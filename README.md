@@ -1,4 +1,8 @@
 # BusTrack — Ahmedabad BRTS Real-Time Fleet System
+> This version of the application does use the Browser Geolocation API (navigator.geolocation) to determine and track users' real-time locations:
+
+Passenger Tracking: In PassengerMap.tsx, it uses navigator.geolocation.watchPosition to track and display the passenger's current location on the map.
+Driver Tracking: In driver/page.tsx, it uses navigator.geolocation.getCurrentPosition to obtain the driver's location.
 
 > Live GPS tracking, on-demand stops, and complete fleet oversight — seamlessly connecting passengers, drivers, and administrators across Ahmedabad's BRTS network.
 
