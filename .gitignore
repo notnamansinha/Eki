@@ -72,3 +72,6 @@ temp/
 .idea/
 *.swp
 *.swo
+
+*BusTracking
+
