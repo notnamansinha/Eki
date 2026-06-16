@@ -1,0 +1,81 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap");
+@import "tailwindcss";
+
+:root {
+  --brand-primary: #0F4C81;
+  --brand-accent: #f5a623;
+  --brand-dark: #0C0C0E;        /* Deep Matte Charcoal */
+  --brand-surface: #161618;     /* Slightly lighter panels */
+  --brand-muted: #1F1F21;       /* Secondary surface */
+  --radius-premium: 1rem;       /* 16px rounding - rounded-2xl */
+}
+
+@theme inline {
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-dark: var(--brand-dark);
+  --color-brand-surface: var(--brand-surface);
+  --color-brand-muted: var(--brand-muted);
+  --color-status-active: #10b981;
+  --color-status-idle: #f59e0b;
+  --color-status-maintenance: #ef4444;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Outfit", "Inter", sans-serif;
+  --radius-xl: var(--radius-premium);
+}
+
+* {
+  box-sizing: border-box;
+  border-color: rgba(255, 255, 255, 0.05); /* Subtle borders global default */
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--brand-dark);
+  color: #fff;
+  font-family: "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar - Clean & Minimal */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--brand-dark);
+}
+::-webkit-scrollbar-thumb {
+  background: #2A2A2E;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3A3A3E;
+}
+
+/* Custom bus-pulse animation for active tracking */
+@keyframes buspulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.8; }
+}
+.bus-pulse {
+  animation: buspulse 2s ease-in-out infinite;
+}
+
+/* Glassmorphism utility - Refined for Charcoal */
+.glass {
+  background: rgba(22, 22, 24, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+/* Premium gradient text utility - Monotone focus */
+.gradient-text {
+  background: linear-gradient(135deg, #fff 0%, #a1a1aa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}

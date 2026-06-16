@@ -1,0 +1,19 @@
+{
+  "name": "bustrack-ecosystem",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BusTrack - Real-time bus tracking and management ecosystem for Ahmedabad BRTS",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=frontend\" \"npm run dev --workspace=backend\"",
+    "build": "npm run build --workspace=frontend",
+    "deploy": "npm run build && npx firebase deploy",
+    "lint": "npm run lint --workspace=frontend && npm run lint --workspace=backend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

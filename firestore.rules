@@ -1,0 +1,83 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isDriver() {
+      return isAuthenticated() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'driver' || isAdmin()
+      );
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // ── User Profiles — Store User Data & Roles ──
+    match /users/{uid} {
+      // Users can read their own profile
+      allow read: if isOwner(uid);
+      // New users can only insert themselves as a 'passenger'
+      allow create: if isOwner(uid) && request.resource.data.role == 'passenger';
+      // Nobody can update/delete their own role (Forces Admin to do it manually in backend)
+      allow update, delete: if false;
+    }
+
+    // ── Routes collection — PUBLIC read, write by admins only ──
+    match /routes/{routeId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── Bus locations — PUBLIC read, write by drivers/admins ──
+    match /bus_locations/{busId} {
+      allow read: if true;
+      allow write: if isDriver();
+    }
+
+    // ── Passenger requests — own requests for passengers, full access for drivers/admins ──
+    match /passenger_requests/{requestId} {
+      // Anyone authenticated can read their own requests (admins/drivers see all)
+      allow read: if isAdmin() || isDriver() ||
+        (isAuthenticated() && resource.data.passengerId == request.auth.uid);
+      // Passengers can only create requests for themselves
+      allow create: if isAuthenticated() &&
+        request.resource.data.passengerId == request.auth.uid &&
+        request.resource.data.lat is number &&
+        request.resource.data.lng is number;
+      // Only admins and drivers can update/delete requests
+      allow update, delete: if isAdmin() || isDriver();
+    }
+    
+    // ── Buses collection ──
+    match /buses/{busId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ── Drivers collection ──
+    match /drivers/{driverId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ── Feedback collection ──
+    match /feedback/{feedbackId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ── Default deny — no catch-all, everything not listed above is denied ──
+    // (Firestore denies by default, but this comment makes the intent explicit)
+  }
+}

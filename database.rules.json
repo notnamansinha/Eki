@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "activeBuses": {
+      ".read": true,
+      "$busKey": {
+        ".write": "auth != null"
+      }
+    },
+    "messages": {
+      "$busId": {
+        ".read": true,
+        ".write": "auth != null"
+      }
+    }
+  }
+}

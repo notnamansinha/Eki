@@ -1,0 +1,74 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Next.js
+.next/
+out/
+.agent/
+.gemini/
+next-env.d.ts
+*.tsbuildinfo
+
+# Build & Tooling
+dist/
+build/
+.turbo
+.vercel
+/coverage
+
+# Environment Files (NEVER COMMIT)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+.env*.local
+
+# Firebase
+.firebase/
+*-debug.log
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+serviceAccountKey.json
+service-account.json
+*.json
+!package.json
+!tsconfig.json
+!*config.json
+!firebase.json
+!database.rules.json
+
+# Misc
+.DS_Store
+*.pem
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.tmp
+*.log
+
+# Diagnostic & Development Scripts
+test-*.ts
+test-*.js
+read-*.ts
+list-*.ts
+
+# Media & Storage
+artifacts/
+temp/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
