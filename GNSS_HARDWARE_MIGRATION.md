@@ -293,7 +293,7 @@ This is the current data flow as implemented across [driver/page.tsx](file:///c:
 
 ### 4.1 — PlatformIO Configuration Update
 
-Update your [platformio.ini](file:///c:/Users/Naman Sinha/Desktop/Eki/BusTracking/platformio.ini) to add the Firebase and WiFi dependencies:
+Update your `platformio.ini` to add the Firebase and WiFi dependencies. Note that we are using the mature Firebase Arduino Client library instead of older libraries.
 
 ```ini
 [env:esp32dev]
@@ -302,97 +302,113 @@ board = esp32dev
 framework = arduino
 monitor_speed = 115200
 
-; WiFi and time sync
-build_flags = 
-    -DWIFI_SSID=\"YOUR_BUS_WIFI_SSID\"
-    -DWIFI_PASS=\"YOUR_BUS_WIFI_PASSWORD\"
-    -DFIREBASE_PROJECT_ID=\"bustrack-be165\"
-
 lib_deps = 
     mikalhart/TinyGPSPlus @ ^1.0.3
-    mobizt/Firebase ESP Client @ ^4.4.14
+    mobizt/Firebase Arduino Client Library for ESP8266 and ESP32 @ ^4.4.14
 ```
 
 > [!NOTE]
-> **Why `Firebase ESP Client` by mobizt?** It's the most mature ESP32 Firebase library, supporting RTDB, Firestore, FCM, and Storage. It handles SSL/TLS, token refresh, and connection keepalive internally. It uses the Firebase REST API under the hood, which means it doesn't maintain a persistent WebSocket like the JS SDK — each write is an HTTPS request.
+> **Why this Firebase library?** It handles SSL/TLS, token refresh (vital for Service Accounts), and connection keepalive internally. It uses the Firebase REST API under the hood, meaning it doesn't maintain a persistent WebSocket like the JS SDK — each write is an HTTPS request.
 
-### 4.2 — Firmware: WiFi Connection + Firebase Test Write
+### 4.2 — Firmware: Secrets Management & Firebase Setup
 
-Create a new file or replace [main.cpp](file:///c:/Users/Naman Sinha/Desktop/Eki/BusTracking/src/main.cpp) with this Phase 1 code:
+For security, we isolate all credentials from the main code. Create a new directory and file `include/secrets.h`. **Make sure to add `include/secrets.h` to your `.gitignore`!**
 
+**`include/secrets.example.h`** (Commit this to Git as a template):
 ```cpp
-#include <Arduino.h>
-#include <WiFi.h>
-#include <Firebase_ESP_Client.h>
+#pragma once
 
 // ── WiFi Credentials ──────────────────────────────────────────────
-// These come from build_flags in platformio.ini
-// For production: store in a config struct in SPIFFS/NVS
-const char* WIFI_SSID = WIFI_SSID;
-const char* WIFI_PASS = WIFI_PASS;
+#define WIFI_SSID "YOUR_WIFI_SSID"
+#define WIFI_PASS "YOUR_WIFI_PASSWORD"
 
 // ── Firebase Configuration ────────────────────────────────────────
-// For Phase 1: use database secret (legacy token) for simplicity.
-// Phase 5 upgrades this to service account or custom token auth.
-#define FIREBASE_HOST "bustrack-be165-default-rtdb.firebaseio.com"
-#define FIREBASE_AUTH "YOUR_RTDB_DATABASE_SECRET"  // Firebase Console → RTDB → Rules → Legacy token
+#define FIREBASE_HOST "your-project-id-default-rtdb.firebaseio.com"
+#define FIREBASE_PROJECT_ID "your-project-id"
+#define FIREBASE_CLIENT_EMAIL "firebase-adminsdk-xxx@your-project-id.iam.gserviceaccount.com"
+
+static const char FIREBASE_PRIVATE_KEY[] = "-----BEGIN PRIVATE KEY-----\n"
+"YOUR_PRIVATE_KEY_HERE\n"
+"-----END PRIVATE KEY-----\n";
+```
+
+**`src/main.cpp`** (The main application logic using Service Accounts):
+```cpp
+#include <Arduino.h>
+#include <Firebase_ESP_Client.h>
+#include <WiFi.h>
+#include "secrets.h" // ── All WiFi and Firebase secrets are imported from here
 
 FirebaseData fbData;
 FirebaseAuth fbAuth;
 FirebaseConfig fbConfig;
 
 void connectWiFi() {
-    Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-        delay(500);
-        Serial.print(".");
-        attempts++;
-    }
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 40) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
 
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.printf("\n[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
-    } else {
-        Serial.println("\n[WiFi] FAILED to connect. Will retry in loop.");
-    }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("\n[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+  } else {
+    Serial.println("\n[WiFi] FAILED to connect. Will retry in loop.");
+  }
 }
 
 void setup() {
-    Serial.begin(115200);
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("\n========================================");
+  Serial.println("  Eki BusTrack — ESP32 Phase 1");
+  Serial.println("  WiFi + Firebase RTDB Test");
+  Serial.println("========================================\n");
+
+  connectWiFi();
+
+  // Initialize Firebase using the Service Account defined in secrets.h
+  Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
+  fbConfig.database_url = FIREBASE_HOST;
+
+  // Set the service account credentials
+  fbConfig.service_account.data.client_email = FIREBASE_CLIENT_EMAIL;
+  fbConfig.service_account.data.project_id = FIREBASE_PROJECT_ID;
+  fbConfig.service_account.data.private_key = FIREBASE_PRIVATE_KEY;
+
+  // Assign the configuration and authentication to the Firebase instance
+  Firebase.begin(&fbConfig, &fbAuth);
+  Firebase.reconnectWiFi(true); // Reconnects if WiFi drops
+
+  Serial.println("[Firebase] Initializing and waiting for token...");
+
+  // Wait for Service Account token generation
+  while (!Firebase.ready()) {
+    Serial.print(".");
     delay(1000);
-    Serial.println("\n========================================");
-    Serial.println("  Eki BusTrack — ESP32 Phase 1");
-    Serial.println("  WiFi + Firebase RTDB Test");
-    Serial.println("========================================\n");
+  }
+  Serial.println("\n[Firebase] Ready!");
 
-    connectWiFi();
-
-    // Firebase init
-    fbConfig.host = FIREBASE_HOST;
-    fbConfig.signer.tokens.legacy_token = FIREBASE_AUTH;
-    Firebase.begin(&fbConfig, &fbAuth);
-    Firebase.reconnectNetwork(true);
-
-    Serial.println("[Firebase] Initialized. Sending test write...");
-
-    // Test write
-    if (Firebase.RTDB.setString(&fbData, "/deviceTest/esp32_status", "online")) {
-        Serial.println("[Firebase] ✅ Test write SUCCESS — device is online in RTDB");
-    } else {
-        Serial.printf("[Firebase] ❌ Test write FAILED: %s\n", fbData.errorReason().c_str());
-    }
+  // Test write
+  if (Firebase.RTDB.setString(&fbData, "/deviceTest/esp32_status", "online")) {
+    Serial.println("[Firebase] ✅ Test write SUCCESS — device is online in RTDB");
+  } else {
+    Serial.printf("[Firebase] ❌ Test write FAILED: %s\n", fbData.errorReason().c_str());
+  }
 }
 
 void loop() {
-    // Phase 1: Just keep alive and verify connection
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("[WiFi] Disconnected. Reconnecting...");
-        connectWiFi();
-    }
-    delay(10000);
+  // Phase 1: Just keep alive and verify connection
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[WiFi] Disconnected. Reconnecting...");
+    connectWiFi();
+  }
+  delay(10000);
 }
 ```
 
