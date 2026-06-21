@@ -73,5 +73,15 @@ temp/
 *.swp
 *.swo
 
-*BusTracking
+# Firmware project directory (contains secrets.h with WiFi and Firebase private key)
+BusTracking/
 
+# Dev utility & one-off scripts (no secrets, but should not be public)
+simulator.js
+serve.js
+frontend/fetch_route.js
+frontend/google_maps_recovery_instructions.md
+backend/src/patch-stops.ts
+
+# Build artifacts
+frontend/tsconfig.tsbuildinfo

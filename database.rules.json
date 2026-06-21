@@ -3,14 +3,21 @@
     "activeBuses": {
       ".read": true,
       "$busKey": {
-        ".write": "auth != null"
+        // Only drivers or admins may write bus location data.
+        // The ESP32 hardware uses the firebase-adminsdk service account,
+        // which bypasses all client-side rules — this rule only applies
+        // to browser-based driver clients.
+        ".write": "auth != null && (auth.token.driver == true || auth.token.admin == true)"
       }
     },
     "messages": {
       "$busId": {
         ".read": true,
-        ".write": "auth != null"
+        // Only drivers and admins may post to the messaging channel.
+        ".write": "auth != null && (auth.token.driver == true || auth.token.admin == true)"
       }
-    }
+    },
+    ".read": false,
+    ".write": false
   }
 }
