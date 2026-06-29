@@ -3,6 +3,7 @@ import { db } from "../lib/firebaseAdmin";
 
 const router = Router();
 
+
 // ── Pure-JS Google Polyline Decoder (no API cost) ────────────────────────────
 // Implements the standard Google Maps Encoded Polyline Algorithm
 function decodePolyline(encoded: string): { lat: number; lng: number }[] {
@@ -109,6 +110,29 @@ interface RouteDoc {
   polyline: string;
 }
 
+// ── In-memory TTL cache for route Firestore reads ───────────────────────────────
+// Avoids redundant Firestore reads when multiple passengers plan routes
+// simultaneously on the same route. TTL: 10 min (routes rarely change mid-day).
+// Self-contained implementation — no external dependency needed.
+const MAX_CACHE_SIZE = 50;
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const routeCache = new Map<string, { data: RouteDoc; expiresAt: number }>();
+
+function getCachedRoute(routeId: string): RouteDoc | undefined {
+  const entry = routeCache.get(routeId);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) { routeCache.delete(routeId); return undefined; }
+  return entry.data;
+}
+
+function setCachedRoute(routeId: string, data: RouteDoc): void {
+  // Evict oldest entry if at capacity
+  if (routeCache.size >= MAX_CACHE_SIZE) {
+    routeCache.delete(routeCache.keys().next().value!);
+  }
+  routeCache.set(routeId, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
 /**
  * POST /api/plan
  *
@@ -140,13 +164,17 @@ router.post("/", async (req: Request, res: Response) => {
   }
 
   try {
-    const doc = await db.collection("routes").doc(routeId).get();
-    if (!doc.exists) {
-      res.status(404).json({ error: `Route '${routeId}' not found in Firestore` });
-      return;
+    // ── TTL cache hit: skip Firestore read if route was recently fetched ──
+    let route = getCachedRoute(routeId);
+    if (!route) {
+      const doc = await db.collection("routes").doc(routeId).get();
+      if (!doc.exists) {
+        res.status(404).json({ error: `Route '${routeId}' not found in Firestore` });
+        return;
+      }
+      route = doc.data() as RouteDoc;
+      setCachedRoute(routeId, route); // Store in cache for subsequent requests
     }
-
-    const route = doc.data() as RouteDoc;
 
     if (!route.stops || route.stops.length < 2) {
       res.status(422).json({ error: "Route has no stops data. Please re-seed the database." });

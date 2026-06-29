@@ -1,16 +1,33 @@
 {
   "rules": {
     "activeBuses": {
-      ".read": true,
+      // Require sign-in (anonymous auth is free and takes one SDK call).
+      // Prevents unauthenticated scraping of fleet telemetry.
+      ".read": "auth != null",
       "$busKey": {
-        ".write": "auth != null"
+        // Drivers and admins may write any bus path.
+        // Hardware devices (ESP32) are locked to their own path only:
+        //   token.deviceId is injected as a Custom Token claim in POST /api/devices/auth.
+        //   $busKey format is "bus_01_route_01" — must start with the device's own ID.
+        ".write": "auth != null && (auth.token.driver == true || auth.token.admin == true || (auth.token.role == 'device' && $busKey.matches(auth.token.deviceId + '_.*')))"
+      },
+      // Index routeId so clients can use orderByChild("routeId").equalTo(routeId)
+      // without a full-collection scan (reduces downloaded bytes per passenger).
+      ".indexOn": ["routeId"]
+    },
+    "busShifts": {
+      ".read": "auth != null",
+      "$busId": {
+        ".write": "auth != null && (auth.token.driver == true || auth.token.admin == true || auth.token.role == 'device')"
       }
     },
     "messages": {
       "$busId": {
-        ".read": true,
-        ".write": "auth != null"
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.token.driver == true || auth.token.admin == true)"
       }
-    }
+    },
+    ".read": false,
+    ".write": false
   }
 }

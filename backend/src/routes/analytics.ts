@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { db } from "../lib/firebaseAdmin";
+import { requireAdmin } from "../middleware/requireAdmin";
 
 const router = Router();
 
-// Retrieve fleet statistics from Firestore (persistent) + in-memory active state
-router.get("/fleet", async (_req, res) => {
+// Retrieve fleet statistics — admin only (reads Firestore bus_locations collection)
+router.get("/fleet", requireAdmin, async (_req, res) => {
   try {
     // Get persistent bus count from Firestore
     const busSnapshot = await db.collection("bus_locations").get();

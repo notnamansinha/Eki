@@ -19,6 +19,22 @@ function isNonEmptyString(val: unknown, maxLen = 256): val is string {
   return typeof val === "string" && val.trim().length > 0 && val.length <= maxLen;
 }
 
+// ── TTL eviction: sweep completed/cancelled requests older than 30 minutes ──
+// Runs every 5 minutes to prevent unbounded Map growth on long-running containers.
+setInterval(() => {
+  const cutoff = Date.now() - 30 * 60 * 1000; // 30 minutes ago
+  let evicted = 0;
+  for (const [id, req] of pendingRequests) {
+    if (req.status !== "pending" && req.createdAt < cutoff) {
+      pendingRequests.delete(id);
+      evicted++;
+    }
+  }
+  if (evicted > 0) {
+    console.log(`[Requests] TTL eviction: removed ${evicted} completed/cancelled requests`);
+  }
+}, 5 * 60 * 1000);
+
 // Create new external pickup request over HTTP
 router.post("/", (req, res) => {
   const { passengerId, busId, type, lat, lng } = req.body ?? {};
@@ -41,8 +57,23 @@ router.post("/", (req, res) => {
     return;
   }
 
+  // ── Idempotency key: one request per passenger per bus per minute ──
+  // Prevents request flooding from rapid-tapping passengers or frontend retries.
+  const idempotencyWindow = Math.floor(Date.now() / 60_000); // 1-minute bucket
+  const idempotencyKey = `${passengerId}:${busId}:${idempotencyWindow}`;
+
+  // Check if an identical request was already submitted in this window
+  const existingRequest = Array.from(pendingRequests.values()).find(
+    (r) => (r as any).idempotencyKey === idempotencyKey
+  );
+  if (existingRequest) {
+    // Return the existing request — idempotent success
+    res.status(200).json(existingRequest);
+    return;
+  }
+
   const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const newRequest: PassengerRequest = {
+  const newRequest: PassengerRequest & { idempotencyKey: string } = {
     requestId,
     passengerId,
     busId,
@@ -51,6 +82,7 @@ router.post("/", (req, res) => {
     lng,
     status: "pending",
     createdAt: Date.now(),
+    idempotencyKey, // Stored for deduplication lookups
   };
 
   pendingRequests.set(requestId, newRequest);
