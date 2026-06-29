@@ -25,7 +25,7 @@ setInterval(() => {
   const cutoff = Date.now() - 30 * 60 * 1000; // 30 minutes ago
   let evicted = 0;
   for (const [id, req] of pendingRequests) {
-    if (req.status !== "pending" && req.createdAt < cutoff) {
+    if (req.createdAt < cutoff) {
       pendingRequests.delete(id);
       evicted++;
     }

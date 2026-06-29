@@ -581,7 +581,7 @@ void loop() {
  if (now - lastSendTime >= SEND_INTERVAL_MS) {
  lastSendTime = now;
 
- if (!WiFi.status() == WL_CONNECTED) {
+ if (WiFi.status() != WL_CONNECTED) {
  connectWiFi();
  }
 
@@ -813,8 +813,18 @@ if (WiFi.status() != WL_CONNECTED) {
 
 // If WiFi just came back and we have a buffered fix, send it first
 if (wifiBuffer.valid) {
- // Send buffered fix, then clear buffer
- wifiBuffer.valid = false;
+  // Reconstruct payload using wifiBuffer values
+  jsonPayload.set("lat", wifiBuffer.lat);
+  jsonPayload.set("lng", wifiBuffer.lng);
+  jsonPayload.set("speed", wifiBuffer.speed);
+  jsonPayload.set("heading", wifiBuffer.heading);
+  jsonPayload.set("satellites", wifiBuffer.satellites);
+  
+  // Transmit buffered data
+  Firebase.RTDB.updateNode(&fbData, path.c_str(), &jsonPayload);
+  
+  // Clear buffer
+  wifiBuffer.valid = false;
 }
 ```
 
@@ -925,8 +935,8 @@ In Phase 1–2, we used a **legacy RTDB database secret** (`FIREBASE_AUTH` const
 
 **Flow:**
 1. Each ESP32 is provisioned with a unique **device secret** (a random 32-byte string stored in NVS)
-2. On boot, the ESP32 sends an HTTPS POST to your backend: `POST /api/device/auth` with `{ deviceId: "bus_01", secret: "..." }`
-3. The backend validates the device secret against Firestore's `devices` collection
+2. On boot, the ESP32 sends an HTTPS POST to your backend: `POST /api/devices/auth` with `{ deviceId: "bus_01", secret: "..." }`
+3. The backend validates the device secret against Firestore's `devices` collection using `bcrypt`
 4. If valid, the backend generates a **Firebase Custom Token** using the Admin SDK: `admin.auth().createCustomToken(deviceId)`
 5. The ESP32 receives the custom token, uses it to authenticate with RTDB
 6. Custom tokens expire after 1 hour — the ESP32 re-authenticates every 50 minutes
@@ -937,12 +947,58 @@ In Phase 1–2, we used a **legacy RTDB database secret** (`FIREBASE_AUTH` const
 router.post("/auth", async (req, res) => {
  const { deviceId, secret } = req.body;
  const deviceDoc = await db.collection("devices").doc(deviceId).get();
- if (!deviceDoc.exists || deviceDoc.data()?.secret !== secret) {
- return res.status(401).json({ error: "Invalid device credentials" });
+ 
+ if (!deviceDoc.exists) {
+   return res.status(401).json({ error: "Invalid device credentials" });
  }
- const customToken = await auth.createCustomToken(deviceId, { role: "device" });
+ 
+ const isValid = await bcrypt.compare(secret, deviceDoc.data()?.secretHash);
+ if (!isValid) {
+   return res.status(401).json({ error: "Invalid device credentials" });
+ }
+ 
+ const customToken = await auth.createCustomToken(deviceId, { deviceId, role: "device" });
  res.json({ token: customToken, expiresIn: 3600 });
 });
+```
+
+**ESP32 Firmware addition (Phase 5):**
+```cpp
+#include <HTTPClient.h>
+#include <ArduinoJson.h> // Ensure ArduinoJson v7 is installed
+
+// Store the custom token globally so the pointer remains valid
+String currentCustomToken = "";
+
+// Replace initFirebase() from Phase 2 with this:
+void initFirebase() {
+  HTTPClient http;
+  http.begin("https://your-backend.com/api/devices/auth");
+  http.addHeader("Content-Type", "application/json");
+
+  // Send the device secret
+  String payload = "{\"deviceId\":\"bus_01\",\"secret\":\"YOUR_DEVICE_SECRET\"}";
+  int httpCode = http.POST(payload);
+
+  if (httpCode == 200) {
+    String response = http.getString();
+    JsonDocument doc;
+    deserializeJson(doc, response);
+    
+    // Assign to global String to prevent dangling pointer when passing c_str()
+    currentCustomToken = doc["token"].as<String>();
+
+    fbConfig.host = FIREBASE_HOST;
+    fbConfig.signer.tokens.custom_token = currentCustomToken.c_str(); // Use custom token!
+    Firebase.begin(&fbConfig, &fbAuth);
+    Firebase.reconnectNetwork(true);
+    firebaseReady = true;
+    Serial.println("[Firebase] Initialized with Custom Token.");
+  } else {
+    Serial.printf("[Firebase] Auth Failed. HTTP %d\n", httpCode);
+  }
+  http.end();
+}
 ```
 
 ### 8.4 — Updated RTDB Rules
@@ -951,26 +1007,20 @@ Update [database.rules.json](file:///c:/Users/Naman Sinha/Desktop/Eki/database.r
 
 ```json
 {
- "rules": {
- "activeBuses": {
- ".read": true,
- "$busKey": {
- ".write": "auth != null"
- }
- },
- "busShifts": {
- ".read": "auth != null",
- "$busId": {
- ".write": "auth != null"
- }
- },
- "messages": {
- "$busId": {
- ".read": true,
- ".write": "auth != null"
- }
- }
- }
+  "rules": {
+    "activeBuses": {
+      ".read": true,
+      "$busKey": {
+        ".write": "auth != null && (auth.token.admin == true || $busKey.matches(auth.token.deviceId + '_.*'))"
+      }
+    },
+    "busShifts": {
+      ".read": "auth != null",
+      "$busId": {
+        ".write": "auth != null && (auth.token.admin == true || auth.token.deviceId == $busId)"
+      }
+    }
+  }
 }
 ```
 
@@ -1173,8 +1223,8 @@ STEP C: SHIFT END
 - Implement exponential backoff on WiFi reconnection (not a tight loop)
 
 ### "Firebase write fails with 401"
-- Your database secret or custom token has expired
-- Regenerate the database secret in Firebase Console → RTDB → Rules
+- Your custom token has expired or is invalid
+- Ensure the ESP32 is successfully fetching a new token from your backend every ~50 minutes
 - If using custom tokens, check that the backend's service account has the `iam.serviceAccounts.signBlob` permission
 
 ### "Bus marker jumps erratically on the map"
@@ -1194,7 +1244,7 @@ STEP C: SHIFT END
 ---
 
 > [!IMPORTANT]
-> **Recommended Implementation Order**: Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 6 → Phase 5. Get the hardware streaming data first (Phases 1–3), then update the frontend (Phase 4), test it end-to-end (Phase 6), and only then lock down security (Phase 5). This lets you iterate quickly with the database secret during development.
+> **Recommended Implementation Order**: Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6. Get the hardware streaming data first (Phases 1–3), then update the frontend (Phase 4). **CRITICAL**: You must lock down security (Phase 5) *before* testing end-to-end and deploying to production (Phase 6). Deploying firmware with hardcoded database secrets and permissive rules to production buses presents a severe security risk.
 
 ---
 

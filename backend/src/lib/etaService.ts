@@ -101,13 +101,14 @@ function computeETAFromPolyline(
   const destIdx = closestPolylineIndex(polylineCoords, destination);
 
   // Walk along the polyline from bus → destination, summing segment distances.
-  // If the bus is ahead of the destination on the polyline (route nearly complete),
-  // the remaining distance is near zero, which is correct.
-  const startI = Math.min(busIdx, destIdx);
-  const endI = Math.max(busIdx, destIdx);
+  // If the bus is ahead of the destination on the polyline (route already passed),
+  // the ETA is 0 since the stop was missed or completed.
+  if (busIdx >= destIdx) {
+    return { etaSeconds: 0, distanceMeters: 0 };
+  }
 
   let distMeters = 0;
-  for (let i = startI; i < endI; i++) {
+  for (let i = busIdx; i < destIdx; i++) {
     distMeters += haversineMeters(polylineCoords[i], polylineCoords[i + 1]);
   }
 
