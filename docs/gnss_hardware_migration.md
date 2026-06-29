@@ -64,44 +64,44 @@ This is the current data flow as implemented across [driver/page.tsx](file:///c:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        CURRENT ARCHITECTURE                            │
-│                     (Browser Geolocation Based)                        │
+│ CURRENT ARCHITECTURE │
+│ (Browser Geolocation Based) │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌──────────────────────┐                                               │
-│  │   Driver's Phone     │                                               │
-│  │   (Chrome/Safari)    │                                               │
-│  │                      │                                               │
-│  │  ┌────────────────┐  │     Every 3s via setInterval                  │
-│  │  │ Browser Tab    │  │  ┌──────────────────────────────┐             │
-│  │  │                │  │  │ navigator.geolocation        │             │
-│  │  │ driver/page.tsx│──┼──│   .getCurrentPosition()      │             │
-│  │  │                │  │  │                              │             │
-│  │  │                │  │  │ Returns: lat, lng, heading,  │             │
-│  │  │                │  │  │          speed, accuracy     │             │
-│  │  └───────┬────────┘  │  └──────────────────────────────┘             │
-│  │          │           │                                               │
-│  └──────────┼───────────┘                                               │
-│             │                                                           │
-│             │  Firebase Client SDK                                      │
-│             │  ref(rtdb, `activeBuses/${busId}_${routeId}`)             │
-│             │  set(busRef, payload)                                     │
-│             ▼                                                           │
-│  ┌──────────────────────┐                                               │
-│  │  Firebase RTDB       │                                               │
-│  │  /activeBuses/       │                                               │
-│  │    bus_01_route_01   │──────────┐                                    │
-│  │      ├── lat         │          │  onValue() listeners               │
-│  │      ├── lng         │          │                                    │
-│  │      ├── heading     │          ▼                                    │
-│  │      ├── speed       │  ┌──────────────────┐  ┌──────────────────┐   │
-│  │      ├── timestamp   │  │ Passenger App    │  │ Admin Dashboard  │   │
-│  │      ├── busId       │  │ PassengerMap.tsx  │  │ Fleet Map        │   │
-│  │      ├── routeId     │  └──────────────────┘  └──────────────────┘   │
-│  │      ├── driverId    │                                               │
-│  │      └── status      │                                               │
-│  └──────────────────────┘                                               │
-│                                                                         │
+│ │
+│ ┌──────────────────────┐ │
+│ │ Driver's Phone │ │
+│ │ (Chrome/Safari) │ │
+│ │ │ │
+│ │ ┌────────────────┐ │ Every 3s via setInterval │
+│ │ │ Browser Tab │ │ ┌──────────────────────────────┐ │
+│ │ │ │ │ │ navigator.geolocation │ │
+│ │ │ driver/page.tsx│──┼──│ .getCurrentPosition() │ │
+│ │ │ │ │ │ │ │
+│ │ │ │ │ │ Returns: lat, lng, heading, │ │
+│ │ │ │ │ │ speed, accuracy │ │
+│ │ └───────┬────────┘ │ └──────────────────────────────┘ │
+│ │ │ │ │
+│ └──────────┼───────────┘ │
+│ │ │
+│ │ Firebase Client SDK │
+│ │ ref(rtdb, `activeBuses/${busId}_${routeId}`) │
+│ │ set(busRef, payload) │
+│ ▼ │
+│ ┌──────────────────────┐ │
+│ │ Firebase RTDB │ │
+│ │ /activeBuses/ │ │
+│ │ bus_01_route_01 │──────────┐ │
+│ │ ├── lat │ │ onValue() listeners │
+│ │ ├── lng │ │ │
+│ │ ├── heading │ ▼ │
+│ │ ├── speed │ ┌──────────────────┐ ┌──────────────────┐ │
+│ │ ├── timestamp │ │ Passenger App │ │ Admin Dashboard │ │
+│ │ ├── busId │ │ PassengerMap.tsx │ │ Fleet Map │ │
+│ │ ├── routeId │ └──────────────────┘ └──────────────────┘ │
+│ │ ├── driverId │ │
+│ │ └── status │ │
+│ └──────────────────────┘ │
+│ │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -131,61 +131,61 @@ This is the current data flow as implemented across [driver/page.tsx](file:///c:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         NEW ARCHITECTURE                                │
-│                    (ESP32 + NEO-M8N GNSS Based)                        │
+│ NEW ARCHITECTURE │
+│ (ESP32 + NEO-M8N GNSS Based) │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌──────────────────────────────────────────────┐                       │
-│  │            HARDWARE ON BUS                    │                      │
-│  │                                               │                      │
-│  │  ┌──────────────┐    UART (9600 baud)         │                      │
-│  │  │  NEO-M8N     │────────────────────┐        │                      │
-│  │  │  GNSS Module │  TX→RX16, RX→TX17  │        │                      │
-│  │  │  + Ceramic   │                    │        │                      │
-│  │  │  Active Ant. │                    ▼        │                      │
-│  │  └──────────────┘             ┌────────────┐  │                      │
-│  │                               │   ESP32    │  │                      │
-│  │                               │ ESP-WROOM  │  │                      │
-│  │  ┌──────────────┐             │   -32      │  │                      │
-│  │  │  Bus 12V     │──5V USB───▶│            │  │                      │
-│  │  │  Cigarette   │            │ TinyGPS++  │  │                      │
-│  │  │  Lighter /   │            │ parses     │  │                      │
-│  │  │  USB Port    │            │ NMEA       │  │                      │
-│  │  └──────────────┘            │            │  │                      │
-│  │                               │ WiFi STA   │  │                      │
-│  │  ┌──────────────┐             │ connects   │  │                      │
-│  │  │  Bus WiFi    │◀── WiFi ──│ to bus      │  │                      │
-│  │  │  Router      │            │ router     │  │                      │
-│  │  └──────┬───────┘            └────────────┘  │                      │
-│  │         │                                     │                      │
-│  └─────────┼─────────────────────────────────────┘                      │
-│            │                                                            │
-│            │  HTTPS (Firebase REST API or Client SDK)                   │
-│            │  PATCH /activeBuses/{busId}_{routeId}.json                 │
-│            ▼                                                            │
-│  ┌──────────────────────┐                                               │
-│  │  Firebase RTDB       │                                               │
-│  │  /activeBuses/       │                                               │
-│  │    bus_01_route_01   │──────────┐                                    │
-│  │      ├── lat         │          │  onValue() listeners               │
-│  │      ├── lng         │          │  (UNCHANGED from current)          │
-│  │      ├── heading     │          ▼                                    │
-│  │      ├── speed       │  ┌──────────────────┐  ┌──────────────────┐   │
-│  │      ├── timestamp   │  │ Passenger App    │  │ Admin Dashboard  │   │
-│  │      ├── busId       │  │ PassengerMap.tsx  │  │ Fleet Map        │   │
-│  │      ├── routeId     │  │ (NO CHANGES)     │  │ (NO CHANGES)     │   │
-│  │      ├── satellites  │  └──────────────────┘  └──────────────────┘   │
-│  │      ├── source:"hw" │                                               │
-│  │      └── status      │                                               │
-│  └──────────────────────┘                                               │
-│                                                                         │
-│  ┌──────────────────────┐                                               │
-│  │  Driver App          │  No longer writes GPS data!                   │
-│  │  driver/page.tsx     │  Only reads from RTDB to display own bus      │
-│  │                      │  on the DriverMap. Controls (start/stop       │
-│  │                      │  shift, route selection) remain unchanged.    │
-│  └──────────────────────┘                                               │
-│                                                                         │
+│ │
+│ ┌──────────────────────────────────────────────┐ │
+│ │ HARDWARE ON BUS │ │
+│ │ │ │
+│ │ ┌──────────────┐ UART (9600 baud) │ │
+│ │ │ NEO-M8N │────────────────────┐ │ │
+│ │ │ GNSS Module │ TX→RX16, RX→TX17 │ │ │
+│ │ │ + Ceramic │ │ │ │
+│ │ │ Active Ant. │ ▼ │ │
+│ │ └──────────────┘ ┌────────────┐ │ │
+│ │ │ ESP32 │ │ │
+│ │ │ ESP-WROOM │ │ │
+│ │ ┌──────────────┐ │ -32 │ │ │
+│ │ │ Bus 12V │──5V USB───▶│ │ │ │
+│ │ │ Cigarette │ │ TinyGPS++ │ │ │
+│ │ │ Lighter / │ │ parses │ │ │
+│ │ │ USB Port │ │ NMEA │ │ │
+│ │ └──────────────┘ │ │ │ │
+│ │ │ WiFi STA │ │ │
+│ │ ┌──────────────┐ │ connects │ │ │
+│ │ │ Bus WiFi │◀── WiFi ──│ to bus │ │ │
+│ │ │ Router │ │ router │ │ │
+│ │ └──────┬───────┘ └────────────┘ │ │
+│ │ │ │ │
+│ └─────────┼─────────────────────────────────────┘ │
+│ │ │
+│ │ HTTPS (Firebase REST API or Client SDK) │
+│ │ PATCH /activeBuses/{busId}_{routeId}.json │
+│ ▼ │
+│ ┌──────────────────────┐ │
+│ │ Firebase RTDB │ │
+│ │ /activeBuses/ │ │
+│ │ bus_01_route_01 │──────────┐ │
+│ │ ├── lat │ │ onValue() listeners │
+│ │ ├── lng │ │ (UNCHANGED from current) │
+│ │ ├── heading │ ▼ │
+│ │ ├── speed │ ┌──────────────────┐ ┌──────────────────┐ │
+│ │ ├── timestamp │ │ Passenger App │ │ Admin Dashboard │ │
+│ │ ├── busId │ │ PassengerMap.tsx │ │ Fleet Map │ │
+│ │ ├── routeId │ │ (NO CHANGES) │ │ (NO CHANGES) │ │
+│ │ ├── satellites │ └──────────────────┘ └──────────────────┘ │
+│ │ ├── source:"hw" │ │
+│ │ └── status │ │
+│ └──────────────────────┘ │
+│ │
+│ ┌──────────────────────┐ │
+│ │ Driver App │ No longer writes GPS data! │
+│ │ driver/page.tsx │ Only reads from RTDB to display own bus │
+│ │ │ on the DriverMap. Controls (start/stop │
+│ │ │ shift, route selection) remain unchanged. │
+│ └──────────────────────┘ │
+│ │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -252,25 +252,25 @@ This is the current data flow as implemented across [driver/page.tsx](file:///c:
 ### 3.3 — Wiring Diagram
 
 ```
-                    ESP32 (30-Pin)                    NEO-M8N Module
-                 ┌──────────────────┐              ┌──────────────────┐
-                 │                  │              │                  │
-   USB Power ──▶│  5V (or VIN)    │──── VCC ────▶│  VCC (3.3–5V)   │
-                 │                  │              │                  │
-                 │  GND            │──── GND ────▶│  GND            │
-                 │                  │              │                  │
-                 │  GPIO 16 (RX2)  │◀─── TX  ────│  TX             │
-                 │                  │              │                  │
-                 │  GPIO 17 (TX2)  │──── RX  ───▶│  RX             │
-                 │                  │              │                  │
-                 └──────────────────┘              └──────────────────┘
-                                                          │
-                                                   ┌──────┴──────┐
-                                                   │  Ceramic    │
-                                                   │  Active     │
-                                                   │  Antenna    │
-                                                   │  (U.FL/SMA) │
-                                                   └─────────────┘
+ ESP32 (30-Pin) NEO-M8N Module
+ ┌──────────────────┐ ┌──────────────────┐
+ │ │ │ │
+ USB Power ──▶│ 5V (or VIN) │──── VCC ────▶│ VCC (3.3–5V) │
+ │ │ │ │
+ │ GND │──── GND ────▶│ GND │
+ │ │ │ │
+ │ GPIO 16 (RX2) │◀─── TX ────│ TX │
+ │ │ │ │
+ │ GPIO 17 (TX2) │──── RX ───▶│ RX │
+ │ │ │ │
+ └──────────────────┘ └──────────────────┘
+ │
+ ┌──────┴──────┐
+ │ Ceramic │
+ │ Active │
+ │ Antenna │
+ │ (U.FL/SMA) │
+ └─────────────┘
 ```
 
 > [!IMPORTANT]
@@ -303,8 +303,8 @@ framework = arduino
 monitor_speed = 115200
 
 lib_deps = 
-    mikalhart/TinyGPSPlus @ ^1.0.3
-    mobizt/Firebase Arduino Client Library for ESP8266 and ESP32 @ ^4.4.14
+ mikalhart/TinyGPSPlus @ ^1.0.3
+ mobizt/Firebase Arduino Client Library for ESP8266 and ESP32 @ ^4.4.14
 ```
 
 > [!NOTE]
@@ -344,71 +344,71 @@ FirebaseAuth fbAuth;
 FirebaseConfig fbConfig;
 
 void connectWiFi() {
-  Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+ Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
+ WiFi.mode(WIFI_STA);
+ WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
+ int attempts = 0;
+ while (WiFi.status() != WL_CONNECTED && attempts < 40) {
+ delay(500);
+ Serial.print(".");
+ attempts++;
+ }
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("\n[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
-  } else {
-    Serial.println("\n[WiFi] FAILED to connect. Will retry in loop.");
-  }
+ if (WiFi.status() == WL_CONNECTED) {
+ Serial.printf("\n[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+ } else {
+ Serial.println("\n[WiFi] FAILED to connect. Will retry in loop.");
+ }
 }
 
 void setup() {
-  Serial.begin(115200);
-  delay(1000);
-  Serial.println("\n========================================");
-  Serial.println("  Eki BusTrack — ESP32 Phase 1");
-  Serial.println("  WiFi + Firebase RTDB Test");
-  Serial.println("========================================\n");
+ Serial.begin(115200);
+ delay(1000);
+ Serial.println("\n========================================");
+ Serial.println(" Eki BusTrack — ESP32 Phase 1");
+ Serial.println(" WiFi + Firebase RTDB Test");
+ Serial.println("========================================\n");
 
-  connectWiFi();
+ connectWiFi();
 
-  // Initialize Firebase using the Service Account defined in secrets.h
-  Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
-  fbConfig.database_url = FIREBASE_HOST;
+ // Initialize Firebase using the Service Account defined in secrets.h
+ Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
+ fbConfig.database_url = FIREBASE_HOST;
 
-  // Set the service account credentials
-  fbConfig.service_account.data.client_email = FIREBASE_CLIENT_EMAIL;
-  fbConfig.service_account.data.project_id = FIREBASE_PROJECT_ID;
-  fbConfig.service_account.data.private_key = FIREBASE_PRIVATE_KEY;
+ // Set the service account credentials
+ fbConfig.service_account.data.client_email = FIREBASE_CLIENT_EMAIL;
+ fbConfig.service_account.data.project_id = FIREBASE_PROJECT_ID;
+ fbConfig.service_account.data.private_key = FIREBASE_PRIVATE_KEY;
 
-  // Assign the configuration and authentication to the Firebase instance
-  Firebase.begin(&fbConfig, &fbAuth);
-  Firebase.reconnectWiFi(true); // Reconnects if WiFi drops
+ // Assign the configuration and authentication to the Firebase instance
+ Firebase.begin(&fbConfig, &fbAuth);
+ Firebase.reconnectWiFi(true); // Reconnects if WiFi drops
 
-  Serial.println("[Firebase] Initializing and waiting for token...");
+ Serial.println("[Firebase] Initializing and waiting for token...");
 
-  // Wait for Service Account token generation
-  while (!Firebase.ready()) {
-    Serial.print(".");
-    delay(1000);
-  }
-  Serial.println("\n[Firebase] Ready!");
+ // Wait for Service Account token generation
+ while (!Firebase.ready()) {
+ Serial.print(".");
+ delay(1000);
+ }
+ Serial.println("\n[Firebase] Ready!");
 
-  // Test write
-  if (Firebase.RTDB.setString(&fbData, "/deviceTest/esp32_status", "online")) {
-    Serial.println("[Firebase] ✅ Test write SUCCESS — device is online in RTDB");
-  } else {
-    Serial.printf("[Firebase] ❌ Test write FAILED: %s\n", fbData.errorReason().c_str());
-  }
+ // Test write
+ if (Firebase.RTDB.setString(&fbData, "/deviceTest/esp32_status", "online")) {
+ Serial.println("[Firebase] Test write SUCCESS — device is online in RTDB");
+ } else {
+ Serial.printf("[Firebase] Test write FAILED: %s\n", fbData.errorReason().c_str());
+ }
 }
 
 void loop() {
-  // Phase 1: Just keep alive and verify connection
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[WiFi] Disconnected. Reconnecting...");
-    connectWiFi();
-  }
-  delay(10000);
+ // Phase 1: Just keep alive and verify connection
+ if (WiFi.status() != WL_CONNECTED) {
+ Serial.println("[WiFi] Disconnected. Reconnecting...");
+ connectWiFi();
+ }
+ delay(10000);
 }
 ```
 
@@ -417,7 +417,7 @@ void loop() {
 - [ ] Flash the firmware via PlatformIO: `pio run --target upload`
 - [ ] Open Serial Monitor at 115200 baud
 - [ ] Confirm `[WiFi] Connected! IP: x.x.x.x` appears
-- [ ] Confirm `[Firebase] ✅ Test write SUCCESS` appears
+- [ ] Confirm `[Firebase] Test write SUCCESS` appears
 - [ ] Open Firebase Console → Realtime Database → Verify `/deviceTest/esp32_status` = `"online"`
 - [ ] Delete `/deviceTest` after confirming — it was just a connectivity test
 
@@ -434,13 +434,13 @@ Before writing the firmware, define these configuration values. In production, t
 ```cpp
 // ── Bus Identity ──────────────────────────────────────────────────
 // Each ESP32 is assigned to one bus. These values match your Firestore 'buses' collection.
-#define BUS_ID       "bus_01"
-#define ROUTE_ID     "route_01"    // Default route; can be overridden via RTDB command
-#define DRIVER_ID    "hw_device"   // Identifies this as hardware-sourced data
+#define BUS_ID "bus_01"
+#define ROUTE_ID "route_01" // Default route; can be overridden via RTDB command
+#define DRIVER_ID "hw_device" // Identifies this as hardware-sourced data
 
 // ── Timing ────────────────────────────────────────────────────────
-#define GPS_SEND_INTERVAL_MS   5000   // Base interval: send every 5 seconds
-#define GPS_STALE_TIMEOUT_MS   30000  // If no valid fix for 30s, mark as stale
+#define GPS_SEND_INTERVAL_MS 5000 // Base interval: send every 5 seconds
+#define GPS_STALE_TIMEOUT_MS 30000 // If no valid fix for 30s, mark as stale
 ```
 
 ### 5.2 — Full Phase 2 Firmware
@@ -460,9 +460,9 @@ const char* WIFI_PASS = "BUS_WIFI_PASSWORD";
 #define FIREBASE_AUTH "YOUR_RTDB_DATABASE_SECRET"
 
 // ── Bus Identity ──────────────────────────────────────────────────
-#define BUS_ID     "bus_01"
-#define ROUTE_ID   "route_01"
-#define DRIVER_ID  "hw_device"
+#define BUS_ID "bus_01"
+#define ROUTE_ID "route_01"
+#define DRIVER_ID "hw_device"
 
 // ── Timing ────────────────────────────────────────────────────────
 #define SEND_INTERVAL_MS 5000
@@ -479,119 +479,119 @@ unsigned long lastSendTime = 0;
 bool firebaseReady = false;
 
 void connectWiFi() {
-    if (WiFi.status() == WL_CONNECTED) return;
-    Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-        delay(500);
-        Serial.print(".");
-        attempts++;
-    }
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.printf("\n[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
-    } else {
-        Serial.println("\n[WiFi] Connection failed. Will retry.");
-    }
+ if (WiFi.status() == WL_CONNECTED) return;
+ Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
+ WiFi.mode(WIFI_STA);
+ WiFi.begin(WIFI_SSID, WIFI_PASS);
+ int attempts = 0;
+ while (WiFi.status() != WL_CONNECTED && attempts < 40) {
+ delay(500);
+ Serial.print(".");
+ attempts++;
+ }
+ if (WiFi.status() == WL_CONNECTED) {
+ Serial.printf("\n[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+ } else {
+ Serial.println("\n[WiFi] Connection failed. Will retry.");
+ }
 }
 
 void initFirebase() {
-    fbConfig.host = FIREBASE_HOST;
-    fbConfig.signer.tokens.legacy_token = FIREBASE_AUTH;
-    Firebase.begin(&fbConfig, &fbAuth);
-    Firebase.reconnectNetwork(true);
-    firebaseReady = true;
-    Serial.println("[Firebase] Initialized.");
+ fbConfig.host = FIREBASE_HOST;
+ fbConfig.signer.tokens.legacy_token = FIREBASE_AUTH;
+ Firebase.begin(&fbConfig, &fbAuth);
+ Firebase.reconnectNetwork(true);
+ firebaseReady = true;
+ Serial.println("[Firebase] Initialized.");
 }
 
 void sendLocationToRTDB() {
-    if (!gps.location.isValid()) {
-        Serial.println("[GPS] No valid fix yet. Skipping send.");
-        return;
-    }
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("[WiFi] Not connected. Skipping send.");
-        return;
-    }
+ if (!gps.location.isValid()) {
+ Serial.println("[GPS] No valid fix yet. Skipping send.");
+ return;
+ }
+ if (WiFi.status() != WL_CONNECTED) {
+ Serial.println("[WiFi] Not connected. Skipping send.");
+ return;
+ }
 
-    double lat = gps.location.lat();
-    double lng = gps.location.lng();
-    double speed = gps.speed.kmph();
-    double heading = gps.course.deg();
-    int sats = gps.satellites.value();
-    double hdop = gps.hdop.hdop();
-    double alt = gps.altitude.meters();
+ double lat = gps.location.lat();
+ double lng = gps.location.lng();
+ double speed = gps.speed.kmph();
+ double heading = gps.course.deg();
+ int sats = gps.satellites.value();
+ double hdop = gps.hdop.hdop();
+ double alt = gps.altitude.meters();
 
-    // Build the RTDB path — matches the existing frontend schema
-    String path = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID;
+ // Build the RTDB path — matches the existing frontend schema
+ String path = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID;
 
-    // Build JSON payload — same schema as driver/page.tsx writes
-    jsonPayload.clear();
-    jsonPayload.set("busId", BUS_ID);
-    jsonPayload.set("driverId", DRIVER_ID);
-    jsonPayload.set("routeId", ROUTE_ID);
-    jsonPayload.set("lat", lat);
-    jsonPayload.set("lng", lng);
-    jsonPayload.set("heading", heading);
-    jsonPayload.set("speed", speed);
-    jsonPayload.set("status", "active");
-    jsonPayload.set("timestamp/.sv", "timestamp");  // Firebase server timestamp
-    jsonPayload.set("currentStopIndex", 0);          // Will be computed server-side later
-    jsonPayload.set("delayMinutes", 0);
+ // Build JSON payload — same schema as driver/page.tsx writes
+ jsonPayload.clear();
+ jsonPayload.set("busId", BUS_ID);
+ jsonPayload.set("driverId", DRIVER_ID);
+ jsonPayload.set("routeId", ROUTE_ID);
+ jsonPayload.set("lat", lat);
+ jsonPayload.set("lng", lng);
+ jsonPayload.set("heading", heading);
+ jsonPayload.set("speed", speed);
+ jsonPayload.set("status", "active");
+ jsonPayload.set("timestamp/.sv", "timestamp"); // Firebase server timestamp
+ jsonPayload.set("currentStopIndex", 0); // Will be computed server-side later
+ jsonPayload.set("delayMinutes", 0);
 
-    // Extra fields unique to hardware tracking
-    jsonPayload.set("source", "gnss_hw");            // Distinguishes from browser GPS
-    jsonPayload.set("satellites", sats);
-    jsonPayload.set("hdop", hdop);
-    jsonPayload.set("altitude", alt);
+ // Extra fields unique to hardware tracking
+ jsonPayload.set("source", "gnss_hw"); // Distinguishes from browser GPS
+ jsonPayload.set("satellites", sats);
+ jsonPayload.set("hdop", hdop);
+ jsonPayload.set("altitude", alt);
 
-    // Use PATCH (update) instead of SET (overwrite) — more efficient
-    if (Firebase.RTDB.updateNode(&fbData, path.c_str(), &jsonPayload)) {
-        Serial.printf("[RTDB] ✅ Sent: %.6f, %.6f | Speed: %.1f km/h | Sats: %d | HDOP: %.1f\n",
-                      lat, lng, speed, sats, hdop);
-    } else {
-        Serial.printf("[RTDB] ❌ Failed: %s\n", fbData.errorReason().c_str());
-    }
+ // Use PATCH (update) instead of SET (overwrite) — more efficient
+ if (Firebase.RTDB.updateNode(&fbData, path.c_str(), &jsonPayload)) {
+ Serial.printf("[RTDB] Sent: %.6f, %.6f | Speed: %.1f km/h | Sats: %d | HDOP: %.1f\n",
+ lat, lng, speed, sats, hdop);
+ } else {
+ Serial.printf("[RTDB] Failed: %s\n", fbData.errorReason().c_str());
+ }
 }
 
 void setup() {
-    Serial.begin(115200);
-    gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
-    delay(1000);
+ Serial.begin(115200);
+ gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
+ delay(1000);
 
-    Serial.println("\n========================================");
-    Serial.println("  Eki BusTrack — ESP32 Phase 2");
-    Serial.println("  GNSS + Firebase RTDB Streaming");
-    Serial.println("========================================\n");
+ Serial.println("\n========================================");
+ Serial.println(" Eki BusTrack — ESP32 Phase 2");
+ Serial.println(" GNSS + Firebase RTDB Streaming");
+ Serial.println("========================================\n");
 
-    connectWiFi();
-    initFirebase();
-    Serial.println("[GPS] Waiting for satellite fix...");
+ connectWiFi();
+ initFirebase();
+ Serial.println("[GPS] Waiting for satellite fix...");
 }
 
 void loop() {
-    // Feed NMEA characters to TinyGPS++ parser
-    while (gpsSerial.available() > 0) {
-        gps.encode(gpsSerial.read());
-    }
+ // Feed NMEA characters to TinyGPS++ parser
+ while (gpsSerial.available() > 0) {
+ gps.encode(gpsSerial.read());
+ }
 
-    // Send location at regular intervals
-    unsigned long now = millis();
-    if (now - lastSendTime >= SEND_INTERVAL_MS) {
-        lastSendTime = now;
+ // Send location at regular intervals
+ unsigned long now = millis();
+ if (now - lastSendTime >= SEND_INTERVAL_MS) {
+ lastSendTime = now;
 
-        if (!WiFi.status() == WL_CONNECTED) {
-            connectWiFi();
-        }
+ if (!WiFi.status() == WL_CONNECTED) {
+ connectWiFi();
+ }
 
-        sendLocationToRTDB();
-    }
+ sendLocationToRTDB();
+ }
 
-    // Watchdog: if no NMEA data received in 5 seconds, warn
-    if (millis() > 5000 && gps.charsProcessed() < 10) {
-        Serial.println("[GPS] ⚠️  No GPS data received — check wiring!");
-    }
+ // Watchdog: if no NMEA data received in 5 seconds, warn
+ if (millis() > 5000 && gps.charsProcessed() < 10) {
+ Serial.println("[GPS] ️ No GPS data received — check wiring!");
+ }
 }
 ```
 
@@ -617,7 +617,7 @@ void loop() {
 - [ ] Flash firmware, open Serial Monitor
 - [ ] Wait for `[WiFi] Connected!` followed by `[GPS] Waiting for satellite fix...`
 - [ ] Take the ESP32 + antenna near a **window or outdoors** — first fix takes 26–60 seconds (cold start)
-- [ ] Confirm `[RTDB] ✅ Sent: 23.xxxxxx, 72.xxxxxx | Speed: 0.0 km/h | Sats: 8 | HDOP: 1.2` appears
+- [ ] Confirm `[RTDB] Sent: 23.xxxxxx, 72.xxxxxx | Speed: 0.0 km/h | Sats: 8 | HDOP: 1.2` appears
 - [ ] Open Firebase Console → RTDB → `/activeBuses/bus_01_route_01` → verify all fields present
 - [ ] Open the **Passenger App** → select the route → confirm the bus appears on the map with real-time updates
 - [ ] Walk around with the device and verify the bus marker moves on the passenger map
@@ -659,17 +659,17 @@ The algorithm decides whether to send an update based on these conditions:
 
 ```
 SEND an update if ANY of these are true:
-  1. Distance moved since last send > DISTANCE_THRESHOLD (10 meters)
-  2. Heading changed by > HEADING_THRESHOLD (15 degrees)
-  3. Speed changed by > SPEED_THRESHOLD (5 km/h)
-  4. Time since last send > MAX_SILENT_INTERVAL (30 seconds)
-  5. Bus just stopped (speed dropped to 0 from >5 km/h — likely at a bus stop)
-  6. Bus just started moving (speed rose from 0 — departing a bus stop)
+ 1. Distance moved since last send > DISTANCE_THRESHOLD (10 meters)
+ 2. Heading changed by > HEADING_THRESHOLD (15 degrees)
+ 3. Speed changed by > SPEED_THRESHOLD (5 km/h)
+ 4. Time since last send > MAX_SILENT_INTERVAL (30 seconds)
+ 5. Bus just stopped (speed dropped to 0 from >5 km/h — likely at a bus stop)
+ 6. Bus just started moving (speed rose from 0 — departing a bus stop)
 
 DO NOT SEND if:
-  - Bus is stationary AND last send was <30s ago (bus is waiting at a stop/signal, don't spam)
-  - GPS fix is invalid (no satellite lock)
-  - WiFi is disconnected (buffer the fix, send when reconnected)
+ - Bus is stationary AND last send was <30s ago (bus is waiting at a stop/signal, don't spam)
+ - GPS fix is invalid (no satellite lock)
+ - WiFi is disconnected (buffer the fix, send when reconnected)
 ```
 
 ### 6.3 — Phase 3 Firmware Addition
@@ -678,12 +678,12 @@ Add these constants and logic to the Phase 2 firmware:
 
 ```cpp
 // ── Smart Transmission Thresholds ─────────────────────────────────
-#define DISTANCE_THRESHOLD_M    10.0    // Minimum meters moved to trigger send
-#define HEADING_THRESHOLD_DEG   15.0    // Minimum heading change (degrees)
-#define SPEED_THRESHOLD_KMH     5.0     // Minimum speed change (km/h)
-#define MAX_SILENT_INTERVAL_MS  30000   // Force send every 30s even if stationary
-#define STOP_SPEED_KMH          2.0     // Below this = "stopped"
-#define MOVING_SPEED_KMH        5.0     // Above this = "moving"
+#define DISTANCE_THRESHOLD_M 10.0 // Minimum meters moved to trigger send
+#define HEADING_THRESHOLD_DEG 15.0 // Minimum heading change (degrees)
+#define SPEED_THRESHOLD_KMH 5.0 // Minimum speed change (km/h)
+#define MAX_SILENT_INTERVAL_MS 30000 // Force send every 30s even if stationary
+#define STOP_SPEED_KMH 2.0 // Below this = "stopped"
+#define MOVING_SPEED_KMH 5.0 // Above this = "moving"
 
 // ── State tracking ────────────────────────────────────────────────
 double lastSentLat = 0.0;
@@ -695,57 +695,57 @@ bool wasMoving = false;
 
 // Haversine distance in meters between two GPS points
 double haversineMeters(double lat1, double lng1, double lat2, double lng2) {
-    double dLat = radians(lat2 - lat1);
-    double dLng = radians(lng2 - lng1);
-    double a = sin(dLat / 2) * sin(dLat / 2) +
-               cos(radians(lat1)) * cos(radians(lat2)) *
-               sin(dLng / 2) * sin(dLng / 2);
-    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    return 6371000.0 * c; // Earth radius in meters
+ double dLat = radians(lat2 - lat1);
+ double dLng = radians(lng2 - lng1);
+ double a = sin(dLat / 2) * sin(dLat / 2) +
+ cos(radians(lat1)) * cos(radians(lat2)) *
+ sin(dLng / 2) * sin(dLng / 2);
+ double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+ return 6371000.0 * c; // Earth radius in meters
 }
 
 bool shouldSendUpdate() {
-    if (!gps.location.isValid()) return false;
+ if (!gps.location.isValid()) return false;
 
-    double currentLat = gps.location.lat();
-    double currentLng = gps.location.lng();
-    double currentSpeed = gps.speed.kmph();
-    double currentHeading = gps.course.deg();
-    unsigned long now = millis();
+ double currentLat = gps.location.lat();
+ double currentLng = gps.location.lng();
+ double currentSpeed = gps.speed.kmph();
+ double currentHeading = gps.course.deg();
+ unsigned long now = millis();
 
-    // First fix ever — always send
-    if (lastSentTime == 0) return true;
+ // First fix ever — always send
+ if (lastSentTime == 0) return true;
 
-    // Max silent interval exceeded — force send (heartbeat)
-    if (now - lastSentTime >= MAX_SILENT_INTERVAL_MS) return true;
+ // Max silent interval exceeded — force send (heartbeat)
+ if (now - lastSentTime >= MAX_SILENT_INTERVAL_MS) return true;
 
-    // Distance moved exceeds threshold
-    double dist = haversineMeters(lastSentLat, lastSentLng, currentLat, currentLng);
-    if (dist >= DISTANCE_THRESHOLD_M) return true;
+ // Distance moved exceeds threshold
+ double dist = haversineMeters(lastSentLat, lastSentLng, currentLat, currentLng);
+ if (dist >= DISTANCE_THRESHOLD_M) return true;
 
-    // Heading changed significantly (handles 350° → 10° wraparound)
-    double headingDiff = fabs(currentHeading - lastSentHeading);
-    if (headingDiff > 180.0) headingDiff = 360.0 - headingDiff;
-    if (headingDiff >= HEADING_THRESHOLD_DEG) return true;
+ // Heading changed significantly (handles 350° → 10° wraparound)
+ double headingDiff = fabs(currentHeading - lastSentHeading);
+ if (headingDiff > 180.0) headingDiff = 360.0 - headingDiff;
+ if (headingDiff >= HEADING_THRESHOLD_DEG) return true;
 
-    // Speed changed significantly
-    if (fabs(currentSpeed - lastSentSpeed) >= SPEED_THRESHOLD_KMH) return true;
+ // Speed changed significantly
+ if (fabs(currentSpeed - lastSentSpeed) >= SPEED_THRESHOLD_KMH) return true;
 
-    // Bus just stopped
-    bool isMoving = currentSpeed > STOP_SPEED_KMH;
-    if (wasMoving && !isMoving) return true;   // Was moving, now stopped
-    if (!wasMoving && isMoving) return true;    // Was stopped, now moving
+ // Bus just stopped
+ bool isMoving = currentSpeed > STOP_SPEED_KMH;
+ if (wasMoving && !isMoving) return true; // Was moving, now stopped
+ if (!wasMoving && isMoving) return true; // Was stopped, now moving
 
-    return false;
+ return false;
 }
 
 void updateLastSentState() {
-    lastSentLat = gps.location.lat();
-    lastSentLng = gps.location.lng();
-    lastSentHeading = gps.course.deg();
-    lastSentSpeed = gps.speed.kmph();
-    lastSentTime = millis();
-    wasMoving = gps.speed.kmph() > STOP_SPEED_KMH;
+ lastSentLat = gps.location.lat();
+ lastSentLng = gps.location.lng();
+ lastSentHeading = gps.course.deg();
+ lastSentSpeed = gps.speed.kmph();
+ lastSentTime = millis();
+ wasMoving = gps.speed.kmph() > STOP_SPEED_KMH;
 }
 ```
 
@@ -753,26 +753,26 @@ Then, in your `loop()`, replace the fixed-interval send with:
 
 ```cpp
 void loop() {
-    // Feed NMEA to parser
-    while (gpsSerial.available() > 0) {
-        gps.encode(gpsSerial.read());
-    }
+ // Feed NMEA to parser
+ while (gpsSerial.available() > 0) {
+ gps.encode(gpsSerial.read());
+ }
 
-    // Check every 1 second if we should send (NOT every frame — save CPU)
-    unsigned long now = millis();
-    if (now - lastCheckTime >= 1000) {
-        lastCheckTime = now;
+ // Check every 1 second if we should send (NOT every frame — save CPU)
+ unsigned long now = millis();
+ if (now - lastCheckTime >= 1000) {
+ lastCheckTime = now;
 
-        if (WiFi.status() != WL_CONNECTED) {
-            connectWiFi();
-            return;
-        }
+ if (WiFi.status() != WL_CONNECTED) {
+ connectWiFi();
+ return;
+ }
 
-        if (shouldSendUpdate()) {
-            sendLocationToRTDB();
-            updateLastSentState();
-        }
-    }
+ if (shouldSendUpdate()) {
+ sendLocationToRTDB();
+ updateLastSentState();
+ }
+ }
 }
 ```
 
@@ -793,28 +793,28 @@ If WiFi drops momentarily (bus passes through a dead zone), buffer the last vali
 ```cpp
 // In sendLocationToRTDB(), if WiFi is down:
 struct BufferedFix {
-    double lat, lng, speed, heading;
-    int satellites;
-    bool valid = false;
+ double lat, lng, speed, heading;
+ int satellites;
+ bool valid = false;
 };
 
 BufferedFix wifiBuffer;
 
 // If WiFi is down, save the fix
 if (WiFi.status() != WL_CONNECTED) {
-    wifiBuffer.lat = gps.location.lat();
-    wifiBuffer.lng = gps.location.lng();
-    wifiBuffer.speed = gps.speed.kmph();
-    wifiBuffer.heading = gps.course.deg();
-    wifiBuffer.satellites = gps.satellites.value();
-    wifiBuffer.valid = true;
-    return;
+ wifiBuffer.lat = gps.location.lat();
+ wifiBuffer.lng = gps.location.lng();
+ wifiBuffer.speed = gps.speed.kmph();
+ wifiBuffer.heading = gps.course.deg();
+ wifiBuffer.satellites = gps.satellites.value();
+ wifiBuffer.valid = true;
+ return;
 }
 
 // If WiFi just came back and we have a buffered fix, send it first
 if (wifiBuffer.valid) {
-    // Send buffered fix, then clear buffer
-    wifiBuffer.valid = false;
+ // Send buffered fix, then clear buffer
+ wifiBuffer.valid = false;
 }
 ```
 
@@ -840,32 +840,32 @@ The driver app transforms from a **GPS transmitter** to a **shift controller**:
 **Before (Current):**
 ```
 Driver opens app → Selects bus/route → Clicks "Start" →
-  App starts GPS polling →
-  App writes lat/lng to RTDB every 3s →
-  App sets onDisconnect cleanup
+ App starts GPS polling →
+ App writes lat/lng to RTDB every 3s →
+ App sets onDisconnect cleanup
 
 Driver clicks "Stop" →
-  App stops GPS polling →
-  App removes bus from RTDB
+ App stops GPS polling →
+ App removes bus from RTDB
 ```
 
 **After (With Hardware):**
 ```
 ESP32 is already streaming GPS to RTDB automatically.
 The driver app is optional for tracking — but needed for:
-  - Setting the routeId (which route is the bus on?)
-  - Controlling shift metadata (marking bus as "active" vs "idle")
-  - Viewing the own-bus map
-  - Handling messaging
+ - Setting the routeId (which route is the bus on?)
+ - Controlling shift metadata (marking bus as "active" vs "idle")
+ - Viewing the own-bus map
+ - Handling messaging
 
 Driver opens app → Selects bus/route → Clicks "Start Shift" →
-  App writes SHIFT METADATA to RTDB:
-    /busShifts/{busId}: { routeId, driverId, status: "active", startedAt }
-  ESP32 firmware reads routeId from /busShifts/{busId} to stamp on GPS data
+ App writes SHIFT METADATA to RTDB:
+ /busShifts/{busId}: { routeId, driverId, status: "active", startedAt }
+ ESP32 firmware reads routeId from /busShifts/{busId} to stamp on GPS data
 
 Driver clicks "End Shift" →
-  App removes /busShifts/{busId}
-  ESP32 detects no active shift → stops sending (or sends with status: "idle")
+ App removes /busShifts/{busId}
+ ESP32 detects no active shift → stops sending (or sends with status: "idle")
 ```
 
 ### 7.3 — How the Driver App Still Shows the Bus on the Map
@@ -877,19 +877,19 @@ After the migration, the driver app should **read** the bus location from RTDB (
 ```typescript
 // NEW: Read the bus position from RTDB (written by ESP32)
 useEffect(() => {
-  if (!busId || !isTracking) return;
-  const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
-  const unsubscribe = onValue(busRef, (snapshot) => {
-    const data = snapshot.val();
-    if (data && data.lat && data.lng) {
-      setDriverLocation({
-        lat: data.lat,
-        lng: data.lng,
-        heading: data.heading || 0,
-      });
-    }
-  });
-  return () => off(busRef, "value", unsubscribe);
+ if (!busId || !isTracking) return;
+ const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
+ const unsubscribe = onValue(busRef, (snapshot) => {
+ const data = snapshot.val();
+ if (data && data.lat && data.lng) {
+ setDriverLocation({
+ lat: data.lat,
+ lng: data.lng,
+ heading: data.heading || 0,
+ });
+ }
+ });
+ return () => off(busRef, "value", unsubscribe);
 }, [busId, selectedRouteIds, isTracking]);
 ```
 
@@ -935,13 +935,13 @@ In Phase 1–2, we used a **legacy RTDB database secret** (`FIREBASE_AUTH` const
 ```typescript
 // backend/src/routes/devices.ts
 router.post("/auth", async (req, res) => {
-    const { deviceId, secret } = req.body;
-    const deviceDoc = await db.collection("devices").doc(deviceId).get();
-    if (!deviceDoc.exists || deviceDoc.data()?.secret !== secret) {
-        return res.status(401).json({ error: "Invalid device credentials" });
-    }
-    const customToken = await auth.createCustomToken(deviceId, { role: "device" });
-    res.json({ token: customToken, expiresIn: 3600 });
+ const { deviceId, secret } = req.body;
+ const deviceDoc = await db.collection("devices").doc(deviceId).get();
+ if (!deviceDoc.exists || deviceDoc.data()?.secret !== secret) {
+ return res.status(401).json({ error: "Invalid device credentials" });
+ }
+ const customToken = await auth.createCustomToken(deviceId, { role: "device" });
+ res.json({ token: customToken, expiresIn: 3600 });
 });
 ```
 
@@ -951,26 +951,26 @@ Update [database.rules.json](file:///c:/Users/Naman Sinha/Desktop/Eki/database.r
 
 ```json
 {
-  "rules": {
-    "activeBuses": {
-      ".read": true,
-      "$busKey": {
-        ".write": "auth != null"
-      }
-    },
-    "busShifts": {
-      ".read": "auth != null",
-      "$busId": {
-        ".write": "auth != null"
-      }
-    },
-    "messages": {
-      "$busId": {
-        ".read": true,
-        ".write": "auth != null"
-      }
-    }
-  }
+ "rules": {
+ "activeBuses": {
+ ".read": true,
+ "$busKey": {
+ ".write": "auth != null"
+ }
+ },
+ "busShifts": {
+ ".read": "auth != null",
+ "$busId": {
+ ".write": "auth != null"
+ }
+ },
+ "messages": {
+ "$busId": {
+ ".read": true,
+ ".write": "auth != null"
+ }
+ }
+ }
 }
 ```
 
@@ -1008,11 +1008,11 @@ Add a debug menu accessible via Serial Monitor for field troubleshooting:
 
 ```
 Command via Serial → Action:
-  "status"    → Print WiFi status, GPS fix status, last sent time
-  "force"     → Force an immediate RTDB write
-  "gps"       → Print raw GPS data (lat, lng, sats, hdop, speed)
-  "wifi"      → Print WiFi RSSI (signal strength)
-  "reset"     → Restart ESP32
+ "status" → Print WiFi status, GPS fix status, last sent time
+ "force" → Force an immediate RTDB write
+ "gps" → Print raw GPS data (lat, lng, sats, hdop, speed)
+ "wifi" → Print WiFi RSSI (signal strength)
+ "reset" → Restart ESP32
 ```
 
 ### 9.4 — Deployment Checklist Per Bus
@@ -1081,75 +1081,75 @@ With the GNSS hardware optimization:
 
 ```
 STEP 1: HARDWARE BOOT
-   Bus ignition ON → 12V adapter → 5V USB → ESP32 powers on
-   ESP32 boots (takes ~2 seconds)
-   ↓
+ Bus ignition ON → 12V adapter → 5V USB → ESP32 powers on
+ ESP32 boots (takes ~2 seconds)
+ ↓
 STEP 2: WIFI CONNECTION
-   ESP32 scans for configured SSID (bus WiFi router)
-   Connects in ~3-5 seconds
-   ↓
+ ESP32 scans for configured SSID (bus WiFi router)
+ Connects in ~3-5 seconds
+ ↓
 STEP 3: FIREBASE INIT
-   ESP32 authenticates with Firebase (custom token via backend)
-   Token valid for 1 hour, auto-refresh at 50min mark
-   ↓
+ ESP32 authenticates with Firebase (custom token via backend)
+ Token valid for 1 hour, auto-refresh at 50min mark
+ ↓
 STEP 4: GPS ACQUISITION
-   NEO-M8N begins receiving NMEA sentences
-   Cold start: 26-60 seconds (first time or after long power-off)
-   Hot start: 1 second (if battery-backed RTC coin cell installed)
-   TinyGPS++ parses $GPRMC, $GPGGA sentences
-   ↓
+ NEO-M8N begins receiving NMEA sentences
+ Cold start: 26-60 seconds (first time or after long power-off)
+ Hot start: 1 second (if battery-backed RTC coin cell installed)
+ TinyGPS++ parses $GPRMC, $GPGGA sentences
+ ↓
 STEP 5: SMART TRANSMISSION LOOP
-   Every 1 second, firmware checks shouldSendUpdate():
-     - Moved >10m? → SEND
-     - Turned >15°? → SEND
-     - Speed change >5 km/h? → SEND
-     - Stopped/started? → SEND
-     - 30s heartbeat? → SEND
-     - None of the above? → SKIP (save Firebase write)
-   ↓
+ Every 1 second, firmware checks shouldSendUpdate():
+ - Moved >10m? → SEND
+ - Turned >15°? → SEND
+ - Speed change >5 km/h? → SEND
+ - Stopped/started? → SEND
+ - 30s heartbeat? → SEND
+ - None of the above? → SKIP (save Firebase write)
+ ↓
 STEP 6: FIREBASE RTDB WRITE
-   ESP32 sends HTTPS PATCH to:
-     /activeBuses/{busId}_{routeId}.json
-   Payload: { lat, lng, heading, speed, timestamp, source: "gnss_hw", satellites, hdop }
-   ↓
+ ESP32 sends HTTPS PATCH to:
+ /activeBuses/{busId}_{routeId}.json
+ Payload: { lat, lng, heading, speed, timestamp, source: "gnss_hw", satellites, hdop }
+ ↓
 STEP 7: REAL-TIME SYNC TO CLIENTS
-   Firebase RTDB pushes the update to all active onValue() listeners:
-     - PassengerMap.tsx (passenger phones)
-     - Admin Fleet Map (admin dashboard)
-     - DriverMap.tsx (driver's own phone, now read-only for GPS)
-   Latency: typically <500ms from ESP32 write to client render
-   ↓
+ Firebase RTDB pushes the update to all active onValue() listeners:
+ - PassengerMap.tsx (passenger phones)
+ - Admin Fleet Map (admin dashboard)
+ - DriverMap.tsx (driver's own phone, now read-only for GPS)
+ Latency: typically <500ms from ESP32 write to client render
+ ↓
 STEP 8: PASSENGER MAP RENDER
-   PassengerMap.tsx receives the bus data
-   Calculates ETA to each stop based on bus speed + distance
-   Renders bus marker with directional arrow
-   Triggers haptic buzz when bus is <200m from target stop
-   ↓
+ PassengerMap.tsx receives the bus data
+ Calculates ETA to each stop based on bus speed + distance
+ Renders bus marker with directional arrow
+ Triggers haptic buzz when bus is <200m from target stop
+ ↓
 STEP 9: BUS IGNITION OFF
-   12V adapter cuts power → ESP32 loses power
-   Firebase RTDB's onDisconnect handler (if configured) removes the bus entry
-   OR: PassengerMap staleness check (5min timeout) naturally hides the bus
+ 12V adapter cuts power → ESP32 loses power
+ Firebase RTDB's onDisconnect handler (if configured) removes the bus entry
+ OR: PassengerMap staleness check (5min timeout) naturally hides the bus
 ```
 
 ### 11.2 — What the Driver App Does Now
 
 ```
 STEP A: SHIFT START
-   Driver opens Eki app → Selects bus ID + route → Taps "Start Shift"
-   App writes to /busShifts/{busId}:
-     { routeId, driverId, status: "active", startedAt: timestamp }
-   ESP32 can optionally read this to determine which routeId to stamp on GPS data
-   ↓
+ Driver opens Eki app → Selects bus ID + route → Taps "Start Shift"
+ App writes to /busShifts/{busId}:
+ { routeId, driverId, status: "active", startedAt: timestamp }
+ ESP32 can optionally read this to determine which routeId to stamp on GPS data
+ ↓
 STEP B: DURING SHIFT
-   Driver app reads bus position from RTDB (same as passengers)
-   Shows the bus on DriverMap (read-only, no longer writing GPS)
-   Driver can use messaging feature, view profile, etc.
-   ↓
+ Driver app reads bus position from RTDB (same as passengers)
+ Shows the bus on DriverMap (read-only, no longer writing GPS)
+ Driver can use messaging feature, view profile, etc.
+ ↓
 STEP C: SHIFT END
-   Driver taps "End Shift"
-   App removes /busShifts/{busId}
-   App removes /activeBuses/{busId}_{routeId} (cleanup)
-   App removes /messages/{busId} (cleanup)
+ Driver taps "End Shift"
+ App removes /busShifts/{busId}
+ App removes /activeBuses/{busId}_{routeId} (cleanup)
+ App removes /messages/{busId} (cleanup)
 ```
 
 ---
