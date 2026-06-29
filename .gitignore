@@ -85,3 +85,5 @@ backend/src/patch-stops.ts
 
 # Build artifacts
 frontend/tsconfig.tsbuildinfo
+
+.agents/

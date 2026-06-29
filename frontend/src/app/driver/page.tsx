@@ -12,12 +12,7 @@ import { useDrivers } from "@/hooks/useDrivers";
 import { useBuses } from "@/hooks/useBuses";
 import { Navigation, User, Radio, ArrowLeft } from "lucide-react";
 import { rtdb } from "@/lib/firebase";
-import { ref, set, remove, onDisconnect, serverTimestamp } from "firebase/database";
-
-// Mock location state for fallback when GPS is unavailable
-let mockLat = 23.0347;
-let mockLng = 72.5483;
-let mockHeading = 45;
+import { ref, update, remove, onDisconnect, serverTimestamp, onValue } from "firebase/database";
 
 type Tab = "map" | "profile";
 
@@ -32,11 +27,13 @@ export default function DriverPage() {
 
   useEffect(() => {
     const saved = localStorage.getItem("driverId");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (saved) setDriverId(saved);
   }, []);
 
   useEffect(() => {
     if (driverId) localStorage.setItem("driverId", driverId);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedBusId("");
   }, [driverId]);
 
@@ -54,7 +51,6 @@ export default function DriverPage() {
   const routeIdsRef = useRef<string[]>([]);
   const currentStopIndexRef = useRef<number>(0);
   const delayMinutesRef = useRef<number>(0);
-  const intervalIdRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleStopIndexChange = useCallback((index: number) => {
     currentStopIndexRef.current = index;
@@ -65,85 +61,59 @@ export default function DriverPage() {
 
   useEffect(() => {
     if (routes.length > 0 && selectedRouteIds.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedRouteIds([routes[0].id]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routes]);
 
   // Also keep a dummy socketRef for DriverMap compatibility (DriverMap accepts it but we won't use it for tracking)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const socketRef = useRef<any>(null);
 
   const activeRoute = routes.find(r => selectedRouteIds.includes(r.id)) || routes.find(r => r.id === selectedRouteIds[0]);
-
-  // Write location directly to Firebase RTDB
-  const writeLocationToRTDB = useCallback((lat: number, lng: number, heading: number, speed: number) => {
-    const currentBusId = busIdRef.current;
-    const currentRouteIds = routeIdsRef.current;
-    const currentStopIndex = currentStopIndexRef.current;
-    if (!currentBusId || currentRouteIds.length === 0) return;
-
-    const payload = {
-      busId: currentBusId,
-      driverId: driverId || user?.uid || "driver",
-      routeId: currentRouteIds[0],
-      lat,
-      lng,
-      heading,
-      speed,
-      status: "active",
-      timestamp: Date.now(),
-      currentStopIndex,
-      delayMinutes: delayMinutesRef.current,
-    };
-
-    // Write one entry per route so passengers on any of the routes can find the bus
-    currentRouteIds.forEach(routeId => {
-      const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
-      set(busRef, { ...payload, routeId }).catch(err =>
-        console.error("[RTDB] Write failed:", err)
-      );
-    });
-  }, [driverId, user?.uid]);
 
   const handleStartTracking = useCallback(() => {
     if (!busId || selectedRouteIds.length === 0) return;
     setIsTracking(true);
 
-    // Set onDisconnect cleanup so the bus disappears if the driver closes the browser
-    selectedRouteIds.forEach(routeId => {
-      const busRef = ref(rtdb, `activeBuses/${busId}_${routeId}`);
-      onDisconnect(busRef).remove().catch(() => {});
-    });
-
-    const updateLocation = () => {
-      if ("geolocation" in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const newLoc = {
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
-              heading: pos.coords.heading || 0,
-            };
-            const speed = (pos.coords.speed || 0) * 3.6;
-            setDriverLocation(newLoc);
-            writeLocationToRTDB(newLoc.lat, newLoc.lng, newLoc.heading, speed);
-          },
-          () => {
-            // GPS unavailable — use mock movement
-            mockLat += (Math.random() - 0.4) * 0.0003;
-            mockLng += (Math.random() - 0.3) * 0.0004;
-            mockHeading = (mockHeading + (Math.random() - 0.5) * 15 + 360) % 360;
-            const mockLoc = { lat: mockLat, lng: mockLng, heading: Math.round(mockHeading) };
-            setDriverLocation(mockLoc);
-            writeLocationToRTDB(mockLoc.lat, mockLoc.lng, mockLoc.heading, 15);
-          },
-          { enableHighAccuracy: true, timeout: 5000 }
-        );
-      }
+    // Write initial shift metadata (e.g., actual driver ID), ESP32 hardware will provide location
+    const currentBusId = busId;
+    const currentRouteIds = selectedRouteIds;
+    
+    const payload = {
+      driverId: driverId || user?.uid || "driver",
+      status: "active",
+      currentStopIndex: currentStopIndexRef.current,
+      delayMinutes: delayMinutesRef.current,
     };
 
-    updateLocation();
-    intervalIdRef.current = setInterval(updateLocation, 3000);
-  }, [busId, selectedRouteIds, writeLocationToRTDB]);
+    currentRouteIds.forEach(routeId => {
+      const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
+      update(busRef, { ...payload, routeId }).catch(err =>
+        console.error("[RTDB] Write failed:", err)
+      );
+    });
+  }, [busId, selectedRouteIds, driverId, user?.uid]);
+
+  // Pure GNSS listener (read-only mode for driver location)
+  useEffect(() => {
+    if (!busId || !isTracking) return;
+
+    const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
+    const unsubscribe = onValue(busRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data && data.lat && data.lng) {
+        setDriverLocation({
+          lat: data.lat,
+          lng: data.lng,
+          heading: data.heading || 0,
+        });
+      }
+    });
+    // Correct Modular SDK cleanup — off() with a callback is Compat SDK syntax
+    return () => unsubscribe();
+  }, [busId, selectedRouteIds, isTracking]);
 
   const handleStopTracking = useCallback(() => {
     const currentBusId = busIdRef.current;
@@ -151,16 +121,10 @@ export default function DriverPage() {
     setIsTracking(false);
     setDriverLocation(null);
 
-    if (intervalIdRef.current) {
-      clearInterval(intervalIdRef.current);
-      intervalIdRef.current = null;
-    }
-
-    // Remove bus from RTDB so passengers see it go offline
+    // Mark bus as offline (ESP32 will continue sending GPS but status can be overridden here)
     currentRouteIds.forEach(routeId => {
       const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
-      remove(busRef).catch(console.error);
-      onDisconnect(busRef).cancel();
+      update(busRef, { status: "offline", driverId: "hw_device" }).catch(console.error);
     });
 
     // Clean up messages
@@ -188,6 +152,7 @@ export default function DriverPage() {
               <DriverMap
                 route={activeRoute}
                 driverLocation={driverLocation}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 socketRef={socketRef as any}
                 busId={busId}
                 onEndShift={handleStopTracking}

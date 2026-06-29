@@ -77,6 +77,14 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ── Devices collection — server-side Admin SDK access only ──
+    // Device secrets MUST never be readable by any client.
+    // The backend POST /api/devices/auth uses Admin SDK which bypasses these rules,
+    // but making the deny explicit prevents accidental misconfiguration.
+    match /devices/{deviceId} {
+      allow read, write: if false;
+    }
+
     // ── Default deny — no catch-all, everything not listed above is denied ──
     // (Firestore denies by default, but this comment makes the intent explicit)
   }

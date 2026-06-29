@@ -8,8 +8,9 @@ import FeedbackModal from "@/components/shared/FeedbackModal";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { Map as MapIcon, User, Loader2, Radio } from "lucide-react";
-import { rtdb } from "@/lib/firebase";
-import { ref, onValue, off } from "firebase/database";
+import { rtdb, auth } from "@/lib/firebase";
+import { ref, onValue } from "firebase/database";
+import { signInAnonymously } from "firebase/auth";
 import { buzzController } from "@/lib/audioUtils";
 
 type Tab = "map" | "account";
@@ -42,10 +43,15 @@ export default function PassengerPage() {
   const latestBusDriversRef = useRef<Map<string, string>>(new Map());
 
   // Listen to Firebase Realtime Database for active buses
+  // signInAnonymously ensures auth != null, required by RTDB security rules.
   useEffect(() => {
+    signInAnonymously(auth).catch((err) =>
+      console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code)
+    );
+
     const busesRef = ref(rtdb, "activeBuses");
 
-    const handleSnapshot = onValue(busesRef, (snapshot) => {
+    const unsubscribe = onValue(busesRef, (snapshot) => {
       const data = snapshot.val();
       const newBuses: {busId: string, routeId: string}[] = [];
       const driverMap = new Map<string, string>();
@@ -64,7 +70,10 @@ export default function PassengerPage() {
       setActiveBuses(newBuses);
     });
 
-    return () => off(busesRef, "value", handleSnapshot);
+    // Correct Modular SDK cleanup: call returned unsubscribe function directly.
+    // off(busesRef, 'value', handleSnapshot) is Compat SDK syntax and silently
+    // fails here, causing listener accumulation on each navigation.
+    return () => unsubscribe();
   }, []);
 
   const activeRouteIds = Array.from(new Set(activeBuses.map(b => b.routeId)));

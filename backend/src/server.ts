@@ -30,6 +30,7 @@ import requestRoutes from "./routes/requests";
 import polylineRoutes from "./routes/polyline";
 import planRoutes from "./routes/plan";
 import routesListRoutes from "./routes/routesList";
+import devicesRoutes from "./routes/devices";
 
 const PORT = process.env.PORT || 4000;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "http://localhost:3000";
@@ -89,6 +90,7 @@ app.use("/api/routes", writeLimiter, polylineRoutes);
 // Route planner — zero Google Maps API cost at runtime
 app.use("/api/plan", planRoutes);
 app.use("/api/routes-list", routesListRoutes);
+app.use("/api/devices", devicesRoutes);
 
 // ── Socket.io ─────────────────────────────────────────────────────────────────
 const io = new SocketServer(httpServer, {
