@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { db, auth } from "../lib/firebaseAdmin";
+import { FieldValue } from "firebase-admin/firestore";
 import bcrypt from "bcryptjs";
 
 const router = Router();
@@ -24,8 +25,8 @@ router.post("/auth", async (req: Request, res: Response): Promise<any> => {
       return res.status(400).json({ error: "Missing deviceId or secret" });
     }
 
-    // Validate input lengths to prevent abuse
-    if (typeof deviceId !== "string" || deviceId.length > 128 ||
+    // Validate input lengths and characters to prevent path injection abuse
+    if (typeof deviceId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(deviceId) ||
         typeof secret !== "string" || secret.length > 512) {
       return res.status(400).json({ error: "Invalid deviceId or secret format" });
     }
@@ -83,19 +84,27 @@ router.post("/auth", async (req: Request, res: Response): Promise<any> => {
 router.post("/hash-secret", async (req: Request, res: Response): Promise<any> => {
   const { deviceId, plainSecret, adminSecret } = req.body;
 
-  if (adminSecret !== process.env.ADMIN_API_SECRET) {
+  if (!process.env.ADMIN_API_SECRET || adminSecret !== process.env.ADMIN_API_SECRET) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  if (!deviceId || !plainSecret) {
-    return res.status(400).json({ error: "Missing deviceId or plainSecret" });
+  if (typeof deviceId !== "string" || !plainSecret || typeof plainSecret !== "string") {
+    return res.status(400).json({ error: "Missing or invalid deviceId or plainSecret" });
   }
 
   try {
+    const deviceRef = db.collection("devices").doc(deviceId);
+    const doc = await deviceRef.get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Device not found" });
+    }
+
     const hashed = await bcrypt.hash(plainSecret, 12);
-    await db.collection("devices").doc(deviceId).update({
+    await deviceRef.update({
       secretHash: hashed,
-      // Keep old plaintext secret during transition — remove manually after verifying
+      // Securely delete the plaintext credential from the database after migration
+      secret: FieldValue.delete(),
     });
     return res.json({ success: true, message: `Secret hashed for device ${deviceId}` });
   } catch (err) {

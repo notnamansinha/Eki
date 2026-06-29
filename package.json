@@ -1,8 +1,8 @@
 {
-  "name": "bustrack-ecosystem",
+  "name": "eki-ecosystem",
   "version": "1.0.0",
   "private": true,
-  "description": "BusTrack - Real-time bus tracking and management ecosystem for Ahmedabad BRTS",
+  "description": "Open-source GPS tracking MVP using ESP32 GNSS telemetry, streaming to Firebase RTDB with a Next.js routing engine.",
   "workspaces": [
     "frontend",
     "backend"

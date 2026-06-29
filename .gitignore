@@ -73,8 +73,9 @@ temp/
 *.swp
 *.swo
 
-# Firmware project directory (contains secrets.h with WiFi and Firebase private key)
-BusTracking/
+# Firmware project directory (PlatformIO build files and secrets)
+hardware/.pio/
+hardware/include/secrets.h
 
 # Dev utility & one-off scripts (no secrets, but should not be public)
 simulator.js

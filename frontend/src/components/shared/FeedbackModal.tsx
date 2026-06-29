@@ -113,6 +113,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
+              maxLength={1000}
               placeholder={busId ? "How was the temperature, driving, or cleanliness?" : "What features would you like to see?"}
               className="w-full bg-black/20 border border-white/10 rounded-xl p-4 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-emerald-500/50 resize-none h-28"
             />
