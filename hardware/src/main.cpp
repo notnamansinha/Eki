@@ -36,6 +36,21 @@
 #define IDLE_SPEED_THRESHOLD_KMH    5.0    // Drop to idle only below this
 #define HYSTERESIS_READINGS         3      // Must hold state for N consecutive readings
 
+// ── WiFi reconnect interval ──────────────────────────────────────
+// Power is not a concern (12V bus ignition), so we retry aggressively.
+#define WIFI_RETRY_INTERVAL_MS      5000   // 5 s between reconnect attempts
+
+// ── RTDB write failure backoff ────────────────────────────────────
+// Prevents hammering Firebase RTDB at 1Hz when it is experiencing issues.
+#define RTDB_INITIAL_BACKOFF_MS     2000
+#define RTDB_MAX_BACKOFF_MS        60000   // 1 min cap
+
+// ── GPS ring buffer for WiFi outage periods ───────────────────────
+// Stores the last N fixes while WiFi is down. On reconnect, sends only the
+// most-recent fix (avoids stale teleport artifact on passenger map).
+// Keeping N=5 catches brief tunnel exits without wasting heap.
+#define GPS_BUFFER_SIZE             5
+
 // ── Objects ───────────────────────────────────────────────────────
 TinyGPSPlus gps;
 #define gpsSerial Serial2
@@ -65,42 +80,64 @@ static bool fixLostStatusWritten = false; // Only write maintenance status once 
 
 // ── Token tracking ────────────────────────────────────────────────
 unsigned long lastTokenFetch = 0;
-const unsigned long TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 minutes (before 60-min expiry)
+const unsigned long TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 min (before 60-min expiry)
 
-// ── WiFi buffer for connectivity drops ───────────────────────────
+// ── GPS ring buffer for WiFi outage periods ───────────────────────
+// On extended WiFi outage, we overwrite old entries (circular). On reconnect,
+// only the latest (most recent) fix is sent — prevents marker teleporting.
 struct BufferedFix {
     double lat, lng, speed, heading;
     int satellites;
+    double hdop;
     bool valid = false;
 };
-BufferedFix wifiBuffer;
+static BufferedFix gpsRingBuffer[GPS_BUFFER_SIZE];
+static uint8_t ringHead = 0;        // Points to next write slot
+static uint8_t ringCount = 0;       // How many valid entries are buffered
+
+// ── WiFi reconnect cooldown ──────────────────────────────────────
+static unsigned long lastWifiAttemptTime = 0;
+
+// ── RTDB write failure backoff state ─────────────────────────────
+static unsigned long rtdbBackoffMs = RTDB_INITIAL_BACKOFF_MS;
+static unsigned long lastRtdbFailTime = 0;
+static bool rtdbInBackoff = false;
 
 // ── Meta write flag ───────────────────────────────────────────────
 // Trip-start static metadata (busId, driverId, routeId, source) is written
 // once to /activeBuses/bus_01_route_01/meta — not repeated on every update.
 static bool metaWritten = false;
 
+// ── Safe elapsed time helper (handles millis() uint32 overflow at 49.7 days) ──
+inline unsigned long elapsed(unsigned long since) {
+    return millis() - since; // Unsigned subtraction wraps correctly on overflow
+}
+
 void connectWiFi() {
-  if (WiFi.status() == WL_CONNECTED) return;
-  Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+    if (WiFi.status() == WL_CONNECTED) return;
 
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-    // Keep feeding NMEA data so the hardware serial buffer doesn't overflow during WiFi reconnect
-    while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
+    // Cooldown: don't spam reconnect attempts — wait 5s between tries
+    if (lastWifiAttemptTime != 0 && elapsed(lastWifiAttemptTime) < WIFI_RETRY_INTERVAL_MS) {
+        return;
+    }
+    lastWifiAttemptTime = millis();
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("\n[WiFi] Connected! IP: %s\n",
-                  WiFi.localIP().toString().c_str());
-  } else {
-    Serial.println("\n[WiFi] FAILED to connect. Will retry in loop.");
-  }
+    Serial.printf("[WiFi] Connecting to %s...\n", WIFI_SSID);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+    // Wait up to 10s, feeding GPS serial throughout to prevent buffer overflow
+    unsigned long waitStart = millis();
+    while (WiFi.status() != WL_CONNECTED && elapsed(waitStart) < 10000) {
+        while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
+        delay(200);
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+    } else {
+        Serial.println("[WiFi] Attempt failed. Will retry in 5s.");
+    }
 }
 
 #include <WiFiClientSecure.h>
@@ -119,7 +156,7 @@ bool fetchCustomToken() {
     http.begin(client, url);
     http.addHeader("Content-Type", "application/json");
 
-    StaticJsonDocument<200> doc;
+    JsonDocument doc;
     doc["deviceId"] = BUS_ID;
     doc["secret"] = DEVICE_SECRET;
     
@@ -131,7 +168,7 @@ bool fetchCustomToken() {
 
     if (httpResponseCode == 200) {
         String response = http.getString();
-        StaticJsonDocument<512> respDoc;
+        JsonDocument respDoc;
         deserializeJson(respDoc, response);
         
         const char* token = respDoc["token"];
@@ -139,7 +176,7 @@ bool fetchCustomToken() {
             fbConfig.signer.tokens.custom_token = token;
             lastTokenFetch = millis();
             http.end();
-            Serial.println("[Auth] ✅ Token obtained.");
+            Serial.println("[Auth] Token obtained.");
             return true;
         }
     } else {
@@ -151,22 +188,28 @@ bool fetchCustomToken() {
 }
 
 void initFirebase() {
-  fbConfig.host = FIREBASE_HOST;
+    fbConfig.host = FIREBASE_HOST;
 
-  if (!fetchCustomToken()) {
-      Serial.println("[Auth] Failed to get initial token. Will retry in loop.");
-  }
+    if (!fetchCustomToken()) {
+        Serial.println("[Auth] Failed to get initial token. Will retry in loop.");
+    }
 
-  Firebase.begin(&fbConfig, &fbAuth);
-  Firebase.reconnectNetwork(true);
+    Firebase.begin(&fbConfig, &fbAuth);
+    Firebase.reconnectNetwork(true);
 
-  Serial.println("[Firebase] Initializing and waiting for token...");
-  while (!Firebase.ready()) {
-    Serial.print(".");
-    delay(1000);
-  }
-  Serial.println("\n[Firebase] Ready!");
-  firebaseReady = true;
+    Serial.println("[Firebase] Initializing and waiting for token...");
+    unsigned long fbWait = millis();
+    while (!Firebase.ready()) {
+        Serial.print(".");
+        delay(500);
+        // Safety timeout: don't block indefinitely on boot if RTDB is unreachable
+        if (elapsed(fbWait) > 30000) {
+            Serial.println("\n[Firebase] Timed out waiting for ready state. Continuing anyway.");
+            break;
+        }
+    }
+    Serial.println("\n[Firebase] Ready!");
+    firebaseReady = true;
 }
 
 // Haversine distance in meters between two GPS points
@@ -200,7 +243,7 @@ const char* updateAndGetStatus(double speed) {
     // In the dead-band (IDLE_THRESHOLD ≤ speed < ACTIVE_THRESHOLD): hold current state
 
     if (consecutiveActiveReadings >= HYSTERESIS_READINGS) statusActive = true;
-    if (consecutiveIdleReadings >= HYSTERESIS_READINGS)   statusActive = false;
+    if (consecutiveIdleReadings   >= HYSTERESIS_READINGS) statusActive = false;
 
     return statusActive ? "active" : "idle";
 }
@@ -231,7 +274,7 @@ bool shouldSendUpdate() {
     unsigned long maxSilent = isCurrentlyIdle
         ? MAX_SILENT_INTERVAL_IDLE    // 5 min
         : MAX_SILENT_INTERVAL_MOVING; // 30 s
-    if (now - lastSendTime >= maxSilent) return true;
+    if (elapsed(lastSendTime) >= maxSilent) return true;
 
     // Distance moved exceeds threshold
     double dist = haversineMeters(smoothedLat, smoothedLng, currentLat, currentLng);
@@ -282,6 +325,65 @@ void updateLastSentState() {
     wasMoving = getFilteredSpeed() > STOP_SPEED_KMH;
 }
 
+// ── Push current GPS fix into the ring buffer ─────────────────────
+// Called when WiFi is down and a location update is due.
+// Old entries are overwritten when the buffer is full (circular).
+void bufferCurrentFix() {
+    if (!gps.location.isValid()) return;
+    gpsRingBuffer[ringHead] = {
+        gps.location.lat(),
+        gps.location.lng(),
+        getFilteredSpeed(),
+        gps.course.deg(),
+        gps.satellites.value(),
+        gps.hdop.isValid() ? gps.hdop.hdop() : 99.9,
+        true
+    };
+    ringHead = (ringHead + 1) % GPS_BUFFER_SIZE;
+    if (ringCount < GPS_BUFFER_SIZE) ringCount++;
+    Serial.printf("[GPS] Fix buffered (%u in queue).\n", ringCount);
+}
+
+// ── Flush the ring buffer — send only the newest fix ──────────────
+// Discards intermediate buffered fixes to avoid marker teleporting on the
+// passenger map. Only the most-recently-recorded position is transmitted.
+void flushBufferedFix() {
+    if (ringCount == 0) return;
+
+    // Most recent entry is at (ringHead - 1 + GPS_BUFFER_SIZE) % GPS_BUFFER_SIZE
+    uint8_t latestIdx = (ringHead - 1 + GPS_BUFFER_SIZE) % GPS_BUFFER_SIZE;
+    BufferedFix& fix = gpsRingBuffer[latestIdx];
+
+    if (!fix.valid) return;
+
+    Serial.printf("[GPS] Flushing buffered fix (discarded %u stale entries).\n", ringCount - 1);
+
+    String path = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID;
+    FirebaseJson payload;
+    payload.set("lat",       fix.lat);
+    payload.set("lng",       fix.lng);
+    payload.set("heading",   fix.heading);
+    payload.set("speed",     fix.speed);
+    payload.set("status",    updateAndGetStatus(fix.speed));
+    payload.set("timestamp/.sv", "timestamp");
+    payload.set("satellites", fix.satellites);
+    payload.set("hdop",      fix.hdop);
+    payload.set("lowAccuracy", fix.hdop > HDOP_LOW_ACCURACY_THRESHOLD);
+
+    if (Firebase.RTDB.updateNode(&fbData, path.c_str(), &payload)) {
+        Serial.println("[RTDB] Buffered fix sent.");
+        rtdbBackoffMs = RTDB_INITIAL_BACKOFF_MS; // Reset on success
+        rtdbInBackoff = false;
+    } else {
+        Serial.printf("[RTDB] Buffered fix send failed: %s\n", fbData.errorReason().c_str());
+        // Don't clear buffer on failure — it will be retried on next successful window
+    }
+
+    // Clear the ring buffer regardless — data is now stale
+    ringCount = 0;
+    ringHead = 0;
+}
+
 // ── Write static trip metadata once per session ───────────────────
 // Fields that don't change during a trip (busId, driverId, routeId, source)
 // are written to /meta sub-path on startup. Subsequent location patches omit them.
@@ -294,10 +396,10 @@ void writeBusMeta() {
     meta.set("source",   "gnss_hw");
 
     if (Firebase.RTDB.updateNode(&fbData, metaPath.c_str(), &meta)) {
-        Serial.println("[RTDB] ✅ Bus meta written (busId, routeId, source).");
+        Serial.println("[RTDB] Bus meta written (busId, routeId, source).");
         metaWritten = true;
     } else {
-        Serial.printf("[RTDB] ⚠️  Meta write failed: %s\n", fbData.errorReason().c_str());
+        Serial.printf("[RTDB] Meta write failed: %s\n", fbData.errorReason().c_str());
     }
 }
 
@@ -307,15 +409,18 @@ void sendLocationToRTDB() {
         return;
     }
 
-    // If WiFi is down, save the fix to buffer
+    // ── WiFi down: push to ring buffer and return ─────────────────────────
     if (WiFi.status() != WL_CONNECTED) {
-        wifiBuffer.lat = gps.location.lat();
-        wifiBuffer.lng = gps.location.lng();
-        wifiBuffer.speed = getFilteredSpeed();
-        wifiBuffer.heading = gps.course.deg();
-        wifiBuffer.satellites = gps.satellites.value();
-        wifiBuffer.valid = true;
-        Serial.println("[WiFi] Not connected. Buffered GPS fix.");
+        bufferCurrentFix();
+        return;
+    }
+
+    // ── RTDB write backoff guard ──────────────────────────────────────────
+    // If RTDB is in a backoff period (due to repeated write failures), skip
+    // this update entirely to avoid hammering Firebase during an outage.
+    if (rtdbInBackoff && elapsed(lastRtdbFailTime) < rtdbBackoffMs) {
+        Serial.printf("[RTDB] In backoff — skipping write for %lums.\n",
+                      rtdbBackoffMs - elapsed(lastRtdbFailTime));
         return;
     }
 
@@ -324,27 +429,12 @@ void sendLocationToRTDB() {
         writeBusMeta();
     }
 
-    double lat, lng, speed, heading, hdop;
-    int sats;
-
-    // Use buffered fix if available, else current GPS reading
-    if (wifiBuffer.valid) {
-        lat = wifiBuffer.lat;
-        lng = wifiBuffer.lng;
-        speed = wifiBuffer.speed;
-        heading = wifiBuffer.heading;
-        sats = wifiBuffer.satellites;
-        hdop = gps.hdop.hdop();
-        wifiBuffer.valid = false;
-        Serial.println("[GPS] Sending buffered fix.");
-    } else {
-        lat = gps.location.lat();
-        lng = gps.location.lng();
-        speed = getFilteredSpeed();
-        heading = gps.course.deg();
-        sats = gps.satellites.value();
-        hdop = gps.hdop.hdop();
-    }
+    double lat = gps.location.lat();
+    double lng = gps.location.lng();
+    double speed = getFilteredSpeed();
+    double heading = gps.course.deg();
+    int sats = gps.satellites.value();
+    double hdop = gps.hdop.isValid() ? gps.hdop.hdop() : 99.9;
 
     // ── Build lean coordinate payload (~120 bytes vs. ~285 bytes full payload) ──
     // Static fields (busId, routeId, driverId, source) are in /meta — written once.
@@ -365,32 +455,39 @@ void sendLocationToRTDB() {
 
     // ── HDOP accuracy flag (for frontend to downgrade confidence display) ──
     // "near stop X" instead of "at stop X" when GPS accuracy is reduced
-    bool lowAccuracy = gps.hdop.isValid() && hdop > HDOP_LOW_ACCURACY_THRESHOLD;
+    bool lowAccuracy = hdop > HDOP_LOW_ACCURACY_THRESHOLD;
     payload.set("lowAccuracy", lowAccuracy);
 
     // Use PATCH (updateNode) not SET — preserves /meta sub-path and other fields
     if (Firebase.RTDB.updateNode(&fbData, path.c_str(), &payload)) {
-        Serial.printf("[RTDB] ✅ Sent: %.6f, %.6f | Speed: %.1f | Status: %s | HDOP: %.1f%s\n",
-                      lat, lng, speed, status, hdop, lowAccuracy ? " ⚠️ lowAcc" : "");
+        Serial.printf("[RTDB] Sent: %.6f, %.6f | Speed: %.1f | Status: %s | HDOP: %.1f%s\n",
+                      lat, lng, speed, status, hdop, lowAccuracy ? " lowAcc" : "");
+        // ── Reset backoff state on successful write ────────────────────────
+        rtdbBackoffMs = RTDB_INITIAL_BACKOFF_MS;
+        rtdbInBackoff = false;
     } else {
-        Serial.printf("[RTDB] ❌ Failed: %s\n", fbData.errorReason().c_str());
+        Serial.printf("[RTDB] Write failed: %s\n", fbData.errorReason().c_str());
+        // ── Engage exponential backoff on repeated RTDB failures ──────────
+        lastRtdbFailTime = millis();
+        rtdbInBackoff = true;
+        rtdbBackoffMs = min(rtdbBackoffMs * 2, (unsigned long)RTDB_MAX_BACKOFF_MS);
+        Serial.printf("[RTDB] Backoff engaged. Next retry in %lums.\n", rtdbBackoffMs);
     }
 }
 
 void setup() {
-  Serial.begin(115200);
-  gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
-  delay(1000);
+    Serial.begin(115200);
+    gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
+    delay(1000);
 
-  Serial.println("\n========================================");
-  Serial.println("  Eki BusTrack — ESP32 Phase 6");
-  Serial.println("  Tiered Heartbeat, Hysteresis, HDOP Dual-Threshold");
-  Serial.println("  Lean Payload, Fix-Loss Tracking");
-  Serial.println("========================================\n");
+    Serial.println("\n========================================");
+    Serial.println("  Eki BusTrack — ESP32 Phase 7");
+    Serial.println("  Ring Buffer, Backoff Guards, Overflow-safe Timers");
+    Serial.println("========================================\n");
 
-  connectWiFi();
-  initFirebase();
-  Serial.println("[GPS] Waiting for satellite fix...");
+    connectWiFi();
+    initFirebase();
+    Serial.println("[GPS] Waiting for satellite fix...");
 }
 
 void loop() {
@@ -401,10 +498,21 @@ void loop() {
 
     unsigned long now = millis();
 
-    // ── Proactive token refresh at 50 minutes (before 60-min Firebase expiry) ──
-    if (lastTokenFetch > 0 && (now - lastTokenFetch >= TOKEN_REFRESH_INTERVAL_MS)) {
+    // ── Token Management (Refresh & Retry) ────────────────────────────────────
+    if (lastTokenFetch == 0) {
+        // CRITICAL FIX: If the initial token fetch failed on boot (e.g. backend down),
+        // we must retry periodically. Otherwise the bus stays offline forever.
+        static unsigned long lastTokenRetry = 0;
+        if (elapsed(lastTokenRetry) >= 10000) { // Retry every 10 seconds
+            lastTokenRetry = now;
+            if (fetchCustomToken()) {
+                Serial.println("[Auth] ✅ Successfully fetched initial Custom Token after retry.");
+            }
+        }
+    } else if (elapsed(lastTokenFetch) >= TOKEN_REFRESH_INTERVAL_MS) {
+        // Proactive token refresh at 50 minutes (before 60-min Firebase expiry)
         if (fetchCustomToken()) {
-            Serial.println("[Auth] Successfully refreshed Custom Token.");
+            Serial.println("[Auth] ✅ Successfully refreshed Custom Token.");
         }
     }
 
@@ -414,7 +522,7 @@ void loop() {
             gpsFixLost = true;
             fixLostTime = now;
             fixLostStatusWritten = false;
-            Serial.println("[GPS] ⚠️  Fix lost — entering maintenance state.");
+            Serial.println("[GPS] Fix lost — entering maintenance state.");
         }
 
         // Write maintenance status once so the frontend shows "GPS signal lost"
@@ -427,7 +535,7 @@ void loop() {
             statusPayload.set("timestamp/.sv", "timestamp");
             if (Firebase.RTDB.updateNode(&fbData, path.c_str(), &statusPayload)) {
                 fixLostStatusWritten = true;
-                Serial.println("[RTDB] ✅ Maintenance status written (fix lost).");
+                Serial.println("[RTDB] Maintenance status written (fix lost).");
             }
         }
         return; // Do not attempt shouldSendUpdate() without a valid fix
@@ -440,28 +548,41 @@ void loop() {
         // calculations are accurate from the first re-acquired frame.
         smoothedLat = gps.location.lat();
         smoothedLng = gps.location.lng();
-        Serial.printf("[GPS] ✅ Fix re-acquired after %lums. EMA reset to %.6f, %.6f\n",
-                      now - fixLostTime, smoothedLat, smoothedLng);
+        Serial.printf("[GPS] Fix re-acquired after %lums. EMA reset to %.6f, %.6f\n",
+                      elapsed(fixLostTime), smoothedLat, smoothedLng);
         fixLostTime = 0;
     }
 
     // Check every 1 second if we should send (NOT every frame — save CPU)
-    if (now - lastCheckTime >= 1000) {
+    if (elapsed(lastCheckTime) >= 1000) {
         lastCheckTime = now;
 
+        // ── WiFi reconnect ────────────────────────────────────────────────
         if (WiFi.status() != WL_CONNECTED) {
-            connectWiFi();
-            // Don't return here — we still need to buffer the fix
+            connectWiFi(); // Non-blocking — respects 5s cooldown internally
         }
 
-        if (firebaseReady && (shouldSendUpdate() || (WiFi.status() == WL_CONNECTED && wifiBuffer.valid))) {
-            sendLocationToRTDB();
-            updateLastSentState();
+        // Only attempt Firebase writes if we have successfully obtained an auth token
+        if (firebaseReady && lastTokenFetch > 0) {
+            // Flush buffered GPS fixes if WiFi just came back
+            if (WiFi.status() == WL_CONNECTED && ringCount > 0) {
+                flushBufferedFix();
+                updateLastSentState();
+            }
+            // Send live update if movement thresholds are met
+            else if (shouldSendUpdate()) {
+                sendLocationToRTDB();
+                updateLastSentState();
+            }
         }
     }
 
-    // Watchdog: if no NMEA data received in 5 seconds after boot, warn
+    // Watchdog: if no NMEA data received in 5 seconds after boot, warn (with cooldown)
     if (millis() > 5000 && gps.charsProcessed() < 10) {
-        Serial.println("[GPS] ⚠️  No GPS data received — check wiring!");
+        static unsigned long lastGpsWarn = 0;
+        if (elapsed(lastGpsWarn) >= 5000) {
+            lastGpsWarn = millis();
+            Serial.println("[GPS] ⚠️ No GPS data received — check wiring!");
+        }
     }
 }

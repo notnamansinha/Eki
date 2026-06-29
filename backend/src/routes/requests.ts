@@ -35,67 +35,10 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
-// Create new external pickup request over HTTP
-router.post("/", (req, res) => {
-  const { passengerId, busId, type, lat, lng } = req.body ?? {};
+// NOTE: The unauthenticated POST / and GET / routes have been removed to close a major DoS vulnerability.
+// Passenger requests must be created exclusively via the authenticated WebSocket (passenger:request)
+// which strictly enforces Firebase UID verification (ARCH-04) and rate limiting (ARCH-05).
 
-  // ── Input Validation ──
-  if (!isNonEmptyString(passengerId)) {
-    res.status(400).json({ error: "passengerId must be a non-empty string" });
-    return;
-  }
-  if (!isNonEmptyString(busId)) {
-    res.status(400).json({ error: "busId must be a non-empty string" });
-    return;
-  }
-  if (!ALLOWED_REQUEST_TYPES.has(type)) {
-    res.status(400).json({ error: "type must be 'pickup' or 'dropoff'" });
-    return;
-  }
-  if (!isValidLatLng(lat, lng)) {
-    res.status(400).json({ error: "lat/lng must be valid finite numbers in range" });
-    return;
-  }
-
-  // ── Idempotency key: one request per passenger per bus per minute ──
-  // Prevents request flooding from rapid-tapping passengers or frontend retries.
-  const idempotencyWindow = Math.floor(Date.now() / 60_000); // 1-minute bucket
-  const idempotencyKey = `${passengerId}:${busId}:${idempotencyWindow}`;
-
-  // Check if an identical request was already submitted in this window
-  const existingRequest = Array.from(pendingRequests.values()).find(
-    (r) => (r as any).idempotencyKey === idempotencyKey
-  );
-  if (existingRequest) {
-    // Return the existing request — idempotent success
-    res.status(200).json(existingRequest);
-    return;
-  }
-
-  const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const newRequest: PassengerRequest & { idempotencyKey: string } = {
-    requestId,
-    passengerId,
-    busId,
-    type,
-    lat,
-    lng,
-    status: "pending",
-    createdAt: Date.now(),
-    idempotencyKey, // Stored for deduplication lookups
-  };
-
-  pendingRequests.set(requestId, newRequest);
-  res.status(201).json(newRequest);
-});
-
-// List all currently pending requests for admin view tracking
-// ARCH-09 fix: no caching — this is live state
-router.get("/", (_req, res) => {
-  res.setHeader("Cache-Control", "no-store");
-  const reqArray = Array.from(pendingRequests.values());
-  res.json({ requests: reqArray });
-});
 
 // Admin patch completion override — SEC-10 fix: requires Firebase admin token
 router.patch("/:id", requireAdmin, (req, res) => {

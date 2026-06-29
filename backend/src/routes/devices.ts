@@ -83,7 +83,7 @@ router.post("/auth", async (req: Request, res: Response): Promise<any> => {
 router.post("/hash-secret", async (req: Request, res: Response): Promise<any> => {
   const { deviceId, plainSecret, adminSecret } = req.body;
 
-  if (adminSecret !== process.env.ADMIN_API_SECRET) {
+  if (!process.env.ADMIN_API_SECRET || adminSecret !== process.env.ADMIN_API_SECRET) {
     return res.status(403).json({ error: "Forbidden" });
   }
 

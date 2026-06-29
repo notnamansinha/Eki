@@ -21,8 +21,6 @@ export const api = {
     }>("/api/analytics/fleet"),
   getTrips: () => req<{ trips: unknown[] }>("/api/analytics/trips"),
   getFeedback: () => req<{ feedback: unknown[] }>("/api/analytics/feedback"),
-  createRequest: (data: unknown) =>
-    req("/api/requests", { method: "POST", body: JSON.stringify(data) }),
   completeRequest: (id: string) =>
     req(`/api/requests/${id}`, { method: "PATCH", body: JSON.stringify({ status: "completed" }) }),
 };
