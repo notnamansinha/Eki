@@ -483,6 +483,26 @@ export function trackingGateway(io: Server<ClientToServerEvents, ServerToClientE
       // This gives the passenger app time to show the "Route Ended" screen
       // before the bus entry disappears from the database.
       if (tripState === "completed") {
+        const completionTimestamp = new Date().toISOString();
+        const ctx = busTripContext.get(data.busId);
+        const routeStops = ctx?.stops ?? [];
+
+        // ── Analytics: write completed trip to Firestore ──────────────────────
+        // This is fire-and-forget. A failure here must NOT block the grace-period
+        // cleanup or the RTDB write above.
+        db.collection("completed_trips").add({
+          busId:          data.busId,
+          driverId:       data.driverId,
+          routeId:        metadata?.routeId ?? null,
+          completedAt:    completionTimestamp,
+          stopCount:      routeStops.length,
+          stopNames:      routeStops.map(s => s.name),
+        }).then((docRef) => {
+          console.log(`[Analytics] Trip completed: ${docRef.id} for bus ${data.busId}`);
+        }).catch((err) => {
+          console.warn(`[Analytics] Failed to write completed_trips for bus ${data.busId}:`, err);
+        });
+
         setTimeout(() => {
           const mdata = busMetadata.get(data.busId);
           if (mdata) clearRTDBLocation(data.busId, mdata.routeIds || []);
