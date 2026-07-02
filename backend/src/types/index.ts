@@ -7,20 +7,27 @@
 
 // ── Driver / Bus ──────────────────────────────────────────────────────────────
 
+export type DeviceState = "online" | "offline";
+export type MotionState = "moving" | "stopped" | "uncertain";
+export type TripState   = "pre_departure" | "in_service" | "completed" | "maintenance";
+
 export interface BusLocation {
   busId: string;
   driverId: string;
   lat: number;
   lng: number;
-  heading: number;     // degrees, 0 = North
-  speed: number;       // km/h
-  timestamp: number;   // Unix ms
-  status: "active" | "idle" | "maintenance";
-  routeId?: string;    // The ID from PREDEFINED_ROUTES (legacy single route)
-  routeIds?: string[]; // Array of associated routeIds for multi-route assignment
-  currentStopIndex?: number; // Driver's current stop in the route progression
-  delayMinutes?: number;     // Reported delay in minutes (positive = late)
+  heading: number;        // degrees, 0 = North
+  speed: number;          // km/h
+  timestamp: number;      // Unix ms
+  deviceState: DeviceState;
+  motionState: MotionState;
+  tripState: TripState;
+  routeId?: string;       // The ID from routes collection (legacy single route)
+  routeIds?: string[];    // Array of associated routeIds for multi-route assignment
+  currentStopIndex?: number; // Index of the most recently passed stop
+  delayMinutes?: number;  // Reported delay in minutes (positive = late)
 }
+
 
 // ── Passenger Requests ────────────────────────────────────────────────────────
 
@@ -83,7 +90,9 @@ export interface ServerToClientEvents {
 
 export interface ClientToServerEvents {
   "driver:start-tracking": (data: { busId: string; driverId: string; routeId?: string; routeIds?: string[] }) => void;
-  "driver:location-update": (data: Omit<BusLocation, "status"> & { routeIds?: string[]; currentStopIndex?: number }) => void;
+  // Driver sends raw telemetry; backend computes tripState via geofencing.
+  // motionState is pre-computed on the ESP32 (hardware hysteresis). deviceState is always "online" when this fires.
+  "driver:location-update": (data: Omit<BusLocation, "tripState" | "currentStopIndex" | "delayMinutes"> & { routeIds?: string[] }) => void;
   "driver:route-update": (data: { busId: string; routeId?: string; routeIds?: string[] }) => void;
   "driver:stop-tracking": (data: { busId: string }) => void;
   "driver:request-done": (data: { requestId: string }) => void;
@@ -94,3 +103,4 @@ export interface ClientToServerEvents {
   // Simulation: driver emits real-time simulated position
   "bus:location": (data: SimBusLocation) => void;
 }
+

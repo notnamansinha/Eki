@@ -229,10 +229,14 @@ double getFilteredSpeed() {
     return (s < MOVING_SPEED_KMH) ? 0.0 : s;
 }
 
-// ── Update hysteresis state and return current bus status string ──
-// Requires 3 consecutive readings above/below threshold to flip status.
-// Prevents rapid active↔idle oscillation at the boundary (e.g., 7–9 km/h).
-const char* updateAndGetStatus(double speed) {
+// ── Update hysteresis state and return motionState string ────────
+// Logic is identical to the old updateAndGetStatus(); only the output labels
+// have changed to reflect the 3-state architecture:
+//   moving    ← was "active"  (speed >= ACTIVE_SPEED_THRESHOLD_KMH for N readings)
+//   stopped   ← was "idle"    (speed <  IDLE_SPEED_THRESHOLD_KMH  for N readings)
+//   uncertain   written directly by the GPS fix-loss handler (was "maintenance")
+// tripState is NOT computed here — the backend owns that via geofencing.
+const char* getMotionState(double speed) {
     if (speed >= ACTIVE_SPEED_THRESHOLD_KMH) {
         consecutiveActiveReadings = min((int)consecutiveActiveReadings + 1, (int)HYSTERESIS_READINGS);
         consecutiveIdleReadings = 0;
@@ -245,7 +249,7 @@ const char* updateAndGetStatus(double speed) {
     if (consecutiveActiveReadings >= HYSTERESIS_READINGS) statusActive = true;
     if (consecutiveIdleReadings   >= HYSTERESIS_READINGS) statusActive = false;
 
-    return statusActive ? "active" : "idle";
+    return statusActive ? "moving" : "stopped";
 }
 
 bool shouldSendUpdate() {
@@ -360,14 +364,15 @@ void flushBufferedFix() {
 
     String path = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID;
     FirebaseJson payload;
-    payload.set("lat",       fix.lat);
-    payload.set("lng",       fix.lng);
-    payload.set("heading",   fix.heading);
-    payload.set("speed",     fix.speed);
-    payload.set("status",    updateAndGetStatus(fix.speed));
+    payload.set("lat",         fix.lat);
+    payload.set("lng",         fix.lng);
+    payload.set("heading",     fix.heading);
+    payload.set("speed",       fix.speed);
+    payload.set("deviceState", "online");
+    payload.set("motionState", getMotionState(fix.speed));
     payload.set("timestamp/.sv", "timestamp");
-    payload.set("satellites", fix.satellites);
-    payload.set("hdop",      fix.hdop);
+    payload.set("satellites",  fix.satellites);
+    payload.set("hdop",        fix.hdop);
     payload.set("lowAccuracy", fix.hdop > HDOP_LOW_ACCURACY_THRESHOLD);
 
     if (Firebase.RTDB.updateNode(&fbData, path.c_str(), &payload)) {
@@ -445,23 +450,27 @@ void sendLocationToRTDB() {
     payload.set("heading",   heading);
     payload.set("speed",     speed);
 
-    // ── Hysteresis-gated status (prevents rapid active/idle oscillation) ──
-    const char* status = updateAndGetStatus(speed);
-    payload.set("status",    status);
+    // ── Hysteresis-gated motionState (prevents rapid moving/stopped oscillation) ──
+    const char* motionState = getMotionState(speed);
+    // deviceState is always "online" when this function is executing on a connected device.
+    // The backend sets deviceState:"offline" on socket disconnect / power cut.
+    payload.set("deviceState", "online");
+    payload.set("motionState", motionState);
+    // tripState is intentionally NOT written here — the backend computes it
+    // by geofencing the bus position against the route's stop coordinates.
 
     payload.set("timestamp/.sv", "timestamp");  // Firebase server-injected timestamp
     payload.set("satellites", sats);
     payload.set("hdop",      hdop);
 
     // ── HDOP accuracy flag (for frontend to downgrade confidence display) ──
-    // "near stop X" instead of "at stop X" when GPS accuracy is reduced
     bool lowAccuracy = hdop > HDOP_LOW_ACCURACY_THRESHOLD;
     payload.set("lowAccuracy", lowAccuracy);
 
     // Use PATCH (updateNode) not SET — preserves /meta sub-path and other fields
     if (Firebase.RTDB.updateNode(&fbData, path.c_str(), &payload)) {
-        Serial.printf("[RTDB] Sent: %.6f, %.6f | Speed: %.1f | Status: %s | HDOP: %.1f%s\n",
-                      lat, lng, speed, status, hdop, lowAccuracy ? " lowAcc" : "");
+        Serial.printf("[RTDB] Sent: %.6f, %.6f | Speed: %.1f | Motion: %s | HDOP: %.1f%s\n",
+                      lat, lng, speed, motionState, hdop, lowAccuracy ? " lowAcc" : "");
         // ── Reset backoff state on successful write ────────────────────────
         rtdbBackoffMs = RTDB_INITIAL_BACKOFF_MS;
         rtdbInBackoff = false;
@@ -530,12 +539,16 @@ void loop() {
         if (firebaseReady && WiFi.status() == WL_CONNECTED && !fixLostStatusWritten) {
             String path = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID;
             FirebaseJson statusPayload;
-            statusPayload.set("status", "maintenance");
+            // GPS fix lost → deviceState stays "online" (ESP32 is alive), but
+            // motionState becomes "uncertain" (no trustworthy position data).
+            // The backend will set tripState = "maintenance" when it sees this.
+            statusPayload.set("deviceState", "online");
+            statusPayload.set("motionState", "uncertain");
             statusPayload.set("lowAccuracy", true);
             statusPayload.set("timestamp/.sv", "timestamp");
             if (Firebase.RTDB.updateNode(&fbData, path.c_str(), &statusPayload)) {
                 fixLostStatusWritten = true;
-                Serial.println("[RTDB] Maintenance status written (fix lost).");
+                Serial.println("[RTDB] motionState:uncertain written (GPS fix lost).");
             }
         }
         return; // Do not attempt shouldSendUpdate() without a valid fix

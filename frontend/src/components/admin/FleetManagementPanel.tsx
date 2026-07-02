@@ -20,6 +20,9 @@ interface ActiveBusEntry {
   lat?: number;
   lng?: number;
   speed?: number;
+  deviceState?: "online" | "offline";
+  motionState?: "moving" | "stopped" | "uncertain";
+  tripState?: "pre_departure" | "in_service" | "completed" | "maintenance";
 }
 
 function useActiveBuses(): ActiveBusEntry[] {
