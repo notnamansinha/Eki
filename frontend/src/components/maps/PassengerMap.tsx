@@ -37,10 +37,12 @@ interface IncomingBusData {
   heading: number;
   speed: number;
   timestamp: number;
-  status: "active" | "maintenance" | "idle";
+  deviceState: "online" | "offline";
+  motionState: "moving" | "stopped" | "uncertain";  // Physical movement state from hardware
+  tripState: "pre_departure" | "in_service" | "completed" | "maintenance";  // Service visibility
   currentStopIndex?: number;
   delayMinutes?: number;
-  lowAccuracy?: boolean;   // Set by firmware when 2.5 < HDOP ≤ 4.0
+  lowAccuracy?: boolean;  // Set by firmware when 2.5 < HDOP ≤ 4.0
 }
 
 // Staleness threshold: show "signal lost" banner if timestamp is older than 90s
@@ -65,13 +67,15 @@ const RIPPLE_KEYFRAMES = `
   }
 `;
 
-function createBusIconHtml(heading: number, status: string, size = 48) {
+function createBusIconHtml(heading: number, motionState: string, size = 48) {
+  // Colour communicates physical movement, not trip service state.
+  // The bus is always in_service when visible, so we don't need to encode that here.
   const colors: Record<string, string> = {
-    active: "#10b981",
-    maintenance: "#ef4444",
-    idle: "#f59e0b",
+    moving:    "#10b981",  // emerald — bus is rolling
+    stopped:   "#f59e0b",  // amber   — stopped at station or in traffic (still in_service)
+    uncertain: "#ef4444",  // red     — GPS fix lost
   };
-  const color = colors[status] || colors.idle;
+  const color = colors[motionState] ?? colors.uncertain;
   const snappedHeading = Math.round(heading / 5) * 5;
 
   return `
@@ -216,7 +220,7 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
         const age = now - bus.timestamp;
         const isFresh = age < BUS_EXPIRY_MS; // Not yet swept from RTDB
 
-        if (bus.status === "active" && isFresh) {
+        if ((bus.deviceState === "online" && bus.tripState === "in_service") && isFresh) {
           activeBuses.set(bus.busId, bus);
 
           // ── Timestamp staleness: signal lost banner ────────────────────
@@ -388,7 +392,7 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
                 position={[bus.lat, bus.lng]}
                 icon={L.divIcon({
                   className: "custom-bus-icon",
-                  html: createBusIconHtml(bus.heading, bus.status, 48),
+                  html: createBusIconHtml(bus.heading, bus.motionState, 48),
                   iconSize: [48, 48],
                   iconAnchor: [24, 24]
                 })}

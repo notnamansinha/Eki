@@ -4,6 +4,8 @@ import type {
   ClientToServerEvents,
   BusLocation,
   PassengerRequest,
+  TripState,
+  MotionState,
 } from "../types";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import {
@@ -12,7 +14,7 @@ import {
   getAllETAs,
 } from "../lib/etaService";
 
-// Initial data for tracking system
+// ── Core in-memory state ────────────────────────────────────────────
 export const activeBuses = new Map<string, BusLocation>();
 export const busMetadata = new Map<string, { routeId?: string; routeIds?: string[] }>();
 export const pendingRequests = new Map<string, PassengerRequest>();
@@ -58,6 +60,108 @@ function isRateLimited(socketId: string): boolean {
 // ── Reverse map: socketId → busId (for abrupt disconnect cleanup) ──
 const socketBusMap = new Map<string, string>();
 
+// ── Trip State Machine ───────────────────────────────────────────────
+// Each active bus has cached stop coordinates and a current tripState.
+// tripState is computed server-side by geofencing the live position against
+// the route's stop array. The hardware never writes this field.
+interface RouteStop { id: string; lat: number; lng: number; name: string; }
+interface BusTripContext {
+  stops: RouteStop[];          // Ordered stop list for this bus's route
+  tripState: TripState;        // Current service state
+  currentStopIndex: number;    // Index of the most recently passed stop
+}
+const busTripContext = new Map<string, BusTripContext>();
+
+// Geofence radius for stop detection.
+// NEO-M8N with EMA smoothing gives ~2m CEP; 20m is 10× the error floor.
+const STOP_GEOFENCE_M = 20;
+
+/** Haversine distance in metres between two coordinates. */
+function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6_371_000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Compute the next tripState for a bus given its current GPS position.
+ *
+ * Transitions:
+ *   pre_departure → in_service  : bus enters 20m geofence of stops[0]
+ *   in_service    → completed   : bus enters 20m geofence of stops[last]
+ *   any           → maintenance : motionState === "uncertain" (GPS fix lost)
+ *   maintenance   → (previous)  : fix re-acquired (handled by caller restoring prior state)
+ */
+function computeTripState(
+  busId: string,
+  lat: number,
+  lng: number,
+  motionState: MotionState,
+): { tripState: TripState; currentStopIndex: number } {
+  const ctx = busTripContext.get(busId);
+  if (!ctx || ctx.stops.length === 0) {
+    // No route context loaded yet — treat as in_service so the bus isn't hidden.
+    return { tripState: "in_service", currentStopIndex: 0 };
+  }
+
+  // GPS fix lost — enter maintenance regardless of prior state
+  if (motionState === "uncertain") {
+    return { tripState: "maintenance", currentStopIndex: ctx.currentStopIndex };
+  }
+
+  const { stops, tripState: current, currentStopIndex } = ctx;
+  const firstStop = stops[0];
+  const lastStop  = stops[stops.length - 1];
+
+  // Check arrival at the first stop → trip begins
+  if (current === "pre_departure") {
+    const d = haversineM(lat, lng, firstStop.lat, firstStop.lng);
+    if (d <= STOP_GEOFENCE_M) {
+      console.log(`[TripState] Bus ${busId} entered stop[0] geofence (${d.toFixed(1)}m). Trip started.`);
+      ctx.tripState = "in_service";
+      return { tripState: "in_service", currentStopIndex: 0 };
+    }
+    return { tripState: "pre_departure", currentStopIndex };
+  }
+
+  // Check arrival at the last stop → route complete
+  if (current === "in_service") {
+    const d = haversineM(lat, lng, lastStop.lat, lastStop.lng);
+    if (d <= STOP_GEOFENCE_M) {
+      console.log(`[TripState] Bus ${busId} reached last stop (${d.toFixed(1)}m). Route completed.`);
+      ctx.tripState = "completed";
+      return { tripState: "completed", currentStopIndex: stops.length - 1 };
+    }
+
+    // Track progression through intermediate stops for ETA display
+    let closestIdx = currentStopIndex;
+    let closestD   = Infinity;
+    // Scan forward only (buses don't reverse on a route)
+    const searchEnd = Math.min(currentStopIndex + 5, stops.length - 2);
+    for (let i = currentStopIndex; i <= searchEnd; i++) {
+      const dist = haversineM(lat, lng, stops[i].lat, stops[i].lng);
+      if (dist < closestD) { closestD = dist; closestIdx = i; }
+    }
+    if (closestIdx !== currentStopIndex) {
+      ctx.currentStopIndex = closestIdx;
+    }
+    return { tripState: "in_service", currentStopIndex: ctx.currentStopIndex };
+  }
+
+  // maintenance → restore to in_service when fix returns (motionState !== "uncertain")
+  if (current === "maintenance") {
+    ctx.tripState = "in_service";
+    return { tripState: "in_service", currentStopIndex };
+  }
+
+  return { tripState: current, currentStopIndex };
+}
+
 // ── Input validation helpers ──────────────────────────────────────────────────
 function isValidLatLng(lat: unknown, lng: unknown): boolean {
   return (
@@ -78,21 +182,24 @@ function isValidSpeed(s: unknown): boolean {
   return typeof s === "number" && isFinite(s) && s >= 0 && s <= 300;
 }
 
-// Helper to update RTDB securely from backend
+// Helper to update RTDB securely from backend.
+// Now writes deviceState + motionState + tripState instead of the old single status field.
 async function setRTDBLocation(busId: string, driverId: string, routeIds: string[], loc: BusLocation) {
   routeIds.forEach(routeId => {
     const payload: any = {
-      busId: loc.busId,
-      driverId: loc.driverId,
+      busId:        loc.busId,
+      driverId:     loc.driverId,
       routeId,
-      lat: loc.lat,
-      lng: loc.lng,
-      heading: loc.heading,
-      speed: loc.speed,
-      status: loc.status,
-      timestamp: loc.timestamp,
+      lat:          loc.lat,
+      lng:          loc.lng,
+      heading:      loc.heading,
+      speed:        loc.speed,
+      deviceState:  loc.deviceState,
+      motionState:  loc.motionState,
+      tripState:    loc.tripState,
+      timestamp:    loc.timestamp,
       currentStopIndex: loc.currentStopIndex,
-      delayMinutes: loc.delayMinutes
+      delayMinutes: loc.delayMinutes,
     };
 
     // Remove undefined values to prevent Firebase Admin SDK crashes
@@ -179,15 +286,84 @@ export function trackingGateway(io: Server<ClientToServerEvents, ServerToClientE
       }
 
       socket.join(`bus:${busId}`);
-      socketBusMap.set(socket.id, busId); // Register for abrupt-disconnect cleanup
-      
+      socketBusMap.set(socket.id, busId);
+
       const parsedRouteIds = Array.isArray(routeIds) ? routeIds : (isNonEmptyString(routeId) ? [routeId] : []);
       busMetadata.set(busId, { routeId: parsedRouteIds[0], routeIds: parsedRouteIds });
 
-      // If we have an existing location for this bus, broadcast it with potential new routeId immediately
+      // ── Load route stops and initialise trip context ───────────────────────────
+      // Stops are fetched once per shift and cached in busTripContext.
+      // They don't change while a driver is on duty.
+      const targetRouteId = parsedRouteIds[0];
+      if (targetRouteId && isNonEmptyString(targetRouteId)) {
+        try {
+          const routeDoc = await db.collection("routes").doc(targetRouteId).get();
+          const routeData = routeDoc.data();
+          const stops: RouteStop[] = (routeData?.stops ?? []).map((s: any) => ({
+            id:   s.id   ?? "",
+            lat:  s.lat  ?? 0,
+            lng:  s.lng  ?? 0,
+            name: s.name ?? "",
+          }));
+
+          // ── Trip State Recovery ────────────────────────────────────────────────
+          // Check if this bus had an active trip recently (e.g., within 2 hours)
+          let recoveredTripState: TripState = "pre_departure";
+          let recoveredStopIndex = 0;
+
+          try {
+            const busDoc = await db.collection("bus_locations").doc(busId).get();
+            const busData = busDoc.data();
+            if (busData && (busData.tripState === "in_service" || busData.tripState === "maintenance")) {
+              const lastSeen = new Date(busData.lastSeen || 0).getTime();
+              const now = Date.now();
+              const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+              
+              if (now - lastSeen < TWO_HOURS_MS) {
+                recoveredTripState = busData.tripState as TripState;
+                recoveredStopIndex = typeof busData.currentStopIndex === "number" ? busData.currentStopIndex : 0;
+                console.log(`[TripState] Bus ${busId} recovering tripState: ${recoveredTripState} at stop index ${recoveredStopIndex}`);
+              }
+            }
+          } catch (err) {
+            console.warn(`[TripState] Failed to query recovery state for bus ${busId}:`, err);
+          }
+
+          busTripContext.set(busId, {
+            stops,
+            tripState: recoveredTripState,
+            currentStopIndex: recoveredStopIndex,
+          });
+          console.log(`[TripState] Bus ${busId} trip context loaded — ${stops.length} stops, state: ${recoveredTripState}.`);
+
+          // ── Start ETA tracking using last waypoint as destination ──
+          if (routeData?.waypoints && routeData.waypoints.length >= 2) {
+            const lastWp = routeData.waypoints[routeData.waypoints.length - 1];
+            const destination = { lat: lastWp.lat, lng: lastWp.lng };
+            const etaIntervalMs = parseInt(process.env.ETA_INTERVAL_MS || "180000", 10);
+            startETATracking(
+              io as any,
+              busId,
+              targetRouteId,
+              () => { const bus = activeBuses.get(busId); return bus ? { lat: bus.lat, lng: bus.lng } : null; },
+              () => destination,
+              etaIntervalMs
+            );
+          }
+        } catch (err) {
+          console.error(`❌ [TripState] Failed to load route context for bus ${busId}:`, err);
+        }
+      }
+
+      // If we have an existing location for this bus, broadcast it immediately
       const existing = activeBuses.get(busId);
       if (existing) {
-        const update = { ...existing, status: "active" as const, routeId: parsedRouteIds[0], routeIds: parsedRouteIds };
+        const update: BusLocation = {
+          ...existing,
+          deviceState: "online",
+          routeId: parsedRouteIds[0],
+          routeIds: parsedRouteIds,
+        };
         activeBuses.set(busId, update);
         io.to("admin").emit("bus:location-update", update);
         io.to("passengers").emit("bus:location-update", update);
@@ -196,38 +372,7 @@ export function trackingGateway(io: Server<ClientToServerEvents, ServerToClientE
 
       // Send any existing requests for this bus to the connecting driver
       for (const req of pendingRequests.values()) {
-        if (req.busId === busId) {
-          socket.emit("request:new", req);
-        }
-      }
-
-      // ── Start server-side ETA tracking ──
-      // Fetch the route's last stop as destination from Firestore
-      const targetRouteId = parsedRouteIds[0];
-      if (targetRouteId && isNonEmptyString(targetRouteId)) {
-        try {
-          const routeDoc = await db.collection("routes").doc(targetRouteId).get();
-          const routeData = routeDoc.data();
-          if (routeData && routeData.waypoints && routeData.waypoints.length >= 2) {
-            const lastWp = routeData.waypoints[routeData.waypoints.length - 1];
-            const destination = { lat: lastWp.lat, lng: lastWp.lng };
-
-            const etaIntervalMs = parseInt(process.env.ETA_INTERVAL_MS || "180000", 10);
-            startETATracking(
-              io as any,
-              busId,
-              targetRouteId,
-              () => {
-                const bus = activeBuses.get(busId);
-                return bus ? { lat: bus.lat, lng: bus.lng } : null;
-              },
-              () => destination,
-              etaIntervalMs
-            );
-          }
-        } catch (err) {
-          console.error(`❌ Failed to start ETA tracking for bus ${busId}:`, err);
-        }
+        if (req.busId === busId) socket.emit("request:new", req);
       }
     });
 
@@ -277,9 +422,7 @@ export function trackingGateway(io: Server<ClientToServerEvents, ServerToClientE
 
     socket.on("driver:location-update", async (data) => {
       // ── Rate limiting: max 2 location events/sec per socket ──
-      if (isRateLimited(socket.id)) {
-        return; // Drop silently — prevents Firestore write flooding
-      }
+      if (isRateLimited(socket.id)) return;
 
       // ── Input Validation ──
       if (
@@ -297,9 +440,8 @@ export function trackingGateway(io: Server<ClientToServerEvents, ServerToClientE
 
       let metadata = busMetadata.get(data.busId);
 
-      // ── Self-heal: if backend restarted and lost in-memory state, recover
-      // metadata from the payload. The driver always sends routeIds.
-      if (!metadata && (Array.isArray(data.routeIds) && data.routeIds.length > 0)) {
+      // ── Self-heal: recover metadata if backend restarted ──
+      if (!metadata && Array.isArray(data.routeIds) && data.routeIds.length > 0) {
         const parsedRouteIds = data.routeIds as string[];
         metadata = { routeId: parsedRouteIds[0], routeIds: parsedRouteIds };
         busMetadata.set(data.busId, metadata);
@@ -308,30 +450,80 @@ export function trackingGateway(io: Server<ClientToServerEvents, ServerToClientE
         console.log(`[driver:location-update] Self-healed metadata for ${data.busId} from payload`);
       }
 
+      // ── Trip state machine ─────────────────────────────────────────────
+      // motionState comes from the hardware (hysteresis-gated, renamed from active/idle).
+      // tripState is computed here by geofencing against the cached route stops.
+      const motionState: MotionState = (data.motionState as MotionState) ?? "uncertain";
+      const { tripState, currentStopIndex } = computeTripState(data.busId, data.lat, data.lng, motionState);
+
       const busLocation: BusLocation = {
-        busId: data.busId,
-        driverId: data.driverId,
-        lat: data.lat,
-        lng: data.lng,
-        heading: data.heading,
-        speed: data.speed,
-        timestamp: data.timestamp,
-        status: "active",
-        routeId: metadata?.routeId,
-        routeIds: metadata?.routeIds,
+        busId:       data.busId,
+        driverId:    data.driverId,
+        lat:         data.lat,
+        lng:         data.lng,
+        heading:     data.heading,
+        speed:       data.speed,
+        timestamp:   data.timestamp,
+        deviceState: "online",
+        motionState,
+        tripState,
+        currentStopIndex,
+        routeId:     metadata?.routeId,
+        routeIds:    metadata?.routeIds,
       };
 
       activeBuses.set(data.busId, busLocation);
       setRTDBLocation(data.busId, data.driverId, metadata?.routeIds || [], busLocation);
+
       if ((metadata?.routeIds || []).length === 0) {
-        console.warn(`[driver:location-update] No routeIds for ${data.busId} — RTDB not written. Payload:`, JSON.stringify(data));
+        console.warn(`[driver:location-update] No routeIds for ${data.busId} — RTDB not written.`);
       }
 
-      // ── PERSISTENCE: Live location write (independent try/catch) ──
+      // ── If route is completed, schedule RTDB removal after 30s grace period ──
+      // This gives the passenger app time to show the "Route Ended" screen
+      // before the bus entry disappears from the database.
+      if (tripState === "completed") {
+        const completionTimestamp = new Date().toISOString();
+        const ctx = busTripContext.get(data.busId);
+        const routeStops = ctx?.stops ?? [];
+
+        // ── Analytics: write completed trip to Firestore ──────────────────────
+        // This is fire-and-forget. A failure here must NOT block the grace-period
+        // cleanup or the RTDB write above.
+        db.collection("completed_trips").add({
+          busId:          data.busId,
+          driverId:       data.driverId,
+          routeId:        metadata?.routeId ?? null,
+          completedAt:    completionTimestamp,
+          stopCount:      routeStops.length,
+          stopNames:      routeStops.map(s => s.name),
+        }).then((docRef) => {
+          console.log(`[Analytics] Trip completed: ${docRef.id} for bus ${data.busId}`);
+        }).catch((err) => {
+          console.warn(`[Analytics] Failed to write completed_trips for bus ${data.busId}:`, err);
+        });
+
+        setTimeout(() => {
+          const mdata = busMetadata.get(data.busId);
+          if (mdata) clearRTDBLocation(data.busId, mdata.routeIds || []);
+          activeBuses.delete(data.busId);
+          busMetadata.delete(data.busId);
+          busTripContext.delete(data.busId);
+          stopETATracking(data.busId);
+          io.to("admin").emit("bus:stop-tracking", { busId: data.busId });
+          io.to("passengers").emit("bus:stop-tracking", { busId: data.busId });
+          db.collection("bus_locations").doc(data.busId)
+            .set({ deviceState: "offline", tripState: "completed", lastSeen: new Date().toISOString() }, { merge: true })
+            .catch(console.warn);
+          console.log(`[TripState] Bus ${data.busId} route completed — RTDB cleared after grace period.`);
+        }, 30_000);
+      }
+
+      // ── Persistence: live location write ──
       try {
         await db.collection("bus_locations").doc(data.busId).set({
           ...busLocation,
-          lastSeen: new Date().toISOString()
+          lastSeen: new Date().toISOString(),
         }, { merge: true });
       } catch (err) {
         console.error(`❌ [Firestore] bus_locations write FAILED for ${data.busId}:`, err);
@@ -352,16 +544,15 @@ export function trackingGateway(io: Server<ClientToServerEvents, ServerToClientE
       const mdata = busMetadata.get(busId);
       if (mdata) clearRTDBLocation(busId, mdata.routeIds || []);
       busMetadata.delete(busId);
+      busTripContext.delete(busId);
       socketBusMap.delete(socket.id);
       stopETATracking(busId);
-      locationRateMap.delete(socket.id); // Clean up rate limit entry
+      locationRateMap.delete(socket.id);
       io.to("admin").emit("bus:stop-tracking", { busId });
       io.to("passengers").emit("bus:stop-tracking", { busId });
-      // Mark as inactive in Firestore so stale position doesn't show as live
-      db.collection("bus_locations").doc(busId).set(
-        { status: "idle", lastSeen: new Date().toISOString() },
-        { merge: true }
-      ).catch((err) => console.warn(`[Firestore] Failed to mark bus ${busId} idle:`, err));
+      db.collection("bus_locations").doc(busId)
+        .set({ deviceState: "offline", tripState: "completed", lastSeen: new Date().toISOString() }, { merge: true })
+        .catch((err) => console.warn(`[Firestore] Failed to mark bus ${busId} offline:`, err));
     });
 
     socket.on("driver:request-done", (payload) => {
@@ -433,7 +624,7 @@ export function trackingGateway(io: Server<ClientToServerEvents, ServerToClientE
     // was never emitted. Without this, the bus stays "active" in memory and Firestore.
     socket.on("disconnect", () => {
       locationRateMap.delete(socket.id);
-      passengerRequestRateMap.delete(socket.id); // ARCH-05: clean up passenger rate map
+      passengerRequestRateMap.delete(socket.id);
       const busId = socketBusMap.get(socket.id);
       if (busId) {
         socketBusMap.delete(socket.id);
@@ -441,14 +632,13 @@ export function trackingGateway(io: Server<ClientToServerEvents, ServerToClientE
         const mdata = busMetadata.get(busId);
         if (mdata) clearRTDBLocation(busId, mdata.routeIds || []);
         busMetadata.delete(busId);
+        busTripContext.delete(busId);
         stopETATracking(busId);
         io.to("admin").emit("bus:stop-tracking", { busId });
         io.to("passengers").emit("bus:stop-tracking", { busId });
-        // Mark as inactive in Firestore
-        db.collection("bus_locations").doc(busId).set(
-          { status: "idle", lastSeen: new Date().toISOString() },
-          { merge: true }
-        ).catch((err) => console.warn(`[Firestore] Failed to mark bus ${busId} idle on disconnect:`, err));
+        db.collection("bus_locations").doc(busId)
+          .set({ deviceState: "offline", lastSeen: new Date().toISOString() }, { merge: true })
+          .catch((err) => console.warn(`[Firestore] Failed to mark bus ${busId} offline on disconnect:`, err));
         console.log(`🔌 Socket ${socket.id} disconnected — bus ${busId} marked offline.`);
       }
     });

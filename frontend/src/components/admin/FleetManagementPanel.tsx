@@ -4,12 +4,14 @@ import { useState, useEffect } from "react";
 import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
-import { doc, setDoc, deleteDoc } from "firebase/firestore";
+import { doc, setDoc, deleteDoc, collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
 import { db, rtdb } from "@/lib/firebase";
 import { ref, onValue } from "firebase/database";
 import {
   Bus, User, Trash2, Plus, ArrowRight,
   ChevronDown, ChevronUp, Wifi, Pencil, Check, X, AlertCircle,
+  Navigation, Gauge, MapPin, Clock, Radio, Activity, BarChart2,
+  TrendingUp, Route, AlertTriangle, CheckCircle2,
 } from "lucide-react";
 
 // ── Live bus tracking ─────────────────────────────────────────────────────────
@@ -20,6 +22,24 @@ interface ActiveBusEntry {
   lat?: number;
   lng?: number;
   speed?: number;
+  heading?: number;
+  timestamp?: number;
+  deviceState?: "online" | "offline";
+  motionState?: "moving" | "stopped" | "uncertain";
+  tripState?: "pre_departure" | "in_service" | "completed" | "maintenance";
+  currentStopIndex?: number;
+  lowAccuracy?: boolean;
+}
+
+// ── Completed trip analytics ───────────────────────────────────────────────────
+interface CompletedTrip {
+  id: string;
+  busId: string;
+  driverId: string;
+  routeId?: string;
+  completedAt: string;
+  stopCount: number;
+  stopNames: string[];
 }
 
 function useActiveBuses(): ActiveBusEntry[] {
@@ -35,6 +55,50 @@ function useActiveBuses(): ActiveBusEntry[] {
   return active;
 }
 
+function useRecentTrips(count = 10): CompletedTrip[] {
+  const [trips, setTrips] = useState<CompletedTrip[]>([]);
+  useEffect(() => {
+    const q = query(
+      collection(db, "completed_trips"),
+      orderBy("completedAt", "desc"),
+      limit(count)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setTrips(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<CompletedTrip, "id">) })));
+    });
+    return () => unsub();
+  }, [count]);
+  return trips;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function timeSince(isoStr?: string | number): string {
+  if (!isoStr) return "—";
+  const ms = typeof isoStr === "number" ? Date.now() - isoStr : Date.now() - new Date(isoStr).getTime();
+  if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+  return `${Math.floor(ms / 3_600_000)}h ago`;
+}
+
+function headingLabel(deg?: number): string {
+  if (deg == null) return "—";
+  const dirs = ["N","NE","E","SE","S","SW","W","NW","N"];
+  return dirs[Math.round(deg / 45) % 8] + ` ${Math.round(deg)}°`;
+}
+
+const TRIP_STATE_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: any }> = {
+  pre_departure: { label: "At Depot",    color: "text-white/40",     bg: "bg-white/5",        Icon: Clock         },
+  in_service:    { label: "In Service",  color: "text-emerald-400",  bg: "bg-emerald-500/10", Icon: Navigation    },
+  completed:     { label: "Completed",   color: "text-blue-400",     bg: "bg-blue-500/10",    Icon: CheckCircle2  },
+  maintenance:   { label: "GPS Lost",    color: "text-amber-400",    bg: "bg-amber-500/10",   Icon: AlertTriangle },
+};
+
+const MOTION_STATE_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
+  moving:    { label: "Moving",   color: "text-emerald-400", dot: "bg-emerald-400" },
+  stopped:   { label: "Stopped",  color: "text-amber-400",   dot: "bg-amber-400"   },
+  uncertain: { label: "No GPS",   color: "text-red-400",     dot: "bg-red-400"     },
+};
+
 // ── Inline error banner ───────────────────────────────────────────────────────
 function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
@@ -44,6 +108,213 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
       <button onClick={onDismiss} aria-label="Dismiss error" className="shrink-0 hover:text-white transition-colors">
         <X className="w-3.5 h-3.5" />
       </button>
+    </div>
+  );
+}
+
+// ── Expanded live bus detail card ─────────────────────────────────────────────
+function LiveBusCard({ entry, buses, routes, drivers }: {
+  entry: ActiveBusEntry;
+  buses: BusData[];
+  routes: any[];
+  drivers: DriverData[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const bus = buses.find(b => b.id === entry.busId);
+  const route = routes.find(r => r.id === entry.routeId);
+  const driver = drivers.find(d => d.id === entry.driverId);
+  const ts = TRIP_STATE_CONFIG[entry.tripState ?? "pre_departure"] ?? TRIP_STATE_CONFIG.pre_departure;
+  const ms = MOTION_STATE_CONFIG[entry.motionState ?? "uncertain"] ?? MOTION_STATE_CONFIG.uncertain;
+  const TsIcon = ts.Icon;
+  const stopsTotal = route?.stops?.length ?? 0;
+  const stopIdx = (entry.currentStopIndex ?? 0) + 1;
+  const currentStop = route?.stops?.[entry.currentStopIndex ?? 0];
+  const nextStop = route?.stops?.[(entry.currentStopIndex ?? 0) + 1];
+
+  return (
+    <div className="bg-brand-dark/50 border border-emerald-500/20 rounded-2xl overflow-hidden">
+      {/* Compact header */}
+      <button
+        onClick={() => setExpanded(o => !o)}
+        aria-label={`${expanded ? "Collapse" : "Expand"} details for bus ${bus?.name ?? entry.busId}`}
+        className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-white/3 transition-colors text-left"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          {/* Trip state icon */}
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${ts.bg}`}>
+            <TsIcon className={`w-4 h-4 ${ts.color}`} />
+          </div>
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-white text-sm truncate">
+                {bus?.name ?? entry.busId}
+              </span>
+              {entry.lowAccuracy && (
+                <span className="text-[8px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded font-black uppercase tracking-wider">Low Acc</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${ts.color}`}>
+                <TsIcon className="w-2.5 h-2.5" />
+                {ts.label}
+              </span>
+              <span className={`text-[9px] font-bold flex items-center gap-1 ${ms.color}`}>
+                <span className={`w-1.5 h-1.5 rounded-full inline-block ${ms.dot} ${entry.motionState === "moving" ? "animate-pulse" : ""}`} />
+                {ms.label}
+              </span>
+              {entry.speed != null && (
+                <span className="text-[9px] text-white/30 font-mono">{Math.round(entry.speed)} km/h</span>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {route && stopsTotal > 0 && (
+            <span className="text-[9px] text-white/30 font-mono hidden sm:block">
+              {stopIdx}/{stopsTotal} stops
+            </span>
+          )}
+          {expanded ? <ChevronUp className="w-3.5 h-3.5 text-white/30" /> : <ChevronDown className="w-3.5 h-3.5 text-white/30" />}
+        </div>
+      </button>
+
+      {/* Expanded detail panel */}
+      {expanded && (
+        <div className="border-t border-white/5 p-4 flex flex-col gap-3">
+
+          {/* Stats row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { icon: Gauge,      label: "Speed",    value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "—" },
+              { icon: Navigation, label: "Heading",  value: headingLabel(entry.heading) },
+              { icon: MapPin,     label: "Position", value: entry.lat != null ? `${entry.lat.toFixed(4)}, ${entry.lng?.toFixed(4)}` : "—" },
+              { icon: Clock,      label: "Last Seen",value: timeSince(entry.timestamp) },
+            ].map(({ icon: Icon, label, value }) => (
+              <div key={label} className="bg-white/3 border border-white/5 rounded-xl p-2.5 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5">
+                  <Icon className="w-3 h-3 text-white/25" />
+                  <span className="text-[8px] font-black uppercase tracking-wider text-white/30">{label}</span>
+                </div>
+                <span className="text-xs font-bold text-white font-mono truncate">{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Route progress bar */}
+          {route && stopsTotal > 0 && entry.tripState === "in_service" && (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-black uppercase tracking-wider text-white/30">Route Progress</span>
+                <span className="text-[9px] font-mono text-white/40">{stopIdx} of {stopsTotal} stops</span>
+              </div>
+              <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all duration-700"
+                  style={{ width: `${Math.round((stopIdx / stopsTotal) * 100)}%` }}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-0.5">
+                {currentStop && (
+                  <div className="flex flex-col">
+                    <span className="text-[8px] text-white/25 uppercase font-black tracking-wider">Current Stop</span>
+                    <span className="text-[10px] font-bold text-white truncate">{currentStop.name}</span>
+                  </div>
+                )}
+                {nextStop && (
+                  <div className="flex flex-col">
+                    <span className="text-[8px] text-white/25 uppercase font-black tracking-wider">Next Stop</span>
+                    <span className="text-[10px] font-bold text-white/60 truncate">{nextStop.name}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Driver + Route identifiers */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[8px] font-black uppercase tracking-wider text-white/30">Driver</span>
+              <span className="text-[10px] font-bold text-white truncate">{driver?.name ?? entry.driverId ?? "—"}</span>
+              <span className="text-[9px] font-mono text-white/20">{entry.driverId}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[8px] font-black uppercase tracking-wider text-white/30">Route</span>
+              <span className="text-[10px] font-bold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</span>
+              <span className="text-[9px] font-mono text-white/20">{entry.routeId}</span>
+            </div>
+          </div>
+
+          {/* Bus hardware ID */}
+          <div className="flex items-center gap-2 border-t border-white/5 pt-2.5 mt-0.5">
+            <Radio className="w-3 h-3 text-white/20" />
+            <span className="text-[9px] text-white/25 font-black uppercase tracking-wider">Hardware ID</span>
+            <span className="text-[9px] font-mono text-white/50 ml-auto">{entry.busId}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Recent trips analytics section ────────────────────────────────────────────
+function RecentTripsPanel({ routes, buses, drivers }: { routes: any[]; buses: BusData[]; drivers: DriverData[] }) {
+  const trips = useRecentTrips(10);
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="bg-brand-surface/40 border border-white/5 rounded-[1.5rem] overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-label={open ? "Collapse recent trips" : "Expand recent trips"}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <BarChart2 className="w-4 h-4 text-blue-400/70" />
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Route Analytics</span>
+          {trips.length > 0 && (
+            <span className="text-[9px] bg-blue-500/20 text-blue-400 font-black px-2 py-0.5 rounded-full">
+              {trips.length} trips
+            </span>
+          )}
+        </div>
+        {open ? <ChevronUp className="w-3.5 h-3.5 text-white/20" /> : <ChevronDown className="w-3.5 h-3.5 text-white/20" />}
+      </button>
+
+      {open && (
+        <div className="border-t border-white/5 px-3 pb-3 flex flex-col gap-2">
+          {trips.length === 0 ? (
+            <p className="text-white/20 text-xs text-center py-6 font-bold uppercase tracking-widest">No completed trips yet.</p>
+          ) : (
+            trips.map(trip => {
+              const bus = buses.find(b => b.id === trip.busId);
+              const route = routes.find(r => r.id === trip.routeId);
+              const driver = drivers.find(d => d.id === trip.driverId);
+              return (
+                <div key={trip.id} className="bg-brand-dark/40 border border-white/5 rounded-xl p-3 flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white">{route?.name ?? trip.routeId ?? "Unknown Route"}</span>
+                    <span className="text-[9px] text-white/30 font-mono">{timeSince(trip.completedAt)}</span>
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-[9px] text-white/40 flex items-center gap-1">
+                      <Bus className="w-2.5 h-2.5" />{bus?.name ?? trip.busId}
+                    </span>
+                    <span className="text-[9px] text-white/40 flex items-center gap-1">
+                      <User className="w-2.5 h-2.5" />{driver?.name ?? trip.driverId}
+                    </span>
+                    <span className="text-[9px] text-white/40 flex items-center gap-1">
+                      <MapPin className="w-2.5 h-2.5" />{trip.stopCount} stops
+                    </span>
+                    <span className="text-[9px] bg-blue-500/15 text-blue-400 px-1.5 py-0.5 rounded font-black uppercase tracking-wider flex items-center gap-1">
+                      <CheckCircle2 className="w-2.5 h-2.5" />Completed
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -118,7 +389,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
     setEditingBusId(bus.id);
     setEditBusName(bus.name);
     setEditBusRoutes(bus.assignedRoutes ?? []);
-    setEditingDriverId(null); // close any open driver editor
+    setEditingDriverId(null);
   };
 
   const handleSaveBus = async (id: string) => {
@@ -155,7 +426,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
     setEditingDriverId(driver.id);
     setEditDriverName(driver.name);
     setEditDriverBusId(driver.assignedBusId ?? "");
-    setEditingBusId(null); // close any open bus editor
+    setEditingBusId(null);
   };
 
   const handleSaveDriver = async (id: string) => {
@@ -169,9 +440,14 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
     } catch (e: any) { setErrorMsg("Failed to update Operator: " + e.message); }
   };
 
-  // Live drivers = drivers whose ID appears in the active tracking feed
   const liveDriverIds = new Set(activeEntries.map((e) => e.driverId).filter(Boolean));
   const liveDrivers = drivers.filter((d) => liveDriverIds.has(d.id));
+
+  // ── Fleet summary stats ────────────────────────────────────────────────────
+  const inServiceCount  = activeEntries.filter(e => e.tripState === "in_service").length;
+  const atDepotCount    = activeEntries.filter(e => e.tripState === "pre_departure").length;
+  const gpsLostCount    = activeEntries.filter(e => e.tripState === "maintenance").length;
+  const movingCount     = activeEntries.filter(e => e.motionState === "moving").length;
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-5 p-3 md:p-6 animate-slide-up">
@@ -181,40 +457,44 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
         <ErrorBanner message={errorMsg} onDismiss={() => setErrorMsg(null)} />
       )}
 
-      {/* ══ LIVE NOW banner (only when someone is online) ══ */}
-      {liveDrivers.length > 0 && (
-        <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-2xl p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400">
-              Live Now — {liveDrivers.length} Driver{liveDrivers.length !== 1 ? "s" : ""} Online
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {liveDrivers.map((d) => {
-              const entry = activeEntries.find((e) => e.driverId === d.id);
-              if (!entry) return null;
-              const bus = buses.find((b) => b.id === entry.busId);
-              const route = routes.find((r) => r.id === entry.routeId);
-              return (
-                <div
-                  key={d.id}
-                  className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-                    <Wifi className="w-3.5 h-3.5 text-emerald-400" />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-white leading-tight">{d.name}</span>
-                    <span className="text-[9px] text-emerald-400/70 font-mono">
-                      {bus?.name || entry.busId}
-                      {route ? ` · ${route.name}` : ""}
-                      {entry.speed != null ? ` · ${Math.round(entry.speed)} km/h` : ""}
-                    </span>
-                  </div>
+      {/* ══ FLEET COMMAND CENTER ══ */}
+      {activeEntries.length > 0 && (
+        <div className="flex flex-col gap-3">
+          {/* Fleet summary stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { icon: Activity,    label: "In Service",  value: inServiceCount,  color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
+              { icon: TrendingUp,  label: "Moving",      value: movingCount,     color: "text-blue-400",    bg: "bg-blue-500/10",    border: "border-blue-500/20"    },
+              { icon: Clock,       label: "At Depot",    value: atDepotCount,    color: "text-white/40",    bg: "bg-white/5",        border: "border-white/10"       },
+              { icon: AlertTriangle,label:"GPS Issues",  value: gpsLostCount,    color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20"   },
+            ].map(({ icon: Icon, label, value, color, bg, border }) => (
+              <div key={label} className={`${bg} border ${border} rounded-2xl p-3 flex flex-col gap-1.5`}>
+                <div className="flex items-center gap-1.5">
+                  <Icon className={`w-3.5 h-3.5 ${color}`} />
+                  <span className={`text-[9px] font-black uppercase tracking-wider ${color}`}>{label}</span>
                 </div>
-              );
-            })}
+                <span className={`text-2xl font-black ${color}`}>{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Live bus cards */}
+          <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl p-3 flex flex-col gap-2">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400">
+                Live Tracking — {activeEntries.length} Bus{activeEntries.length !== 1 ? "es" : ""} Online
+              </span>
+            </div>
+            {activeEntries.map(entry => (
+              <LiveBusCard
+                key={entry.busId}
+                entry={entry}
+                buses={buses}
+                routes={routes}
+                drivers={drivers}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -250,12 +530,9 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               aria-label="New vehicle display name"
               className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-bold"
             />
-            {/* ── Multi-select route checkboxes ── */}
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-[9px] text-white/30 uppercase tracking-[0.2em] font-black">
-                  Assign Allowed Routes
-                </span>
+                <span className="text-[9px] text-white/30 uppercase tracking-[0.2em] font-black">Assign Allowed Routes</span>
                 {newBusRoutes.length > 0 && (
                   <span className="text-[9px] text-white/40 bg-white/10 font-black px-2 py-0.5 rounded-full">
                     {newBusRoutes.length} selected
@@ -279,12 +556,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                             </svg>
                           )}
                         </div>
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={checked}
-                          onChange={() => toggleRoute(r.id)}
-                        />
+                        <input type="checkbox" className="sr-only" checked={checked} onChange={() => toggleRoute(r.id)} />
                         <span className={`text-sm font-bold ${checked ? "text-white" : "text-white/50"}`}>{r.name}</span>
                       </label>
                     );
@@ -323,6 +595,8 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                   : buses.map((bus) => {
                     const isOnline = activeBusIds.has(bus.id);
                     const isEditing = editingBusId === bus.id;
+                    const liveEntry = activeEntries.find(e => e.busId === bus.id);
+                    const ts = liveEntry ? TRIP_STATE_CONFIG[liveEntry.tripState ?? "pre_departure"] : null;
 
                     return (
                       <div key={bus.id} className="bg-brand-dark/40 border border-white/5 rounded-2xl overflow-hidden">
@@ -336,10 +610,16 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                               <span className="font-bold text-white text-sm truncate">{bus.name}</span>
                               <span className="text-[10px] text-white/30 font-mono tracking-widest">{bus.id}</span>
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                {isOnline && (
-                                  <span className="text-[9px] text-emerald-400 font-black uppercase tracking-widest flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" /> Online
+                                {isOnline && ts ? (
+                                  <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${ts.color}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full inline-block ${ts.color.replace("text-","bg-")} ${liveEntry?.motionState === "moving" ? "animate-pulse" : ""}`} />
+                                    {ts.label}
                                   </span>
+                                ) : (
+                                  <span className="text-[9px] text-white/20 font-black uppercase tracking-widest">Offline</span>
+                                )}
+                                {isOnline && liveEntry?.speed != null && (
+                                  <span className="text-[9px] text-white/30 font-mono">{Math.round(liveEntry.speed)} km/h</span>
                                 )}
                                 {bus.assignedRoutes && bus.assignedRoutes.length > 0 ? (
                                   <span className="text-[9px] text-blue-400 font-bold flex items-center gap-1">
@@ -419,6 +699,9 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               </div>
             )}
           </div>
+
+          {/* Analytics */}
+          <RecentTripsPanel routes={routes} buses={buses} drivers={drivers} />
         </div>
         )}
 
@@ -499,6 +782,8 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                     const assignedBus = buses.find((b) => b.id === driver.assignedBusId);
                     const isDriving = liveDriverIds.has(driver.id);
                     const isEditing = editingDriverId === driver.id;
+                    const liveEntry = activeEntries.find(e => e.driverId === driver.id);
+                    const dTs = liveEntry ? TRIP_STATE_CONFIG[liveEntry.tripState ?? "pre_departure"] : null;
 
                     return (
                       <div
@@ -515,13 +800,16 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                               <span className="font-bold text-white text-sm truncate">{driver.name}</span>
                               <span className="text-[10px] text-white/30 font-mono tracking-widest">{driver.id}</span>
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                {isDriving ? (
-                                  <span className="text-[9px] text-emerald-400 font-black uppercase tracking-widest flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
-                                    Online · Driving
+                                {isDriving && dTs ? (
+                                  <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${dTs.color}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full inline-block ${dTs.color.replace("text-","bg-")} ${liveEntry?.motionState === "moving" ? "animate-pulse" : ""}`} />
+                                    {dTs.label}
                                   </span>
                                 ) : (
                                   <span className="text-[9px] text-white/20 font-black uppercase tracking-widest">Offline</span>
+                                )}
+                                {isDriving && liveEntry?.speed != null && (
+                                  <span className="text-[9px] text-white/30 font-mono">{Math.round(liveEntry.speed)} km/h</span>
                                 )}
                                 {assignedBus && (
                                   <span className="text-[9px] text-blue-400 font-bold flex items-center gap-1">

@@ -22,8 +22,11 @@ interface ActiveBusData {
   lng: number;
   heading: number;
   speed: number;
-  status: string;
+  deviceState: string;   // "online" | "offline"
+  tripState: string;     // "pre_departure" | "in_service" | "completed" | "maintenance"
+  motionState: string;   // "moving" | "stopped" | "uncertain"
   timestamp: number;
+  driverId?: string;
 }
 
 export default function PassengerPage() {
@@ -32,7 +35,7 @@ export default function PassengerPage() {
   const { routes } = useRoutes();
   const [selectedRouteId, setSelectedRouteId] = useState("");
   const [selectedStopId, setSelectedStopId] = useState("");
-  const [activeBuses, setActiveBuses] = useState<{busId: string, routeId: string}[]>([]);
+  const [activeBuses, setActiveBuses] = useState<{ busId: string, routeId: string }[]>([]);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -41,9 +44,12 @@ export default function PassengerPage() {
   const trackingBusIdRef = useRef<string | null>(null);
   const trackingDriverIdRef = useRef<string | null>(null);
   const latestBusDriversRef = useRef<Map<string, string>>(new Map());
+  const [endedMessage, setEndedMessage] = useState(false);
 
-  // Listen to Firebase Realtime Database for active buses
+  // Listen to Firebase Realtime Database for active buses.
   // signInAnonymously ensures auth != null, required by RTDB security rules.
+  // Visibility is now driven purely by tripState (computed by the backend trip
+  // state machine). The old frontend departure-detection hack is gone.
   useEffect(() => {
     signInAnonymously(auth).catch((err) =>
       console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code)
@@ -53,26 +59,32 @@ export default function PassengerPage() {
 
     const unsubscribe = onValue(busesRef, (snapshot) => {
       const data = snapshot.val();
-      const newBuses: {busId: string, routeId: string}[] = [];
+      const newBuses: { busId: string; routeId: string }[] = [];
       const driverMap = new Map<string, string>();
+
       if (data) {
-        Object.values(data as Record<string, ActiveBusData & { driverId?: string }>).forEach((bus) => {
-          const isFresh = Date.now() - bus.timestamp < 300000; 
-          if (bus.routeId && bus.busId && bus.status === "active" && isFresh) {
-            newBuses.push({ busId: bus.busId, routeId: bus.routeId });
-            if (bus.driverId) {
-              driverMap.set(bus.busId, bus.driverId);
-            }
-          }
+        Object.values(data as Record<string, ActiveBusData>).forEach((bus) => {
+          // Safety net: discard entries older than 5 minutes (RTDB cleanup lag).
+          const isFresh = Date.now() - bus.timestamp < 300_000;
+          if (!bus.routeId || !bus.busId || !isFresh) return;
+
+          // ── The single visibility rule ──────────────────────────────────────
+          // A bus is shown ONLY when the backend has confirmed the trip is
+          // actively running. pre_departure = bus is at depot, not yet visible.
+          // maintenance = GPS lost, hide. completed = route done, hide.
+          // motionState (moving/stopped) has no effect on visibility.
+          if (bus.deviceState !== "online" || bus.tripState !== "in_service") return;
+
+          newBuses.push({ busId: bus.busId, routeId: bus.routeId });
+          if (bus.driverId) driverMap.set(bus.busId, bus.driverId);
         });
       }
+
       latestBusDriversRef.current = driverMap;
       setActiveBuses(newBuses);
     });
 
     // Correct Modular SDK cleanup: call returned unsubscribe function directly.
-    // off(busesRef, 'value', handleSnapshot) is Compat SDK syntax and silently
-    // fails here, causing listener accumulation on each navigation.
     return () => unsubscribe();
   }, []);
 
@@ -101,10 +113,10 @@ export default function PassengerPage() {
     }
   }, [activeRoute, selectedStopId]);
 
-  const targetStop = activeRoute?.stops?.find(s => s.id === selectedStopId) || 
+  const targetStop = activeRoute?.stops?.find(s => s.id === selectedStopId) ||
     (activeRoute?.stops && activeRoute.stops.length > 0
-    ? activeRoute.stops[activeRoute.stops.length - 1]
-    : (activeRoute?.waypoints && activeRoute.waypoints.length > 0 ? {
+      ? activeRoute.stops[activeRoute.stops.length - 1]
+      : (activeRoute?.waypoints && activeRoute.waypoints.length > 0 ? {
         id: "terminus",
         lat: activeRoute.waypoints[activeRoute.waypoints.length - 1].lat,
         lng: activeRoute.waypoints[activeRoute.waypoints.length - 1].lng,
@@ -129,12 +141,14 @@ export default function PassengerPage() {
     } else if (trackingBusIdRef.current) {
       const finishedBusId = trackingBusIdRef.current;
       const finishedDriverId = trackingDriverIdRef.current;
+      setEndedMessage(true);
       timerId = setTimeout(() => {
-         setFeedbackBusId(finishedBusId);
-         setFeedbackDriverId(finishedDriverId || "");
-         setShowFeedbackModal(true);
-         trackingBusIdRef.current = null;
-         trackingDriverIdRef.current = null;
+        setFeedbackBusId(finishedBusId);
+        setFeedbackDriverId(finishedDriverId || "");
+        setShowFeedbackModal(true);
+        trackingBusIdRef.current = null;
+        trackingDriverIdRef.current = null;
+        setEndedMessage(false);
       }, 10000);
     }
 
@@ -203,7 +217,7 @@ export default function PassengerPage() {
               {/* Messaging FAB — TOP RIGHT */}
               {activeRouteIds.includes(activeRoute.id) && !isMessagingOpen && (
                 <div className="absolute top-4 right-4 z-50">
-                  <button 
+                  <button
                     onClick={handleOpenMessaging}
                     className="w-12 h-12 rounded-full bg-brand-surface/90 backdrop-blur-xl border border-white/10 text-white flex items-center justify-center shadow-2xl hover:scale-105 active:scale-95 transition-all relative"
                     aria-label="Open live comms"
@@ -238,6 +252,18 @@ export default function PassengerPage() {
                 route={activeRoute}
               />
             </>
+          ) : endedMessage ? (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-brand-dark px-10 text-center animate-fade-in">
+              <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mb-6">
+                <MapIcon className="w-8 h-8 text-red-500" />
+              </div>
+              <p className="text-white text-lg font-bold tracking-tight mb-2">Route Ended</p>
+              <p className="text-white/60 text-sm mb-6">The route has ended and the bus is offline.</p>
+              <div className="flex items-center gap-2 text-emerald-400">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <p className="text-xs font-bold uppercase tracking-[0.15em]">Showing the next bus...</p>
+              </div>
+            </div>
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center bg-brand-dark px-10 text-center">
               <Loader2 className="w-10 h-10 text-white/20 animate-spin mb-6" />
@@ -268,9 +294,8 @@ export default function PassengerPage() {
         <div className="flex items-center justify-around px-4 h-full max-w-md mx-auto">
           <button
             onClick={() => setActiveTab("map")}
-            className={`flex flex-col items-center justify-center py-2 flex-1 rounded-2xl transition-all duration-300 ${
-              activeTab === "map" ? "text-white bg-white/5 transform scale-105" : "text-white/30 hover:text-white/60"
-            }`}
+            className={`flex flex-col items-center justify-center py-2 flex-1 rounded-2xl transition-all duration-300 ${activeTab === "map" ? "text-white bg-white/5 transform scale-105" : "text-white/30 hover:text-white/60"
+              }`}
           >
             <MapIcon className={`w-5 h-5 mb-1 ${activeTab === "map" ? "text-white" : "opacity-40"}`} />
             <span className="text-[9px] font-black tracking-[0.15em] uppercase">Live Map</span>
@@ -278,9 +303,8 @@ export default function PassengerPage() {
 
           <button
             onClick={() => setActiveTab("account")}
-            className={`flex flex-col items-center justify-center py-2 flex-1 rounded-2xl transition-all duration-300 ${
-              activeTab === "account" ? "text-white bg-white/5 transform scale-105" : "text-white/30 hover:text-white/60"
-            }`}
+            className={`flex flex-col items-center justify-center py-2 flex-1 rounded-2xl transition-all duration-300 ${activeTab === "account" ? "text-white bg-white/5 transform scale-105" : "text-white/30 hover:text-white/60"
+              }`}
           >
             <User className={`w-5 h-5 mb-1 ${activeTab === "account" ? "text-white" : "opacity-40"}`} />
             <span className="text-[9px] font-black tracking-[0.15em] uppercase">Account</span>
