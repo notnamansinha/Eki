@@ -1,31 +1,8 @@
-#include "secrets.h"
 #include <Arduino.h>
-#include <WiFi.h>
 #include <TinyGPSPlus.h>
 
 TinyGPSPlus gps;
 #define gpsSerial Serial2
-
-void connectWiFi() {
-    if (WiFi.status() == WL_CONNECTED) return;
-    Serial.printf("\n[WiFi] Connecting to %s...\n", WIFI_SSID);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    
-    unsigned long waitStart = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - waitStart < 10000) {
-        // Feed GPS while waiting to prevent buffer overflow
-        while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
-        delay(200);
-        Serial.print(".");
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.printf("\n[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
-    } else {
-        Serial.println("\n[WiFi] Connection failed.");
-    }
-}
 
 void setup() {
     Serial.begin(115200);
@@ -33,21 +10,15 @@ void setup() {
     delay(1000);
 
     Serial.println("\n========================================");
-    Serial.println("  Eki GNSS Diagnostic Mode");
+    Serial.println("  Eki GNSS Diagnostic Mode (No WiFi)");
     Serial.println("========================================\n");
 
-    connectWiFi();
     Serial.println("[GPS] Waiting for satellite fix...");
 }
 
 unsigned long lastPrint = 0;
 
 void loop() {
-    // Reconnect WiFi if dropped
-    if (WiFi.status() != WL_CONNECTED) {
-        connectWiFi();
-    }
-
     // Parse incoming NMEA sentences
     while (gpsSerial.available() > 0) {
         gps.encode(gpsSerial.read());
