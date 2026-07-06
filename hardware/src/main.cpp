@@ -173,7 +173,7 @@ bool fetchCustomToken() {
         
         const char* token = respDoc["token"];
         if (token) {
-            Firebase.setCustomToken(&fbConfig, token);
+            fbConfig.signer.tokens.legacy_token = token;
             lastTokenFetch = millis();
             http.end();
             Serial.println("[Auth] Token obtained.");
@@ -334,13 +334,15 @@ void updateLastSentState() {
 // Old entries are overwritten when the buffer is full (circular).
 void bufferCurrentFix() {
     if (!gps.location.isValid()) return;
-    gpsRingBuffer[ringHead].lat = gps.location.lat();
-    gpsRingBuffer[ringHead].lng = gps.location.lng();
-    gpsRingBuffer[ringHead].speed = getFilteredSpeed();
-    gpsRingBuffer[ringHead].heading = gps.course.deg();
-    gpsRingBuffer[ringHead].satellites = gps.satellites.value();
-    gpsRingBuffer[ringHead].hdop = gps.hdop.isValid() ? gps.hdop.hdop() : 99.9;
-    gpsRingBuffer[ringHead].valid = true;
+    gpsRingBuffer[ringHead] = BufferedFix{
+        gps.location.lat(),
+        gps.location.lng(),
+        getFilteredSpeed(),
+        gps.course.deg(),
+        gps.satellites.value(),
+        gps.hdop.isValid() ? gps.hdop.hdop() : 99.9,
+        true
+    };
     ringHead = (ringHead + 1) % GPS_BUFFER_SIZE;
     if (ringCount < GPS_BUFFER_SIZE) ringCount++;
     Serial.printf("[GPS] Fix buffered (%u in queue).\n", ringCount);

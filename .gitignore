@@ -88,3 +88,4 @@ backend/src/patch-stops.ts
 frontend/tsconfig.tsbuildinfo
 
 .agents/
+.git/
