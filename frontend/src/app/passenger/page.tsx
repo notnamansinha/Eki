@@ -12,6 +12,7 @@ import { rtdb, auth } from "@/lib/firebase";
 import { ref, onValue } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";
 import { buzzController } from "@/lib/audioUtils";
+import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 
 type Tab = "map" | "account";
 
@@ -266,9 +267,9 @@ export default function PassengerPage() {
             </div>
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center bg-brand-dark px-10 text-center">
-              <Loader2 className="w-10 h-10 text-white/20 animate-spin mb-6" />
-              <p className="text-white/40 text-sm font-bold uppercase tracking-[0.2em]">Waiting for a driver to go live…</p>
-              <p className="text-white/20 text-xs mt-2">Updates automatically when a driver goes online</p>
+              <p className="text-white/40 text-sm font-bold uppercase tracking-[0.2em]">
+                The Bus will start at {PASSENGER_BUS_START_TIME}
+              </p>
             </div>
           )}
         </div>
@@ -298,7 +299,7 @@ export default function PassengerPage() {
               }`}
           >
             <MapIcon className={`w-5 h-5 mb-1 ${activeTab === "map" ? "text-white" : "opacity-40"}`} />
-            <span className="text-[9px] font-black tracking-[0.15em] uppercase">Live Map</span>
+            <span className="text-[9px] font-black tracking-[0.15em] uppercase">Map</span>
           </button>
 
           <button
