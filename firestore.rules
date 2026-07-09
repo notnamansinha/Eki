@@ -107,7 +107,7 @@ service cloud.firestore {
         (request.resource.data.driverId == null || request.resource.data.driverId is string) &&
         (request.resource.data.rating == null ||
           (request.resource.data.rating is number &&
-            request.resource.data.rating >= 0 &&
+            request.resource.data.rating >= 1 &&
             request.resource.data.rating <= 5)) &&
         request.resource.data.comment is string &&
         request.resource.data.comment.size() <= 2000 &&

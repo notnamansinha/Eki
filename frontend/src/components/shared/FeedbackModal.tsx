@@ -49,7 +49,8 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [error, setError] = useState("");
 
-  const cooldownStorageKey = `feedbackCooldown:${userId}`;
+  const resolvedUserId = auth.currentUser?.uid ?? userId;
+  const cooldownStorageKey = `feedbackCooldown:${resolvedUserId}`;
   const wordCount = countWords(comment);
 
   useEffect(() => {
@@ -103,7 +104,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           type: busId ? "ride" : "general",
           busId: busId || null,
           driverId: driverId || null,
-          rating: busId ? rating : null,
+          rating: busId && rating > 0 ? rating : null,
           comment: comment.trim(),
           timestamp: serverTimestamp(),
           status: "new"
@@ -115,7 +116,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
         }, { merge: true });
       });
 
-      localStorage.setItem(cooldownStorageKey, Date.now().toString());
+      localStorage.setItem(`feedbackCooldown:${currentUserId}`, Date.now().toString());
       setCooldownRemaining(FEEDBACK_COOLDOWN_MS);
       setSubmitted(true);
       setTimeout(() => {

@@ -99,7 +99,7 @@ export default function AccountTab() {
         )}
         
         {/* Version Info */}
-        <p className="text-center text-[10px] text-white/10 font-bold uppercase tracking-widest pb-12">BUSTRACK  V2.01 Live</p>
+        <p className="text-center text-[10px] text-white/10 font-bold uppercase tracking-widest pb-12">BusTrack v2.1.0 • Live</p>
       </div>
     </div>
   );

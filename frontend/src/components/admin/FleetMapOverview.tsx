@@ -143,6 +143,14 @@ function FleetMapOverviewInner() {
   // Filter live buses to only show those registered in Firestore `buses` collection.
   // useBuses() uses onSnapshot so this updates the instant a bus is deleted.
   const registeredBusIds = new Set(registeredBuses.map((b) => b.id));
+
+  useEffect(() => {
+    if (selectedBusId && !registeredBusIds.has(selectedBusId)) {
+      setSelectedBusId(null);
+      setIsPanelOpen(false);
+    }
+  }, [selectedBusId, registeredBuses]);
+
   const visibleBuses = new Map(
     Array.from(buses.entries()).filter(([busId]) => registeredBusIds.has(busId))
   );
