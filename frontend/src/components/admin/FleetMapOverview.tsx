@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRoutes } from "@/hooks/useRoutes";
+import { useBuses } from "@/hooks/useBuses";
 import DirectionsPanel from "@/components/shared/DirectionsPanel";
 let L: any;
 if (typeof window !== "undefined") {
@@ -91,6 +92,7 @@ function MapClickHandler({ onClick }: { onClick?: () => void }) {
 
 function FleetMapOverviewInner() {
   const { routes } = useRoutes();
+  const { buses: registeredBuses } = useBuses();
   const [buses, setBuses] = useState<Map<string, BusLocation>>(new Map());
 
   useEffect(() => {
@@ -138,6 +140,13 @@ function FleetMapOverviewInner() {
     }
   }, [buses, selectedBusId, activeRouteId, routes, predefinedRoute.length]);
 
+  // Filter live buses to only show those registered in Firestore `buses` collection.
+  // useBuses() uses onSnapshot so this updates the instant a bus is deleted.
+  const registeredBusIds = new Set(registeredBuses.map((b) => b.id));
+  const visibleBuses = new Map(
+    Array.from(buses.entries()).filter(([busId]) => registeredBusIds.has(busId))
+  );
+
   return (
     <div className="relative w-full h-full">
       {typeof window !== 'undefined' && (
@@ -162,7 +171,7 @@ function FleetMapOverviewInner() {
             />
           )}
 
-          {Array.from(buses.values()).map((bus) => (
+          {Array.from(visibleBuses.values()).map((bus) => (
             <Marker 
               key={bus.busId} 
               position={[bus.lat, bus.lng]}

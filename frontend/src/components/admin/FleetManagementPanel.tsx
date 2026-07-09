@@ -6,7 +6,7 @@ import { useDrivers, DriverData } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { doc, setDoc, deleteDoc, collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
 import { db, rtdb } from "@/lib/firebase";
-import { ref, onValue } from "firebase/database";
+import { ref, onValue, get, remove } from "firebase/database";
 import {
   Bus, User, Trash2, Plus, ArrowRight,
   ChevronDown, ChevronUp, Wifi, Pencil, Check, X, AlertCircle,
@@ -328,7 +328,18 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   const { drivers, loading: driversLoading } = useDrivers();
   const { routes } = useRoutes();
   const activeEntries = useActiveBuses();
-  const activeBusIds = new Set(activeEntries.map((e) => e.busId));
+  // Only show buses that are registered in the Firestore `buses` collection.
+  // This acts as a defense-in-depth guard: even if RTDB cleanup is delayed
+  // or a stale entry exists, deleted buses will never render in the UI.
+  //
+  // IMPORTANT: only apply the filter once `busesLoading` is false.
+  // On initial render `buses` is [] (Firestore hasn't responded yet), so
+  // filtering immediately would produce an empty Set and wipe out all stats.
+  const registeredBusIds = new Set(buses.map((b) => b.id));
+  const filteredActiveEntries = busesLoading
+    ? activeEntries                                          // buses not ready yet — show all
+    : activeEntries.filter((e) => registeredBusIds.has(e.busId)); // buses loaded — filter to registered only
+  const activeBusIds = new Set(filteredActiveEntries.map((e) => e.busId));
 
   // ── Error state ───────────────────────────────────────────────────────────
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -381,8 +392,41 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
 
   const handleDeleteBus = async (id: string) => {
     if (!confirm("Delete this vehicle? This cannot be undone.")) return;
-    try { await deleteDoc(doc(db, "buses", id)); }
-    catch (e: any) { setErrorMsg("Failed to delete Vehicle: " + e.message); }
+    try {
+      // 1. Delete from Firestore buses collection
+      await deleteDoc(doc(db, "buses", id));
+
+      // 2. Clean up all RTDB /activeBuses entries for this bus.
+      //    Keys follow the pattern {busId}_{routeId} so we scan all and
+      //    remove any that start with the deleted bus ID.
+      try {
+        const activeBusesRef = ref(rtdb, "activeBuses");
+        const snapshot = await get(activeBusesRef);
+        if (snapshot.exists()) {
+          const data = snapshot.val() as Record<string, unknown>;
+          const keysToRemove = Object.keys(data).filter(
+            (key) => key === id || key.startsWith(`${id}_`)
+          );
+          await Promise.all(
+            keysToRemove.map((key) => remove(ref(rtdb, `activeBuses/${key}`)))
+          );
+          if (keysToRemove.length > 0) {
+            console.log(`[Delete] Removed ${keysToRemove.length} RTDB activeBuses entries for ${id}`);
+          }
+        }
+      } catch (rtdbErr: any) {
+        console.warn(`[Delete] Failed to clean RTDB for ${id}:`, rtdbErr.message);
+      }
+
+      // 3. Remove the persistent bus_locations document (best-effort)
+      try {
+        await deleteDoc(doc(db, "bus_locations", id));
+      } catch (locErr: any) {
+        console.warn(`[Delete] Failed to clean bus_locations for ${id}:`, locErr.message);
+      }
+    } catch (e: any) {
+      setErrorMsg("Failed to delete Vehicle: " + e.message);
+    }
   };
 
   const startEditBus = (bus: BusData) => {
@@ -440,14 +484,14 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
     } catch (e: any) { setErrorMsg("Failed to update Operator: " + e.message); }
   };
 
-  const liveDriverIds = new Set(activeEntries.map((e) => e.driverId).filter(Boolean));
+  const liveDriverIds = new Set(filteredActiveEntries.map((e) => e.driverId).filter(Boolean));
   const liveDrivers = drivers.filter((d) => liveDriverIds.has(d.id));
 
   // ── Fleet summary stats ────────────────────────────────────────────────────
-  const inServiceCount  = activeEntries.filter(e => e.tripState === "in_service").length;
-  const atDepotCount    = activeEntries.filter(e => e.tripState === "pre_departure").length;
-  const gpsLostCount    = activeEntries.filter(e => e.tripState === "maintenance").length;
-  const movingCount     = activeEntries.filter(e => e.motionState === "moving").length;
+  const inServiceCount  = filteredActiveEntries.filter(e => e.tripState === "in_service").length;
+  const atDepotCount    = filteredActiveEntries.filter(e => e.tripState === "pre_departure").length;
+  const gpsLostCount    = filteredActiveEntries.filter(e => e.tripState === "maintenance").length;
+  const movingCount     = filteredActiveEntries.filter(e => e.motionState === "moving").length;
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-5 p-3 md:p-6 animate-slide-up">
@@ -457,36 +501,37 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
         <ErrorBanner message={errorMsg} onDismiss={() => setErrorMsg(null)} />
       )}
 
-      {/* ══ FLEET COMMAND CENTER ══ */}
-      {activeEntries.length > 0 && (
-        <div className="flex flex-col gap-3">
-          {/* Fleet summary stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {[
-              { icon: Activity,    label: "In Service",  value: inServiceCount,  color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-              { icon: TrendingUp,  label: "Moving",      value: movingCount,     color: "text-blue-400",    bg: "bg-blue-500/10",    border: "border-blue-500/20"    },
-              { icon: Clock,       label: "At Depot",    value: atDepotCount,    color: "text-white/40",    bg: "bg-white/5",        border: "border-white/10"       },
-              { icon: AlertTriangle,label:"GPS Issues",  value: gpsLostCount,    color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20"   },
-            ].map(({ icon: Icon, label, value, color, bg, border }) => (
-              <div key={label} className={`${bg} border ${border} rounded-2xl p-3 flex flex-col gap-1.5`}>
-                <div className="flex items-center gap-1.5">
-                  <Icon className={`w-3.5 h-3.5 ${color}`} />
-                  <span className={`text-[9px] font-black uppercase tracking-wider ${color}`}>{label}</span>
-                </div>
-                <span className={`text-2xl font-black ${color}`}>{value}</span>
-              </div>
-            ))}
-          </div>
 
-          {/* Live bus cards */}
-          <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl p-3 flex flex-col gap-2">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400">
-                Live Tracking — {activeEntries.length} Bus{activeEntries.length !== 1 ? "es" : ""} Online
-              </span>
+      {/* ══ FLEET COMMAND CENTER — always visible, driven by live Firebase data ══ */}
+      <div className="flex flex-col gap-3">
+        {/* Fleet summary stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {[
+            { icon: Activity,     label: "In Service",  value: inServiceCount,  color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
+            { icon: TrendingUp,   label: "Moving",      value: movingCount,     color: "text-blue-400",    bg: "bg-blue-500/10",    border: "border-blue-500/20"    },
+            { icon: Clock,        label: "At Depot",    value: atDepotCount,    color: "text-white/40",    bg: "bg-white/5",        border: "border-white/10"       },
+            { icon: AlertTriangle,label: "GPS Issues",  value: gpsLostCount,    color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20"   },
+          ].map(({ icon: Icon, label, value, color, bg, border }) => (
+            <div key={label} className={`${bg} border ${border} rounded-2xl p-3 flex flex-col gap-1.5`}>
+              <div className="flex items-center gap-1.5">
+                <Icon className={`w-3.5 h-3.5 ${color}`} />
+                <span className={`text-[9px] font-black uppercase tracking-wider ${color}`}>{label}</span>
+              </div>
+              <span className={`text-2xl font-black ${color}`}>{value}</span>
             </div>
-            {activeEntries.map(entry => (
+          ))}
+        </div>
+
+        {/* Live bus cards */}
+        <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl p-3 flex flex-col gap-2">
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${filteredActiveEntries.length > 0 ? "bg-emerald-400 animate-pulse" : "bg-white/20"}`} />
+            <span className={`text-[10px] font-black uppercase tracking-[0.25em] ${filteredActiveEntries.length > 0 ? "text-emerald-400" : "text-white/30"}`}>
+              Live Tracking — {busesLoading ? "…" : `${filteredActiveEntries.length} Bus${filteredActiveEntries.length !== 1 ? "es" : ""} Online`}
+            </span>
+          </div>
+          {filteredActiveEntries.length > 0 ? (
+            filteredActiveEntries.map(entry => (
               <LiveBusCard
                 key={entry.busId}
                 entry={entry}
@@ -494,10 +539,15 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                 routes={routes}
                 drivers={drivers}
               />
-            ))}
-          </div>
+            ))
+          ) : (
+            <p className="text-white/20 text-xs text-center py-4 font-bold uppercase tracking-widest">
+              {busesLoading ? "Loading…" : "No buses currently active"}
+            </p>
+          )}
         </div>
-      )}
+      </div>
+
 
       {/* ══ CONDITIONAL TABS: Vehicles OR Drivers ══ */}
       <div className="flex flex-col gap-5 w-full max-w-3xl mx-auto">
