@@ -1,4 +1,3 @@
-#include "esp_wpa2.h"
 #include "secrets.h"
 #include <Arduino.h>
 #include <Firebase_ESP_Client.h>
@@ -6,6 +5,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <TinyGPSPlus.h>
+#include <WiFiClientSecure.h>
 
 // ── Bus Identity ──────────────────────────────────────────────────
 #define BUS_ID     "bus_01"
@@ -126,22 +126,8 @@ void connectWiFi() {
     WiFi.disconnect(true);
     WiFi.mode(WIFI_STA);
 
-#if defined(WIFI_USERNAME)
-    if (strlen(WIFI_USERNAME) > 0) {
-        Serial.printf("[WiFi] Connecting to WPA2 Enterprise AP %s as %s...\n", WIFI_SSID, WIFI_USERNAME);
-        esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)WIFI_USERNAME, strlen(WIFI_USERNAME));
-        esp_wifi_sta_wpa2_ent_set_username((uint8_t *)WIFI_USERNAME, strlen(WIFI_USERNAME));
-        esp_wifi_sta_wpa2_ent_set_password((uint8_t *)WIFI_PASS, strlen(WIFI_PASS));
-        esp_wifi_sta_wpa2_ent_enable();
-        WiFi.begin(WIFI_SSID);
-    } else {
-        Serial.printf("[WiFi] Connecting to WPA2 Personal AP %s...\n", WIFI_SSID);
-        WiFi.begin(WIFI_SSID, WIFI_PASS);
-    }
-#else
     Serial.printf("[WiFi] Connecting to WPA2 Personal AP %s...\n", WIFI_SSID);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
-#endif
 
     // Wait up to 10s, feeding GPS serial throughout to prevent buffer overflow
     unsigned long waitStart = millis();
@@ -155,9 +141,6 @@ void connectWiFi() {
     } else {
         Serial.println("[WiFi] Attempt failed. Will retry in 5s.");
     }
-}
-
-#include <WiFiClientSecure.h>
 
 bool fetchCustomToken() {
     if (WiFi.status() != WL_CONNECTED) return false;
@@ -356,7 +339,7 @@ void bufferCurrentFix() {
         gps.location.lng(),
         getFilteredSpeed(),
         gps.course.deg(),
-        gps.satellites.value(),
+        (int)gps.satellites.value(),
         gps.hdop.isValid() ? gps.hdop.hdop() : 99.9,
         true
     };
