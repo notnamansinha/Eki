@@ -43,44 +43,6 @@ export function interpolatePosition(
   };
 }
 
-// Projection-based distance from a line segment
-function distanceToSegmentMeters(
-  p: { lat: number; lng: number },
-  v: { lat: number; lng: number },
-  w: { lat: number; lng: number }
-): number {
-  // Approximate flat earth math for small scale distances
-  const l2 = Math.pow(w.lat - v.lat, 2) + Math.pow(w.lng - v.lng, 2);
-  if (l2 === 0) return getDistanceMeters(p, v);
-
-  // t parameterized projection
-  let t = ((p.lat - v.lat) * (w.lat - v.lat) + (p.lng - v.lng) * (w.lng - v.lng)) / l2;
-  t = Math.max(0, Math.min(1, t));
-
-  const projection = {
-    lat: v.lat + t * (w.lat - v.lat),
-    lng: v.lng + t * (w.lng - v.lng),
-  };
-
-  return getDistanceMeters(p, projection);
-}
-
-export function distanceFromPolyline(
-  position: { lat: number; lng: number },
-  polyline: { lat: number; lng: number }[]
-): number {
-  if (polyline.length === 0) return Infinity;
-  if (polyline.length === 1) return getDistanceMeters(position, polyline[0]);
-
-  let minDistance = Infinity;
-
-  for (let i = 0; i < polyline.length - 1; i++) {
-    const d = distanceToSegmentMeters(position, polyline[i], polyline[i + 1]);
-    if (d < minDistance) minDistance = d;
-  }
-
-  return minDistance;
-}
 
 export function formatDistance(meters: number): string {
   if (meters < 1000) return `${Math.round(meters)} m`;

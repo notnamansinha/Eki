@@ -46,11 +46,9 @@
 #define RTDB_INITIAL_BACKOFF_MS     2000
 #define RTDB_MAX_BACKOFF_MS        60000   // 1 min cap
 
-// ── GPS ring buffer for WiFi outage periods ───────────────────────
-// Stores the last N fixes while WiFi is down. On reconnect, sends only the
+// ── GPS buffer for WiFi outage periods ───────────────────────
+// Stores the last fix while WiFi is down. On reconnect, sends only the
 // most-recent fix (avoids stale teleport artifact on passenger map).
-// Keeping N=5 catches brief tunnel exits without wasting heap.
-#define GPS_BUFFER_SIZE             5
 
 // ── Objects ───────────────────────────────────────────────────────
 TinyGPSPlus gps;
@@ -83,8 +81,8 @@ static bool fixLostStatusWritten = false; // Only write maintenance status once 
 unsigned long lastTokenFetch = 0;
 const unsigned long TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 min (before 60-min expiry)
 
-// ── GPS ring buffer for WiFi outage periods ───────────────────────
-// On extended WiFi outage, we overwrite old entries (circular). On reconnect,
+// ── GPS buffer for WiFi outage periods ───────────────────────
+// On extended WiFi outage, we overwrite the old entry. On reconnect,
 // only the latest (most recent) fix is sent — prevents marker teleporting.
 struct BufferedFix {
     double lat, lng, speed, heading;
@@ -92,9 +90,7 @@ struct BufferedFix {
     double hdop;
     bool valid;
 };
-static BufferedFix gpsRingBuffer[GPS_BUFFER_SIZE];
-static uint8_t ringHead = 0;        // Points to next write slot
-static uint8_t ringCount = 0;       // How many valid entries are buffered
+static BufferedFix lastBufferedFix = {0, 0, 0, 0, 0, 0, false};
 
 // ── WiFi reconnect cooldown ──────────────────────────────────────
 static unsigned long lastWifiAttemptTime = 0;
@@ -334,12 +330,12 @@ void updateLastSentState() {
     wasMoving = getFilteredSpeed() > STOP_SPEED_KMH;
 }
 
-// ── Push current GPS fix into the ring buffer ─────────────────────
+// ── Push current GPS fix into the buffer ─────────────────────
 // Called when WiFi is down and a location update is due.
-// Old entries are overwritten when the buffer is full (circular).
+// Old entries are overwritten.
 void bufferCurrentFix() {
     if (!gps.location.isValid()) return;
-    gpsRingBuffer[ringHead] = BufferedFix{
+    lastBufferedFix = BufferedFix{
         gps.location.lat(),
         gps.location.lng(),
         getFilteredSpeed(),
@@ -348,37 +344,29 @@ void bufferCurrentFix() {
         gps.hdop.isValid() ? gps.hdop.hdop() : 99.9,
         true
     };
-    ringHead = (ringHead + 1) % GPS_BUFFER_SIZE;
-    if (ringCount < GPS_BUFFER_SIZE) ringCount++;
-    Serial.printf("[GPS] Fix buffered (%u in queue).\n", ringCount);
+    Serial.println("[GPS] Fix buffered (1 in queue).");
 }
 
-// ── Flush the ring buffer — send only the newest fix ──────────────
+// ── Flush the buffer — send only the newest fix ──────────────
 // Discards intermediate buffered fixes to avoid marker teleporting on the
 // passenger map. Only the most-recently-recorded position is transmitted.
 void flushBufferedFix() {
-    if (ringCount == 0) return;
+    if (!lastBufferedFix.valid) return;
 
-    // Most recent entry is at (ringHead - 1 + GPS_BUFFER_SIZE) % GPS_BUFFER_SIZE
-    uint8_t latestIdx = (ringHead - 1 + GPS_BUFFER_SIZE) % GPS_BUFFER_SIZE;
-    BufferedFix& fix = gpsRingBuffer[latestIdx];
-
-    if (!fix.valid) return;
-
-    Serial.printf("[GPS] Flushing buffered fix (discarded %u stale entries).\n", ringCount - 1);
+    Serial.println("[GPS] Flushing buffered fix.");
 
     String path = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID;
     FirebaseJson payload;
-    payload.set("lat",         fix.lat);
-    payload.set("lng",         fix.lng);
-    payload.set("heading",     fix.heading);
-    payload.set("speed",       fix.speed);
+    payload.set("lat",         lastBufferedFix.lat);
+    payload.set("lng",         lastBufferedFix.lng);
+    payload.set("heading",     lastBufferedFix.heading);
+    payload.set("speed",       lastBufferedFix.speed);
     payload.set("deviceState", "online");
-    payload.set("motionState", getMotionState(fix.speed));
+    payload.set("motionState", getMotionState(lastBufferedFix.speed));
     payload.set("timestamp/.sv", "timestamp");
-    payload.set("satellites",  fix.satellites);
-    payload.set("hdop",        fix.hdop);
-    payload.set("lowAccuracy", fix.hdop > HDOP_LOW_ACCURACY_THRESHOLD);
+    payload.set("satellites",  lastBufferedFix.satellites);
+    payload.set("hdop",        lastBufferedFix.hdop);
+    payload.set("lowAccuracy", lastBufferedFix.hdop > HDOP_LOW_ACCURACY_THRESHOLD);
 
     if (Firebase.RTDB.updateNode(&fbData, path.c_str(), &payload)) {
         Serial.println("[RTDB] Buffered fix sent.");
@@ -389,9 +377,8 @@ void flushBufferedFix() {
         // Don't clear buffer on failure — it will be retried on next successful window
     }
 
-    // Clear the ring buffer regardless — data is now stale
-    ringCount = 0;
-    ringHead = 0;
+    // Clear the buffer regardless — data is now stale
+    lastBufferedFix.valid = false;
 }
 
 // ── Write static trip metadata once per session ───────────────────
@@ -583,7 +570,7 @@ void loop() {
         // Only attempt Firebase writes if we have successfully obtained an auth token
         if (firebaseReady && lastTokenFetch > 0) {
             // Flush buffered GPS fixes if WiFi just came back
-            if (WiFi.status() == WL_CONNECTED && ringCount > 0) {
+            if (WiFi.status() == WL_CONNECTED && lastBufferedFix.valid) {
                 flushBufferedFix();
                 updateLastSentState();
             }

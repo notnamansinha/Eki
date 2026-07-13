@@ -7,7 +7,6 @@ const router = Router();
 import {
   decodePolyline,
   encodePolyline,
-  encodeValue,
   closestPolylineIndex,
 } from "../lib/polylineUtils";
 
