@@ -7,6 +7,7 @@ interface BusTripContext {
   stops: RouteStop[];
   tripState: TripState;
   currentStopIndex: number;
+  latestLocation?: { lat: number; lng: number };
 }
 
 const busTripContext = new Map<string, BusTripContext>();
@@ -14,8 +15,13 @@ const STOP_GEOFENCE_M = 20;
 
 // Removed duplicated haversine math.
 
-async function loadRouteContext(busId: string, routeId: string) {
-  if (busTripContext.has(busId)) return;
+async function loadRouteContext(busId: string, routeId: string, location?: { lat: number; lng: number }) {
+  if (busTripContext.has(busId)) {
+    if (location) {
+      busTripContext.get(busId)!.latestLocation = location;
+    }
+    return;
+  }
   try {
     const routeDoc = await db.collection("routes").doc(routeId).get();
     const routeData = routeDoc.data();
@@ -33,7 +39,12 @@ async function loadRouteContext(busId: string, routeId: string) {
       recoveredStopIndex = typeof busData.currentStopIndex === "number" ? busData.currentStopIndex : 0;
     }
 
-    busTripContext.set(busId, { stops, tripState: recoveredTripState, currentStopIndex: recoveredStopIndex });
+    let latestLocation = location;
+    if (!latestLocation && busData && busData.lat != null && busData.lng != null) {
+      latestLocation = { lat: busData.lat, lng: busData.lng };
+    }
+
+    busTripContext.set(busId, { stops, tripState: recoveredTripState, currentStopIndex: recoveredStopIndex, latestLocation });
     console.log(`[TripState] Bus ${busId} context loaded — ${stops.length} stops, state: ${recoveredTripState}`);
 
     if (routeData?.waypoints && routeData.waypoints.length >= 2) {
@@ -41,7 +52,7 @@ async function loadRouteContext(busId: string, routeId: string) {
       const destination = { lat: lastWp.lat, lng: lastWp.lng };
       // Pass a dummy getLocation function that fetches the latest location from busTripContext if needed,
       // or just rely on RTDB coordinates.
-      startETATracking(busId, routeId, () => null, () => destination, parseInt(process.env.ETA_INTERVAL_MS || "180000", 10));
+      startETATracking(busId, routeId, () => busTripContext.get(busId)?.latestLocation || null, () => destination, parseInt(process.env.ETA_INTERVAL_MS || "180000", 10));
     }
   } catch (err) {
     console.error(`[TripState] Failed to load route context for bus ${busId}:`, err);
@@ -97,14 +108,17 @@ export function startTripStateEngine() {
   busesRef.on("child_added", async (snapshot) => {
     const data = snapshot.val();
     if (!data || !data.busId || !data.routeId) return;
-    await loadRouteContext(data.busId, data.routeId);
+    const loc = data.lat != null && data.lng != null ? { lat: data.lat, lng: data.lng } : undefined;
+    await loadRouteContext(data.busId, data.routeId, loc);
   });
 
   busesRef.on("child_changed", async (snapshot) => {
     const data = snapshot.val();
     if (!data || !data.busId || !data.routeId || data.lat == null || data.lng == null) return;
 
-    await loadRouteContext(data.busId, data.routeId);
+    const loc = { lat: data.lat, lng: data.lng };
+
+    await loadRouteContext(data.busId, data.routeId, loc);
 
     // If driver marked offline via frontend, handle cleanup
     if (data.status === "offline") {
