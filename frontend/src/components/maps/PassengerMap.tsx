@@ -8,7 +8,6 @@ import { getDistanceMeters } from "@/lib/mapUtils";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";
-import { buzzController } from "@/lib/audioUtils";
 import { LocateFixed, WifiOff } from "lucide-react";
 import { DEFAULT_CENTER, MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 
@@ -243,7 +242,6 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
             const dwellAtTarget = stopEntryTimeRef.current[targetStop.id];
             const isAtTarget = dwellAtTarget && (now - dwellAtTarget >= DWELL_GATE_MS);
             if (busDist < 200 && isAtTarget && lastBuzzedStopIdRef.current !== targetStop.id) {
-              buzzController.playBuzz([300, 150, 300, 150, 500]);
               lastBuzzedStopIdRef.current = targetStop.id;
             }
           }

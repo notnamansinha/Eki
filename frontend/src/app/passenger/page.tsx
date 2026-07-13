@@ -11,7 +11,6 @@ import { Map as MapIcon, User, Loader2, Radio } from "lucide-react";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, onValue } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";
-import { buzzController } from "@/lib/audioUtils";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 
 type Tab = "map" | "account";
@@ -176,7 +175,6 @@ export default function PassengerPage() {
                     value={selectedRouteId}
                     onChange={(e) => {
                       setSelectedRouteId(e.target.value);
-                      buzzController.unlock();
                     }}
                     className="w-full h-13 backdrop-blur-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-2xl px-5 text-white text-[13px] focus:outline-none focus:ring-2 focus:ring-white/20 shadow-2xl appearance-none font-bold tracking-tight transition-all cursor-pointer"
                     style={{ height: "52px" }}
@@ -198,7 +196,6 @@ export default function PassengerPage() {
                       value={selectedStopId}
                       onChange={(e) => {
                         setSelectedStopId(e.target.value);
-                        buzzController.unlock();
                       }}
                       className="w-full h-11 bg-black/90 hover:bg-black border border-white/15 rounded-2xl px-5 text-white text-[12px] focus:outline-none focus:ring-2 focus:ring-white/40 shadow-2xl appearance-none font-bold tracking-tight transition-all cursor-pointer"
                     >
