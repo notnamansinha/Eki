@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import { useRoutes } from "@/hooks/useRoutes";
-import DirectionsPanel from "@/components/shared/DirectionsPanel";
+
 import { Bus, Loader2, Map as MapIcon } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { rtdb } from "@/lib/firebase";
@@ -52,7 +52,6 @@ function LiveMapInner({ onMapClick, selectedPin }: LiveMapProps) {
   const { routes } = useRoutes();
   const [buses, setBuses] = useState<Map<string, BusLocation>>(new Map<string, BusLocation>());
   const [connected, setConnected] = useState(false);
-  const [isPanelOpen, setIsPanelOpen] = useState(false);
 
   const destination = useMemo(() => {
     return selectedPin ? { lat: selectedPin.lat, lng: selectedPin.lng } : null;
@@ -140,11 +139,7 @@ function LiveMapInner({ onMapClick, selectedPin }: LiveMapProps) {
         )}
       </GoogleMap>
 
-      <DirectionsPanel
-        result={null}
-        isOpen={isPanelOpen}
-        onToggle={() => setIsPanelOpen(!isPanelOpen)}
-      />
+
 
       {/* Connection Status Overlay */}
       <div className="absolute bottom-6 right-6 z-[1000] flex items-center gap-2.5 bg-brand-dark/80 backdrop-blur-xl border border-white/5 rounded-2xl px-4 py-2.5 shadow-3xl overflow-hidden">

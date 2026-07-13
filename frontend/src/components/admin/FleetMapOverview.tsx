@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useBuses } from "@/hooks/useBuses";
-import DirectionsPanel from "@/components/shared/DirectionsPanel";
+
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { rtdb } from "@/lib/firebase";
 import { ref, onValue } from "firebase/database";
@@ -75,8 +75,6 @@ function FleetMapOverviewInner() {
   const [predefinedRoute, setPredefinedRoute] = useState<{ lat: number; lng: number }[]>([]);
   const [activeRouteId, setActiveRouteId] = useState<string | null>(null);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
-  const [routeResult, setRouteResult] = useState<any>(null);
-  const [isPanelOpen, setIsPanelOpen] = useState(false);
 
   useEffect(() => {
     const targetBus = selectedBusId ? buses.get(selectedBusId) : null;
@@ -96,7 +94,6 @@ function FleetMapOverviewInner() {
   useEffect(() => {
     if (selectedBusId && !registeredBusIds.has(selectedBusId)) {
       setSelectedBusId(null);
-      setIsPanelOpen(false);
     }
   }, [selectedBusId, registeredBuses]);
 
@@ -128,7 +125,6 @@ function FleetMapOverviewInner() {
               position={{ lat: bus.lat, lng: bus.lng }}
               onClick={(e) => {
                 setSelectedBusId(bus.busId);
-                setIsPanelOpen(true);
               }}
             >
               <div style={{ width: s, height: s, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", transform: isSelected ? "scale(1.25)" : "scale(1)", transition: "transform 0.3s" }}>
@@ -149,13 +145,7 @@ function FleetMapOverviewInner() {
         })}
       </GoogleMap>
 
-      {selectedBusId && routeResult && (
-        <DirectionsPanel
-          result={routeResult}
-          isOpen={isPanelOpen}
-          onToggle={() => setIsPanelOpen(!isPanelOpen)}
-        />
-      )}
+
     </div>
   );
 }

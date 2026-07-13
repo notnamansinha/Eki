@@ -5,7 +5,6 @@ import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-m
 import { LocateFixed as GPS, ArrowLeft, ChevronRight } from "lucide-react";
 import { RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
-import RoutePreviewCards from "@/components/maps/RoutePreviewCards";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import { rtdb } from "@/lib/firebase";
 import { ref, update } from "firebase/database";
@@ -184,15 +183,6 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
     return stops.map(s => ({ lat: s.lat, lng: s.lng }));
   }, [route.polyline, stops]);
 
-  const previewRouteMock = [{
-    duration: 2700,
-    durationText: "45 mins",
-    distanceMeters: 12000,
-    distanceText: "12 km",
-    summary: "Standard Route",
-    overview_polyline: "",
-  }];
-
   const snappedHeading = driverLocation ? Math.round(driverLocation.heading / 5) * 5 : 0;
 
   return (
@@ -283,13 +273,14 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
 
       <div className="absolute bottom-[70px] left-0 right-0 z-50">
         {navPhase === "preview" ? (
-          <RoutePreviewCards
-            routes={previewRouteMock}
-            selectedIndex={0}
-            onSelect={() => {}}
-            onStart={handleStartNavigation}
-            isLoading={false}
-          />
+          <div className="flex justify-center p-4 pb-8">
+            <button 
+              onClick={handleStartNavigation} 
+              className="px-12 py-4 rounded-full bg-blue-500 hover:bg-blue-600 shadow-[0_0_20px_rgba(59,130,246,0.4)] text-white font-black uppercase tracking-widest text-sm transition-all active:scale-95 flex items-center gap-3"
+            >
+              Start Shift
+            </button>
+          </div>
         ) : (
           <RouteTimelineSheet
             route={route}
