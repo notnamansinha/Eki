@@ -14,11 +14,6 @@
 
 import { rtdb, db } from "./firebaseAdmin";
 
-interface LatLng {
-  lat: number;
-  lng: number;
-}
-
 export interface ETAUpdate {
   busId: string;
   routeId: string;
@@ -42,34 +37,7 @@ export function haversineMeters(a: LatLng, b: LatLng): number {
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-// ── Pure-JS Google Polyline Decoder ──────────────────────────────────────────
-function decodePolyline(encoded: string): LatLng[] {
-  const coords: LatLng[] = [];
-  let index = 0, lat = 0, lng = 0;
-  while (index < encoded.length) {
-    let b: number, shift = 0, result = 0;
-    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-    lat += result & 1 ? ~(result >> 1) : result >> 1;
-    shift = 0; result = 0;
-    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-    lng += result & 1 ? ~(result >> 1) : result >> 1;
-    coords.push({ lat: lat / 1e5, lng: lng / 1e5 });
-  }
-  return coords;
-}
-
-// ── Find closest waypoint index on a decoded polyline ────────────────────────
-function closestPolylineIndex(coords: LatLng[], target: LatLng): number {
-  let minDist = Infinity, minIdx = 0;
-  for (let i = 0; i < coords.length; i++) {
-    // Use squared Euclidean distance (no sqrt needed for comparison)
-    const dLat = coords[i].lat - target.lat;
-    const dLng = coords[i].lng - target.lng;
-    const d = dLat * dLat + dLng * dLng;
-    if (d < minDist) { minDist = d; minIdx = i; }
-  }
-  return minIdx;
-}
+import { decodePolyline, closestPolylineIndex, LatLng } from "./polylineUtils";
 
 /**
  * Compute ETA from bus position to destination using road-following polyline

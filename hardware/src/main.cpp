@@ -141,19 +141,24 @@ void connectWiFi() {
     } else {
         Serial.println("[WiFi] Attempt failed. Will retry in 5s.");
     }
+}
 
 bool fetchCustomToken() {
     if (WiFi.status() != WL_CONNECTED) return false;
 
-    WiFiClientSecure client;
+    WiFiClient client;
+    WiFiClientSecure clientSecure;
     // SEC-09: For absolute production security, replace setInsecure() with client.setCACert(root_ca);
-    // setInsecure() allows HTTPS connections without validating the server's certificate chain,
-    // which prevents crashes if the cert rotates, but exposes the device to MITM attacks.
-    client.setInsecure();
+    clientSecure.setInsecure();
 
     HTTPClient http;
     String url = String(BACKEND_URL) + "/api/devices/auth";
-    http.begin(client, url);
+    
+    if (url.startsWith("https://")) {
+        http.begin(clientSecure, url);
+    } else {
+        http.begin(client, url);
+    }
     http.addHeader("Content-Type", "application/json");
 
     JsonDocument doc;
