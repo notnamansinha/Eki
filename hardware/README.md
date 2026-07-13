@@ -31,7 +31,7 @@ pio device monitor
 ```
 
 ## How It Works
-The hardware automatically boots when the bus ignition is turned on. It acquires a GPS lock and connects to the enterprise WiFi. Once connected, it authenticates with the backend server via a custom JWT to obtain Firebase credentials, and then begins streaming optimized location deltas directly to the Firebase Realtime Database.
+The hardware automatically boots when the bus ignition is turned on. It acquires a GPS lock and connects to the WiFi. Once connected, it authenticates with the backend server via a custom JWT to obtain Firebase credentials, and then begins streaming optimized location deltas directly to the Firebase Realtime Database.
 
 ## Future Scaling & Security Hardening
 As the fleet scales and physical access to the ESP32 modules becomes difficult, the following two features should be implemented before mass production:

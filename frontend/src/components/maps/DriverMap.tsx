@@ -1,38 +1,17 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import { LocateFixed as GPS, ArrowLeft, ChevronRight } from "lucide-react";
-import dynamic from "next/dynamic";
-let L: any;
-if (typeof window !== "undefined") {
-  L = require("leaflet");
-}
-import "leaflet/dist/leaflet.css";
-
 import { RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
-import RoutePreviewCards from "@/components/maps/RoutePreviewCards";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import { rtdb } from "@/lib/firebase";
 import { ref, update } from "firebase/database";
-
-if (typeof window !== "undefined" && L) {
-  delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-});
-}
-
-const MapContainer = dynamic(() => import('react-leaflet').then((mod) => mod.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then((mod) => mod.TileLayer), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then((mod) => mod.Marker), { ssr: false });
-const Polyline = dynamic(() => import('react-leaflet').then((mod) => mod.Polyline), { ssr: false });
+import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 
 export interface DriverMapProps {
   route: RouteData;
-  socketRef: React.RefObject<any>;
   busId: string;
   driverLocation: { lat: number; lng: number; heading: number } | null;
   onEndShift?: () => void;
@@ -41,20 +20,11 @@ export interface DriverMapProps {
   onStopIndexChange?: (index: number) => void;
 }
 
-const RIPPLE_KEYFRAMES = `
-  @keyframes ripple {
-    0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.5); }
-    70% { box-shadow: 0 0 0 30px rgba(249, 115, 22, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
-  }
-`;
-
 const SELECTED_ROUTE_COLOR = "#4285F4";
 type NavPhase = "preview" | "navigating";
 
-// Polyline Decoder
 function decodePolyline(str: string, precision: number = 5) {
-  let index = 0, lat = 0, lng = 0, coordinates: [number, number][] = [], shift = 0, result = 0, byte = null, latitude_change, longitude_change, factor = Math.pow(10, precision);
+  let index = 0, lat = 0, lng = 0, coordinates: { lat: number; lng: number }[] = [], shift = 0, result = 0, byte: number | null = null, latitude_change: number, longitude_change: number, factor = Math.pow(10, precision);
   while (index < str.length) {
     byte = null; shift = 0; result = 0;
     do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
@@ -63,37 +33,58 @@ function decodePolyline(str: string, precision: number = 5) {
     do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
     longitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
     lat += latitude_change; lng += longitude_change;
-    coordinates.push([lat / factor, lng / factor]);
+    coordinates.push({ lat: lat / factor, lng: lng / factor });
   }
   return coordinates;
 }
 
-function MapControls({ driverLocation, isCentered, navPhase }: { driverLocation: any, isCentered: boolean, navPhase: string }) {
-  const [useMap, setUseMap] = useState<any>(null);
+function RoutePolylines({ decodedPath, isNavigating }: { decodedPath: { lat: number; lng: number }[], isNavigating: boolean }) {
+  const map = useMap();
+  const greyLineRef = useRef<google.maps.Polyline | null>(null);
+  const blueLineRef  = useRef<google.maps.Polyline | null>(null);
 
   useEffect(() => {
-    import('react-leaflet').then((mod) => {
-      setUseMap(() => mod.useMap);
-    });
-  }, []);
+    if (!map || decodedPath.length === 0) return;
 
-  if (useMap) {
-    const MapHook = () => {
-      const map = useMap();
-      useEffect(() => {
-        if (isCentered && driverLocation && map && navPhase === "navigating") {
-          map.panTo([driverLocation.lat, driverLocation.lng]);
-          map.setZoom(18);
-        }
-      }, [isCentered, driverLocation, map, navPhase]);
-      return null;
+    greyLineRef.current = new google.maps.Polyline({
+      path: decodedPath,
+      strokeColor: "#9aa0a6",
+      strokeWeight: 6,
+      strokeOpacity: 0.9,
+      map,
+    });
+
+    if (isNavigating) {
+      blueLineRef.current = new google.maps.Polyline({
+        path: decodedPath,
+        strokeColor: "#3b82f6",
+        strokeWeight: 6,
+        strokeOpacity: 1,
+        map,
+      });
+    }
+
+    return () => {
+      greyLineRef.current?.setMap(null);
+      blueLineRef.current?.setMap(null);
     };
-    return <MapHook />;
-  }
+  }, [map, decodedPath, isNavigating]);
+
   return null;
 }
 
-function DriverMapInner({ route, driverLocation, socketRef, busId, onEndShift, isTracking, selectedRouteIds, onStopIndexChange }: DriverMapProps) {
+function MapCenterer({ target, isCentered, navPhase }: { target: { lat: number; lng: number; heading: number } | null, isCentered: boolean, navPhase: string }) {
+  const map = useMap();
+  useEffect(() => {
+    if (isCentered && target && map && navPhase === "navigating") {
+      map.panTo({ lat: target.lat, lng: target.lng });
+      map.setZoom(18);
+    }
+  }, [isCentered, target, map, navPhase]);
+  return null;
+}
+
+function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, selectedRouteIds, onStopIndexChange }: DriverMapProps) {
   const stops = route.stops || [];
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
   const nextStop = stops[currentStopIndex] ?? stops[stops.length - 1];
@@ -147,25 +138,23 @@ function DriverMapInner({ route, driverLocation, socketRef, busId, onEndShift, i
 
   useEffect(() => {
     if (navPhase !== "navigating" || !driverLocation || !nextStop) return;
-
     const distM = getDistanceMeters(
       { lat: driverLocation.lat, lng: driverLocation.lng },
       { lat: nextStop.lat, lng: nextStop.lng }
     );
-
     const speedKmh = (driverLocation as any).speed > 0 ? (driverLocation as any).speed : 25;
     const speedMs = speedKmh / 3.6;
     const durationSec = speedMs > 0 ? distM / speedMs : 0;
-
     const roundedDist = Math.round(distM / 10) * 10;
     const roundedDur  = Math.round(durationSec / 10) * 10;
-
     setDisplayDist(prev => prev === roundedDist ? prev : roundedDist);
     setDisplayDur(prev  => prev === roundedDur  ? prev : roundedDur);
   }, [navPhase, driverLocation?.lat, driverLocation?.lng, nextStop?.lat, nextStop?.lng]);
 
-  const defaultCenter = driverLocation || (stops.length ? { lat: stops[0].lat, lng: stops[0].lng } : { lat: 23.03, lng: 72.55 });
-  
+  const defaultCenter = driverLocation
+    ? { lat: driverLocation.lat, lng: driverLocation.lng }
+    : (stops.length ? { lat: stops[0].lat, lng: stops[0].lng } : { lat: 23.03, lng: 72.55 });
+
   const handleRecenter = useCallback(() => setIsCentered(true), []);
   const handlePointerDown = useCallback(() => setIsCentered(false), []);
   const handleStartNavigation = useCallback(async () => {
@@ -191,86 +180,82 @@ function DriverMapInner({ route, driverLocation, socketRef, busId, onEndShift, i
 
   const decodedPath = useMemo(() => {
     if (route.polyline) return decodePolyline(route.polyline);
-    return stops.map(s => [s.lat, s.lng] as [number, number]);
+    return stops.map(s => ({ lat: s.lat, lng: s.lng }));
   }, [route.polyline, stops]);
 
-  const previewRouteMock = [{
-    duration: 2700,
-    durationText: "45 mins",
-    distanceMeters: 12000,
-    distanceText: "12 km",
-    summary: "Standard Route",
-    overview_polyline: "",
-  }];
+  const snappedHeading = driverLocation ? Math.round(driverLocation.heading / 5) * 5 : 0;
 
   return (
     <>
-      <style>{RIPPLE_KEYFRAMES}</style>
       <div className="absolute inset-0 z-0" onPointerDown={handlePointerDown} onTouchStart={handlePointerDown}>
-        {typeof window !== 'undefined' && (
-          <MapContainer center={[defaultCenter.lat, defaultCenter.lng]} zoom={14} style={{ width: "100%", height: "100%" }} zoomControl={false}>
-            <TileLayer attribution='&copy; OSM' url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
-            <MapControls driverLocation={driverLocation} isCentered={isCentered} navPhase={navPhase} />
-            
-            {decodedPath.length > 0 && (
-              <Polyline positions={decodedPath} pathOptions={{ color: '#9aa0a6', weight: 6, opacity: 0.9 }} />
-            )}
+        <GoogleMap
+          mapId={MAPS_MAP_ID}
+          defaultCenter={defaultCenter}
+          defaultZoom={14}
+          style={{ width: "100%", height: "100%" }}
+          {...MAP_OPTIONS}
+        >
+          <MapCenterer target={driverLocation} isCentered={isCentered} navPhase={navPhase} />
+          <RoutePolylines decodedPath={decodedPath} isNavigating={navPhase === "navigating"} />
 
-            {navPhase === "navigating" && decodedPath.length > 0 && (
-              <Polyline positions={decodedPath} pathOptions={{ color: '#3b82f6', weight: 6, opacity: 1 }} />
-            )}
+          {/* Stop markers */}
+          {stops.map((stop, i) => (
+            <AdvancedMarker key={`stop-${stop.id || i}`} position={{ lat: stop.lat, lng: stop.lng }}>
+              {i === currentStopIndex ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                  <div style={{ position: "absolute", width: 32, height: 32, background: "#f97316", borderRadius: "50%", animation: "ripple 2s infinite" }} />
+                  <div style={{ width: 32, height: 32, background: "#f97316", border: "4px solid #fb923c", borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 15px rgba(0,0,0,0.3)" }}>
+                    <span style={{ color: "white", fontWeight: 900, fontSize: 12 }}>{String.fromCharCode(65 + i)}</span>
+                  </div>
+                  <span style={{ marginTop: 8, padding: "4px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", color: "white", borderRadius: 12, fontSize: 10, whiteSpace: "nowrap", zIndex: 50, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2em" }}>
+                    {stop.shortName}
+                  </span>
+                </div>
+              ) : i < currentStopIndex ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, background: "rgba(249,115,22,0.6)", border: "2px solid rgba(251,146,60,0.5)", borderRadius: "50%", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}>
+                  <span style={{ color: "white", fontWeight: 900, fontSize: 10 }}>{String.fromCharCode(65 + i)}</span>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: 0.7, transform: "scale(0.9)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, background: "#f97316", border: "2px solid #fb923c", borderRadius: "50%", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}>
+                    <span style={{ color: "white", fontWeight: 900, fontSize: 10 }}>{String.fromCharCode(65 + i)}</span>
+                  </div>
+                  <span style={{ marginTop: 4, padding: "2px 8px", background: "rgba(30,41,59,0.8)", color: "white", borderRadius: 4, fontSize: 8, whiteSpace: "nowrap", opacity: 0.6, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                    {stop.shortName}
+                  </span>
+                </div>
+              )}
+            </AdvancedMarker>
+          ))}
 
-            {stops.map((stop, i) => (
-              <Marker key={`stop-${stop.id || i}`} position={[stop.lat, stop.lng]} icon={L.divIcon({
-                className: "driver-stop-icon",
-                html: i === currentStopIndex ? `
-                  <div class="relative flex flex-col items-center">
-                    <div style="position:absolute; width:32px; height:32px; background:#f97316; border-radius:50%; animation: ripple 2s infinite"></div>
-                    <div style="width:32px; height:32px; background:#f97316; border:4px solid #fb923c; border-radius:50%; z-index:10; display:flex; align-items:center; justify-content:center; box-shadow:0 0 15px rgba(0,0,0,0.3)">
-                      <span style="color:white; font-weight:900; font-size:12px">${String.fromCharCode(65 + i)}</span>
-                    </div>
-                    <span style="margin-top:8px; padding:4px 12px; background:#1e293b; border:1px solid rgba(255,255,255,0.1); color:white; border-radius:12px; font-size:10px; white-space:nowrap; z-index:50; font-weight:900; text-transform:uppercase; letter-spacing:0.2em">
-                      ${stop.shortName}
-                    </span>
-                  </div>
-                ` : i < currentStopIndex ? `
-                  <div style="display:flex; align-items:center; justify-content:center; width:24px; height:24px; background:rgba(249,115,22,0.6); border:2px solid rgba(251,146,60,0.5); border-radius:50%; box-shadow:0 4px 6px rgba(0,0,0,0.1)">
-                    <span style="color:white; font-weight:900; font-size:10px">${String.fromCharCode(65 + i)}</span>
-                  </div>
-                ` : `
-                  <div class="relative flex flex-col items-center" style="opacity:0.7; transform:scale(0.9)">
-                    <div style="display:flex; align-items:center; justify-content:center; width:24px; height:24px; background:#f97316; border:2px solid #fb923c; border-radius:50%; box-shadow:0 4px 6px rgba(0,0,0,0.1)">
-                      <span style="color:white; font-weight:900; font-size:10px">${String.fromCharCode(65 + i)}</span>
-                    </div>
-                    <span style="margin-top:4px; padding:2px 8px; background:rgba(30,41,59,0.8); color:white; border-radius:4px; font-size:8px; white-space:nowrap; opacity:0.6; font-weight:900; text-transform:uppercase; letter-spacing:0.1em">
-                      ${stop.shortName}
-                    </span>
-                  </div>
-                `,
-                iconSize: [100, 100],
-                iconAnchor: [50, 20]
-              })} />
-            ))}
-
-            {driverLocation && (
-              <Marker position={[driverLocation.lat, driverLocation.lng]} icon={L.divIcon({
-                className: "driver-bus-icon",
-                html: `
-                  <div style="width:48px;height:48px;position:relative;display:flex;align-items:center;justify-content:center;">
-                    <div style="position:absolute;inset:0;border-radius:50%;background:rgba(66,133,244,0.2);animation:ping 1s infinite;opacity:0.6"></div>
-                    <div style="transform:rotate(${Math.round(driverLocation.heading / 5) * 5}deg);transition:transform 600ms;z-index:10;">
-                      <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M12 2L20 20L12 16L4 20L12 2Z" fill="${SELECTED_ROUTE_COLOR}" stroke="white" stroke-width="1.5" stroke-linejoin="round"/></svg>
-                    </div>
-                    <div style="position:absolute;bottom:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:${SELECTED_ROUTE_COLOR};border:2px solid #1a1a2e"></div>
-                  </div>
-                `,
-                iconSize: [48, 48],
-                iconAnchor: [24, 24]
-              })} />
-            )}
-          </MapContainer>
-        )}
+          {/* Driver bus marker */}
+          {driverLocation && (
+            <AdvancedMarker position={{ lat: driverLocation.lat, lng: driverLocation.lng }}>
+              <div style={{ width: 48, height: 48, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "rgba(66,133,244,0.2)", animation: "ping 1s infinite", opacity: 0.6 }} />
+                <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 600ms", zIndex: 10 }}>
+                  <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2L20 20L12 16L4 20L12 2Z" fill={SELECTED_ROUTE_COLOR} stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
+                  </svg>
+                </div>
+                <div style={{ position: "absolute", bottom: -4, right: -4, width: 10, height: 10, borderRadius: "50%", background: SELECTED_ROUTE_COLOR, border: "2px solid #1a1a2e" }} />
+              </div>
+            </AdvancedMarker>
+          )}
+        </GoogleMap>
       </div>
+
+      <style>{`
+        @keyframes ripple {
+          0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.5); }
+          70% { box-shadow: 0 0 0 30px rgba(249, 115, 22, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
+        }
+        @keyframes ping {
+          0% { transform: scale(1); opacity: 0.6; }
+          75%, 100% { transform: scale(2); opacity: 0; }
+        }
+      `}</style>
 
       {navPhase === "navigating" && (
         <div className="absolute left-4 top-10 z-40">
@@ -288,13 +273,14 @@ function DriverMapInner({ route, driverLocation, socketRef, busId, onEndShift, i
 
       <div className="absolute bottom-[70px] left-0 right-0 z-50">
         {navPhase === "preview" ? (
-          <RoutePreviewCards
-            routes={previewRouteMock}
-            selectedIndex={0}
-            onSelect={() => {}}
-            onStart={handleStartNavigation}
-            isLoading={false}
-          />
+          <div className="flex justify-center p-4 pb-8">
+            <button 
+              onClick={handleStartNavigation} 
+              className="px-12 py-4 rounded-full bg-blue-500 hover:bg-blue-600 shadow-[0_0_20px_rgba(59,130,246,0.4)] text-white font-black uppercase tracking-widest text-sm transition-all active:scale-95 flex items-center gap-3"
+            >
+              Start Shift
+            </button>
+          </div>
         ) : (
           <RouteTimelineSheet
             route={route}

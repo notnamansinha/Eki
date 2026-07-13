@@ -20,8 +20,7 @@ import http from "http";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import { Server as SocketServer } from "socket.io";
-import { trackingGateway, restoreState } from "./sockets/trackingGateway";
+import { startTripStateEngine } from "./services/tripStateEngine";
 import { preloadRoutePolylines } from "./lib/etaService";
 import { auth, db } from "./lib/firebaseAdmin";
 import busRoutes from "./routes/buses";
@@ -92,47 +91,7 @@ app.use("/api/plan", planRoutes);
 app.use("/api/routes-list", routesListRoutes);
 app.use("/api/devices", devicesRoutes);
 
-// ── Socket.io ─────────────────────────────────────────────────────────────────
-const io = new SocketServer(httpServer, {
-  cors: { origin: CORS_ORIGINS, methods: ["GET", "POST"], credentials: true },
-  // Start with polling so Render's HTTP proxy can handle connections reliably;
-  // socket.io will automatically upgrade to WebSocket when available.
-  transports: ["polling", "websocket"],
-  pingTimeout: 60000,
-  pingInterval: 25000,
-});
-
-// ── SEC-04 fix: Authenticate every socket with a Firebase ID token ──
-// Clients pass: io({ auth: { token: await getIdToken(firebaseUser) } })
-// If no token is present (anonymous passenger), the socket still connects
-// but is tagged as anonymous. Driver and admin events validate role inline.
-io.use(async (socket, next) => {
-  // Allow unauthenticated connections in local dev if explicitly opted out
-  if (process.env.DISABLE_SOCKET_AUTH === "true" && process.env.NODE_ENV !== "production") {
-    (socket as any).user = { uid: "dev-bypass", role: "admin" };
-    return next();
-  }
-
-  const token = socket.handshake.auth?.token as string | undefined;
-  if (!token) {
-    // Anonymous connection — allowed for passengers reading live data
-    (socket as any).user = { uid: "anonymous", role: "passenger" };
-    return next();
-  }
-
-  try {
-    const decoded = await auth.verifyIdToken(token);
-    (socket as any).user = decoded; // Attach verified claims to socket
-    next();
-  } catch {
-    // Bad token — still let them in as anonymous rather than hard-reject
-    (socket as any).user = { uid: "anonymous", role: "passenger" };
-    next();
-  }
-});
-
-// All socket logic is consolidated in trackingGateway — no duplicate listeners
-trackingGateway(io);
+// Socket.IO has been removed in favor of native Firebase streams.
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 // DEV-01 fix: probe Firestore so orchestrators detect a degraded Firebase connection.
@@ -153,10 +112,8 @@ httpServer.listen(Number(PORT), "0.0.0.0", () => {
   preloadRoutePolylines().catch((err) =>
     console.error("Failed to preload polylines:", err)
   );
-  // Restore tracking state
-  restoreState(io).catch((err) => 
-    console.error("Failed to restore tracking state:", err)
-  );
+  // Start Trip State Geofencing Engine
+  startTripStateEngine();
 });
 
-export { io };
+export {};

@@ -34,16 +34,4 @@ router.get("/fleet", requireAdmin, async (_req, res) => {
   }
 });
 
-// Retrieve aggregated trip analytics graph data
-router.get("/trips", (_req, res) => {
-  // Returns empty until a trips collection is implemented
-  res.json({ trips: [] });
-});
-
-// Retrieve aggregated feedback table
-router.get("/feedback", (_req, res) => {
-  // Returns empty until a feedback collection is implemented
-  res.json({ feedback: [] });
-});
-
 export default router;

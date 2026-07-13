@@ -7,25 +7,11 @@ import { useDriverSimulation } from "@/hooks/useDriverSimulation";
 
 export default function SimulateDriverPage() {
   const [busId] = useState("BRTS-SIM-1");
-  const socketRef = useRef<ReturnType<typeof import("socket.io-client").io> | null>(null);
-
-  useEffect(() => {
-    import("socket.io-client").then(({ io }) => {
-      const socket = io(process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000", {
-        transports: ["websocket"],
-      });
-      socketRef.current = socket;
-    });
-
-    return () => {
-      socketRef.current?.disconnect();
-    };
-  }, []);
+  // Socket.IO has been completely removed in favor of native Firebase streams.
 
   const sim = useDriverSimulation({
     route: BRTS_ROUTES[0],
     targetStop: BRTS_ROUTES[0].stops[1],
-    socketRef: socketRef as any,
     busId: busId
   });
 
@@ -38,7 +24,6 @@ export default function SimulateDriverPage() {
 
       <div className="relative flex-1">
         <DriverMap
-          socketRef={socketRef as any}
           busId={busId}
           route={BRTS_ROUTES[0]}
           driverLocation={sim.currentPosition ? { ...sim.currentPosition, heading: sim.heading } : null}

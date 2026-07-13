@@ -1,9 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Star, MessageSquare, X, Send } from "lucide-react";
-import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
+import { signInAnonymously } from "firebase/auth";
+import {
+  collection,
+  doc,
+  runTransaction,
+  serverTimestamp,
+  Timestamp,
+} from "firebase/firestore";
+import { FEEDBACK_COOLDOWN_MS, FEEDBACK_WORD_LIMIT } from "@/config/passenger";
 
 interface Props {
   userId: string;
@@ -13,37 +21,116 @@ interface Props {
   onClose: () => void;
 }
 
+const countWords = (value: string) => {
+  const words = value.trim().match(/\S+/g);
+  return words ? words.length : 0;
+};
+
+const trimToWordLimit = (value: string) => {
+  const words = value.trim().match(/\S+/g);
+  return words && words.length > FEEDBACK_WORD_LIMIT
+    ? words.slice(0, FEEDBACK_WORD_LIMIT).join(" ")
+    : value;
+};
+
+const formatCooldown = (ms: number) => {
+  const totalSeconds = Math.ceil(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+};
+
 export default function FeedbackModal({ userId, userName, busId, driverId, onClose }: Props) {
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const [error, setError] = useState("");
+
+  const resolvedUserId = auth.currentUser?.uid ?? userId;
+  const cooldownStorageKey = `feedbackCooldown:${resolvedUserId}`;
+  const wordCount = countWords(comment);
+
+  useEffect(() => {
+    const updateCooldown = () => {
+      const lastSubmittedAt = Number(localStorage.getItem(cooldownStorageKey) || 0);
+      setCooldownRemaining(Math.max(0, FEEDBACK_COOLDOWN_MS - (Date.now() - lastSubmittedAt)));
+    };
+
+    updateCooldown();
+    const intervalId = window.setInterval(updateCooldown, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [cooldownStorageKey]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
     if (!comment.trim() && rating === 0 && busId) return; // For ride, need at least rating or comment
     if (!comment.trim() && !busId) return; // For general, need comment
+    if (wordCount > FEEDBACK_WORD_LIMIT) {
+      setError(`Please keep feedback under ${FEEDBACK_WORD_LIMIT} words.`);
+      return;
+    }
+    if (cooldownRemaining > 0) {
+      setError(`Please wait ${formatCooldown(cooldownRemaining)} before sending feedback again.`);
+      return;
+    }
     
     setSubmitting(true);
     try {
-      await addDoc(collection(db, "feedback"), {
-        userId,
-        userName,
-        type: busId ? "ride" : "general",
-        busId: busId || null,
-        driverId: driverId || null,
-        rating: busId ? rating : null,
-        comment: comment.trim(),
-        timestamp: serverTimestamp(),
-        status: "new"
+      const currentUser = auth.currentUser || (await signInAnonymously(auth)).user;
+      const currentUserId = currentUser.uid;
+      const cooldownRef = doc(db, "feedbackCooldowns", currentUserId);
+      const feedbackRef = doc(collection(db, "feedbacks"));
+
+      await runTransaction(db, async (transaction) => {
+        const cooldownSnap = await transaction.get(cooldownRef);
+        const lastSubmittedAt = cooldownSnap.exists()
+          ? cooldownSnap.data().lastSubmittedAt as Timestamp | undefined
+          : undefined;
+
+        if (lastSubmittedAt) {
+          const remaining = FEEDBACK_COOLDOWN_MS - (Date.now() - lastSubmittedAt.toMillis());
+          if (remaining > 0) {
+            throw new Error(`COOLDOWN:${remaining}`);
+          }
+        }
+
+        transaction.set(feedbackRef, {
+          userId: currentUserId,
+          userName,
+          type: busId ? "ride" : "general",
+          busId: busId || null,
+          driverId: driverId || null,
+          rating: busId && rating > 0 ? rating : null,
+          comment: comment.trim(),
+          timestamp: serverTimestamp(),
+          status: "new"
+        });
+
+        transaction.set(cooldownRef, {
+          userId: currentUserId,
+          lastSubmittedAt: serverTimestamp()
+        }, { merge: true });
       });
+
+      localStorage.setItem(`feedbackCooldown:${currentUserId}`, Date.now().toString());
+      setCooldownRemaining(FEEDBACK_COOLDOWN_MS);
       setSubmitted(true);
       setTimeout(() => {
         onClose();
       }, 2000);
     } catch (err) {
       console.error("Feedback error:", err);
+      if (err instanceof Error && err.message.startsWith("COOLDOWN:")) {
+        const remaining = Number(err.message.split(":")[1] || 0);
+        setCooldownRemaining(remaining);
+        setError(`Please wait ${formatCooldown(remaining)} before sending feedback again.`);
+      } else {
+        setError("Feedback could not be sent. Please try again.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -112,19 +199,38 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
             </span>
             <textarea
               value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              maxLength={1000}
+              onChange={(e) => {
+                const nextComment = e.target.value;
+                if (countWords(nextComment) > FEEDBACK_WORD_LIMIT) {
+                  setComment(trimToWordLimit(nextComment));
+                  setError(`Feedback is limited to ${FEEDBACK_WORD_LIMIT} words.`);
+                } else {
+                  setComment(nextComment);
+                  setError("");
+                }
+              }}
+              maxLength={2000}
               placeholder={busId ? "How was the temperature, driving, or cleanliness?" : "What features would you like to see?"}
               className="w-full bg-black/20 border border-white/10 rounded-xl p-4 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-emerald-500/50 resize-none h-28"
             />
+            <div className="flex items-center justify-between gap-3 text-[10px] font-black uppercase tracking-widest">
+              <span className={error ? "text-red-400" : "text-white/30"}>
+                {error || (cooldownRemaining > 0
+                  ? `Available in ${formatCooldown(cooldownRemaining)}`
+                  : "Ready to send")}
+              </span>
+              <span className={wordCount >= FEEDBACK_WORD_LIMIT ? "text-amber-400" : "text-white/30"}>
+                {wordCount}/{FEEDBACK_WORD_LIMIT}
+              </span>
+            </div>
           </div>
 
           <button
             type="submit"
-            disabled={submitting || (!!busId && !comment.trim() && rating === 0) || (!busId && !comment.trim())}
+            disabled={submitting || cooldownRemaining > 0 || (!!busId && !comment.trim() && rating === 0) || (!busId && !comment.trim())}
             className="w-full h-12 bg-white text-brand-dark font-black tracking-widest uppercase text-xs rounded-xl flex items-center justify-center gap-2 hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
-            {submitting ? "Transmitting..." : "Submit Feedback"}
+            {submitting ? "Transmitting..." : cooldownRemaining > 0 ? `Wait ${formatCooldown(cooldownRemaining)}` : "Submit Feedback"}
             {!submitting && <Send className="w-4 h-4 ml-1 -mr-1" />}
           </button>
         </form>

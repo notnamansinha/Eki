@@ -12,13 +12,7 @@
  * Now: $0/day ongoing.
  */
 
-import { Server } from "socket.io";
-import { db } from "./firebaseAdmin";
-
-interface LatLng {
-  lat: number;
-  lng: number;
-}
+import { rtdb, db } from "./firebaseAdmin";
 
 export interface ETAUpdate {
   busId: string;
@@ -32,7 +26,7 @@ export interface ETAUpdate {
 }
 
 // ── Haversine distance (no API call needed) ──
-function haversineMeters(a: LatLng, b: LatLng): number {
+export function haversineMeters(a: LatLng, b: LatLng): number {
   const R = 6371e3;
   const toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);
@@ -43,34 +37,7 @@ function haversineMeters(a: LatLng, b: LatLng): number {
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-// ── Pure-JS Google Polyline Decoder ──────────────────────────────────────────
-function decodePolyline(encoded: string): LatLng[] {
-  const coords: LatLng[] = [];
-  let index = 0, lat = 0, lng = 0;
-  while (index < encoded.length) {
-    let b: number, shift = 0, result = 0;
-    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-    lat += result & 1 ? ~(result >> 1) : result >> 1;
-    shift = 0; result = 0;
-    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-    lng += result & 1 ? ~(result >> 1) : result >> 1;
-    coords.push({ lat: lat / 1e5, lng: lng / 1e5 });
-  }
-  return coords;
-}
-
-// ── Find closest waypoint index on a decoded polyline ────────────────────────
-function closestPolylineIndex(coords: LatLng[], target: LatLng): number {
-  let minDist = Infinity, minIdx = 0;
-  for (let i = 0; i < coords.length; i++) {
-    // Use squared Euclidean distance (no sqrt needed for comparison)
-    const dLat = coords[i].lat - target.lat;
-    const dLng = coords[i].lng - target.lng;
-    const d = dLat * dLat + dLng * dLng;
-    if (d < minDist) { minDist = d; minIdx = i; }
-  }
-  return minIdx;
-}
+import { decodePolyline, closestPolylineIndex, LatLng } from "./polylineUtils";
 
 /**
  * Compute ETA from bus position to destination using road-following polyline
@@ -179,7 +146,6 @@ export function getCachedDecodedPolyline(routeId: string): LatLng[] {
  * Uses polyline-based Haversine — zero Google Maps API cost.
  */
 export function startETATracking(
-  io: Server,
   busId: string,
   routeId: string,
   getLocation: () => LatLng | null,
@@ -229,9 +195,13 @@ export function startETATracking(
     lastETAResults.set(busId, update);
     lastETALocation.set(busId, loc); // Record location at time of computation
 
-    // Broadcast to all passengers and admin
-    io.to("passengers").emit("bus:eta-update" as any, update);
-    io.to("admin").emit("bus:eta-update" as any, update);
+    // Write to RTDB directly instead of Socket.IO
+    rtdb.ref(`activeBuses/${busId}_${routeId}`).update({
+      etaSeconds: update.etaSeconds,
+      etaMinutes: update.etaMinutes,
+      distanceKm: update.distanceKm,
+      etaTimestamp: update.timestamp,
+    }).catch(console.error);
 
     console.log(`📍 ETA update for bus ${busId}: ${etaMinutes} min, ${distKm} km (polyline-based, $0 cost)`);
   };

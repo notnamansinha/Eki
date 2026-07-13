@@ -1,28 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import dynamic from "next/dynamic";
+import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
-import React from "react";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";
-import { buzzController } from "@/lib/audioUtils";
 import { LocateFixed, WifiOff } from "lucide-react";
-
-// ── Leaflet is loaded lazily inside useEffect to avoid SSR bundling ──
-// Do NOT use require("leaflet") at module scope — it adds ~160KB to the main bundle
-// for every page that imports this component, including pages that show no map.
-let L: any;
-
-import "leaflet/dist/leaflet.css";
-
-const MapContainer = dynamic(() => import('react-leaflet').then((mod) => mod.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then((mod) => mod.TileLayer), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then((mod) => mod.Marker), { ssr: false });
-const Polyline = dynamic(() => import('react-leaflet').then((mod) => mod.Polyline), { ssr: false });
+import { DEFAULT_CENTER, MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
@@ -38,11 +25,11 @@ interface IncomingBusData {
   speed: number;
   timestamp: number;
   deviceState: "online" | "offline";
-  motionState: "moving" | "stopped" | "uncertain";  // Physical movement state from hardware
-  tripState: "pre_departure" | "in_service" | "completed" | "maintenance";  // Service visibility
+  motionState: "moving" | "stopped" | "uncertain"; // Physical movement state from hardware
+  tripState: "pre_departure" | "in_service" | "completed" | "maintenance"; // Service visibility
   currentStopIndex?: number;
   delayMinutes?: number;
-  lowAccuracy?: boolean;  // Set by firmware when 2.5 < HDOP ≤ 4.0
+  lowAccuracy?: boolean; // Set by firmware when 2.5 < HDOP ≤ 4.0
 }
 
 // Staleness threshold: show "signal lost" banner if timestamp is older than 90s
@@ -54,44 +41,14 @@ const WALKING_KMH = 5;
 const WALKING_M_PER_MIN = (WALKING_KMH * 1000) / 60;
 const BUS_SPEED_FLOOR_KMH = 15;
 
-const RIPPLE_KEYFRAMES = `
-  @keyframes ripple {
-    0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.5); }
-    70% { box-shadow: 0 0 0 30px rgba(249, 115, 22, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
-  }
-  @keyframes passengerPulse {
-    0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
-    70% { box-shadow: 0 0 0 18px rgba(59, 130, 246, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
-  }
-`;
-
-function createBusIconHtml(heading: number, motionState: string, size = 48) {
-  // Colour communicates physical movement, not trip service state.
-  // The bus is always in_service when visible, so we don't need to encode that here.
-  const colors: Record<string, string> = {
-    moving:    "#10b981",  // emerald — bus is rolling
-    stopped:   "#f59e0b",  // amber   — stopped at station or in traffic (still in_service)
-    uncertain: "#ef4444",  // red     — GPS fix lost
-  };
-  const color = colors[motionState] ?? colors.uncertain;
-  const snappedHeading = Math.round(heading / 5) * 5;
-
-  return `
-    <div style="width:${size}px; height:${size}px; position:relative; display:flex; align-items:center; justify-content:center;">
-      <div style="transform: rotate(${snappedHeading}deg); transition: transform 600ms;">
-        <svg width="${size * 0.7}" height="${size * 0.7}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2L20 20L12 16L4 20L12 2Z" fill="${color}" stroke="white" stroke-width="1" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <div style="position:absolute; bottom:-4px; right:-4px; width:10px; height:10px; border-radius:50%; background-color:${color}; border:1px solid #000;"></div>
-    </div>
-  `;
-}
+const BUS_MOTION_COLORS: Record<string, string> = {
+  moving:    "#10b981", // emerald — bus is rolling
+  stopped:   "#f59e0b", // amber   — stopped at station or in traffic
+  uncertain: "#ef4444", // red     — GPS fix lost
+};
 
 function decodePolyline(str: string, precision: number = 5) {
-  let index = 0, lat = 0, lng = 0, coordinates: [number, number][] = [], shift = 0, result = 0, byte = null, latitude_change, longitude_change, factor = Math.pow(10, precision);
+  let index = 0, lat = 0, lng = 0, coordinates: { lat: number; lng: number }[] = [], shift = 0, result = 0, byte: number | null = null, latitude_change: number, longitude_change: number, factor = Math.pow(10, precision);
   while (index < str.length) {
     byte = null; shift = 0; result = 0;
     do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
@@ -100,67 +57,73 @@ function decodePolyline(str: string, precision: number = 5) {
     do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
     longitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
     lat += latitude_change; lng += longitude_change;
-    coordinates.push([lat / factor, lng / factor]);
+    coordinates.push({ lat: lat / factor, lng: lng / factor });
   }
   return coordinates;
 }
 
-// Map events handler
-function MapControls({ passengerLocation, isCentered }: { passengerLocation: any, isCentered: boolean }) {
-  const [useMap, setUseMap] = useState<any>(null);
+// ── Route polyline drawn imperatively via google.maps.Polyline ───────────────
+// Using useMap + useEffect pattern avoids needing the Polyline overlay component.
+function RoutePolylines({ decodedPath, hasBuses }: { decodedPath: { lat: number; lng: number }[], hasBuses: boolean }) {
+  const map = useMap();
+  const routeLineRef = useRef<google.maps.Polyline | null>(null);
+  const activeLineRef = useRef<google.maps.Polyline | null>(null);
 
   useEffect(() => {
-    import('react-leaflet').then((mod) => {
-      setUseMap(() => mod.useMap);
-    });
-  }, []);
+    if (!map || decodedPath.length === 0) return;
 
-  if (useMap) {
-    const MapHook = () => {
-      const map = useMap();
-      useEffect(() => {
-        if (isCentered && passengerLocation && map) {
-          map.panTo([passengerLocation.lat, passengerLocation.lng]);
-          map.setZoom(16);
-        }
-      }, [isCentered, passengerLocation, map]);
-      return null;
+    routeLineRef.current = new google.maps.Polyline({
+      path: decodedPath,
+      strokeColor: "#9aa0a6",
+      strokeWeight: 7,
+      strokeOpacity: 0.8,
+      map,
+    });
+
+    if (hasBuses) {
+      activeLineRef.current = new google.maps.Polyline({
+        path: decodedPath,
+        strokeColor: "#3b82f6",
+        strokeWeight: 7,
+        strokeOpacity: 1.0,
+        map,
+      });
+    }
+
+    return () => {
+      routeLineRef.current?.setMap(null);
+      activeLineRef.current?.setMap(null);
     };
-    return <MapHook />;
-  }
+  }, [map, decodedPath, hasBuses]);
+
+  return null;
+}
+
+// ── Pan/zoom controller ──────────────────────────────────────────────────────
+function MapCenterer({ target, isCentered }: { target: { lat: number; lng: number } | null, isCentered: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    if (isCentered && target && map) {
+      map.panTo(target);
+      map.setZoom(16);
+    }
+  }, [isCentered, target, map]);
   return null;
 }
 
 function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
-  const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map());
+  const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map<string, IncomingBusData>());
   const [stopETAs, setStopETAs] = useState<Record<string, number>>({});
   const [signalLostBuses, setSignalLostBuses] = useState<Set<string>>(new Set());
   const [signalLostLastSeen, setSignalLostLastSeen] = useState<number | null>(null);
   const lastBuzzedStopIdRef = useRef<string | null>(null);
-  const lastStopIndexRef = useRef<Record<string, number>>({});  // Step-forward stop optimization
-  const stopEntryTimeRef = useRef<Record<string, number>>({});  // Dwell time gate per stop
-
-  // ── Leaflet loaded lazily to avoid SSR bundling ─────────────────
-  const [leafletLoaded, setLeafletLoaded] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    import("leaflet").then((mod) => {
-      L = mod.default;
-      // Fix Leaflet default icon paths
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
-      L.Icon.Default.mergeOptions({
-        iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-        iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-      });
-      setLeafletLoaded(true);
-    });
-  }, []);
+  const lastStopIndexRef = useRef<Record<string, number>>({});
+  const stopEntryTimeRef = useRef<Record<string, number>>({});
 
   const [passengerLocation, setPassengerLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isCentered, setIsCentered] = useState(false);
 
-  // ── Passenger geolocation (read-only — ESP32 is the sole source for bus GPS) ──
+  // ── Passenger geolocation (read-only — ESP32 is sole source for bus GPS) ──
   useEffect(() => {
     if (!navigator.geolocation) return;
     const watchId = navigator.geolocation.watchPosition(
@@ -179,22 +142,17 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
 
   const decodedPath = useMemo(() => {
     if (route.polyline) return decodePolyline(route.polyline);
-    return route.stops?.map(s => [s.lat, s.lng] as [number, number]) || [];
+    return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) || [];
   }, [route.polyline, route.stops]);
 
-  // ── Ensure anonymous auth before reading RTDB ────────────────────
-  // RTDB rules now require auth != null on /activeBuses.
-  // signInAnonymously is free and takes <200ms — no user action needed.
+  // ── Anonymous auth before reading RTDB ──────────────────────────────────
   useEffect(() => {
     signInAnonymously(auth).catch((err) => {
       console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code);
     });
   }, []);
 
-  // ── RTDB subscription: filtered by routeId ───────────────────────
-  // Subscribe only to buses on this route, not the full /activeBuses node.
-  // Uses orderByChild("routeId") with the routeId index in database.rules.json.
-  // Impact: 70–90% bandwidth reduction when multiple routes have active buses.
+  // ── RTDB subscription: filtered by routeId ───────────────────────────────
   useEffect(() => {
     const busesRef = query(
       ref(rtdb, "activeBuses"),
@@ -218,12 +176,11 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
 
       Object.values(data).forEach((bus) => {
         const age = now - bus.timestamp;
-        const isFresh = age < BUS_EXPIRY_MS; // Not yet swept from RTDB
+        const isFresh = age < BUS_EXPIRY_MS;
 
         if ((bus.deviceState === "online" && bus.tripState === "in_service") && isFresh) {
           activeBuses.set(bus.busId, bus);
 
-          // ── Timestamp staleness: signal lost banner ────────────────────
           if (age > SIGNAL_LOST_MS) {
             newSignalLost.add(bus.busId);
             if (oldestTimestamp === null || bus.timestamp < oldestTimestamp) {
@@ -232,9 +189,6 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
           }
 
           if (route.stops && route.stops.length > 0) {
-            // ── Step-forward stop detection (reduced iterations) ──────────
-            // Instead of scanning all 40 stops, check last-known index ± 3.
-            // Falls back to full scan only if bus appears to have moved backwards.
             let closestStopIndex: number;
             if (bus.currentStopIndex !== undefined) {
               closestStopIndex = bus.currentStopIndex;
@@ -242,15 +196,12 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
               const lastKnown = lastStopIndexRef.current[bus.busId] ?? 0;
               const searchStart = Math.max(0, lastKnown - 1);
               const searchEnd = Math.min(route.stops.length - 1, lastKnown + 3);
-
               let minD = Infinity;
               closestStopIndex = lastKnown;
               for (let i = searchStart; i <= searchEnd; i++) {
                 const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, route.stops[i]);
                 if (d < minD) { minD = d; closestStopIndex = i; }
               }
-
-              // Full fallback scan if nearest stop is suspiciously far
               if (minD > 500) {
                 route.stops.forEach((stop, idx) => {
                   const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
@@ -265,40 +216,32 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
             const distToNextStop = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, route.stops[closestStopIndex]) * 1.3;
             const busDelay = bus.delayMinutes || 0;
             const newStopETAs: Record<string, number> = {};
-
             let accumDistM = distToNextStop;
             newStopETAs[route.stops[closestStopIndex].id] = Math.ceil(accumDistM / mPerMin) + busDelay;
-
             for (let i = closestStopIndex + 1; i < route.stops.length; i++) {
               const segDist = getDistanceMeters(route.stops[i - 1], route.stops[i]) * 1.3;
               accumDistM += segDist + 125;
               newStopETAs[route.stops[i].id] = Math.ceil(accumDistM / mPerMin) + busDelay;
             }
-
             setStopETAs(prev => ({ ...prev, ...newStopETAs }));
 
-            // ── Dwell time gate for "at stop" computation ─────────────────
-            // A bus within 50m of a stop for ≥ 15s is "at the stop".
-            // Prevents false "at Stop Y" when bus passes through an intersection.
             const DWELL_GATE_MS = 15_000;
             const STOP_PROXIMITY_M = 50;
             route.stops.forEach((stop) => {
               const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
               if (d < STOP_PROXIMITY_M) {
                 if (!stopEntryTimeRef.current[stop.id]) {
-                  stopEntryTimeRef.current[stop.id] = now; // First entry into geofence
+                  stopEntryTimeRef.current[stop.id] = now;
                 }
               } else {
-                delete stopEntryTimeRef.current[stop.id]; // Left geofence, reset
+                delete stopEntryTimeRef.current[stop.id];
               }
             });
 
-            // Arrival notification buzz
             const busDist = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, targetStop);
             const dwellAtTarget = stopEntryTimeRef.current[targetStop.id];
             const isAtTarget = dwellAtTarget && (now - dwellAtTarget >= DWELL_GATE_MS);
             if (busDist < 200 && isAtTarget && lastBuzzedStopIdRef.current !== targetStop.id) {
-              buzzController.playBuzz([300, 150, 300, 150, 500]);
               lastBuzzedStopIdRef.current = targetStop.id;
             }
           }
@@ -310,32 +253,18 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
       setSignalLostLastSeen(oldestTimestamp);
     });
 
-    // ── Correct cleanup for Firebase Modular SDK ─────────────────────
-    // onValue() returns an unsubscribe function directly.
-    // The previous `off(busesRef, "value", unsubscribe)` syntax is for the
-    // Compat SDK and silently fails with the Modular SDK, causing listener
-    // accumulation on navigation (each nav away+back doubles active listeners).
     return () => unsubscribe();
   }, [route.id, targetStop, route.stops]);
 
-  const activePath = useMemo(() => {
-    return decodedPath;
-  }, [decodedPath]);
-
-  // ── Signal lost banner text ─────────────────────────────────────
   const signalLostMinutes = signalLostLastSeen
     ? Math.round((Date.now() - signalLostLastSeen) / 60_000)
     : null;
 
-  if (!leafletLoaded) {
-    return null; // Don't render map until Leaflet is loaded client-side
-  }
+  const mapCenter = useMemo(() => ({ lat: targetStop.lat, lng: targetStop.lng }), [targetStop.lat, targetStop.lng]);
 
   return (
     <>
-      <style>{RIPPLE_KEYFRAMES}</style>
-
-      {/* ── Signal Lost Banner ──────────────────────────────────────── */}
+      {/* ── Signal Lost Banner ─────────────────────────────────────────── */}
       {signalLostBuses.size > 0 && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2
                         bg-amber-900/90 border border-amber-500/60 text-amber-200
@@ -352,92 +281,91 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
       )}
 
       <div className="absolute inset-0 z-0" onPointerDown={() => setIsCentered(false)}>
-        {typeof window !== "undefined" && (
-          <MapContainer
-            center={[targetStop.lat, targetStop.lng]}
-            zoom={15}
-            style={{ width: "100%", height: "100%" }}
-            zoomControl={false}
-          >
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/">OSM</a>'
-              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-            />
-            
-            <MapControls passengerLocation={passengerLocation} isCentered={isCentered} />
+        <GoogleMap
+          mapId={MAPS_MAP_ID}
+          defaultCenter={mapCenter}
+          defaultZoom={15}
+          style={{ width: "100%", height: "100%" }}
+          {...MAP_OPTIONS}
+        >
+          <MapCenterer target={passengerLocation} isCentered={isCentered} />
+          <RoutePolylines decodedPath={decodedPath} hasBuses={buses.size > 0} />
 
-            {decodedPath.length > 0 && (
-              <Polyline positions={decodedPath} pathOptions={{ color: '#9aa0a6', weight: 7, opacity: 0.8 }} />
-            )}
-            
-            {activePath.length > 0 && Array.from(buses.values()).length > 0 && (
-              <Polyline positions={activePath} pathOptions={{ color: '#3b82f6', weight: 7, opacity: 1.0 }} />
-            )}
+          {/* Passenger location dot */}
+          {passengerLocation && (
+            <AdvancedMarker position={passengerLocation}>
+              <div style={{ position: "relative", width: 20, height: 20 }}>
+                <div style={{
+                  position: "absolute", inset: 0, width: 20, height: 20,
+                  borderRadius: "50%", background: "#3b82f6", border: "3px solid white",
+                  zIndex: 10, animation: "passengerPulse 2s infinite",
+                  boxShadow: "0 0 0 0 rgba(59,130,246,0.7)"
+                }} />
+              </div>
+            </AdvancedMarker>
+          )}
 
-            {passengerLocation && (
-              <Marker 
-                position={[passengerLocation.lat, passengerLocation.lng]}
-                icon={L.divIcon({
-                  className: "passenger-icon",
-                  html: `<div style="width:20px;height:20px;position:relative"><div style="position:absolute;inset:0;width:20px;height:20px;border-radius:50%;background:#3b82f6;border:3px solid white;z-index:10;animation:passengerPulse 2s infinite;box-shadow:0 0 0 0 rgba(59,130,246,0.7)"></div></div>`,
-                  iconSize: [20, 20],
-                  iconAnchor: [10, 10]
-                })}
-              />
-            )}
-
-            {Array.from(buses.values()).map(bus => (
-              <Marker 
-                key={bus.busId}
-                position={[bus.lat, bus.lng]}
-                icon={L.divIcon({
-                  className: "custom-bus-icon",
-                  html: createBusIconHtml(bus.heading, bus.motionState, 48),
-                  iconSize: [48, 48],
-                  iconAnchor: [24, 24]
-                })}
-              />
-            ))}
-
-            {route.stops?.map((stop, i) => {
-              const isTarget = stop.id === targetStop.id;
-              const html = isTarget ? `
-                <div class="relative flex flex-col items-center">
-                  <div style="position:absolute; width:32px; height:32px; background:#f97316; border-radius:50%; animation: ripple 2s infinite"></div>
-                  <div style="width:32px; height:32px; background:#f97316; border:4px solid #fb923c; border-radius:50%; z-index:10; display:flex; align-items:center; justify-content:center; box-shadow:0 0 15px rgba(0,0,0,0.3)">
-                    <span style="color:white; font-weight:900; font-size:12px">${String.fromCharCode(65 + i)}</span>
+          {/* Bus markers */}
+          {Array.from(buses.values()).map(bus => {
+            const color = BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
+            const snappedHeading = Math.round(bus.heading / 5) * 5;
+            return (
+              <AdvancedMarker key={bus.busId} position={{ lat: bus.lat, lng: bus.lng }}>
+                <div style={{ width: 48, height: 48, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 600ms" }}>
+                    <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
+                      <path d="M12 2L20 20L12 16L4 20L12 2Z" fill={color} stroke="white" strokeWidth="1" strokeLinejoin="round" />
+                    </svg>
                   </div>
-                  <span style="margin-top:8px; padding:6px 16px; background:#1e293b; border:1px solid rgba(255,255,255,0.1); color:white; border-radius:12px; font-size:10px; white-space:nowrap; z-index:50; font-weight:900; text-transform:uppercase; letter-spacing:0.2em">
-                    ${stop.shortName}
-                  </span>
+                  <div style={{ position: "absolute", bottom: -4, right: -4, width: 10, height: 10, borderRadius: "50%", background: color, border: "1px solid #000" }} />
                 </div>
-              ` : `
-                <div class="relative flex flex-col items-center" style="opacity:0.7; transform:scale(0.9)">
-                  <div style="display:flex; align-items:center; justify-content:center; width:24px; height:24px; background:#f97316; border:2px solid #fb923c; border-radius:50%; box-shadow:0 4px 6px rgba(0,0,0,0.1)">
-                    <span style="color:white; font-weight:900; font-size:10px">${String.fromCharCode(65 + i)}</span>
-                  </div>
-                  <span style="margin-top:4px; padding:2px 8px; background:rgba(30,41,59,0.8); color:white; border-radius:4px; font-size:8px; white-space:nowrap; opacity:0.6; font-weight:900; text-transform:uppercase; letter-spacing:0.1em">
-                    ${stop.shortName}
-                  </span>
-                </div>
-              `;
+              </AdvancedMarker>
+            );
+          })}
 
-              return (
-                <Marker 
-                  key={`stop-${stop.id || i}`} 
-                  position={[stop.lat, stop.lng]}
-                  icon={L.divIcon({
-                    className: "route-stop-icon",
-                    html,
-                    iconSize: [100, 100],
-                    iconAnchor: [50, 20]
-                  })}
-                />
-              );
-            })}
-          </MapContainer>
-        )}
+          {/* Stop markers */}
+          {route.stops?.map((stop, i) => {
+            const isTarget = stop.id === targetStop.id;
+            return (
+              <AdvancedMarker key={`stop-${stop.id || i}`} position={{ lat: stop.lat, lng: stop.lng }}>
+                {isTarget ? (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ position: "absolute", width: 32, height: 32, background: "#f97316", borderRadius: "50%", animation: "ripple 2s infinite" }} />
+                    <div style={{ width: 32, height: 32, background: "#f97316", border: "4px solid #fb923c", borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 15px rgba(0,0,0,0.3)" }}>
+                      <span style={{ color: "white", fontWeight: 900, fontSize: 12 }}>{String.fromCharCode(65 + i)}</span>
+                    </div>
+                    <span style={{ marginTop: 8, padding: "6px 16px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", color: "white", borderRadius: 12, fontSize: 10, whiteSpace: "nowrap", zIndex: 50, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2em" }}>
+                      {stop.shortName}
+                    </span>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: 0.7, transform: "scale(0.9)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, background: "#f97316", border: "2px solid #fb923c", borderRadius: "50%", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}>
+                      <span style={{ color: "white", fontWeight: 900, fontSize: 10 }}>{String.fromCharCode(65 + i)}</span>
+                    </div>
+                    <span style={{ marginTop: 4, padding: "2px 8px", background: "rgba(30,41,59,0.8)", color: "white", borderRadius: 4, fontSize: 8, whiteSpace: "nowrap", opacity: 0.6, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                      {stop.shortName}
+                    </span>
+                  </div>
+                )}
+              </AdvancedMarker>
+            );
+          })}
+        </GoogleMap>
       </div>
+
+      <style>{`
+        @keyframes ripple {
+          0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.5); }
+          70% { box-shadow: 0 0 0 30px rgba(249, 115, 22, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
+        }
+        @keyframes passengerPulse {
+          0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+          70% { box-shadow: 0 0 0 18px rgba(59, 130, 246, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+      `}</style>
 
       {passengerLocation && (
         <div className="absolute bottom-[80px] right-4 z-40">

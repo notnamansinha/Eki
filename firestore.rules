@@ -22,6 +22,15 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == uid;
     }
 
+    function feedbackCooldownDoc(uid) {
+      return /databases/$(database)/documents/feedbackCooldowns/$(uid);
+    }
+
+    function feedbackCooldownExpired(uid) {
+      return !exists(feedbackCooldownDoc(uid)) ||
+        request.time - get(feedbackCooldownDoc(uid)).data.lastSubmittedAt >= duration.value(5, 'm');
+    }
+
     // ── User Profiles — Store User Data & Roles ──
     match /users/{uid} {
       // Users can read their own profile
@@ -69,12 +78,62 @@ service cloud.firestore {
       allow read: if true;
       allow create, update, delete: if isAdmin();
     }
+
+    // ── Completed trips collection ──
+    match /completed_trips/{tripId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only backend writes to this via Admin SDK
+    }
     
     // ── Feedback collection ──
-    match /feedback/{feedbackId} {
+    match /feedbacks/{feedbackId} {
       allow read: if isAdmin();
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if false;
+      allow create: if isAuthenticated() &&
+        request.resource.data.keys().hasOnly([
+          'userId',
+          'userName',
+          'type',
+          'busId',
+          'driverId',
+          'rating',
+          'comment',
+          'timestamp',
+          'status'
+        ]) &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.userName is string &&
+        request.resource.data.type in ['ride', 'general'] &&
+        (request.resource.data.busId == null || request.resource.data.busId is string) &&
+        (request.resource.data.driverId == null || request.resource.data.driverId is string) &&
+        (request.resource.data.rating == null ||
+          (request.resource.data.rating is number &&
+            request.resource.data.rating >= 1 &&
+            request.resource.data.rating <= 5)) &&
+        request.resource.data.comment is string &&
+        request.resource.data.comment.size() <= 2000 &&
+        request.resource.data.timestamp == request.time &&
+        request.resource.data.status == 'new' &&
+        feedbackCooldownExpired(request.auth.uid) &&
+        getAfter(feedbackCooldownDoc(request.auth.uid)).data.lastSubmittedAt == request.time;
+      allow update: if isAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        request.resource.data.status in ['new', 'reviewed', 'resolved'];
+      allow delete: if false;
+    }
+
+    // Feedback cooldowns
+    match /feedbackCooldowns/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) &&
+        request.resource.data.keys().hasOnly(['userId', 'lastSubmittedAt']) &&
+        request.resource.data.userId == uid &&
+        request.resource.data.lastSubmittedAt == request.time;
+      allow update: if isOwner(uid) &&
+        request.resource.data.keys().hasOnly(['userId', 'lastSubmittedAt']) &&
+        request.resource.data.userId == uid &&
+        request.resource.data.lastSubmittedAt == request.time &&
+        request.time - resource.data.lastSubmittedAt >= duration.value(5, 'm');
+      allow delete: if false;
     }
 
     // ── Devices collection — server-side Admin SDK access only ──

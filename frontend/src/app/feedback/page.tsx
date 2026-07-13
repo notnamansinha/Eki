@@ -248,7 +248,7 @@ export default function FeedbackPage() {
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    const q = query(collection(db, "feedback"), orderBy("timestamp", "desc"));
+    const q = query(collection(db, "feedbacks"), orderBy("timestamp", "desc"));
     const unsub = onSnapshot(q, (snap) => {
       setEntries(
         snap.docs.map((d) => ({ id: d.id, ...d.data() } as FeedbackEntry))
@@ -263,7 +263,7 @@ export default function FeedbackPage() {
     status: FeedbackEntry["status"]
   ) => {
     try {
-      await updateDoc(doc(db, "feedback", id), { status });
+      await updateDoc(doc(db, "feedbacks", id), { status });
     } catch (e) {
       console.error("Status update failed:", e);
     }

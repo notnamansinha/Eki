@@ -1,28 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import dynamic from "next/dynamic";
+import { useEffect, useRef, useState } from "react";
+import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import { useRoutes } from "@/hooks/useRoutes";
-import DirectionsPanel from "@/components/shared/DirectionsPanel";
-let L: any;
-if (typeof window !== "undefined") {
-  L = require("leaflet");
-}
-import "leaflet/dist/leaflet.css";
+import { useBuses } from "@/hooks/useBuses";
 
-if (typeof window !== "undefined" && L) {
-  delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-});
-}
-
-const MapContainer = dynamic(() => import('react-leaflet').then((mod) => mod.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then((mod) => mod.TileLayer), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then((mod) => mod.Marker), { ssr: false });
-const Polyline = dynamic(() => import('react-leaflet').then((mod) => mod.Polyline), { ssr: false });
+import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
+import { rtdb } from "@/lib/firebase";
+import { ref, onValue } from "firebase/database";
 
 interface BusLocation {
   busId: string;
@@ -42,157 +27,127 @@ const STATUS_COLORS: Record<string, string> = {
   idle: "#f59e0b",
 };
 
-// Generate SVG icon string for Leaflet divIcon
-const createBusIconHtml = (busId: string, heading: number, status: string, isSelected: boolean, size = 48) => {
-  const color = STATUS_COLORS[status] || STATUS_COLORS.idle;
-  const snappedHeading = Math.round(heading / 5) * 5;
-  const s = isSelected ? 48 : 40;
-  
-  return `
-    <div class="transition-transform duration-300 ${isSelected ? 'scale-125' : ''}" style="width:${s}px; height:${s}px; position:relative; display:flex; align-items:center; justify-content:center;">
-      <div style="transform: rotate(${snappedHeading}deg); transition: transform 600ms;">
-        <svg width="${s * 0.7}" height="${s * 0.7}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2L20 20L12 16L4 20L12 2Z" fill="${color}" stroke="white" stroke-width="1" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <div style="position:absolute; bottom:-4px; right:-4px; width:10px; height:10px; border-radius:50%; background-color:${color}; border:1px solid #000;"></div>
-      ${isSelected ? `
-        <div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap">
-          Selected: ${busId}
-        </div>
-      ` : ''}
-    </div>
-  `;
-};
-
-// Map events handler
-function MapClickHandler({ onClick }: { onClick?: () => void }) {
-  const [useMapEvents, setUseMapEvents] = useState<any>(null);
+function RoutePolyline({ path }: { path: { lat: number; lng: number }[] }) {
+  const map = useMap();
+  const lineRef = useRef<google.maps.Polyline | null>(null);
 
   useEffect(() => {
-    import('react-leaflet').then((mod) => {
-      setUseMapEvents(() => mod.useMapEvents);
+    if (!map || path.length === 0) return;
+    lineRef.current = new google.maps.Polyline({
+      path,
+      strokeColor: "#2563EB",
+      strokeWeight: 6,
+      strokeOpacity: 0.8,
+      map,
     });
-  }, []);
+    return () => { lineRef.current?.setMap(null); };
+  }, [map, path]);
 
-  if (useMapEvents) {
-    const MapEventsHook = () => {
-      useMapEvents({
-        click() {
-          if (onClick) onClick();
-        },
-      });
-      return null;
-    };
-    return <MapEventsHook />;
-  }
   return null;
 }
 
 function FleetMapOverviewInner() {
   const { routes } = useRoutes();
-  const [buses, setBuses] = useState<Map<string, BusLocation>>(new Map());
+  const { buses: registeredBuses } = useBuses();
+  const [buses, setBuses] = useState<Map<string, BusLocation>>(new Map<string, BusLocation>());
 
   useEffect(() => {
-    let socket: any = null;
-    import("socket.io-client").then(({ io }) => {
-      socket = io(process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000", {
-        transports: ["websocket"],
+    const busesRef = ref(rtdb, "activeBuses");
+    const unsubscribe = onValue(busesRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) {
+        setBuses(new Map());
+        return;
+      }
+      
+      const newBuses = new Map<string, BusLocation>();
+      Object.values(data).forEach((bus: any) => {
+        if (bus.busId && bus.lat != null && bus.lng != null && bus.status !== "offline") {
+          newBuses.set(bus.busId, bus);
+        }
       });
-
-      socket.emit("admin:join");
-      socket.on("bus:location-update", (data: BusLocation) => {
-        setBuses((prev) => new Map(prev).set(data.busId, data));
-      });
-      socket.on("bus:stop-tracking", ({ busId }: { busId: string }) => {
-        setBuses((prev) => {
-          const next = new Map(prev);
-          next.delete(busId);
-          return next;
-        });
-      });
+      setBuses(newBuses);
     });
 
-    return () => { socket?.disconnect(); };
+    return () => unsubscribe();
   }, []);
 
-  const [predefinedRoute, setPredefinedRoute] = useState<{lat: number, lng: number}[]>([]);
+  const [predefinedRoute, setPredefinedRoute] = useState<{ lat: number; lng: number }[]>([]);
   const [activeRouteId, setActiveRouteId] = useState<string | null>(null);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
-  const [routeResult, setRouteResult] = useState<any>(null);
-  const [isPanelOpen, setIsPanelOpen] = useState(false);
 
   useEffect(() => {
     const targetBus = selectedBusId ? buses.get(selectedBusId) : null;
     const newRouteId = targetBus?.routeId || "";
-
     if (newRouteId !== activeRouteId && newRouteId) {
       setActiveRouteId(newRouteId);
       const route = routes.find(r => r.id === newRouteId);
-      if (route) {
-         setPredefinedRoute(route.waypoints.map(w => ({ lat: w.lat, lng: w.lng })));
-      }
+      if (route) setPredefinedRoute(route.waypoints.map(w => ({ lat: w.lat, lng: w.lng })));
     } else if (!newRouteId && predefinedRoute.length > 0) {
       setPredefinedRoute([]);
       setActiveRouteId(null);
     }
   }, [buses, selectedBusId, activeRouteId, routes, predefinedRoute.length]);
 
+  // Clear selection if selected bus is deleted from Firestore
+  const registeredBusIds = new Set(registeredBuses.map((b) => b.id));
+  useEffect(() => {
+    if (selectedBusId && !registeredBusIds.has(selectedBusId)) {
+      setSelectedBusId(null);
+    }
+  }, [selectedBusId, registeredBuses]);
+
+  // Only show buses registered in Firestore
+  const visibleBuses = new Map(
+    Array.from(buses.entries()).filter(([busId]) => registeredBusIds.has(busId))
+  );
+
   return (
     <div className="relative w-full h-full">
-      {typeof window !== 'undefined' && (
-        <MapContainer
-          center={[23.0347, 72.5483]}
-          zoom={14}
-          style={{ height: '100%', width: '100%', position: 'absolute', inset: 0 }}
-          zoomControl={false}
-        >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/">OSM</a>'
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          />
+      <GoogleMap
+        mapId={MAPS_MAP_ID}
+        defaultCenter={DEFAULT_CENTER}
+        defaultZoom={14}
+        style={{ height: "100%", width: "100%", position: "absolute", inset: 0 }}
+        onClick={() => setSelectedBusId(null)}
+        {...MAP_OPTIONS}
+      >
+        <RoutePolyline path={predefinedRoute} />
 
-          <MapClickHandler onClick={() => setSelectedBusId(null)} />
-
-          {/* Dynamic Route Line */}
-          {predefinedRoute.length > 0 && (
-            <Polyline 
-               positions={predefinedRoute.map(wp => [wp.lat, wp.lng])} 
-               pathOptions={{ color: '#2563EB', weight: 6, opacity: 0.8 }} 
-            />
-          )}
-
-          {Array.from(buses.values()).map((bus) => (
-            <Marker 
-              key={bus.busId} 
-              position={[bus.lat, bus.lng]}
-              icon={L.divIcon({
-                className: "custom-bus-icon",
-                html: createBusIconHtml(bus.busId, bus.heading, bus.status, selectedBusId === bus.busId),
-                iconSize: [48, 48],
-                iconAnchor: [24, 24]
-              })}
-              eventHandlers={{
-                click: () => {
-                  setSelectedBusId(bus.busId);
-                  setIsPanelOpen(true);
-                }
+        {Array.from(visibleBuses.values()).map((bus) => {
+          const color = STATUS_COLORS[bus.status] || STATUS_COLORS.idle;
+          const isSelected = selectedBusId === bus.busId;
+          const s = isSelected ? 48 : 40;
+          const snappedHeading = Math.round(bus.heading / 5) * 5;
+          return (
+            <AdvancedMarker
+              key={bus.busId}
+              position={{ lat: bus.lat, lng: bus.lng }}
+              onClick={(e) => {
+                setSelectedBusId(bus.busId);
               }}
-            />
-          ))}
-        </MapContainer>
-      )}
+            >
+              <div style={{ width: s, height: s, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", transform: isSelected ? "scale(1.25)" : "scale(1)", transition: "transform 0.3s" }}>
+                {isSelected && (
+                  <div style={{ position: "absolute", top: -32, left: "50%", transform: "translateX(-50%)", background: "#2563eb", color: "white", fontSize: 10, fontWeight: "bold", padding: "2px 8px", borderRadius: 4, whiteSpace: "nowrap", boxShadow: "0 2px 8px rgba(0,0,0,0.5)" }}>
+                    Selected: {bus.busId}
+                  </div>
+                )}
+                <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 600ms" }}>
+                  <svg width={s * 0.7} height={s * 0.7} viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2L20 20L12 16L4 20L12 2Z" fill={color} stroke="white" strokeWidth="1" strokeLinejoin="round" />
+                  </svg>
+                </div>
+                <div style={{ position: "absolute", bottom: -4, right: -4, width: 10, height: 10, borderRadius: "50%", background: color, border: "1px solid #000" }} />
+              </div>
+            </AdvancedMarker>
+          );
+        })}
+      </GoogleMap>
 
-      {/* Admin Side Directions View - Mocked since we have no DirectionsResult */}
-      {selectedBusId && routeResult && (
-        <DirectionsPanel 
-          result={routeResult} 
-          isOpen={isPanelOpen} 
-          onToggle={() => setIsPanelOpen(!isPanelOpen)} 
-        />
-      )}
+
     </div>
   );
 }
 
-export default dynamic(() => Promise.resolve(FleetMapOverviewInner), { ssr: false });
+export default FleetMapOverviewInner;

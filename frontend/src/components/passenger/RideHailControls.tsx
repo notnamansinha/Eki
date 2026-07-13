@@ -2,6 +2,8 @@
 
 import { useState, useCallback } from "react";
 import { MapPin, MapPinned, Loader2, CheckCircle, Navigation, X } from "lucide-react";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 type Mode = "pickup" | "dropoff" | null;
 type RequestStatus = "idle" | "pending" | "accepted" | "completed";
@@ -27,20 +29,18 @@ export default function RideHailControls({ onModeChange, pendingLocation }: Prop
     setStatus("pending");
 
     try {
-      const { io } = await import("socket.io-client");
-      const socket = io(process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000", {
-        transports: ["websocket"],
-      });
-      socket.emit("passenger:request", {
+      await addDoc(collection(db, "passenger_requests"), {
         passengerId: `pax_${Date.now()}`,
         busId,
         type: mode === "pickup" ? "pickup" : "dropoff",
         lat: pendingLocation.lat,
         lng: pendingLocation.lng,
+        status: "pending",
+        createdAt: Date.now(),
       });
-      socket.on("request:updated", () => setStatus("accepted"));
-      setTimeout(() => setStatus("accepted"), 1500);
-    } catch {
+      setStatus("accepted");
+    } catch (err) {
+      console.error("Failed to request ride:", err);
       setStatus("idle");
     }
   }, [mode, pendingLocation, busId]);

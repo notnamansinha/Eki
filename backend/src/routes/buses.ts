@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { activeBuses } from "../sockets/trackingGateway";
+import { rtdb } from "../lib/firebaseAdmin";
 import { requireAdmin } from "../middleware/requireAdmin";
 import type { TripState } from "../types";
 
@@ -10,29 +10,42 @@ const ALLOWED_TRIP_STATES = new Set<TripState>([
 ]);
 
 // GET all active buses snapshot for fleet overview
-router.get("/", (_req, res) => {
-  const busesArray = Array.from(activeBuses.values());
-  res.json({ buses: busesArray });
+router.get("/", async (_req, res) => {
+  try {
+    const snapshot = await rtdb.ref("activeBuses").once("value");
+    const data = snapshot.val() || {};
+    res.json({ buses: Object.values(data) });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch active buses" });
+  }
 });
 
 // GET specific bus by ID
-router.get("/:busId", (req, res) => {
+router.get("/:busId", async (req, res) => {
   const { busId } = req.params;
   if (!busId || busId.length > 64) {
     res.status(400).json({ error: "Invalid busId" });
     return;
   }
-  const bus = activeBuses.get(busId);
-  if (bus) {
-    res.json(bus);
-  } else {
-    res.status(404).json({ error: "Bus not found or inactive" });
+  
+  try {
+    // Because RTDB path is activeBuses/${busId}_${routeId}, we must search for the busId prefix
+    const snapshot = await rtdb.ref("activeBuses").orderByChild("busId").equalTo(busId).once("value");
+    const data = snapshot.val();
+    if (data) {
+      // Returns the first match (a bus should only be active on one route at a time)
+      res.json(Object.values(data)[0]);
+    } else {
+      res.status(404).json({ error: "Bus not found or inactive" });
+    }
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch bus" });
   }
 });
 
 // PATCH bus tripState (admin override) — requires Firebase admin token
 // Useful for manually forcing a bus into maintenance or resuming in_service.
-router.patch("/:busId", requireAdmin, (req, res) => {
+router.patch("/:busId", requireAdmin, async (req, res) => {
   const { busId } = req.params;
   if (!busId || busId.length > 64) {
     res.status(400).json({ error: "Invalid busId" });
@@ -48,14 +61,21 @@ router.patch("/:busId", requireAdmin, (req, res) => {
     return;
   }
 
-  const bus = activeBuses.get(busId);
-  if (!bus) {
-    res.status(404).json({ error: "Bus not found" });
-    return;
+  try {
+    const snapshot = await rtdb.ref("activeBuses").orderByChild("busId").equalTo(busId).once("value");
+    const data = snapshot.val();
+    if (!data) {
+      res.status(404).json({ error: "Bus not found" });
+      return;
+    }
+    
+    const nodeKey = Object.keys(data)[0];
+    await rtdb.ref(`activeBuses/${nodeKey}`).update({ tripState });
+    
+    res.json({ ...(Object.values(data)[0] as object), tripState });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update bus trip state" });
   }
-
-  bus.tripState = tripState;
-  res.json(bus);
 });
 
 export default router;
