@@ -67,9 +67,7 @@ export default function DriverPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routes]);
 
-  // Also keep a dummy socketRef for DriverMap compatibility (DriverMap accepts it but we won't use it for tracking)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const socketRef = useRef<any>(null);
+  // Socket.IO has been fully removed from the frontend; Firebase RTDB is used directly.
 
   const activeRoute = routes.find(r => selectedRouteIds.includes(r.id)) || routes.find(r => r.id === selectedRouteIds[0]);
 
@@ -152,8 +150,6 @@ export default function DriverPage() {
               <DriverMap
                 route={activeRoute}
                 driverLocation={driverLocation}
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                socketRef={socketRef as any}
                 busId={busId}
                 onEndShift={handleStopTracking}
                 isTracking={isTracking}

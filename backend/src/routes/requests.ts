@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { pendingRequests } from "../sockets/trackingGateway";
+import { db } from "../lib/firebaseAdmin";
 import { requireAdmin } from "../middleware/requireAdmin";
 import type { PassengerRequest } from "../types";
 
@@ -19,29 +19,12 @@ function isNonEmptyString(val: unknown, maxLen = 256): val is string {
   return typeof val === "string" && val.trim().length > 0 && val.length <= maxLen;
 }
 
-// ── TTL eviction: sweep completed/cancelled requests older than 30 minutes ──
-// Runs every 5 minutes to prevent unbounded Map growth on long-running containers.
-setInterval(() => {
-  const cutoff = Date.now() - 30 * 60 * 1000; // 30 minutes ago
-  let evicted = 0;
-  for (const [id, req] of pendingRequests) {
-    if (req.createdAt < cutoff) {
-      pendingRequests.delete(id);
-      evicted++;
-    }
-  }
-  if (evicted > 0) {
-    console.log(`[Requests] TTL eviction: removed ${evicted} completed/cancelled requests`);
-  }
-}, 5 * 60 * 1000);
-
-// NOTE: The unauthenticated POST / and GET / routes have been removed to close a major DoS vulnerability.
 // Passenger requests must be created exclusively via the authenticated WebSocket (passenger:request)
 // which strictly enforces Firebase UID verification (ARCH-04) and rate limiting (ARCH-05).
 
 
 // Admin patch completion override — SEC-10 fix: requires Firebase admin token
-router.patch("/:id", requireAdmin, (req, res) => {
+router.patch("/:id", requireAdmin, async (req, res) => {
   const id = req.params.id;
   if (!isNonEmptyString(id, 128)) {
     res.status(400).json({ error: "Invalid request id" });
@@ -56,28 +39,38 @@ router.patch("/:id", requireAdmin, (req, res) => {
     return;
   }
 
-  const pReq = pendingRequests.get(id);
-  if (!pReq) {
-    res.status(404).json({ error: "Request not found" });
-    return;
+  try {
+    const docRef = db.collection("passenger_requests").doc(id);
+    const doc = await docRef.get();
+    if (!doc.exists) {
+      res.status(404).json({ error: "Request not found" });
+      return;
+    }
+    await docRef.update({ status });
+    res.json({ id, ...doc.data(), status });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update request" });
   }
-
-  pReq.status = status;
-  res.json(pReq);
 });
 
 // Cancel a request by ID — SEC-10 fix: requires Firebase admin token
-router.delete("/:id", requireAdmin, (req, res) => {
+router.delete("/:id", requireAdmin, async (req, res) => {
   const id = req.params.id;
   if (!isNonEmptyString(id, 128)) {
     res.status(400).json({ error: "Invalid request id" });
     return;
   }
-  if (pendingRequests.has(id)) {
-    pendingRequests.delete(id);
+  try {
+    const docRef = db.collection("passenger_requests").doc(id);
+    const doc = await docRef.get();
+    if (!doc.exists) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    await docRef.delete();
     res.json({ message: "Deleted successfully" });
-  } else {
-    res.status(404).json({ error: "Not found" });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to delete request" });
   }
 });
 

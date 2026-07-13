@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import dynamic from "next/dynamic";
+import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import { useRoutes, RouteData, RouteStop } from "@/hooks/useRoutes";
 import { doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -9,24 +9,7 @@ import {
   Trash2, Plus, X, CheckCircle, MapPin,
   Loader2, Search, ChevronDown, ChevronUp,
 } from "lucide-react";
-let L: any;
-if (typeof window !== "undefined") {
-  L = require("leaflet");
-}
-import "leaflet/dist/leaflet.css";
-
-if (typeof window !== "undefined" && L) {
-  delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-});
-}
-
-const MapContainer = dynamic(() => import('react-leaflet').then((mod) => mod.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then((mod) => mod.TileLayer), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then((mod) => mod.Marker), { ssr: false });
+import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 
 function stopLabel(index: number): string {
   const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -159,27 +142,13 @@ function RouteCard({ route, onDelete }: { route: RouteData; onDelete: (id: strin
 }
 
 function MapControls({ center }: { center: {lat: number, lng: number} | null }) {
-  const [useMap, setUseMap] = useState<any>(null);
-
+  const map = useMap();
   useEffect(() => {
-    import('react-leaflet').then((mod) => {
-      setUseMap(() => mod.useMap);
-    });
-  }, []);
-
-  if (useMap) {
-    const MapHook = () => {
-      const map = useMap();
-      useEffect(() => {
-        if (center && map) {
-          map.panTo([center.lat, center.lng]);
-          map.setZoom(15);
-        }
-      }, [center, map]);
-      return null;
-    };
-    return <MapHook />;
-  }
+    if (center && map) {
+      map.panTo(center);
+      map.setZoom(15);
+    }
+  }, [center, map]);
   return null;
 }
 
@@ -358,29 +327,27 @@ export default function RouteManagementPanel() {
 
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
         <div className="w-full h-[55vw] min-h-[260px] max-h-[460px] lg:h-auto lg:max-h-none lg:flex-1 relative z-0">
-          {typeof window !== 'undefined' && (
-            <MapContainer center={[23.0347, 72.5483]} zoom={13} style={{ width: "100%", height: "100%" }}>
-              <TileLayer attribution='&copy; OSM' url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
-              <MapControls center={mapCenter} />
-              {newStops.map((stop, i) => (
-                <Marker key={`stop-${i}`} position={[stop.lat, stop.lng]} icon={L.divIcon({
-                  className: "route-creator-stop-icon",
-                  html: `
-                    <div class="relative group">
-                      <div style="width:36px; height:36px; border-radius:16px; background:#10b981; border:4px solid #1a1a2e; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:900; box-shadow:0 0 15px rgba(0,0,0,0.3)">
-                        ${stopLabel(i)}
-                      </div>
-                      <div class="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-3 py-1 bg-brand-dark/90 backdrop-blur-md rounded-lg border border-white/10 text-[9px] font-black text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest z-50">
-                        ${stop.shortName}
-                      </div>
-                    </div>
-                  `,
-                  iconSize: [36, 36],
-                  iconAnchor: [18, 18]
-                })} />
-              ))}
-            </MapContainer>
-          )}
+          <GoogleMap
+            mapId={MAPS_MAP_ID}
+            defaultCenter={DEFAULT_CENTER}
+            defaultZoom={13}
+            style={{ width: "100%", height: "100%" }}
+            {...MAP_OPTIONS}
+          >
+            <MapControls center={mapCenter} />
+            {newStops.map((stop, i) => (
+              <AdvancedMarker key={`stop-${i}`} position={{ lat: stop.lat, lng: stop.lng }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 16, background: "#10b981", border: "4px solid #1a1a2e", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 10, fontWeight: 900, boxShadow: "0 0 15px rgba(0,0,0,0.3)" }}>
+                    {stopLabel(i)}
+                  </div>
+                  <div style={{ marginTop: 4, padding: "2px 8px", background: "rgba(15,17,23,0.9)", border: "1px solid rgba(255,255,255,0.1)", color: "white", borderRadius: 6, fontSize: 9, whiteSpace: "nowrap", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                    {stop.shortName}
+                  </div>
+                </div>
+              </AdvancedMarker>
+            ))}
+          </GoogleMap>
         </div>
 
         <div className="w-full lg:w-[320px] shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-white/5 bg-brand-surface/30 backdrop-blur-2xl overflow-y-auto">

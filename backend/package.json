@@ -20,9 +20,7 @@
     "express": "^4.19.2",
     "express-rate-limit": "^8.3.2",
     "firebase-admin": "^13.7.0",
-    "helmet": "^8.1.0",
-    "lru-cache": "^5.1.1",
-    "socket.io": "^4.7.5"
+    "helmet": "^8.1.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

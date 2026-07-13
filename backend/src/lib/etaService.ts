@@ -12,8 +12,7 @@
  * Now: $0/day ongoing.
  */
 
-import { Server } from "socket.io";
-import { db } from "./firebaseAdmin";
+import { rtdb, db } from "./firebaseAdmin";
 
 interface LatLng {
   lat: number;
@@ -32,7 +31,7 @@ export interface ETAUpdate {
 }
 
 // ── Haversine distance (no API call needed) ──
-function haversineMeters(a: LatLng, b: LatLng): number {
+export function haversineMeters(a: LatLng, b: LatLng): number {
   const R = 6371e3;
   const toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);
@@ -179,7 +178,6 @@ export function getCachedDecodedPolyline(routeId: string): LatLng[] {
  * Uses polyline-based Haversine — zero Google Maps API cost.
  */
 export function startETATracking(
-  io: Server,
   busId: string,
   routeId: string,
   getLocation: () => LatLng | null,
@@ -229,9 +227,13 @@ export function startETATracking(
     lastETAResults.set(busId, update);
     lastETALocation.set(busId, loc); // Record location at time of computation
 
-    // Broadcast to all passengers and admin
-    io.to("passengers").emit("bus:eta-update" as any, update);
-    io.to("admin").emit("bus:eta-update" as any, update);
+    // Write to RTDB directly instead of Socket.IO
+    rtdb.ref(`activeBuses/${busId}_${routeId}`).update({
+      etaSeconds: update.etaSeconds,
+      etaMinutes: update.etaMinutes,
+      distanceKm: update.distanceKm,
+      etaTimestamp: update.timestamp,
+    }).catch(console.error);
 
     console.log(`📍 ETA update for bus ${busId}: ${etaMinutes} min, ${distKm} km (polyline-based, $0 cost)`);
   };

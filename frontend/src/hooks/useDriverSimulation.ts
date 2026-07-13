@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { BRTSRoute, BRTSStop, SIMULATION_SPEED_MS } from "@/config/brtsRoutes";
 import { getBearing, interpolatePosition, getDistanceKm } from "@/lib/mapUtils";
+import { rtdb } from "@/lib/firebase";
+import { ref, update } from "firebase/database";
 
 export interface SimulationState {
   currentPosition: { lat: number; lng: number } | null;
@@ -16,7 +18,6 @@ export interface SimulationState {
 interface Props {
   route: BRTSRoute;
   targetStop: BRTSStop;
-  socketRef: React.RefObject<ReturnType<typeof import("socket.io-client").io> | null>;
   busId: string;
 }
 
@@ -32,7 +33,6 @@ const INITIAL: SimulationState = {
 export function useDriverSimulation({
   route,
   targetStop,
-  socketRef,
   busId,
 }: Props): SimulationState {
   const [state, setState] = useState<SimulationState>(INITIAL);
@@ -63,21 +63,21 @@ export function useDriverSimulation({
     idxRef.current++;
     startRef.current = Date.now();
     
-    // Broadcast via socket using latest stateRef
-    if (socketRef.current && stateRef.current.currentPosition) {
-      socketRef.current.emit("bus:locationUpdate", {
+    // Broadcast via Firebase RTDB using latest stateRef
+    if (stateRef.current.currentPosition) {
+      update(ref(rtdb, `activeBuses/${busId}_${route.id}`), {
         busId,
         routeId: route.id,
+        driverId: "sim_driver",
         lat: stateRef.current.currentPosition.lat,
         lng: stateRef.current.currentPosition.lng,
         heading: stateRef.current.heading,
-        etaMinutes: stateRef.current.etaMinutes, 
-        nextStopId: targetStopRef.current.id,
-        nextStopName: targetStopRef.current.name,
-        distanceRemainingKm: stateRef.current.distanceRemainingKm,
-      });
+        speed: 25,
+        status: "active",
+        timestamp: Date.now(),
+      }).catch(console.error);
     }
-  }, [socketRef, busId, route.id]);
+  }, [busId, route.id]);
 
   useEffect(() => {
     idxRef.current = 0;
