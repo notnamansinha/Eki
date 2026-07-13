@@ -174,7 +174,7 @@ bool fetchCustomToken() {
         
         const char* token = respDoc["token"];
         if (token) {
-            fbConfig.signer.tokens.legacy_token = token;
+            fbConfig.signer.tokens.custom_token = token;
             lastTokenFetch = millis();
             http.end();
             Serial.println("[Auth] Token obtained.");

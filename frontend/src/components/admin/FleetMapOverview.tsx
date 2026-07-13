@@ -62,7 +62,7 @@ function FleetMapOverviewInner() {
       
       const newBuses = new Map<string, BusLocation>();
       Object.values(data).forEach((bus: any) => {
-        if (bus.busId && bus.lat && bus.lng && bus.status !== "offline") {
+        if (bus.busId && bus.lat != null && bus.lng != null && bus.status !== "offline") {
           newBuses.set(bus.busId, bus);
         }
       });

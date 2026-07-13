@@ -102,7 +102,7 @@ export function startTripStateEngine() {
 
   busesRef.on("child_changed", async (snapshot) => {
     const data = snapshot.val();
-    if (!data || !data.busId || !data.routeId || !data.lat || !data.lng) return;
+    if (!data || !data.busId || !data.routeId || data.lat == null || data.lng == null) return;
 
     await loadRouteContext(data.busId, data.routeId);
 
