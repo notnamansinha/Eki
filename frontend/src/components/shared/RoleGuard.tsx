@@ -2,7 +2,6 @@
 
 import { useAuth, UserRole } from "@/hooks/useAuth";
 import { Loader2, ShieldAlert } from "lucide-react";
-import { useEffect, useState } from "react";
 
 interface RoleGuardProps {
   children: React.ReactNode;
@@ -11,21 +10,8 @@ interface RoleGuardProps {
 
 export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
   const { user, loading, loginWithGoogle, logout } = useAuth();
-  const [timedOut, setTimedOut] = useState(false);
 
-  // Hard 6-second bail-out: if still loading after 6s, stop and show login
-  useEffect(() => {
-    if (!loading) return;
-    const timer = setTimeout(() => setTimedOut(true), 6000);
-    return () => clearTimeout(timer);
-  }, [loading]);
-
-  // Once auth resolves, reset the timeout flag
-  useEffect(() => {
-    if (!loading) setTimedOut(false);
-  }, [loading]);
-
-  if (loading && !timedOut) {
+  if (loading) {
     return (
       <div className="w-full h-screen flex flex-col items-center justify-center bg-[#1d1d1f]">
         <Loader2 className="w-8 h-8 text-white/40 animate-spin mb-4" />
@@ -34,7 +20,7 @@ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
     );
   }
 
-  if (!user || timedOut) {
+  if (!user) {
     return (
       <div className="w-full h-screen flex flex-col items-center justify-center bg-[#1d1d1f] text-white px-6 text-center">
         <ShieldAlert className="w-16 h-16 text-blue-500 mb-6" />

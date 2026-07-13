@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { db, auth } from "../lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
-import bcrypt from "bcryptjs";
+import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
 
 const router = Router();
 
@@ -46,7 +46,15 @@ router.post("/auth", async (req: Request, res: Response): Promise<any> => {
     // (migration window — re-seed devices with hashed secrets when possible).
     let authenticated = false;
     if (deviceData.secretHash) {
-      authenticated = await bcrypt.compare(secret, deviceData.secretHash);
+      const parts = deviceData.secretHash.split(":");
+      if (parts.length === 2) {
+        const [salt, key] = parts;
+        const derivedKey = scryptSync(secret, salt, 64);
+        const storedKey = Buffer.from(key, "hex");
+        if (derivedKey.length === storedKey.length) {
+          authenticated = timingSafeEqual(derivedKey, storedKey);
+        }
+      }
     } else if (deviceData.secret) {
       // Legacy plaintext comparison — remove once all devices are re-seeded
       authenticated = deviceData.secret === secret;
@@ -100,7 +108,9 @@ router.post("/hash-secret", async (req: Request, res: Response): Promise<any> =>
       return res.status(404).json({ error: "Device not found" });
     }
 
-    const hashed = await bcrypt.hash(plainSecret, 12);
+    const salt = randomBytes(16).toString("hex");
+    const derivedKey = scryptSync(plainSecret, salt, 64).toString("hex");
+    const hashed = `${salt}:${derivedKey}`;
     await deviceRef.update({
       secretHash: hashed,
       // Securely delete the plaintext credential from the database after migration

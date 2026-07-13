@@ -8,13 +8,6 @@ const router = Router();
 const ALLOWED_REQUEST_TYPES = new Set<string>(["pickup", "dropoff"]);
 const ALLOWED_REQUEST_STATUSES = new Set<string>(["pending", "accepted", "completed", "cancelled"]);
 
-function isValidLatLng(lat: unknown, lng: unknown): boolean {
-  return (
-    typeof lat === "number" && isFinite(lat) && lat >= -90 && lat <= 90 &&
-    typeof lng === "number" && isFinite(lng) && lng >= -180 && lng <= 180
-  );
-}
-
 function isNonEmptyString(val: unknown, maxLen = 256): val is string {
   return typeof val === "string" && val.trim().length > 0 && val.length <= maxLen;
 }
