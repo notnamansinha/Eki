@@ -174,7 +174,7 @@ bool fetchCustomToken() {
         
         const char* token = respDoc["token"];
         if (token) {
-            fbConfig.signer.tokens.custom_token = token;
+            Firebase.setCustomToken(&fbConfig, token);
             lastTokenFetch = millis();
             http.end();
             Serial.println("[Auth] Token obtained.");
@@ -260,7 +260,6 @@ bool shouldSendUpdate() {
     double currentLng = gps.location.lng();
     double currentSpeed = getFilteredSpeed();
     double currentHeading = gps.course.deg();
-    unsigned long now = millis();
 
     // First fix ever — always send
     if (lastSendTime == 0) return true;
