@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     "Real-time bus tracking for Ahmedabad. Live GPS, speed-aware ETAs, and driver-rider communication.",
   keywords: ["Ahmedabad", "bus tracking", "live GPS", "BRTS", "transit", "Eki"],
   icons: {
-    icon: "/BusLogo.png",
+    icon: "/favicon.svg",
   },
 };
 

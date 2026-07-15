@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
-import { LocateFixed as GPS, ArrowLeft, ChevronRight } from "lucide-react";
+import { LocateFixed as GPS, ArrowLeft, ChevronRight, Navigation } from "lucide-react";
 import { RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
@@ -234,9 +234,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
               <div style={{ width: 44, height: 44, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "rgba(66,133,244,0.15)", animation: "ping 1s infinite", opacity: 0.6 }} />
                 <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 600ms", zIndex: 10 }}>
-                  <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-                    <path d="M12 2L20 20L12 16L4 20L12 2Z" fill={SELECTED_ROUTE_COLOR} stroke="white" strokeWidth="1" strokeLinejoin="round" />
-                  </svg>
+                  <Navigation size={30} fill={SELECTED_ROUTE_COLOR} color="white" strokeWidth={1} />
                 </div>
                 <div style={{ position: "absolute", bottom: -3, right: -3, width: 8, height: 8, borderRadius: "50%", background: SELECTED_ROUTE_COLOR, border: "1.5px solid var(--surface-0)" }} />
               </div>

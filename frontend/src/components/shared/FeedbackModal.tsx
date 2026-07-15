@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Star, MessageSquare, X, Send } from "lucide-react";
+import { Star, MessageSquare, X, Send, Check } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 import { signInAnonymously } from "firebase/auth";
 import {
@@ -199,9 +199,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           style={{ background: "var(--surface-2)", border: "1px solid rgba(52, 211, 153, 0.2)" }}>
           <div className="w-14 h-14 rounded-full flex items-center justify-center mb-4"
             style={{ background: "var(--status-live-bg)" }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--status-live)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
+            <Check color="var(--status-live)" strokeWidth={3} size={28} />
           </div>
           <h2 className="text-lg font-bold mb-1.5" style={{ color: "var(--text-primary)" }}>
             Thank you
