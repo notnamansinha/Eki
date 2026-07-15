@@ -9,6 +9,7 @@ export interface BRTSStop {
 export interface BRTSRoute {
   id: string;
   name: string;
+  type: "up" | "down" | "circular";
   color: string;
   stops: BRTSStop[];
   waypoints: { lat: number; lng: number }[];
@@ -21,6 +22,7 @@ export const BRTS_ROUTES: BRTSRoute[] = [
   {
     id: 'route-navrangpura-1',
     name: 'Ring Road → Navrangpura',
+    type: 'circular',
     color: '#4285F4',
     stops: [
       {
