@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useLayoutEffect } from "react";
 import { auth, googleProvider, rtdb, db } from "@/lib/firebase";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
 import { ref, set } from "firebase/database";
@@ -50,11 +50,23 @@ function clearCache() {
 
 // ── Hook ───────────────────────────────────────────────────────────────────────
 export function useAuth() {
-  // Initialise synchronously from cache so returning users get zero flash
-  const [user, setUser] = useState<AppUser | null>(() => readCache());
-  // If we have a cached user, start non-loading (UI can render immediately)
-  const [loading, setLoading] = useState<boolean>(() => readCache() === null);
+  // Always initialize to null/true to ensure client hydration matches SSR.
+  const [user, setUser] = useState<AppUser | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
   const [loginLoading, setLoginLoading] = useState(false);
+
+  // useLayoutEffect runs synchronously immediately after React has performed all DOM mutations
+  // during the initial render, before the browser has a chance to paint. This completely
+  // eliminates the "flash of loading state" while keeping hydration perfectly matched.
+  const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+  useIsomorphicLayoutEffect(() => {
+    const cached = readCache();
+    if (cached) {
+      setUser(cached);
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     // Hard safety-net: never show spinner > 6 s even if everything fails
