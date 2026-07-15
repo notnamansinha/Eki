@@ -1,9 +1,12 @@
 import RoleGuard from "@/components/shared/RoleGuard";
+import MapProviders from "@/components/MapProviders";
 
 export default function DriverLayout({ children }: { children: React.ReactNode }) {
   return (
     <RoleGuard allowedRoles={["driver", "admin"]}>
-      {children}
+      <MapProviders>
+        {children}
+      </MapProviders>
     </RoleGuard>
   );
 }
