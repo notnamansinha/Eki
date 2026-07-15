@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bus, MapPin, Navigation, Wifi, Star, Bell, ShieldCheck, Loader2, LogIn, ArrowRight, Zap, Radio, Clock } from "lucide-react";
+import { Bus, Navigation, Loader2, LogIn, ArrowRight, Zap, Radio, Clock } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -10,7 +10,7 @@ import { ref, onValue } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";
 
 export default function HomePage() {
-  const { user, loading, loginWithGoogle } = useAuth();
+  const { user, loading, loginLoading, loginWithGoogle } = useAuth();
   const router = useRouter();
   const [activeBusCount, setActiveBusCount] = useState(0);
 
@@ -75,11 +75,18 @@ export default function HomePage() {
               <Navigation className="w-3.5 h-3.5" />
               Plan Trip
             </Link>
-            <button 
-              onClick={loginWithGoogle} 
-              className="btn-primary px-5 py-2 flex items-center gap-2 text-[13px]"
+            <button
+              onClick={loginWithGoogle}
+              disabled={loginLoading}
+              className="btn-primary px-5 py-2 flex items-center gap-2 text-[13px] disabled:opacity-60"
             >
-              Sign In <ArrowRight className="w-3.5 h-3.5" />
+              {loginLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <>
+                  Sign In <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -114,12 +121,17 @@ export default function HomePage() {
         </p>
         
         <div className="flex gap-3 flex-wrap">
-          <button 
-            onClick={loginWithGoogle} 
-            className="btn-primary px-7 py-3.5 flex items-center gap-2.5 font-bold text-[14px]"
+          <button
+            onClick={loginWithGoogle}
+            disabled={loginLoading}
+            className="btn-primary px-7 py-3.5 flex items-center gap-2.5 font-bold text-[14px] disabled:opacity-60"
           >
-            <LogIn className="w-4 h-4" />
-            Sign In with Google
+            {loginLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <LogIn className="w-4 h-4" />
+            )}
+            {loginLoading ? "Opening Google…" : "Sign In with Google"}
           </button>
           <Link
             href="/route-planner"
@@ -220,11 +232,17 @@ export default function HomePage() {
               Track your bus in real-time. It's free.
             </p>
           </div>
-          <button 
-            onClick={loginWithGoogle} 
-            className="btn-primary px-8 py-4 text-[15px] font-bold inline-flex items-center gap-3 shrink-0"
+          <button
+            onClick={loginWithGoogle}
+            disabled={loginLoading}
+            className="btn-primary px-8 py-4 text-[15px] font-bold inline-flex items-center gap-3 shrink-0 disabled:opacity-60"
           >
-            Get Started <ArrowRight className="w-4 h-4" />
+            {loginLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <ArrowRight className="w-4 h-4" />
+            )}
+            {loginLoading ? "Opening Google…" : "Get Started"}
           </button>
         </div>
       </section>
