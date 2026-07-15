@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { waitForAuth } from "@/lib/authState";
 
 export interface DriverData {
   id: string; // Driver unique ID e.g. "drv_1"
@@ -14,20 +15,27 @@ export function useDrivers() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "drivers"), (snapshot) => {
-      const fetched = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as DriverData[];
-      
-      setDrivers(fetched);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching drivers from Firestore:", error);
-      setLoading(false);
+    let unsubscribe: (() => void) | undefined;
+
+    waitForAuth().then(() => {
+      unsubscribe = onSnapshot(
+        collection(db, "drivers"),
+        (snapshot) => {
+          const fetched = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as DriverData[];
+          setDrivers(fetched);
+          setLoading(false);
+        },
+        (error) => {
+          console.error("Error fetching drivers from Firestore:", error);
+          setLoading(false);
+        }
+      );
     });
 
-    return () => unsubscribe();
+    return () => unsubscribe?.();
   }, []);
 
   return { drivers, loading };

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { waitForAuth } from "@/lib/authState";
 
 export interface RouteWaypoint {
   lat: number;
@@ -34,20 +35,29 @@ export function useRoutes() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "routes"), (snapshot) => {
-      const fetchedRoutes = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as RouteData[];
-      
-      setRoutes(fetchedRoutes);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching routes from Firestore:", error);
-      setLoading(false);
+    let unsubscribe: (() => void) | undefined;
+
+    // Wait for auth to resolve before opening the listener to avoid
+    // "permission-denied" errors from unauthenticated Firestore reads.
+    waitForAuth().then(() => {
+      unsubscribe = onSnapshot(
+        collection(db, "routes"),
+        (snapshot) => {
+          const fetchedRoutes = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as RouteData[];
+          setRoutes(fetchedRoutes);
+          setLoading(false);
+        },
+        (error) => {
+          console.error("Error fetching routes from Firestore:", error);
+          setLoading(false);
+        }
+      );
     });
 
-    return () => unsubscribe();
+    return () => unsubscribe?.();
   }, []);
 
   return { routes, loading };
