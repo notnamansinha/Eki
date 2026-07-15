@@ -1,32 +1,72 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap");
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   EKI TRANSIT — Design System
+   Editorial Transit aesthetic: type-driven, restrained color, purposeful motion
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 :root {
-  --brand-primary: #0F4C81;
-  --brand-accent: #f5a623;
-  --brand-dark: #0C0C0E;        /* Deep Matte Charcoal */
-  --brand-surface: #161618;     /* Slightly lighter panels */
-  --brand-muted: #1F1F21;       /* Secondary surface */
-  --radius-premium: 1rem;       /* 16px rounding - rounded-2xl */
+  /* ── Surfaces: Warm blacks with subtle depth ── */
+  --surface-0: #09090b;    /* Deepest background */
+  --surface-1: #0f0f12;    /* Primary background */
+  --surface-2: #16161a;    /* Cards, panels */
+  --surface-3: #1c1c21;    /* Elevated elements */
+  --surface-4: #26262c;    /* Hover states, inputs */
+
+  /* ── Brand ── */
+  --accent: #FA5D29;       /* Primary accent — warm orange */
+  --accent-subtle: rgba(250, 93, 41, 0.12);
+  --accent-glow: rgba(250, 93, 41, 0.25);
+
+  /* ── Text hierarchy ── */
+  --text-primary: #ECECEF;
+  --text-secondary: #94949C;
+  --text-tertiary: #5A5A63;
+  --text-ghost: #3A3A42;
+
+  /* ── Borders ── */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-hover: rgba(255, 255, 255, 0.18);
+
+  /* ── Status (muted, not neon) ── */
+  --status-live: #34D399;
+  --status-live-bg: rgba(52, 211, 153, 0.10);
+  --status-warning: #FBBF24;
+  --status-warning-bg: rgba(251, 191, 36, 0.10);
+  --status-danger: #F87171;
+  --status-danger-bg: rgba(248, 113, 113, 0.10);
+
+  /* ── Radii: intentional variation ── */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-pill: 999px;
+
+  /* ── Route color (set dynamically per-route via JS) ── */
+  --route-color: #3B82F6;
 }
 
 @theme inline {
-  --color-brand-primary: var(--brand-primary);
-  --color-brand-accent: var(--brand-accent);
-  --color-brand-dark: var(--brand-dark);
-  --color-brand-surface: var(--brand-surface);
-  --color-brand-muted: var(--brand-muted);
-  --color-status-active: #10b981;
-  --color-status-idle: #f59e0b;
-  --color-status-maintenance: #ef4444;
-  --font-sans: "Inter", system-ui, sans-serif;
-  --font-display: "Outfit", "Inter", sans-serif;
-  --radius-xl: var(--radius-premium);
+  --color-brand-primary: var(--text-primary);
+  --color-brand-accent: var(--accent);
+  --color-brand-dark: var(--surface-0);
+  --color-brand-surface: var(--surface-2);
+  --color-brand-muted: var(--text-secondary);
+  --color-border-thin: var(--border-default);
+  --color-status-active: var(--status-live);
+  --color-status-idle: var(--status-warning);
+  --color-status-maintenance: var(--accent);
+  --font-sans: "Inter Tight", system-ui, -apple-system, sans-serif;
+  --font-display: "Inter Tight", sans-serif;
+  --radius-xl: var(--radius-lg);
 }
 
 * {
   box-sizing: border-box;
-  border-color: rgba(255, 255, 255, 0.05); /* Subtle borders global default */
+  border-color: var(--border-subtle);
 }
 
 html {
@@ -34,48 +74,300 @@ html {
 }
 
 body {
-  background: var(--brand-dark);
-  color: #fff;
-  font-family: "Inter", system-ui, sans-serif;
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  position: relative;
+  overflow-x: hidden;
+  letter-spacing: -0.01em;
 }
 
-/* Scrollbar - Clean & Minimal */
-::-webkit-scrollbar {
-  width: 4px;
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--surface-4); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPONENT CLASSES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Cards ── */
+.eki-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
-::-webkit-scrollbar-track {
-  background: var(--brand-dark);
+.eki-card:hover {
+  border-color: var(--border-hover);
 }
-::-webkit-scrollbar-thumb {
-  background: #2A2A2E;
-  border-radius: 10px;
+.eki-card-interactive {
+  composes: eki-card;
+  cursor: pointer;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #3A3A3E;
+.eki-card-interactive:hover {
+  background: var(--surface-3);
+}
+.eki-card-interactive:active {
+  transform: scale(0.985);
+  transition: transform 0.1s ease;
 }
 
-/* Custom bus-pulse animation for active tracking */
-@keyframes buspulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.1); opacity: 0.8; }
-}
-.bus-pulse {
-  animation: buspulse 2s ease-in-out infinite;
-}
-
-/* Glassmorphism utility - Refined for Charcoal */
-.glass {
-  background: rgba(22, 22, 24, 0.7);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.03);
+/* ── Panel (elevated surfaces with subtle shadow) ── */
+.eki-panel {
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
-/* Premium gradient text utility - Monotone focus */
-.gradient-text {
-  background: linear-gradient(135deg, #fff 0%, #a1a1aa 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+/* ── Legacy compatibility: glass-panel maps to eki-panel ── */
+.glass-panel {
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* ── Buttons ── */
+.btn-primary {
+  background: var(--text-primary);
+  color: var(--surface-0);
+  border: 1px solid var(--text-primary);
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+  transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.btn-primary:hover {
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+}
+.btn-primary:active {
+  transform: scale(0.97);
+}
+
+/* Legacy compat */
+.btn-rc-primary {
+  background: var(--text-primary);
+  color: var(--surface-0);
+  border: 1px solid var(--text-primary);
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+  transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.btn-rc-primary:hover {
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+}
+
+.btn-rc-outline {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+  transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.btn-rc-outline:hover {
+  border-color: var(--text-primary);
+  background: var(--text-primary);
+  color: var(--surface-0);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+.btn-ghost:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+/* ── Labels ── */
+.label-xs {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: var(--text-tertiary);
+}
+/* Legacy compat */
+.micro-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: var(--text-tertiary);
+}
+
+/* ── Status pills ── */
+.status-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--status-live-bg);
+  color: var(--status-live);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.status-live::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-live);
+  animation: pulse-dot 2s infinite;
+}
+
+/* ── ETA Display (the hero number) ── */
+.eta-number {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.eta-unit {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  margin-left: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ANIMATIONS — Purposeful, not decorative
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes scale-up {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes count-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Named animation utilities */
+.animate-fade-in { animation: fade-in 0.3s ease both; }
+.animate-slide-up { animation: slide-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-slide-down { animation: slide-down 0.3s ease both; }
+.animate-scale-in { animation: scale-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-scale-up { animation: scale-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-count-in { animation: count-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Stagger delays for list items */
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.10s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.20s; }
+
+/* ── Loading skeleton ── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-3) 25%,
+    var(--surface-4) 50%,
+    var(--surface-3) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-md);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Focus ring for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Safe area utilities */
+.pt-safe { padding-top: env(safe-area-inset-top); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MAP SPECIFIC
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@keyframes ripple {
+  0% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0.4); }
+  70% { box-shadow: 0 0 0 20px rgba(250, 93, 41, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0); }
+}
+
+@keyframes passengerPulse {
+  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.6); }
+  70% { box-shadow: 0 0 0 14px rgba(59, 130, 246, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
+
+/* ── Noise overlay for depth (applied selectively) ── */
+.noise-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.025;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  z-index: 0;
 }
