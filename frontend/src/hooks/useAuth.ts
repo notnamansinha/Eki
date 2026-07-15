@@ -126,8 +126,13 @@ export function useAuth() {
   const loginWithGoogle = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      console.error("Login failed:", error);
+    } catch (error: any) {
+      if (error.code === 'auth/cancelled-popup-request' || error.code === 'auth/popup-closed-by-user') {
+        // User cancelled the login process
+        console.log("Login cancelled by user.");
+      } else {
+        console.error("Login failed:", error);
+      }
     }
   };
 
