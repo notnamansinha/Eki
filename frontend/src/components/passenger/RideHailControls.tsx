@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { MapPin, MapPinned, Loader2, CheckCircle, Navigation, X } from "lucide-react";
+import { MapPin, MapPinned, Loader2, CheckCircle, Navigation, X, AlertCircle } from "lucide-react";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc } from "firebase/firestore";
 
 type Mode = "pickup" | "dropoff" | null;
 type RequestStatus = "idle" | "pending" | "accepted" | "completed";
@@ -38,7 +38,8 @@ export default function RideHailControls({ onModeChange, pendingLocation }: Prop
         status: "pending",
         createdAt: Date.now(),
       });
-      setStatus("accepted");
+      // Simulate real-time operator sync
+      setTimeout(() => setStatus("accepted"), 1500);
     } catch (err) {
       console.error("Failed to request ride:", err);
       setStatus("idle");
@@ -51,30 +52,36 @@ export default function RideHailControls({ onModeChange, pendingLocation }: Prop
     onModeChange?.(null);
   };
 
-  const statusLabels: Record<RequestStatus, { label: string; color: string; icon: any }> = {
-    idle:     { label: "Define Precise Location", color: "text-white/40", icon: MapPin },
-    pending:  { label: "Dispatching Request...",    color: "text-amber-400", icon: Loader2 },
-    accepted: { label: "Operator En Route",   color: "text-emerald-400", icon: Navigation },
-    completed:{ label: "Request Finalized",           color: "text-emerald-400", icon: CheckCircle },
+  const statusLabels: Record<RequestStatus, { label: string; color: string; bg: string; icon: any; message: string }> = {
+    idle:     { label: "Set Location", color: "text-white/70", bg: "bg-white/5", icon: MapPin, message: "Tap map to pinpoint." },
+    pending:  { label: "Dispatching...", color: "text-brand-accent", bg: "bg-brand-accent/20", icon: Loader2, message: "Syncing with operator" },
+    accepted: { label: "Accepted", color: "text-emerald-400", bg: "bg-emerald-500/20", icon: Navigation, message: "Operator synchronized" },
+    completed:{ label: "Completed", color: "text-emerald-400", bg: "bg-emerald-500/20", icon: CheckCircle, message: "Request finalized" },
   };
 
   const current = statusLabels[status];
   const Icon = current.icon;
 
   return (
-    <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-sm px-6">
-      <div className="bg-brand-surface/90 backdrop-blur-2xl rounded-[1.5rem] border border-white/5 shadow-3xl overflow-hidden animate-slide-up">
+    <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-sm px-6 pointer-events-auto">
+      <div className="glass-panel rounded-[2rem] overflow-hidden animate-slide-up relative">
 
-        {/* Mode Selector - Charcoal Mono Style */}
-        <div className="flex bg-white/5 p-1 rounded-2xl m-3 gap-1">
+        {/* Ambient Glow for accepted state */}
+        {status === "accepted" && (
+          <div className="absolute inset-0 bg-emerald-500/10 blur-xl pointer-events-none" />
+        )}
+
+        {/* Mode Selector */}
+        <div className="flex bg-black/40 p-1.5 rounded-[1.5rem] m-3 relative z-10">
           {(["pickup", "dropoff"] as Mode[]).map((m) => (
             <button
               key={m}
               onClick={() => selectMode(mode === m ? null : m)}
-              className={`flex-1 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 ${
+              disabled={status !== "idle"}
+              className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.15em] transition-all duration-300 flex items-center justify-center gap-2 ${
                 mode === m
-                  ? "bg-white text-brand-dark shadow-xl"
-                  : "text-white/30 hover:text-white/60"
+                  ? "bg-white text-brand-dark shadow-xl scale-[1.02]"
+                  : "text-white/40 hover:text-white/80 disabled:opacity-30 disabled:scale-100"
               }`}
             >
               {m === "pickup" ? <MapPin className="w-3.5 h-3.5" /> : <MapPinned className="w-3.5 h-3.5" />}
@@ -84,54 +91,56 @@ export default function RideHailControls({ onModeChange, pendingLocation }: Prop
         </div>
 
         {/* Status Area */}
-        <div className="px-8 pb-8 pt-4">
+        <div className="px-6 pb-6 pt-2 relative z-10">
           {mode ? (
-            <div className="space-y-6">
-              <div className="flex items-center gap-4">
-                <div className={`w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center ${current.color}`}>
-                   <Icon className={`w-5 h-5 ${status === 'pending' ? 'animate-spin' : ''}`} />
+            <div className="space-y-5 animate-scale-in">
+              <div className="flex items-center gap-4 bg-white/5 p-4 rounded-[1.5rem] border border-white/10">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${current.bg} ${current.color} shadow-inner`}>
+                   <Icon className={`w-6 h-6 ${status === 'pending' ? 'animate-spin' : ''}`} />
                 </div>
-                <div>
-                   <p className={`text-xs font-bold uppercase tracking-widest ${current.color}`}>
+                <div className="flex-1 min-w-0">
+                   <p className={`text-xs font-black uppercase tracking-widest ${current.color} truncate`}>
                     {current.label}
                   </p>
-                  {pendingLocation && status === "idle" && (
-                    <div className="text-[10px] text-white/20 font-mono tracking-tight mt-1">
-                      {pendingLocation.lat.toFixed(5)}, {pendingLocation.lng.toFixed(5)}
-                    </div>
-                  )}
+                  <div className="text-[10px] text-white/50 font-bold uppercase tracking-widest mt-1 flex items-center gap-1.5">
+                    {status === "idle" && !pendingLocation ? (
+                      <><AlertCircle className="w-3 h-3 text-amber-500" /> Tap map to select location</>
+                    ) : (
+                      current.message
+                    )}
+                  </div>
                 </div>
               </div>
 
               {pendingLocation && status === "idle" && (
-                <div className="flex gap-3 pt-2">
+                <div className="flex gap-2">
                   <button
                     onClick={confirmRequest}
-                    className="flex-1 py-4 rounded-2xl text-xs font-black uppercase tracking-widest bg-white text-brand-dark transition transform active:scale-95 shadow-xl"
+                    className="flex-1 py-4 rounded-2xl text-xs font-black uppercase tracking-[0.2em] bg-brand-accent text-brand-dark transition-all hover:bg-yellow-400 active:scale-95 shadow-glow"
                   >
-                    Confirm Request
+                    Confirm
                   </button>
                   <button
                     onClick={cancel}
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center bg-white/5 border border-white/5 text-white/30 hover:text-red-400 hover:bg-white/10 transition-colors"
+                    className="w-14 h-14 rounded-2xl flex items-center justify-center bg-white/5 border border-white/10 text-white/40 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 active:scale-95 transition-all"
                   >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
               )}
 
-              {status === "accepted" && (
-                <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl">
-                  <span className="text-[10px] text-emerald-400 font-black uppercase tracking-widest">Operator Synchronized</span>
-                  <button onClick={cancel} className="text-[10px] font-black text-white/20 hover:text-white/40 uppercase tracking-widest transition-colors">
-                    Close
-                  </button>
-                </div>
+              {(status === "accepted" || status === "completed") && (
+                <button 
+                  onClick={cancel} 
+                  className="w-full py-3.5 rounded-xl text-[10px] font-black text-white/40 hover:text-white uppercase tracking-[0.2em] transition-all bg-white/5 hover:bg-white/10"
+                >
+                  Dismiss
+                </button>
               )}
             </div>
           ) : (
-            <div className="flex flex-col items-center py-4 opacity-20">
-               <div className="w-1 h-1 rounded-full bg-white mb-2" />
+            <div className="flex flex-col items-center py-6 opacity-30">
+               <div className="w-1.5 h-1.5 rounded-full bg-white mb-3 shadow-[0_0_10px_rgba(255,255,255,0.5)]" />
                <p className="text-[10px] font-black text-white uppercase tracking-[0.3em]">Select Operation Type</p>
             </div>
           )}
