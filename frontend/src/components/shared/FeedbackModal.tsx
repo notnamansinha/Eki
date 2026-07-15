@@ -8,10 +8,12 @@ import {
   collection,
   doc,
   runTransaction,
-  serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
-import { FEEDBACK_COOLDOWN_MS, FEEDBACK_WORD_LIMIT } from "@/config/passenger";
+import { FEEDBACK_WORD_LIMIT } from "@/config/passenger";
+
+const FEEDBACK_LIMIT_PER_DAY = 2;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 interface Props {
   userId: string;
@@ -34,10 +36,12 @@ const trimToWordLimit = (value: string) => {
 };
 
 const formatCooldown = (ms: number) => {
-  const totalSeconds = Math.ceil(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  const totalHours = Math.floor(ms / (60 * 60 * 1000));
+  const totalMinutes = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));
+  if (totalHours > 0) {
+    return `${totalHours}h ${totalMinutes}m`;
+  }
+  return `${totalMinutes}m`;
 };
 
 export default function FeedbackModal({ userId, userName, busId, driverId, onClose }: Props) {
@@ -55,12 +59,29 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
 
   useEffect(() => {
     const updateCooldown = () => {
-      const lastSubmittedAt = Number(localStorage.getItem(cooldownStorageKey) || 0);
-      setCooldownRemaining(Math.max(0, FEEDBACK_COOLDOWN_MS - (Date.now() - lastSubmittedAt)));
+      try {
+        const raw = localStorage.getItem(cooldownStorageKey);
+        if (!raw) {
+          setCooldownRemaining(0);
+          return;
+        }
+        let history = JSON.parse(raw) as number[];
+        const now = Date.now();
+        history = history.filter((ts) => now - ts < ONE_DAY_MS);
+        
+        if (history.length >= FEEDBACK_LIMIT_PER_DAY) {
+          const oldestMs = Math.min(...history);
+          setCooldownRemaining(Math.max(0, ONE_DAY_MS - (now - oldestMs)));
+        } else {
+          setCooldownRemaining(0);
+        }
+      } catch (e) {
+        setCooldownRemaining(0);
+      }
     };
 
     updateCooldown();
-    const intervalId = window.setInterval(updateCooldown, 1000);
+    const intervalId = window.setInterval(updateCooldown, 10000); // Check every 10s is enough for hours
     return () => window.clearInterval(intervalId);
   }, [cooldownStorageKey]);
 
@@ -87,16 +108,30 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
 
       await runTransaction(db, async (transaction) => {
         const cooldownSnap = await transaction.get(cooldownRef);
-        const lastSubmittedAt = cooldownSnap.exists()
-          ? cooldownSnap.data().lastSubmittedAt as Timestamp | undefined
-          : undefined;
-
-        if (lastSubmittedAt) {
-          const remaining = FEEDBACK_COOLDOWN_MS - (Date.now() - lastSubmittedAt.toMillis());
-          if (remaining > 0) {
-            throw new Error(`COOLDOWN:${remaining}`);
+        let history: number[] = [];
+        
+        if (cooldownSnap.exists()) {
+          const data = cooldownSnap.data();
+          // Support old format (lastSubmittedAt) and new format (history)
+          if (data.history) {
+            history = data.history.map((t: Timestamp) => t.toMillis());
+          } else if (data.lastSubmittedAt) {
+            history = [(data.lastSubmittedAt as Timestamp).toMillis()];
           }
         }
+
+        const now = Date.now();
+        history = history.filter((ts) => now - ts < ONE_DAY_MS);
+
+        if (history.length >= FEEDBACK_LIMIT_PER_DAY) {
+          const oldestMs = Math.min(...history);
+          const remaining = ONE_DAY_MS - (now - oldestMs);
+          if (remaining > 0) {
+            throw new Error(`LIMIT_REACHED:${remaining}`);
+          }
+        }
+
+        history.push(now);
 
         transaction.set(feedbackRef, {
           userId: currentUserId,
@@ -106,28 +141,41 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           driverId: driverId || null,
           rating: busId && rating > 0 ? rating : null,
           comment: comment.trim(),
-          timestamp: serverTimestamp(),
+          timestamp: Timestamp.fromMillis(now),
           status: "new"
         });
 
         transaction.set(cooldownRef, {
           userId: currentUserId,
-          lastSubmittedAt: serverTimestamp()
+          history: history.map(ts => Timestamp.fromMillis(ts))
         }, { merge: true });
       });
 
-      localStorage.setItem(`feedbackCooldown:${currentUserId}`, Date.now().toString());
-      setCooldownRemaining(FEEDBACK_COOLDOWN_MS);
+      try {
+        const raw = localStorage.getItem(`feedbackCooldown:${currentUserId}`);
+        let localHistory = raw ? JSON.parse(raw) as number[] : [];
+        const now = Date.now();
+        localHistory = localHistory.filter((ts) => now - ts < ONE_DAY_MS);
+        localHistory.push(now);
+        localStorage.setItem(`feedbackCooldown:${currentUserId}`, JSON.stringify(localHistory));
+
+        // Optimistically disable if they've hit the limit
+        if (localHistory.length >= FEEDBACK_LIMIT_PER_DAY) {
+          const oldestMs = Math.min(...localHistory);
+          setCooldownRemaining(Math.max(0, ONE_DAY_MS - (now - oldestMs)));
+        }
+      } catch (e) {}
+      
       setSubmitted(true);
       setTimeout(() => {
         onClose();
       }, 2000);
     } catch (err) {
       console.error("Feedback error:", err);
-      if (err instanceof Error && err.message.startsWith("COOLDOWN:")) {
+      if (err instanceof Error && (err.message.startsWith("COOLDOWN:") || err.message.startsWith("LIMIT_REACHED:"))) {
         const remaining = Number(err.message.split(":")[1] || 0);
         setCooldownRemaining(remaining);
-        setError(`Please wait ${formatCooldown(remaining)} before sending again.`);
+        setError(`Limit reached. Please try again in ${formatCooldown(remaining)}.`);
       } else {
         setError("Failed to send. Please try again.");
       }
