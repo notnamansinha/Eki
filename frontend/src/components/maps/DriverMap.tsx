@@ -24,7 +24,9 @@ const SELECTED_ROUTE_COLOR = "#4285F4";
 type NavPhase = "preview" | "navigating";
 
 function decodePolyline(str: string, precision: number = 5) {
-  let index = 0, lat = 0, lng = 0, coordinates: { lat: number; lng: number }[] = [], shift = 0, result = 0, byte: number | null = null, latitude_change: number, longitude_change: number, factor = Math.pow(10, precision);
+  let index = 0, lat = 0, lng = 0, shift = 0, result = 0, byte: number | null = null, latitude_change: number, longitude_change: number;
+  const coordinates: { lat: number; lng: number }[] = [];
+  const factor = Math.pow(10, precision);
   while (index < str.length) {
     byte = null; shift = 0; result = 0;
     do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
@@ -85,7 +87,7 @@ function MapCenterer({ target, isCentered, navPhase }: { target: { lat: number; 
 }
 
 function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, selectedRouteIds, onStopIndexChange }: DriverMapProps) {
-  const stops = route.stops || [];
+  const stops = useMemo(() => route.stops || [], [route.stops]);
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
   const nextStop = stops[currentStopIndex] ?? stops[stops.length - 1];
 
@@ -123,17 +125,17 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       { lat: nextStop.lat, lng: nextStop.lng }
     );
     if (dist < 80) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCurrentStopIndex(i => {
         const nextIdx = Math.min(i + 1, stops.length - 1);
         if (onStopIndexChange) onStopIndexChange(nextIdx);
         return nextIdx;
       });
     }
-  }, [driverLocation?.lat, driverLocation?.lng, nextStop?.lat, nextStop?.lng, currentStopIndex, stops.length, onStopIndexChange]);
+  }, [driverLocation, nextStop, currentStopIndex, stops.length, onStopIndexChange]);
 
   const [navPhase, setNavPhase] = useState<NavPhase>("preview");
   const [isCentered, setIsCentered] = useState(true);
-  const [displayDist, setDisplayDist] = useState(0);
   const [displayDur, setDisplayDur] = useState(0);
 
   useEffect(() => {
@@ -142,14 +144,14 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       { lat: driverLocation.lat, lng: driverLocation.lng },
       { lat: nextStop.lat, lng: nextStop.lng }
     );
-    const speedKmh = (driverLocation as any).speed > 0 ? (driverLocation as any).speed : 25;
+    const speed = (driverLocation as typeof driverLocation & { speed?: number }).speed;
+    const speedKmh = speed && speed > 0 ? speed : 25;
     const speedMs = speedKmh / 3.6;
     const durationSec = speedMs > 0 ? distM / speedMs : 0;
-    const roundedDist = Math.round(distM / 10) * 10;
     const roundedDur  = Math.round(durationSec / 10) * 10;
-    setDisplayDist(prev => prev === roundedDist ? prev : roundedDist);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDisplayDur(prev  => prev === roundedDur  ? prev : roundedDur);
-  }, [navPhase, driverLocation?.lat, driverLocation?.lng, nextStop?.lat, nextStop?.lng]);
+  }, [navPhase, driverLocation, nextStop]);
 
   const defaultCenter = driverLocation
     ? { lat: driverLocation.lat, lng: driverLocation.lng }
@@ -164,7 +166,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
   }, []);
   const handleBackToPreview = useCallback(() => setNavPhase("preview"), []);
 
-  const upcomingETAs = useMemo(() => {
+  const upcomingETAs = (() => {
     const etaMap: Record<string, number> = {};
     let accumTime = displayDur;
     if (nextStop?.id) {
@@ -176,7 +178,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       }
     }
     return etaMap;
-  }, [displayDur, delayMinutes, nextStop?.id, currentStopIndex, stops]);
+  })();
 
   const decodedPath = useMemo(() => {
     if (route.polyline) return decodePolyline(route.polyline);

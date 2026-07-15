@@ -40,7 +40,7 @@ export function useDriverSimulation({
   const targetStopRef = useRef(targetStop);
 
   const idxRef = useRef(0);
-  const startRef = useRef(Date.now());
+  const startRef = useRef<number | null>(null);
   const frameRef = useRef(0);
   const finishedRef = useRef(false);
 
@@ -97,7 +97,8 @@ export function useDriverSimulation({
 
       const idx = idxRef.current;
       const nIdx = Math.min(idx + 1, path.length - 1);
-      const t = Math.min((Date.now() - startRef.current) / SIMULATION_SPEED_MS, 1);
+      const start = startRef.current ?? Date.now();
+      const t = Math.min((Date.now() - start) / SIMULATION_SPEED_MS, 1);
       
       const from = path[idx];
       const to = path[nIdx];

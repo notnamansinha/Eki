@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Navigation, Footprints } from "lucide-react";
 import { RouteData } from "@/hooks/useRoutes";
 import BottomSheet from "./ui/BottomSheet";
@@ -16,18 +16,13 @@ interface RouteTimelineSheetProps {
 export default function RouteTimelineSheet({
   route,
   targetStopId,
-  activeBusId,
   stopETAs = {},
-  headerContent,
   bottomControls,
   walkMinutesToTarget,
 }: RouteTimelineSheetProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => { setMounted(true); }, []);
-
-  if (!mounted || !route || !route.stops || route.stops.length === 0) return null;
+  if (!route || !route.stops || route.stops.length === 0) return null;
 
   const targetIndex = route.stops.findIndex((s) => s.id === targetStopId);
   const routeColor = route.color || "#3b82f6";

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { MapPin, MapPinned, Loader2, CheckCircle, Navigation, X, AlertCircle } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { db } from "@/lib/firebase";
-import { collection, addDoc } from "firebase/firestore";
+import { collection, addDoc, doc, onSnapshot, updateDoc } from "firebase/firestore";
 
 type Mode = "pickup" | "dropoff" | null;
-type RequestStatus = "idle" | "pending" | "accepted" | "completed";
+type RequestStatus = "idle" | "pending" | "accepted" | "completed" | "cancelled";
 
 interface Props {
   onModeChange?: (mode: Mode) => void;
@@ -16,20 +17,39 @@ interface Props {
 export default function RideHailControls({ onModeChange, pendingLocation }: Props) {
   const [mode, setMode] = useState<Mode>(null);
   const [status, setStatus] = useState<RequestStatus>("idle");
+  const [requestId, setRequestId] = useState<string | null>(null);
   const [busId] = useState("BUS-001"); 
 
   function selectMode(m: Mode) {
     setMode(m);
     onModeChange?.(m);
     setStatus("idle");
+    setRequestId(null);
   }
+
+  useEffect(() => {
+    if (!requestId) return;
+
+    const requestRef = doc(db, "passenger_requests", requestId);
+    const unsubscribe = onSnapshot(requestRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        setStatus("idle");
+        return;
+      }
+
+      const nextStatus = snapshot.data().status as RequestStatus | undefined;
+      if (nextStatus) setStatus(nextStatus);
+    });
+
+    return () => unsubscribe();
+  }, [requestId]);
 
   const confirmRequest = useCallback(async () => {
     if (!pendingLocation) return;
     setStatus("pending");
 
     try {
-      await addDoc(collection(db, "passenger_requests"), {
+      const requestDoc = await addDoc(collection(db, "passenger_requests"), {
         passengerId: `pax_${Date.now()}`,
         busId,
         type: mode === "pickup" ? "pickup" : "dropoff",
@@ -38,25 +58,55 @@ export default function RideHailControls({ onModeChange, pendingLocation }: Prop
         status: "pending",
         createdAt: Date.now(),
       });
-      // Simulate real-time operator sync
-      setTimeout(() => setStatus("accepted"), 1500);
+      setRequestId(requestDoc.id);
     } catch (err) {
       console.error("Failed to request ride:", err);
       setStatus("idle");
     }
   }, [mode, pendingLocation, busId]);
 
-  const cancel = () => {
+  const reset = () => {
     setMode(null);
     setStatus("idle");
+    setRequestId(null);
     onModeChange?.(null);
   };
 
-  const statusLabels: Record<RequestStatus, { label: string; color: string; bg: string; icon: any; message: string }> = {
+  const cancel = async () => {
+    if (requestId) {
+      try {
+        await updateDoc(doc(db, "passenger_requests", requestId), {
+          status: "cancelled",
+          cancelledAt: Date.now(),
+        });
+      } catch (err) {
+        console.error("Failed to cancel request:", err);
+      }
+    }
+    reset();
+  };
+
+  const completeOrDismiss = async () => {
+    if (requestId && status === "accepted") {
+      try {
+        await updateDoc(doc(db, "passenger_requests", requestId), {
+          status: "completed",
+          completedAt: Date.now(),
+        });
+      } catch (err) {
+        console.error("Failed to complete request:", err);
+        return;
+      }
+    }
+    reset();
+  };
+
+  const statusLabels: Record<RequestStatus, { label: string; color: string; bg: string; icon: LucideIcon; message: string }> = {
     idle:     { label: "Set Location", color: "text-white/70", bg: "bg-white/5", icon: MapPin, message: "Tap map to pinpoint." },
     pending:  { label: "Dispatching...", color: "text-brand-accent", bg: "bg-brand-accent/20", icon: Loader2, message: "Syncing with operator" },
     accepted: { label: "Accepted", color: "text-emerald-400", bg: "bg-emerald-500/20", icon: Navigation, message: "Operator synchronized" },
     completed:{ label: "Completed", color: "text-emerald-400", bg: "bg-emerald-500/20", icon: CheckCircle, message: "Request finalized" },
+    cancelled:{ label: "Cancelled", color: "text-white/40", bg: "bg-white/5", icon: X, message: "Request cancelled" },
   };
 
   const current = statusLabels[status];
@@ -129,9 +179,18 @@ export default function RideHailControls({ onModeChange, pendingLocation }: Prop
                 </div>
               )}
 
-              {(status === "accepted" || status === "completed") && (
+              {status === "pending" && (
+                <button
+                  onClick={cancel}
+                  className="w-full py-3.5 rounded-xl text-[10px] font-black text-white/40 hover:text-red-400 uppercase tracking-[0.2em] transition-all bg-white/5 hover:bg-red-500/10"
+                >
+                  Cancel Request
+                </button>
+              )}
+
+              {(status === "accepted" || status === "completed" || status === "cancelled") && (
                 <button 
-                  onClick={cancel} 
+                  onClick={completeOrDismiss} 
                   className="w-full py-3.5 rounded-xl text-[10px] font-black text-white/40 hover:text-white uppercase tracking-[0.2em] transition-all bg-white/5 hover:bg-white/10"
                 >
                   Dismiss

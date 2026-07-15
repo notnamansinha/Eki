@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useRoutes } from "@/hooks/useRoutes";
 import { Bus, Navigation, Play, Square, ChevronDown, ChevronUp, MapPin } from "lucide-react";
 
@@ -8,7 +8,6 @@ import { DriverData } from "@/hooks/useDrivers";
 import { BusData } from "@/hooks/useBuses";
 
 interface Props {
-  onNewRequest?: (req: any) => void;
   busId: string;
   driverId: string;
   setDriverId: (id: string) => void;
@@ -41,14 +40,20 @@ export default function TransmitterControls({
 }: Props) {
   const [isExpanded, setIsExpanded] = useState(true);
   const { routes } = useRoutes();
-
-  useEffect(() => {
-    if (isTracking) {
-      setIsExpanded(false);
-    } else {
-      setIsExpanded(true);
-    }
-  }, [isTracking]);
+  const activeBus = useMemo(() => buses.find((b) => b.id === busId), [buses, busId]);
+  const legacyAssignedRouteId = (activeBus as BusData & { assignedRouteId?: string })?.assignedRouteId;
+  const busRoutes = useMemo(
+    () => activeBus?.assignedRoutes || (legacyAssignedRouteId ? [legacyAssignedRouteId] : []),
+    [activeBus?.assignedRoutes, legacyAssignedRouteId]
+  );
+  const allowedRoutes = useMemo(
+    () => routes.filter((route) => busRoutes.includes(route.id)),
+    [busRoutes, routes]
+  );
+  const hasAuthorizedSelectedRoute =
+    selectedRouteIds.length > 0 &&
+    selectedRouteIds.every((routeId) => allowedRoutes.some((route) => route.id === routeId));
+  const controlsExpanded = !isTracking && isExpanded;
 
   return (
     <div className="flex flex-col w-full rounded-t-2xl overflow-hidden relative transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
@@ -56,7 +61,9 @@ export default function TransmitterControls({
       {/* Handle / Header */}
       <div 
         className="w-full h-[52px] flex items-center justify-between px-5 cursor-pointer relative"
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => {
+          if (!isTracking) setIsExpanded(!isExpanded);
+        }}
       >
         <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full" style={{ background: "var(--surface-4)" }} />
         <div className="flex items-center gap-2.5 mt-1">
@@ -66,11 +73,11 @@ export default function TransmitterControls({
           </span>
         </div>
         <div className="mt-1" style={{ color: "var(--text-ghost)" }}>
-          {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+          {controlsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
         </div>
       </div>
 
-      <div className={`px-5 gap-4 flex-col overflow-y-auto max-h-[55vh] ${isExpanded ? 'flex pb-6' : 'hidden'}`}>
+      <div className={`px-5 gap-4 flex-col overflow-y-auto max-h-[55vh] ${controlsExpanded ? 'flex pb-6' : 'hidden'}`}>
 
         {/* Vehicle Selector */}
         {!isTracking ? (
@@ -81,7 +88,11 @@ export default function TransmitterControls({
             <div className="relative">
               <select
                 value={busId}
-                onChange={(e) => setSelectedBusId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedBusId(e.target.value);
+                  setSelectedRouteIds([]);
+                  onRouteUpdate?.([]);
+                }}
                 className="w-full h-12 rounded-xl px-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none cursor-pointer transition-all"
                 style={{ 
                   background: "var(--surface-3)", 
@@ -161,15 +172,11 @@ export default function TransmitterControls({
                 return <p className="text-[11px] font-medium text-center py-4 animate-pulse" style={{ color: "var(--text-ghost)" }}>Loading fleet data…</p>;
               }
 
-              const activeBus = buses.find(b => b.id === busId);
-              const busRoutes = activeBus?.assignedRoutes || ((activeBus as any)?.assignedRouteId ? [(activeBus as any).assignedRouteId] : []);
-              const allowedRoutes = routes.filter(r => busRoutes.includes(r.id));
-              
               if (allowedRoutes.length === 0) {
                 return (
                   <div className="flex flex-col items-center py-5 px-4 text-center">
                     <p className="text-[11px] font-bold mb-0.5" style={{ color: "var(--status-danger)" }}>No routes assigned</p>
-                    <p className="text-[10px]" style={{ color: "var(--text-ghost)" }}>Vehicle "{busId}" has no authorized routes.</p>
+                    <p className="text-[10px]" style={{ color: "var(--text-ghost)" }}>Vehicle &quot;{busId}&quot; has no authorized routes.</p>
                   </div>
                 );
               }
@@ -222,7 +229,7 @@ export default function TransmitterControls({
           <button
               aria-label="Go live and start transmitting location"
               onClick={onStartTracking}
-              disabled={!busId || !driverId || selectedRouteIds.length === 0 || !isSocketConnected}
+              disabled={!busId || !driverId || !hasAuthorizedSelectedRoute || !isSocketConnected}
               className="w-full py-4 rounded-xl font-bold text-[14px] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 disabled:opacity-30 disabled:cursor-not-allowed"
               style={{ background: "var(--text-primary)", color: "var(--surface-0)" }}
             >
@@ -253,7 +260,7 @@ export default function TransmitterControls({
       </div>
 
       {/* Collapsed Tracking Bar */}
-      {!isExpanded && isTracking && (
+      {!controlsExpanded && isTracking && (
         <div className="px-5 pb-5 flex items-center justify-between gap-4 animate-slide-up">
           <div className="flex flex-col flex-1 cursor-pointer" onClick={() => setIsExpanded(true)}>
              <div className="status-live mb-1" style={{ fontSize: "9px", padding: "2px 8px", width: "fit-content" }}>

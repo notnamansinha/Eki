@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Navigation, Footprints, ChevronUp } from "lucide-react";
+import { Footprints, ChevronUp } from "lucide-react";
 
 interface NextBusCardProps {
   routeName: string;
@@ -29,12 +29,16 @@ export default function NextBusCard({
   routeColor = "var(--accent)",
 }: NextBusCardProps) {
   const motion = MOTION_LABELS[motionState] || MOTION_LABELS.uncertain;
+  const ariaLabel =
+    typeof etaMinutes === "number"
+      ? `Next bus in ${etaMinutes} minutes`
+      : "Next bus arrival time is being calculated";
 
   return (
     <button
       onClick={onTap}
       className="w-full text-left transition-all duration-200 active:scale-[0.98]"
-      aria-label={`Next bus in ${etaMinutes} minutes`}
+      aria-label={ariaLabel}
     >
       <div
         className="rounded-2xl p-4 border"

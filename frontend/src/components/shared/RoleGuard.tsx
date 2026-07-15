@@ -2,6 +2,7 @@
 
 import { useAuth, UserRole } from "@/hooks/useAuth";
 import { Loader2, ShieldAlert, LogIn } from "lucide-react";
+import Link from "next/link";
 
 interface RoleGuardProps {
   children: React.ReactNode;
@@ -9,9 +10,9 @@ interface RoleGuardProps {
 }
 
 export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
-  const { user, loading, loginLoading, loginWithGoogle, logout } = useAuth();
+  const { user, loading, roleResolved, loginLoading, loginWithGoogle, logout } = useAuth();
 
-  if (loading) {
+  if (loading || (user && !roleResolved)) {
     return (
       <div
         className="w-full flex flex-col items-center justify-center"
@@ -107,13 +108,13 @@ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
           >
             Sign out
           </button>
-          <a
+          <Link
             href="/"
             className="text-[13px] font-bold transition-colors"
             style={{ color: "var(--accent)" }}
           >
             Return Home
-          </a>
+          </Link>
         </div>
       </div>
     );

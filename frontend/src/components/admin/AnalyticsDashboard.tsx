@@ -1,7 +1,7 @@
 "use client";
 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { TrendingUp, PieChart as PieIcon, MessageSquare, Clock, Star } from "lucide-react";
+import { TrendingUp, MessageSquare, Star } from "lucide-react";
 
 const MOCK_LINE_DATA = [
   { time: "06:00", today: 120, yesterday: 100 },

@@ -3,14 +3,25 @@
 import RouteManagementPanel from "@/components/admin/RouteManagementPanel";
 import FleetManagementPanel from "@/components/admin/FleetManagementPanel";
 import FleetMapOverview from "@/components/admin/FleetMapOverview";
+import { AdminDataProvider } from "@/contexts/AdminDataContext";
 import { Map as MapIcon, Users, ShieldCheck, Bus as BusIcon, Route as RouteIcon, LayoutGrid } from "lucide-react";
 import { useState } from "react";
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<"routes" | "fleet" | "personnel">("fleet");
   const [showMap, setShowMap] = useState(false);
+  const [hasOpenedMap, setHasOpenedMap] = useState(false);
+
+  const toggleMap = () => {
+    setShowMap((current) => {
+      const next = !current;
+      if (next) setHasOpenedMap(true);
+      return next;
+    });
+  };
 
   return (
+    <AdminDataProvider>
     <main className="min-h-screen bg-brand-dark text-white flex flex-col font-sans admin-page">
 
       {/* ── Slim identity header ── */}
@@ -28,7 +39,7 @@ export default function AdminPage() {
           </div>
 
           <button
-            onClick={() => setShowMap(!showMap)}
+            onClick={toggleMap}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold uppercase tracking-wider text-white transition-colors"
           >
             {showMap ? (
@@ -106,23 +117,20 @@ export default function AdminPage() {
       {/* ── Content ── */}
       <div className="flex-1 bg-brand-dark/20 relative min-h-0 overflow-hidden">
         {/* Map layer — always present in background but only visible when showMap is true */}
-        <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${showMap ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
-          <FleetMapOverview />
+        <div className={`absolute inset-0 transition-opacity duration-500 ${showMap ? "opacity-100 pointer-events-auto z-20" : "opacity-0 pointer-events-none z-0"}`}>
+          {hasOpenedMap && <FleetMapOverview />}
         </div>
 
-        {/* Content panels */}
+        {/* Content panel */}
         <div className={`relative z-10 w-full h-full transition-all duration-500 ${showMap ? "opacity-0 translate-y-4 pointer-events-none" : "opacity-100 translate-y-0"}`}>
-          <div className={`w-full h-full overflow-y-auto transition-all duration-300 ${activeTab === "routes" ? "opacity-100 translate-y-0 pointer-events-auto relative" : "opacity-0 translate-y-2 pointer-events-none absolute inset-0"}`}>
-            <RouteManagementPanel />
-          </div>
-          <div className={`w-full h-full overflow-y-auto transition-all duration-300 ${activeTab === "fleet" ? "opacity-100 translate-y-0 pointer-events-auto relative" : "opacity-0 translate-y-2 pointer-events-none absolute inset-0"}`}>
-            <FleetManagementPanel mode="fleet" />
-          </div>
-          <div className={`w-full h-full overflow-y-auto transition-all duration-300 ${activeTab === "personnel" ? "opacity-100 translate-y-0 pointer-events-auto relative" : "opacity-0 translate-y-2 pointer-events-none absolute inset-0"}`}>
-            <FleetManagementPanel mode="personnel" />
+          <div className="w-full h-full overflow-y-auto transition-all duration-300 opacity-100 translate-y-0 pointer-events-auto relative">
+            {activeTab === "routes" && <RouteManagementPanel />}
+            {activeTab === "fleet" && <FleetManagementPanel mode="fleet" />}
+            {activeTab === "personnel" && <FleetManagementPanel mode="personnel" />}
           </div>
         </div>
       </div>
     </main>
+    </AdminDataProvider>
   );
 }

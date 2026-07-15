@@ -21,8 +21,8 @@
   /* ── Text hierarchy ── */
   --text-primary: #ECECEF;
   --text-secondary: #94949C;
-  --text-tertiary: #5A5A63;
-  --text-ghost: #3A3A42;
+  --text-tertiary: #B8B8C2;
+  --text-ghost: #A6A6B0;
 
   /* ── Borders ── */
   --border-subtle: rgba(255, 255, 255, 0.06);
@@ -105,11 +105,15 @@ body {
   border-color: var(--border-hover);
 }
 .eki-card-interactive {
-  composes: eki-card;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  transition: border-color 0.2s ease, background 0.2s ease;
   cursor: pointer;
 }
 .eki-card-interactive:hover {
   background: var(--surface-3);
+  border-color: var(--border-hover);
 }
 .eki-card-interactive:active {
   transform: scale(0.985);

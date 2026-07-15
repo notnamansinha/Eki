@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useLayoutEffect } from "react";
+import { useEffect, useState, useCallback, useLayoutEffect, useRef } from "react";
 import { auth, googleProvider, rtdb, db } from "@/lib/firebase";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
 import { ref, set } from "firebase/database";
@@ -53,7 +53,9 @@ export function useAuth() {
   // Always initialize to null/true to ensure client hydration matches SSR.
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [roleResolved, setRoleResolved] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
+  const authGenerationRef = useRef(0);
 
   // useLayoutEffect runs synchronously immediately after React has performed all DOM mutations
   // during the initial render, before the browser has a chance to paint. This completely
@@ -65,14 +67,24 @@ export function useAuth() {
     if (cached) {
       setUser(cached);
       setLoading(false);
+      setRoleResolved(false);
     }
   }, []);
 
   useEffect(() => {
+    let active = true;
     // Hard safety-net: never show spinner > 6 s even if everything fails
-    const timeout = setTimeout(() => setLoading(false), 6000);
+    const timeout = setTimeout(() => {
+      if (active) setLoading(false);
+    }, 6000);
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      const generation = ++authGenerationRef.current;
+      const isCurrentAuth = () =>
+        active &&
+        authGenerationRef.current === generation &&
+        auth.currentUser?.uid === firebaseUser?.uid;
+
       // Signal to Firestore hooks that auth has resolved (ends their wait)
       notifyAuthReady();
 
@@ -92,6 +104,7 @@ export function useAuth() {
         };
 
         setUser(optimisticUser);
+        setRoleResolved(false);
         // Unblock the UI immediately — role may update silently below
         setLoading(false);
         clearTimeout(timeout);
@@ -114,6 +127,7 @@ export function useAuth() {
             let role: UserRole = optimisticRole;
 
             const userSnap = await fetchWithTimeout(getDoc(userDocRef), 3000);
+            if (!isCurrentAuth()) return;
 
             if (userSnap.exists()) {
               role = (userSnap.data()?.role as UserRole) ?? "passenger";
@@ -130,6 +144,7 @@ export function useAuth() {
               };
               try {
                 await setDoc(userDocRef, userData);
+                if (!isCurrentAuth()) return;
                 const userDbRef = ref(rtdb, `users/${firebaseUser.uid}`);
                 await set(userDbRef, userData);
               } catch (dbErr) {
@@ -145,24 +160,30 @@ export function useAuth() {
               photoURL: firebaseUser.photoURL,
               role,
             };
+            if (!isCurrentAuth()) return;
             setUser(resolvedUser);
+            setRoleResolved(true);
             writeCache(resolvedUser);
           } catch (err) {
             // Firestore failed/timed out — keep optimistic user, still functional
             console.warn("Firestore role fetch failed:", err);
-            writeCache(optimisticUser);
+            if (!isCurrentAuth()) return;
+            setRoleResolved(false);
           }
         })();
       } else {
         // Signed out — clear everything
         clearCache();
         setUser(null);
+        setRoleResolved(false);
         setLoading(false);
         clearTimeout(timeout);
       }
     });
 
     return () => {
+      active = false;
+      authGenerationRef.current += 1;
       unsubscribe();
       clearTimeout(timeout);
     };
@@ -195,5 +216,5 @@ export function useAuth() {
     }
   }, []);
 
-  return { user, loading, loginLoading, loginWithGoogle, logout };
+  return { user, loading, roleResolved, loginLoading, loginWithGoogle, logout };
 }

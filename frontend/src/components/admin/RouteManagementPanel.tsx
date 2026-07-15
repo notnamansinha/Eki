@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
-import { useRoutes, RouteData, RouteStop } from "@/hooks/useRoutes";
+import { RouteData, RouteStop } from "@/hooks/useRoutes";
+import { useAdminData } from "@/contexts/AdminDataContext";
 import { doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
@@ -27,9 +28,15 @@ interface SearchBoxProps {
   onPlaceSelect: (place: PlaceResult) => void;
 }
 
+interface NominatimResult {
+  display_name: string;
+  lat: string;
+  lon: string;
+}
+
 function SearchBox({ onPlaceSelect }: SearchBoxProps) {
   const [inputValue, setInputValue] = useState("");
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<NominatimResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
@@ -154,7 +161,7 @@ function MapControls({ center }: { center: {lat: number, lng: number} | null }) 
 }
 
 export default function RouteManagementPanel() {
-  const { routes, loading } = useRoutes();
+  const { routes, routesLoading: loading } = useAdminData();
   const [isCreating, setIsCreating] = useState(false);
   const [newRouteId, setNewRouteId] = useState("");
   const [newRouteName, setNewRouteName] = useState("");

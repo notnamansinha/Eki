@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import DriverMap from "@/components/maps/DriverMap";
 import { BRTS_ROUTES } from "@/config/brtsRoutes";
 import { useDriverSimulation } from "@/hooks/useDriverSimulation";

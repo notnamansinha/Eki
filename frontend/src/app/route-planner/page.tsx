@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { ArrowLeft, MapPin, ArrowRight, Navigation2, ChevronDown, Loader2, AlertCircle, GitBranch, Route, X, RefreshCw } from "lucide-react";
+import { ArrowLeft, MapPin, Navigation2, ChevronDown, Loader2, AlertCircle, GitBranch, Route, X, RefreshCw } from "lucide-react";
 import { PREDEFINED_ROUTES } from "@/lib/predefinedRoutes";
 
 const RoutePlannerMap = dynamic(() => import("@/components/maps/RoutePlannerMap"), {
@@ -147,13 +147,14 @@ export default function RoutePlannerPage() {
     (s) => s.id !== startStopId && s.id !== endStopId && s.id !== stops[0]?.id && s.id !== stops[stops.length - 1]?.id
   );
 
-  useEffect(() => {
+  const handleRouteChange = (routeId: string) => {
+    setSelectedRouteId(routeId);
     setStartStopId("");
     setEndStopId("");
     setViaStopId("");
     setPlanResult(null);
     setError(null);
-  }, [selectedRouteId]);
+  };
 
   const fetchPlan = useCallback(async (
     routeId: string,
@@ -199,6 +200,7 @@ export default function RoutePlannerPage() {
 
   useEffect(() => {
     if (startStopId && endStopId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchPlan(selectedRouteId, startStopId, endStopId, viaStopId);
     } else {
       setPlanResult(null);
@@ -304,7 +306,7 @@ export default function RoutePlannerPage() {
               <div className="relative">
                 <select
                   value={selectedRouteId}
-                  onChange={(e) => setSelectedRouteId(e.target.value)}
+                  onChange={(e) => handleRouteChange(e.target.value)}
                   className="w-full h-11 pl-4 pr-10 rounded-xl text-[13px] font-semibold appearance-none cursor-pointer transition-all outline-none"
                   style={{ 
                     background: "var(--surface-3)", 
@@ -534,7 +536,7 @@ export default function RoutePlannerPage() {
               color: "var(--text-secondary)"
             }}>
             <Route className="w-4 h-4" style={{ color: routeColor }} />
-            Tap "Plan" to open the route selector
+            Tap &quot;Plan&quot; to open the route selector
           </div>
         </div>
       )}

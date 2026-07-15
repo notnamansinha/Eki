@@ -2,6 +2,7 @@
 
 import PassengerMap from "@/components/maps/PassengerMap";
 import { BRTS_ROUTES } from "@/config/brtsRoutes";
+import type { RouteData } from "@/hooks/useRoutes";
 
 export default function SimulatePassengerPage() {
   return (
@@ -14,7 +15,7 @@ export default function SimulatePassengerPage() {
       <div className="relative flex-1">
         <PassengerMap 
           targetStop={BRTS_ROUTES[0].stops[1]} 
-          route={BRTS_ROUTES[0] as any} 
+          route={BRTS_ROUTES[0] as RouteData} 
         />
       </div>
     </div>

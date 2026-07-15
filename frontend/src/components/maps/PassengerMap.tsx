@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
-import { rtdb, auth } from "@/lib/firebase";
+import { calculateStopEtas } from "@/lib/routeEta";
+import { rtdb } from "@/lib/firebase";
 import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
-import { signInAnonymously } from "firebase/auth";
 import { LocateFixed, WifiOff } from "lucide-react";
-import { DEFAULT_CENTER, MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
+import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
@@ -39,8 +39,6 @@ const BUS_EXPIRY_MS = 300_000;
 
 const WALKING_KMH = 5;
 const WALKING_M_PER_MIN = (WALKING_KMH * 1000) / 60;
-const BUS_SPEED_FLOOR_KMH = 15;
-
 const BUS_MOTION_COLORS: Record<string, string> = {
   moving:    "#34D399", // emerald — bus is rolling
   stopped:   "#FBBF24", // amber   — stopped at station or in traffic
@@ -48,7 +46,9 @@ const BUS_MOTION_COLORS: Record<string, string> = {
 };
 
 function decodePolyline(str: string, precision: number = 5) {
-  let index = 0, lat = 0, lng = 0, coordinates: { lat: number; lng: number }[] = [], shift = 0, result = 0, byte: number | null = null, latitude_change: number, longitude_change: number, factor = Math.pow(10, precision);
+  let index = 0, lat = 0, lng = 0, shift = 0, result = 0, byte: number | null = null, latitude_change: number, longitude_change: number;
+  const coordinates: { lat: number; lng: number }[] = [];
+  const factor = Math.pow(10, precision);
   while (index < str.length) {
     byte = null; shift = 0; result = 0;
     do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
@@ -115,6 +115,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
   const [stopETAs, setStopETAs] = useState<Record<string, number>>({});
   const [signalLostBuses, setSignalLostBuses] = useState<Set<string>>(new Set());
   const [signalLostLastSeen, setSignalLostLastSeen] = useState<number | null>(null);
+  const [signalLostObservedAt, setSignalLostObservedAt] = useState(0);
   const lastBuzzedStopIdRef = useRef<string | null>(null);
   const lastStopIndexRef = useRef<Record<string, number>>({});
   const stopEntryTimeRef = useRef<Record<string, number>>({});
@@ -143,13 +144,6 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     if (route.polyline) return decodePolyline(route.polyline);
     return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) || [];
   }, [route.polyline, route.stops]);
-
-  // ── Anonymous auth before reading RTDB ──────────────────────────────────
-  useEffect(() => {
-    signInAnonymously(auth).catch((err) => {
-      console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code);
-    });
-  }, []);
 
   // ── RTDB subscription: filtered by routeId ───────────────────────────────
   useEffect(() => {
@@ -210,18 +204,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
               lastStopIndexRef.current[bus.busId] = closestStopIndex;
             }
 
-            const busSpeedKmh = bus.speed > 0 ? bus.speed : BUS_SPEED_FLOOR_KMH;
-            const mPerMin = (busSpeedKmh * 1000) / 60;
-            const distToNextStop = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, route.stops[closestStopIndex]) * 1.3;
-            const busDelay = bus.delayMinutes || 0;
-            const newStopETAs: Record<string, number> = {};
-            let accumDistM = distToNextStop;
-            newStopETAs[route.stops[closestStopIndex].id] = Math.ceil(accumDistM / mPerMin) + busDelay;
-            for (let i = closestStopIndex + 1; i < route.stops.length; i++) {
-              const segDist = getDistanceMeters(route.stops[i - 1], route.stops[i]) * 1.3;
-              accumDistM += segDist + 125;
-              newStopETAs[route.stops[i].id] = Math.ceil(accumDistM / mPerMin) + busDelay;
-            }
+            const { stopEtas: newStopETAs } = calculateStopEtas(route.stops, bus, closestStopIndex);
             setStopETAs(prev => ({ ...prev, ...newStopETAs }));
 
             const DWELL_GATE_MS = 15_000;
@@ -250,13 +233,14 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
       setBuses(activeBuses);
       setSignalLostBuses(newSignalLost);
       setSignalLostLastSeen(oldestTimestamp);
+      setSignalLostObservedAt(now);
     });
 
     return () => unsubscribe();
   }, [route.id, targetStop, route.stops]);
 
   const signalLostMinutes = signalLostLastSeen
-    ? Math.round((Date.now() - signalLostLastSeen) / 60_000)
+    ? Math.round((signalLostObservedAt - signalLostLastSeen) / 60_000)
     : null;
 
   const mapCenter = useMemo(() => ({ lat: targetStop.lat, lng: targetStop.lng }), [targetStop.lat, targetStop.lng]);

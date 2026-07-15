@@ -15,11 +15,20 @@ export function useBuses() {
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
 
     waitForAuth().then(() => {
-      unsubscribe = onSnapshot(
+      if (cancelled) {
+        return;
+      }
+
+      const snapshotUnsubscribe = onSnapshot(
         collection(db, "buses"),
         (snapshot) => {
+          if (cancelled) {
+            return;
+          }
+
           const fetched = snapshot.docs.map((doc) => ({
             id: doc.id,
             ...doc.data(),
@@ -28,13 +37,27 @@ export function useBuses() {
           setLoading(false);
         },
         (error) => {
+          if (cancelled) {
+            return;
+          }
+
           console.error("Error fetching buses from Firestore:", error);
           setLoading(false);
         }
       );
+
+      if (cancelled) {
+        snapshotUnsubscribe();
+        return;
+      }
+
+      unsubscribe = snapshotUnsubscribe;
     });
 
-    return () => unsubscribe?.();
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, []);
 
   return { buses, loading };

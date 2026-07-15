@@ -14,6 +14,8 @@ interface Message {
   timestamp: number;
 }
 
+type MessagePayload = Omit<Message, "id">;
+
 interface Props {
   busId: string;
   currentUserRole: "driver" | "passenger" | "admin";
@@ -44,17 +46,17 @@ export default function MessagingPanel({
 
     const messagesRef = ref(rtdb, `messages/${busId}`);
     const unsubscribe = onValue(messagesRef, (snapshot) => {
-      const data = snapshot.val();
+      const data = snapshot.val() as Record<string, MessagePayload> | null;
       if (data) {
-        const msgs = Object.entries(data).map(([id, val]: [string, any]) => ({
+        const msgs = Object.entries(data).map(([id, val]) => ({
           id,
           ...val
-        })).sort((a: any, b: any) => (a.timestamp || 0) - (b.timestamp || 0));
+        })).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
         setMessages(msgs);
 
         // Count messages from others to surface unread badge
         if (onUnreadCountChange) {
-          const othersCount = msgs.filter((m: any) => m.senderId !== currentUserId).length;
+          const othersCount = msgs.filter((m) => m.senderId !== currentUserId).length;
           if (othersCount > lastSeenCountRef.current) {
             onUnreadCountChange(othersCount - lastSeenCountRef.current);
           }
@@ -70,7 +72,7 @@ export default function MessagingPanel({
     });
 
     return () => unsubscribe();
-  }, [busId]);
+  }, [busId, currentUserId, onUnreadCountChange]);
 
   // --- Rate Limiting Logic ---
   const [messagesSentCounts, setMessagesSentCounts] = useState<{timestamp: number}[]>([]);

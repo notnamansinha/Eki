@@ -7,43 +7,57 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, onValue } from "firebase/database";
-import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged } from "firebase/auth";
+
+interface ActiveBusCountEntry {
+  deviceState?: string;
+  tripState?: string;
+  timestamp?: number;
+}
 
 export default function HomePage() {
-  const { user, loading, loginLoading, loginWithGoogle } = useAuth();
+  const { user, loading, roleResolved, loginLoading, loginWithGoogle } = useAuth();
   const router = useRouter();
   const [activeBusCount, setActiveBusCount] = useState(0);
 
   useEffect(() => {
-    if (!loading && user) {
+    if (!loading && user && roleResolved) {
       router.push(`/${user.role || 'passenger'}`);
     }
-  }, [user, loading, router]);
+  }, [user, loading, roleResolved, router]);
 
   // Live bus count for social proof
   useEffect(() => {
+    let unsubscribeBuses: (() => void) | undefined;
+
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       if (!firebaseUser) {
-        signInAnonymously(auth).catch(() => {});
+        setActiveBusCount(0);
+        unsubscribeBuses?.();
+        unsubscribeBuses = undefined;
+        return;
       }
+
+      if (unsubscribeBuses) return;
+
+      const busesRef = ref(rtdb, "activeBuses");
+      unsubscribeBuses = onValue(busesRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const now = Date.now();
+          const count = Object.values(data as Record<string, ActiveBusCountEntry>).filter(
+            (b) => b.deviceState === "online" && b.tripState === "in_service" && b.timestamp && (now - b.timestamp) < 300_000
+          ).length;
+          setActiveBusCount(count);
+        } else {
+          setActiveBusCount(0);
+        }
+      });
     });
 
-    const busesRef = ref(rtdb, "activeBuses");
-    const unsub = onValue(busesRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const now = Date.now();
-        const count = Object.values(data as Record<string, any>).filter(
-          (b: any) => b.deviceState === "online" && b.tripState === "in_service" && (now - b.timestamp) < 300_000
-        ).length;
-        setActiveBusCount(count);
-      } else {
-        setActiveBusCount(0);
-      }
-    });
     return () => {
       unsubscribeAuth();
-      unsub();
+      unsubscribeBuses?.();
     };
   }, []);
 
@@ -192,7 +206,7 @@ export default function HomePage() {
                 desc: "Direct messaging channel between driver and riders. Ask about stops, report issues, get real responses.",
                 icon: Radio,
               },
-            ].map((f, i) => {
+            ].map((f) => {
               const Icon = f.icon;
               return (
                 <div
@@ -237,7 +251,7 @@ export default function HomePage() {
               Stop guessing.
             </h2>
             <p className="text-lg" style={{ color: "var(--text-secondary)" }}>
-              Track your bus in real-time. It's free.
+              Track your bus in real-time. It&apos;s free.
             </p>
           </div>
           <button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 
@@ -16,7 +16,10 @@ function StraightLine({ from, to }: { from: { lat: number; lng: number }, to: { 
   useEffect(() => {
     if (!map) return;
     lineRef.current = new google.maps.Polyline({
-      path: [from, to],
+      path: [
+        { lat: from.lat, lng: from.lng },
+        { lat: to.lat, lng: to.lng },
+      ],
       strokeColor: "#2563EB",
       strokeWeight: 6,
       strokeOpacity: 0.8,
@@ -28,15 +31,17 @@ function StraightLine({ from, to }: { from: { lat: number; lng: number }, to: { 
 }
 
 export default function GoogleLiveMap({ driverLocation, destination, onMapClick }: Props) {
-  const [etaInfo, setEtaInfo] = useState<{ duration_in_traffic: string; distance: string } | null>(null);
   const center = driverLocation || DEFAULT_CENTER;
+  const etaInfo = driverLocation && destination
+    ? { duration_in_traffic: "ETA N/A", distance: "Distance N/A" }
+    : null;
 
   useEffect(() => {
     if (driverLocation && destination) {
       // ETA displayed from backend socket data — no Directions API call
-      setEtaInfo({ duration_in_traffic: "ETA N/A", distance: "Distance N/A" });
+      return;
     } else {
-      setEtaInfo(null);
+      return;
     }
   }, [driverLocation, destination]);
 

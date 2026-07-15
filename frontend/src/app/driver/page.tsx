@@ -175,7 +175,7 @@ export default function DriverPage() {
 
         <div className={`absolute inset-0 z-10 flex flex-col transition-opacity duration-300 ${activeTab === "profile" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
           style={{ background: "var(--surface-0)" }}>
-          <DriverProfileTab driverId={driverId || "UNASSIGNED"} busId={busId || "UNASSIGNED"} onStopTracking={handleStopTracking} isTracking={isTracking} />
+          <DriverProfileTab driverId={driverId} busId={busId} onStopTracking={handleStopTracking} isTracking={isTracking} />
         </div>
 
         {/* Back Button FAB */}

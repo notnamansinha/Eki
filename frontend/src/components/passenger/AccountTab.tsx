@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { User, LogOut, ChevronRight, LogIn, MessageSquare } from "lucide-react";
+import { User, LogOut, ChevronRight, MessageSquare } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import FeedbackModal from "@/components/shared/FeedbackModal";
 
@@ -40,6 +40,7 @@ export default function AccountTab() {
             <div className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden"
               style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)" }}>
                {user?.photoURL ? (
+                 // eslint-disable-next-line @next/next/no-img-element
                  <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                ) : (
                  <User className="w-9 h-9" style={{ color: "var(--text-ghost)" }} />

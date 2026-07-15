@@ -1,30 +1,29 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
-import { useRoutes } from "@/hooks/useRoutes";
-import { useBuses } from "@/hooks/useBuses";
+import { useAdminData } from "@/contexts/AdminDataContext";
 
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
-import { rtdb } from "@/lib/firebase";
-import { ref, onValue } from "firebase/database";
 
 interface BusLocation {
   busId: string;
-  driverId: string;
+  driverId?: string;
   lat: number;
   lng: number;
   heading: number;
   speed: number;
   timestamp: number;
-  status: "active" | "idle" | "maintenance";
+  deviceState?: "online" | "offline";
+  motionState?: "moving" | "stopped" | "uncertain";
+  tripState?: "pre_departure" | "in_service" | "completed" | "maintenance";
   routeId?: string;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  active: "#10b981",
-  maintenance: "#ef4444",
-  idle: "#f59e0b",
+const MOTION_COLORS: Record<string, string> = {
+  moving:    "#34D399", // emerald
+  stopped:   "#FBBF24", // amber
+  uncertain: "#F87171", // red
 };
 
 function RoutePolyline({ path }: { path: { lat: number; lng: number }[] }) {
@@ -47,60 +46,29 @@ function RoutePolyline({ path }: { path: { lat: number; lng: number }[] }) {
 }
 
 function FleetMapOverviewInner() {
-  const { routes } = useRoutes();
-  const { buses: registeredBuses } = useBuses();
-  const [buses, setBuses] = useState<Map<string, BusLocation>>(new Map<string, BusLocation>());
-
-  useEffect(() => {
-    const busesRef = ref(rtdb, "activeBuses");
-    const unsubscribe = onValue(busesRef, (snapshot) => {
-      const data = snapshot.val();
-      if (!data) {
-        setBuses(new Map());
-        return;
+  const { routes, buses: registeredBuses, activeBuses, activeBusesUpdatedAt } = useAdminData();
+  const buses = useMemo(() => {
+    const liveBuses = new Map<string, BusLocation>();
+    activeBuses.forEach((bus) => {
+      const isFresh = bus.timestamp ? activeBusesUpdatedAt - bus.timestamp < 300_000 : false;
+      if (bus.busId && bus.lat != null && bus.lng != null && isFresh && bus.deviceState === "online") {
+        liveBuses.set(bus.busId, bus as BusLocation);
       }
-      
-      const newBuses = new Map<string, BusLocation>();
-      Object.values(data).forEach((bus: any) => {
-        if (bus.busId && bus.lat != null && bus.lng != null && bus.status !== "offline") {
-          newBuses.set(bus.busId, bus);
-        }
-      });
-      setBuses(newBuses);
     });
+    return liveBuses;
+  }, [activeBuses, activeBusesUpdatedAt]);
 
-    return () => unsubscribe();
-  }, []);
-
-  const [predefinedRoute, setPredefinedRoute] = useState<{ lat: number; lng: number }[]>([]);
-  const [activeRouteId, setActiveRouteId] = useState<string | null>(null);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const targetBus = selectedBusId ? buses.get(selectedBusId) : null;
-    const newRouteId = targetBus?.routeId || "";
-    if (newRouteId !== activeRouteId && newRouteId) {
-      setActiveRouteId(newRouteId);
-      const route = routes.find(r => r.id === newRouteId);
-      if (route) setPredefinedRoute(route.waypoints.map(w => ({ lat: w.lat, lng: w.lng })));
-    } else if (!newRouteId && predefinedRoute.length > 0) {
-      setPredefinedRoute([]);
-      setActiveRouteId(null);
-    }
-  }, [buses, selectedBusId, activeRouteId, routes, predefinedRoute.length]);
-
-  // Clear selection if selected bus is deleted from Firestore
   const registeredBusIds = new Set(registeredBuses.map((b) => b.id));
-  useEffect(() => {
-    if (selectedBusId && !registeredBusIds.has(selectedBusId)) {
-      setSelectedBusId(null);
-    }
-  }, [selectedBusId, registeredBuses]);
-
-  // Only show buses registered in Firestore
   const visibleBuses = new Map(
     Array.from(buses.entries()).filter(([busId]) => registeredBusIds.has(busId))
   );
+  const selectedBus = selectedBusId ? visibleBuses.get(selectedBusId) : null;
+  const selectedRoute = selectedBus?.routeId
+    ? routes.find((route) => route.id === selectedBus.routeId)
+    : null;
+  const predefinedRoute = selectedRoute?.waypoints.map((waypoint) => ({ lat: waypoint.lat, lng: waypoint.lng })) || [];
 
   return (
     <div className="relative w-full h-full">
@@ -115,37 +83,42 @@ function FleetMapOverviewInner() {
         <RoutePolyline path={predefinedRoute} />
 
         {Array.from(visibleBuses.values()).map((bus) => {
-          const color = STATUS_COLORS[bus.status] || STATUS_COLORS.idle;
+          const registeredBus = registeredBuses.find(b => b.id === bus.busId);
+          const labelText = registeredBus?.name || bus.busId;
+          
+          const motion = bus.motionState || "uncertain";
+          const color = MOTION_COLORS[motion] || MOTION_COLORS.uncertain;
+          
           const isSelected = selectedBusId === bus.busId;
-          const s = isSelected ? 48 : 40;
           const snappedHeading = Math.round(bus.heading / 5) * 5;
           return (
             <AdvancedMarker
               key={bus.busId}
               position={{ lat: bus.lat, lng: bus.lng }}
-              onClick={(e) => {
+              onClick={() => {
                 setSelectedBusId(bus.busId);
               }}
             >
-              <div style={{ width: s, height: s, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", transform: isSelected ? "scale(1.25)" : "scale(1)", transition: "transform 0.3s" }}>
-                {isSelected && (
-                  <div style={{ position: "absolute", top: -32, left: "50%", transform: "translateX(-50%)", background: "#2563eb", color: "white", fontSize: 10, fontWeight: "bold", padding: "2px 8px", borderRadius: 4, whiteSpace: "nowrap", boxShadow: "0 2px 8px rgba(0,0,0,0.5)" }}>
-                    Selected: {bus.busId}
-                  </div>
-                )}
+              <div style={{ width: 44, height: 44, position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", transform: isSelected ? "scale(1.2)" : "scale(1)", transition: "transform 0.3s" }}>
+                {/* Persistent label badge above the pointer */}
+                <div style={{ position: "absolute", top: -20, background: isSelected ? "var(--accent)" : "var(--surface-2)", color: "white", fontSize: 9, fontWeight: "bold", padding: "2px 6px", borderRadius: 4, whiteSpace: "nowrap", border: "1px solid var(--border-default)", boxShadow: "0 2px 6px rgba(0,0,0,0.4)" }}>
+                  {labelText}
+                </div>
+                
+                {/* Pointer icon rotated dynamically */}
                 <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 600ms" }}>
-                  <svg width={s * 0.7} height={s * 0.7} viewBox="0 0 24 24" fill="none">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
                     <path d="M12 2L20 20L12 16L4 20L12 2Z" fill={color} stroke="white" strokeWidth="1" strokeLinejoin="round" />
                   </svg>
                 </div>
-                <div style={{ position: "absolute", bottom: -4, right: -4, width: 10, height: 10, borderRadius: "50%", background: color, border: "1px solid #000" }} />
+                
+                {/* Status indicator dot */}
+                <div style={{ position: "absolute", bottom: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: color, border: "1.5px solid #09090b" }} />
               </div>
             </AdvancedMarker>
           );
         })}
       </GoogleMap>
-
-
     </div>
   );
 }

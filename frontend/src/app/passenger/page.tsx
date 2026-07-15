@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import PassengerMap from "@/components/maps/PassengerMap";
 import AccountTab from "@/components/passenger/AccountTab";
 import MessagingPanel from "@/components/shared/MessagingPanel";
@@ -14,7 +14,7 @@ import { ref, onValue } from "firebase/database";
 import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import RouteCard from "@/components/passenger/ui/RouteCard";
-import { getDistanceMeters } from "@/lib/mapUtils";
+import { calculateStopEtas } from "@/lib/routeEta";
 
 type ViewState = "home" | "tracking" | "profile";
 
@@ -39,7 +39,7 @@ export default function PassengerPage() {
   const [currentView, setCurrentView] = useState<ViewState>("home");
   const { routes } = useRoutes();
   const [selectedRouteId, setSelectedRouteId] = useState("");
-  const [selectedStopId, setSelectedStopId] = useState("");
+  const [selectedStopId] = useState("");
   const [activeBuses, setActiveBuses] = useState<ActiveBusData[]>([]);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -51,75 +51,75 @@ export default function PassengerPage() {
   const latestBusDriversRef = useRef<Map<string, string>>(new Map());
   const [endedMessage, setEndedMessage] = useState(false);
 
-  // Listen to Firebase Realtime Database for active buses.
-  // signInAnonymously ensures auth != null, required by RTDB security rules.
-  // Visibility is now driven purely by tripState (computed by the backend trip
-  // state machine). The old frontend departure-detection hack is gone.
+  // Listen to Firebase Realtime Database for active buses after auth resolves.
   useEffect(() => {
+    let cancelled = false;
+    let unsubscribeBuses: (() => void) | undefined;
+
+    const startBusListener = () => {
+      if (cancelled || unsubscribeBuses) return;
+
+      const busesRef = ref(rtdb, "activeBuses");
+
+      unsubscribeBuses = onValue(busesRef, (snapshot) => {
+        const data = snapshot.val();
+        const newBuses: ActiveBusData[] = [];
+        const driverMap = new Map<string, string>();
+
+        if (data) {
+          Object.values(data as Record<string, ActiveBusData>).forEach((bus) => {
+            // Safety net: discard entries older than 5 minutes (RTDB cleanup lag).
+            const isFresh = Date.now() - bus.timestamp < 300_000;
+            if (!bus.routeId || !bus.busId || !isFresh) return;
+
+            if (bus.deviceState !== "online" || bus.tripState !== "in_service") return;
+
+            newBuses.push(bus);
+            if (bus.driverId) driverMap.set(bus.busId, bus.driverId);
+          });
+        }
+
+        latestBusDriversRef.current = driverMap;
+        setActiveBuses(newBuses);
+      });
+    };
+
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
-      if (!firebaseUser) {
-        signInAnonymously(auth).catch((err) =>
+      if (firebaseUser) {
+        startBusListener();
+        return;
+      }
+
+      if (auth.currentUser) {
+        startBusListener();
+        return;
+      }
+
+      signInAnonymously(auth)
+        .then(() => startBusListener())
+        .catch((err) =>
           console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code)
         );
-      }
-    });
-
-    const busesRef = ref(rtdb, "activeBuses");
-
-    const unsubscribeBuses = onValue(busesRef, (snapshot) => {
-      const data = snapshot.val();
-      const newBuses: ActiveBusData[] = [];
-      const driverMap = new Map<string, string>();
-
-      if (data) {
-        Object.values(data as Record<string, ActiveBusData>).forEach((bus) => {
-          // Safety net: discard entries older than 5 minutes (RTDB cleanup lag).
-          const isFresh = Date.now() - bus.timestamp < 300_000;
-          if (!bus.routeId || !bus.busId || !isFresh) return;
-
-          if (bus.deviceState !== "online" || bus.tripState !== "in_service") return;
-
-          newBuses.push(bus);
-          if (bus.driverId) driverMap.set(bus.busId, bus.driverId);
-        });
-      }
-
-      latestBusDriversRef.current = driverMap;
-      setActiveBuses(newBuses);
     });
 
     return () => {
+      cancelled = true;
       unsubscribeAuth();
-      unsubscribeBuses();
+      unsubscribeBuses?.();
     };
   }, []);
 
   const activeRouteIds = Array.from(new Set(activeBuses.map(b => b.routeId)));
-  const activeRouteIdsStr = activeRouteIds.sort().join(',');
-
-  useEffect(() => {
-    const currentAvailable = routes.filter(r => activeRouteIds.includes(r.id));
-    if (currentAvailable.length > 0) {
-      if (!selectedRouteId || !currentAvailable.some(r => r.id === selectedRouteId)) {
-        setSelectedRouteId(currentAvailable[0].id);
-      }
-    } else if (currentAvailable.length === 0 && selectedRouteId) {
-      setSelectedRouteId("");
-    }
-  }, [activeRouteIdsStr, routes.length, selectedRouteId]);
-
   const availableRoutes = routes.filter(r => activeRouteIds.includes(r.id));
-  const activeRoute = availableRoutes.find(r => r.id === selectedRouteId);
+  const effectiveRouteId = availableRoutes.some((route) => route.id === selectedRouteId)
+    ? selectedRouteId
+    : availableRoutes[0]?.id || "";
+  const activeRoute = availableRoutes.find(r => r.id === effectiveRouteId);
+  const effectiveStopId = activeRoute?.stops?.some((stop) => stop.id === selectedStopId)
+    ? selectedStopId
+    : activeRoute?.stops?.[activeRoute.stops.length - 1]?.id || "";
 
-  useEffect(() => {
-    if (activeRoute && activeRoute.stops && activeRoute.stops.length > 0) {
-      if (!selectedStopId || !activeRoute.stops.some(s => s.id === selectedStopId)) {
-        setSelectedStopId(activeRoute.stops[activeRoute.stops.length - 1].id);
-      }
-    }
-  }, [activeRoute, selectedStopId]);
-
-  const targetStop = activeRoute?.stops?.find(s => s.id === selectedStopId) ||
+  const targetStop = activeRoute?.stops?.find(s => s.id === effectiveStopId) ||
     (activeRoute?.stops && activeRoute.stops.length > 0
       ? activeRoute.stops[activeRoute.stops.length - 1]
       : (activeRoute?.waypoints && activeRoute.waypoints.length > 0 ? {
@@ -136,20 +136,13 @@ export default function PassengerPage() {
         shortName: "LIVE"
       }));
 
-  const activeBusOnRoute = activeBuses.find(b => b.routeId === selectedRouteId);
+  const activeBusOnRoute = activeBuses.find(b => b.routeId === effectiveRouteId);
   const activeBusOnRouteId = activeBusOnRoute?.busId;
 
   // Compute live ETA for NextBusCard
-  const liveEtaMinutes = useMemo(() => {
-    if (!activeBusOnRoute || !targetStop || !activeRoute?.stops) return undefined;
-    const busSpeedKmh = activeBusOnRoute.speed > 0 ? activeBusOnRoute.speed : 15;
-    const mPerMin = (busSpeedKmh * 1000) / 60;
-    const dist = getDistanceMeters(
-      { lat: activeBusOnRoute.lat, lng: activeBusOnRoute.lng },
-      { lat: targetStop.lat, lng: targetStop.lng }
-    ) * 1.3;
-    return Math.ceil(dist / mPerMin) + (activeBusOnRoute.delayMinutes || 0);
-  }, [activeBusOnRoute?.lat, activeBusOnRoute?.lng, activeBusOnRoute?.speed, activeBusOnRoute?.delayMinutes, targetStop?.lat, targetStop?.lng]);
+  const liveEtaMinutes = activeBusOnRoute && targetStop && activeRoute?.stops
+    ? calculateStopEtas(activeRoute.stops, activeBusOnRoute).stopEtas[targetStop.id]
+    : undefined;
 
   const busMotionState = (activeBusOnRoute?.motionState || "uncertain") as "moving" | "stopped" | "uncertain";
 

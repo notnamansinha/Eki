@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import { useRoutes } from "@/hooks/useRoutes";
 
@@ -16,7 +16,7 @@ export interface BusLocation {
   heading: number;
   speed: number;
   timestamp: number;
-  status: "active" | "idle" | "maintenance";
+  status?: "active" | "idle" | "maintenance" | "offline";
   routeId?: string;
 }
 
@@ -51,24 +51,19 @@ function RoutePolyline({ path }: { path: { lat: number; lng: number }[] }) {
 function LiveMapInner({ onMapClick, selectedPin }: LiveMapProps) {
   const { routes } = useRoutes();
   const [buses, setBuses] = useState<Map<string, BusLocation>>(new Map<string, BusLocation>());
-  const [connected, setConnected] = useState(false);
-
-  const destination = useMemo(() => {
-    return selectedPin ? { lat: selectedPin.lat, lng: selectedPin.lng } : null;
-  }, [selectedPin]);
+  const connected = true;
 
   useEffect(() => {
-    setConnected(true);
     const busesRef = ref(rtdb, "activeBuses");
     const unsubscribe = onValue(busesRef, (snapshot) => {
-      const data = snapshot.val();
+      const data = snapshot.val() as Record<string, BusLocation> | null;
       if (!data) {
         setBuses(new Map());
         return;
       }
       
       const newBuses = new Map<string, BusLocation>();
-      Object.values(data).forEach((bus: any) => {
+      Object.values(data).forEach((bus) => {
         if (bus.busId && bus.lat && bus.lng && bus.status !== "offline") {
           newBuses.set(bus.busId, bus);
         }
@@ -79,23 +74,10 @@ function LiveMapInner({ onMapClick, selectedPin }: LiveMapProps) {
     return () => unsubscribe();
   }, []);
 
-  const [predefinedRoute, setPredefinedRoute] = useState<{ lat: number; lng: number }[]>([]);
-  const [activeRouteId, setActiveRouteId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const activeBus = Array.from(buses.values()).find(b => b.routeId);
-    const newRouteId = activeBus?.routeId || "";
-    if (newRouteId !== activeRouteId && newRouteId) {
-      setActiveRouteId(newRouteId);
-      const route = routes.find(r => r.id === newRouteId);
-      if (route) {
-        setPredefinedRoute(route.waypoints.map(w => ({ lat: w.lat, lng: w.lng })));
-      }
-    } else if (!newRouteId && predefinedRoute.length > 0) {
-      setPredefinedRoute([]);
-      setActiveRouteId(null);
-    }
-  }, [buses, activeRouteId, routes, predefinedRoute.length]);
+  const activeRouteId = Array.from(buses.values()).find((bus) => bus.routeId)?.routeId || "";
+  const predefinedRoute = activeRouteId
+    ? routes.find((route) => route.id === activeRouteId)?.waypoints.map((waypoint) => ({ lat: waypoint.lat, lng: waypoint.lng })) || []
+    : [];
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
@@ -115,7 +97,10 @@ function LiveMapInner({ onMapClick, selectedPin }: LiveMapProps) {
 
         {/* Bus markers */}
         {Array.from(buses.values()).map(bus => {
-          const color = STATUS_COLORS[bus.status] || STATUS_COLORS.idle;
+          const color =
+            bus.status && bus.status in STATUS_COLORS
+              ? STATUS_COLORS[bus.status as keyof typeof STATUS_COLORS]
+              : STATUS_COLORS.idle;
           const snappedHeading = Math.round(bus.heading / 5) * 5;
           return (
             <AdvancedMarker key={bus.busId} position={{ lat: bus.lat, lng: bus.lng }}>

@@ -1,35 +1,20 @@
 "use client";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { useState, useEffect } from "react";
-import { useBuses, BusData } from "@/hooks/useBuses";
-import { useDrivers, DriverData } from "@/hooks/useDrivers";
-import { useRoutes } from "@/hooks/useRoutes";
+import { BusData } from "@/hooks/useBuses";
+import { DriverData } from "@/hooks/useDrivers";
+import { ActiveBusEntry, useAdminData } from "@/contexts/AdminDataContext";
 import { doc, setDoc, deleteDoc, collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
 import { db, rtdb } from "@/lib/firebase";
-import { ref, onValue, get, remove } from "firebase/database";
+import { ref, get, remove } from "firebase/database";
 import {
   Bus, User, Trash2, Plus, ArrowRight,
-  ChevronDown, ChevronUp, Wifi, Pencil, Check, X, AlertCircle,
+  ChevronDown, ChevronUp, Pencil, Check, X, AlertCircle,
   Navigation, Gauge, MapPin, Clock, Radio, Activity, BarChart2,
-  TrendingUp, Route, AlertTriangle, CheckCircle2,
+  TrendingUp, AlertTriangle, CheckCircle2,
 } from "lucide-react";
-
-// ── Live bus tracking ─────────────────────────────────────────────────────────
-interface ActiveBusEntry {
-  busId: string;
-  driverId?: string;
-  routeId?: string;
-  lat?: number;
-  lng?: number;
-  speed?: number;
-  heading?: number;
-  timestamp?: number;
-  deviceState?: "online" | "offline";
-  motionState?: "moving" | "stopped" | "uncertain";
-  tripState?: "pre_departure" | "in_service" | "completed" | "maintenance";
-  currentStopIndex?: number;
-  lowAccuracy?: boolean;
-}
 
 // ── Completed trip analytics ───────────────────────────────────────────────────
 interface CompletedTrip {
@@ -40,19 +25,6 @@ interface CompletedTrip {
   completedAt: string;
   stopCount: number;
   stopNames: string[];
-}
-
-function useActiveBuses(): ActiveBusEntry[] {
-  const [active, setActive] = useState<ActiveBusEntry[]>([]);
-  useEffect(() => {
-    const r = ref(rtdb, "activeBuses");
-    const unsub = onValue(r, (snap) => {
-      const data = snap.val() as Record<string, ActiveBusEntry> | null;
-      setActive(data ? Object.values(data) : []);
-    });
-    return () => unsub();
-  }, []);
-  return active;
 }
 
 function useRecentTrips(count = 10): CompletedTrip[] {
@@ -324,10 +296,14 @@ interface Props {
 }
 
 export default function FleetManagementPanel({ mode = "fleet" }: Props) {
-  const { buses, loading: busesLoading } = useBuses();
-  const { drivers, loading: driversLoading } = useDrivers();
-  const { routes } = useRoutes();
-  const activeEntries = useActiveBuses();
+  const {
+    buses,
+    busesLoading,
+    drivers,
+    driversLoading,
+    routes,
+    activeBuses: activeEntries,
+  } = useAdminData();
   // Only show buses that are registered in the Firestore `buses` collection.
   // This acts as a defense-in-depth guard: even if RTDB cleanup is delayed
   // or a stale entry exists, deleted buses will never render in the UI.

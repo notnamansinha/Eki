@@ -36,13 +36,22 @@ export function useRoutes() {
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
 
     // Wait for auth to resolve before opening the listener to avoid
     // "permission-denied" errors from unauthenticated Firestore reads.
     waitForAuth().then(() => {
-      unsubscribe = onSnapshot(
+      if (cancelled) {
+        return;
+      }
+
+      const snapshotUnsubscribe = onSnapshot(
         collection(db, "routes"),
         (snapshot) => {
+          if (cancelled) {
+            return;
+          }
+
           const fetchedRoutes = snapshot.docs.map((doc) => ({
             id: doc.id,
             ...doc.data(),
@@ -51,13 +60,27 @@ export function useRoutes() {
           setLoading(false);
         },
         (error) => {
+          if (cancelled) {
+            return;
+          }
+
           console.error("Error fetching routes from Firestore:", error);
           setLoading(false);
         }
       );
+
+      if (cancelled) {
+        snapshotUnsubscribe();
+        return;
+      }
+
+      unsubscribe = snapshotUnsubscribe;
     });
 
-    return () => unsubscribe?.();
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, []);
 
   return { routes, loading };

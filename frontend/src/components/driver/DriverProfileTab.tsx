@@ -23,10 +23,11 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
   
   const currentDriver = drivers.find(d => d.id === driverId);
   const displayPhotoUrl = currentDriver?.photoUrl || user?.photoURL;
+  const canMutateProfile = Boolean(driverId);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !canMutateProfile) return;
 
     try {
       setIsUploading(true);
@@ -54,11 +55,14 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
           <div className="flex flex-col items-center gap-5 relative z-10">
             
             <div 
-              className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden relative cursor-pointer group"
+              className={`w-20 h-20 rounded-full flex items-center justify-center overflow-hidden relative group ${canMutateProfile ? "cursor-pointer" : "cursor-not-allowed"}`}
               style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)" }}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                if (canMutateProfile) fileInputRef.current?.click();
+              }}
             >
               {displayPhotoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={displayPhotoUrl} alt="Driver" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               ) : (
                 <User className="w-9 h-9" style={{ color: "var(--text-ghost)" }} />
@@ -74,13 +78,14 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
                 ref={fileInputRef} 
                 onChange={handlePhotoUpload} 
                 accept="image/*" 
+                disabled={!canMutateProfile}
                 className="hidden" 
               />
             </div>
 
             <div className="text-center">
               <h2 className="text-xl font-bold tracking-tight mb-1.5" style={{ color: "var(--text-primary)" }}>
-                {currentDriver?.name || `Driver ${driverId.replace("drv_", "#")}`}
+                {currentDriver?.name || (driverId ? `Driver ${driverId.replace("drv_", "#")}` : "Select an operator")}
               </h2>
               <div className="flex items-center justify-center gap-1.5">
                 <BadgeCheck className="w-3.5 h-3.5" style={{ color: "#60A5FA" }} />
@@ -105,6 +110,7 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
               <span className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>Active unit</span>
               <span className="font-bold font-mono text-[13px] tracking-wide" style={{ color: "var(--text-secondary)" }}>
                 {busId}
+                {!busId && "Unassigned"}
               </span>
             </div>
             <div className="flex justify-between items-center">
@@ -150,7 +156,7 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
         </div>
         
         <p className="text-center text-[10px] font-semibold pt-2" style={{ color: "var(--text-ghost)" }}>
-          Operator ID: {driverId.toUpperCase()}
+          Operator ID: {driverId ? driverId.toUpperCase() : "UNASSIGNED"}
         </p>
       </div>
     </div>
