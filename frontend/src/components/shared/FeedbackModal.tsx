@@ -9,6 +9,7 @@ import {
   doc,
   runTransaction,
   Timestamp,
+  serverTimestamp,
 } from "firebase/firestore";
 import { FEEDBACK_WORD_LIMIT } from "@/config/passenger";
 
@@ -108,30 +109,31 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
 
       await runTransaction(db, async (transaction) => {
         const cooldownSnap = await transaction.get(cooldownRef);
-        let history: number[] = [];
+        let lastSubmittedAt: Timestamp | undefined;
+        let previousSubmittedAt: Timestamp | undefined;
         
         if (cooldownSnap.exists()) {
           const data = cooldownSnap.data();
-          // Support old format (lastSubmittedAt) and new format (history)
-          if (data.history) {
-            history = data.history.map((t: Timestamp) => t.toMillis());
-          } else if (data.lastSubmittedAt) {
-            history = [(data.lastSubmittedAt as Timestamp).toMillis()];
+          lastSubmittedAt = data.lastSubmittedAt as Timestamp | undefined;
+          previousSubmittedAt = data.previousSubmittedAt as Timestamp | undefined;
+          
+          // Support old format (history array) if migrating
+          if (data.history && Array.isArray(data.history) && data.history.length > 0) {
+            lastSubmittedAt = data.history[data.history.length - 1] as Timestamp;
+            if (data.history.length > 1) {
+              previousSubmittedAt = data.history[0] as Timestamp;
+            }
           }
         }
 
         const now = Date.now();
-        history = history.filter((ts) => now - ts < ONE_DAY_MS);
 
-        if (history.length >= FEEDBACK_LIMIT_PER_DAY) {
-          const oldestMs = Math.min(...history);
-          const remaining = ONE_DAY_MS - (now - oldestMs);
+        if (previousSubmittedAt) {
+          const remaining = ONE_DAY_MS - (now - previousSubmittedAt.toMillis());
           if (remaining > 0) {
             throw new Error(`LIMIT_REACHED:${remaining}`);
           }
         }
-
-        history.push(now);
 
         transaction.set(feedbackRef, {
           userId: currentUserId,
@@ -141,14 +143,19 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           driverId: driverId || null,
           rating: busId && rating > 0 ? rating : null,
           comment: comment.trim(),
-          timestamp: Timestamp.fromMillis(now),
+          timestamp: serverTimestamp(),
           status: "new"
         });
 
-        transaction.set(cooldownRef, {
+        const cooldownData: any = {
           userId: currentUserId,
-          history: history.map(ts => Timestamp.fromMillis(ts))
-        }, { merge: true });
+          lastSubmittedAt: serverTimestamp()
+        };
+        if (lastSubmittedAt) {
+          cooldownData.previousSubmittedAt = lastSubmittedAt;
+        }
+
+        transaction.set(cooldownRef, cooldownData, { merge: true });
       });
 
       try {
