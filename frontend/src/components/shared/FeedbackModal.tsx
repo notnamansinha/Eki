@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Star, MessageSquare, X, Send, Check } from "lucide-react";
+import { Star, HeartHandshake, X, Send, Check } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
 import { signInAnonymously } from "firebase/auth";
 import {
@@ -222,7 +222,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg flex items-center justify-center"
               style={{ background: busId ? "rgba(59,130,246,0.10)" : "var(--status-live-bg)" }}>
-              <MessageSquare className="w-4 h-4" style={{ color: busId ? "#60A5FA" : "var(--status-live)" }} />
+              <HeartHandshake className="w-4 h-4" style={{ color: busId ? "#60A5FA" : "var(--status-live)" }} />
             </div>
             <div>
               <h2 className="text-[15px] font-bold leading-none" style={{ color: "var(--text-primary)" }}>

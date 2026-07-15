@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { rtdb } from "@/lib/firebase";
 import { ref, push, onValue, serverTimestamp } from "firebase/database";
-import { Send, X, Radio } from "lucide-react";
+import { Send, X, SignalHigh as Radio } from "lucide-react";
 
 interface Message {
   id: string;

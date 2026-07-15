@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { User, LogOut, ChevronRight, LogIn, MessageSquare } from "lucide-react";
+import { CircleUserRound, LogOut, ChevronRight, LogIn, HeartHandshake } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import FeedbackModal from "@/components/shared/FeedbackModal";
 
@@ -21,7 +21,7 @@ export default function AccountTab() {
                {user?.photoURL ? (
                  <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" />
                ) : (
-                 <User className="w-9 h-9" style={{ color: "var(--text-ghost)" }} />
+                 <CircleUserRound className="w-9 h-9" style={{ color: "var(--text-ghost)" }} />
                )}
             </div>
             
@@ -65,7 +65,7 @@ export default function AccountTab() {
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors"
                 style={{ background: "var(--surface-3)" }}>
-                  <MessageSquare className="w-4 h-4" style={{ color: "var(--text-tertiary)" }} />
+                  <HeartHandshake className="w-4 h-4" style={{ color: "var(--text-tertiary)" }} />
               </div>
               <span className="text-[13px] font-semibold" style={{ color: "var(--text-secondary)" }}>
                 Send Feedback

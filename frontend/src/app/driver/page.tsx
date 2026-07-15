@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useBuses } from "@/hooks/useBuses";
-import { Navigation, User, Radio, ArrowLeft } from "lucide-react";
+import { Navigation, CircleUserRound as User, SignalHigh as Radio, ArrowLeft } from "lucide-react";
 import { rtdb } from "@/lib/firebase";
 import { ref, update, remove, onValue } from "firebase/database";
 

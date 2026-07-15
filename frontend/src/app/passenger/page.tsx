@@ -8,7 +8,7 @@ import FeedbackModal from "@/components/shared/FeedbackModal";
 import NextBusCard from "@/components/passenger/NextBusCard";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
-import { Map as MapIcon, User, Loader2, Radio, ArrowLeft } from "lucide-react";
+import { MapPinned as MapIcon, CircleUserRound as User, Loader2, SignalHigh as Radio, ArrowLeft } from "lucide-react";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, onValue } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";

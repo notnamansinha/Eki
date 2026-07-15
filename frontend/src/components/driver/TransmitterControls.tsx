@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRoutes } from "@/hooks/useRoutes";
-import { Bus, Navigation, Play, Square, ChevronDown, ChevronUp, MapPin } from "lucide-react";
+import { BusFront as Bus, Navigation, Play, Square, ChevronDown, ChevronUp, MapPin } from "lucide-react";
 
 import { DriverData } from "@/hooks/useDrivers";
 import { BusData } from "@/hooks/useBuses";

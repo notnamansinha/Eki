@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bus } from "lucide-react";
+import { BusFront as Bus } from "lucide-react";
 
 export default function Header() {
   const pathname = usePathname(); 
