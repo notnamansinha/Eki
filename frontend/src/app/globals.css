@@ -371,3 +371,14 @@ body {
   background-repeat: repeat;
   z-index: 0;
 }
+
+/* ── Admin page inputs focus states (lime green focus) ── */
+.admin-page input:focus,
+.admin-page input:focus-visible,
+.admin-page select:focus,
+.admin-page select:focus-visible,
+.admin-page textarea:focus,
+.admin-page textarea:focus-visible {
+  border-color: #84cc16 !important;
+  outline: none !important;
+}

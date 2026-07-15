@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, onValue } from "firebase/database";
-import { signInAnonymously } from "firebase/auth";
+import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
 export default function HomePage() {
   const { user, loading, loginLoading, loginWithGoogle } = useAuth();
@@ -22,7 +22,12 @@ export default function HomePage() {
 
   // Live bus count for social proof
   useEffect(() => {
-    signInAnonymously(auth).catch(() => {});
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!firebaseUser) {
+        signInAnonymously(auth).catch(() => {});
+      }
+    });
+
     const busesRef = ref(rtdb, "activeBuses");
     const unsub = onValue(busesRef, (snapshot) => {
       const data = snapshot.val();
@@ -36,7 +41,10 @@ export default function HomePage() {
         setActiveBusCount(0);
       }
     });
-    return () => unsub();
+    return () => {
+      unsubscribeAuth();
+      unsub();
+    };
   }, []);
 
   if (loading || user) {

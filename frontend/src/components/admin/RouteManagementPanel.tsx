@@ -100,7 +100,8 @@ function RouteCard({ route, onDelete }: { route: RouteData; onDelete: (id: strin
         </div>
         <button
           onClick={() => onDelete(route.id)}
-          className="p-2 rounded-xl bg-white/5 text-red-400 hover:bg-red-500 hover:text-white transition-all opacity-0 group-hover:opacity-100 shadow-xl shrink-0"
+          className="p-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-all shadow-xl shrink-0"
+          aria-label={`Delete route ${route.name}`}
         >
           <Trash2 className="w-4 h-4" />
         </button>
@@ -261,7 +262,7 @@ export default function RouteManagementPanel() {
       <div className="w-full max-w-4xl mx-auto p-3 md:p-6 flex flex-col gap-4 animate-slide-up">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="font-bold text-xl tracking-tight" style={{ fontFamily: "Outfit" }}>Infrastructure</h2>
+            <h2 className="font-bold text-xl tracking-tight">Infrastructure</h2>
             <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black mt-0.5">Saved Routes</p>
           </div>
           <button

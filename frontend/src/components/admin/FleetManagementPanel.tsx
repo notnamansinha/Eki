@@ -560,7 +560,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               <Bus className="w-4 h-4 text-white/40" />
             </div>
             <div>
-              <h2 className="font-bold text-lg tracking-tight" style={{ fontFamily: "Outfit" }}>Fleet Vehicles</h2>
+              <h2 className="font-bold text-lg tracking-tight">Fleet Vehicles</h2>
               <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black">Manage Hardware IDs</p>
             </div>
           </div>
@@ -763,7 +763,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               <User className="w-4 h-4 text-white/40" />
             </div>
             <div>
-              <h2 className="font-bold text-lg tracking-tight" style={{ fontFamily: "Outfit" }}>Driver Personnel</h2>
+              <h2 className="font-bold text-lg tracking-tight">Driver Personnel</h2>
               <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black">Manage Operator IDs</p>
             </div>
           </div>

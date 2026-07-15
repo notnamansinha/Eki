@@ -11,7 +11,7 @@ import { useRoutes } from "@/hooks/useRoutes";
 import { Map as MapIcon, User, Loader2, Radio, ArrowLeft } from "lucide-react";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, onValue } from "firebase/database";
-import { signInAnonymously } from "firebase/auth";
+import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import RouteCard from "@/components/passenger/ui/RouteCard";
 import { getDistanceMeters } from "@/lib/mapUtils";
@@ -56,13 +56,17 @@ export default function PassengerPage() {
   // Visibility is now driven purely by tripState (computed by the backend trip
   // state machine). The old frontend departure-detection hack is gone.
   useEffect(() => {
-    signInAnonymously(auth).catch((err) =>
-      console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code)
-    );
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!firebaseUser) {
+        signInAnonymously(auth).catch((err) =>
+          console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code)
+        );
+      }
+    });
 
     const busesRef = ref(rtdb, "activeBuses");
 
-    const unsubscribe = onValue(busesRef, (snapshot) => {
+    const unsubscribeBuses = onValue(busesRef, (snapshot) => {
       const data = snapshot.val();
       const newBuses: ActiveBusData[] = [];
       const driverMap = new Map<string, string>();
@@ -84,7 +88,10 @@ export default function PassengerPage() {
       setActiveBuses(newBuses);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      unsubscribeBuses();
+    };
   }, []);
 
   const activeRouteIds = Array.from(new Set(activeBuses.map(b => b.routeId)));
@@ -373,13 +380,13 @@ export default function PassengerPage() {
             className="flex flex-col items-center justify-center py-2 flex-1 rounded-xl transition-all duration-300 relative"
           >
             {(currentView === "home" || currentView === "tracking") && (
-              <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "var(--accent)" }} />
+              <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "#84cc16" }} />
             )}
             <MapIcon className="w-5 h-5 mb-1" style={{ 
-              color: (currentView === "home" || currentView === "tracking") ? "var(--accent)" : "var(--text-ghost)" 
+              color: (currentView === "home" || currentView === "tracking") ? "#84cc16" : "#ffffff" 
             }} />
             <span className="text-[10px] font-bold" style={{ 
-              color: (currentView === "home" || currentView === "tracking") ? "var(--accent)" : "var(--text-ghost)" 
+              color: (currentView === "home" || currentView === "tracking") ? "#84cc16" : "#ffffff" 
             }}>
               Map
             </span>
@@ -390,13 +397,13 @@ export default function PassengerPage() {
             className="flex flex-col items-center justify-center py-2 flex-1 rounded-xl transition-all duration-300 relative"
           >
             {currentView === "profile" && (
-              <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "var(--text-primary)" }} />
+              <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "#84cc16" }} />
             )}
             <User className="w-5 h-5 mb-1" style={{ 
-              color: currentView === "profile" ? "var(--text-primary)" : "var(--text-ghost)" 
+              color: currentView === "profile" ? "#84cc16" : "#ffffff" 
             }} />
             <span className="text-[10px] font-bold" style={{ 
-              color: currentView === "profile" ? "var(--text-primary)" : "var(--text-ghost)" 
+              color: currentView === "profile" ? "#84cc16" : "#ffffff" 
             }}>
               Profile
             </span>
