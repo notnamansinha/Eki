@@ -499,20 +499,14 @@ void loop() {
     unsigned long now = millis();
 
     // ── Token Management (Refresh & Retry) ────────────────────────────────────
-    if (lastTokenFetch == 0) {
-        // CRITICAL FIX: If the initial token fetch failed on boot (e.g. backend down),
-        // we must retry periodically. Otherwise the bus stays offline forever.
-        static unsigned long lastTokenRetry = 0;
-        if (elapsed(lastTokenRetry) >= 10000) { // Retry every 10 seconds
-            lastTokenRetry = now;
+    if (lastTokenFetch == 0 || elapsed(lastTokenFetch) >= TOKEN_REFRESH_INTERVAL_MS) {
+        static unsigned long lastAuthRetry = 0;
+        // Retry every 10s if the initial fetch failed on boot, or if the 50-min refresh fails.
+        if (elapsed(lastAuthRetry) >= 10000) {
+            lastAuthRetry = now;
             if (fetchCustomToken()) {
-                Serial.println("[Auth] ✅ Successfully fetched initial Custom Token after retry.");
+                Serial.println("[Auth] Successfully obtained Custom Token.");
             }
-        }
-    } else if (elapsed(lastTokenFetch) >= TOKEN_REFRESH_INTERVAL_MS) {
-        // Proactive token refresh at 50 minutes (before 60-min Firebase expiry)
-        if (fetchCustomToken()) {
-            Serial.println("[Auth] ✅ Successfully refreshed Custom Token.");
         }
     }
 
