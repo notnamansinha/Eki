@@ -127,9 +127,9 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
       if (err instanceof Error && err.message.startsWith("COOLDOWN:")) {
         const remaining = Number(err.message.split(":")[1] || 0);
         setCooldownRemaining(remaining);
-        setError(`Please wait ${formatCooldown(remaining)} before sending feedback again.`);
+        setError(`Please wait ${formatCooldown(remaining)} before sending again.`);
       } else {
-        setError("Feedback could not be sent. Please try again.");
+        setError("Failed to send. Please try again.");
       }
     } finally {
       setSubmitting(false);
@@ -138,43 +138,65 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
 
   if (submitted) {
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-        <div className="bg-brand-surface border border-emerald-500/30 rounded-3xl p-8 max-w-sm w-full flex flex-col items-center text-center shadow-2xl animate-scale-up">
-          <div className="w-16 h-16 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mb-4">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in"
+        style={{ background: "rgba(0, 0, 0, 0.6)" }}>
+        <div className="rounded-2xl p-8 max-w-sm w-full flex flex-col items-center text-center animate-scale-up"
+          style={{ background: "var(--surface-2)", border: "1px solid rgba(52, 211, 153, 0.2)" }}>
+          <div className="w-14 h-14 rounded-full flex items-center justify-center mb-4"
+            style={{ background: "var(--status-live-bg)" }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--status-live)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
           </div>
-          <h2 className="text-xl font-bold text-white mb-2 font-display" style={{ fontFamily: "Outfit" }}>Thank You!</h2>
-          <p className="text-sm text-white/50">Your feedback helps us improve the network.</p>
+          <h2 className="text-lg font-bold mb-1.5" style={{ color: "var(--text-primary)" }}>
+            Thank you
+          </h2>
+          <p className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>
+            Your feedback helps us improve.
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm sm:p-4 animate-fade-in">
-      <div className="bg-brand-surface w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-white/10 shadow-3xl flex flex-col animate-slide-up">
-        <div className="flex items-center justify-between p-6 border-b border-white/5">
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4 animate-fade-in"
+      style={{ background: "rgba(0, 0, 0, 0.6)" }}>
+      <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl flex flex-col animate-slide-up"
+        style={{ background: "var(--surface-1)", border: "1px solid var(--border-default)" }}>
+        {/* Header */}
+        <div className="flex items-center justify-between p-5" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${busId ? 'bg-blue-500/20 text-blue-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-              <MessageSquare className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center"
+              style={{ background: busId ? "rgba(59,130,246,0.10)" : "var(--status-live-bg)" }}>
+              <MessageSquare className="w-4 h-4" style={{ color: busId ? "#60A5FA" : "var(--status-live)" }} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white tracking-tight leading-none" style={{ fontFamily: "Outfit" }}>
-                {busId ? "Ride Feedback" : "System Suggestion"}
+              <h2 className="text-[15px] font-bold leading-none" style={{ color: "var(--text-primary)" }}>
+                {busId ? "Rate your ride" : "Send feedback"}
               </h2>
-              {busId && <p className="text-[10px] text-white/40 uppercase tracking-widest font-black mt-1">Vehicle {busId}</p>}
+              {busId && (
+                <p className="text-[10px] font-semibold mt-1" style={{ color: "var(--text-ghost)" }}>
+                  Bus {busId}
+                </p>
+              )}
             </div>
           </div>
-          <button onClick={onClose} className="p-2 text-white/40 hover:text-white transition-colors bg-white/5 rounded-full">
+          <button onClick={onClose} className="p-2 rounded-lg transition-colors"
+            style={{ color: "var(--text-ghost)", background: "var(--surface-3)" }}
+            aria-label="Close feedback">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-6">
+        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-5">
+          {/* Star Rating */}
           {busId && (
-            <div className="flex flex-col items-center gap-3">
-              <span className="text-[10px] text-white/40 uppercase tracking-widest font-black">Rate Your Experience</span>
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col items-center gap-2.5">
+              <span className="text-[11px] font-semibold" style={{ color: "var(--text-ghost)" }}>
+                How was your experience?
+              </span>
+              <div className="flex items-center gap-1">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
                     key={star}
@@ -182,10 +204,18 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
                     onClick={() => setRating(star)}
                     onMouseEnter={() => setHoverRating(star)}
                     onMouseLeave={() => setHoverRating(0)}
-                    className="p-1 focus:outline-none transition-transform hover:scale-110"
+                    className="p-0.5 focus:outline-none transition-transform hover:scale-110"
+                    aria-label={`Rate ${star} stars`}
                   >
                     <Star 
-                      className={`w-8 h-8 ${star <= (hoverRating || rating) ? 'fill-yellow-400 text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]' : 'text-white/10'} transition-all`} 
+                      className={`w-8 h-8 transition-all ${
+                        star <= (hoverRating || rating) 
+                          ? 'fill-amber-400 text-amber-400' 
+                          : ''
+                      }`}
+                      style={{
+                        color: star <= (hoverRating || rating) ? "#FBBF24" : "var(--surface-4)",
+                      }}
                     />
                   </button>
                 ))}
@@ -193,9 +223,10 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
             </div>
           )}
 
-          <div className="flex flex-col gap-2">
-            <span className="text-[10px] text-white/40 uppercase tracking-widest font-black">
-              {busId ? "Additional Comments (Optional)" : "Describe your suggestion"}
+          {/* Comment */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-semibold" style={{ color: "var(--text-ghost)" }}>
+              {busId ? "Comments (optional)" : "What's on your mind?"}
             </span>
             <textarea
               value={comment}
@@ -203,35 +234,42 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
                 const nextComment = e.target.value;
                 if (countWords(nextComment) > FEEDBACK_WORD_LIMIT) {
                   setComment(trimToWordLimit(nextComment));
-                  setError(`Feedback is limited to ${FEEDBACK_WORD_LIMIT} words.`);
+                  setError(`Limited to ${FEEDBACK_WORD_LIMIT} words.`);
                 } else {
                   setComment(nextComment);
                   setError("");
                 }
               }}
               maxLength={2000}
-              placeholder={busId ? "How was the temperature, driving, or cleanliness?" : "What features would you like to see?"}
-              className="w-full bg-black/20 border border-white/10 rounded-xl p-4 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-emerald-500/50 resize-none h-28"
+              placeholder={busId ? "Temperature, driving, cleanliness…" : "Suggestions, ideas, bugs…"}
+              className="w-full rounded-xl p-3.5 text-[13px] focus:outline-none resize-none h-24 transition-colors"
+              style={{
+                background: "var(--surface-3)",
+                border: "1px solid var(--border-subtle)",
+                color: "var(--text-primary)",
+              }}
             />
-            <div className="flex items-center justify-between gap-3 text-[10px] font-black uppercase tracking-widest">
-              <span className={error ? "text-red-400" : "text-white/30"}>
+            <div className="flex items-center justify-between gap-3 text-[10px] font-semibold">
+              <span style={{ color: error ? "var(--status-danger)" : "var(--text-ghost)" }}>
                 {error || (cooldownRemaining > 0
-                  ? `Available in ${formatCooldown(cooldownRemaining)}`
-                  : "Ready to send")}
+                  ? `Wait ${formatCooldown(cooldownRemaining)}`
+                  : "Ready")}
               </span>
-              <span className={wordCount >= FEEDBACK_WORD_LIMIT ? "text-amber-400" : "text-white/30"}>
+              <span style={{ color: wordCount >= FEEDBACK_WORD_LIMIT ? "var(--status-warning)" : "var(--text-ghost)" }}>
                 {wordCount}/{FEEDBACK_WORD_LIMIT}
               </span>
             </div>
           </div>
 
+          {/* Submit */}
           <button
             type="submit"
             disabled={submitting || cooldownRemaining > 0 || (!!busId && !comment.trim() && rating === 0) || (!busId && !comment.trim())}
-            className="w-full h-12 bg-white text-brand-dark font-black tracking-widest uppercase text-xs rounded-xl flex items-center justify-center gap-2 hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            className="w-full h-11 rounded-xl font-bold text-[13px] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all"
+            style={{ background: "var(--text-primary)", color: "var(--surface-0)" }}
           >
-            {submitting ? "Transmitting..." : cooldownRemaining > 0 ? `Wait ${formatCooldown(cooldownRemaining)}` : "Submit Feedback"}
-            {!submitting && <Send className="w-4 h-4 ml-1 -mr-1" />}
+            {submitting ? "Sending…" : cooldownRemaining > 0 ? `Wait ${formatCooldown(cooldownRemaining)}` : "Submit"}
+            {!submitting && <Send className="w-3.5 h-3.5" />}
           </button>
         </form>
       </div>
