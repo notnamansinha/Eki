@@ -1,12 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { BusFront as Bus } from "lucide-react";
 
 export default function Header() {
-  const pathname = usePathname(); 
-
   return (
     <header className="sticky top-0 z-[100] w-full" style={{
       background: "rgba(9, 9, 11, 0.85)",

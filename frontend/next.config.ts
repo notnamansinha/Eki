@@ -8,7 +8,6 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react", "recharts"],
   },
-  devIndicators: false as any,
 };
 
 export default nextConfig;
