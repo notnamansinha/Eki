@@ -9,8 +9,6 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@fontsource/inter": "^5.2.8",
-    "@fontsource/inter-tight": "^5.2.7",
     "@vis.gl/react-google-maps": "^1.9.0",
     "firebase": "^12.11.0",
     "lucide-react": "^1.7.0",
