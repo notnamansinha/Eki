@@ -208,19 +208,6 @@ export default function PassengerPage() {
 
         {/* ── HOME VIEW ── */}
         <div className={`absolute inset-0 z-20 flex flex-col pt-safe transition-all duration-500 ${currentView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8 pointer-events-none"}`}>
-          
-          {/* Top Left University Logo with Glassmorphism */}
-          <div className="absolute top-0 left-0 pt-safe pl-5 mt-4 z-50 pointer-events-none">
-            <div className="p-2 rounded-[14px]" style={{
-              background: "rgba(18, 18, 20, 0.75)",
-              backdropFilter: "blur(16px)",
-              WebkitBackdropFilter: "blur(16px)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
-              boxShadow: "0 4px 16px rgba(0, 0, 0, 0.15)"
-            }}>
-              <img src="/ahduni_logo.webp" alt="University Logo" className="h-10 w-auto object-contain opacity-90 drop-shadow-md" />
-            </div>
-          </div>
 
           {/* Top spacer to frame the bus illustration near the top of the screen */}
           <div className="shrink-0" style={{ height: "34vh", minHeight: "250px" }} aria-hidden="true" />
