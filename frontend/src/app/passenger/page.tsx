@@ -182,55 +182,97 @@ export default function PassengerPage() {
   };
 
   return (
-    <div className="flex flex-col text-white overflow-hidden" style={{ height: "100dvh", background: "var(--surface-0)" }}>
-      <div className="relative flex-1 flex flex-col overflow-hidden min-h-0">
+    <div className="relative text-white overflow-hidden" style={{ height: "100dvh", backgroundColor: "var(--surface-0)" }}>
+      {/* Background Image Layer: Full screen map flowing naturally */}
+      <div 
+        className="absolute inset-0 z-0 pointer-events-none"
+        style={{
+          backgroundImage: "url('/userpanel.webp')",
+          backgroundSize: "cover", 
+          backgroundPosition: "center -24px", // Masks exactly 24px of the top to bring the bus closer to the top without clipping it
+          backgroundRepeat: "no-repeat",
+        }}
+      />
+      
+      <div className="absolute inset-0 flex flex-col overflow-hidden">
         
-        {/* Map layer — always present */}
-        <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${currentView !== "profile" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+        {/* Map layer — only present on tracking */}
+        <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${currentView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
           <PassengerMap
             targetStop={targetStop}
             route={activeRoute || null}
           />
-          {/* Dim overlay on home view so cards are readable */}
-          {currentView === "home" && (
-            <div className="absolute inset-0 z-10 animate-fade-in" 
-              style={{ background: "rgba(9, 9, 11, 0.65)", backdropFilter: "blur(2px)" }} />
-          )}
         </div>
+
+
 
         {/* ── HOME VIEW ── */}
         <div className={`absolute inset-0 z-20 flex flex-col pt-safe transition-all duration-500 ${currentView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8 pointer-events-none"}`}>
-          <div className="px-5 pt-10 pb-4">
-            <h1 className="font-extrabold text-3xl tracking-tight mb-1" style={{ color: "var(--text-primary)" }}>
-              Where to?
-            </h1>
-            <p className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>
-              Select a route to start tracking.
-            </p>
-          </div>
           
-          <div className="flex-1 overflow-y-auto px-5 pb-24 space-y-3">
-            {availableRoutes.length > 0 ? (
-              availableRoutes.map(r => (
-                <RouteCard 
-                  key={r.id}
-                  route={r}
-                  isSelected={false}
-                  onSelect={handleRouteSelect}
-                  activeBusesCount={activeBuses.filter(b => b.routeId === r.id).length}
-                />
-              ))
-            ) : (
-              <div className="rounded-xl p-8 text-center" 
-                style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
-                <p className="text-[13px] font-bold mb-1" style={{ color: "var(--text-tertiary)" }}>
-                  No buses running
-                </p>
-                <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
-                  Service starts at {PASSENGER_BUS_START_TIME}
+          {/* Top Left University Logo with Glassmorphism */}
+          <div className="absolute top-0 left-0 pt-safe pl-5 mt-4 z-50 pointer-events-none">
+            <div className="p-2 rounded-[14px]" style={{
+              background: "rgba(18, 18, 20, 0.75)",
+              backdropFilter: "blur(16px)",
+              WebkitBackdropFilter: "blur(16px)",
+              border: "1px solid rgba(255, 255, 255, 0.08)",
+              boxShadow: "0 4px 16px rgba(0, 0, 0, 0.15)"
+            }}>
+              <img src="/ahduni_logo.webp" alt="University Logo" className="h-10 w-auto object-contain opacity-90 drop-shadow-md" />
+            </div>
+          </div>
+
+          {/* Top spacer to frame the bus illustration near the top of the screen */}
+          <div className="shrink-0" style={{ height: "34vh", minHeight: "250px" }} aria-hidden="true" />
+
+          {/* Unified scrollable container */}
+          <div className="flex-1 overflow-y-auto px-5 pb-24">
+            
+            {/* Unified Glass Panel */}
+            <div className="rounded-3xl p-6 flex flex-col"
+              style={{
+                background: "rgba(18, 18, 20, 0.75)",
+                backdropFilter: "blur(16px)",
+                WebkitBackdropFilter: "blur(16px)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                boxShadow: "0 8px 32px rgba(0, 0, 0, 0.15)"
+              }}
+            >
+              {/* Heading Section with Subtle Divider */}
+              <div className="text-center pb-6 mb-6" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                <h1 className="font-bold text-2xl tracking-tight mb-2" style={{ color: "var(--text-primary)" }}>
+                  Where to?
+                </h1>
+                <p className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>
+                  Select a route to start tracking.
                 </p>
               </div>
-            )}
+
+              {/* Status / Routes Section */}
+              <div className="space-y-3">
+                {availableRoutes.length > 0 ? (
+                  availableRoutes.map(r => (
+                    <RouteCard 
+                      key={r.id}
+                      route={r}
+                      isSelected={false}
+                      onSelect={handleRouteSelect}
+                      activeBusesCount={activeBuses.filter(b => b.routeId === r.id).length}
+                    />
+                  ))
+                ) : (
+                  <div className="rounded-xl p-8 text-center" 
+                    style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
+                    <p className="text-[13px] font-bold mb-1" style={{ color: "var(--text-tertiary)" }}>
+                      No buses running
+                    </p>
+                    <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
+                      Service starts at {PASSENGER_BUS_START_TIME}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -338,8 +380,7 @@ export default function PassengerPage() {
         </div>
 
         {/* ── PROFILE VIEW ── */}
-        <div className={`absolute inset-0 z-30 flex flex-col transition-all duration-500 ${currentView === "profile" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-8 pointer-events-none"}`}
-          style={{ background: "var(--surface-0)" }}>
+        <div className={`absolute inset-0 z-30 flex flex-col transition-all duration-500 ${currentView === "profile" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-8 pointer-events-none"}`}>
           <AccountTab />
         </div>
       </div>
@@ -355,9 +396,10 @@ export default function PassengerPage() {
       )}
 
       {/* Bottom Navigation — 2 tabs */}
-      <nav className="relative z-[100] shrink-0 pb-safe" style={{ 
+      <nav className="absolute bottom-0 w-full z-[100] pb-safe" style={{ 
         height: "72px", 
-        background: "var(--surface-1)", 
+        background: "rgba(9, 9, 11, 0.85)",
+        backdropFilter: "blur(12px)",
         borderTop: "1px solid var(--border-subtle)" 
       }}>
         <div className="flex items-center justify-around px-6 h-full max-w-md mx-auto">
