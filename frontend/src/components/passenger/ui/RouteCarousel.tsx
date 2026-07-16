@@ -12,6 +12,8 @@ interface RouteCarouselProps {
 
 export default function RouteCarousel({ routes, selectedRouteId, onSwipe, onClick, getActiveBusesCount }: RouteCarouselProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isProgrammaticScroll = useRef(false);
+  const scrollTimeout = useRef<NodeJS.Timeout>();
   const [activeIndex, setActiveIndex] = useState(
     Math.max(0, routes.findIndex(r => r.id === selectedRouteId))
   );
@@ -24,25 +26,35 @@ export default function RouteCarousel({ routes, selectedRouteId, onSwipe, onClic
     let timeoutId: NodeJS.Timeout;
 
     const handleScroll = () => {
+      if (isProgrammaticScroll.current) return;
+
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
-        if (!container) return;
-        const scrollLeft = container.scrollLeft;
-        const width = container.clientWidth;
-        const child = container.children[0] as HTMLElement;
-        if (!child) return;
+        // Find the card closest to the center
+        let closestIdx = 0;
+        let minDiff = Infinity;
+        const center = container.scrollLeft + container.clientWidth / 2;
 
-        const cardWidth = child.offsetWidth;
-        const gap = 12; // Gap specified in style
-        const closestIndex = Math.max(0, Math.min(routes.length - 1, Math.round(scrollLeft / (cardWidth + gap))));
+        Array.from(container.children).forEach((child, i) => {
+          const childCenter = (child as HTMLElement).offsetLeft + (child as HTMLElement).offsetWidth / 2;
+          const diff = Math.abs(childCenter - center);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestIdx = i;
+          }
+        });
 
-        if (closestIndex !== activeIndex) {
-          onSwipe(routes[closestIndex].id);
+        if (closestIdx !== activeIndex) {
+          setActiveIndex(closestIdx);
+          onSwipe(routes[closestIdx].id);
         }
-      }, 50); // Small debounce for performance
+      }, 50);
     };
 
-    container.addEventListener('scroll', handleScroll, { passive: true });
+    container.addEventListener('scroll', handleScroll);
+    // Call once to initialize without debounce
+    handleScroll();
+
     return () => {
       container.removeEventListener('scroll', handleScroll);
       clearTimeout(timeoutId);
@@ -56,6 +68,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onSwipe, onClic
 
     const index = routes.findIndex(r => r.id === selectedRouteId);
     if (index !== -1 && index !== activeIndex) {
+      isProgrammaticScroll.current = true;
       setActiveIndex(index);
       const child = container.children[index] as HTMLElement;
       if (child) {
@@ -64,6 +77,12 @@ export default function RouteCarousel({ routes, selectedRouteId, onSwipe, onClic
           behavior: 'smooth'
         });
       }
+      
+      // Reset programmatic scroll flag after animation is likely done
+      clearTimeout(scrollTimeout.current);
+      scrollTimeout.current = setTimeout(() => {
+        isProgrammaticScroll.current = false;
+      }, 500);
     }
   }, [selectedRouteId, routes, activeIndex]);
 
@@ -96,6 +115,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onSwipe, onClic
           const routeColor = route.color || "var(--accent)";
           const stops = route.stops ?? [];
           const durationMins = route.duration ? Math.round(parseInt(route.duration) / 60) : (stops.length * 2); // Fallback estimation
+          const scheduleTime = new Date(Date.now() + durationMins * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
           return (
             <div
@@ -146,7 +166,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onSwipe, onClic
 
                   {/* Journey Information Row */}
                   <div className="flex items-center justify-start w-full gap-3 mb-3 text-metadata whitespace-nowrap" style={{ color: "var(--text-tertiary)" }}>
-                    <span>Departs in {durationMins} min</span>
+                    <span>Scheduled: {scheduleTime}</span>
                     <span className="text-[10px] opacity-40">•</span>
                     <span>{stops.length} Stops</span>
                   </div>
