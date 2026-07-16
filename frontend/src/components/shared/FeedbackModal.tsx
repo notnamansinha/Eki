@@ -194,18 +194,18 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
   if (submitted) {
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in"
-        style={{ background: "rgba(0, 0, 0, 0.6)" }}>
-        <div className="rounded-2xl p-8 max-w-sm w-full flex flex-col items-center text-center animate-scale-up"
-          style={{ background: "var(--surface-2)", border: "1px solid rgba(52, 211, 153, 0.2)" }}>
-          <div className="w-14 h-14 rounded-full flex items-center justify-center mb-4"
-            style={{ background: "var(--status-live-bg)" }}>
-            <Check color="var(--status-live)" strokeWidth={3} size={28} />
+        style={{ background: "rgba(0, 0, 0, 0.7)", backdropFilter: "blur(4px)" }}>
+        <div className="rounded-3xl p-8 max-w-sm w-full flex flex-col items-center text-center animate-scale-up relative overflow-hidden"
+          style={{ background: "var(--surface-2)", border: "1px solid rgba(255,255,255,0.05)", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)" }}>
+          <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/10 to-transparent pointer-events-none" />
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5 bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/30 relative z-10">
+            <Check className="text-white" strokeWidth={3} size={32} />
           </div>
-          <h2 className="text-lg font-bold mb-1.5" style={{ color: "var(--text-primary)" }}>
-            Thank you
+          <h2 className="text-xl font-bold mb-2 relative z-10" style={{ color: "var(--text-primary)" }}>
+            Thank you!
           </h2>
-          <p className="text-[13px]" style={{ color: "var(--text-tertiary)" }}>
-            Your feedback helps us improve.
+          <p className="text-[14px] relative z-10" style={{ color: "var(--text-tertiary)" }}>
+            Your feedback helps us improve the experience for everyone.
           </p>
         </div>
       </div>
@@ -214,31 +214,38 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4 animate-fade-in"
-      style={{ background: "rgba(0, 0, 0, 0.6)" }}>
-      <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl flex flex-col animate-slide-up"
-        style={{ background: "var(--surface-1)", border: "1px solid var(--border-default)" }}>
+      style={{ background: "rgba(0, 0, 0, 0.7)", backdropFilter: "blur(4px)" }}>
+      <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl flex flex-col animate-slide-up relative overflow-hidden shadow-2xl"
+        style={{ background: "var(--surface-1)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        
+        {/* Subtle top gradient glow */}
+        <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-indigo-500/5 to-transparent pointer-events-none" />
+
         {/* Header */}
-        <div className="flex items-center justify-between p-5" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-              style={{ background: busId ? "rgba(59,130,246,0.10)" : "var(--status-live-bg)" }}>
-              <HeartHandshake className="w-4 h-4" style={{ color: busId ? "#60A5FA" : "var(--status-live)" }} />
+        <div className="flex items-center justify-between p-6 relative z-10" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+          <div className="flex items-center gap-4">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg ${
+              busId 
+                ? 'bg-gradient-to-br from-blue-500 to-cyan-500 shadow-blue-500/20' 
+                : 'bg-gradient-to-br from-indigo-500 to-pink-500 shadow-indigo-500/20'
+            }`}>
+              <HeartHandshake className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-[15px] font-bold leading-none" style={{ color: "var(--text-primary)" }}>
+              <h2 className="text-[16px] font-bold leading-tight" style={{ color: "var(--text-primary)" }}>
                 {busId ? "Rate your ride" : "Send feedback"}
               </h2>
               {busId && (
-                <p className="text-[10px] font-semibold mt-1" style={{ color: "var(--text-ghost)" }}>
+                <p className="text-[11px] font-semibold mt-0.5" style={{ color: "var(--text-ghost)" }}>
                   Bus {busId}
                 </p>
               )}
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg transition-colors"
-            style={{ color: "var(--text-ghost)", background: "var(--surface-3)" }}
+          <button onClick={onClose} className="p-2 rounded-full transition-all hover:bg-white/10 active:scale-95"
+            style={{ color: "var(--text-ghost)" }}
             aria-label="Close feedback">
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -277,39 +284,45 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           )}
 
           {/* Comment */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-semibold" style={{ color: "var(--text-ghost)" }}>
+          <div className="flex flex-col gap-2">
+            <span className="text-[12px] font-semibold tracking-wide uppercase" style={{ color: "var(--text-ghost)" }}>
               {busId ? "Comments (optional)" : "What's on your mind?"}
             </span>
-            <textarea
-              value={comment}
-              onChange={(e) => {
-                const nextComment = e.target.value;
-                if (countWords(nextComment) > FEEDBACK_WORD_LIMIT) {
-                  setComment(trimToWordLimit(nextComment));
-                  setError(`Limited to ${FEEDBACK_WORD_LIMIT} words.`);
-                } else {
-                  setComment(nextComment);
-                  setError("");
-                }
-              }}
-              maxLength={2000}
-              placeholder={busId ? "Temperature, driving, cleanliness…" : "Suggestions, ideas, bugs…"}
-              className="w-full rounded-xl p-3.5 text-[13px] focus:outline-none resize-none h-24 transition-colors"
-              style={{
-                background: "var(--surface-3)",
-                border: "1px solid var(--border-subtle)",
-                color: "var(--text-primary)",
-              }}
-            />
-            <div className="flex items-center justify-between gap-3 text-[10px] font-semibold">
-              <span style={{ color: error ? "var(--status-danger)" : "var(--text-ghost)" }}>
+            <div className="relative group">
+              <textarea
+                value={comment}
+                onChange={(e) => {
+                  const nextComment = e.target.value;
+                  if (countWords(nextComment) > FEEDBACK_WORD_LIMIT) {
+                    setComment(trimToWordLimit(nextComment));
+                    setError(`Limited to ${FEEDBACK_WORD_LIMIT} words.`);
+                  } else {
+                    setComment(nextComment);
+                    setError("");
+                  }
+                }}
+                maxLength={2000}
+                placeholder={busId ? "Temperature, driving, cleanliness…" : "Suggestions, ideas, bugs…"}
+                className="w-full rounded-2xl p-4 text-[14px] focus:outline-none resize-none h-32 transition-all placeholder:text-white/20"
+                style={{
+                  background: "var(--surface-2)",
+                  border: "1px solid rgba(255,255,255,0.05)",
+                  color: "var(--text-primary)",
+                  boxShadow: "inset 0 2px 4px rgba(0,0,0,0.2)"
+                }}
+              />
+              <div className="absolute inset-0 rounded-2xl pointer-events-none transition-opacity opacity-0 group-focus-within:opacity-100" 
+                style={{ border: "1px solid rgba(99, 102, 241, 0.3)", boxShadow: "0 0 0 4px rgba(99, 102, 241, 0.1)" }} />
+            </div>
+            
+            <div className="flex items-center justify-between gap-3 text-[11px] font-semibold px-1 mt-1">
+              <span style={{ color: error ? "#F87171" : "var(--text-ghost)" }} className="transition-colors">
                 {error || (cooldownRemaining > 0
                   ? `Wait ${formatCooldown(cooldownRemaining)}`
                   : "Ready")}
               </span>
-              <span style={{ color: wordCount >= FEEDBACK_WORD_LIMIT ? "var(--status-warning)" : "var(--text-ghost)" }}>
-                {wordCount}/{FEEDBACK_WORD_LIMIT}
+              <span style={{ color: wordCount >= FEEDBACK_WORD_LIMIT ? "#FBBF24" : "var(--text-ghost)" }} className="transition-colors">
+                {wordCount} / {FEEDBACK_WORD_LIMIT} words
               </span>
             </div>
           </div>
@@ -318,11 +331,22 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           <button
             type="submit"
             disabled={submitting || cooldownRemaining > 0 || (!!busId && !comment.trim() && rating === 0) || (!busId && !comment.trim())}
-            className="w-full h-11 rounded-xl font-bold text-[13px] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all"
-            style={{ background: "var(--text-primary)", color: "var(--surface-0)" }}
+            className="w-full h-12 rounded-xl font-bold text-[14px] flex items-center justify-center gap-2 transition-all relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ 
+              background: (submitting || cooldownRemaining > 0 || (!!busId && !comment.trim() && rating === 0) || (!busId && !comment.trim()))
+                ? "var(--surface-3)" 
+                : "linear-gradient(135deg, #6366f1 0%, #ec4899 100%)",
+              color: "white",
+              boxShadow: (submitting || cooldownRemaining > 0 || (!!busId && !comment.trim() && rating === 0) || (!busId && !comment.trim()))
+                ? "none"
+                : "0 10px 25px -5px rgba(99, 102, 241, 0.4)",
+            }}
           >
-            {submitting ? "Sending…" : cooldownRemaining > 0 ? `Wait ${formatCooldown(cooldownRemaining)}` : "Submit"}
-            {!submitting && <Send className="w-3.5 h-3.5" />}
+            <div className="absolute inset-0 bg-white/20 translate-y-[100%] group-hover:translate-y-0 transition-transform duration-300 pointer-events-none" />
+            <span className="relative z-10 flex items-center gap-2">
+              {submitting ? "Sending…" : cooldownRemaining > 0 ? `Wait ${formatCooldown(cooldownRemaining)}` : "Submit Feedback"}
+              {!submitting && <Send className="w-4 h-4" />}
+            </span>
           </button>
         </form>
       </div>
