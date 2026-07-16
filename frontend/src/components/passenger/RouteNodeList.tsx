@@ -68,7 +68,7 @@ export default function RouteNodeList({
 
             {/* Stop info */}
             <div className="flex-1 flex flex-col min-w-0">
-              <p className={`truncate transition-colors leading-tight ${isTarget ? "text-important-number" : "text-card-title"}`}
+              <p className={`transition-colors leading-tight ${isTarget ? "text-important-number" : "text-card-title"}`}
                 style={{ color: isTarget ? "var(--text-primary)" : isDimmed ? "var(--text-ghost)" : "var(--text-secondary)" }}>
                 {stop.name}
               </p>
@@ -80,7 +80,7 @@ export default function RouteNodeList({
                 {isTarget && (
                   <span className="px-2 py-0.5 rounded text-chip"
                     style={{ background: "var(--accent-subtle)", color: "var(--accent)" }}>
-                    Your stop
+                    Last Stop
                   </span>
                 )}
                 {isFirst && !isTarget && (

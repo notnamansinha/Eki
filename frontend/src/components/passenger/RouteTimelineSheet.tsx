@@ -87,7 +87,7 @@ export default function RouteTimelineSheet({
 
               {/* Stop info */}
               <div className="flex-1 -mt-1 min-w-0">
-                <p className={`truncate ${isTarget ? "font-semibold text-[14px]" : "font-medium text-[13px]"}`}
+                <p className={`${isTarget ? "font-semibold text-[14px]" : "font-medium text-[13px]"}`}
                   style={{ color: isTarget ? "var(--text-primary)" : isDimmed ? "var(--text-ghost)" : "var(--text-secondary)" }}>
                   {stop.name}
                 </p>
@@ -99,7 +99,7 @@ export default function RouteTimelineSheet({
                   {isTarget && (
                     <span className="px-1.5 py-0.5 rounded text-[8px] font-semibold"
                       style={{ background: "var(--accent-subtle)", color: "var(--accent)" }}>
-                      Your stop
+                      Last Stop
                     </span>
                   )}
                   {isFirst && !isTarget && (

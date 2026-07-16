@@ -11,11 +11,20 @@ interface RouteCarouselProps {
 }
 
 export default function RouteCarousel({ routes, selectedRouteId, onClick, getActiveBusesCount }: RouteCarouselProps) {
-  if (routes.length === 0) return null;
+  const liveRoutes = routes.filter((route) => getActiveBusesCount(route.id) > 0);
+
+  if (liveRoutes.length === 0) {
+    return (
+      <div className="w-full flex flex-col items-center justify-center py-12 gap-3">
+        <p className="text-[16px] font-black" style={{ color: "var(--text-secondary)" }}>No live routes right now</p>
+        <p className="text-[13px] font-medium text-center" style={{ color: "var(--text-tertiary)" }}>Routes will appear here once a bus is active.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full flex flex-col gap-4 pb-4">
-      {routes.map((route) => {
+      {liveRoutes.map((route) => {
         const isSelected = route.id === selectedRouteId;
         const activeBuses = getActiveBusesCount(route.id);
         const stops = route.stops ?? [];
@@ -51,7 +60,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
                   )}
                 </div>
 
-                <div className="flex items-center w-full mt-6 gap-3">
+                <div className="flex items-baseline w-full mt-6 gap-3">
                   <div className="flex items-center gap-2">
                     {activeBuses > 0 && (
                       <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold tracking-wider flex items-center gap-1.5 shrink-0" style={{ background: "rgba(34, 197, 94, 0.1)", color: "var(--status-live)" }}>
@@ -59,14 +68,14 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
                         LIVE
                       </span>
                     )}
-                    <div className="flex items-center gap-1.5 text-[11.5px] font-black whitespace-nowrap" style={{ color: "var(--text-tertiary)" }}>
+                    <div className="flex items-baseline gap-1.5 text-[11.5px] font-black whitespace-nowrap" style={{ color: "var(--text-tertiary)" }}>
                       <span>{stops.length} stops</span>
-                      <span className="text-[10px] opacity-30">&bull;</span>
+                      <span className="text-[10px] opacity-30 self-center">&bull;</span>
                       <span className="text-white">Scheduled: {scheduleTime}</span>
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-1.5 text-[13px] font-black tracking-wider uppercase transition-opacity shrink-0" style={{ color: "var(--accent)" }}>
+                  <div className="flex items-baseline gap-1.5 text-[13px] font-black tracking-wider uppercase transition-opacity shrink-0" style={{ color: "var(--accent)" }}>
                     TRACK ROUTE <span className="text-[15px]">&rarr;</span>
                   </div>
                 </div>
