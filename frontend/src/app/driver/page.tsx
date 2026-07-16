@@ -70,7 +70,7 @@ export default function DriverPage() {
   const activeRoute = routes.find(r => selectedRouteIds.includes(r.id)) || routes.find(r => r.id === selectedRouteIds[0]);
 
   const handleStartTracking = useCallback(() => {
-    if (!busId || selectedRouteIds.length === 0) return;
+    if (!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0) return;
     setIsTracking(true);
 
     const currentBusId = busId;
@@ -79,6 +79,13 @@ export default function DriverPage() {
     const payload = {
       driverId: driverId || user?.uid || "driver",
       status: "active",
+      deviceState: "online",
+      tripState: "in_service",
+      timestamp: Date.now(),
+      lat: activeRoute?.stops?.[0]?.lat || 23.03, // Fallback to first stop or center
+      lng: activeRoute?.stops?.[0]?.lng || 72.55,
+      speed: 25,
+      heading: 0,
       currentStopIndex: currentStopIndexRef.current,
       delayMinutes: delayMinutesRef.current,
     };
@@ -109,6 +116,24 @@ export default function DriverPage() {
     return () => unsubscribe();
   }, [busId, selectedRouteIds, isTracking]);
 
+  // Software mode heartbeat to keep the bus "fresh" in the passenger app
+  useEffect(() => {
+    if (!isTracking) return;
+
+    const intervalId = setInterval(() => {
+      const currentBusId = busIdRef.current;
+      const currentRouteIds = routeIdsRef.current;
+      
+      currentRouteIds.forEach(routeId => {
+        if (!currentBusId || !routeId) return;
+        const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
+        update(busRef, { timestamp: Date.now() }).catch(console.error);
+      });
+    }, 60000); // 1 minute heartbeat
+
+    return () => clearInterval(intervalId);
+  }, [isTracking]);
+
   const handleStopTracking = useCallback(() => {
     const currentBusId = busIdRef.current;
     const currentRouteIds = routeIdsRef.current;
@@ -117,7 +142,12 @@ export default function DriverPage() {
 
     currentRouteIds.forEach(routeId => {
       const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
-      update(busRef, { status: "offline", driverId: "hw_device" }).catch(console.error);
+      update(busRef, { 
+        status: "offline", 
+        deviceState: "offline", 
+        tripState: "ended",
+        driverId: "hw_device" 
+      }).catch(console.error);
     });
 
     const messagesRef = ref(rtdb, `messages/${currentBusId}`);
@@ -148,6 +178,8 @@ export default function DriverPage() {
                 isTracking={isTracking}
                 selectedRouteIds={selectedRouteIds}
                 onStopIndexChange={handleStopIndexChange}
+                onStartTracking={handleStartTracking}
+                canStartTracking={!!busId && !!driverId && drivers.some(d => d.id === driverId) && selectedRouteIds.length > 0}
               />
             )}
           </div>

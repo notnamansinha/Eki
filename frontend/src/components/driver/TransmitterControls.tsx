@@ -222,7 +222,7 @@ export default function TransmitterControls({
           <button
               aria-label="Go live and start transmitting location"
               onClick={onStartTracking}
-              disabled={!busId || !driverId || selectedRouteIds.length === 0 || !isSocketConnected}
+              disabled={!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0 || !isSocketConnected}
               className="w-full py-4 rounded-xl font-bold text-[14px] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 disabled:opacity-30 disabled:cursor-not-allowed"
               style={{ background: "var(--text-primary)", color: "var(--surface-0)" }}
             >

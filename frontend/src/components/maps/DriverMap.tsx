@@ -18,6 +18,8 @@ export interface DriverMapProps {
   isTracking?: boolean;
   selectedRouteIds?: string[];
   onStopIndexChange?: (index: number) => void;
+  onStartTracking?: () => void;
+  canStartTracking?: boolean;
 }
 
 const SELECTED_ROUTE_COLOR = "#4285F4";
@@ -84,7 +86,7 @@ function MapCenterer({ target, isCentered, navPhase }: { target: { lat: number; 
   return null;
 }
 
-function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, selectedRouteIds, onStopIndexChange }: DriverMapProps) {
+function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, selectedRouteIds, onStopIndexChange, onStartTracking, canStartTracking }: DriverMapProps) {
   const stops = route.stops || [];
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
   const nextStop = stops[currentStopIndex] ?? stops[stops.length - 1];
@@ -158,11 +160,28 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
   const handleRecenter = useCallback(() => setIsCentered(true), []);
   const handlePointerDown = useCallback(() => setIsCentered(false), []);
   const handleStartNavigation = useCallback(async () => {
+    if (!canStartTracking) {
+      alert("Please select a Vehicle and Operator in the Transmitter Controls first.");
+      return;
+    }
+    if (onStartTracking) {
+      onStartTracking();
+    }
     setNavPhase("navigating");
     setIsCentered(true);
     setDelayMinutes(0);
-  }, []);
+  }, [canStartTracking, onStartTracking]);
   const handleBackToPreview = useCallback(() => setNavPhase("preview"), []);
+
+  useEffect(() => {
+    if (isTracking) {
+      setNavPhase("navigating");
+      setIsCentered(true);
+      setDelayMinutes(0);
+    } else {
+      setNavPhase("preview");
+    }
+  }, [isTracking]);
 
   const upcomingETAs = useMemo(() => {
     const etaMap: Record<string, number> = {};
