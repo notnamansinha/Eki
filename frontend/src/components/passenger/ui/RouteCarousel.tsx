@@ -39,38 +39,35 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
               <div className="pl-2 flex flex-col h-full justify-between">
                 <div>
                   <h3
-                    className="text-[20px] font-bold tracking-tight line-clamp-1"
+                    className="text-[22px] font-black tracking-tight line-clamp-1"
                     style={{ color: "var(--text-primary)" }}
                   >
                     {route.name}
                   </h3>
                   {stops.length > 0 && (
-                    <p className="text-[14px] font-medium mt-2 line-clamp-1" style={{ color: "var(--text-secondary)" }}>
+                    <p className="text-[14.5px] font-bold mt-2 line-clamp-1" style={{ color: "var(--text-secondary)" }}>
                       {stops[0].name} <span className="mx-1 opacity-60">&rarr;</span> {stops[stops.length - 1].name}
                     </p>
                   )}
                 </div>
 
-                <div className="flex items-center justify-between w-full mt-6">
-                  <div className="flex items-center gap-3">
-                    <span className="px-3 py-1.5 rounded-full text-[12px] font-extrabold tracking-wider" style={{ background: "rgba(255,255,255,0.06)", color: "var(--text-secondary)" }}>
-                      BUS
-                    </span>
+                <div className="flex items-center w-full mt-6 gap-3">
+                  <div className="flex items-center gap-2">
                     {activeBuses > 0 && (
-                      <span className="px-3 py-1.5 rounded-full text-[12px] font-extrabold tracking-wider flex items-center gap-1.5" style={{ background: "rgba(34, 197, 94, 0.1)", color: "var(--status-live)" }}>
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold tracking-wider flex items-center gap-1.5 shrink-0" style={{ background: "rgba(34, 197, 94, 0.1)", color: "var(--status-live)" }}>
                         <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "var(--status-live)" }} />
                         LIVE
                       </span>
                     )}
-                    <div className="flex items-center gap-2 text-[14.5px] font-bold" style={{ color: "var(--text-tertiary)" }}>
+                    <div className="flex items-center gap-1.5 text-[11.5px] font-black whitespace-nowrap" style={{ color: "var(--text-tertiary)" }}>
                       <span>{stops.length} stops</span>
-                      <span className="text-[11px] opacity-30">&bull;</span>
-                      <span>Scheduled: {scheduleTime}</span>
+                      <span className="text-[10px] opacity-30">&bull;</span>
+                      <span className="text-white">Scheduled: {scheduleTime}</span>
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest uppercase transition-opacity shrink-0" style={{ color: "var(--accent)" }}>
-                    TRACK ROUTE <span className="text-[12px]">&rarr;</span>
+                  <div className="flex items-center gap-1.5 text-[13px] font-black tracking-wider uppercase transition-opacity shrink-0" style={{ color: "var(--accent)" }}>
+                    TRACK ROUTE <span className="text-[15px]">&rarr;</span>
                   </div>
                 </div>
               </div>

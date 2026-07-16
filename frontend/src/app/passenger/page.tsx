@@ -212,8 +212,8 @@ export default function PassengerPage() {
           {/* Top spacer to frame the bus illustration near the top of the screen */}
           <div className="shrink-0" style={{ height: "34vh", minHeight: "250px" }} aria-hidden="true" />
 
-          {/* Unified Transit Panel that fills the rest of the height */}
-          <div className="flex-1 flex flex-col mx-4 rounded-t-[32px] overflow-hidden relative shadow-2xl pt-8"
+          {/* Unified Transit Panel that fills the rest of the height, with a gap above bottom nav */}
+          <div className="flex-1 flex flex-col mx-4 mb-[110px] rounded-[32px] overflow-hidden relative shadow-2xl pt-8"
             style={{
               background: "linear-gradient(180deg, #1c1c1e 0%, #151517 100%)",
               borderTop: "1px solid rgba(255, 255, 255, 0.12)",
@@ -223,11 +223,11 @@ export default function PassengerPage() {
             }}
           >
             {/* Heading Section - Fixed */}
-            <div className="text-center pb-5 mb-3 mx-6 shrink-0">
-              <h1 className="text-title-screen mb-2" style={{ color: "var(--text-primary)" }}>
+            <div className="text-center pb-6 mb-4 mx-6 shrink-0">
+              <h1 className="text-[32px] font-black tracking-tight mb-2 leading-none" style={{ color: "var(--text-primary)" }}>
                 Live Routes
               </h1>
-              <p className="text-body-primary" style={{ color: "var(--text-secondary)" }}>
+              <p className="text-[15px] font-medium mt-2" style={{ color: "var(--text-secondary)" }}>
                 Select a route to view schedules.
               </p>
             </div>
@@ -383,12 +383,12 @@ export default function PassengerPage() {
 
       {/* Bottom Navigation — Fixed Transit Tab Bar */}
       <div className="absolute bottom-0 inset-x-0 z-[100] pb-safe pointer-events-none flex justify-center">
-        <nav className="w-full pointer-events-auto flex items-center justify-around px-2 py-1.5 rounded-t-[24px]"
+        <nav className="w-full pointer-events-auto flex items-center justify-around px-2 py-2.5 rounded-t-[24px]"
           style={{
             background: "rgba(22, 22, 26, 0.95)",
             backdropFilter: "blur(20px)",
             WebkitBackdropFilter: "blur(20px)",
-            borderTop: "1px solid rgba(255, 255, 255, 0.1)",
+            borderTop: "1px solid rgba(255, 255, 255, 0.15)",
           }}>
           <button
             onClick={() => {
@@ -398,15 +398,15 @@ export default function PassengerPage() {
                 setCurrentView("home");
               }
             }}
-            className="flex flex-col items-center justify-center h-[52px] w-[120px] rounded-[18px] transition-all duration-300 relative group active:scale-95 gap-1"
+            className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-all duration-300 relative group active:scale-95 gap-1.5"
             style={{
               background: (currentView === "home" || currentView === "tracking") ? "rgba(255,255,255,0.08)" : "transparent"
             }}
           >
-            <MapIcon className="w-[18px] h-[18px] transition-colors" style={{
+            <MapIcon className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
               color: (currentView === "home" || currentView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
             }} />
-            <span className="text-[11px] font-semibold transition-colors leading-none" style={{
+            <span className="text-[13px] font-bold transition-colors leading-none" style={{
               color: (currentView === "home" || currentView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
             }}>
               Routes
@@ -415,15 +415,15 @@ export default function PassengerPage() {
 
           <button
             onClick={() => setCurrentView("profile")}
-            className="flex flex-col items-center justify-center h-[52px] w-[120px] rounded-[18px] transition-all duration-300 relative group active:scale-95 gap-1"
+            className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-all duration-300 relative group active:scale-95 gap-1.5"
             style={{
               background: currentView === "profile" ? "rgba(255,255,255,0.08)" : "transparent"
             }}
           >
-            <User className="w-[18px] h-[18px] transition-colors" style={{
+            <User className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
               color: currentView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
             }} />
-            <span className="text-[11px] font-semibold transition-colors leading-none" style={{
+            <span className="text-[13px] font-bold transition-colors leading-none" style={{
               color: currentView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
             }}>
               Profile
