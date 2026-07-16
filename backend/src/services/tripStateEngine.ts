@@ -10,77 +10,56 @@ interface BusTripContext {
   latestLocation?: { lat: number; lng: number };
 }
 
-const busTripContext = new Map<string, BusTripContext>();
+const latestLocations = new Map<string, {lat: number, lng: number}>();
+const routeStopsCache = new Map<string, RouteStop[]>();
+const routeDestCache = new Map<string, {lat: number, lng: number}>();
+const activeETATracking = new Set<string>();
+
 const STOP_GEOFENCE_M = 20;
 
-// Removed duplicated haversine math.
-
-async function loadRouteContext(busId: string, routeId: string, location?: { lat: number; lng: number }) {
-  if (busTripContext.has(busId)) {
-    if (location) {
-      busTripContext.get(busId)!.latestLocation = location;
-    }
-    return;
-  }
+async function ensureRouteLoaded(routeId: string): Promise<RouteStop[]> {
+  if (routeStopsCache.has(routeId)) return routeStopsCache.get(routeId)!;
   try {
     const routeDoc = await db.collection("routes").doc(routeId).get();
     const routeData = routeDoc.data();
     const stops: RouteStop[] = (routeData?.stops ?? []).map((s: any) => ({
       id: s.id ?? "", lat: s.lat ?? 0, lng: s.lng ?? 0, name: s.name ?? "",
     }));
-
-    let recoveredTripState: TripState = "pre_departure";
-    let recoveredStopIndex = 0;
-
-    const busDoc = await db.collection("bus_locations").doc(busId).get();
-    const busData = busDoc.data();
-    if (busData && (busData.tripState === "in_service" || busData.tripState === "maintenance")) {
-      recoveredTripState = busData.tripState as TripState;
-      recoveredStopIndex = typeof busData.currentStopIndex === "number" ? busData.currentStopIndex : 0;
-    }
-
-    let latestLocation = location;
-    if (!latestLocation && busData && busData.lat != null && busData.lng != null) {
-      latestLocation = { lat: busData.lat, lng: busData.lng };
-    }
-
-    busTripContext.set(busId, { stops, tripState: recoveredTripState, currentStopIndex: recoveredStopIndex, latestLocation });
-    console.log(`[TripState] Bus ${busId} context loaded — ${stops.length} stops, state: ${recoveredTripState}`);
-
+    routeStopsCache.set(routeId, stops);
+    
     if (routeData?.waypoints && routeData.waypoints.length >= 2) {
       const lastWp = routeData.waypoints[routeData.waypoints.length - 1];
-      const destination = { lat: lastWp.lat, lng: lastWp.lng };
-      // Pass a dummy getLocation function that fetches the latest location from busTripContext if needed,
-      // or just rely on RTDB coordinates.
-      startETATracking(busId, routeId, () => busTripContext.get(busId)?.latestLocation || null, () => destination, parseInt(process.env.ETA_INTERVAL_MS || "180000", 10));
+      routeDestCache.set(routeId, { lat: lastWp.lat, lng: lastWp.lng });
     }
+    return stops;
   } catch (err) {
-    console.error(`[TripState] Failed to load route context for bus ${busId}:`, err);
+    console.error(`[TripState] Failed to load route ${routeId}:`, err);
+    return [];
   }
 }
 
-function computeTripState(busId: string, lat: number, lng: number, motionState: MotionState): { tripState: TripState; currentStopIndex: number } {
-  const ctx = busTripContext.get(busId);
-  if (!ctx || ctx.stops.length === 0) return { tripState: "in_service", currentStopIndex: 0 };
-  if (motionState === "uncertain") return { tripState: "maintenance", currentStopIndex: ctx.currentStopIndex };
+function computeTripState(
+  lat: number, lng: number, 
+  motionState: MotionState, 
+  currentTripState: TripState, 
+  currentStopIndex: number, 
+  stops: RouteStop[]
+): { tripState: TripState; currentStopIndex: number } {
+  if (stops.length === 0) return { tripState: "in_service", currentStopIndex: 0 };
+  if (motionState === "uncertain") return { tripState: "maintenance", currentStopIndex };
 
-  const { stops, tripState: current, currentStopIndex } = ctx;
   const firstStop = stops[0];
   const lastStop = stops[stops.length - 1];
 
-  if (current === "pre_departure") {
-    const d = haversineMeters({lat, lng}, firstStop);
-    if (d <= STOP_GEOFENCE_M) {
-      ctx.tripState = "in_service";
+  if (currentTripState === "pre_departure") {
+    if (haversineMeters({lat, lng}, firstStop) <= STOP_GEOFENCE_M) {
       return { tripState: "in_service", currentStopIndex: 0 };
     }
     return { tripState: "pre_departure", currentStopIndex };
   }
 
-  if (current === "in_service") {
-    const d = haversineMeters({lat, lng}, lastStop);
-    if (d <= STOP_GEOFENCE_M) {
-      ctx.tripState = "completed";
+  if (currentTripState === "in_service") {
+    if (haversineMeters({lat, lng}, lastStop) <= STOP_GEOFENCE_M) {
       return { tripState: "completed", currentStopIndex: stops.length - 1 };
     }
     let closestIdx = currentStopIndex;
@@ -90,15 +69,13 @@ function computeTripState(busId: string, lat: number, lng: number, motionState: 
       const dist = haversineMeters({lat, lng}, stops[i]);
       if (dist < closestD) { closestD = dist; closestIdx = i; }
     }
-    ctx.currentStopIndex = closestIdx;
-    return { tripState: "in_service", currentStopIndex: ctx.currentStopIndex };
+    return { tripState: "in_service", currentStopIndex: closestIdx };
   }
 
-  if (current === "maintenance") {
-    ctx.tripState = "in_service";
+  if (currentTripState === "maintenance") {
     return { tripState: "in_service", currentStopIndex };
   }
-  return { tripState: current, currentStopIndex };
+  return { tripState: currentTripState, currentStopIndex };
 }
 
 export function startTripStateEngine() {
@@ -108,28 +85,49 @@ export function startTripStateEngine() {
   busesRef.on("child_added", async (snapshot) => {
     const data = snapshot.val();
     if (!data || !data.busId || !data.routeId) return;
-    const loc = data.lat != null && data.lng != null ? { lat: data.lat, lng: data.lng } : undefined;
-    await loadRouteContext(data.busId, data.routeId, loc);
+    
+    if (data.lat != null && data.lng != null) {
+      latestLocations.set(data.busId, { lat: data.lat, lng: data.lng });
+    }
+    
+    await ensureRouteLoaded(data.routeId);
+    
+    if (!activeETATracking.has(data.busId)) {
+      activeETATracking.add(data.busId);
+      startETATracking(
+        data.busId, 
+        data.routeId, 
+        () => latestLocations.get(data.busId) || null, 
+        () => routeDestCache.get(data.routeId) || null, 
+        parseInt(process.env.ETA_INTERVAL_MS || "180000", 10)
+      );
+    }
   });
 
   busesRef.on("child_changed", async (snapshot) => {
     const data = snapshot.val();
     if (!data || !data.busId || !data.routeId || data.lat == null || data.lng == null) return;
 
-    const loc = { lat: data.lat, lng: data.lng };
-
-    await loadRouteContext(data.busId, data.routeId, loc);
+    latestLocations.set(data.busId, { lat: data.lat, lng: data.lng });
+    const stops = await ensureRouteLoaded(data.routeId);
 
     // If driver marked offline via frontend, handle cleanup
     if (data.status === "offline") {
-      busTripContext.delete(data.busId);
+      latestLocations.delete(data.busId);
+      activeETATracking.delete(data.busId);
       stopETATracking(data.busId);
       db.collection("bus_locations").doc(data.busId).set({ deviceState: "offline", lastSeen: new Date().toISOString() }, { merge: true }).catch(console.warn);
       snapshot.ref.remove().catch(console.error);
       return;
     }
 
-    const { tripState, currentStopIndex } = computeTripState(data.busId, data.lat, data.lng, data.motionState || "active");
+    const { tripState, currentStopIndex } = computeTripState(
+      data.lat, data.lng, 
+      data.motionState || "active", 
+      data.tripState || "pre_departure", 
+      data.currentStopIndex || 0, 
+      stops
+    );
 
     if (tripState !== data.tripState || currentStopIndex !== data.currentStopIndex) {
       snapshot.ref.update({ tripState, currentStopIndex }).catch(console.error);
@@ -137,31 +135,26 @@ export function startTripStateEngine() {
 
     if (tripState === "completed" && data.tripState !== "completed") {
       const completionTimestamp = new Date().toISOString();
-      const ctx = busTripContext.get(data.busId);
-      const routeStops = ctx?.stops ?? [];
-      
       db.collection("completed_trips").add({
         busId: data.busId,
         driverId: data.driverId || "unknown",
         routeId: data.routeId,
         completedAt: completionTimestamp,
-        stopCount: routeStops.length,
-        stopNames: routeStops.map(s => s.name),
+        stopCount: stops.length,
+        stopNames: stops.map(s => s.name),
       }).catch(console.warn);
 
       setTimeout(() => {
         snapshot.ref.remove().catch(console.error);
-        busTripContext.delete(data.busId);
+        latestLocations.delete(data.busId);
+        activeETATracking.delete(data.busId);
         stopETATracking(data.busId);
         db.collection("bus_locations").doc(data.busId).set({ deviceState: "offline", tripState: "completed", lastSeen: completionTimestamp }, { merge: true }).catch(console.warn);
       }, 30_000);
     }
 
     db.collection("bus_locations").doc(data.busId).set({
-      ...data,
-      tripState,
-      currentStopIndex,
-      lastSeen: new Date().toISOString()
+      ...data, tripState, currentStopIndex, lastSeen: new Date().toISOString()
     }, { merge: true }).catch(console.error);
   });
 }

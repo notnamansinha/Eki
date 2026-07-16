@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useLayoutEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { auth, googleProvider, rtdb, db } from "@/lib/firebase";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
 import { ref, set } from "firebase/database";
@@ -18,184 +18,76 @@ export interface AppUser {
   isAnonymous: boolean;
 }
 
-// ── Auth cache (localStorage) ─────────────────────────────────────────────────
-// Persists the resolved user so returning visitors get their UI instantly
-// without waiting for Firebase cold-boot. Firebase still validates in the
-// background and updates the role if it changed.
-const CACHE_KEY = "eki_auth_cache";
-
-function readCache(): AppUser | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as AppUser;
-    // Backwards compatibility for older cached objects
-    if (parsed.isAnonymous === undefined) {
-      parsed.isAnonymous = !parsed.email;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeCache(user: AppUser) {
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(user));
-  } catch {
-    // Storage quota exceeded or private-browsing — silent fail
-  }
-}
-
-function clearCache() {
-  try {
-    localStorage.removeItem(CACHE_KEY);
-  } catch {}
-}
-
-// ── Hook ───────────────────────────────────────────────────────────────────────
 export function useAuth() {
-  // Always initialize to null/true to ensure client hydration matches SSR.
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [loginLoading, setLoginLoading] = useState(false);
 
-  // useLayoutEffect runs synchronously immediately after React has performed all DOM mutations
-  // during the initial render, before the browser has a chance to paint. This completely
-  // eliminates the "flash of loading state" while keeping hydration perfectly matched.
-  const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
-
-  useIsomorphicLayoutEffect(() => {
-    const cached = readCache();
-    if (cached) {
-      setUser(cached);
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    // Hard safety-net: never show spinner > 6 s even if everything fails
-    const timeout = setTimeout(() => setLoading(false), 6000);
-
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      // Signal to Firestore hooks that auth has resolved (ends their wait)
       notifyAuthReady();
 
       if (firebaseUser) {
-        // Always show the user instantly with cached/optimistic role.
-        // However, if the cached role is privileged, we MUST wait for Firestore
-        // to verify it before unblocking the UI to prevent localStorage tampering.
-        const cached = readCache();
-        const cachedRole = cached?.uid === firebaseUser.uid ? cached.role : "passenger";
-        const isSafeToUnblock = cachedRole === "passenger";
+        try {
+          const userDocRef = doc(db, "users", firebaseUser.uid);
+          const userSnap = await getDoc(userDocRef);
 
-        const optimisticUser: AppUser = {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName,
-          photoURL: firebaseUser.photoURL,
-          role: cachedRole,
-          isAnonymous: firebaseUser.isAnonymous,
-        };
+          let role: UserRole = "passenger";
 
-        setUser(optimisticUser);
-        
-        // Unblock the UI immediately ONLY if it's safe (passenger)
-        if (isSafeToUnblock) {
-          setLoading(false);
-          clearTimeout(timeout);
-        }
-
-        // ── Background: fetch true role from Firestore ────────────────────
-        (async () => {
-          try {
-            const userDocRef = doc(db, "users", firebaseUser.uid);
-
-            const fetchWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
-              new Promise((resolve, reject) => {
-                const t = setTimeout(() => reject(new Error("timeout")), ms);
-                promise.then(
-                  (v) => { clearTimeout(t); resolve(v); },
-                  (e) => { clearTimeout(t); reject(e); }
-                );
-              });
-
-            let role: UserRole = cachedRole;
-
-            const userSnap = await fetchWithTimeout(getDoc(userDocRef), 3000);
-
-            if (userSnap.exists()) {
-              role = (userSnap.data()?.role as UserRole) ?? "passenger";
-            } else {
-              // First login — write the user document
-              role = "passenger";
-              const userData = {
-                uid: firebaseUser.uid,
-                email: firebaseUser.email || "",
-                displayName: firebaseUser.displayName || "Unknown User",
-                photoURL: firebaseUser.photoURL || "",
-                role,
-                createdAt: Date.now(),
-              };
-              try {
-                await setDoc(userDocRef, userData);
-                const userDbRef = ref(rtdb, `users/${firebaseUser.uid}`);
-                await set(userDbRef, userData);
-              } catch (dbErr) {
-                console.error("Failed to write new user:", dbErr);
-              }
-            }
-
-            // Update user with true role and persist to cache
-            const resolvedUser: AppUser = {
+          if (userSnap.exists()) {
+            role = (userSnap.data()?.role as UserRole) ?? "passenger";
+          } else {
+            const userData = {
               uid: firebaseUser.uid,
-              email: firebaseUser.email,
-              displayName: firebaseUser.displayName,
-              photoURL: firebaseUser.photoURL,
+              email: firebaseUser.email || "",
+              displayName: firebaseUser.displayName || "Unknown User",
+              photoURL: firebaseUser.photoURL || "",
               role,
-              isAnonymous: firebaseUser.isAnonymous,
+              createdAt: Date.now(),
             };
-            setUser(resolvedUser);
-            writeCache(resolvedUser);
-            
-            if (!isSafeToUnblock) {
-              setLoading(false);
-              clearTimeout(timeout);
-            }
-          } catch (err) {
-            // Firestore failed/timed out — keep optimistic user, still functional
-            console.warn("Firestore role fetch failed:", err);
-            writeCache(optimisticUser);
-            
-            if (!isSafeToUnblock) {
-              // If it failed, fallback to passenger for safety
-              setUser({ ...optimisticUser, role: "passenger" });
-              setLoading(false);
-              clearTimeout(timeout);
+            try {
+              await setDoc(userDocRef, userData);
+              const userDbRef = ref(rtdb, `users/${firebaseUser.uid}`);
+              await set(userDbRef, userData);
+            } catch (dbErr) {
+              console.error("Failed to write new user:", dbErr);
             }
           }
-        })();
+
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            photoURL: firebaseUser.photoURL,
+            role,
+            isAnonymous: firebaseUser.isAnonymous,
+          });
+        } catch (err) {
+          console.error("Firestore role fetch failed:", err);
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            photoURL: firebaseUser.photoURL,
+            role: "passenger",
+            isAnonymous: firebaseUser.isAnonymous,
+          });
+        } finally {
+          setLoading(false);
+        }
       } else {
-        // Signed out — clear everything
-        clearCache();
         setUser(null);
         setLoading(false);
-        clearTimeout(timeout);
       }
     });
 
-    return () => {
-      unsubscribe();
-      clearTimeout(timeout);
-    };
+    return () => unsubscribe();
   }, []);
 
   const loginWithGoogle = useCallback(async () => {
     setLoginLoading(true);
     try {
       await signInWithPopup(auth, googleProvider);
-      // onAuthStateChanged will handle setting the user state
     } catch (error: unknown) {
       const code = (error as { code?: string }).code;
       if (
@@ -211,7 +103,6 @@ export function useAuth() {
 
   const logout = useCallback(async () => {
     try {
-      clearCache();
       await signOut(auth);
     } catch (error) {
       console.error("Logout failed:", error);

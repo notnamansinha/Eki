@@ -6,9 +6,7 @@ import { auth, db } from "@/lib/firebase";
 import { signInAnonymously } from "firebase/auth";
 import {
   collection,
-  doc,
-  runTransaction,
-  Timestamp,
+  addDoc,
   serverTimestamp,
 } from "firebase/firestore";
 import { FEEDBACK_WORD_LIMIT } from "@/config/passenger";
@@ -104,58 +102,18 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
     try {
       const currentUser = auth.currentUser || (await signInAnonymously(auth)).user;
       const currentUserId = currentUser.uid;
-      const cooldownRef = doc(db, "feedbackCooldowns", currentUserId);
-      const feedbackRef = doc(collection(db, "feedbacks"));
+      const feedbackRef = collection(db, "feedbacks");
 
-      await runTransaction(db, async (transaction) => {
-        const cooldownSnap = await transaction.get(cooldownRef);
-        let lastSubmittedAt: Timestamp | undefined;
-        let previousSubmittedAt: Timestamp | undefined;
-        
-        if (cooldownSnap.exists()) {
-          const data = cooldownSnap.data();
-          lastSubmittedAt = data.lastSubmittedAt as Timestamp | undefined;
-          previousSubmittedAt = data.previousSubmittedAt as Timestamp | undefined;
-          
-          // Support old format (history array) if migrating
-          if (data.history && Array.isArray(data.history) && data.history.length > 0) {
-            lastSubmittedAt = data.history[data.history.length - 1] as Timestamp;
-            if (data.history.length > 1) {
-              previousSubmittedAt = data.history[0] as Timestamp;
-            }
-          }
-        }
-
-        const now = Date.now();
-
-        if (previousSubmittedAt) {
-          const remaining = ONE_DAY_MS - (now - previousSubmittedAt.toMillis());
-          if (remaining > 0) {
-            throw new Error(`LIMIT_REACHED:${remaining}`);
-          }
-        }
-
-        transaction.set(feedbackRef, {
-          userId: currentUserId,
-          userName,
-          type: busId ? "ride" : "general",
-          busId: busId || null,
-          driverId: driverId || null,
-          rating: busId && rating > 0 ? rating : null,
-          comment: comment.trim(),
-          timestamp: serverTimestamp(),
-          status: "new"
-        });
-
-        const cooldownData: any = {
-          userId: currentUserId,
-          lastSubmittedAt: serverTimestamp()
-        };
-        if (lastSubmittedAt) {
-          cooldownData.previousSubmittedAt = lastSubmittedAt;
-        }
-
-        transaction.set(cooldownRef, cooldownData, { merge: true });
+      await addDoc(feedbackRef, {
+        userId: currentUserId,
+        userName,
+        type: busId ? "ride" : "general",
+        busId: busId || null,
+        driverId: driverId || null,
+        rating: busId && rating > 0 ? rating : null,
+        comment: comment.trim(),
+        timestamp: serverTimestamp(),
+        status: "new"
       });
 
       try {
