@@ -61,7 +61,7 @@ export default function RouteCard({ route, isSelected, onSelect, activeBusesCoun
         {/* Bottom: stop count */}
         <div className="flex items-center gap-1.5 text-[11px] font-medium" style={{ color: "var(--text-ghost)" }}>
           <Navigation className="w-3 h-3" />
-          <span>{stops.length} stops</span>
+          <span>{route.stops?.length || 0} stops</span>
         </div>
       </div>
     </button>

@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect, useId, useRef } from 'react';
+import React, { ReactNode } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 
 interface BottomSheetProps {
@@ -20,38 +20,6 @@ export default function BottomSheet({
   bottomControls,
   maxHeightClass = "max-h-[50vh]",
 }: BottomSheetProps) {
-  const contentId = useId();
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const wasOpenRef = useRef(isOpen);
-
-  useEffect(() => {
-    if (isOpen) {
-      contentRef.current?.focus();
-      wasOpenRef.current = true;
-      return;
-    }
-
-    if (wasOpenRef.current) {
-      buttonRef.current?.focus();
-    }
-    wasOpenRef.current = false;
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onToggle();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onToggle]);
-
   return (
     <>
       {/* Backdrop */}
@@ -67,7 +35,7 @@ export default function BottomSheet({
       <div
         className={`fixed inset-x-0 bottom-[64px] z-50 rounded-t-2xl transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
           isOpen ? "translate-y-0" : "translate-y-[calc(100%-56px)]"
-        }`}
+        } ${!isOpen ? "pointer-events-none" : ""}`}
         style={{
           background: "var(--surface-1)",
           borderTop: "1px solid var(--border-default)",
@@ -75,14 +43,11 @@ export default function BottomSheet({
           paddingBottom: "env(safe-area-inset-bottom)",
         }}
       >
-        {/* Handle + Header */}
-        <button
-          ref={buttonRef}
-          type="button"
-          className="w-full h-[56px] flex items-center justify-between px-5 cursor-pointer relative text-left"
+        {/* Handle + Header — always interactive even when sheet is collapsed */}
+        <div
+          className="w-full h-[56px] flex items-center justify-between px-5 cursor-pointer relative"
+          style={{ pointerEvents: "auto" }}
           onClick={onToggle}
-          aria-expanded={isOpen}
-          aria-controls={contentId}
         >
           {/* Drag handle */}
           <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full" 
@@ -99,21 +64,15 @@ export default function BottomSheet({
               {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
             </div>
           </div>
-        </button>
+        </div>
 
         {/* Content */}
-        <div
-          id={contentId}
-          ref={contentRef}
-          tabIndex={-1}
-          hidden={!isOpen}
-          className={`px-5 pb-5 pt-1 overflow-y-auto ${maxHeightClass}`}
-        >
+        <div className={`px-5 pb-5 pt-1 overflow-y-auto ${maxHeightClass}`}>
           {children}
         </div>
 
         {/* Bottom Controls */}
-        {bottomControls && isOpen && (
+        {bottomControls && (
           <div className="p-4" style={{ borderTop: "1px solid var(--border-subtle)", background: "var(--surface-0)" }}>
             {bottomControls}
           </div>
