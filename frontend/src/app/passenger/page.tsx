@@ -212,51 +212,49 @@ export default function PassengerPage() {
           {/* Top spacer to frame the bus illustration near the top of the screen */}
           <div className="shrink-0" style={{ height: "34vh", minHeight: "250px" }} aria-hidden="true" />
 
-          {/* Unified scrollable container */}
-          <div className="flex-1 overflow-y-auto px-4 pb-32">
+          {/* Unified Transit Panel that fills the rest of the height */}
+          <div className="flex-1 flex flex-col mx-4 rounded-t-[32px] overflow-hidden relative shadow-2xl pt-8"
+            style={{
+              background: "linear-gradient(180deg, #1c1c1e 0%, #151517 100%)",
+              borderTop: "1px solid rgba(255, 255, 255, 0.12)",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.04)",
+              borderRight: "1px solid rgba(255, 255, 255, 0.04)",
+              boxShadow: "0 12px 48px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05)"
+            }}
+          >
+            {/* Heading Section - Fixed */}
+            <div className="text-center pb-5 mb-3 mx-6 shrink-0">
+              <h1 className="text-title-screen mb-2" style={{ color: "var(--text-primary)" }}>
+                Live Routes
+              </h1>
+              <p className="text-body-primary" style={{ color: "var(--text-secondary)" }}>
+                Select a route to view schedules.
+              </p>
+            </div>
 
-            {/* Unified Transit Panel */}
-            <div className="rounded-[32px] pt-8 pb-10 flex flex-col overflow-hidden relative shadow-2xl mx-1"
-              style={{
-                background: "linear-gradient(180deg, #1c1c1e 0%, #151517 100%)",
-                borderTop: "1px solid rgba(255, 255, 255, 0.12)",
-                borderLeft: "1px solid rgba(255, 255, 255, 0.04)",
-                borderRight: "1px solid rgba(255, 255, 255, 0.04)",
-                boxShadow: "0 12px 48px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05)"
-              }}
+            {/* Status / Routes Section - Scrollable */}
+            <div
+              className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth hide-scrollbar px-4 pb-32"
+              style={{ scrollBehavior: 'smooth', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
-              {/* Heading Section */}
-              <div className="text-center pb-5 mb-3 mx-6">
-                <h1 className="text-title-screen mb-2" style={{ color: "var(--text-primary)" }}>
-                  Live Routes
-                </h1>
-                <p className="text-body-primary" style={{ color: "var(--text-secondary)" }}>
-                  Select a route to view schedules.
-                </p>
-              </div>
-
-              {/* Status / Routes Section */}
-              <div className="w-full">
-                {displayRoutes.length > 0 ? (
-                  <RouteCarousel
-                    routes={displayRoutes}
-                    selectedRouteId={selectedRouteId}
-                    onSwipe={setSelectedRouteId}
-                    onClick={handleRouteSelect}
-                    getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
-                  />
-                ) : (
-                  <div className="rounded-xl p-8 text-center mx-1"
-                    style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
-                    <p className="text-[13px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>
-                      No buses running
-                    </p>
-                    <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
-                      Service starts at {PASSENGER_BUS_START_TIME}
-                    </p>
-                  </div>
-                )}
-              </div>
+              {displayRoutes.length > 0 ? (
+                <RouteCarousel
+                  routes={displayRoutes}
+                  selectedRouteId={selectedRouteId}
+                  onClick={handleRouteSelect}
+                  getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
+                />
+              ) : (
+                <div className="rounded-xl p-8 text-center mx-1"
+                  style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
+                  <p className="text-[13px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>
+                    No buses running
+                  </p>
+                  <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
+                    Service starts at {PASSENGER_BUS_START_TIME}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -383,15 +381,14 @@ export default function PassengerPage() {
         />
       )}
 
-      {/* Bottom Navigation — Floating Transit Tab Bar */}
-      <div className="absolute bottom-6 inset-x-0 z-[100] px-5 pb-safe pointer-events-none flex justify-center">
-        <nav className="w-full max-w-sm rounded-[24px] pointer-events-auto flex items-center justify-around px-2 py-1.5"
+      {/* Bottom Navigation — Fixed Transit Tab Bar */}
+      <div className="absolute bottom-0 inset-x-0 z-[100] pb-safe pointer-events-none flex justify-center">
+        <nav className="w-full pointer-events-auto flex items-center justify-around px-2 py-1.5 rounded-t-[24px]"
           style={{
             background: "rgba(22, 22, 26, 0.95)",
             backdropFilter: "blur(20px)",
             WebkitBackdropFilter: "blur(20px)",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            boxShadow: "0 16px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.05)"
+            borderTop: "1px solid rgba(255, 255, 255, 0.1)",
           }}>
           <button
             onClick={() => {
