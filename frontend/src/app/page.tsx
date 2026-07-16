@@ -15,7 +15,7 @@ export default function HomePage() {
   const [activeBusCount, setActiveBusCount] = useState(0);
 
   useEffect(() => {
-    if (!loading && user) {
+    if (!loading && user && !user.isAnonymous) {
       router.push(`/${user.role || 'passenger'}`);
     }
   }, [user, loading, router]);
@@ -39,7 +39,7 @@ export default function HomePage() {
     return () => unsub();
   }, []);
 
-  if (loading || user) {
+  if (loading || (user && !user.isAnonymous)) {
     return (
       <main className="min-h-screen flex items-center justify-center" style={{ background: "var(--surface-0)" }}>
         <Loader2 className="w-6 h-6 text-[var(--text-tertiary)] animate-spin" />

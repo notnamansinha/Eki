@@ -15,6 +15,7 @@ export interface AppUser {
   displayName: string | null;
   photoURL: string | null;
   role: UserRole;
+  isAnonymous: boolean;
 }
 
 // ── Auth cache (localStorage) ─────────────────────────────────────────────────
@@ -28,7 +29,12 @@ function readCache(): AppUser | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as AppUser;
+    const parsed = JSON.parse(raw) as AppUser;
+    // Backwards compatibility for older cached objects
+    if (parsed.isAnonymous === undefined) {
+      parsed.isAnonymous = !parsed.email;
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -90,6 +96,7 @@ export function useAuth() {
           displayName: firebaseUser.displayName,
           photoURL: firebaseUser.photoURL,
           role: cachedRole,
+          isAnonymous: firebaseUser.isAnonymous,
         };
 
         setUser(optimisticUser);
@@ -147,6 +154,7 @@ export function useAuth() {
               displayName: firebaseUser.displayName,
               photoURL: firebaseUser.photoURL,
               role,
+              isAnonymous: firebaseUser.isAnonymous,
             };
             setUser(resolvedUser);
             writeCache(resolvedUser);
