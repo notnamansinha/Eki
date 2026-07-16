@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth, UserRole } from "@/hooks/useAuth";
-import { Loader2, ShieldAlert } from "lucide-react";
+import { Loader2, ShieldAlert, LogIn } from "lucide-react";
 
 interface RoleGuardProps {
   children: React.ReactNode;
@@ -9,30 +9,64 @@ interface RoleGuardProps {
 }
 
 export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
-  const { user, loading, loginWithGoogle, logout } = useAuth();
+  const { user, loading, loginLoading, loginWithGoogle, logout } = useAuth();
 
   if (loading) {
     return (
-      <div className="w-full h-screen flex flex-col items-center justify-center bg-[#1d1d1f]">
-        <Loader2 className="w-8 h-8 text-white/40 animate-spin mb-4" />
-        <p className="text-white/60 font-medium tracking-tight">Authenticating...</p>
+      <div
+        className="w-full flex flex-col items-center justify-center"
+        style={{ height: "100dvh", background: "var(--surface-0)" }}
+      >
+        <div className="flex flex-col items-center gap-4">
+          <div
+            className="w-10 h-10 rounded-2xl flex items-center justify-center"
+            style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)" }}
+          >
+            <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--text-tertiary)" }} />
+          </div>
+          <p className="text-[13px] font-semibold" style={{ color: "var(--text-ghost)" }}>
+            Signing you in…
+          </p>
+        </div>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="w-full h-screen flex flex-col items-center justify-center bg-[#1d1d1f] text-white px-6 text-center">
-        <ShieldAlert className="w-16 h-16 text-blue-500 mb-6" />
-        <h1 className="text-3xl font-bold tracking-tight mb-4 text-[#f5f5f7]">Access Restricted</h1>
-        <p className="text-[#86868b] max-w-sm mb-8 leading-relaxed">
-          Please sign in to verify your access privileges for this section of the network.
+      <div
+        className="w-full flex flex-col items-center justify-center px-6 text-center"
+        style={{ height: "100dvh", background: "var(--surface-0)" }}
+      >
+        <div
+          className="w-14 h-14 rounded-2xl flex items-center justify-center mb-6"
+          style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)" }}
+        >
+          <ShieldAlert className="w-7 h-7" style={{ color: "var(--text-tertiary)" }} />
+        </div>
+        <h1
+          className="text-2xl font-extrabold tracking-tight mb-2"
+          style={{ color: "var(--text-primary)" }}
+        >
+          Access Restricted
+        </h1>
+        <p
+          className="text-[14px] max-w-xs mb-8 leading-relaxed"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          Sign in to access this section.
         </p>
         <button
           onClick={loginWithGoogle}
-          className="bg-[#0071e3] hover:bg-[#0077ed] text-white px-8 py-3 rounded-full font-medium transition-colors"
+          disabled={loginLoading}
+          className="btn-primary px-6 py-3 flex items-center gap-2.5 text-[13px] font-bold disabled:opacity-60"
         >
-          Sign in with Google
+          {loginLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <LogIn className="w-4 h-4" />
+          )}
+          {loginLoading ? "Opening Google…" : "Sign in with Google"}
         </button>
       </div>
     );
@@ -40,26 +74,45 @@ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
 
   if (!allowedRoles.includes(user.role)) {
     return (
-      <div className="w-full h-screen flex flex-col items-center justify-center bg-[#1d1d1f] text-white px-6 text-center">
-        <ShieldAlert className="w-16 h-16 text-red-500 mb-6" />
-        <h1 className="text-3xl font-bold tracking-tight mb-4 text-[#f5f5f7]">Unauthorized Role</h1>
-        <p className="text-[#86868b] max-w-sm mb-8 leading-relaxed">
-          Your account <span className="text-white/80">({user.email})</span> does not have access to this panel.
-          <br />
-          Current Role: <span className="text-[#f5f5f7] font-bold uppercase">{user.role}</span>
+      <div
+        className="w-full flex flex-col items-center justify-center px-6 text-center"
+        style={{ height: "100dvh", background: "var(--surface-0)" }}
+      >
+        <div
+          className="w-14 h-14 rounded-2xl flex items-center justify-center mb-6"
+          style={{ background: "var(--status-danger-bg)", border: "1px solid rgba(248, 113, 113, 0.2)" }}
+        >
+          <ShieldAlert className="w-7 h-7" style={{ color: "var(--status-danger)" }} />
+        </div>
+        <h1
+          className="text-2xl font-extrabold tracking-tight mb-2"
+          style={{ color: "var(--text-primary)" }}
+        >
+          Unauthorized
+        </h1>
+        <p
+          className="text-[13px] max-w-xs mb-1 leading-relaxed"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          <span style={{ color: "var(--text-primary)" }}>{user.email}</span> does not have access to this panel.
         </p>
-        <div className="flex gap-4 border-t border-white/10 pt-8 mt-4">
+        <p className="text-[11px] font-bold mb-8 uppercase tracking-widest" style={{ color: "var(--text-ghost)" }}>
+          Role: {user.role}
+        </p>
+        <div className="flex items-center gap-4">
           <button
             onClick={logout}
-            className="text-[#86868b] hover:text-white transition-colors text-sm font-medium"
+            className="text-[13px] font-semibold transition-colors"
+            style={{ color: "var(--text-secondary)" }}
           >
             Sign out
           </button>
           <a
             href="/"
-            className="text-[#0071e3] hover:text-[#0077ed] transition-colors text-sm font-bold"
+            className="text-[13px] font-bold transition-colors"
+            style={{ color: "var(--accent)" }}
           >
-            Return to Home
+            Return Home
           </a>
         </div>
       </div>

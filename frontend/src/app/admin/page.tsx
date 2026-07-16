@@ -2,7 +2,7 @@
 
 import RouteManagementPanel from "@/components/admin/RouteManagementPanel";
 import FleetManagementPanel from "@/components/admin/FleetManagementPanel";
-import { Map as MapIcon, Users, ShieldCheck, Bus as BusIcon } from "lucide-react";
+import { MapPinned as MapIcon, UsersRound as Users, ShieldCheck, BusFront as BusIcon } from "lucide-react";
 import { useState } from "react";
 
 export default function AdminPage() {

@@ -132,7 +132,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
   const nextStop = route?.stops?.[(entry.currentStopIndex ?? 0) + 1];
 
   return (
-    <div className="bg-brand-dark/50 border border-emerald-500/20 rounded-2xl overflow-hidden">
+    <div className="bg-brand-surface border border-border-thin rounded-md overflow-hidden transition-colors hover:border-white/30">
       {/* Compact header */}
       <button
         onClick={() => setExpanded(o => !o)}
@@ -566,7 +566,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
           </div>
 
           {/* Add form */}
-          <div className="bg-brand-surface/40 border border-white/5 rounded-[1.5rem] p-4 flex flex-col gap-2.5">
+          <div className="panel-rc p-6 flex flex-col gap-4">
             <p className="text-[9px] text-white/20 font-black uppercase tracking-[0.2em]">Register new vehicle</p>
             <input
               value={newBusId} onChange={(e) => setNewBusId(e.target.value)}
@@ -601,9 +601,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                       >
                         <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all ${checked ? "border-white bg-white" : "border-white/20 bg-transparent"}`}>
                           {checked && (
-                            <svg viewBox="0 0 12 12" className="w-2.5 h-2.5 text-brand-dark" fill="none" stroke="currentColor" strokeWidth="2.5">
-                              <path d="M2 6l3 3 5-5" />
-                            </svg>
+                            <Check className="w-2.5 h-2.5 text-brand-dark" strokeWidth={2.5} />
                           )}
                         </div>
                         <input type="checkbox" className="sr-only" checked={checked} onChange={() => toggleRoute(r.id)} />
@@ -617,14 +615,14 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             <button
               onClick={handleAddBus}
               aria-label="Add new vehicle"
-              className="h-10 bg-white text-brand-dark rounded-xl font-black uppercase text-xs tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-bold uppercase text-[11px] tracking-widest px-4"
             >
               <Plus className="w-4 h-4" /> Add Vehicle
             </button>
           </div>
 
           {/* Saved buses */}
-          <div className="bg-brand-surface/40 border border-white/5 rounded-[1.5rem] overflow-hidden">
+          <div className="panel-rc overflow-hidden">
             <button
               onClick={() => setBusListOpen((o) => !o)}
               aria-label={busListOpen ? "Collapse saved vehicles" : "Expand saved vehicles"}
@@ -724,7 +722,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                                     return (
                                       <label key={r.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${checked ? "bg-white/10" : "hover:bg-white/5"}`}>
                                         <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all ${checked ? "border-white bg-white" : "border-white/20 bg-transparent"}`}>
-                                          {checked && <svg viewBox="0 0 12 12" className="w-2.5 h-2.5 text-brand-dark" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2 6l3 3 5-5" /></svg>}
+                                          {checked && <Check className="w-2.5 h-2.5 text-brand-dark" strokeWidth={2.5} />}
                                         </div>
                                         <input type="checkbox" className="sr-only" checked={checked} onChange={() => toggleEditRoute(r.id)} />
                                         <span className={`text-sm font-bold ${checked ? "text-white" : "text-white/50"}`}>{r.name}</span>
@@ -737,7 +735,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                             <button
                               onClick={() => handleSaveBus(bus.id)}
                               aria-label="Save vehicle changes"
-                              className="h-9 bg-blue-500 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+                              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-bold uppercase text-[11px] tracking-widest px-4"
                             >
                               <Check className="w-4 h-4" /> Save Changes
                             </button>
@@ -769,7 +767,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
           </div>
 
           {/* Add form */}
-          <div className="bg-brand-surface/40 border border-white/5 rounded-[1.5rem] p-4 flex flex-col gap-2.5">
+          <div className="panel-rc p-6 flex flex-col gap-4">
             <p className="text-[9px] text-white/20 font-black uppercase tracking-[0.2em]">Register new operator</p>
             <input
               value={newDriverId} onChange={(e) => setNewDriverId(e.target.value)}
@@ -797,7 +795,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             <button
               onClick={handleAddDriver}
               aria-label="Add new operator"
-              className="h-10 bg-white text-brand-dark rounded-xl font-black uppercase text-xs tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-bold uppercase text-[11px] tracking-widest px-4"
             >
               <Plus className="w-4 h-4" /> Add Operator
             </button>

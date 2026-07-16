@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { rtdb } from "@/lib/firebase";
 import { ref, push, onValue, serverTimestamp } from "firebase/database";
-import { Send, X, User } from "lucide-react";
+import { Send, X, SignalHigh as Radio } from "lucide-react";
 
 interface Message {
   id: string;
@@ -35,6 +35,7 @@ export default function MessagingPanel({
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
+  const [rateLimitMsg, setRateLimitMsg] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastSeenCountRef = useRef(0);
 
@@ -91,7 +92,8 @@ export default function MessagingPanel({
     const recentMessages = messagesSentCounts.filter(m => m.timestamp > oneHourAgo);
     
     if (recentMessages.length >= 60) {
-      alert("Rate limit exceeded: Maximum 60 messages per hour. Please try again later.");
+      setRateLimitMsg("Limit reached — 60 messages/hour");
+      setTimeout(() => setRateLimitMsg(""), 3000);
       return;
     }
     
@@ -121,22 +123,30 @@ export default function MessagingPanel({
   };
 
   return (
-    <div className={`flex flex-col h-full bg-brand-surface border border-white/5 shadow-2xl relative ${isOverlay ? 'rounded-t-[2rem]' : 'rounded-2xl'}`}>
+    <div className={`flex flex-col h-full relative overflow-hidden ${isOverlay ? 'rounded-t-2xl' : 'rounded-2xl'}`}
+      style={{ 
+        background: "var(--surface-1)", 
+        border: "1px solid var(--border-subtle)",
+        boxShadow: "0 -4px 32px rgba(0,0,0,0.3)" 
+      }}>
       {/* Header */}
-      <div className="flex items-center justify-between p-5 border-b border-white/5 bg-brand-dark/40 backdrop-blur-xl">
+      <div className="flex items-center justify-between p-4" 
+        style={{ borderBottom: "1px solid var(--border-subtle)", background: "var(--surface-2)" }}>
         <div>
-          <h3 className="font-bold text-white tracking-tight flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            Live Comms
+          <h3 className="font-bold text-[15px] flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+            <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: "var(--status-live)" }} />
+            Live Chat
           </h3>
-          <p className="text-[10px] text-white/40 font-black uppercase tracking-widest mt-0.5">
-            Node: {busId}
+          <p className="text-[10px] font-semibold mt-0.5" style={{ color: "var(--text-ghost)" }}>
+            Bus {busId}
           </p>
         </div>
         {isOverlay && onClose && (
           <button 
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+            style={{ background: "var(--surface-3)", color: "var(--text-tertiary)" }}
+            aria-label="Close chat"
           >
             <X className="w-4 h-4" />
           </button>
@@ -144,11 +154,16 @@ export default function MessagingPanel({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-5 gap-4 flex flex-col bg-brand-dark/20 text-sm">
+      <div className="flex-1 overflow-y-auto p-4 gap-4 flex flex-col relative z-10 text-sm">
         {messages.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-white/20">
-            <User className="w-8 h-8 mb-3 opacity-20" />
-            <p className="text-[10px] font-bold uppercase tracking-widest text-center">Secure Channel Established<br/>Awaiting Comms...</p>
+          <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
+            <Radio className="w-8 h-8 mb-3" style={{ color: "var(--text-ghost)" }} />
+            <p className="text-[12px] font-semibold text-center" style={{ color: "var(--text-ghost)" }}>
+              No messages yet
+            </p>
+            <p className="text-[11px] mt-1" style={{ color: "var(--text-ghost)" }}>
+              Send a message to the {currentUserRole === "driver" ? "riders" : "driver"}
+            </p>
           </div>
         ) : (
           messages.map((msg) => {
@@ -157,26 +172,29 @@ export default function MessagingPanel({
             return (
               <div 
                 key={msg.id} 
-                className={`flex flex-col max-w-[85%] ${isMe ? 'self-end items-end' : 'self-start items-start'}`}
+                className={`flex flex-col max-w-[80%] animate-slide-up ${isMe ? 'self-end items-end' : 'self-start items-start'}`}
               >
-                <div className={`flex items-baseline gap-2 mb-1 px-1 ${isMe ? 'flex-row-reverse' : ''}`}>
-                  <span className={`text-[9px] font-bold uppercase tracking-widest ${isMe ? 'text-emerald-400/80' : 'text-white/40'}`}>
+                <div className={`flex items-baseline gap-1.5 mb-1 px-1 ${isMe ? 'flex-row-reverse' : ''}`}>
+                  <span className="text-[10px] font-bold" 
+                    style={{ color: isMe ? "var(--accent)" : "var(--text-ghost)" }}>
                     {isMe ? 'You' : msg.senderName}
                   </span>
                   {msg.timestamp && (
-                    <span className="text-[8px] font-mono tracking-widest text-white/20">
+                    <span className="text-[9px] font-medium" style={{ color: "var(--text-ghost)" }}>
                       {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   )}
                 </div>
                 <div 
-                  className={`px-4 py-2.5 rounded-2xl ${
-                    isMe 
-                      ? 'bg-emerald-500 text-white rounded-tr-sm' 
-                      : 'bg-white/10 text-white rounded-tl-sm border border-white/5'
-                  }`}
+                  className="px-4 py-2.5 text-[14px] leading-relaxed"
+                  style={{
+                    borderRadius: isMe ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+                    background: isMe ? "var(--accent)" : "var(--surface-3)",
+                    color: isMe ? "#1a1a1a" : "var(--text-primary)",
+                    fontWeight: isMe ? 500 : 400,
+                  }}
                 >
-                  <p className="leading-relaxed whitespace-pre-wrap font-medium">{msg.text}</p>
+                  <p className="whitespace-pre-wrap">{msg.text}</p>
                 </div>
               </div>
             );
@@ -185,22 +203,41 @@ export default function MessagingPanel({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Rate limit toast */}
+      {rateLimitMsg && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 animate-slide-down">
+          <div className="px-4 py-2 rounded-lg text-[11px] font-semibold"
+            style={{ background: "var(--status-warning-bg)", color: "var(--status-warning)" }}>
+            {rateLimitMsg}
+          </div>
+        </div>
+      )}
+
       {/* Input */}
-      <form onSubmit={handleSend} className="p-4 border-t border-white/5 bg-brand-dark/40 backdrop-blur-xl shrink-0">
-        <div className="flex items-center gap-3">
+      <form onSubmit={handleSend} className="p-3 shrink-0 relative z-10"
+        style={{ borderTop: "1px solid var(--border-subtle)", background: "var(--surface-2)" }}>
+        <div className="flex items-center gap-2">
           <input
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Transmit message..."
-            className="flex-1 bg-white/5 border border-white/10 h-12 rounded-xl px-4 text-white placeholder:text-white/20 focus:outline-none focus:border-white/30 focus:bg-white/10 transition-all font-medium text-sm"
+            maxLength={500}
+            placeholder="Message…"
+            className="flex-1 h-11 rounded-xl px-4 text-[14px] font-medium focus:outline-none transition-all"
+            style={{
+              background: "var(--surface-3)",
+              border: "1px solid var(--border-subtle)",
+              color: "var(--text-primary)",
+            }}
           />
           <button
             type="submit"
             disabled={!newMessage.trim()}
-            className="w-12 h-12 rounded-xl bg-emerald-500 text-white flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-400 active:scale-95 transition-all shadow-xl"
+            className="w-11 h-11 rounded-xl flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 transition-all"
+            style={{ background: "var(--accent)", color: "var(--surface-0)" }}
+            aria-label="Send message"
           >
-            <Send className="w-5 h-5 ml-1" />
+            <Send className="w-5 h-5 ml-0.5" />
           </button>
         </div>
       </form>

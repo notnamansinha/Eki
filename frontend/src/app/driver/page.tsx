@@ -10,9 +10,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useBuses } from "@/hooks/useBuses";
-import { Navigation, User, Radio, ArrowLeft } from "lucide-react";
+import { Navigation, CircleUserRound as User, SignalHigh as Radio, ArrowLeft } from "lucide-react";
 import { rtdb } from "@/lib/firebase";
-import { ref, update, remove, onDisconnect, serverTimestamp, onValue } from "firebase/database";
+import { ref, update, remove, onValue } from "firebase/database";
 
 type Tab = "map" | "profile";
 
@@ -67,21 +67,25 @@ export default function DriverPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routes]);
 
-  // Socket.IO has been fully removed from the frontend; Firebase RTDB is used directly.
-
   const activeRoute = routes.find(r => selectedRouteIds.includes(r.id)) || routes.find(r => r.id === selectedRouteIds[0]);
 
   const handleStartTracking = useCallback(() => {
-    if (!busId || selectedRouteIds.length === 0) return;
+    if (!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0) return;
     setIsTracking(true);
 
-    // Write initial shift metadata (e.g., actual driver ID), ESP32 hardware will provide location
     const currentBusId = busId;
     const currentRouteIds = selectedRouteIds;
     
     const payload = {
       driverId: driverId || user?.uid || "driver",
       status: "active",
+      deviceState: "online",
+      tripState: "in_service",
+      timestamp: Date.now(),
+      lat: activeRoute?.stops?.[0]?.lat || 23.03, // Fallback to first stop or center
+      lng: activeRoute?.stops?.[0]?.lng || 72.55,
+      speed: 25,
+      heading: 0,
       currentStopIndex: currentStopIndexRef.current,
       delayMinutes: delayMinutesRef.current,
     };
@@ -109,9 +113,26 @@ export default function DriverPage() {
         });
       }
     });
-    // Correct Modular SDK cleanup — off() with a callback is Compat SDK syntax
     return () => unsubscribe();
   }, [busId, selectedRouteIds, isTracking]);
+
+  // Software mode heartbeat to keep the bus "fresh" in the passenger app
+  useEffect(() => {
+    if (!isTracking) return;
+
+    const intervalId = setInterval(() => {
+      const currentBusId = busIdRef.current;
+      const currentRouteIds = routeIdsRef.current;
+      
+      currentRouteIds.forEach(routeId => {
+        if (!currentBusId || !routeId) return;
+        const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
+        update(busRef, { timestamp: Date.now() }).catch(console.error);
+      });
+    }, 60000); // 1 minute heartbeat
+
+    return () => clearInterval(intervalId);
+  }, [isTracking]);
 
   const handleStopTracking = useCallback(() => {
     const currentBusId = busIdRef.current;
@@ -119,19 +140,21 @@ export default function DriverPage() {
     setIsTracking(false);
     setDriverLocation(null);
 
-    // Mark bus as offline (ESP32 will continue sending GPS but status can be overridden here)
     currentRouteIds.forEach(routeId => {
       const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
-      update(busRef, { status: "offline", driverId: "hw_device" }).catch(console.error);
+      update(busRef, { 
+        status: "offline", 
+        deviceState: "offline", 
+        tripState: "ended",
+        driverId: "hw_device" 
+      }).catch(console.error);
     });
 
-    // Clean up messages
     const messagesRef = ref(rtdb, `messages/${currentBusId}`);
     remove(messagesRef).catch(console.error);
   }, []);
 
   const handleRouteUpdate = useCallback((routeIds: string[]) => {
-    // Called when driver changes route mid-trip — just update local refs; next tick will write new RTDB entries
     routeIdsRef.current = routeIds;
   }, []);
 
@@ -141,7 +164,7 @@ export default function DriverPage() {
   };
 
   return (
-    <div className="flex flex-col bg-brand-dark text-white overflow-hidden" style={{ height: "100dvh" }}>
+    <div className="flex flex-col overflow-hidden" style={{ height: "100dvh", background: "var(--surface-0)", color: "var(--text-primary)" }}>
       <div className="relative flex-1 flex flex-col overflow-hidden min-h-0">
 
         <div className={`absolute inset-0 z-0 flex flex-col ${activeTab === "map" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
@@ -155,6 +178,8 @@ export default function DriverPage() {
                 isTracking={isTracking}
                 selectedRouteIds={selectedRouteIds}
                 onStopIndexChange={handleStopIndexChange}
+                onStartTracking={handleStartTracking}
+                canStartTracking={!!busId && !!driverId && drivers.some(d => d.id === driverId) && selectedRouteIds.length > 0}
               />
             )}
           </div>
@@ -180,34 +205,46 @@ export default function DriverPage() {
           )}
         </div>
 
-        <div className={`absolute inset-0 z-10 flex flex-col bg-brand-dark transition-opacity duration-300 ${activeTab === "profile" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
+        <div className={`absolute inset-0 z-10 flex flex-col transition-opacity duration-300 ${activeTab === "profile" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+          style={{ background: "var(--surface-0)" }}>
           <DriverProfileTab driverId={driverId || "UNASSIGNED"} busId={busId || "UNASSIGNED"} onStopTracking={handleStopTracking} isTracking={isTracking} />
         </div>
 
-        {/* Back Button FAB — top left, only shown when not tracking */}
+        {/* Back Button FAB */}
         {activeTab === "map" && !isTracking && (
           <div className="absolute top-4 left-4 z-50">
             <button
               onClick={() => router.back()}
-              className="w-12 h-12 rounded-full bg-brand-surface/90 backdrop-blur-xl border border-white/10 text-white flex items-center justify-center shadow-2xl hover:scale-105 active:scale-95 transition-all"
+              className="w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-95"
+              style={{ 
+                background: "var(--surface-2)", 
+                border: "1px solid var(--border-default)",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.3)"
+              }}
               aria-label="Go back"
             >
-              <ArrowLeft className="w-5 h-5 text-white/70" />
+              <ArrowLeft className="w-4 h-4" style={{ color: "var(--text-secondary)" }} />
             </button>
           </div>
         )}
 
-        {/* Messaging FAB — top right */}
+        {/* Messaging FAB */}
         {activeTab === "map" && !isMessagingOpen && (
           <div className="absolute top-4 right-4 z-50">
             <button
               onClick={handleOpenMessaging}
-              className="w-12 h-12 rounded-full bg-brand-surface/90 backdrop-blur-xl border border-white/10 text-white flex items-center justify-center shadow-2xl hover:scale-105 active:scale-95 transition-all relative"
+              className="w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-95 relative"
+              style={{ 
+                background: "var(--surface-2)", 
+                border: "1px solid var(--border-default)",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.3)"
+              }}
               aria-label="Open live comms"
             >
-              <Radio className="w-5 h-5 text-emerald-400" />
+              <Radio className="w-4 h-4" style={{ color: "var(--status-live)" }} />
               {unreadCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 rounded-full flex items-center justify-center text-[10px] font-black text-white px-1 shadow-lg border border-brand-dark">
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
+                  style={{ background: "var(--status-danger)", boxShadow: "0 0 0 2px var(--surface-0)" }}>
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
               )}
@@ -232,26 +269,36 @@ export default function DriverPage() {
       </div>
 
       {/* Bottom Navigation */}
-      <nav className="relative z-50 shrink-0 bg-brand-surface/80 border-t border-white/5 backdrop-blur-2xl pb-safe" style={{ height: "64px" }}>
+      <nav className="relative z-50 shrink-0 pb-safe" style={{ 
+        height: "64px", 
+        background: "var(--surface-1)", 
+        borderTop: "1px solid var(--border-subtle)" 
+      }}>
         <div className="flex items-center justify-around px-4 h-full max-w-md mx-auto">
           <button
             onClick={() => setActiveTab("map")}
-            className={`flex flex-col items-center justify-center py-2 flex-1 rounded-2xl transition-all duration-300 ${
-              activeTab === "map" ? "text-white bg-white/5 transform scale-105" : "text-white/30 hover:text-white/60"
-            }`}
+            className="flex flex-col items-center justify-center py-2 flex-1 rounded-xl transition-all duration-300 relative"
           >
-            <Navigation className={`w-5 h-5 mb-1 ${activeTab === "map" ? "text-white" : "opacity-40"}`} />
-            <span className="text-[9px] font-black tracking-[0.15em] uppercase">Drive View</span>
+            {activeTab === "map" && (
+              <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "var(--text-primary)" }} />
+            )}
+            <Navigation className="w-5 h-5 mb-1" style={{ color: activeTab === "map" ? "var(--text-primary)" : "var(--text-ghost)" }} />
+            <span className="text-[9px] font-bold" style={{ color: activeTab === "map" ? "var(--text-primary)" : "var(--text-ghost)" }}>
+              Drive
+            </span>
           </button>
 
           <button
             onClick={() => setActiveTab("profile")}
-            className={`flex flex-col items-center justify-center py-2 flex-1 rounded-2xl transition-all duration-300 ${
-              activeTab === "profile" ? "text-white bg-white/5 transform scale-105" : "text-white/30 hover:text-white/60"
-            }`}
+            className="flex flex-col items-center justify-center py-2 flex-1 rounded-xl transition-all duration-300 relative"
           >
-            <User className={`w-5 h-5 mb-1 ${activeTab === "profile" ? "text-white" : "opacity-40"}`} />
-            <span className="text-[9px] font-black tracking-[0.15em] uppercase">Profile</span>
+            {activeTab === "profile" && (
+              <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "var(--text-primary)" }} />
+            )}
+            <User className="w-5 h-5 mb-1" style={{ color: activeTab === "profile" ? "var(--text-primary)" : "var(--text-ghost)" }} />
+            <span className="text-[9px] font-bold" style={{ color: activeTab === "profile" ? "var(--text-primary)" : "var(--text-ghost)" }}>
+              Profile
+            </span>
           </button>
         </div>
       </nav>

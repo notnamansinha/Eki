@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { MapPin, Bus, CheckCircle, Navigation } from "lucide-react";
+import { MapPin, BusFront as Bus, CheckCircle, Navigation } from "lucide-react";
 
 export interface ETACardProps {
   stopName: string;

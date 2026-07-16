@@ -1,6 +1,4 @@
-import { useState, useEffect } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { useCollection } from "./useCollection";
 
 export interface DriverData {
   id: string; // Driver unique ID e.g. "drv_1"
@@ -10,25 +8,6 @@ export interface DriverData {
 }
 
 export function useDrivers() {
-  const [drivers, setDrivers] = useState<DriverData[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "drivers"), (snapshot) => {
-      const fetched = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as DriverData[];
-      
-      setDrivers(fetched);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching drivers from Firestore:", error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
+  const { data: drivers, loading } = useCollection<DriverData>("drivers");
   return { drivers, loading };
 }

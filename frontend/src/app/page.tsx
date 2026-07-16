@@ -1,27 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { Bus, MapPin, Navigation, LayoutDashboard, Wifi, Star, Bell, ShieldCheck, Loader2, LogIn } from "lucide-react";
+import { BusFront as Bus, Navigation, Loader2, LogIn, ArrowRight, Zap, SignalHigh as Radio, Clock } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-
-
-
-const FEATURES = [
-  { icon: Wifi, title: "Real-Time GPS", desc: "Sub-second location updates via Firebase Realtime Database." },
-  { icon: MapPin, title: "On-Demand Stops", desc: "Passengers tap the map to request pickups anywhere on the route." },
-  { icon: Navigation, title: "Smart Routing", desc: "Intelligent road-based routing calculates optimal driver paths." },
-  { icon: Star, title: "Rider Ratings", desc: "Star ratings and comments collected per trip for quality control." },
-  { icon: Bell, title: "Instant Alerts", desc: "Automated notifications for arrivals, request spikes, and deviations." },
-  { icon: ShieldCheck, title: "Secure Access", desc: "Firebase-backed authentication and rules at every layer." },
-];
-
-
+import { useEffect, useState } from "react";
+import { rtdb, auth } from "@/lib/firebase";
+import { ref, onValue } from "firebase/database";
+import { signInAnonymously } from "firebase/auth";
 
 export default function HomePage() {
-  const { user, loading, loginWithGoogle } = useAuth();
+  const { user, loading, loginLoading, loginWithGoogle } = useAuth();
   const router = useRouter();
+  const [activeBusCount, setActiveBusCount] = useState(0);
 
   useEffect(() => {
     if (!loading && user) {
@@ -29,97 +20,196 @@ export default function HomePage() {
     }
   }, [user, loading, router]);
 
+  // Live bus count for social proof
+  useEffect(() => {
+    signInAnonymously(auth).catch(() => {});
+    const busesRef = ref(rtdb, "activeBuses");
+    const unsub = onValue(busesRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const now = Date.now();
+        const count = Object.values(data as Record<string, any>).filter(
+          (b: any) => b.deviceState === "online" && b.tripState === "in_service" && (now - b.timestamp) < 300_000
+        ).length;
+        setActiveBusCount(count);
+      } else {
+        setActiveBusCount(0);
+      }
+    });
+    return () => unsub();
+  }, []);
+
   if (loading || user) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#212121]">
-        <Loader2 className="w-10 h-10 text-white/20 animate-spin" />
+      <main className="min-h-screen flex items-center justify-center" style={{ background: "var(--surface-0)" }}>
+        <Loader2 className="w-6 h-6 text-[var(--text-tertiary)] animate-spin" />
       </main>
     );
   }
 
   return (
-    <main
-      className="min-h-screen overflow-x-hidden"
-      style={{ background: "#212121", fontFamily: "'Inter', sans-serif", color: "#e0e0e0" }}
-    >
-      <style>{`
-        * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-        .apple-nav-link { color: #ffffff; font-size: 14px; font-weight: 500; padding: 0 12px; opacity: 0.7; transition: opacity 0.2s; text-decoration: none; }
-        .apple-nav-link:hover { opacity: 1; }
-        .portal-card { background: #2A2A2A; border-radius: 18px; padding: 40px; transition: transform 0.3s cubic-bezier(0.25,0.1,0.25,1); text-decoration: none; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.05); }
-        .portal-card:hover { transform: scale(1.02); }
-        .feature-card { padding: 32px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .cta-btn-primary { display: inline-flex; align-items: center; gap: 8px; background: #0071e3; color: white; padding: 14px 28px; border-radius: 980px; font-size: 15px; font-weight: 500; text-decoration: none; transition: background 0.2s; }
-        .cta-btn-primary:hover { background: #0077ed; }
-        .cta-btn-secondary { display: inline-flex; align-items: center; gap: 6px; color: #0071e3; font-size: 15px; font-weight: 500; text-decoration: none; transition: opacity 0.2s; }
-        .cta-btn-secondary:hover { opacity: 0.7; }
-        .cta-btn-secondary::after { content: "›"; font-size: 18px; }
-        .dark-section { background: #1d1d1f; }
-        .dark-section * { color: #f5f5f7; }
-      `}</style>
-
-      {/* ── NAV BAR ─── Apple.com style */}
-      <nav style={{ background: "rgba(0,0,0,0.95)", backdropFilter: "saturate(180%) blur(20px)", WebkitBackdropFilter: "saturate(180%) blur(20px)", position: "sticky", top: 0, zIndex: 100, borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
-        <div className="max-w-[980px] mx-auto px-5 h-20 md:h-[120px] flex items-center justify-between">
-          <div className="flex items-center gap-3 md:gap-4 no-underline">
-            <img src="/BusLogo.png" alt="BusTrack Logo" className="w-[50px] h-[50px] md:w-[110px] md:h-[110px] object-contain" />
-            <span className="text-2xl md:text-3xl font-bold text-white tracking-tighter italic">BusTrack</span>
+    <main className="min-h-screen relative noise-bg" style={{ background: "var(--surface-0)" }}>
+      
+      {/* ── NAV ─── */}
+      <nav className="fixed top-0 w-full z-50" style={{
+        background: "rgba(9, 9, 11, 0.85)",
+        backdropFilter: "blur(12px)",
+        borderBottom: "1px solid var(--border-subtle)"
+      }}>
+        <div className="max-w-[1200px] mx-auto px-6 md:px-10 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "var(--accent)" }}>
+              <Bus className="w-4 h-4 text-white" />
+            </div>
+            <span className="text-lg font-extrabold tracking-tight" style={{ color: "var(--text-primary)" }}>
+              eki
+            </span>
           </div>
-          <button onClick={loginWithGoogle} className="cta-btn-primary px-4 py-2 md:px-[18px] md:py-[8px] text-[12px] md:text-[13px]">
-            Sign In 
-          </button>
+
+          <div className="flex items-center gap-3">
+            <Link
+              href="/route-planner"
+              className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <Navigation className="w-3.5 h-3.5" />
+              Plan Trip
+            </Link>
+            <button
+              onClick={loginWithGoogle}
+              disabled={loginLoading}
+              className="btn-primary px-5 py-2 flex items-center gap-2 text-[13px] disabled:opacity-60"
+            >
+              {loginLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <>
+                  Sign In <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </nav>
 
-      {/* ── HERO ─── Full-width, dark bottom section like apple.com product pages */}
-      <section className="bg-black min-h-[88vh] flex flex-col items-center justify-center text-center px-5 pt-[80px] pb-[60px] md:pt-[100px] md:pb-[80px]">
-        <p className="text-xs md:text-sm font-medium text-[#6e6e73] tracking-widest uppercase mb-4 md:mb-5">
-          BusTrack — Live
-        </p>
-        <h1 className="text-[clamp(2.5rem,8vw,6rem)] font-bold text-[#f5f5f7] tracking-tighter leading-none m-0 mb-6 md:mb-7 max-w-[800px]">
-          The Smartest Way<br />to Ride the City.
+      {/* ── HERO ─── */}
+      <section className="relative pt-[140px] pb-20 px-6 md:px-10 max-w-[1200px] mx-auto">
+        {/* Live status */}
+        {activeBusCount > 0 && (
+          <div className="status-live mb-8 animate-fade-in">
+            {activeBusCount} bus{activeBusCount !== 1 ? "es" : ""} live now
+          </div>
+        )}
+        {activeBusCount === 0 && (
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-8 text-[11px] font-semibold"
+            style={{ background: "var(--surface-3)", color: "var(--text-tertiary)" }}>
+            <Clock className="w-3 h-3" />
+            Service starts at 8:00 AM
+          </div>
+        )}
+        
+        <h1 className="font-extrabold tracking-tighter leading-[0.92] mb-6 max-w-[900px]"
+          style={{ fontSize: "clamp(2.8rem, 7vw, 5.5rem)", color: "var(--text-primary)" }}>
+          Know exactly when{" "}
+          <span style={{ color: "var(--text-tertiary)" }}>your bus arrives.</span>
         </h1>
-        <p className="text-[clamp(1rem,2.5vw,1.4rem)] text-[#86868b] font-normal max-w-[560px] leading-relaxed mb-10 md:mb-12 px-4 md:px-0">
-          Real-time bus tracking, on-demand stops, and full fleet oversight. One ecosystem for everyone.
+        
+        <p className="text-lg md:text-xl font-medium max-w-[520px] leading-relaxed mb-10"
+          style={{ color: "var(--text-secondary)" }}>
+          Live GPS tracking with speed-aware ETAs for Ahmedabad transit. 
+          Open your phone, see your bus, know when to leave.
         </p>
-        <div className="flex gap-4 md:gap-5 flex-wrap justify-center w-full px-5 md:px-0">
-          <button onClick={loginWithGoogle} className="cta-btn-primary px-6 py-3 md:px-[32px] md:py-[16px] text-sm md:text-[16px] w-full max-w-[280px] md:w-auto justify-center">
-            <LogIn className="w-5 h-5" />
-            Sign In with Google
+        
+        <div className="flex gap-3 flex-wrap">
+          <button
+            onClick={loginWithGoogle}
+            disabled={loginLoading}
+            className="btn-primary px-7 py-3.5 flex items-center gap-2.5 font-bold text-[14px] disabled:opacity-60"
+          >
+            {loginLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <LogIn className="w-4 h-4" />
+            )}
+            {loginLoading ? "Opening Google…" : "Sign In with Google"}
           </button>
           <Link
             href="/route-planner"
-            className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 border border-white/15 text-white px-6 py-3 md:px-[32px] md:py-[16px] rounded-full text-sm md:text-[16px] font-semibold no-underline transition-all w-full max-w-[280px] md:w-auto"
-            style={{ backdropFilter: "blur(12px)" }}
+            className="btn-rc-outline px-7 py-3.5 flex items-center gap-2.5 font-bold text-[14px]"
           >
-            <Navigation className="w-5 h-5" />
-            Plan Your Trip
+            <Navigation className="w-4 h-4" />
+            Plan a Trip
           </Link>
         </div>
       </section>
 
+      {/* ── DIVIDER ── */}
+      <div className="w-full" style={{ borderTop: "1px solid var(--border-subtle)" }} />
 
-
-
-
-      {/* ── FEATURES ─── Clean list like apple tech specs */}
-      <section className="bg-[#212121] px-5 py-16 md:py-[80px]">
-        <div className="max-w-[740px] mx-auto">
-          <h2 className="text-[clamp(1.5rem,4vw,3rem)] font-semibold text-white tracking-tight text-center mb-10 md:mb-16 leading-tight">
-            Built for real cities.<br /><span className="text-[#a1a1a6]">Engineered for reliability.</span>
-          </h2>
-          <div>
-            {FEATURES.map((f, i) => {
+      {/* ── CAPABILITIES ─── */}
+      <section className="relative py-20 px-6 md:px-10">
+        <div className="max-w-[1200px] mx-auto">
+          <div className="mb-14">
+            <p className="label-xs mb-3">What it does</p>
+            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight leading-tight max-w-[600px]"
+              style={{ color: "var(--text-primary)" }}>
+              Built for riders who value their time.
+            </h2>
+          </div>
+          
+          {/* Staggered 2-col layout with large numbers as anchors */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {[
+              {
+                stat: "200ms",
+                label: "Update latency",
+                desc: "Sub-second GPS updates via Firebase Realtime Database. Bus positions refresh faster than you can blink.",
+                icon: Zap,
+              },
+              {
+                stat: "60fps",
+                label: "Smooth tracking",
+                desc: "GPU-accelerated marker interpolation creates fluid bus movement between discrete GPS pings.",
+                icon: Navigation,
+              },
+              {
+                stat: "±30s",
+                label: "ETA accuracy",
+                desc: "Speed-aware arrival estimates that account for current bus velocity, traffic stops, and delay buffers.",
+                icon: Clock,
+              },
+              {
+                stat: "2-way",
+                label: "Live comms",
+                desc: "Direct messaging channel between driver and riders. Ask about stops, report issues, get real responses.",
+                icon: Radio,
+              },
+            ].map((f, i) => {
               const Icon = f.icon;
               return (
-                <div key={f.title} className={`py-6 md:py-8 flex gap-4 md:gap-8 items-start border-b border-white/10 ${i === 0 ? 'border-t' : ''}`}>
-                  <div className="w-10 h-10 md:w-11 md:h-11 bg-[#333333] rounded-[10px] flex items-center justify-center shrink-0">
-                    <Icon className="w-5 h-5 md:w-6 md:h-6 text-white" />
+                <div
+                  key={f.label}
+                  className="p-7 rounded-2xl border transition-colors group"
+                  style={{
+                    background: "var(--surface-1)",
+                    borderColor: "var(--border-subtle)",
+                  }}
+                >
+                  <div className="flex items-start justify-between mb-5">
+                    <div>
+                      <span className="text-3xl font-extrabold tracking-tight" style={{ color: "var(--text-primary)" }}>
+                        {f.stat}
+                      </span>
+                      <p className="label-xs mt-1">{f.label}</p>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                      style={{ background: "var(--surface-3)" }}>
+                      <Icon className="w-5 h-5" style={{ color: "var(--text-tertiary)" }} />
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-[16px] md:text-[17px] font-semibold text-white mb-2 tracking-tight">{f.title}</h3>
-                    <p className="text-[14px] md:text-[15px] text-[#a1a1a6] leading-relaxed">{f.desc}</p>
-                  </div>
+                  <p className="text-[15px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                    {f.desc}
+                  </p>
                 </div>
               );
             })}
@@ -127,23 +217,43 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── DIVIDER ── */}
+      <div className="w-full" style={{ borderTop: "1px solid var(--border-subtle)" }} />
+
       {/* ── FINAL CTA ─── */}
-      <section className="bg-[#1a1a1a] px-5 py-16 md:py-[120px] text-center">
-        <h2 className="text-[clamp(1.8rem,5vw,3.5rem)] font-bold text-white tracking-tighter mb-3 leading-tight">
-          Ready to ride smarter?
-        </h2>
-        <p className="text-[17px] md:text-[19px] text-[#a1a1a6] mb-10 md:mb-12 px-4">
-          Join the live transit network today.
-        </p>
-        <div className="flex gap-4 justify-center flex-wrap px-5 md:px-0">
-          <button onClick={loginWithGoogle} className="inline-flex items-center justify-center gap-2 bg-white text-[#111111] px-6 py-3 md:px-7 md:py-[14px] rounded-full text-sm md:text-[15px] font-semibold no-underline transition-colors hover:bg-gray-200 w-full max-w-[280px] md:w-auto">
-            <LogIn className="w-4 h-4 md:w-4 md:h-4" />
-            Sign In with Google
+      <section className="relative py-24 px-6 md:px-10 max-w-[1200px] mx-auto">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-10">
+          <div>
+            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight leading-tight mb-3"
+              style={{ color: "var(--text-primary)" }}>
+              Stop guessing.
+            </h2>
+            <p className="text-lg" style={{ color: "var(--text-secondary)" }}>
+              Track your bus in real-time. It's free.
+            </p>
+          </div>
+          <button
+            onClick={loginWithGoogle}
+            disabled={loginLoading}
+            className="btn-primary px-8 py-4 text-[15px] font-bold inline-flex items-center gap-3 shrink-0 disabled:opacity-60"
+          >
+            {loginLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <ArrowRight className="w-4 h-4" />
+            )}
+            {loginLoading ? "Opening Google…" : "Get Started"}
           </button>
         </div>
       </section>
 
-
+      {/* ── FOOTER ── */}
+      <footer style={{ borderTop: "1px solid var(--border-subtle)" }} className="py-6 px-6 md:px-10">
+        <div className="max-w-[1200px] mx-auto flex flex-col md:flex-row justify-between items-center gap-3">
+          <span className="label-xs">© 2026 Eki Transit</span>
+          <span className="label-xs" style={{ color: "var(--text-ghost)" }}>Ahmedabad, India</span>
+        </div>
+      </footer>
     </main>
   );
 }
