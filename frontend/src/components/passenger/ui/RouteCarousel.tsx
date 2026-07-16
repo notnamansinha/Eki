@@ -46,7 +46,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
                   </h3>
                   {stops.length > 0 && (
                     <p className="text-[14.5px] font-bold mt-2 line-clamp-1" style={{ color: "var(--text-secondary)" }}>
-                      {stops[0].name} <span className="mx-1 opacity-60">&rarr;</span> {stops[stops.length - 1].name}
+                      {stops[0].name.split(',')[0]} <span className="mx-1 opacity-60">&rarr;</span> {stops[stops.length - 1].name.split(',')[0]}
                     </p>
                   )}
                 </div>
