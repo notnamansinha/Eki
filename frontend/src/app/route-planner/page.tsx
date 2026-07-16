@@ -80,7 +80,7 @@ function SelectBox({
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between">
-        <label className="text-[10px] font-bold flex items-center gap-1.5" style={{ color: "var(--text-ghost)", letterSpacing: "0.08em" }}>
+        <label className="text-[10px] font-semibold flex items-center gap-1.5" style={{ color: "var(--text-ghost)", letterSpacing: "0.08em" }}>
           {icon}
           {label.toUpperCase()}
           {optional && <span className="font-normal normal-case" style={{ color: "var(--text-ghost)", letterSpacing: "0" }}>(optional)</span>}
@@ -258,7 +258,7 @@ export default function RoutePlannerPage() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: routeColor }} />
-            <p className="text-[12px] font-bold truncate" style={{ color: "var(--text-primary)" }}>
+            <p className="text-[12px] font-semibold truncate" style={{ color: "var(--text-primary)" }}>
               Route Planner
             </p>
           </div>
@@ -269,7 +269,7 @@ export default function RoutePlannerPage() {
 
         <button
           onClick={() => setIsPanelOpen((p) => !p)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold transition-all"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold transition-all"
           style={{ 
             background: "var(--surface-3)", 
             border: "1px solid var(--border-default)", 
@@ -296,7 +296,7 @@ export default function RoutePlannerPage() {
           <div className="px-4 pt-4 pb-3 space-y-4 max-w-lg mx-auto">
             {/* Route selector */}
             <div>
-              <label className="text-[10px] font-bold flex items-center gap-1.5 mb-1.5" 
+              <label className="text-[10px] font-semibold flex items-center gap-1.5 mb-1.5" 
                 style={{ color: "var(--text-ghost)", letterSpacing: "0.08em" }}>
                 <GitBranch className="w-3 h-3" />
                 SELECT ROUTE
@@ -411,9 +411,9 @@ export default function RoutePlannerPage() {
                   style={{ borderBottom: "1px solid var(--border-subtle)" }}>
                   <div className="flex items-center gap-2">
                     <Navigation2 className="w-3.5 h-3.5" style={{ color: routeColor }} />
-                    <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>Your Trip</span>
+                    <span className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>Your Trip</span>
                   </div>
-                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-md"
+                  <span className="text-[10px] font-semibold px-2.5 py-1 rounded-md"
                     style={{ background: `${routeColor}18`, color: routeColor }}>
                     {planResult!.totalStops} stops
                   </span>
@@ -445,7 +445,7 @@ export default function RoutePlannerPage() {
                             {stop.name}
                           </p>
                           {(isFirst || isLast || isVia) && (
-                            <p className="text-[9px] font-bold mt-0.5"
+                            <p className="text-[9px] font-semibold mt-0.5"
                               style={{ color: "var(--text-ghost)", letterSpacing: "0.06em" }}>
                               {isFirst ? "DEPARTURE" : isLast ? "DESTINATION" : "VIA"}
                             </p>
@@ -476,7 +476,7 @@ export default function RoutePlannerPage() {
           >
             <div className="flex items-center justify-between mb-1">
               <div>
-                <p className="text-[13px] font-bold" style={{ color: "var(--text-primary)" }}>{clickedStop.name}</p>
+                <p className="text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>{clickedStop.name}</p>
                 <p className="text-[10px] mt-0.5" style={{ color: "var(--text-ghost)" }}>Choose an action for this stop</p>
               </div>
               <button onClick={() => setClickedStop(null)} className="p-1.5 rounded-lg transition-colors"
@@ -499,7 +499,7 @@ export default function RoutePlannerPage() {
                   style={{ background: `${color}12`, borderColor: `${color}25` }}
                 >
                   <div className="w-3.5 h-3.5 rounded-full" style={{ background: color }} />
-                  <span className="text-[10px] font-bold text-center leading-tight"
+                  <span className="text-[10px] font-semibold text-center leading-tight"
                     style={{ color: "var(--text-secondary)" }}>{label}</span>
                 </button>
               ))}

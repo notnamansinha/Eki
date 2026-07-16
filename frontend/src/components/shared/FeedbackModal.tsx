@@ -159,7 +159,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5 bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/30 relative z-10">
             <Check className="text-white" strokeWidth={3} size={32} />
           </div>
-          <h2 className="text-xl font-bold mb-2 relative z-10" style={{ color: "var(--text-primary)" }}>
+          <h2 className="text-xl font-extrabold mb-2 relative z-10" style={{ color: "var(--text-primary)" }}>
             Thank you!
           </h2>
           <p className="text-[14px] relative z-10" style={{ color: "var(--text-tertiary)" }}>
@@ -190,7 +190,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
               <HeartHandshake className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-[16px] font-bold leading-tight" style={{ color: "var(--text-primary)" }}>
+              <h2 className="text-[16px] font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>
                 {busId ? "Rate your ride" : "Send feedback"}
               </h2>
               {busId && (
@@ -289,7 +289,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           <button
             type="submit"
             disabled={submitting || cooldownRemaining > 0 || (!!busId && !comment.trim() && rating === 0) || (!busId && !comment.trim())}
-            className="w-full h-12 rounded-xl font-bold text-[14px] flex items-center justify-center gap-2 transition-all relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full h-12 rounded-xl font-semibold text-[14px] flex items-center justify-center gap-2 transition-all relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ 
               background: (submitting || cooldownRemaining > 0 || (!!busId && !comment.trim() && rating === 0) || (!busId && !comment.trim()))
                 ? "var(--surface-3)" 

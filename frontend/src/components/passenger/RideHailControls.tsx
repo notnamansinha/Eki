@@ -102,7 +102,7 @@ export default function RideHailControls({ onModeChange, pendingLocation }: Prop
                    <p className={`text-xs font-black uppercase tracking-widest ${current.color} truncate`}>
                     {current.label}
                   </p>
-                  <div className="text-[10px] text-white/50 font-bold uppercase tracking-widest mt-1 flex items-center gap-1.5">
+                  <div className="text-[10px] text-white/50 font-semibold uppercase tracking-widest mt-1 flex items-center gap-1.5">
                     {status === "idle" && !pendingLocation ? (
                       <><AlertCircle className="w-3 h-3 text-amber-500" /> Tap map to select location</>
                     ) : (

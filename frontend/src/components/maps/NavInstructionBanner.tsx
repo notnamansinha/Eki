@@ -52,7 +52,7 @@ const NavInstructionBanner = React.memo(function NavInstructionBanner({
             </div>
             <div className="flex-1 min-w-0">
                <p className="text-[10px] font-black tracking-widest text-white/20 uppercase mb-1 leading-none">Topology Sync</p>
-               <p className="text-white font-bold text-sm tracking-tight leading-snug truncate">
+               <p className="text-white font-semibold text-sm tracking-tight leading-snug truncate">
                 Recalculating optimal path...
               </p>
             </div>
@@ -70,7 +70,7 @@ const NavInstructionBanner = React.memo(function NavInstructionBanner({
                  <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest leading-none">{distanceToTurn || "—"}</p>
               </div>
               <p
-                className="text-white font-bold text-sm tracking-tight leading-snug truncate"
+                className="text-white font-semibold text-sm tracking-tight leading-snug truncate"
                 dangerouslySetInnerHTML={{ __html: instruction || "Continue straightforward" }}
               />
             </div>

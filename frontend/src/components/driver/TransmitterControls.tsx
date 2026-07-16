@@ -61,7 +61,7 @@ export default function TransmitterControls({
         <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full" style={{ background: "var(--surface-4)" }} />
         <div className="flex items-center gap-2.5 mt-1">
           <Navigation className="w-3.5 h-3.5" style={{ color: "var(--text-ghost)" }} />
-          <span className="text-[11px] font-bold" style={{ color: "var(--text-secondary)" }}>
+          <span className="text-[11px] font-semibold" style={{ color: "var(--text-secondary)" }}>
             Transmitter Controls
           </span>
         </div>
@@ -75,7 +75,7 @@ export default function TransmitterControls({
         {/* Vehicle Selector */}
         {!isTracking ? (
           <div className="space-y-1.5">
-            <label className="text-[10px] font-bold px-0.5" style={{ color: "var(--text-ghost)" }}>
+            <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
               Vehicle
             </label>
             <div className="relative">
@@ -99,14 +99,14 @@ export default function TransmitterControls({
           </div>
         ) : (
           <div className="space-y-1.5">
-            <label className="text-[10px] font-bold px-0.5" style={{ color: "var(--text-ghost)" }}>
+            <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
               Vehicle
             </label>
             <div className="w-full rounded-xl px-4 py-3 text-[13px] flex items-center justify-between"
               style={{ background: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}>
               <div className="flex items-center gap-3">
                 <Bus className="w-4 h-4" style={{ color: "var(--text-ghost)" }} />
-                <span className="font-bold font-mono tracking-wide" style={{ color: "var(--text-secondary)" }}>
+                <span className="font-semibold font-mono tracking-wide" style={{ color: "var(--text-secondary)" }}>
                   {busId || "UNASSIGNED"}
                 </span>
               </div>
@@ -122,7 +122,7 @@ export default function TransmitterControls({
         {/* Operator Selector */}
         {!isTracking && (
           <div className="space-y-1.5">
-            <label className="text-[10px] font-bold px-0.5" style={{ color: "var(--text-ghost)" }}>
+            <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
               Operator
             </label>
             <div className="relative">
@@ -148,7 +148,7 @@ export default function TransmitterControls({
 
         {/* Route Selector */}
         <div className="space-y-1.5">
-          <label className="text-[10px] font-bold px-0.5" style={{ color: "var(--text-ghost)" }}>
+          <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
             Route {selectedRouteIds.length > 0 ? "· 1 selected" : ""}
           </label>
           <div className="rounded-xl overflow-hidden" style={{ background: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}>
@@ -168,7 +168,7 @@ export default function TransmitterControls({
               if (allowedRoutes.length === 0) {
                 return (
                   <div className="flex flex-col items-center py-5 px-4 text-center">
-                    <p className="text-[11px] font-bold mb-0.5" style={{ color: "var(--status-danger)" }}>No routes assigned</p>
+                    <p className="text-[11px] font-semibold mb-0.5" style={{ color: "var(--status-danger)" }}>No routes assigned</p>
                     <p className="text-[10px]" style={{ color: "var(--text-ghost)" }}>Vehicle "{busId}" has no authorized routes.</p>
                   </div>
                 );
@@ -223,7 +223,7 @@ export default function TransmitterControls({
               aria-label="Go live and start transmitting location"
               onClick={onStartTracking}
               disabled={!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0 || !isSocketConnected}
-              className="w-full py-4 rounded-xl font-bold text-[14px] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="w-full py-4 rounded-xl font-semibold text-[14px] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 disabled:opacity-30 disabled:cursor-not-allowed"
               style={{ background: "var(--text-primary)", color: "var(--surface-0)" }}
             >
               {!isSocketConnected ? (
@@ -242,7 +242,7 @@ export default function TransmitterControls({
           <button
               aria-label="End shift and stop transmitting"
               onClick={onStopTracking}
-              className="w-full py-4 rounded-xl font-bold text-[14px] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
+              className="w-full py-4 rounded-xl font-semibold text-[14px] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
               style={{ background: "var(--status-danger)", color: "white" }}
             >
               <Square className="w-4 h-4" style={{ fill: "white" }} />
@@ -269,7 +269,7 @@ export default function TransmitterControls({
           <button
             aria-label="Stop transmitting and go offline"
             onClick={onStopTracking}
-            className="h-10 px-5 rounded-xl text-[11px] font-bold transition-all"
+            className="h-10 px-5 rounded-xl text-[11px] font-semibold transition-all"
             style={{ 
               background: "var(--status-danger-bg)", 
               border: "1px solid rgba(248,113,113,0.15)", 

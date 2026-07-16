@@ -58,12 +58,7 @@ export default function HomePage() {
       }}>
         <div className="max-w-[1200px] mx-auto px-6 md:px-10 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "var(--accent)" }}>
-              <Bus className="w-4 h-4 text-white" />
-            </div>
-            <span className="text-title-screen" style={{ color: "var(--text-primary)" }}>
-              eki
-            </span>
+              <img src="/logo.webp" alt="Eki Transit Logo" className="h-[28px] w-auto" style={{ filter: "brightness(0) invert(1)" }} />
           </div>
 
           <div className="flex items-center gap-3">
@@ -124,7 +119,7 @@ export default function HomePage() {
           <button
             onClick={loginWithGoogle}
             disabled={loginLoading}
-            className="btn-primary px-7 py-3.5 flex items-center gap-2.5 font-bold text-[14px] disabled:opacity-60"
+            className="btn-primary px-7 py-3.5 flex items-center gap-2.5 font-semibold text-[14px] disabled:opacity-60"
           >
             {loginLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -135,7 +130,7 @@ export default function HomePage() {
           </button>
           <Link
             href="/route-planner"
-            className="btn-rc-outline px-7 py-3.5 flex items-center gap-2.5 font-bold text-[14px]"
+            className="btn-rc-outline px-7 py-3.5 flex items-center gap-2.5 font-semibold text-[14px]"
           >
             <Navigation className="w-4 h-4" />
             Plan a Trip
@@ -235,7 +230,7 @@ export default function HomePage() {
           <button
             onClick={loginWithGoogle}
             disabled={loginLoading}
-            className="btn-primary px-8 py-4 text-[15px] font-bold inline-flex items-center gap-3 shrink-0 disabled:opacity-60"
+            className="btn-primary px-8 py-4 text-[15px] font-medium inline-flex items-center gap-3 shrink-0 disabled:opacity-60"
           >
             {loginLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />

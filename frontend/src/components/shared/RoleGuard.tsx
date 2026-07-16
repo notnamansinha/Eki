@@ -59,7 +59,7 @@ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
         <button
           onClick={loginWithGoogle}
           disabled={loginLoading}
-          className="btn-primary px-6 py-3 flex items-center gap-2.5 text-[13px] font-bold disabled:opacity-60"
+          className="btn-primary px-6 py-3 flex items-center gap-2.5 text-[13px] font-medium disabled:opacity-60"
         >
           {loginLoading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -96,7 +96,7 @@ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
         >
           <span style={{ color: "var(--text-primary)" }}>{user.email}</span> does not have access to this panel.
         </p>
-        <p className="text-[11px] font-bold mb-8 uppercase tracking-widest" style={{ color: "var(--text-ghost)" }}>
+        <p className="text-[11px] font-semibold mb-8 uppercase tracking-widest" style={{ color: "var(--text-ghost)" }}>
           Role: {user.role}
         </p>
         <div className="flex items-center gap-4">
@@ -109,7 +109,7 @@ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
           </button>
           <a
             href="/"
-            className="text-[13px] font-bold transition-colors"
+            className="text-[13px] font-medium transition-colors"
             style={{ color: "var(--accent)" }}
           >
             Return Home

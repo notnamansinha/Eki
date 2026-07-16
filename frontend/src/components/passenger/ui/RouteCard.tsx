@@ -35,7 +35,7 @@ export default function RouteCard({ route, isSelected, onSelect, activeBusesCoun
       <div className="pl-2">
         {/* Top row: name + active badge */}
         <div className="flex items-center justify-between mb-2">
-          <h3 className="font-bold tracking-tight text-[15px]" style={{ color: "var(--text-primary)" }}>
+          <h3 className="font-semibold tracking-tight text-[15px]" style={{ color: "var(--text-primary)" }}>
             {route.name}
           </h3>
           {activeBusesCount > 0 ? (
