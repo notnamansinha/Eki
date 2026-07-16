@@ -307,7 +307,7 @@ export default function FeedbackPage() {
           <div className="flex flex-col">
             <span
               className="font-black text-sm uppercase tracking-[0.18em] text-white leading-none"
-              style={{ fontFamily: "Outfit" }}
+             
             >
               Feedback Console
             </span>

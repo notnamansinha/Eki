@@ -103,7 +103,7 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
           <div className="p-4 space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>Active unit</span>
-              <span className="font-semibold font-mono text-[13px] tracking-wide" style={{ color: "var(--text-secondary)" }}>
+              <span className="font-semibold tabular-nums text-[13px] tracking-wide" style={{ color: "var(--text-secondary)" }}>
                 {busId}
               </span>
             </div>

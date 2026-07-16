@@ -106,7 +106,7 @@ export default function TransmitterControls({
               style={{ background: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}>
               <div className="flex items-center gap-3">
                 <Bus className="w-4 h-4" style={{ color: "var(--text-ghost)" }} />
-                <span className="font-semibold font-mono tracking-wide" style={{ color: "var(--text-secondary)" }}>
+                <span className="font-semibold tabular-nums tracking-wide" style={{ color: "var(--text-secondary)" }}>
                   {busId || "UNASSIGNED"}
                 </span>
               </div>
@@ -207,7 +207,7 @@ export default function TransmitterControls({
                       <span className="text-[13px] font-semibold" style={{ color: isSelected ? "var(--text-primary)" : "var(--text-tertiary)" }}>
                         {r.name}
                       </span>
-                      <span className="text-[9px] font-mono" style={{ color: "var(--text-ghost)" }}>{r.id}</span>
+                      <span className="text-[9px] tabular-nums" style={{ color: "var(--text-ghost)" }}>{r.id}</span>
                     </div>
                   </label>
                 );

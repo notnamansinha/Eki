@@ -163,14 +163,14 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
                 {ms.label}
               </span>
               {entry.speed != null && (
-                <span className="text-[9px] text-white/30 font-mono">{Math.round(entry.speed)} km/h</span>
+                <span className="text-[9px] text-white/30 tabular-nums">{Math.round(entry.speed)} km/h</span>
               )}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {route && stopsTotal > 0 && (
-            <span className="text-[9px] text-white/30 font-mono hidden sm:block">
+            <span className="text-[9px] text-white/30 tabular-nums hidden sm:block">
               {stopIdx}/{stopsTotal} stops
             </span>
           )}
@@ -195,7 +195,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
                   <Icon className="w-3 h-3 text-white/25" />
                   <span className="text-[8px] font-black uppercase tracking-wider text-white/30">{label}</span>
                 </div>
-                <span className="text-xs font-semibold text-white font-mono truncate">{value}</span>
+                <span className="text-xs font-semibold text-white tabular-nums truncate">{value}</span>
               </div>
             ))}
           </div>
@@ -205,7 +205,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-[9px] font-black uppercase tracking-wider text-white/30">Route Progress</span>
-                <span className="text-[9px] font-mono text-white/40">{stopIdx} of {stopsTotal} stops</span>
+                <span className="text-[9px] tabular-nums text-white/40">{stopIdx} of {stopsTotal} stops</span>
               </div>
               <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
                 <div
@@ -235,12 +235,12 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
             <div className="flex flex-col gap-0.5">
               <span className="text-[8px] font-black uppercase tracking-wider text-white/30">Driver</span>
               <span className="text-[10px] font-semibold text-white truncate">{driver?.name ?? entry.driverId ?? "—"}</span>
-              <span className="text-[9px] font-mono text-white/20">{entry.driverId}</span>
+              <span className="text-[9px] tabular-nums text-white/20">{entry.driverId}</span>
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-[8px] font-black uppercase tracking-wider text-white/30">Route</span>
               <span className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</span>
-              <span className="text-[9px] font-mono text-white/20">{entry.routeId}</span>
+              <span className="text-[9px] tabular-nums text-white/20">{entry.routeId}</span>
             </div>
           </div>
 
@@ -248,7 +248,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
           <div className="flex items-center gap-2 border-t border-white/5 pt-2.5 mt-0.5">
             <Radio className="w-3 h-3 text-white/20" />
             <span className="text-[9px] text-white/25 font-black uppercase tracking-wider">Hardware ID</span>
-            <span className="text-[9px] font-mono text-white/50 ml-auto">{entry.busId}</span>
+            <span className="text-[9px] tabular-nums text-white/50 ml-auto">{entry.busId}</span>
           </div>
         </div>
       )}
@@ -293,7 +293,7 @@ function RecentTripsPanel({ routes, buses, drivers }: { routes: any[]; buses: Bu
                 <div key={trip.id} className="bg-brand-dark/40 border border-white/5 rounded-xl p-3 flex flex-col gap-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-white">{route?.name ?? trip.routeId ?? "Unknown Route"}</span>
-                    <span className="text-[9px] text-white/30 font-mono">{timeSince(trip.completedAt)}</span>
+                    <span className="text-[9px] text-white/30 tabular-nums">{timeSince(trip.completedAt)}</span>
                   </div>
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className="text-[9px] text-white/40 flex items-center gap-1">
@@ -560,7 +560,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               <Bus className="w-4 h-4 text-white/40" />
             </div>
             <div>
-              <h2 className="font-extrabold text-lg tracking-tight" style={{ fontFamily: "Outfit" }}>Fleet Vehicles</h2>
+              <h2 className="font-extrabold text-lg tracking-tight">Fleet Vehicles</h2>
               <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black">Manage Hardware IDs</p>
             </div>
           </div>
@@ -656,7 +656,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                             </div>
                             <div className="flex flex-col min-w-0">
                               <span className="font-semibold text-white text-sm truncate">{bus.name}</span>
-                              <span className="text-[10px] text-white/30 font-mono tracking-widest">{bus.id}</span>
+                              <span className="text-[10px] text-white/30 tabular-nums tracking-widest">{bus.id}</span>
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 {isOnline && ts ? (
                                   <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${ts.color}`}>
@@ -667,7 +667,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                                   <span className="text-[9px] text-white/20 font-black uppercase tracking-widest">Offline</span>
                                 )}
                                 {isOnline && liveEntry?.speed != null && (
-                                  <span className="text-[9px] text-white/30 font-mono">{Math.round(liveEntry.speed)} km/h</span>
+                                  <span className="text-[9px] text-white/30 tabular-nums">{Math.round(liveEntry.speed)} km/h</span>
                                 )}
                                 {bus.assignedRoutes && bus.assignedRoutes.length > 0 ? (
                                   <span className="text-[9px] text-blue-400 font-semibold flex items-center gap-1">
@@ -761,7 +761,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               <User className="w-4 h-4 text-white/40" />
             </div>
             <div>
-              <h2 className="font-extrabold text-lg tracking-tight" style={{ fontFamily: "Outfit" }}>Driver Personnel</h2>
+              <h2 className="font-extrabold text-lg tracking-tight">Driver Personnel</h2>
               <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black">Manage Operator IDs</p>
             </div>
           </div>
@@ -846,7 +846,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                             </div>
                             <div className="flex flex-col min-w-0">
                               <span className="font-semibold text-white text-sm truncate">{driver.name}</span>
-                              <span className="text-[10px] text-white/30 font-mono tracking-widest">{driver.id}</span>
+                              <span className="text-[10px] text-white/30 tabular-nums tracking-widest">{driver.id}</span>
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 {isDriving && dTs ? (
                                   <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${dTs.color}`}>
@@ -857,7 +857,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                                   <span className="text-[9px] text-white/20 font-black uppercase tracking-widest">Offline</span>
                                 )}
                                 {isDriving && liveEntry?.speed != null && (
-                                  <span className="text-[9px] text-white/30 font-mono">{Math.round(liveEntry.speed)} km/h</span>
+                                  <span className="text-[9px] text-white/30 tabular-nums">{Math.round(liveEntry.speed)} km/h</span>
                                 )}
                                 {assignedBus && (
                                   <span className="text-[9px] text-blue-400 font-semibold flex items-center gap-1">

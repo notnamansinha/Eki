@@ -96,7 +96,7 @@ function RouteCard({ route, onDelete }: { route: RouteData; onDelete: (id: strin
       <div className="flex justify-between items-start p-4 gap-3">
         <div className="space-y-1 min-w-0">
           <h3 className="font-semibold text-white tracking-tight truncate">{route.name}</h3>
-          <div className="text-[10px] text-white/20 font-mono tracking-widest uppercase">{route.id}</div>
+          <div className="text-[10px] text-white/20 tabular-nums tracking-widest uppercase">{route.id}</div>
         </div>
         <button
           onClick={() => onDelete(route.id)}
@@ -130,7 +130,7 @@ function RouteCard({ route, onDelete }: { route: RouteData; onDelete: (id: strin
               <div className="pb-3 flex flex-col justify-center min-w-0">
                 <span className="text-sm font-semibold text-white/80 leading-tight truncate">{stop.name}</span>
                 {stop.shortName && stop.shortName !== stop.name && (
-                  <span className="text-[9px] text-white/30 font-mono tracking-widest truncate">{stop.shortName}</span>
+                  <span className="text-[9px] text-white/30 tabular-nums tracking-widest truncate">{stop.shortName}</span>
                 )}
               </div>
             </div>
@@ -261,7 +261,7 @@ export default function RouteManagementPanel() {
       <div className="w-full max-w-4xl mx-auto p-3 md:p-6 flex flex-col gap-4 animate-slide-up">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="font-extrabold text-xl tracking-tight" style={{ fontFamily: "Outfit" }}>Infrastructure</h2>
+            <h2 className="font-extrabold text-xl tracking-tight">Infrastructure</h2>
             <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black mt-0.5">Saved Routes</p>
           </div>
           <button
@@ -374,7 +374,7 @@ export default function RouteManagementPanel() {
                   <div className="flex-1 pb-3 flex items-start justify-between group min-w-0 pt-1">
                     <div className="flex flex-col overflow-hidden pr-2">
                       <span className="text-white font-semibold text-xs truncate tracking-tight">{stop.name}</span>
-                      <span className="text-emerald-400/40 font-mono text-[8px] uppercase tracking-widest">{stop.shortName}</span>
+                      <span className="text-emerald-400/40 tabular-nums text-[8px] uppercase tracking-widest">{stop.shortName}</span>
                     </div>
                     <button onClick={() => handleRemoveStop(i)} className="p-1.5 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"><X className="w-3.5 h-3.5" /></button>
                   </div>
