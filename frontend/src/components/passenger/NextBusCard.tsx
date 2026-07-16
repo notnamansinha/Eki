@@ -51,7 +51,7 @@ export default function NextBusCard({
               className="w-2 h-2 rounded-full shrink-0"
               style={{ background: routeColor }}
             />
-            <span className="text-[13px] font-bold truncate" style={{ color: "var(--text-primary)" }}>
+            <span className="text-[13px] font-medium truncate" style={{ color: "var(--text-primary)" }}>
               {routeName}
             </span>
             <span className="text-[11px] font-medium shrink-0" style={{ color: "var(--text-tertiary)" }}>
@@ -72,7 +72,7 @@ export default function NextBusCard({
                 {etaMinutes > 0 && <span className="eta-unit">min</span>}
               </>
             ) : (
-              <span className="text-lg font-bold" style={{ color: "var(--text-tertiary)" }}>
+              <span className="text-lg font-extrabold" style={{ color: "var(--text-tertiary)" }}>
                 Calculating…
               </span>
             )}

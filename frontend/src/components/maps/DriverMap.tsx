@@ -300,7 +300,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           <div className="flex justify-center p-4 pb-8">
             <button 
               onClick={handleStartNavigation} 
-              className="btn-primary px-10 py-3.5 text-[13px] font-bold flex items-center gap-2.5 active:scale-95 transition-all"
+              className="btn-primary px-10 py-3.5 text-[13px] font-medium flex items-center gap-2.5 active:scale-95 transition-all"
             >
               Start Shift
             </button>
@@ -318,7 +318,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
                     Transmitting
                   </div>
                   {delayMinutes > 0 && (
-                    <span className="px-2 py-0.5 rounded text-[9px] font-bold"
+                    <span className="px-2 py-0.5 rounded text-[9px] font-semibold"
                       style={{ background: "var(--status-warning-bg)", color: "var(--status-warning)" }}>
                       +{delayMinutes} min
                     </span>
@@ -326,7 +326,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
                 </div>
                 {onEndShift && isTracking && (
                   <button onClick={(e) => { e.stopPropagation(); onEndShift(); }} 
-                    className="h-7 px-3 rounded-lg text-[9px] font-bold transition-all"
+                    className="h-7 px-3 rounded-lg text-[9px] font-semibold transition-all"
                     style={{ background: "var(--status-danger-bg)", border: "1px solid rgba(248,113,113,0.15)", color: "var(--status-danger)" }}>
                     End Shift
                   </button>
@@ -336,24 +336,24 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
             bottomControls={
               <div className="flex items-center gap-2 justify-between w-full">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] font-bold mr-1" style={{ color: "var(--text-ghost)" }}>Delay</span>
-                  <button onClick={() => pushDelay(-2)} className="h-8 w-10 rounded-lg text-[10px] font-bold active:scale-90 transition-all"
+                  <span className="text-[9px] font-semibold mr-1" style={{ color: "var(--text-ghost)" }}>Delay</span>
+                  <button onClick={() => pushDelay(-2)} className="h-8 w-10 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
                     style={{ background: "rgba(59,130,246,0.10)", border: "1px solid rgba(59,130,246,0.15)", color: "#60A5FA" }}>-2</button>
-                  <button onClick={() => pushDelay(-1)} className="h-8 w-10 rounded-lg text-[10px] font-bold active:scale-90 transition-all"
+                  <button onClick={() => pushDelay(-1)} className="h-8 w-10 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
                     style={{ background: "rgba(59,130,246,0.10)", border: "1px solid rgba(59,130,246,0.15)", color: "#60A5FA" }}>-1</button>
                   <div className="px-2 min-w-[32px] text-center">
-                    <span className="text-sm font-bold" style={{ color: delayMinutes > 0 ? "var(--status-warning)" : "var(--text-ghost)", fontVariantNumeric: "tabular-nums" }}>
+                    <span className="text-sm font-semibold" style={{ color: delayMinutes > 0 ? "var(--status-warning)" : "var(--text-ghost)", fontVariantNumeric: "tabular-nums" }}>
                       {delayMinutes > 0 ? `+${delayMinutes}` : '0'}
                     </span>
                     <div className="text-[7px] font-semibold" style={{ color: "var(--text-ghost)" }}>min</div>
                   </div>
-                  <button onClick={() => pushDelay(1)} className="h-8 w-10 rounded-lg text-[10px] font-bold active:scale-90 transition-all"
+                  <button onClick={() => pushDelay(1)} className="h-8 w-10 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
                     style={{ background: "var(--status-warning-bg)", border: "1px solid rgba(251,191,36,0.15)", color: "var(--status-warning)" }}>+1</button>
-                  <button onClick={() => pushDelay(2)} className="h-8 w-10 rounded-lg text-[10px] font-bold active:scale-90 transition-all"
+                  <button onClick={() => pushDelay(2)} className="h-8 w-10 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
                     style={{ background: "var(--status-warning-bg)", border: "1px solid rgba(251,191,36,0.15)", color: "var(--status-warning)" }}>+2</button>
                 </div>
                 {currentStopIndex < stops.length - 1 && (
-                  <button onClick={handleManualNextStop} className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-[9px] font-bold active:scale-90 transition-all"
+                  <button onClick={handleManualNextStop} className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-[9px] font-semibold active:scale-90 transition-all"
                     style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)", color: "var(--text-secondary)" }}>
                     Next Stop
                     <ChevronRight className="w-3 h-3" />

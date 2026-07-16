@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import PassengerMap from "@/components/maps/PassengerMap";
+import RouteNodeList from "@/components/passenger/RouteNodeList";
 import AccountTab from "@/components/passenger/AccountTab";
 import MessagingPanel from "@/components/shared/MessagingPanel";
 import FeedbackModal from "@/components/shared/FeedbackModal";
@@ -13,7 +13,7 @@ import { rtdb, auth } from "@/lib/firebase";
 import { ref, onValue } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
-import RouteCard from "@/components/passenger/ui/RouteCard";
+import RouteCarousel from "@/components/passenger/ui/RouteCarousel";
 import { getDistanceMeters } from "@/lib/mapUtils";
 
 type ViewState = "home" | "tracking" | "profile";
@@ -88,21 +88,17 @@ export default function PassengerPage() {
   }, []);
 
   const activeRouteIds = Array.from(new Set(activeBuses.map(b => b.routeId)));
-  const activeRouteIdsStr = activeRouteIds.sort().join(',');
+  const availableRoutes = routes.filter(r => activeRouteIds.includes(r.id));
+  const displayRoutes = availableRoutes;
+  const displayRoutesIdsStr = displayRoutes.map(r => r.id).join(',');
 
   useEffect(() => {
-    const currentAvailable = routes.filter(r => activeRouteIds.includes(r.id));
-    if (currentAvailable.length > 0) {
-      if (!selectedRouteId || !currentAvailable.some(r => r.id === selectedRouteId)) {
-        setSelectedRouteId(currentAvailable[0].id);
-      }
-    } else if (currentAvailable.length === 0 && selectedRouteId) {
-      setSelectedRouteId("");
+    if (displayRoutes.length > 0 && (!selectedRouteId || !displayRoutes.some(r => r.id === selectedRouteId))) {
+      setSelectedRouteId(displayRoutes[0].id);
     }
-  }, [activeRouteIdsStr, routes.length, selectedRouteId]);
+  }, [displayRoutesIdsStr]);
 
-  const availableRoutes = routes.filter(r => activeRouteIds.includes(r.id));
-  const activeRoute = availableRoutes.find(r => r.id === selectedRouteId);
+  const activeRoute = displayRoutes.find(r => r.id === selectedRouteId) || displayRoutes[0];
 
   useEffect(() => {
     if (activeRoute && activeRoute.stops && activeRoute.stops.length > 0) {
@@ -182,79 +178,109 @@ export default function PassengerPage() {
   };
 
   return (
-    <div className="flex flex-col text-white overflow-hidden" style={{ height: "100dvh", background: "var(--surface-0)" }}>
-      <div className="relative flex-1 flex flex-col overflow-hidden min-h-0">
-        
-        {/* Map layer — always present */}
-        <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${currentView !== "profile" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-          <PassengerMap
-            targetStop={targetStop}
+    <div className="relative text-white overflow-hidden" style={{ height: "100dvh", backgroundColor: "var(--surface-0)" }}>
+      {/* Background Image Layer: Full screen map flowing naturally */}
+      <div
+        className="absolute inset-0 z-0 pointer-events-none"
+        style={{
+          backgroundImage: "url('/userpanel.webp')",
+          backgroundSize: "cover",
+          backgroundPosition: "center -24px", // Masks exactly 24px of the top to bring the bus closer to the top without clipping it
+          backgroundRepeat: "no-repeat",
+        }}
+      />
+
+      <div className="absolute inset-0 flex flex-col overflow-hidden">
+
+        {/* Map layer — only present on tracking */}
+        <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${currentView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+          <RouteNodeList
+            targetStopId={targetStop?.id || ""}
             route={activeRoute || null}
+            activeBusId={activeBusOnRouteId || null}
+            walkMinutesToTarget={undefined}
           />
-          {/* Dim overlay on home view so cards are readable */}
-          {currentView === "home" && (
-            <div className="absolute inset-0 z-10 animate-fade-in" 
-              style={{ background: "rgba(9, 9, 11, 0.65)", backdropFilter: "blur(2px)" }} />
-          )}
         </div>
+
+
 
         {/* ── HOME VIEW ── */}
         <div className={`absolute inset-0 z-20 flex flex-col pt-safe transition-all duration-500 ${currentView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8 pointer-events-none"}`}>
-          <div className="px-5 pt-10 pb-4">
-            <h1 className="font-extrabold text-3xl tracking-tight mb-1" style={{ color: "var(--text-primary)" }}>
-              Where to?
-            </h1>
-            <p className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>
-              Select a route to start tracking.
-            </p>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto px-5 pb-24 space-y-3">
-            {availableRoutes.length > 0 ? (
-              availableRoutes.map(r => (
-                <RouteCard 
-                  key={r.id}
-                  route={r}
-                  isSelected={false}
-                  onSelect={handleRouteSelect}
-                  activeBusesCount={activeBuses.filter(b => b.routeId === r.id).length}
+
+          {/* Top spacer to frame the bus illustration near the top of the screen */}
+          <div className="shrink-0" style={{ height: "34vh", minHeight: "250px" }} aria-hidden="true" />
+
+          {/* Unified Transit Panel that fills the rest of the height, with a gap above bottom nav */}
+          <div className="flex-1 flex flex-col mx-4 mb-[110px] rounded-[32px] overflow-hidden relative shadow-2xl pt-8"
+            style={{
+              background: "linear-gradient(180deg, #1c1c1e 0%, #151517 100%)",
+              borderTop: "1px solid rgba(255, 255, 255, 0.12)",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.04)",
+              borderRight: "1px solid rgba(255, 255, 255, 0.04)",
+              boxShadow: "0 12px 48px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05)"
+            }}
+          >
+            {/* Heading Section - Fixed */}
+            <div className="text-center pb-6 mb-4 mx-6 shrink-0">
+              <h1 className="text-[32px] font-black tracking-tight mb-2 leading-none" style={{ color: "var(--text-primary)" }}>
+                Live Routes
+              </h1>
+              <p className="text-[15px] font-medium mt-2" style={{ color: "var(--text-secondary)" }}>
+                Select a route to view schedules.
+              </p>
+            </div>
+
+            {/* Status / Routes Section - Scrollable */}
+            <div
+              className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth hide-scrollbar px-4 pb-32"
+              style={{ scrollBehavior: 'smooth', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            >
+              {displayRoutes.length > 0 ? (
+                <RouteCarousel
+                  routes={displayRoutes}
+                  selectedRouteId={selectedRouteId}
+                  onClick={handleRouteSelect}
+                  getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
                 />
-              ))
-            ) : (
-              <div className="rounded-xl p-8 text-center" 
-                style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
-                <p className="text-[13px] font-bold mb-1" style={{ color: "var(--text-tertiary)" }}>
-                  No buses running
-                </p>
-                <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
-                  Service starts at {PASSENGER_BUS_START_TIME}
-                </p>
-              </div>
-            )}
+              ) : (
+                <div className="rounded-xl p-8 text-center mx-1"
+                  style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
+                  <p className="text-[13px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>
+                    No buses running
+                  </p>
+                  <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
+                    Service starts at {PASSENGER_BUS_START_TIME}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {/* ── TRACKING VIEW ── */}
-        <div className={`absolute inset-0 z-20 pointer-events-none transition-all duration-500 ${currentView === "tracking" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
+        <div className={`absolute inset-0 z-20 pointer-events-none transition-all duration-500 ${currentView === "tracking" ? "opacity-100" : "opacity-0"}`}>
           {activeRoute && targetStop ? (
             <>
               {/* Top bar: back + route info */}
-              <div className="absolute top-0 w-full z-40 pt-safe px-4 pb-6"
+              <div className="absolute top-0 w-full z-40 pt-safe px-4 pb-6 pointer-events-auto"
                 style={{ background: "linear-gradient(to bottom, rgba(9,9,11,0.92) 0%, transparent 100%)" }}>
-                <div className="flex items-center gap-3 max-w-lg mx-auto pt-2">
-                  <button 
+                <div className="flex items-center gap-4 max-w-lg mx-auto pt-6">
+                  <button
                     onClick={() => setCurrentView("home")}
-                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors"
-                    style={{ background: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}
+                    className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 hover:opacity-90 shadow-sm cursor-pointer"
+                    style={{ backgroundColor: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}
                     aria-label="Back to home"
+                    onPointerDown={(e) => (e.currentTarget.style.backgroundColor = "var(--surface-4)")}
+                    onPointerUp={(e) => (e.currentTarget.style.backgroundColor = "var(--surface-3)")}
+                    onPointerLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--surface-3)")}
                   >
-                    <ArrowLeft className="w-4 h-4" style={{ color: "var(--text-secondary)" }} />
+                    <ArrowLeft className="w-5 h-5" style={{ color: "var(--text-secondary)" }} />
                   </button>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-bold" style={{ color: "var(--accent)", letterSpacing: "0.05em" }}>
+                  <div className="min-w-0 flex-1 flex flex-col justify-center gap-0.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-widest leading-none" style={{ color: "var(--accent)" }}>
                       Live
                     </p>
-                    <p className="font-bold truncate text-[15px]" style={{ color: "var(--text-primary)" }}>
+                    <p className="text-[17px] font-semibold truncate leading-tight" style={{ color: "var(--text-primary)" }}>
                       {activeRoute.name}
                     </p>
                   </div>
@@ -263,12 +289,12 @@ export default function PassengerPage() {
 
               {/* Messaging FAB */}
               {activeRouteIds.includes(activeRoute.id) && !isMessagingOpen && (
-                <div className="absolute top-20 right-4 z-50 animate-scale-in">
+                <div className="absolute top-20 right-4 z-50 animate-scale-in pointer-events-auto">
                   <button
                     onClick={handleOpenMessaging}
                     className="w-12 h-12 rounded-xl flex items-center justify-center transition-all active:scale-95 relative"
-                    style={{ 
-                      background: "var(--surface-2)", 
+                    style={{
+                      background: "var(--surface-2)",
                       border: "1px solid var(--border-default)",
                       boxShadow: "0 4px 16px rgba(0,0,0,0.3)"
                     }}
@@ -276,7 +302,7 @@ export default function PassengerPage() {
                   >
                     <Radio className="w-5 h-5" style={{ color: "var(--status-live)" }} />
                     {unreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1"
+                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-semibold text-white px-1"
                         style={{ background: "var(--status-danger)", boxShadow: "0 0 0 2px var(--surface-0)" }}>
                         {unreadCount > 9 ? "9+" : unreadCount}
                       </span>
@@ -300,7 +326,7 @@ export default function PassengerPage() {
 
               {/* Messaging Overlay */}
               {isMessagingOpen && (
-                <div className="absolute inset-x-0 top-16 bottom-[80px] z-50 animate-slide-up flex flex-col">
+                <div className="absolute inset-x-0 top-16 bottom-[80px] z-50 animate-slide-up flex flex-col pointer-events-auto">
                   <MessagingPanel
                     busId={activeBuses.find(b => b.routeId === activeRoute.id)?.busId || ""}
                     currentUserRole="passenger"
@@ -320,7 +346,7 @@ export default function PassengerPage() {
                 style={{ background: "var(--status-danger-bg)", border: "1px solid rgba(248, 113, 113, 0.15)" }}>
                 <MapIcon className="w-8 h-8" style={{ color: "var(--status-danger)" }} />
               </div>
-              <p className="text-xl font-bold tracking-tight mb-2" style={{ color: "var(--text-primary)" }}>
+              <p className="text-xl font-extrabold tracking-tight mb-2" style={{ color: "var(--text-primary)" }}>
                 Route ended
               </p>
               <p className="text-[13px] mb-6 max-w-xs" style={{ color: "var(--text-tertiary)" }}>
@@ -329,7 +355,7 @@ export default function PassengerPage() {
               <div className="flex items-center gap-2 px-5 py-2.5 rounded-xl"
                 style={{ background: "var(--status-live-bg)" }}>
                 <Loader2 className="w-4 h-4 animate-spin" style={{ color: "var(--status-live)" }} />
-                <p className="text-[11px] font-bold" style={{ color: "var(--status-live)" }}>
+                <p className="text-[11px] font-semibold" style={{ color: "var(--status-live)" }}>
                   Waiting for next bus
                 </p>
               </div>
@@ -338,8 +364,7 @@ export default function PassengerPage() {
         </div>
 
         {/* ── PROFILE VIEW ── */}
-        <div className={`absolute inset-0 z-30 flex flex-col transition-all duration-500 ${currentView === "profile" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-8 pointer-events-none"}`}
-          style={{ background: "var(--surface-0)" }}>
+        <div className={`absolute inset-0 z-30 flex flex-col transition-all duration-500 ${currentView === "profile" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-8 pointer-events-none"}`}>
           <AccountTab />
         </div>
       </div>
@@ -354,14 +379,15 @@ export default function PassengerPage() {
         />
       )}
 
-      {/* Bottom Navigation — 2 tabs */}
-      <nav className="relative z-[100] shrink-0 pb-safe" style={{ 
-        height: "72px", 
-        background: "var(--surface-1)", 
-        borderTop: "1px solid var(--border-subtle)" 
-      }}>
-        <div className="flex items-center justify-around px-6 h-full max-w-md mx-auto">
-          
+      {/* Bottom Navigation — Fixed Transit Tab Bar */}
+      <div className="absolute bottom-0 inset-x-0 z-[100] pb-safe pointer-events-none flex justify-center">
+        <nav className="w-full pointer-events-auto flex items-center justify-around px-2 py-2.5 rounded-t-[24px]"
+          style={{
+            background: "rgba(22, 22, 26, 0.95)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            borderTop: "1px solid rgba(255, 255, 255, 0.15)",
+          }}>
           <button
             onClick={() => {
               if (currentView === "tracking" || currentView === "home") {
@@ -370,39 +396,39 @@ export default function PassengerPage() {
                 setCurrentView("home");
               }
             }}
-            className="flex flex-col items-center justify-center py-2 flex-1 rounded-xl transition-all duration-300 relative"
+            className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-all duration-300 relative group active:scale-95 gap-1.5"
+            style={{
+              background: (currentView === "home" || currentView === "tracking") ? "rgba(255,255,255,0.08)" : "transparent"
+            }}
           >
-            {(currentView === "home" || currentView === "tracking") && (
-              <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "var(--accent)" }} />
-            )}
-            <MapIcon className="w-5 h-5 mb-1" style={{ 
-              color: (currentView === "home" || currentView === "tracking") ? "var(--accent)" : "var(--text-ghost)" 
+            <MapIcon className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
+              color: (currentView === "home" || currentView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
             }} />
-            <span className="text-[10px] font-bold" style={{ 
-              color: (currentView === "home" || currentView === "tracking") ? "var(--accent)" : "var(--text-ghost)" 
+            <span className="text-[13px] font-bold transition-colors leading-none" style={{
+              color: (currentView === "home" || currentView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
             }}>
-              Map
+              Routes
             </span>
           </button>
 
           <button
             onClick={() => setCurrentView("profile")}
-            className="flex flex-col items-center justify-center py-2 flex-1 rounded-xl transition-all duration-300 relative"
+            className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-all duration-300 relative group active:scale-95 gap-1.5"
+            style={{
+              background: currentView === "profile" ? "rgba(255,255,255,0.08)" : "transparent"
+            }}
           >
-            {currentView === "profile" && (
-              <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "var(--text-primary)" }} />
-            )}
-            <User className="w-5 h-5 mb-1" style={{ 
-              color: currentView === "profile" ? "var(--text-primary)" : "var(--text-ghost)" 
+            <User className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
+              color: currentView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
             }} />
-            <span className="text-[10px] font-bold" style={{ 
-              color: currentView === "profile" ? "var(--text-primary)" : "var(--text-ghost)" 
+            <span className="text-[13px] font-bold transition-colors leading-none" style={{
+              color: currentView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
             }}>
               Profile
             </span>
           </button>
-        </div>
-      </nav>
+        </nav>
+      </div>
     </div>
   );
 }

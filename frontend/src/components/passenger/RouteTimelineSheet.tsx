@@ -41,7 +41,7 @@ export default function RouteTimelineSheet({
       bottomControls={bottomControls}
     >
       {/* Route name */}
-      <div className="text-[11px] font-bold mb-5 text-center" style={{ color: "var(--text-ghost)" }}>
+      <div className="text-[11px] font-semibold mb-5 text-center" style={{ color: "var(--text-ghost)" }}>
         {route.name}
       </div>
 
@@ -87,35 +87,35 @@ export default function RouteTimelineSheet({
 
               {/* Stop info */}
               <div className="flex-1 -mt-1 min-w-0">
-                <p className={`truncate ${isTarget ? "font-bold text-[14px]" : "font-medium text-[13px]"}`}
+                <p className={`${isTarget ? "font-semibold text-[14px]" : "font-medium text-[13px]"}`}
                   style={{ color: isTarget ? "var(--text-primary)" : isDimmed ? "var(--text-ghost)" : "var(--text-secondary)" }}>
                   {stop.name}
                 </p>
                 <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
                     style={{ background: "var(--surface-3)", color: "var(--text-ghost)" }}>
                     {stop.shortName}
                   </span>
                   {isTarget && (
-                    <span className="px-1.5 py-0.5 rounded text-[8px] font-bold"
+                    <span className="px-1.5 py-0.5 rounded text-[8px] font-semibold"
                       style={{ background: "var(--accent-subtle)", color: "var(--accent)" }}>
-                      Your stop
+                      Last Stop
                     </span>
                   )}
                   {isFirst && !isTarget && (
-                    <span className="px-1.5 py-0.5 rounded text-[8px] font-bold"
+                    <span className="px-1.5 py-0.5 rounded text-[8px] font-semibold"
                       style={{ background: "var(--surface-3)", color: "var(--text-ghost)" }}>
                       Start
                     </span>
                   )}
                   {isLast && !isTarget && (
-                    <span className="px-1.5 py-0.5 rounded text-[8px] font-bold"
+                    <span className="px-1.5 py-0.5 rounded text-[8px] font-semibold"
                       style={{ background: "var(--surface-3)", color: "var(--text-ghost)" }}>
                       Terminus
                     </span>
                   )}
                   {isTarget && typeof walkMinutesToTarget === "number" && (
-                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold"
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-semibold"
                       style={{ background: "rgba(59, 130, 246, 0.10)", color: "#60A5FA" }}>
                       <Footprints className="w-2.5 h-2.5" />
                       {walkMinutesToTarget === 0 ? "At stop" : `${walkMinutesToTarget} min walk`}
@@ -136,7 +136,7 @@ export default function RouteTimelineSheet({
                       {etaMinutes === 0 ? "Due" : etaMinutes}
                     </span>
                     {etaMinutes > 0 && (
-                      <span className="text-[9px] font-bold" style={{ color: "var(--text-ghost)" }}>
+                      <span className="text-[9px] font-semibold" style={{ color: "var(--text-ghost)" }}>
                         min
                       </span>
                     )}

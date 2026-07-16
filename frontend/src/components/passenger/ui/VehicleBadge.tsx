@@ -20,7 +20,7 @@ export default function VehicleBadge({ busId, status = 'on-time', delayMinutes, 
         <Bus className="w-4 h-4" style={{ color: "var(--text-tertiary)" }} />
       </div>
       <div className="flex flex-col gap-1">
-        <span className="text-[12px] font-bold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
+        <span className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
           {busId}
         </span>
         <StatusChip status={status} delayMinutes={delayMinutes} />

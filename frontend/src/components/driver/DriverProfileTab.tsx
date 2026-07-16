@@ -79,12 +79,12 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
             </div>
 
             <div className="text-center">
-              <h2 className="text-xl font-bold tracking-tight mb-1.5" style={{ color: "var(--text-primary)" }}>
+              <h2 className="text-xl font-extrabold tracking-tight mb-1.5" style={{ color: "var(--text-primary)" }}>
                 {currentDriver?.name || `Driver ${driverId.replace("drv_", "#")}`}
               </h2>
               <div className="flex items-center justify-center gap-1.5">
                 <BadgeCheck className="w-3.5 h-3.5" style={{ color: "#60A5FA" }} />
-                <span className="text-[10px] font-bold" style={{ color: "var(--text-ghost)", letterSpacing: "0.08em" }}>
+                <span className="text-[10px] font-semibold" style={{ color: "var(--text-ghost)", letterSpacing: "0.08em" }}>
                   AUTHORIZED OPERATOR
                 </span>
               </div>
@@ -96,14 +96,14 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
         <div className="rounded-xl overflow-hidden"
           style={{ background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
           <div className="p-4" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-            <span className="text-[10px] font-bold" style={{ color: "var(--text-ghost)" }}>
+            <span className="text-[10px] font-semibold" style={{ color: "var(--text-ghost)" }}>
               Assignment
             </span>
           </div>
           <div className="p-4 space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>Active unit</span>
-              <span className="font-bold font-mono text-[13px] tracking-wide" style={{ color: "var(--text-secondary)" }}>
+              <span className="font-semibold tabular-nums text-[13px] tracking-wide" style={{ color: "var(--text-secondary)" }}>
                 {busId}
               </span>
             </div>
@@ -114,7 +114,7 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
                   On shift
                 </div>
               ) : (
-                <span className="text-[10px] font-bold px-2.5 py-1 rounded-md"
+                <span className="text-[10px] font-semibold px-2.5 py-1 rounded-md"
                   style={{ background: "var(--surface-3)", color: "var(--text-ghost)" }}>
                   Off duty
                 </span>

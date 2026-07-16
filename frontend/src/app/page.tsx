@@ -15,14 +15,14 @@ export default function HomePage() {
   const [activeBusCount, setActiveBusCount] = useState(0);
 
   useEffect(() => {
-    if (!loading && user) {
+    if (!loading && user && !user.isAnonymous) {
       router.push(`/${user.role || 'passenger'}`);
     }
   }, [user, loading, router]);
 
   // Live bus count for social proof
   useEffect(() => {
-    signInAnonymously(auth).catch(() => {});
+    signInAnonymously(auth).catch(() => { });
     const busesRef = ref(rtdb, "activeBuses");
     const unsub = onValue(busesRef, (snapshot) => {
       const data = snapshot.val();
@@ -39,7 +39,7 @@ export default function HomePage() {
     return () => unsub();
   }, []);
 
-  if (loading || user) {
+  if (loading || (user && !user.isAnonymous)) {
     return (
       <main className="min-h-screen flex items-center justify-center" style={{ background: "var(--surface-0)" }}>
         <Loader2 className="w-6 h-6 text-[var(--text-tertiary)] animate-spin" />
@@ -49,7 +49,7 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen relative noise-bg" style={{ background: "var(--surface-0)" }}>
-      
+
       {/* ── NAV ─── */}
       <nav className="fixed top-0 w-full z-50" style={{
         background: "rgba(9, 9, 11, 0.85)",
@@ -58,12 +58,7 @@ export default function HomePage() {
       }}>
         <div className="max-w-[1200px] mx-auto px-6 md:px-10 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "var(--accent)" }}>
-              <Bus className="w-4 h-4 text-white" />
-            </div>
-            <span className="text-lg font-extrabold tracking-tight" style={{ color: "var(--text-primary)" }}>
-              eki
-            </span>
+              <img src="/eki-logo.png" alt="Eki Transit Logo" className="h-[28px] w-auto" />
           </div>
 
           <div className="flex items-center gap-3">
@@ -107,24 +102,24 @@ export default function HomePage() {
             Service starts at 8:00 AM
           </div>
         )}
-        
-        <h1 className="font-extrabold tracking-tighter leading-[0.92] mb-6 max-w-[900px]"
-          style={{ fontSize: "clamp(2.8rem, 7vw, 5.5rem)", color: "var(--text-primary)" }}>
+
+        <h1 className="text-display-hero mb-6 max-w-[900px]"
+          style={{ color: "var(--text-primary)" }}>
           Know exactly when{" "}
           <span style={{ color: "var(--text-tertiary)" }}>your bus arrives.</span>
         </h1>
-        
-        <p className="text-lg md:text-xl font-medium max-w-[520px] leading-relaxed mb-10"
+
+        <p className="text-body-primary max-w-[520px] mb-10"
           style={{ color: "var(--text-secondary)" }}>
-          Live GPS tracking with speed-aware ETAs for Ahmedabad transit. 
+          Live GPS tracking with speed-aware ETAs for Ahmedabad transit.
           Open your phone, see your bus, know when to leave.
         </p>
-        
+
         <div className="flex gap-3 flex-wrap">
           <button
             onClick={loginWithGoogle}
             disabled={loginLoading}
-            className="btn-primary px-7 py-3.5 flex items-center gap-2.5 font-bold text-[14px] disabled:opacity-60"
+            className="btn-primary px-7 py-3.5 flex items-center gap-2.5 font-semibold text-[14px] disabled:opacity-60"
           >
             {loginLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -135,7 +130,7 @@ export default function HomePage() {
           </button>
           <Link
             href="/route-planner"
-            className="btn-rc-outline px-7 py-3.5 flex items-center gap-2.5 font-bold text-[14px]"
+            className="btn-rc-outline px-7 py-3.5 flex items-center gap-2.5 font-semibold text-[14px]"
           >
             <Navigation className="w-4 h-4" />
             Plan a Trip
@@ -156,7 +151,7 @@ export default function HomePage() {
               Built for riders who value their time.
             </h2>
           </div>
-          
+
           {/* Staggered 2-col layout with large numbers as anchors */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {[
@@ -224,18 +219,18 @@ export default function HomePage() {
       <section className="relative py-24 px-6 md:px-10 max-w-[1200px] mx-auto">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-10">
           <div>
-            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight leading-tight mb-3"
+            <h2 className="text-title-screen mb-3"
               style={{ color: "var(--text-primary)" }}>
               Stop guessing.
             </h2>
-            <p className="text-lg" style={{ color: "var(--text-secondary)" }}>
+            <p className="text-body-primary" style={{ color: "var(--text-secondary)" }}>
               Track your bus in real-time. It's free.
             </p>
           </div>
           <button
             onClick={loginWithGoogle}
             disabled={loginLoading}
-            className="btn-primary px-8 py-4 text-[15px] font-bold inline-flex items-center gap-3 shrink-0 disabled:opacity-60"
+            className="btn-primary px-8 py-4 text-[15px] font-medium inline-flex items-center gap-3 shrink-0 disabled:opacity-60"
           >
             {loginLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" />

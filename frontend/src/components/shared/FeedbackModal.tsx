@@ -8,8 +8,8 @@ import {
   collection,
   doc,
   runTransaction,
-  Timestamp,
   serverTimestamp,
+  Timestamp
 } from "firebase/firestore";
 import { FEEDBACK_WORD_LIMIT } from "@/config/passenger";
 
@@ -104,19 +104,19 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
     try {
       const currentUser = auth.currentUser || (await signInAnonymously(auth)).user;
       const currentUserId = currentUser.uid;
+      const feedbackRef = collection(db, "feedbacks");
       const cooldownRef = doc(db, "feedbackCooldowns", currentUserId);
-      const feedbackRef = doc(collection(db, "feedbacks"));
 
       await runTransaction(db, async (transaction) => {
         const cooldownSnap = await transaction.get(cooldownRef);
         let lastSubmittedAt: Timestamp | undefined;
         let previousSubmittedAt: Timestamp | undefined;
-        
+
         if (cooldownSnap.exists()) {
           const data = cooldownSnap.data();
           lastSubmittedAt = data.lastSubmittedAt as Timestamp | undefined;
           previousSubmittedAt = data.previousSubmittedAt as Timestamp | undefined;
-          
+
           // Support old format (history array) if migrating
           if (data.history && Array.isArray(data.history) && data.history.length > 0) {
             lastSubmittedAt = data.history[data.history.length - 1] as Timestamp;
@@ -135,7 +135,8 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           }
         }
 
-        transaction.set(feedbackRef, {
+        const newFeedbackDoc = doc(feedbackRef);
+        transaction.set(newFeedbackDoc, {
           userId: currentUserId,
           userName,
           type: busId ? "ride" : "general",
@@ -201,7 +202,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5 bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/30 relative z-10">
             <Check className="text-white" strokeWidth={3} size={32} />
           </div>
-          <h2 className="text-xl font-bold mb-2 relative z-10" style={{ color: "var(--text-primary)" }}>
+          <h2 className="text-xl font-extrabold mb-2 relative z-10" style={{ color: "var(--text-primary)" }}>
             Thank you!
           </h2>
           <p className="text-[14px] relative z-10" style={{ color: "var(--text-tertiary)" }}>
@@ -232,7 +233,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
               <HeartHandshake className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-[16px] font-bold leading-tight" style={{ color: "var(--text-primary)" }}>
+              <h2 className="text-[16px] font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>
                 {busId ? "Rate your ride" : "Send feedback"}
               </h2>
               {busId && (
@@ -331,7 +332,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           <button
             type="submit"
             disabled={submitting || cooldownRemaining > 0 || (!!busId && !comment.trim() && rating === 0) || (!busId && !comment.trim())}
-            className="w-full h-12 rounded-xl font-bold text-[14px] flex items-center justify-center gap-2 transition-all relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full h-12 rounded-xl font-semibold text-[14px] flex items-center justify-center gap-2 transition-all relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ 
               background: (submitting || cooldownRemaining > 0 || (!!busId && !comment.trim() && rating === 0) || (!busId && !comment.trim()))
                 ? "var(--surface-3)" 

@@ -49,7 +49,7 @@ export default function StatusChip({ status, delayMinutes = 0, className = '' }:
       style={{ background: current.bg, borderColor: current.border }}
     >
       {React.cloneElement(current.icon, { style: { color: current.text } })}
-      <span className="text-[10px] font-bold" style={{ color: current.text, letterSpacing: "0.04em" }}>
+      <span className="text-[10px] font-semibold" style={{ color: current.text, letterSpacing: "0.04em" }}>
         {current.label}
       </span>
     </div>

@@ -243,7 +243,7 @@ export default function DriverPage() {
             >
               <Radio className="w-4 h-4" style={{ color: "var(--status-live)" }} />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-semibold text-white px-1"
                   style={{ background: "var(--status-danger)", boxShadow: "0 0 0 2px var(--surface-0)" }}>
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
@@ -283,7 +283,7 @@ export default function DriverPage() {
               <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "var(--text-primary)" }} />
             )}
             <Navigation className="w-5 h-5 mb-1" style={{ color: activeTab === "map" ? "var(--text-primary)" : "var(--text-ghost)" }} />
-            <span className="text-[9px] font-bold" style={{ color: activeTab === "map" ? "var(--text-primary)" : "var(--text-ghost)" }}>
+            <span className="text-[9px] font-semibold" style={{ color: activeTab === "map" ? "var(--text-primary)" : "var(--text-ghost)" }}>
               Drive
             </span>
           </button>
@@ -296,7 +296,7 @@ export default function DriverPage() {
               <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "var(--text-primary)" }} />
             )}
             <User className="w-5 h-5 mb-1" style={{ color: activeTab === "profile" ? "var(--text-primary)" : "var(--text-ghost)" }} />
-            <span className="text-[9px] font-bold" style={{ color: activeTab === "profile" ? "var(--text-primary)" : "var(--text-ghost)" }}>
+            <span className="text-[9px] font-semibold" style={{ color: activeTab === "profile" ? "var(--text-primary)" : "var(--text-ghost)" }}>
               Profile
             </span>
           </button>

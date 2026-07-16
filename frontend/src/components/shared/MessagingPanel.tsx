@@ -133,7 +133,7 @@ export default function MessagingPanel({
       <div className="flex items-center justify-between p-4" 
         style={{ borderBottom: "1px solid var(--border-subtle)", background: "var(--surface-2)" }}>
         <div>
-          <h3 className="font-bold text-[15px] flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+          <h3 className="font-semibold text-[15px] flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
             <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: "var(--status-live)" }} />
             Live Chat
           </h3>
@@ -175,7 +175,7 @@ export default function MessagingPanel({
                 className={`flex flex-col max-w-[80%] animate-slide-up ${isMe ? 'self-end items-end' : 'self-start items-start'}`}
               >
                 <div className={`flex items-baseline gap-1.5 mb-1 px-1 ${isMe ? 'flex-row-reverse' : ''}`}>
-                  <span className="text-[10px] font-bold" 
+                  <span className="text-[10px] font-semibold" 
                     style={{ color: isMe ? "var(--accent)" : "var(--text-ghost)" }}>
                     {isMe ? 'You' : msg.senderName}
                   </span>

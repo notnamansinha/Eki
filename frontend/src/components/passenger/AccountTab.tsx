@@ -28,10 +28,10 @@ export default function AccountTab() {
             <div className="text-center">
               {user ? (
                 <>
-                  <h2 className="text-xl font-bold tracking-tight mb-1.5" style={{ color: "var(--text-primary)" }}>
+                  <h2 className="text-xl font-extrabold tracking-tight mb-1.5" style={{ color: "var(--text-primary)" }}>
                     {user.displayName || "Rider"}
                   </h2>
-                  <span className="text-[10px] font-bold px-2 py-1 rounded-md"
+                  <span className="text-[10px] font-semibold px-2 py-1 rounded-md"
                     style={{ 
                       background: "rgba(59, 130, 246, 0.10)", 
                       color: "#60A5FA",
@@ -42,7 +42,7 @@ export default function AccountTab() {
                 </>
               ) : (
                 <>
-                  <h2 className="text-xl font-bold tracking-tight mb-1" style={{ color: "var(--text-primary)" }}>
+                  <h2 className="text-xl font-extrabold tracking-tight mb-1" style={{ color: "var(--text-primary)" }}>
                     Guest
                   </h2>
                   <span className="text-[10px] font-semibold" style={{ color: "var(--text-ghost)" }}>

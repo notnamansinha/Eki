@@ -41,7 +41,7 @@ interface FeedbackEntry {
 }
 
 function StarDisplay({ rating }: { rating: number | null }) {
-  if (!rating) return <span className="text-white/20 text-xs font-bold">No rating</span>;
+  if (!rating) return <span className="text-white/20 text-xs font-semibold">No rating</span>;
   return (
     <div className="flex items-center gap-1">
       {[1, 2, 3, 4, 5].map((s) => (
@@ -124,7 +124,7 @@ function FeedbackCard({
         {/* Main info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span className="font-bold text-white text-sm truncate">{entry.userName}</span>
+            <span className="font-semibold text-white text-sm truncate">{entry.userName}</span>
             <StatusBadge status={entry.status} />
             <span
               className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${
@@ -138,7 +138,7 @@ function FeedbackCard({
           </div>
 
           {/* Meta row */}
-          <div className="flex items-center gap-3 flex-wrap text-[10px] text-white/30 font-bold uppercase tracking-widest">
+          <div className="flex items-center gap-3 flex-wrap text-[10px] text-white/30 font-semibold uppercase tracking-widest">
             {entry.busId && (
               <span className="flex items-center gap-1">
                 <Bus className="w-3 h-3" /> {entry.busId}
@@ -202,7 +202,7 @@ function FeedbackCard({
                   <Icon className="w-3 h-3" />
                   <span className="text-[9px] font-black uppercase tracking-widest">{label}</span>
                 </div>
-                <p className="text-xs font-bold text-white/70 truncate" title={value ?? undefined}>
+                <p className="text-xs font-semibold text-white/70 truncate" title={value ?? undefined}>
                   {value}
                 </p>
               </div>
@@ -307,11 +307,11 @@ export default function FeedbackPage() {
           <div className="flex flex-col">
             <span
               className="font-black text-sm uppercase tracking-[0.18em] text-white leading-none"
-              style={{ fontFamily: "Outfit" }}
+             
             >
               Feedback Console
             </span>
-            <span className="text-[9px] text-white/30 font-bold uppercase tracking-widest">
+            <span className="text-[9px] text-white/30 font-semibold uppercase tracking-widest">
               Admin Only
             </span>
           </div>
@@ -368,7 +368,7 @@ export default function FeedbackPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by user, bus, driver, or route…"
-              className="w-full h-10 bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-bold"
+              className="w-full h-10 bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-semibold"
             />
           </div>
           <div className="flex gap-2">
@@ -415,14 +415,14 @@ export default function FeedbackPage() {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 text-white/20">
             <div className="w-8 h-8 border-2 border-white/20 border-t-white/60 rounded-full animate-spin mb-4" />
-            <span className="text-[11px] font-bold uppercase tracking-widest">
+            <span className="text-[11px] font-semibold uppercase tracking-widest">
               Loading feedback…
             </span>
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-white/20 text-center">
             <Inbox className="w-10 h-10 mb-4 opacity-30" />
-            <p className="text-sm font-bold uppercase tracking-widest">
+            <p className="text-sm font-semibold uppercase tracking-widest">
               No feedback found
             </p>
             <p className="text-xs mt-1 opacity-60">

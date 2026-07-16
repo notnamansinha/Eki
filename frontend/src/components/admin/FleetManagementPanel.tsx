@@ -102,7 +102,7 @@ const MOTION_STATE_CONFIG: Record<string, { label: string; color: string; dot: s
 // ── Inline error banner ───────────────────────────────────────────────────────
 function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
-    <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl px-3 py-2 text-xs font-bold animate-slide-up">
+    <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl px-3 py-2 text-xs font-semibold animate-slide-up">
       <AlertCircle className="w-3.5 h-3.5 shrink-0" />
       <span className="flex-1">{message}</span>
       <button onClick={onDismiss} aria-label="Dismiss error" className="shrink-0 hover:text-white transition-colors">
@@ -146,7 +146,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
           </div>
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-white text-sm truncate">
+              <span className="font-semibold text-white text-sm truncate">
                 {bus?.name ?? entry.busId}
               </span>
               {entry.lowAccuracy && (
@@ -158,19 +158,19 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
                 <TsIcon className="w-2.5 h-2.5" />
                 {ts.label}
               </span>
-              <span className={`text-[9px] font-bold flex items-center gap-1 ${ms.color}`}>
+              <span className={`text-[9px] font-semibold flex items-center gap-1 ${ms.color}`}>
                 <span className={`w-1.5 h-1.5 rounded-full inline-block ${ms.dot} ${entry.motionState === "moving" ? "animate-pulse" : ""}`} />
                 {ms.label}
               </span>
               {entry.speed != null && (
-                <span className="text-[9px] text-white/30 font-mono">{Math.round(entry.speed)} km/h</span>
+                <span className="text-[9px] text-white/30 tabular-nums">{Math.round(entry.speed)} km/h</span>
               )}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {route && stopsTotal > 0 && (
-            <span className="text-[9px] text-white/30 font-mono hidden sm:block">
+            <span className="text-[9px] text-white/30 tabular-nums hidden sm:block">
               {stopIdx}/{stopsTotal} stops
             </span>
           )}
@@ -195,7 +195,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
                   <Icon className="w-3 h-3 text-white/25" />
                   <span className="text-[8px] font-black uppercase tracking-wider text-white/30">{label}</span>
                 </div>
-                <span className="text-xs font-bold text-white font-mono truncate">{value}</span>
+                <span className="text-xs font-semibold text-white tabular-nums truncate">{value}</span>
               </div>
             ))}
           </div>
@@ -205,7 +205,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-[9px] font-black uppercase tracking-wider text-white/30">Route Progress</span>
-                <span className="text-[9px] font-mono text-white/40">{stopIdx} of {stopsTotal} stops</span>
+                <span className="text-[9px] tabular-nums text-white/40">{stopIdx} of {stopsTotal} stops</span>
               </div>
               <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
                 <div
@@ -217,13 +217,13 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
                 {currentStop && (
                   <div className="flex flex-col">
                     <span className="text-[8px] text-white/25 uppercase font-black tracking-wider">Current Stop</span>
-                    <span className="text-[10px] font-bold text-white truncate">{currentStop.name}</span>
+                    <span className="text-[10px] font-semibold text-white truncate">{currentStop.name}</span>
                   </div>
                 )}
                 {nextStop && (
                   <div className="flex flex-col">
                     <span className="text-[8px] text-white/25 uppercase font-black tracking-wider">Next Stop</span>
-                    <span className="text-[10px] font-bold text-white/60 truncate">{nextStop.name}</span>
+                    <span className="text-[10px] font-semibold text-white/60 truncate">{nextStop.name}</span>
                   </div>
                 )}
               </div>
@@ -234,13 +234,13 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
           <div className="grid grid-cols-2 gap-2">
             <div className="flex flex-col gap-0.5">
               <span className="text-[8px] font-black uppercase tracking-wider text-white/30">Driver</span>
-              <span className="text-[10px] font-bold text-white truncate">{driver?.name ?? entry.driverId ?? "—"}</span>
-              <span className="text-[9px] font-mono text-white/20">{entry.driverId}</span>
+              <span className="text-[10px] font-semibold text-white truncate">{driver?.name ?? entry.driverId ?? "—"}</span>
+              <span className="text-[9px] tabular-nums text-white/20">{entry.driverId}</span>
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-[8px] font-black uppercase tracking-wider text-white/30">Route</span>
-              <span className="text-[10px] font-bold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</span>
-              <span className="text-[9px] font-mono text-white/20">{entry.routeId}</span>
+              <span className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</span>
+              <span className="text-[9px] tabular-nums text-white/20">{entry.routeId}</span>
             </div>
           </div>
 
@@ -248,7 +248,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
           <div className="flex items-center gap-2 border-t border-white/5 pt-2.5 mt-0.5">
             <Radio className="w-3 h-3 text-white/20" />
             <span className="text-[9px] text-white/25 font-black uppercase tracking-wider">Hardware ID</span>
-            <span className="text-[9px] font-mono text-white/50 ml-auto">{entry.busId}</span>
+            <span className="text-[9px] tabular-nums text-white/50 ml-auto">{entry.busId}</span>
           </div>
         </div>
       )}
@@ -283,7 +283,7 @@ function RecentTripsPanel({ routes, buses, drivers }: { routes: any[]; buses: Bu
       {open && (
         <div className="border-t border-white/5 px-3 pb-3 flex flex-col gap-2">
           {trips.length === 0 ? (
-            <p className="text-white/20 text-xs text-center py-6 font-bold uppercase tracking-widest">No completed trips yet.</p>
+            <p className="text-white/20 text-xs text-center py-6 font-semibold uppercase tracking-widest">No completed trips yet.</p>
           ) : (
             trips.map(trip => {
               const bus = buses.find(b => b.id === trip.busId);
@@ -292,8 +292,8 @@ function RecentTripsPanel({ routes, buses, drivers }: { routes: any[]; buses: Bu
               return (
                 <div key={trip.id} className="bg-brand-dark/40 border border-white/5 rounded-xl p-3 flex flex-col gap-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-white">{route?.name ?? trip.routeId ?? "Unknown Route"}</span>
-                    <span className="text-[9px] text-white/30 font-mono">{timeSince(trip.completedAt)}</span>
+                    <span className="text-xs font-semibold text-white">{route?.name ?? trip.routeId ?? "Unknown Route"}</span>
+                    <span className="text-[9px] text-white/30 tabular-nums">{timeSince(trip.completedAt)}</span>
                   </div>
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className="text-[9px] text-white/40 flex items-center gap-1">
@@ -541,7 +541,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               />
             ))
           ) : (
-            <p className="text-white/20 text-xs text-center py-4 font-bold uppercase tracking-widest">
+            <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">
               {busesLoading ? "Loading…" : "No buses currently active"}
             </p>
           )}
@@ -560,7 +560,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               <Bus className="w-4 h-4 text-white/40" />
             </div>
             <div>
-              <h2 className="font-bold text-lg tracking-tight" style={{ fontFamily: "Outfit" }}>Fleet Vehicles</h2>
+              <h2 className="font-extrabold text-lg tracking-tight">Fleet Vehicles</h2>
               <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black">Manage Hardware IDs</p>
             </div>
           </div>
@@ -572,13 +572,13 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               value={newBusId} onChange={(e) => setNewBusId(e.target.value)}
               placeholder="Hardware ID (e.g. BRTS-101)"
               aria-label="New vehicle hardware ID"
-              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-bold"
+              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
             />
             <input
               value={newBusName} onChange={(e) => setNewBusName(e.target.value)}
               placeholder="Display Name (e.g. Red Line Express)"
               aria-label="New vehicle display name"
-              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-bold"
+              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
             />
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
@@ -591,7 +591,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               </div>
               <div className="max-h-36 overflow-y-auto bg-brand-dark/60 border border-white/10 rounded-xl p-2 flex flex-col gap-0.5">
                 {routes.length === 0
-                  ? <p className="text-white/20 text-[10px] text-center py-3 font-bold">No routes available</p>
+                  ? <p className="text-white/20 text-[10px] text-center py-3 font-semibold">No routes available</p>
                   : routes.map((r) => {
                     const checked = newBusRoutes.includes(r.id);
                     return (
@@ -605,7 +605,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                           )}
                         </div>
                         <input type="checkbox" className="sr-only" checked={checked} onChange={() => toggleRoute(r.id)} />
-                        <span className={`text-sm font-bold ${checked ? "text-white" : "text-white/50"}`}>{r.name}</span>
+                        <span className={`text-sm font-semibold ${checked ? "text-white" : "text-white/50"}`}>{r.name}</span>
                       </label>
                     );
                   })
@@ -615,7 +615,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             <button
               onClick={handleAddBus}
               aria-label="Add new vehicle"
-              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-bold uppercase text-[11px] tracking-widest px-4"
+              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-[11px] tracking-widest px-4"
             >
               <Plus className="w-4 h-4" /> Add Vehicle
             </button>
@@ -637,9 +637,9 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             {busListOpen && (
               <div className="px-3 pb-3 flex flex-col gap-2 border-t border-white/5">
                 {busesLoading
-                  ? <p className="text-white/20 text-xs text-center py-4 font-bold">Loading…</p>
+                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold">Loading…</p>
                   : buses.length === 0
-                  ? <p className="text-white/20 text-xs text-center py-4 font-bold uppercase tracking-widest">No vehicles registered.</p>
+                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">No vehicles registered.</p>
                   : buses.map((bus) => {
                     const isOnline = activeBusIds.has(bus.id);
                     const isEditing = editingBusId === bus.id;
@@ -655,8 +655,8 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                               <Bus className={`w-4 h-4 ${isOnline ? "text-emerald-400" : "text-white/30"}`} />
                             </div>
                             <div className="flex flex-col min-w-0">
-                              <span className="font-bold text-white text-sm truncate">{bus.name}</span>
-                              <span className="text-[10px] text-white/30 font-mono tracking-widest">{bus.id}</span>
+                              <span className="font-semibold text-white text-sm truncate">{bus.name}</span>
+                              <span className="text-[10px] text-white/30 tabular-nums tracking-widest">{bus.id}</span>
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 {isOnline && ts ? (
                                   <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${ts.color}`}>
@@ -667,15 +667,15 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                                   <span className="text-[9px] text-white/20 font-black uppercase tracking-widest">Offline</span>
                                 )}
                                 {isOnline && liveEntry?.speed != null && (
-                                  <span className="text-[9px] text-white/30 font-mono">{Math.round(liveEntry.speed)} km/h</span>
+                                  <span className="text-[9px] text-white/30 tabular-nums">{Math.round(liveEntry.speed)} km/h</span>
                                 )}
                                 {bus.assignedRoutes && bus.assignedRoutes.length > 0 ? (
-                                  <span className="text-[9px] text-blue-400 font-bold flex items-center gap-1">
+                                  <span className="text-[9px] text-blue-400 font-semibold flex items-center gap-1">
                                     <ArrowRight className="w-2.5 h-2.5" />
                                     {bus.assignedRoutes.length} Route{bus.assignedRoutes.length !== 1 ? "s" : ""}
                                   </span>
                                 ) : (bus as any).assignedRouteId ? (
-                                  <span className="text-[9px] text-blue-400 font-bold flex items-center gap-1">
+                                  <span className="text-[9px] text-blue-400 font-semibold flex items-center gap-1">
                                     <ArrowRight className="w-2.5 h-2.5" />
                                     {routes.find(r => r.id === (bus as any).assignedRouteId)?.name || (bus as any).assignedRouteId}
                                   </span>
@@ -710,13 +710,13 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                               onChange={(e) => setEditBusName(e.target.value)}
                               placeholder="Display Name"
                               aria-label="Edit vehicle display name"
-                              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-blue-400/60 outline-none transition-colors placeholder:text-white/20 font-bold"
+                              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-blue-400/60 outline-none transition-colors placeholder:text-white/20 font-semibold"
                             />
                             <div className="flex flex-col gap-1">
                               <span className="text-[9px] text-white/30 uppercase tracking-[0.2em] font-black">Assigned Routes</span>
                               <div className="max-h-32 overflow-y-auto bg-brand-dark/60 border border-white/10 rounded-xl p-2 flex flex-col gap-0.5">
                                 {routes.length === 0
-                                  ? <p className="text-white/20 text-[10px] text-center py-3 font-bold">No routes available</p>
+                                  ? <p className="text-white/20 text-[10px] text-center py-3 font-semibold">No routes available</p>
                                   : routes.map((r) => {
                                     const checked = editBusRoutes.includes(r.id);
                                     return (
@@ -725,7 +725,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                                           {checked && <Check className="w-2.5 h-2.5 text-brand-dark" strokeWidth={2.5} />}
                                         </div>
                                         <input type="checkbox" className="sr-only" checked={checked} onChange={() => toggleEditRoute(r.id)} />
-                                        <span className={`text-sm font-bold ${checked ? "text-white" : "text-white/50"}`}>{r.name}</span>
+                                        <span className={`text-sm font-semibold ${checked ? "text-white" : "text-white/50"}`}>{r.name}</span>
                                       </label>
                                     );
                                   })
@@ -735,7 +735,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                             <button
                               onClick={() => handleSaveBus(bus.id)}
                               aria-label="Save vehicle changes"
-                              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-bold uppercase text-[11px] tracking-widest px-4"
+                              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-[11px] tracking-widest px-4"
                             >
                               <Check className="w-4 h-4" /> Save Changes
                             </button>
@@ -761,7 +761,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               <User className="w-4 h-4 text-white/40" />
             </div>
             <div>
-              <h2 className="font-bold text-lg tracking-tight" style={{ fontFamily: "Outfit" }}>Driver Personnel</h2>
+              <h2 className="font-extrabold text-lg tracking-tight">Driver Personnel</h2>
               <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black">Manage Operator IDs</p>
             </div>
           </div>
@@ -773,19 +773,19 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               value={newDriverId} onChange={(e) => setNewDriverId(e.target.value)}
               placeholder="Operator ID (e.g. drv_1)"
               aria-label="New operator ID"
-              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-bold"
+              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
             />
             <input
               value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)}
               placeholder="Display Name (e.g. Ravi Kumar)"
               aria-label="New operator display name"
-              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-bold"
+              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
             />
             <div className="relative">
               <select
                 value={newDriverBusId} onChange={(e) => setNewDriverBusId(e.target.value)}
                 aria-label="Assign vehicle to new operator"
-                className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 pr-8 text-sm text-white focus:border-white/40 outline-none transition-colors font-bold appearance-none cursor-pointer"
+                className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 pr-8 text-sm text-white focus:border-white/40 outline-none transition-colors font-semibold appearance-none cursor-pointer"
               >
                 <option value="" className="bg-[#1a1c29]">— Assign Vehicle —</option>
                 {buses.map((b) => <option key={b.id} value={b.id} className="bg-[#1a1c29]">{b.name} ({b.id})</option>)}
@@ -795,7 +795,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             <button
               onClick={handleAddDriver}
               aria-label="Add new operator"
-              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-bold uppercase text-[11px] tracking-widest px-4"
+              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-[11px] tracking-widest px-4"
             >
               <Plus className="w-4 h-4" /> Add Operator
             </button>
@@ -823,9 +823,9 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             {driverListOpen && (
               <div className="px-3 pb-3 flex flex-col gap-2 border-t border-white/5">
                 {driversLoading
-                  ? <p className="text-white/20 text-xs text-center py-4 font-bold">Loading…</p>
+                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold">Loading…</p>
                   : drivers.length === 0
-                  ? <p className="text-white/20 text-xs text-center py-4 font-bold uppercase tracking-widest">No operators registered.</p>
+                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">No operators registered.</p>
                   : drivers.map((driver) => {
                     const assignedBus = buses.find((b) => b.id === driver.assignedBusId);
                     const isDriving = liveDriverIds.has(driver.id);
@@ -845,8 +845,8 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                               <User className={`w-4 h-4 ${isDriving ? "text-emerald-400" : "text-white/30"}`} />
                             </div>
                             <div className="flex flex-col min-w-0">
-                              <span className="font-bold text-white text-sm truncate">{driver.name}</span>
-                              <span className="text-[10px] text-white/30 font-mono tracking-widest">{driver.id}</span>
+                              <span className="font-semibold text-white text-sm truncate">{driver.name}</span>
+                              <span className="text-[10px] text-white/30 tabular-nums tracking-widest">{driver.id}</span>
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 {isDriving && dTs ? (
                                   <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${dTs.color}`}>
@@ -857,10 +857,10 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                                   <span className="text-[9px] text-white/20 font-black uppercase tracking-widest">Offline</span>
                                 )}
                                 {isDriving && liveEntry?.speed != null && (
-                                  <span className="text-[9px] text-white/30 font-mono">{Math.round(liveEntry.speed)} km/h</span>
+                                  <span className="text-[9px] text-white/30 tabular-nums">{Math.round(liveEntry.speed)} km/h</span>
                                 )}
                                 {assignedBus && (
-                                  <span className="text-[9px] text-blue-400 font-bold flex items-center gap-1">
+                                  <span className="text-[9px] text-blue-400 font-semibold flex items-center gap-1">
                                     <ArrowRight className="w-2.5 h-2.5" /> {assignedBus.name}
                                   </span>
                                 )}
@@ -894,14 +894,14 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                               onChange={(e) => setEditDriverName(e.target.value)}
                               placeholder="Display Name"
                               aria-label="Edit operator display name"
-                              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-blue-400/60 outline-none transition-colors placeholder:text-white/20 font-bold"
+                              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-blue-400/60 outline-none transition-colors placeholder:text-white/20 font-semibold"
                             />
                             <div className="relative">
                               <select
                                 value={editDriverBusId}
                                 onChange={(e) => setEditDriverBusId(e.target.value)}
                                 aria-label="Edit assigned vehicle"
-                                className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 pr-8 text-sm text-white focus:border-blue-400/60 outline-none transition-colors font-bold appearance-none cursor-pointer"
+                                className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 pr-8 text-sm text-white focus:border-blue-400/60 outline-none transition-colors font-semibold appearance-none cursor-pointer"
                               >
                                 <option value="" className="bg-[#1a1c29]">— Unassign Vehicle —</option>
                                 {buses.map((b) => <option key={b.id} value={b.id} className="bg-[#1a1c29]">{b.name} ({b.id})</option>)}

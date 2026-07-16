@@ -55,7 +55,7 @@ export default function BottomSheet({
           <div className="flex items-center w-full justify-between mt-1">
             <div className="flex items-center gap-2.5">
               {headerIcon && <div style={{ color: "var(--text-ghost)" }}>{headerIcon}</div>}
-              <span className="text-[12px] font-bold tracking-wide" style={{ color: "var(--text-secondary)" }}>
+              <span className="text-[12px] font-semibold tracking-wide" style={{ color: "var(--text-secondary)" }}>
                 {headerTitle}
               </span>
             </div>

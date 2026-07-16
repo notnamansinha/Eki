@@ -61,7 +61,7 @@ function SearchBox({ onPlaceSelect }: SearchBoxProps) {
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
         placeholder="Search for a stop..."
-        className="w-full h-10 bg-brand-dark border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/40 transition-colors placeholder:text-white/20 font-bold"
+        className="w-full h-10 bg-brand-dark border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/40 transition-colors placeholder:text-white/20 font-semibold"
       />
       {results.length > 0 && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-brand-dark border border-white/10 rounded-xl overflow-hidden z-50">
@@ -95,8 +95,8 @@ function RouteCard({ route, onDelete }: { route: RouteData; onDelete: (id: strin
     <div className="group bg-brand-dark/30 border border-white/5 rounded-[1.2rem] overflow-hidden hover:bg-white/5 transition-all duration-300">
       <div className="flex justify-between items-start p-4 gap-3">
         <div className="space-y-1 min-w-0">
-          <h3 className="font-bold text-white tracking-tight truncate">{route.name}</h3>
-          <div className="text-[10px] text-white/20 font-mono tracking-widest uppercase">{route.id}</div>
+          <h3 className="font-semibold text-white tracking-tight truncate">{route.name}</h3>
+          <div className="text-[10px] text-white/20 tabular-nums tracking-widest uppercase">{route.id}</div>
         </div>
         <button
           onClick={() => onDelete(route.id)}
@@ -128,9 +128,9 @@ function RouteCard({ route, onDelete }: { route: RouteData; onDelete: (id: strin
                 {i < route.stops!.length - 1 && <div className="flex-1 w-px my-1 bg-white/10 min-h-[14px]" />}
               </div>
               <div className="pb-3 flex flex-col justify-center min-w-0">
-                <span className="text-sm font-bold text-white/80 leading-tight truncate">{stop.name}</span>
+                <span className="text-sm font-semibold text-white/80 leading-tight truncate">{stop.name}</span>
                 {stop.shortName && stop.shortName !== stop.name && (
-                  <span className="text-[9px] text-white/30 font-mono tracking-widest truncate">{stop.shortName}</span>
+                  <span className="text-[9px] text-white/30 tabular-nums tracking-widest truncate">{stop.shortName}</span>
                 )}
               </div>
             </div>
@@ -261,7 +261,7 @@ export default function RouteManagementPanel() {
       <div className="w-full max-w-4xl mx-auto p-3 md:p-6 flex flex-col gap-4 animate-slide-up">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="font-bold text-xl tracking-tight" style={{ fontFamily: "Outfit" }}>Infrastructure</h2>
+            <h2 className="font-extrabold text-xl tracking-tight">Infrastructure</h2>
             <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black mt-0.5">Saved Routes</p>
           </div>
           <button
@@ -282,10 +282,10 @@ export default function RouteManagementPanel() {
           {loading ? (
             <div className="flex flex-col items-center justify-center py-16 text-white/20">
               <Loader2 className="w-6 h-6 animate-spin mb-3" />
-              <span className="text-[10px] font-bold uppercase tracking-widest">Querying routes…</span>
+              <span className="text-[10px] font-semibold uppercase tracking-widest">Querying routes…</span>
             </div>
           ) : routes.length === 0 ? (
-            <div className="text-white/20 text-xs font-bold text-center py-16 uppercase tracking-widest">No active routes.</div>
+            <div className="text-white/20 text-xs font-semibold text-center py-16 uppercase tracking-widest">No active routes.</div>
           ) : (
             routes.map((route) => <RouteCard key={route.id} route={route} onDelete={handleDeleteRoute} />)
           )}
@@ -300,11 +300,11 @@ export default function RouteManagementPanel() {
         <div className="flex flex-wrap gap-2 items-end">
           <div className="flex flex-col gap-1 flex-1 min-w-[130px]">
             <label className="text-[9px] text-white/20 font-black uppercase tracking-[0.2em] px-1">Route ID</label>
-            <input type="text" value={newRouteId} onChange={(e) => setNewRouteId(e.target.value)} placeholder="e.g. route_101" className="h-9 bg-brand-dark border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/40 transition-colors placeholder:text-white/10 font-bold" />
+            <input type="text" value={newRouteId} onChange={(e) => setNewRouteId(e.target.value)} placeholder="e.g. route_101" className="h-9 bg-brand-dark border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/40 transition-colors placeholder:text-white/10 font-semibold" />
           </div>
           <div className="flex flex-col gap-1 flex-[2] min-w-[160px]">
             <label className="text-[9px] text-white/20 font-black uppercase tracking-[0.2em] px-1">Display Name</label>
-            <input type="text" value={newRouteName} onChange={(e) => setNewRouteName(e.target.value)} placeholder="e.g. Downtown Express" className="h-9 bg-brand-dark border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/40 transition-colors placeholder:text-white/10 font-bold" />
+            <input type="text" value={newRouteName} onChange={(e) => setNewRouteName(e.target.value)} placeholder="e.g. Downtown Express" className="h-9 bg-brand-dark border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/40 transition-colors placeholder:text-white/10 font-semibold" />
           </div>
           <div className="flex gap-2 shrink-0">
             <button onClick={handleSaveRoute} disabled={isSaving || newStops.length < 2} className="h-9 px-4 rounded-xl bg-white text-brand-dark font-black transition disabled:opacity-20 disabled:cursor-not-allowed shadow-2xl text-xs uppercase tracking-[0.15em] flex items-center gap-2">
@@ -318,7 +318,7 @@ export default function RouteManagementPanel() {
           <span className="hidden md:inline text-[9px] text-white/20 font-black uppercase tracking-widest shrink-0">Min. 2 stops to deploy</span>
         </div>
         {polylineBakeError && (
-          <div className="flex items-center gap-2 bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded-xl px-4 py-2 text-xs font-bold animate-slide-up">
+          <div className="flex items-center gap-2 bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded-xl px-4 py-2 text-xs font-semibold animate-slide-up">
             <span className="flex-1">{polylineBakeError}</span>
             <button onClick={() => setPolylineBakeError(null)} className="shrink-0 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
           </div>
@@ -362,7 +362,7 @@ export default function RouteManagementPanel() {
             {newStops.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center opacity-20">
                 <Search className="w-6 h-6 mb-2" />
-                <p className="text-[9px] font-bold uppercase tracking-widest leading-relaxed">Search to add stops</p>
+                <p className="text-[9px] font-semibold uppercase tracking-widest leading-relaxed">Search to add stops</p>
               </div>
             ) : (
               newStops.map((stop, i) => (
@@ -373,8 +373,8 @@ export default function RouteManagementPanel() {
                   </div>
                   <div className="flex-1 pb-3 flex items-start justify-between group min-w-0 pt-1">
                     <div className="flex flex-col overflow-hidden pr-2">
-                      <span className="text-white font-bold text-xs truncate tracking-tight">{stop.name}</span>
-                      <span className="text-emerald-400/40 font-mono text-[8px] uppercase tracking-widest">{stop.shortName}</span>
+                      <span className="text-white font-semibold text-xs truncate tracking-tight">{stop.name}</span>
+                      <span className="text-emerald-400/40 tabular-nums text-[8px] uppercase tracking-widest">{stop.shortName}</span>
                     </div>
                     <button onClick={() => handleRemoveStop(i)} className="p-1.5 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"><X className="w-3.5 h-3.5" /></button>
                   </div>

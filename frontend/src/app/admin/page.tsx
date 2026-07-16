@@ -19,7 +19,7 @@ export default function AdminPage() {
           </div>
           <span
             className="font-black text-sm uppercase tracking-[0.18em] text-white"
-            style={{ fontFamily: "Outfit" }}
+           
           >
             Admin Panel
           </span>
