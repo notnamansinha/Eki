@@ -6,8 +6,10 @@ import { auth, db } from "@/lib/firebase";
 import { signInAnonymously } from "firebase/auth";
 import {
   collection,
-  addDoc,
+  doc,
+  runTransaction,
   serverTimestamp,
+  Timestamp
 } from "firebase/firestore";
 import { FEEDBACK_WORD_LIMIT } from "@/config/passenger";
 
@@ -103,17 +105,58 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
       const currentUser = auth.currentUser || (await signInAnonymously(auth)).user;
       const currentUserId = currentUser.uid;
       const feedbackRef = collection(db, "feedbacks");
+      const cooldownRef = doc(db, "feedbackCooldowns", currentUserId);
 
-      await addDoc(feedbackRef, {
-        userId: currentUserId,
-        userName,
-        type: busId ? "ride" : "general",
-        busId: busId || null,
-        driverId: driverId || null,
-        rating: busId && rating > 0 ? rating : null,
-        comment: comment.trim(),
-        timestamp: serverTimestamp(),
-        status: "new"
+      await runTransaction(db, async (transaction) => {
+        const cooldownSnap = await transaction.get(cooldownRef);
+        let lastSubmittedAt: Timestamp | undefined;
+        let previousSubmittedAt: Timestamp | undefined;
+
+        if (cooldownSnap.exists()) {
+          const data = cooldownSnap.data();
+          lastSubmittedAt = data.lastSubmittedAt as Timestamp | undefined;
+          previousSubmittedAt = data.previousSubmittedAt as Timestamp | undefined;
+
+          // Support old format (history array) if migrating
+          if (data.history && Array.isArray(data.history) && data.history.length > 0) {
+            lastSubmittedAt = data.history[data.history.length - 1] as Timestamp;
+            if (data.history.length > 1) {
+              previousSubmittedAt = data.history[0] as Timestamp;
+            }
+          }
+        }
+
+        const now = Date.now();
+
+        if (previousSubmittedAt) {
+          const remaining = ONE_DAY_MS - (now - previousSubmittedAt.toMillis());
+          if (remaining > 0) {
+            throw new Error(`LIMIT_REACHED:${remaining}`);
+          }
+        }
+
+        const newFeedbackDoc = doc(feedbackRef);
+        transaction.set(newFeedbackDoc, {
+          userId: currentUserId,
+          userName,
+          type: busId ? "ride" : "general",
+          busId: busId || null,
+          driverId: driverId || null,
+          rating: busId && rating > 0 ? rating : null,
+          comment: comment.trim(),
+          timestamp: serverTimestamp(),
+          status: "new"
+        });
+
+        const cooldownData: any = {
+          userId: currentUserId,
+          lastSubmittedAt: serverTimestamp()
+        };
+        if (lastSubmittedAt) {
+          cooldownData.previousSubmittedAt = lastSubmittedAt;
+        }
+
+        transaction.set(cooldownRef, cooldownData, { merge: true });
       });
 
       try {

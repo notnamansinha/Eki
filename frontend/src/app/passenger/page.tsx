@@ -89,9 +89,7 @@ export default function PassengerPage() {
 
   const activeRouteIds = Array.from(new Set(activeBuses.map(b => b.routeId)));
   const availableRoutes = routes.filter(r => activeRouteIds.includes(r.id));
-  const activeRouteIdsStr = activeRouteIds.sort().join(',');
-
-  const displayRoutes = availableRoutes.length > 0 ? availableRoutes : routes.slice(0, 4);
+  const displayRoutes = availableRoutes;
   const displayRoutesIdsStr = displayRoutes.map(r => r.id).join(',');
 
   useEffect(() => {

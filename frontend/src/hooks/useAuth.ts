@@ -24,18 +24,36 @@ export function useAuth() {
   const [loginLoading, setLoginLoading] = useState(false);
 
   useEffect(() => {
+    let generation = 0;
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      const currentGen = ++generation;
       notifyAuthReady();
 
       if (firebaseUser) {
         try {
           const userDocRef = doc(db, "users", firebaseUser.uid);
           const userSnap = await getDoc(userDocRef);
+          
+          if (currentGen !== generation) return;
 
           let role: UserRole = "passenger";
 
           if (userSnap.exists()) {
             role = (userSnap.data()?.role as UserRole) ?? "passenger";
+            // Backfill RTDB independently to ensure sync
+            try {
+              const userDbRef = ref(rtdb, `users/${firebaseUser.uid}`);
+              await set(userDbRef, {
+                uid: firebaseUser.uid,
+                email: firebaseUser.email || "",
+                displayName: firebaseUser.displayName || "Unknown User",
+                photoURL: firebaseUser.photoURL || "",
+                role,
+                createdAt: userSnap.data()?.createdAt || Date.now(),
+              });
+            } catch (rtdbErr) {
+              console.error("Failed to backfill user to RTDB:", rtdbErr);
+            }
           } else {
             const userData = {
               uid: firebaseUser.uid,
@@ -47,12 +65,18 @@ export function useAuth() {
             };
             try {
               await setDoc(userDocRef, userData);
+            } catch (dbErr) {
+              console.error("Failed to write new user to Firestore:", dbErr);
+            }
+            try {
               const userDbRef = ref(rtdb, `users/${firebaseUser.uid}`);
               await set(userDbRef, userData);
             } catch (dbErr) {
-              console.error("Failed to write new user:", dbErr);
+              console.error("Failed to write new user to RTDB:", dbErr);
             }
           }
+
+          if (currentGen !== generation) return;
 
           setUser({
             uid: firebaseUser.uid,
@@ -64,6 +88,7 @@ export function useAuth() {
           });
         } catch (err) {
           console.error("Firestore role fetch failed:", err);
+          if (currentGen !== generation) return;
           setUser({
             uid: firebaseUser.uid,
             email: firebaseUser.email,
@@ -73,9 +98,10 @@ export function useAuth() {
             isAnonymous: firebaseUser.isAnonymous,
           });
         } finally {
-          setLoading(false);
+          if (currentGen === generation) setLoading(false);
         }
       } else {
+        if (currentGen !== generation) return;
         setUser(null);
         setLoading(false);
       }
