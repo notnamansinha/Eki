@@ -1,7 +1,4 @@
-import { useState, useEffect } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { waitForAuth } from "@/lib/authState";
+import { useCollection } from "./useCollection";
 
 export interface BusData {
   id: string; // The bus hardware ID e.g. "BRTS-101"
@@ -10,55 +7,6 @@ export interface BusData {
 }
 
 export function useBuses() {
-  const [buses, setBuses] = useState<BusData[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-    let cancelled = false;
-
-    waitForAuth().then(() => {
-      if (cancelled) {
-        return;
-      }
-
-      const snapshotUnsubscribe = onSnapshot(
-        collection(db, "buses"),
-        (snapshot) => {
-          if (cancelled) {
-            return;
-          }
-
-          const fetched = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          })) as BusData[];
-          setBuses(fetched);
-          setLoading(false);
-        },
-        (error) => {
-          if (cancelled) {
-            return;
-          }
-
-          console.error("Error fetching buses from Firestore:", error);
-          setLoading(false);
-        }
-      );
-
-      if (cancelled) {
-        snapshotUnsubscribe();
-        return;
-      }
-
-      unsubscribe = snapshotUnsubscribe;
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe?.();
-    };
-  }, []);
-
+  const { data: buses, loading } = useCollection<BusData>("buses");
   return { buses, loading };
 }

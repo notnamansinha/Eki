@@ -6,9 +6,10 @@ import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
 import { calculateStopEtas } from "@/lib/routeEta";
-import { rtdb } from "@/lib/firebase";
+import { rtdb, auth } from "@/lib/firebase";
 import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
-import { LocateFixed, WifiOff } from "lucide-react";
+import { signInAnonymously } from "firebase/auth";
+import { LocateFixed, Navigation, WifiOff } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 
 export interface PassengerMapProps {
@@ -144,6 +145,12 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     if (route.polyline) return decodePolyline(route.polyline);
     return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) || [];
   }, [route.polyline, route.stops]);
+
+  useEffect(() => {
+    signInAnonymously(auth).catch((err) => {
+      console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code);
+    });
+  }, []);
 
   // ── RTDB subscription: filtered by routeId ───────────────────────────────
   useEffect(() => {
@@ -300,9 +307,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
               <AdvancedMarker key={bus.busId} position={{ lat: bus.lat, lng: bus.lng }}>
                 <div style={{ width: 44, height: 44, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 600ms" }}>
-                    <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-                      <path d="M12 2L20 20L12 16L4 20L12 2Z" fill={color} stroke="white" strokeWidth="1" strokeLinejoin="round" />
-                    </svg>
+                    <Navigation size={30} fill={color} color="white" strokeWidth={1} />
                   </div>
                   <div style={{ position: "absolute", bottom: -3, right: -3, width: 8, height: 8, borderRadius: "50%", background: color, border: "1.5px solid #09090b" }} />
                 </div>

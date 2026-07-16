@@ -6,7 +6,7 @@ import { useDrivers } from "@/hooks/useDrivers";
 import { db, storage } from "@/lib/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { User, LogOut, BadgeCheck, Camera, Loader2 } from "lucide-react";
+import { CircleUserRound as User, LogOut, BadgeCheck, Camera, Loader2 } from "lucide-react";
 
 interface Props {
   driverId: string;

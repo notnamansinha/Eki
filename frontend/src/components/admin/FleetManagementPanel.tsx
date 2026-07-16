@@ -577,9 +577,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                       >
                         <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all ${checked ? "border-white bg-white" : "border-white/20 bg-transparent"}`}>
                           {checked && (
-                            <svg viewBox="0 0 12 12" className="w-2.5 h-2.5 text-brand-dark" fill="none" stroke="currentColor" strokeWidth="2.5">
-                              <path d="M2 6l3 3 5-5" />
-                            </svg>
+                            <Check className="w-2.5 h-2.5 text-brand-dark" strokeWidth={2.5} />
                           )}
                         </div>
                         <input type="checkbox" className="sr-only" checked={checked} onChange={() => toggleRoute(r.id)} />
@@ -700,7 +698,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                                     return (
                                       <label key={r.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${checked ? "bg-white/10" : "hover:bg-white/5"}`}>
                                         <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all ${checked ? "border-white bg-white" : "border-white/20 bg-transparent"}`}>
-                                          {checked && <svg viewBox="0 0 12 12" className="w-2.5 h-2.5 text-brand-dark" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2 6l3 3 5-5" /></svg>}
+                                          {checked && <Check className="w-2.5 h-2.5 text-brand-dark" strokeWidth={2.5} />}
                                         </div>
                                         <input type="checkbox" className="sr-only" checked={checked} onChange={() => toggleEditRoute(r.id)} />
                                         <span className={`text-sm font-bold ${checked ? "text-white" : "text-white/50"}`}>{r.name}</span>

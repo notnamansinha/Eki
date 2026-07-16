@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bus } from "lucide-react";
+import { BusFront as Bus } from "lucide-react";
 
 export default function Header() {
   return (

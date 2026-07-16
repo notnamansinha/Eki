@@ -27,8 +27,10 @@ service cloud.firestore {
     }
 
     function feedbackCooldownExpired(uid) {
+      let cooldownDoc = get(feedbackCooldownDoc(uid));
       return !exists(feedbackCooldownDoc(uid)) ||
-        request.time - get(feedbackCooldownDoc(uid)).data.lastSubmittedAt >= duration.value(5, 'm');
+             !('previousSubmittedAt' in cooldownDoc.data) ||
+             request.time - cooldownDoc.data.previousSubmittedAt >= duration.value(24, 'h');
     }
 
     // ── User Profiles — Store User Data & Roles ──
@@ -129,10 +131,17 @@ service cloud.firestore {
         request.resource.data.userId == uid &&
         request.resource.data.lastSubmittedAt == request.time;
       allow update: if isOwner(uid) &&
-        request.resource.data.keys().hasOnly(['userId', 'lastSubmittedAt']) &&
+        request.resource.data.keys().hasOnly(['userId', 'lastSubmittedAt', 'previousSubmittedAt']) &&
         request.resource.data.userId == uid &&
         request.resource.data.lastSubmittedAt == request.time &&
-        request.time - resource.data.lastSubmittedAt >= duration.value(5, 'm');
+        (
+          !('lastSubmittedAt' in resource.data) ||
+          request.resource.data.previousSubmittedAt == resource.data.lastSubmittedAt
+        ) &&
+        (
+          !('previousSubmittedAt' in resource.data) ||
+          request.time - resource.data.previousSubmittedAt >= duration.value(24, 'h')
+        );
       allow delete: if false;
     }
 

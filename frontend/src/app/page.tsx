@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bus, Navigation, Loader2, LogIn, ArrowRight, Zap, Radio, Clock } from "lucide-react";
+import { BusFront as Bus, Navigation, Loader2, LogIn, ArrowRight, Zap, SignalHigh as Radio, Clock } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";

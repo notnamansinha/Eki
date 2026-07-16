@@ -92,22 +92,25 @@ export function useAuth() {
         // Always show the user instantly with cached/optimistic role so the UI
         // unblocks immediately. Firestore fetch refines the role afterwards.
         const cached = readCache();
-        const optimisticRole: UserRole =
+        const cachedRole: UserRole =
           cached?.uid === firebaseUser.uid ? cached.role : "passenger";
+        const isSafeToUnblock = cachedRole === "passenger";
 
         const optimisticUser: AppUser = {
           uid: firebaseUser.uid,
           email: firebaseUser.email,
           displayName: firebaseUser.displayName,
           photoURL: firebaseUser.photoURL,
-          role: optimisticRole,
+          role: cachedRole,
         };
 
         setUser(optimisticUser);
         setRoleResolved(false);
         // Unblock the UI immediately — role may update silently below
-        setLoading(false);
-        clearTimeout(timeout);
+        if (isSafeToUnblock) {
+          setLoading(false);
+          clearTimeout(timeout);
+        }
 
         // ── Background: fetch true role from Firestore ────────────────────
         // We do NOT await this before unblocking the UI. It updates silently.
@@ -124,7 +127,7 @@ export function useAuth() {
                 );
               });
 
-            let role: UserRole = optimisticRole;
+            let role: UserRole = cachedRole;
 
             const userSnap = await fetchWithTimeout(getDoc(userDocRef), 3000);
             if (!isCurrentAuth()) return;
@@ -164,11 +167,24 @@ export function useAuth() {
             setUser(resolvedUser);
             setRoleResolved(true);
             writeCache(resolvedUser);
+            if (!isSafeToUnblock) {
+              setLoading(false);
+              clearTimeout(timeout);
+            }
           } catch (err) {
             // Firestore failed/timed out — keep optimistic user, still functional
             console.warn("Firestore role fetch failed:", err);
             if (!isCurrentAuth()) return;
             setRoleResolved(false);
+            if (!isSafeToUnblock) {
+              const safeUser: AppUser = { ...optimisticUser, role: "passenger" };
+              setUser(safeUser);
+              writeCache(safeUser);
+              setLoading(false);
+              clearTimeout(timeout);
+            } else {
+              writeCache(optimisticUser);
+            }
           }
         })();
       } else {
