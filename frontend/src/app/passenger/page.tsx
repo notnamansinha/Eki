@@ -13,7 +13,7 @@ import { rtdb, auth } from "@/lib/firebase";
 import { ref, onValue } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
-import RouteCard from "@/components/passenger/ui/RouteCard";
+import RouteCarousel from "@/components/passenger/ui/RouteCarousel";
 import { getDistanceMeters } from "@/lib/mapUtils";
 
 type ViewState = "home" | "tracking" | "profile";
@@ -102,7 +102,9 @@ export default function PassengerPage() {
   }, [activeRouteIdsStr, routes.length, selectedRouteId]);
 
   const availableRoutes = routes.filter(r => activeRouteIds.includes(r.id));
-  const activeRoute = availableRoutes.find(r => r.id === selectedRouteId);
+  // TEMP TESTING OVERRIDE: Show first 4 routes if none are active so user can test the UI
+  const displayRoutes = availableRoutes.length > 0 ? availableRoutes : routes.slice(0, 4);
+  const activeRoute = displayRoutes.find(r => r.id === selectedRouteId) || displayRoutes[0];
 
   useEffect(() => {
     if (activeRoute && activeRoute.stops && activeRoute.stops.length > 0) {
@@ -184,18 +186,18 @@ export default function PassengerPage() {
   return (
     <div className="relative text-white overflow-hidden" style={{ height: "100dvh", backgroundColor: "var(--surface-0)" }}>
       {/* Background Image Layer: Full screen map flowing naturally */}
-      <div 
+      <div
         className="absolute inset-0 z-0 pointer-events-none"
         style={{
           backgroundImage: "url('/userpanel.webp')",
-          backgroundSize: "cover", 
+          backgroundSize: "cover",
           backgroundPosition: "center -24px", // Masks exactly 24px of the top to bring the bus closer to the top without clipping it
           backgroundRepeat: "no-repeat",
         }}
       />
-      
+
       <div className="absolute inset-0 flex flex-col overflow-hidden">
-        
+
         {/* Map layer — only present on tracking */}
         <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${currentView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
           <PassengerMap
@@ -213,42 +215,40 @@ export default function PassengerPage() {
           <div className="shrink-0" style={{ height: "34vh", minHeight: "250px" }} aria-hidden="true" />
 
           {/* Unified scrollable container */}
-          <div className="flex-1 overflow-y-auto px-5 pb-24">
-            
-            {/* Unified Glass Panel */}
-            <div className="rounded-3xl p-6 flex flex-col"
+          <div className="flex-1 overflow-y-auto px-4 pb-32">
+
+            {/* Unified Transit Panel */}
+            <div className="rounded-[32px] pt-8 pb-10 flex flex-col overflow-hidden relative shadow-2xl mx-1"
               style={{
-                background: "rgba(18, 18, 20, 0.75)",
-                backdropFilter: "blur(16px)",
-                WebkitBackdropFilter: "blur(16px)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                boxShadow: "0 8px 32px rgba(0, 0, 0, 0.15)"
+                background: "linear-gradient(180deg, #1c1c1e 0%, #151517 100%)",
+                borderTop: "1px solid rgba(255, 255, 255, 0.12)",
+                borderLeft: "1px solid rgba(255, 255, 255, 0.04)",
+                borderRight: "1px solid rgba(255, 255, 255, 0.04)",
+                boxShadow: "0 12px 48px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05)"
               }}
             >
-              {/* Heading Section with Subtle Divider */}
-              <div className="text-center pb-6 mb-6" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                <h1 className="font-bold text-2xl tracking-tight mb-2" style={{ color: "var(--text-primary)" }}>
-                  Where to?
+              {/* Heading Section */}
+              <div className="text-center pb-5 mb-3 mx-6">
+                <h1 className="text-title-screen mb-2" style={{ color: "var(--text-primary)" }}>
+                  Live Routes
                 </h1>
-                <p className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>
-                  Select a route to start tracking.
+                <p className="text-body-primary" style={{ color: "var(--text-secondary)" }}>
+                  Select a route to view schedules.
                 </p>
               </div>
 
               {/* Status / Routes Section */}
-              <div className="space-y-3">
-                {availableRoutes.length > 0 ? (
-                  availableRoutes.map(r => (
-                    <RouteCard 
-                      key={r.id}
-                      route={r}
-                      isSelected={false}
-                      onSelect={handleRouteSelect}
-                      activeBusesCount={activeBuses.filter(b => b.routeId === r.id).length}
-                    />
-                  ))
+              <div className="w-full">
+                {displayRoutes.length > 0 ? (
+                  <RouteCarousel
+                    routes={displayRoutes}
+                    selectedRouteId={selectedRouteId}
+                    onSwipe={setSelectedRouteId}
+                    onClick={handleRouteSelect}
+                    getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
+                  />
                 ) : (
-                  <div className="rounded-xl p-8 text-center" 
+                  <div className="rounded-xl p-8 text-center mx-1"
                     style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
                     <p className="text-[13px] font-bold mb-1" style={{ color: "var(--text-tertiary)" }}>
                       No buses running
@@ -271,7 +271,7 @@ export default function PassengerPage() {
               <div className="absolute top-0 w-full z-40 pt-safe px-4 pb-6"
                 style={{ background: "linear-gradient(to bottom, rgba(9,9,11,0.92) 0%, transparent 100%)" }}>
                 <div className="flex items-center gap-3 max-w-lg mx-auto pt-2">
-                  <button 
+                  <button
                     onClick={() => setCurrentView("home")}
                     className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors"
                     style={{ background: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}
@@ -280,10 +280,10 @@ export default function PassengerPage() {
                     <ArrowLeft className="w-4 h-4" style={{ color: "var(--text-secondary)" }} />
                   </button>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-bold" style={{ color: "var(--accent)", letterSpacing: "0.05em" }}>
+                    <p className="text-label" style={{ color: "var(--accent)", letterSpacing: "0.05em" }}>
                       Live
                     </p>
-                    <p className="font-bold truncate text-[15px]" style={{ color: "var(--text-primary)" }}>
+                    <p className="text-route-name truncate" style={{ color: "var(--text-primary)" }}>
                       {activeRoute.name}
                     </p>
                   </div>
@@ -296,8 +296,8 @@ export default function PassengerPage() {
                   <button
                     onClick={handleOpenMessaging}
                     className="w-12 h-12 rounded-xl flex items-center justify-center transition-all active:scale-95 relative"
-                    style={{ 
-                      background: "var(--surface-2)", 
+                    style={{
+                      background: "var(--surface-2)",
                       border: "1px solid var(--border-default)",
                       boxShadow: "0 4px 16px rgba(0,0,0,0.3)"
                     }}
@@ -382,15 +382,16 @@ export default function PassengerPage() {
         />
       )}
 
-      {/* Bottom Navigation — 2 tabs */}
-      <nav className="absolute bottom-0 w-full z-[100] pb-safe" style={{ 
-        height: "72px", 
-        background: "rgba(9, 9, 11, 0.85)",
-        backdropFilter: "blur(12px)",
-        borderTop: "1px solid var(--border-subtle)" 
-      }}>
-        <div className="flex items-center justify-around px-6 h-full max-w-md mx-auto">
-          
+      {/* Bottom Navigation — Floating Transit Tab Bar */}
+      <div className="absolute bottom-6 inset-x-0 z-[100] px-5 pb-safe pointer-events-none flex justify-center">
+        <nav className="w-full max-w-sm rounded-[24px] pointer-events-auto flex items-center justify-around px-2 py-1.5"
+          style={{
+            background: "rgba(22, 22, 26, 0.95)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            boxShadow: "0 16px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.05)"
+          }}>
           <button
             onClick={() => {
               if (currentView === "tracking" || currentView === "home") {
@@ -399,39 +400,39 @@ export default function PassengerPage() {
                 setCurrentView("home");
               }
             }}
-            className="flex flex-col items-center justify-center py-2 flex-1 rounded-xl transition-all duration-300 relative"
+            className="flex flex-col items-center justify-center py-2.5 px-8 rounded-[18px] transition-all duration-300 relative group active:scale-95"
+            style={{
+              background: (currentView === "home" || currentView === "tracking") ? "rgba(255,255,255,0.08)" : "transparent"
+            }}
           >
-            {(currentView === "home" || currentView === "tracking") && (
-              <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "var(--accent)" }} />
-            )}
-            <MapIcon className="w-5 h-5 mb-1" style={{ 
-              color: (currentView === "home" || currentView === "tracking") ? "var(--accent)" : "var(--text-ghost)" 
+            <MapIcon className="w-5 h-5 mb-1 transition-colors" style={{
+              color: (currentView === "home" || currentView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
             }} />
-            <span className="text-[10px] font-bold" style={{ 
-              color: (currentView === "home" || currentView === "tracking") ? "var(--accent)" : "var(--text-ghost)" 
+            <span className="text-[11px] font-bold transition-colors" style={{
+              color: (currentView === "home" || currentView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
             }}>
-              Map
+              Routes
             </span>
           </button>
 
           <button
             onClick={() => setCurrentView("profile")}
-            className="flex flex-col items-center justify-center py-2 flex-1 rounded-xl transition-all duration-300 relative"
+            className="flex flex-col items-center justify-center py-2.5 px-8 rounded-[18px] transition-all duration-300 relative group active:scale-95"
+            style={{
+              background: currentView === "profile" ? "rgba(255,255,255,0.08)" : "transparent"
+            }}
           >
-            {currentView === "profile" && (
-              <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "var(--text-primary)" }} />
-            )}
-            <User className="w-5 h-5 mb-1" style={{ 
-              color: currentView === "profile" ? "var(--text-primary)" : "var(--text-ghost)" 
+            <User className="w-5 h-5 mb-1 transition-colors" style={{
+              color: currentView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
             }} />
-            <span className="text-[10px] font-bold" style={{ 
-              color: currentView === "profile" ? "var(--text-primary)" : "var(--text-ghost)" 
+            <span className="text-[11px] font-bold transition-colors" style={{
+              color: currentView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
             }}>
               Profile
             </span>
           </button>
-        </div>
-      </nav>
+        </nav>
+      </div>
     </div>
   );
 }
