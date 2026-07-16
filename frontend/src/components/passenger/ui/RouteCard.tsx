@@ -11,8 +11,9 @@ interface RouteCardProps {
 
 export default function RouteCard({ route, isSelected, onSelect, activeBusesCount = 0 }: RouteCardProps) {
   const routeColor = route.color || "var(--accent)";
-  const firstStop = route.stops?.[0];
-  const lastStop = route.stops?.[route.stops.length - 1];
+  const stops = route.stops ?? [];
+  const firstStop = stops[0];
+  const lastStop = stops[stops.length - 1];
 
   return (
     <button

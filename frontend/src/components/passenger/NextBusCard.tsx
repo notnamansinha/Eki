@@ -34,7 +34,7 @@ export default function NextBusCard({
     <button
       onClick={onTap}
       className="w-full text-left transition-all duration-200 active:scale-[0.98]"
-      aria-label={`Next bus in ${etaMinutes} minutes`}
+      aria-label={typeof etaMinutes === "number" ? `Next bus in ${etaMinutes} minutes` : "Next bus ETA calculating"}
     >
       <div
         className="rounded-2xl p-4 border"
