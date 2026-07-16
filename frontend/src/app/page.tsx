@@ -58,7 +58,7 @@ export default function HomePage() {
       }}>
         <div className="max-w-[1200px] mx-auto px-6 md:px-10 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-              <img src="/logo.webp" alt="Eki Transit Logo" className="h-[28px] w-auto" style={{ filter: "brightness(0) invert(1)" }} />
+              <img src="/eki-logo.png" alt="Eki Transit Logo" className="h-[28px] w-auto" />
           </div>
 
           <div className="flex items-center gap-3">

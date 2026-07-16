@@ -12,7 +12,7 @@ export default function Header() {
     }}>
       <div className="max-w-[1200px] mx-auto px-6 md:px-10 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-3">
-          <img src="/logo.webp" alt="Eki Transit Logo" className="h-6 w-auto" style={{ filter: "brightness(0) invert(1)" }} />
+          <img src="/eki-logo.png" alt="Eki Transit Logo" className="h-6 w-auto" />
         </Link>
       </div>
     </header>
