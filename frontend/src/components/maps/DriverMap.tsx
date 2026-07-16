@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
-import { LocateFixed as GPS, ArrowLeft, ChevronRight } from "lucide-react";
+import { LocateFixed as GPS, ArrowLeft, ChevronRight, Navigation } from "lucide-react";
 import { RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
@@ -18,6 +18,8 @@ export interface DriverMapProps {
   isTracking?: boolean;
   selectedRouteIds?: string[];
   onStopIndexChange?: (index: number) => void;
+  onStartTracking?: () => void;
+  canStartTracking?: boolean;
 }
 
 const SELECTED_ROUTE_COLOR = "#4285F4";
@@ -84,7 +86,7 @@ function MapCenterer({ target, isCentered, navPhase }: { target: { lat: number; 
   return null;
 }
 
-function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, selectedRouteIds, onStopIndexChange }: DriverMapProps) {
+function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, selectedRouteIds, onStopIndexChange, onStartTracking, canStartTracking }: DriverMapProps) {
   const stops = route.stops || [];
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
   const nextStop = stops[currentStopIndex] ?? stops[stops.length - 1];
@@ -158,11 +160,28 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
   const handleRecenter = useCallback(() => setIsCentered(true), []);
   const handlePointerDown = useCallback(() => setIsCentered(false), []);
   const handleStartNavigation = useCallback(async () => {
+    if (!canStartTracking) {
+      alert("Please select a Vehicle and Operator in the Transmitter Controls first.");
+      return;
+    }
+    if (onStartTracking) {
+      onStartTracking();
+    }
     setNavPhase("navigating");
     setIsCentered(true);
     setDelayMinutes(0);
-  }, []);
+  }, [canStartTracking, onStartTracking]);
   const handleBackToPreview = useCallback(() => setNavPhase("preview"), []);
+
+  useEffect(() => {
+    if (isTracking) {
+      setNavPhase("navigating");
+      setIsCentered(true);
+      setDelayMinutes(0);
+    } else {
+      setNavPhase("preview");
+    }
+  }, [isTracking]);
 
   const upcomingETAs = useMemo(() => {
     const etaMap: Record<string, number> = {};
@@ -203,24 +222,24 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
             <AdvancedMarker key={`stop-${stop.id || i}`} position={{ lat: stop.lat, lng: stop.lng }}>
               {i === currentStopIndex ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                  <div style={{ position: "absolute", width: 32, height: 32, background: "#f97316", borderRadius: "50%", animation: "ripple 2s infinite" }} />
-                  <div style={{ width: 32, height: 32, background: "#f97316", border: "4px solid #fb923c", borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 15px rgba(0,0,0,0.3)" }}>
-                    <span style={{ color: "white", fontWeight: 900, fontSize: 12 }}>{String.fromCharCode(65 + i)}</span>
+                  <div style={{ position: "absolute", width: 28, height: 28, background: "var(--accent)", borderRadius: "50%", animation: "ripple 2s infinite" }} />
+                  <div style={{ width: 28, height: 28, background: "var(--accent)", border: "3px solid #fb923c", borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 12px rgba(250,93,41,0.3)" }}>
+                    <span style={{ color: "white", fontWeight: 800, fontSize: 11 }}>{String.fromCharCode(65 + i)}</span>
                   </div>
-                  <span style={{ marginTop: 8, padding: "4px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", color: "white", borderRadius: 12, fontSize: 10, whiteSpace: "nowrap", zIndex: 50, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2em" }}>
+                  <span style={{ marginTop: 6, padding: "3px 10px", background: "var(--surface-2)", border: "1px solid var(--border-default)", color: "var(--text-primary)", borderRadius: 8, fontSize: 9, whiteSpace: "nowrap", zIndex: 50, fontWeight: 700 }}>
                     {stop.shortName}
                   </span>
                 </div>
               ) : i < currentStopIndex ? (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, background: "rgba(249,115,22,0.6)", border: "2px solid rgba(251,146,60,0.5)", borderRadius: "50%", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}>
-                  <span style={{ color: "white", fontWeight: 900, fontSize: 10 }}>{String.fromCharCode(65 + i)}</span>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, background: "rgba(250,93,41,0.5)", border: "2px solid rgba(251,146,60,0.4)", borderRadius: "50%" }}>
+                  <span style={{ color: "white", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: 0.7, transform: "scale(0.9)" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, background: "#f97316", border: "2px solid #fb923c", borderRadius: "50%", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}>
-                    <span style={{ color: "white", fontWeight: 900, fontSize: 10 }}>{String.fromCharCode(65 + i)}</span>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: 0.7 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, background: "var(--accent)", border: "2px solid #fb923c", borderRadius: "50%" }}>
+                    <span style={{ color: "white", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
                   </div>
-                  <span style={{ marginTop: 4, padding: "2px 8px", background: "rgba(30,41,59,0.8)", color: "white", borderRadius: 4, fontSize: 8, whiteSpace: "nowrap", opacity: 0.6, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                  <span style={{ marginTop: 3, padding: "1px 6px", background: "var(--surface-2)", color: "var(--text-tertiary)", borderRadius: 4, fontSize: 8, whiteSpace: "nowrap", fontWeight: 600 }}>
                     {stop.shortName}
                   </span>
                 </div>
@@ -231,14 +250,12 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           {/* Driver bus marker */}
           {driverLocation && (
             <AdvancedMarker position={{ lat: driverLocation.lat, lng: driverLocation.lng }}>
-              <div style={{ width: 48, height: 48, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "rgba(66,133,244,0.2)", animation: "ping 1s infinite", opacity: 0.6 }} />
+              <div style={{ width: 44, height: 44, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "rgba(66,133,244,0.15)", animation: "ping 1s infinite", opacity: 0.6 }} />
                 <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 600ms", zIndex: 10 }}>
-                  <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
-                    <path d="M12 2L20 20L12 16L4 20L12 2Z" fill={SELECTED_ROUTE_COLOR} stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
-                  </svg>
+                  <Navigation size={30} fill={SELECTED_ROUTE_COLOR} color="white" strokeWidth={1} />
                 </div>
-                <div style={{ position: "absolute", bottom: -4, right: -4, width: 10, height: 10, borderRadius: "50%", background: SELECTED_ROUTE_COLOR, border: "2px solid #1a1a2e" }} />
+                <div style={{ position: "absolute", bottom: -3, right: -3, width: 8, height: 8, borderRadius: "50%", background: SELECTED_ROUTE_COLOR, border: "1.5px solid var(--surface-0)" }} />
               </div>
             </AdvancedMarker>
           )}
@@ -247,9 +264,9 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
 
       <style>{`
         @keyframes ripple {
-          0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.5); }
-          70% { box-shadow: 0 0 0 30px rgba(249, 115, 22, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
+          0% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0.4); }
+          70% { box-shadow: 0 0 0 20px rgba(250, 93, 41, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0); }
         }
         @keyframes ping {
           0% { transform: scale(1); opacity: 0.6; }
@@ -259,15 +276,22 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
 
       {navPhase === "navigating" && (
         <div className="absolute left-4 top-10 z-40">
-          <button onClick={handleBackToPreview} className="p-4 rounded-full shadow-2xl bg-brand-surface border border-white/10 text-white active:scale-95 transition-all">
-            <ArrowLeft className="w-5 h-5" />
+          <button onClick={handleBackToPreview} className="p-3 rounded-xl transition-all active:scale-95"
+            style={{ background: "var(--surface-2)", border: "1px solid var(--border-default)", boxShadow: "0 4px 16px rgba(0,0,0,0.3)" }}>
+            <ArrowLeft className="w-4 h-4" style={{ color: "var(--text-secondary)" }} />
           </button>
         </div>
       )}
 
       <div className="absolute right-4 top-10 z-40">
-        <button onClick={handleRecenter} className={`p-4 rounded-full shadow-2xl transition-all duration-300 border active:scale-95 ${isCentered ? "bg-blue-500 text-white border-blue-400 opacity-60" : "bg-brand-surface text-white border-white/10 hover:bg-white/10"}`}>
-          <GPS className="w-5 h-5" />
+        <button onClick={handleRecenter} className="p-3 rounded-xl transition-all duration-300 active:scale-95"
+          style={{
+            background: isCentered ? "rgba(59,130,246,0.15)" : "var(--surface-2)",
+            border: `1px solid ${isCentered ? "rgba(59,130,246,0.3)" : "var(--border-default)"}`,
+            color: isCentered ? "#60A5FA" : "var(--text-secondary)",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+          }}>
+          <GPS className="w-4 h-4" />
         </button>
       </div>
 
@@ -276,7 +300,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           <div className="flex justify-center p-4 pb-8">
             <button 
               onClick={handleStartNavigation} 
-              className="px-12 py-4 rounded-full bg-blue-500 hover:bg-blue-600 shadow-[0_0_20px_rgba(59,130,246,0.4)] text-white font-black uppercase tracking-widest text-sm transition-all active:scale-95 flex items-center gap-3"
+              className="btn-primary px-10 py-3.5 text-[13px] font-medium flex items-center gap-2.5 active:scale-95 transition-all"
             >
               Start Shift
             </button>
@@ -290,30 +314,49 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
             headerContent={
               <div className="flex items-center w-full justify-between mt-2 pl-2">
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
-                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest leading-none">Transmitting</span>
-                  {delayMinutes > 0 && <span className="ml-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-[9px] font-black uppercase tracking-widest">+{delayMinutes} MIN</span>}
+                  <div className="status-live" style={{ fontSize: "9px", padding: "2px 8px" }}>
+                    Transmitting
+                  </div>
+                  {delayMinutes > 0 && (
+                    <span className="px-2 py-0.5 rounded text-[9px] font-semibold"
+                      style={{ background: "var(--status-warning-bg)", color: "var(--status-warning)" }}>
+                      +{delayMinutes} min
+                    </span>
+                  )}
                 </div>
-                {onEndShift && isTracking && <button onClick={(e) => { e.stopPropagation(); onEndShift(); }} className="h-8 px-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-[9px] font-black uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white transition-all pointer-events-auto">End Shift</button>}
+                {onEndShift && isTracking && (
+                  <button onClick={(e) => { e.stopPropagation(); onEndShift(); }} 
+                    className="h-7 px-3 rounded-lg text-[9px] font-semibold transition-all"
+                    style={{ background: "var(--status-danger-bg)", border: "1px solid rgba(248,113,113,0.15)", color: "var(--status-danger)" }}>
+                    End Shift
+                  </button>
+                )}
               </div>
             }
             bottomControls={
               <div className="flex items-center gap-2 justify-between w-full">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] font-black text-white/30 uppercase tracking-widest mr-1">Delay</span>
-                  <button onClick={() => pushDelay(-2)} className="h-9 w-12 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-black hover:bg-blue-500/30 active:scale-90 transition-all flex items-center justify-center">-2</button>
-                  <button onClick={() => pushDelay(-1)} className="h-9 w-12 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-black hover:bg-blue-500/30 active:scale-90 transition-all flex items-center justify-center">-1</button>
-                  <div className="px-2 min-w-[36px] text-center">
-                    <span className={`text-sm font-black ${delayMinutes > 0 ? 'text-amber-400' : 'text-white/20'}`}>{delayMinutes > 0 ? `+${delayMinutes}` : '0'}</span>
-                    <div className="text-[7px] text-white/20 uppercase tracking-widest">min</div>
+                  <span className="text-[9px] font-semibold mr-1" style={{ color: "var(--text-ghost)" }}>Delay</span>
+                  <button onClick={() => pushDelay(-2)} className="h-8 w-10 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
+                    style={{ background: "rgba(59,130,246,0.10)", border: "1px solid rgba(59,130,246,0.15)", color: "#60A5FA" }}>-2</button>
+                  <button onClick={() => pushDelay(-1)} className="h-8 w-10 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
+                    style={{ background: "rgba(59,130,246,0.10)", border: "1px solid rgba(59,130,246,0.15)", color: "#60A5FA" }}>-1</button>
+                  <div className="px-2 min-w-[32px] text-center">
+                    <span className="text-sm font-semibold" style={{ color: delayMinutes > 0 ? "var(--status-warning)" : "var(--text-ghost)", fontVariantNumeric: "tabular-nums" }}>
+                      {delayMinutes > 0 ? `+${delayMinutes}` : '0'}
+                    </span>
+                    <div className="text-[7px] font-semibold" style={{ color: "var(--text-ghost)" }}>min</div>
                   </div>
-                  <button onClick={() => pushDelay(1)} className="h-9 w-12 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-black hover:bg-amber-500/30 active:scale-90 transition-all flex items-center justify-center">+1</button>
-                  <button onClick={() => pushDelay(2)} className="h-9 w-12 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-black hover:bg-amber-500/30 active:scale-90 transition-all flex items-center justify-center">+2</button>
+                  <button onClick={() => pushDelay(1)} className="h-8 w-10 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
+                    style={{ background: "var(--status-warning-bg)", border: "1px solid rgba(251,191,36,0.15)", color: "var(--status-warning)" }}>+1</button>
+                  <button onClick={() => pushDelay(2)} className="h-8 w-10 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
+                    style={{ background: "var(--status-warning-bg)", border: "1px solid rgba(251,191,36,0.15)", color: "var(--status-warning)" }}>+2</button>
                 </div>
                 {currentStopIndex < stops.length - 1 && (
-                  <button onClick={handleManualNextStop} className="flex items-center gap-1.5 h-9 px-3 rounded-xl bg-white/5 border border-white/10 text-white/60 text-[9px] font-black uppercase tracking-widest hover:bg-white/10 active:scale-90 transition-all">
+                  <button onClick={handleManualNextStop} className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-[9px] font-semibold active:scale-90 transition-all"
+                    style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)", color: "var(--text-secondary)" }}>
                     Next Stop
-                    <ChevronRight className="w-3.5 h-3.5" />
+                    <ChevronRight className="w-3 h-3" />
                   </button>
                 )}
               </div>

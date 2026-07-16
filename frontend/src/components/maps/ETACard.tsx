@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { MapPin, Bus, CheckCircle, Navigation } from "lucide-react";
+import { MapPin, BusFront as Bus, CheckCircle, Navigation } from "lucide-react";
 
 export interface ETACardProps {
   stopName: string;
@@ -51,7 +51,7 @@ const ETACard = React.memo(function ETACard({
           </div>
           <div className="flex flex-col">
             <span className="font-black text-xs uppercase tracking-widest text-emerald-400">Proximal Arrival</span>
-            <span className="font-bold text-[10px] text-white/40 uppercase tracking-widest mt-1">{stopShortName} in ~{etaMinutes} min</span>
+            <span className="font-medium text-[10px] text-white/40 uppercase tracking-widest mt-1">{stopShortName} in ~{etaMinutes} min</span>
           </div>
         </div>
       )}
@@ -76,7 +76,7 @@ const ETACard = React.memo(function ETACard({
             </div>
             <div className="flex flex-col">
                <span className="text-[10px] font-black tracking-widest text-white/20 uppercase mb-0.5">Target Stop</span>
-               <span className="text-white font-bold text-base tracking-tight">{stopName}</span>
+               <span className="text-white font-semibold text-base tracking-tight">{stopName}</span>
             </div>
           </div>
 
@@ -94,7 +94,7 @@ const ETACard = React.memo(function ETACard({
               </div>
               <div className="flex items-center gap-2 mt-1.5 overflow-hidden">
                 <Navigation className="w-3 h-3 text-white/20 flex-shrink-0" />
-                <span className="text-white/40 font-bold text-[10px] uppercase tracking-widest truncate">
+                <span className="text-white/40 font-medium text-[10px] uppercase tracking-widest truncate">
                   {distanceKm}km via {viaRoad}
                 </span>
               </div>

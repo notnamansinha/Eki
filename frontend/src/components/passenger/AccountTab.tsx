@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { User, LogOut, ChevronRight, LogIn, MessageSquare } from "lucide-react";
+import { CircleUserRound, LogOut, ChevronRight, LogIn, HeartHandshake } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import FeedbackModal from "@/components/shared/FeedbackModal";
 
@@ -9,83 +9,103 @@ export default function AccountTab() {
   const { user, loginWithGoogle, logout } = useAuth();
   const [showFeedback, setShowFeedback] = useState(false);
   return (
-    <div className="flex-1 overflow-y-auto bg-brand-dark p-8 flex flex-col items-center">
-      <div className="w-full max-w-lg space-y-12 mt-12">
+    <div className="flex-1 overflow-y-auto flex flex-col pt-safe px-5" style={{ background: "var(--surface-0)" }}>
+      <div className="w-full max-w-lg mx-auto space-y-6 mt-10 pb-32">
+        
         {/* Profile Header */}
-        <div className="flex flex-col items-center gap-6">
-          <div className="w-28 h-28 rounded-[2.5rem] bg-brand-surface border border-white/5 flex items-center justify-center text-white/10 shadow-2xl relative overflow-hidden">
-             <div className="absolute top-0 right-0 w-16 h-16 bg-white/5 blur-2xl" />
-             {user?.photoURL ? (
-               <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" />
-             ) : (
-               <User className="w-12 h-12 text-white/40" />
-             )}
-          </div>
-          <div className="text-center">
-            {user ? (
-              <>
-                <h2 className="text-3xl font-bold font-display tracking-tight text-white mb-1" style={{ fontFamily: "Outfit, sans-serif" }}>
-                  {user.displayName || "Rider"}
-                </h2>
-                <div className="flex flex-col items-center">
-                  <span className="text-xs font-black text-blue-400 uppercase tracking-[0.25em]">
+        <div className="p-6 rounded-2xl relative overflow-hidden" 
+          style={{ background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
+          <div className="flex flex-col items-center gap-5 relative z-10">
+            <div className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden"
+              style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)" }}>
+               {user?.photoURL ? (
+                 <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" />
+               ) : (
+                 <CircleUserRound className="w-9 h-9" style={{ color: "var(--text-ghost)" }} />
+               )}
+            </div>
+            
+            <div className="text-center">
+              {user ? (
+                <>
+                  <h2 className="text-xl font-extrabold tracking-tight mb-1.5" style={{ color: "var(--text-primary)" }}>
+                    {user.displayName || "Rider"}
+                  </h2>
+                  <span className="text-[10px] font-semibold px-2 py-1 rounded-md"
+                    style={{ 
+                      background: "rgba(59, 130, 246, 0.10)", 
+                      color: "#60A5FA",
+                      letterSpacing: "0.05em" 
+                    }}>
                     {user.role?.toUpperCase() || "PASSENGER"}
                   </span>
-                </div>
-              </>
-            ) : (
-              <>
-                <h2 className="text-3xl font-bold font-display tracking-tight text-white mb-1" style={{ fontFamily: "Outfit, sans-serif" }}>
-                  Guest Rider
-                </h2>
-                <span className="text-xs font-black text-white/20 uppercase tracking-[0.25em]">
-                  UNVERIFIED
-                </span>
-              </>
-            )}
+                </>
+              ) : (
+                <>
+                  <h2 className="text-xl font-extrabold tracking-tight mb-1" style={{ color: "var(--text-primary)" }}>
+                    Guest
+                  </h2>
+                  <span className="text-[10px] font-semibold" style={{ color: "var(--text-ghost)" }}>
+                    Sign in to save preferences
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Actions List - Refined Block */}
-        <div className="bg-brand-surface border border-white/5 rounded-[2rem] overflow-hidden mt-8 shadow-3xl">
+        {/* Actions List */}
+        <div className="rounded-xl overflow-hidden"
+          style={{ background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
           <button
             onClick={() => setShowFeedback(true)}
-            className="w-full flex items-center justify-between p-6 border-b border-white/5 bg-transparent hover:bg-white/5 transition-all group"
+            className="w-full flex items-center justify-between p-4 bg-transparent hover:bg-[var(--surface-3)] transition-colors group active:bg-[var(--surface-4)]"
+            style={{ borderBottom: "1px solid var(--border-subtle)" }}
           >
-            <div className="flex items-center gap-5">
-              <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
-                  <MessageSquare className="w-5 h-5 text-white/60 group-hover:text-emerald-400" />
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors"
+                style={{ background: "var(--surface-3)" }}>
+                  <HeartHandshake className="w-4 h-4" style={{ color: "var(--text-tertiary)" }} />
               </div>
-              <span className="text-sm font-bold tracking-tight text-white/80 group-hover:text-white">Give Feedback</span>
+              <span className="text-[13px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+                Send Feedback
+              </span>
             </div>
-            <ChevronRight className="w-4 h-4 text-white/10 group-hover:text-white/40 transition-colors" />
+            <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" 
+              style={{ color: "var(--text-ghost)" }} />
           </button>
 
           {user ? (
             <button
               onClick={logout}
-              className="w-full flex items-center justify-between p-6 bg-transparent hover:bg-white/5 transition-all group"
+              className="w-full flex items-center justify-between p-4 bg-transparent hover:bg-[var(--surface-3)] transition-colors group"
             >
-              <div className="flex items-center gap-5">
-                <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-red-500/20 transition-colors">
-                   <LogOut className="w-5 h-5 text-red-500/80" />
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center"
+                  style={{ background: "var(--status-danger-bg)" }}>
+                   <LogOut className="w-4 h-4" style={{ color: "var(--status-danger)" }} />
                 </div>
-                <span className="text-sm font-bold tracking-tight text-red-400">Log Out</span>
+                <span className="text-[13px] font-semibold" style={{ color: "var(--status-danger)" }}>
+                  Sign Out
+                </span>
               </div>
-              <ChevronRight className="w-4 h-4 text-white/10 group-hover:text-white/40 transition-colors" />
             </button>
           ) : (
             <button
               onClick={loginWithGoogle}
-              className="w-full flex items-center justify-between p-6 bg-transparent hover:bg-[#0071e3]/20 transition-all group"
+              className="w-full flex items-center justify-between p-4 bg-transparent hover:bg-[var(--surface-3)] transition-colors group"
             >
-              <div className="flex items-center gap-5">
-                <div className="w-10 h-10 rounded-xl bg-[#0071e3]/20 flex items-center justify-center group-hover:bg-[#0071e3]/40 transition-colors">
-                   <LogIn className="w-5 h-5 text-[#0071e3]" />
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center"
+                  style={{ background: "rgba(59, 130, 246, 0.10)" }}>
+                   <LogIn className="w-4 h-4" style={{ color: "#3B82F6" }} />
                 </div>
-                <span className="text-sm font-bold tracking-tight text-[#0071e3]">Sign in with Google</span>
+                <span className="text-[13px] font-semibold" style={{ color: "#3B82F6" }}>
+                  Sign in with Google
+                </span>
               </div>
-              <ChevronRight className="w-4 h-4 text-white/10 group-hover:text-white/40 transition-colors" />
+              <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" 
+                style={{ color: "var(--text-ghost)" }} />
             </button>
           )}
         </div>
@@ -93,13 +113,15 @@ export default function AccountTab() {
         {showFeedback && (
           <FeedbackModal
             userId={user?.uid || "anonymous"}
-            userName={user?.displayName || "Guest Rider"}
+            userName={user?.displayName || "Guest"}
             onClose={() => setShowFeedback(false)}
           />
         )}
         
-        {/* Version Info */}
-        <p className="text-center text-[10px] text-white/10 font-bold uppercase tracking-widest pb-12">BusTrack v2.1.0 • Live</p>
+        {/* Version */}
+        <p className="text-center text-[10px] font-semibold pt-4" style={{ color: "var(--text-ghost)" }}>
+          Eki Transit · v3.0
+        </p>
       </div>
     </div>
   );

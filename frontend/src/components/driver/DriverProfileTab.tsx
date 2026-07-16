@@ -6,7 +6,7 @@ import { useDrivers } from "@/hooks/useDrivers";
 import { db, storage } from "@/lib/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { User, ClipboardList, Settings, LogOut, ChevronRight, Wrench, BadgeCheck, Camera, Loader2 } from "lucide-react";
+import { CircleUserRound as User, LogOut, BadgeCheck, Camera, Loader2 } from "lucide-react";
 
 interface Props {
   driverId: string;
@@ -39,102 +39,119 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
       });
     } catch (error) {
       console.error("Error uploading photo:", error);
-      alert("Failed to upload photo. Please check your network connection.");
     } finally {
       setIsUploading(false);
     }
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-brand-dark p-8 flex flex-col items-center">
-      <div className="w-full max-w-lg space-y-12 mt-12">
+    <div className="flex-1 overflow-y-auto flex flex-col pt-safe px-5" style={{ background: "var(--surface-0)" }}>
+      <div className="w-full max-w-lg mx-auto space-y-6 mt-10 pb-32">
+        
         {/* Profile Header */}
-        <div className="flex flex-col items-center gap-6">
-          <div 
-            className="w-28 h-28 rounded-[2.5rem] bg-brand-surface border border-white/5 flex items-center justify-center text-white/10 shadow-3xl relative overflow-hidden group cursor-pointer"
-            onClick={() => fileInputRef.current?.click()}
-          >
-             <div className="absolute top-0 left-0 w-16 h-16 bg-white/5 blur-2xl z-0" />
-             
-             {displayPhotoUrl ? (
-               <img src={displayPhotoUrl} alt="Driver" className="w-full h-full object-cover z-10 relative" referrerPolicy="no-referrer" />
-             ) : (
-               <User className="w-12 h-12 text-white/40 z-10 relative" />
-             )}
+        <div className="p-6 rounded-2xl relative overflow-hidden"
+          style={{ background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
+          <div className="flex flex-col items-center gap-5 relative z-10">
+            
+            <div 
+              className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden relative cursor-pointer group"
+              style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)" }}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {displayPhotoUrl ? (
+                <img src={displayPhotoUrl} alt="Driver" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              ) : (
+                <User className="w-9 h-9" style={{ color: "var(--text-ghost)" }} />
+              )}
 
-             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm z-20">
-                {isUploading ? <Loader2 className="w-6 h-6 text-white animate-spin" /> : <Camera className="w-6 h-6 text-white/80" />}
-             </div>
-             
-             <input 
-               type="file" 
-               ref={fileInputRef} 
-               onChange={handlePhotoUpload} 
-               accept="image/*" 
-               className="hidden" 
-             />
-          </div>
-          <div className="text-center">
-            <h2 className="text-3xl font-bold font-display tracking-tight text-white mb-2" style={{ fontFamily: "Outfit, sans-serif" }}>
-              Driver {driverId.replace("drv_", "#")}
-            </h2>
-            <div className="flex items-center justify-center gap-2">
-               <BadgeCheck className="w-3.5 h-3.5 text-blue-500" />
-               <p className="text-[10px] font-black text-white/20 uppercase tracking-[0.2em]">Authorized Operator</p>
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ background: "rgba(0,0,0,0.55)" }}>
+                {isUploading ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <Camera className="w-5 h-5 text-white" />}
+              </div>
+              
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handlePhotoUpload} 
+                accept="image/*" 
+                className="hidden" 
+              />
             </div>
-          </div>
-        </div>
 
-        {/* Current Shift Info - Refined Block */}
-        <div className="bg-brand-surface border border-white/5 rounded-[2rem] p-8 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 blur-[50px] pointer-events-none" />
-          <h3 className="text-[10px] font-black uppercase tracking-[0.25em] text-white/20 mb-6 px-1">Assignment Metrics</h3>
-          <div className="space-y-4">
-            <div className="flex justify-between items-center bg-brand-dark/40 p-4 rounded-2xl border border-white/5">
-              <span className="text-white/40 text-xs font-bold uppercase tracking-widest">Active Unit</span>
-              <span className="font-black font-mono tracking-widest text-white/80">{busId}</span>
-            </div>
-            <div className="flex justify-between items-center bg-brand-dark/40 p-4 rounded-2xl border border-white/5">
-              <span className="text-white/40 text-xs font-bold uppercase tracking-widest">Duty Status</span>
-              <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
-                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                 <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Active</span>
+            <div className="text-center">
+              <h2 className="text-xl font-extrabold tracking-tight mb-1.5" style={{ color: "var(--text-primary)" }}>
+                {currentDriver?.name || `Driver ${driverId.replace("drv_", "#")}`}
+              </h2>
+              <div className="flex items-center justify-center gap-1.5">
+                <BadgeCheck className="w-3.5 h-3.5" style={{ color: "#60A5FA" }} />
+                <span className="text-[10px] font-semibold" style={{ color: "var(--text-ghost)", letterSpacing: "0.08em" }}>
+                  AUTHORIZED OPERATOR
+                </span>
               </div>
             </div>
           </div>
         </div>
 
+        {/* Assignment Metrics */}
+        <div className="rounded-xl overflow-hidden"
+          style={{ background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
+          <div className="p-4" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+            <span className="text-[10px] font-semibold" style={{ color: "var(--text-ghost)" }}>
+              Assignment
+            </span>
+          </div>
+          <div className="p-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>Active unit</span>
+              <span className="font-semibold tabular-nums text-[13px] tracking-wide" style={{ color: "var(--text-secondary)" }}>
+                {busId}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>Duty status</span>
+              {isTracking ? (
+                <div className="status-live" style={{ fontSize: "10px", padding: "3px 10px" }}>
+                  On shift
+                </div>
+              ) : (
+                <span className="text-[10px] font-semibold px-2.5 py-1 rounded-md"
+                  style={{ background: "var(--surface-3)", color: "var(--text-ghost)" }}>
+                  Off duty
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
 
-
-        {/* Actions List - Deep Charcoal Mono */}
-        <div className="bg-brand-surface border border-white/5 rounded-[2rem] overflow-hidden mt-8 shadow-3xl">
+        {/* Actions */}
+        <div className="rounded-xl overflow-hidden"
+          style={{ background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
           <button
             aria-label="End shift and go offline"
             disabled={!isTracking}
             onClick={() => {
-              if (confirm("End your shift and go offline? Passengers will no longer see your bus.")) {
+              if (confirm("End your shift? Passengers will no longer see your bus.")) {
                 onStopTracking();
               }
             }}
-            className={`w-full flex items-center justify-between p-6 bg-transparent transition-all group ${
-              isTracking
-                ? 'hover:bg-red-500/10 cursor-pointer'
-                : 'opacity-40 cursor-not-allowed'
-            }`}
+            className="w-full flex items-center justify-between p-4 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{ background: "transparent" }}
           >
-            <div className="flex items-center gap-5">
-              <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-red-500/10 transition-colors">
-                <LogOut className="w-5 h-5 text-red-400" />
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center"
+                style={{ background: "var(--status-danger-bg)" }}>
+                <LogOut className="w-4 h-4" style={{ color: "var(--status-danger)" }} />
               </div>
-              <span className="text-sm font-bold tracking-tight text-red-400">
-                {isTracking ? "End Shift" : "Not On Shift"}
+              <span className="text-[13px] font-semibold" style={{ color: isTracking ? "var(--status-danger)" : "var(--text-ghost)" }}>
+                {isTracking ? "End Shift" : "Not on shift"}
               </span>
             </div>
-            <ChevronRight className="w-4 h-4 text-white/10 group-hover:text-white/40 transition-colors" />
           </button>
         </div>
         
-        <p className="text-center text-[10px] text-white/10 font-bold uppercase tracking-widest pb-12">Operator ID: {driverId.toUpperCase()}</p>
+        <p className="text-center text-[10px] font-semibold pt-2" style={{ color: "var(--text-ghost)" }}>
+          Operator ID: {driverId.toUpperCase()}
+        </p>
       </div>
     </div>
   );

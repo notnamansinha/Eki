@@ -8,17 +8,17 @@ import { getDistanceMeters } from "@/lib/mapUtils";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";
-import { LocateFixed, WifiOff } from "lucide-react";
+import { LocateFixed, WifiOff, Navigation } from "lucide-react";
 import { DEFAULT_CENTER, MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
-  route: RouteData;
+  route: RouteData | null;
 }
 
 interface IncomingBusData {
   busId: string;
-  routeId: string;
+  routeId: string; // 
   lat: number;
   lng: number;
   heading: number;
@@ -42,9 +42,9 @@ const WALKING_M_PER_MIN = (WALKING_KMH * 1000) / 60;
 const BUS_SPEED_FLOOR_KMH = 15;
 
 const BUS_MOTION_COLORS: Record<string, string> = {
-  moving:    "#10b981", // emerald — bus is rolling
-  stopped:   "#f59e0b", // amber   — stopped at station or in traffic
-  uncertain: "#ef4444", // red     — GPS fix lost
+  moving:    "#34D399", // emerald — bus is rolling
+  stopped:   "#FBBF24", // amber   — stopped at station or in traffic
+  uncertain: "#F87171", // red     — GPS fix lost
 };
 
 function decodePolyline(str: string, precision: number = 5) {
@@ -63,7 +63,6 @@ function decodePolyline(str: string, precision: number = 5) {
 }
 
 // ── Route polyline drawn imperatively via google.maps.Polyline ───────────────
-// Using useMap + useEffect pattern avoids needing the Polyline overlay component.
 function RoutePolylines({ decodedPath, hasBuses }: { decodedPath: { lat: number; lng: number }[], hasBuses: boolean }) {
   const map = useMap();
   const routeLineRef = useRef<google.maps.Polyline | null>(null);
@@ -111,7 +110,7 @@ function MapCenterer({ target, isCentered }: { target: { lat: number; lng: numbe
   return null;
 }
 
-function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
+function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route: RouteData }) {
   const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map<string, IncomingBusData>());
   const [stopETAs, setStopETAs] = useState<Record<string, number>>({});
   const [signalLostBuses, setSignalLostBuses] = useState<Set<string>>(new Set());
@@ -264,23 +263,27 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
 
   return (
     <>
-      {/* ── Signal Lost Banner ─────────────────────────────────────────── */}
+      {/* ── Signal Lost Banner ── */}
       {signalLostBuses.size > 0 && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2
-                        bg-amber-900/90 border border-amber-500/60 text-amber-200
-                        px-4 py-2 rounded-xl text-sm backdrop-blur-md shadow-lg
-                        animate-in fade-in slide-in-from-top-2 duration-300">
-          <WifiOff className="w-4 h-4 shrink-0" />
-          <span>
-            GPS signal lost
-            {signalLostMinutes !== null && signalLostMinutes > 0
-              ? ` — last seen ${signalLostMinutes} min ago`
-              : " — reconnecting…"}
-          </span>
+        <div className="absolute top-10 left-4 right-4 z-50 animate-slide-down">
+          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[12px] font-semibold"
+            style={{ 
+              background: "var(--status-warning-bg)", 
+              border: "1px solid rgba(251, 191, 36, 0.2)",
+              color: "var(--status-warning)" 
+            }}>
+            <WifiOff className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              GPS signal lost
+              {signalLostMinutes !== null && signalLostMinutes > 0
+                ? ` · ${signalLostMinutes}m ago`
+                : " · reconnecting…"}
+            </span>
+          </div>
         </div>
       )}
 
-      <div className="absolute inset-0 z-0" onPointerDown={() => setIsCentered(false)}>
+      <div className="absolute inset-0 z-0" style={{ background: "var(--surface-0)" }} onPointerDown={() => setIsCentered(false)}>
         <GoogleMap
           mapId={MAPS_MAP_ID}
           defaultCenter={mapCenter}
@@ -294,12 +297,12 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
           {/* Passenger location dot */}
           {passengerLocation && (
             <AdvancedMarker position={passengerLocation}>
-              <div style={{ position: "relative", width: 20, height: 20 }}>
+              <div style={{ position: "relative", width: 18, height: 18 }}>
                 <div style={{
-                  position: "absolute", inset: 0, width: 20, height: 20,
+                  position: "absolute", inset: 0, width: 18, height: 18,
                   borderRadius: "50%", background: "#3b82f6", border: "3px solid white",
                   zIndex: 10, animation: "passengerPulse 2s infinite",
-                  boxShadow: "0 0 0 0 rgba(59,130,246,0.7)"
+                  boxShadow: "0 0 0 0 rgba(59,130,246,0.6)"
                 }} />
               </div>
             </AdvancedMarker>
@@ -311,13 +314,11 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
             const snappedHeading = Math.round(bus.heading / 5) * 5;
             return (
               <AdvancedMarker key={bus.busId} position={{ lat: bus.lat, lng: bus.lng }}>
-                <div style={{ width: 48, height: 48, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 44, height: 44, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 600ms" }}>
-                    <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
-                      <path d="M12 2L20 20L12 16L4 20L12 2Z" fill={color} stroke="white" strokeWidth="1" strokeLinejoin="round" />
-                    </svg>
+                    <Navigation size={30} fill={color} color="white" strokeWidth={1} />
                   </div>
-                  <div style={{ position: "absolute", bottom: -4, right: -4, width: 10, height: 10, borderRadius: "50%", background: color, border: "1px solid #000" }} />
+                  <div style={{ position: "absolute", bottom: -3, right: -3, width: 8, height: 8, borderRadius: "50%", background: color, border: "1.5px solid #09090b" }} />
                 </div>
               </AdvancedMarker>
             );
@@ -330,20 +331,20 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
               <AdvancedMarker key={`stop-${stop.id || i}`} position={{ lat: stop.lat, lng: stop.lng }}>
                 {isTarget ? (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                    <div style={{ position: "absolute", width: 32, height: 32, background: "#f97316", borderRadius: "50%", animation: "ripple 2s infinite" }} />
-                    <div style={{ width: 32, height: 32, background: "#f97316", border: "4px solid #fb923c", borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 15px rgba(0,0,0,0.3)" }}>
-                      <span style={{ color: "white", fontWeight: 900, fontSize: 12 }}>{String.fromCharCode(65 + i)}</span>
+                    <div style={{ position: "absolute", width: 28, height: 28, background: "var(--accent)", borderRadius: "50%", animation: "ripple 2s infinite" }} />
+                    <div style={{ width: 28, height: 28, background: "var(--accent)", border: "3px solid #fb923c", borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 12px rgba(250,93,41,0.3)" }}>
+                      <span style={{ color: "white", fontWeight: 800, fontSize: 11 }}>{String.fromCharCode(65 + i)}</span>
                     </div>
-                    <span style={{ marginTop: 8, padding: "6px 16px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", color: "white", borderRadius: 12, fontSize: 10, whiteSpace: "nowrap", zIndex: 50, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2em" }}>
+                    <span style={{ marginTop: 6, padding: "3px 10px", background: "var(--surface-2)", border: "1px solid var(--border-default)", color: "var(--text-primary)", borderRadius: 8, fontSize: 9, whiteSpace: "nowrap", zIndex: 50, fontWeight: 700 }}>
                       {stop.shortName}
                     </span>
                   </div>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: 0.7, transform: "scale(0.9)" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, background: "#f97316", border: "2px solid #fb923c", borderRadius: "50%", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}>
-                      <span style={{ color: "white", fontWeight: 900, fontSize: 10 }}>{String.fromCharCode(65 + i)}</span>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: 0.75 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, background: "var(--accent)", border: "2px solid #fb923c", borderRadius: "50%", boxShadow: "0 2px 4px rgba(0,0,0,0.2)" }}>
+                      <span style={{ color: "white", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
                     </div>
-                    <span style={{ marginTop: 4, padding: "2px 8px", background: "rgba(30,41,59,0.8)", color: "white", borderRadius: 4, fontSize: 8, whiteSpace: "nowrap", opacity: 0.6, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                    <span style={{ marginTop: 3, padding: "1px 6px", background: "var(--surface-2)", color: "var(--text-tertiary)", borderRadius: 4, fontSize: 8, whiteSpace: "nowrap", fontWeight: 600 }}>
                       {stop.shortName}
                     </span>
                   </div>
@@ -356,28 +357,31 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
 
       <style>{`
         @keyframes ripple {
-          0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.5); }
-          70% { box-shadow: 0 0 0 30px rgba(249, 115, 22, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
+          0% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0.4); }
+          70% { box-shadow: 0 0 0 20px rgba(250, 93, 41, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0); }
         }
         @keyframes passengerPulse {
-          0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
-          70% { box-shadow: 0 0 0 18px rgba(59, 130, 246, 0); }
+          0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.6); }
+          70% { box-shadow: 0 0 0 14px rgba(59, 130, 246, 0); }
           100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
         }
       `}</style>
 
       {passengerLocation && (
-        <div className="absolute bottom-[80px] right-4 z-40">
+        <div className="absolute bottom-[90px] right-4 z-40">
           <button
             onClick={() => setIsCentered(true)}
-            className={`flex items-center gap-2 px-4 py-3 rounded-2xl shadow-2xl transition-all duration-300 border active:scale-95 ${
-              isCentered
-                ? "bg-blue-500 text-white border-blue-400 opacity-70 scale-95"
-                : "bg-brand-surface text-white border-white/10"
-            }`}
+            className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-300 border active:scale-95"
+            style={{
+              background: isCentered ? "rgba(59, 130, 246, 0.15)" : "var(--surface-2)",
+              borderColor: isCentered ? "rgba(59, 130, 246, 0.3)" : "var(--border-default)",
+              color: isCentered ? "#60A5FA" : "var(--text-secondary)",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+            }}
+            aria-label="Center on my location"
           >
-            <LocateFixed className="w-5 h-5" />
+            <LocateFixed className="w-4.5 h-4.5" />
           </button>
         </div>
       )}
@@ -394,9 +398,12 @@ function PassengerMapInner({ targetStop, route }: PassengerMapProps) {
 }
 
 export default function PassengerMap(props: PassengerMapProps) {
+  if (!props.route) {
+    return <div style={{ position: "relative", width: "100%", height: "100%", background: "var(--surface-0)" }} />;
+  }
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <PassengerMapInner {...props} />
+      <PassengerMapInner targetStop={props.targetStop} route={props.route!} />
     </div>
   );
 }

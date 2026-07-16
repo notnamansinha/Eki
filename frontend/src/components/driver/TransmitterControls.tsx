@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRoutes } from "@/hooks/useRoutes";
-import { Bus, Navigation, Play, Square, ChevronDown, ChevronUp, MapPin } from "lucide-react";
+import { BusFront as Bus, Navigation, Play, Square, ChevronDown, ChevronUp, MapPin } from "lucide-react";
 
 import { DriverData } from "@/hooks/useDrivers";
 import { BusData } from "@/hooks/useBuses";
@@ -51,112 +51,125 @@ export default function TransmitterControls({
   }, [isTracking]);
 
   return (
-    <div className={`flex flex-col w-full bg-brand-dark rounded-t-3xl border-t border-white/10 shadow-2xl transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] overflow-hidden relative`}>
-      {/* Drag Handle / Header */}
+    <div className="flex flex-col w-full rounded-t-2xl overflow-hidden relative transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
+      style={{ background: "var(--surface-1)", borderTop: "1px solid var(--border-default)" }}>
+      {/* Handle / Header */}
       <div 
-        className="w-full h-[60px] flex items-center justify-between px-6 cursor-pointer relative"
+        className="w-full h-[52px] flex items-center justify-between px-5 cursor-pointer relative"
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 w-12 h-1.5 bg-white/20 rounded-full" />
-        <div className="flex items-center gap-3 mt-2">
-          <Navigation className="w-4 h-4 text-white/50" />
-          <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/70">
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full" style={{ background: "var(--surface-4)" }} />
+        <div className="flex items-center gap-2.5 mt-1">
+          <Navigation className="w-3.5 h-3.5" style={{ color: "var(--text-ghost)" }} />
+          <span className="text-[11px] font-semibold" style={{ color: "var(--text-secondary)" }}>
             Transmitter Controls
           </span>
         </div>
-        <div className="mt-2 text-white/40">
-          {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
+        <div className="mt-1" style={{ color: "var(--text-ghost)" }}>
+          {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
         </div>
       </div>
 
-      <div className={`px-6 md:px-8 gap-5 md:gap-6 flex-col overflow-y-auto max-h-[55vh] ${isExpanded ? 'flex pb-8' : 'hidden'}`}>
+      <div className={`px-5 gap-4 flex-col overflow-y-auto max-h-[55vh] ${isExpanded ? 'flex pb-6' : 'hidden'}`}>
 
-        {/* Hardware Selector */}
+        {/* Vehicle Selector */}
         {!isTracking ? (
-          <div className="space-y-3">
-            <label className="text-[10px] text-white/20 font-black uppercase tracking-[0.2em] px-1">Hardware Identity (Fleet Vehicle)</label>
-            <div className="relative group">
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
+              Vehicle
+            </label>
+            <div className="relative">
               <select
                 value={busId}
                 onChange={(e) => setSelectedBusId(e.target.value)}
-                className="w-full h-14 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-2xl px-6 py-2.5 text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-white/20 appearance-none shadow-2xl transition-all cursor-pointer"
+                className="w-full h-12 rounded-xl px-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none cursor-pointer transition-all"
+                style={{ 
+                  background: "var(--surface-3)", 
+                  border: "1px solid var(--border-default)", 
+                  color: "var(--text-primary)" 
+                }}
               >
-                <option value="" className="bg-[#1a1c29] text-white min-h-[40px]">— SELECT VEHICLE —</option>
+                <option value="" style={{ background: "var(--surface-2)" }}>Select vehicle…</option>
                 {buses.map((b) => (
-                  <option key={b.id} value={b.id} className="bg-[#1a1c29] text-white min-h-[40px]">{b.name} ({b.id})</option>
+                  <option key={b.id} value={b.id} style={{ background: "var(--surface-2)" }}>{b.name} ({b.id})</option>
                 ))}
               </select>
-              <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 group-hover:text-white/60 transition-colors pointer-events-none" />
+              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--text-ghost)" }} />
             </div>
           </div>
         ) : (
-          <div className="space-y-3">
-            <label className="text-[10px] text-white/20 font-black uppercase tracking-[0.2em] px-1">Hardware Identity</label>
-            <div className="w-full bg-brand-dark/40 border border-white/5 rounded-2xl px-6 py-4 text-white text-sm flex items-center justify-between shadow-inner">
-              <div className="flex items-center gap-4">
-                <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">
-                  <Bus className="w-4 h-4 text-white/50" />
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
+              Vehicle
+            </label>
+            <div className="w-full rounded-xl px-4 py-3 text-[13px] flex items-center justify-between"
+              style={{ background: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}>
+              <div className="flex items-center gap-3">
+                <Bus className="w-4 h-4" style={{ color: "var(--text-ghost)" }} />
+                <span className="font-semibold tabular-nums tracking-wide" style={{ color: "var(--text-secondary)" }}>
+                  {busId || "UNASSIGNED"}
+                </span>
+              </div>
+              {isTracking && (
+                <div className="status-live" style={{ fontSize: "9px", padding: "2px 8px" }}>
+                  Live
                 </div>
-                <span className="font-black font-mono tracking-widest text-white/80">{busId || "UNASSIGNED"}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                 {isTracking ? (
-                   <>
-                     <span className="w-2 h-2 rounded-full bg-status-active shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
-                     <span className="text-[9px] font-black tracking-widest text-status-active uppercase">Operational</span>
-                   </>
-                 ) : (
-                   <>
-                     <span className="w-2 h-2 rounded-full bg-white/20" />
-                     <span className="text-[9px] font-black tracking-widest text-white/40 uppercase">Offline</span>
-                   </>
-                 )}
-              </div>
+              )}
             </div>
           </div>
         )}
 
         {/* Operator Selector */}
         {!isTracking && (
-          <div className="space-y-3">
-            <label className="text-[10px] text-white/20 font-black uppercase tracking-[0.2em] px-1">Operator Identity</label>
-            <div className="relative group">
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
+              Operator
+            </label>
+            <div className="relative">
               <select
                 value={driverId}
                 onChange={(e) => setDriverId(e.target.value)}
-                className="w-full h-14 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-2xl px-6 py-2.5 text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-white/20 appearance-none shadow-2xl transition-all cursor-pointer"
+                className="w-full h-12 rounded-xl px-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none cursor-pointer transition-all"
+                style={{ 
+                  background: "var(--surface-3)", 
+                  border: "1px solid var(--border-default)", 
+                  color: "var(--text-primary)" 
+                }}
               >
-                <option value="" className="bg-[#1a1c29] text-white min-h-[40px]">— SELECT OPERATOR —</option>
+                <option value="" style={{ background: "var(--surface-2)" }}>Select operator…</option>
                 {drivers.map((d) => (
-                  <option key={d.id} value={d.id} className="bg-[#1a1c29] text-white min-h-[40px]">{d.name} ({d.id})</option>
+                  <option key={d.id} value={d.id} style={{ background: "var(--surface-2)" }}>{d.name} ({d.id})</option>
                 ))}
               </select>
-              <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 group-hover:text-white/60 transition-colors pointer-events-none" />
+              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--text-ghost)" }} />
             </div>
           </div>
         )}
 
-        {/* Path Selector - Single Select */}
-        <div className="space-y-3">
-          <label className="text-[10px] text-white/20 font-black uppercase tracking-[0.2em] px-1">Active Route ({selectedRouteIds.length > 0 ? 1 : 0} selected)</label>
-          <div className="bg-brand-dark/40 border border-white/5 rounded-2xl overflow-hidden shadow-inner">
+        {/* Route Selector */}
+        <div className="space-y-1.5">
+          <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
+            Route {selectedRouteIds.length > 0 ? "· 1 selected" : ""}
+          </label>
+          <div className="rounded-xl overflow-hidden" style={{ background: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}>
             {!busId ? (
-              <p className="text-[10px] text-white/20 font-bold uppercase tracking-widest text-center py-4">Select a vehicle first</p>
+              <p className="text-[11px] font-medium text-center py-4" style={{ color: "var(--text-ghost)" }}>
+                Select a vehicle first
+              </p>
             ) : (() => {
               if (buses.length === 0 || routes.length === 0) {
-                return <p className="text-[10px] text-white/20 font-bold uppercase tracking-widest text-center py-4 animate-pulse">Synchronizing Fleet Data...</p>;
+                return <p className="text-[11px] font-medium text-center py-4 animate-pulse" style={{ color: "var(--text-ghost)" }}>Loading fleet data…</p>;
               }
 
               const activeBus = buses.find(b => b.id === busId);
-              // Backward compatibility for legacy assignedRouteId
               const busRoutes = activeBus?.assignedRoutes || ((activeBus as any)?.assignedRouteId ? [(activeBus as any).assignedRouteId] : []);
               const allowedRoutes = routes.filter(r => busRoutes.includes(r.id));
               
               if (allowedRoutes.length === 0) {
                 return (
-                  <div className="flex flex-col items-center py-6 px-4 text-center">
-                    <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest mb-1">No Routes Assigned</p>
-                    <p className="text-[9px] text-white/20 font-medium">Vehicle "{busId}" is not authorized for any routes in the Admin Panel.</p>
+                  <div className="flex flex-col items-center py-5 px-4 text-center">
+                    <p className="text-[11px] font-semibold mb-0.5" style={{ color: "var(--status-danger)" }}>No routes assigned</p>
+                    <p className="text-[10px]" style={{ color: "var(--text-ghost)" }}>Vehicle "{busId}" has no authorized routes.</p>
                   </div>
                 );
               }
@@ -166,14 +179,18 @@ export default function TransmitterControls({
                 return (
                   <label
                     key={r.id}
-                    className={`flex items-center gap-4 px-5 py-4 cursor-pointer border-b border-white/5 last:border-b-0 transition-all ${
-                      isSelected ? 'bg-white/5' : 'hover:bg-white/3'
-                    }`}
+                    className="flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors"
+                    style={{ 
+                      borderBottom: "1px solid var(--border-subtle)",
+                      background: isSelected ? "var(--surface-4)" : "transparent",
+                    }}
                   >
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-                      isSelected ? 'border-emerald-400 bg-emerald-500/20' : 'border-white/20 bg-transparent'
-                    }`}>
-                      {isSelected && <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full" />}
+                    <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all"
+                      style={{
+                        borderColor: isSelected ? "var(--status-live)" : "var(--text-ghost)",
+                        background: isSelected ? "rgba(52,211,153,0.15)" : "transparent",
+                      }}>
+                      {isSelected && <div className="w-2 h-2 rounded-full" style={{ background: "var(--status-live)" }} />}
                     </div>
                     <input
                       type="radio"
@@ -187,8 +204,10 @@ export default function TransmitterControls({
                       }}
                     />
                     <div className="flex flex-col">
-                      <span className={`text-sm font-bold tracking-tight ${isSelected ? 'text-white' : 'text-white/40'}`}>{r.name}</span>
-                      <span className="text-[9px] font-mono text-white/20 tracking-widest">{r.id}</span>
+                      <span className="text-[13px] font-semibold" style={{ color: isSelected ? "var(--text-primary)" : "var(--text-tertiary)" }}>
+                        {r.name}
+                      </span>
+                      <span className="text-[9px] tabular-nums" style={{ color: "var(--text-ghost)" }}>{r.id}</span>
                     </div>
                   </label>
                 );
@@ -197,24 +216,25 @@ export default function TransmitterControls({
           </div>
         </div>
         
-        {/* Expanded Tracking Controls */}
-        <div className="pt-4">
+        {/* Action Button */}
+        <div className="pt-2">
           {!isTracking ? (
           <button
               aria-label="Go live and start transmitting location"
               onClick={onStartTracking}
-              disabled={!busId || !driverId || selectedRouteIds.length === 0 || !isSocketConnected}
-              className="w-full py-5 rounded-[1.5rem] bg-white text-brand-dark font-black text-sm hover:scale-[1.02] active:scale-95 transition-all shadow-3xl flex items-center justify-center gap-3 tracking-[0.1em] disabled:opacity-30 disabled:cursor-not-allowed"
+              disabled={!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0 || !isSocketConnected}
+              className="w-full py-4 rounded-xl font-semibold text-[14px] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 disabled:opacity-30 disabled:cursor-not-allowed"
+              style={{ background: "var(--text-primary)", color: "var(--surface-0)" }}
             >
               {!isSocketConnected ? (
                 <>
-                  <span className="w-3 h-3 rounded-full bg-amber-400 animate-pulse" />
-                  CONNECTING…
+                  <span className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: "var(--status-warning)" }} />
+                  Connecting…
                 </>
               ) : (
                 <>
-                  <Play className="w-4 h-4 fill-brand-dark" />
-                  GO LIVE
+                  <Play className="w-4 h-4" style={{ fill: "var(--surface-0)" }} />
+                  Go Live
                 </>
               )}
             </button>
@@ -222,26 +242,26 @@ export default function TransmitterControls({
           <button
               aria-label="End shift and stop transmitting"
               onClick={onStopTracking}
-              className="w-full py-5 rounded-[1.5rem] bg-red-500 text-white font-black text-sm hover:scale-[1.02] active:scale-95 transition-all shadow-3xl shadow-red-500/20 flex items-center justify-center gap-3 tracking-[0.1em]"
+              className="w-full py-4 rounded-xl font-semibold text-[14px] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
+              style={{ background: "var(--status-danger)", color: "white" }}
             >
-              <Square className="w-4 h-4 fill-white" />
-              END SHIFT
+              <Square className="w-4 h-4" style={{ fill: "white" }} />
+              End Shift
             </button>
           )}
         </div>
       </div>
 
-      {/* Collapsed View (Live Tracking Bar) */}
+      {/* Collapsed Tracking Bar */}
       {!isExpanded && isTracking && (
-        <div className="px-8 pb-6 flex items-center justify-between gap-4 animate-slide-up">
-          <div className="flex flex-col flex-1" onClick={() => setIsExpanded(true)}>
-             <div className="flex items-center gap-2 mb-1">
-               <span className="w-2.5 h-2.5 rounded-full bg-status-active shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
-               <span className="text-[10px] font-black text-status-active uppercase tracking-widest">TRANSMITTING</span>
+        <div className="px-5 pb-5 flex items-center justify-between gap-4 animate-slide-up">
+          <div className="flex flex-col flex-1 cursor-pointer" onClick={() => setIsExpanded(true)}>
+             <div className="status-live mb-1" style={{ fontSize: "9px", padding: "2px 8px", width: "fit-content" }}>
+               Transmitting
              </div>
-             <div className="flex items-center gap-2">
-                <MapPin className="w-3.5 h-3.5 text-white/20" />
-                <span className="text-sm font-bold text-white tracking-tight">
+             <div className="flex items-center gap-1.5">
+                <MapPin className="w-3 h-3" style={{ color: "var(--text-ghost)" }} />
+                <span className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
                   {selectedRouteIds.length} Route{selectedRouteIds.length !== 1 ? 's' : ''} Active
                 </span>
              </div>
@@ -249,9 +269,14 @@ export default function TransmitterControls({
           <button
             aria-label="Stop transmitting and go offline"
             onClick={onStopTracking}
-            className="h-12 px-6 rounded-2xl bg-white/5 border border-white/5 text-red-500 text-[10px] font-black uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white transition-all shadow-2xl"
+            className="h-10 px-5 rounded-xl text-[11px] font-semibold transition-all"
+            style={{ 
+              background: "var(--status-danger-bg)", 
+              border: "1px solid rgba(248,113,113,0.15)", 
+              color: "var(--status-danger)" 
+            }}
           >
-            END SHIFT
+            End Shift
           </button>
         </div>
       )}

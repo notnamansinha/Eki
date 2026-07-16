@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-
+import { Navigation } from "lucide-react";
 interface BusIconProps {
   heading: number;
   status: "active" | "idle" | "maintenance" | string;
@@ -39,21 +39,12 @@ const BusIcon = React.memo(function BusIcon({ heading, status, size = 32 }: BusI
           willChange: "transform",
         }}
       >
-        <svg 
-          width={size * 0.7} 
-          height={size * 0.7} 
-          viewBox="0 0 24 24" 
-          fill="none" 
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path 
-            d="M12 2L20 20L12 16L4 20L12 2Z" 
-            fill={colors.primary} 
-            stroke="white" 
-            strokeWidth="1"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <Navigation
+          size={size * 0.7}
+          fill={colors.primary}
+          color="white"
+          strokeWidth={1}
+        />
       </div>
 
       {/* Mini status indicator */}

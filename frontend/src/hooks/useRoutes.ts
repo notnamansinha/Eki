@@ -1,6 +1,4 @@
-import { useState, useEffect } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { useCollection } from "./useCollection";
 
 export interface RouteWaypoint {
   lat: number;
@@ -17,10 +15,11 @@ export interface RouteStop {
 
 export interface RouteData {
   id: string;
-  name: string;
+  name: string; // e.g. "1A"
+  type?: "up" | "down" | "circular";
   color: string;
-  stops: RouteStop[];
   waypoints: RouteWaypoint[];
+  stops: RouteStop[];
   /** Pre-computed encoded polyline from Google Maps (stored in Firestore during seed) */
   polyline?: string;
   /** Pre-computed route distance in meters */
@@ -30,25 +29,6 @@ export interface RouteData {
 }
 
 export function useRoutes() {
-  const [routes, setRoutes] = useState<RouteData[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "routes"), (snapshot) => {
-      const fetchedRoutes = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as RouteData[];
-      
-      setRoutes(fetchedRoutes);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching routes from Firestore:", error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
+  const { data: routes, loading } = useCollection<RouteData>("routes");
   return { routes, loading };
 }
