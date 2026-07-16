@@ -77,27 +77,30 @@ export function useAuth() {
       notifyAuthReady();
 
       if (firebaseUser) {
-        // Always show the user instantly with cached/optimistic role so the UI
-        // unblocks immediately. Firestore fetch refines the role afterwards.
+        // Always show the user instantly with cached/optimistic role.
+        // However, if the cached role is privileged, we MUST wait for Firestore
+        // to verify it before unblocking the UI to prevent localStorage tampering.
         const cached = readCache();
-        const optimisticRole: UserRole =
-          cached?.uid === firebaseUser.uid ? cached.role : "passenger";
+        const cachedRole = cached?.uid === firebaseUser.uid ? cached.role : "passenger";
+        const isSafeToUnblock = cachedRole === "passenger";
 
         const optimisticUser: AppUser = {
           uid: firebaseUser.uid,
           email: firebaseUser.email,
           displayName: firebaseUser.displayName,
           photoURL: firebaseUser.photoURL,
-          role: optimisticRole,
+          role: cachedRole,
         };
 
         setUser(optimisticUser);
-        // Unblock the UI immediately — role may update silently below
-        setLoading(false);
-        clearTimeout(timeout);
+        
+        // Unblock the UI immediately ONLY if it's safe (passenger)
+        if (isSafeToUnblock) {
+          setLoading(false);
+          clearTimeout(timeout);
+        }
 
         // ── Background: fetch true role from Firestore ────────────────────
-        // We do NOT await this before unblocking the UI. It updates silently.
         (async () => {
           try {
             const userDocRef = doc(db, "users", firebaseUser.uid);
@@ -111,7 +114,7 @@ export function useAuth() {
                 );
               });
 
-            let role: UserRole = optimisticRole;
+            let role: UserRole = cachedRole;
 
             const userSnap = await fetchWithTimeout(getDoc(userDocRef), 3000);
 
@@ -147,10 +150,22 @@ export function useAuth() {
             };
             setUser(resolvedUser);
             writeCache(resolvedUser);
+            
+            if (!isSafeToUnblock) {
+              setLoading(false);
+              clearTimeout(timeout);
+            }
           } catch (err) {
             // Firestore failed/timed out — keep optimistic user, still functional
             console.warn("Firestore role fetch failed:", err);
             writeCache(optimisticUser);
+            
+            if (!isSafeToUnblock) {
+              // If it failed, fallback to passenger for safety
+              setUser({ ...optimisticUser, role: "passenger" });
+              setLoading(false);
+              clearTimeout(timeout);
+            }
           }
         })();
       } else {
