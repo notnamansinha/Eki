@@ -105,7 +105,10 @@ body {
   border-color: var(--border-hover);
 }
 .eki-card-interactive {
-  composes: eki-card;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  transition: border-color 0.2s ease, background 0.2s ease;
   cursor: pointer;
 }
 .eki-card-interactive:hover {
