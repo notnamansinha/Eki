@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import { LocateFixed as GPS, ArrowLeft, ChevronRight, Navigation } from "lucide-react";
+import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
@@ -25,52 +26,17 @@ export interface DriverMapProps {
 const SELECTED_ROUTE_COLOR = "#4285F4";
 type NavPhase = "preview" | "navigating";
 
-function decodePolyline(str: string, precision: number = 5) {
-  let index = 0, lat = 0, lng = 0, coordinates: { lat: number; lng: number }[] = [], shift = 0, result = 0, byte: number | null = null, latitude_change: number, longitude_change: number, factor = Math.pow(10, precision);
-  while (index < str.length) {
-    byte = null; shift = 0; result = 0;
-    do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
-    latitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    shift = result = 0;
-    do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
-    longitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lat += latitude_change; lng += longitude_change;
-    coordinates.push({ lat: lat / factor, lng: lng / factor });
-  }
-  return coordinates;
-}
-
-function RoutePolylines({ decodedPath, isNavigating }: { decodedPath: { lat: number; lng: number }[], isNavigating: boolean }) {
+// ── Traffic layer rendered imperatively ──────────────────────────────────────
+function TrafficLayer() {
   const map = useMap();
-  const greyLineRef = useRef<google.maps.Polyline | null>(null);
-  const blueLineRef  = useRef<google.maps.Polyline | null>(null);
+  const layerRef = useRef<google.maps.TrafficLayer | null>(null);
 
   useEffect(() => {
-    if (!map || decodedPath.length === 0) return;
-
-    greyLineRef.current = new google.maps.Polyline({
-      path: decodedPath,
-      strokeColor: "#9aa0a6",
-      strokeWeight: 6,
-      strokeOpacity: 0.9,
-      map,
-    });
-
-    if (isNavigating) {
-      blueLineRef.current = new google.maps.Polyline({
-        path: decodedPath,
-        strokeColor: "#3b82f6",
-        strokeWeight: 6,
-        strokeOpacity: 1,
-        map,
-      });
-    }
-
-    return () => {
-      greyLineRef.current?.setMap(null);
-      blueLineRef.current?.setMap(null);
-    };
-  }, [map, decodedPath, isNavigating]);
+    if (!map) return;
+    layerRef.current = new google.maps.TrafficLayer();
+    layerRef.current.setMap(map);
+    return () => { layerRef.current?.setMap(null); };
+  }, [map]);
 
   return null;
 }
@@ -197,12 +163,11 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
     return etaMap;
   }, [displayDur, delayMinutes, nextStop?.id, currentStopIndex, stops]);
 
-  const decodedPath = useMemo(() => {
-    if (route.polyline) return decodePolyline(route.polyline);
-    return stops.map(s => ({ lat: s.lat, lng: s.lng }));
-  }, [route.polyline, stops]);
-
   const snappedHeading = driverLocation ? Math.round(driverLocation.heading / 5) * 5 : 0;
+
+  const routeStops = useMemo(() => {
+    return stops.map(s => ({ lat: s.lat, lng: s.lng }));
+  }, [stops]);
 
   return (
     <>
@@ -214,8 +179,13 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           style={{ width: "100%", height: "100%" }}
           {...MAP_OPTIONS}
         >
+          <TrafficLayer />
           <MapCenterer target={driverLocation} isCentered={isCentered} navPhase={navPhase} />
-          <RoutePolylines decodedPath={decodedPath} isNavigating={navPhase === "navigating"} />
+          <DirectionsRoute
+            stops={routeStops}
+            color={route.color || SELECTED_ROUTE_COLOR}
+            hasBuses={navPhase === "navigating"}
+          />
 
           {/* Stop markers */}
           {stops.map((stop, i) => (

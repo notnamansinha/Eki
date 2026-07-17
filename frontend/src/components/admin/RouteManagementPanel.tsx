@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Map as GoogleMap, AdvancedMarker, useMap,
 } from "@vis.gl/react-google-maps";
+import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { useRoutes, RouteData, RouteStop } from "@/hooks/useRoutes";
 import { doc, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -207,6 +208,21 @@ function RouteEditor({
   const [saving, setSaving] = useState(false);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
 
+  // ── Traffic layer rendered imperatively ──────────────────────────────────────
+  const TrafficLayer = () => {
+    const map = useMap();
+    const layerRef = useRef<google.maps.TrafficLayer | null>(null);
+
+    useEffect(() => {
+      if (!map) return;
+      layerRef.current = new google.maps.TrafficLayer();
+      layerRef.current.setMap(map);
+      return () => { layerRef.current?.setMap(null); };
+    }, [map]);
+
+    return null;
+  };
+
   const setField = <K extends keyof EditorState>(k: K, v: EditorState[K]) =>
     setState(s => ({ ...s, [k]: v }));
 
@@ -267,6 +283,10 @@ function RouteEditor({
       setSaving(false);
     }
   };
+
+  const routeStops = useMemo(() => {
+    return state.stops.map(s => ({ lat: s.lat, lng: s.lng }));
+  }, [state.stops]);
 
   return (
     <div className="flex flex-col w-full animate-slide-up" style={{ height: "calc(100vh - 88px)" }}>
@@ -342,7 +362,13 @@ function RouteEditor({
         {/* Map */}
         <div className="flex-1 relative min-h-[260px]">
           <GoogleMap mapId={MAPS_MAP_ID} defaultCenter={DEFAULT_CENTER} defaultZoom={13} style={{ width: "100%", height: "100%" }} {...MAP_OPTIONS}>
+            <TrafficLayer />
             <MapCenter center={mapCenter} />
+            <DirectionsRoute
+              stops={routeStops}
+              color={state.color}
+              hasBuses={false}
+            />
             {state.stops.map((stop, i) => (
               <AdvancedMarker key={`s-${i}`} position={{ lat: stop.lat, lng: stop.lng }}>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>

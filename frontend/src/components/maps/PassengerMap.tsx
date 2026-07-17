@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
+import { Map as GoogleMap, AdvancedMarker, useMap, useMapsLibrary } from "@vis.gl/react-google-maps";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
@@ -89,6 +89,9 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
 
   const [passengerLocation, setPassengerLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isCentered, setIsCentered] = useState(false);
+  const routesLib = useMapsLibrary("routes");
+  const arrivalTimestampsRef = useRef<Record<string, number>>({});
+  const lastTrafficFetchRef = useRef<number>(0);
 
   // ── Passenger geolocation (read-only — ESP32 is sole source for bus GPS) ──
   useEffect(() => {
@@ -176,18 +179,6 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
               }
 
               const busSpeedKmh = bus.speed > 0 ? bus.speed : BUS_SPEED_FLOOR_KMH;
-              const mPerMin = (busSpeedKmh * 1000) / 60;
-              const distToNextStop = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, route.stops[closestStopIndex]) * 1.3;
-              const busDelay = bus.delayMinutes || 0;
-              const newStopETAs: Record<string, number> = {};
-              let accumDistM = distToNextStop;
-              newStopETAs[route.stops[closestStopIndex].id] = Math.ceil(accumDistM / mPerMin) + busDelay;
-              for (let i = closestStopIndex + 1; i < route.stops.length; i++) {
-                const segDist = getDistanceMeters(route.stops[i - 1], route.stops[i]) * 1.3;
-                accumDistM += segDist + 125;
-                newStopETAs[route.stops[i].id] = Math.ceil(accumDistM / mPerMin) + busDelay;
-              }
-              setStopETAs(prev => ({ ...prev, ...newStopETAs }));
 
               const DWELL_GATE_MS = 15_000;
               const STOP_PROXIMITY_M = 50;
@@ -226,11 +217,118 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     };
   }, [route.id, targetStop, route.stops]);
 
+  // ── 60-Second Live Traffic ETA Fetcher ─────────────────────────────────────
+  useEffect(() => {
+    if (!routesLib || !route.stops || route.stops.length === 0 || buses.size === 0) return;
+
+    const fetchETAs = async () => {
+      const now = Date.now();
+      // Only fetch once every 60 seconds
+      if (now - lastTrafficFetchRef.current < 60000) return;
+      lastTrafficFetchRef.current = now;
+
+      const service = new routesLib.DirectionsService();
+      const newArrivals: Record<string, number> = {};
+
+      for (const bus of Array.from(buses.values())) {
+        const closestStopIdx = lastStopIndexRef.current[bus.busId] ?? 0;
+        const remainingStops = route.stops.slice(closestStopIdx);
+        if (remainingStops.length === 0) continue;
+
+        // Chunking the stops 8 waypoints at a time for free tier
+        const CHUNK_SIZE = 9;
+        const waypointsList = [
+          { lat: bus.lat, lng: bus.lng, id: "bus" },
+          ...remainingStops
+        ];
+
+        const chunks: { lat: number, lng: number, id: string }[][] = [];
+        for (let i = 0; i < waypointsList.length - 1; i += CHUNK_SIZE - 1) {
+          chunks.push(waypointsList.slice(i, i + CHUNK_SIZE));
+          if (i + CHUNK_SIZE >= waypointsList.length) break;
+        }
+
+        let totalSeconds = 0;
+        const busDelaySec = (bus.delayMinutes || 0) * 60;
+
+        for (const chunk of chunks) {
+          if (chunk.length < 2) continue;
+          try {
+            const res = await service.route({
+              origin: chunk[0],
+              destination: chunk[chunk.length - 1],
+              waypoints: chunk.slice(1, -1).map(p => ({ location: p, stopover: true })),
+              travelMode: google.maps.TravelMode.DRIVING,
+              optimizeWaypoints: false,
+              drivingOptions: {
+                departureTime: new Date(),
+                trafficModel: google.maps.TrafficModel.BEST_GUESS,
+              },
+            });
+
+            if (res && res.routes[0]) {
+              const legs = res.routes[0].legs;
+              for (let i = 0; i < legs.length; i++) {
+                const leg = legs[i];
+                // Use live traffic duration if available, fallback to normal duration
+                const legSeconds = leg.duration_in_traffic?.value || leg.duration?.value || 0;
+                totalSeconds += legSeconds;
+                
+                const targetStopId = chunk[i + 1].id;
+                // Add base delay to final timestamp calculation
+                const arrivalTimestamp = now + (totalSeconds * 1000) + (busDelaySec * 1000);
+                
+                // Keep the soonest arrival if multiple buses approach the same stop
+                if (!newArrivals[targetStopId] || arrivalTimestamp < newArrivals[targetStopId]) {
+                  newArrivals[targetStopId] = arrivalTimestamp;
+                }
+              }
+            }
+          } catch (err) {
+            console.warn("[Directions API ETA Chunk Failed]", err);
+          }
+        }
+      }
+
+      arrivalTimestampsRef.current = newArrivals;
+      // Immediately trigger UI update for the new values
+      updateUI();
+    };
+
+    fetchETAs();
+    const interval = setInterval(fetchETAs, 60000);
+    return () => clearInterval(interval);
+  }, [routesLib, buses, route.stops]);
+
+  // ── ETA Smooth Interpolation ───────────────────────────────────────────────
+  const updateUI = useCallback(() => {
+    const now = Date.now();
+    const updatedETAs: Record<string, number> = {};
+    for (const [stopId, timestamp] of Object.entries(arrivalTimestampsRef.current)) {
+      const msRemaining = timestamp - now;
+      if (msRemaining > 0) {
+        updatedETAs[stopId] = Math.ceil(msRemaining / 60000);
+      } else {
+        updatedETAs[stopId] = 0;
+      }
+    }
+    setStopETAs(updatedETAs);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(updateUI, 1000);
+    return () => clearInterval(interval);
+  }, [updateUI]);
+
   const signalLostMinutes = signalLostLastSeen
     ? Math.round((Date.now() - signalLostLastSeen) / 60_000)
     : null;
 
   const mapCenter = useMemo(() => ({ lat: targetStop.lat, lng: targetStop.lng }), [targetStop.lat, targetStop.lng]);
+
+  const routeStops = useMemo(() => {
+    return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) ?? [];
+  }, [route.stops]);
 
   return (
     <>
@@ -265,7 +363,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           <MapCenterer target={passengerLocation} isCentered={isCentered} />
           <TrafficLayer />
           <DirectionsRoute
-            stops={route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) ?? []}
+            stops={routeStops}
             color={route.color || "#3b82f6"}
             hasBuses={buses.size > 0}
           />

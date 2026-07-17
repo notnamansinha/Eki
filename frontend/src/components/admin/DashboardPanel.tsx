@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Map as GoogleMap, AdvancedMarker, useMap,
 } from "@vis.gl/react-google-maps";
@@ -380,6 +380,21 @@ export default function DashboardPanel() {
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
 
+  // ── Traffic layer rendered imperatively ──────────────────────────────────────
+  const TrafficLayer = () => {
+    const map = useMap();
+    const layerRef = useRef<google.maps.TrafficLayer | null>(null);
+
+    useEffect(() => {
+      if (!map) return;
+      layerRef.current = new google.maps.TrafficLayer();
+      layerRef.current.setMap(map);
+      return () => { layerRef.current?.setMap(null); };
+    }, [map]);
+
+    return null;
+  };
+
   const inService  = activeEntries.filter(e => e.tripState === "in_service").length;
   const moving     = activeEntries.filter(e => e.motionState === "moving").length;
   const gpsLost    = activeEntries.filter(e => e.tripState === "maintenance").length;
@@ -401,6 +416,7 @@ export default function DashboardPanel() {
           style={{ width: "100%", height: "100%" }}
           {...MAP_OPTIONS}
         >
+          <TrafficLayer />
           <MapCenter center={mapCenter} />
           {activeEntries.map(entry => (
             <BusMarker
