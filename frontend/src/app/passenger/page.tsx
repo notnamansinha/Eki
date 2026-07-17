@@ -14,6 +14,7 @@ import { ref, onValue } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import RouteCarousel from "@/components/passenger/ui/RouteCarousel";
+import { useSettings } from "@/hooks/useSettings";
 import { getDistanceMeters } from "@/lib/mapUtils";
 
 type ViewState = "home" | "tracking" | "profile";
@@ -36,6 +37,7 @@ interface ActiveBusData {
 
 export default function PassengerPage() {
   const { user } = useAuth();
+  const { settings } = useSettings();
   const [currentView, setCurrentView] = useState<ViewState>("home");
   const { routes } = useRoutes();
   const [selectedRouteId, setSelectedRouteId] = useState("");
@@ -244,6 +246,11 @@ export default function PassengerPage() {
               className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth hide-scrollbar px-4 pb-32"
               style={{ scrollBehavior: 'smooth', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
+              {settings.announcementActive && settings.announcementText && (
+                <div className="mx-1 mb-3 rounded-xl px-4 py-2.5 flex items-center gap-2" style={{ background: "var(--accent-subtle)", border: "1px solid var(--accent-glow)" }}>
+                  <span className="text-[11px] font-semibold" style={{ color: "var(--accent)" }}>{settings.announcementText}</span>
+                </div>
+              )}
               {displayRoutes.length > 0 ? (
                 <RouteCarousel
                   routes={displayRoutes}
@@ -255,10 +262,10 @@ export default function PassengerPage() {
                 <div className="rounded-xl p-8 text-center mx-1"
                   style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
                   <p className="text-[13px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>
-                    No buses running
+                    {settings.noBusesMessage || "No buses running"}
                   </p>
                   <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
-                    Service starts at {PASSENGER_BUS_START_TIME}
+                    {(settings.noBusesSubMessage || "Service starts at {time}").replace("{time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
                   </p>
                 </div>
               )}
