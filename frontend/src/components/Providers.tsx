@@ -1,5 +1,7 @@
 "use client";
 
+import { useAutoUpdate } from "@/hooks/useAutoUpdate";
+
 /**
  * Root providers — intentionally lean.
  *
@@ -9,5 +11,9 @@
  * off the landing page, reducing TTI for unauthenticated visitors.
  */
 export default function Providers({ children }: { children: React.ReactNode }) {
+  // Mount the global auto-update polling hook here
+  // so it is active across all surfaces (passenger, admin, driver)
+  useAutoUpdate();
+
   return <>{children}</>;
 }
