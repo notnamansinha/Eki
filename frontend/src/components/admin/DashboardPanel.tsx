@@ -61,56 +61,22 @@ function headingLabel(d?: number): string {
   return dirs[Math.round(d / 45) % 8] + ` ${Math.round(d)}°`;
 }
 
-/**
- * Module-level singleton for RTDB activeBuses.
- * FREE TIER OPTIMISATION: only ONE Firebase RTDB connection is opened
- * regardless of how many components (DashboardPanel, FleetManagementPanel)
- * mount at the same time. Ref-counted — tears down when last consumer leaves.
- */
-let _buses: ActiveBusEntry[] = [];
-let _busListenerCount = 0;
-let _busUnsub: (() => void) | null = null;
-const _busListeners = new Set<() => void>();
-
-function ensureBusListener() {
-  if (_busUnsub) return;
-  const startListener = (user: import("firebase/auth").User) => {
-    _busUnsub = onValue(
-      ref(rtdb, "activeBuses"),
-      (snap) => {
-        const data = snap.val() as Record<string, ActiveBusEntry> | null;
-        _buses = data ? Object.values(data) : [];
-        _busListeners.forEach(fn => fn());
-      },
-      (err) => console.warn("[RTDB Dashboard] activeBuses:", err.message)
-    );
-  };
-  // onAuthStateChanged fires immediately if already signed in
-  onAuthStateChanged(auth, (user) => { if (user) startListener(user); });
-}
-
-function releaseBusListener() {
-  if (_busListenerCount === 0 && _busUnsub) {
-    _busUnsub();
-    _busUnsub = null;
-    _buses = [];
-  }
-}
-
+/* ── Live bus hook ──────────────────────────────────────────────────────────── */
 function useActiveBuses(): ActiveBusEntry[] {
-  const [, forceRender] = useState(0);
+  const [active, setActive] = useState<ActiveBusEntry[]>([]);
   useEffect(() => {
-    _busListenerCount++;
-    ensureBusListener();
-    const trigger = () => forceRender(n => n + 1);
-    _busListeners.add(trigger);
-    return () => {
-      _busListeners.delete(trigger);
-      _busListenerCount--;
-      releaseBusListener();
-    };
+    let unsub: (() => void) | undefined;
+    const authUnsub = onAuthStateChanged(auth, (user) => {
+      if (user && !unsub) {
+        unsub = onValue(ref(rtdb, "activeBuses"), (snap) => {
+          const data = snap.val() as Record<string, ActiveBusEntry> | null;
+          setActive(data ? Object.values(data) : []);
+        }, (err) => console.warn("[RTDB] activeBuses:", err.message));
+      }
+    });
+    return () => { authUnsub(); unsub?.(); };
   }, []);
-  return _buses;
+  return active;
 }
 
 /* ── Map centering helper ───────────────────────────────────────────────────── */
