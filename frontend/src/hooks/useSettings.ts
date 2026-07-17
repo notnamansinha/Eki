@@ -40,6 +40,7 @@ function notifyAll() {
 }
 
 function ensureListener() {
+  if (_timeoutId) clearTimeout(_timeoutId);
   if (_unsubscribe) return;
   _unsubscribe = onSnapshot(
     doc(db, "settings", "global"),
@@ -58,10 +59,16 @@ function ensureListener() {
   );
 }
 
+let _timeoutId: NodeJS.Timeout | undefined;
+
 function releaseListener() {
   if (_listenerCount === 0 && _unsubscribe) {
-    _unsubscribe();
-    _unsubscribe = null;
+    _timeoutId = setTimeout(() => {
+      if (_listenerCount === 0 && _unsubscribe) {
+        _unsubscribe();
+        _unsubscribe = null;
+      }
+    }, 3000);
   }
 }
 

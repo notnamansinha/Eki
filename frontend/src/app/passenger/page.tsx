@@ -11,7 +11,7 @@ import { useRoutes } from "@/hooks/useRoutes";
 import { MapPinned as MapIcon, CircleUserRound as User, Loader2, SignalHigh as Radio, ArrowLeft } from "lucide-react";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, onValue } from "firebase/database";
-import { signInAnonymously } from "firebase/auth";
+import { waitForAuth } from "@/lib/authState";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import RouteCarousel from "@/components/passenger/ui/RouteCarousel";
 import { useSettings } from "@/hooks/useSettings";
@@ -26,6 +26,7 @@ interface ActiveBusData {
   lng: number;
   heading: number;
   speed: number;
+  status?: string; // "active" | "offline"
   deviceState: string;
   tripState: string;
   motionState: string;
@@ -61,36 +62,46 @@ export default function PassengerPage() {
     let unsubscribe: (() => void) | undefined;
     let isMounted = true;
 
-    signInAnonymously(auth).then(() => {
+    waitForAuth().then(() => {
       if (!isMounted) return;
       const busesRef = ref(rtdb, "activeBuses");
 
       unsubscribe = onValue(busesRef, (snapshot) => {
         const data = snapshot.val();
+        console.log("[Passenger] RTDB activeBuses raw:", data ? Object.keys(data) : "null");
         const newBuses: ActiveBusData[] = [];
         const driverMap = new Map<string, string>();
 
         if (data) {
-          Object.values(data as Record<string, ActiveBusData>).forEach((bus) => {
+          Object.entries(data as Record<string, ActiveBusData>).forEach(([key, bus]) => {
+            bus.busId = bus.busId || key.split("_")[0];
             // Safety net: discard entries older than 5 minutes (RTDB cleanup lag).
             const isFresh = Date.now() - bus.timestamp < 300_000;
-            if (!bus.routeId || !bus.busId || !isFresh) return;
+            if (!bus.routeId || !bus.busId || !isFresh) {
+              console.log("[Passenger] Skipped (stale/missing):", key, { routeId: bus.routeId, busId: bus.busId, isFresh });
+              return;
+            }
 
-            if (bus.deviceState !== "online" || bus.tripState !== "in_service") return;
+            // Show bus if it's actively tracking — allow pre_departure so the
+            // backend tripState geofence doesn't hide a freshly started driver.
+            const isActive = bus.tripState === "in_service" || bus.tripState === "pre_departure";
+            // Only skip if explicitly marked offline by driver stop action
+            const isOffline = bus.status === "offline" || bus.deviceState === "offline";
+            console.log("[Passenger] Bus check:", key, { tripState: bus.tripState, status: bus.status, deviceState: bus.deviceState, isActive, isOffline });
+            if (!isActive || isOffline) return;
 
             newBuses.push(bus);
             if (bus.driverId) driverMap.set(bus.busId, bus.driverId);
           });
         }
 
+        console.log("[Passenger] setActiveBuses count:", newBuses.length);
         latestBusDriversRef.current = driverMap;
         setActiveBuses(newBuses);
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed:", error.message);
       });
-    }).catch((err) =>
-      console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code)
-    );
+    });
 
     return () => {
       isMounted = false;

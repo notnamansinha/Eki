@@ -2,6 +2,7 @@
   "rules": {
     "activeBuses": {
       ".read": "auth != null",
+      ".indexOn": ["routeId"],
       "$busKey": {
         ".write": "auth != null"
       }

@@ -70,7 +70,17 @@ function useActiveBuses(): ActiveBusEntry[] {
       if (user && !unsub) {
         unsub = onValue(ref(rtdb, "activeBuses"), (snap) => {
           const data = snap.val() as Record<string, ActiveBusEntry> | null;
-          setActive(data ? Object.values(data) : []);
+          if (!data) {
+            setActive([]);
+            return;
+          }
+          const freshBuses: ActiveBusEntry[] = [];
+          Object.entries(data).forEach(([key, bus]) => {
+            bus.busId = bus.busId || key.split("_")[0];
+            const isFresh = bus.timestamp && (Date.now() - bus.timestamp < 300_000);
+            if (isFresh) freshBuses.push(bus);
+          });
+          setActive(freshBuses);
         }, (err) => console.warn("[RTDB] activeBuses:", err.message));
       }
     });

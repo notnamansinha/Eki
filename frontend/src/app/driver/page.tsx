@@ -12,7 +12,7 @@ import { useDrivers } from "@/hooks/useDrivers";
 import { useBuses } from "@/hooks/useBuses";
 import { Navigation, CircleUserRound as User, SignalHigh as Radio, ArrowLeft } from "lucide-react";
 import { rtdb, auth } from "@/lib/firebase";
-import { ref, update, remove, onValue } from "firebase/database";
+import { ref, update, remove, onValue, onDisconnect } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";
 
 type Tab = "map" | "profile";
@@ -71,33 +71,60 @@ export default function DriverPage() {
   const activeRoute = routes.find(r => selectedRouteIds.includes(r.id)) || routes.find(r => r.id === selectedRouteIds[0]);
 
   const handleStartTracking = useCallback(() => {
-    if (!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0) return;
+    console.log("[Driver] handleStartTracking called", { busId, driverId, selectedRouteIds, driversLen: drivers.length });
+    if (!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0) {
+      console.warn("[Driver] Guard prevented start:", { busId, driverId, routeCount: selectedRouteIds.length, driverFound: drivers.some(d => d.id === driverId) });
+      return;
+    }
     setIsTracking(true);
 
     const currentBusId = busId;
     const currentRouteIds = selectedRouteIds;
     
     const payload = {
+      busId: currentBusId,
       driverId: driverId || user?.uid || "driver",
       status: "active",
       deviceState: "online",
       tripState: "in_service",
       timestamp: Date.now(),
-      lat: activeRoute?.stops?.[0]?.lat || 23.03, // Fallback to first stop or center
+      lat: activeRoute?.stops?.[0]?.lat || 23.03,
       lng: activeRoute?.stops?.[0]?.lng || 72.55,
-      speed: 25,
+      speed: 0,
       heading: 0,
+      motionState: "stopped",
       currentStopIndex: currentStopIndexRef.current,
       delayMinutes: delayMinutesRef.current,
     };
 
-    currentRouteIds.forEach(routeId => {
-      const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
-      update(busRef, { ...payload, routeId }).catch(err =>
-        console.error("[RTDB] Write failed:", err)
-      );
-    });
-  }, [busId, selectedRouteIds, driverId, user?.uid]);
+    console.log("[Driver] Writing to RTDB:", { currentBusId, currentRouteIds, payload, currentUser: auth.currentUser?.uid });
+
+    const doWrite = () => {
+      currentRouteIds.forEach(routeId => {
+        const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
+        update(busRef, { ...payload, routeId })
+          .then(() => console.log("[Driver] RTDB write succeeded for", `${currentBusId}_${routeId}`))
+          .catch(err => console.error("[Driver] RTDB write FAILED:", err.code, err.message));
+        
+        // Prevent ghost sessions if the driver forces app close
+        onDisconnect(busRef).update({
+          status: "offline",
+          deviceState: "offline",
+          tripState: "ended",
+          timestamp: Date.now()
+        }).catch(() => {});
+      });
+    };
+
+    if (auth.currentUser) {
+      doWrite();
+    } else {
+      // Driver not yet authenticated — sign in anonymously then write
+      signInAnonymously(auth)
+        .then(doWrite)
+        .catch(err => console.error("[Driver] Auth failed before RTDB write:", err.message));
+    }
+  }, [busId, selectedRouteIds, driverId, user?.uid, activeRoute, drivers]);
 
   // Pure GNSS listener (read-only mode for driver location)
   useEffect(() => {

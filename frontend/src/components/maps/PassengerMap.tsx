@@ -5,9 +5,10 @@ import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-m
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
+import { waitForAuth } from "@/lib/authState";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
-import { signInAnonymously } from "firebase/auth";
+
 import { LocateFixed, WifiOff, Navigation } from "lucide-react";
 import { DEFAULT_CENTER, MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 
@@ -24,6 +25,7 @@ interface IncomingBusData {
   heading: number;
   speed: number;
   timestamp: number;
+  status?: string; // "active" | "offline"
   deviceState: "online" | "offline";
   motionState: "moving" | "stopped" | "uncertain"; // Physical movement state from hardware
   tripState: "pre_departure" | "in_service" | "completed" | "maintenance"; // Service visibility
@@ -149,7 +151,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     let unsubscribe: (() => void) | undefined;
     let isMounted = true;
 
-    signInAnonymously(auth).then(() => {
+    waitForAuth().then(() => {
       if (!isMounted) return;
 
       const busesRef = query(
@@ -176,7 +178,9 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           const age = now - bus.timestamp;
           const isFresh = age < BUS_EXPIRY_MS;
 
-          if ((bus.deviceState === "online" && bus.tripState === "in_service") && isFresh) {
+          const isActiveState = bus.tripState === "in_service" || bus.tripState === "pre_departure";
+          const isOffline = bus.status === "offline" || bus.deviceState === "offline";
+          if (isActiveState && !isOffline && isFresh) {
             activeBuses.set(bus.busId, bus);
 
             if (age > SIGNAL_LOST_MS) {
@@ -252,8 +256,6 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed:", error.message);
       });
-    }).catch((err) => {
-      console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code);
     });
 
     return () => {
