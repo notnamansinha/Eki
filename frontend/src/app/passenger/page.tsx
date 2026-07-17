@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import RouteNodeList from "@/components/passenger/RouteNodeList";
+import PassengerMap from "@/components/maps/PassengerMap";
 import AccountTab from "@/components/passenger/AccountTab";
 import MessagingPanel from "@/components/shared/MessagingPanel";
 import FeedbackModal from "@/components/shared/FeedbackModal";
@@ -216,11 +216,9 @@ export default function PassengerPage() {
 
         {/* Map layer — only present on tracking */}
         <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${currentView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-          <RouteNodeList
-            targetStopId={targetStop?.id || ""}
-            route={activeRoute || null}
-            activeBusId={activeBusOnRouteId || null}
-            walkMinutesToTarget={undefined}
+          <PassengerMap
+            targetStop={targetStop!}
+            route={activeRoute}
           />
         </div>
 

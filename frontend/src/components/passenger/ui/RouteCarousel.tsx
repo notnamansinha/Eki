@@ -67,12 +67,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
 
                 <div className="flex items-baseline w-full mt-6 gap-3">
                   <div className="flex items-center gap-2">
-                    {activeBuses > 0 && (
-                      <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold tracking-wider flex items-center gap-1.5 shrink-0" style={{ background: "rgba(34, 197, 94, 0.1)", color: "var(--status-live)" }}>
-                        <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "var(--status-live)" }} />
-                        LIVE
-                      </span>
-                    )}
+
                     <div className="flex items-baseline gap-1.5 text-[11.5px] font-black whitespace-nowrap" style={{ color: "var(--text-tertiary)" }}>
                       <span>{stops.length} stops</span>
                       <span className="text-[10px] opacity-30 self-center">&bull;</span>

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
+import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
 import { waitForAuth } from "@/lib/authState";
@@ -49,53 +50,18 @@ const BUS_MOTION_COLORS: Record<string, string> = {
   uncertain: "#F87171", // red     — GPS fix lost
 };
 
-function decodePolyline(str: string, precision: number = 5) {
-  let index = 0, lat = 0, lng = 0, coordinates: { lat: number; lng: number }[] = [], shift = 0, result = 0, byte: number | null = null, latitude_change: number, longitude_change: number, factor = Math.pow(10, precision);
-  while (index < str.length) {
-    byte = null; shift = 0; result = 0;
-    do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
-    latitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    shift = result = 0;
-    do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
-    longitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lat += latitude_change; lng += longitude_change;
-    coordinates.push({ lat: lat / factor, lng: lng / factor });
-  }
-  return coordinates;
-}
 
-// ── Route polyline drawn imperatively via google.maps.Polyline ───────────────
-function RoutePolylines({ decodedPath, hasBuses }: { decodedPath: { lat: number; lng: number }[], hasBuses: boolean }) {
+// ── Traffic layer rendered imperatively ──────────────────────────────────────
+function TrafficLayer() {
   const map = useMap();
-  const routeLineRef = useRef<google.maps.Polyline | null>(null);
-  const activeLineRef = useRef<google.maps.Polyline | null>(null);
+  const layerRef = useRef<google.maps.TrafficLayer | null>(null);
 
   useEffect(() => {
-    if (!map || decodedPath.length === 0) return;
-
-    routeLineRef.current = new google.maps.Polyline({
-      path: decodedPath,
-      strokeColor: "#9aa0a6",
-      strokeWeight: 7,
-      strokeOpacity: 0.8,
-      map,
-    });
-
-    if (hasBuses) {
-      activeLineRef.current = new google.maps.Polyline({
-        path: decodedPath,
-        strokeColor: "#3b82f6",
-        strokeWeight: 7,
-        strokeOpacity: 1.0,
-        map,
-      });
-    }
-
-    return () => {
-      routeLineRef.current?.setMap(null);
-      activeLineRef.current?.setMap(null);
-    };
-  }, [map, decodedPath, hasBuses]);
+    if (!map) return;
+    layerRef.current = new google.maps.TrafficLayer();
+    layerRef.current.setMap(map);
+    return () => { layerRef.current?.setMap(null); };
+  }, [map]);
 
   return null;
 }
@@ -141,10 +107,6 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     return Math.ceil(dist / WALKING_M_PER_MIN);
   }, [passengerLocation, targetStop]);
 
-  const decodedPath = useMemo(() => {
-    if (route.polyline) return decodePolyline(route.polyline);
-    return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) || [];
-  }, [route.polyline, route.stops]);
 
   // ── RTDB subscription: filtered by routeId ───────────────────────────────
   useEffect(() => {
@@ -301,7 +263,12 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           {...MAP_OPTIONS}
         >
           <MapCenterer target={passengerLocation} isCentered={isCentered} />
-          <RoutePolylines decodedPath={decodedPath} hasBuses={buses.size > 0} />
+          <TrafficLayer />
+          <DirectionsRoute
+            stops={route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) ?? []}
+            color={route.color || "#3b82f6"}
+            hasBuses={buses.size > 0}
+          />
 
           {/* Passenger location dot */}
           {passengerLocation && (

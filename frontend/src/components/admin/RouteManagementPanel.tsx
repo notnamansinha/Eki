@@ -205,7 +205,6 @@ function RouteEditor({
 }) {
   const [state, setState] = useState<EditorState>(initial);
   const [saving, setSaving] = useState(false);
-  const [bakeError, setBakeError] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
 
   const setField = <K extends keyof EditorState>(k: K, v: EditorState[K]) =>
@@ -249,35 +248,9 @@ function RouteEditor({
       return;
     }
     setSaving(true);
-    setBakeError(null);
-
-    const waypoints = state.stops.map(s => ({ lat: s.lat, lng: s.lng }));
-    let bakedPolyline: string | undefined;
 
     try {
-      const { auth } = await import("@/lib/firebase");
-      const { getIdToken } = await import("firebase/auth");
-      const user = auth.currentUser;
-      if (!user) throw new Error("Not logged in");
-      const token = await getIdToken(user);
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-      const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 8000);
-      const res = await fetch(`${backendUrl}/api/routes/compute-polyline`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ waypoints }),
-        signal: ctrl.signal,
-      });
-      clearTimeout(tid);
-      if (!res.ok) { const e = await res.json().catch(() => ({})) as any; throw new Error(e.error || `HTTP ${res.status}`); }
-      bakedPolyline = ((await res.json()) as { polyline: string }).polyline;
-    } catch (err) {
-      const msg = err instanceof Error ? err.name === "AbortError" ? "Backend timeout" : err.message : "Unknown";
-      setBakeError(`⚠ Polyline bake skipped (${msg}). Route saved with straight-line fallback.`);
-    }
-
-    try {
+      const waypoints = state.stops.map(s => ({ lat: s.lat, lng: s.lng }));
       const routeData: RouteData = {
         id: state.routeId,
         name: state.name,
@@ -285,7 +258,6 @@ function RouteEditor({
         type: state.type,
         stops: state.stops,
         waypoints,
-        ...(bakedPolyline ? { polyline: bakedPolyline } : {}),
       };
       await setDoc(doc(db, "routes", state.routeId), routeData);
       onSaved();
@@ -363,12 +335,7 @@ function RouteEditor({
         </div>
       </div>
 
-      {bakeError && (
-        <div className="shrink-0 flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 text-amber-400 px-4 py-2 text-xs font-medium">
-          <span className="flex-1">{bakeError}</span>
-          <button onClick={() => setBakeError(null)}><X className="w-4 h-4" /></button>
-        </div>
-      )}
+
 
       {/* Body: map + stop list */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
