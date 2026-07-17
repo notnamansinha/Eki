@@ -39,6 +39,8 @@ export default function HomePage() {
         } else {
           setActiveBusCount(0);
         }
+      }, (error) => {
+        console.warn("[RTDB] activeBuses read failed:", error.message);
       });
     }).catch(() => { });
     

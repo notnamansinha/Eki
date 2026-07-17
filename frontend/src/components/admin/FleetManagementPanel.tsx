@@ -53,6 +53,8 @@ function useActiveBuses(): ActiveBusEntry[] {
         unsub = onValue(r, (snap) => {
           const data = snap.val() as Record<string, ActiveBusEntry> | null;
           setActive(data ? Object.values(data) : []);
+        }, (error) => {
+          console.warn("[RTDB] activeBuses read failed:", error.message);
         });
       }
     });

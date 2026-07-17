@@ -249,6 +249,8 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         setBuses(activeBuses);
         setSignalLostBuses(newSignalLost);
         setSignalLostLastSeen(oldestTimestamp);
+      }, (error) => {
+        console.warn("[RTDB] activeBuses read failed:", error.message);
       });
     }).catch((err) => {
       console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code);

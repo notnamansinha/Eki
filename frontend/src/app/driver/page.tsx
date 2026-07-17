@@ -118,6 +118,8 @@ export default function DriverPage() {
             heading: data.heading || 0,
           });
         }
+      }, (error) => {
+        console.warn("[RTDB] activeBuses read failed in GNSS listener:", error.message);
       });
     }).catch(err => console.warn("[RTDB Auth] GNSS listener sign-in failed:", err.code));
 

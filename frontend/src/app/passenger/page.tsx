@@ -83,6 +83,8 @@ export default function PassengerPage() {
 
         latestBusDriversRef.current = driverMap;
         setActiveBuses(newBuses);
+      }, (error) => {
+        console.warn("[RTDB] activeBuses read failed:", error.message);
       });
     }).catch((err) =>
       console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code)

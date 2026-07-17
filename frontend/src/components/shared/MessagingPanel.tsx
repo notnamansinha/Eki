@@ -52,7 +52,7 @@ export default function MessagingPanel({
       unsubscribe = onValue(messagesRef, (snapshot) => {
         const data = snapshot.val();
         if (data) {
-          const msgs = Object.entries(data).map(([id, val]: [string, Partial<Message>]) => ({
+          const msgs = Object.entries(data).map(([id, val]) => ({
             id,
             ...(val as Record<string, unknown>) // Type assertion to satisfy spread, since val is unknown/Partial
           }) as Message).sort((a: Message, b: Message) => (a.timestamp || 0) - (b.timestamp || 0));
@@ -73,6 +73,8 @@ export default function MessagingPanel({
         } else {
           setMessages([]);
         }
+      }, (error) => {
+        console.warn("[RTDB] messages read failed:", error.message);
       });
     }).catch(err => console.warn("[RTDB Auth] Messaging sign-in failed:", err.code));
 
