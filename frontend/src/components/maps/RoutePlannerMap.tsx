@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 
@@ -80,7 +80,14 @@ function RoutePlannerMapInner({
   viaStopId,
   onStopClick,
 }: RoutePlannerMapProps) {
-  const decodedPath = polyline ? decodePolyline(polyline) : [];
+  // Memoized: without this, decodedPath was a new array reference on every
+  // render, which caused RouteLine and BoundsFitter's effects (both keyed on
+  // decodedPath) to tear down/recreate the polyline and re-run fitBounds on
+  // every unrelated re-render (e.g. hovering a stop), snapping the viewport.
+  const decodedPath = useMemo(
+    () => (polyline ? decodePolyline(polyline) : []),
+    [polyline]
+  );
 
   return (
     <div style={{ width: "100%", height: "100%" }}>

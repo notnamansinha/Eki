@@ -63,23 +63,48 @@ function decodePolyline(str: string, precision: number = 5) {
 }
 
 // ── Route polyline drawn imperatively via google.maps.Polyline ───────────────
+// Split into two effects so toggling `hasBuses` (which happens whenever a bus's
+// tripState flips) only touches the blue "active" line, not the grey base
+// route — previously both were recreated together on every hasBuses change.
 function RoutePolylines({ decodedPath, hasBuses }: { decodedPath: { lat: number; lng: number }[], hasBuses: boolean }) {
   const map = useMap();
   const routeLineRef = useRef<google.maps.Polyline | null>(null);
   const activeLineRef = useRef<google.maps.Polyline | null>(null);
 
+  // Static grey base route — only rebuilt when the map instance or the
+  // decoded path itself changes, never when buses come and go.
   useEffect(() => {
     if (!map || decodedPath.length === 0) return;
 
-    routeLineRef.current = new google.maps.Polyline({
-      path: decodedPath,
-      strokeColor: "#9aa0a6",
-      strokeWeight: 7,
-      strokeOpacity: 0.8,
-      map,
-    });
+    if (routeLineRef.current) {
+      routeLineRef.current.setPath(decodedPath);
+    } else {
+      routeLineRef.current = new google.maps.Polyline({
+        path: decodedPath,
+        strokeColor: "#9aa0a6",
+        strokeWeight: 7,
+        strokeOpacity: 0.8,
+        map,
+      });
+    }
 
-    if (hasBuses) {
+    return () => {
+      routeLineRef.current?.setMap(null);
+      routeLineRef.current = null;
+    };
+  }, [map, decodedPath]);
+
+  // Blue "active" overlay — shown only while a bus is live on this route.
+  useEffect(() => {
+    if (!map || decodedPath.length === 0 || !hasBuses) {
+      activeLineRef.current?.setMap(null);
+      activeLineRef.current = null;
+      return;
+    }
+
+    if (activeLineRef.current) {
+      activeLineRef.current.setPath(decodedPath);
+    } else {
       activeLineRef.current = new google.maps.Polyline({
         path: decodedPath,
         strokeColor: "#3b82f6",
@@ -90,8 +115,8 @@ function RoutePolylines({ decodedPath, hasBuses }: { decodedPath: { lat: number;
     }
 
     return () => {
-      routeLineRef.current?.setMap(null);
       activeLineRef.current?.setMap(null);
+      activeLineRef.current = null;
     };
   }, [map, decodedPath, hasBuses]);
 
@@ -128,7 +153,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     const watchId = navigator.geolocation.watchPosition(
       (pos) => setPassengerLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => {},
-      { enableHighAccuracy: true, maximumAge: 5000 }
+      { enableHighAccuracy: true, maximumAge: 10000 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);

@@ -40,23 +40,47 @@ function decodePolyline(str: string, precision: number = 5) {
   return coordinates;
 }
 
+// Split into two effects so toggling `isNavigating` (preview -> navigating)
+// only touches the blue line, not the grey base route — previously both were
+// recreated together every time the driver started/stopped navigation.
 function RoutePolylines({ decodedPath, isNavigating }: { decodedPath: { lat: number; lng: number }[], isNavigating: boolean }) {
   const map = useMap();
   const greyLineRef = useRef<google.maps.Polyline | null>(null);
   const blueLineRef  = useRef<google.maps.Polyline | null>(null);
 
+  // Static grey base route.
   useEffect(() => {
     if (!map || decodedPath.length === 0) return;
 
-    greyLineRef.current = new google.maps.Polyline({
-      path: decodedPath,
-      strokeColor: "#9aa0a6",
-      strokeWeight: 6,
-      strokeOpacity: 0.9,
-      map,
-    });
+    if (greyLineRef.current) {
+      greyLineRef.current.setPath(decodedPath);
+    } else {
+      greyLineRef.current = new google.maps.Polyline({
+        path: decodedPath,
+        strokeColor: "#9aa0a6",
+        strokeWeight: 6,
+        strokeOpacity: 0.9,
+        map,
+      });
+    }
 
-    if (isNavigating) {
+    return () => {
+      greyLineRef.current?.setMap(null);
+      greyLineRef.current = null;
+    };
+  }, [map, decodedPath]);
+
+  // Blue "navigating" overlay.
+  useEffect(() => {
+    if (!map || decodedPath.length === 0 || !isNavigating) {
+      blueLineRef.current?.setMap(null);
+      blueLineRef.current = null;
+      return;
+    }
+
+    if (blueLineRef.current) {
+      blueLineRef.current.setPath(decodedPath);
+    } else {
       blueLineRef.current = new google.maps.Polyline({
         path: decodedPath,
         strokeColor: "#3b82f6",
@@ -67,8 +91,8 @@ function RoutePolylines({ decodedPath, isNavigating }: { decodedPath: { lat: num
     }
 
     return () => {
-      greyLineRef.current?.setMap(null);
       blueLineRef.current?.setMap(null);
+      blueLineRef.current = null;
     };
   }, [map, decodedPath, isNavigating]);
 
