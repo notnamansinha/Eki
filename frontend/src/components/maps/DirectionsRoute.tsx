@@ -77,6 +77,10 @@ export default function DirectionsRoute({ stops, color = "#3b82f6", hasBuses = f
           waypoints,
           travelMode: google.maps.TravelMode.DRIVING,
           optimizeWaypoints: false,
+          drivingOptions: {
+            departureTime: new Date(),
+            trafficModel: google.maps.TrafficModel.BEST_GUESS,
+          },
         },
         (result, status) => {
           if (status === google.maps.DirectionsStatus.OK && result) {
