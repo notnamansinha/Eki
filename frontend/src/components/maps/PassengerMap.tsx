@@ -144,115 +144,120 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) || [];
   }, [route.polyline, route.stops]);
 
-  // ── Anonymous auth before reading RTDB ──────────────────────────────────
-  useEffect(() => {
-    signInAnonymously(auth).catch((err) => {
-      console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code);
-    });
-  }, []);
-
   // ── RTDB subscription: filtered by routeId ───────────────────────────────
   useEffect(() => {
-    const busesRef = query(
-      ref(rtdb, "activeBuses"),
-      orderByChild("routeId"),
-      equalTo(route.id)
-    );
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
 
-    const unsubscribe = onValue(busesRef, (snapshot) => {
-      const data = snapshot.val() as Record<string, IncomingBusData>;
-      const now = Date.now();
+    signInAnonymously(auth).then(() => {
+      if (!isMounted) return;
 
-      if (!data) {
-        setBuses(new Map());
-        setSignalLostBuses(new Set());
-        return;
-      }
+      const busesRef = query(
+        ref(rtdb, "activeBuses"),
+        orderByChild("routeId"),
+        equalTo(route.id)
+      );
 
-      const activeBuses = new Map<string, IncomingBusData>();
-      const newSignalLost = new Set<string>();
-      let oldestTimestamp: number | null = null;
+      unsubscribe = onValue(busesRef, (snapshot) => {
+        const data = snapshot.val() as Record<string, IncomingBusData>;
+        const now = Date.now();
 
-      Object.values(data).forEach((bus) => {
-        const age = now - bus.timestamp;
-        const isFresh = age < BUS_EXPIRY_MS;
-
-        if ((bus.deviceState === "online" && bus.tripState === "in_service") && isFresh) {
-          activeBuses.set(bus.busId, bus);
-
-          if (age > SIGNAL_LOST_MS) {
-            newSignalLost.add(bus.busId);
-            if (oldestTimestamp === null || bus.timestamp < oldestTimestamp) {
-              oldestTimestamp = bus.timestamp;
-            }
-          }
-
-          if (route.stops && route.stops.length > 0) {
-            let closestStopIndex: number;
-            if (bus.currentStopIndex !== undefined) {
-              closestStopIndex = bus.currentStopIndex;
-            } else {
-              const lastKnown = lastStopIndexRef.current[bus.busId] ?? 0;
-              const searchStart = Math.max(0, lastKnown - 1);
-              const searchEnd = Math.min(route.stops.length - 1, lastKnown + 3);
-              let minD = Infinity;
-              closestStopIndex = lastKnown;
-              for (let i = searchStart; i <= searchEnd; i++) {
-                const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, route.stops[i]);
-                if (d < minD) { minD = d; closestStopIndex = i; }
-              }
-              if (minD > 500) {
-                route.stops.forEach((stop, idx) => {
-                  const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
-                  if (d < minD) { minD = d; closestStopIndex = idx; }
-                });
-              }
-              lastStopIndexRef.current[bus.busId] = closestStopIndex;
-            }
-
-            const busSpeedKmh = bus.speed > 0 ? bus.speed : BUS_SPEED_FLOOR_KMH;
-            const mPerMin = (busSpeedKmh * 1000) / 60;
-            const distToNextStop = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, route.stops[closestStopIndex]) * 1.3;
-            const busDelay = bus.delayMinutes || 0;
-            const newStopETAs: Record<string, number> = {};
-            let accumDistM = distToNextStop;
-            newStopETAs[route.stops[closestStopIndex].id] = Math.ceil(accumDistM / mPerMin) + busDelay;
-            for (let i = closestStopIndex + 1; i < route.stops.length; i++) {
-              const segDist = getDistanceMeters(route.stops[i - 1], route.stops[i]) * 1.3;
-              accumDistM += segDist + 125;
-              newStopETAs[route.stops[i].id] = Math.ceil(accumDistM / mPerMin) + busDelay;
-            }
-            setStopETAs(prev => ({ ...prev, ...newStopETAs }));
-
-            const DWELL_GATE_MS = 15_000;
-            const STOP_PROXIMITY_M = 50;
-            route.stops.forEach((stop) => {
-              const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
-              if (d < STOP_PROXIMITY_M) {
-                if (!stopEntryTimeRef.current[stop.id]) {
-                  stopEntryTimeRef.current[stop.id] = now;
-                }
-              } else {
-                delete stopEntryTimeRef.current[stop.id];
-              }
-            });
-
-            const busDist = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, targetStop);
-            const dwellAtTarget = stopEntryTimeRef.current[targetStop.id];
-            const isAtTarget = dwellAtTarget && (now - dwellAtTarget >= DWELL_GATE_MS);
-            if (busDist < 200 && isAtTarget && lastBuzzedStopIdRef.current !== targetStop.id) {
-              lastBuzzedStopIdRef.current = targetStop.id;
-            }
-          }
+        if (!data) {
+          setBuses(new Map());
+          setSignalLostBuses(new Set());
+          return;
         }
-      });
 
-      setBuses(activeBuses);
-      setSignalLostBuses(newSignalLost);
-      setSignalLostLastSeen(oldestTimestamp);
+        const activeBuses = new Map<string, IncomingBusData>();
+        const newSignalLost = new Set<string>();
+        let oldestTimestamp: number | null = null;
+
+        Object.values(data).forEach((bus) => {
+          const age = now - bus.timestamp;
+          const isFresh = age < BUS_EXPIRY_MS;
+
+          if ((bus.deviceState === "online" && bus.tripState === "in_service") && isFresh) {
+            activeBuses.set(bus.busId, bus);
+
+            if (age > SIGNAL_LOST_MS) {
+              newSignalLost.add(bus.busId);
+              if (oldestTimestamp === null || bus.timestamp < oldestTimestamp) {
+                oldestTimestamp = bus.timestamp;
+              }
+            }
+
+            if (route.stops && route.stops.length > 0) {
+              let closestStopIndex: number;
+              if (bus.currentStopIndex !== undefined) {
+                closestStopIndex = bus.currentStopIndex;
+              } else {
+                const lastKnown = lastStopIndexRef.current[bus.busId] ?? 0;
+                const searchStart = Math.max(0, lastKnown - 1);
+                const searchEnd = Math.min(route.stops.length - 1, lastKnown + 3);
+                let minD = Infinity;
+                closestStopIndex = lastKnown;
+                for (let i = searchStart; i <= searchEnd; i++) {
+                  const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, route.stops[i]);
+                  if (d < minD) { minD = d; closestStopIndex = i; }
+                }
+                if (minD > 500) {
+                  route.stops.forEach((stop, idx) => {
+                    const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
+                    if (d < minD) { minD = d; closestStopIndex = idx; }
+                  });
+                }
+                lastStopIndexRef.current[bus.busId] = closestStopIndex;
+              }
+
+              const busSpeedKmh = bus.speed > 0 ? bus.speed : BUS_SPEED_FLOOR_KMH;
+              const mPerMin = (busSpeedKmh * 1000) / 60;
+              const distToNextStop = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, route.stops[closestStopIndex]) * 1.3;
+              const busDelay = bus.delayMinutes || 0;
+              const newStopETAs: Record<string, number> = {};
+              let accumDistM = distToNextStop;
+              newStopETAs[route.stops[closestStopIndex].id] = Math.ceil(accumDistM / mPerMin) + busDelay;
+              for (let i = closestStopIndex + 1; i < route.stops.length; i++) {
+                const segDist = getDistanceMeters(route.stops[i - 1], route.stops[i]) * 1.3;
+                accumDistM += segDist + 125;
+                newStopETAs[route.stops[i].id] = Math.ceil(accumDistM / mPerMin) + busDelay;
+              }
+              setStopETAs(prev => ({ ...prev, ...newStopETAs }));
+
+              const DWELL_GATE_MS = 15_000;
+              const STOP_PROXIMITY_M = 50;
+              route.stops.forEach((stop) => {
+                const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
+                if (d < STOP_PROXIMITY_M) {
+                  if (!stopEntryTimeRef.current[stop.id]) {
+                    stopEntryTimeRef.current[stop.id] = now;
+                  }
+                } else {
+                  delete stopEntryTimeRef.current[stop.id];
+                }
+              });
+
+              const busDist = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, targetStop);
+              const dwellAtTarget = stopEntryTimeRef.current[targetStop.id];
+              const isAtTarget = dwellAtTarget && (now - dwellAtTarget >= DWELL_GATE_MS);
+              if (busDist < 200 && isAtTarget && lastBuzzedStopIdRef.current !== targetStop.id) {
+                lastBuzzedStopIdRef.current = targetStop.id;
+              }
+            }
+          }
+        });
+
+        setBuses(activeBuses);
+        setSignalLostBuses(newSignalLost);
+        setSignalLostLastSeen(oldestTimestamp);
+      });
+    }).catch((err) => {
+      console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code);
     });
 
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, [route.id, targetStop, route.stops]);
 
   const signalLostMinutes = signalLostLastSeen

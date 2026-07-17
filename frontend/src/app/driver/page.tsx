@@ -11,8 +11,9 @@ import { useRoutes } from "@/hooks/useRoutes";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useBuses } from "@/hooks/useBuses";
 import { Navigation, CircleUserRound as User, SignalHigh as Radio, ArrowLeft } from "lucide-react";
-import { rtdb } from "@/lib/firebase";
+import { rtdb, auth } from "@/lib/firebase";
 import { ref, update, remove, onValue } from "firebase/database";
+import { signInAnonymously } from "firebase/auth";
 
 type Tab = "map" | "profile";
 
@@ -102,18 +103,28 @@ export default function DriverPage() {
   useEffect(() => {
     if (!busId || !isTracking) return;
 
-    const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
-    const unsubscribe = onValue(busRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data && data.lat && data.lng) {
-        setDriverLocation({
-          lat: data.lat,
-          lng: data.lng,
-          heading: data.heading || 0,
-        });
-      }
-    });
-    return () => unsubscribe();
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
+
+    signInAnonymously(auth).then(() => {
+      if (!isMounted) return;
+      const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
+      unsubscribe = onValue(busRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data && data.lat && data.lng) {
+          setDriverLocation({
+            lat: data.lat,
+            lng: data.lng,
+            heading: data.heading || 0,
+          });
+        }
+      });
+    }).catch(err => console.warn("[RTDB Auth] GNSS listener sign-in failed:", err.code));
+
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, [busId, selectedRouteIds, isTracking]);
 
   // Software mode heartbeat to keep the bus "fresh" in the passenger app

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { rtdb } from "@/lib/firebase";
+import { rtdb, auth } from "@/lib/firebase";
 import { ref, push, onValue, serverTimestamp } from "firebase/database";
+import { signInAnonymously } from "firebase/auth";
 import { Send, X, SignalHigh as Radio } from "lucide-react";
 
 interface Message {
@@ -42,35 +43,44 @@ export default function MessagingPanel({
   useEffect(() => {
     if (!busId) return;
 
-    const messagesRef = ref(rtdb, `messages/${busId}`);
-    const unsubscribe = onValue(messagesRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const msgs = Object.entries(data).map(([id, val]: [string, any]) => ({
-          id,
-          ...val
-        })).sort((a: any, b: any) => (a.timestamp || 0) - (b.timestamp || 0));
-        setMessages(msgs);
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
 
-        // Count messages from others to surface unread badge
-        if (onUnreadCountChange) {
-          const othersCount = msgs.filter((m: any) => m.senderId !== currentUserId).length;
-          if (othersCount > lastSeenCountRef.current) {
-            onUnreadCountChange(othersCount - lastSeenCountRef.current);
+    signInAnonymously(auth).then(() => {
+      if (!isMounted) return;
+      const messagesRef = ref(rtdb, `messages/${busId}`);
+      unsubscribe = onValue(messagesRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const msgs = Object.entries(data).map(([id, val]: [string, Partial<Message>]) => ({
+            id,
+            ...(val as Record<string, unknown>) // Type assertion to satisfy spread, since val is unknown/Partial
+          }) as Message).sort((a: Message, b: Message) => (a.timestamp || 0) - (b.timestamp || 0));
+          setMessages(msgs);
+
+          // Count messages from others to surface unread badge
+          if (onUnreadCountChange) {
+            const othersCount = msgs.filter((m: Message) => m.senderId !== currentUserId).length;
+            if (othersCount > lastSeenCountRef.current) {
+              onUnreadCountChange(othersCount - lastSeenCountRef.current);
+            }
+            lastSeenCountRef.current = othersCount;
           }
-          lastSeenCountRef.current = othersCount;
+
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          }, 100);
+        } else {
+          setMessages([]);
         }
+      });
+    }).catch(err => console.warn("[RTDB Auth] Messaging sign-in failed:", err.code));
 
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-        }, 100);
-      } else {
-        setMessages([]);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [busId]);
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
+  }, [busId, currentUserId, onUnreadCountChange]);
 
   // --- Rate Limiting Logic ---
   const [messagesSentCounts, setMessagesSentCounts] = useState<{timestamp: number}[]>([]);

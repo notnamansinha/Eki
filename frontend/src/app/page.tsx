@@ -22,21 +22,30 @@ export default function HomePage() {
 
   // Live bus count for social proof
   useEffect(() => {
-    signInAnonymously(auth).catch(() => { });
-    const busesRef = ref(rtdb, "activeBuses");
-    const unsub = onValue(busesRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const now = Date.now();
-        const count = Object.values(data as Record<string, any>).filter(
-          (b: any) => b.deviceState === "online" && b.tripState === "in_service" && (now - b.timestamp) < 300_000
-        ).length;
-        setActiveBusCount(count);
-      } else {
-        setActiveBusCount(0);
-      }
-    });
-    return () => unsub();
+    let unsub: (() => void) | undefined;
+    let isMounted = true;
+    
+    signInAnonymously(auth).then(() => {
+      if (!isMounted) return;
+      const busesRef = ref(rtdb, "activeBuses");
+      unsub = onValue(busesRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const now = Date.now();
+          const count = Object.values(data as Record<string, any>).filter(
+            (b: any) => b.deviceState === "online" && b.tripState === "in_service" && (now - b.timestamp) < 300_000
+          ).length;
+          setActiveBusCount(count);
+        } else {
+          setActiveBusCount(0);
+        }
+      });
+    }).catch(() => { });
+    
+    return () => {
+      isMounted = false;
+      if (unsub) unsub();
+    };
   }, []);
 
   if (loading || (user && !user.isAnonymous)) {

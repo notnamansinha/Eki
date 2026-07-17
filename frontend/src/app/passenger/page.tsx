@@ -56,35 +56,42 @@ export default function PassengerPage() {
   // Visibility is now driven purely by tripState (computed by the backend trip
   // state machine). The old frontend departure-detection hack is gone.
   useEffect(() => {
-    signInAnonymously(auth).catch((err) =>
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
+
+    signInAnonymously(auth).then(() => {
+      if (!isMounted) return;
+      const busesRef = ref(rtdb, "activeBuses");
+
+      unsubscribe = onValue(busesRef, (snapshot) => {
+        const data = snapshot.val();
+        const newBuses: ActiveBusData[] = [];
+        const driverMap = new Map<string, string>();
+
+        if (data) {
+          Object.values(data as Record<string, ActiveBusData>).forEach((bus) => {
+            // Safety net: discard entries older than 5 minutes (RTDB cleanup lag).
+            const isFresh = Date.now() - bus.timestamp < 300_000;
+            if (!bus.routeId || !bus.busId || !isFresh) return;
+
+            if (bus.deviceState !== "online" || bus.tripState !== "in_service") return;
+
+            newBuses.push(bus);
+            if (bus.driverId) driverMap.set(bus.busId, bus.driverId);
+          });
+        }
+
+        latestBusDriversRef.current = driverMap;
+        setActiveBuses(newBuses);
+      });
+    }).catch((err) =>
       console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code)
     );
 
-    const busesRef = ref(rtdb, "activeBuses");
-
-    const unsubscribe = onValue(busesRef, (snapshot) => {
-      const data = snapshot.val();
-      const newBuses: ActiveBusData[] = [];
-      const driverMap = new Map<string, string>();
-
-      if (data) {
-        Object.values(data as Record<string, ActiveBusData>).forEach((bus) => {
-          // Safety net: discard entries older than 5 minutes (RTDB cleanup lag).
-          const isFresh = Date.now() - bus.timestamp < 300_000;
-          if (!bus.routeId || !bus.busId || !isFresh) return;
-
-          if (bus.deviceState !== "online" || bus.tripState !== "in_service") return;
-
-          newBuses.push(bus);
-          if (bus.driverId) driverMap.set(bus.busId, bus.driverId);
-        });
-      }
-
-      latestBusDriversRef.current = driverMap;
-      setActiveBuses(newBuses);
-    });
-
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const activeRouteIds = Array.from(new Set(activeBuses.map(b => b.routeId)));

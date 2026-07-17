@@ -1,6 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { RouteData } from '@/hooks/useRoutes';
-import { Navigation, Clock, Activity, MapPin } from 'lucide-react';
 
 interface RouteCarouselProps {
   routes: RouteData[];
@@ -11,6 +10,13 @@ interface RouteCarouselProps {
 }
 
 export default function RouteCarousel({ routes, selectedRouteId, onClick, getActiveBusesCount }: RouteCarouselProps) {
+  const [now, setNow] = useState<number | null>(null);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNow(Date.now());
+  }, []);
+
   const liveRoutes = routes.filter((route) => getActiveBusesCount(route.id) > 0);
 
   if (liveRoutes.length === 0) {
@@ -25,11 +31,10 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
   return (
     <div className="w-full flex flex-col gap-4 pb-4">
       {liveRoutes.map((route) => {
-        const isSelected = route.id === selectedRouteId;
         const activeBuses = getActiveBusesCount(route.id);
         const stops = route.stops ?? [];
         const durationMins = route.duration ? Math.round(parseInt(route.duration) / 60) : (stops.length * 2); // Fallback estimation
-        const scheduleTime = new Date(Date.now() + durationMins * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const scheduleTime = now ? new Date(now + durationMins * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
 
         return (
           <div
