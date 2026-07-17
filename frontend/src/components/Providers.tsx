@@ -1,4 +1,4 @@
-"use client";
+iles if"use client";
 
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 

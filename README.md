@@ -4,7 +4,7 @@
 
 > An open-source, full-stack vehicle tracking ecosystem engineered entirely for **Zero-Budget** operations on Free Tiers. Build your own live GPS tracker using an ESP32 and NEO-M8N GNSS module, streaming sub-second telemetry to Firebase RTDB with Next.js live-map dashboards.
 
-![Hardware Setup and Explanation](./image.jpg)
+![Hardware Setup and Explanation](./docs/assets/image.jpg)
 
 ---
 
@@ -169,10 +169,11 @@ npm run deploy
 
 For super-detailed explanations of the system architecture, zero-budget scaling, and hardware integration, please refer to our deep-dive documentation:
 
-- [System Architecture & RBAC Flow](docs/architecture.md) **(Updated)**
+- [System Architecture & RBAC Flow](docs/ARCHITECTURE.md) **(Updated)**
 - [Zero-Budget & API Optimizations](docs/OPTIMIZATIONS.md) **(NEW)**
-- [GNSS Hardware Migration Guide](docs/gnss_hardware_migration.md)
-- [System Workflows](docs/workflow_explanation.md)
+- [GNSS Hardware Migration Guide](docs/GNSS_HARDWARE_MIGRATION.md)
+- [System Workflows](docs/WORKFLOW_EXPLANATION.md)
+- [PWA Update Strategy](docs/PWA_UPDATE_STRATEGY.md)
 - [Hardware Telemetry & Security](hardware/README.md)
 - [Frontend Workspace](frontend/README.md)
 - [Backend Workspace](backend/README.md)
