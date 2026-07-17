@@ -1,4 +1,4 @@
-iles if"use client";
+"use client";
 
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 
