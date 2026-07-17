@@ -5,7 +5,6 @@ import PassengerMap from "@/components/maps/PassengerMap";
 import AccountTab from "@/components/passenger/AccountTab";
 import MessagingPanel from "@/components/shared/MessagingPanel";
 import FeedbackModal from "@/components/shared/FeedbackModal";
-import NextBusCard from "@/components/passenger/NextBusCard";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { MapPinned as MapIcon, CircleUserRound as User, Loader2, SignalHigh as Radio, ArrowLeft } from "lucide-react";
@@ -336,18 +335,7 @@ export default function PassengerPage() {
                 </div>
               )}
 
-              {/* NextBusCard — persistent bottom card */}
-              {activeBusOnRouteId && (
-                <div className="absolute bottom-[80px] inset-x-0 z-40 px-4 pb-2 pointer-events-auto">
-                  <NextBusCard
-                    routeName={activeRoute.name}
-                    targetStopName={targetStop.name}
-                    etaMinutes={liveEtaMinutes}
-                    motionState={busMotionState}
-                    routeColor={activeRoute.color}
-                  />
-                </div>
-              )}
+
 
               {/* Messaging Overlay */}
               {isMessagingOpen && (
