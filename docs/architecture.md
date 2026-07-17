@@ -1,10 +1,10 @@
-# BusTrack Architecture & Data Flow
+# Eki (BusTrackr) Architecture & Data Flow
 
-This document details the core architecture, data synchronization flows, and Role-Based Access Control (RBAC) hierarchy of the BusTrack ecosystem.
+This document details the core architecture, data synchronization flows, and Role-Based Access Control (RBAC) hierarchy of the Eki (BusTrackr) ecosystem.
 
 ## 1. High-Level Architecture
 
-BusTrack uses a modern hybrid, real-time architecture leveraging Firebase as the core streaming layer and a containerized Node.js backend for heavy computation. 
+BusTrack uses a modern hybrid, real-time architecture leveraging Firebase as the core streaming layer, a containerized Node.js backend for heavy computation, and an ESP32 hardware telemetry edge layer.
 
 ```mermaid
 graph TD
@@ -62,7 +62,7 @@ sequenceDiagram
     participant Firestore
     participant Protected Page
 
-    User->>RoleGuard: Requests Route (e.g., /driver)
+    User->>RoleGuard: Requests Route (e.g., /admin)
     RoleGuard->>Firebase Auth: Check Auth State
     
     alt is authenticated
@@ -70,7 +70,7 @@ sequenceDiagram
         RoleGuard->>Firestore: Fetch User Role Document
         Firestore-->>RoleGuard: Returns Role (e.g., 'admin')
         
-        Note over RoleGuard: Array Check:<br>['driver', 'admin'].includes('admin')
+        Note over RoleGuard: Array Check:<br>['admin'].includes('admin')
         
         alt Role matches allowed roles
             RoleGuard->>Protected Page: Render Children
@@ -85,13 +85,15 @@ sequenceDiagram
 
 ## 3. Real-Time GPS Tracking Data Flow
 
-Location updates happen completely outside the standard Node.js server. The Drivers stream directly to the Firebase Realtime Database (RTDB), which in turn publishes the updates to the Passenger app, ensuring sub-second latency globally.
+Location updates happen completely outside the standard Node.js server. The ESP32 Hardware modules physically on the buses stream directly to the Firebase Realtime Database (RTDB). RTDB then broadcasts the updates to the Passenger app, ensuring sub-second latency globally.
 
 ```mermaid
 graph LR
-    subgraph Client [Driver App]
-        GPS1[Browser Geolocation API]
-        GPS1 -->|1. Emits coords every 5s| DBClient[Frontend Firebase SDK]
+    subgraph Edge Layer [Hardware]
+        GPS1[NEO-M8N GPS]
+        ESP[ESP32 Hardware]
+        GPS1 -->|1. NMEA sentences| ESP
+        ESP -->|2. Delta changes only| RTDB
     end
 
     subgraph Firebase [Google Cloud]
@@ -102,8 +104,6 @@ graph LR
         PApp[Passenger Live Map]
         AApp[Admin Fleet Map]
     end
-
-    DBClient -->|2. HTTP Upgrade/WebSocket| RTDB
     
     RTDB -->|3. Data Sync Stream| PApp
     RTDB -->|3. Data Sync Stream| AApp
@@ -111,32 +111,43 @@ graph LR
     style RTDB fill:#ffca28,stroke:#f57f17,stroke-width:2px,color:black
 ```
 
-## 4. Auth Fallback & Loading Cycle
+## 4. Admin Panel Rewrite Architecture
 
-As implemented in `RoleGuard`, to prevent infinite loading screens when Firestore latency issues occur or network connections drop:
+The Admin Panel has been rebuilt into a unified 5-tab interface (`Dashboard`, `Routes`, `Fleet`, `Personnel`, `Settings`). 
+
+To avoid the cost of opening 5 different WebSocket listeners to Firebase RTDB/Firestore, the admin panel architecture heavily relies on conditionally mounted tabs using `&&` and isolated Context boundaries.
+
+* **Layout Client Boundary:** `layout.tsx` is `"use client"` so it can wrap all panels in `RoleGuard` and `MapProviders`.
+* **Shared Firebase Connections:** Instead of using React Context for Firebase RTDB, tabs only mount when active, guaranteeing that `DashboardPanel` and `FleetManagementPanel` never accidentally double-subscribe to Firebase at the same time.
+* **Singleton `useSettings`:** For Firestore globals, `useSettings.ts` sits at the module level. Even if 10 components on the page consume settings, exactly 1 Firestore `onSnapshot` is spawned.
+
+## 5. PWA Auto-Update Strategy
+
+To ensure zero downtime and instant rollouts across PWAs and aggressive Safari caches, Eki implements a strict auto-polling strategy.
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Authenticating: Page Load
-    Authenticating --> VerifyingAuth: Auth State Changed
-    VerifyingAuth --> FetchedRole: Firebase Responds < 6s
-    VerifyingAuth --> TimeoutFallback: > 6s Elapsed
+sequenceDiagram
+    participant Browser
+    participant useAutoUpdate
+    participant FirebaseHosting
     
-    FetchedRole --> Allowed: Role Valid
-    FetchedRole --> Denied: Role Invalid
+    Note over Browser: User backgrounds app
+    Note over Browser: Developer deploys new version
     
-    TimeoutFallback --> Denied: Show "Access Restricted"
+    Browser->>useAutoUpdate: User opens app (visibilitychange)
+    useAutoUpdate->>FirebaseHosting: Fetch /version.json?t=[timestamp]
+    FirebaseHosting-->>useAutoUpdate: Returns new timestamp
     
-    Allowed --> [*]: Render Context
-    Denied --> [*]: Render Error & Prompt Login
+    Note over useAutoUpdate: Mismatch detected! (New vs Old)
+    
+    useAutoUpdate->>Browser: caches.delete() all PWA Caches
+    useAutoUpdate->>Browser: window.location.reload() (Hard Refresh)
 ```
 
-## 5. Backend Dockerization
+## 6. Backend Dockerization
 
-The Node.js backend (located in the `/backend` directory) includes a `Dockerfile` and `.dockerignore`. While Firebase (RTDB & Firestore) efficiently handles direct client-to-database real-time streaming, the Dockerized Node.js backend exists to securely manage operations that cannot be handled directly from the client:
+The Node.js backend (located in the `/backend` directory) includes a `Dockerfile`. While Firebase (RTDB & Firestore) efficiently handles direct client-to-database real-time streaming, the Dockerized Node.js backend securely manages:
 
-* **Heavy Computation:** Interacting with the Google Maps Routes API v2 to compute complex polylines and ETAs.
-* **Security & Validation:** Hiding sensitive Server API keys and enforcing complex business logic or data validation before updating Firestore.
-* **WebSocket Management:** Running a Socket.io gateway for advanced client-server communications.
-
-The `Dockerfile` packages this Express server into an isolated container. This allows the backend to be deployed anywhere that supports containers (like **Google Cloud Run** or **Render**), ensuring it scales automatically and runs consistently across development, staging, and production environments.
+* **Heavy Computation:** Interacting with the Google Maps Routes API v2 to compute complex polylines and ETAs (Cost optimization).
+* **Security & Validation:** Hiding sensitive Server API keys and enforcing complex business logic.
+* **WebSocket Management:** Running a Socket.io gateway for older legacy interactions.
