@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useBuses } from "@/hooks/useBuses";
-import { Navigation, CircleUserRound as User, SignalHigh as Radio, ArrowLeft } from "lucide-react";
+import { Map, CircleUserRound as User, MessageCircle, ArrowLeft } from "lucide-react";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, update, remove, onValue, onDisconnect } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";
@@ -281,7 +281,7 @@ export default function DriverPage() {
               }}
               aria-label="Open live comms"
             >
-              <Radio className="w-4 h-4" style={{ color: "var(--status-live)" }} />
+              <MessageCircle className="w-5 h-5" style={{ color: "var(--status-live)" }} />
               {unreadCount > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-semibold text-white px-1"
                   style={{ background: "var(--status-danger)", boxShadow: "0 0 0 2px var(--surface-0)" }}>
@@ -322,7 +322,7 @@ export default function DriverPage() {
             {activeTab === "map" && (
               <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "var(--text-primary)" }} />
             )}
-            <Navigation className="w-5 h-5 mb-1" style={{ color: activeTab === "map" ? "var(--text-primary)" : "var(--text-ghost)" }} />
+            <Map className="w-5 h-5 mb-1" style={{ color: activeTab === "map" ? "var(--text-primary)" : "var(--text-ghost)" }} />
             <span className="text-[9px] font-semibold" style={{ color: activeTab === "map" ? "var(--text-primary)" : "var(--text-ghost)" }}>
               Drive
             </span>

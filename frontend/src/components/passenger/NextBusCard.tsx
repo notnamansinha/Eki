@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Navigation, Footprints, ChevronUp } from "lucide-react";
+import { Footprints, ChevronUp } from "lucide-react";
 
 interface NextBusCardProps {
   routeName: string;

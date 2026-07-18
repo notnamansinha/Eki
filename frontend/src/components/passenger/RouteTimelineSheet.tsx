@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Navigation, Footprints } from "lucide-react";
+import { Route as RouteIcon, Footprints } from "lucide-react";
 import { RouteData } from "@/hooks/useRoutes";
 import BottomSheet from "./ui/BottomSheet";
 
@@ -36,7 +36,7 @@ export default function RouteTimelineSheet({
     <BottomSheet
       isOpen={isOpen}
       onToggle={() => setIsOpen(!isOpen)}
-      headerIcon={<Navigation className="w-4 h-4" />}
+      headerIcon={<RouteIcon className="w-4 h-4" />}
       headerTitle="Route Timeline"
       bottomControls={bottomControls}
     >

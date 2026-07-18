@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, push, onValue, serverTimestamp } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";
-import { Send, X, SignalHigh as Radio } from "lucide-react";
+import { Send, X, MessageCircle } from "lucide-react";
 
 interface Message {
   id: string;
@@ -169,7 +169,7 @@ export default function MessagingPanel({
       <div className="flex-1 overflow-y-auto p-4 gap-4 flex flex-col relative z-10 text-sm">
         {messages.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
-            <Radio className="w-8 h-8 mb-3" style={{ color: "var(--text-ghost)" }} />
+            <MessageCircle className="w-8 h-8 mb-3" style={{ color: "var(--text-ghost)" }} />
             <p className="text-[12px] font-semibold text-center" style={{ color: "var(--text-ghost)" }}>
               No messages yet
             </p>

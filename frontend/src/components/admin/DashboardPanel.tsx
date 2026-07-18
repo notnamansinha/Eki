@@ -14,7 +14,7 @@ import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import {
   Activity, Navigation, Clock, MapPin, AlertTriangle,
   TrendingUp, X, ChevronDown, ChevronUp,
-  Sliders, Wifi, WifiOff, Loader2, Radio, Target,
+  Sliders, Wifi, WifiOff, Loader2, MessageCircle, Target,
 } from "lucide-react";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
@@ -202,7 +202,7 @@ function OverrideDrawer({
               <WifiOff className="w-3.5 h-3.5" /> Force Offline
             </button>
             <button onClick={handleWipeMessages} className="h-10 flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors">
-              <Radio className="w-3.5 h-3.5" /> Wipe Messages
+              <MessageCircle className="w-3.5 h-3.5" /> Wipe Messages
             </button>
           </div>
         </div>

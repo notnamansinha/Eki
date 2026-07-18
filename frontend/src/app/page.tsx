@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BusFront as Bus, Navigation, Loader2, LogIn, ArrowRight, Zap, SignalHigh as Radio, Clock } from "lucide-react";
+import { BusFront as Bus, Navigation, Map, Loader2, LogIn, ArrowRight, Zap, MessageCircle, Clock } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -143,7 +143,7 @@ export default function HomePage() {
             href="/route-planner"
             className="btn-rc-outline px-7 py-3.5 flex items-center gap-2.5 font-semibold text-[14px]"
           >
-            <Navigation className="w-4 h-4" />
+            <Map className="w-4 h-4" />
             Plan a Trip
           </Link>
         </div>

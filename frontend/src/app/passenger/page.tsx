@@ -7,7 +7,7 @@ import MessagingPanel from "@/components/shared/MessagingPanel";
 import FeedbackModal from "@/components/shared/FeedbackModal";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
-import { MapPinned as MapIcon, CircleUserRound as User, Loader2, SignalHigh as Radio, ArrowLeft } from "lucide-react";
+import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag } from "lucide-react";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, onValue } from "firebase/database";
 import { waitForAuth } from "@/lib/authState";
@@ -331,7 +331,7 @@ export default function PassengerPage() {
                     }}
                     aria-label="Open live chat"
                   >
-                    <Radio className="w-5 h-5" style={{ color: "var(--status-live)" }} />
+                    <MessageCircle className="w-5 h-5" style={{ color: "var(--status-live)" }} />
                     {unreadCount > 0 && (
                       <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-semibold text-white px-1"
                         style={{ background: "var(--status-danger)", boxShadow: "0 0 0 2px var(--surface-0)" }}>
@@ -364,7 +364,7 @@ export default function PassengerPage() {
               style={{ background: "rgba(9, 9, 11, 0.9)" }}>
               <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
                 style={{ background: "var(--status-danger-bg)", border: "1px solid rgba(248, 113, 113, 0.15)" }}>
-                <MapIcon className="w-8 h-8" style={{ color: "var(--status-danger)" }} />
+                <Flag className="w-8 h-8" style={{ color: "var(--status-danger)" }} />
               </div>
               <p className="text-xl font-extrabold tracking-tight mb-2" style={{ color: "var(--text-primary)" }}>
                 Route ended

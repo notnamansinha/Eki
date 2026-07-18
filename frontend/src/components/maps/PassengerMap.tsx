@@ -10,7 +10,7 @@ import { waitForAuth } from "@/lib/authState";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
 
-import { LocateFixed, WifiOff, Navigation } from "lucide-react";
+import { WifiOff, Navigation } from "lucide-react";
 import { DEFAULT_CENTER, MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 
 export interface PassengerMapProps {
