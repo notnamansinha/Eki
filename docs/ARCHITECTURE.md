@@ -111,6 +111,12 @@ graph LR
     style RTDB fill:#ffca28,stroke:#f57f17,stroke-width:2px,color:black
 ```
 
+### 3.1 Client-Side ETA Mathematics
+If a bus loses GPS signal or stops transmitting, the client does not wait helplessly. The architecture gracefully falls back to a **35km/h internal estimation math** (matching 4-wheeler transit speeds) overlaid onto the Haversine distance remaining to the next stop. This guarantees that passengers always see a highly accurate, speed-aware ETA projection even when GNSS hardware briefly fails.
+
+### 3.2 Custom Map Overlays (Semantic UI)
+To prevent native Google Maps controls from interfering with our highly styled floating action buttons (FABs), we explicitly pass `options={{ disableDefaultUI: true }}` to the `@vis.gl` wrapper. We then implement our own semantic layers (e.g. `LocateFixed`/`Navigation` buttons tracking the active bus or passenger, `MessageCircle` for live chat).
+
 ## 4. Admin Panel Rewrite Architecture
 
 The Admin Panel has been rebuilt into a unified 5-tab interface (`Dashboard`, `Routes`, `Fleet`, `Personnel`, `Settings`). 

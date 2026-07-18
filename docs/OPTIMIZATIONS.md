@@ -57,7 +57,15 @@ Rather than using raw `new google.maps.Map()`, we utilize the official React wra
 **The Lazy-Load MapProviders Wrapper:**
 The landing page (`/`) does NOT load the Google Maps SDK. It is completely deferred. Only when a user navigates to `/passenger` or `/admin` does `MapProviders.tsx` dynamically inject the SDK. This eliminates wasted map-loads from bounced traffic.
 
-### 2.2 Server-Side Polyline Baking (Routes API)
+### 2.2 Directions API Chunking & Rate-Limit Bypass
+The Google Maps Directions API imposes a strict 25-waypoint limit and throws `OVER_QUERY_LIMIT` when requests are fired simultaneously (e.g. tracking a fleet).
+
+**The Solution:**
+1. **Waypoint Chunking**: We segment routes with 100+ stops into multiple chunks of exactly 25 waypoints.
+2. **Asynchronous Serialization**: Instead of firing chunks simultaneously (which instantly triggers Google's IP rate-limits), we execute an async loop with a `300ms delay` between requests.
+3. **Graceful Degradation**: If the API still blocks a chunk, the system gracefully falls back to straight-line polyline segments between the failed waypoints, ensuring the map *never* breaks.
+
+### 2.3 Server-Side Polyline Baking (Routes API)
 Calculating a route using Google Maps Directions API on the client side costs money per request. If 10,000 passengers open the app and request the BRTS route path, the API bill would be catastrophic.
 
 **The Solution:**
@@ -71,7 +79,16 @@ Now, when 10,000 passengers open the app, they simply download a static string f
 
 ---
 
-## 3. PWA Auto-Update (Bypassing Aggressive Safari Cache)
+## 3. React Rendering & Map Stability
+
+Google Maps SDK charges per tile load, but in React, state changes (like live chat unread counts) can accidentally trigger full component re-renders, wiping the `<GoogleMap />` instance.
+
+### 3.1 Strict Pointer Isolation & useMemo
+We completely isolated all rapidly updating data (like `unreadCount`, ETAs) from the core Map component parameters. Everything passed into the `DirectionsRoute` and `PassengerMapInner` is heavily cached via `useMemo`. This guarantees the core `@vis.gl` map wrapper NEVER unmounts during active tracking, saving thousands of free-tier map loads and resulting in hyper-smooth UX.
+
+---
+
+## 4. PWA Auto-Update (Bypassing Aggressive Safari Cache)
 
 One massive problem with PWAs and Next.js is that iOS Safari aggressively caches `index.html` and Javascript bundles. When you deploy a new version to Firebase, users opening the app from their home screen will be stuck on the old version because the Service Worker intercepts the request.
 
