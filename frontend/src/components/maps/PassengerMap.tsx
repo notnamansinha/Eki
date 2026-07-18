@@ -139,66 +139,66 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         const newSignalLost = new Set<string>();
         let oldestTimestamp: number | null = null;
 
-        Object.values(data).forEach((bus) => {
-          const age = now - bus.timestamp;
-          const isFresh = age < BUS_EXPIRY_MS;
+        Object.entries(data).forEach(([key, bus]) => {
+          bus.busId = bus.busId || key.split("_")[0];
+          const isFresh = Date.now() - bus.timestamp < 300_000;
+          if (!bus.routeId || !bus.busId || !isFresh) return;
 
-          const isActiveState = bus.tripState === "in_service" || bus.tripState === "pre_departure";
+          const isActive = bus.tripState === "in_service" || bus.tripState === "pre_departure";
           const isOffline = bus.status === "offline" || bus.deviceState === "offline";
-          if (isActiveState && !isOffline && isFresh) {
-            activeBuses.set(bus.busId, bus);
+          if (!isActive || isOffline) return;
 
-            if (age > SIGNAL_LOST_MS) {
-              newSignalLost.add(bus.busId);
-              if (oldestTimestamp === null || bus.timestamp < oldestTimestamp) {
-                oldestTimestamp = bus.timestamp;
+          activeBuses.set(bus.busId, bus);
+
+          const age = now - bus.timestamp;
+          if (age > SIGNAL_LOST_MS) {
+            newSignalLost.add(bus.busId);
+            if (oldestTimestamp === null || bus.timestamp < oldestTimestamp) {
+              oldestTimestamp = bus.timestamp;
+            }
+          }
+
+          if (route.stops && route.stops.length > 0) {
+            let closestStopIndex: number;
+            if (bus.currentStopIndex !== undefined) {
+              closestStopIndex = bus.currentStopIndex;
+            } else {
+              const lastKnown = lastStopIndexRef.current[bus.busId] ?? 0;
+              const searchStart = Math.max(0, lastKnown - 1);
+              const searchEnd = Math.min(route.stops.length - 1, lastKnown + 3);
+              let minD = Infinity;
+              closestStopIndex = lastKnown;
+              for (let i = searchStart; i <= searchEnd; i++) {
+                const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, route.stops[i]);
+                if (d < minD) { minD = d; closestStopIndex = i; }
               }
+              if (minD > 500) {
+                route.stops.forEach((stop, idx) => {
+                  const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
+                  if (d < minD) { minD = d; closestStopIndex = idx; }
+                });
+              }
+              lastStopIndexRef.current[bus.busId] = closestStopIndex;
             }
 
-            if (route.stops && route.stops.length > 0) {
-              let closestStopIndex: number;
-              if (bus.currentStopIndex !== undefined) {
-                closestStopIndex = bus.currentStopIndex;
+            const DWELL_GATE_MS = 15_000;
+            const STOP_PROXIMITY_M = 50;
+            route.stops.forEach((stop) => {
+              const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
+              if (d < STOP_PROXIMITY_M) {
+                if (!stopEntryTimeRef.current[stop.id]) {
+                  stopEntryTimeRef.current[stop.id] = now;
+                }
               } else {
-                const lastKnown = lastStopIndexRef.current[bus.busId] ?? 0;
-                const searchStart = Math.max(0, lastKnown - 1);
-                const searchEnd = Math.min(route.stops.length - 1, lastKnown + 3);
-                let minD = Infinity;
-                closestStopIndex = lastKnown;
-                for (let i = searchStart; i <= searchEnd; i++) {
-                  const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, route.stops[i]);
-                  if (d < minD) { minD = d; closestStopIndex = i; }
-                }
-                if (minD > 500) {
-                  route.stops.forEach((stop, idx) => {
-                    const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
-                    if (d < minD) { minD = d; closestStopIndex = idx; }
-                  });
-                }
-                lastStopIndexRef.current[bus.busId] = closestStopIndex;
+                delete stopEntryTimeRef.current[stop.id];
               }
+            });
 
-              const busSpeedKmh = bus.speed > 0 ? bus.speed : BUS_SPEED_FLOOR_KMH;
-
-              const DWELL_GATE_MS = 15_000;
-              const STOP_PROXIMITY_M = 50;
-              route.stops.forEach((stop) => {
-                const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
-                if (d < STOP_PROXIMITY_M) {
-                  if (!stopEntryTimeRef.current[stop.id]) {
-                    stopEntryTimeRef.current[stop.id] = now;
-                  }
-                } else {
-                  delete stopEntryTimeRef.current[stop.id];
-                }
-              });
-
-              const busDist = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, targetStop);
-              const dwellAtTarget = stopEntryTimeRef.current[targetStop.id];
-              const isAtTarget = dwellAtTarget && (now - dwellAtTarget >= DWELL_GATE_MS);
-              if (busDist < 200 && isAtTarget && lastBuzzedStopIdRef.current !== targetStop.id) {
-                lastBuzzedStopIdRef.current = targetStop.id;
-              }
+            const busDist = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, targetStop);
+            const dwellAtTarget = stopEntryTimeRef.current[targetStop.id];
+            const isAtTarget = dwellAtTarget && (now - dwellAtTarget >= DWELL_GATE_MS);
+            if (busDist < 200 && isAtTarget && lastBuzzedStopIdRef.current !== targetStop.id) {
+              lastBuzzedStopIdRef.current = targetStop.id;
             }
           }
         });

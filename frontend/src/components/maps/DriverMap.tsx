@@ -57,6 +57,10 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
   const nextStop = stops[currentStopIndex] ?? stops[stops.length - 1];
 
+  useEffect(() => {
+    setCurrentStopIndex(0);
+  }, [route.id]);
+
   const [delayMinutes, setDelayMinutes] = useState(0);
   const lastDelayPushRef = useRef(0);
 
@@ -110,7 +114,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       { lat: driverLocation.lat, lng: driverLocation.lng },
       { lat: nextStop.lat, lng: nextStop.lng }
     );
-    const speedKmh = (driverLocation as any).speed > 0 ? (driverLocation as any).speed : 25;
+    const speedKmh = (driverLocation as any).speed > 0 ? (driverLocation as any).speed : 35;
     const speedMs = speedKmh / 3.6;
     const durationSec = speedMs > 0 ? distM / speedMs : 0;
     const roundedDist = Math.round(distM / 10) * 10;
@@ -156,7 +160,8 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       etaMap[nextStop.id] = Math.round((accumTime / 60) + delayMinutes);
       for (let i = currentStopIndex + 1; i < stops.length; i++) {
         const dist = (getDistanceMeters(stops[i - 1], stops[i]) * 1.3) + 125;
-        accumTime += (dist / 250) * 60;
+        // 583 meters per min is ~35 km/h (4-wheeler speed)
+        accumTime += (dist / 583) * 60;
         etaMap[stops[i].id] = Math.round((accumTime / 60) + delayMinutes);
       }
     }
@@ -266,16 +271,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       </div>
 
       <div className="absolute bottom-[70px] left-0 right-0 z-50">
-        {navPhase === "preview" ? (
-          <div className="flex justify-center p-4 pb-8">
-            <button 
-              onClick={handleStartNavigation} 
-              className="btn-primary px-10 py-3.5 text-[13px] font-medium flex items-center gap-2.5 active:scale-95 transition-all"
-            >
-              Start Shift
-            </button>
-          </div>
-        ) : (
+        {navPhase !== "preview" && (
           <RouteTimelineSheet
             route={route}
             targetStopId={stops[stops.length - 1]?.id || ""}

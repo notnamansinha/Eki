@@ -124,7 +124,7 @@ export default function PassengerPage() {
   useEffect(() => {
     if (activeRoute && activeRoute.stops && activeRoute.stops.length > 0) {
       if (!selectedStopId || !activeRoute.stops.some(s => s.id === selectedStopId)) {
-        setSelectedStopId(activeRoute.stops[activeRoute.stops.length - 1].id);
+        setSelectedStopId(activeRoute.stops[0].id);
       }
     }
   }, [activeRoute, selectedStopId]);
@@ -152,7 +152,7 @@ export default function PassengerPage() {
   // Compute live ETA for NextBusCard
   const liveEtaMinutes = useMemo(() => {
     if (!activeBusOnRoute || !targetStop || !activeRoute?.stops) return undefined;
-    const busSpeedKmh = activeBusOnRoute.speed > 0 ? activeBusOnRoute.speed : 15;
+    const busSpeedKmh = activeBusOnRoute.speed > 0 ? activeBusOnRoute.speed : 35;
     const mPerMin = (busSpeedKmh * 1000) / 60;
     const dist = getDistanceMeters(
       { lat: activeBusOnRoute.lat, lng: activeBusOnRoute.lng },
