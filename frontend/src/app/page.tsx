@@ -188,7 +188,7 @@ export default function HomePage() {
                 stat: "2-way",
                 label: "Live comms",
                 desc: "Direct messaging channel between driver and riders. Ask about stops, report issues, get real responses.",
-                icon: Radio,
+                icon: MessageCircle,
               },
             ].map((f, i) => {
               const Icon = f.icon;

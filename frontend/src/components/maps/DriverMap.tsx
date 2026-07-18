@@ -182,7 +182,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           defaultCenter={defaultCenter}
           defaultZoom={14}
           style={{ width: "100%", height: "100%" }}
-          options={MAP_OPTIONS}
+          {...MAP_OPTIONS}
         >
           <TrafficLayer />
           <MapCenterer target={driverLocation} isCentered={isCentered} navPhase={navPhase} />

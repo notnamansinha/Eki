@@ -28,13 +28,13 @@ export default function DriverPage() {
 
   useEffect(() => {
     const saved = localStorage.getItem("driverId");
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     if (saved) setDriverId(saved);
   }, []);
 
   useEffect(() => {
     if (driverId) localStorage.setItem("driverId", driverId);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setSelectedBusId("");
   }, [driverId]);
 
@@ -62,7 +62,7 @@ export default function DriverPage() {
 
   useEffect(() => {
     if (routes.length > 0 && selectedRouteIds.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setSelectedRouteIds([routes[0].id]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -362,7 +362,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           defaultCenter={mapCenter}
           defaultZoom={15}
           style={{ width: "100%", height: "100%" }}
-          options={MAP_OPTIONS}
+          {...MAP_OPTIONS}
         >
           <MapCenterer target={centerTarget} isCentered={isCentered} />
           <TrafficLayer />
