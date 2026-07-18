@@ -47,64 +47,75 @@ export default function DirectionsRoute({ stops, color = "#3b82f6", hasBuses = f
       if (i + CHUNK_SIZE >= stops.length) break;
     }
 
-    chunks.forEach((chunk, chunkIdx) => {
-      if (chunk.length < 2) return;
+    let isMounted = true;
 
-      const origin = chunk[0];
-      const destination = chunk[chunk.length - 1];
-      const waypoints = chunk.slice(1, -1).map(p => ({
-        location: new google.maps.LatLng(p.lat, p.lng),
-        stopover: false, // false = faster, treats as passthrough
-      }));
+    const fetchChunks = async () => {
+      for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+        if (!isMounted) break;
+        const chunk = chunks[chunkIdx];
+        if (chunk.length < 2) continue;
 
-      const renderer = new google.maps.DirectionsRenderer({
-        suppressMarkers: true,
-        preserveViewport: true,
-        polylineOptions: {
-          strokeColor: color,
-          strokeWeight: hasBuses ? 5 : 3,
-          strokeOpacity: hasBuses ? 0.9 : 0.5,
-          zIndex: 10,
-        },
-      });
-      renderer.setMap(map);
-      renderersRef.current.push(renderer);
+        const origin = chunk[0];
+        const destination = chunk[chunk.length - 1];
+        const waypoints = chunk.slice(1, -1).map(p => ({
+          location: new google.maps.LatLng(p.lat, p.lng),
+          stopover: false, // false = faster, treats as passthrough
+        }));
 
-      service.route(
-        {
-          origin: new google.maps.LatLng(origin.lat, origin.lng),
-          destination: new google.maps.LatLng(destination.lat, destination.lng),
-          waypoints,
-          travelMode: google.maps.TravelMode.DRIVING,
-          optimizeWaypoints: false,
-          drivingOptions: {
-            departureTime: new Date(),
-            trafficModel: google.maps.TrafficModel.BEST_GUESS,
+        const renderer = new google.maps.DirectionsRenderer({
+          suppressMarkers: true,
+          preserveViewport: true,
+          polylineOptions: {
+            strokeColor: color,
+            strokeWeight: hasBuses ? 5 : 3,
+            strokeOpacity: hasBuses ? 0.9 : 0.5,
+            zIndex: 10,
           },
-        },
-        (result, status) => {
-          if (status === google.maps.DirectionsStatus.OK && result) {
-            renderer.setDirections(result);
-          } else {
-            console.warn(`[DirectionsRoute] Chunk ${chunkIdx} failed: ${status}. Falling back to polyline.`);
-            // Fallback: draw straight-line polyline for this chunk
-            renderer.setMap(null);
-            const fallback = new google.maps.Polyline({
-              path: chunk.map(p => ({ lat: p.lat, lng: p.lng })),
-              strokeColor: color,
-              strokeWeight: hasBuses ? 4 : 2.5,
-              strokeOpacity: 0.6,
-              map,
-            });
-            // Store as custom ref for cleanup (type cast)
-            (renderersRef.current as any[]).push({ setMap: (m: any) => fallback.setMap(m) });
-            setError(true);
-          }
-        }
-      );
-    });
+        });
+        renderer.setMap(map);
+        renderersRef.current.push(renderer);
+
+        await new Promise<void>((resolve) => {
+          service.route(
+            {
+              origin: new google.maps.LatLng(origin.lat, origin.lng),
+              destination: new google.maps.LatLng(destination.lat, destination.lng),
+              waypoints,
+              travelMode: google.maps.TravelMode.DRIVING,
+              optimizeWaypoints: false,
+              drivingOptions: {
+                departureTime: new Date(),
+                trafficModel: google.maps.TrafficModel.BEST_GUESS,
+              },
+            },
+            (result, status) => {
+              if (status === google.maps.DirectionsStatus.OK && result) {
+                renderer.setDirections(result);
+              } else {
+                console.warn(`[DirectionsRoute] Chunk ${chunkIdx} failed: ${status}. Falling back to polyline.`);
+                renderer.setMap(null);
+                const fallback = new google.maps.Polyline({
+                  path: chunk.map(p => ({ lat: p.lat, lng: p.lng })),
+                  strokeColor: color,
+                  strokeWeight: hasBuses ? 4 : 2.5,
+                  strokeOpacity: 0.6,
+                  map,
+                });
+                (renderersRef.current as any[]).push({ setMap: (m: any) => fallback.setMap(m) });
+                setError(true);
+              }
+              // Wait 300ms before resolving to prevent OVER_QUERY_LIMIT rate limiting
+              setTimeout(resolve, 300);
+            }
+          );
+        });
+      }
+    };
+
+    fetchChunks();
 
     return () => {
+      isMounted = false;
       renderersRef.current.forEach(r => r.setMap(null));
       renderersRef.current = [];
     };
