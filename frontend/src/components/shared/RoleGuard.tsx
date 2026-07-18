@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useAuth, UserRole } from "@/hooks/useAuth";
 import { Loader2, ShieldAlert, LogIn } from "lucide-react";
 import Link from "next/link";
@@ -11,6 +12,7 @@ interface RoleGuardProps {
 
 export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
   const { user, loading, loginLoading, loginWithGoogle, logout } = useAuth();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   if (loading) {
     return (
@@ -102,7 +104,7 @@ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
         </p>
         <div className="flex items-center gap-4">
           <button
-            onClick={logout}
+            onClick={() => setShowLogoutConfirm(true)}
             className="text-[13px] font-semibold transition-colors"
             style={{ color: "var(--text-secondary)" }}
           >
@@ -116,6 +118,29 @@ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
             Return Home
           </Link>
         </div>
+
+        {showLogoutConfirm && (
+          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowLogoutConfirm(false)}>
+            <div className="p-5 rounded-2xl w-[280px] text-center flex flex-col gap-4 shadow-2xl" 
+                 style={{ background: "var(--surface-1)", border: "1px solid var(--surface-2)" }} 
+                 onClick={e => e.stopPropagation()}>
+              <div className="flex flex-col gap-2">
+                <h3 className="font-bold text-base" style={{ color: "var(--text-primary)" }}>Sign Out?</h3>
+                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Are you sure you want to sign out of your account?</p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 py-2.5 rounded-xl text-xs font-semibold"
+                  style={{ background: "var(--surface-2)", color: "var(--text-primary)" }}>
+                  Cancel
+                </button>
+                <button onClick={() => { setShowLogoutConfirm(false); logout(); }} className="flex-1 py-2.5 rounded-xl text-xs font-semibold"
+                  style={{ background: "var(--status-danger)", color: "white" }}>
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
