@@ -217,17 +217,16 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     };
   }, [route.id, targetStop, route.stops]);
 
-  // ── 60-Second Live Traffic ETA Fetcher ─────────────────────────────────────
+  // ── High-Frequency Speed-Aware ETA Fallback (Haversine) ──────────────────
   useEffect(() => {
     if (!routesLib || !route.stops || route.stops.length === 0 || buses.size === 0) return;
 
     const fetchETAs = async () => {
       const now = Date.now();
-      // Only fetch once every 60 seconds
-      if (now - lastTrafficFetchRef.current < 60000) return;
+      // Re-calculate ETAs frequently since it's local math now
+      if (now - lastTrafficFetchRef.current < 5000) return;
       lastTrafficFetchRef.current = now;
 
-      const service = new routesLib.DirectionsService();
       const newArrivals: Record<string, number> = {};
 
       for (const bus of Array.from(buses.values())) {
@@ -235,58 +234,29 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         const remainingStops = route.stops.slice(closestStopIdx);
         if (remainingStops.length === 0) continue;
 
-        // Chunking the stops 8 waypoints at a time for free tier
-        const CHUNK_SIZE = 9;
-        const waypointsList = [
-          { lat: bus.lat, lng: bus.lng, id: "bus" },
-          ...remainingStops
-        ];
-
-        const chunks: { lat: number, lng: number, id: string }[][] = [];
-        for (let i = 0; i < waypointsList.length - 1; i += CHUNK_SIZE - 1) {
-          chunks.push(waypointsList.slice(i, i + CHUNK_SIZE));
-          if (i + CHUNK_SIZE >= waypointsList.length) break;
-        }
-
-        let totalSeconds = 0;
+        // Base speed fallback: 35km/h for city transit. Use actual speed if available.
+        const speedKmh = (bus as any).speed > 0 ? (bus as any).speed : 35;
+        const speedMs = speedKmh / 3.6;
         const busDelaySec = (bus.delayMinutes || 0) * 60;
 
-        for (const chunk of chunks) {
-          if (chunk.length < 2) continue;
-          try {
-            const res = await service.route({
-              origin: chunk[0],
-              destination: chunk[chunk.length - 1],
-              waypoints: chunk.slice(1, -1).map(p => ({ location: p, stopover: true })),
-              travelMode: google.maps.TravelMode.DRIVING,
-              optimizeWaypoints: false,
-              drivingOptions: {
-                departureTime: new Date(),
-                trafficModel: google.maps.TrafficModel.BEST_GUESS,
-              },
-            });
+        let accumDistMeters = 0;
+        let lastPt = { lat: bus.lat, lng: bus.lng };
 
-            if (res && res.routes[0]) {
-              const legs = res.routes[0].legs;
-              for (let i = 0; i < legs.length; i++) {
-                const leg = legs[i];
-                // Use live traffic duration if available, fallback to normal duration
-                const legSeconds = leg.duration_in_traffic?.value || leg.duration?.value || 0;
-                totalSeconds += legSeconds;
-                
-                const targetStopId = chunk[i + 1].id;
-                // Add base delay to final timestamp calculation
-                const arrivalTimestamp = now + (totalSeconds * 1000) + (busDelaySec * 1000);
-                
-                // Keep the soonest arrival if multiple buses approach the same stop
-                if (!newArrivals[targetStopId] || arrivalTimestamp < newArrivals[targetStopId]) {
-                  newArrivals[targetStopId] = arrivalTimestamp;
-                }
-              }
-            }
-          } catch (err) {
-            console.warn("[Directions API ETA Chunk Failed]", err);
+        for (let i = 0; i < remainingStops.length; i++) {
+          const stop = remainingStops[i];
+          const distToStop = getDistanceMeters(lastPt, { lat: stop.lat, lng: stop.lng });
+          
+          // 1.3 topology multiplier + adding 45s dwell time per stop for realistic transit ETAs
+          accumDistMeters += (distToStop * 1.3);
+          let totalSeconds = accumDistMeters / speedMs;
+          if (i > 0) totalSeconds += (i * 45); 
+
+          const arrivalTimestamp = now + (totalSeconds * 1000) + (busDelaySec * 1000);
+          
+          if (!newArrivals[stop.id] || arrivalTimestamp < newArrivals[stop.id]) {
+            newArrivals[stop.id] = arrivalTimestamp;
           }
+          lastPt = { lat: stop.lat, lng: stop.lng };
         }
       }
 
