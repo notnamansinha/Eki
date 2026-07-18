@@ -55,6 +55,7 @@ export default function DriverPage() {
   const routeIdsRef = useRef<string[]>([]);
   const currentStopIndexRef = useRef<number>(0);
   const delayMinutesRef = useRef<number>(0);
+  const driverLocationRef = useRef<{ lat: number; lng: number } | null>(null);
 
   const lastLogTimeRef = useRef<number>(0);
 
@@ -87,13 +88,13 @@ export default function DriverPage() {
     routesToUpdate.forEach(routeId => {
       const activeBusId = busIdRef.current || "test_bus_1";
 
-      // Use the PREVIOUS stop's coords as the bus position so the ETA engine
-      // correctly calculates travel time to reach the next stop, rather than
-      // placing the bus at the next stop itself (which would show "Due").
-      // For index 0 (first stop, i.e. route start), use stop 0 coords as-is.
+      // Prefer live GPS location for accurate ETA calculation.
+      // Only fall back to the previous stop's coords if no GPS fix is available yet
+      // (avoids teleporting the bus to a skipped stop's position).
+      const liveLoc = driverLocationRef.current;
       const prevIdx = Math.max(0, index - 1);
-      const stopLat = activeRoute?.stops?.[prevIdx]?.lat ?? 23.03;
-      const stopLng = activeRoute?.stops?.[prevIdx]?.lng ?? 72.55;
+      const stopLat = liveLoc?.lat ?? activeRoute?.stops?.[prevIdx]?.lat ?? 23.03;
+      const stopLng = liveLoc?.lng ?? activeRoute?.stops?.[prevIdx]?.lng ?? 72.55;
 
       const busRef = ref(rtdb, `activeBuses/${activeBusId}_${routeId}`);
       update(busRef, {
@@ -112,6 +113,7 @@ export default function DriverPage() {
 
   useEffect(() => { busIdRef.current = busId; }, [busId]);
   useEffect(() => { routeIdsRef.current = selectedRouteIds; }, [selectedRouteIds]);
+  useEffect(() => { driverLocationRef.current = driverLocation; }, [driverLocation]);
 
   useEffect(() => {
     if (routes.length > 0 && selectedRouteIds.length === 0) {
