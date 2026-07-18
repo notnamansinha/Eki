@@ -4,19 +4,25 @@
       ".read": "auth != null",
       ".indexOn": ["routeId"],
       "$busKey": {
-        ".write": "auth != null"
+        ".write": "auth != null && (root.child('users/' + auth.uid).child('role').val() === 'driver' || root.child('users/' + auth.uid).child('role').val() === 'admin')"
       }
     },
     "messages": {
       "sessions": {
         "$sessionId": {
           ".read": "auth != null",
-          ".write": "auth != null"
+          "$msgId": {
+            ".write": "auth != null",
+            ".validate": "newData.child('senderId').val() === auth.uid && newData.child('text').val().length <= 500"
+          }
         }
       },
       "$busId": {
         ".read": "auth != null",
-        ".write": "auth != null"
+        "$msgId": {
+          ".write": "auth != null",
+          ".validate": "newData.child('senderId').val() === auth.uid && newData.child('text').val().length <= 500"
+        }
       }
     },
     "users": {

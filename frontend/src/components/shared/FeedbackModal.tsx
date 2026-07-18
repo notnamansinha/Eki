@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { Star, HeartHandshake, X, Send, Check } from "lucide-react";
 import { auth, db } from "@/lib/firebase";
-import { signInAnonymously } from "firebase/auth";
 import {
   collection,
   doc,
@@ -102,7 +101,8 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
     
     setSubmitting(true);
     try {
-      const currentUser = auth.currentUser || (await signInAnonymously(auth)).user;
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("User must be logged in to submit feedback");
       const currentUserId = currentUser.uid;
       const feedbackRef = collection(db, "feedbacks");
       const cooldownRef = doc(db, "feedbackCooldowns", currentUserId);
