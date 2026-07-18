@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, push, onValue, serverTimestamp } from "firebase/database";
-import { signInAnonymously } from "firebase/auth";
+import { waitForAuth } from "@/lib/authState";
 import { Send, X, MessageCircle } from "lucide-react";
 
 interface Message {
@@ -46,7 +46,7 @@ export default function MessagingPanel({
     let unsubscribe: (() => void) | undefined;
     let isMounted = true;
 
-    signInAnonymously(auth).then(() => {
+    waitForAuth().then(() => {
       if (!isMounted) return;
       const messagesRef = ref(rtdb, `messages/${busId}`);
       unsubscribe = onValue(messagesRef, (snapshot) => {
@@ -76,7 +76,7 @@ export default function MessagingPanel({
       }, (error) => {
         console.warn("[RTDB] messages read failed:", error.message);
       });
-    }).catch(err => console.warn("[RTDB Auth] Messaging sign-in failed:", err.code));
+    });
 
     return () => {
       isMounted = false;
