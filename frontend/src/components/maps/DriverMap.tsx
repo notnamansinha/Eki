@@ -56,6 +56,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
   const stops = route.stops || [];
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
   const nextStop = stops[currentStopIndex] ?? stops[stops.length - 1];
+  const [showEndShiftConfirm, setShowEndShiftConfirm] = useState(false);
   // Timestamp of last manual skip — geofence is suppressed for 3s after a manual advance
   // to prevent the auto-advance from cascading when driverLocation gets a synthetic position.
   const lastManualSkipRef = useRef<number>(0);
@@ -321,7 +322,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
                   )}
                 </div>
                 {onEndShift && isTracking && (
-                  <button onClick={(e) => { e.stopPropagation(); onEndShift(); }} 
+                  <button onClick={(e) => { e.stopPropagation(); setShowEndShiftConfirm(true); }} 
                     className="h-7 px-3 rounded-lg text-[9px] font-semibold transition-all"
                     style={{ background: "var(--status-danger-bg)", border: "1px solid rgba(248,113,113,0.15)", color: "var(--status-danger)" }}>
                     End Shift
@@ -360,6 +361,29 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           />
         )}
       </div>
+
+      {showEndShiftConfirm && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowEndShiftConfirm(false)}>
+          <div className="p-5 rounded-2xl w-[280px] text-center flex flex-col gap-4 shadow-2xl" 
+               style={{ background: "var(--surface-1)", border: "1px solid var(--surface-2)" }} 
+               onClick={e => e.stopPropagation()}>
+            <div className="flex flex-col gap-2">
+              <h3 className="font-bold text-base" style={{ color: "var(--text-primary)" }}>End Shift?</h3>
+              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Are you sure you want to end your tracking session? Passengers will no longer see this bus.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowEndShiftConfirm(false)} className="flex-1 py-2.5 rounded-xl text-xs font-semibold"
+                style={{ background: "var(--surface-2)", color: "var(--text-primary)" }}>
+                Cancel
+              </button>
+              <button onClick={() => { setShowEndShiftConfirm(false); if (onEndShift) onEndShift(); }} className="flex-1 py-2.5 rounded-xl text-xs font-semibold"
+                style={{ background: "var(--status-danger)", color: "white" }}>
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
