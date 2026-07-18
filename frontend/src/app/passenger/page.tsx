@@ -163,6 +163,13 @@ export default function PassengerPage() {
 
   const busMotionState = (activeBusOnRoute?.motionState || "uncertain") as "moving" | "stopped" | "uncertain";
 
+  // Automatically return to home if tracking view is open but there are no buses and the ended message is gone
+  useEffect(() => {
+    if (currentView === "tracking" && !activeBusOnRouteId && !endedMessage) {
+      setCurrentView("home");
+    }
+  }, [currentView, activeBusOnRouteId, endedMessage]);
+
   useEffect(() => {
     let timerId: NodeJS.Timeout;
 
@@ -372,6 +379,16 @@ export default function PassengerPage() {
                   Waiting for next bus
                 </p>
               </div>
+              <button
+                onClick={() => {
+                  setEndedMessage(false);
+                  setCurrentView("home");
+                }}
+                className="mt-6 px-6 py-2.5 rounded-xl text-[13px] font-semibold transition-all active:scale-95"
+                style={{ background: "rgba(255,255,255,0.1)", color: "white", border: "1px solid rgba(255,255,255,0.05)" }}
+              >
+                Return to Routes
+              </button>
             </div>
           ) : null}
         </div>

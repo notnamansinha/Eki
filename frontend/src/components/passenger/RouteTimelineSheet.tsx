@@ -99,7 +99,7 @@ export default function RouteTimelineSheet({
                   {isTarget && (
                     <span className="px-1.5 py-0.5 rounded text-[8px] font-semibold"
                       style={{ background: "var(--accent-subtle)", color: "var(--accent)" }}>
-                      Last Stop
+                      {isFirst ? "Boarding Stop" : isLast ? "Destination" : "Selected Stop"}
                     </span>
                   )}
                   {isFirst && !isTarget && (
