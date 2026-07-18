@@ -193,34 +193,49 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           />
 
           {/* Stop markers */}
-          {stops.map((stop, i) => (
-            <AdvancedMarker key={`stop-${stop.id || i}`} position={{ lat: stop.lat, lng: stop.lng }}>
-              {i === currentStopIndex ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                  <div style={{ position: "absolute", width: 28, height: 28, background: "var(--accent)", borderRadius: "50%", animation: "ripple 2s infinite" }} />
-                  <div style={{ width: 28, height: 28, background: "var(--accent)", border: "3px solid #fb923c", borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 12px rgba(250,93,41,0.3)" }}>
-                    <span style={{ color: "white", fontWeight: 800, fontSize: 11 }}>{String.fromCharCode(65 + i)}</span>
+          {stops.map((stop, i) => {
+            const dotColor = "var(--accent)"; // FORCED ORANGE
+            
+            // Native halo text style (White text, thick black halo)
+            const labelStyle: React.CSSProperties = {
+              marginTop: 4,
+              color: "#ffffff",
+              fontSize: i === currentStopIndex ? 11 : 9.5,
+              fontWeight: 800,
+              whiteSpace: "nowrap",
+              textShadow: "2px 0 #000, -2px 0 #000, 0 2px #000, 0 -2px #000, 1px 1px #000, -1px -1px #000, 1px -1px #000, -1px 1px #000, 0 4px 8px rgba(0,0,0,0.8)",
+              zIndex: 50
+            };
+
+            return (
+              <AdvancedMarker key={`stop-${stop.id || i}`} position={{ lat: stop.lat, lng: stop.lng }}>
+                {i === currentStopIndex ? (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ position: "absolute", top: 2, width: 26, height: 26, background: dotColor, borderRadius: "50%", animation: "ripple 2s infinite" }} />
+                    <div style={{ width: 26, height: 26, background: dotColor, border: `3.5px solid #000000`, borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.5)" }}>
+                      <span style={{ color: "#ffffff", fontWeight: 900, fontSize: 12 }}>{String.fromCharCode(65 + i)}</span>
+                    </div>
+                    <span style={labelStyle}>
+                      {stop.shortName}
+                    </span>
                   </div>
-                  <span style={{ marginTop: 6, padding: "3px 10px", background: "var(--surface-2)", border: "1px solid var(--border-default)", color: "var(--text-primary)", borderRadius: 8, fontSize: 9, whiteSpace: "nowrap", zIndex: 50, fontWeight: 700 }}>
-                    {stop.shortName}
-                  </span>
-                </div>
-              ) : i < currentStopIndex ? (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, background: "rgba(250,93,41,0.5)", border: "2px solid rgba(251,146,60,0.4)", borderRadius: "50%" }}>
-                  <span style={{ color: "white", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: 0.7 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, background: "var(--accent)", border: "2px solid #fb923c", borderRadius: "50%" }}>
-                    <span style={{ color: "white", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
+                ) : i < currentStopIndex ? (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 14, height: 14, background: dotColor, opacity: 0.6, borderRadius: "50%" }}>
+                    <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 7 }}>{String.fromCharCode(65 + i)}</span>
                   </div>
-                  <span style={{ marginTop: 3, padding: "1px 6px", background: "var(--surface-2)", color: "var(--text-tertiary)", borderRadius: 4, fontSize: 8, whiteSpace: "nowrap", fontWeight: 600 }}>
-                    {stop.shortName}
-                  </span>
-                </div>
-              )}
-            </AdvancedMarker>
-          ))}
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ width: 20, height: 20, background: dotColor, border: `3px solid #000000`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,0.4)" }}>
+                      <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
+                    </div>
+                    <span style={labelStyle}>
+                      {stop.shortName}
+                    </span>
+                  </div>
+                )}
+              </AdvancedMarker>
+            );
+          })}
 
           {/* Driver bus marker */}
           {driverLocation && (
@@ -239,9 +254,9 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
 
       <style>{`
         @keyframes ripple {
-          0% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0.4); }
-          70% { box-shadow: 0 0 0 20px rgba(250, 93, 41, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0); }
+          0% { transform: scale(1); opacity: 0.6; }
+          70% { transform: scale(3.5); opacity: 0; }
+          100% { transform: scale(3.5); opacity: 0; }
         }
         @keyframes ping {
           0% { transform: scale(1); opacity: 0.6; }

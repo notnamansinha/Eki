@@ -405,24 +405,37 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           {/* Stop markers */}
           {route.stops?.map((stop, i) => {
             const isTarget = stop.id === targetStop.id;
+            const dotColor = "var(--accent)"; // FORCED ORANGE
+            
+            // Native halo text style (White text, thick black halo)
+            const labelStyle: React.CSSProperties = {
+              marginTop: 4,
+              color: "#ffffff",
+              fontSize: isTarget ? 11 : 9.5,
+              fontWeight: 800,
+              whiteSpace: "nowrap",
+              textShadow: "2px 0 #000, -2px 0 #000, 0 2px #000, 0 -2px #000, 1px 1px #000, -1px -1px #000, 1px -1px #000, -1px 1px #000, 0 4px 8px rgba(0,0,0,0.8)",
+              zIndex: 50
+            };
+
             return (
               <AdvancedMarker key={`stop-${stop.id || i}`} position={{ lat: stop.lat, lng: stop.lng }}>
                 {isTarget ? (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                    <div style={{ position: "absolute", width: 28, height: 28, background: "var(--accent)", borderRadius: "50%", animation: "ripple 2s infinite" }} />
-                    <div style={{ width: 28, height: 28, background: "var(--accent)", border: "3px solid #fb923c", borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 12px rgba(250,93,41,0.3)" }}>
-                      <span style={{ color: "white", fontWeight: 800, fontSize: 11 }}>{String.fromCharCode(65 + i)}</span>
+                    <div style={{ position: "absolute", top: 2, width: 26, height: 26, background: dotColor, borderRadius: "50%", animation: "ripple 2s infinite" }} />
+                    <div style={{ width: 26, height: 26, background: dotColor, border: `3.5px solid #000000`, borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.5)" }}>
+                      <span style={{ color: "#ffffff", fontWeight: 900, fontSize: 12 }}>{String.fromCharCode(65 + i)}</span>
                     </div>
-                    <span style={{ marginTop: 6, padding: "3px 10px", background: "var(--surface-2)", border: "1px solid var(--border-default)", color: "var(--text-primary)", borderRadius: 8, fontSize: 9, whiteSpace: "nowrap", zIndex: 50, fontWeight: 700 }}>
+                    <span style={labelStyle}>
                       {stop.shortName}
                     </span>
                   </div>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: 0.75 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, background: "var(--accent)", border: "2px solid #fb923c", borderRadius: "50%", boxShadow: "0 2px 4px rgba(0,0,0,0.2)" }}>
-                      <span style={{ color: "white", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ width: 20, height: 20, background: dotColor, border: `3px solid #000000`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,0.4)" }}>
+                      <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
                     </div>
-                    <span style={{ marginTop: 3, padding: "1px 6px", background: "var(--surface-2)", color: "var(--text-tertiary)", borderRadius: 4, fontSize: 8, whiteSpace: "nowrap", fontWeight: 600 }}>
+                    <span style={labelStyle}>
                       {stop.shortName}
                     </span>
                   </div>
@@ -435,9 +448,9 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
 
       <style>{`
         @keyframes ripple {
-          0% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0.4); }
-          70% { box-shadow: 0 0 0 20px rgba(250, 93, 41, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0); }
+          0% { transform: scale(1); opacity: 0.6; }
+          70% { transform: scale(3.5); opacity: 0; }
+          100% { transform: scale(3.5); opacity: 0; }
         }
         @keyframes passengerPulse {
           0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.6); }
