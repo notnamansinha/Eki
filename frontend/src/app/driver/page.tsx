@@ -86,8 +86,15 @@ export default function DriverPage() {
 
     routesToUpdate.forEach(routeId => {
       const activeBusId = busIdRef.current || "test_bus_1";
-      const stopLat = activeRoute?.stops?.[index]?.lat ?? 23.03;
-      const stopLng = activeRoute?.stops?.[index]?.lng ?? 72.55;
+
+      // Use the PREVIOUS stop's coords as the bus position so the ETA engine
+      // correctly calculates travel time to reach the next stop, rather than
+      // placing the bus at the next stop itself (which would show "Due").
+      // For index 0 (first stop, i.e. route start), use stop 0 coords as-is.
+      const prevIdx = Math.max(0, index - 1);
+      const stopLat = activeRoute?.stops?.[prevIdx]?.lat ?? 23.03;
+      const stopLng = activeRoute?.stops?.[prevIdx]?.lng ?? 72.55;
+
       const busRef = ref(rtdb, `activeBuses/${activeBusId}_${routeId}`);
       update(busRef, {
         busId: activeBusId,
