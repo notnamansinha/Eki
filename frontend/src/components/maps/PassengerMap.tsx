@@ -325,6 +325,10 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     : null;
 
   const mapCenter = useMemo(() => ({ lat: targetStop.lat, lng: targetStop.lng }), [targetStop.lat, targetStop.lng]);
+  const centerTarget = useMemo(() => {
+    const firstBus = Array.from(buses.values())[0];
+    return firstBus ? { lat: firstBus.lat, lng: firstBus.lng } : mapCenter;
+  }, [buses, mapCenter]);
 
   const routeStops = useMemo(() => {
     return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) ?? [];
@@ -352,15 +356,15 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         </div>
       )}
 
-      <div className="absolute inset-0 z-0" style={{ background: "var(--surface-0)" }} onPointerDown={() => setIsCentered(false)}>
+      <div className="absolute inset-0 z-0" style={{ background: "var(--surface-0)" }} onPointerDown={() => setIsCentered(false)} onTouchStart={() => setIsCentered(false)}>
         <GoogleMap
           mapId={MAPS_MAP_ID}
           defaultCenter={mapCenter}
           defaultZoom={15}
           style={{ width: "100%", height: "100%" }}
-          {...MAP_OPTIONS}
+          options={MAP_OPTIONS}
         >
-          <MapCenterer target={passengerLocation} isCentered={isCentered} />
+          <MapCenterer target={centerTarget} isCentered={isCentered} />
           <TrafficLayer />
           <DirectionsRoute
             stops={routeStops}
@@ -442,23 +446,21 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         }
       `}</style>
 
-      {passengerLocation && (
-        <div className="absolute bottom-[90px] right-4 z-40">
-          <button
-            onClick={() => setIsCentered(true)}
-            className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-300 border active:scale-95"
-            style={{
-              background: isCentered ? "rgba(59, 130, 246, 0.15)" : "var(--surface-2)",
-              borderColor: isCentered ? "rgba(59, 130, 246, 0.3)" : "var(--border-default)",
-              color: isCentered ? "#60A5FA" : "var(--text-secondary)",
-              boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
-            }}
-            aria-label="Center on my location"
-          >
-            <LocateFixed className="w-4.5 h-4.5" />
-          </button>
-        </div>
-      )}
+      <div className="absolute top-[140px] right-4 z-40">
+        <button
+          onClick={() => setIsCentered(true)}
+          className="flex items-center justify-center w-12 h-12 rounded-xl transition-all duration-300 border active:scale-95 shadow-lg"
+          style={{
+            background: isCentered ? "rgba(59, 130, 246, 0.15)" : "var(--surface-2)",
+            borderColor: isCentered ? "rgba(59, 130, 246, 0.3)" : "var(--border-default)",
+            color: isCentered ? "#60A5FA" : "var(--text-secondary)",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+          }}
+          aria-label="Center on bus"
+        >
+          <Navigation className="w-5 h-5" fill={isCentered ? "currentColor" : "none"} />
+        </button>
+      </div>
 
       <RouteTimelineSheet
         route={route}
