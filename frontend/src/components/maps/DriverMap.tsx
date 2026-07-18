@@ -18,7 +18,7 @@ export interface DriverMapProps {
   onEndShift?: () => void;
   isTracking?: boolean;
   selectedRouteIds?: string[];
-  onStopIndexChange?: (index: number) => void;
+  onStopIndexChange?: (index: number, routeIdHint?: string) => void;
   onStartTracking?: () => void;
   canStartTracking?: boolean;
 }
@@ -68,14 +68,22 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
     setDelayMinutes(prev => {
       const next = Math.max(0, prev + addMin);
       const now = Date.now();
-      if (now - lastDelayPushRef.current > 500) {
-        lastDelayPushRef.current = now;
-        const routesToUpdate = selectedRouteIds?.length ? selectedRouteIds : [route.id];
-        routesToUpdate.forEach(routeId => {
-          const busRef = ref(rtdb, `activeBuses/${busId}_${routeId}`);
-          update(busRef, { delayMinutes: next }).catch(console.error);
-        });
-      }
+      const routesToUpdate = selectedRouteIds?.length ? selectedRouteIds : [route.id];
+      routesToUpdate.forEach(routeId => {
+        const activeBusId = busId || "test_bus_1";
+        const busRef = ref(rtdb, `activeBuses/${activeBusId}_${routeId}`);
+        update(busRef, { 
+          busId: activeBusId,
+          routeId,
+          lat: driverLocation?.lat || route.stops?.[currentStopIndex]?.lat || 23.03,
+          lng: driverLocation?.lng || route.stops?.[currentStopIndex]?.lng || 72.55,
+          delayMinutes: next, 
+          timestamp: now,
+          tripState: "in_service",
+          status: "active",
+          deviceState: "online"
+        }).catch(console.error);
+      });
       return next;
     });
   }, [busId, selectedRouteIds, route.id]);
@@ -83,10 +91,10 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
   const handleManualNextStop = useCallback(() => {
     setCurrentStopIndex(i => {
       const nextIdx = Math.min(i + 1, stops.length - 1);
-      if (onStopIndexChange) onStopIndexChange(nextIdx);
+      if (onStopIndexChange) onStopIndexChange(nextIdx, route.id);
       return nextIdx;
     });
-  }, [stops.length, onStopIndexChange]);
+  }, [stops.length, onStopIndexChange, route.id]);
 
   useEffect(() => {
     if (!driverLocation || !nextStop || currentStopIndex >= stops.length - 1) return;
@@ -97,11 +105,11 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
     if (dist < 80) {
       setCurrentStopIndex(i => {
         const nextIdx = Math.min(i + 1, stops.length - 1);
-        if (onStopIndexChange) onStopIndexChange(nextIdx);
+        if (onStopIndexChange) onStopIndexChange(nextIdx, route.id);
         return nextIdx;
       });
     }
-  }, [driverLocation?.lat, driverLocation?.lng, nextStop?.lat, nextStop?.lng, currentStopIndex, stops.length, onStopIndexChange]);
+  }, [driverLocation?.lat, driverLocation?.lng, nextStop?.lat, nextStop?.lng, currentStopIndex, stops.length, onStopIndexChange, route.id]);
 
   const [navPhase, setNavPhase] = useState<NavPhase>("preview");
   const [isCentered, setIsCentered] = useState(true);

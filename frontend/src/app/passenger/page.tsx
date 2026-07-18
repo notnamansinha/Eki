@@ -303,7 +303,7 @@ export default function PassengerPage() {
               {/* Top bar: back + route info */}
               <div className="absolute top-0 w-full z-40 pt-safe px-4 pb-6 pointer-events-auto"
                 style={{ background: "linear-gradient(to bottom, rgba(9,9,11,0.92) 0%, transparent 100%)" }}>
-                <div className="flex items-center gap-4 max-w-lg mx-auto pt-6">
+                <div className="flex items-center gap-4 max-w-lg mx-auto pt-12">
                   <button
                     onClick={() => setCurrentView("home")}
                     className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 hover:opacity-90 shadow-sm cursor-pointer"
@@ -315,8 +315,8 @@ export default function PassengerPage() {
                   >
                     <ArrowLeft className="w-5 h-5" style={{ color: "var(--text-secondary)" }} />
                   </button>
-                  {activeSessionId && !isBoarded ? (
-                    <div className="flex-1 min-w-0 pr-4">
+                  {activeSessionId ? (
+                    <div className="flex-1 min-w-0">
                       <PassengerBoardingView 
                         sessionId={activeSessionId}
                         route={activeRoute}
@@ -340,7 +340,7 @@ export default function PassengerPage() {
 
               {/* Messaging FAB */}
               {activeRouteIds.includes(activeRoute.id) && !isMessagingOpen && (
-                <div className="absolute top-20 right-4 z-50 animate-scale-in pointer-events-auto">
+                <div className="absolute top-[160px] right-4 z-50 animate-scale-in pointer-events-auto">
                   <button
                     onClick={handleOpenMessaging}
                     className="w-12 h-12 rounded-xl flex items-center justify-center transition-all active:scale-95 relative"

@@ -83,6 +83,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
   const [stopETAs, setStopETAs] = useState<Record<string, number>>({});
   const [signalLostBuses, setSignalLostBuses] = useState<Set<string>>(new Set());
   const [signalLostLastSeen, setSignalLostLastSeen] = useState<number | null>(null);
+  const [activeBusStopIndex, setActiveBusStopIndex] = useState<number | undefined>(undefined);
   const lastBuzzedStopIdRef = useRef<string | null>(null);
   const lastStopIndexRef = useRef<Record<string, number>>({});
   const stopEntryTimeRef = useRef<Record<string, number>>({});
@@ -161,7 +162,9 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           if (route.stops && route.stops.length > 0) {
             let closestStopIndex: number;
             if (bus.currentStopIndex !== undefined) {
+              // Driver panel / ESP32 is the source of truth — always trust it and store it
               closestStopIndex = bus.currentStopIndex;
+              lastStopIndexRef.current[bus.busId] = closestStopIndex;
             } else {
               const lastKnown = lastStopIndexRef.current[bus.busId] ?? 0;
               const searchStart = Math.max(0, lastKnown - 1);
@@ -206,6 +209,12 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         setBuses(activeBuses);
         setSignalLostBuses(newSignalLost);
         setSignalLostLastSeen(oldestTimestamp);
+        // Update activeBusStopIndex reactively from the first bus
+        const firstEntry = activeBuses.values().next().value as IncomingBusData | undefined;
+        if (firstEntry) {
+          const idx = lastStopIndexRef.current[firstEntry.busId] ?? 0;
+          setActiveBusStopIndex(idx);
+        }
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed:", error.message);
       });
@@ -223,8 +232,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
 
     const fetchETAs = async () => {
       const now = Date.now();
-      // Re-calculate ETAs frequently since it's local math now
-      if (now - lastTrafficFetchRef.current < 5000) return;
+      // Re-calculate ETAs instantly on driver state changes (since it's lightweight local math)
       lastTrafficFetchRef.current = now;
 
       const newArrivals: Record<string, number> = {};
@@ -377,6 +385,10 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
             const isTarget = stop.id === targetStop.id;
             const dotColor = "var(--accent)"; // FORCED ORANGE
             
+            // Get the current stop index — reactive state from RTDB (driver/ESP32 source of truth)
+            const currentStopIndex = activeBusStopIndex ?? 0;
+            const isPast = i < currentStopIndex;
+            
             // Native halo text style (White text, thick black halo)
             const labelStyle: React.CSSProperties = {
               marginTop: 4,
@@ -390,7 +402,11 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
 
             return (
               <AdvancedMarker key={`stop-${stop.id || i}`} position={{ lat: stop.lat, lng: stop.lng }}>
-                {isTarget ? (
+                {isPast ? (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 14, height: 14, background: dotColor, opacity: 0.6, borderRadius: "50%" }}>
+                    <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 7 }}>{String.fromCharCode(65 + i)}</span>
+                  </div>
+                ) : isTarget ? (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                     <div style={{ position: "absolute", top: 2, width: 26, height: 26, background: dotColor, borderRadius: "50%", animation: "ripple 2s infinite" }} />
                     <div style={{ width: 26, height: 26, background: dotColor, border: `3.5px solid #000000`, borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.5)" }}>
@@ -429,7 +445,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         }
       `}</style>
 
-      <div className="absolute top-[140px] right-4 z-40">
+      <div className="absolute top-[220px] right-4 z-40">
         <button
           onClick={() => setIsCentered(true)}
           className="flex items-center justify-center w-12 h-12 rounded-xl transition-all duration-300 border active:scale-95 shadow-lg"
@@ -451,6 +467,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         activeBusId={null}
         stopETAs={stopETAs}
         walkMinutesToTarget={walkMinutesToTarget}
+        currentStopIndex={activeBusStopIndex}
       />
     </>
   );

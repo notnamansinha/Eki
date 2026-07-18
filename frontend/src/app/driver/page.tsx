@@ -58,7 +58,7 @@ export default function DriverPage() {
 
   const lastLogTimeRef = useRef<number>(0);
 
-  const handleStopIndexChange = useCallback((index: number) => {
+  const handleStopIndexChange = useCallback((index: number, routeIdHint?: string) => {
     currentStopIndexRef.current = index;
     
     // Log the stop reached to Firestore
@@ -73,6 +73,34 @@ export default function DriverPage() {
         })
       }).catch(console.error);
     }
+
+    // Sync stop changes to Passenger Panels instantly via RTDB
+    // Use the most specific route IDs available (hint from DriverMap > routeIdsRef > activeRoute)
+    const routesToUpdate = routeIdsRef.current.length > 0
+      ? routeIdsRef.current
+      : routeIdHint
+        ? [routeIdHint]
+        : activeRoute
+          ? [activeRoute.id]
+          : [];
+
+    routesToUpdate.forEach(routeId => {
+      const activeBusId = busIdRef.current || "test_bus_1";
+      const stopLat = activeRoute?.stops?.[index]?.lat ?? 23.03;
+      const stopLng = activeRoute?.stops?.[index]?.lng ?? 72.55;
+      const busRef = ref(rtdb, `activeBuses/${activeBusId}_${routeId}`);
+      update(busRef, {
+        busId: activeBusId,
+        routeId: routeId,
+        lat: stopLat,
+        lng: stopLng,
+        currentStopIndex: index,
+        timestamp: Date.now(),
+        tripState: "in_service",
+        status: "active",
+        deviceState: "online"
+      }).catch(console.error);
+    });
   }, [activeSessionIds, selectedRouteIds, activeRoute]);
 
   useEffect(() => { busIdRef.current = busId; }, [busId]);
