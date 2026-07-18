@@ -63,14 +63,10 @@ function computeTripState(
     if (haversineMeters({lat, lng}, lastStop) <= STOP_GEOFENCE_M) {
       return { tripState: "completed", currentStopIndex: stops.length - 1 };
     }
-    let closestIdx = currentStopIndex;
-    let closestD = Infinity;
-    const searchEnd = Math.min(currentStopIndex + 5, stops.length - 2);
-    for (let i = currentStopIndex; i <= searchEnd; i++) {
-      const dist = haversineMeters({lat, lng}, stops[i]);
-      if (dist < closestD) { closestD = dist; closestIdx = i; }
-    }
-    return { tripState: "in_service", currentStopIndex: closestIdx };
+    // The driver app is the source of truth for intermediate stop progression.
+    // Removed the aggressive "closest of next 5 stops" logic because it causes
+    // phantom skips if a future stop is closer in a straight line than the route.
+    return { tripState: "in_service", currentStopIndex };
   }
 
   if (currentTripState === "maintenance") {
