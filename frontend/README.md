@@ -45,5 +45,6 @@ npm run build
 ```
 
 ## Architecture Notes
-- All rendering is client-heavy due to mapping requirements (`react-leaflet`).
+- All rendering is client-heavy due to mapping requirements (`@vis.gl/react-google-maps`).
 - Role-based routing is managed by `RoleGuard`, preventing unauthorized access to the `/admin` and `/driver` portals.
+- **Typography & UI**: The application is globally styled using the `Sora` font via `next/font/google` and utilizes semantic `lucide-react` iconography across all panels.

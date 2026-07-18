@@ -1,16 +1,14 @@
-# Google Maps Recovery Instructions
+# Google Maps Integration (Restored)
 
-This document provides instructions for a future AI Agent on how to restore the
-Google Maps API implementation that was temporarily replaced by Leaflet to
-save costs.
+*Note: Google Maps was successfully restored to the Eki repository. The zero-budget `DirectionsRoute` chunking strategy successfully bypasses the strict free-tier quotas. Leaflet has been fully deprecated and removed from the active codebase.*
+
+This document is preserved for historical reference on how the transition back from Leaflet to Google Maps was orchestrated.
 
 ## 1. Revert Package Dependencies
 
-To switch back, you will need to uninstall Leaflet packages and reinstall the
-`@vis.gl/react-google-maps` package:
+*Completed.* The repository now exclusively relies on:
 
 ```bash
-npm uninstall leaflet react-leaflet @types/leaflet
 npm install @vis.gl/react-google-maps
 ```
 

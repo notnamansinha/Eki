@@ -1,86 +1,70 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import {
+  Map as GoogleMap, AdvancedMarker, useMap,
+} from "@vis.gl/react-google-maps";
+import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { useRoutes, RouteData, RouteStop } from "@/hooks/useRoutes";
-import { doc, setDoc, deleteDoc } from "firebase/firestore";
+import { doc, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
-  Trash2, Plus, X, CheckCircle, MapPin,
-  Loader2, Search, ChevronDown, ChevronUp,
+  Trash2, Plus, X, CheckCircle, MapPin, Loader2, Search,
+  Pencil, GripVertical, ArrowUpDown, Palette, Save,
+  ChevronDown, ChevronUp, ArrowLeft, RefreshCw,
 } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 
-function stopLabel(index: number): string {
-  const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  if (index < 26) return alpha[index];
-  return alpha[Math.floor(index / 26) - 1] + alpha[index % 26];
+/* ── Helpers ────────────────────────────────────────────────────────────────── */
+function stopLabel(i: number): string {
+  const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  if (i < 26) return a[i];
+  return a[Math.floor(i / 26) - 1] + a[i % 26];
 }
 
-interface PlaceResult {
-  name: string;
-  lat: number;
-  lng: number;
-}
+const ROUTE_COLORS = [
+  "#3B82F6", "#10B981", "#F59E0B", "#EF4444",
+  "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
+];
 
-interface SearchBoxProps {
-  onPlaceSelect: (place: PlaceResult) => void;
-}
-
-function SearchBox({ onPlaceSelect }: SearchBoxProps) {
-  const [inputValue, setInputValue] = useState("");
+/* ── Nominatim search box ───────────────────────────────────────────────────── */
+function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: number; lng: number }) => void }) {
+  const [value, setValue] = useState("");
   const [results, setResults] = useState<any[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      if (inputValue.length > 2) {
-        setIsSearching(true);
-        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(inputValue)}&limit=5`)
-          .then(res => res.json())
-          .then(data => {
-            setResults(data);
-            setIsSearching(false);
-          })
-          .catch(() => setIsSearching(false));
-      } else {
-        setResults([]);
-      }
+    const t = setTimeout(() => {
+      if (value.length > 2) {
+        setSearching(true);
+        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(value)}&limit=5`)
+          .then(r => r.json())
+          .then(d => { setResults(d); setSearching(false); })
+          .catch(() => setSearching(false));
+      } else { setResults([]); }
     }, 500);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [inputValue]);
+    return () => clearTimeout(t);
+  }, [value]);
 
   return (
     <div className="relative flex-1">
       <div className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none">
-        {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+        {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
       </div>
       <input
-        type="text"
-        value={inputValue}
-        onChange={(e) => setInputValue(e.target.value)}
-        placeholder="Search for a stop..."
-        className="w-full h-10 bg-brand-dark border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/40 transition-colors placeholder:text-white/20 font-semibold"
+        type="text" value={value} onChange={e => setValue(e.target.value)}
+        placeholder="Search for a stop location…"
+        className="w-full h-10 bg-[#0f0f12] border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-medium"
       />
       {results.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-brand-dark border border-white/10 rounded-xl overflow-hidden z-50">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-[#0f0f12] border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl">
           {results.map((r, i) => (
-            <div 
-              key={i} 
-              className="p-3 hover:bg-white/10 cursor-pointer text-xs text-white border-b border-white/5 last:border-0"
-              onClick={() => {
-                onPlaceSelect({
-                  name: r.display_name,
-                  lat: parseFloat(r.lat),
-                  lng: parseFloat(r.lon)
-                });
-                setInputValue("");
-                setResults([]);
-              }}
-            >
+            <button key={i} className="w-full text-left p-3 hover:bg-white/5 text-xs text-white border-b border-white/5 last:border-0 truncate transition-colors" onClick={() => {
+              onPlaceSelect({ name: r.display_name, lat: parseFloat(r.lat), lng: parseFloat(r.lon) });
+              setValue(""); setResults([]);
+            }}>
               {r.display_name}
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -88,50 +72,60 @@ function SearchBox({ onPlaceSelect }: SearchBoxProps) {
   );
 }
 
-function RouteCard({ route, onDelete }: { route: RouteData; onDelete: (id: string) => void; }) {
+/* ── Map centering ──────────────────────────────────────────────────────────── */
+function MapCenter({ center }: { center: { lat: number; lng: number } | null }) {
+  const map = useMap();
+  useEffect(() => { if (center && map) { map.panTo(center); map.setZoom(15); } }, [center, map]);
+  return null;
+}
+
+/* ── Route list card ────────────────────────────────────────────────────────── */
+function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () => void; onDelete: (id: string) => void }) {
   const [stopsOpen, setStopsOpen] = useState(false);
-
   return (
-    <div className="group bg-brand-dark/30 border border-white/5 rounded-[1.2rem] overflow-hidden hover:bg-white/5 transition-all duration-300">
-      <div className="flex justify-between items-start p-4 gap-3">
-        <div className="space-y-1 min-w-0">
-          <h3 className="font-semibold text-white tracking-tight truncate">{route.name}</h3>
-          <div className="text-[10px] text-white/20 tabular-nums tracking-widest uppercase">{route.id}</div>
+    <div className="group bg-white/3 border border-white/8 rounded-2xl overflow-hidden hover:border-white/15 transition-all">
+      <div className="p-4 flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-3 h-3 rounded-full shrink-0" style={{ background: route.color || "#3B82F6" }} />
+          <div className="min-w-0">
+            <p className="font-semibold text-white truncate">{route.name}</p>
+            <p className="text-[10px] text-white/30 tabular-nums tracking-widest">{route.id}</p>
+          </div>
         </div>
-        <button
-          onClick={() => onDelete(route.id)}
-          className="p-2 rounded-xl bg-white/5 text-red-400 hover:bg-red-500 hover:text-white transition-all opacity-0 group-hover:opacity-100 shadow-xl shrink-0"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={onEdit} className="p-2 rounded-lg text-white/30 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Edit route">
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={() => onDelete(route.id)} className="p-2 rounded-lg text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete route">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
-
-      <div className="px-4 pb-3 flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => setStopsOpen((o) => !o)}
-          className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/5 text-[9px] font-black tracking-widest text-white/50 uppercase hover:bg-white/10 hover:text-white/80 transition-all"
-        >
+      <div className="px-4 pb-3 flex items-center gap-2">
+        <button onClick={() => setStopsOpen(o => !o)} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 text-[9px] font-black tracking-widest text-white/40 uppercase hover:text-white/60 transition-colors">
           <MapPin className="w-2.5 h-2.5" />
-          {route.stops?.length || 0} Stops
-          {stopsOpen ? <ChevronUp className="w-2.5 h-2.5 ml-0.5" /> : <ChevronDown className="w-2.5 h-2.5 ml-0.5" />}
+          {route.stops?.length ?? 0} Stops
+          {stopsOpen ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
         </button>
+        {route.type && (
+          <span className="px-2 py-0.5 rounded-full bg-white/5 text-[9px] font-black text-white/30 uppercase">{route.type}</span>
+        )}
+        {route.distanceMeters && (
+          <span className="text-[9px] text-white/20 tabular-nums">{(route.distanceMeters / 1000).toFixed(1)} km</span>
+        )}
       </div>
-
       {stopsOpen && route.stops && route.stops.length > 0 && (
         <div className="border-t border-white/5 px-4 py-3 flex flex-col gap-0">
           {route.stops.map((stop, i) => (
             <div key={i} className="flex items-stretch gap-3">
               <div className="flex flex-col items-center shrink-0">
-                <div className="w-7 h-7 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-black text-[10px] shrink-0">
+                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-black text-[9px] shrink-0">
                   {stopLabel(i)}
                 </div>
-                {i < route.stops!.length - 1 && <div className="flex-1 w-px my-1 bg-white/10 min-h-[14px]" />}
+                {i < route.stops!.length - 1 && <div className="flex-1 w-px my-0.5 bg-white/10 min-h-[12px]" />}
               </div>
-              <div className="pb-3 flex flex-col justify-center min-w-0">
-                <span className="text-sm font-semibold text-white/80 leading-tight truncate">{stop.name}</span>
-                {stop.shortName && stop.shortName !== stop.name && (
-                  <span className="text-[9px] text-white/30 tabular-nums tracking-widest truncate">{stop.shortName}</span>
-                )}
+              <div className="pb-2.5 flex flex-col justify-center min-w-0">
+                <span className="text-sm font-medium text-white/80 leading-tight truncate">{stop.name}</span>
               </div>
             </div>
           ))}
@@ -141,248 +135,381 @@ function RouteCard({ route, onDelete }: { route: RouteData; onDelete: (id: strin
   );
 }
 
-function MapControls({ center }: { center: {lat: number, lng: number} | null }) {
-  const map = useMap();
-  useEffect(() => {
-    if (center && map) {
-      map.panTo(center);
-      map.setZoom(15);
-    }
-  }, [center, map]);
-  return null;
+/* ── Stop list item (draggable in editor) ───────────────────────────────────── */
+function StopItem({ stop, index, onRemove, onNameChange }: {
+  stop: RouteStop; index: number;
+  onRemove: (i: number) => void;
+  onNameChange: (i: number, name: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(stop.name);
+  return (
+    <div className="flex items-center gap-2 group">
+      <GripVertical className="w-4 h-4 text-white/15 shrink-0 cursor-grab" />
+      <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 font-black text-[9px] flex items-center justify-center shrink-0">
+        {stopLabel(index)}
+      </span>
+      {editing ? (
+        <input
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          onBlur={() => { onNameChange(index, val); setEditing(false); }}
+          onKeyDown={e => e.key === "Enter" && (onNameChange(index, val), setEditing(false))}
+          autoFocus
+          className="flex-1 h-8 bg-white/5 border border-white/20 rounded-lg px-2 text-sm text-white focus:outline-none focus:border-white/40"
+        />
+      ) : (
+        <span
+          className="flex-1 text-sm text-white/80 font-medium truncate cursor-text min-w-0"
+          onClick={() => setEditing(true)}
+          title="Click to rename"
+        >
+          {stop.name}
+        </span>
+      )}
+      <button onClick={() => onRemove(index)} className="p-1.5 rounded-lg text-white/15 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+        <X className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
 }
 
-export default function RouteManagementPanel() {
-  const { routes, loading } = useRoutes();
-  const [isCreating, setIsCreating] = useState(false);
-  const [newRouteId, setNewRouteId] = useState("");
-  const [newRouteName, setNewRouteName] = useState("");
-  const [newStops, setNewStops] = useState<RouteStop[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [polylineBakeError, setPolylineBakeError] = useState<string | null>(null);
-  
-  const [mapCenter, setMapCenter] = useState<{lat: number, lng: number} | null>(null);
+/* ── Route editor ───────────────────────────────────────────────────────────── */
+type EditorMode = "create" | "edit";
 
-  const handlePlaceSelect = (place: PlaceResult) => {
-    const name = place.name || "Unknown Stop";
+interface EditorState {
+  mode: EditorMode;
+  routeId: string;
+  name: string;
+  color: string;
+  type: "up" | "down" | "circular";
+  stops: RouteStop[];
+}
+
+const EMPTY_EDITOR: EditorState = {
+  mode: "create",
+  routeId: "",
+  name: "",
+  color: "#3B82F6",
+  type: "circular",
+  stops: [],
+};
+
+function RouteEditor({
+  initial,
+  onSaved,
+  onCancel,
+}: {
+  initial: EditorState;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [state, setState] = useState<EditorState>(initial);
+  const [saving, setSaving] = useState(false);
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
+
+  // ── Traffic layer rendered imperatively ──────────────────────────────────────
+  const TrafficLayer = () => {
+    const map = useMap();
+    const layerRef = useRef<google.maps.TrafficLayer | null>(null);
+
+    useEffect(() => {
+      if (!map) return;
+      layerRef.current = new google.maps.TrafficLayer();
+      layerRef.current.setMap(map);
+      return () => { layerRef.current?.setMap(null); };
+    }, [map]);
+
+    return null;
+  };
+
+  const setField = <K extends keyof EditorState>(k: K, v: EditorState[K]) =>
+    setState(s => ({ ...s, [k]: v }));
+
+  const handlePlaceSelect = (place: { name: string; lat: number; lng: number }) => {
     const stop: RouteStop = {
       id: `stop-${Date.now()}`,
-      name,
-      shortName: name.split(",")[0],
+      name: place.name,
+      shortName: place.name.split(",")[0],
       lat: place.lat,
       lng: place.lng,
     };
-    setNewStops((prev) => [...prev, stop]);
+    setState(s => ({ ...s, stops: [...s.stops, stop] }));
     setMapCenter({ lat: place.lat, lng: place.lng });
   };
 
-  const handleRemoveStop = (index: number) => setNewStops((prev) => prev.filter((_, i) => i !== index));
+  const removeStop = (i: number) =>
+    setState(s => ({ ...s, stops: s.stops.filter((_, idx) => idx !== i) }));
 
-  const handleSaveRoute = async () => {
-    if (!newRouteId || !newRouteName || newStops.length < 2) {
-      alert("Please provide an ID, Name, and at least 2 stops.");
+  const renameStop = (i: number, name: string) =>
+    setState(s => {
+      const stops = [...s.stops];
+      stops[i] = { ...stops[i], name, shortName: name.split(",")[0] };
+      return { ...s, stops };
+    });
+
+  const moveStop = (from: number, to: number) => {
+    if (to < 0 || to >= state.stops.length) return;
+    setState(s => {
+      const stops = [...s.stops];
+      const [item] = stops.splice(from, 1);
+      stops.splice(to, 0, item);
+      return { ...s, stops };
+    });
+  };
+
+  const handleSave = async () => {
+    if (!state.routeId || !state.name || state.stops.length < 2) {
+      alert("Route ID, name, and at least 2 stops are required.");
       return;
     }
-    setIsSaving(true);
-    setPolylineBakeError(null);
-
-    const waypointsForBake = newStops.map((s) => ({ lat: s.lat, lng: s.lng }));
-    let bakedPolyline: string | undefined;
+    setSaving(true);
 
     try {
-      const { auth } = await import("@/lib/firebase");
-      const { getIdToken } = await import("firebase/auth");
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error("Must be logged in to create routes");
-      const token = await getIdToken(currentUser);
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-      const polyRes = await fetch(`${backendUrl}/api/routes/compute-polyline`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({ waypoints: waypointsForBake }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      if (!polyRes.ok) {
-        const errData = (await polyRes.json().catch(() => ({}))) as Record<string, string>;
-        throw new Error(errData.error || `HTTP ${polyRes.status}`);
-      }
-      const polyData = (await polyRes.json()) as { polyline: string };
-      bakedPolyline = polyData.polyline;
-    } catch (err) {
-      const isTimeout = err instanceof Error && err.name === "AbortError";
-      const msg = isTimeout ? "Backend unreachable (timeout)" : err instanceof Error ? err.message : "Unknown error";
-      console.warn("⚠️ Polyline bake failed:", msg);
-      setPolylineBakeError(`⚠️ Polyline bake skipped (${msg}). Route saved with straight-line fallback.`);
-    }
-
-    try {
+      const waypoints = state.stops.map(s => ({ lat: s.lat, lng: s.lng }));
       const routeData: RouteData = {
-        id: newRouteId,
-        name: newRouteName,
-        stops: newStops,
-        waypoints: waypointsForBake,
-        color: "#3b82f6",
-        ...(bakedPolyline ? { polyline: bakedPolyline } : {}),
+        id: state.routeId,
+        name: state.name,
+        color: state.color,
+        type: state.type,
+        stops: state.stops,
+        waypoints,
       };
-      await setDoc(doc(db, "routes", newRouteId), routeData);
-
-      setIsCreating(false);
-      setNewRouteId("");
-      setNewRouteName("");
-      setNewStops([]);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 5000);
-    } catch (err) {
-      console.error("Error saving route:", err);
-      alert("Failed to save route to Firestore. Check your admin permissions and try again.");
+      await setDoc(doc(db, "routes", state.routeId), routeData);
+      onSaved();
+    } catch (err: any) {
+      alert("Failed to save: " + err.message);
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   };
 
-  const handleDeleteRoute = async (id: string) => {
-    if (confirm("Are you sure you want to delete this route?")) {
-      try { await deleteDoc(doc(db, "routes", id)); } catch (e) { console.error(e); }
-    }
-  };
-
-  if (!isCreating) {
-    return (
-      <div className="w-full max-w-4xl mx-auto p-3 md:p-6 flex flex-col gap-4 animate-slide-up">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-extrabold text-xl tracking-tight">Infrastructure</h2>
-            <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black mt-0.5">Saved Routes</p>
-          </div>
-          <button
-            onClick={() => setIsCreating(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-brand-dark hover:bg-white/90 transition shadow-xl text-xs font-black uppercase tracking-widest"
-          >
-            <Plus className="w-3.5 h-3.5" /> ADD ROUTE
-          </button>
-        </div>
-
-        {showSuccess && (
-          <div className="flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-widest animate-slide-up">
-            <CheckCircle className="w-4 h-4 shrink-0" /> Route deployed successfully!
-          </div>
-        )}
-
-        <div className="flex flex-col gap-3">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-16 text-white/20">
-              <Loader2 className="w-6 h-6 animate-spin mb-3" />
-              <span className="text-[10px] font-semibold uppercase tracking-widest">Querying routes…</span>
-            </div>
-          ) : routes.length === 0 ? (
-            <div className="text-white/20 text-xs font-semibold text-center py-16 uppercase tracking-widest">No active routes.</div>
-          ) : (
-            routes.map((route) => <RouteCard key={route.id} route={route} onDelete={handleDeleteRoute} />)
-          )}
-        </div>
-      </div>
-    );
-  }
+  const routeStops = useMemo(() => {
+    return state.stops.map(s => ({ lat: s.lat, lng: s.lng }));
+  }, [state.stops]);
 
   return (
-    <div className="flex flex-col w-full animate-slide-up" style={{ height: "calc(100vh - 56px)" }}>
-      <div className="shrink-0 border-b border-white/5 bg-brand-surface/90 backdrop-blur-2xl z-10 shadow-lg px-3 md:px-5 py-3 flex flex-col gap-3">
-        <div className="flex flex-wrap gap-2 items-end">
-          <div className="flex flex-col gap-1 flex-1 min-w-[130px]">
-            <label className="text-[9px] text-white/20 font-black uppercase tracking-[0.2em] px-1">Route ID</label>
-            <input type="text" value={newRouteId} onChange={(e) => setNewRouteId(e.target.value)} placeholder="e.g. route_101" className="h-9 bg-brand-dark border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/40 transition-colors placeholder:text-white/10 font-semibold" />
-          </div>
-          <div className="flex flex-col gap-1 flex-[2] min-w-[160px]">
-            <label className="text-[9px] text-white/20 font-black uppercase tracking-[0.2em] px-1">Display Name</label>
-            <input type="text" value={newRouteName} onChange={(e) => setNewRouteName(e.target.value)} placeholder="e.g. Downtown Express" className="h-9 bg-brand-dark border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/40 transition-colors placeholder:text-white/10 font-semibold" />
-          </div>
-          <div className="flex gap-2 shrink-0">
-            <button onClick={handleSaveRoute} disabled={isSaving || newStops.length < 2} className="h-9 px-4 rounded-xl bg-white text-brand-dark font-black transition disabled:opacity-20 disabled:cursor-not-allowed shadow-2xl text-xs uppercase tracking-[0.15em] flex items-center gap-2">
-              {isSaving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Baking…</> : "Deploy"}
-            </button>
-            <button onClick={() => setIsCreating(false)} className="h-9 px-4 rounded-xl border border-white/10 text-white/40 hover:text-white hover:border-white/20 transition-all text-xs font-black uppercase tracking-widest">Cancel</button>
+    <div className="flex flex-col w-full animate-slide-up" style={{ height: "calc(100vh - 88px)" }}>
+      {/* Toolbar */}
+      <div className="shrink-0 border-b border-white/5 bg-[#0f0f12]/90 backdrop-blur-2xl px-4 py-3 flex flex-wrap gap-3 items-end">
+        <button onClick={onCancel} className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors shrink-0 self-center">
+          <ArrowLeft className="w-4 h-4 text-white/60" />
+        </button>
+
+        <div className="flex flex-col gap-1 min-w-[110px]">
+          <label className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Route ID</label>
+          <input
+            value={state.routeId}
+            onChange={e => setField("routeId", e.target.value)}
+            disabled={state.mode === "edit"}
+            placeholder="route_101"
+            className="h-9 bg-[#09090b] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/15 font-medium disabled:opacity-40"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
+          <label className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Display Name</label>
+          <input
+            value={state.name}
+            onChange={e => setField("name", e.target.value)}
+            placeholder="Downtown Express"
+            className="h-9 bg-[#09090b] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/15 font-medium"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Type</label>
+          <select
+            value={state.type}
+            onChange={e => setField("type", e.target.value as EditorState["type"])}
+            className="h-9 bg-[#09090b] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 font-medium appearance-none cursor-pointer"
+          >
+            <option value="circular">Circular</option>
+            <option value="up">Up</option>
+            <option value="down">Down</option>
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Colour</label>
+          <div className="flex items-center gap-1.5 h-9">
+            {ROUTE_COLORS.map(c => (
+              <button
+                key={c}
+                onClick={() => setField("color", c)}
+                className="w-6 h-6 rounded-full border-2 transition-all"
+                style={{ background: c, borderColor: state.color === c ? "white" : "transparent" }}
+              />
+            ))}
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <SearchBox onPlaceSelect={handlePlaceSelect} />
-          <span className="hidden md:inline text-[9px] text-white/20 font-black uppercase tracking-widest shrink-0">Min. 2 stops to deploy</span>
+
+        <div className="flex gap-2 shrink-0 self-end">
+          <button
+            onClick={handleSave}
+            disabled={saving || state.stops.length < 2}
+            className="h-9 px-5 rounded-xl bg-white text-[#09090b] font-black text-xs uppercase tracking-widest transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-white/90 shadow-lg"
+          >
+            {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</> : <><Save className="w-3.5 h-3.5" /> {state.mode === "edit" ? "Update" : "Deploy"}</>}
+          </button>
         </div>
-        {polylineBakeError && (
-          <div className="flex items-center gap-2 bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded-xl px-4 py-2 text-xs font-semibold animate-slide-up">
-            <span className="flex-1">{polylineBakeError}</span>
-            <button onClick={() => setPolylineBakeError(null)} className="shrink-0 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
-          </div>
-        )}
       </div>
 
+
+
+      {/* Body: map + stop list */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
-        <div className="w-full h-[55vw] min-h-[260px] max-h-[460px] lg:h-auto lg:max-h-none lg:flex-1 relative z-0">
-          <GoogleMap
-            mapId={MAPS_MAP_ID}
-            defaultCenter={DEFAULT_CENTER}
-            defaultZoom={13}
-            style={{ width: "100%", height: "100%" }}
-            {...MAP_OPTIONS}
-          >
-            <MapControls center={mapCenter} />
-            {newStops.map((stop, i) => (
-              <AdvancedMarker key={`stop-${i}`} position={{ lat: stop.lat, lng: stop.lng }}>
+        {/* Map */}
+        <div className="flex-1 relative min-h-[260px]">
+          <GoogleMap mapId={MAPS_MAP_ID} defaultCenter={DEFAULT_CENTER} defaultZoom={13} style={{ width: "100%", height: "100%" }} {...MAP_OPTIONS}>
+            <TrafficLayer />
+            <MapCenter center={mapCenter} />
+            <DirectionsRoute
+              stops={routeStops}
+              color={state.color}
+              hasBuses={false}
+            />
+            {state.stops.map((stop, i) => (
+              <AdvancedMarker key={`s-${i}`} position={{ lat: stop.lat, lng: stop.lng }}>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 16, background: "#10b981", border: "4px solid #1a1a2e", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 10, fontWeight: 900, boxShadow: "0 0 15px rgba(0,0,0,0.3)" }}>
-                    {stopLabel(i)}
-                  </div>
-                  <div style={{ marginTop: 4, padding: "2px 8px", background: "rgba(15,17,23,0.9)", border: "1px solid rgba(255,255,255,0.1)", color: "white", borderRadius: 6, fontSize: 9, whiteSpace: "nowrap", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                    {stop.shortName}
-                  </div>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: 12,
+                    background: state.color, border: "3px solid #09090b",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "white", fontSize: 9, fontWeight: 900,
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                  }}>{stopLabel(i)}</div>
+                  <div style={{
+                    marginTop: 3, padding: "2px 6px", background: "rgba(9,9,11,0.9)",
+                    border: "1px solid rgba(255,255,255,0.1)", color: "white",
+                    borderRadius: 5, fontSize: 8, fontWeight: 800,
+                    whiteSpace: "nowrap", letterSpacing: "0.08em",
+                  }}>{stop.shortName}</div>
                 </div>
               </AdvancedMarker>
             ))}
           </GoogleMap>
+          {/* Search box floating on map */}
+          <div className="absolute bottom-3 left-3 right-3">
+            <SearchBox onPlaceSelect={handlePlaceSelect} />
+          </div>
         </div>
 
-        <div className="w-full lg:w-[320px] shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-white/5 bg-brand-surface/30 backdrop-blur-2xl overflow-y-auto">
-          <div className="px-4 py-3 bg-emerald-500/5 flex items-center justify-between sticky top-0 backdrop-blur-xl z-10">
+        {/* Stop list sidebar */}
+        <div className="w-full lg:w-[300px] shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-white/5 bg-[#09090b]/40 backdrop-blur-xl">
+          <div className="px-4 py-3 flex items-center justify-between sticky top-0 bg-[#0f0f12]/80 backdrop-blur-xl border-b border-white/5">
             <div className="flex items-center gap-2">
               <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Route Stops</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Stops</span>
             </div>
-            <span className="text-[9px] font-black text-emerald-400/50 bg-emerald-400/10 px-2 py-0.5 rounded-md">{newStops.length}</span>
+            <span className="text-[9px] font-black text-emerald-400/50 bg-emerald-500/10 px-2 py-0.5 rounded-full">{state.stops.length}</span>
           </div>
-          <div className="p-3 flex flex-col gap-0">
-            {newStops.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center opacity-20">
-                <Search className="w-6 h-6 mb-2" />
-                <p className="text-[9px] font-semibold uppercase tracking-widest leading-relaxed">Search to add stops</p>
+          <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5">
+            {state.stops.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center opacity-20 gap-2">
+                <Search className="w-6 h-6" />
+                <p className="text-xs font-semibold uppercase tracking-widest leading-relaxed">Search to add stops</p>
               </div>
             ) : (
-              newStops.map((stop, i) => (
-                <div key={i} className="flex items-stretch gap-3">
-                  <div className="flex flex-col items-center shrink-0 pt-1">
-                    <span className="w-7 h-7 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-black shadow-lg text-[10px]">{stopLabel(i)}</span>
-                    {i < newStops.length - 1 && <div className="flex-1 w-px my-1 bg-emerald-500/20 min-h-[10px]" />}
-                  </div>
-                  <div className="flex-1 pb-3 flex items-start justify-between group min-w-0 pt-1">
-                    <div className="flex flex-col overflow-hidden pr-2">
-                      <span className="text-white font-semibold text-xs truncate tracking-tight">{stop.name}</span>
-                      <span className="text-emerald-400/40 tabular-nums text-[8px] uppercase tracking-widest">{stop.shortName}</span>
+              state.stops.map((stop, i) => (
+                <div key={`${stop.id}-${i}`}>
+                  <StopItem stop={stop} index={i} onRemove={removeStop} onNameChange={renameStop} />
+                  {i < state.stops.length - 1 && (
+                    <div className="flex items-center gap-1.5 pl-6 my-0.5">
+                      <div className="w-px h-4 bg-emerald-500/15 mx-2" />
+                      <div className="flex gap-1">
+                        <button onClick={() => moveStop(i, i - 1)} className="w-5 h-5 rounded hover:bg-white/5 flex items-center justify-center" title="Move up">
+                          <ChevronUp className="w-3 h-3 text-white/20" />
+                        </button>
+                        <button onClick={() => moveStop(i, i + 1)} className="w-5 h-5 rounded hover:bg-white/5 flex items-center justify-center" title="Move down">
+                          <ChevronDown className="w-3 h-3 text-white/20" />
+                        </button>
+                      </div>
                     </div>
-                    <button onClick={() => handleRemoveStop(i)} className="p-1.5 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"><X className="w-3.5 h-3.5" /></button>
-                  </div>
+                  )}
                 </div>
               ))
             )}
           </div>
+          {state.stops.length < 2 && (
+            <p className="text-center text-[9px] text-white/20 font-semibold uppercase tracking-widest py-2 border-t border-white/5">
+              Min. 2 stops to save
+            </p>
+          )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main Route Management Panel ────────────────────────────────────────────── */
+export default function RouteManagementPanel() {
+  const { routes, loading } = useRoutes();
+  const [editor, setEditor] = useState<EditorState | null>(null);
+  const [successMsg, setSuccessMsg] = useState("");
+
+  const openCreate = () => setEditor({ ...EMPTY_EDITOR, mode: "create" });
+
+  const openEdit = (route: RouteData) =>
+    setEditor({
+      mode: "edit",
+      routeId: route.id,
+      name: route.name,
+      color: route.color || "#3B82F6",
+      type: (route.type as EditorState["type"]) || "circular",
+      stops: route.stops ?? [],
+    });
+
+  const handleSaved = () => {
+    setEditor(null);
+    setSuccessMsg(editor?.mode === "edit" ? "Route updated!" : "Route deployed!");
+    setTimeout(() => setSuccessMsg(""), 4000);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm(`Delete route "${routes.find(r => r.id === id)?.name ?? id}"? This cannot be undone.`)) return;
+    try { await deleteDoc(doc(db, "routes", id)); }
+    catch (e: any) { alert("Failed to delete: " + e.message); }
+  };
+
+  if (editor) {
+    return <RouteEditor initial={editor} onSaved={handleSaved} onCancel={() => setEditor(null)} />;
+  }
+
+  return (
+    <div className="w-full max-w-4xl mx-auto p-4 md:p-6 flex flex-col gap-4 animate-slide-up">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-xl text-white">Routes</h2>
+          <p className="text-xs text-white/30 mt-0.5">Manage bus routes and stops</p>
+        </div>
+        <button
+          onClick={openCreate}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-[#09090b] font-bold text-sm hover:bg-white/90 transition-colors shadow-lg"
+        >
+          <Plus className="w-4 h-4" /> Add Route
+        </button>
+      </div>
+
+      {successMsg && (
+        <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl px-4 py-2.5 text-sm font-semibold animate-slide-up">
+          <CheckCircle className="w-4 h-4 shrink-0" /> {successMsg}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3">
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-16 text-white/20 gap-3">
+            <Loader2 className="w-6 h-6 animate-spin" />
+            <span className="text-xs font-semibold uppercase tracking-widest">Loading routes…</span>
+          </div>
+        ) : routes.length === 0 ? (
+          <div className="text-center py-16 text-white/20 text-sm font-semibold">No routes yet. Click &ldquo;Add Route&rdquo; to create one.</div>
+        ) : (
+          routes.map(route => (
+            <RouteCard key={route.id} route={route} onEdit={() => openEdit(route)} onDelete={handleDelete} />
+          ))
+        )}
       </div>
     </div>
   );

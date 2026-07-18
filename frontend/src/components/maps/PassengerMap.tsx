@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
+import { Map as GoogleMap, AdvancedMarker, useMap, useMapsLibrary } from "@vis.gl/react-google-maps";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
+import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
+import { waitForAuth } from "@/lib/authState";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
-import { signInAnonymously } from "firebase/auth";
-import { LocateFixed, WifiOff, Navigation } from "lucide-react";
+
+import { WifiOff, Navigation } from "lucide-react";
 import { DEFAULT_CENTER, MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 
 export interface PassengerMapProps {
@@ -24,6 +26,7 @@ interface IncomingBusData {
   heading: number;
   speed: number;
   timestamp: number;
+  status?: string; // "active" | "offline"
   deviceState: "online" | "offline";
   motionState: "moving" | "stopped" | "uncertain"; // Physical movement state from hardware
   tripState: "pre_departure" | "in_service" | "completed" | "maintenance"; // Service visibility
@@ -47,53 +50,18 @@ const BUS_MOTION_COLORS: Record<string, string> = {
   uncertain: "#F87171", // red     — GPS fix lost
 };
 
-function decodePolyline(str: string, precision: number = 5) {
-  let index = 0, lat = 0, lng = 0, coordinates: { lat: number; lng: number }[] = [], shift = 0, result = 0, byte: number | null = null, latitude_change: number, longitude_change: number, factor = Math.pow(10, precision);
-  while (index < str.length) {
-    byte = null; shift = 0; result = 0;
-    do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
-    latitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    shift = result = 0;
-    do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
-    longitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lat += latitude_change; lng += longitude_change;
-    coordinates.push({ lat: lat / factor, lng: lng / factor });
-  }
-  return coordinates;
-}
 
-// ── Route polyline drawn imperatively via google.maps.Polyline ───────────────
-function RoutePolylines({ decodedPath, hasBuses }: { decodedPath: { lat: number; lng: number }[], hasBuses: boolean }) {
+// ── Traffic layer rendered imperatively ──────────────────────────────────────
+function TrafficLayer() {
   const map = useMap();
-  const routeLineRef = useRef<google.maps.Polyline | null>(null);
-  const activeLineRef = useRef<google.maps.Polyline | null>(null);
+  const layerRef = useRef<google.maps.TrafficLayer | null>(null);
 
   useEffect(() => {
-    if (!map || decodedPath.length === 0) return;
-
-    routeLineRef.current = new google.maps.Polyline({
-      path: decodedPath,
-      strokeColor: "#9aa0a6",
-      strokeWeight: 7,
-      strokeOpacity: 0.8,
-      map,
-    });
-
-    if (hasBuses) {
-      activeLineRef.current = new google.maps.Polyline({
-        path: decodedPath,
-        strokeColor: "#3b82f6",
-        strokeWeight: 7,
-        strokeOpacity: 1.0,
-        map,
-      });
-    }
-
-    return () => {
-      routeLineRef.current?.setMap(null);
-      activeLineRef.current?.setMap(null);
-    };
-  }, [map, decodedPath, hasBuses]);
+    if (!map) return;
+    layerRef.current = new google.maps.TrafficLayer();
+    layerRef.current.setMap(map);
+    return () => { layerRef.current?.setMap(null); };
+  }, [map]);
 
   return null;
 }
@@ -115,12 +83,16 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
   const [stopETAs, setStopETAs] = useState<Record<string, number>>({});
   const [signalLostBuses, setSignalLostBuses] = useState<Set<string>>(new Set());
   const [signalLostLastSeen, setSignalLostLastSeen] = useState<number | null>(null);
+  const [activeBusStopIndex, setActiveBusStopIndex] = useState<number | undefined>(undefined);
   const lastBuzzedStopIdRef = useRef<string | null>(null);
   const lastStopIndexRef = useRef<Record<string, number>>({});
   const stopEntryTimeRef = useRef<Record<string, number>>({});
 
   const [passengerLocation, setPassengerLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isCentered, setIsCentered] = useState(false);
+  const routesLib = useMapsLibrary("routes");
+  const arrivalTimestampsRef = useRef<Record<string, number>>({});
+  const lastTrafficFetchRef = useRef<number>(0);
 
   // ── Passenger geolocation (read-only — ESP32 is sole source for bus GPS) ──
   useEffect(() => {
@@ -139,47 +111,47 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     return Math.ceil(dist / WALKING_M_PER_MIN);
   }, [passengerLocation, targetStop]);
 
-  const decodedPath = useMemo(() => {
-    if (route.polyline) return decodePolyline(route.polyline);
-    return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) || [];
-  }, [route.polyline, route.stops]);
-
-  // ── Anonymous auth before reading RTDB ──────────────────────────────────
-  useEffect(() => {
-    signInAnonymously(auth).catch((err) => {
-      console.warn("[RTDB Auth] Anonymous sign-in failed:", err.code);
-    });
-  }, []);
 
   // ── RTDB subscription: filtered by routeId ───────────────────────────────
   useEffect(() => {
-    const busesRef = query(
-      ref(rtdb, "activeBuses"),
-      orderByChild("routeId"),
-      equalTo(route.id)
-    );
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
 
-    const unsubscribe = onValue(busesRef, (snapshot) => {
-      const data = snapshot.val() as Record<string, IncomingBusData>;
-      const now = Date.now();
+    waitForAuth().then(() => {
+      if (!isMounted) return;
 
-      if (!data) {
-        setBuses(new Map());
-        setSignalLostBuses(new Set());
-        return;
-      }
+      const busesRef = query(
+        ref(rtdb, "activeBuses"),
+        orderByChild("routeId"),
+        equalTo(route.id)
+      );
 
-      const activeBuses = new Map<string, IncomingBusData>();
-      const newSignalLost = new Set<string>();
-      let oldestTimestamp: number | null = null;
+      unsubscribe = onValue(busesRef, (snapshot) => {
+        const data = snapshot.val() as Record<string, IncomingBusData>;
+        const now = Date.now();
 
-      Object.values(data).forEach((bus) => {
-        const age = now - bus.timestamp;
-        const isFresh = age < BUS_EXPIRY_MS;
+        if (!data) {
+          setBuses(new Map());
+          setSignalLostBuses(new Set());
+          return;
+        }
 
-        if ((bus.deviceState === "online" && bus.tripState === "in_service") && isFresh) {
+        const activeBuses = new Map<string, IncomingBusData>();
+        const newSignalLost = new Set<string>();
+        let oldestTimestamp: number | null = null;
+
+        Object.entries(data).forEach(([key, bus]) => {
+          bus.busId = bus.busId || key.split("_")[0];
+          const isFresh = Date.now() - bus.timestamp < 300_000;
+          if (!bus.routeId || !bus.busId || !isFresh) return;
+
+          const isActive = bus.tripState === "in_service" || bus.tripState === "pre_departure";
+          const isOffline = bus.status === "offline" || bus.deviceState === "offline";
+          if (!isActive || isOffline) return;
+
           activeBuses.set(bus.busId, bus);
 
+          const age = now - bus.timestamp;
           if (age > SIGNAL_LOST_MS) {
             newSignalLost.add(bus.busId);
             if (oldestTimestamp === null || bus.timestamp < oldestTimestamp) {
@@ -190,7 +162,9 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           if (route.stops && route.stops.length > 0) {
             let closestStopIndex: number;
             if (bus.currentStopIndex !== undefined) {
+              // Driver panel / ESP32 is the source of truth — always trust it and store it
               closestStopIndex = bus.currentStopIndex;
+              lastStopIndexRef.current[bus.busId] = closestStopIndex;
             } else {
               const lastKnown = lastStopIndexRef.current[bus.busId] ?? 0;
               const searchStart = Math.max(0, lastKnown - 1);
@@ -209,20 +183,6 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
               }
               lastStopIndexRef.current[bus.busId] = closestStopIndex;
             }
-
-            const busSpeedKmh = bus.speed > 0 ? bus.speed : BUS_SPEED_FLOOR_KMH;
-            const mPerMin = (busSpeedKmh * 1000) / 60;
-            const distToNextStop = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, route.stops[closestStopIndex]) * 1.3;
-            const busDelay = bus.delayMinutes || 0;
-            const newStopETAs: Record<string, number> = {};
-            let accumDistM = distToNextStop;
-            newStopETAs[route.stops[closestStopIndex].id] = Math.ceil(accumDistM / mPerMin) + busDelay;
-            for (let i = closestStopIndex + 1; i < route.stops.length; i++) {
-              const segDist = getDistanceMeters(route.stops[i - 1], route.stops[i]) * 1.3;
-              accumDistM += segDist + 125;
-              newStopETAs[route.stops[i].id] = Math.ceil(accumDistM / mPerMin) + busDelay;
-            }
-            setStopETAs(prev => ({ ...prev, ...newStopETAs }));
 
             const DWELL_GATE_MS = 15_000;
             const STOP_PROXIMITY_M = 50;
@@ -244,22 +204,113 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
               lastBuzzedStopIdRef.current = targetStop.id;
             }
           }
-        }
-      });
+        });
 
-      setBuses(activeBuses);
-      setSignalLostBuses(newSignalLost);
-      setSignalLostLastSeen(oldestTimestamp);
+        setBuses(activeBuses);
+        setSignalLostBuses(newSignalLost);
+        setSignalLostLastSeen(oldestTimestamp);
+        // Update activeBusStopIndex reactively from the first bus
+        const firstEntry = activeBuses.values().next().value as IncomingBusData | undefined;
+        if (firstEntry) {
+          const idx = lastStopIndexRef.current[firstEntry.busId] ?? 0;
+          setActiveBusStopIndex(idx);
+        }
+      }, (error) => {
+        console.warn("[RTDB] activeBuses read failed:", error.message);
+      });
     });
 
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, [route.id, targetStop, route.stops]);
+
+  // ── High-Frequency Speed-Aware ETA Fallback (Haversine) ──────────────────
+  useEffect(() => {
+    if (!routesLib || !route.stops || route.stops.length === 0 || buses.size === 0) return;
+
+    const fetchETAs = async () => {
+      const now = Date.now();
+      // Re-calculate ETAs instantly on driver state changes (since it's lightweight local math)
+      lastTrafficFetchRef.current = now;
+
+      const newArrivals: Record<string, number> = {};
+
+      for (const bus of Array.from(buses.values())) {
+        const closestStopIdx = lastStopIndexRef.current[bus.busId] ?? 0;
+        const remainingStops = route.stops.slice(closestStopIdx);
+        if (remainingStops.length === 0) continue;
+
+        // Base speed fallback: 35km/h for city transit. Use actual speed if available.
+        const speedKmh = (bus as any).speed > 0 ? (bus as any).speed : 35;
+        const speedMs = speedKmh / 3.6;
+        const busDelaySec = (bus.delayMinutes || 0) * 60;
+
+        let accumDistMeters = 0;
+        let lastPt = { lat: bus.lat, lng: bus.lng };
+
+        for (let i = 0; i < remainingStops.length; i++) {
+          const stop = remainingStops[i];
+          const distToStop = getDistanceMeters(lastPt, { lat: stop.lat, lng: stop.lng });
+          
+          // 1.3 topology multiplier + adding 45s dwell time per stop for realistic transit ETAs
+          accumDistMeters += (distToStop * 1.3);
+          let totalSeconds = accumDistMeters / speedMs;
+          if (i > 0) totalSeconds += (i * 45); 
+
+          const arrivalTimestamp = now + (totalSeconds * 1000) + (busDelaySec * 1000);
+          
+          if (!newArrivals[stop.id] || arrivalTimestamp < newArrivals[stop.id]) {
+            newArrivals[stop.id] = arrivalTimestamp;
+          }
+          lastPt = { lat: stop.lat, lng: stop.lng };
+        }
+      }
+
+      arrivalTimestampsRef.current = newArrivals;
+      // Immediately trigger UI update for the new values
+      updateUI();
+    };
+
+    fetchETAs();
+    const interval = setInterval(fetchETAs, 60000);
+    return () => clearInterval(interval);
+  }, [routesLib, buses, route.stops]);
+
+  // ── ETA Smooth Interpolation ───────────────────────────────────────────────
+  const updateUI = useCallback(() => {
+    const now = Date.now();
+    const updatedETAs: Record<string, number> = {};
+    for (const [stopId, timestamp] of Object.entries(arrivalTimestampsRef.current)) {
+      const msRemaining = timestamp - now;
+      if (msRemaining > 0) {
+        updatedETAs[stopId] = Math.ceil(msRemaining / 60000);
+      } else {
+        updatedETAs[stopId] = 0;
+      }
+    }
+    setStopETAs(updatedETAs);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(updateUI, 1000);
+    return () => clearInterval(interval);
+  }, [updateUI]);
 
   const signalLostMinutes = signalLostLastSeen
     ? Math.round((Date.now() - signalLostLastSeen) / 60_000)
     : null;
 
   const mapCenter = useMemo(() => ({ lat: targetStop.lat, lng: targetStop.lng }), [targetStop.lat, targetStop.lng]);
+  const centerTarget = useMemo(() => {
+    const firstBus = Array.from(buses.values())[0];
+    return firstBus ? { lat: firstBus.lat, lng: firstBus.lng } : mapCenter;
+  }, [buses, mapCenter]);
+
+  const routeStops = useMemo(() => {
+    return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) ?? [];
+  }, [route.stops]);
 
   return (
     <>
@@ -283,7 +334,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         </div>
       )}
 
-      <div className="absolute inset-0 z-0" style={{ background: "var(--surface-0)" }} onPointerDown={() => setIsCentered(false)}>
+      <div className="absolute inset-0 z-0" style={{ background: "var(--surface-0)" }} onPointerDown={() => setIsCentered(false)} onTouchStart={() => setIsCentered(false)}>
         <GoogleMap
           mapId={MAPS_MAP_ID}
           defaultCenter={mapCenter}
@@ -291,8 +342,13 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           style={{ width: "100%", height: "100%" }}
           {...MAP_OPTIONS}
         >
-          <MapCenterer target={passengerLocation} isCentered={isCentered} />
-          <RoutePolylines decodedPath={decodedPath} hasBuses={buses.size > 0} />
+          <MapCenterer target={centerTarget} isCentered={isCentered} />
+          <TrafficLayer />
+          <DirectionsRoute
+            stops={routeStops}
+            color={route.color || "#3b82f6"}
+            hasBuses={buses.size > 0}
+          />
 
           {/* Passenger location dot */}
           {passengerLocation && (
@@ -327,24 +383,45 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           {/* Stop markers */}
           {route.stops?.map((stop, i) => {
             const isTarget = stop.id === targetStop.id;
+            const dotColor = "var(--accent)"; // FORCED ORANGE
+            
+            // Get the current stop index — reactive state from RTDB (driver/ESP32 source of truth)
+            const currentStopIndex = activeBusStopIndex ?? 0;
+            const isPast = i < currentStopIndex;
+            
+            // Native halo text style (White text, thick black halo)
+            const labelStyle: React.CSSProperties = {
+              marginTop: 4,
+              color: "#ffffff",
+              fontSize: isTarget ? 11 : 9.5,
+              fontWeight: 800,
+              whiteSpace: "nowrap",
+              textShadow: "2px 0 #000, -2px 0 #000, 0 2px #000, 0 -2px #000, 1px 1px #000, -1px -1px #000, 1px -1px #000, -1px 1px #000, 0 4px 8px rgba(0,0,0,0.8)",
+              zIndex: 50
+            };
+
             return (
               <AdvancedMarker key={`stop-${stop.id || i}`} position={{ lat: stop.lat, lng: stop.lng }}>
-                {isTarget ? (
+                {isPast ? (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 14, height: 14, background: dotColor, opacity: 0.6, borderRadius: "50%" }}>
+                    <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 7 }}>{String.fromCharCode(65 + i)}</span>
+                  </div>
+                ) : isTarget ? (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                    <div style={{ position: "absolute", width: 28, height: 28, background: "var(--accent)", borderRadius: "50%", animation: "ripple 2s infinite" }} />
-                    <div style={{ width: 28, height: 28, background: "var(--accent)", border: "3px solid #fb923c", borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 12px rgba(250,93,41,0.3)" }}>
-                      <span style={{ color: "white", fontWeight: 800, fontSize: 11 }}>{String.fromCharCode(65 + i)}</span>
+                    <div style={{ position: "absolute", top: 2, width: 26, height: 26, background: dotColor, borderRadius: "50%", animation: "ripple 2s infinite" }} />
+                    <div style={{ width: 26, height: 26, background: dotColor, border: `3.5px solid #000000`, borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.5)" }}>
+                      <span style={{ color: "#ffffff", fontWeight: 900, fontSize: 12 }}>{String.fromCharCode(65 + i)}</span>
                     </div>
-                    <span style={{ marginTop: 6, padding: "3px 10px", background: "var(--surface-2)", border: "1px solid var(--border-default)", color: "var(--text-primary)", borderRadius: 8, fontSize: 9, whiteSpace: "nowrap", zIndex: 50, fontWeight: 700 }}>
+                    <span style={labelStyle}>
                       {stop.shortName}
                     </span>
                   </div>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: 0.75 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, background: "var(--accent)", border: "2px solid #fb923c", borderRadius: "50%", boxShadow: "0 2px 4px rgba(0,0,0,0.2)" }}>
-                      <span style={{ color: "white", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ width: 20, height: 20, background: dotColor, border: `3px solid #000000`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,0.4)" }}>
+                      <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
                     </div>
-                    <span style={{ marginTop: 3, padding: "1px 6px", background: "var(--surface-2)", color: "var(--text-tertiary)", borderRadius: 4, fontSize: 8, whiteSpace: "nowrap", fontWeight: 600 }}>
+                    <span style={labelStyle}>
                       {stop.shortName}
                     </span>
                   </div>
@@ -357,9 +434,9 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
 
       <style>{`
         @keyframes ripple {
-          0% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0.4); }
-          70% { box-shadow: 0 0 0 20px rgba(250, 93, 41, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0); }
+          0% { transform: scale(1); opacity: 0.6; }
+          70% { transform: scale(3.5); opacity: 0; }
+          100% { transform: scale(3.5); opacity: 0; }
         }
         @keyframes passengerPulse {
           0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.6); }
@@ -368,23 +445,21 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         }
       `}</style>
 
-      {passengerLocation && (
-        <div className="absolute bottom-[90px] right-4 z-40">
-          <button
-            onClick={() => setIsCentered(true)}
-            className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-300 border active:scale-95"
-            style={{
-              background: isCentered ? "rgba(59, 130, 246, 0.15)" : "var(--surface-2)",
-              borderColor: isCentered ? "rgba(59, 130, 246, 0.3)" : "var(--border-default)",
-              color: isCentered ? "#60A5FA" : "var(--text-secondary)",
-              boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
-            }}
-            aria-label="Center on my location"
-          >
-            <LocateFixed className="w-4.5 h-4.5" />
-          </button>
-        </div>
-      )}
+      <div className="absolute top-[220px] right-4 z-40">
+        <button
+          onClick={() => setIsCentered(true)}
+          className="flex items-center justify-center w-12 h-12 rounded-xl transition-all duration-300 border active:scale-95 shadow-lg"
+          style={{
+            background: isCentered ? "rgba(59, 130, 246, 0.15)" : "var(--surface-2)",
+            borderColor: isCentered ? "rgba(59, 130, 246, 0.3)" : "var(--border-default)",
+            color: isCentered ? "#60A5FA" : "var(--text-secondary)",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+          }}
+          aria-label="Center on bus"
+        >
+          <Navigation className="w-5 h-5" fill={isCentered ? "currentColor" : "none"} />
+        </button>
+      </div>
 
       <RouteTimelineSheet
         route={route}
@@ -392,6 +467,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         activeBusId={null}
         stopETAs={stopETAs}
         walkMinutesToTarget={walkMinutesToTarget}
+        currentStopIndex={activeBusStopIndex}
       />
     </>
   );

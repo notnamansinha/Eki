@@ -76,7 +76,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
         } else {
           setCooldownRemaining(0);
         }
-      } catch (e) {
+      } catch {
         setCooldownRemaining(0);
       }
     };
@@ -148,7 +148,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           status: "new"
         });
 
-        const cooldownData: any = {
+        const cooldownData: Record<string, unknown> = {
           userId: currentUserId,
           lastSubmittedAt: serverTimestamp()
         };
@@ -172,7 +172,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           const oldestMs = Math.min(...localHistory);
           setCooldownRemaining(Math.max(0, ONE_DAY_MS - (now - oldestMs)));
         }
-      } catch (e) {}
+      } catch {}
       
       setSubmitted(true);
       setTimeout(() => {
@@ -194,7 +194,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
 
   if (submitted) {
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in"
+      <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 animate-fade-in"
         style={{ background: "rgba(0, 0, 0, 0.7)", backdropFilter: "blur(4px)" }}>
         <div className="rounded-3xl p-8 max-w-sm w-full flex flex-col items-center text-center animate-scale-up relative overflow-hidden"
           style={{ background: "var(--surface-2)", border: "1px solid rgba(255,255,255,0.05)", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)" }}>
@@ -214,7 +214,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4 animate-fade-in"
+    <div className="fixed inset-0 z-[999] flex items-end sm:items-center justify-center pb-24 sm:pb-0 sm:p-4 animate-fade-in"
       style={{ background: "rgba(0, 0, 0, 0.7)", backdropFilter: "blur(4px)" }}>
       <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl flex flex-col animate-slide-up relative overflow-hidden shadow-2xl"
         style={{ background: "var(--surface-1)", border: "1px solid rgba(255,255,255,0.08)" }}>

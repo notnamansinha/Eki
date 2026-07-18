@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Navigation, Footprints, ChevronUp } from "lucide-react";
+import { Footprints, ChevronUp } from "lucide-react";
 
 interface NextBusCardProps {
   routeName: string;
@@ -53,9 +53,6 @@ export default function NextBusCard({
             />
             <span className="text-[13px] font-medium truncate" style={{ color: "var(--text-primary)" }}>
               {routeName}
-            </span>
-            <span className="text-[11px] font-medium shrink-0" style={{ color: "var(--text-tertiary)" }}>
-              → {targetStopName}
             </span>
           </div>
           <ChevronUp className="w-4 h-4 shrink-0" style={{ color: "var(--text-ghost)" }} />

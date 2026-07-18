@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BusFront as Bus, Navigation, Loader2, LogIn, ArrowRight, Zap, SignalHigh as Radio, Clock } from "lucide-react";
+import { BusFront as Bus, Navigation, Map, Loader2, LogIn, ArrowRight, Zap, MessageCircle, Clock } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -22,21 +22,32 @@ export default function HomePage() {
 
   // Live bus count for social proof
   useEffect(() => {
-    signInAnonymously(auth).catch(() => { });
-    const busesRef = ref(rtdb, "activeBuses");
-    const unsub = onValue(busesRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const now = Date.now();
-        const count = Object.values(data as Record<string, any>).filter(
-          (b: any) => b.deviceState === "online" && b.tripState === "in_service" && (now - b.timestamp) < 300_000
-        ).length;
-        setActiveBusCount(count);
-      } else {
-        setActiveBusCount(0);
-      }
-    });
-    return () => unsub();
+    let unsub: (() => void) | undefined;
+    let isMounted = true;
+    
+    signInAnonymously(auth).then(() => {
+      if (!isMounted) return;
+      const busesRef = ref(rtdb, "activeBuses");
+      unsub = onValue(busesRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const now = Date.now();
+          const count = Object.values(data as Record<string, any>).filter(
+            (b: any) => b.deviceState === "online" && b.tripState === "in_service" && (now - b.timestamp) < 300_000
+          ).length;
+          setActiveBusCount(count);
+        } else {
+          setActiveBusCount(0);
+        }
+      }, (error) => {
+        console.warn("[RTDB] activeBuses read failed:", error.message);
+      });
+    }).catch(() => { });
+    
+    return () => {
+      isMounted = false;
+      if (unsub) unsub();
+    };
   }, []);
 
   if (loading || (user && !user.isAnonymous)) {
@@ -132,7 +143,7 @@ export default function HomePage() {
             href="/route-planner"
             className="btn-rc-outline px-7 py-3.5 flex items-center gap-2.5 font-semibold text-[14px]"
           >
-            <Navigation className="w-4 h-4" />
+            <Map className="w-4 h-4" />
             Plan a Trip
           </Link>
         </div>
@@ -177,7 +188,7 @@ export default function HomePage() {
                 stat: "2-way",
                 label: "Live comms",
                 desc: "Direct messaging channel between driver and riders. Ask about stops, report issues, get real responses.",
-                icon: Radio,
+                icon: MessageCircle,
               },
             ].map((f, i) => {
               const Icon = f.icon;
