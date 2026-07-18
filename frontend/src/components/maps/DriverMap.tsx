@@ -56,6 +56,9 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
   const stops = route.stops || [];
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
   const nextStop = stops[currentStopIndex] ?? stops[stops.length - 1];
+  // Timestamp of last manual skip — geofence is suppressed for 3s after a manual advance
+  // to prevent the auto-advance from cascading when driverLocation gets a synthetic position.
+  const lastManualSkipRef = useRef<number>(0);
 
   useEffect(() => {
     setCurrentStopIndex(0);
@@ -89,6 +92,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
   }, [busId, selectedRouteIds, route.id]);
 
   const handleManualNextStop = useCallback(() => {
+    lastManualSkipRef.current = Date.now();
     setCurrentStopIndex(i => {
       const nextIdx = Math.min(i + 1, stops.length - 1);
       if (onStopIndexChange) onStopIndexChange(nextIdx, route.id);
@@ -98,6 +102,9 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
 
   useEffect(() => {
     if (!driverLocation || !nextStop || currentStopIndex >= stops.length - 1) return;
+    // Suppress geofence auto-advance for 3s after a manual skip to prevent cascading
+    // when the bus position is temporarily set to a synthetic (stop-coord) fallback.
+    if (Date.now() - lastManualSkipRef.current < 3000) return;
     const dist = getDistanceMeters(
       { lat: driverLocation.lat, lng: driverLocation.lng },
       { lat: nextStop.lat, lng: nextStop.lng }
