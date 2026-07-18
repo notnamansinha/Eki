@@ -65,8 +65,8 @@
   --color-status-active: var(--status-live);
   --color-status-idle: var(--status-warning);
   --color-status-maintenance: var(--accent);
-  --font-sans: "Inter Tight", system-ui, -apple-system, sans-serif;
-  --font-display: "Inter Tight", sans-serif;
+  --font-sans: var(--font-sora), system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-sora), sans-serif;
   --radius-xl: var(--radius-lg);
 }
 
