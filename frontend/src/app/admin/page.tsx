@@ -4,6 +4,7 @@ import RouteManagementPanel from "@/components/admin/RouteManagementPanel";
 import FleetManagementPanel from "@/components/admin/FleetManagementPanel";
 import DashboardPanel from "@/components/admin/DashboardPanel";
 import SettingsPanel from "@/components/admin/SettingsPanel";
+import RideHistoryPanel from "@/components/admin/RideHistoryPanel";
 import {
   MapPinned as MapIcon,
   UsersRound as UsersIcon,
@@ -11,16 +12,18 @@ import {
   BusFront as BusIcon,
   LayoutDashboard,
   Settings as SettingsIcon,
+  Activity,
 } from "lucide-react";
 import { useState } from "react";
 
-type AdminTab = "dashboard" | "routes" | "fleet" | "personnel" | "settings";
+type AdminTab = "dashboard" | "routes" | "fleet" | "personnel" | "history" | "settings";
 
 const TABS: { id: AdminTab; label: string; Icon: React.FC<{ className?: string }> }[] = [
   { id: "dashboard",  label: "Dashboard",  Icon: LayoutDashboard },
   { id: "routes",     label: "Routes",     Icon: MapIcon },
   { id: "fleet",      label: "Fleet",      Icon: BusIcon },
   { id: "personnel",  label: "Personnel",  Icon: UsersIcon },
+  { id: "history",    label: "History",    Icon: Activity },
   { id: "settings",   label: "Settings",   Icon: SettingsIcon },
 ];
 
@@ -72,6 +75,7 @@ export default function AdminPage() {
         {activeTab === "routes"     && <RouteManagementPanel />}
         {activeTab === "fleet"      && <FleetManagementPanel mode="fleet" />}
         {activeTab === "personnel"  && <FleetManagementPanel mode="personnel" />}
+        {activeTab === "history"    && <RideHistoryPanel />}
         {activeTab === "settings"   && <SettingsPanel />}
       </div>
     </main>

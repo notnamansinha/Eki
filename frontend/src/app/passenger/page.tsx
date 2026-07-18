@@ -13,6 +13,7 @@ import { ref, onValue } from "firebase/database";
 import { waitForAuth } from "@/lib/authState";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import RouteCarousel from "@/components/passenger/ui/RouteCarousel";
+import PassengerBoardingView from "@/components/passenger/PassengerBoardingView";
 import { useSettings } from "@/hooks/useSettings";
 import { getDistanceMeters } from "@/lib/mapUtils";
 
@@ -33,6 +34,7 @@ interface ActiveBusData {
   driverId?: string;
   currentStopIndex?: number;
   delayMinutes?: number;
+  sessionId?: string;
 }
 
 export default function PassengerPage() {
@@ -52,6 +54,7 @@ export default function PassengerPage() {
   const trackingDriverIdRef = useRef<string | null>(null);
   const latestBusDriversRef = useRef<Map<string, string>>(new Map());
   const [endedMessage, setEndedMessage] = useState(false);
+  const [isBoarded, setIsBoarded] = useState(false);
 
   // Listen to Firebase Realtime Database for active buses.
   // signInAnonymously ensures auth != null, required by RTDB security rules.
@@ -148,6 +151,11 @@ export default function PassengerPage() {
 
   const activeBusOnRoute = activeBuses.find(b => b.routeId === selectedRouteId);
   const activeBusOnRouteId = activeBusOnRoute?.busId;
+  const activeSessionId = activeBusOnRoute?.sessionId;
+
+  useEffect(() => {
+    setIsBoarded(false);
+  }, [activeSessionId]);
 
   // Compute live ETA for NextBusCard
   const liveEtaMinutes = useMemo(() => {
@@ -307,14 +315,26 @@ export default function PassengerPage() {
                   >
                     <ArrowLeft className="w-5 h-5" style={{ color: "var(--text-secondary)" }} />
                   </button>
-                  <div className="min-w-0 flex-1 flex flex-col justify-center gap-0.5">
-                    <p className="text-[11px] font-semibold uppercase tracking-widest leading-none" style={{ color: "var(--accent)" }}>
-                      Live
-                    </p>
-                    <p className="text-[17px] font-semibold truncate leading-tight" style={{ color: "var(--text-primary)" }}>
-                      {activeRoute.name}
-                    </p>
-                  </div>
+                  {activeSessionId && !isBoarded ? (
+                    <div className="flex-1 min-w-0 pr-4">
+                      <PassengerBoardingView 
+                        sessionId={activeSessionId}
+                        route={activeRoute}
+                        userId={user?.uid || "anonymous"}
+                        userName={user?.displayName || "Rider"}
+                        onBoarded={() => setIsBoarded(true)}
+                      />
+                    </div>
+                  ) : (
+                    <div className="min-w-0 flex-1 flex flex-col justify-center gap-0.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-widest leading-none" style={{ color: "var(--accent)" }}>
+                        Live
+                      </p>
+                      <p className="text-[17px] font-semibold truncate leading-tight" style={{ color: "var(--text-primary)" }}>
+                        {activeRoute.name}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -342,13 +362,13 @@ export default function PassengerPage() {
                 </div>
               )}
 
-
+              {/* Passenger Boarding View was moved to the header above */}
 
               {/* Messaging Overlay */}
               {isMessagingOpen && (
                 <div className="absolute inset-x-0 top-16 bottom-[80px] z-50 animate-slide-up flex flex-col pointer-events-auto">
                   <MessagingPanel
-                    busId={activeBuses.find(b => b.routeId === activeRoute.id)?.busId || ""}
+                    sessionId={activeBuses.find(b => b.routeId === activeRoute.id)?.sessionId || ""}
                     currentUserRole="passenger"
                     currentUserId={user?.uid || "anonymous"}
                     currentUserName={user?.displayName || "Rider"}

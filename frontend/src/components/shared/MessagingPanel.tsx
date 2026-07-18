@@ -16,7 +16,7 @@ interface Message {
 }
 
 interface Props {
-  busId: string;
+  sessionId: string;
   currentUserRole: "driver" | "passenger" | "admin";
   currentUserId: string;
   currentUserName: string;
@@ -26,7 +26,7 @@ interface Props {
 }
 
 export default function MessagingPanel({ 
-  busId, 
+  sessionId, 
   currentUserRole, 
   currentUserId, 
   currentUserName, 
@@ -41,14 +41,14 @@ export default function MessagingPanel({
   const lastSeenCountRef = useRef(0);
 
   useEffect(() => {
-    if (!busId) return;
+    if (!sessionId) return;
 
     let unsubscribe: (() => void) | undefined;
     let isMounted = true;
 
     waitForAuth().then(() => {
       if (!isMounted) return;
-      const messagesRef = ref(rtdb, `messages/${busId}`);
+      const messagesRef = ref(rtdb, `messages/sessions/${sessionId}`);
       unsubscribe = onValue(messagesRef, (snapshot) => {
         const data = snapshot.val();
         if (data) {
@@ -82,7 +82,7 @@ export default function MessagingPanel({
       isMounted = false;
       if (unsubscribe) unsubscribe();
     };
-  }, [busId, currentUserId, onUnreadCountChange]);
+  }, [sessionId, currentUserId, onUnreadCountChange]);
 
   // --- Rate Limiting Logic ---
   const [messagesSentCounts, setMessagesSentCounts] = useState<{timestamp: number}[]>([]);
@@ -97,7 +97,7 @@ export default function MessagingPanel({
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !busId) return;
+    if (!newMessage.trim() || !sessionId) return;
 
     const now = Date.now();
     const oneHourAgo = now - 3600000;
@@ -120,7 +120,7 @@ export default function MessagingPanel({
     const roleForMsg = currentUserRole === "admin" ? "driver" : currentUserRole;
 
     try {
-      const messagesRef = ref(rtdb, `messages/${busId}`);
+      const messagesRef = ref(rtdb, `messages/sessions/${sessionId}`);
       await push(messagesRef, {
         text: censoredContent,
         from: roleForMsg,
@@ -150,7 +150,7 @@ export default function MessagingPanel({
             Live Chat
           </h3>
           <p className="text-[10px] font-semibold mt-0.5" style={{ color: "var(--text-ghost)" }}>
-            Bus {busId}
+            Session {sessionId.substring(0, 8)}
           </p>
         </div>
         {isOverlay && onClose && (

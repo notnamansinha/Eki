@@ -8,6 +8,12 @@
       }
     },
     "messages": {
+      "sessions": {
+        "$sessionId": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
+      },
       "$busId": {
         ".read": "auth != null",
         ".write": "auth != null"

@@ -75,6 +75,14 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
     
+    // ── Ride Sessions ──
+    match /ride_sessions/{sessionId} {
+      allow read: if isAuthenticated();
+      allow create: if isDriver();
+      allow update: if isDriver() || isAdmin() || 
+        (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['passengers']));
+    }
+    
     // ── Drivers collection ──
     match /drivers/{driverId} {
       allow read: if true;

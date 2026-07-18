@@ -279,9 +279,12 @@ function FleetCard({
           selected ? "border-brand-accent/40 bg-brand-accent/5" : "border-white/8 bg-white/3 hover:border-white/15"
         }`}
       >
-        <button
+        <div
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') { setExpanded(o => !o); onSelect(); } }}
           onClick={() => { setExpanded(o => !o); onSelect(); }}
-          className="w-full p-3 flex items-center gap-3 text-left"
+          className="w-full p-3 flex items-center gap-3 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/50"
         >
           <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${ts.bg}`}>
             <span className={`w-2 h-2 rounded-full ${ts.dot} ${entry.motionState === "moving" ? "animate-pulse" : ""}`} />
@@ -307,7 +310,7 @@ function FleetCard({
             </button>
             {expanded ? <ChevronUp className="w-3.5 h-3.5 text-white/30" /> : <ChevronDown className="w-3.5 h-3.5 text-white/30" />}
           </div>
-        </button>
+        </div>
 
         {expanded && (
           <div className="border-t border-white/5 p-3 flex flex-col gap-3">
