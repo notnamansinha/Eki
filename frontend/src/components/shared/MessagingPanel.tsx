@@ -41,6 +41,11 @@ export default function MessagingPanel({
   const lastSeenCountRef = useRef(0);
 
   useEffect(() => {
+    // Always reset session-bound state when sessionId changes (including when empty)
+    setMessages([]);
+    setNewMessage("");
+    lastSeenCountRef.current = 0;
+
     if (!sessionId) return;
 
     let unsubscribe: (() => void) | undefined;
