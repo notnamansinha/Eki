@@ -295,7 +295,7 @@ export default function DriverPage() {
     // Optional: Only clear legacy messages if using busId path, but we are using sessionId now.
     // const messagesRef = ref(rtdb, `messages/${currentBusId}`);
     // remove(messagesRef).catch(console.error);
-  }, []);
+  }, [activeSessionIds]);
 
   const handleRouteUpdate = useCallback((routeIds: string[]) => {
     routeIdsRef.current = routeIds;
