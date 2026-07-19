@@ -161,6 +161,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Settings collection ──
+    match /settings/{document} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
     // ── Default deny — no catch-all, everything not listed above is denied ──
     // (Firestore denies by default, but this comment makes the intent explicit)
   }

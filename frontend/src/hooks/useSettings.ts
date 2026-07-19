@@ -51,14 +51,16 @@ function ensureListener() {
       _loading = false;
       notifyAll();
     },
-    (err) => {
+    (err: any) => {
       console.warn("[Settings] Firestore read failed:", err.message);
       _loading = false;
       _unsubscribe = null;
       notifyAll();
-      // Reconnect if consumers are still mounted
-      if (_listenerCount > 0) {
-        ensureListener();
+      // Most optimized for mobile: Do not retry instantly. 
+      // Do not retry at all on fatal permission errors to prevent battery-draining infinite loops.
+      if (_listenerCount > 0 && err.code !== 'permission-denied') {
+        if (_timeoutId) clearTimeout(_timeoutId);
+        _timeoutId = setTimeout(ensureListener, 5000);
       }
     }
   );
