@@ -54,7 +54,12 @@ function ensureListener() {
     (err) => {
       console.warn("[Settings] Firestore read failed:", err.message);
       _loading = false;
+      _unsubscribe = null;
       notifyAll();
+      // Reconnect if consumers are still mounted
+      if (_listenerCount > 0) {
+        ensureListener();
+      }
     }
   );
 }
