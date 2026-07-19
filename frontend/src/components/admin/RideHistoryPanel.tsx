@@ -47,9 +47,11 @@ export default function RideHistoryPanel() {
       ) : (
         sortedSessions.map(session => (
           <div key={session.id} className="bg-brand-surface border border-white/10 rounded-xl overflow-hidden transition-all">
-            <div 
-              className="p-4 cursor-pointer hover:bg-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            <button
+              type="button"
+              className="w-full text-left p-4 cursor-pointer hover:bg-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
               onClick={() => setExpandedId(expandedId === session.id ? null : session.id)}
+              aria-expanded={expandedId === session.id}
             >
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
@@ -71,7 +73,7 @@ export default function RideHistoryPanel() {
                   <span className="text-sm font-bold text-white">{session.passengers?.length || 0}</span>
                 </div>
               </div>
-            </div>
+            </button>
 
             {expandedId === session.id && (
               <div className="px-4 pb-4 border-t border-white/10 bg-black/20 pt-4">
