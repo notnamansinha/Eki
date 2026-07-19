@@ -34,16 +34,27 @@ function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: 
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
+    if (value.length <= 2) {
+      setResults([]);
+      return;
+    }
+    const controller = new AbortController();
     const t = setTimeout(() => {
-      if (value.length > 2) {
-        setSearching(true);
-        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(value)}&limit=5`)
-          .then(r => r.json())
-          .then(d => { setResults(d); setSearching(false); })
-          .catch(() => setSearching(false));
-      } else { setResults([]); }
+      setSearching(true);
+      fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(value)}&limit=5`,
+        { signal: controller.signal }
+      )
+        .then(r => r.json())
+        .then(d => { setResults(d); setSearching(false); })
+        .catch(err => {
+          if (err.name !== 'AbortError') setSearching(false);
+        });
     }, 500);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      controller.abort();
+    };
   }, [value]);
 
   return (
@@ -92,7 +103,7 @@ function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () =
             <p className="text-[10px] text-white/30 tabular-nums tracking-widest">{route.id}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
           <button onClick={onEdit} className="p-2 rounded-lg text-white/30 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Edit route">
             <Pencil className="w-3.5 h-3.5" />
           </button>
@@ -267,7 +278,7 @@ function RouteEditor({
 
     try {
       const waypoints = state.stops.map(s => ({ lat: s.lat, lng: s.lng }));
-      const routeData: RouteData = {
+      const routeData: Partial<RouteData> = {
         id: state.routeId,
         name: state.name,
         color: state.color,
@@ -275,7 +286,21 @@ function RouteEditor({
         stops: state.stops,
         waypoints,
       };
-      await setDoc(doc(db, "routes", state.routeId), routeData);
+
+      if (state.mode === "create") {
+        // Guard against duplicate route IDs — check existence first
+        const { getDoc } = await import("firebase/firestore");
+        const existing = await getDoc(doc(db, "routes", state.routeId));
+        if (existing.exists()) {
+          alert(`A route with ID "${state.routeId}" already exists. Choose a different ID.`);
+          setSaving(false);
+          return;
+        }
+        await setDoc(doc(db, "routes", state.routeId), routeData as RouteData);
+      } else {
+        // Edit mode — merge so existing polyline/distanceMeters/duration are preserved
+        await updateDoc(doc(db, "routes", state.routeId), routeData);
+      }
       onSaved();
     } catch (err: any) {
       alert("Failed to save: " + err.message);
@@ -414,19 +439,27 @@ function RouteEditor({
               state.stops.map((stop, i) => (
                 <div key={`${stop.id}-${i}`}>
                   <StopItem stop={stop} index={i} onRemove={removeStop} onNameChange={renameStop} />
-                  {i < state.stops.length - 1 && (
-                    <div className="flex items-center gap-1.5 pl-6 my-0.5">
-                      <div className="w-px h-4 bg-emerald-500/15 mx-2" />
-                      <div className="flex gap-1">
-                        <button onClick={() => moveStop(i, i - 1)} className="w-5 h-5 rounded hover:bg-white/5 flex items-center justify-center" title="Move up">
-                          <ChevronUp className="w-3 h-3 text-white/20" />
-                        </button>
-                        <button onClick={() => moveStop(i, i + 1)} className="w-5 h-5 rounded hover:bg-white/5 flex items-center justify-center" title="Move down">
-                          <ChevronDown className="w-3 h-3 text-white/20" />
-                        </button>
-                      </div>
+                  <div className="flex items-center gap-1.5 pl-6 my-0.5">
+                    <div className="w-px h-4 bg-emerald-500/15 mx-2" />
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => moveStop(i, i - 1)}
+                        disabled={i === 0}
+                        className="w-5 h-5 rounded hover:bg-white/5 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Move up"
+                      >
+                        <ChevronUp className="w-3 h-3 text-white/20" />
+                      </button>
+                      <button
+                        onClick={() => moveStop(i, i + 1)}
+                        disabled={i === state.stops.length - 1}
+                        className="w-5 h-5 rounded hover:bg-white/5 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Move down"
+                      >
+                        <ChevronDown className="w-3 h-3 text-white/20" />
+                      </button>
                     </div>
-                  )}
+                  </div>
                 </div>
               ))
             )}
