@@ -1,6 +1,6 @@
-# BusTrack Documentation
+# Eki Documentation
 
-Welcome to the deep-dive documentation for the BusTrack ecosystem.
+Welcome to the deep-dive documentation for the Eki ecosystem.
 
 ## Documentation Index
 

@@ -14,7 +14,7 @@ npm install @vis.gl/react-google-maps
 
 ## 2. Restore Global Providers
 
-In `src/components/Providers.tsx`, restore the `APIProvider`:
+In `frontend/src/components/Providers.tsx`, restore the `APIProvider`:
 
 ```tsx
 "use client";
@@ -42,7 +42,7 @@ The following files were migrated from Google Maps (`<GoogleMap>` / `<Map>`) to
 Leaflet (`<MapContainer>`). You should revert them to use
 `@vis.gl/react-google-maps`.
 
-### A. `src/components/passenger/GoogleLiveMap.tsx`
+### A. `frontend/src/components/passenger/GoogleLiveMap.tsx`
 
 **Key missing features to restore:**
 
@@ -51,13 +51,13 @@ Leaflet (`<MapContainer>`). You should revert them to use
   real-time route snapping using `cachedDirections` and `etaInfo` from
   `useThrottledDirections(driverLocation, destination)`.
 
-### B. `src/components/passenger/LiveMap.tsx`
+### B. `frontend/src/components/passenger/LiveMap.tsx`
 
 - Revert `MapContainer` back to `<Map disableDefaultUI={true} mapId="...">`.
 - Restore the `DirectionsRoute` component usage.
 - Re-enable `<AdvancedMarker>` instead of Leaflet's `<Marker>`.
 
-### C. `src/components/driver/DriverNavMap.tsx`
+### C. `frontend/src/components/driver/DriverNavMap.tsx`
 
 **Key missing features to restore:**
 
@@ -68,7 +68,7 @@ Leaflet (`<MapContainer>`). You should revert them to use
 - Restore the `Recenter` component that leverages the Google map instance hook
   (`useMap()`) for panning.
 
-### D. `src/components/DirectionsRoute.tsx`
+### D. `frontend/src/components/DirectionsRoute.tsx`
 
 - Restore the `DirectionsService` usage:
 
@@ -88,10 +88,10 @@ directionsService.route({
 
 Revert the following files back to use `<Map>` from `@vis.gl/react-google-maps`:
 
-- `src/components/maps/DriverMap.tsx`
-- `src/components/maps/PassengerMap.tsx`
-- `src/components/maps/RoutePlannerMap.tsx`
-- `src/components/admin/FleetMapOverview.tsx`
+- `frontend/src/components/maps/DriverMap.tsx`
+- `frontend/src/components/maps/PassengerMap.tsx`
+- `frontend/src/components/maps/RoutePlannerMap.tsx`
+- `frontend/src/components/admin/FleetMapOverview.tsx`
 
 ## Notes for the AI Agent
 

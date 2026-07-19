@@ -1,10 +1,10 @@
-# Eki (BusTrackr) Architecture & Data Flow
+# Eki Architecture & Data Flow
 
-This document details the core architecture, data synchronization flows, and Role-Based Access Control (RBAC) hierarchy of the Eki (BusTrackr) ecosystem.
+This document details the core architecture, data synchronization flows, and Role-Based Access Control (RBAC) hierarchy of the Eki ecosystem.
 
 ## 1. High-Level Architecture
 
-BusTrack uses a modern hybrid, real-time architecture leveraging Firebase as the core streaming layer, a containerized Node.js backend for heavy computation, and an ESP32 hardware telemetry edge layer.
+Eki uses a modern hybrid, real-time architecture leveraging Firebase as the core streaming layer, a containerized Node.js backend for heavy computation, and an ESP32 hardware telemetry edge layer.
 
 ```mermaid
 graph TD
@@ -33,8 +33,9 @@ graph TD
     Auth -->|Returns Token| Frontend
     
     %% Realtime Connections
-    D -->|Push GPS| RTDB
+    ESP -->|Push GPS telemetry| RTDB
     RTDB -->|Listen Updates| P
+    D -->|Shift control / read state| RTDB
     A -->|Listen and Override| RTDB
     RTDB -->|Listen and Override| A
 
@@ -47,7 +48,7 @@ graph TD
 
 ## 2. Role-Based Access Control (RBAC) Flow
 
-The system employs a strict hierarchical Role-Based Access Control pattern. The `RoleGuard` wrapper checks a user's role initialized via Google Authentication against the page's permitted roles. 
+The system employs a strict hierarchical Role-Based Access Control pattern. The `RoleGuard` wrapper is a **presentation-layer guard** that controls UI rendering. It reads the user's role from Firestore (`users/{uid}.role`) — Google Authentication supplies identity only. Authorization is enforced by Firebase Security Rules and authenticated backend endpoints; `RoleGuard` prevents unauthorized UI rendering but should not be considered the sole authorization boundary.
 
 ### Role Hierarchy
 * **Admin:** Inherits all permissions. Can view `/admin`, `/driver`, and `/passenger`.
@@ -85,7 +86,7 @@ sequenceDiagram
 
 ## 3. Real-Time GPS Tracking Data Flow
 
-Location updates happen completely outside the standard Node.js server. The ESP32 Hardware modules physically on the buses stream directly to the Firebase Realtime Database (RTDB). RTDB then broadcasts the updates to the Passenger app, ensuring sub-second latency globally.
+Location updates happen completely outside the standard Node.js server. The ESP32 hardware modules physically on the buses stream directly to the Firebase Realtime Database (RTDB) using an adaptive transmission cadence of 2–10 seconds (or a 30-second stationary heartbeat). RTDB then broadcasts updates to the Passenger app.
 
 ```mermaid
 graph LR

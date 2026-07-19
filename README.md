@@ -2,7 +2,7 @@
 
 <img src="./frontend/public/eki-logo.png" alt="Eki Logo" width="200" />
 
-> An open-source, full-stack vehicle tracking ecosystem engineered entirely for **Zero-Budget** operations on Free Tiers. Build your own live GPS tracker using an ESP32 and NEO-M8N GNSS module, streaming sub-second telemetry to Firebase RTDB with Next.js live-map dashboards.
+> An open-source, full-stack vehicle tracking ecosystem designed to operate within **Firebase free-tier limits** for small-to-medium fleets. Build your own live GPS tracker using an ESP32 and NEO-M8N GNSS module, streaming location updates to Firebase RTDB with Next.js live-map dashboards. Note: larger deployments (50+ buses, 200+ concurrent listeners) may exceed free-tier capacity.
 
 ![Hardware Setup and Explanation](./docs/assets/image.jpg)
 
@@ -14,9 +14,9 @@ Eki (BusTrackr) is a full-stack, real-time fleet management ecosystem. By bridgi
 
 The system is composed of three primary surfaces:
 
-1. **Passenger App**: Interactive live maps, zero-latency ETA calculations, and dynamic live announcements.
+1. **Passenger App**: Interactive live maps, adaptive-update ETA calculations (2–10 second update cadence), and dynamic live announcements.
 2. **Admin Dashboard**: Bird's-eye fleet map, historical analytics, route infrastructure management, and passenger communication overrides.
-3. **Hardware Telemetry**: Dedicated ESP32 GNSS modules physically installed on buses, autonomously streaming high-frequency location data using smart-delta transmission.
+3. **Hardware Telemetry**: Dedicated ESP32 GNSS modules physically installed on buses, autonomously streaming location data using smart-delta transmission.
 
 ---
 
@@ -135,7 +135,7 @@ Requires your Firebase public config and a Google Maps Browser Key (HTTP Referre
 
 ```env
 NEXT_PUBLIC_FIREBASE_API_KEY=your_public_key
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_browser_key
+NEXT_PUBLIC_GOOGLE_MAPS_KEY=your_browser_key
 # ... see frontend/README.md for full list
 ```
 

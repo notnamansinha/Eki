@@ -1,4 +1,4 @@
-# BusTrack GNSS App Workflow
+# Eki GNSS App Workflow
 
 Here is the complete end-to-end workflow of the new GNSS hardware-based tracking system, explained visually.
 
@@ -31,14 +31,14 @@ sequenceDiagram
     %% Shift Start
     Note over D,R: 3. Shift Initialization
     D->>D: Driver selects Bus & Route
-    D->>R: Clicks "Start Tracking" -> Writes {status: "active", driverId}
-    D->>R: Subscribes to /activeBuses (Read-only)
+    D->>R: Clicks "Start Tracking" -> Writes shift metadata to /busShifts/{busId} ({driverId, routeId, status: "active"})
+    D->>R: Subscribes to /activeBuses (Read-only from hardware)
 
     %% Tracking Loop
     Note over E,R: 4. Smart Transmission Loop (Every 1s)
     loop Continuous Tracking
         N-->>E: Live lat/lng/speed
-        alt Moved >10m OR Turned >15° OR Speed >5km/h
+        alt Moved >10m OR Turned >15° OR Speed change >5km/h
             E->>R: PATCH /activeBuses (lat, lng, speed, heading)
         else Stationary for 30s
             E->>R: PATCH /activeBuses (Heartbeat)
@@ -52,9 +52,9 @@ sequenceDiagram
 
     %% Shift End
     Note over B,D: 6. Shift End & Shutdown
-    D->>R: Clicks "Stop Tracking" -> Sets {status: "offline"}
+    D->>R: Clicks "Stop Tracking" -> Updates /busShifts/{busId} {status: "offline"}
     B->>E: Ignition OFF -> Power cut
-    E-xR: Connection drops
+    E-xR: Hardware connection drops
 ```
 
 ## 2. Smart Transmission State Machine

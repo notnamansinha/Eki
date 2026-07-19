@@ -1,4 +1,4 @@
-# Eki (BusTrackr) — Zero-Budget Optimization Strategy
+# Eki — Zero-Budget Optimization Strategy
 
 This document provides a deep dive into how the Eki architecture is explicitly engineered to operate entirely on **Free Tiers**, circumventing the typical exorbitant costs associated with live transit tracking.
 

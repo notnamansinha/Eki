@@ -1,4 +1,4 @@
-# Eki (BusTrack) — GNSS Hardware Module
+# Eki — GNSS Hardware Module
 
 This directory contains the PlatformIO (C++) project for the dedicated ESP32 + NEO-M8N GNSS hardware module, which handles real-time bus tracking without relying on driver smartphones.
 
