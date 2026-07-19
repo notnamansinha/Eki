@@ -13,8 +13,10 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
   const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setNow(Date.now());
+    const refresh = () => setNow(Date.now());
+    refresh();
+    const intervalId = window.setInterval(refresh, 60_000);
+    return () => window.clearInterval(intervalId);
   }, []);
 
   const liveRoutes = routes.filter((route) => getActiveBusesCount(route.id) > 0);
