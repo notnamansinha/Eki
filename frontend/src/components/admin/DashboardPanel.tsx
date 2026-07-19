@@ -123,9 +123,44 @@ function OverrideDrawer({
     setSaving(true);
     try {
       const patch: Record<string, unknown> = { timestamp: Date.now() };
-      if (lat && lng) { patch.lat = parseFloat(lat); patch.lng = parseFloat(lng); }
-      if (delay !== "") patch.delayMinutes = parseInt(delay, 10);
-      if (stopIdx !== "") patch.currentStopIndex = parseInt(stopIdx, 10);
+
+      if (lat && lng) {
+        const latVal = parseFloat(lat);
+        const lngVal = parseFloat(lng);
+        if (!isFinite(latVal) || latVal < -90 || latVal > 90) {
+          setMsg("Error: Latitude must be a finite number between -90 and 90.");
+          setSaving(false);
+          return;
+        }
+        if (!isFinite(lngVal) || lngVal < -180 || lngVal > 180) {
+          setMsg("Error: Longitude must be a finite number between -180 and 180.");
+          setSaving(false);
+          return;
+        }
+        patch.lat = latVal;
+        patch.lng = lngVal;
+      }
+
+      if (delay !== "") {
+        const delayVal = parseFloat(delay);
+        if (!isFinite(delayVal)) {
+          setMsg("Error: Delay must be a finite number.");
+          setSaving(false);
+          return;
+        }
+        patch.delayMinutes = delayVal;
+      }
+
+      if (stopIdx !== "" && stopCount > 0) {
+        const idxVal = parseInt(stopIdx, 10);
+        if (!Number.isInteger(idxVal) || idxVal < 0 || idxVal >= stopCount) {
+          setMsg(`Error: Stop index must be an integer between 0 and ${stopCount - 1}.`);
+          setSaving(false);
+          return;
+        }
+        patch.currentStopIndex = idxVal;
+      }
+
       await update(ref(rtdb, `activeBuses/${rtdbKey}`), patch);
       setMsg("Saved ✓");
       setTimeout(() => setMsg(""), 2000);
