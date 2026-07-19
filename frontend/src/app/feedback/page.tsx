@@ -255,12 +255,7 @@ export default function FeedbackPage() {
       );
       setLoading(false);
     });
-    let timeoutId: NodeJS.Timeout;
-    return () => {
-      timeoutId = setTimeout(() => {
-        unsub();
-      }, 3000);
-    };
+    return () => unsub();
   }, []);
 
   const handleStatusChange = async (

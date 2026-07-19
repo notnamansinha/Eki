@@ -78,13 +78,7 @@ function useRecentTrips(count = 10): CompletedTrip[] {
     const unsub = onSnapshot(q, (snap) => {
       setTrips(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<CompletedTrip, "id">) })));
     });
-    // Debounce the unsubscribe to prevent Firestore ve:-1 internal assertion crashes during strict mode/HMR
-    let timeoutId = setTimeout(() => {}, 0);
-    return () => {
-      timeoutId = setTimeout(() => {
-        unsub();
-      }, 3000);
-    };
+    return () => unsub();
   }, [count]);
   return trips;
 }
