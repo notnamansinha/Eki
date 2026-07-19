@@ -30,9 +30,14 @@ export default function DirectionsRoute({ stops, color = "#3b82f6", hasBuses = f
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    if (!map || stops.length < 2) return;
+    if (!map || stops.length < 2) {
+      // Detach any existing renderers when route becomes invalid
+      renderersRef.current.forEach(r => r.setMap(null));
+      renderersRef.current = [];
+      return;
+    }
 
-    // Clear previous renderers
+    // Clear previous renderers and reset error state
     renderersRef.current.forEach(r => r.setMap(null));
     renderersRef.current = [];
     setError(false);
@@ -89,11 +94,13 @@ export default function DirectionsRoute({ stops, color = "#3b82f6", hasBuses = f
               },
             },
             (result, status) => {
+              if (!isMounted) return; // Discard stale callbacks after cleanup
               if (status === google.maps.DirectionsStatus.OK && result) {
                 renderer.setDirections(result);
               } else {
                 console.warn(`[DirectionsRoute] Chunk ${chunkIdx} failed: ${status}. Falling back to polyline.`);
                 renderer.setMap(null);
+                if (!isMounted) return;
                 const fallback = new google.maps.Polyline({
                   path: chunk.map(p => ({ lat: p.lat, lng: p.lng })),
                   strokeColor: color,
