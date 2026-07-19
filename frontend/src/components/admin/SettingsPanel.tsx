@@ -7,15 +7,17 @@ import { Save, Loader2, Eye, EyeOff, Megaphone, Clock, MessageSquare, Info } fro
 function Field({
   label,
   hint,
+  controlId,
   children,
 }: {
   label: string;
   hint?: string;
+  controlId: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-semibold text-white/80">{label}</label>
+      <label htmlFor={controlId} className="text-sm font-semibold text-white/80">{label}</label>
       {children}
       {hint && <p className="text-xs text-white/30">{hint}</p>}
     </div>
@@ -95,8 +97,9 @@ export default function SettingsPanel() {
       <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5">
         <SectionHeader icon={Clock} title="Service Hours" subtitle="Controls the 'service starts at' message shown when no buses are active" />
 
-        <Field label="Service Start Time" hint='Shown to passengers in the "no buses" empty state. e.g. "6:30 am"'>
+        <Field controlId="setting-service-start-time" label="Service Start Time" hint='Shown to passengers in the "no buses" empty state. e.g. "6:30 am"'>
           <input
+            id="setting-service-start-time"
             type="text"
             value={draft.serviceStartTime}
             onChange={e => set("serviceStartTime", e.target.value)}
@@ -110,8 +113,9 @@ export default function SettingsPanel() {
       <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5">
         <SectionHeader icon={MessageSquare} title="Passenger App Copy" subtitle="Text shown in the passenger app when no buses are running" />
 
-        <Field label="No Buses — Headline" hint='The bold text shown in the empty state. e.g. "No buses running"'>
+        <Field controlId="setting-no-buses-headline" label="No Buses — Headline" hint='The bold text shown in the empty state. e.g. "No buses running"'>
           <input
+            id="setting-no-buses-headline"
             value={draft.noBusesMessage}
             onChange={e => set("noBusesMessage", e.target.value)}
             placeholder="No buses running"
@@ -120,10 +124,12 @@ export default function SettingsPanel() {
         </Field>
 
         <Field
+          controlId="setting-no-buses-subtext"
           label="No Buses — Subtext"
           hint='Use {time} to insert the service start time automatically. e.g. "Service starts at {time}"'
         >
           <input
+            id="setting-no-buses-subtext"
             value={draft.noBusesSubMessage}
             onChange={e => set("noBusesSubMessage", e.target.value)}
             placeholder="Service starts at {time}"
@@ -145,8 +151,9 @@ export default function SettingsPanel() {
       <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5">
         <SectionHeader icon={Megaphone} title="Live Announcement Banner" subtitle="When active, a banner appears at the top of the Passenger app home screen" />
 
-        <Field label="Announcement Text" hint="Keep it brief — shown in a slim banner strip">
+        <Field controlId="setting-announcement-text" label="Announcement Text" hint="Keep it brief — shown in a slim banner strip">
           <textarea
+            id="setting-announcement-text"
             value={draft.announcementText}
             onChange={e => set("announcementText", e.target.value)}
             placeholder="e.g. Heavy traffic near Central Park — expect delays on Route 1A"
