@@ -1,6 +1,5 @@
 # Eki — Open-Source GPS & Vehicle Tracking System
 
-<img src="./frontend/public/eki-logo.png" alt="Eki Logo" width="200" />
 
 > An open-source, full-stack vehicle tracking ecosystem designed to operate within **Firebase free-tier limits** for small-to-medium fleets. Build your own live GPS tracker using an ESP32 and NEO-M8N GNSS module, streaming location updates to Firebase RTDB with Next.js live-map dashboards. Note: larger deployments (50+ buses, 200+ concurrent listeners) may exceed free-tier capacity.
 
