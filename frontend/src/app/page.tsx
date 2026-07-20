@@ -36,6 +36,8 @@ export default function HomePage() {
         priority
         quality={100}
       />
+      {/* ── SUBTLE OVERLAY SHADOW ── */}
+      <div className="absolute inset-0 bg-black/40 z-0 pointer-events-none" />
 
       {/* ── TOP NAV ─── */}
       <nav className="relative z-10 w-full pt-6 px-6 md:px-12 flex items-center justify-end">
@@ -59,11 +61,24 @@ export default function HomePage() {
           <span className="text-xs font-bold uppercase tracking-widest text-white">Ahmedabad Transit Live</span>
         </div>
 
-        <h1 className="text-5xl md:text-7xl lg:text-8xl font-extrabold tracking-tight leading-[1.1] text-balance text-white mb-8 drop-shadow-2xl">
-          Know exactly when your bus arrives.
+        <h1 
+          className="text-6xl md:text-[80px] lg:text-[96px] font-black leading-[1.05] text-white mb-6 w-full mx-auto"
+          style={{
+            letterSpacing: '0.5px',
+            textShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            WebkitTextStroke: '1px rgba(255,255,255,0.08)'
+          }}
+        >
+          Know exactly when<br className="hidden md:block" /> your bus arrives.
         </h1>
 
-        <p className="text-lg md:text-2xl text-white/90 text-pretty max-w-2xl mb-12 drop-shadow-xl font-medium">
+        <p 
+          className="text-xl md:text-3xl text-white/90 text-balance max-w-[600px] mx-auto mb-12 font-medium"
+          style={{
+            letterSpacing: '0.2px',
+            textShadow: '0 2px 8px rgba(0,0,0,0.2)'
+          }}
+        >
           Live GPS tracking with speed-aware ETAs. Open your phone, see your bus, and know exactly when to leave.
         </p>
 
