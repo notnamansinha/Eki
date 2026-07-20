@@ -75,6 +75,14 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
     
+    // ── Ride Sessions ──
+    match /ride_sessions/{sessionId} {
+      allow read: if isAuthenticated();
+      allow create: if isDriver();
+      allow update: if isDriver() || isAdmin() || 
+        (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['passengers']));
+    }
+    
     // ── Drivers collection ──
     match /drivers/{driverId} {
       allow read: if true;
@@ -151,6 +159,12 @@ service cloud.firestore {
     // but making the deny explicit prevents accidental misconfiguration.
     match /devices/{deviceId} {
       allow read, write: if false;
+    }
+
+    // ── Settings collection ──
+    match /settings/{document} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
     }
 
     // ── Default deny — no catch-all, everything not listed above is denied ──

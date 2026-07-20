@@ -1,45 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { BusFront as Bus, Navigation, Loader2, LogIn, ArrowRight, Zap, SignalHigh as Radio, Clock } from "lucide-react";
+import { BusFront as Bus, Navigation, Map, Loader2, LogIn, ArrowRight, Zap, MessageCircle, Clock } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { rtdb, auth } from "@/lib/firebase";
-import { ref, onValue } from "firebase/database";
-import { signInAnonymously } from "firebase/auth";
+import { useEffect } from "react";
 
 export default function HomePage() {
   const { user, loading, loginLoading, loginWithGoogle } = useAuth();
   const router = useRouter();
-  const [activeBusCount, setActiveBusCount] = useState(0);
 
   useEffect(() => {
-    if (!loading && user && !user.isAnonymous) {
+    if (!loading && user) {
       router.push(`/${user.role || 'passenger'}`);
     }
   }, [user, loading, router]);
 
-  // Live bus count for social proof
-  useEffect(() => {
-    signInAnonymously(auth).catch(() => { });
-    const busesRef = ref(rtdb, "activeBuses");
-    const unsub = onValue(busesRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const now = Date.now();
-        const count = Object.values(data as Record<string, any>).filter(
-          (b: any) => b.deviceState === "online" && b.tripState === "in_service" && (now - b.timestamp) < 300_000
-        ).length;
-        setActiveBusCount(count);
-      } else {
-        setActiveBusCount(0);
-      }
-    });
-    return () => unsub();
-  }, []);
-
-  if (loading || (user && !user.isAnonymous)) {
+  if (loading || user) {
     return (
       <main className="min-h-screen flex items-center justify-center" style={{ background: "var(--surface-0)" }}>
         <Loader2 className="w-6 h-6 text-[var(--text-tertiary)] animate-spin" />
@@ -89,19 +66,7 @@ export default function HomePage() {
 
       {/* ── HERO ─── */}
       <section className="relative pt-[140px] pb-20 px-6 md:px-10 max-w-[1200px] mx-auto">
-        {/* Live status */}
-        {activeBusCount > 0 && (
-          <div className="status-live mb-8 animate-fade-in">
-            {activeBusCount} bus{activeBusCount !== 1 ? "es" : ""} live now
-          </div>
-        )}
-        {activeBusCount === 0 && (
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-8 text-[11px] font-semibold"
-            style={{ background: "var(--surface-3)", color: "var(--text-tertiary)" }}>
-            <Clock className="w-3 h-3" />
-            Service starts at 8:00 AM
-          </div>
-        )}
+
 
         <h1 className="text-display-hero mb-6 max-w-[900px]"
           style={{ color: "var(--text-primary)" }}>
@@ -132,7 +97,7 @@ export default function HomePage() {
             href="/route-planner"
             className="btn-rc-outline px-7 py-3.5 flex items-center gap-2.5 font-semibold text-[14px]"
           >
-            <Navigation className="w-4 h-4" />
+            <Map className="w-4 h-4" />
             Plan a Trip
           </Link>
         </div>
@@ -177,7 +142,7 @@ export default function HomePage() {
                 stat: "2-way",
                 label: "Live comms",
                 desc: "Direct messaging channel between driver and riders. Ask about stops, report issues, get real responses.",
-                icon: Radio,
+                icon: MessageCircle,
               },
             ].map((f, i) => {
               const Icon = f.icon;

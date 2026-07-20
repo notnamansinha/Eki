@@ -10,9 +10,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useBuses } from "@/hooks/useBuses";
-import { Navigation, CircleUserRound as User, SignalHigh as Radio, ArrowLeft } from "lucide-react";
-import { rtdb } from "@/lib/firebase";
-import { ref, update, remove, onValue } from "firebase/database";
+import { Map, CircleUserRound as User, MessageCircle, ArrowLeft } from "lucide-react";
+import { db, rtdb, auth } from "@/lib/firebase";
+import { collection, doc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
+import { ref, update, remove, onValue, onDisconnect } from "firebase/database";
+import { signInAnonymously } from "firebase/auth";
 
 type Tab = "map" | "profile";
 
@@ -24,16 +26,17 @@ export default function DriverPage() {
   const { buses } = useBuses();
   const [driverId, setDriverId] = useState("");
   const [selectedBusId, setSelectedBusId] = useState("");
+  const [activeSessionIds, setActiveSessionIds] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const saved = localStorage.getItem("driverId");
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     if (saved) setDriverId(saved);
   }, []);
 
   useEffect(() => {
     if (driverId) localStorage.setItem("driverId", driverId);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setSelectedBusId("");
   }, [driverId]);
 
@@ -41,6 +44,7 @@ export default function DriverPage() {
   const busId = selectedBusId || activeDriver?.assignedBusId || "";
 
   const [selectedRouteIds, setSelectedRouteIds] = useState<string[]>([]);
+  const activeRoute = routes.find(r => selectedRouteIds.includes(r.id)) || routes.find(r => r.id === selectedRouteIds[0]);
   const [isTracking, setIsTracking] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number; heading: number } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("map");
@@ -51,69 +55,195 @@ export default function DriverPage() {
   const routeIdsRef = useRef<string[]>([]);
   const currentStopIndexRef = useRef<number>(0);
   const delayMinutesRef = useRef<number>(0);
+  const driverLocationRef = useRef<{ lat: number; lng: number } | null>(null);
 
-  const handleStopIndexChange = useCallback((index: number) => {
+  const lastLogTimeRef = useRef<number>(0);
+
+  const handleStopIndexChange = useCallback((index: number, routeIdHint?: string) => {
     currentStopIndexRef.current = index;
-  }, []);
+    
+    // Log the stop reached to Firestore
+    const currentSessionId = activeSessionIds[selectedRouteIds[0]];
+    if (currentSessionId && activeRoute?.stops?.[index]) {
+      updateDoc(doc(db, "ride_sessions", currentSessionId), {
+        stopsReached: arrayUnion({
+          stopIndex: index,
+          stopId: activeRoute.stops[index].id,
+          stopName: activeRoute.stops[index].name,
+          timestamp: Date.now()
+        })
+      }).catch(console.error);
+    }
+
+    // Sync stop changes to Passenger Panels instantly via RTDB
+    // Use the most specific route IDs available (hint from DriverMap > routeIdsRef > activeRoute)
+    const routesToUpdate = routeIdsRef.current.length > 0
+      ? routeIdsRef.current
+      : routeIdHint
+        ? [routeIdHint]
+        : activeRoute
+          ? [activeRoute.id]
+          : [];
+
+    routesToUpdate.forEach(routeId => {
+      const activeBusId = busIdRef.current || "test_bus_1";
+
+      // Prefer live GPS location for accurate ETA calculation.
+      // Only fall back to the previous stop's coords if no GPS fix is available yet
+      // (avoids teleporting the bus to a skipped stop's position).
+      const liveLoc = driverLocationRef.current;
+      const prevIdx = Math.max(0, index - 1);
+      const stopLat = liveLoc?.lat ?? activeRoute?.stops?.[prevIdx]?.lat ?? 23.03;
+      const stopLng = liveLoc?.lng ?? activeRoute?.stops?.[prevIdx]?.lng ?? 72.55;
+
+      const busRef = ref(rtdb, `activeBuses/${activeBusId}_${routeId}`);
+      update(busRef, {
+        busId: activeBusId,
+        routeId: routeId,
+        lat: stopLat,
+        lng: stopLng,
+        currentStopIndex: index,
+        timestamp: Date.now(),
+        tripState: "in_service",
+        status: "active",
+        deviceState: "online"
+      }).catch(console.error);
+    });
+  }, [activeSessionIds, selectedRouteIds, activeRoute]);
 
   useEffect(() => { busIdRef.current = busId; }, [busId]);
   useEffect(() => { routeIdsRef.current = selectedRouteIds; }, [selectedRouteIds]);
+  useEffect(() => { driverLocationRef.current = driverLocation; }, [driverLocation]);
 
   useEffect(() => {
     if (routes.length > 0 && selectedRouteIds.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setSelectedRouteIds([routes[0].id]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routes]);
 
-  const activeRoute = routes.find(r => selectedRouteIds.includes(r.id)) || routes.find(r => r.id === selectedRouteIds[0]);
 
   const handleStartTracking = useCallback(() => {
-    if (!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0) return;
+    console.log("[Driver] handleStartTracking called", { busId, driverId, selectedRouteIds, driversLen: drivers.length });
+    if (!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0) {
+      console.warn("[Driver] Guard prevented start:", { busId, driverId, routeCount: selectedRouteIds.length, driverFound: drivers.some(d => d.id === driverId) });
+      return;
+    }
     setIsTracking(true);
 
     const currentBusId = busId;
     const currentRouteIds = selectedRouteIds;
     
-    const payload = {
-      driverId: driverId || user?.uid || "driver",
+    // Generate session IDs for each route being tracked
+    const newSessionIds: Record<string, string> = {};
+    currentRouteIds.forEach(routeId => {
+      newSessionIds[routeId] = doc(collection(db, "ride_sessions")).id;
+    });
+    setActiveSessionIds(newSessionIds);
+    
+    const basePayload = {
+      busId: currentBusId,
+      driverId: driverId || auth.currentUser?.uid || "driver",
       status: "active",
       deviceState: "online",
       tripState: "in_service",
       timestamp: Date.now(),
-      lat: activeRoute?.stops?.[0]?.lat || 23.03, // Fallback to first stop or center
+      lat: activeRoute?.stops?.[0]?.lat || 23.03,
       lng: activeRoute?.stops?.[0]?.lng || 72.55,
-      speed: 25,
+      speed: 0,
       heading: 0,
+      motionState: "stopped",
       currentStopIndex: currentStopIndexRef.current,
       delayMinutes: delayMinutesRef.current,
     };
 
-    currentRouteIds.forEach(routeId => {
-      const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
-      update(busRef, { ...payload, routeId }).catch(err =>
-        console.error("[RTDB] Write failed:", err)
-      );
-    });
-  }, [busId, selectedRouteIds, driverId, user?.uid]);
+    console.log("[Driver] Writing to RTDB:", { currentBusId, currentRouteIds, basePayload, currentUser: auth.currentUser?.uid });
+
+    const doWrite = () => {
+      currentRouteIds.forEach(routeId => {
+        const sessionId = newSessionIds[routeId];
+        const payload = { ...basePayload, routeId, sessionId };
+        
+        // 1. RTDB Update
+        const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
+        update(busRef, payload)
+          .then(() => console.log("[Driver] RTDB write succeeded for", `${currentBusId}_${routeId}`))
+          .catch(err => console.error("[Driver] RTDB write FAILED:", err.code, err.message));
+        
+        // Prevent ghost sessions if the driver forces app close
+        onDisconnect(busRef).update({
+          status: "offline",
+          deviceState: "offline",
+          tripState: "ended",
+          timestamp: Date.now()
+        }).catch(() => {});
+
+        // 2. Firestore Session Record
+        setDoc(doc(db, "ride_sessions", sessionId), {
+          id: sessionId,
+          busId: currentBusId,
+          driverId: driverId || auth.currentUser?.uid || "driver",
+          routeId: routeId,
+          startTime: Date.now(),
+          status: "active",
+          passengers: []
+        }).catch(err => console.error("[Driver] Firestore write failed:", err));
+      });
+    };
+
+    if (auth.currentUser) {
+      doWrite();
+    } else {
+      // Driver not yet authenticated — sign in anonymously then write
+      signInAnonymously(auth)
+        .then(doWrite)
+        .catch(err => console.error("[Driver] Auth failed before RTDB write:", err.message));
+    }
+  }, [busId, selectedRouteIds, driverId, user?.uid, activeRoute, drivers]);
 
   // Pure GNSS listener (read-only mode for driver location)
   useEffect(() => {
     if (!busId || !isTracking) return;
 
-    const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
-    const unsubscribe = onValue(busRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data && data.lat && data.lng) {
-        setDriverLocation({
-          lat: data.lat,
-          lng: data.lng,
-          heading: data.heading || 0,
-        });
-      }
-    });
-    return () => unsubscribe();
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
+
+    signInAnonymously(auth).then(() => {
+      if (!isMounted) return;
+      const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
+      unsubscribe = onValue(busRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data && data.lat && data.lng) {
+          setDriverLocation({
+            lat: data.lat,
+            lng: data.lng,
+            heading: data.heading || 0,
+          });
+
+          const now = Date.now();
+          if (now - lastLogTimeRef.current > 15000 && data.sessionId) {
+            lastLogTimeRef.current = now;
+            updateDoc(doc(db, "ride_sessions", data.sessionId), {
+              path: arrayUnion({
+                lat: data.lat,
+                lng: data.lng,
+                heading: data.heading || 0,
+                speed: data.speed || 0,
+                timestamp: now
+              })
+            }).catch(console.error);
+          }
+        }
+      }, (error) => {
+        console.warn("[RTDB] activeBuses read failed in GNSS listener:", error.message);
+      });
+    }).catch(err => console.warn("[RTDB Auth] GNSS listener sign-in failed:", err.code));
+
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, [busId, selectedRouteIds, isTracking]);
 
   // Software mode heartbeat to keep the bus "fresh" in the passenger app
@@ -141,6 +271,7 @@ export default function DriverPage() {
     setDriverLocation(null);
 
     currentRouteIds.forEach(routeId => {
+      // End RTDB tracking
       const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
       update(busRef, { 
         status: "offline", 
@@ -148,11 +279,23 @@ export default function DriverPage() {
         tripState: "ended",
         driverId: "hw_device" 
       }).catch(console.error);
+
+      // End Firestore session
+      const sessionId = activeSessionIds[routeId];
+      if (sessionId) {
+        updateDoc(doc(db, "ride_sessions", sessionId), {
+          endTime: Date.now(),
+          status: "completed"
+        }).catch(console.error);
+      }
     });
 
-    const messagesRef = ref(rtdb, `messages/${currentBusId}`);
-    remove(messagesRef).catch(console.error);
-  }, []);
+    setActiveSessionIds({});
+
+    // Optional: Only clear legacy messages if using busId path, but we are using sessionId now.
+    // const messagesRef = ref(rtdb, `messages/${currentBusId}`);
+    // remove(messagesRef).catch(console.error);
+  }, [activeSessionIds]);
 
   const handleRouteUpdate = useCallback((routeIds: string[]) => {
     routeIdsRef.current = routeIds;
@@ -241,7 +384,7 @@ export default function DriverPage() {
               }}
               aria-label="Open live comms"
             >
-              <Radio className="w-4 h-4" style={{ color: "var(--status-live)" }} />
+              <MessageCircle className="w-5 h-5" style={{ color: "var(--status-live)" }} />
               {unreadCount > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-semibold text-white px-1"
                   style={{ background: "var(--status-danger)", boxShadow: "0 0 0 2px var(--surface-0)" }}>
@@ -256,7 +399,7 @@ export default function DriverPage() {
         {isMessagingOpen && (
           <div className="absolute inset-x-0 bottom-0 top-0 z-50 animate-slide-up">
             <MessagingPanel
-              busId={busId}
+              sessionId={activeSessionIds[selectedRouteIds[0]] || ""}
               currentUserRole="driver"
               currentUserId={user?.uid || driverId || "operator"}
               currentUserName={user?.displayName || "Operator"}
@@ -282,7 +425,7 @@ export default function DriverPage() {
             {activeTab === "map" && (
               <div className="absolute top-0 w-6 h-0.5 rounded-full" style={{ background: "var(--text-primary)" }} />
             )}
-            <Navigation className="w-5 h-5 mb-1" style={{ color: activeTab === "map" ? "var(--text-primary)" : "var(--text-ghost)" }} />
+            <Map className="w-5 h-5 mb-1" style={{ color: activeTab === "map" ? "var(--text-primary)" : "var(--text-ghost)" }} />
             <span className="text-[9px] font-semibold" style={{ color: activeTab === "map" ? "var(--text-primary)" : "var(--text-ghost)" }}>
               Drive
             </span>

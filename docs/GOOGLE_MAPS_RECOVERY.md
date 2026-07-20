@@ -1,22 +1,20 @@
-# Google Maps Recovery Instructions
+# Google Maps Integration (Restored)
 
-This document provides instructions for a future AI Agent on how to restore the
-Google Maps API implementation that was temporarily replaced by Leaflet to
-save costs.
+*Note: Google Maps was successfully restored to the Eki repository. The zero-budget `DirectionsRoute` chunking strategy successfully bypasses the strict free-tier quotas. Leaflet has been fully deprecated and removed from the active codebase.*
+
+This document is preserved for historical reference on how the transition back from Leaflet to Google Maps was orchestrated.
 
 ## 1. Revert Package Dependencies
 
-To switch back, you will need to uninstall Leaflet packages and reinstall the
-`@vis.gl/react-google-maps` package:
+*Completed.* The repository now exclusively relies on:
 
 ```bash
-npm uninstall leaflet react-leaflet @types/leaflet
 npm install @vis.gl/react-google-maps
 ```
 
 ## 2. Restore Global Providers
 
-In `src/components/Providers.tsx`, restore the `APIProvider`:
+In `frontend/src/components/Providers.tsx`, restore the `APIProvider`:
 
 ```tsx
 "use client";
@@ -44,7 +42,7 @@ The following files were migrated from Google Maps (`<GoogleMap>` / `<Map>`) to
 Leaflet (`<MapContainer>`). You should revert them to use
 `@vis.gl/react-google-maps`.
 
-### A. `src/components/passenger/GoogleLiveMap.tsx`
+### A. `frontend/src/components/passenger/GoogleLiveMap.tsx`
 
 **Key missing features to restore:**
 
@@ -53,13 +51,13 @@ Leaflet (`<MapContainer>`). You should revert them to use
   real-time route snapping using `cachedDirections` and `etaInfo` from
   `useThrottledDirections(driverLocation, destination)`.
 
-### B. `src/components/passenger/LiveMap.tsx`
+### B. `frontend/src/components/passenger/LiveMap.tsx`
 
 - Revert `MapContainer` back to `<Map disableDefaultUI={true} mapId="...">`.
 - Restore the `DirectionsRoute` component usage.
 - Re-enable `<AdvancedMarker>` instead of Leaflet's `<Marker>`.
 
-### C. `src/components/driver/DriverNavMap.tsx`
+### C. `frontend/src/components/driver/DriverNavMap.tsx`
 
 **Key missing features to restore:**
 
@@ -70,7 +68,7 @@ Leaflet (`<MapContainer>`). You should revert them to use
 - Restore the `Recenter` component that leverages the Google map instance hook
   (`useMap()`) for panning.
 
-### D. `src/components/DirectionsRoute.tsx`
+### D. `frontend/src/components/DirectionsRoute.tsx`
 
 - Restore the `DirectionsService` usage:
 
@@ -90,10 +88,10 @@ directionsService.route({
 
 Revert the following files back to use `<Map>` from `@vis.gl/react-google-maps`:
 
-- `src/components/maps/DriverMap.tsx`
-- `src/components/maps/PassengerMap.tsx`
-- `src/components/maps/RoutePlannerMap.tsx`
-- `src/components/admin/FleetMapOverview.tsx`
+- `frontend/src/components/maps/DriverMap.tsx`
+- `frontend/src/components/maps/PassengerMap.tsx`
+- `frontend/src/components/maps/RoutePlannerMap.tsx`
+- `frontend/src/components/admin/FleetMapOverview.tsx`
 
 ## Notes for the AI Agent
 

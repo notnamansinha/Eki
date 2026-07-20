@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import { LocateFixed as GPS, ArrowLeft, ChevronRight, Navigation } from "lucide-react";
+import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
@@ -17,7 +18,7 @@ export interface DriverMapProps {
   onEndShift?: () => void;
   isTracking?: boolean;
   selectedRouteIds?: string[];
-  onStopIndexChange?: (index: number) => void;
+  onStopIndexChange?: (index: number, routeIdHint?: string) => void;
   onStartTracking?: () => void;
   canStartTracking?: boolean;
 }
@@ -25,52 +26,17 @@ export interface DriverMapProps {
 const SELECTED_ROUTE_COLOR = "#4285F4";
 type NavPhase = "preview" | "navigating";
 
-function decodePolyline(str: string, precision: number = 5) {
-  let index = 0, lat = 0, lng = 0, coordinates: { lat: number; lng: number }[] = [], shift = 0, result = 0, byte: number | null = null, latitude_change: number, longitude_change: number, factor = Math.pow(10, precision);
-  while (index < str.length) {
-    byte = null; shift = 0; result = 0;
-    do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
-    latitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    shift = result = 0;
-    do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
-    longitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lat += latitude_change; lng += longitude_change;
-    coordinates.push({ lat: lat / factor, lng: lng / factor });
-  }
-  return coordinates;
-}
-
-function RoutePolylines({ decodedPath, isNavigating }: { decodedPath: { lat: number; lng: number }[], isNavigating: boolean }) {
+// ── Traffic layer rendered imperatively ──────────────────────────────────────
+function TrafficLayer() {
   const map = useMap();
-  const greyLineRef = useRef<google.maps.Polyline | null>(null);
-  const blueLineRef  = useRef<google.maps.Polyline | null>(null);
+  const layerRef = useRef<google.maps.TrafficLayer | null>(null);
 
   useEffect(() => {
-    if (!map || decodedPath.length === 0) return;
-
-    greyLineRef.current = new google.maps.Polyline({
-      path: decodedPath,
-      strokeColor: "#9aa0a6",
-      strokeWeight: 6,
-      strokeOpacity: 0.9,
-      map,
-    });
-
-    if (isNavigating) {
-      blueLineRef.current = new google.maps.Polyline({
-        path: decodedPath,
-        strokeColor: "#3b82f6",
-        strokeWeight: 6,
-        strokeOpacity: 1,
-        map,
-      });
-    }
-
-    return () => {
-      greyLineRef.current?.setMap(null);
-      blueLineRef.current?.setMap(null);
-    };
-  }, [map, decodedPath, isNavigating]);
+    if (!map) return;
+    layerRef.current = new google.maps.TrafficLayer();
+    layerRef.current.setMap(map);
+    return () => { layerRef.current?.setMap(null); };
+  }, [map]);
 
   return null;
 }
@@ -90,6 +56,14 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
   const stops = route.stops || [];
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
   const nextStop = stops[currentStopIndex] ?? stops[stops.length - 1];
+  const [showEndShiftConfirm, setShowEndShiftConfirm] = useState(false);
+  // Timestamp of last manual skip — geofence is suppressed for 3s after a manual advance
+  // to prevent the auto-advance from cascading when driverLocation gets a synthetic position.
+  const lastManualSkipRef = useRef<number>(0);
+
+  useEffect(() => {
+    setCurrentStopIndex(0);
+  }, [route.id]);
 
   const [delayMinutes, setDelayMinutes] = useState(0);
   const lastDelayPushRef = useRef(0);
@@ -98,28 +72,40 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
     setDelayMinutes(prev => {
       const next = Math.max(0, prev + addMin);
       const now = Date.now();
-      if (now - lastDelayPushRef.current > 500) {
-        lastDelayPushRef.current = now;
-        const routesToUpdate = selectedRouteIds?.length ? selectedRouteIds : [route.id];
-        routesToUpdate.forEach(routeId => {
-          const busRef = ref(rtdb, `activeBuses/${busId}_${routeId}`);
-          update(busRef, { delayMinutes: next }).catch(console.error);
-        });
-      }
+      const routesToUpdate = selectedRouteIds?.length ? selectedRouteIds : [route.id];
+      routesToUpdate.forEach(routeId => {
+        const activeBusId = busId || "test_bus_1";
+        const busRef = ref(rtdb, `activeBuses/${activeBusId}_${routeId}`);
+        update(busRef, { 
+          busId: activeBusId,
+          routeId,
+          lat: driverLocation?.lat || route.stops?.[currentStopIndex]?.lat || 23.03,
+          lng: driverLocation?.lng || route.stops?.[currentStopIndex]?.lng || 72.55,
+          delayMinutes: next, 
+          timestamp: now,
+          tripState: "in_service",
+          status: "active",
+          deviceState: "online"
+        }).catch(console.error);
+      });
       return next;
     });
   }, [busId, selectedRouteIds, route.id]);
 
   const handleManualNextStop = useCallback(() => {
+    lastManualSkipRef.current = Date.now();
     setCurrentStopIndex(i => {
       const nextIdx = Math.min(i + 1, stops.length - 1);
-      if (onStopIndexChange) onStopIndexChange(nextIdx);
+      if (onStopIndexChange) onStopIndexChange(nextIdx, route.id);
       return nextIdx;
     });
-  }, [stops.length, onStopIndexChange]);
+  }, [stops.length, onStopIndexChange, route.id]);
 
   useEffect(() => {
     if (!driverLocation || !nextStop || currentStopIndex >= stops.length - 1) return;
+    // Suppress geofence auto-advance for 3s after a manual skip to prevent cascading
+    // when the bus position is temporarily set to a synthetic (stop-coord) fallback.
+    if (Date.now() - lastManualSkipRef.current < 3000) return;
     const dist = getDistanceMeters(
       { lat: driverLocation.lat, lng: driverLocation.lng },
       { lat: nextStop.lat, lng: nextStop.lng }
@@ -127,11 +113,11 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
     if (dist < 80) {
       setCurrentStopIndex(i => {
         const nextIdx = Math.min(i + 1, stops.length - 1);
-        if (onStopIndexChange) onStopIndexChange(nextIdx);
+        if (onStopIndexChange) onStopIndexChange(nextIdx, route.id);
         return nextIdx;
       });
     }
-  }, [driverLocation?.lat, driverLocation?.lng, nextStop?.lat, nextStop?.lng, currentStopIndex, stops.length, onStopIndexChange]);
+  }, [driverLocation?.lat, driverLocation?.lng, nextStop?.lat, nextStop?.lng, currentStopIndex, stops.length, onStopIndexChange, route.id]);
 
   const [navPhase, setNavPhase] = useState<NavPhase>("preview");
   const [isCentered, setIsCentered] = useState(true);
@@ -144,7 +130,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       { lat: driverLocation.lat, lng: driverLocation.lng },
       { lat: nextStop.lat, lng: nextStop.lng }
     );
-    const speedKmh = (driverLocation as any).speed > 0 ? (driverLocation as any).speed : 25;
+    const speedKmh = (driverLocation as any).speed > 0 ? (driverLocation as any).speed : 35;
     const speedMs = speedKmh / 3.6;
     const durationSec = speedMs > 0 ? distM / speedMs : 0;
     const roundedDist = Math.round(distM / 10) * 10;
@@ -190,19 +176,19 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       etaMap[nextStop.id] = Math.round((accumTime / 60) + delayMinutes);
       for (let i = currentStopIndex + 1; i < stops.length; i++) {
         const dist = (getDistanceMeters(stops[i - 1], stops[i]) * 1.3) + 125;
-        accumTime += (dist / 250) * 60;
+        // 583 meters per min is ~35 km/h (4-wheeler speed)
+        accumTime += (dist / 583) * 60;
         etaMap[stops[i].id] = Math.round((accumTime / 60) + delayMinutes);
       }
     }
     return etaMap;
   }, [displayDur, delayMinutes, nextStop?.id, currentStopIndex, stops]);
 
-  const decodedPath = useMemo(() => {
-    if (route.polyline) return decodePolyline(route.polyline);
-    return stops.map(s => ({ lat: s.lat, lng: s.lng }));
-  }, [route.polyline, stops]);
-
   const snappedHeading = driverLocation ? Math.round(driverLocation.heading / 5) * 5 : 0;
+
+  const routeStops = useMemo(() => {
+    return stops.map(s => ({ lat: s.lat, lng: s.lng }));
+  }, [stops]);
 
   return (
     <>
@@ -214,38 +200,58 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           style={{ width: "100%", height: "100%" }}
           {...MAP_OPTIONS}
         >
+          <TrafficLayer />
           <MapCenterer target={driverLocation} isCentered={isCentered} navPhase={navPhase} />
-          <RoutePolylines decodedPath={decodedPath} isNavigating={navPhase === "navigating"} />
+          <DirectionsRoute
+            stops={routeStops}
+            color={route.color || SELECTED_ROUTE_COLOR}
+            hasBuses={navPhase === "navigating"}
+          />
 
           {/* Stop markers */}
-          {stops.map((stop, i) => (
-            <AdvancedMarker key={`stop-${stop.id || i}`} position={{ lat: stop.lat, lng: stop.lng }}>
-              {i === currentStopIndex ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                  <div style={{ position: "absolute", width: 28, height: 28, background: "var(--accent)", borderRadius: "50%", animation: "ripple 2s infinite" }} />
-                  <div style={{ width: 28, height: 28, background: "var(--accent)", border: "3px solid #fb923c", borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 12px rgba(250,93,41,0.3)" }}>
-                    <span style={{ color: "white", fontWeight: 800, fontSize: 11 }}>{String.fromCharCode(65 + i)}</span>
+          {stops.map((stop, i) => {
+            const dotColor = "var(--accent)"; // FORCED ORANGE
+            
+            // Native halo text style (White text, thick black halo)
+            const labelStyle: React.CSSProperties = {
+              marginTop: 4,
+              color: "#ffffff",
+              fontSize: i === currentStopIndex ? 11 : 9.5,
+              fontWeight: 800,
+              whiteSpace: "nowrap",
+              textShadow: "2px 0 #000, -2px 0 #000, 0 2px #000, 0 -2px #000, 1px 1px #000, -1px -1px #000, 1px -1px #000, -1px 1px #000, 0 4px 8px rgba(0,0,0,0.8)",
+              zIndex: 50
+            };
+
+            return (
+              <AdvancedMarker key={`stop-${stop.id || i}`} position={{ lat: stop.lat, lng: stop.lng }}>
+                {i === currentStopIndex ? (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ position: "absolute", top: 2, width: 26, height: 26, background: dotColor, borderRadius: "50%", animation: "ripple 2s infinite" }} />
+                    <div style={{ width: 26, height: 26, background: dotColor, border: `3.5px solid #000000`, borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.5)" }}>
+                      <span style={{ color: "#ffffff", fontWeight: 900, fontSize: 12 }}>{String.fromCharCode(65 + i)}</span>
+                    </div>
+                    <span style={labelStyle}>
+                      {stop.shortName}
+                    </span>
                   </div>
-                  <span style={{ marginTop: 6, padding: "3px 10px", background: "var(--surface-2)", border: "1px solid var(--border-default)", color: "var(--text-primary)", borderRadius: 8, fontSize: 9, whiteSpace: "nowrap", zIndex: 50, fontWeight: 700 }}>
-                    {stop.shortName}
-                  </span>
-                </div>
-              ) : i < currentStopIndex ? (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, background: "rgba(250,93,41,0.5)", border: "2px solid rgba(251,146,60,0.4)", borderRadius: "50%" }}>
-                  <span style={{ color: "white", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", opacity: 0.7 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, background: "var(--accent)", border: "2px solid #fb923c", borderRadius: "50%" }}>
-                    <span style={{ color: "white", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
+                ) : i < currentStopIndex ? (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 14, height: 14, background: dotColor, opacity: 0.6, borderRadius: "50%" }}>
+                    <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 7 }}>{String.fromCharCode(65 + i)}</span>
                   </div>
-                  <span style={{ marginTop: 3, padding: "1px 6px", background: "var(--surface-2)", color: "var(--text-tertiary)", borderRadius: 4, fontSize: 8, whiteSpace: "nowrap", fontWeight: 600 }}>
-                    {stop.shortName}
-                  </span>
-                </div>
-              )}
-            </AdvancedMarker>
-          ))}
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ width: 20, height: 20, background: dotColor, border: `3px solid #000000`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,0.4)" }}>
+                      <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
+                    </div>
+                    <span style={labelStyle}>
+                      {stop.shortName}
+                    </span>
+                  </div>
+                )}
+              </AdvancedMarker>
+            );
+          })}
 
           {/* Driver bus marker */}
           {driverLocation && (
@@ -264,9 +270,9 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
 
       <style>{`
         @keyframes ripple {
-          0% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0.4); }
-          70% { box-shadow: 0 0 0 20px rgba(250, 93, 41, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(250, 93, 41, 0); }
+          0% { transform: scale(1); opacity: 0.6; }
+          70% { transform: scale(3.5); opacity: 0; }
+          100% { transform: scale(3.5); opacity: 0; }
         }
         @keyframes ping {
           0% { transform: scale(1); opacity: 0.6; }
@@ -296,16 +302,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       </div>
 
       <div className="absolute bottom-[70px] left-0 right-0 z-50">
-        {navPhase === "preview" ? (
-          <div className="flex justify-center p-4 pb-8">
-            <button 
-              onClick={handleStartNavigation} 
-              className="btn-primary px-10 py-3.5 text-[13px] font-medium flex items-center gap-2.5 active:scale-95 transition-all"
-            >
-              Start Shift
-            </button>
-          </div>
-        ) : (
+        {navPhase !== "preview" && (
           <RouteTimelineSheet
             route={route}
             targetStopId={stops[stops.length - 1]?.id || ""}
@@ -325,7 +322,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
                   )}
                 </div>
                 {onEndShift && isTracking && (
-                  <button onClick={(e) => { e.stopPropagation(); onEndShift(); }} 
+                  <button onClick={(e) => { e.stopPropagation(); setShowEndShiftConfirm(true); }} 
                     className="h-7 px-3 rounded-lg text-[9px] font-semibold transition-all"
                     style={{ background: "var(--status-danger-bg)", border: "1px solid rgba(248,113,113,0.15)", color: "var(--status-danger)" }}>
                     End Shift
@@ -364,6 +361,29 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           />
         )}
       </div>
+
+      {showEndShiftConfirm && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowEndShiftConfirm(false)}>
+          <div className="p-5 rounded-2xl w-[280px] text-center flex flex-col gap-4 shadow-2xl" 
+               style={{ background: "var(--surface-1)", border: "1px solid var(--surface-2)" }} 
+               onClick={e => e.stopPropagation()}>
+            <div className="flex flex-col gap-2">
+              <h3 className="font-bold text-base" style={{ color: "var(--text-primary)" }}>End Shift?</h3>
+              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Are you sure you want to end your tracking session? Passengers will no longer see this bus.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowEndShiftConfirm(false)} className="flex-1 py-2.5 rounded-xl text-xs font-semibold"
+                style={{ background: "var(--surface-2)", color: "var(--text-primary)" }}>
+                Cancel
+              </button>
+              <button onClick={() => { setShowEndShiftConfirm(false); if (onEndShift) onEndShift(); }} className="flex-1 py-2.5 rounded-xl text-xs font-semibold"
+                style={{ background: "var(--status-danger)", color: "white" }}>
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

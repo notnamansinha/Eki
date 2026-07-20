@@ -1,0 +1,97 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { RouteData } from "@/hooks/useRoutes";
+import { ChevronDown } from "lucide-react";
+
+interface Props {
+  sessionId: string;
+  route: RouteData;
+  userId: string;
+  userName: string;
+  onBoarded: () => void;
+}
+
+const formatStopName = (name: string) => {
+  const parts = name.split(/[ ,-]/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0]} ${parts[1]}`;
+  return name;
+};
+
+export default function PassengerBoardingView({ sessionId, route, userId, userName }: Props) {
+  const [boardingStopId, setBoardingStopId] = useState<string>("");
+  const [alightingStopId, setAlightingStopId] = useState<string>("");
+
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    if (!isMounted.current) {
+      isMounted.current = true;
+      return;
+    }
+    
+    // Auto sync when selection changes
+    if (!boardingStopId) return;
+
+    const syncPassenger = async () => {
+      try {
+        const sessionRef = doc(db, "ride_sessions", sessionId);
+        const snap = await getDoc(sessionRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          let passengers = data.passengers || [];
+          // Remove old entry for this user
+          passengers = passengers.filter((p: any) => p.userId !== userId);
+          // Add updated entry
+          passengers.push({
+            userId,
+            userName,
+            boardingStopId,
+            alightingStopId: alightingStopId || null,
+            joinedAt: Date.now()
+          });
+          await updateDoc(sessionRef, { passengers });
+        }
+      } catch (err) {
+        console.error("Failed to sync passenger:", err);
+      }
+    };
+
+    syncPassenger();
+  }, [boardingStopId, alightingStopId, sessionId, userId, userName]);
+
+  return (
+    <div className="flex flex-col w-full animate-fade-in pointer-events-auto gap-2">
+      <div className="relative w-full">
+        <select
+          value={boardingStopId}
+          onChange={(e) => setBoardingStopId(e.target.value)}
+          className="w-full h-10 rounded-xl pl-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none transition-all truncate shadow-sm m-0"
+          style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
+        >
+          <option value="">Boarding...</option>
+          {route.stops?.map(stop => (
+            <option key={stop.id} value={stop.id}>{formatStopName(stop.name)}</option>
+          ))}
+        </select>
+        <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--text-ghost)" }} />
+      </div>
+      <div className="relative w-full">
+        <select
+          value={alightingStopId}
+          onChange={(e) => setAlightingStopId(e.target.value)}
+          className="w-full h-10 rounded-xl pl-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none transition-all truncate shadow-sm m-0"
+          style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
+        >
+          <option value="">Destination (Optional)...</option>
+          {route.stops?.map(stop => (
+            <option key={stop.id} value={stop.id}>{formatStopName(stop.name)}</option>
+          ))}
+        </select>
+        <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--text-ghost)" }} />
+      </div>
+    </div>
+  );
+}

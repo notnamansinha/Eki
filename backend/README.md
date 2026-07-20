@@ -1,6 +1,6 @@
-# Eki (BusTrack) — Backend
+# Eki — Backend
 
-This is the Node.js/Express backend for the BusTrack application. It handles Google Maps Routes API integration, real-time WebSocket coordination via Socket.io, and secure interactions with Firebase Admin.
+This is the Node.js/Express backend for the Eki application. It handles Google Maps Routes API integration, real-time WebSocket coordination via Socket.io, and secure interactions with Firebase Admin.
 
 ## Prerequisites
 - Node.js ≥ 20.x

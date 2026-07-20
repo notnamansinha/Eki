@@ -1,4 +1,4 @@
-# BusTrack Backend API Reference
+# Eki Backend API Reference
 
 This document outlines the REST API endpoints and Socket.io events exposed by the Node.js/Express backend.
 

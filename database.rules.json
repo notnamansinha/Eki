@@ -1,33 +1,35 @@
 {
   "rules": {
     "activeBuses": {
-      // Require sign-in (anonymous auth is free and takes one SDK call).
-      // Prevents unauthenticated scraping of fleet telemetry.
       ".read": "auth != null",
+      ".indexOn": ["routeId"],
       "$busKey": {
-        // Drivers and admins may write any bus path.
-        // Hardware devices (ESP32) are locked to their own path only:
-        //   token.deviceId is injected as a Custom Token claim in POST /api/devices/auth.
-        //   $busKey format is "bus_01_route_01" — must start with the device's own ID.
-        ".write": "auth != null && (auth.token.driver == true || auth.token.admin == true || (auth.token.role == 'device' && $busKey.matches(auth.token.deviceId + '_.*')))"
-      },
-      // Index routeId so clients can use orderByChild("routeId").equalTo(routeId)
-      // without a full-collection scan (reduces downloaded bytes per passenger).
-      ".indexOn": ["routeId"]
-    },
-    "busShifts": {
-      ".read": "auth != null",
-      "$busId": {
-        ".write": "auth != null && (auth.token.driver == true || auth.token.admin == true || auth.token.role == 'device')"
+        ".write": "auth != null && (root.child('users/' + auth.uid).child('role').val() === 'driver' || root.child('users/' + auth.uid).child('role').val() === 'admin')"
       }
     },
     "messages": {
+      "sessions": {
+        "$sessionId": {
+          ".read": "auth != null",
+          "$msgId": {
+            ".write": "auth != null",
+            ".validate": "newData.child('senderId').val() === auth.uid && newData.child('text').val().length <= 500"
+          }
+        }
+      },
       "$busId": {
         ".read": "auth != null",
-        ".write": "auth != null && (auth.token.driver == true || auth.token.admin == true)"
+        "$msgId": {
+          ".write": "auth != null",
+          ".validate": "newData.child('senderId').val() === auth.uid && newData.child('text').val().length <= 500"
+        }
       }
     },
-    ".read": false,
-    ".write": false
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    }
   }
 }

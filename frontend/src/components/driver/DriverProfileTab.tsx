@@ -19,6 +19,7 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
   const { user } = useAuth();
   const { drivers } = useDrivers();
   const [isUploading, setIsUploading] = useState(false);
+  const [showEndShiftConfirm, setShowEndShiftConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const currentDriver = drivers.find(d => d.id === driverId);
@@ -129,11 +130,7 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
           <button
             aria-label="End shift and go offline"
             disabled={!isTracking}
-            onClick={() => {
-              if (confirm("End your shift? Passengers will no longer see your bus.")) {
-                onStopTracking();
-              }
-            }}
+            onClick={() => setShowEndShiftConfirm(true)}
             className="w-full flex items-center justify-between p-4 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             style={{ background: "transparent" }}
           >
@@ -153,6 +150,29 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
           Operator ID: {driverId.toUpperCase()}
         </p>
       </div>
+
+      {showEndShiftConfirm && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowEndShiftConfirm(false)}>
+          <div className="p-5 rounded-2xl w-[280px] text-center flex flex-col gap-4 shadow-2xl" 
+               style={{ background: "var(--surface-1)", border: "1px solid var(--surface-2)" }} 
+               onClick={e => e.stopPropagation()}>
+            <div className="flex flex-col gap-2">
+              <h3 className="font-bold text-base" style={{ color: "var(--text-primary)" }}>End Shift?</h3>
+              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Are you sure you want to end your tracking session? Passengers will no longer see this bus.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowEndShiftConfirm(false)} className="flex-1 py-2.5 rounded-xl text-xs font-semibold"
+                style={{ background: "var(--surface-2)", color: "var(--text-primary)" }}>
+                Cancel
+              </button>
+              <button onClick={() => { setShowEndShiftConfirm(false); onStopTracking(); }} className="flex-1 py-2.5 rounded-xl text-xs font-semibold"
+                style={{ background: "var(--status-danger)", color: "white" }}>
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

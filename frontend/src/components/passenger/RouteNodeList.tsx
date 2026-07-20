@@ -80,7 +80,7 @@ export default function RouteNodeList({
                 {isTarget && (
                   <span className="px-2 py-0.5 rounded text-chip"
                     style={{ background: "var(--accent-subtle)", color: "var(--accent)" }}>
-                    Last Stop
+                    {isFirst ? "Boarding Stop" : isLast ? "Destination" : "Selected Stop"}
                   </span>
                 )}
                 {isFirst && !isTarget && (

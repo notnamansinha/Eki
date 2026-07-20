@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { rtdb } from "@/lib/firebase";
+import { rtdb, auth } from "@/lib/firebase";
 import { ref, push, onValue, serverTimestamp } from "firebase/database";
-import { Send, X, SignalHigh as Radio } from "lucide-react";
+import { waitForAuth } from "@/lib/authState";
+import { Send, X, MessageCircle } from "lucide-react";
 
 interface Message {
   id: string;
@@ -15,7 +16,7 @@ interface Message {
 }
 
 interface Props {
-  busId: string;
+  sessionId: string;
   currentUserRole: "driver" | "passenger" | "admin";
   currentUserId: string;
   currentUserName: string;
@@ -25,7 +26,7 @@ interface Props {
 }
 
 export default function MessagingPanel({ 
-  busId, 
+  sessionId, 
   currentUserRole, 
   currentUserId, 
   currentUserName, 
@@ -40,37 +41,53 @@ export default function MessagingPanel({
   const lastSeenCountRef = useRef(0);
 
   useEffect(() => {
-    if (!busId) return;
+    // Always reset session-bound state when sessionId changes (including when empty)
+    setMessages([]);
+    setNewMessage("");
+    lastSeenCountRef.current = 0;
 
-    const messagesRef = ref(rtdb, `messages/${busId}`);
-    const unsubscribe = onValue(messagesRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const msgs = Object.entries(data).map(([id, val]: [string, any]) => ({
-          id,
-          ...val
-        })).sort((a: any, b: any) => (a.timestamp || 0) - (b.timestamp || 0));
-        setMessages(msgs);
+    if (!sessionId) return;
 
-        // Count messages from others to surface unread badge
-        if (onUnreadCountChange) {
-          const othersCount = msgs.filter((m: any) => m.senderId !== currentUserId).length;
-          if (othersCount > lastSeenCountRef.current) {
-            onUnreadCountChange(othersCount - lastSeenCountRef.current);
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
+
+    waitForAuth().then(() => {
+      if (!isMounted) return;
+      const messagesRef = ref(rtdb, `messages/sessions/${sessionId}`);
+      unsubscribe = onValue(messagesRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const msgs = Object.entries(data).map(([id, val]) => ({
+            id,
+            ...(val as Record<string, unknown>) // Type assertion to satisfy spread, since val is unknown/Partial
+          }) as Message).sort((a: Message, b: Message) => (a.timestamp || 0) - (b.timestamp || 0));
+          setMessages(msgs);
+
+          // Count messages from others to surface unread badge
+          if (onUnreadCountChange) {
+            const othersCount = msgs.filter((m: Message) => m.senderId !== currentUserId).length;
+            if (othersCount > lastSeenCountRef.current) {
+              onUnreadCountChange(othersCount - lastSeenCountRef.current);
+            }
+            lastSeenCountRef.current = othersCount;
           }
-          lastSeenCountRef.current = othersCount;
-        }
 
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-        }, 100);
-      } else {
-        setMessages([]);
-      }
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          }, 100);
+        } else {
+          setMessages([]);
+        }
+      }, (error) => {
+        console.warn("[RTDB] messages read failed:", error.message);
+      });
     });
 
-    return () => unsubscribe();
-  }, [busId]);
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
+  }, [sessionId, currentUserId, onUnreadCountChange]);
 
   // --- Rate Limiting Logic ---
   const [messagesSentCounts, setMessagesSentCounts] = useState<{timestamp: number}[]>([]);
@@ -85,7 +102,7 @@ export default function MessagingPanel({
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !busId) return;
+    if (!newMessage.trim() || !sessionId) return;
 
     const now = Date.now();
     const oneHourAgo = now - 3600000;
@@ -108,7 +125,7 @@ export default function MessagingPanel({
     const roleForMsg = currentUserRole === "admin" ? "driver" : currentUserRole;
 
     try {
-      const messagesRef = ref(rtdb, `messages/${busId}`);
+      const messagesRef = ref(rtdb, `messages/sessions/${sessionId}`);
       await push(messagesRef, {
         text: censoredContent,
         from: roleForMsg,
@@ -138,7 +155,7 @@ export default function MessagingPanel({
             Live Chat
           </h3>
           <p className="text-[10px] font-semibold mt-0.5" style={{ color: "var(--text-ghost)" }}>
-            Bus {busId}
+            Session {sessionId.substring(0, 8)}
           </p>
         </div>
         {isOverlay && onClose && (
@@ -157,7 +174,7 @@ export default function MessagingPanel({
       <div className="flex-1 overflow-y-auto p-4 gap-4 flex flex-col relative z-10 text-sm">
         {messages.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
-            <Radio className="w-8 h-8 mb-3" style={{ color: "var(--text-ghost)" }} />
+            <MessageCircle className="w-8 h-8 mb-3" style={{ color: "var(--text-ghost)" }} />
             <p className="text-[12px] font-semibold text-center" style={{ color: "var(--text-ghost)" }}>
               No messages yet
             </p>

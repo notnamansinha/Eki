@@ -1,6 +1,6 @@
-# Eki (BusTrack) — Frontend
+# Eki — Frontend
 
-This is the Next.js frontend for the BusTrack application, containing the passenger, driver, and admin portals.
+This is the Next.js frontend for the Eki application, containing the passenger, driver, and admin portals.
 
 ## Prerequisites
 - Node.js ≥ 20.x
@@ -20,7 +20,6 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
 NEXT_PUBLIC_FIREBASE_APP_ID=...
 
 # Google Maps — BROWSER key (restrict to your domain)
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_browser_key_here
 NEXT_PUBLIC_GOOGLE_MAPS_KEY=your_browser_key_here
 
 # Backend URLs
@@ -45,5 +44,6 @@ npm run build
 ```
 
 ## Architecture Notes
-- All rendering is client-heavy due to mapping requirements (`react-leaflet`).
+- All rendering is client-heavy due to mapping requirements (`@vis.gl/react-google-maps`).
 - Role-based routing is managed by `RoleGuard`, preventing unauthorized access to the `/admin` and `/driver` portals.
+- **Typography & UI**: The application is globally styled using the `Sora` font via `next/font/google` and utilizes semantic `lucide-react` iconography across all panels.

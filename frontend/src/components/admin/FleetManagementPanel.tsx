@@ -5,8 +5,9 @@ import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { doc, setDoc, deleteDoc, collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
-import { db, rtdb } from "@/lib/firebase";
+import { db, rtdb, auth } from "@/lib/firebase";
 import { ref, onValue, get, remove } from "firebase/database";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   Bus, User, Trash2, Plus, ArrowRight,
   ChevronDown, ChevronUp, Wifi, Pencil, Check, X, AlertCircle,
@@ -45,12 +46,23 @@ interface CompletedTrip {
 function useActiveBuses(): ActiveBusEntry[] {
   const [active, setActive] = useState<ActiveBusEntry[]>([]);
   useEffect(() => {
-    const r = ref(rtdb, "activeBuses");
-    const unsub = onValue(r, (snap) => {
-      const data = snap.val() as Record<string, ActiveBusEntry> | null;
-      setActive(data ? Object.values(data) : []);
+    let unsub: (() => void) | undefined;
+    const authUnsub = onAuthStateChanged(auth, (user) => {
+      if (user && !unsub) {
+        const r = ref(rtdb, "activeBuses");
+        unsub = onValue(r, (snap) => {
+          const data = snap.val() as Record<string, ActiveBusEntry> | null;
+          setActive(data ? Object.values(data) : []);
+        }, (error) => {
+          console.warn("[RTDB] activeBuses read failed:", error.message);
+        });
+      }
     });
-    return () => unsub();
+    
+    return () => {
+      authUnsub();
+      unsub?.();
+    };
   }, []);
   return active;
 }

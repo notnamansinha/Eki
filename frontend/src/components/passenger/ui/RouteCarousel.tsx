@@ -1,6 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { RouteData } from '@/hooks/useRoutes';
-import { Navigation, Clock, Activity, MapPin } from 'lucide-react';
 
 interface RouteCarouselProps {
   routes: RouteData[];
@@ -11,6 +10,15 @@ interface RouteCarouselProps {
 }
 
 export default function RouteCarousel({ routes, selectedRouteId, onClick, getActiveBusesCount }: RouteCarouselProps) {
+  const [now, setNow] = useState<number | null>(null);
+
+  useEffect(() => {
+    const refresh = () => setNow(Date.now());
+    refresh();
+    const intervalId = window.setInterval(refresh, 60_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   const liveRoutes = routes.filter((route) => getActiveBusesCount(route.id) > 0);
 
   if (liveRoutes.length === 0) {
@@ -25,11 +33,10 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
   return (
     <div className="w-full flex flex-col gap-4 pb-4">
       {liveRoutes.map((route) => {
-        const isSelected = route.id === selectedRouteId;
         const activeBuses = getActiveBusesCount(route.id);
         const stops = route.stops ?? [];
         const durationMins = route.duration ? Math.round(parseInt(route.duration) / 60) : (stops.length * 2); // Fallback estimation
-        const scheduleTime = new Date(Date.now() + durationMins * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const scheduleTime = now ? new Date(now + durationMins * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
 
         return (
           <div
@@ -62,12 +69,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
 
                 <div className="flex items-baseline w-full mt-6 gap-3">
                   <div className="flex items-center gap-2">
-                    {activeBuses > 0 && (
-                      <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold tracking-wider flex items-center gap-1.5 shrink-0" style={{ background: "rgba(34, 197, 94, 0.1)", color: "var(--status-live)" }}>
-                        <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "var(--status-live)" }} />
-                        LIVE
-                      </span>
-                    )}
+
                     <div className="flex items-baseline gap-1.5 text-[11.5px] font-black whitespace-nowrap" style={{ color: "var(--text-tertiary)" }}>
                       <span>{stops.length} stops</span>
                       <span className="text-[10px] opacity-30 self-center">&bull;</span>

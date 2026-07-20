@@ -1,6 +1,6 @@
 # ESP32 + NEO-M8N GNSS Hardware Integration — Complete Migration Guide
 
-> **Project**: Eki (BusTrack)
+> **Project**: Eki
 > **Migration**: Browser Geolocation API → Dedicated ESP32 + NEO-M8N GNSS Module
 > **Hardware**: ESP-WROOM-32 (30-Pin, CP2102) + NEO-M8N with Ceramic Active Antenna
 > **Date**: June 2026
@@ -28,7 +28,7 @@
 
 ### The Problem with Browser Geolocation
 
-The current system relies on the **driver's phone browser** calling `navigator.geolocation.getCurrentPosition()` every 3 seconds inside [driver/page.tsx](file:///c:/Users/Naman Sinha/Desktop/Eki/frontend/src/app/driver/page.tsx#L117-L142). This approach has fundamental limitations:
+The current system relies on the **driver's phone browser** calling `navigator.geolocation.getCurrentPosition()` every 3 seconds inside [../frontend/src/app/driver/page.tsx](../frontend/src/app/driver/page.tsx). This approach has fundamental limitations:
 
 | Issue | Impact |
 |---|---|
@@ -366,7 +366,7 @@ void setup() {
  Serial.begin(115200);
  delay(1000);
  Serial.println("\n========================================");
- Serial.println(" Eki BusTrack — ESP32 Phase 1");
+ Serial.println(" Eki — ESP32 Phase 1");
  Serial.println(" WiFi + Firebase RTDB Test");
  Serial.println("========================================\n");
 
@@ -537,7 +537,7 @@ void sendLocationToRTDB() {
  jsonPayload.set("speed", speed);
  jsonPayload.set("status", "active");
  jsonPayload.set("timestamp/.sv", "timestamp"); // Firebase server timestamp
- jsonPayload.set("currentStopIndex", 0); // Will be computed server-side later
+ // currentStopIndex is managed by the driver app / backend — do not reset it here
  jsonPayload.set("delayMinutes", 0);
 
  // Extra fields unique to hardware tracking
@@ -561,7 +561,7 @@ void setup() {
  delay(1000);
 
  Serial.println("\n========================================");
- Serial.println(" Eki BusTrack — ESP32 Phase 2");
+ Serial.println(" Eki — ESP32 Phase 2");
  Serial.println(" GNSS + Firebase RTDB Streaming");
  Serial.println("========================================\n");
 
@@ -769,8 +769,9 @@ void loop() {
  }
 
  if (shouldSendUpdate()) {
- sendLocationToRTDB();
- updateLastSentState();
+  if (sendLocationToRTDB()) {
+    updateLastSentState();
+  }
  }
  }
 }
@@ -820,11 +821,11 @@ if (wifiBuffer.valid) {
   jsonPayload.set("heading", wifiBuffer.heading);
   jsonPayload.set("satellites", wifiBuffer.satellites);
   
-  // Transmit buffered data
-  Firebase.RTDB.updateNode(&fbData, path.c_str(), &jsonPayload);
-  
-  // Clear buffer
-  wifiBuffer.valid = false;
+  // Transmit buffered data — only clear buffer on success
+  if (Firebase.RTDB.updateNode(&fbData, path.c_str(), &jsonPayload)) {
+    wifiBuffer.valid = false;
+  }
+  // If write fails, wifiBuffer.valid stays true so it is retried on the next loop
 }
 ```
 
@@ -1009,15 +1010,15 @@ Update [database.rules.json](file:///c:/Users/Naman Sinha/Desktop/Eki/database.r
 {
   "rules": {
     "activeBuses": {
-      ".read": true,
+      ".read": "auth != null",
       "$busKey": {
-        ".write": "auth != null && (auth.token.admin == true || $busKey.matches(auth.token.deviceId + '_.*'))"
+        ".write": "auth != null && (root.child('users/' + auth.uid).child('role').val() === 'driver' || root.child('users/' + auth.uid).child('role').val() === 'admin' || auth.token.deviceId != null)"
       }
     },
     "busShifts": {
       ".read": "auth != null",
       "$busId": {
-        ".write": "auth != null && (auth.token.admin == true || auth.token.deviceId == $busId)"
+        ".write": "auth != null && (root.child('users/' + auth.uid).child('role').val() === 'admin' || auth.token.deviceId == $busId)"
       }
     }
   }

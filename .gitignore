@@ -89,3 +89,4 @@ frontend/tsconfig.tsbuildinfo
 
 .agents/
 .git/
+# docs/audit/ — intentionally tracked; do not ignore committed audit documents

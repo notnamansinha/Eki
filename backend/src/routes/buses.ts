@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { rtdb } from "../lib/firebaseAdmin";
 import { requireAdmin } from "../middleware/requireAdmin";
+import { requireAuth } from "../middleware/requireAuth";
 import type { TripState } from "../types";
 
 const router = Router();
@@ -10,7 +11,7 @@ const ALLOWED_TRIP_STATES = new Set<TripState>([
 ]);
 
 // GET all active buses snapshot for fleet overview
-router.get("/", async (_req, res) => {
+router.get("/", requireAuth, async (_req, res) => {
   try {
     const snapshot = await rtdb.ref("activeBuses").once("value");
     const data = snapshot.val() || {};
@@ -21,7 +22,7 @@ router.get("/", async (_req, res) => {
 });
 
 // GET specific bus by ID
-router.get("/:busId", async (req, res) => {
+router.get("/:busId", requireAuth, async (req, res) => {
   const { busId } = req.params;
   if (!busId || busId.length > 64) {
     res.status(400).json({ error: "Invalid busId" });

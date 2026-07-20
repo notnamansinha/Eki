@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { BusFront as Bus } from "lucide-react";
 
 export default function Header() {
   return (
@@ -12,6 +11,7 @@ export default function Header() {
     }}>
       <div className="max-w-[1200px] mx-auto px-6 md:px-10 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/eki-logo.png" alt="Eki Transit Logo" className="h-6 w-auto" />
         </Link>
       </div>
