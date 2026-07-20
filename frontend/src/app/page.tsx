@@ -39,20 +39,7 @@ export default function HomePage() {
       {/* ── SUBTLE OVERLAY SHADOW ── */}
       <div className="absolute inset-0 bg-black/40 z-0 pointer-events-none" />
 
-      {/* ── TOP NAV ─── */}
-      <nav className="relative z-10 w-full pt-6 px-6 md:px-12 flex items-center justify-end">
-        <button
-          onClick={loginWithGoogle}
-          disabled={loginLoading}
-          className="flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold bg-white text-black rounded-full hover:bg-gray-200 active:scale-95 transition-transform disabled:opacity-60 shadow-lg"
-        >
-          {loginLoading ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            "Sign In"
-          )}
-        </button>
-      </nav>
+
 
       {/* ── HERO CONTENT ─── */}
       <section className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 md:px-12 w-full max-w-5xl mx-auto">
@@ -95,13 +82,6 @@ export default function HomePage() {
             )}
             {loginLoading ? "Opening Google…" : "Sign In with Google"}
           </button>
-          <Link
-            href="/route-planner"
-            className="flex items-center justify-center gap-3 px-10 py-5 text-lg font-bold bg-black/40 text-white backdrop-blur-md border border-white/30 rounded-full hover:bg-black/60 active:scale-95 transition-all shadow-xl"
-          >
-            <Map className="size-6" />
-            Plan a Trip
-          </Link>
         </div>
       </section>
 
