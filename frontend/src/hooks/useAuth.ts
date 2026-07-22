@@ -1,10 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { auth, googleProvider, rtdb, db } from "@/lib/firebase";
-import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
-import { ref, set } from "firebase/database";
-import { doc, getDoc, setDoc } from "firebase/firestore";
 import { notifyAuthReady } from "@/lib/authState";
 
 export type UserRole = "passenger" | "driver" | "admin" | null;
@@ -25,12 +21,30 @@ export function useAuth() {
 
   useEffect(() => {
     let generation = 0;
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let disposed = false;
+    let unsubscribe = () => {};
+
+    void Promise.all([import("firebase/auth"), import("@/lib/firebaseAuth")]).then(
+      ([{ onAuthStateChanged }, { auth }]) => {
+        if (disposed) return;
+
+        unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       const currentGen = ++generation;
       notifyAuthReady();
 
       if (firebaseUser) {
         try {
+          // Firestore and RTDB are only needed after a signed-in session exists.
+          // Keeping them out of the unauthenticated route removes their parsing and
+          // evaluation cost from first paint.
+          const [{ getFirestore, doc, getDoc, setDoc }, { getDatabase, ref, set }, { firebaseApp }] =
+            await Promise.all([
+              import("firebase/firestore"),
+              import("firebase/database"),
+              import("@/lib/firebaseCore"),
+            ]);
+          const db = getFirestore(firebaseApp);
+          const rtdb = getDatabase(firebaseApp);
           const userDocRef = doc(db, "users", firebaseUser.uid);
           const userSnap = await getDoc(userDocRef);
           
@@ -105,14 +119,23 @@ export function useAuth() {
         setUser(null);
         setLoading(false);
       }
-    });
+        });
+      },
+    );
 
-    return () => unsubscribe();
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
   }, []);
 
   const loginWithGoogle = useCallback(async () => {
     setLoginLoading(true);
     try {
+      const [{ signInWithPopup }, { auth, googleProvider }] = await Promise.all([
+        import("firebase/auth"),
+        import("@/lib/firebaseAuth"),
+      ]);
       await signInWithPopup(auth, googleProvider);
     } catch (error: unknown) {
       const code = (error as { code?: string }).code;
@@ -129,6 +152,10 @@ export function useAuth() {
 
   const logout = useCallback(async () => {
     try {
+      const [{ signOut }, { auth }] = await Promise.all([
+        import("firebase/auth"),
+        import("@/lib/firebaseAuth"),
+      ]);
       await signOut(auth);
     } catch (error) {
       console.error("Logout failed:", error);
