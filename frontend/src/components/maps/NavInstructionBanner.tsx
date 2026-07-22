@@ -48,7 +48,7 @@ const NavInstructionBanner = React.memo(function NavInstructionBanner({
         {isRerouting ? (
           <>
             <div className="shrink-0 w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center">
-              <Loader2 className="w-6 h-6 text-white/40 animate-spin" />
+              <Loader2 className="w-6 h-6 text-white/50 animate-spin" />
             </div>
             <div className="flex-1 min-w-0">
                <p className="text-[10px] font-black tracking-widest text-white/20 uppercase mb-1 leading-none">Topology Sync</p>
