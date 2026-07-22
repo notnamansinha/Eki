@@ -39,7 +39,19 @@ export default function HomePage() {
       {/* ── SUBTLE OVERLAY SHADOW ── */}
       <div className="absolute inset-0 bg-black/40 z-0 pointer-events-none" />
 
-
+      {/* ── TOP RIGHT UNIVERSITY LOGO ── */}
+      <header className="absolute top-0 right-0 z-20 p-3 md:p-5 flex items-center justify-end pointer-events-none">
+        <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-none p-1 shadow-md shadow-black/50 flex items-center justify-center overflow-hidden">
+          <Image 
+            src="/uni-logo.webp" 
+            alt="University Logo" 
+            width={180} 
+            height={70} 
+            className="h-10 md:h-14 w-auto object-contain block"
+            priority 
+          />
+        </div>
+      </header>
 
       {/* ── HERO CONTENT ─── */}
       <section className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 md:px-12 w-full max-w-5xl mx-auto pt-6">
