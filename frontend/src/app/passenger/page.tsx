@@ -61,8 +61,8 @@ export default function PassengerPage() {
   const latestBusDriversRef = useRef<Map<string, string>>(new Map());
   const [endedMessage, setEndedMessage] = useState(false);
 
-  // Listen to Firebase Realtime Database for active buses.
-  // signInAnonymously ensures auth != null, required by RTDB security rules.
+  // Listen to Firebase Realtime Database for active buses using the existing
+  // Firebase session established by the root auth provider.
   // Visibility is now driven purely by tripState (computed by the backend trip
   // state machine). The old frontend departure-detection hack is gone.
   useEffect(() => {

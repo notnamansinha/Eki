@@ -20,9 +20,14 @@ interface RideSession {
   startTime: number;
   endTime?: number;
   status: "active" | "completed";
-  passengers?: PassengerRecord[];
+  passengers?: PassengerRecord[] | Record<string, PassengerRecord>;
   path?: { lat: number; lng: number; timestamp: number }[];
   stopsReached?: { stopIndex: number; stopId: string; stopName: string; timestamp: number }[];
+}
+
+function passengerRecords(passengers: RideSession["passengers"]): PassengerRecord[] {
+  if (!passengers) return [];
+  return Array.isArray(passengers) ? passengers : Object.values(passengers);
 }
 
 export default function RideHistoryPanel() {
@@ -45,7 +50,10 @@ export default function RideHistoryPanel() {
       {sortedSessions.length === 0 ? (
         <div className="text-white/50 text-sm text-center py-10">No rides recorded yet.</div>
       ) : (
-        sortedSessions.map(session => (
+        sortedSessions.map(session => {
+          const passengers = passengerRecords(session.passengers);
+
+          return (
           <div key={session.id} className="bg-brand-surface border border-white/10 rounded-xl overflow-hidden transition-all">
             <button
               type="button"
@@ -70,7 +78,7 @@ export default function RideHistoryPanel() {
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1.5 bg-brand-dark/50 px-3 py-1.5 rounded-lg border border-white/5">
                   <Users className="w-4 h-4 text-brand-accent" />
-                  <span className="text-sm font-bold text-white">{session.passengers?.length || 0}</span>
+                  <span className="text-sm font-bold text-white">{passengers.length}</span>
                 </div>
               </div>
             </button>
@@ -78,11 +86,11 @@ export default function RideHistoryPanel() {
             {expandedId === session.id && (
               <div className="px-4 pb-4 border-t border-white/10 bg-black/20 pt-4">
                 <h4 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-3">Passenger Manifest</h4>
-                {(!session.passengers || session.passengers.length === 0) ? (
+                {passengers.length === 0 ? (
                   <p className="text-xs text-white/30 italic">No passengers boarded.</p>
                 ) : (
                   <div className="space-y-2">
-                    {session.passengers.map((p, i) => (
+                    {passengers.map((p, i) => (
                       <div key={i} className="flex items-center justify-between text-sm py-1.5 px-3 rounded bg-white/5 border border-white/5">
                         <span className="font-medium text-white/90">{p.userName} <span className="text-xs text-white/50 ml-1">({p.userId.substring(0,6)}...)</span></span>
                         <div className="text-xs text-white/60 flex items-center gap-2">
@@ -126,7 +134,8 @@ export default function RideHistoryPanel() {
               </div>
             )}
           </div>
-        ))
+          );
+        })
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { RouteData } from "@/hooks/useRoutes";
 import { ChevronDown } from "lucide-react";
@@ -38,22 +38,17 @@ export default function PassengerBoardingView({ sessionId, route, userId, userNa
     const syncPassenger = async () => {
       try {
         const sessionRef = doc(db, "ride_sessions", sessionId);
-        const snap = await getDoc(sessionRef);
-        if (snap.exists()) {
-          const data = snap.data();
-          let passengers = data.passengers || [];
-          // Remove old entry for this user
-          passengers = passengers.filter((p: any) => p.userId !== userId);
-          // Add updated entry
-          passengers.push({
+        // The UID-keyed nested update needs no manifest read, keeping other
+        // riders' travel data private. Rules permit only this user's entry.
+        await updateDoc(sessionRef, {
+          [`passengers.${userId}`]: {
             userId,
             userName,
             boardingStopId,
             alightingStopId: alightingStopId || null,
-            joinedAt: Date.now()
-          });
-          await updateDoc(sessionRef, { passengers });
-        }
+            joinedAt: Date.now(),
+          },
+        });
       } catch (err) {
         console.error("Failed to sync passenger:", err);
       }

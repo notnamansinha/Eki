@@ -14,7 +14,6 @@ import { Map, CircleUserRound as User, MessageCircle, ArrowLeft } from "lucide-r
 import { db, rtdb, auth } from "@/lib/firebase";
 import { collection, doc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
 import { ref, update, remove, onValue, onDisconnect } from "firebase/database";
-import { signInAnonymously } from "firebase/auth";
 
 const DriverMap = dynamic(() => import("@/components/maps/DriverMap"), {
   ssr: false,
@@ -192,19 +191,17 @@ export default function DriverPage() {
           routeId: routeId,
           startTime: Date.now(),
           status: "active",
-          passengers: []
+          passengers: {}
         }).catch(err => console.error("[Driver] Firestore write failed:", err));
       });
     };
 
-    if (auth.currentUser) {
-      doWrite();
-    } else {
-      // Driver not yet authenticated — sign in anonymously then write
-      signInAnonymously(auth)
-        .then(doWrite)
-        .catch(err => console.error("[Driver] Auth failed before RTDB write:", err.message));
+    if (!auth.currentUser) {
+      console.warn("[Driver] Tracking requires the signed-in driver session.");
+      return;
     }
+
+    doWrite();
   }, [busId, selectedRouteIds, driverId, user?.uid, activeRoute, drivers]);
 
   // Pure GNSS listener (read-only mode for driver location)
@@ -212,12 +209,10 @@ export default function DriverPage() {
     if (!busId || !isTracking) return;
 
     let unsubscribe: (() => void) | undefined;
-    let isMounted = true;
+    if (!auth.currentUser) return;
 
-    signInAnonymously(auth).then(() => {
-      if (!isMounted) return;
-      const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
-      unsubscribe = onValue(busRef, (snapshot) => {
+    const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
+    unsubscribe = onValue(busRef, (snapshot) => {
         const data = snapshot.val();
         if (data && data.lat && data.lng) {
           setDriverLocation({
@@ -243,10 +238,8 @@ export default function DriverPage() {
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed in GNSS listener:", error.message);
       });
-    }).catch(err => console.warn("[RTDB Auth] GNSS listener sign-in failed:", err.code));
 
     return () => {
-      isMounted = false;
       if (unsubscribe) unsubscribe();
     };
   }, [busId, selectedRouteIds, isTracking]);
