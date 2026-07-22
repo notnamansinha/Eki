@@ -18,7 +18,7 @@ import {
   Sliders, Wifi, WifiOff, Loader2, MessageCircle, Target,
 } from "lucide-react";
 
-/* ── Types ─────────────────────────────────────────────────────────────────── */
+/* â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 interface ActiveBusEntry {
   busId: string;
   driverId?: string;
@@ -36,9 +36,9 @@ interface ActiveBusEntry {
   lowAccuracy?: boolean;
 }
 
-/* ── Config ─────────────────────────────────────────────────────────────────── */
+/* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const TRIP_STATE: Record<string, { label: string; color: string; bg: string; dot: string }> = {
-  pre_departure: { label: "At Depot",   color: "text-white/40",    bg: "bg-white/5",        dot: "bg-white/30" },
+  pre_departure: { label: "At Depot",   color: "text-white/50",    bg: "bg-white/5",        dot: "bg-white/30" },
   in_service:    { label: "In Service", color: "text-emerald-400", bg: "bg-emerald-500/10", dot: "bg-emerald-400" },
   completed:     { label: "Completed",  color: "text-blue-400",    bg: "bg-blue-500/10",    dot: "bg-blue-400" },
   maintenance:   { label: "GPS Lost",   color: "text-amber-400",   bg: "bg-amber-500/10",   dot: "bg-amber-400" },
@@ -50,19 +50,19 @@ const MOTION_STATE: Record<string, { label: string; color: string }> = {
 };
 
 function timeSince(t?: string | number): string {
-  if (!t) return "—";
+  if (!t) return "â€”";
   const ms = typeof t === "number" ? Date.now() - t : Date.now() - new Date(t).getTime();
   if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
   if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
   return `${Math.floor(ms / 3_600_000)}h ago`;
 }
 function headingLabel(d?: number): string {
-  if (d == null) return "—";
+  if (d == null) return "â€”";
   const dirs = ["N","NE","E","SE","S","SW","W","NW","N"];
-  return dirs[Math.round(d / 45) % 8] + ` ${Math.round(d)}°`;
+  return dirs[Math.round(d / 45) % 8] + ` ${Math.round(d)}Â°`;
 }
 
-/* ── Live bus hook ──────────────────────────────────────────────────────────── */
+/* â”€â”€ Live bus hook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function useActiveBuses(): ActiveBusEntry[] {
   const [active, setActive] = useState<ActiveBusEntry[]>([]);
   useEffect(() => {
@@ -90,7 +90,7 @@ function useActiveBuses(): ActiveBusEntry[] {
   return active;
 }
 
-/* ── Map centering helper ───────────────────────────────────────────────────── */
+/* â”€â”€ Map centering helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function MapCenter({ center }: { center: { lat: number; lng: number } | null }) {
   const map = useMap();
   useEffect(() => {
@@ -99,7 +99,7 @@ function MapCenter({ center }: { center: { lat: number; lng: number } | null }) 
   return null;
 }
 
-/* ── Override Drawer ────────────────────────────────────────────────────────── */
+/* â”€â”€ Override Drawer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function OverrideDrawer({
   entry,
   routeName,
@@ -163,7 +163,7 @@ function OverrideDrawer({
       }
 
       await update(ref(rtdb, `activeBuses/${rtdbKey}`), patch);
-      setMsg("Saved ✓");
+      setMsg("Saved âœ“");
       setTimeout(() => setMsg(""), 2000);
     } catch (e: any) { setMsg("Error: " + e.message); }
     finally { setSaving(false); }
@@ -183,7 +183,7 @@ function OverrideDrawer({
 
   const handleWipeMessages = async () => {
     if (!confirm(`Clear all messages for ${entry.busId}?`)) return;
-    try { await remove(ref(rtdb, `messages/${entry.busId}`)); setMsg("Messages cleared ✓"); setTimeout(() => setMsg(""), 2000); }
+    try { await remove(ref(rtdb, `messages/${entry.busId}`)); setMsg("Messages cleared âœ“"); setTimeout(() => setMsg(""), 2000); }
     catch (e: any) { setMsg("Error: " + (e as any).message); }
   };
 
@@ -194,7 +194,7 @@ function OverrideDrawer({
           <div>
             <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Live Override</p>
             <p className="font-bold text-white">{entry.busId}</p>
-            <p className="text-xs text-white/40">{routeName}</p>
+            <p className="text-xs text-white/50">{routeName}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
             <X className="w-4 h-4 text-white/60" />
@@ -220,7 +220,7 @@ function OverrideDrawer({
           {/* Stop index */}
           {stopCount > 0 && (
             <div className="flex flex-col gap-2">
-              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black flex items-center gap-1.5"><Navigation className="w-3 h-3" /> Stop Index (0–{stopCount - 1})</p>
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black flex items-center gap-1.5"><Navigation className="w-3 h-3" /> Stop Index (0â€“{stopCount - 1})</p>
               <input value={stopIdx} onChange={e => setStopIdx(e.target.value)} type="number" min="0" max={stopCount - 1} className="input-rc h-10 text-sm" />
             </div>
           )}
@@ -247,7 +247,7 @@ function OverrideDrawer({
   );
 }
 
-/* ── Live bus map marker ────────────────────────────────────────────────────── */
+/* â”€â”€ Live bus map marker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => void }) {
   const ts = TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure;
   const markerColor =
@@ -258,7 +258,7 @@ function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => v
   if (!entry.lat || !entry.lng) return null;
   return (
     <AdvancedMarker position={{ lat: entry.lat, lng: entry.lng }} onClick={onClick}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }} title={`${entry.busId} — ${ts.label}`}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }} title={`${entry.busId} â€” ${ts.label}`}>
         <div style={{
           width: 36, height: 36, borderRadius: 18,
           background: markerColor, border: "3px solid #09090b",
@@ -278,7 +278,7 @@ function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => v
   );
 }
 
-/* ── Fleet card ─────────────────────────────────────────────────────────────── */
+/* â”€â”€ Fleet card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function FleetCard({
   entry, buses, routes, drivers,
   onSelect, selected,
@@ -305,7 +305,7 @@ function FleetCard({
       {overrideOpen && (
         <OverrideDrawer
           entry={entry}
-          routeName={route?.name ?? entry.routeId ?? "—"}
+          routeName={route?.name ?? entry.routeId ?? "â€”"}
           stopCount={stopCount}
           onClose={() => setOverrideOpen(false)}
         />
@@ -342,7 +342,7 @@ function FleetCard({
               className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center hover:bg-brand-accent/20 hover:text-brand-accent transition-colors"
               title="Override"
             >
-              <Sliders className="w-3.5 h-3.5 text-white/40" />
+              <Sliders className="w-3.5 h-3.5 text-white/50" />
             </button>
             {expanded ? <ChevronUp className="w-3.5 h-3.5 text-white/30" /> : <ChevronDown className="w-3.5 h-3.5 text-white/30" />}
           </div>
@@ -352,10 +352,10 @@ function FleetCard({
           <div className="border-t border-white/5 p-3 flex flex-col gap-3">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
-                { label: "Speed", value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "—" },
+                { label: "Speed", value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "â€”" },
                 { label: "Heading", value: headingLabel(entry.heading) },
                 { label: "Last Update", value: timeSince(entry.timestamp) },
-                { label: "Stop", value: stopCount > 0 ? `${stopIdx}/${stopCount}` : "—" },
+                { label: "Stop", value: stopCount > 0 ? `${stopIdx}/${stopCount}` : "â€”" },
               ].map(({ label, value }) => (
                 <div key={label} className="bg-white/3 border border-white/5 rounded-lg p-2 flex flex-col gap-0.5">
                   <span className="text-[8px] font-black uppercase tracking-wider text-white/25">{label}</span>
@@ -391,11 +391,11 @@ function FleetCard({
             <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
               <div>
                 <span className="text-[8px] font-black uppercase tracking-wider text-white/25">Driver</span>
-                <p className="text-[10px] font-semibold text-white truncate">{driver?.name ?? entry.driverId ?? "—"}</p>
+                <p className="text-[10px] font-semibold text-white truncate">{driver?.name ?? entry.driverId ?? "â€”"}</p>
               </div>
               <div>
                 <span className="text-[8px] font-black uppercase tracking-wider text-white/25">Route</span>
-                <p className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</p>
+                <p className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "â€”"}</p>
               </div>
             </div>
             {entry.lat && entry.lng && (
@@ -410,7 +410,7 @@ function FleetCard({
   );
 }
 
-/* ── Main Dashboard ─────────────────────────────────────────────────────────── */
+/* â”€â”€ Main Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function DashboardPanel() {
   const activeEntries = useActiveBuses();
   const { buses } = useBuses();
@@ -419,7 +419,7 @@ export default function DashboardPanel() {
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
 
-  // ── Traffic layer rendered imperatively ──────────────────────────────────────
+  // â”€â”€ Traffic layer rendered imperatively â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const TrafficLayer = () => {
     const map = useMap();
     const layerRef = useRef<google.maps.TrafficLayer | null>(null);
@@ -446,7 +446,7 @@ export default function DashboardPanel() {
 
   return (
     <div className="flex flex-col lg:flex-row w-full" style={{ height: "calc(100vh - 88px)" }}>
-      {/* ── Map ── */}
+      {/* â”€â”€ Map â”€â”€ */}
       <div className="flex-1 relative min-h-[300px] lg:min-h-0">
         <GoogleMap
           mapId={MAPS_MAP_ID}
@@ -477,14 +477,14 @@ export default function DashboardPanel() {
         </div>
       </div>
 
-      {/* ── Sidebar ── */}
+      {/* â”€â”€ Sidebar â”€â”€ */}
       <div className="w-full lg:w-[360px] shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-white/5 overflow-hidden">
         {/* Stats row */}
         <div className="grid grid-cols-4 border-b border-white/5 shrink-0">
           {[
             { label: "In Service", value: inService,  color: "text-emerald-400", Icon: Activity },
             { label: "Moving",     value: moving,     color: "text-blue-400",    Icon: TrendingUp },
-            { label: "At Depot",   value: atDepot,    color: "text-white/40",    Icon: Clock },
+            { label: "At Depot",   value: atDepot,    color: "text-white/50",    Icon: Clock },
             { label: "GPS Lost",   value: gpsLost,    color: "text-amber-400",   Icon: AlertTriangle },
           ].map(({ label, value, color, Icon }) => (
             <div key={label} className="flex flex-col items-center justify-center gap-0.5 py-3 border-r border-white/5 last:border-0">

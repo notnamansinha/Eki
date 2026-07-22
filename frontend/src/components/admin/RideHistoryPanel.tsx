@@ -43,7 +43,7 @@ export default function RideHistoryPanel() {
     <div className="h-full overflow-y-auto p-4 sm:p-6 space-y-4">
       <h2 className="text-xl font-bold text-white mb-4">Ride History</h2>
       {sortedSessions.length === 0 ? (
-        <div className="text-white/40 text-sm text-center py-10">No rides recorded yet.</div>
+        <div className="text-white/50 text-sm text-center py-10">No rides recorded yet.</div>
       ) : (
         sortedSessions.map(session => (
           <div key={session.id} className="bg-brand-surface border border-white/10 rounded-xl overflow-hidden transition-all">
@@ -77,19 +77,19 @@ export default function RideHistoryPanel() {
 
             {expandedId === session.id && (
               <div className="px-4 pb-4 border-t border-white/10 bg-black/20 pt-4">
-                <h4 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">Passenger Manifest</h4>
+                <h4 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-3">Passenger Manifest</h4>
                 {(!session.passengers || session.passengers.length === 0) ? (
                   <p className="text-xs text-white/30 italic">No passengers boarded.</p>
                 ) : (
                   <div className="space-y-2">
                     {session.passengers.map((p, i) => (
                       <div key={i} className="flex items-center justify-between text-sm py-1.5 px-3 rounded bg-white/5 border border-white/5">
-                        <span className="font-medium text-white/90">{p.userName} <span className="text-xs text-white/40 ml-1">({p.userId.substring(0,6)}...)</span></span>
+                        <span className="font-medium text-white/90">{p.userName} <span className="text-xs text-white/50 ml-1">({p.userId.substring(0,6)}...)</span></span>
                         <div className="text-xs text-white/60 flex items-center gap-2">
                           <span className="bg-white/10 px-1.5 py-0.5 rounded">{p.boardingStopId}</span>
                           {p.alightingStopId && (
                             <>
-                              <span className="text-white/30">→</span>
+                              <span className="text-white/30">â†’</span>
                               <span className="bg-white/10 px-1.5 py-0.5 rounded">{p.alightingStopId}</span>
                             </>
                           )}
@@ -101,7 +101,7 @@ export default function RideHistoryPanel() {
                 
                 {session.stopsReached && session.stopsReached.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-white/10">
-                    <h4 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <h4 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-3 flex items-center gap-2">
                       <MapPin className="w-3 h-3"/> 
                       Route Log ({session.path?.length || 0} GPS breadcrumbs saved)
                     </h4>

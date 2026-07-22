@@ -81,7 +81,7 @@ export default function RideHailControls({ onModeChange, pendingLocation }: Prop
               className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.15em] transition-all duration-300 flex items-center justify-center gap-2 ${
                 mode === m
                   ? "bg-white text-brand-dark shadow-xl scale-[1.02]"
-                  : "text-white/40 hover:text-white/80 disabled:opacity-30 disabled:scale-100"
+                  : "text-white/50 hover:text-white/80 disabled:opacity-30 disabled:scale-100"
               }`}
             >
               {m === "pickup" ? <MapPin className="w-3.5 h-3.5" /> : <MapPinned className="w-3.5 h-3.5" />}
@@ -122,7 +122,7 @@ export default function RideHailControls({ onModeChange, pendingLocation }: Prop
                   </button>
                   <button
                     onClick={cancel}
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center bg-white/5 border border-white/10 text-white/40 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 active:scale-95 transition-all"
+                    className="w-14 h-14 rounded-2xl flex items-center justify-center bg-white/5 border border-white/10 text-white/50 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 active:scale-95 transition-all"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -132,7 +132,7 @@ export default function RideHailControls({ onModeChange, pendingLocation }: Prop
               {(status === "accepted" || status === "completed") && (
                 <button 
                   onClick={cancel} 
-                  className="w-full py-3.5 rounded-xl text-[10px] font-black text-white/40 hover:text-white uppercase tracking-[0.2em] transition-all bg-white/5 hover:bg-white/10"
+                  className="w-full py-3.5 rounded-xl text-[10px] font-black text-white/50 hover:text-white uppercase tracking-[0.2em] transition-all bg-white/5 hover:bg-white/10"
                 >
                   Dismiss
                 </button>

@@ -15,7 +15,7 @@ import {
   TrendingUp, Route, AlertTriangle, CheckCircle2,
 } from "lucide-react";
 
-// ── Live bus tracking ─────────────────────────────────────────────────────────
+// â”€â”€ Live bus tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface ActiveBusEntry {
   busId: string;
   driverId?: string;
@@ -32,7 +32,7 @@ interface ActiveBusEntry {
   lowAccuracy?: boolean;
 }
 
-// ── Completed trip analytics ───────────────────────────────────────────────────
+// â”€â”€ Completed trip analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface CompletedTrip {
   id: string;
   busId: string;
@@ -83,9 +83,9 @@ function useRecentTrips(count = 10): CompletedTrip[] {
   return trips;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function timeSince(isoStr?: string | number): string {
-  if (!isoStr) return "—";
+  if (!isoStr) return "â€”";
   const ms = typeof isoStr === "number" ? Date.now() - isoStr : Date.now() - new Date(isoStr).getTime();
   if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
   if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
@@ -93,13 +93,13 @@ function timeSince(isoStr?: string | number): string {
 }
 
 function headingLabel(deg?: number): string {
-  if (deg == null) return "—";
+  if (deg == null) return "â€”";
   const dirs = ["N","NE","E","SE","S","SW","W","NW","N"];
-  return dirs[Math.round(deg / 45) % 8] + ` ${Math.round(deg)}°`;
+  return dirs[Math.round(deg / 45) % 8] + ` ${Math.round(deg)}Â°`;
 }
 
 const TRIP_STATE_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: any }> = {
-  pre_departure: { label: "At Depot",    color: "text-white/40",     bg: "bg-white/5",        Icon: Clock         },
+  pre_departure: { label: "At Depot",    color: "text-white/50",     bg: "bg-white/5",        Icon: Clock         },
   in_service:    { label: "In Service",  color: "text-emerald-400",  bg: "bg-emerald-500/10", Icon: Navigation    },
   completed:     { label: "Completed",   color: "text-blue-400",     bg: "bg-blue-500/10",    Icon: CheckCircle2  },
   maintenance:   { label: "GPS Lost",    color: "text-amber-400",    bg: "bg-amber-500/10",   Icon: AlertTriangle },
@@ -111,7 +111,7 @@ const MOTION_STATE_CONFIG: Record<string, { label: string; color: string; dot: s
   uncertain: { label: "No GPS",   color: "text-red-400",     dot: "bg-red-400"     },
 };
 
-// ── Inline error banner ───────────────────────────────────────────────────────
+// â”€â”€ Inline error banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
     <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl px-3 py-2 text-xs font-semibold animate-slide-up">
@@ -124,7 +124,7 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
   );
 }
 
-// ── Expanded live bus detail card ─────────────────────────────────────────────
+// â”€â”€ Expanded live bus detail card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function LiveBusCard({ entry, buses, routes, drivers }: {
   entry: ActiveBusEntry;
   buses: BusData[];
@@ -197,9 +197,9 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
           {/* Stats row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[
-              { icon: Gauge,      label: "Speed",    value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "—" },
+              { icon: Gauge,      label: "Speed",    value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "â€”" },
               { icon: Navigation, label: "Heading",  value: headingLabel(entry.heading) },
-              { icon: MapPin,     label: "Position", value: entry.lat != null ? `${entry.lat.toFixed(4)}, ${entry.lng?.toFixed(4)}` : "—" },
+              { icon: MapPin,     label: "Position", value: entry.lat != null ? `${entry.lat.toFixed(4)}, ${entry.lng?.toFixed(4)}` : "â€”" },
               { icon: Clock,      label: "Last Seen",value: timeSince(entry.timestamp) },
             ].map(({ icon: Icon, label, value }) => (
               <div key={label} className="bg-white/3 border border-white/5 rounded-xl p-2.5 flex flex-col gap-1">
@@ -217,7 +217,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-[9px] font-black uppercase tracking-wider text-white/30">Route Progress</span>
-                <span className="text-[9px] tabular-nums text-white/40">{stopIdx} of {stopsTotal} stops</span>
+                <span className="text-[9px] tabular-nums text-white/50">{stopIdx} of {stopsTotal} stops</span>
               </div>
               <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
                 <div
@@ -246,12 +246,12 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
           <div className="grid grid-cols-2 gap-2">
             <div className="flex flex-col gap-0.5">
               <span className="text-[8px] font-black uppercase tracking-wider text-white/30">Driver</span>
-              <span className="text-[10px] font-semibold text-white truncate">{driver?.name ?? entry.driverId ?? "—"}</span>
+              <span className="text-[10px] font-semibold text-white truncate">{driver?.name ?? entry.driverId ?? "â€”"}</span>
               <span className="text-[9px] tabular-nums text-white/20">{entry.driverId}</span>
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-[8px] font-black uppercase tracking-wider text-white/30">Route</span>
-              <span className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</span>
+              <span className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "â€”"}</span>
               <span className="text-[9px] tabular-nums text-white/20">{entry.routeId}</span>
             </div>
           </div>
@@ -268,7 +268,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
   );
 }
 
-// ── Recent trips analytics section ────────────────────────────────────────────
+// â”€â”€ Recent trips analytics section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function RecentTripsPanel({ routes, buses, drivers }: { routes: any[]; buses: BusData[]; drivers: DriverData[] }) {
   const trips = useRecentTrips(10);
   const [open, setOpen] = useState(false);
@@ -282,7 +282,7 @@ function RecentTripsPanel({ routes, buses, drivers }: { routes: any[]; buses: Bu
       >
         <div className="flex items-center gap-2">
           <BarChart2 className="w-4 h-4 text-blue-400/70" />
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Route Analytics</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Route Analytics</span>
           {trips.length > 0 && (
             <span className="text-[9px] bg-blue-500/20 text-blue-400 font-black px-2 py-0.5 rounded-full">
               {trips.length} trips
@@ -308,13 +308,13 @@ function RecentTripsPanel({ routes, buses, drivers }: { routes: any[]; buses: Bu
                     <span className="text-[9px] text-white/30 tabular-nums">{timeSince(trip.completedAt)}</span>
                   </div>
                   <div className="flex items-center gap-3 flex-wrap">
-                    <span className="text-[9px] text-white/40 flex items-center gap-1">
+                    <span className="text-[9px] text-white/50 flex items-center gap-1">
                       <Bus className="w-2.5 h-2.5" />{bus?.name ?? trip.busId}
                     </span>
-                    <span className="text-[9px] text-white/40 flex items-center gap-1">
+                    <span className="text-[9px] text-white/50 flex items-center gap-1">
                       <User className="w-2.5 h-2.5" />{driver?.name ?? trip.driverId}
                     </span>
-                    <span className="text-[9px] text-white/40 flex items-center gap-1">
+                    <span className="text-[9px] text-white/50 flex items-center gap-1">
                       <MapPin className="w-2.5 h-2.5" />{trip.stopCount} stops
                     </span>
                     <span className="text-[9px] bg-blue-500/15 text-blue-400 px-1.5 py-0.5 rounded font-black uppercase tracking-wider flex items-center gap-1">
@@ -349,36 +349,36 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   // filtering immediately would produce an empty Set and wipe out all stats.
   const registeredBusIds = new Set(buses.map((b) => b.id));
   const filteredActiveEntries = busesLoading
-    ? activeEntries                                          // buses not ready yet — show all
-    : activeEntries.filter((e) => registeredBusIds.has(e.busId)); // buses loaded — filter to registered only
+    ? activeEntries                                          // buses not ready yet â€” show all
+    : activeEntries.filter((e) => registeredBusIds.has(e.busId)); // buses loaded â€” filter to registered only
   const activeBusIds = new Set(filteredActiveEntries.map((e) => e.busId));
 
-  // ── Error state ───────────────────────────────────────────────────────────
+  // â”€â”€ Error state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // ── Bus add form ──────────────────────────────────────────────────────────
+  // â”€â”€ Bus add form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [newBusId, setNewBusId] = useState("");
   const [newBusName, setNewBusName] = useState("");
   const [newBusRoutes, setNewBusRoutes] = useState<string[]>([]);
   const [busListOpen, setBusListOpen] = useState(true);
 
-  // ── Bus inline edit ───────────────────────────────────────────────────────
+  // â”€â”€ Bus inline edit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [editingBusId, setEditingBusId] = useState<string | null>(null);
   const [editBusName, setEditBusName] = useState("");
   const [editBusRoutes, setEditBusRoutes] = useState<string[]>([]);
 
-  // ── Driver add form ───────────────────────────────────────────────────────
+  // â”€â”€ Driver add form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [newDriverId, setNewDriverId] = useState("");
   const [newDriverName, setNewDriverName] = useState("");
   const [newDriverBusId, setNewDriverBusId] = useState("");
   const [driverListOpen, setDriverListOpen] = useState(true);
 
-  // ── Driver inline edit ────────────────────────────────────────────────────
+  // â”€â”€ Driver inline edit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [editingDriverId, setEditingDriverId] = useState<string | null>(null);
   const [editDriverName, setEditDriverName] = useState("");
   const [editDriverBusId, setEditDriverBusId] = useState("");
 
-  // ── Route togglers ────────────────────────────────────────────────────────
+  // â”€â”€ Route togglers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const toggleRoute = (id: string) =>
     setNewBusRoutes((prev) =>
       prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]
@@ -389,7 +389,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
       prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]
     );
 
-  // ── Bus CRUD ──────────────────────────────────────────────────────────────
+  // â”€â”€ Bus CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleAddBus = async () => {
     if (!newBusId || !newBusName) return;
     try {
@@ -459,7 +459,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
     } catch (e: any) { setErrorMsg("Failed to update Vehicle: " + e.message); }
   };
 
-  // ── Driver CRUD ───────────────────────────────────────────────────────────
+  // â”€â”€ Driver CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleAddDriver = async () => {
     if (!newDriverId || !newDriverName) return;
     try {
@@ -499,7 +499,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   const liveDriverIds = new Set(filteredActiveEntries.map((e) => e.driverId).filter(Boolean));
   const liveDrivers = drivers.filter((d) => liveDriverIds.has(d.id));
 
-  // ── Fleet summary stats ────────────────────────────────────────────────────
+  // â”€â”€ Fleet summary stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const inServiceCount  = filteredActiveEntries.filter(e => e.tripState === "in_service").length;
   const atDepotCount    = filteredActiveEntries.filter(e => e.tripState === "pre_departure").length;
   const gpsLostCount    = filteredActiveEntries.filter(e => e.tripState === "maintenance").length;
@@ -508,20 +508,20 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-5 p-3 md:p-6 animate-slide-up">
 
-      {/* ── Global error banner ── */}
+      {/* â”€â”€ Global error banner â”€â”€ */}
       {errorMsg && (
         <ErrorBanner message={errorMsg} onDismiss={() => setErrorMsg(null)} />
       )}
 
 
-      {/* ══ FLEET COMMAND CENTER — always visible, driven by live Firebase data ══ */}
+      {/* â•â• FLEET COMMAND CENTER â€” always visible, driven by live Firebase data â•â• */}
       <div className="flex flex-col gap-3">
         {/* Fleet summary stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {[
             { icon: Activity,     label: "In Service",  value: inServiceCount,  color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
             { icon: TrendingUp,   label: "Moving",      value: movingCount,     color: "text-blue-400",    bg: "bg-blue-500/10",    border: "border-blue-500/20"    },
-            { icon: Clock,        label: "At Depot",    value: atDepotCount,    color: "text-white/40",    bg: "bg-white/5",        border: "border-white/10"       },
+            { icon: Clock,        label: "At Depot",    value: atDepotCount,    color: "text-white/50",    bg: "bg-white/5",        border: "border-white/10"       },
             { icon: AlertTriangle,label: "GPS Issues",  value: gpsLostCount,    color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20"   },
           ].map(({ icon: Icon, label, value, color, bg, border }) => (
             <div key={label} className={`${bg} border ${border} rounded-2xl p-3 flex flex-col gap-1.5`}>
@@ -539,7 +539,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
           <div className="flex items-center gap-2 mb-1">
             <span className={`w-2 h-2 rounded-full shrink-0 ${filteredActiveEntries.length > 0 ? "bg-emerald-400 animate-pulse" : "bg-white/20"}`} />
             <span className={`text-[10px] font-black uppercase tracking-[0.25em] ${filteredActiveEntries.length > 0 ? "text-emerald-400" : "text-white/30"}`}>
-              Live Tracking — {busesLoading ? "…" : `${filteredActiveEntries.length} Bus${filteredActiveEntries.length !== 1 ? "es" : ""} Online`}
+              Live Tracking â€” {busesLoading ? "â€¦" : `${filteredActiveEntries.length} Bus${filteredActiveEntries.length !== 1 ? "es" : ""} Online`}
             </span>
           </div>
           {filteredActiveEntries.length > 0 ? (
@@ -554,22 +554,22 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             ))
           ) : (
             <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">
-              {busesLoading ? "Loading…" : "No buses currently active"}
+              {busesLoading ? "Loadingâ€¦" : "No buses currently active"}
             </p>
           )}
         </div>
       </div>
 
 
-      {/* ══ CONDITIONAL TABS: Vehicles OR Drivers ══ */}
+      {/* â•â• CONDITIONAL TABS: Vehicles OR Drivers â•â• */}
       <div className="flex flex-col gap-5 w-full max-w-3xl mx-auto">
 
-        {/* ── FLEET VEHICLES ── */}
+        {/* â”€â”€ FLEET VEHICLES â”€â”€ */}
         {mode === "fleet" && (
           <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
-              <Bus className="w-4 h-4 text-white/40" />
+              <Bus className="w-4 h-4 text-white/50" />
             </div>
             <div>
               <h2 className="font-extrabold text-lg tracking-tight">Fleet Vehicles</h2>
@@ -596,7 +596,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               <div className="flex items-center justify-between">
                 <span className="text-[9px] text-white/30 uppercase tracking-[0.2em] font-black">Assign Allowed Routes</span>
                 {newBusRoutes.length > 0 && (
-                  <span className="text-[9px] text-white/40 bg-white/10 font-black px-2 py-0.5 rounded-full">
+                  <span className="text-[9px] text-white/50 bg-white/10 font-black px-2 py-0.5 rounded-full">
                     {newBusRoutes.length} selected
                   </span>
                 )}
@@ -641,15 +641,15 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
             >
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Saved Vehicles</span>
-                <span className="text-[9px] bg-white/10 text-white/40 font-black px-2 py-0.5 rounded-full">{buses.length}</span>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Saved Vehicles</span>
+                <span className="text-[9px] bg-white/10 text-white/50 font-black px-2 py-0.5 rounded-full">{buses.length}</span>
               </div>
               {busListOpen ? <ChevronUp className="w-3.5 h-3.5 text-white/20" /> : <ChevronDown className="w-3.5 h-3.5 text-white/20" />}
             </button>
             {busListOpen && (
               <div className="px-3 pb-3 flex flex-col gap-2 border-t border-white/5">
                 {busesLoading
-                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold">Loading…</p>
+                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold">Loadingâ€¦</p>
                   : buses.length === 0
                   ? <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">No vehicles registered.</p>
                   : buses.map((bus) => {
@@ -765,12 +765,12 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
         </div>
         )}
 
-        {/* ── DRIVER PERSONNEL ── */}
+        {/* â”€â”€ DRIVER PERSONNEL â”€â”€ */}
         {mode === "personnel" && (
           <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
-              <User className="w-4 h-4 text-white/40" />
+              <User className="w-4 h-4 text-white/50" />
             </div>
             <div>
               <h2 className="font-extrabold text-lg tracking-tight">Driver Personnel</h2>
@@ -799,7 +799,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                 aria-label="Assign vehicle to new operator"
                 className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 pr-8 text-sm text-white focus:border-white/40 outline-none transition-colors font-semibold appearance-none cursor-pointer"
               >
-                <option value="" className="bg-[#1a1c29]">— Assign Vehicle —</option>
+                <option value="" className="bg-[#1a1c29]">â€” Assign Vehicle â€”</option>
                 {buses.map((b) => <option key={b.id} value={b.id} className="bg-[#1a1c29]">{b.name} ({b.id})</option>)}
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 pointer-events-none" />
@@ -821,8 +821,8 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
             >
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Saved Operators</span>
-                <span className="text-[9px] bg-white/10 text-white/40 font-black px-2 py-0.5 rounded-full">{drivers.length}</span>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Saved Operators</span>
+                <span className="text-[9px] bg-white/10 text-white/50 font-black px-2 py-0.5 rounded-full">{drivers.length}</span>
                 {liveDrivers.length > 0 && (
                   <span className="text-[9px] bg-emerald-500/20 text-emerald-400 font-black px-2 py-0.5 rounded-full flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
@@ -835,7 +835,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             {driverListOpen && (
               <div className="px-3 pb-3 flex flex-col gap-2 border-t border-white/5">
                 {driversLoading
-                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold">Loading…</p>
+                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold">Loadingâ€¦</p>
                   : drivers.length === 0
                   ? <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">No operators registered.</p>
                   : drivers.map((driver) => {
@@ -915,7 +915,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                                 aria-label="Edit assigned vehicle"
                                 className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 pr-8 text-sm text-white focus:border-blue-400/60 outline-none transition-colors font-semibold appearance-none cursor-pointer"
                               >
-                                <option value="" className="bg-[#1a1c29]">— Unassign Vehicle —</option>
+                                <option value="" className="bg-[#1a1c29]">â€” Unassign Vehicle â€”</option>
                                 {buses.map((b) => <option key={b.id} value={b.id} className="bg-[#1a1c29]">{b.name} ({b.id})</option>)}
                               </select>
                               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 pointer-events-none" />

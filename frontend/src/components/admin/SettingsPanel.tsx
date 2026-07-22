@@ -28,7 +28,7 @@ function SectionHeader({ icon: Icon, title, subtitle }: { icon: any; title: stri
   return (
     <div className="flex items-start gap-3 pb-4 border-b border-white/5">
       <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
-        <Icon className="w-4 h-4 text-white/40" />
+        <Icon className="w-4 h-4 text-white/50" />
       </div>
       <div>
         <p className="font-bold text-white">{title}</p>
@@ -67,7 +67,7 @@ export default function SettingsPanel() {
     return (
       <div className="flex items-center justify-center h-64 gap-3 text-white/30">
         <Loader2 className="w-5 h-5 animate-spin" />
-        <span className="text-sm font-medium">Loading settings…</span>
+        <span className="text-sm font-medium">Loading settingsâ€¦</span>
       </div>
     );
   }
@@ -85,15 +85,15 @@ export default function SettingsPanel() {
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-[#09090b] font-bold text-sm hover:bg-white/90 transition-colors shadow-lg disabled:opacity-50"
         >
           {saving
-            ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+            ? <><Loader2 className="w-4 h-4 animate-spin" /> Savingâ€¦</>
             : saved
-            ? <><span className="text-emerald-600">✓</span> Saved!</>
+            ? <><span className="text-emerald-600">âœ“</span> Saved!</>
             : <><Save className="w-4 h-4" /> Save All</>
           }
         </button>
       </div>
 
-      {/* ── Service Hours ── */}
+      {/* â”€â”€ Service Hours â”€â”€ */}
       <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5">
         <SectionHeader icon={Clock} title="Service Hours" subtitle="Controls the 'service starts at' message shown when no buses are active" />
 
@@ -109,11 +109,11 @@ export default function SettingsPanel() {
         </Field>
       </div>
 
-      {/* ── Passenger-facing copy ── */}
+      {/* â”€â”€ Passenger-facing copy â”€â”€ */}
       <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5">
         <SectionHeader icon={MessageSquare} title="Passenger App Copy" subtitle="Text shown in the passenger app when no buses are running" />
 
-        <Field controlId="setting-no-buses-headline" label="No Buses — Headline" hint='The bold text shown in the empty state. e.g. "No buses running"'>
+        <Field controlId="setting-no-buses-headline" label="No Buses â€” Headline" hint='The bold text shown in the empty state. e.g. "No buses running"'>
           <input
             id="setting-no-buses-headline"
             value={draft.noBusesMessage}
@@ -125,7 +125,7 @@ export default function SettingsPanel() {
 
         <Field
           controlId="setting-no-buses-subtext"
-          label="No Buses — Subtext"
+          label="No Buses â€” Subtext"
           hint='Use {time} to insert the service start time automatically. e.g. "Service starts at {time}"'
         >
           <input
@@ -147,16 +147,16 @@ export default function SettingsPanel() {
         </Field>
       </div>
 
-      {/* ── Live Announcement Banner ── */}
+      {/* â”€â”€ Live Announcement Banner â”€â”€ */}
       <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5">
         <SectionHeader icon={Megaphone} title="Live Announcement Banner" subtitle="When active, a banner appears at the top of the Passenger app home screen" />
 
-        <Field controlId="setting-announcement-text" label="Announcement Text" hint="Keep it brief — shown in a slim banner strip">
+        <Field controlId="setting-announcement-text" label="Announcement Text" hint="Keep it brief â€” shown in a slim banner strip">
           <textarea
             id="setting-announcement-text"
             value={draft.announcementText}
             onChange={e => set("announcementText", e.target.value)}
-            placeholder="e.g. Heavy traffic near Central Park — expect delays on Route 1A"
+            placeholder="e.g. Heavy traffic near Central Park â€” expect delays on Route 1A"
             rows={3}
             className="input-rc py-2 resize-none"
           />
@@ -177,7 +177,7 @@ export default function SettingsPanel() {
               ? <Eye className="w-4 h-4 text-emerald-400" />
               : <EyeOff className="w-4 h-4 text-white/30" />
             }
-            <span className={`text-sm font-semibold ${draft.announcementActive ? "text-emerald-400" : "text-white/40"}`}>
+            <span className={`text-sm font-semibold ${draft.announcementActive ? "text-emerald-400" : "text-white/50"}`}>
               {draft.announcementActive ? "Visible to passengers" : "Hidden"}
             </span>
           </div>
@@ -198,9 +198,9 @@ export default function SettingsPanel() {
         className="w-full flex items-center justify-center gap-2 h-12 rounded-xl bg-white text-[#09090b] font-bold text-sm hover:bg-white/90 transition-colors shadow-lg disabled:opacity-50"
       >
         {saving
-          ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+          ? <><Loader2 className="w-4 h-4 animate-spin" /> Savingâ€¦</>
           : saved
-          ? <><span className="text-emerald-600">✓</span> All changes saved!</>
+          ? <><span className="text-emerald-600">âœ“</span> All changes saved!</>
           : <><Save className="w-4 h-4" /> Save All Settings</>
         }
       </button>

@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 
-/* ── Helpers ────────────────────────────────────────────────────────────────── */
+/* â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function stopLabel(i: number): string {
   const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   if (i < 26) return a[i];
@@ -27,7 +27,7 @@ const ROUTE_COLORS = [
   "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
 ];
 
-/* ── Nominatim search box ───────────────────────────────────────────────────── */
+/* â”€â”€ Nominatim search box â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: number; lng: number }) => void }) {
   const [value, setValue] = useState("");
   const [results, setResults] = useState<any[]>([]);
@@ -64,7 +64,7 @@ function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: 
       </div>
       <input
         type="text" value={value} onChange={e => setValue(e.target.value)}
-        placeholder="Search for a stop location…"
+        placeholder="Search for a stop locationâ€¦"
         className="w-full h-10 bg-[#0f0f12] border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-medium"
       />
       {results.length > 0 && (
@@ -83,14 +83,14 @@ function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: 
   );
 }
 
-/* ── Map centering ──────────────────────────────────────────────────────────── */
+/* â”€â”€ Map centering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function MapCenter({ center }: { center: { lat: number; lng: number } | null }) {
   const map = useMap();
   useEffect(() => { if (center && map) { map.panTo(center); map.setZoom(15); } }, [center, map]);
   return null;
 }
 
-/* ── Route list card ────────────────────────────────────────────────────────── */
+/* â”€â”€ Route list card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () => void; onDelete: (id: string) => void }) {
   const [stopsOpen, setStopsOpen] = useState(false);
   return (
@@ -113,7 +113,7 @@ function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () =
         </div>
       </div>
       <div className="px-4 pb-3 flex items-center gap-2">
-        <button onClick={() => setStopsOpen(o => !o)} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 text-[9px] font-black tracking-widest text-white/40 uppercase hover:text-white/60 transition-colors">
+        <button onClick={() => setStopsOpen(o => !o)} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 text-[9px] font-black tracking-widest text-white/50 uppercase hover:text-white/60 transition-colors">
           <MapPin className="w-2.5 h-2.5" />
           {route.stops?.length ?? 0} Stops
           {stopsOpen ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
@@ -146,7 +146,7 @@ function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () =
   );
 }
 
-/* ── Stop list item (draggable in editor) ───────────────────────────────────── */
+/* â”€â”€ Stop list item (draggable in editor) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function StopItem({ stop, index, onRemove, onNameChange }: {
   stop: RouteStop; index: number;
   onRemove: (i: number) => void;
@@ -185,7 +185,7 @@ function StopItem({ stop, index, onRemove, onNameChange }: {
   );
 }
 
-/* ── Route editor ───────────────────────────────────────────────────────────── */
+/* â”€â”€ Route editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 type EditorMode = "create" | "edit";
 
 interface EditorState {
@@ -219,7 +219,7 @@ function RouteEditor({
   const [saving, setSaving] = useState(false);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
 
-  // ── Traffic layer rendered imperatively ──────────────────────────────────────
+  // â”€â”€ Traffic layer rendered imperatively â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const TrafficLayer = () => {
     const map = useMap();
     const layerRef = useRef<google.maps.TrafficLayer | null>(null);
@@ -288,7 +288,7 @@ function RouteEditor({
       };
 
       if (state.mode === "create") {
-        // Guard against duplicate route IDs — check existence first
+        // Guard against duplicate route IDs â€” check existence first
         const { getDoc } = await import("firebase/firestore");
         const existing = await getDoc(doc(db, "routes", state.routeId));
         if (existing.exists()) {
@@ -298,7 +298,7 @@ function RouteEditor({
         }
         await setDoc(doc(db, "routes", state.routeId), routeData as RouteData);
       } else {
-        // Edit mode — merge so existing polyline/distanceMeters/duration are preserved
+        // Edit mode â€” merge so existing polyline/distanceMeters/duration are preserved
         await updateDoc(doc(db, "routes", state.routeId), routeData);
       }
       onSaved();
@@ -375,7 +375,7 @@ function RouteEditor({
             disabled={saving || state.stops.length < 2}
             className="h-9 px-5 rounded-xl bg-white text-[#09090b] font-black text-xs uppercase tracking-widest transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-white/90 shadow-lg"
           >
-            {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</> : <><Save className="w-3.5 h-3.5" /> {state.mode === "edit" ? "Update" : "Deploy"}</>}
+            {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Savingâ€¦</> : <><Save className="w-3.5 h-3.5" /> {state.mode === "edit" ? "Update" : "Deploy"}</>}
           </button>
         </div>
       </div>
@@ -475,7 +475,7 @@ function RouteEditor({
   );
 }
 
-/* ── Main Route Management Panel ────────────────────────────────────────────── */
+/* â”€â”€ Main Route Management Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function RouteManagementPanel() {
   const { routes, loading } = useRoutes();
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -534,7 +534,7 @@ export default function RouteManagementPanel() {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16 text-white/20 gap-3">
             <Loader2 className="w-6 h-6 animate-spin" />
-            <span className="text-xs font-semibold uppercase tracking-widest">Loading routes…</span>
+            <span className="text-xs font-semibold uppercase tracking-widest">Loading routesâ€¦</span>
           </div>
         ) : routes.length === 0 ? (
           <div className="text-center py-16 text-white/20 text-sm font-semibold">No routes yet. Click &ldquo;Add Route&rdquo; to create one.</div>

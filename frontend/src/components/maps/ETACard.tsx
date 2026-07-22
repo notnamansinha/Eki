@@ -51,7 +51,7 @@ const ETACard = React.memo(function ETACard({
           </div>
           <div className="flex flex-col">
             <span className="font-black text-xs uppercase tracking-widest text-emerald-400">Proximal Arrival</span>
-            <span className="font-medium text-[10px] text-white/40 uppercase tracking-widest mt-1">{stopShortName} in ~{etaMinutes} min</span>
+            <span className="font-medium text-[10px] text-white/50 uppercase tracking-widest mt-1">{stopShortName} in ~{etaMinutes} min</span>
           </div>
         </div>
       )}
@@ -72,7 +72,7 @@ const ETACard = React.memo(function ETACard({
           {/* Top: Location Context */}
           <div className="flex items-center gap-4">
             <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-white/5 border border-white/5">
-              <MapPin className="w-4 h-4 text-white/40" />
+              <MapPin className="w-4 h-4 text-white/50" />
             </div>
             <div className="flex flex-col">
                <span className="text-[10px] font-black tracking-widest text-white/20 uppercase mb-0.5">Target Stop</span>
@@ -94,7 +94,7 @@ const ETACard = React.memo(function ETACard({
               </div>
               <div className="flex items-center gap-2 mt-1.5 overflow-hidden">
                 <Navigation className="w-3 h-3 text-white/20 flex-shrink-0" />
-                <span className="text-white/40 font-medium text-[10px] uppercase tracking-widest truncate">
+                <span className="text-white/50 font-medium text-[10px] uppercase tracking-widest truncate">
                   {distanceKm}km via {viaRoad}
                 </span>
               </div>
