@@ -6,6 +6,7 @@ import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
+import { SIGNAL_LOST_MS, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
 import { waitForAuth } from "@/lib/authState";
 import { rtdb, auth } from "@/lib/firebase";
 import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
@@ -34,11 +35,6 @@ interface IncomingBusData {
   delayMinutes?: number;
   lowAccuracy?: boolean; // Set by firmware when 2.5 < HDOP ≤ 4.0
 }
-
-// Staleness threshold: show "signal lost" banner if timestamp is older than 90s
-const SIGNAL_LOST_MS = 90_000;
-// Buses not seen in 5 minutes are considered gone
-const BUS_EXPIRY_MS = 300_000;
 
 const WALKING_KMH = 5;
 const WALKING_M_PER_MIN = (WALKING_KMH * 1000) / 60;
@@ -142,7 +138,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
 
         Object.entries(data).forEach(([key, bus]) => {
           bus.busId = bus.busId || key.split("_")[0];
-          const isFresh = Date.now() - bus.timestamp < 300_000;
+          const isFresh = isLiveBusTimestamp(bus.timestamp);
           if (!bus.routeId || !bus.busId || !isFresh) return;
 
           const isActive = bus.tripState === "in_service" || bus.tripState === "pre_departure";

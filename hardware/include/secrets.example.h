@@ -17,6 +17,7 @@
 
 // ── Firebase Configuration ────────────────────────────────────────
 #define FIREBASE_HOST "your-project-id-default-rtdb.firebaseio.com"
+#define FIREBASE_API_KEY "YOUR_FIREBASE_API_KEY"
 
 // ── Backend Authentication ────────────────────────────────────────
 // The backend URL where the ESP32 will fetch its Firebase Custom Token

@@ -16,6 +16,7 @@ import RouteCarousel from "@/components/passenger/ui/RouteCarousel";
 import PassengerBoardingView from "@/components/passenger/PassengerBoardingView";
 import { useSettings } from "@/hooks/useSettings";
 import { getDistanceMeters } from "@/lib/mapUtils";
+import { isLiveBusTimestamp } from "@/lib/liveBusFreshness";
 
 type ViewState = "home" | "tracking" | "profile";
 
@@ -77,8 +78,8 @@ export default function PassengerPage() {
         if (data) {
           Object.entries(data as Record<string, ActiveBusData>).forEach(([key, bus]) => {
             bus.busId = bus.busId || key.split("_")[0];
-            // Safety net: discard entries older than 5 minutes (RTDB cleanup lag).
-            const isFresh = Date.now() - bus.timestamp < 300_000;
+            // Safety net: discard stale entries while RTDB cleanup catches up.
+            const isFresh = isLiveBusTimestamp(bus.timestamp);
             if (!bus.routeId || !bus.busId || !isFresh) {
               console.log("[Passenger] Skipped (stale/missing):", key, { routeId: bus.routeId, busId: bus.busId, isFresh });
               return;

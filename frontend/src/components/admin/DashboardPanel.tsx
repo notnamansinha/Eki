@@ -10,6 +10,7 @@ import { rtdb, auth } from "@/lib/firebase";
 import { useBuses } from "@/hooks/useBuses";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
+import { isLiveBusTimestamp } from "@/lib/liveBusFreshness";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import {
   Activity, Navigation, Clock, MapPin, AlertTriangle,
@@ -77,7 +78,7 @@ function useActiveBuses(): ActiveBusEntry[] {
           const freshBuses: ActiveBusEntry[] = [];
           Object.entries(data).forEach(([key, bus]) => {
             bus.busId = bus.busId || key.split("_")[0];
-            const isFresh = bus.timestamp && (Date.now() - bus.timestamp < 300_000);
+            const isFresh = isLiveBusTimestamp(bus.timestamp);
             if (isFresh) freshBuses.push(bus);
           });
           setActive(freshBuses);

@@ -12,17 +12,19 @@
 #define ROUTE_ID   "route_01"
 #define DRIVER_ID  "hw_device"
 
-// ── Smart Transmission Thresholds ─────────────────────────────────
-#define DISTANCE_THRESHOLD_M        10.0   // Minimum meters moved to trigger send
+// ── Unified Adaptive Transmission Thresholds ──────────────────────
+// Uses net coordinate displacement (Haversine) rather than rigid speed splits.
+// Works seamlessly for both walking tests (on foot) and live bus routes.
+#define DISTANCE_THRESHOLD_M        8.0    // Minimum meters moved to trigger send (handles walking & driving)
 #define HEADING_THRESHOLD_DEG       15.0   // Minimum heading change (degrees)
 #define SPEED_THRESHOLD_KMH         5.0    // Minimum speed change (km/h)
 
-// Tiered heartbeat: longer interval when stationary to reduce idle RTDB writes
+// Tiered heartbeat: 30s when moving, 5 min when parked in depot/terminus
 #define MAX_SILENT_INTERVAL_MOVING  30000  // 30 s when active/moving
 #define MAX_SILENT_INTERVAL_IDLE   300000  // 5 min when idle (stationary at stop/terminus)
 
-#define STOP_SPEED_KMH              2.0    // Below this = "stopped"
-#define MOVING_SPEED_KMH            5.0    // Above this = "moving" (jitter filter)
+#define STOP_SPEED_KMH              1.5    // Below this = "stopped"
+#define MOVING_SPEED_KMH            2.5    // Above this = "moving" (jitter filter)
 
 // ── HDOP Dual Threshold ───────────────────────────────────────────
 // HDOP < 2.5  → accurate, write normally
@@ -32,9 +34,9 @@
 #define HDOP_LOW_ACCURACY_THRESHOLD 2.5
 
 // ── Hysteresis for active/idle status transitions ─────────────────
-// Prevents rapid active↔idle oscillation at threshold boundary (e.g., 7–9 km/h)
-#define ACTIVE_SPEED_THRESHOLD_KMH  8.0    // Enter active only above this
-#define IDLE_SPEED_THRESHOLD_KMH    5.0    // Drop to idle only below this
+// Prevents rapid active↔idle oscillation at threshold boundary
+#define ACTIVE_SPEED_THRESHOLD_KMH  4.0    // Enter active state
+#define IDLE_SPEED_THRESHOLD_KMH    2.0    // Drop to idle state
 #define HYSTERESIS_READINGS         3      // Must hold state for N consecutive readings
 
 // ── WiFi reconnect interval ──────────────────────────────────────
@@ -134,6 +136,7 @@ void connectWiFi() {
 
     if (WiFi.status() == WL_CONNECTED) {
         Serial.printf("[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+        configTime(0, 0, "pool.ntp.org"); // Sync time for SSL certificate validation
     } else {
         Serial.println("[WiFi] Attempt failed. Will retry in 5s.");
     }
@@ -190,10 +193,15 @@ bool fetchCustomToken() {
 
 void initFirebase() {
     fbConfig.host = FIREBASE_HOST;
+    fbConfig.api_key = FIREBASE_API_KEY;
 
     if (!fetchCustomToken()) {
         Serial.println("[Auth] Failed to get initial token. Will retry in loop.");
     }
+
+    // Fix for ESP32 SSL memory limitation and "ssl engine closed" / BR_SSL_SENDAPP errors
+    fbData.setBSSLBufferSize(4096, 1024);
+    fbData.setResponseSize(4096);
 
     Firebase.begin(&fbConfig, &fbAuth);
     Firebase.reconnectNetwork(true);
