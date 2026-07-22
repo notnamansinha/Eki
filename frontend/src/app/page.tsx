@@ -42,12 +42,7 @@ export default function HomePage() {
 
 
       {/* ── HERO CONTENT ─── */}
-      <section className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 md:px-12 w-full max-w-5xl mx-auto">
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-8 bg-white/10 backdrop-blur-md border border-white/20 shadow-lg">
-          <span className="size-2 rounded-full bg-green-400 animate-pulse"></span>
-          <span className="text-xs font-bold uppercase tracking-widest text-white">Ahmedabad Transit Live</span>
-        </div>
-
+      <section className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 md:px-12 w-full max-w-5xl mx-auto pt-6">
         <h1 
           className="text-6xl md:text-[80px] lg:text-[96px] font-black leading-[1.05] text-white mb-6 w-full mx-auto"
           style={{
@@ -56,17 +51,17 @@ export default function HomePage() {
             WebkitTextStroke: '1px rgba(255,255,255,0.08)'
           }}
         >
-          Know exactly when<br className="hidden md:block" /> your bus arrives.
+          Seamless campus mobility<br className="hidden md:block" /> at your fingertips
         </h1>
 
         <p 
-          className="text-xl md:text-3xl text-white/90 text-balance max-w-[600px] mx-auto mb-12 font-medium"
+          className="text-xl md:text-3xl text-white/90 text-balance max-w-[650px] mx-auto mb-12 font-medium"
           style={{
             letterSpacing: '0.2px',
             textShadow: '0 2px 8px rgba(0,0,0,0.2)'
           }}
         >
-          Live GPS tracking with speed-aware ETAs. Open your phone, see your bus, and know exactly when to leave.
+          Live GNSS location tracking and intelligent arrival estimates for effortless travel
         </p>
 
         <div className="flex flex-col sm:flex-row w-full sm:w-auto gap-4">
