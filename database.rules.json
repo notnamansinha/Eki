@@ -4,7 +4,7 @@
       ".read": "auth != null",
       ".indexOn": ["routeId"],
       "$busKey": {
-        ".write": "auth != null && (root.child('users/' + auth.uid).child('role').val() === 'driver' || root.child('users/' + auth.uid).child('role').val() === 'admin')"
+        ".write": "auth != null && ((auth.token.role === 'driver' || auth.token.role === 'admin') || (auth.token.role === 'device' && auth.token.deviceId != null && newData.child('busId').val() === auth.token.deviceId && $busKey === auth.token.deviceId + '_' + newData.child('routeId').val()))"
       }
     },
     "messages": {
@@ -12,23 +12,23 @@
         "$sessionId": {
           ".read": "auth != null",
           "$msgId": {
-            ".write": "auth != null",
-            ".validate": "newData.child('senderId').val() === auth.uid && newData.child('text').val().length <= 500"
+            ".write": "auth != null && !data.exists()",
+            ".validate": "newData.hasChildren(['text', 'from', 'senderName', 'senderId', 'timestamp']) && newData.child('senderId').val() === auth.uid && newData.child('text').isString() && newData.child('text').val().length <= 500 && newData.child('from').isString() && newData.child('senderName').isString() && newData.child('senderName').val().length <= 100 && newData.child('timestamp').isNumber()"
           }
         }
       },
       "$busId": {
         ".read": "auth != null",
         "$msgId": {
-          ".write": "auth != null",
-          ".validate": "newData.child('senderId').val() === auth.uid && newData.child('text').val().length <= 500"
+          ".write": "auth != null && !data.exists()",
+          ".validate": "newData.hasChildren(['text', 'from', 'senderName', 'senderId', 'timestamp']) && newData.child('senderId').val() === auth.uid && newData.child('text').isString() && newData.child('text').val().length <= 500 && newData.child('from').isString() && newData.child('senderName').isString() && newData.child('senderName').val().length <= 100 && newData.child('timestamp').isNumber()"
         }
       }
     },
     "users": {
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid"
+        ".write": false
       }
     }
   }

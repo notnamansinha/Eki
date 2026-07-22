@@ -10,6 +10,7 @@
     "start": "node dist/server.js",
     "lint": "eslint src --ext .ts",
     "seed": "tsx src/seed.ts",
+    "sync-role-claims": "tsx src/syncRoleClaims.ts",
     "patch-stops": "tsx src/patch-stops.ts",
     "test": "vitest run"
   },

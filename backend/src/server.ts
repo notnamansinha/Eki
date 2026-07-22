@@ -89,7 +89,7 @@ app.use("/api/routes", writeLimiter, polylineRoutes);
 // Route planner — zero Google Maps API cost at runtime
 app.use("/api/plan", planRoutes);
 app.use("/api/routes-list", routesListRoutes);
-app.use("/api/devices", devicesRoutes);
+app.use("/api/devices", writeLimiter, devicesRoutes);
 
 // Socket.IO has been removed in favor of native Firebase streams.
 

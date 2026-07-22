@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { db, auth } from "../lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
+import { requireAdmin } from "../middleware/requireAdmin";
 
 const router = Router();
 
@@ -55,10 +56,11 @@ router.post("/auth", async (req: Request, res: Response): Promise<any> => {
           authenticated = timingSafeEqual(derivedKey, storedKey);
         }
       }
-    } else if (deviceData.secret) {
-      // Legacy plaintext comparison — remove once all devices are re-seeded
-      authenticated = deviceData.secret === secret;
     }
+
+    // Plaintext device credentials are deliberately rejected.
+      // Legacy plaintext comparison — remove once all devices are re-seeded
+    // Legacy plaintext values are not accepted.
 
     if (!authenticated) {
       return res.status(401).json({ error: "Invalid device credentials" });
@@ -89,14 +91,10 @@ router.post("/auth", async (req: Request, res: Response): Promise<any> => {
  * Body: { deviceId, adminSecret }
  * (Protected by ADMIN_API_SECRET — not exposed publicly)
  */
-router.post("/hash-secret", async (req: Request, res: Response): Promise<any> => {
-  const { deviceId, plainSecret, adminSecret } = req.body;
+router.post("/hash-secret", requireAdmin, async (req: Request, res: Response): Promise<any> => {
+  const { deviceId, plainSecret } = req.body;
 
-  if (!process.env.ADMIN_API_SECRET || adminSecret !== process.env.ADMIN_API_SECRET) {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-
-  if (typeof deviceId !== "string" || !plainSecret || typeof plainSecret !== "string") {
+  if (typeof deviceId !== "string" || !plainSecret || typeof plainSecret !== "string" || plainSecret.length > 512) {
     return res.status(400).json({ error: "Missing or invalid deviceId or plainSecret" });
   }
 
