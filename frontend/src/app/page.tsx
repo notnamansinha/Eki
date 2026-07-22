@@ -39,15 +39,15 @@ export default function HomePage() {
       {/* ── SUBTLE OVERLAY SHADOW ── */}
       <div className="absolute inset-0 bg-black/40 z-0 pointer-events-none" />
 
-      {/* ── TOP RIGHT UNIVERSITY LOGO ── */}
-      <header className="absolute top-0 right-0 z-20 p-3 md:p-5 flex items-center justify-end pointer-events-none">
+      {/* ── TOP LEFT UNIVERSITY LOGO ── */}
+      <header className="absolute top-6 left-6 md:top-8 md:left-8 z-20 flex items-center justify-start pointer-events-none">
         <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-none p-1 shadow-md shadow-black/50 flex items-center justify-center overflow-hidden">
           <Image 
             src="/uni-logo.webp" 
             alt="University Logo" 
-            width={180} 
-            height={70} 
-            className="h-10 md:h-14 w-auto object-contain block"
+            width={280} 
+            height={100} 
+            className="h-16 md:h-24 w-auto object-contain block"
             priority 
           />
         </div>
