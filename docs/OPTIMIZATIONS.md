@@ -51,11 +51,18 @@ When `PassengerPage` and `SettingsPanel` both mount, the listener count incremen
 
 Google Maps JavaScript API charges per map load ($7 per 1,000 loads) and heavily limits the Routes API.
 
-### 2.1 The `@vis.gl/react-google-maps` Tile Strategy
+### 2.1 The `@vis.gl/react-google-maps` Tile Strategy & Deferred Loading
 Rather than using raw `new google.maps.Map()`, we utilize the official React wrapper. By strictly controlling when the `APIProvider` mounts, we ensure the map script is only requested when absolutely necessary. 
 
-**The Lazy-Load MapProviders Wrapper:**
-The landing page (`/`) does NOT load the Google Maps SDK. It is completely deferred. Only when a user navigates to `/passenger` or `/admin` does `MapProviders.tsx` dynamically inject the SDK. This eliminates wasted map-loads from bounced traffic.
+**Deferred Tracking-Only MapProviders:**
+The Google Maps SDK is **completely unmounted** from the root layout and passenger layout (`PassengerLayout`). The map script is never loaded when visiting `/`, `/passenger` (home screen), `/feedback`, or during auth transitions.
+Only when a passenger selects a bus route and opens live tracking does [`PassengerTrackingMap.tsx`](file:///c:/Users/Naman/Sinha/Desktop/Eki/frontend/src/components/maps/PassengerTrackingMap.tsx) mount `<MapProviders>`, dynamically fetching the Google Maps JavaScript API payload on demand. This removes several megabytes of Google Maps JS evaluation from initial mobile page loads.
+
+### 2.2 Instant Auth Claim Resolution (Zero-Latency Startup)
+Previously, opening the web app required waiting for Firebase authentication **plus** a sequential Firestore read to determine user roles (`users/{uid}.role`), delaying page rendering.
+
+**The Solution:**
+Custom claims (`role: 'passenger' | 'driver' | 'admin'`) are embedded directly inside the Firebase session token. On startup, `useAuth` reads `firebaseUser.getIdTokenResult().claims.role` instantly from memory/indexedDB cache. Unauthenticated or passenger users experience zero delay and zero network round-trips for role verification.
 
 ### 2.2 Directions API Chunking & Rate-Limit Bypass
 The Google Maps Directions API imposes a strict 25-waypoint limit and throws `OVER_QUERY_LIMIT` when requests are fired simultaneously (e.g. tracking a fleet).

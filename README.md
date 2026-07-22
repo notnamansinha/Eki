@@ -25,7 +25,8 @@ Eki utilizes a highly optimized real-time architecture, maximizing Google Cloud 
 
 - **Hardware Telemetry (ESP-WROOM-32 & NEO-M8N):** Processes NMEA sentences via TinyGPS++ to extract live coordinates, speed, and heading.
 - **Cost-Optimized Sync:** Smart delta-transmission firmware calculates Haversine distance locally. It only sends HTTPS PATCH updates to Firebase RTDB when the vehicle moves >10m or turns >15°, reducing cloud writes by ~85%.
-- **Role-Based Access Control:** Next.js Server/Client component boundary validating Firebase Auth tokens against Firestore role hierarchies, securely routing traffic between Admin, Driver, and Passenger views.
+- **Immutable Custom Claims & Role-Based Access Control:** Next.js presentation boundaries and Firebase Security Rules enforce immutable `auth.token.role` claims issued via backend synchronization (`npm run sync-role-claims`).
+- **Mobile-First Deferred Map Loading:** Google Maps SDK loading is completely deferred from root and layout levels, dynamically mounting via `PassengerTrackingMap` only when a rider opens live tracking.
 - **Client Real-Time Singletons:** Global Module-Level Singletons heavily optimize Firestore snapshot listeners and RTDB listeners, ensuring that no matter how many React components mount, exactly 1 WebSocket connection is used per client.
 
 ```mermaid

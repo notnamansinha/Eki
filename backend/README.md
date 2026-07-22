@@ -40,6 +40,18 @@ To populate your Firestore database with the initial BRTS routes and stops:
 npm run seed
 ```
 
+## Role claims
+
+Realtime Database write access is authorized with Firebase custom claims rather
+than client-writable profile data. After changing a user's Firestore `role`, run:
+
+```bash
+npm run sync-role-claims
+```
+
+Affected users must refresh their Firebase ID token (sign out and back in) before
+the new role takes effect.
+
 ## Core Modules
 - `src/server.ts`: The main Express application and Socket.io setup.
 - `src/sockets/trackingGateway.ts`: The unified WebSocket handler for location updates and passenger requests.
