@@ -10,7 +10,7 @@
  */
 import { useState, useEffect } from "react";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db } from "@/lib/firebaseFirestore";
 
 export interface GlobalSettings {
   serviceStartTime: string;
@@ -51,14 +51,18 @@ function ensureListener() {
       _loading = false;
       notifyAll();
     },
-    (err: any) => {
-      console.warn("[Settings] Firestore read failed:", err.message);
+    (err: unknown) => {
+      const error = err as { code?: unknown; message?: unknown };
+      const code = typeof error.code === "string" ? error.code : "unknown";
+      if (code !== "permission-denied") {
+        console.warn("[Settings] Firestore read failed:", error.message);
+      }
       _loading = false;
       _unsubscribe = null;
       notifyAll();
       // Most optimized for mobile: Do not retry instantly. 
       // Do not retry at all on fatal permission errors to prevent battery-draining infinite loops.
-      if (_listenerCount > 0 && err.code !== 'permission-denied') {
+      if (_listenerCount > 0 && code !== 'permission-denied') {
         if (_timeoutId) clearTimeout(_timeoutId);
         _timeoutId = setTimeout(ensureListener, 5000);
       }

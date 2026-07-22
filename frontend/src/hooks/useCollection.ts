@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db } from "@/lib/firebaseFirestore";
 import { waitForAuth } from "@/lib/authState";
 
-interface CacheEntry<T> {
-  data: T[];
+interface CacheEntry {
+  data: unknown[];
   loading: boolean;
   listenerCount: number;
   unsubscribe: (() => void) | null;
@@ -12,7 +12,7 @@ interface CacheEntry<T> {
   timeoutId?: NodeJS.Timeout;
 }
 
-const queryCache = new Map<string, CacheEntry<any>>();
+const queryCache = new Map<string, CacheEntry>();
 
 export function useCollection<T>(collectionName: string) {
   const [, forceRender] = useState(0);

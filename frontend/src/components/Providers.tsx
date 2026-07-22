@@ -1,6 +1,7 @@
 "use client";
 
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
+import { AuthProvider } from "@/hooks/useAuth";
 
 /**
  * Root providers — intentionally lean.
@@ -15,5 +16,5 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   // so it is active across all surfaces (passenger, admin, driver)
   useAutoUpdate();
 
-  return <>{children}</>;
+  return <AuthProvider>{children}</AuthProvider>;
 }
