@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import PassengerMap from "@/components/maps/PassengerMap";
+import dynamic from "next/dynamic";
 import AccountTab from "@/components/passenger/AccountTab";
 import MessagingPanel from "@/components/shared/MessagingPanel";
 import FeedbackModal from "@/components/shared/FeedbackModal";
@@ -17,6 +17,11 @@ import PassengerBoardingView from "@/components/passenger/PassengerBoardingView"
 import { useSettings } from "@/hooks/useSettings";
 import { getDistanceMeters } from "@/lib/mapUtils";
 import { isLiveBusTimestamp } from "@/lib/liveBusFreshness";
+
+const PassengerMap = dynamic(() => import("@/components/maps/PassengerMap"), {
+  ssr: false,
+  loading: () => <div className="h-full bg-[var(--surface-0)]" role="status" aria-label="Loading map" />,
+});
 
 type ViewState = "home" | "tracking" | "profile";
 
@@ -231,10 +236,12 @@ export default function PassengerPage() {
 
         {/* Map layer — only present on tracking */}
         <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${currentView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-          <PassengerMap
-            targetStop={targetStop!}
-            route={activeRoute}
-          />
+          {currentView === "tracking" && (
+            <PassengerMap
+              targetStop={targetStop!}
+              route={activeRoute}
+            />
+          )}
         </div>
 
 

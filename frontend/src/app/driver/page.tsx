@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import TransmitterControls from "@/components/driver/TransmitterControls";
-import DriverMap from "@/components/maps/DriverMap";
 import DriverProfileTab from "@/components/driver/DriverProfileTab";
 import MessagingPanel from "@/components/shared/MessagingPanel";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,6 +15,11 @@ import { db, rtdb, auth } from "@/lib/firebase";
 import { collection, doc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
 import { ref, update, remove, onValue, onDisconnect } from "firebase/database";
 import { signInAnonymously } from "firebase/auth";
+
+const DriverMap = dynamic(() => import("@/components/maps/DriverMap"), {
+  ssr: false,
+  loading: () => <div className="h-full bg-[var(--surface-0)]" role="status" aria-label="Loading map" />,
+});
 
 type Tab = "map" | "profile";
 

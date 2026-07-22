@@ -1,10 +1,6 @@
 "use client";
 
-import RouteManagementPanel from "@/components/admin/RouteManagementPanel";
-import FleetManagementPanel from "@/components/admin/FleetManagementPanel";
-import DashboardPanel from "@/components/admin/DashboardPanel";
-import SettingsPanel from "@/components/admin/SettingsPanel";
-import RideHistoryPanel from "@/components/admin/RideHistoryPanel";
+import dynamic from "next/dynamic";
 import {
   MapPinned as MapIcon,
   UsersRound as UsersIcon,
@@ -15,6 +11,18 @@ import {
   Activity,
 } from "lucide-react";
 import { useState } from "react";
+
+const loadingPanel = () => (
+  <div className="h-full grid place-items-center text-white/50" role="status" aria-label="Loading panel">
+    Loading panel…
+  </div>
+);
+
+const RouteManagementPanel = dynamic(() => import("@/components/admin/RouteManagementPanel"), { ssr: false, loading: loadingPanel });
+const FleetManagementPanel = dynamic(() => import("@/components/admin/FleetManagementPanel"), { ssr: false, loading: loadingPanel });
+const DashboardPanel = dynamic(() => import("@/components/admin/DashboardPanel"), { ssr: false, loading: loadingPanel });
+const SettingsPanel = dynamic(() => import("@/components/admin/SettingsPanel"), { ssr: false, loading: loadingPanel });
+const RideHistoryPanel = dynamic(() => import("@/components/admin/RideHistoryPanel"), { ssr: false, loading: loadingPanel });
 
 type AdminTab = "dashboard" | "routes" | "fleet" | "personnel" | "history" | "settings";
 
@@ -55,7 +63,7 @@ export default function AdminPage() {
                 id={`admin-tab-${id}`}
                 onClick={() => setActiveTab(id)}
                 className={`relative flex items-center gap-2 px-4 py-3.5 text-sm font-semibold transition-all whitespace-nowrap ${
-                  activeTab === id ? "text-white" : "text-white/40 hover:text-white/70"
+                  activeTab === id ? "text-white" : "text-white/50 hover:text-white/70"
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
