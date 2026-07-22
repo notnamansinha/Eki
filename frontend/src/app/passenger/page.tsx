@@ -2,26 +2,26 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import dynamic from "next/dynamic";
-import AccountTab from "@/components/passenger/AccountTab";
-import MessagingPanel from "@/components/shared/MessagingPanel";
-import FeedbackModal from "@/components/shared/FeedbackModal";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag } from "lucide-react";
-import { rtdb, auth } from "@/lib/firebase";
+import { rtdb } from "@/lib/firebaseDatabase";
 import { ref, onValue } from "firebase/database";
 import { waitForAuth } from "@/lib/authState";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import RouteCarousel from "@/components/passenger/ui/RouteCarousel";
-import PassengerBoardingView from "@/components/passenger/PassengerBoardingView";
 import { useSettings } from "@/hooks/useSettings";
 import { getDistanceMeters } from "@/lib/mapUtils";
 import { isLiveBusTimestamp } from "@/lib/liveBusFreshness";
 
-const PassengerMap = dynamic(() => import("@/components/maps/PassengerMap"), {
+const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTrackingMap"), {
   ssr: false,
   loading: () => <div className="h-full bg-[var(--surface-0)]" role="status" aria-label="Loading map" />,
 });
+const AccountTab = dynamic(() => import("@/components/passenger/AccountTab"), { ssr: false });
+const MessagingPanel = dynamic(() => import("@/components/shared/MessagingPanel"), { ssr: false });
+const FeedbackModal = dynamic(() => import("@/components/shared/FeedbackModal"), { ssr: false });
+const PassengerBoardingView = dynamic(() => import("@/components/passenger/PassengerBoardingView"), { ssr: false });
 
 type ViewState = "home" | "tracking" | "profile";
 
@@ -60,7 +60,6 @@ export default function PassengerPage() {
   const trackingDriverIdRef = useRef<string | null>(null);
   const latestBusDriversRef = useRef<Map<string, string>>(new Map());
   const [endedMessage, setEndedMessage] = useState(false);
-  const [isBoarded, setIsBoarded] = useState(false);
 
   // Listen to Firebase Realtime Database for active buses.
   // signInAnonymously ensures auth != null, required by RTDB security rules.
@@ -76,7 +75,6 @@ export default function PassengerPage() {
 
       unsubscribe = onValue(busesRef, (snapshot) => {
         const data = snapshot.val();
-        console.log("[Passenger] RTDB activeBuses raw:", data ? Object.keys(data) : "null");
         const newBuses: ActiveBusData[] = [];
         const driverMap = new Map<string, string>();
 
@@ -86,7 +84,6 @@ export default function PassengerPage() {
             // Safety net: discard stale entries while RTDB cleanup catches up.
             const isFresh = isLiveBusTimestamp(bus.timestamp);
             if (!bus.routeId || !bus.busId || !isFresh) {
-              console.log("[Passenger] Skipped (stale/missing):", key, { routeId: bus.routeId, busId: bus.busId, isFresh });
               return;
             }
 
@@ -95,7 +92,6 @@ export default function PassengerPage() {
             const isActive = bus.tripState === "in_service" || bus.tripState === "pre_departure";
             // Only skip if explicitly marked offline by driver stop action
             const isOffline = bus.status === "offline" || bus.deviceState === "offline";
-            console.log("[Passenger] Bus check:", key, { tripState: bus.tripState, status: bus.status, deviceState: bus.deviceState, isActive, isOffline });
             if (!isActive || isOffline) return;
 
             newBuses.push(bus);
@@ -103,7 +99,6 @@ export default function PassengerPage() {
           });
         }
 
-        console.log("[Passenger] setActiveBuses count:", newBuses.length);
         latestBusDriversRef.current = driverMap;
         setActiveBuses(newBuses);
       }, (error) => {
@@ -158,24 +153,6 @@ export default function PassengerPage() {
   const activeBusOnRoute = activeBuses.find(b => b.routeId === selectedRouteId);
   const activeBusOnRouteId = activeBusOnRoute?.busId;
   const activeSessionId = activeBusOnRoute?.sessionId;
-
-  useEffect(() => {
-    setIsBoarded(false);
-  }, [activeSessionId]);
-
-  // Compute live ETA for NextBusCard
-  const liveEtaMinutes = useMemo(() => {
-    if (!activeBusOnRoute || !targetStop || !activeRoute?.stops) return undefined;
-    const busSpeedKmh = activeBusOnRoute.speed > 0 ? activeBusOnRoute.speed : 35;
-    const mPerMin = (busSpeedKmh * 1000) / 60;
-    const dist = getDistanceMeters(
-      { lat: activeBusOnRoute.lat, lng: activeBusOnRoute.lng },
-      { lat: targetStop.lat, lng: targetStop.lng }
-    ) * 1.3;
-    return Math.ceil(dist / mPerMin) + (activeBusOnRoute.delayMinutes || 0);
-  }, [activeBusOnRoute?.lat, activeBusOnRoute?.lng, activeBusOnRoute?.speed, activeBusOnRoute?.delayMinutes, targetStop?.lat, targetStop?.lng]);
-
-  const busMotionState = (activeBusOnRoute?.motionState || "uncertain") as "moving" | "stopped" | "uncertain";
 
   // Automatically return to home if tracking view is open but there are no buses and the ended message is gone
   useEffect(() => {
@@ -237,7 +214,7 @@ export default function PassengerPage() {
         {/* Map layer — only present on tracking */}
         <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${currentView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
           {currentView === "tracking" && (
-            <PassengerMap
+            <PassengerTrackingMap
               targetStop={targetStop!}
               route={activeRoute}
             />
@@ -330,7 +307,7 @@ export default function PassengerPage() {
                         route={activeRoute}
                         userId={user?.uid || "anonymous"}
                         userName={user?.displayName || "Rider"}
-                        onBoarded={() => setIsBoarded(true)}
+                        onBoarded={() => {}}
                       />
                     </div>
                   ) : (
@@ -423,7 +400,7 @@ export default function PassengerPage() {
 
         {/* ── PROFILE VIEW ── */}
         <div className={`absolute inset-0 z-30 flex flex-col transition-all duration-500 ${currentView === "profile" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-8 pointer-events-none"}`}>
-          <AccountTab />
+          {currentView === "profile" && <AccountTab />}
         </div>
       </div>
 

@@ -69,10 +69,9 @@ const NavInstructionBanner = React.memo(function NavInstructionBanner({
                  <p className="text-[10px] font-black tracking-widest text-white/20 uppercase leading-none">Instruction</p>
                  <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest leading-none">{distanceToTurn || "—"}</p>
               </div>
-              <p
-                className="text-white font-semibold text-sm tracking-tight leading-snug truncate"
-                dangerouslySetInnerHTML={{ __html: instruction || "Continue straightforward" }}
-              />
+              <p className="text-white font-semibold text-sm tracking-tight leading-snug truncate">
+                {(instruction || "Continue straightforward").replace(/<[^>]*>/g, "")}
+              </p>
             </div>
           </>
         )}
