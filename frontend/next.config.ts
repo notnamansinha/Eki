@@ -20,13 +20,14 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  productionBrowserSourceMaps: true,
   experimental: {
     optimizePackageImports: ["lucide-react", "recharts"],
   },
-  devIndicators: false as any,
+  devIndicators: false,
   env: {
     NEXT_PUBLIC_APP_VERSION: appVersion,
   },
 };
 
-export default nextConfig;
+export default nextConfig;

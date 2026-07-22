@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
-import { Navigation, Loader2, LogIn, Map } from "lucide-react";
+import { Loader2, LogIn } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -29,12 +28,12 @@ export default function HomePage() {
     <main className="relative h-dvh w-full overflow-hidden flex flex-col bg-black">
       {/* ── FULL SCREEN BACKGROUND IMAGE ── */}
       <Image 
-        src="/images/hero-background.png" 
+        src="/images/hero-background.jpg"
         alt="Eki Transit Background" 
         fill
         className="object-cover md:object-[center_30%] absolute inset-0 z-0"
         priority
-        quality={100}
+        quality={75}
       />
       {/* ── SUBTLE OVERLAY SHADOW ── */}
       <div className="absolute inset-0 bg-black/40 z-0 pointer-events-none" />
