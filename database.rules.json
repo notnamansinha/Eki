@@ -13,7 +13,7 @@
           ".read": "auth != null",
           "$msgId": {
             ".write": "auth != null && !data.exists()",
-            ".validate": "newData.hasChildren(['text', 'from', 'senderName', 'senderId', 'timestamp']) && newData.child('senderId').val() === auth.uid && newData.child('text').isString() && newData.child('text').val().length <= 500 && newData.child('from').isString() && newData.child('senderName').isString() && newData.child('senderName').val().length <= 100 && newData.child('timestamp').isNumber()"
+            ".validate": "newData.hasChildren(['text', 'from', 'senderName', 'senderId', 'timestamp']) && newData.child('senderId').val() === auth.uid && newData.child('text').isString() && newData.child('text').val().length <= 500 && newData.child('from').isString() && ((auth.token.role === 'driver' && newData.child('from').val() === 'driver') || (auth.token.role === 'admin' && newData.child('from').val() === 'driver') || ((auth.token.role === 'passenger' || auth.token.role === null) && newData.child('from').val() === 'passenger')) && newData.child('senderName').isString() && newData.child('senderName').val().length <= 100 && newData.child('timestamp').isNumber()"
           }
         }
       },
@@ -21,7 +21,7 @@
         ".read": "auth != null",
         "$msgId": {
           ".write": "auth != null && !data.exists()",
-          ".validate": "newData.hasChildren(['text', 'from', 'senderName', 'senderId', 'timestamp']) && newData.child('senderId').val() === auth.uid && newData.child('text').isString() && newData.child('text').val().length <= 500 && newData.child('from').isString() && newData.child('senderName').isString() && newData.child('senderName').val().length <= 100 && newData.child('timestamp').isNumber()"
+          ".validate": "newData.hasChildren(['text', 'from', 'senderName', 'senderId', 'timestamp']) && newData.child('senderId').val() === auth.uid && newData.child('text').isString() && newData.child('text').val().length <= 500 && newData.child('from').isString() && ((auth.token.role === 'driver' && newData.child('from').val() === 'driver') || (auth.token.role === 'admin' && newData.child('from').val() === 'driver') || ((auth.token.role === 'passenger' || auth.token.role === null) && newData.child('from').val() === 'passenger')) && newData.child('senderName').isString() && newData.child('senderName').val().length <= 100 && newData.child('timestamp').isNumber()"
         }
       }
     },

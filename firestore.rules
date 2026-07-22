@@ -9,12 +9,12 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isAuthenticated() && request.auth.token.role == 'admin';
     }
 
     function isDriver() {
       return isAuthenticated() && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'driver' || isAdmin()
+        request.auth.token.role == 'driver' || isAdmin()
       );
     }
 
@@ -77,10 +77,27 @@ service cloud.firestore {
     
     // ── Ride Sessions ──
     match /ride_sessions/{sessionId} {
-      allow read: if isAuthenticated();
+      // Passenger manifests contain personal travel information. Only trusted
+      // operator roles may read them; passengers can update their own entry.
+      allow read: if isDriver();
       allow create: if isDriver();
-      allow update: if isDriver() || isAdmin() || 
-        (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['passengers']));
+      allow update: if isDriver() ||
+        (
+          isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['passengers']) &&
+          request.resource.data.passengers is map &&
+          resource.data.passengers is map &&
+          request.resource.data.passengers.diff(resource.data.passengers).affectedKeys().hasOnly([request.auth.uid]) &&
+          request.resource.data.passengers[request.auth.uid].userId == request.auth.uid &&
+          request.resource.data.passengers[request.auth.uid].userName is string &&
+          request.resource.data.passengers[request.auth.uid].userName.size() <= 100 &&
+          request.resource.data.passengers[request.auth.uid].boardingStopId is string &&
+          (
+            request.resource.data.passengers[request.auth.uid].alightingStopId == null ||
+            request.resource.data.passengers[request.auth.uid].alightingStopId is string
+          ) &&
+          request.resource.data.passengers[request.auth.uid].joinedAt is number
+        );
     }
     
     // ── Drivers collection ──
