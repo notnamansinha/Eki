@@ -16,6 +16,17 @@ export const metadata: Metadata = {
   description:
     "Real-time bus tracking for Ahmedabad. Live GPS, speed-aware ETAs, and driver-rider communication.",
   keywords: ["Ahmedabad", "bus tracking", "live GPS", "BRTS", "transit", "Eki"],
+  metadataBase: new URL("https://bustrack-be165.web.app"),
+  alternates: { canonical: "/" },
+  robots: { index: true, follow: true },
+  openGraph: {
+    type: "website",
+    url: "/",
+    title: "Eki Live Transit Tracking",
+    description: "Real-time bus tracking for Ahmedabad.",
+    siteName: "Eki Transit",
+  },
+  twitter: { card: "summary" },
 };
 
 export default function RootLayout({
