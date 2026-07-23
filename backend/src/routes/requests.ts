@@ -1,11 +1,9 @@
 import { Router } from "express";
 import { db } from "../lib/firebaseAdmin";
 import { requireAdmin } from "../middleware/requireAdmin";
-import type { PassengerRequest } from "../types";
 
 const router = Router();
 
-const ALLOWED_REQUEST_TYPES = new Set<string>(["pickup", "dropoff"]);
 const ALLOWED_REQUEST_STATUSES = new Set<string>(["pending", "accepted", "completed", "cancelled"]);
 
 function isNonEmptyString(val: unknown, maxLen = 256): val is string {
@@ -41,7 +39,7 @@ router.patch("/:id", requireAdmin, async (req, res) => {
     }
     await docRef.update({ status });
     res.json({ id, ...doc.data(), status });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to update request" });
   }
 });
@@ -62,7 +60,7 @@ router.delete("/:id", requireAdmin, async (req, res) => {
     }
     await docRef.delete();
     res.json({ message: "Deleted successfully" });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to delete request" });
   }
 });

@@ -3,13 +3,6 @@ import { startETATracking, stopETATracking, haversineMeters } from "../lib/etaSe
 import type { TripState, MotionState } from "../types";
 
 interface RouteStop { id: string; lat: number; lng: number; name: string; }
-interface BusTripContext {
-  stops: RouteStop[];
-  tripState: TripState;
-  currentStopIndex: number;
-  latestLocation?: { lat: number; lng: number };
-}
-
 const latestLocations = new Map<string, {lat: number, lng: number}>();
 const routeStopsCache = new Map<string, RouteStop[]>();
 const routeDestCache = new Map<string, {lat: number, lng: number}>();
@@ -17,6 +10,7 @@ const activeETATracking = new Map<string, string>();
 const completedTimeouts = new Map<string, NodeJS.Timeout>();
 
 const STOP_GEOFENCE_M = 20;
+const STALE_BUS_MS = Math.max(90_000, Number.parseInt(process.env.BUS_STALE_MS || "300000", 10));
 
 async function ensureRouteLoaded(routeId: string): Promise<RouteStop[]> {
   if (routeStopsCache.has(routeId)) return routeStopsCache.get(routeId)!;
@@ -203,4 +197,23 @@ export function startTripStateEngine() {
       completedTimeouts.delete(data.busId);
     }
   });
+
+  // Hardware trackers cannot register an RTDB onDisconnect handler. Sweep only
+  // nodes whose server timestamp has exceeded the client freshness horizon.
+  setInterval(async () => {
+    try {
+      const snapshot = await busesRef.once("value");
+      const now = Date.now();
+      const removals: Promise<unknown>[] = [];
+      snapshot.forEach((child) => {
+        const data = child.val() as { timestamp?: unknown } | null;
+        if (typeof data?.timestamp === "number" && now - data.timestamp > STALE_BUS_MS) {
+          removals.push(child.ref.remove());
+        }
+      });
+      await Promise.all(removals);
+    } catch (error) {
+      console.error("[TripState] stale bus sweep failed:", error);
+    }
+  }, STALE_BUS_MS);
 }

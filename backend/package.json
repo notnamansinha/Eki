@@ -6,20 +6,21 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "prebuild": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsc",
     "start": "node dist/server.js",
     "lint": "eslint src --ext .ts",
     "seed": "tsx src/seed.ts",
     "sync-role-claims": "tsx src/syncRoleClaims.ts",
     "patch-stops": "tsx src/patch-stops.ts",
-    "test": "vitest run"
+    "test": "vitest run src"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "express-rate-limit": "^8.3.2",
-    "firebase-admin": "^13.7.0",
+    "express": "^4.22.2",
+    "express-rate-limit": "^8.6.0",
+    "firebase-admin": "^14.2.0",
     "helmet": "^8.1.0"
   },
   "devDependencies": {
@@ -31,6 +32,6 @@
     "@types/node": "^20.14.0",
     "tsx": "^4.7.0",
     "typescript": "^5.4.5",
-    "vitest": "^1.6.0"
+    "vitest": "^4.1.10"
   }
 }

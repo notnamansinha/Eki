@@ -16,7 +16,7 @@ router.get("/", requireAuth, async (_req, res) => {
     const snapshot = await rtdb.ref("activeBuses").once("value");
     const data = snapshot.val() || {};
     res.json({ buses: Object.values(data) });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to fetch active buses" });
   }
 });
@@ -39,7 +39,7 @@ router.get("/:busId", requireAuth, async (req, res) => {
     } else {
       res.status(404).json({ error: "Bus not found or inactive" });
     }
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to fetch bus" });
   }
 });
@@ -74,7 +74,7 @@ router.patch("/:busId", requireAdmin, async (req, res) => {
     await rtdb.ref(`activeBuses/${nodeKey}`).update({ tripState });
     
     res.json({ ...(Object.values(data)[0] as object), tripState });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to update bus trip state" });
   }
 });

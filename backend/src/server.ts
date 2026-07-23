@@ -22,7 +22,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { startTripStateEngine } from "./services/tripStateEngine";
 import { preloadRoutePolylines } from "./lib/etaService";
-import { auth, db } from "./lib/firebaseAdmin";
+import { db } from "./lib/firebaseAdmin";
 import busRoutes from "./routes/buses";
 import analyticsRoutes from "./routes/analytics";
 import requestRoutes from "./routes/requests";
@@ -32,9 +32,15 @@ import routesListRoutes from "./routes/routesList";
 import devicesRoutes from "./routes/devices";
 
 const PORT = process.env.PORT || 4000;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || "http://localhost:3000";
+const configuredCorsOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map(origin => origin.trim())
+  .filter(Boolean);
 
 const app = express();
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
 const httpServer = http.createServer(app);
 
 // ── Security Middleware ───────────────────────────────────────────────────────
@@ -73,12 +79,19 @@ const writeLimiter = rateLimit({
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const CORS_ORIGINS = [
-  CORS_ORIGIN,
+  ...configuredCorsOrigins,
   "https://bustrack-be165.web.app",
   "https://bustrack-be165.firebaseapp.com",
-  "http://localhost:3000",
+  ...(process.env.NODE_ENV === "production" ? [] : ["http://localhost:3000"]),
 ];
-app.use(cors({ origin: CORS_ORIGINS, credentials: true }));
+app.use(cors({ origin: CORS_ORIGINS, credentials: false }));
+app.use((req, res, next) => {
+  if (req.method === "TRACE" || req.method === "CONNECT") {
+    res.status(405).json({ error: "Method not allowed." });
+    return;
+  }
+  next();
+});
 app.use(express.json({ limit: "16kb" })); // Prevent request body size attacks
 
 // ── REST Routes ───────────────────────────────────────────────────────────────
