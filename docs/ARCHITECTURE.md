@@ -58,7 +58,7 @@ Unlike legacy client-writable database roles, role authorization in Eki is issue
 * **Device:** Hardware units are issued temporary custom tokens containing `role: "device"` and `deviceId: "<hardwareId>"`.
 
 ### 2.2 Global AuthProvider Singleton
-The frontend uses a top-level `<AuthProvider>` in `Providers.tsx` ([useAuth.ts](file:///c:/Users/Naman/Sinha/Desktop/Eki/frontend/src/hooks/useAuth.ts)) that maintains a single `onAuthStateChanged` listener across all route changes:
+The frontend uses a top-level `<AuthProvider>` in `Providers.tsx` ([useAuth.ts](../frontend/src/hooks/useAuth.ts)) that maintains a single `onAuthStateChanged` listener across all route changes:
 1. On initial mount or page refresh, `useAuth` inspects `firebaseUser.getIdTokenResult().claims.role`.
 2. If custom claims exist in the active session token, the role is immediately initialized without waiting for a Firestore read.
 3. If no custom claim is present (new or legacy users), it falls back to a single read of `users/{uid}` in Firestore.

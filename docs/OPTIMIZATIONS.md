@@ -56,7 +56,7 @@ Rather than using raw `new google.maps.Map()`, we utilize the official React wra
 
 **Deferred Tracking-Only MapProviders:**
 The Google Maps SDK is **completely unmounted** from the root layout and passenger layout (`PassengerLayout`). The map script is never loaded when visiting `/`, `/passenger` (home screen), `/feedback`, or during auth transitions.
-Only when a passenger selects a bus route and opens live tracking does [`PassengerTrackingMap.tsx`](file:///c:/Users/Naman/Sinha/Desktop/Eki/frontend/src/components/maps/PassengerTrackingMap.tsx) mount `<MapProviders>`, dynamically fetching the Google Maps JavaScript API payload on demand. This removes several megabytes of Google Maps JS evaluation from initial mobile page loads.
+Only when a passenger selects a bus route and opens live tracking does [`PassengerTrackingMap.tsx`](../frontend/src/components/maps/PassengerTrackingMap.tsx) mount `<MapProviders>`, dynamically fetching the Google Maps JavaScript API payload on demand. This removes several megabytes of Google Maps JS evaluation from initial mobile page loads.
 
 ### 2.2 Instant Auth Claim Resolution (Zero-Latency Startup)
 Previously, opening the web app required waiting for Firebase authentication **plus** a sequential Firestore read to determine user roles (`users/{uid}.role`), delaying page rendering.
