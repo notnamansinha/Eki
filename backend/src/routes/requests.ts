@@ -10,8 +10,8 @@ function isNonEmptyString(val: unknown, maxLen = 256): val is string {
   return typeof val === "string" && val.trim().length > 0 && val.length <= maxLen;
 }
 
-// Passenger requests must be created exclusively via the authenticated WebSocket (passenger:request)
-// which strictly enforces Firebase UID verification (ARCH-04) and rate limiting (ARCH-05).
+// Passenger requests are created directly through the constrained Firestore
+// rule; this API exposes only administrator lifecycle overrides.
 
 
 // Admin patch completion override — SEC-10 fix: requires Firebase admin token

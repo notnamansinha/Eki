@@ -24,11 +24,6 @@ NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_browser_key_here
 
 # Backend URLs
 NEXT_PUBLIC_BACKEND_URL=http://localhost:4000
-NEXT_PUBLIC_SOCKET_URL=http://localhost:4000
-
-# Server-only secrets
-BACKEND_URL=http://localhost:4000
-ADMIN_API_SECRET=your_long_random_secret_here
 ```
 
 ## Running the Application

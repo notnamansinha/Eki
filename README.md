@@ -43,8 +43,7 @@ graph TD
     end
 
     subgraph Cloud Container [Backend Server]
-        Express["Node.js + Express"]
-        SocketIO["Socket.io Gateway"]
+    Express["Node.js + Express REST API"]
         RoutesAPI["Google Maps Routes API v2"]
     end
 
@@ -67,7 +66,7 @@ graph TD
     RTDB -->|Data Sync Stream| A
 
     %% Backend Connections
-    Frontend -->|REST and WS| Express
+    Frontend -->|Authenticated REST| Express
     Express -->|Validates/Updates| FS
     Express -->|Computes Polylines| RoutesAPI
 ```
@@ -79,7 +78,7 @@ graph TD
 | Layer | Technologies Used |
 | --- | --- |
 | **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS, Google Maps (@vis.gl) |
-| **Backend** | Node.js, Express 4, Socket.io 4, TypeScript, Docker |
+| **Backend** | Node.js, Express 4, TypeScript, Docker |
 | **Hardware** | ESP-WROOM-32, NEO-M8N GNSS, PlatformIO, ArduinoJson |
 | **Data & Auth** | Firestore, Firebase Realtime Database, Firebase Auth, Firebase Hosting |
 | **Maps & GIS** | Google Maps JS API (Client), Routes API v2 (Server) |
@@ -92,7 +91,7 @@ This repository is structured as a monorepo, separating the distinct operational
 
 ```text
 Eki/
-├── backend/       # Node.js server (WebSocket gateway, Routes API, secure ops)
+├── backend/       # Node.js server (Routes API and secure operations)
 ├── docs/          # Deep-dive architecture, zero-budget optimizations, and hardware
 ├── frontend/      # Next.js web applications (Passenger, Driver, Admin portals)
 ├── hardware/      # PlatformIO/C++ firmware for ESP32 GNSS telemetry modules

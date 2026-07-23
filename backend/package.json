@@ -2,7 +2,7 @@
   "name": "bustrack-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "BusTrack real-time backend server with Express and Socket.io",
+  "description": "BusTrack backend with Express, Firebase Admin, and route operations",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",

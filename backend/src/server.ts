@@ -3,9 +3,8 @@
  *
  * Responsibilities:
  * - Initialize Express app with middleware (CORS, JSON, Helmet, rate-limit, dotenv)
- * - Create HTTP server and attach Socket.io
- * - Mount REST API route groups (/api/buses, /api/analytics, /api/requests)
- * - Initialize the tracking Socket.io gateway with Firebase token auth
+ * - Create the HTTP server and mount protected REST API route groups
+ * - Initialize Firebase-backed trip-state and ETA services
  * - Start the server and listen on PORT from .env
  *
  * Security notes:

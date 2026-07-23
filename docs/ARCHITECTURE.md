@@ -23,7 +23,7 @@ graph TD
 
     subgraph Cloud Container [Backend Server - Cloud Run/Render]
         Express[Node.js + Express]
-        SocketIO[Socket.io Gateway]
+        API[Authenticated REST API]
         RoutesAPI["Google Maps<br/>Routes API v2"]
     end
 
@@ -40,8 +40,8 @@ graph TD
     RTDB -->|Listen and Override| A
 
     %% Backend Connections
-    Frontend -->|REST and WS| Express
-    Express -->|REST and WS| Frontend
+    Frontend -->|Authenticated REST| Express
+    Express -->|Authenticated REST| Frontend
     Express -->|Validates/Updates| FS
     Express -->|Computes Polylines| RoutesAPI
 ```
@@ -177,4 +177,4 @@ The Node.js backend (located in the `/backend` directory) includes a `Dockerfile
 
 * **Heavy Computation:** Interacting with the Google Maps Routes API v2 to compute complex polylines and ETAs (Cost optimization).
 * **Security & Validation:** Hiding sensitive Server API keys and enforcing complex business logic.
-* **WebSocket Management:** Running a Socket.io gateway for older legacy interactions.
+* **Live-data management:** Firebase RTDB/Firestore listeners carry live updates; the backend does not run a Socket.IO gateway.
