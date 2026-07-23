@@ -12,12 +12,6 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.token.role == 'admin';
     }
 
-    function isDriver() {
-      return isAuthenticated() && (
-        request.auth.token.role == 'driver' || isAdmin()
-      );
-    }
-
     function isOwner(uid) {
       return isAuthenticated() && request.auth.uid == uid;
     }
@@ -29,8 +23,25 @@ service cloud.firestore {
     function feedbackCooldownExpired(uid) {
       let cooldownDoc = get(feedbackCooldownDoc(uid));
       return !exists(feedbackCooldownDoc(uid)) ||
-             !('previousSubmittedAt' in cooldownDoc.data) ||
-             request.time - cooldownDoc.data.previousSubmittedAt >= duration.value(24, 'h');
+             !('lastSubmittedAt' in cooldownDoc.data) ||
+             request.time - cooldownDoc.data.lastSubmittedAt >= duration.value(24, 'h');
+    }
+
+    function sessionDoc(sessionId) {
+      return get(/databases/$(database)/documents/ride_sessions/$(sessionId));
+    }
+
+    function isSessionOperator(sessionId) {
+      return isAdmin() ||
+        (isAuthenticated() && request.auth.token.role == 'driver' &&
+         request.auth.token.driverId == sessionDoc(sessionId).data.driverId);
+    }
+
+    function isSessionPassenger(sessionId) {
+      let session = sessionDoc(sessionId);
+      return isAuthenticated() && session.data.passengers is map &&
+        request.auth.uid in session.data.passengers &&
+        session.data.passengers[request.auth.uid].userId == request.auth.uid;
     }
 
     // ── User Profiles — Store User Data & Roles ──
@@ -38,7 +49,16 @@ service cloud.firestore {
       // Users can read their own profile
       allow read: if isOwner(uid);
       // New users can only insert themselves as a 'passenger'
-      allow create: if isOwner(uid) && request.resource.data.role == 'passenger';
+      allow create: if isOwner(uid) &&
+        request.resource.data.keys().hasOnly([
+          'uid', 'email', 'displayName', 'photoURL', 'role', 'createdAt'
+        ]) &&
+        request.resource.data.uid == uid &&
+        request.resource.data.email is string && request.resource.data.email.size() <= 320 &&
+        request.resource.data.displayName is string && request.resource.data.displayName.size() <= 100 &&
+        request.resource.data.photoURL is string && request.resource.data.photoURL.size() <= 2048 &&
+        request.resource.data.role == 'passenger' &&
+        request.resource.data.createdAt is number;
       // Nobody can update/delete their own role (Forces Admin to do it manually in backend)
       allow update, delete: if false;
     }
@@ -52,21 +72,36 @@ service cloud.firestore {
     // ── Bus locations — PUBLIC read, write by drivers/admins ──
     match /bus_locations/{busId} {
       allow read: if true;
-      allow write: if isDriver();
+      allow write: if isAdmin() ||
+        (isAuthenticated() &&
+         request.auth.token.role == 'driver' &&
+         request.auth.token.assignedBusId == busId);
     }
 
     // ── Passenger requests — own requests for passengers, full access for drivers/admins ──
     match /passenger_requests/{requestId} {
       // Anyone authenticated can read their own requests (admins/drivers see all)
-      allow read: if isAdmin() || isDriver() ||
+      allow read: if isAdmin() ||
+        (isAuthenticated() && request.auth.token.role == 'driver' &&
+         resource.data.busId == request.auth.token.assignedBusId) ||
         (isAuthenticated() && resource.data.passengerId == request.auth.uid);
       // Passengers can only create requests for themselves
       allow create: if isAuthenticated() &&
+        requestId == request.auth.uid &&
+        request.resource.data.keys().hasOnly([
+          'passengerId', 'busId', 'type', 'lat', 'lng', 'status', 'createdAt'
+        ]) &&
         request.resource.data.passengerId == request.auth.uid &&
-        request.resource.data.lat is number &&
-        request.resource.data.lng is number;
+        request.resource.data.busId is string && request.resource.data.busId.size() <= 128 &&
+        request.resource.data.type in ['pickup', 'dropoff'] &&
+        request.resource.data.lat is number && request.resource.data.lat >= -90 && request.resource.data.lat <= 90 &&
+        request.resource.data.lng is number && request.resource.data.lng >= -180 && request.resource.data.lng <= 180 &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.createdAt == request.time;
       // Only admins and drivers can update/delete requests
-      allow update, delete: if isAdmin() || isDriver();
+      allow update, delete: if isAdmin() ||
+        (isAuthenticated() && request.auth.token.role == 'driver' &&
+         resource.data.busId == request.auth.token.assignedBusId);
     }
     
     // ── Buses collection ──
@@ -79,15 +114,43 @@ service cloud.firestore {
     match /ride_sessions/{sessionId} {
       // Passenger manifests contain personal travel information. Only trusted
       // operator roles may read them; passengers can update their own entry.
-      allow read: if isDriver();
-      allow create: if isDriver();
-      allow update: if isDriver() ||
+      allow read: if isSessionOperator(sessionId);
+      allow create: if isAuthenticated() &&
+        request.auth.token.role == 'driver' &&
+        request.resource.data.keys().hasOnly([
+          'id', 'busId', 'driverId', 'routeId', 'startTime', 'status', 'passengers'
+        ]) &&
+        request.resource.data.id == sessionId &&
+        request.resource.data.driverId == request.auth.token.driverId &&
+        request.resource.data.busId == request.auth.token.assignedBusId &&
+        request.resource.data.routeId is string &&
+        request.resource.data.routeId.size() <= 128 &&
+        request.resource.data.startTime is number &&
+        request.resource.data.status == 'active' &&
+        request.resource.data.passengers is map &&
+        request.resource.data.passengers.size() == 0;
+      allow update: if isAdmin() ||
+        (
+          isSessionOperator(sessionId) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'endTime', 'stopsReached']) &&
+          request.resource.data.busId == resource.data.busId &&
+          request.resource.data.driverId == resource.data.driverId &&
+          request.resource.data.routeId == resource.data.routeId &&
+          request.resource.data.status in ['active', 'completed'] &&
+          (!('endTime' in request.resource.data) || request.resource.data.endTime is number) &&
+          (!('stopsReached' in request.resource.data) ||
+            (request.resource.data.stopsReached is list &&
+             request.resource.data.stopsReached.size() <= 1000))
+        ) ||
         (
           isAuthenticated() &&
+          resource.data.status == 'active' &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['passengers']) &&
           request.resource.data.passengers is map &&
           resource.data.passengers is map &&
           request.resource.data.passengers.diff(resource.data.passengers).affectedKeys().hasOnly([request.auth.uid]) &&
+          request.resource.data.passengers[request.auth.uid].keys().hasOnly(['userId', 'userName', 'boardingStopId', 'alightingStopId', 'joinedAt']) &&
           request.resource.data.passengers[request.auth.uid].userId == request.auth.uid &&
           request.resource.data.passengers[request.auth.uid].userName is string &&
           request.resource.data.passengers[request.auth.uid].userName.size() <= 100 &&
@@ -96,13 +159,31 @@ service cloud.firestore {
             request.resource.data.passengers[request.auth.uid].alightingStopId == null ||
             request.resource.data.passengers[request.auth.uid].alightingStopId is string
           ) &&
-          request.resource.data.passengers[request.auth.uid].joinedAt is number
+          request.resource.data.passengers[request.auth.uid].joinedAt == request.time
         );
+
+      match /messages/{messageId} {
+        allow read: if isSessionOperator(sessionId) || isSessionPassenger(sessionId);
+        allow create: if (isSessionOperator(sessionId) || isSessionPassenger(sessionId)) &&
+          request.resource.data.keys().hasOnly(['text', 'from', 'senderName', 'senderId', 'timestamp']) &&
+          request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.text is string && request.resource.data.text.size() <= 500 &&
+          request.resource.data.senderName is string && request.resource.data.senderName.size() <= 100 &&
+          (
+            (isSessionOperator(sessionId) && request.resource.data.from == 'driver') ||
+            (isSessionPassenger(sessionId) && request.resource.data.from == 'passenger')
+          ) &&
+          request.resource.data.timestamp == request.time;
+        allow update, delete: if false;
+      }
     }
     
     // ── Drivers collection ──
     match /drivers/{driverId} {
-      allow read: if true;
+      allow read: if isAdmin() ||
+        (isAuthenticated() &&
+         request.auth.token.role == 'driver' &&
+         resource.data.authUid == request.auth.uid);
       allow create, update, delete: if isAdmin();
     }
 
@@ -156,17 +237,10 @@ service cloud.firestore {
         request.resource.data.userId == uid &&
         request.resource.data.lastSubmittedAt == request.time;
       allow update: if isOwner(uid) &&
-        request.resource.data.keys().hasOnly(['userId', 'lastSubmittedAt', 'previousSubmittedAt']) &&
+        request.resource.data.keys().hasOnly(['userId', 'lastSubmittedAt']) &&
         request.resource.data.userId == uid &&
         request.resource.data.lastSubmittedAt == request.time &&
-        (
-          !('lastSubmittedAt' in resource.data) ||
-          request.resource.data.previousSubmittedAt == resource.data.lastSubmittedAt
-        ) &&
-        (
-          !('previousSubmittedAt' in resource.data) ||
-          request.time - resource.data.previousSubmittedAt >= duration.value(24, 'h')
-        );
+        request.time - resource.data.lastSubmittedAt >= duration.value(24, 'h');
       allow delete: if false;
     }
 
