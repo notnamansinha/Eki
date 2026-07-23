@@ -9,7 +9,6 @@ import { rtdb } from "@/lib/firebaseDatabase";
 import { ref, onValue } from "firebase/database";
 import { waitForAuth } from "@/lib/authState";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
-import RouteCarousel from "@/components/passenger/ui/RouteCarousel";
 import { useSettings } from "@/hooks/useSettings";
 import { hasValidBusCoordinates, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
 
@@ -17,6 +16,7 @@ const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTr
   ssr: false,
   loading: () => <div className="h-full bg-[var(--surface-0)]" role="status" aria-label="Loading map" />,
 });
+const RouteCarousel = dynamic(() => import("@/components/passenger/ui/RouteCarousel"), { ssr: false });
 const AccountTab = dynamic(() => import("@/components/passenger/AccountTab"), { ssr: false });
 const MessagingPanel = dynamic(() => import("@/components/shared/MessagingPanel"), { ssr: false });
 const FeedbackModal = dynamic(() => import("@/components/shared/FeedbackModal"), { ssr: false });

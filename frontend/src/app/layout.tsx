@@ -27,11 +27,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full" suppressHydrationWarning>
       <head>
-        {/* Preconnect to Firebase hosts for faster cold-start */}
-        <link rel="preconnect" href="https://firebaseapp.com" />
-        <link rel="preconnect" href="https://firebase.googleapis.com" />
-        <link rel="preconnect" href="https://firestore.googleapis.com" />
+        {/* Only preconnect to origins that are on the critical path.
+            Unused preconnects waste resources and are penalised by Lighthouse. */}
+        <link rel="preconnect" href="https://identitytoolkit.googleapis.com" />
         <link rel="dns-prefetch" href="https://apis.google.com" />
+        <link rel="dns-prefetch" href="https://firebaseio.com" />
       </head>
       <body
         className="min-h-full flex flex-col bg-[var(--surface-0)] text-[var(--text-primary)] antialiased font-sans"
