@@ -56,18 +56,11 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       const activeBusId = busId || "test_bus_1";
       const busRef = ref(rtdb, `activeBuses/${activeBusId}_${routeId}`);
       update(busRef, {
-        busId: activeBusId,
-        routeId,
-        lat: driverLocation?.lat || route.stops?.[currentStopIndex]?.lat || 23.03,
-        lng: driverLocation?.lng || route.stops?.[currentStopIndex]?.lng || 72.55,
         delayMinutes: next,
         timestamp: now,
-        tripState: "in_service",
-        status: "active",
-        deviceState: "online"
       }).catch(console.error);
     });
-  }, [busId, currentStopIndex, delayMinutes, driverLocation, route.id, route.stops, selectedRouteIds]);
+  }, [busId, delayMinutes, route.id, selectedRouteIds]);
 
   const handleManualNextStop = useCallback(() => {
     lastManualSkipRef.current = Date.now();

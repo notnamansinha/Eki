@@ -8,9 +8,38 @@ const routeStopsCache = new Map<string, RouteStop[]>();
 const routeDestCache = new Map<string, {lat: number, lng: number}>();
 const activeETATracking = new Map<string, string>();
 const completedTimeouts = new Map<string, NodeJS.Timeout>();
+const persistedFleetState = new Map<string, string>();
 
 const STOP_GEOFENCE_M = 20;
 const STALE_BUS_MS = Math.max(90_000, Number.parseInt(process.env.BUS_STALE_MS || "300000", 10));
+
+/**
+ * Firestore is the durable fleet-state store, not a second telemetry stream.
+ * Persist only lifecycle changes; coordinates, speed and heartbeat data remain
+ * in RTDB, which prevents a Firestore write for every GNSS update.
+ */
+function persistFleetState(data: Record<string, unknown>, lastSeen: string): void {
+  const busId = typeof data.busId === "string" ? data.busId : null;
+  if (!busId) return;
+
+  const state = {
+    routeId: typeof data.routeId === "string" ? data.routeId : null,
+    driverId: typeof data.driverId === "string" ? data.driverId : null,
+    status: typeof data.status === "string" ? data.status : "active",
+    deviceState: typeof data.deviceState === "string" ? data.deviceState : "online",
+    tripState: typeof data.tripState === "string" ? data.tripState : "pre_departure",
+  };
+  const fingerprint = JSON.stringify(state);
+  if (persistedFleetState.get(busId) === fingerprint) return;
+
+  persistedFleetState.set(busId, fingerprint);
+  db.collection("bus_locations").doc(busId).set({ ...state, lastSeen }, { merge: true })
+    .catch((error) => {
+      // Permit a retry on the next state transition if the durable write fails.
+      persistedFleetState.delete(busId);
+      console.warn("[TripState] Failed to persist fleet lifecycle state:", error);
+    });
+}
 
 async function ensureRouteLoaded(routeId: string): Promise<RouteStop[]> {
   if (routeStopsCache.has(routeId)) return routeStopsCache.get(routeId)!;
@@ -80,6 +109,7 @@ export function startTripStateEngine() {
     if (data.lat != null && data.lng != null) {
       latestLocations.set(data.busId, { lat: data.lat, lng: data.lng });
     }
+    persistFleetState(data, new Date().toISOString());
     
     await ensureRouteLoaded(data.routeId);
     
@@ -111,7 +141,7 @@ export function startTripStateEngine() {
         clearTimeout(completedTimeouts.get(data.busId));
         completedTimeouts.delete(data.busId);
       }
-      db.collection("bus_locations").doc(data.busId).set({ deviceState: "offline", lastSeen: new Date().toISOString() }, { merge: true }).catch(console.warn);
+      persistFleetState({ ...data, deviceState: "offline", status: "offline" }, new Date().toISOString());
       snapshot.ref.remove().catch(console.error);
       return;
     }
@@ -173,15 +203,13 @@ export function startTripStateEngine() {
         activeETATracking.delete(data.busId);
         stopETATracking(data.busId);
         completedTimeouts.delete(data.busId);
-        db.collection("bus_locations").doc(data.busId).set({ deviceState: "offline", tripState: "completed", lastSeen: completionTimestamp }, { merge: true }).catch(console.warn);
+        persistFleetState({ ...data, deviceState: "offline", status: "offline", tripState: "completed" }, completionTimestamp);
       }, 30_000);
       
       completedTimeouts.set(data.busId, timeoutId);
     }
 
-    db.collection("bus_locations").doc(data.busId).set({
-      ...data, tripState, currentStopIndex, lastSeen: new Date().toISOString()
-    }, { merge: true }).catch(console.error);
+    persistFleetState({ ...data, tripState }, new Date().toISOString());
   });
 
   busesRef.on("child_removed", (snapshot) => {

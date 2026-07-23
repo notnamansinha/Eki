@@ -88,25 +88,11 @@ export default function DriverPage() {
     routesToUpdate.forEach(routeId => {
       const activeBusId = busIdRef.current || "test_bus_1";
 
-      // Prefer live GPS location for accurate ETA calculation.
-      // Only fall back to the previous stop's coords if no GPS fix is available yet
-      // (avoids teleporting the bus to a skipped stop's position).
-      const liveLoc = driverLocationRef.current;
-      const prevIdx = Math.max(0, index - 1);
-      const stopLat = liveLoc?.lat ?? activeRoute?.stops?.[prevIdx]?.lat ?? 23.03;
-      const stopLng = liveLoc?.lng ?? activeRoute?.stops?.[prevIdx]?.lng ?? 72.55;
-
       const busRef = ref(rtdb, `activeBuses/${activeBusId}_${routeId}`);
       update(busRef, {
-        busId: activeBusId,
-        routeId: routeId,
-        lat: stopLat,
-        lng: stopLng,
         currentStopIndex: index,
         timestamp: Date.now(),
         tripState: "in_service",
-        status: "active",
-        deviceState: "online"
       }).catch(console.error);
     });
   }, [activeSessionIds, selectedRouteIds, activeRoute]);
@@ -226,24 +212,6 @@ export default function DriverPage() {
       unsubscribe();
     };
   }, [busId, selectedRouteIds, isTracking]);
-
-  // Software mode heartbeat to keep the bus "fresh" in the passenger app
-  useEffect(() => {
-    if (!isTracking) return;
-
-    const intervalId = setInterval(() => {
-      const currentBusId = busIdRef.current;
-      const currentRouteIds = routeIdsRef.current;
-      
-      currentRouteIds.forEach(routeId => {
-        if (!currentBusId || !routeId) return;
-        const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
-        update(busRef, { timestamp: Date.now() }).catch(console.error);
-      });
-    }, 60000); // 1 minute heartbeat
-
-    return () => clearInterval(intervalId);
-  }, [isTracking]);
 
   const handleStopTracking = useCallback(() => {
     const currentBusId = busIdRef.current;

@@ -50,7 +50,12 @@ function useAuthState(): AuthContextValue {
     }, 8000);
 
     void Promise.all([import("firebase/auth"), import("@/lib/firebaseAuth")])
-      .then(([{ onAuthStateChanged }, { auth }]) => {
+      .then(async ([{ browserLocalPersistence, onAuthStateChanged, setPersistence }, { auth }]) => {
+        if (disposed) return;
+
+        // Keep an explicitly signed-in account across navigation, PWA restarts
+        // and normal reloads. Only an explicit sign-out should end the session.
+        await setPersistence(auth, browserLocalPersistence);
         if (disposed) return;
 
         unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -210,7 +215,13 @@ function useAuthState(): AuthContextValue {
         import("firebase/auth"),
         import("@/lib/firebaseAuth"),
       ]);
+      const signedOutUid = auth.currentUser?.uid;
       await signOut(auth);
+      if (signedOutUid) {
+        window.localStorage.removeItem(`eki:role:${signedOutUid}`);
+      }
+      window.localStorage.removeItem("eki:last-workspace");
+      setUser(null);
     } catch (error) {
       console.error("Logout failed:", error);
     }
