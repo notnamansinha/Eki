@@ -464,12 +464,16 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
 
   // â”€â”€ Driver CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleAddDriver = async () => {
-    if (!newDriverId || !newDriverName || !newDriverAuthUid) return;
+    const authUid = newDriverAuthUid.trim();
+    if (!newDriverId || !newDriverName || !authUid) {
+      setErrorMsg("Operator ID, name, and Firebase Auth UID are required.");
+      return;
+    }
     try {
       await setDoc(doc(db, "drivers", newDriverId), {
         id: newDriverId,
         name: newDriverName,
-        authUid: newDriverAuthUid.trim(),
+        authUid,
         assignedBusId: newDriverBusId || null,
       } as DriverData);
       setNewDriverId(""); setNewDriverName(""); setNewDriverAuthUid(""); setNewDriverBusId("");
@@ -491,11 +495,16 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   };
 
   const handleSaveDriver = async (id: string) => {
+    const authUid = editDriverAuthUid.trim();
+    if (!authUid) {
+      setErrorMsg("Firebase Auth UID is required for every operator.");
+      return;
+    }
     try {
       await setDoc(doc(db, "drivers", id), {
         id,
         name: editDriverName,
-        authUid: editDriverAuthUid.trim(),
+        authUid,
         assignedBusId: editDriverBusId || null,
       } as DriverData);
       setEditingDriverId(null);
