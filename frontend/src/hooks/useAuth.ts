@@ -221,6 +221,12 @@ function useAuthState(): AuthContextValue {
         window.localStorage.removeItem(`eki:role:${signedOutUid}`);
       }
       window.localStorage.removeItem("eki:last-workspace");
+      const [{ clearCollectionCache }, { clearSettingsCache }] = await Promise.all([
+        import("@/hooks/useCollection"),
+        import("@/hooks/useSettings"),
+      ]);
+      clearCollectionCache();
+      clearSettingsCache();
       setUser(null);
     } catch (error) {
       console.error("Logout failed:", error);

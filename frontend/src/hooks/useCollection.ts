@@ -14,6 +14,18 @@ interface CacheEntry {
 
 const queryCache = new Map<string, CacheEntry>();
 
+/** Clear in-memory snapshots when the Firebase principal changes. */
+export function clearCollectionCache(): void {
+  for (const entry of queryCache.values()) {
+    if (entry.timeoutId) clearTimeout(entry.timeoutId);
+    entry.unsubscribe?.();
+    entry.unsubscribe = null;
+    entry.data = [];
+    entry.loading = true;
+  }
+  queryCache.clear();
+}
+
 export function useCollection<T>(collectionName: string) {
   const [, forceRender] = useState(0);
 

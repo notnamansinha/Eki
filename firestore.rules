@@ -65,17 +65,13 @@ service cloud.firestore {
 
     // ── Routes collection — PUBLIC read, write by admins only ──
     match /routes/{routeId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow create, update, delete: if isAdmin();
     }
 
     // ── Bus locations — PUBLIC read, write by drivers/admins ──
     match /bus_locations/{busId} {
-      allow read: if true;
-      allow write: if isAdmin() ||
-        (isAuthenticated() &&
-         request.auth.token.role == 'driver' &&
-         request.auth.token.assignedBusId == busId);
+      allow read, write: if isAdmin();
     }
 
     // ── Passenger requests — own requests for passengers, full access for drivers/admins ──
@@ -106,7 +102,7 @@ service cloud.firestore {
     
     // ── Buses collection ──
     match /buses/{busId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow create, update, delete: if isAdmin();
     }
     
@@ -254,7 +250,7 @@ service cloud.firestore {
 
     // ── Settings collection ──
     match /settings/{document} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow create, update, delete: if isAdmin();
     }
 

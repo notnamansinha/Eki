@@ -46,6 +46,58 @@ describe("production security configuration", () => {
     expect(messages).toContain("request.resource.data.from == 'driver'");
   });
 
+  it("requires sign-in for live application data and route APIs", () => {
+    const rules = workspaceFile("firestore.rules");
+    const routes = ruleBlock(rules, "match /routes/{routeId}");
+    const buses = ruleBlock(rules, "match /buses/{busId}");
+    const settings = ruleBlock(rules, "match /settings/{document}");
+    const locations = ruleBlock(rules, "match /bus_locations/{busId}");
+    const planRoute = workspaceFile("backend/src/routes/plan.ts");
+    const routesList = workspaceFile("backend/src/routes/routesList.ts");
+
+    expect(routes).toContain("allow read: if isAuthenticated();");
+    expect(buses).toContain("allow read: if isAuthenticated();");
+    expect(settings).toContain("allow read: if isAuthenticated();");
+    expect(locations).toContain("allow read, write: if isAdmin();");
+    expect(planRoute).toContain('router.post("/", requireAuth');
+    expect(routesList).toContain('router.get("/", requireAuth');
+  });
+
+  it("uses server time for driver disconnect state", () => {
+    const driverPage = workspaceFile("frontend/src/app/driver/page.tsx");
+    expect(driverPage).toContain("onDisconnect, serverTimestamp");
+    expect(driverPage).toContain("timestamp: serverTimestamp()");
+  });
+
+  it("renders stored route geometry without browser Directions API calls", () => {
+    const directionsRoute = workspaceFile("frontend/src/components/maps/DirectionsRoute.tsx");
+
+    expect(directionsRoute).toContain("function decodePolyline");
+    expect(directionsRoute).not.toContain("DirectionsService");
+    expect(directionsRoute).not.toContain("DirectionsRenderer");
+  });
+
+  it("rate-limits billable route computation and failed device authentication", () => {
+    const server = workspaceFile("backend/src/server.ts");
+    const devices = workspaceFile("backend/src/routes/devices.ts");
+
+    expect(server).toContain("const routeComputeLimiter");
+    expect(server).toContain('app.use("/api/routes", routeComputeLimiter, polylineRoutes)');
+    expect(devices).toContain("const deviceAuthLimiter");
+    expect(devices).toContain("skipSuccessfulRequests: true");
+  });
+
+  it("clears in-memory data caches on logout", () => {
+    const authHook = workspaceFile("frontend/src/hooks/useAuth.ts");
+    const collectionHook = workspaceFile("frontend/src/hooks/useCollection.ts");
+    const settingsHook = workspaceFile("frontend/src/hooks/useSettings.ts");
+
+    expect(authHook).toContain("clearCollectionCache();");
+    expect(authHook).toContain("clearSettingsCache();");
+    expect(collectionHook).toContain("export function clearCollectionCache");
+    expect(settingsHook).toContain("export function clearSettingsCache");
+  });
+
   it("requires verified HTTPS for hardware credentials", () => {
     const firmware = workspaceFile("hardware/src/main.cpp");
     const tokenRequest = firmware.slice(

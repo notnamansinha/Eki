@@ -72,6 +72,17 @@ function ensureListener() {
 
 let _timeoutId: NodeJS.Timeout | undefined;
 
+/** Prevent a previous account's cached settings from surviving sign-out. */
+export function clearSettingsCache(): void {
+  if (_timeoutId) clearTimeout(_timeoutId);
+  _timeoutId = undefined;
+  _unsubscribe?.();
+  _unsubscribe = null;
+  _settings = DEFAULT_SETTINGS;
+  _loading = true;
+  notifyAll();
+}
+
 function releaseListener() {
   if (_listenerCount === 0 && _unsubscribe) {
     _timeoutId = setTimeout(() => {

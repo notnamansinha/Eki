@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { db } from "../lib/firebaseAdmin";
+import { requireAuth } from "../middleware/requireAuth";
 
 const router = Router();
 
@@ -44,7 +45,7 @@ interface RouteDoc {
  * RUNTIME COST: $0 — reads Firestore cache + pure math.
  * No Google Directions API calls are made.
  */
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", requireAuth, async (req: Request, res: Response) => {
   const { routeId, startStopId, endStopId, viaStopId } = req.body as {
     routeId?: string;
     startStopId?: string;

@@ -13,7 +13,7 @@ import { useBuses } from "@/hooks/useBuses";
 import { Map, CircleUserRound as User, MessageCircle, ArrowLeft } from "lucide-react";
 import { db, rtdb, auth } from "@/lib/firebase";
 import { collection, doc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
-import { ref, update, onValue, onDisconnect } from "firebase/database";
+import { ref, update, onValue, onDisconnect, serverTimestamp } from "firebase/database";
 
 const DriverMap = dynamic(() => import("@/components/maps/DriverMap"), {
   ssr: false,
@@ -70,7 +70,7 @@ export default function DriverPage() {
           stopIndex: index,
           stopId: activeRoute.stops[index].id,
           stopName: activeRoute.stops[index].name,
-          timestamp: Date.now()
+          timestamp: serverTimestamp()
         })
       }).catch(console.error);
     }
@@ -111,9 +111,7 @@ export default function DriverPage() {
 
 
   const handleStartTracking = useCallback(() => {
-    console.log("[Driver] handleStartTracking called", { busId, driverId, selectedRouteIds, driversLen: drivers.length });
     if (!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0) {
-      console.warn("[Driver] Guard prevented start:", { busId, driverId, routeCount: selectedRouteIds.length, driverFound: drivers.some(d => d.id === driverId) });
       return;
     }
     setIsTracking(true);
@@ -144,8 +142,6 @@ export default function DriverPage() {
       delayMinutes: delayMinutesRef.current,
     };
 
-    console.log("[Driver] Writing to RTDB:", { currentBusId, currentRouteIds, basePayload, currentUser: auth.currentUser?.uid });
-
     const doWrite = () => {
       currentRouteIds.forEach(routeId => {
         const sessionId = newSessionIds[routeId];
@@ -154,15 +150,14 @@ export default function DriverPage() {
         // 1. RTDB Update
         const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
         update(busRef, payload)
-          .then(() => console.log("[Driver] RTDB write succeeded for", `${currentBusId}_${routeId}`))
-          .catch(err => console.error("[Driver] RTDB write FAILED:", err.code, err.message));
+          .catch(err => console.error("[Driver] RTDB write failed:", err.code, err.message));
         
         // Prevent ghost sessions if the driver forces app close
         onDisconnect(busRef).update({
           status: "offline",
           deviceState: "offline",
           tripState: "ended",
-          timestamp: Date.now()
+          timestamp: serverTimestamp()
         }).catch(() => {});
 
         // 2. Firestore Session Record

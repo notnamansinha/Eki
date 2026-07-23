@@ -7,7 +7,7 @@ import {
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { useRoutes, RouteData, RouteStop } from "@/hooks/useRoutes";
 import { doc, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import {
   Trash2, Plus, X, CheckCircle, MapPin, Loader2, Search,
   Pencil, GripVertical, Save,
@@ -202,6 +202,7 @@ interface EditorState {
   color: string;
   type: "up" | "down" | "circular";
   stops: RouteStop[];
+  polyline?: string;
 }
 
 const EMPTY_EDITOR: EditorState = {
@@ -252,18 +253,18 @@ function RouteEditor({
       lat: place.lat,
       lng: place.lng,
     };
-    setState(s => ({ ...s, stops: [...s.stops, stop] }));
+    setState(s => ({ ...s, stops: [...s.stops, stop], polyline: undefined }));
     setMapCenter({ lat: place.lat, lng: place.lng });
   };
 
   const removeStop = (i: number) =>
-    setState(s => ({ ...s, stops: s.stops.filter((_, idx) => idx !== i) }));
+    setState(s => ({ ...s, stops: s.stops.filter((_, idx) => idx !== i), polyline: undefined }));
 
   const renameStop = (i: number, name: string) =>
     setState(s => {
       const stops = [...s.stops];
       stops[i] = { ...stops[i], name, shortName: name.split(",")[0] };
-      return { ...s, stops };
+      return { ...s, stops, polyline: undefined };
     });
 
   const moveStop = (from: number, to: number) => {
@@ -272,7 +273,7 @@ function RouteEditor({
       const stops = [...s.stops];
       const [item] = stops.splice(from, 1);
       stops.splice(to, 0, item);
-      return { ...s, stops };
+      return { ...s, stops, polyline: undefined };
     });
   };
 
@@ -281,10 +282,50 @@ function RouteEditor({
       alert("Route ID, name, and at least 2 stops are required.");
       return;
     }
+    if (state.stops.length > 27) {
+      alert("A route can have at most 27 stops.");
+      return;
+    }
     setSaving(true);
 
     try {
       const waypoints = state.stops.map(s => ({ lat: s.lat, lng: s.lng }));
+      if (state.mode === "create") {
+        const { getDoc } = await import("firebase/firestore");
+        const existing = await getDoc(doc(db, "routes", state.routeId));
+        if (existing.exists()) {
+          alert(`A route with ID "${state.routeId}" already exists. Choose a different ID.`);
+          return;
+        }
+      }
+
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+      const currentUser = auth.currentUser;
+      if (!backendUrl || !currentUser) {
+        throw new Error("Route geometry service is unavailable. Sign in again and retry.");
+      }
+
+      const token = await currentUser.getIdToken(true);
+      const geometryResponse = await fetch(`${backendUrl}/api/routes/compute-polyline`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ waypoints }),
+      });
+      if (!geometryResponse.ok) {
+        throw new Error("Unable to compute route geometry. The route was not saved.");
+      }
+      const geometry = await geometryResponse.json() as {
+        polyline?: string;
+        distanceMeters?: number;
+        duration?: string;
+      };
+      if (!geometry.polyline || typeof geometry.distanceMeters !== "number" || typeof geometry.duration !== "string") {
+        throw new Error("Route geometry service returned an invalid result.");
+      }
+
       const routeData: Partial<RouteData> = {
         id: state.routeId,
         name: state.name,
@@ -292,20 +333,16 @@ function RouteEditor({
         type: state.type,
         stops: state.stops,
         waypoints,
+        polyline: geometry.polyline,
+        distanceMeters: geometry.distanceMeters,
+        duration: geometry.duration,
       };
 
       if (state.mode === "create") {
         // Guard against duplicate route IDs — check existence first
-        const { getDoc } = await import("firebase/firestore");
-        const existing = await getDoc(doc(db, "routes", state.routeId));
-        if (existing.exists()) {
-          alert(`A route with ID "${state.routeId}" already exists. Choose a different ID.`);
-          setSaving(false);
-          return;
-        }
         await setDoc(doc(db, "routes", state.routeId), routeData as RouteData);
       } else {
-        // Edit mode — merge so existing polyline/distanceMeters/duration are preserved
+        // Edit mode — persist the freshly computed geometry with the changed stops.
         await updateDoc(doc(db, "routes", state.routeId), routeData);
       }
       onSaved();
@@ -398,6 +435,7 @@ function RouteEditor({
             <MapCenter center={mapCenter} />
             <DirectionsRoute
               stops={routeStops}
+              polyline={state.mode === "edit" ? state.polyline : undefined}
               color={state.color}
               hasBuses={false}
             />
@@ -498,6 +536,7 @@ export default function RouteManagementPanel() {
       color: route.color || "#3B82F6",
       type: (route.type as EditorState["type"]) || "circular",
       stops: route.stops ?? [],
+      polyline: route.polyline,
     });
 
   const handleSaved = () => {

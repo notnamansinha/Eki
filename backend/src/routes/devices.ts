@@ -3,10 +3,19 @@ import { db, auth } from "../lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
+import rateLimit from "express-rate-limit";
 import { requireAdmin } from "../middleware/requireAdmin";
 
 const router = Router();
 const scryptAsync = promisify(scrypt);
+const deviceAuthLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 8,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many device authentication attempts. Please retry shortly." },
+});
 
 /**
  * POST /api/devices/auth
@@ -20,7 +29,7 @@ const scryptAsync = promisify(scrypt);
  *  2. Secrets are derived with scrypt and compared in constant time.
  *     Plaintext credentials are never accepted.
  */
-router.post("/auth", async (req: Request, res: Response): Promise<any> => {
+router.post("/auth", deviceAuthLimiter, async (req: Request, res: Response): Promise<any> => {
   try {
     const { deviceId, secret } = req.body;
 

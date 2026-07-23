@@ -86,6 +86,7 @@ router.post("/compute-polyline", requireAdmin, async (req: Request, res: Respons
       "https://routes.googleapis.com/directions/v2:computeRoutes",
       {
         method: "POST",
+        signal: AbortSignal.timeout(10_000),
         headers: {
           "Content-Type": "application/json",
           "X-Goog-Api-Key": apiKey,

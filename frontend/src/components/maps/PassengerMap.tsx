@@ -321,6 +321,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           <MapCenterer target={centerTarget} isCentered={isCentered} />
           <DirectionsRoute
             stops={routeStops}
+            polyline={route.polyline}
             color={route.color || "#3b82f6"}
             hasBuses={buses.size > 0}
           />

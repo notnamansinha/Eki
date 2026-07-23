@@ -64,13 +64,13 @@ Previously, opening the web app required waiting for Firebase authentication **p
 **The Solution:**
 Custom claims (`role: 'passenger' | 'driver' | 'admin'`) are embedded directly inside the Firebase session token. On startup, `useAuth` reads `firebaseUser.getIdTokenResult().claims.role` instantly from memory/indexedDB cache. Unauthenticated or passenger users experience zero delay and zero network round-trips for role verification.
 
-### 2.2 Directions API Chunking & Rate-Limit Bypass
-The Google Maps Directions API imposes a strict 25-waypoint limit and throws `OVER_QUERY_LIMIT` when requests are fired simultaneously (e.g. tracking a fleet).
+### 2.2 Stored Route Geometry
+Routes are calculated once, when an administrator saves a route, subject to the Google Routes API waypoint limits and quotas.
 
 **The Solution:**
-1. **Waypoint Chunking**: We segment routes with 100+ stops into multiple chunks of exactly 25 waypoints.
-2. **Asynchronous Serialization**: Instead of firing chunks simultaneously (which instantly triggers Google's IP rate-limits), we execute an async loop with a `300ms delay` between requests.
-3. **Graceful Degradation**: If the API still blocks a chunk, the system gracefully falls back to straight-line polyline segments between the failed waypoints, ensuring the map *never* breaks.
+1. The backend validates the route and makes one authenticated, time-bounded Routes API request.
+2. It stores the resulting encoded polyline with the route record.
+3. Passenger and driver maps decode that stored geometry locally. They never call the browser Directions service while rendering live tracking.
 
 ### 2.3 Server-Side Polyline Baking (Routes API)
 Calculating a route using Google Maps Directions API on the client side costs money per request. If 10,000 passengers open the app and request the BRTS route path, the API bill would be catastrophic.
@@ -82,7 +82,7 @@ Calculating a route using Google Maps Directions API on the client side costs mo
 4. The Backend securely calls the Google Maps Routes API v2, computes the extremely complex geometric polyline, and extracts the bounding boxes.
 5. The Backend saves this raw string polyline to **Firestore**.
 
-Now, when 10,000 passengers open the app, they simply download a static string from Firestore (costing fractions of a cent) and decode it locally using `mapbox/polyline`. Google Maps Routes API is entirely bypassed for end-users.
+Now, when 10,000 passengers open the app, they simply download a static string from Firestore and decode it locally. Google Maps Routes API is not called by end-user map views.
 
 ---
 

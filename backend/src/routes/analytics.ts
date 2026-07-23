@@ -16,8 +16,8 @@ router.get("/fleet", requireAdmin, async (_req, res) => {
     busSnapshot.forEach((doc) => {
       const data = doc.data();
       if (data.status === "active") activeCount++;
-      else if (data.status === "idle") idleCount++;
-      else if (data.status === "maintenance") maintenanceCount++;
+      else if (data.tripState === "maintenance") maintenanceCount++;
+      else idleCount++;
     });
 
     res.json({

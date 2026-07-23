@@ -150,6 +150,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           <MapCenterer target={driverLocation} isCentered={isCentered} navPhase={navPhase} />
           <DirectionsRoute
             stops={routeStops}
+            polyline={route.polyline}
             color={route.color || SELECTED_ROUTE_COLOR}
             hasBuses={navPhase === "navigating"}
           />

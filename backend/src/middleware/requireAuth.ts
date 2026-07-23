@@ -20,7 +20,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   const idToken = authHeader.split("Bearer ")[1];
 
   try {
-    const decoded = await auth.verifyIdToken(idToken);
+    // Check revocation as well as signature/expiry. This makes a disabled user
+    // lose API access immediately instead of retaining it until token expiry.
+    const decoded = await auth.verifyIdToken(idToken, true);
     
     // Attach user info to request for downstream handlers
     (req as any).user = decoded;

@@ -92,13 +92,24 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Route computation calls a billable upstream API. The admin-only route editor
+// normally sends one request per save, so this guard leaves normal use ample
+// headroom while limiting accidental loops and compromised admin sessions.
+const routeComputeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Route computation rate limit exceeded." },
+});
 app.use(express.json({ limit: "16kb" })); // Prevent request body size attacks
 
 // ── REST Routes ───────────────────────────────────────────────────────────────
 app.use("/api/buses", busRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/requests", writeLimiter, requestRoutes);
-app.use("/api/routes", writeLimiter, polylineRoutes);
+app.use("/api/routes", routeComputeLimiter, polylineRoutes);
 // Route planner — zero Google Maps API cost at runtime
 app.use("/api/plan", planRoutes);
 app.use("/api/routes-list", routesListRoutes);

@@ -20,7 +20,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
 NEXT_PUBLIC_FIREBASE_APP_ID=...
 
 # Google Maps — BROWSER key (restrict to your domain)
-NEXT_PUBLIC_GOOGLE_MAPS_KEY=your_browser_key_here
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_browser_key_here
 
 # Backend URLs
 NEXT_PUBLIC_BACKEND_URL=http://localhost:4000
