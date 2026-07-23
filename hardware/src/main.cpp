@@ -8,9 +8,9 @@
 #include <WiFiClientSecure.h>
 
 // ── Bus Identity ──────────────────────────────────────────────────
-#define BUS_ID     "bus_01"
-#define ROUTE_ID   "route_01"
-#define DRIVER_ID  "hw_device"
+#ifndef BACKEND_ROOT_CA
+#error "BACKEND_ROOT_CA must be defined in include/secrets.h for TLS verification."
+#endif
 
 // ── Unified Adaptive Transmission Thresholds ──────────────────────
 // Uses net coordinate displacement (Haversine) rather than rigid speed splits.
@@ -136,7 +136,7 @@ void connectWiFi() {
 
     if (WiFi.status() == WL_CONNECTED) {
         Serial.printf("[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
-        configTime(0, 0, "pool.ntp.org"); // Sync time for SSL certificate validation
+        configTime(0, 0, "pool.ntp.org"); // Start async SNTP time sync for SSL/TLS cert validation
     } else {
         Serial.println("[WiFi] Attempt failed. Will retry in 5s.");
     }
@@ -145,19 +145,23 @@ void connectWiFi() {
 bool fetchCustomToken() {
     if (WiFi.status() != WL_CONNECTED) return false;
 
-    WiFiClient client;
+    struct tm timeInfo;
+    if (!getLocalTime(&timeInfo, 0) || timeInfo.tm_year <= 70) {
+        Serial.println("[Auth] NTP time is not synchronized; deferring authenticated connection.");
+        return false;
+    }
+
+    String url = String(BACKEND_URL) + "/api/devices/auth";
+    if (!url.startsWith("https://")) {
+        Serial.println("[Auth] BACKEND_URL must use HTTPS; refusing to send device credentials.");
+        return false;
+    }
+
     WiFiClientSecure clientSecure;
-    // SEC-09: For absolute production security, replace setInsecure() with client.setCACert(root_ca);
-    clientSecure.setInsecure();
+    clientSecure.setCACert(BACKEND_ROOT_CA);
 
     HTTPClient http;
-    String url = String(BACKEND_URL) + "/api/devices/auth";
-    
-    if (url.startsWith("https://")) {
-        http.begin(clientSecure, url);
-    } else {
-        http.begin(client, url);
-    }
+    http.begin(clientSecure, url);
     http.addHeader("Content-Type", "application/json");
 
     JsonDocument doc;
@@ -191,12 +195,45 @@ bool fetchCustomToken() {
     return false;
 }
 
+// CR-09: Wait for NTP time sync before initializing Firebase.
+// configTime() is async; TLS cert validation fails if the clock is still at epoch.
+// Feeds GPS serial during the wait to prevent hardware buffer overflow.
+// Returns true if time synced within timeoutMs, false if timed out.
+bool waitForNtpSync(uint32_t timeoutMs) {
+    struct tm timeInfo;
+    unsigned long waitStart = millis();
+    Serial.print("[NTP] Waiting for time sync");
+    while (elapsed(waitStart) < timeoutMs) {
+        // Keep GPS serial drained to avoid 512-byte hardware buffer overflow
+        while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
+        if (getLocalTime(&timeInfo, 0) && timeInfo.tm_year > 70) {
+            Serial.printf(" OK (epoch: %lld)\n", (long long)mktime(&timeInfo));
+            return true;
+        }
+        Serial.print(".");
+        delay(200);
+    }
+    Serial.println(" TIMEOUT — proceeding without confirmed time sync.");
+    return false;
+}
+
 void initFirebase() {
     fbConfig.host = FIREBASE_HOST;
     fbConfig.api_key = FIREBASE_API_KEY;
 
+    // CR-09: Block until NTP time is synchronized (needed for SSL/TLS cert validation).
+    // Defer rather than weakening TLS or attempting an epoch-dated handshake.
+    if (WiFi.status() != WL_CONNECTED || !waitForNtpSync(5000)) {
+        Serial.println("[NTP] Firebase init deferred; will retry after time synchronization.");
+        return;
+    }
+
+    // CR-10: Do NOT call Firebase.begin() if the device token is unavailable.
+    // An unauthenticated Firebase session will fail all RTDB writes silently.
     if (!fetchCustomToken()) {
-        Serial.println("[Auth] Failed to get initial token. Will retry in loop.");
+        Serial.println("[Auth] Failed to get initial token. Firebase init deferred — will retry in loop.");
+        // firebaseReady remains false; loop() will retry token fetch and call initFirebase() again
+        return;
     }
 
     // Fix for ESP32 SSL memory limitation and "ssl engine closed" / BR_SSL_SENDAPP errors
@@ -514,6 +551,12 @@ void loop() {
             lastAuthRetry = now;
             if (fetchCustomToken()) {
                 Serial.println("[Auth] Successfully obtained Custom Token.");
+                // CR-10: If Firebase was never initialized (token failed at boot),
+                // complete initialization now that we have a valid token.
+                if (!firebaseReady && WiFi.status() == WL_CONNECTED) {
+                    Serial.println("[Auth] Completing deferred Firebase initialization.");
+                    initFirebase();
+                }
             }
         }
     }
