@@ -130,6 +130,18 @@ describe("production security configuration", () => {
     expect(tokenRequest).not.toContain("setInsecure(");
   });
 
+  it("lets the GNSS tracker seed its own static bus identity", () => {
+    const firmware = workspaceFile("hardware/src/main.cpp");
+    const metadataWriter = firmware.slice(
+      firmware.indexOf("void writeBusMeta()"),
+      firmware.indexOf("void sendLocationToRTDB()"),
+    );
+
+    expect(metadataWriter).toContain('meta.set("busId",         BUS_ID)');
+    expect(metadataWriter).toContain('meta.set("routeId",       ROUTE_ID)');
+    expect(metadataWriter).toContain('meta.set("meta/source",   "gnss_hw")');
+  });
+
   it("ships exact browser security headers", () => {
     const firebase = JSON.parse(workspaceFile("firebase.json"));
     const defaultHeaders = firebase.hosting.headers.find(

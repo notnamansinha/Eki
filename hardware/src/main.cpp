@@ -103,8 +103,9 @@ static unsigned long lastRtdbFailTime = 0;
 static bool rtdbInBackoff = false;
 
 // ── Meta write flag ───────────────────────────────────────────────
-// Trip-start static metadata (busId, driverId, routeId, source) is written
-// once to /activeBuses/bus_01_route_01/meta — not repeated on every update.
+// Trip-start static metadata is written once to the active-bus node — not
+// repeated on every coordinate update. This lets the hardware tracker remain
+// visible even before the driver web console opens a shift.
 static bool metaWritten = false;
 
 // ── Safe elapsed time helper (handles millis() uint32 overflow at 49.7 days) ──
@@ -429,18 +430,25 @@ void flushBufferedFix() {
 }
 
 // ── Write static trip metadata once per session ───────────────────
-// Fields that don't change during a trip (busId, driverId, routeId, source)
-// are written to /meta sub-path on startup. Subsequent location patches omit them.
+// Identity and service fields live at the active-bus root for passenger/admin
+// listeners. The mirrored /meta fields are retained for the device RTDB rule.
+// Subsequent coordinate patches omit all of these static fields.
 void writeBusMeta() {
-    String metaPath = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID + "/meta";
+    String busPath = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID;
     FirebaseJson meta;
-    meta.set("busId",    BUS_ID);
-    meta.set("driverId", DRIVER_ID);
-    meta.set("routeId",  ROUTE_ID);
-    meta.set("source",   "gnss_hw");
+    meta.set("busId",         BUS_ID);
+    meta.set("driverId",      DRIVER_ID);
+    meta.set("routeId",       ROUTE_ID);
+    meta.set("status",        "active");
+    meta.set("deviceState",   "online");
+    meta.set("timestamp/.sv", "timestamp");
+    meta.set("meta/busId",    BUS_ID);
+    meta.set("meta/driverId", DRIVER_ID);
+    meta.set("meta/routeId",  ROUTE_ID);
+    meta.set("meta/source",   "gnss_hw");
 
-    if (Firebase.RTDB.updateNode(&fbData, metaPath.c_str(), &meta)) {
-        Serial.println("[RTDB] Bus meta written (busId, routeId, source).");
+    if (Firebase.RTDB.updateNode(&fbData, busPath.c_str(), &meta)) {
+        Serial.println("[RTDB] Static bus metadata written.");
         metaWritten = true;
     } else {
         Serial.printf("[RTDB] Meta write failed: %s\n", fbData.errorReason().c_str());
