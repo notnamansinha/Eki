@@ -217,25 +217,7 @@ bool waitForNtpSync(uint32_t timeoutMs) {
     return false;
 }
 
-void initFirebase() {
-    fbConfig.host = FIREBASE_HOST;
-    fbConfig.api_key = FIREBASE_API_KEY;
-
-    // CR-09: Block until NTP time is synchronized (needed for SSL/TLS cert validation).
-    // Defer rather than weakening TLS or attempting an epoch-dated handshake.
-    if (WiFi.status() != WL_CONNECTED || !waitForNtpSync(5000)) {
-        Serial.println("[NTP] Firebase init deferred; will retry after time synchronization.");
-        return;
-    }
-
-    // CR-10: Do NOT call Firebase.begin() if the device token is unavailable.
-    // An unauthenticated Firebase session will fail all RTDB writes silently.
-    if (!fetchCustomToken()) {
-        Serial.println("[Auth] Failed to get initial token. Firebase init deferred — will retry in loop.");
-        // firebaseReady remains false; loop() will retry token fetch and call initFirebase() again
-        return;
-    }
-
+void startFirebaseWithCurrentToken() {
     // Fix for ESP32 SSL memory limitation and "ssl engine closed" / BR_SSL_SENDAPP errors
     fbData.setBSSLBufferSize(4096, 1024);
     fbData.setResponseSize(4096);
@@ -256,6 +238,27 @@ void initFirebase() {
     }
     Serial.println("\n[Firebase] Ready!");
     firebaseReady = true;
+}
+
+void initFirebase() {
+    fbConfig.host = FIREBASE_HOST;
+    fbConfig.api_key = FIREBASE_API_KEY;
+
+    // Block until NTP time is synchronized (needed for SSL/TLS cert validation).
+    // Defer rather than weakening TLS or attempting an epoch-dated handshake.
+    if (WiFi.status() != WL_CONNECTED || !waitForNtpSync(5000)) {
+        Serial.println("[NTP] Firebase init deferred; will retry after time synchronization.");
+        return;
+    }
+
+    // Do NOT call Firebase.begin() if the device token is unavailable.
+    // An unauthenticated Firebase session will fail all RTDB writes silently.
+    if (!fetchCustomToken()) {
+        Serial.println("[Auth] Failed to get initial token. Firebase init deferred — will retry in loop.");
+        return;
+    }
+
+    startFirebaseWithCurrentToken();
 }
 
 // Haversine distance in meters between two GPS points
@@ -555,7 +558,7 @@ void loop() {
                 // complete initialization now that we have a valid token.
                 if (!firebaseReady && WiFi.status() == WL_CONNECTED) {
                     Serial.println("[Auth] Completing deferred Firebase initialization.");
-                    initFirebase();
+                    startFirebaseWithCurrentToken();
                 }
             }
         }
