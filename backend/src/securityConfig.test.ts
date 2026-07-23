@@ -65,11 +65,13 @@ describe("production security configuration", () => {
 
   it("does not let the browser seed or take down hardware GNSS coordinates", () => {
     const driverPage = workspaceFile("frontend/src/app/driver/page.tsx");
+    const passengerPage = workspaceFile("frontend/src/app/passenger/page.tsx");
 
     expect(driverPage).not.toContain("onDisconnect(");
     expect(driverPage).not.toContain("lat: activeRoute?.stops");
     expect(driverPage).toContain("serverTimestamp as firestoreServerTimestamp");
     expect(driverPage).toContain("timestamp: firestoreServerTimestamp()");
+    expect(passengerPage).toContain("hasValidBusCoordinates(bus.lat, bus.lng)");
   });
 
   it("renders stored route geometry without browser Directions API calls", () => {

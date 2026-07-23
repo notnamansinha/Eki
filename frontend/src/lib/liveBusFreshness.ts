@@ -20,3 +20,8 @@ export function isLiveBusTimestamp(timestamp?: number): boolean {
   // and reject stale timestamps older than BUS_EXPIRY_MS.
   return age >= -10_000 && age < BUS_EXPIRY_MS;
 }
+
+export function hasValidBusCoordinates(lat?: number, lng?: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng) &&
+    lat! >= -90 && lat! <= 90 && lng! >= -180 && lng! <= 180;
+}

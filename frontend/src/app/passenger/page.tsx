@@ -11,7 +11,7 @@ import { waitForAuth } from "@/lib/authState";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import RouteCarousel from "@/components/passenger/ui/RouteCarousel";
 import { useSettings } from "@/hooks/useSettings";
-import { isLiveBusTimestamp } from "@/lib/liveBusFreshness";
+import { hasValidBusCoordinates, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
 
 const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTrackingMap"), {
   ssr: false,
@@ -81,7 +81,7 @@ export default function PassengerPage() {
             bus.busId = bus.busId || key.split("_")[0];
             // Safety net: discard stale entries while RTDB cleanup catches up.
             const isFresh = isLiveBusTimestamp(bus.timestamp);
-            if (!bus.routeId || !bus.busId || !isFresh) {
+            if (!bus.routeId || !bus.busId || !isFresh || !hasValidBusCoordinates(bus.lat, bus.lng)) {
               return;
             }
 

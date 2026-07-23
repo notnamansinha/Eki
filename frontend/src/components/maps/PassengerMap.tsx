@@ -6,7 +6,7 @@ import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
-import { SIGNAL_LOST_MS, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
+import { SIGNAL_LOST_MS, hasValidBusCoordinates, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
 import { waitForAuth } from "@/lib/authState";
 import { rtdb } from "@/lib/firebase";
 import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
@@ -123,7 +123,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         Object.entries(data).forEach(([key, bus]) => {
           bus.busId = bus.busId || key.split("_")[0];
           const isFresh = isLiveBusTimestamp(bus.timestamp);
-          if (!bus.routeId || !bus.busId || !isFresh) return;
+          if (!bus.routeId || !bus.busId || !isFresh || !hasValidBusCoordinates(bus.lat, bus.lng)) return;
 
           const isActive = bus.tripState === "in_service" || bus.tripState === "pre_departure";
           const isOffline = bus.status === "offline" || bus.deviceState === "offline";
