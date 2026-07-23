@@ -16,6 +16,9 @@ async function syncRoleClaims() {
 
     try {
       const existingClaims = (await auth.getUser(user.id)).customClaims ?? {};
+      const previousDriverId = typeof existingClaims.driverId === "string"
+        ? existingClaims.driverId
+        : null;
       const preservedClaims = { ...existingClaims };
       delete preservedClaims.admin;
       delete preservedClaims.role;
@@ -74,11 +77,18 @@ async function syncRoleClaims() {
       // assignment into a server-only RTDB path so driver writes are bound to
       // both their bus and one of its assigned routes.
       if (role === "driver" && routeAssignments) {
-        await rtdb.ref(`driverRouteAssignments/${driverAssignment!.docs[0].id}`).set({
+        const currentDriverId = driverAssignment!.docs[0].id;
+        await rtdb.ref(`driverRouteAssignments/${currentDriverId}`).set({
           [assignedBusId]: routeAssignments,
         });
+        if (previousDriverId && previousDriverId !== currentDriverId) {
+          await rtdb.ref(`driverRouteAssignments/${previousDriverId}`).remove();
+        }
       } else {
-        await rtdb.ref(`driverRouteAssignments/${user.id}`).remove();
+        const staleAssignmentIds = new Set([user.id, previousDriverId].filter(Boolean));
+        await Promise.all(
+          [...staleAssignmentIds].map((driverId) => rtdb.ref(`driverRouteAssignments/${driverId}`).remove()),
+        );
       }
       updated += 1;
     } catch (err: any) {

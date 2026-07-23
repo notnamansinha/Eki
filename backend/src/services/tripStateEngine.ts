@@ -9,9 +9,16 @@ const routeDestCache = new Map<string, {lat: number, lng: number}>();
 const activeETATracking = new Map<string, string>();
 const completedTimeouts = new Map<string, NodeJS.Timeout>();
 const persistedFleetState = new Map<string, string>();
+const fleetWriteQueues = new Map<string, Promise<void>>();
 
 const STOP_GEOFENCE_M = 20;
-const STALE_BUS_MS = Math.max(90_000, Number.parseInt(process.env.BUS_STALE_MS || "300000", 10));
+function readIntervalMs(value: string | undefined, fallback: number, minimum: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= minimum ? Math.floor(parsed) : fallback;
+}
+
+const STALE_BUS_MS = readIntervalMs(process.env.BUS_STALE_MS, 300_000, 90_000);
+const ETA_INTERVAL_MS = readIntervalMs(process.env.ETA_INTERVAL_MS, 180_000, 30_000);
 
 /**
  * Firestore is the durable fleet-state store, not a second telemetry stream.
@@ -33,12 +40,28 @@ function persistFleetState(data: Record<string, unknown>, lastSeen: string): voi
   if (persistedFleetState.get(busId) === fingerprint) return;
 
   persistedFleetState.set(busId, fingerprint);
-  db.collection("bus_locations").doc(busId).set({ ...state, lastSeen }, { merge: true })
-    .catch((error) => {
-      // Permit a retry on the next state transition if the durable write fails.
-      persistedFleetState.delete(busId);
-      console.warn("[TripState] Failed to persist fleet lifecycle state:", error);
+  // RTDB child events can arrive faster than Firestore commits. Serialize
+  // lifecycle writes per bus so an older transition cannot finish after a
+  // newer one and overwrite the durable fleet state.
+  const previous = fleetWriteQueues.get(busId) ?? Promise.resolve();
+  const queuedWrite = previous
+    .catch(() => undefined)
+    .then(async () => {
+      await db.collection("bus_locations").doc(busId).set({ ...state, lastSeen }, { merge: true });
     });
+  fleetWriteQueues.set(busId, queuedWrite);
+
+  void queuedWrite.then(
+    () => {
+      if (fleetWriteQueues.get(busId) === queuedWrite) fleetWriteQueues.delete(busId);
+    },
+    (error) => {
+      // Do not discard a newer fingerprint when an earlier queued write fails.
+      if (persistedFleetState.get(busId) === fingerprint) persistedFleetState.delete(busId);
+      if (fleetWriteQueues.get(busId) === queuedWrite) fleetWriteQueues.delete(busId);
+      console.warn("[TripState] Failed to persist fleet lifecycle state:", error);
+    },
+  );
 }
 
 async function ensureRouteLoaded(routeId: string): Promise<RouteStop[]> {
@@ -120,7 +143,7 @@ export function startTripStateEngine() {
         data.routeId, 
         () => latestLocations.get(data.busId) || null, 
         () => routeDestCache.get(data.routeId) || null, 
-        parseInt(process.env.ETA_INTERVAL_MS || "180000", 10)
+        ETA_INTERVAL_MS
       );
     }
   });
@@ -156,7 +179,7 @@ export function startTripStateEngine() {
         data.routeId, 
         () => latestLocations.get(data.busId) || null, 
         () => routeDestCache.get(data.routeId) || null, 
-        parseInt(process.env.ETA_INTERVAL_MS || "180000", 10)
+        ETA_INTERVAL_MS
       );
     } else if (!currentActiveRoute) {
       activeETATracking.set(data.busId, data.routeId);
@@ -165,7 +188,7 @@ export function startTripStateEngine() {
         data.routeId, 
         () => latestLocations.get(data.busId) || null, 
         () => routeDestCache.get(data.routeId) || null, 
-        parseInt(process.env.ETA_INTERVAL_MS || "180000", 10)
+        ETA_INTERVAL_MS
       );
     }
 
@@ -215,7 +238,10 @@ export function startTripStateEngine() {
   busesRef.on("child_removed", (snapshot) => {
     const data = snapshot.val();
     if (!data || !data.busId) return;
-    
+
+    // RTDB is the live-presence source. Preserve the final offline lifecycle
+    // state before forgetting a bus removed by the stale sweep.
+    persistFleetState({ ...data, status: "offline", deviceState: "offline" }, new Date().toISOString());
     latestLocations.delete(data.busId);
     activeETATracking.delete(data.busId);
     stopETATracking(data.busId);

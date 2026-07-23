@@ -36,6 +36,19 @@ describe("production security configuration", () => {
     expect(database.rules.messages.$busId.$msgId[".write"]).toBe("false");
     const syncRoles = workspaceFile("backend/src/syncRoleClaims.ts");
     expect(syncRoles).toContain("driverRouteAssignments/");
+    expect(syncRoles).toContain("previousDriverId");
+    expect(syncRoles).toContain("staleAssignmentIds");
+  });
+
+  it("keeps maintenance fleet state and lifecycle persistence ordered", () => {
+    const analytics = workspaceFile("backend/src/routes/analytics.ts");
+    const tripStateEngine = workspaceFile("backend/src/services/tripStateEngine.ts");
+
+    expect(analytics.indexOf('data.tripState === "maintenance"'))
+      .toBeLessThan(analytics.indexOf('data.status === "active"'));
+    expect(tripStateEngine).toContain("function readIntervalMs");
+    expect(tripStateEngine).toContain("fleetWriteQueues");
+    expect(tripStateEngine).toContain("const ETA_INTERVAL_MS = readIntervalMs");
   });
 
   it("keeps sensitive Firestore collections and chat identity protected", () => {
@@ -147,7 +160,7 @@ describe("production security configuration", () => {
     const tripStateEngine = workspaceFile("backend/src/services/tripStateEngine.ts");
 
     expect(firmware).toContain("#define MAX_SILENT_INTERVAL_IDLE   120000");
-    expect(tripStateEngine).toContain('process.env.BUS_STALE_MS || "300000"');
+    expect(tripStateEngine).toContain("const STALE_BUS_MS = readIntervalMs");
   });
 
   it("ships exact browser security headers", () => {
