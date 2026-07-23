@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth, UserRole } from "@/hooks/useAuth";
 import { Loader2, ShieldAlert, LogIn } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 interface RoleGuardProps {
   children: React.ReactNode;
@@ -13,6 +14,13 @@ interface RoleGuardProps {
 export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
   const { user, loading, loginLoading, loginWithGoogle, logout } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (user && allowedRoles.includes(user.role)) {
+      window.localStorage.setItem("eki:last-workspace", pathname);
+    }
+  }, [allowedRoles, pathname, user]);
 
   if (loading) {
     return (

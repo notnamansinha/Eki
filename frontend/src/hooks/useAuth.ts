@@ -41,16 +41,44 @@ function useAuthState(): AuthContextValue {
     let generation = 0;
     let disposed = false;
     let unsubscribe = () => {};
+    const authTimeout = window.setTimeout(() => {
+      if (!disposed) {
+        console.warn("Firebase auth restoration timed out.");
+        notifyAuthReady();
+        setLoading(false);
+      }
+    }, 8000);
 
-    void Promise.all([import("firebase/auth"), import("@/lib/firebaseAuth")]).then(
-      ([{ onAuthStateChanged }, { auth }]) => {
+    void Promise.all([import("firebase/auth"), import("@/lib/firebaseAuth")])
+      .then(([{ onAuthStateChanged }, { auth }]) => {
         if (disposed) return;
 
         unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      clearTimeout(authTimeout);
       const currentGen = ++generation;
       notifyAuthReady();
 
       if (firebaseUser) {
+        const storedRole = window.localStorage.getItem(`eki:role:${firebaseUser.uid}`);
+        const cachedRole: UserRole =
+          storedRole === "passenger" || storedRole === "driver" || storedRole === "admin"
+            ? storedRole
+            : null;
+
+        // Restore the last verified role immediately. Firebase claims remain
+        // the authorization boundary and refresh this value in the background.
+        if (cachedRole) {
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            photoURL: firebaseUser.photoURL,
+            role: cachedRole,
+            isAnonymous: firebaseUser.isAnonymous,
+          });
+          setLoading(false);
+        }
+
         try {
           // Role claims are already present in a persisted Firebase session, so
           // this returns without a Firestore round trip for normal app starts.
@@ -64,6 +92,7 @@ function useAuthState(): AuthContextValue {
             claimedRole === "admin"
           ) {
             if (currentGen !== generation) return;
+            window.localStorage.setItem(`eki:role:${firebaseUser.uid}`, claimedRole);
             setUser({
               uid: firebaseUser.uid,
               email: firebaseUser.email,
@@ -109,6 +138,7 @@ function useAuthState(): AuthContextValue {
           }
 
           if (currentGen !== generation) return;
+          window.localStorage.setItem(`eki:role:${firebaseUser.uid}`, role || "passenger");
 
           setUser({
             uid: firebaseUser.uid,
@@ -126,7 +156,7 @@ function useAuthState(): AuthContextValue {
             email: firebaseUser.email,
             displayName: firebaseUser.displayName,
             photoURL: firebaseUser.photoURL,
-            role: "passenger",
+            role: cachedRole || "passenger",
             isAnonymous: firebaseUser.isAnonymous,
           });
         } finally {
@@ -138,11 +168,17 @@ function useAuthState(): AuthContextValue {
         setLoading(false);
       }
         });
-      },
-    );
+      })
+      .catch((error) => {
+        console.error("Firebase auth initialization failed:", error);
+        clearTimeout(authTimeout);
+        notifyAuthReady();
+        if (!disposed) setLoading(false);
+      });
 
     return () => {
       disposed = true;
+      clearTimeout(authTimeout);
       unsubscribe();
     };
   }, []);

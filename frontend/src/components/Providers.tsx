@@ -1,6 +1,5 @@
 "use client";
 
-import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { AuthProvider } from "@/hooks/useAuth";
 
 /**
@@ -12,9 +11,5 @@ import { AuthProvider } from "@/hooks/useAuth";
  * off the landing page, reducing TTI for unauthenticated visitors.
  */
 export default function Providers({ children }: { children: React.ReactNode }) {
-  // Mount the global auto-update polling hook here
-  // so it is active across all surfaces (passenger, admin, driver)
-  useAutoUpdate();
-
   return <AuthProvider>{children}</AuthProvider>;
 }
