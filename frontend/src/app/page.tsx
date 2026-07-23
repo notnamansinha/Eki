@@ -43,14 +43,20 @@ export default function HomePage() {
 
   return (
     <main className="relative h-dvh w-full overflow-hidden flex flex-col bg-black">
-      <Image
-        src="/images/hero-background.jpg"
-        alt="Eki Transit Background"
-        fill
-        className="object-cover md:object-[center_30%] absolute inset-0 z-0"
-        priority
-        quality={75}
-      />
+      {/* Native picture element for format negotiation — next/image can't
+          serve WebP in static export mode (unoptimized:true). WebP saves
+          ~180KB vs the JPG fallback for older browsers. */}
+      <picture className="absolute inset-0 z-0 w-full h-full">
+        <source srcSet="/images/hero-background.webp" type="image/webp" />
+        <img
+          src="/images/hero-background.jpg"
+          alt=""
+          aria-hidden="true"
+          fetchPriority="high"
+          decoding="async"
+          className="object-cover md:object-[center_30%] w-full h-full"
+        />
+      </picture>
       <div className="absolute inset-0 bg-black/40 z-0 pointer-events-none" />
 
       <header className="absolute top-6 left-6 md:top-8 md:left-8 z-20 flex items-center justify-start pointer-events-none">
