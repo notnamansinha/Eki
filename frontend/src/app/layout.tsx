@@ -27,10 +27,12 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full" suppressHydrationWarning>
       <head>
-        {/* Only preconnect to origins that are on the critical path.
-            Unused preconnects waste resources and are penalised by Lighthouse. */}
-        <link rel="preconnect" href="https://identitytoolkit.googleapis.com" />
-        <link rel="dns-prefetch" href="https://apis.google.com" />
+        {/* Preconnect to the origins on the actual critical path.
+            apis.google.com hosts Firebase Auth's iframe JS (400ms LCP savings per Lighthouse).
+            identitytoolkit is only on the critical path for /passenger's token refresh,
+            not the landing page's auth iframe flow. */}
+        <link rel="preconnect" href="https://apis.google.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://identitytoolkit.googleapis.com" />
         <link rel="dns-prefetch" href="https://firebaseio.com" />
       </head>
       <body

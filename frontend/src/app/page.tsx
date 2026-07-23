@@ -30,7 +30,10 @@ export default function HomePage() {
     }
   }, [user, loading, router]);
 
-  if (loading || user) {
+  // Only replace the page with a redirect spinner once we KNOW there's a
+  // signed-in user. Do NOT block on `loading` — that hides the hero and
+  // tanks LCP by 7–22 seconds in Lighthouse while Firebase Auth initialises.
+  if (!loading && user) {
     return (
       <main className="min-h-dvh flex items-center justify-center bg-black">
         <Loader2 className="w-6 h-6 text-white animate-spin" />
@@ -88,7 +91,7 @@ export default function HomePage() {
         <div className="flex flex-col sm:flex-row w-full sm:w-auto gap-4">
           <button
             onClick={loginWithGoogle}
-            disabled={loginLoading}
+          disabled={loginLoading || loading}
             className="flex items-center justify-center gap-3 px-10 py-5 text-lg font-bold bg-white text-black rounded-full hover:bg-gray-200 active:scale-95 transition-transform disabled:opacity-60 shadow-xl"
           >
             {loginLoading ? <Loader2 className="size-6 animate-spin" /> : <LogIn className="size-6" />}
