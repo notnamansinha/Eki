@@ -61,7 +61,7 @@ function MapCenterer({ target, isCentered }: { target: { lat: number; lng: numbe
 function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route: RouteData }) {
   const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map<string, IncomingBusData>());
   const [stopETAs, setStopETAs] = useState<Record<string, number>>({});
-  const [uiNow, setUiNow] = useState(0);
+  const [uiNow, setUiNow] = useState(() => Date.now());
   const [signalLostBuses, setSignalLostBuses] = useState<Set<string>>(new Set());
   const [signalLostLastSeen, setSignalLostLastSeen] = useState<number | null>(null);
   const [activeBusStopIndex, setActiveBusStopIndex] = useState<number | undefined>(undefined);

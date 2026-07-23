@@ -18,11 +18,13 @@ export function useDrivers() {
   const { user } = useAuth();
   const [drivers, setDrivers] = useState<DriverData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
+  const scope = user && (user.role === "admin" || user.role === "driver")
+    ? `${user.uid}:${user.role}`
+    : null;
 
   useEffect(() => {
-    if (!user || (user.role !== "admin" && user.role !== "driver")) {
-      return;
-    }
+    if (!user || !scope) return;
 
     let unsubscribe: (() => void) | undefined;
     let active = true;
@@ -40,10 +42,12 @@ export function useDrivers() {
             id: driver.id,
             ...driver.data(),
           })) as DriverData[]);
+          setLoadedScope(scope);
           setLoading(false);
         },
         error => {
           console.error("Error fetching drivers:", error);
+          setLoadedScope(scope);
           setLoading(false);
         },
       );
@@ -53,7 +57,11 @@ export function useDrivers() {
       active = false;
       unsubscribe?.();
     };
-  }, [user]);
+  }, [scope, user]);
 
-  return { drivers, loading };
+  const hasCurrentScope = scope !== null && loadedScope === scope;
+  return {
+    drivers: hasCurrentScope ? drivers : [],
+    loading: scope === null ? false : !hasCurrentScope || loading,
+  };
 }
