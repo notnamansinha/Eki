@@ -169,6 +169,7 @@ npm run deploy
 
 For super-detailed explanations of the system architecture, zero-budget scaling, and hardware integration, please refer to our deep-dive documentation:
 
+- [Master Project Scrum Board](docs/SCRUM_BOARD.md) **(NEW)**
 - [System Architecture & RBAC Flow](docs/ARCHITECTURE.md) **(Updated)**
 - [Zero-Budget & API Optimizations](docs/OPTIMIZATIONS.md) **(NEW)**
 - [GNSS Hardware Migration Guide](docs/GNSS_HARDWARE_MIGRATION.md)
