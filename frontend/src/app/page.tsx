@@ -6,13 +6,27 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+const WORKSPACES = ["/admin", "/driver", "/passenger"] as const;
+
+function canOpenWorkspace(role: string | null, path: string): boolean {
+  if (role === "admin") return WORKSPACES.includes(path as (typeof WORKSPACES)[number]);
+  if (role === "driver") return path === "/driver" || path === "/passenger";
+  return path === "/passenger";
+}
+
 export default function HomePage() {
   const { user, loading, loginLoading, loginWithGoogle } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace(`/${user.role || "passenger"}`);
+      const savedPath = window.localStorage.getItem("eki:last-workspace");
+      const fallbackPath = `/${user.role || "passenger"}`;
+      router.replace(
+        savedPath && canOpenWorkspace(user.role, savedPath)
+          ? savedPath
+          : fallbackPath,
+      );
     }
   }, [user, loading, router]);
 
