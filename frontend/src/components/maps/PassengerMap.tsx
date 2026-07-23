@@ -1,17 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { Map as GoogleMap, AdvancedMarker, useMap, useMapsLibrary } from "@vis.gl/react-google-maps";
+import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
+import { SIGNAL_LOST_MS, hasValidBusCoordinates, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
 import { waitForAuth } from "@/lib/authState";
-import { rtdb, auth } from "@/lib/firebase";
+import { rtdb } from "@/lib/firebase";
 import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
 
 import { WifiOff, Navigation } from "lucide-react";
-import { DEFAULT_CENTER, MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
+import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
@@ -35,15 +36,8 @@ interface IncomingBusData {
   lowAccuracy?: boolean; // Set by firmware when 2.5 < HDOP ≤ 4.0
 }
 
-// Staleness threshold: show "signal lost" banner if timestamp is older than 90s
-const SIGNAL_LOST_MS = 90_000;
-// Buses not seen in 5 minutes are considered gone
-const BUS_EXPIRY_MS = 300_000;
-
 const WALKING_KMH = 5;
 const WALKING_M_PER_MIN = (WALKING_KMH * 1000) / 60;
-const BUS_SPEED_FLOOR_KMH = 15;
-
 const BUS_MOTION_COLORS: Record<string, string> = {
   moving:    "#34D399", // emerald — bus is rolling
   stopped:   "#FBBF24", // amber   — stopped at station or in traffic
@@ -52,20 +46,6 @@ const BUS_MOTION_COLORS: Record<string, string> = {
 
 
 // ── Traffic layer rendered imperatively ──────────────────────────────────────
-function TrafficLayer() {
-  const map = useMap();
-  const layerRef = useRef<google.maps.TrafficLayer | null>(null);
-
-  useEffect(() => {
-    if (!map) return;
-    layerRef.current = new google.maps.TrafficLayer();
-    layerRef.current.setMap(map);
-    return () => { layerRef.current?.setMap(null); };
-  }, [map]);
-
-  return null;
-}
-
 // ── Pan/zoom controller ──────────────────────────────────────────────────────
 function MapCenterer({ target, isCentered }: { target: { lat: number; lng: number } | null, isCentered: boolean }) {
   const map = useMap();
@@ -81,6 +61,7 @@ function MapCenterer({ target, isCentered }: { target: { lat: number; lng: numbe
 function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route: RouteData }) {
   const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map<string, IncomingBusData>());
   const [stopETAs, setStopETAs] = useState<Record<string, number>>({});
+  const [uiNow, setUiNow] = useState(() => Date.now());
   const [signalLostBuses, setSignalLostBuses] = useState<Set<string>>(new Set());
   const [signalLostLastSeen, setSignalLostLastSeen] = useState<number | null>(null);
   const [activeBusStopIndex, setActiveBusStopIndex] = useState<number | undefined>(undefined);
@@ -90,7 +71,6 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
 
   const [passengerLocation, setPassengerLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isCentered, setIsCentered] = useState(false);
-  const routesLib = useMapsLibrary("routes");
   const arrivalTimestampsRef = useRef<Record<string, number>>({});
   const lastTrafficFetchRef = useRef<number>(0);
 
@@ -100,7 +80,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     const watchId = navigator.geolocation.watchPosition(
       (pos) => setPassengerLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => {},
-      { enableHighAccuracy: true, maximumAge: 5000 }
+      { enableHighAccuracy: false, maximumAge: 30_000, timeout: 10_000 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
@@ -142,8 +122,8 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
 
         Object.entries(data).forEach(([key, bus]) => {
           bus.busId = bus.busId || key.split("_")[0];
-          const isFresh = Date.now() - bus.timestamp < 300_000;
-          if (!bus.routeId || !bus.busId || !isFresh) return;
+          const isFresh = isLiveBusTimestamp(bus.timestamp);
+          if (!bus.routeId || !bus.busId || !isFresh || !hasValidBusCoordinates(bus.lat, bus.lng)) return;
 
           const isActive = bus.tripState === "in_service" || bus.tripState === "pre_departure";
           const isOffline = bus.status === "offline" || bus.deviceState === "offline";
@@ -227,8 +207,18 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
   }, [route.id, targetStop, route.stops]);
 
   // ── High-Frequency Speed-Aware ETA Fallback (Haversine) ──────────────────
+  const updateUI = useCallback(() => {
+    const now = Date.now();
+    setUiNow(now);
+    const updatedETAs: Record<string, number> = {};
+    for (const [stopId, timestamp] of Object.entries(arrivalTimestampsRef.current)) {
+      updatedETAs[stopId] = Math.max(0, Math.ceil((timestamp - now) / 60_000));
+    }
+    setStopETAs(updatedETAs);
+  }, []);
+
   useEffect(() => {
-    if (!routesLib || !route.stops || route.stops.length === 0 || buses.size === 0) return;
+    if (!route.stops || route.stops.length === 0 || buses.size === 0) return;
 
     const fetchETAs = async () => {
       const now = Date.now();
@@ -243,7 +233,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         if (remainingStops.length === 0) continue;
 
         // Base speed fallback: 35km/h for city transit. Use actual speed if available.
-        const speedKmh = (bus as any).speed > 0 ? (bus as any).speed : 35;
+        const speedKmh = bus.speed > 0 ? bus.speed : 35;
         const speedMs = speedKmh / 3.6;
         const busDelaySec = (bus.delayMinutes || 0) * 60;
 
@@ -276,30 +266,16 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     fetchETAs();
     const interval = setInterval(fetchETAs, 60000);
     return () => clearInterval(interval);
-  }, [routesLib, buses, route.stops]);
+  }, [buses, route.stops, updateUI]);
 
   // ── ETA Smooth Interpolation ───────────────────────────────────────────────
-  const updateUI = useCallback(() => {
-    const now = Date.now();
-    const updatedETAs: Record<string, number> = {};
-    for (const [stopId, timestamp] of Object.entries(arrivalTimestampsRef.current)) {
-      const msRemaining = timestamp - now;
-      if (msRemaining > 0) {
-        updatedETAs[stopId] = Math.ceil(msRemaining / 60000);
-      } else {
-        updatedETAs[stopId] = 0;
-      }
-    }
-    setStopETAs(updatedETAs);
-  }, []);
-
   useEffect(() => {
-    const interval = setInterval(updateUI, 1000);
+    const interval = setInterval(updateUI, 15_000);
     return () => clearInterval(interval);
   }, [updateUI]);
 
   const signalLostMinutes = signalLostLastSeen
-    ? Math.round((Date.now() - signalLostLastSeen) / 60_000)
+    ? Math.max(0, Math.round((uiNow - signalLostLastSeen) / 60_000))
     : null;
 
   const mapCenter = useMemo(() => ({ lat: targetStop.lat, lng: targetStop.lng }), [targetStop.lat, targetStop.lng]);
@@ -343,9 +319,9 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           {...MAP_OPTIONS}
         >
           <MapCenterer target={centerTarget} isCentered={isCentered} />
-          <TrafficLayer />
           <DirectionsRoute
             stops={routeStops}
+            polyline={route.polyline}
             color={route.color || "#3b82f6"}
             hasBuses={buses.size > 0}
           />

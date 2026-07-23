@@ -1,10 +1,6 @@
 "use client";
 
-import RouteManagementPanel from "@/components/admin/RouteManagementPanel";
-import FleetManagementPanel from "@/components/admin/FleetManagementPanel";
-import DashboardPanel from "@/components/admin/DashboardPanel";
-import SettingsPanel from "@/components/admin/SettingsPanel";
-import RideHistoryPanel from "@/components/admin/RideHistoryPanel";
+import dynamic from "next/dynamic";
 import {
   MapPinned as MapIcon,
   UsersRound as UsersIcon,
@@ -15,6 +11,18 @@ import {
   Activity,
 } from "lucide-react";
 import { useState } from "react";
+
+const loadingPanel = () => (
+  <div className="h-full grid place-items-center text-white/50" role="status" aria-label="Loading panel">
+    Loading panel…
+  </div>
+);
+
+const RouteManagementPanel = dynamic(() => import("@/components/admin/RouteManagementPanel"), { ssr: false, loading: loadingPanel });
+const FleetManagementPanel = dynamic(() => import("@/components/admin/FleetManagementPanel"), { ssr: false, loading: loadingPanel });
+const DashboardPanel = dynamic(() => import("@/components/admin/DashboardPanel"), { ssr: false, loading: loadingPanel });
+const SettingsPanel = dynamic(() => import("@/components/admin/SettingsPanel"), { ssr: false, loading: loadingPanel });
+const RideHistoryPanel = dynamic(() => import("@/components/admin/RideHistoryPanel"), { ssr: false, loading: loadingPanel });
 
 type AdminTab = "dashboard" | "routes" | "fleet" | "personnel" | "history" | "settings";
 
@@ -29,6 +37,23 @@ const TABS: { id: AdminTab; label: string; Icon: React.FC<{ className?: string }
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
+  const [visitedTabs, setVisitedTabs] = useState<AdminTab[]>(["dashboard"]);
+
+  const selectTab = (tab: AdminTab) => {
+    setActiveTab(tab);
+    setVisitedTabs((current) => current.includes(tab) ? current : [...current, tab]);
+  };
+
+  const renderPanel = (tab: AdminTab) => {
+    switch (tab) {
+      case "dashboard": return <DashboardPanel />;
+      case "routes": return <RouteManagementPanel />;
+      case "fleet": return <FleetManagementPanel mode="fleet" />;
+      case "personnel": return <FleetManagementPanel mode="personnel" />;
+      case "history": return <RideHistoryPanel />;
+      case "settings": return <SettingsPanel />;
+    }
+  };
 
   return (
     <main
@@ -53,9 +78,9 @@ export default function AdminPage() {
               <button
                 key={id}
                 id={`admin-tab-${id}`}
-                onClick={() => setActiveTab(id)}
+                onClick={() => selectTab(id)}
                 className={`relative flex items-center gap-2 px-4 py-3.5 text-sm font-semibold transition-all whitespace-nowrap ${
-                  activeTab === id ? "text-white" : "text-white/40 hover:text-white/70"
+                  activeTab === id ? "text-white" : "text-white/50 hover:text-white/70"
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
@@ -71,12 +96,11 @@ export default function AdminPage() {
 
       {/* ── Content — fills remaining height, scrolls internally per panel ── */}
       <div className="flex-1 min-h-0 overflow-hidden bg-brand-dark/20">
-        {activeTab === "dashboard"  && <DashboardPanel />}
-        {activeTab === "routes"     && <RouteManagementPanel />}
-        {activeTab === "fleet"      && <FleetManagementPanel mode="fleet" />}
-        {activeTab === "personnel"  && <FleetManagementPanel mode="personnel" />}
-        {activeTab === "history"    && <RideHistoryPanel />}
-        {activeTab === "settings"   && <SettingsPanel />}
+        {TABS.map(({ id }) => visitedTabs.includes(id) && (
+          <div key={id} className={activeTab === id ? "h-full" : "hidden"}>
+            {renderPanel(id)}
+          </div>
+        ))}
       </div>
     </main>
   );

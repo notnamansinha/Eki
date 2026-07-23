@@ -379,7 +379,7 @@ export default function FeedbackPage() {
                 className={`px-3 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
                   filterType === t
                     ? "bg-white text-brand-dark border-white"
-                    : "bg-white/5 text-white/40 border-white/10 hover:border-white/20 hover:text-white/70"
+                    : "bg-white/5 text-white/50 border-white/10 hover:border-white/20 hover:text-white/70"
                 }`}
               >
                 {t}
@@ -395,7 +395,7 @@ export default function FeedbackPage() {
                   className={`px-3 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
                     filterStatus === s
                       ? "bg-white text-brand-dark border-white"
-                      : "bg-white/5 text-white/40 border-white/10 hover:border-white/20 hover:text-white/70"
+                      : "bg-white/5 text-white/50 border-white/10 hover:border-white/20 hover:text-white/70"
                   }`}
                 >
                   {s}

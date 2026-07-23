@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from "express";
+import { Router, Request, Response } from "express";
 
 const router = Router();
 
@@ -37,6 +37,10 @@ router.post("/compute-polyline", requireAdmin, async (req: Request, res: Respons
   }
   if (waypoints.length < 2) {
     res.status(400).json({ error: "waypoints must have at least 2 items" });
+    return;
+  }
+  if (waypoints.length > 27) {
+    res.status(400).json({ error: "waypoints must have at most 27 items" });
     return;
   }
   const invalidIndex = waypoints.findIndex((wp) => !isValidLatLng(wp));
@@ -82,6 +86,7 @@ router.post("/compute-polyline", requireAdmin, async (req: Request, res: Respons
       "https://routes.googleapis.com/directions/v2:computeRoutes",
       {
         method: "POST",
+        signal: AbortSignal.timeout(10_000),
         headers: {
           "Content-Type": "application/json",
           "X-Goog-Api-Key": apiKey,
@@ -93,8 +98,8 @@ router.post("/compute-polyline", requireAdmin, async (req: Request, res: Respons
 
     if (!response.ok) {
       const errBody = await response.text();
-      console.error(`❌ Routes API HTTP ${response.status}:`, errBody);
-      res.status(502).json({ error: `Routes API returned ${response.status}`, detail: errBody });
+      console.error(`❌ Routes API HTTP ${response.status}:`, errBody.slice(0, 1000));
+      res.status(502).json({ error: `Routes API returned ${response.status}` });
       return;
     }
 

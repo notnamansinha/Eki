@@ -1,19 +1,17 @@
 import { Router } from "express";
 import { db } from "../lib/firebaseAdmin";
 import { requireAdmin } from "../middleware/requireAdmin";
-import type { PassengerRequest } from "../types";
 
 const router = Router();
 
-const ALLOWED_REQUEST_TYPES = new Set<string>(["pickup", "dropoff"]);
 const ALLOWED_REQUEST_STATUSES = new Set<string>(["pending", "accepted", "completed", "cancelled"]);
 
 function isNonEmptyString(val: unknown, maxLen = 256): val is string {
   return typeof val === "string" && val.trim().length > 0 && val.length <= maxLen;
 }
 
-// Passenger requests must be created exclusively via the authenticated WebSocket (passenger:request)
-// which strictly enforces Firebase UID verification (ARCH-04) and rate limiting (ARCH-05).
+// Passenger requests are created directly through the constrained Firestore
+// rule; this API exposes only administrator lifecycle overrides.
 
 
 // Admin patch completion override — SEC-10 fix: requires Firebase admin token
@@ -41,7 +39,7 @@ router.patch("/:id", requireAdmin, async (req, res) => {
     }
     await docRef.update({ status });
     res.json({ id, ...doc.data(), status });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to update request" });
   }
 });
@@ -62,7 +60,7 @@ router.delete("/:id", requireAdmin, async (req, res) => {
     }
     await docRef.delete();
     res.json({ message: "Deleted successfully" });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to delete request" });
   }
 });

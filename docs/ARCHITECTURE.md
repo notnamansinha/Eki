@@ -23,7 +23,7 @@ graph TD
 
     subgraph Cloud Container [Backend Server - Cloud Run/Render]
         Express[Node.js + Express]
-        SocketIO[Socket.io Gateway]
+        API[Authenticated REST API]
         RoutesAPI["Google Maps<br/>Routes API v2"]
     end
 
@@ -40,47 +40,67 @@ graph TD
     RTDB -->|Listen and Override| A
 
     %% Backend Connections
-    Frontend -->|REST and WS| Express
-    Express -->|REST and WS| Frontend
+    Frontend -->|Authenticated REST| Express
+    Express -->|Authenticated REST| Frontend
     Express -->|Validates/Updates| FS
     Express -->|Computes Polylines| RoutesAPI
 ```
 
-## 2. Role-Based Access Control (RBAC) Flow
+## 2. Role-Based Access Control (RBAC) & Custom Claims Architecture
 
-The system employs a strict hierarchical Role-Based Access Control pattern. The `RoleGuard` wrapper is a **presentation-layer guard** that controls UI rendering. It reads the user's role from Firestore (`users/{uid}.role`) — Google Authentication supplies identity only. Authorization is enforced by Firebase Security Rules and authenticated backend endpoints; `RoleGuard` prevents unauthorized UI rendering but should not be considered the sole authorization boundary.
+The system employs a strict hierarchical Role-Based Access Control pattern backed by immutable **Firebase Custom Claims** (`auth.token.role`).
 
-### Role Hierarchy
-* **Admin:** Inherits all permissions. Can view `/admin`, `/driver`, and `/passenger`.
-* **Driver:** Can view `/driver` and `/passenger`.
-* **Passenger:** Can only view `/passenger`.
+### 2.1 Custom Claims Authorization Model
+Unlike legacy client-writable database roles, role authorization in Eki is issued server-side by an admin synchronization task (`npm run sync-role-claims`) using the Firebase Admin SDK:
+* **Admin:** Issued `role: "admin"` and `admin: true` claims. Access to `/admin`, `/driver`, and `/passenger`.
+* **Driver:** Issued `role: "driver"` claim. Access to `/driver` and `/passenger`.
+* **Passenger:** Issued `role: "passenger"` claim (or default). Access to `/passenger`.
+* **Device:** Hardware units are issued temporary custom tokens containing `role: "device"` and `deviceId: "<hardwareId>"`.
+
+The synchronization task also mirrors each driver's assigned bus routes into a
+server-only RTDB path. RTDB rules use that mirror to prevent a valid driver
+from publishing their assigned bus on an unassigned route. Run the task after
+changing a driver, a driver's bus, or a bus's route assignment.
+
+### 2.2 Global AuthProvider Singleton
+The frontend uses a top-level `<AuthProvider>` in `Providers.tsx` ([useAuth.ts](../frontend/src/hooks/useAuth.ts)) that maintains a single `onAuthStateChanged` listener across all route changes:
+1. On initial mount or page refresh, `useAuth` inspects `firebaseUser.getIdTokenResult().claims.role`.
+2. If custom claims exist in the active session token, the role is immediately initialized without waiting for a Firestore read.
+3. If no custom claim is present (new or legacy users), it falls back to a single read of `users/{uid}` in Firestore.
+
+### 2.3 Presentation vs Enforcement Boundaries
+* **Presentation Layer:** `RoleGuard.tsx` checks the authenticated user's role and renders UI or a 403 fallback.
+* **Database Security Layer:** Firebase Realtime Database rules (`database.rules.json`) strictly evaluate `auth.token.role` and `auth.token.deviceId`:
+  - Client writes to `/users/$uid` are disabled (`.write: false`).
+  - Active bus writes under `/activeBuses/$busKey` require `auth.token.role === 'driver' | 'admin'` or a path-isolated hardware token matching `auth.token.deviceId`.
+  - Chat messages under `/messages` are append-only (`!data.exists()`) with strict schema and sender verification.
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant RoleGuard
+    participant AuthProvider
     participant Firebase Auth
-    participant Firestore
+    participant RoleGuard
     participant Protected Page
 
-    User->>RoleGuard: Requests Route (e.g., /admin)
-    RoleGuard->>Firebase Auth: Check Auth State
+    User->>AuthProvider: Opens Web Application
+    AuthProvider->>Firebase Auth: Attach onAuthStateChanged Listener
+    Firebase Auth-->>AuthProvider: Returns firebaseUser Session Token
     
-    alt is authenticated
-        Firebase Auth-->>RoleGuard: Returns User ID
-        RoleGuard->>Firestore: Fetch User Role Document
-        Firestore-->>RoleGuard: Returns Role (e.g., 'admin')
-        
-        Note over RoleGuard: Array Check:<br>['admin'].includes('admin')
-        
-        alt Role matches allowed roles
-            RoleGuard->>Protected Page: Render Children
-            Protected Page-->>User: Displays Dashboard
-        else Role NOT in allowed roles
-            RoleGuard-->>User: Renders 403 Access Restricted
-        end
-    else Not authenticated
-        RoleGuard-->>User: Renders Login Prompt
+    alt Custom Claim Exists in Token
+        Note over AuthProvider: Read tokenResult.claims.role<br>('admin' / 'driver' / 'passenger')
+    else Token missing claim
+        AuthProvider->>Firestore: Fallback Read users/{uid}
+        Firestore-->>AuthProvider: Returns Firestore Role
+    end
+
+    User->>RoleGuard: Navigates to Route (e.g., /admin)
+    RoleGuard->>AuthProvider: Consume Context (user, loading)
+    
+    alt Role Authorized
+        RoleGuard->>Protected Page: Render Route
+    else Role Unauthorized
+        RoleGuard-->>User: Render 403 Access Restricted
     end
 ```
 
@@ -157,4 +177,4 @@ The Node.js backend (located in the `/backend` directory) includes a `Dockerfile
 
 * **Heavy Computation:** Interacting with the Google Maps Routes API v2 to compute complex polylines and ETAs (Cost optimization).
 * **Security & Validation:** Hiding sensitive Server API keys and enforcing complex business logic.
-* **WebSocket Management:** Running a Socket.io gateway for older legacy interactions.
+* **Live-data management:** Firebase RTDB/Firestore listeners carry live updates; the backend does not run a Socket.IO gateway.

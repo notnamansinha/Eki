@@ -8,21 +8,24 @@
 #include <WiFiClientSecure.h>
 
 // ── Bus Identity ──────────────────────────────────────────────────
-#define BUS_ID     "bus_01"
-#define ROUTE_ID   "route_01"
-#define DRIVER_ID  "hw_device"
+#ifndef BACKEND_ROOT_CA
+#error "BACKEND_ROOT_CA must be defined in include/secrets.h for TLS verification."
+#endif
 
-// ── Smart Transmission Thresholds ─────────────────────────────────
-#define DISTANCE_THRESHOLD_M        10.0   // Minimum meters moved to trigger send
+// ── Unified Adaptive Transmission Thresholds ──────────────────────
+// Uses net coordinate displacement (Haversine) rather than rigid speed splits.
+// Works seamlessly for both walking tests (on foot) and live bus routes.
+#define DISTANCE_THRESHOLD_M        8.0    // Minimum meters moved to trigger send (handles walking & driving)
 #define HEADING_THRESHOLD_DEG       15.0   // Minimum heading change (degrees)
 #define SPEED_THRESHOLD_KMH         5.0    // Minimum speed change (km/h)
 
-// Tiered heartbeat: longer interval when stationary to reduce idle RTDB writes
+// Tiered heartbeat: 30s when moving, 2 min when parked in depot/terminus.
+// Keep a safety margin below the backend's 5-minute stale-record sweep.
 #define MAX_SILENT_INTERVAL_MOVING  30000  // 30 s when active/moving
-#define MAX_SILENT_INTERVAL_IDLE   300000  // 5 min when idle (stationary at stop/terminus)
+#define MAX_SILENT_INTERVAL_IDLE   120000  // 2 min when idle (stationary at stop/terminus)
 
-#define STOP_SPEED_KMH              2.0    // Below this = "stopped"
-#define MOVING_SPEED_KMH            5.0    // Above this = "moving" (jitter filter)
+#define STOP_SPEED_KMH              1.5    // Below this = "stopped"
+#define MOVING_SPEED_KMH            2.5    // Above this = "moving" (jitter filter)
 
 // ── HDOP Dual Threshold ───────────────────────────────────────────
 // HDOP < 2.5  → accurate, write normally
@@ -32,9 +35,9 @@
 #define HDOP_LOW_ACCURACY_THRESHOLD 2.5
 
 // ── Hysteresis for active/idle status transitions ─────────────────
-// Prevents rapid active↔idle oscillation at threshold boundary (e.g., 7–9 km/h)
-#define ACTIVE_SPEED_THRESHOLD_KMH  8.0    // Enter active only above this
-#define IDLE_SPEED_THRESHOLD_KMH    5.0    // Drop to idle only below this
+// Prevents rapid active↔idle oscillation at threshold boundary
+#define ACTIVE_SPEED_THRESHOLD_KMH  4.0    // Enter active state
+#define IDLE_SPEED_THRESHOLD_KMH    2.0    // Drop to idle state
 #define HYSTERESIS_READINGS         3      // Must hold state for N consecutive readings
 
 // ── WiFi reconnect interval ──────────────────────────────────────
@@ -101,8 +104,9 @@ static unsigned long lastRtdbFailTime = 0;
 static bool rtdbInBackoff = false;
 
 // ── Meta write flag ───────────────────────────────────────────────
-// Trip-start static metadata (busId, driverId, routeId, source) is written
-// once to /activeBuses/bus_01_route_01/meta — not repeated on every update.
+// Trip-start static metadata is written once to the active-bus node — not
+// repeated on every coordinate update. This lets the hardware tracker remain
+// visible even before the driver web console opens a shift.
 static bool metaWritten = false;
 
 // ── Safe elapsed time helper (handles millis() uint32 overflow at 49.7 days) ──
@@ -134,6 +138,7 @@ void connectWiFi() {
 
     if (WiFi.status() == WL_CONNECTED) {
         Serial.printf("[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+        configTime(0, 0, "pool.ntp.org"); // Start async SNTP time sync for SSL/TLS cert validation
     } else {
         Serial.println("[WiFi] Attempt failed. Will retry in 5s.");
     }
@@ -142,19 +147,23 @@ void connectWiFi() {
 bool fetchCustomToken() {
     if (WiFi.status() != WL_CONNECTED) return false;
 
-    WiFiClient client;
+    struct tm timeInfo;
+    if (!getLocalTime(&timeInfo, 0) || timeInfo.tm_year <= 70) {
+        Serial.println("[Auth] NTP time is not synchronized; deferring authenticated connection.");
+        return false;
+    }
+
+    String url = String(BACKEND_URL) + "/api/devices/auth";
+    if (!url.startsWith("https://")) {
+        Serial.println("[Auth] BACKEND_URL must use HTTPS; refusing to send device credentials.");
+        return false;
+    }
+
     WiFiClientSecure clientSecure;
-    // SEC-09: For absolute production security, replace setInsecure() with client.setCACert(root_ca);
-    clientSecure.setInsecure();
+    clientSecure.setCACert(BACKEND_ROOT_CA);
 
     HTTPClient http;
-    String url = String(BACKEND_URL) + "/api/devices/auth";
-    
-    if (url.startsWith("https://")) {
-        http.begin(clientSecure, url);
-    } else {
-        http.begin(client, url);
-    }
+    http.begin(clientSecure, url);
     http.addHeader("Content-Type", "application/json");
 
     JsonDocument doc;
@@ -188,12 +197,32 @@ bool fetchCustomToken() {
     return false;
 }
 
-void initFirebase() {
-    fbConfig.host = FIREBASE_HOST;
-
-    if (!fetchCustomToken()) {
-        Serial.println("[Auth] Failed to get initial token. Will retry in loop.");
+// CR-09: Wait for NTP time sync before initializing Firebase.
+// configTime() is async; TLS cert validation fails if the clock is still at epoch.
+// Feeds GPS serial during the wait to prevent hardware buffer overflow.
+// Returns true if time synced within timeoutMs, false if timed out.
+bool waitForNtpSync(uint32_t timeoutMs) {
+    struct tm timeInfo;
+    unsigned long waitStart = millis();
+    Serial.print("[NTP] Waiting for time sync");
+    while (elapsed(waitStart) < timeoutMs) {
+        // Keep GPS serial drained to avoid 512-byte hardware buffer overflow
+        while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
+        if (getLocalTime(&timeInfo, 0) && timeInfo.tm_year > 70) {
+            Serial.printf(" OK (epoch: %lld)\n", (long long)mktime(&timeInfo));
+            return true;
+        }
+        Serial.print(".");
+        delay(200);
     }
+    Serial.println(" TIMEOUT — proceeding without confirmed time sync.");
+    return false;
+}
+
+void startFirebaseWithCurrentToken() {
+    // Fix for ESP32 SSL memory limitation and "ssl engine closed" / BR_SSL_SENDAPP errors
+    fbData.setBSSLBufferSize(4096, 1024);
+    fbData.setResponseSize(4096);
 
     Firebase.begin(&fbConfig, &fbAuth);
     Firebase.reconnectNetwork(true);
@@ -211,6 +240,27 @@ void initFirebase() {
     }
     Serial.println("\n[Firebase] Ready!");
     firebaseReady = true;
+}
+
+void initFirebase() {
+    fbConfig.host = FIREBASE_HOST;
+    fbConfig.api_key = FIREBASE_API_KEY;
+
+    // Block until NTP time is synchronized (needed for SSL/TLS cert validation).
+    // Defer rather than weakening TLS or attempting an epoch-dated handshake.
+    if (WiFi.status() != WL_CONNECTED || !waitForNtpSync(5000)) {
+        Serial.println("[NTP] Firebase init deferred; will retry after time synchronization.");
+        return;
+    }
+
+    // Do NOT call Firebase.begin() if the device token is unavailable.
+    // An unauthenticated Firebase session will fail all RTDB writes silently.
+    if (!fetchCustomToken()) {
+        Serial.println("[Auth] Failed to get initial token. Firebase init deferred — will retry in loop.");
+        return;
+    }
+
+    startFirebaseWithCurrentToken();
 }
 
 // Haversine distance in meters between two GPS points
@@ -381,18 +431,25 @@ void flushBufferedFix() {
 }
 
 // ── Write static trip metadata once per session ───────────────────
-// Fields that don't change during a trip (busId, driverId, routeId, source)
-// are written to /meta sub-path on startup. Subsequent location patches omit them.
+// Identity and service fields live at the active-bus root for passenger/admin
+// listeners. The mirrored /meta fields are retained for the device RTDB rule.
+// Subsequent coordinate patches omit all of these static fields.
 void writeBusMeta() {
-    String metaPath = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID + "/meta";
+    String busPath = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID;
     FirebaseJson meta;
-    meta.set("busId",    BUS_ID);
-    meta.set("driverId", DRIVER_ID);
-    meta.set("routeId",  ROUTE_ID);
-    meta.set("source",   "gnss_hw");
+    meta.set("busId",         BUS_ID);
+    meta.set("driverId",      DRIVER_ID);
+    meta.set("routeId",       ROUTE_ID);
+    meta.set("status",        "active");
+    meta.set("deviceState",   "online");
+    meta.set("timestamp/.sv", "timestamp");
+    meta.set("meta/busId",    BUS_ID);
+    meta.set("meta/driverId", DRIVER_ID);
+    meta.set("meta/routeId",  ROUTE_ID);
+    meta.set("meta/source",   "gnss_hw");
 
-    if (Firebase.RTDB.updateNode(&fbData, metaPath.c_str(), &meta)) {
-        Serial.println("[RTDB] Bus meta written (busId, routeId, source).");
+    if (Firebase.RTDB.updateNode(&fbData, busPath.c_str(), &meta)) {
+        Serial.println("[RTDB] Static bus metadata written.");
         metaWritten = true;
     } else {
         Serial.printf("[RTDB] Meta write failed: %s\n", fbData.errorReason().c_str());
@@ -506,6 +563,12 @@ void loop() {
             lastAuthRetry = now;
             if (fetchCustomToken()) {
                 Serial.println("[Auth] Successfully obtained Custom Token.");
+                // CR-10: If Firebase was never initialized (token failed at boot),
+                // complete initialization now that we have a valid token.
+                if (!firebaseReady && WiFi.status() == WL_CONNECTED) {
+                    Serial.println("[Auth] Completing deferred Firebase initialization.");
+                    startFirebaseWithCurrentToken();
+                }
             }
         }
     }

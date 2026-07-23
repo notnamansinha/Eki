@@ -1,8 +1,11 @@
 import { Router, Request, Response } from "express";
 import { db } from "../lib/firebaseAdmin";
+import { requireAuth } from "../middleware/requireAuth";
 
 const router = Router();
 
+const isSafeId = (value: unknown): value is string =>
+  typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 
 import {
   decodePolyline,
@@ -42,7 +45,7 @@ interface RouteDoc {
  * RUNTIME COST: $0 — reads Firestore cache + pure math.
  * No Google Directions API calls are made.
  */
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", requireAuth, async (req: Request, res: Response) => {
   const { routeId, startStopId, endStopId, viaStopId } = req.body as {
     routeId?: string;
     startStopId?: string;
@@ -50,8 +53,9 @@ router.post("/", async (req: Request, res: Response) => {
     viaStopId?: string;
   };
 
-  if (!routeId || !startStopId || !endStopId) {
-    res.status(400).json({ error: "routeId, startStopId, and endStopId are required" });
+  if (!isSafeId(routeId) || !isSafeId(startStopId) || !isSafeId(endStopId) ||
+      (viaStopId !== undefined && !isSafeId(viaStopId))) {
+    res.status(400).json({ error: "Route and stop IDs must use 1-128 letters, numbers, underscores, or hyphens." });
     return;
   }
 

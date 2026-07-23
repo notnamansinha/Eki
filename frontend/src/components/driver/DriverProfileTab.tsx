@@ -1,12 +1,9 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useDrivers } from "@/hooks/useDrivers";
-import { db, storage } from "@/lib/firebase";
-import { doc, updateDoc } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { CircleUserRound as User, LogOut, BadgeCheck, Camera, Loader2 } from "lucide-react";
+import { CircleUserRound as User, LogOut, BadgeCheck } from "lucide-react";
 
 interface Props {
   driverId: string;
@@ -18,32 +15,10 @@ interface Props {
 export default function DriverProfileTab({ driverId, busId, onStopTracking, isTracking }: Props) {
   const { user } = useAuth();
   const { drivers } = useDrivers();
-  const [isUploading, setIsUploading] = useState(false);
   const [showEndShiftConfirm, setShowEndShiftConfirm] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const currentDriver = drivers.find(d => d.id === driverId);
   const displayPhotoUrl = currentDriver?.photoUrl || user?.photoURL;
-
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setIsUploading(true);
-      const storageRef = ref(storage, `drivers/${driverId}-profile`);
-      await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(storageRef);
-      
-      await updateDoc(doc(db, "drivers", driverId), {
-        photoUrl: downloadURL
-      });
-    } catch (error) {
-      console.error("Error uploading photo:", error);
-    } finally {
-      setIsUploading(false);
-    }
-  };
 
   return (
     <div className="flex-1 overflow-y-auto flex flex-col pt-safe px-5" style={{ background: "var(--surface-0)" }}>
@@ -54,29 +29,17 @@ export default function DriverProfileTab({ driverId, busId, onStopTracking, isTr
           style={{ background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
           <div className="flex flex-col items-center gap-5 relative z-10">
             
-            <div 
-              className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden relative cursor-pointer group"
+            <div
+              className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden relative"
               style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)" }}
-              onClick={() => fileInputRef.current?.click()}
             >
               {displayPhotoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={displayPhotoUrl} alt="Driver" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               ) : (
                 <User className="w-9 h-9" style={{ color: "var(--text-ghost)" }} />
               )}
 
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ background: "rgba(0,0,0,0.55)" }}>
-                {isUploading ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <Camera className="w-5 h-5 text-white" />}
-              </div>
-              
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handlePhotoUpload} 
-                accept="image/*" 
-                className="hidden" 
-              />
             </div>
 
             <div className="text-center">

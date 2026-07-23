@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db } from "@/lib/firebaseFirestore";
 import { waitForAuth } from "@/lib/authState";
 
-interface CacheEntry<T> {
-  data: T[];
+interface CacheEntry {
+  data: unknown[];
   loading: boolean;
   listenerCount: number;
   unsubscribe: (() => void) | null;
@@ -12,7 +12,19 @@ interface CacheEntry<T> {
   timeoutId?: NodeJS.Timeout;
 }
 
-const queryCache = new Map<string, CacheEntry<any>>();
+const queryCache = new Map<string, CacheEntry>();
+
+/** Clear in-memory snapshots when the Firebase principal changes. */
+export function clearCollectionCache(): void {
+  for (const entry of queryCache.values()) {
+    if (entry.timeoutId) clearTimeout(entry.timeoutId);
+    entry.unsubscribe?.();
+    entry.unsubscribe = null;
+    entry.data = [];
+    entry.loading = true;
+  }
+  queryCache.clear();
+}
 
 export function useCollection<T>(collectionName: string) {
   const [, forceRender] = useState(0);

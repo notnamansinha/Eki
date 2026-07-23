@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { db } from "../lib/firebaseAdmin";
+import { requireAuth } from "../middleware/requireAuth";
 
 const router = Router();
 
@@ -11,7 +12,7 @@ const router = Router();
  *
  * RUNTIME COST: $0 (Firestore read, 1 req per page load)
  */
-router.get("/", async (_req: Request, res: Response) => {
+router.get("/", requireAuth, async (_req: Request, res: Response) => {
   try {
     const snapshot = await db.collection("routes").get();
     const routes = snapshot.docs.map((doc) => {

@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { rtdb, auth } from "@/lib/firebase";
-import { ref, push, onValue, serverTimestamp } from "firebase/database";
-import { waitForAuth } from "@/lib/authState";
+import { db } from "@/lib/firebase";
+import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp, Timestamp } from "firebase/firestore";
 import { Send, X, MessageCircle } from "lucide-react";
 
 interface Message {
@@ -12,7 +11,7 @@ interface Message {
   from: "driver" | "passenger";
   senderName: string;
   senderId: string;
-  timestamp: number;
+  timestamp: Timestamp | null;
 }
 
 interface Props {
@@ -41,26 +40,14 @@ export default function MessagingPanel({
   const lastSeenCountRef = useRef(0);
 
   useEffect(() => {
-    // Always reset session-bound state when sessionId changes (including when empty)
-    setMessages([]);
-    setNewMessage("");
     lastSeenCountRef.current = 0;
 
     if (!sessionId) return;
 
-    let unsubscribe: (() => void) | undefined;
-    let isMounted = true;
-
-    waitForAuth().then(() => {
-      if (!isMounted) return;
-      const messagesRef = ref(rtdb, `messages/sessions/${sessionId}`);
-      unsubscribe = onValue(messagesRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const msgs = Object.entries(data).map(([id, val]) => ({
-            id,
-            ...(val as Record<string, unknown>) // Type assertion to satisfy spread, since val is unknown/Partial
-          }) as Message).sort((a: Message, b: Message) => (a.timestamp || 0) - (b.timestamp || 0));
+    const unsubscribe = onSnapshot(
+      query(collection(db, "ride_sessions", sessionId, "messages"), orderBy("timestamp", "asc")),
+      (snapshot) => {
+          const msgs = snapshot.docs.map((message) => ({ id: message.id, ...message.data() })) as Message[];
           setMessages(msgs);
 
           // Count messages from others to surface unread badge
@@ -75,17 +62,13 @@ export default function MessagingPanel({
           setTimeout(() => {
             messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
           }, 100);
-        } else {
-          setMessages([]);
-        }
       }, (error) => {
-        console.warn("[RTDB] messages read failed:", error.message);
-      });
-    });
+        console.warn("[Chat] messages read failed:", error.message);
+      }
+    );
 
     return () => {
-      isMounted = false;
-      if (unsubscribe) unsubscribe();
+      unsubscribe();
     };
   }, [sessionId, currentUserId, onUnreadCountChange]);
 
@@ -125,8 +108,7 @@ export default function MessagingPanel({
     const roleForMsg = currentUserRole === "admin" ? "driver" : currentUserRole;
 
     try {
-      const messagesRef = ref(rtdb, `messages/sessions/${sessionId}`);
-      await push(messagesRef, {
+      await addDoc(collection(db, "ride_sessions", sessionId, "messages"), {
         text: censoredContent,
         from: roleForMsg,
         senderName: currentUserName || (roleForMsg === "driver" ? "Operator" : "Rider"),
@@ -198,7 +180,7 @@ export default function MessagingPanel({
                   </span>
                   {msg.timestamp && (
                     <span className="text-[9px] font-medium" style={{ color: "var(--text-ghost)" }}>
-                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   )}
                 </div>

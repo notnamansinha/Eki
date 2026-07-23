@@ -27,8 +27,8 @@
   /* ── Text hierarchy ── */
   --text-primary: #ECECEF;
   --text-secondary: #94949C;
-  --text-tertiary: #5A5A63;
-  --text-ghost: #3A3A42;
+  --text-tertiary: #8A8A93;
+  --text-ghost: #6E6E78;
 
   /* ── Borders ── */
   --border-subtle: rgba(255, 255, 255, 0.06);
@@ -65,8 +65,8 @@
   --color-status-active: var(--status-live);
   --color-status-idle: var(--status-warning);
   --color-status-maintenance: var(--accent);
-  --font-sans: var(--font-sora), system-ui, -apple-system, sans-serif;
-  --font-display: var(--font-sora), sans-serif;
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: system-ui, -apple-system, "Segoe UI", sans-serif;
   --radius-xl: var(--radius-lg);
 }
 
@@ -677,4 +677,4 @@ body {
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 1.5rem;
-}
+}

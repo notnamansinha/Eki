@@ -115,7 +115,7 @@ This is the current data flow as implemented across [driver/page.tsx](file:///c:
 6. The coordinates are packaged into a payload and written directly to Firebase RTDB at `activeBuses/{busId}_{routeId}` using the **Firebase Client SDK** — [lines 84–104](file:///c:/Users/Naman Sinha/Desktop/Eki/frontend/src/app/driver/page.tsx#L84-L104)
 7. On the passenger side, `PassengerMap.tsx` listens to `activeBuses` via `onValue()` — [line 162](file:///c:/Users/Naman Sinha/Desktop/Eki/frontend/src/components/maps/PassengerMap.tsx#L162) and renders bus markers
 8. If GPS fails, the code falls back to **mock movement** (random drift) — [lines 131–137](file:///c:/Users/Naman Sinha/Desktop/Eki/frontend/src/app/driver/page.tsx#L131-L137)
-9. `onDisconnect(busRef).remove()` ensures the bus disappears from the map if the browser tab closes — [line 114](file:///c:/Users/Naman Sinha/Desktop/Eki/frontend/src/app/driver/page.tsx#L114)
+9. The driver UI does not register an RTDB disconnect handler: closing the browser must not mark a still-running GNSS tracker offline. The backend freshness sweep removes only stale telemetry.
 
 **Authentication flow:** The driver is authenticated via Firebase Auth (Google Sign-In). The RTDB write rules require `auth != null` — [database.rules.json](file:///c:/Users/Naman Sinha/Desktop/Eki/database.rules.json#L6).
 

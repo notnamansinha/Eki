@@ -11,36 +11,40 @@ detailed summary of the vulnerability, including steps to reproduce.
 
 ## Security Architecture
 
-### Role-Based Access Control (RBAC)
+### Role-Based Access Control (RBAC) & Custom Claims
 
-Eki enforces strict RBAC at two levels:
+Eki enforces strict RBAC across presentation, API, and database perimeters:
 
-1. **Frontend (`RoleGuard`)**: Prevents unauthorized UI rendering by validating
-   the authenticated Firebase user's role against a Firestore `users` collection.
-2. **Backend/API**: The Express backend requires a valid Firebase ID Token
-   (Bearer token) for all endpoints. Actions like modifying bus states or
-   canceling passenger requests are strictly gated behind an `admin` role check.
+1. **Immutable Firebase Custom Claims (`auth.token.role`)**:
+   Role authorization is issued exclusively server-side via the admin sync utility (`npm run sync-role-claims`) or backend endpoints. Clients cannot self-assign or mirror roles in Realtime Database trees (`/users/$uid` has `.write: false`).
+2. **Frontend Presentation Guard (`RoleGuard`)**:
+   Controls route rendering based on authenticated claims (`admin`, `driver`, `passenger`).
+3. **Backend API Authorization**:
+   Express endpoints validate Bearer tokens. Admin endpoints enforce `requireAdmin` middleware checking `auth.token.admin === true`.
 
-### Firebase Security Rules
+### Hardware Authentication & Isolation
 
-Our database relies on Firebase Security Rules (`firestore.rules` and
-`database.rules.json`) as the final perimeter of defense.
+ESP32 GNSS telemetry units authenticate via `/api/devices/auth`:
+- **Scrypt Password Hashing**: Hardware secrets are hashed using `scrypt` with unique salts and compared via constant-time buffer comparison (`timingSafeEqual`). Plaintext secrets are strictly rejected.
+- **Path-Isolated Custom Tokens**: Upon authentication, the backend mints a custom token containing `role: "device"` and `deviceId`.
+- **RTDB Path Isolation**: Realtime Database rules restrict device writes under `/activeBuses/$busKey` so a device can *only* write to keys matching `auth.token.deviceId + '_' + routeId`.
+- **Secret Migration Security**: Secret hashing endpoints (`/api/devices/hash-secret`) require an admin ID token (`requireAdmin`).
 
-- **Firestore**: User data and global route structures are restricted. Users
-  can only read their own data unless they hold an `admin` role.
-- **Realtime Database (RTDB)**: The `/activeBuses` tree is publicly readable
-  by authenticated passengers but strictly writeable only by the hardware
-  telemetry modules or admin backend.
+### Firebase Security Rules Perimeter (`database.rules.json`)
 
-### Hardware Authentication
+- **`/activeBuses`**: Read-accessible to authenticated users; write-gated to custom claim `driver`, `admin`, or path-isolated `device`.
+- **`/messages`**: Append-only (`!data.exists()`). Enforces required fields (`text`, `from`, `senderName`, `senderId`, `timestamp`), max string lengths (text $\le 500$, name $\le 100$), numeric timestamps, and `senderId === auth.uid`.
+- **`/users`**: Read-restricted to owner (`auth.uid == $uid`). Writes disabled (`.write: false`).
 
-ESP32 GNSS modules do not store long-lived Firebase Admin credentials. Instead,
-they authenticate via a custom JWT flow using a hardware-specific
-`DEVICE_SECRET`. This limits the blast radius if a module is physically
-compromised.
+### HTTP Security Headers & Infrastructure
+
+Firebase Hosting (`firebase.json`) enforces strict production security headers:
+- **`Strict-Transport-Security`**: `max-age=31536000; includeSubDomains` (enforces HTTPS).
+- **`Cross-Origin-Opener-Policy`**: `same-origin-allow-popups` (enables Google OAuth popups while isolating cross-origin windows).
+- **`Content-Security-Policy`**: Restricts script, style, image, font, frame, and WebSocket origins (`wss://*.firebaseio.com`, `wss://*.firebasedatabase.app`). Disables `unsafe-eval`.
+- **`X-Frame-Options`**: `DENY` (prevents clickjacking).
 
 ## In-Transit Encryption
 
-- All client-to-server HTTP traffic must enforce HTTPS.
-- Hardware telemetry (ESP32) utilizes TLS via `WiFiClientSecure` when
-  communicating with backend APIs and Firebase.
+- All HTTP traffic enforces HTTPS.
+- Hardware telemetry (ESP32) utilizes TLS via `WiFiClientSecure` when communicating with backend APIs and Firebase.

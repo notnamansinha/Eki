@@ -10,14 +10,16 @@ import { rtdb, auth } from "@/lib/firebase";
 import { useBuses } from "@/hooks/useBuses";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
+import { isLiveBusTimestamp } from "@/lib/liveBusFreshness";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
+import { errorMessage } from "@/lib/errors";
 import {
   Activity, Navigation, Clock, MapPin, AlertTriangle,
   TrendingUp, X, ChevronDown, ChevronUp,
   Sliders, Wifi, WifiOff, Loader2, MessageCircle, Target,
 } from "lucide-react";
 
-/* ── Types ─────────────────────────────────────────────────────────────────── */
+/* â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 interface ActiveBusEntry {
   busId: string;
   driverId?: string;
@@ -35,9 +37,9 @@ interface ActiveBusEntry {
   lowAccuracy?: boolean;
 }
 
-/* ── Config ─────────────────────────────────────────────────────────────────── */
+/* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const TRIP_STATE: Record<string, { label: string; color: string; bg: string; dot: string }> = {
-  pre_departure: { label: "At Depot",   color: "text-white/40",    bg: "bg-white/5",        dot: "bg-white/30" },
+  pre_departure: { label: "At Depot",   color: "text-white/50",    bg: "bg-white/5",        dot: "bg-white/30" },
   in_service:    { label: "In Service", color: "text-emerald-400", bg: "bg-emerald-500/10", dot: "bg-emerald-400" },
   completed:     { label: "Completed",  color: "text-blue-400",    bg: "bg-blue-500/10",    dot: "bg-blue-400" },
   maintenance:   { label: "GPS Lost",   color: "text-amber-400",   bg: "bg-amber-500/10",   dot: "bg-amber-400" },
@@ -61,7 +63,7 @@ function headingLabel(d?: number): string {
   return dirs[Math.round(d / 45) % 8] + ` ${Math.round(d)}°`;
 }
 
-/* ── Live bus hook ──────────────────────────────────────────────────────────── */
+/* â”€â”€ Live bus hook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function useActiveBuses(): ActiveBusEntry[] {
   const [active, setActive] = useState<ActiveBusEntry[]>([]);
   useEffect(() => {
@@ -77,7 +79,7 @@ function useActiveBuses(): ActiveBusEntry[] {
           const freshBuses: ActiveBusEntry[] = [];
           Object.entries(data).forEach(([key, bus]) => {
             bus.busId = bus.busId || key.split("_")[0];
-            const isFresh = bus.timestamp && (Date.now() - bus.timestamp < 300_000);
+            const isFresh = isLiveBusTimestamp(bus.timestamp);
             if (isFresh) freshBuses.push(bus);
           });
           setActive(freshBuses);
@@ -89,7 +91,7 @@ function useActiveBuses(): ActiveBusEntry[] {
   return active;
 }
 
-/* ── Map centering helper ───────────────────────────────────────────────────── */
+/* â”€â”€ Map centering helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function MapCenter({ center }: { center: { lat: number; lng: number } | null }) {
   const map = useMap();
   useEffect(() => {
@@ -98,7 +100,7 @@ function MapCenter({ center }: { center: { lat: number; lng: number } | null }) 
   return null;
 }
 
-/* ── Override Drawer ────────────────────────────────────────────────────────── */
+/* â”€â”€ Override Drawer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function OverrideDrawer({
   entry,
   routeName,
@@ -164,7 +166,7 @@ function OverrideDrawer({
       await update(ref(rtdb, `activeBuses/${rtdbKey}`), patch);
       setMsg("Saved ✓");
       setTimeout(() => setMsg(""), 2000);
-    } catch (e: any) { setMsg("Error: " + e.message); }
+    } catch (error: unknown) { setMsg("Error: " + errorMessage(error)); }
     finally { setSaving(false); }
   };
 
@@ -177,13 +179,13 @@ function OverrideDrawer({
         timestamp: Date.now(),
       });
       onClose();
-    } catch (e: any) { alert("Error: " + (e as any).message); }
+    } catch (error: unknown) { alert("Error: " + errorMessage(error)); }
   };
 
   const handleWipeMessages = async () => {
     if (!confirm(`Clear all messages for ${entry.busId}?`)) return;
     try { await remove(ref(rtdb, `messages/${entry.busId}`)); setMsg("Messages cleared ✓"); setTimeout(() => setMsg(""), 2000); }
-    catch (e: any) { setMsg("Error: " + (e as any).message); }
+    catch (error: unknown) { setMsg("Error: " + errorMessage(error)); }
   };
 
   return (
@@ -193,7 +195,7 @@ function OverrideDrawer({
           <div>
             <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Live Override</p>
             <p className="font-bold text-white">{entry.busId}</p>
-            <p className="text-xs text-white/40">{routeName}</p>
+            <p className="text-xs text-white/50">{routeName}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
             <X className="w-4 h-4 text-white/60" />
@@ -246,7 +248,7 @@ function OverrideDrawer({
   );
 }
 
-/* ── Live bus map marker ────────────────────────────────────────────────────── */
+/* â”€â”€ Live bus map marker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => void }) {
   const ts = TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure;
   const markerColor =
@@ -277,7 +279,7 @@ function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => v
   );
 }
 
-/* ── Fleet card ─────────────────────────────────────────────────────────────── */
+/* â”€â”€ Fleet card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function FleetCard({
   entry, buses, routes, drivers,
   onSelect, selected,
@@ -341,7 +343,7 @@ function FleetCard({
               className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center hover:bg-brand-accent/20 hover:text-brand-accent transition-colors"
               title="Override"
             >
-              <Sliders className="w-3.5 h-3.5 text-white/40" />
+              <Sliders className="w-3.5 h-3.5 text-white/50" />
             </button>
             {expanded ? <ChevronUp className="w-3.5 h-3.5 text-white/30" /> : <ChevronDown className="w-3.5 h-3.5 text-white/30" />}
           </div>
@@ -409,7 +411,7 @@ function FleetCard({
   );
 }
 
-/* ── Main Dashboard ─────────────────────────────────────────────────────────── */
+/* â”€â”€ Main Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function DashboardPanel() {
   const activeEntries = useActiveBuses();
   const { buses } = useBuses();
@@ -418,7 +420,7 @@ export default function DashboardPanel() {
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
 
-  // ── Traffic layer rendered imperatively ──────────────────────────────────────
+  // â”€â”€ Traffic layer rendered imperatively â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const TrafficLayer = () => {
     const map = useMap();
     const layerRef = useRef<google.maps.TrafficLayer | null>(null);
@@ -445,7 +447,7 @@ export default function DashboardPanel() {
 
   return (
     <div className="flex flex-col lg:flex-row w-full" style={{ height: "calc(100vh - 88px)" }}>
-      {/* ── Map ── */}
+      {/* â”€â”€ Map â”€â”€ */}
       <div className="flex-1 relative min-h-[300px] lg:min-h-0">
         <GoogleMap
           mapId={MAPS_MAP_ID}
@@ -476,14 +478,14 @@ export default function DashboardPanel() {
         </div>
       </div>
 
-      {/* ── Sidebar ── */}
+      {/* â”€â”€ Sidebar â”€â”€ */}
       <div className="w-full lg:w-[360px] shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-white/5 overflow-hidden">
         {/* Stats row */}
         <div className="grid grid-cols-4 border-b border-white/5 shrink-0">
           {[
             { label: "In Service", value: inService,  color: "text-emerald-400", Icon: Activity },
             { label: "Moving",     value: moving,     color: "text-blue-400",    Icon: TrendingUp },
-            { label: "At Depot",   value: atDepot,    color: "text-white/40",    Icon: Clock },
+            { label: "At Depot",   value: atDepot,    color: "text-white/50",    Icon: Clock },
             { label: "GPS Lost",   value: gpsLost,    color: "text-amber-400",   Icon: AlertTriangle },
           ].map(({ label, value, color, Icon }) => (
             <div key={label} className="flex flex-col items-center justify-center gap-0.5 py-3 border-r border-white/5 last:border-0">
