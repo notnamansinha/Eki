@@ -28,20 +28,10 @@ export default function DriverPage() {
   const { routes } = useRoutes();
   const { drivers } = useDrivers();
   const { buses } = useBuses();
-  const [driverId, setDriverId] = useState("");
   const [selectedBusId, setSelectedBusId] = useState("");
   const [activeSessionIds, setActiveSessionIds] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    const assignedDriver = drivers.find((driver) => driver.authUid === user?.uid);
-    setDriverId(assignedDriver?.id ?? "");
-  }, [drivers, user?.uid]);
-
-  useEffect(() => {
-    setSelectedBusId("");
-  }, [driverId]);
-
-  const activeDriver = drivers.find(d => d.id === driverId);
+  const activeDriver = drivers.find((driver) => driver.authUid === user?.uid);
+  const driverId = activeDriver?.id ?? "";
   const busId = selectedBusId || activeDriver?.assignedBusId || "";
 
   const [selectedRouteIds, setSelectedRouteIds] = useState<string[]>([]);
@@ -101,17 +91,12 @@ export default function DriverPage() {
   useEffect(() => { routeIdsRef.current = selectedRouteIds; }, [selectedRouteIds]);
   useEffect(() => { driverLocationRef.current = driverLocation; }, [driverLocation]);
 
-  useEffect(() => {
-    if (routes.length > 0 && selectedRouteIds.length === 0) {
-       
-      setSelectedRouteIds([routes[0].id]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routes]);
-
-
   const handleStartTracking = useCallback(() => {
-    if (!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0) {
+    const activeBus = buses.find((bus) => bus.id === busId);
+    const assignedRouteIds = activeBus?.assignedRoutes ??
+      (activeBus?.assignedRouteId ? [activeBus.assignedRouteId] : []);
+    if (!busId || !driverId || !drivers.some(d => d.id === driverId) ||
+      selectedRouteIds.length !== 1 || !assignedRouteIds.includes(selectedRouteIds[0])) {
       return;
     }
     if (!auth.currentUser) {
@@ -166,7 +151,7 @@ export default function DriverPage() {
     };
 
     doWrite();
-  }, [busId, selectedRouteIds, driverId, drivers]);
+  }, [busId, buses, selectedRouteIds, driverId, drivers]);
 
   // Pure GNSS listener (read-only mode for driver location)
   useEffect(() => {
@@ -261,7 +246,7 @@ export default function DriverPage() {
               <TransmitterControls
                 busId={busId}
                 driverId={driverId}
-                setDriverId={setDriverId}
+                setDriverId={() => {}}
                 buses={buses}
                 setSelectedBusId={setSelectedBusId}
                 drivers={drivers}

@@ -72,6 +72,7 @@ describe("production security configuration", () => {
     expect(driverPage).toContain("serverTimestamp as firestoreServerTimestamp");
     expect(driverPage).toContain("timestamp: firestoreServerTimestamp()");
     expect(passengerPage).toContain("hasValidBusCoordinates(bus.lat, bus.lng)");
+    expect(driverPage).toContain("!assignedRouteIds.includes(selectedRouteIds[0])");
   });
 
   it("renders stored route geometry without browser Directions API calls", () => {
