@@ -142,6 +142,14 @@ describe("production security configuration", () => {
     expect(metadataWriter).toContain('meta.set("meta/source",   "gnss_hw")');
   });
 
+  it("keeps the parked GNSS heartbeat safely inside stale-record expiry", () => {
+    const firmware = workspaceFile("hardware/src/main.cpp");
+    const tripStateEngine = workspaceFile("backend/src/services/tripStateEngine.ts");
+
+    expect(firmware).toContain("#define MAX_SILENT_INTERVAL_IDLE   120000");
+    expect(tripStateEngine).toContain('process.env.BUS_STALE_MS || "300000"');
+  });
+
   it("ships exact browser security headers", () => {
     const firebase = JSON.parse(workspaceFile("firebase.json"));
     const defaultHeaders = firebase.hosting.headers.find(

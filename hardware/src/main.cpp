@@ -19,9 +19,10 @@
 #define HEADING_THRESHOLD_DEG       15.0   // Minimum heading change (degrees)
 #define SPEED_THRESHOLD_KMH         5.0    // Minimum speed change (km/h)
 
-// Tiered heartbeat: 30s when moving, 5 min when parked in depot/terminus
+// Tiered heartbeat: 30s when moving, 2 min when parked in depot/terminus.
+// Keep a safety margin below the backend's 5-minute stale-record sweep.
 #define MAX_SILENT_INTERVAL_MOVING  30000  // 30 s when active/moving
-#define MAX_SILENT_INTERVAL_IDLE   300000  // 5 min when idle (stationary at stop/terminus)
+#define MAX_SILENT_INTERVAL_IDLE   120000  // 2 min when idle (stationary at stop/terminus)
 
 #define STOP_SPEED_KMH              1.5    // Below this = "stopped"
 #define MOVING_SPEED_KMH            2.5    // Above this = "moving" (jitter filter)
