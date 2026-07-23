@@ -29,10 +29,13 @@ describe("production security configuration", () => {
 
     expect(activeBus[".write"]).toContain("auth.token.assignedBusId");
     expect(activeBus[".write"]).toContain("auth.token.driverId");
+    expect(activeBus[".write"]).toContain("driverRouteAssignments");
     expect(activeBus[".write"]).toContain("auth.token.deviceId");
     expect(activeBus[".write"]).toContain("auth.token.routeId");
     expect(database.rules.messages.sessions.$sessionId.$msgId[".write"]).toBe("false");
     expect(database.rules.messages.$busId.$msgId[".write"]).toBe("false");
+    const syncRoles = workspaceFile("backend/src/syncRoleClaims.ts");
+    expect(syncRoles).toContain("driverRouteAssignments/");
   });
 
   it("keeps sensitive Firestore collections and chat identity protected", () => {

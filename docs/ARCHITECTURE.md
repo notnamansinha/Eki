@@ -57,6 +57,11 @@ Unlike legacy client-writable database roles, role authorization in Eki is issue
 * **Passenger:** Issued `role: "passenger"` claim (or default). Access to `/passenger`.
 * **Device:** Hardware units are issued temporary custom tokens containing `role: "device"` and `deviceId: "<hardwareId>"`.
 
+The synchronization task also mirrors each driver's assigned bus routes into a
+server-only RTDB path. RTDB rules use that mirror to prevent a valid driver
+from publishing their assigned bus on an unassigned route. Run the task after
+changing a driver, a driver's bus, or a bus's route assignment.
+
 ### 2.2 Global AuthProvider Singleton
 The frontend uses a top-level `<AuthProvider>` in `Providers.tsx` ([useAuth.ts](../frontend/src/hooks/useAuth.ts)) that maintains a single `onAuthStateChanged` listener across all route changes:
 1. On initial mount or page refresh, `useAuth` inspects `firebaseUser.getIdTokenResult().claims.role`.

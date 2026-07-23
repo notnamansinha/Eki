@@ -43,7 +43,8 @@ npm run seed
 ## Role claims
 
 Realtime Database write access is authorized with Firebase custom claims rather
-than client-writable profile data. After changing a user's Firestore `role`, run:
+than client-writable profile data. After changing a user's Firestore `role`, a
+driver assignment, or a bus's assigned routes, run:
 
 ```bash
 npm run sync-role-claims

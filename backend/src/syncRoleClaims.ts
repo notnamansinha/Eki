@@ -1,4 +1,4 @@
-import { auth, db } from "./lib/firebaseAdmin";
+import { auth, db, rtdb } from "./lib/firebaseAdmin";
 
 const roles = new Set(["passenger", "driver", "admin"]);
 
@@ -39,6 +39,26 @@ async function syncRoleClaims() {
         continue;
       }
 
+      let routeAssignments: Record<string, true> | undefined;
+      if (role === "driver") {
+        const bus = await db.collection("buses").doc(assignedBusId).get();
+        const busData = bus.data();
+        const routeIds = Array.isArray(busData?.assignedRoutes)
+          ? busData.assignedRoutes
+          : typeof busData?.assignedRouteId === "string"
+            ? [busData.assignedRouteId]
+            : [];
+        const validRouteIds = routeIds.filter(
+          (routeId): routeId is string => typeof routeId === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(routeId),
+        );
+        if (!bus.exists || validRouteIds.length === 0) {
+          console.error(`Skipping ${user.id}: assigned bus ${assignedBusId} has no valid routes.`);
+          hasErrors = true;
+          continue;
+        }
+        routeAssignments = Object.fromEntries(validRouteIds.map((routeId) => [routeId, true]));
+      }
+
       // Keep unrelated claims intact and synchronize the legacy `admin` claim
       // used by protected backend routes with the Firestore role.
       await auth.setCustomUserClaims(user.id, {
@@ -50,6 +70,16 @@ async function syncRoleClaims() {
           assignedBusId,
         } : {}),
       });
+      // RTDB rules cannot read Firestore. Mirror the trusted bus-route
+      // assignment into a server-only RTDB path so driver writes are bound to
+      // both their bus and one of its assigned routes.
+      if (role === "driver" && routeAssignments) {
+        await rtdb.ref(`driverRouteAssignments/${driverAssignment!.docs[0].id}`).set({
+          [assignedBusId]: routeAssignments,
+        });
+      } else {
+        await rtdb.ref(`driverRouteAssignments/${user.id}`).remove();
+      }
       updated += 1;
     } catch (err: any) {
       // auth/user-not-found: Firestore doc exists but Auth account was deleted.
