@@ -12,6 +12,7 @@ import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { isLiveBusTimestamp } from "@/lib/liveBusFreshness";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
+import { errorMessage } from "@/lib/errors";
 import {
   Activity, Navigation, Clock, MapPin, AlertTriangle,
   TrendingUp, X, ChevronDown, ChevronUp,
@@ -50,16 +51,16 @@ const MOTION_STATE: Record<string, { label: string; color: string }> = {
 };
 
 function timeSince(t?: string | number): string {
-  if (!t) return "â€”";
+  if (!t) return "—";
   const ms = typeof t === "number" ? Date.now() - t : Date.now() - new Date(t).getTime();
   if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
   if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
   return `${Math.floor(ms / 3_600_000)}h ago`;
 }
 function headingLabel(d?: number): string {
-  if (d == null) return "â€”";
+  if (d == null) return "—";
   const dirs = ["N","NE","E","SE","S","SW","W","NW","N"];
-  return dirs[Math.round(d / 45) % 8] + ` ${Math.round(d)}Â°`;
+  return dirs[Math.round(d / 45) % 8] + ` ${Math.round(d)}°`;
 }
 
 /* â”€â”€ Live bus hook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -163,9 +164,9 @@ function OverrideDrawer({
       }
 
       await update(ref(rtdb, `activeBuses/${rtdbKey}`), patch);
-      setMsg("Saved âœ“");
+      setMsg("Saved ✓");
       setTimeout(() => setMsg(""), 2000);
-    } catch (e: any) { setMsg("Error: " + e.message); }
+    } catch (error: unknown) { setMsg("Error: " + errorMessage(error)); }
     finally { setSaving(false); }
   };
 
@@ -178,13 +179,13 @@ function OverrideDrawer({
         timestamp: Date.now(),
       });
       onClose();
-    } catch (e: any) { alert("Error: " + (e as any).message); }
+    } catch (error: unknown) { alert("Error: " + errorMessage(error)); }
   };
 
   const handleWipeMessages = async () => {
     if (!confirm(`Clear all messages for ${entry.busId}?`)) return;
-    try { await remove(ref(rtdb, `messages/${entry.busId}`)); setMsg("Messages cleared âœ“"); setTimeout(() => setMsg(""), 2000); }
-    catch (e: any) { setMsg("Error: " + (e as any).message); }
+    try { await remove(ref(rtdb, `messages/${entry.busId}`)); setMsg("Messages cleared ✓"); setTimeout(() => setMsg(""), 2000); }
+    catch (error: unknown) { setMsg("Error: " + errorMessage(error)); }
   };
 
   return (
@@ -220,7 +221,7 @@ function OverrideDrawer({
           {/* Stop index */}
           {stopCount > 0 && (
             <div className="flex flex-col gap-2">
-              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black flex items-center gap-1.5"><Navigation className="w-3 h-3" /> Stop Index (0â€“{stopCount - 1})</p>
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black flex items-center gap-1.5"><Navigation className="w-3 h-3" /> Stop Index (0–{stopCount - 1})</p>
               <input value={stopIdx} onChange={e => setStopIdx(e.target.value)} type="number" min="0" max={stopCount - 1} className="input-rc h-10 text-sm" />
             </div>
           )}
@@ -258,7 +259,7 @@ function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => v
   if (!entry.lat || !entry.lng) return null;
   return (
     <AdvancedMarker position={{ lat: entry.lat, lng: entry.lng }} onClick={onClick}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }} title={`${entry.busId} â€” ${ts.label}`}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }} title={`${entry.busId} — ${ts.label}`}>
         <div style={{
           width: 36, height: 36, borderRadius: 18,
           background: markerColor, border: "3px solid #09090b",
@@ -305,7 +306,7 @@ function FleetCard({
       {overrideOpen && (
         <OverrideDrawer
           entry={entry}
-          routeName={route?.name ?? entry.routeId ?? "â€”"}
+          routeName={route?.name ?? entry.routeId ?? "—"}
           stopCount={stopCount}
           onClose={() => setOverrideOpen(false)}
         />
@@ -352,10 +353,10 @@ function FleetCard({
           <div className="border-t border-white/5 p-3 flex flex-col gap-3">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
-                { label: "Speed", value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "â€”" },
+                { label: "Speed", value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "—" },
                 { label: "Heading", value: headingLabel(entry.heading) },
                 { label: "Last Update", value: timeSince(entry.timestamp) },
-                { label: "Stop", value: stopCount > 0 ? `${stopIdx}/${stopCount}` : "â€”" },
+                { label: "Stop", value: stopCount > 0 ? `${stopIdx}/${stopCount}` : "—" },
               ].map(({ label, value }) => (
                 <div key={label} className="bg-white/3 border border-white/5 rounded-lg p-2 flex flex-col gap-0.5">
                   <span className="text-[8px] font-black uppercase tracking-wider text-white/25">{label}</span>
@@ -391,11 +392,11 @@ function FleetCard({
             <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
               <div>
                 <span className="text-[8px] font-black uppercase tracking-wider text-white/25">Driver</span>
-                <p className="text-[10px] font-semibold text-white truncate">{driver?.name ?? entry.driverId ?? "â€”"}</p>
+                <p className="text-[10px] font-semibold text-white truncate">{driver?.name ?? entry.driverId ?? "—"}</p>
               </div>
               <div>
                 <span className="text-[8px] font-black uppercase tracking-wider text-white/25">Route</span>
-                <p className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "â€”"}</p>
+                <p className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</p>
               </div>
             </div>
             {entry.lat && entry.lng && (

@@ -110,26 +110,20 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
       await runTransaction(db, async (transaction) => {
         const cooldownSnap = await transaction.get(cooldownRef);
         let lastSubmittedAt: Timestamp | undefined;
-        let previousSubmittedAt: Timestamp | undefined;
 
         if (cooldownSnap.exists()) {
           const data = cooldownSnap.data();
           lastSubmittedAt = data.lastSubmittedAt as Timestamp | undefined;
-          previousSubmittedAt = data.previousSubmittedAt as Timestamp | undefined;
-
           // Support old format (history array) if migrating
           if (data.history && Array.isArray(data.history) && data.history.length > 0) {
             lastSubmittedAt = data.history[data.history.length - 1] as Timestamp;
-            if (data.history.length > 1) {
-              previousSubmittedAt = data.history[0] as Timestamp;
-            }
           }
         }
 
         const now = Date.now();
 
-        if (previousSubmittedAt) {
-          const remaining = ONE_DAY_MS - (now - previousSubmittedAt.toMillis());
+        if (lastSubmittedAt) {
+          const remaining = ONE_DAY_MS - (now - lastSubmittedAt.toMillis());
           if (remaining > 0) {
             throw new Error(`LIMIT_REACHED:${remaining}`);
           }
@@ -148,15 +142,12 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
           status: "new"
         });
 
-        const cooldownData: Record<string, unknown> = {
+        const cooldownData = {
           userId: currentUserId,
           lastSubmittedAt: serverTimestamp()
         };
-        if (lastSubmittedAt) {
-          cooldownData.previousSubmittedAt = lastSubmittedAt;
-        }
 
-        transaction.set(cooldownRef, cooldownData, { merge: true });
+        transaction.set(cooldownRef, cooldownData);
       });
 
       try {

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { RouteData } from "@/hooks/useRoutes";
 import { ChevronDown } from "lucide-react";
+import { errorMessage } from "@/lib/errors";
 
 interface Props {
   sessionId: string;
@@ -46,11 +47,22 @@ export default function PassengerBoardingView({ sessionId, route, userId, userNa
             userName,
             boardingStopId,
             alightingStopId: alightingStopId || null,
-            joinedAt: Date.now(),
+            joinedAt: serverTimestamp(),
           },
         });
-      } catch (err) {
-        console.error("Failed to sync passenger:", err);
+      } catch (err: unknown) {
+        // CR-06: Differentiate a permission-denied rejection (which may indicate
+        // a legacy array-shaped passengers field in an older ride_session document
+        // that can't be updated with map-key dot notation) from other errors.
+        if (typeof err === "object" && err !== null && "code" in err && err.code === "permission-denied") {
+          console.error(
+            `[PassengerBoardingView] Boarding sync blocked for session ${sessionId} ` +
+            "— possibly a legacy array-shaped passengers manifest. Backend migration required.",
+            err
+          );
+        } else {
+          console.error("Failed to sync passenger:", errorMessage(err));
+        }
       }
     };
 

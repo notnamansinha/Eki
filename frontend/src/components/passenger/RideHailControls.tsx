@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { MapPin, MapPinned, Loader2, CheckCircle, Navigation, X, AlertCircle } from "lucide-react";
+import { MapPin, MapPinned, Loader2, CheckCircle, Navigation, X, AlertCircle, type LucideIcon } from "lucide-react";
 import { db } from "@/lib/firebase";
-import { collection, addDoc } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth } from "@/lib/firebase";
 
 type Mode = "pickup" | "dropoff" | null;
 type RequestStatus = "idle" | "pending" | "accepted" | "completed";
@@ -25,18 +26,19 @@ export default function RideHailControls({ onModeChange, pendingLocation }: Prop
   }
 
   const confirmRequest = useCallback(async () => {
-    if (!pendingLocation) return;
+    const user = auth.currentUser;
+    if (!pendingLocation || !user || !mode) return;
     setStatus("pending");
 
     try {
-      await addDoc(collection(db, "passenger_requests"), {
-        passengerId: `pax_${Date.now()}`,
+      await setDoc(doc(db, "passenger_requests", user.uid), {
+        passengerId: user.uid,
         busId,
         type: mode === "pickup" ? "pickup" : "dropoff",
         lat: pendingLocation.lat,
         lng: pendingLocation.lng,
         status: "pending",
-        createdAt: Date.now(),
+        createdAt: serverTimestamp(),
       });
       // Simulate real-time operator sync
       setTimeout(() => setStatus("accepted"), 1500);
@@ -52,7 +54,7 @@ export default function RideHailControls({ onModeChange, pendingLocation }: Prop
     onModeChange?.(null);
   };
 
-  const statusLabels: Record<RequestStatus, { label: string; color: string; bg: string; icon: any; message: string }> = {
+  const statusLabels: Record<RequestStatus, { label: string; color: string; bg: string; icon: LucideIcon; message: string }> = {
     idle:     { label: "Set Location", color: "text-white/70", bg: "bg-white/5", icon: MapPin, message: "Tap map to pinpoint." },
     pending:  { label: "Dispatching...", color: "text-brand-accent", bg: "bg-brand-accent/20", icon: Loader2, message: "Syncing with operator" },
     accepted: { label: "Accepted", color: "text-emerald-400", bg: "bg-emerald-500/20", icon: Navigation, message: "Operator synchronized" },

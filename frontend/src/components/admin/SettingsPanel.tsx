@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, type ComponentType } from "react";
 import { useSettings, GlobalSettings } from "@/hooks/useSettings";
 import { Save, Loader2, Eye, EyeOff, Megaphone, Clock, MessageSquare, Info } from "lucide-react";
+import { errorMessage } from "@/lib/errors";
 
 function Field({
   label,
@@ -24,7 +25,7 @@ function Field({
   );
 }
 
-function SectionHeader({ icon: Icon, title, subtitle }: { icon: any; title: string; subtitle: string }) {
+function SectionHeader({ icon: Icon, title, subtitle }: { icon: ComponentType<{ className?: string }>; title: string; subtitle: string }) {
   return (
     <div className="flex items-start gap-3 pb-4 border-b border-white/5">
       <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
@@ -40,24 +41,23 @@ function SectionHeader({ icon: Icon, title, subtitle }: { icon: any; title: stri
 
 export default function SettingsPanel() {
   const { settings, loading, saveSettings } = useSettings();
-  const [draft, setDraft] = useState<GlobalSettings>(settings);
+  const [overrides, setOverrides] = useState<Partial<GlobalSettings>>({});
+  const draft = { ...settings, ...overrides };
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // Sync draft when settings load from Firestore
-  useEffect(() => { setDraft(settings); }, [JSON.stringify(settings)]);
-
   const set = <K extends keyof GlobalSettings>(k: K, v: GlobalSettings[K]) =>
-    setDraft(d => ({ ...d, [k]: v }));
+    setOverrides(current => ({ ...current, [k]: v }));
 
   const handleSave = async () => {
     setSaving(true);
     try {
       await saveSettings(draft);
+      setOverrides({});
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch (e: any) {
-      alert("Failed to save: " + e.message);
+    } catch (error: unknown) {
+      alert("Failed to save: " + errorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -67,7 +67,7 @@ export default function SettingsPanel() {
     return (
       <div className="flex items-center justify-center h-64 gap-3 text-white/30">
         <Loader2 className="w-5 h-5 animate-spin" />
-        <span className="text-sm font-medium">Loading settingsâ€¦</span>
+        <span className="text-sm font-medium">Loading settings…</span>
       </div>
     );
   }
@@ -85,9 +85,9 @@ export default function SettingsPanel() {
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-[#09090b] font-bold text-sm hover:bg-white/90 transition-colors shadow-lg disabled:opacity-50"
         >
           {saving
-            ? <><Loader2 className="w-4 h-4 animate-spin" /> Savingâ€¦</>
+            ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
             : saved
-            ? <><span className="text-emerald-600">âœ“</span> Saved!</>
+            ? <><span className="text-emerald-600">✓</span> Saved!</>
             : <><Save className="w-4 h-4" /> Save All</>
           }
         </button>
@@ -113,7 +113,7 @@ export default function SettingsPanel() {
       <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5">
         <SectionHeader icon={MessageSquare} title="Passenger App Copy" subtitle="Text shown in the passenger app when no buses are running" />
 
-        <Field controlId="setting-no-buses-headline" label="No Buses â€” Headline" hint='The bold text shown in the empty state. e.g. "No buses running"'>
+        <Field controlId="setting-no-buses-headline" label="No Buses — Headline" hint='The bold text shown in the empty state. e.g. "No buses running"'>
           <input
             id="setting-no-buses-headline"
             value={draft.noBusesMessage}
@@ -125,7 +125,7 @@ export default function SettingsPanel() {
 
         <Field
           controlId="setting-no-buses-subtext"
-          label="No Buses â€” Subtext"
+          label="No Buses — Subtext"
           hint='Use {time} to insert the service start time automatically. e.g. "Service starts at {time}"'
         >
           <input
@@ -151,12 +151,12 @@ export default function SettingsPanel() {
       <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5">
         <SectionHeader icon={Megaphone} title="Live Announcement Banner" subtitle="When active, a banner appears at the top of the Passenger app home screen" />
 
-        <Field controlId="setting-announcement-text" label="Announcement Text" hint="Keep it brief â€” shown in a slim banner strip">
+        <Field controlId="setting-announcement-text" label="Announcement Text" hint="Keep it brief — shown in a slim banner strip">
           <textarea
             id="setting-announcement-text"
             value={draft.announcementText}
             onChange={e => set("announcementText", e.target.value)}
-            placeholder="e.g. Heavy traffic near Central Park â€” expect delays on Route 1A"
+            placeholder="e.g. Heavy traffic near Central Park — expect delays on Route 1A"
             rows={3}
             className="input-rc py-2 resize-none"
           />
@@ -198,9 +198,9 @@ export default function SettingsPanel() {
         className="w-full flex items-center justify-center gap-2 h-12 rounded-xl bg-white text-[#09090b] font-bold text-sm hover:bg-white/90 transition-colors shadow-lg disabled:opacity-50"
       >
         {saving
-          ? <><Loader2 className="w-4 h-4 animate-spin" /> Savingâ€¦</>
+          ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
           : saved
-          ? <><span className="text-emerald-600">âœ“</span> All changes saved!</>
+          ? <><span className="text-emerald-600">✓</span> All changes saved!</>
           : <><Save className="w-4 h-4" /> Save All Settings</>
         }
       </button>

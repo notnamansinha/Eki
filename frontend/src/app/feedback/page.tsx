@@ -89,7 +89,7 @@ function FeedbackCard({
         minute: "2-digit",
         hour12: true,
       })
-    : "â€”";
+    : "—";
 
   return (
     <div
@@ -146,7 +146,7 @@ function FeedbackCard({
             )}
             {entry.driverId && (
               <span className="flex items-center gap-1">
-                <User className="w-3 h-3" /> {entry.driverId.slice(0, 12)}â€¦
+                <User className="w-3 h-3" /> {entry.driverId.slice(0, 12)}…
               </span>
             )}
             {entry.routeId && (
@@ -190,9 +190,9 @@ function FeedbackCard({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { label: "User ID", value: entry.userId, icon: User },
-              { label: "Bus ID", value: entry.busId || "â€”", icon: Bus },
-              { label: "Driver ID", value: entry.driverId || "â€”", icon: User },
-              { label: "Route", value: entry.routeId || "â€”", icon: Route },
+              { label: "Bus ID", value: entry.busId || "—", icon: Bus },
+              { label: "Driver ID", value: entry.driverId || "—", icon: User },
+              { label: "Route", value: entry.routeId || "—", icon: Route },
             ].map(({ label, value, icon: Icon }) => (
               <div
                 key={label}
@@ -294,7 +294,7 @@ export default function FeedbackPage() {
           entries.reduce((acc, e) => acc + (e.rating || 0), 0) /
           entries.filter((e) => e.rating).length
         ).toFixed(1)
-      : "â€”";
+      : "—";
 
   return (
     <main className="min-h-screen bg-brand-dark text-white flex flex-col font-sans">
@@ -319,7 +319,7 @@ export default function FeedbackPage() {
             href="/admin"
             className="ml-auto text-[10px] text-white/30 hover:text-white font-black uppercase tracking-widest transition-colors"
           >
-            â† Admin Panel
+            ← Admin Panel
           </a>
         </div>
       </header>
@@ -367,7 +367,7 @@ export default function FeedbackPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by user, bus, driver, or routeâ€¦"
+              placeholder="Search by user, bus, driver, or route…"
               className="w-full h-10 bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-semibold"
             />
           </div>
@@ -408,7 +408,7 @@ export default function FeedbackPage() {
         {/* Results count */}
         <div className="flex items-center gap-2 text-[10px] text-white/30 font-black uppercase tracking-widest -mb-2">
           <CheckCircle className="w-3.5 h-3.5" />
-          {loading ? "Loadingâ€¦" : `${filtered.length} of ${total} entries`}
+          {loading ? "Loading…" : `${filtered.length} of ${total} entries`}
         </div>
 
         {/* Feedback list */}
@@ -416,7 +416,7 @@ export default function FeedbackPage() {
           <div className="flex flex-col items-center justify-center py-20 text-white/20">
             <div className="w-8 h-8 border-2 border-white/20 border-t-white/60 rounded-full animate-spin mb-4" />
             <span className="text-[11px] font-semibold uppercase tracking-widest">
-              Loading feedbackâ€¦
+              Loading feedback…
             </span>
           </div>
         ) : filtered.length === 0 ? (

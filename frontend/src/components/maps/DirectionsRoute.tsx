@@ -26,7 +26,7 @@ const CHUNK_SIZE = 9; // Google free tier allows max 8 waypoints (10 total point
  */
 export default function DirectionsRoute({ stops, color = "#3b82f6", hasBuses = false }: DirectionsRouteProps) {
   const map = useMap();
-  const renderersRef = useRef<google.maps.DirectionsRenderer[]>([]);
+  const renderersRef = useRef<Array<{ setMap(map: google.maps.Map | null): void }>>([]);
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -108,7 +108,7 @@ export default function DirectionsRoute({ stops, color = "#3b82f6", hasBuses = f
                   strokeOpacity: 0.6,
                   map,
                 });
-                (renderersRef.current as any[]).push({ setMap: (m: any) => fallback.setMap(m) });
+                renderersRef.current.push({ setMap: (fallbackMap) => fallback.setMap(fallbackMap) });
                 setError(true);
               }
               // Wait 300ms before resolving to prevent OVER_QUERY_LIMIT rate limiting

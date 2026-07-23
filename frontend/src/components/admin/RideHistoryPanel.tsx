@@ -1,7 +1,7 @@
 "use client";
 
 import { useCollection } from "@/hooks/useCollection";
-import { Loader2, Calendar, Clock, MapPin, Bus, User, Users } from "lucide-react";
+import { Loader2, MapPin, Bus, User, Users } from "lucide-react";
 import { useState } from "react";
 
 interface PassengerRecord {
@@ -97,7 +97,7 @@ export default function RideHistoryPanel() {
                           <span className="bg-white/10 px-1.5 py-0.5 rounded">{p.boardingStopId}</span>
                           {p.alightingStopId && (
                             <>
-                              <span className="text-white/30">â†’</span>
+                              <span className="text-white/30">&rarr;</span>
                               <span className="bg-white/10 px-1.5 py-0.5 rounded">{p.alightingStopId}</span>
                             </>
                           )}

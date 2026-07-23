@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
@@ -11,7 +11,6 @@ import { waitForAuth } from "@/lib/authState";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import RouteCarousel from "@/components/passenger/ui/RouteCarousel";
 import { useSettings } from "@/hooks/useSettings";
-import { getDistanceMeters } from "@/lib/mapUtils";
 import { isLiveBusTimestamp } from "@/lib/liveBusFreshness";
 
 const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTrackingMap"), {
@@ -49,7 +48,6 @@ export default function PassengerPage() {
   const [currentView, setCurrentView] = useState<ViewState>("home");
   const { routes } = useRoutes();
   const [selectedRouteId, setSelectedRouteId] = useState("");
-  const [selectedStopId, setSelectedStopId] = useState("");
   const [activeBuses, setActiveBuses] = useState<ActiveBusData[]>([]);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -115,25 +113,13 @@ export default function PassengerPage() {
   const activeRouteIds = Array.from(new Set(activeBuses.map(b => b.routeId)));
   const availableRoutes = routes.filter(r => activeRouteIds.includes(r.id));
   const displayRoutes = availableRoutes;
-  const displayRoutesIdsStr = displayRoutes.map(r => r.id).join(',');
+  const effectiveRouteId = displayRoutes.some(route => route.id === selectedRouteId)
+    ? selectedRouteId
+    : displayRoutes[0]?.id ?? "";
+  const activeRoute = displayRoutes.find(route => route.id === effectiveRouteId);
+  const effectiveStopId = activeRoute?.stops?.[0]?.id ?? "";
 
-  useEffect(() => {
-    if (displayRoutes.length > 0 && (!selectedRouteId || !displayRoutes.some(r => r.id === selectedRouteId))) {
-      setSelectedRouteId(displayRoutes[0].id);
-    }
-  }, [displayRoutesIdsStr]);
-
-  const activeRoute = displayRoutes.find(r => r.id === selectedRouteId) || displayRoutes[0];
-
-  useEffect(() => {
-    if (activeRoute && activeRoute.stops && activeRoute.stops.length > 0) {
-      if (!selectedStopId || !activeRoute.stops.some(s => s.id === selectedStopId)) {
-        setSelectedStopId(activeRoute.stops[0].id);
-      }
-    }
-  }, [activeRoute, selectedStopId]);
-
-  const targetStop = activeRoute?.stops?.find(s => s.id === selectedStopId) ||
+  const targetStop = activeRoute?.stops?.find(s => s.id === effectiveStopId) ||
     (activeRoute?.stops && activeRoute.stops.length > 0
       ? activeRoute.stops[activeRoute.stops.length - 1]
       : (activeRoute?.waypoints && activeRoute.waypoints.length > 0 ? {
@@ -150,19 +136,16 @@ export default function PassengerPage() {
         shortName: "LIVE"
       }));
 
-  const activeBusOnRoute = activeBuses.find(b => b.routeId === selectedRouteId);
+  const activeBusOnRoute = activeBuses.find(b => b.routeId === effectiveRouteId);
   const activeBusOnRouteId = activeBusOnRoute?.busId;
   const activeSessionId = activeBusOnRoute?.sessionId;
 
-  // Automatically return to home if tracking view is open but there are no buses and the ended message is gone
-  useEffect(() => {
-    if (currentView === "tracking" && !activeBusOnRouteId && !endedMessage) {
-      setCurrentView("home");
-    }
-  }, [currentView, activeBusOnRouteId, endedMessage]);
+  const visibleView: ViewState =
+    currentView === "tracking" && !activeBusOnRouteId && !endedMessage ? "home" : currentView;
 
   useEffect(() => {
-    let timerId: NodeJS.Timeout;
+    let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+    let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
 
     if (activeBusOnRouteId) {
       trackingBusIdRef.current = activeBusOnRouteId;
@@ -170,8 +153,8 @@ export default function PassengerPage() {
     } else if (trackingBusIdRef.current) {
       const finishedBusId = trackingBusIdRef.current;
       const finishedDriverId = trackingDriverIdRef.current;
-      setEndedMessage(true);
-      timerId = setTimeout(() => {
+      noticeTimer = setTimeout(() => setEndedMessage(true), 0);
+      feedbackTimer = setTimeout(() => {
         setFeedbackBusId(finishedBusId);
         setFeedbackDriverId(finishedDriverId || "");
         setShowFeedbackModal(true);
@@ -182,7 +165,8 @@ export default function PassengerPage() {
     }
 
     return () => {
-      if (timerId) clearTimeout(timerId);
+      if (noticeTimer) clearTimeout(noticeTimer);
+      if (feedbackTimer) clearTimeout(feedbackTimer);
     };
   }, [activeBusOnRouteId]);
 
@@ -212,11 +196,11 @@ export default function PassengerPage() {
       <div className="absolute inset-0 flex flex-col overflow-hidden">
 
         {/* Map layer — only present on tracking */}
-        <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${currentView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-          {currentView === "tracking" && (
+        <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+          {visibleView === "tracking" && (
             <PassengerTrackingMap
               targetStop={targetStop!}
-              route={activeRoute}
+              route={activeRoute ?? null}
             />
           )}
         </div>
@@ -224,7 +208,7 @@ export default function PassengerPage() {
 
 
         {/* ── HOME VIEW ── */}
-        <div className={`absolute inset-0 z-20 flex flex-col pt-safe transition-all duration-500 ${currentView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8 pointer-events-none"}`}>
+        <div className={`absolute inset-0 z-20 flex flex-col pt-safe transition-all duration-500 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8 pointer-events-none"}`}>
 
           {/* Top spacer to frame the bus illustration near the top of the screen */}
           <div className="shrink-0" style={{ height: "34vh", minHeight: "250px" }} aria-hidden="true" />
@@ -262,7 +246,7 @@ export default function PassengerPage() {
               {displayRoutes.length > 0 ? (
                 <RouteCarousel
                   routes={displayRoutes}
-                  selectedRouteId={selectedRouteId}
+                  selectedRouteId={effectiveRouteId}
                   onClick={handleRouteSelect}
                   getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
                 />
@@ -282,7 +266,7 @@ export default function PassengerPage() {
         </div>
 
         {/* ── TRACKING VIEW ── */}
-        <div className={`absolute inset-0 z-20 pointer-events-none transition-all duration-500 ${currentView === "tracking" ? "opacity-100" : "opacity-0"}`}>
+        <div className={`absolute inset-0 z-20 pointer-events-none transition-all duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0"}`}>
           {activeRoute && targetStop ? (
             <>
               {/* Top bar: back + route info */}
@@ -353,6 +337,7 @@ export default function PassengerPage() {
               {isMessagingOpen && (
                 <div className="absolute inset-x-0 top-16 bottom-[80px] z-50 animate-slide-up flex flex-col pointer-events-auto">
                   <MessagingPanel
+                    key={activeBuses.find(b => b.routeId === activeRoute.id)?.sessionId || "no-session"}
                     sessionId={activeBuses.find(b => b.routeId === activeRoute.id)?.sessionId || ""}
                     currentUserRole="passenger"
                     currentUserId={user?.uid || "anonymous"}
@@ -399,8 +384,8 @@ export default function PassengerPage() {
         </div>
 
         {/* ── PROFILE VIEW ── */}
-        <div className={`absolute inset-0 z-30 flex flex-col transition-all duration-500 ${currentView === "profile" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-8 pointer-events-none"}`}>
-          {currentView === "profile" && <AccountTab />}
+        <div className={`absolute inset-0 z-30 flex flex-col transition-all duration-500 ${visibleView === "profile" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-8 pointer-events-none"}`}>
+          {visibleView === "profile" && <AccountTab />}
         </div>
       </div>
 
@@ -418,29 +403,27 @@ export default function PassengerPage() {
       <div className="absolute bottom-0 inset-x-0 z-[100] pb-safe pointer-events-none flex justify-center">
         <nav className="w-full pointer-events-auto flex items-center justify-around px-2 py-2.5 rounded-t-[24px]"
           style={{
-            background: "rgba(22, 22, 26, 0.95)",
-            backdropFilter: "blur(20px)",
-            WebkitBackdropFilter: "blur(20px)",
+            background: "rgba(22, 22, 26, 0.98)",
             borderTop: "1px solid rgba(255, 255, 255, 0.15)",
           }}>
           <button
             onClick={() => {
-              if (currentView === "tracking" || currentView === "home") {
-                setCurrentView(currentView === "tracking" ? "home" : activeRoute ? "tracking" : "home");
+              if (visibleView === "tracking" || visibleView === "home") {
+                setCurrentView(visibleView === "tracking" ? "home" : activeRoute ? "tracking" : "home");
               } else {
                 setCurrentView("home");
               }
             }}
             className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-all duration-300 relative group active:scale-95 gap-1.5"
             style={{
-              background: (currentView === "home" || currentView === "tracking") ? "rgba(255,255,255,0.08)" : "transparent"
+              background: (visibleView === "home" || visibleView === "tracking") ? "rgba(255,255,255,0.08)" : "transparent"
             }}
           >
             <MapIcon className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
-              color: (currentView === "home" || currentView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
+              color: (visibleView === "home" || visibleView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
             }} />
             <span className="text-[13px] font-bold transition-colors leading-none" style={{
-              color: (currentView === "home" || currentView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
+              color: (visibleView === "home" || visibleView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
             }}>
               Routes
             </span>
@@ -450,14 +433,14 @@ export default function PassengerPage() {
             onClick={() => setCurrentView("profile")}
             className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-all duration-300 relative group active:scale-95 gap-1.5"
             style={{
-              background: currentView === "profile" ? "rgba(255,255,255,0.08)" : "transparent"
+              background: visibleView === "profile" ? "rgba(255,255,255,0.08)" : "transparent"
             }}
           >
             <User className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
-              color: currentView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
+              color: visibleView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
             }} />
             <span className="text-[13px] font-bold transition-colors leading-none" style={{
-              color: currentView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
+              color: visibleView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
             }}>
               Profile
             </span>

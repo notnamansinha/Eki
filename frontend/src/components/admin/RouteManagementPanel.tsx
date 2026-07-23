@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Map as GoogleMap, AdvancedMarker, useMap,
 } from "@vis.gl/react-google-maps";
@@ -10,10 +10,17 @@ import { doc, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
   Trash2, Plus, X, CheckCircle, MapPin, Loader2, Search,
-  Pencil, GripVertical, ArrowUpDown, Palette, Save,
-  ChevronDown, ChevronUp, ArrowLeft, RefreshCw,
+  Pencil, GripVertical, Save,
+  ChevronDown, ChevronUp, ArrowLeft,
 } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
+import { errorMessage } from "@/lib/errors";
+
+interface NominatimResult {
+  display_name: string;
+  lat: string;
+  lon: string;
+}
 
 /* â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function stopLabel(i: number): string {
@@ -30,14 +37,11 @@ const ROUTE_COLORS = [
 /* â”€â”€ Nominatim search box â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: number; lng: number }) => void }) {
   const [value, setValue] = useState("");
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<NominatimResult[]>([]);
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    if (value.length <= 2) {
-      setResults([]);
-      return;
-    }
+    if (value.length <= 2) return;
     const controller = new AbortController();
     const t = setTimeout(() => {
       setSearching(true);
@@ -46,9 +50,12 @@ function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: 
         { signal: controller.signal }
       )
         .then(r => r.json())
-        .then(d => { setResults(d); setSearching(false); })
-        .catch(err => {
-          if (err.name !== 'AbortError') setSearching(false);
+        .then((data: unknown) => {
+          setResults(Array.isArray(data) ? data as NominatimResult[] : []);
+          setSearching(false);
+        })
+        .catch((error: unknown) => {
+          if (!(error instanceof DOMException && error.name === "AbortError")) setSearching(false);
         });
     }, 500);
     return () => {
@@ -64,10 +71,10 @@ function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: 
       </div>
       <input
         type="text" value={value} onChange={e => setValue(e.target.value)}
-        placeholder="Search for a stop locationâ€¦"
+        placeholder="Search for a stop location…"
         className="w-full h-10 bg-[#0f0f12] border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-medium"
       />
-      {results.length > 0 && (
+      {value.length > 2 && results.length > 0 && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-[#0f0f12] border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl">
           {results.map((r, i) => (
             <button key={i} className="w-full text-left p-3 hover:bg-white/5 text-xs text-white border-b border-white/5 last:border-0 truncate transition-colors" onClick={() => {
@@ -288,7 +295,7 @@ function RouteEditor({
       };
 
       if (state.mode === "create") {
-        // Guard against duplicate route IDs â€” check existence first
+        // Guard against duplicate route IDs — check existence first
         const { getDoc } = await import("firebase/firestore");
         const existing = await getDoc(doc(db, "routes", state.routeId));
         if (existing.exists()) {
@@ -298,12 +305,12 @@ function RouteEditor({
         }
         await setDoc(doc(db, "routes", state.routeId), routeData as RouteData);
       } else {
-        // Edit mode â€” merge so existing polyline/distanceMeters/duration are preserved
+        // Edit mode — merge so existing polyline/distanceMeters/duration are preserved
         await updateDoc(doc(db, "routes", state.routeId), routeData);
       }
       onSaved();
-    } catch (err: any) {
-      alert("Failed to save: " + err.message);
+    } catch (error: unknown) {
+      alert("Failed to save: " + errorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -375,7 +382,7 @@ function RouteEditor({
             disabled={saving || state.stops.length < 2}
             className="h-9 px-5 rounded-xl bg-white text-[#09090b] font-black text-xs uppercase tracking-widest transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-white/90 shadow-lg"
           >
-            {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Savingâ€¦</> : <><Save className="w-3.5 h-3.5" /> {state.mode === "edit" ? "Update" : "Deploy"}</>}
+            {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</> : <><Save className="w-3.5 h-3.5" /> {state.mode === "edit" ? "Update" : "Deploy"}</>}
           </button>
         </div>
       </div>
@@ -502,7 +509,7 @@ export default function RouteManagementPanel() {
   const handleDelete = async (id: string) => {
     if (!confirm(`Delete route "${routes.find(r => r.id === id)?.name ?? id}"? This cannot be undone.`)) return;
     try { await deleteDoc(doc(db, "routes", id)); }
-    catch (e: any) { alert("Failed to delete: " + e.message); }
+    catch (error: unknown) { alert("Failed to delete: " + errorMessage(error)); }
   };
 
   if (editor) {
@@ -534,7 +541,7 @@ export default function RouteManagementPanel() {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16 text-white/20 gap-3">
             <Loader2 className="w-6 h-6 animate-spin" />
-            <span className="text-xs font-semibold uppercase tracking-widest">Loading routesâ€¦</span>
+            <span className="text-xs font-semibold uppercase tracking-widest">Loading routes…</span>
           </div>
         ) : routes.length === 0 ? (
           <div className="text-center py-16 text-white/20 text-sm font-semibold">No routes yet. Click &ldquo;Add Route&rdquo; to create one.</div>

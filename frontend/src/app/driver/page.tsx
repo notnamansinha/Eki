@@ -13,7 +13,7 @@ import { useBuses } from "@/hooks/useBuses";
 import { Map, CircleUserRound as User, MessageCircle, ArrowLeft } from "lucide-react";
 import { db, rtdb, auth } from "@/lib/firebase";
 import { collection, doc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
-import { ref, update, remove, onValue, onDisconnect } from "firebase/database";
+import { ref, update, onValue, onDisconnect } from "firebase/database";
 
 const DriverMap = dynamic(() => import("@/components/maps/DriverMap"), {
   ssr: false,
@@ -33,14 +33,11 @@ export default function DriverPage() {
   const [activeSessionIds, setActiveSessionIds] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const saved = localStorage.getItem("driverId");
-     
-    if (saved) setDriverId(saved);
-  }, []);
+    const assignedDriver = drivers.find((driver) => driver.authUid === user?.uid);
+    setDriverId(assignedDriver?.id ?? "");
+  }, [drivers, user?.uid]);
 
   useEffect(() => {
-    if (driverId) localStorage.setItem("driverId", driverId);
-     
     setSelectedBusId("");
   }, [driverId]);
 
@@ -50,7 +47,7 @@ export default function DriverPage() {
   const [selectedRouteIds, setSelectedRouteIds] = useState<string[]>([]);
   const activeRoute = routes.find(r => selectedRouteIds.includes(r.id)) || routes.find(r => r.id === selectedRouteIds[0]);
   const [isTracking, setIsTracking] = useState(false);
-  const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number; heading: number } | null>(null);
+  const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number; heading: number; speed?: number } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("map");
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -61,7 +58,6 @@ export default function DriverPage() {
   const delayMinutesRef = useRef<number>(0);
   const driverLocationRef = useRef<{ lat: number; lng: number } | null>(null);
 
-  const lastLogTimeRef = useRef<number>(0);
 
   const handleStopIndexChange = useCallback((index: number, routeIdHint?: string) => {
     currentStopIndexRef.current = index;
@@ -202,45 +198,32 @@ export default function DriverPage() {
     }
 
     doWrite();
-  }, [busId, selectedRouteIds, driverId, user?.uid, activeRoute, drivers]);
+  }, [busId, selectedRouteIds, driverId, activeRoute, drivers]);
 
   // Pure GNSS listener (read-only mode for driver location)
   useEffect(() => {
     if (!busId || !isTracking) return;
 
-    let unsubscribe: (() => void) | undefined;
     if (!auth.currentUser) return;
 
     const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
-    unsubscribe = onValue(busRef, (snapshot) => {
+    const unsubscribe = onValue(busRef, (snapshot) => {
         const data = snapshot.val();
         if (data && data.lat && data.lng) {
           setDriverLocation({
             lat: data.lat,
             lng: data.lng,
             heading: data.heading || 0,
+            speed: data.speed || 0,
           });
 
-          const now = Date.now();
-          if (now - lastLogTimeRef.current > 15000 && data.sessionId) {
-            lastLogTimeRef.current = now;
-            updateDoc(doc(db, "ride_sessions", data.sessionId), {
-              path: arrayUnion({
-                lat: data.lat,
-                lng: data.lng,
-                heading: data.heading || 0,
-                speed: data.speed || 0,
-                timestamp: now
-              })
-            }).catch(console.error);
-          }
         }
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed in GNSS listener:", error.message);
       });
 
     return () => {
-      if (unsubscribe) unsubscribe();
+      unsubscribe();
     };
   }, [busId, selectedRouteIds, isTracking]);
 
@@ -275,7 +258,6 @@ export default function DriverPage() {
         status: "offline", 
         deviceState: "offline", 
         tripState: "ended",
-        driverId: "hw_device" 
       }).catch(console.error);
 
       // End Firestore session
@@ -312,6 +294,7 @@ export default function DriverPage() {
           <div className="flex-1 relative z-0 min-h-0">
             {activeRoute && (
               <DriverMap
+                key={`${activeRoute.id}-${isTracking ? "tracking" : "preview"}`}
                 route={activeRoute}
                 driverLocation={driverLocation}
                 busId={busId}
@@ -319,8 +302,6 @@ export default function DriverPage() {
                 isTracking={isTracking}
                 selectedRouteIds={selectedRouteIds}
                 onStopIndexChange={handleStopIndexChange}
-                onStartTracking={handleStartTracking}
-                canStartTracking={!!busId && !!driverId && drivers.some(d => d.id === driverId) && selectedRouteIds.length > 0}
               />
             )}
           </div>
@@ -397,6 +378,7 @@ export default function DriverPage() {
         {isMessagingOpen && (
           <div className="absolute inset-x-0 bottom-0 top-0 z-50 animate-slide-up">
             <MessagingPanel
+              key={activeSessionIds[selectedRouteIds[0]] || "no-session"}
               sessionId={activeSessionIds[selectedRouteIds[0]] || ""}
               currentUserRole="driver"
               currentUserId={user?.uid || driverId || "operator"}

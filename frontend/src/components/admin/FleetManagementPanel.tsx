@@ -1,19 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ComponentType } from "react";
 import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
-import { useRoutes } from "@/hooks/useRoutes";
+import { useRoutes, type RouteData } from "@/hooks/useRoutes";
 import { doc, setDoc, deleteDoc, collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
 import { db, rtdb, auth } from "@/lib/firebase";
 import { ref, onValue, get, remove } from "firebase/database";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   Bus, User, Trash2, Plus, ArrowRight,
-  ChevronDown, ChevronUp, Wifi, Pencil, Check, X, AlertCircle,
+  ChevronDown, ChevronUp, Pencil, Check, X, AlertCircle,
   Navigation, Gauge, MapPin, Clock, Radio, Activity, BarChart2,
-  TrendingUp, Route, AlertTriangle, CheckCircle2,
+  TrendingUp, AlertTriangle, CheckCircle2,
 } from "lucide-react";
+import { errorMessage } from "@/lib/errors";
 
 // â”€â”€ Live bus tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface ActiveBusEntry {
@@ -85,7 +86,7 @@ function useRecentTrips(count = 10): CompletedTrip[] {
 
 // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function timeSince(isoStr?: string | number): string {
-  if (!isoStr) return "â€”";
+  if (!isoStr) return "—";
   const ms = typeof isoStr === "number" ? Date.now() - isoStr : Date.now() - new Date(isoStr).getTime();
   if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
   if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
@@ -93,12 +94,12 @@ function timeSince(isoStr?: string | number): string {
 }
 
 function headingLabel(deg?: number): string {
-  if (deg == null) return "â€”";
+  if (deg == null) return "—";
   const dirs = ["N","NE","E","SE","S","SW","W","NW","N"];
-  return dirs[Math.round(deg / 45) % 8] + ` ${Math.round(deg)}Â°`;
+  return dirs[Math.round(deg / 45) % 8] + ` ${Math.round(deg)}°`;
 }
 
-const TRIP_STATE_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: any }> = {
+const TRIP_STATE_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: ComponentType<{ className?: string }> }> = {
   pre_departure: { label: "At Depot",    color: "text-white/50",     bg: "bg-white/5",        Icon: Clock         },
   in_service:    { label: "In Service",  color: "text-emerald-400",  bg: "bg-emerald-500/10", Icon: Navigation    },
   completed:     { label: "Completed",   color: "text-blue-400",     bg: "bg-blue-500/10",    Icon: CheckCircle2  },
@@ -128,7 +129,7 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
 function LiveBusCard({ entry, buses, routes, drivers }: {
   entry: ActiveBusEntry;
   buses: BusData[];
-  routes: any[];
+  routes: RouteData[];
   drivers: DriverData[];
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -197,9 +198,9 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
           {/* Stats row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[
-              { icon: Gauge,      label: "Speed",    value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "â€”" },
+              { icon: Gauge,      label: "Speed",    value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "—" },
               { icon: Navigation, label: "Heading",  value: headingLabel(entry.heading) },
-              { icon: MapPin,     label: "Position", value: entry.lat != null ? `${entry.lat.toFixed(4)}, ${entry.lng?.toFixed(4)}` : "â€”" },
+              { icon: MapPin,     label: "Position", value: entry.lat != null ? `${entry.lat.toFixed(4)}, ${entry.lng?.toFixed(4)}` : "—" },
               { icon: Clock,      label: "Last Seen",value: timeSince(entry.timestamp) },
             ].map(({ icon: Icon, label, value }) => (
               <div key={label} className="bg-white/3 border border-white/5 rounded-xl p-2.5 flex flex-col gap-1">
@@ -246,12 +247,12 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
           <div className="grid grid-cols-2 gap-2">
             <div className="flex flex-col gap-0.5">
               <span className="text-[8px] font-black uppercase tracking-wider text-white/30">Driver</span>
-              <span className="text-[10px] font-semibold text-white truncate">{driver?.name ?? entry.driverId ?? "â€”"}</span>
+              <span className="text-[10px] font-semibold text-white truncate">{driver?.name ?? entry.driverId ?? "—"}</span>
               <span className="text-[9px] tabular-nums text-white/20">{entry.driverId}</span>
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-[8px] font-black uppercase tracking-wider text-white/30">Route</span>
-              <span className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "â€”"}</span>
+              <span className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</span>
               <span className="text-[9px] tabular-nums text-white/20">{entry.routeId}</span>
             </div>
           </div>
@@ -269,7 +270,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
 }
 
 // â”€â”€ Recent trips analytics section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function RecentTripsPanel({ routes, buses, drivers }: { routes: any[]; buses: BusData[]; drivers: DriverData[] }) {
+function RecentTripsPanel({ routes, buses, drivers }: { routes: RouteData[]; buses: BusData[]; drivers: DriverData[] }) {
   const trips = useRecentTrips(10);
   const [open, setOpen] = useState(false);
 
@@ -349,8 +350,8 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   // filtering immediately would produce an empty Set and wipe out all stats.
   const registeredBusIds = new Set(buses.map((b) => b.id));
   const filteredActiveEntries = busesLoading
-    ? activeEntries                                          // buses not ready yet â€” show all
-    : activeEntries.filter((e) => registeredBusIds.has(e.busId)); // buses loaded â€” filter to registered only
+    ? activeEntries                                          // buses not ready yet — show all
+    : activeEntries.filter((e) => registeredBusIds.has(e.busId)); // buses loaded — filter to registered only
   const activeBusIds = new Set(filteredActiveEntries.map((e) => e.busId));
 
   // â”€â”€ Error state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -370,12 +371,14 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   // â”€â”€ Driver add form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [newDriverId, setNewDriverId] = useState("");
   const [newDriverName, setNewDriverName] = useState("");
+  const [newDriverAuthUid, setNewDriverAuthUid] = useState("");
   const [newDriverBusId, setNewDriverBusId] = useState("");
   const [driverListOpen, setDriverListOpen] = useState(true);
 
   // â”€â”€ Driver inline edit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [editingDriverId, setEditingDriverId] = useState<string | null>(null);
   const [editDriverName, setEditDriverName] = useState("");
+  const [editDriverAuthUid, setEditDriverAuthUid] = useState("");
   const [editDriverBusId, setEditDriverBusId] = useState("");
 
   // â”€â”€ Route togglers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -399,7 +402,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
         assignedRoutes: newBusRoutes,
       } as BusData);
       setNewBusId(""); setNewBusName(""); setNewBusRoutes([]);
-    } catch (e: any) { setErrorMsg("Failed to add Vehicle: " + e.message); }
+    } catch (error: unknown) { setErrorMsg("Failed to add Vehicle: " + errorMessage(error)); }
   };
 
   const handleDeleteBus = async (id: string) => {
@@ -426,18 +429,18 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             console.log(`[Delete] Removed ${keysToRemove.length} RTDB activeBuses entries for ${id}`);
           }
         }
-      } catch (rtdbErr: any) {
-        console.warn(`[Delete] Failed to clean RTDB for ${id}:`, rtdbErr.message);
+      } catch (error: unknown) {
+        console.warn(`[Delete] Failed to clean RTDB for ${id}:`, errorMessage(error));
       }
 
       // 3. Remove the persistent bus_locations document (best-effort)
       try {
         await deleteDoc(doc(db, "bus_locations", id));
-      } catch (locErr: any) {
-        console.warn(`[Delete] Failed to clean bus_locations for ${id}:`, locErr.message);
+      } catch (error: unknown) {
+        console.warn(`[Delete] Failed to clean bus_locations for ${id}:`, errorMessage(error));
       }
-    } catch (e: any) {
-      setErrorMsg("Failed to delete Vehicle: " + e.message);
+    } catch (error: unknown) {
+      setErrorMsg("Failed to delete Vehicle: " + errorMessage(error));
     }
   };
 
@@ -456,31 +459,33 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
         assignedRoutes: editBusRoutes,
       } as BusData);
       setEditingBusId(null);
-    } catch (e: any) { setErrorMsg("Failed to update Vehicle: " + e.message); }
+    } catch (error: unknown) { setErrorMsg("Failed to update Vehicle: " + errorMessage(error)); }
   };
 
   // â”€â”€ Driver CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleAddDriver = async () => {
-    if (!newDriverId || !newDriverName) return;
+    if (!newDriverId || !newDriverName || !newDriverAuthUid) return;
     try {
       await setDoc(doc(db, "drivers", newDriverId), {
         id: newDriverId,
         name: newDriverName,
+        authUid: newDriverAuthUid.trim(),
         assignedBusId: newDriverBusId || null,
       } as DriverData);
-      setNewDriverId(""); setNewDriverName(""); setNewDriverBusId("");
-    } catch (e: any) { setErrorMsg("Failed to add Operator: " + e.message); }
+      setNewDriverId(""); setNewDriverName(""); setNewDriverAuthUid(""); setNewDriverBusId("");
+    } catch (error: unknown) { setErrorMsg("Failed to add Operator: " + errorMessage(error)); }
   };
 
   const handleDeleteDriver = async (id: string) => {
     if (!confirm("Delete this operator? This cannot be undone.")) return;
     try { await deleteDoc(doc(db, "drivers", id)); }
-    catch (e: any) { setErrorMsg("Failed to delete Operator: " + e.message); }
+    catch (error: unknown) { setErrorMsg("Failed to delete Operator: " + errorMessage(error)); }
   };
 
   const startEditDriver = (driver: DriverData) => {
     setEditingDriverId(driver.id);
     setEditDriverName(driver.name);
+    setEditDriverAuthUid(driver.authUid ?? "");
     setEditDriverBusId(driver.assignedBusId ?? "");
     setEditingBusId(null);
   };
@@ -490,10 +495,11 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
       await setDoc(doc(db, "drivers", id), {
         id,
         name: editDriverName,
+        authUid: editDriverAuthUid.trim(),
         assignedBusId: editDriverBusId || null,
       } as DriverData);
       setEditingDriverId(null);
-    } catch (e: any) { setErrorMsg("Failed to update Operator: " + e.message); }
+    } catch (error: unknown) { setErrorMsg("Failed to update Operator: " + errorMessage(error)); }
   };
 
   const liveDriverIds = new Set(filteredActiveEntries.map((e) => e.driverId).filter(Boolean));
@@ -514,7 +520,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
       )}
 
 
-      {/* â•â• FLEET COMMAND CENTER â€” always visible, driven by live Firebase data â•â• */}
+      {/* â•â• FLEET COMMAND CENTER — always visible, driven by live Firebase data â•â• */}
       <div className="flex flex-col gap-3">
         {/* Fleet summary stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -539,7 +545,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
           <div className="flex items-center gap-2 mb-1">
             <span className={`w-2 h-2 rounded-full shrink-0 ${filteredActiveEntries.length > 0 ? "bg-emerald-400 animate-pulse" : "bg-white/20"}`} />
             <span className={`text-[10px] font-black uppercase tracking-[0.25em] ${filteredActiveEntries.length > 0 ? "text-emerald-400" : "text-white/30"}`}>
-              Live Tracking â€” {busesLoading ? "â€¦" : `${filteredActiveEntries.length} Bus${filteredActiveEntries.length !== 1 ? "es" : ""} Online`}
+              Live Tracking — {busesLoading ? "…" : `${filteredActiveEntries.length} Bus${filteredActiveEntries.length !== 1 ? "es" : ""} Online`}
             </span>
           </div>
           {filteredActiveEntries.length > 0 ? (
@@ -554,7 +560,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             ))
           ) : (
             <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">
-              {busesLoading ? "Loadingâ€¦" : "No buses currently active"}
+              {busesLoading ? "Loading…" : "No buses currently active"}
             </p>
           )}
         </div>
@@ -649,7 +655,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             {busListOpen && (
               <div className="px-3 pb-3 flex flex-col gap-2 border-t border-white/5">
                 {busesLoading
-                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold">Loadingâ€¦</p>
+                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold">Loading…</p>
                   : buses.length === 0
                   ? <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">No vehicles registered.</p>
                   : buses.map((bus) => {
@@ -686,10 +692,10 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                                     <ArrowRight className="w-2.5 h-2.5" />
                                     {bus.assignedRoutes.length} Route{bus.assignedRoutes.length !== 1 ? "s" : ""}
                                   </span>
-                                ) : (bus as any).assignedRouteId ? (
+                                ) : bus.assignedRouteId ? (
                                   <span className="text-[9px] text-blue-400 font-semibold flex items-center gap-1">
                                     <ArrowRight className="w-2.5 h-2.5" />
-                                    {routes.find(r => r.id === (bus as any).assignedRouteId)?.name || (bus as any).assignedRouteId}
+                                    {routes.find(r => r.id === bus.assignedRouteId)?.name || bus.assignedRouteId}
                                   </span>
                                 ) : null}
                               </div>
@@ -793,13 +799,19 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               aria-label="New operator display name"
               className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
             />
+            <input
+              value={newDriverAuthUid} onChange={(e) => setNewDriverAuthUid(e.target.value)}
+              placeholder="Firebase Auth UID"
+              aria-label="Firebase Auth UID for new operator"
+              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+            />
             <div className="relative">
               <select
                 value={newDriverBusId} onChange={(e) => setNewDriverBusId(e.target.value)}
                 aria-label="Assign vehicle to new operator"
                 className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 pr-8 text-sm text-white focus:border-white/40 outline-none transition-colors font-semibold appearance-none cursor-pointer"
               >
-                <option value="" className="bg-[#1a1c29]">â€” Assign Vehicle â€”</option>
+                <option value="" className="bg-[#1a1c29]">— Assign Vehicle —</option>
                 {buses.map((b) => <option key={b.id} value={b.id} className="bg-[#1a1c29]">{b.name} ({b.id})</option>)}
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 pointer-events-none" />
@@ -835,7 +847,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             {driverListOpen && (
               <div className="px-3 pb-3 flex flex-col gap-2 border-t border-white/5">
                 {driversLoading
-                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold">Loadingâ€¦</p>
+                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold">Loading…</p>
                   : drivers.length === 0
                   ? <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">No operators registered.</p>
                   : drivers.map((driver) => {
@@ -908,6 +920,13 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                               aria-label="Edit operator display name"
                               className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-blue-400/60 outline-none transition-colors placeholder:text-white/20 font-semibold"
                             />
+                            <input
+                              value={editDriverAuthUid}
+                              onChange={(e) => setEditDriverAuthUid(e.target.value)}
+                              placeholder="Firebase Auth UID"
+                              aria-label="Firebase Auth UID for operator"
+                              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+                            />
                             <div className="relative">
                               <select
                                 value={editDriverBusId}
@@ -915,7 +934,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                                 aria-label="Edit assigned vehicle"
                                 className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 pr-8 text-sm text-white focus:border-blue-400/60 outline-none transition-colors font-semibold appearance-none cursor-pointer"
                               >
-                                <option value="" className="bg-[#1a1c29]">â€” Unassign Vehicle â€”</option>
+                                <option value="" className="bg-[#1a1c29]">— Unassign Vehicle —</option>
                                 {buses.map((b) => <option key={b.id} value={b.id} className="bg-[#1a1c29]">{b.name} ({b.id})</option>)}
                               </select>
                               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 pointer-events-none" />

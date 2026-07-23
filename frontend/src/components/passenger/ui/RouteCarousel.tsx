@@ -33,7 +33,6 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
   return (
     <div className="w-full flex flex-col gap-4 pb-4">
       {liveRoutes.map((route) => {
-        const activeBuses = getActiveBusesCount(route.id);
         const stops = route.stops ?? [];
         const durationMins = route.duration ? Math.round(parseInt(route.duration) / 60) : (stops.length * 2); // Fallback estimation
         const scheduleTime = now ? new Date(now + durationMins * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
@@ -48,7 +47,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
               className="w-full text-left transition-all duration-300 rounded-[20px] p-5 border relative overflow-hidden flex flex-col min-h-[170px]"
               style={{
                 background: "var(--surface-3)",
-                borderColor: "var(--border-subtle)",
+                borderColor: route.id === selectedRouteId ? "var(--accent)" : "var(--border-subtle)",
                 boxShadow: "0 4px 12px rgba(0, 0, 0, 0.05)",
               }}
             >
