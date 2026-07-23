@@ -30,6 +30,7 @@ import polylineRoutes from "./routes/polyline";
 import planRoutes from "./routes/plan";
 import routesListRoutes from "./routes/routesList";
 import devicesRoutes from "./routes/devices";
+import placesRoutes from "./routes/places";
 
 const PORT = process.env.PORT || 4000;
 const configuredCorsOrigins = (process.env.CORS_ORIGIN || "")
@@ -114,6 +115,7 @@ app.use("/api/routes", routeComputeLimiter, polylineRoutes);
 app.use("/api/plan", planRoutes);
 app.use("/api/routes-list", routesListRoutes);
 app.use("/api/devices", writeLimiter, devicesRoutes);
+app.use("/api/places", placesRoutes);
 
 // Socket.IO has been removed in favor of native Firebase streams.
 

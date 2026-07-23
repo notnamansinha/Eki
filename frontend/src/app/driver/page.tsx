@@ -12,8 +12,8 @@ import { useDrivers } from "@/hooks/useDrivers";
 import { useBuses } from "@/hooks/useBuses";
 import { Map, CircleUserRound as User, MessageCircle, ArrowLeft } from "lucide-react";
 import { db, rtdb, auth } from "@/lib/firebase";
-import { collection, doc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
-import { ref, update, onValue, onDisconnect, serverTimestamp } from "firebase/database";
+import { collection, doc, setDoc, updateDoc, arrayUnion, serverTimestamp as firestoreServerTimestamp } from "firebase/firestore";
+import { ref, update, onValue } from "firebase/database";
 
 const DriverMap = dynamic(() => import("@/components/maps/DriverMap"), {
   ssr: false,
@@ -70,7 +70,7 @@ export default function DriverPage() {
           stopIndex: index,
           stopId: activeRoute.stops[index].id,
           stopName: activeRoute.stops[index].name,
-          timestamp: serverTimestamp()
+          timestamp: firestoreServerTimestamp()
         })
       }).catch(console.error);
     }
@@ -114,6 +114,11 @@ export default function DriverPage() {
     if (!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0) {
       return;
     }
+    if (!auth.currentUser) {
+      console.warn("[Driver] Tracking requires the signed-in driver session.");
+      return;
+    }
+
     setIsTracking(true);
 
     const currentBusId = busId;
@@ -133,11 +138,6 @@ export default function DriverPage() {
       deviceState: "online",
       tripState: "in_service",
       timestamp: Date.now(),
-      lat: activeRoute?.stops?.[0]?.lat || 23.03,
-      lng: activeRoute?.stops?.[0]?.lng || 72.55,
-      speed: 0,
-      heading: 0,
-      motionState: "stopped",
       currentStopIndex: currentStopIndexRef.current,
       delayMinutes: delayMinutesRef.current,
     };
@@ -152,14 +152,6 @@ export default function DriverPage() {
         update(busRef, payload)
           .catch(err => console.error("[Driver] RTDB write failed:", err.code, err.message));
         
-        // Prevent ghost sessions if the driver forces app close
-        onDisconnect(busRef).update({
-          status: "offline",
-          deviceState: "offline",
-          tripState: "ended",
-          timestamp: serverTimestamp()
-        }).catch(() => {});
-
         // 2. Firestore Session Record
         setDoc(doc(db, "ride_sessions", sessionId), {
           id: sessionId,
@@ -173,13 +165,8 @@ export default function DriverPage() {
       });
     };
 
-    if (!auth.currentUser) {
-      console.warn("[Driver] Tracking requires the signed-in driver session.");
-      return;
-    }
-
     doWrite();
-  }, [busId, selectedRouteIds, driverId, activeRoute, drivers]);
+  }, [busId, selectedRouteIds, driverId, drivers]);
 
   // Pure GNSS listener (read-only mode for driver location)
   useEffect(() => {

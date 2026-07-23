@@ -17,9 +17,9 @@ import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
 
 interface NominatimResult {
-  display_name: string;
-  lat: string;
-  lon: string;
+  name: string;
+  lat: number;
+  lng: number;
 }
 
 /* â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -44,19 +44,28 @@ function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: 
     if (value.length <= 2) return;
     const controller = new AbortController();
     const t = setTimeout(() => {
-      setSearching(true);
-      fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(value)}&limit=5`,
-        { signal: controller.signal }
-      )
-        .then(r => r.json())
-        .then((data: unknown) => {
-          setResults(Array.isArray(data) ? data as NominatimResult[] : []);
+      void (async () => {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+        const token = await auth.currentUser?.getIdToken();
+        if (!backendUrl || !token) {
+          setResults([]);
           setSearching(false);
-        })
-        .catch((error: unknown) => {
-          if (!(error instanceof DOMException && error.name === "AbortError")) setSearching(false);
+          return;
+        }
+        setSearching(true);
+        const response = await fetch(`${backendUrl}/api/places/search?q=${encodeURIComponent(value)}`, {
+          signal: controller.signal,
+          headers: { Authorization: `Bearer ${token}` },
         });
+        const data = await response.json() as { results?: NominatimResult[] };
+        setResults(response.ok && Array.isArray(data.results) ? data.results : []);
+        setSearching(false);
+      })().catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setResults([]);
+          setSearching(false);
+        }
+      });
     }, 500);
     return () => {
       clearTimeout(t);
@@ -78,10 +87,10 @@ function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: 
         <div className="absolute top-full left-0 right-0 mt-1 bg-[#0f0f12] border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl">
           {results.map((r, i) => (
             <button key={i} className="w-full text-left p-3 hover:bg-white/5 text-xs text-white border-b border-white/5 last:border-0 truncate transition-colors" onClick={() => {
-              onPlaceSelect({ name: r.display_name, lat: parseFloat(r.lat), lng: parseFloat(r.lon) });
+              onPlaceSelect({ name: r.name, lat: r.lat, lng: r.lng });
               setValue(""); setResults([]);
             }}>
-              {r.display_name}
+              {r.name}
             </button>
           ))}
         </div>

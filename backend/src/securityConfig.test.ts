@@ -63,10 +63,13 @@ describe("production security configuration", () => {
     expect(routesList).toContain('router.get("/", requireAuth');
   });
 
-  it("uses server time for driver disconnect state", () => {
+  it("does not let the browser seed or take down hardware GNSS coordinates", () => {
     const driverPage = workspaceFile("frontend/src/app/driver/page.tsx");
-    expect(driverPage).toContain("onDisconnect, serverTimestamp");
-    expect(driverPage).toContain("timestamp: serverTimestamp()");
+
+    expect(driverPage).not.toContain("onDisconnect(");
+    expect(driverPage).not.toContain("lat: activeRoute?.stops");
+    expect(driverPage).toContain("serverTimestamp as firestoreServerTimestamp");
+    expect(driverPage).toContain("timestamp: firestoreServerTimestamp()");
   });
 
   it("renders stored route geometry without browser Directions API calls", () => {
@@ -85,6 +88,17 @@ describe("production security configuration", () => {
     expect(server).toContain('app.use("/api/routes", routeComputeLimiter, polylineRoutes)');
     expect(devices).toContain("const deviceAuthLimiter");
     expect(devices).toContain("skipSuccessfulRequests: true");
+  });
+
+  it("keeps admin place searches authenticated and server-side", () => {
+    const places = workspaceFile("backend/src/routes/places.ts");
+    const editor = workspaceFile("frontend/src/components/admin/RouteManagementPanel.tsx");
+
+    expect(places).toContain("requireAdmin");
+    expect(places).toContain("AbortSignal.timeout(5_000)");
+    expect(places).toContain("NOMINATIM_USER_AGENT");
+    expect(editor).toContain("/api/places/search");
+    expect(editor).not.toContain("https://nominatim.openstreetmap.org/search?format=json");
   });
 
   it("clears in-memory data caches on logout", () => {
