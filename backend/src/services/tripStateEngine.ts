@@ -1,6 +1,6 @@
 import { db, rtdb } from "../lib/firebaseAdmin";
-import { startETATracking, stopETATracking, haversineMeters } from "../lib/etaService";
-import type { TripState, MotionState } from "../types";
+import { startETATracking, stopETATracking } from "../lib/etaService";
+import { reduceTripState } from "./tripStateReducer";
 
 interface RouteStop { id: string; lat: number; lng: number; name: string; }
 const latestLocations = new Map<string, {lat: number, lng: number}>();
@@ -11,7 +11,6 @@ const completedTimeouts = new Map<string, NodeJS.Timeout>();
 const persistedFleetState = new Map<string, string>();
 const fleetWriteQueues = new Map<string, Promise<void>>();
 
-const STOP_GEOFENCE_M = 20;
 function readIntervalMs(value: string | undefined, fallback: number, minimum: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= minimum ? Math.floor(parsed) : fallback;
@@ -85,42 +84,6 @@ async function ensureRouteLoaded(routeId: string): Promise<RouteStop[]> {
   }
 }
 
-function computeTripState(
-  lat: number, lng: number, 
-  motionState: MotionState, 
-  currentTripState: TripState, 
-  currentStopIndex: number, 
-  stops: RouteStop[]
-): { tripState: TripState; currentStopIndex: number } {
-  if (stops.length === 0) return { tripState: "in_service", currentStopIndex: 0 };
-  if (motionState === "uncertain") return { tripState: "maintenance", currentStopIndex };
-
-  const firstStop = stops[0];
-  const lastStop = stops[stops.length - 1];
-
-  if (currentTripState === "pre_departure") {
-    if (haversineMeters({lat, lng}, firstStop) <= STOP_GEOFENCE_M) {
-      return { tripState: "in_service", currentStopIndex: 0 };
-    }
-    return { tripState: "pre_departure", currentStopIndex };
-  }
-
-  if (currentTripState === "in_service") {
-    if (haversineMeters({lat, lng}, lastStop) <= STOP_GEOFENCE_M) {
-      return { tripState: "completed", currentStopIndex: stops.length - 1 };
-    }
-    // The driver app is the source of truth for intermediate stop progression.
-    // Removed the aggressive "closest of next 5 stops" logic because it causes
-    // phantom skips if a future stop is closer in a straight line than the route.
-    return { tripState: "in_service", currentStopIndex };
-  }
-
-  if (currentTripState === "maintenance") {
-    return { tripState: "in_service", currentStopIndex };
-  }
-  return { tripState: currentTripState, currentStopIndex };
-}
-
 export function startTripStateEngine() {
   console.log("🚀 Trip State Engine started, listening to RTDB /activeBuses");
   const busesRef = rtdb.ref("activeBuses");
@@ -192,16 +155,24 @@ export function startTripStateEngine() {
       );
     }
 
-    const { tripState, currentStopIndex } = computeTripState(
-      data.lat, data.lng, 
-      data.motionState || "active", 
-      data.tripState || "pre_departure", 
-      data.currentStopIndex || 0, 
-      stops
-    );
+    const { tripState, currentStopIndex, hasDepartedOrigin } = reduceTripState({
+      lat: data.lat,
+      lng: data.lng,
+      motionState: data.motionState || "moving",
+      currentTripState: data.tripState || "pre_departure",
+      currentStopIndex: data.currentStopIndex || 0,
+      stops,
+      hasDepartedOrigin: data.hasDepartedOrigin === true,
+    });
 
-    if (tripState !== data.tripState || currentStopIndex !== data.currentStopIndex) {
-      snapshot.ref.update({ tripState, currentStopIndex }).catch(console.error);
+    if (
+      tripState !== data.tripState ||
+      currentStopIndex !== data.currentStopIndex ||
+      hasDepartedOrigin !== (data.hasDepartedOrigin === true)
+    ) {
+      snapshot.ref
+        .update({ tripState, currentStopIndex, hasDepartedOrigin })
+        .catch(console.error);
     }
 
     if (data.tripState !== "completed" && completedTimeouts.has(data.busId)) {

@@ -93,8 +93,10 @@ describe("production security configuration", () => {
 
   it("renders stored route geometry without browser Directions API calls", () => {
     const directionsRoute = workspaceFile("frontend/src/components/maps/DirectionsRoute.tsx");
+    const polyline = workspaceFile("frontend/src/lib/polyline.ts");
 
-    expect(directionsRoute).toContain("function decodePolyline");
+    expect(directionsRoute).toContain('from "@/lib/polyline"');
+    expect(polyline).toContain("export function decodePolyline");
     expect(directionsRoute).not.toContain("DirectionsService");
     expect(directionsRoute).not.toContain("DirectionsRenderer");
   });
@@ -146,8 +148,8 @@ describe("production security configuration", () => {
   it("lets the GNSS tracker seed its own static bus identity", () => {
     const firmware = workspaceFile("hardware/src/main.cpp");
     const metadataWriter = firmware.slice(
-      firmware.indexOf("void writeBusMeta()"),
-      firmware.indexOf("void sendLocationToRTDB()"),
+      firmware.indexOf("SendResult writeBusMeta()"),
+      firmware.indexOf("SendResult sendLocationToRTDB()"),
     );
 
     expect(metadataWriter).toContain('meta.set("busId",         BUS_ID)');

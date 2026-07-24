@@ -18,6 +18,7 @@
         "lowAccuracy": { ".validate": "newData.isBoolean()" },
         "satellites": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
         "hdop": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+        "hasDepartedOrigin": { ".validate": "newData.isBoolean()" },
         "status": { ".validate": "newData.val() === 'active' || newData.val() === 'offline'" },
         "busId": { ".validate": "newData.isString() && newData.val().length <= 128" },
         "driverId": { ".validate": "newData.isString() && newData.val().length <= 128" },
