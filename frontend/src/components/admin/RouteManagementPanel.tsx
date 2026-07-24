@@ -16,13 +16,8 @@ import {
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
 
-interface NominatimResult {
-  name: string;
-  lat: number;
-  lng: number;
-}
 
-/* â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ────────────────────────────────────────────────────────────────────────────────────────────────── */
 function stopLabel(i: number): string {
   const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   if (i < 26) return a[i];
@@ -34,63 +29,81 @@ const ROUTE_COLORS = [
   "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
 ];
 
-/* â”€â”€ Nominatim search box â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: number; lng: number }) => void }) {
+/* ── Google Maps Places Autocomplete search box ─────────────────────────── */
+function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: number; lng: number }) => void }) {
   const [value, setValue] = useState("");
-  const [results, setResults] = useState<NominatimResult[]>([]);
+  const [predictions, setPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
   const [searching, setSearching] = useState(false);
+  const [ready, setReady] = useState(false);
+  const autocompleteRef = useRef<google.maps.places.AutocompleteService | null>(null);
+  const placesRef = useRef<google.maps.places.PlacesService | null>(null);
+  const dummyRef = useRef<HTMLDivElement>(null);
+
+  // Poll until google.maps.places is loaded (handles any mount timing)
+  useEffect(() => {
+    const check = () => {
+      if (typeof window !== "undefined" && window.google?.maps?.places && dummyRef.current) {
+        autocompleteRef.current = new window.google.maps.places.AutocompleteService();
+        placesRef.current = new window.google.maps.places.PlacesService(dummyRef.current);
+        setReady(true);
+        return true;
+      }
+      return false;
+    };
+    if (check()) return;
+    const id = setInterval(() => { if (check()) clearInterval(id); }, 300);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
-    if (value.length <= 2) return;
-    const controller = new AbortController();
-    const t = setTimeout(() => {
-      void (async () => {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
-        const token = await auth.currentUser?.getIdToken();
-        if (!backendUrl || !token) {
-          setResults([]);
-          setSearching(false);
-          return;
-        }
-        setSearching(true);
-        const response = await fetch(`${backendUrl}/api/places/search?q=${encodeURIComponent(value)}`, {
-          signal: controller.signal,
-          headers: { Authorization: `Bearer ${token}` },
+    if (value.length < 3 || !ready) { setPredictions([]); return; }
+    const svc = autocompleteRef.current;
+    if (!svc) return;
+    setSearching(true);
+    svc.getPlacePredictions({ input: value }, (results, status) => {
+      setSearching(false);
+      if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+        setPredictions(results);
+      } else {
+        setPredictions([]);
+      }
+    });
+  }, [value, ready]);
+
+  const handleSelect = (pred: google.maps.places.AutocompletePrediction) => {
+    const svc = placesRef.current;
+    if (!svc) return;
+    setValue("");
+    setPredictions([]);
+    svc.getDetails({ placeId: pred.place_id, fields: ["geometry", "name"] }, (place, status) => {
+      if (status === google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
+        onPlaceSelect({
+          name: place.name ?? pred.description,
+          lat: place.geometry.location.lat(),
+          lng: place.geometry.location.lng(),
         });
-        const data = await response.json() as { results?: NominatimResult[] };
-        setResults(response.ok && Array.isArray(data.results) ? data.results : []);
-        setSearching(false);
-      })().catch((error: unknown) => {
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
-          setResults([]);
-          setSearching(false);
-        }
-      });
-    }, 500);
-    return () => {
-      clearTimeout(t);
-      controller.abort();
-    };
-  }, [value]);
+      }
+    });
+  };
 
   return (
     <div className="relative flex-1">
+      <div ref={dummyRef} style={{ display: "none" }} />
       <div className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none">
         {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
       </div>
       <input
         type="text" value={value} onChange={e => setValue(e.target.value)}
-        placeholder="Search for a stop location…"
-        className="w-full h-10 bg-[#0f0f12] border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-medium"
+        placeholder={ready ? "Search for a stop (Google Maps)…" : "Loading Maps…"}
+        disabled={!ready}
+        className="w-full h-9 bg-[#09090b] border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-medium disabled:opacity-40"
       />
-      {value.length > 2 && results.length > 0 && (
+      {value.length >= 3 && predictions.length > 0 && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-[#0f0f12] border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl">
-          {results.map((r, i) => (
-            <button key={i} className="w-full text-left p-3 hover:bg-white/5 text-xs text-white border-b border-white/5 last:border-0 truncate transition-colors" onClick={() => {
-              onPlaceSelect({ name: r.name, lat: r.lat, lng: r.lng });
-              setValue(""); setResults([]);
-            }}>
-              {r.name}
+          {predictions.map((pred) => (
+            <button key={pred.place_id} className="w-full text-left p-3 hover:bg-white/5 text-xs text-white border-b border-white/5 last:border-0 transition-colors" onClick={() => handleSelect(pred)}>
+              <span className="font-semibold">{pred.structured_formatting.main_text}</span>
+              <span className="text-white/40 ml-1">{pred.structured_formatting.secondary_text}</span>
             </button>
           ))}
         </div>
@@ -286,6 +299,13 @@ function RouteEditor({
     });
   };
 
+  const updateStopPosition = (i: number, lat: number, lng: number) =>
+    setState(s => {
+      const stops = [...s.stops];
+      stops[i] = { ...stops[i], lat, lng };
+      return { ...s, stops, polyline: undefined };
+    });
+
   const handleSave = async () => {
     if (!state.routeId || !state.name || state.stops.length < 2) {
       alert("Route ID, name, and at least 2 stops are required.");
@@ -369,7 +389,7 @@ function RouteEditor({
   return (
     <div className="h-full flex flex-col w-full overflow-y-auto lg:overflow-hidden animate-slide-up">
       {/* Toolbar */}
-      <div className="shrink-0 border-b border-white/5 bg-[#0f0f12]/90 backdrop-blur-2xl px-4 py-3 flex flex-wrap gap-3 items-end">
+      <div className="shrink-0 border-b border-white/5 bg-[#0f0f12]/90 backdrop-blur-2xl px-4 py-3 flex flex-wrap gap-3 items-end relative z-10 overflow-visible">
         <button onClick={onCancel} className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors shrink-0 self-center">
           <ArrowLeft className="w-4 h-4 text-white/60" />
         </button>
@@ -385,14 +405,9 @@ function RouteEditor({
           />
         </div>
 
-        <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
-          <label className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Display Name</label>
-          <input
-            value={state.name}
-            onChange={e => setField("name", e.target.value)}
-            placeholder="Downtown Express"
-            className="h-9 bg-[#09090b] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/15 font-medium"
-          />
+        <div className="flex flex-col gap-1 flex-1 min-w-[220px]">
+          <label className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Search Stop</label>
+          <PlacesSearchBox onPlaceSelect={handlePlaceSelect} />
         </div>
 
         <div className="flex flex-col gap-1">
@@ -449,8 +464,16 @@ function RouteEditor({
               hasBuses={false}
             />
             {state.stops.map((stop, i) => (
-              <AdvancedMarker key={`s-${i}`} position={{ lat: stop.lat, lng: stop.lng }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <AdvancedMarker
+                key={`s-${i}`}
+                position={{ lat: stop.lat, lng: stop.lng }}
+                draggable
+                onDragEnd={(e: google.maps.MapMouseEvent) => {
+                  if (e.latLng) updateStopPosition(i, e.latLng.lat(), e.latLng.lng());
+                }}
+                title={`Drag to move stop ${stopLabel(i)}`}
+              >
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "grab" }}>
                   <div style={{
                     width: 32, height: 32, borderRadius: 12,
                     background: state.color, border: "3px solid #09090b",
@@ -468,15 +491,21 @@ function RouteEditor({
               </AdvancedMarker>
             ))}
           </GoogleMap>
-          {/* Search box floating on map */}
-          <div className="absolute bottom-3 left-3 right-3">
-            <SearchBox onPlaceSelect={handlePlaceSelect} />
-          </div>
         </div>
 
         {/* Stop list sidebar */}
         <div className="w-full lg:w-[300px] shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-white/5 bg-[#09090b]/40 backdrop-blur-xl">
-          <div className="px-4 py-3 flex items-center justify-between sticky top-0 bg-[#0f0f12]/80 backdrop-blur-xl border-b border-white/5">
+          {/* Display Name field */}
+          <div className="px-4 pt-4 pb-3 border-b border-white/5">
+            <label className="text-[9px] text-white/30 font-black uppercase tracking-widest block mb-1.5">Display Name</label>
+            <input
+              value={state.name}
+              onChange={e => setField("name", e.target.value)}
+              placeholder="e.g. Shela to LD"
+              className="w-full h-9 bg-[#0f0f12] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/15 font-medium"
+            />
+          </div>
+          <div className="px-4 py-3 flex items-center justify-between bg-[#0f0f12]/80 backdrop-blur-xl border-b border-white/5">
             <div className="flex items-center gap-2">
               <MapPin className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Stops</span>
