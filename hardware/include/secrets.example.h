@@ -28,11 +28,16 @@
 #define BACKEND_URL "https://your-backend.example.com"
 
 // PEM root certificate for the CA that issued BACKEND_URL's certificate.
-static const char BACKEND_ROOT_CA[] PROGMEM = R"EOF(
+// Keep this as a macro: main.cpp verifies its presence at compile time.
+#define BACKEND_ROOT_CA R"EOF(
 -----BEGIN CERTIFICATE-----
 REPLACE_WITH_YOUR_BACKEND_CA_CERTIFICATE
 -----END CERTIFICATE-----
-)EOF";
+)EOF"
+
+// Keep disabled in deployed firmware. Enable only for an isolated local
+// development backend where credentials are not sensitive.
+#define BACKEND_ALLOW_INSECURE_HTTP 0
 
 // The secret for this specific device, verified by the backend
 #define DEVICE_SECRET "YOUR_DEVICE_SECRET"
