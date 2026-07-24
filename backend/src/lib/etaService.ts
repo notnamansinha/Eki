@@ -195,7 +195,7 @@ export function startETATracking(
     lastETAResults.set(busId, update);
     lastETALocation.set(busId, loc); // Record location at time of computation
 
-    // Write to RTDB directly instead of Socket.IO
+    // Write directly to RTDB; no intermediary transport is involved.
     rtdb.ref(`activeBuses/${busId}_${routeId}`).update({
       etaSeconds: update.etaSeconds,
       etaMinutes: update.etaMinutes,

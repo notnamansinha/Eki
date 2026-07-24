@@ -20,7 +20,7 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
   const idToken = authHeader.split("Bearer ")[1];
 
   try {
-    const decoded = await auth.verifyIdToken(idToken);
+    const decoded = await auth.verifyIdToken(idToken, true);
 
     // Check for admin custom claim
     if (!decoded.admin) {

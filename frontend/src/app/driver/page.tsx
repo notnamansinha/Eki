@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import TransmitterControls from "@/components/driver/TransmitterControls";
-import DriverMap from "@/components/maps/DriverMap";
 import DriverProfileTab from "@/components/driver/DriverProfileTab";
 import MessagingPanel from "@/components/shared/MessagingPanel";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,9 +12,13 @@ import { useDrivers } from "@/hooks/useDrivers";
 import { useBuses } from "@/hooks/useBuses";
 import { Map, CircleUserRound as User, MessageCircle, ArrowLeft } from "lucide-react";
 import { db, rtdb, auth } from "@/lib/firebase";
-import { collection, doc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
-import { ref, update, remove, onValue, onDisconnect } from "firebase/database";
-import { signInAnonymously } from "firebase/auth";
+import { collection, doc, setDoc, updateDoc, arrayUnion, serverTimestamp as firestoreServerTimestamp } from "firebase/firestore";
+import { ref, update, onValue } from "firebase/database";
+
+const DriverMap = dynamic(() => import("@/components/maps/DriverMap"), {
+  ssr: false,
+  loading: () => <div className="h-full bg-[var(--surface-0)]" role="status" aria-label="Loading map" />,
+});
 
 type Tab = "map" | "profile";
 
@@ -24,29 +28,16 @@ export default function DriverPage() {
   const { routes } = useRoutes();
   const { drivers } = useDrivers();
   const { buses } = useBuses();
-  const [driverId, setDriverId] = useState("");
   const [selectedBusId, setSelectedBusId] = useState("");
   const [activeSessionIds, setActiveSessionIds] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    const saved = localStorage.getItem("driverId");
-     
-    if (saved) setDriverId(saved);
-  }, []);
-
-  useEffect(() => {
-    if (driverId) localStorage.setItem("driverId", driverId);
-     
-    setSelectedBusId("");
-  }, [driverId]);
-
-  const activeDriver = drivers.find(d => d.id === driverId);
+  const activeDriver = drivers.find((driver) => driver.authUid === user?.uid);
+  const driverId = activeDriver?.id ?? "";
   const busId = selectedBusId || activeDriver?.assignedBusId || "";
 
   const [selectedRouteIds, setSelectedRouteIds] = useState<string[]>([]);
   const activeRoute = routes.find(r => selectedRouteIds.includes(r.id)) || routes.find(r => r.id === selectedRouteIds[0]);
   const [isTracking, setIsTracking] = useState(false);
-  const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number; heading: number } | null>(null);
+  const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number; heading: number; speed?: number } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("map");
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -57,7 +48,6 @@ export default function DriverPage() {
   const delayMinutesRef = useRef<number>(0);
   const driverLocationRef = useRef<{ lat: number; lng: number } | null>(null);
 
-  const lastLogTimeRef = useRef<number>(0);
 
   const handleStopIndexChange = useCallback((index: number, routeIdHint?: string) => {
     currentStopIndexRef.current = index;
@@ -70,7 +60,7 @@ export default function DriverPage() {
           stopIndex: index,
           stopId: activeRoute.stops[index].id,
           stopName: activeRoute.stops[index].name,
-          timestamp: Date.now()
+          timestamp: firestoreServerTimestamp()
         })
       }).catch(console.error);
     }
@@ -88,25 +78,11 @@ export default function DriverPage() {
     routesToUpdate.forEach(routeId => {
       const activeBusId = busIdRef.current || "test_bus_1";
 
-      // Prefer live GPS location for accurate ETA calculation.
-      // Only fall back to the previous stop's coords if no GPS fix is available yet
-      // (avoids teleporting the bus to a skipped stop's position).
-      const liveLoc = driverLocationRef.current;
-      const prevIdx = Math.max(0, index - 1);
-      const stopLat = liveLoc?.lat ?? activeRoute?.stops?.[prevIdx]?.lat ?? 23.03;
-      const stopLng = liveLoc?.lng ?? activeRoute?.stops?.[prevIdx]?.lng ?? 72.55;
-
       const busRef = ref(rtdb, `activeBuses/${activeBusId}_${routeId}`);
       update(busRef, {
-        busId: activeBusId,
-        routeId: routeId,
-        lat: stopLat,
-        lng: stopLng,
         currentStopIndex: index,
         timestamp: Date.now(),
         tripState: "in_service",
-        status: "active",
-        deviceState: "online"
       }).catch(console.error);
     });
   }, [activeSessionIds, selectedRouteIds, activeRoute]);
@@ -115,21 +91,19 @@ export default function DriverPage() {
   useEffect(() => { routeIdsRef.current = selectedRouteIds; }, [selectedRouteIds]);
   useEffect(() => { driverLocationRef.current = driverLocation; }, [driverLocation]);
 
-  useEffect(() => {
-    if (routes.length > 0 && selectedRouteIds.length === 0) {
-       
-      setSelectedRouteIds([routes[0].id]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routes]);
-
-
   const handleStartTracking = useCallback(() => {
-    console.log("[Driver] handleStartTracking called", { busId, driverId, selectedRouteIds, driversLen: drivers.length });
-    if (!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0) {
-      console.warn("[Driver] Guard prevented start:", { busId, driverId, routeCount: selectedRouteIds.length, driverFound: drivers.some(d => d.id === driverId) });
+    const activeBus = buses.find((bus) => bus.id === busId);
+    const assignedRouteIds = activeBus?.assignedRoutes ??
+      (activeBus?.assignedRouteId ? [activeBus.assignedRouteId] : []);
+    if (!busId || !driverId || !drivers.some(d => d.id === driverId) ||
+      selectedRouteIds.length !== 1 || !assignedRouteIds.includes(selectedRouteIds[0])) {
       return;
     }
+    if (!auth.currentUser) {
+      console.warn("[Driver] Tracking requires the signed-in driver session.");
+      return;
+    }
+
     setIsTracking(true);
 
     const currentBusId = busId;
@@ -149,16 +123,9 @@ export default function DriverPage() {
       deviceState: "online",
       tripState: "in_service",
       timestamp: Date.now(),
-      lat: activeRoute?.stops?.[0]?.lat || 23.03,
-      lng: activeRoute?.stops?.[0]?.lng || 72.55,
-      speed: 0,
-      heading: 0,
-      motionState: "stopped",
       currentStopIndex: currentStopIndexRef.current,
       delayMinutes: delayMinutesRef.current,
     };
-
-    console.log("[Driver] Writing to RTDB:", { currentBusId, currentRouteIds, basePayload, currentUser: auth.currentUser?.uid });
 
     const doWrite = () => {
       currentRouteIds.forEach(routeId => {
@@ -168,17 +135,8 @@ export default function DriverPage() {
         // 1. RTDB Update
         const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
         update(busRef, payload)
-          .then(() => console.log("[Driver] RTDB write succeeded for", `${currentBusId}_${routeId}`))
-          .catch(err => console.error("[Driver] RTDB write FAILED:", err.code, err.message));
+          .catch(err => console.error("[Driver] RTDB write failed:", err.code, err.message));
         
-        // Prevent ghost sessions if the driver forces app close
-        onDisconnect(busRef).update({
-          status: "offline",
-          deviceState: "offline",
-          tripState: "ended",
-          timestamp: Date.now()
-        }).catch(() => {});
-
         // 2. Firestore Session Record
         setDoc(doc(db, "ride_sessions", sessionId), {
           id: sessionId,
@@ -187,82 +145,40 @@ export default function DriverPage() {
           routeId: routeId,
           startTime: Date.now(),
           status: "active",
-          passengers: []
+          passengers: {}
         }).catch(err => console.error("[Driver] Firestore write failed:", err));
       });
     };
 
-    if (auth.currentUser) {
-      doWrite();
-    } else {
-      // Driver not yet authenticated — sign in anonymously then write
-      signInAnonymously(auth)
-        .then(doWrite)
-        .catch(err => console.error("[Driver] Auth failed before RTDB write:", err.message));
-    }
-  }, [busId, selectedRouteIds, driverId, user?.uid, activeRoute, drivers]);
+    doWrite();
+  }, [busId, buses, selectedRouteIds, driverId, drivers]);
 
   // Pure GNSS listener (read-only mode for driver location)
   useEffect(() => {
     if (!busId || !isTracking) return;
 
-    let unsubscribe: (() => void) | undefined;
-    let isMounted = true;
+    if (!auth.currentUser) return;
 
-    signInAnonymously(auth).then(() => {
-      if (!isMounted) return;
-      const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
-      unsubscribe = onValue(busRef, (snapshot) => {
+    const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
+    const unsubscribe = onValue(busRef, (snapshot) => {
         const data = snapshot.val();
         if (data && data.lat && data.lng) {
           setDriverLocation({
             lat: data.lat,
             lng: data.lng,
             heading: data.heading || 0,
+            speed: data.speed || 0,
           });
 
-          const now = Date.now();
-          if (now - lastLogTimeRef.current > 15000 && data.sessionId) {
-            lastLogTimeRef.current = now;
-            updateDoc(doc(db, "ride_sessions", data.sessionId), {
-              path: arrayUnion({
-                lat: data.lat,
-                lng: data.lng,
-                heading: data.heading || 0,
-                speed: data.speed || 0,
-                timestamp: now
-              })
-            }).catch(console.error);
-          }
         }
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed in GNSS listener:", error.message);
       });
-    }).catch(err => console.warn("[RTDB Auth] GNSS listener sign-in failed:", err.code));
 
     return () => {
-      isMounted = false;
-      if (unsubscribe) unsubscribe();
+      unsubscribe();
     };
   }, [busId, selectedRouteIds, isTracking]);
-
-  // Software mode heartbeat to keep the bus "fresh" in the passenger app
-  useEffect(() => {
-    if (!isTracking) return;
-
-    const intervalId = setInterval(() => {
-      const currentBusId = busIdRef.current;
-      const currentRouteIds = routeIdsRef.current;
-      
-      currentRouteIds.forEach(routeId => {
-        if (!currentBusId || !routeId) return;
-        const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
-        update(busRef, { timestamp: Date.now() }).catch(console.error);
-      });
-    }, 60000); // 1 minute heartbeat
-
-    return () => clearInterval(intervalId);
-  }, [isTracking]);
 
   const handleStopTracking = useCallback(() => {
     const currentBusId = busIdRef.current;
@@ -277,7 +193,6 @@ export default function DriverPage() {
         status: "offline", 
         deviceState: "offline", 
         tripState: "ended",
-        driverId: "hw_device" 
       }).catch(console.error);
 
       // End Firestore session
@@ -314,6 +229,7 @@ export default function DriverPage() {
           <div className="flex-1 relative z-0 min-h-0">
             {activeRoute && (
               <DriverMap
+                key={`${activeRoute.id}-${isTracking ? "tracking" : "preview"}`}
                 route={activeRoute}
                 driverLocation={driverLocation}
                 busId={busId}
@@ -321,8 +237,6 @@ export default function DriverPage() {
                 isTracking={isTracking}
                 selectedRouteIds={selectedRouteIds}
                 onStopIndexChange={handleStopIndexChange}
-                onStartTracking={handleStartTracking}
-                canStartTracking={!!busId && !!driverId && drivers.some(d => d.id === driverId) && selectedRouteIds.length > 0}
               />
             )}
           </div>
@@ -332,7 +246,7 @@ export default function DriverPage() {
               <TransmitterControls
                 busId={busId}
                 driverId={driverId}
-                setDriverId={setDriverId}
+                setDriverId={() => {}}
                 buses={buses}
                 setSelectedBusId={setSelectedBusId}
                 drivers={drivers}
@@ -399,6 +313,7 @@ export default function DriverPage() {
         {isMessagingOpen && (
           <div className="absolute inset-x-0 bottom-0 top-0 z-50 animate-slide-up">
             <MessagingPanel
+              key={activeSessionIds[selectedRouteIds[0]] || "no-session"}
               sessionId={activeSessionIds[selectedRouteIds[0]] || ""}
               currentUserRole="driver"
               currentUserId={user?.uid || driverId || "operator"}

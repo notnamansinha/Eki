@@ -20,6 +20,7 @@ export default function AccountTab() {
             <div className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden"
               style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)" }}>
                {user?.photoURL ? (
+                 // eslint-disable-next-line @next/next/no-img-element
                  <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" />
                ) : (
                  <CircleUserRound className="w-9 h-9" style={{ color: "var(--text-ghost)" }} />

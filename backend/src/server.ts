@@ -3,9 +3,8 @@
  *
  * Responsibilities:
  * - Initialize Express app with middleware (CORS, JSON, Helmet, rate-limit, dotenv)
- * - Create HTTP server and attach Socket.io
- * - Mount REST API route groups (/api/buses, /api/analytics, /api/requests)
- * - Initialize the tracking Socket.io gateway with Firebase token auth
+ * - Create the HTTP server and mount protected REST API route groups
+ * - Initialize Firebase-backed trip-state and ETA services
  * - Start the server and listen on PORT from .env
  *
  * Security notes:
@@ -22,7 +21,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { startTripStateEngine } from "./services/tripStateEngine";
 import { preloadRoutePolylines } from "./lib/etaService";
-import { auth, db } from "./lib/firebaseAdmin";
+import { db } from "./lib/firebaseAdmin";
 import busRoutes from "./routes/buses";
 import analyticsRoutes from "./routes/analytics";
 import requestRoutes from "./routes/requests";
@@ -30,11 +29,18 @@ import polylineRoutes from "./routes/polyline";
 import planRoutes from "./routes/plan";
 import routesListRoutes from "./routes/routesList";
 import devicesRoutes from "./routes/devices";
+import placesRoutes from "./routes/places";
 
 const PORT = process.env.PORT || 4000;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || "http://localhost:3000";
+const configuredCorsOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map(origin => origin.trim())
+  .filter(Boolean);
 
 const app = express();
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
 const httpServer = http.createServer(app);
 
 // ── Security Middleware ───────────────────────────────────────────────────────
@@ -73,23 +79,42 @@ const writeLimiter = rateLimit({
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const CORS_ORIGINS = [
-  CORS_ORIGIN,
+  ...configuredCorsOrigins,
   "https://bustrack-be165.web.app",
   "https://bustrack-be165.firebaseapp.com",
-  "http://localhost:3000",
+  ...(process.env.NODE_ENV === "production" ? [] : ["http://localhost:3000"]),
 ];
-app.use(cors({ origin: CORS_ORIGINS, credentials: true }));
+app.use(cors({ origin: CORS_ORIGINS, credentials: false }));
+app.use((req, res, next) => {
+  if (req.method === "TRACE" || req.method === "CONNECT") {
+    res.status(405).json({ error: "Method not allowed." });
+    return;
+  }
+  next();
+});
+
+// Route computation calls a billable upstream API. The admin-only route editor
+// normally sends one request per save, so this guard leaves normal use ample
+// headroom while limiting accidental loops and compromised admin sessions.
+const routeComputeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Route computation rate limit exceeded." },
+});
 app.use(express.json({ limit: "16kb" })); // Prevent request body size attacks
 
 // ── REST Routes ───────────────────────────────────────────────────────────────
 app.use("/api/buses", busRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/requests", writeLimiter, requestRoutes);
-app.use("/api/routes", writeLimiter, polylineRoutes);
+app.use("/api/routes", routeComputeLimiter, polylineRoutes);
 // Route planner — zero Google Maps API cost at runtime
 app.use("/api/plan", planRoutes);
 app.use("/api/routes-list", routesListRoutes);
-app.use("/api/devices", devicesRoutes);
+app.use("/api/devices", writeLimiter, devicesRoutes);
+app.use("/api/places", placesRoutes);
 
 // Socket.IO has been removed in favor of native Firebase streams.
 

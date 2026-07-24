@@ -25,7 +25,8 @@ Eki utilizes a highly optimized real-time architecture, maximizing Google Cloud 
 
 - **Hardware Telemetry (ESP-WROOM-32 & NEO-M8N):** Processes NMEA sentences via TinyGPS++ to extract live coordinates, speed, and heading.
 - **Cost-Optimized Sync:** Smart delta-transmission firmware calculates Haversine distance locally. It only sends HTTPS PATCH updates to Firebase RTDB when the vehicle moves >10m or turns >15°, reducing cloud writes by ~85%.
-- **Role-Based Access Control:** Next.js Server/Client component boundary validating Firebase Auth tokens against Firestore role hierarchies, securely routing traffic between Admin, Driver, and Passenger views.
+- **Immutable Custom Claims & Role-Based Access Control:** Next.js presentation boundaries and Firebase Security Rules enforce immutable `auth.token.role` claims issued via backend synchronization (`npm run sync-role-claims`).
+- **Mobile-First Deferred Map Loading:** Google Maps SDK loading is completely deferred from root and layout levels, dynamically mounting via `PassengerTrackingMap` only when a rider opens live tracking.
 - **Client Real-Time Singletons:** Global Module-Level Singletons heavily optimize Firestore snapshot listeners and RTDB listeners, ensuring that no matter how many React components mount, exactly 1 WebSocket connection is used per client.
 
 ```mermaid
@@ -42,8 +43,7 @@ graph TD
     end
 
     subgraph Cloud Container [Backend Server]
-        Express["Node.js + Express"]
-        SocketIO["Socket.io Gateway"]
+    Express["Node.js + Express REST API"]
         RoutesAPI["Google Maps Routes API v2"]
     end
 
@@ -66,7 +66,7 @@ graph TD
     RTDB -->|Data Sync Stream| A
 
     %% Backend Connections
-    Frontend -->|REST and WS| Express
+    Frontend -->|Authenticated REST| Express
     Express -->|Validates/Updates| FS
     Express -->|Computes Polylines| RoutesAPI
 ```
@@ -78,7 +78,7 @@ graph TD
 | Layer | Technologies Used |
 | --- | --- |
 | **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS, Google Maps (@vis.gl) |
-| **Backend** | Node.js, Express 4, Socket.io 4, TypeScript, Docker |
+| **Backend** | Node.js, Express 4, TypeScript, Docker |
 | **Hardware** | ESP-WROOM-32, NEO-M8N GNSS, PlatformIO, ArduinoJson |
 | **Data & Auth** | Firestore, Firebase Realtime Database, Firebase Auth, Firebase Hosting |
 | **Maps & GIS** | Google Maps JS API (Client), Routes API v2 (Server) |
@@ -91,7 +91,7 @@ This repository is structured as a monorepo, separating the distinct operational
 
 ```text
 Eki/
-├── backend/       # Node.js server (WebSocket gateway, Routes API, secure ops)
+├── backend/       # Node.js server (Routes API and secure operations)
 ├── docs/          # Deep-dive architecture, zero-budget optimizations, and hardware
 ├── frontend/      # Next.js web applications (Passenger, Driver, Admin portals)
 ├── hardware/      # PlatformIO/C++ firmware for ESP32 GNSS telemetry modules
@@ -168,6 +168,7 @@ npm run deploy
 
 For super-detailed explanations of the system architecture, zero-budget scaling, and hardware integration, please refer to our deep-dive documentation:
 
+- [Master Project Scrum Board](docs/SCRUM_BOARD.md) **(NEW)**
 - [System Architecture & RBAC Flow](docs/ARCHITECTURE.md) **(Updated)**
 - [Zero-Budget & API Optimizations](docs/OPTIMIZATIONS.md) **(NEW)**
 - [GNSS Hardware Migration Guide](docs/GNSS_HARDWARE_MIGRATION.md)

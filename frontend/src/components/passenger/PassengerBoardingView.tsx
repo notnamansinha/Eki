@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { RouteData } from "@/hooks/useRoutes";
 import { ChevronDown } from "lucide-react";
+import { errorMessage } from "@/lib/errors";
 
 interface Props {
   sessionId: string;
@@ -38,24 +39,30 @@ export default function PassengerBoardingView({ sessionId, route, userId, userNa
     const syncPassenger = async () => {
       try {
         const sessionRef = doc(db, "ride_sessions", sessionId);
-        const snap = await getDoc(sessionRef);
-        if (snap.exists()) {
-          const data = snap.data();
-          let passengers = data.passengers || [];
-          // Remove old entry for this user
-          passengers = passengers.filter((p: any) => p.userId !== userId);
-          // Add updated entry
-          passengers.push({
+        // The UID-keyed nested update needs no manifest read, keeping other
+        // riders' travel data private. Rules permit only this user's entry.
+        await updateDoc(sessionRef, {
+          [`passengers.${userId}`]: {
             userId,
             userName,
             boardingStopId,
             alightingStopId: alightingStopId || null,
-            joinedAt: Date.now()
-          });
-          await updateDoc(sessionRef, { passengers });
+            joinedAt: serverTimestamp(),
+          },
+        });
+      } catch (err: unknown) {
+        // CR-06: Differentiate a permission-denied rejection (which may indicate
+        // a legacy array-shaped passengers field in an older ride_session document
+        // that can't be updated with map-key dot notation) from other errors.
+        if (typeof err === "object" && err !== null && "code" in err && err.code === "permission-denied") {
+          console.error(
+            `[PassengerBoardingView] Boarding sync blocked for session ${sessionId} ` +
+            "— possibly a legacy array-shaped passengers manifest. Backend migration required.",
+            err
+          );
+        } else {
+          console.error("Failed to sync passenger:", errorMessage(err));
         }
-      } catch (err) {
-        console.error("Failed to sync passenger:", err);
       }
     };
 

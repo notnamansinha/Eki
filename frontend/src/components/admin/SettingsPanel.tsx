@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, type ComponentType } from "react";
 import { useSettings, GlobalSettings } from "@/hooks/useSettings";
 import { Save, Loader2, Eye, EyeOff, Megaphone, Clock, MessageSquare, Info } from "lucide-react";
+import { errorMessage } from "@/lib/errors";
 
 function Field({
   label,
@@ -24,11 +25,11 @@ function Field({
   );
 }
 
-function SectionHeader({ icon: Icon, title, subtitle }: { icon: any; title: string; subtitle: string }) {
+function SectionHeader({ icon: Icon, title, subtitle }: { icon: ComponentType<{ className?: string }>; title: string; subtitle: string }) {
   return (
     <div className="flex items-start gap-3 pb-4 border-b border-white/5">
       <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
-        <Icon className="w-4 h-4 text-white/40" />
+        <Icon className="w-4 h-4 text-white/50" />
       </div>
       <div>
         <p className="font-bold text-white">{title}</p>
@@ -40,24 +41,23 @@ function SectionHeader({ icon: Icon, title, subtitle }: { icon: any; title: stri
 
 export default function SettingsPanel() {
   const { settings, loading, saveSettings } = useSettings();
-  const [draft, setDraft] = useState<GlobalSettings>(settings);
+  const [overrides, setOverrides] = useState<Partial<GlobalSettings>>({});
+  const draft = { ...settings, ...overrides };
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // Sync draft when settings load from Firestore
-  useEffect(() => { setDraft(settings); }, [JSON.stringify(settings)]);
-
   const set = <K extends keyof GlobalSettings>(k: K, v: GlobalSettings[K]) =>
-    setDraft(d => ({ ...d, [k]: v }));
+    setOverrides(current => ({ ...current, [k]: v }));
 
   const handleSave = async () => {
     setSaving(true);
     try {
       await saveSettings(draft);
+      setOverrides({});
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch (e: any) {
-      alert("Failed to save: " + e.message);
+    } catch (error: unknown) {
+      alert("Failed to save: " + errorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -93,7 +93,7 @@ export default function SettingsPanel() {
         </button>
       </div>
 
-      {/* ── Service Hours ── */}
+      {/* â”€â”€ Service Hours â”€â”€ */}
       <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5">
         <SectionHeader icon={Clock} title="Service Hours" subtitle="Controls the 'service starts at' message shown when no buses are active" />
 
@@ -109,7 +109,7 @@ export default function SettingsPanel() {
         </Field>
       </div>
 
-      {/* ── Passenger-facing copy ── */}
+      {/* â”€â”€ Passenger-facing copy â”€â”€ */}
       <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5">
         <SectionHeader icon={MessageSquare} title="Passenger App Copy" subtitle="Text shown in the passenger app when no buses are running" />
 
@@ -147,7 +147,7 @@ export default function SettingsPanel() {
         </Field>
       </div>
 
-      {/* ── Live Announcement Banner ── */}
+      {/* â”€â”€ Live Announcement Banner â”€â”€ */}
       <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5">
         <SectionHeader icon={Megaphone} title="Live Announcement Banner" subtitle="When active, a banner appears at the top of the Passenger app home screen" />
 
@@ -177,7 +177,7 @@ export default function SettingsPanel() {
               ? <Eye className="w-4 h-4 text-emerald-400" />
               : <EyeOff className="w-4 h-4 text-white/30" />
             }
-            <span className={`text-sm font-semibold ${draft.announcementActive ? "text-emerald-400" : "text-white/40"}`}>
+            <span className={`text-sm font-semibold ${draft.announcementActive ? "text-emerald-400" : "text-white/50"}`}>
               {draft.announcementActive ? "Visible to passengers" : "Hidden"}
             </span>
           </div>

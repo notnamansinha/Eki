@@ -27,8 +27,8 @@
   /* ── Text hierarchy ── */
   --text-primary: #ECECEF;
   --text-secondary: #94949C;
-  --text-tertiary: #5A5A63;
-  --text-ghost: #3A3A42;
+  --text-tertiary: #8A8A93;
+  --text-ghost: #8C8C96;
 
   /* ── Borders ── */
   --border-subtle: rgba(255, 255, 255, 0.06);
@@ -65,8 +65,8 @@
   --color-status-active: var(--status-live);
   --color-status-idle: var(--status-warning);
   --color-status-maintenance: var(--accent);
-  --font-sans: var(--font-sora), system-ui, -apple-system, sans-serif;
-  --font-display: var(--font-sora), sans-serif;
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: system-ui, -apple-system, "Segoe UI", sans-serif;
   --radius-xl: var(--radius-lg);
 }
 
@@ -300,20 +300,7 @@ body {
   transform: scale(0.97);
 }
 
-/* Legacy compat */
-.btn-rc-primary {
-  background: var(--text-primary);
-  color: var(--surface-0);
-  border: 1px solid var(--text-primary);
-  border-radius: var(--radius-pill);
-  font-weight: 700;
-  transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
-}
-
-.btn-rc-primary:hover {
-  background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
-}
+/* .btn-rc-primary is defined in the ADMIN PANEL section below */
 
 .btn-rc-outline {
   background: transparent;
@@ -677,4 +664,4 @@ body {
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 1.5rem;
-}
+}

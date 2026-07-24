@@ -1,21 +1,28 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Map as GoogleMap, AdvancedMarker, useMap,
 } from "@vis.gl/react-google-maps";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { useRoutes, RouteData, RouteStop } from "@/hooks/useRoutes";
 import { doc, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import {
   Trash2, Plus, X, CheckCircle, MapPin, Loader2, Search,
-  Pencil, GripVertical, ArrowUpDown, Palette, Save,
-  ChevronDown, ChevronUp, ArrowLeft, RefreshCw,
+  Pencil, GripVertical, Save,
+  ChevronDown, ChevronUp, ArrowLeft,
 } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
+import { errorMessage } from "@/lib/errors";
 
-/* ── Helpers ────────────────────────────────────────────────────────────────── */
+interface NominatimResult {
+  name: string;
+  lat: number;
+  lng: number;
+}
+
+/* â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function stopLabel(i: number): string {
   const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   if (i < 26) return a[i];
@@ -27,29 +34,38 @@ const ROUTE_COLORS = [
   "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
 ];
 
-/* ── Nominatim search box ───────────────────────────────────────────────────── */
+/* â”€â”€ Nominatim search box â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: number; lng: number }) => void }) {
   const [value, setValue] = useState("");
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<NominatimResult[]>([]);
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    if (value.length <= 2) {
-      setResults([]);
-      return;
-    }
+    if (value.length <= 2) return;
     const controller = new AbortController();
     const t = setTimeout(() => {
-      setSearching(true);
-      fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(value)}&limit=5`,
-        { signal: controller.signal }
-      )
-        .then(r => r.json())
-        .then(d => { setResults(d); setSearching(false); })
-        .catch(err => {
-          if (err.name !== 'AbortError') setSearching(false);
+      void (async () => {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+        const token = await auth.currentUser?.getIdToken();
+        if (!backendUrl || !token) {
+          setResults([]);
+          setSearching(false);
+          return;
+        }
+        setSearching(true);
+        const response = await fetch(`${backendUrl}/api/places/search?q=${encodeURIComponent(value)}`, {
+          signal: controller.signal,
+          headers: { Authorization: `Bearer ${token}` },
         });
+        const data = await response.json() as { results?: NominatimResult[] };
+        setResults(response.ok && Array.isArray(data.results) ? data.results : []);
+        setSearching(false);
+      })().catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setResults([]);
+          setSearching(false);
+        }
+      });
     }, 500);
     return () => {
       clearTimeout(t);
@@ -67,14 +83,14 @@ function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: 
         placeholder="Search for a stop location…"
         className="w-full h-10 bg-[#0f0f12] border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-medium"
       />
-      {results.length > 0 && (
+      {value.length > 2 && results.length > 0 && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-[#0f0f12] border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl">
           {results.map((r, i) => (
             <button key={i} className="w-full text-left p-3 hover:bg-white/5 text-xs text-white border-b border-white/5 last:border-0 truncate transition-colors" onClick={() => {
-              onPlaceSelect({ name: r.display_name, lat: parseFloat(r.lat), lng: parseFloat(r.lon) });
+              onPlaceSelect({ name: r.name, lat: r.lat, lng: r.lng });
               setValue(""); setResults([]);
             }}>
-              {r.display_name}
+              {r.name}
             </button>
           ))}
         </div>
@@ -83,14 +99,14 @@ function SearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: 
   );
 }
 
-/* ── Map centering ──────────────────────────────────────────────────────────── */
+/* â”€â”€ Map centering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function MapCenter({ center }: { center: { lat: number; lng: number } | null }) {
   const map = useMap();
   useEffect(() => { if (center && map) { map.panTo(center); map.setZoom(15); } }, [center, map]);
   return null;
 }
 
-/* ── Route list card ────────────────────────────────────────────────────────── */
+/* â”€â”€ Route list card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () => void; onDelete: (id: string) => void }) {
   const [stopsOpen, setStopsOpen] = useState(false);
   return (
@@ -113,7 +129,7 @@ function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () =
         </div>
       </div>
       <div className="px-4 pb-3 flex items-center gap-2">
-        <button onClick={() => setStopsOpen(o => !o)} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 text-[9px] font-black tracking-widest text-white/40 uppercase hover:text-white/60 transition-colors">
+        <button onClick={() => setStopsOpen(o => !o)} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 text-[9px] font-black tracking-widest text-white/50 uppercase hover:text-white/60 transition-colors">
           <MapPin className="w-2.5 h-2.5" />
           {route.stops?.length ?? 0} Stops
           {stopsOpen ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
@@ -146,7 +162,7 @@ function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () =
   );
 }
 
-/* ── Stop list item (draggable in editor) ───────────────────────────────────── */
+/* â”€â”€ Stop list item (draggable in editor) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function StopItem({ stop, index, onRemove, onNameChange }: {
   stop: RouteStop; index: number;
   onRemove: (i: number) => void;
@@ -185,7 +201,7 @@ function StopItem({ stop, index, onRemove, onNameChange }: {
   );
 }
 
-/* ── Route editor ───────────────────────────────────────────────────────────── */
+/* â”€â”€ Route editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 type EditorMode = "create" | "edit";
 
 interface EditorState {
@@ -195,6 +211,7 @@ interface EditorState {
   color: string;
   type: "up" | "down" | "circular";
   stops: RouteStop[];
+  polyline?: string;
 }
 
 const EMPTY_EDITOR: EditorState = {
@@ -219,7 +236,7 @@ function RouteEditor({
   const [saving, setSaving] = useState(false);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
 
-  // ── Traffic layer rendered imperatively ──────────────────────────────────────
+  // â”€â”€ Traffic layer rendered imperatively â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const TrafficLayer = () => {
     const map = useMap();
     const layerRef = useRef<google.maps.TrafficLayer | null>(null);
@@ -245,18 +262,18 @@ function RouteEditor({
       lat: place.lat,
       lng: place.lng,
     };
-    setState(s => ({ ...s, stops: [...s.stops, stop] }));
+    setState(s => ({ ...s, stops: [...s.stops, stop], polyline: undefined }));
     setMapCenter({ lat: place.lat, lng: place.lng });
   };
 
   const removeStop = (i: number) =>
-    setState(s => ({ ...s, stops: s.stops.filter((_, idx) => idx !== i) }));
+    setState(s => ({ ...s, stops: s.stops.filter((_, idx) => idx !== i), polyline: undefined }));
 
   const renameStop = (i: number, name: string) =>
     setState(s => {
       const stops = [...s.stops];
       stops[i] = { ...stops[i], name, shortName: name.split(",")[0] };
-      return { ...s, stops };
+      return { ...s, stops, polyline: undefined };
     });
 
   const moveStop = (from: number, to: number) => {
@@ -265,7 +282,7 @@ function RouteEditor({
       const stops = [...s.stops];
       const [item] = stops.splice(from, 1);
       stops.splice(to, 0, item);
-      return { ...s, stops };
+      return { ...s, stops, polyline: undefined };
     });
   };
 
@@ -274,10 +291,50 @@ function RouteEditor({
       alert("Route ID, name, and at least 2 stops are required.");
       return;
     }
+    if (state.stops.length > 27) {
+      alert("A route can have at most 27 stops.");
+      return;
+    }
     setSaving(true);
 
     try {
       const waypoints = state.stops.map(s => ({ lat: s.lat, lng: s.lng }));
+      if (state.mode === "create") {
+        const { getDoc } = await import("firebase/firestore");
+        const existing = await getDoc(doc(db, "routes", state.routeId));
+        if (existing.exists()) {
+          alert(`A route with ID "${state.routeId}" already exists. Choose a different ID.`);
+          return;
+        }
+      }
+
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+      const currentUser = auth.currentUser;
+      if (!backendUrl || !currentUser) {
+        throw new Error("Route geometry service is unavailable. Sign in again and retry.");
+      }
+
+      const token = await currentUser.getIdToken(true);
+      const geometryResponse = await fetch(`${backendUrl}/api/routes/compute-polyline`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ waypoints }),
+      });
+      if (!geometryResponse.ok) {
+        throw new Error("Unable to compute route geometry. The route was not saved.");
+      }
+      const geometry = await geometryResponse.json() as {
+        polyline?: string;
+        distanceMeters?: number;
+        duration?: string;
+      };
+      if (!geometry.polyline || typeof geometry.distanceMeters !== "number" || typeof geometry.duration !== "string") {
+        throw new Error("Route geometry service returned an invalid result.");
+      }
+
       const routeData: Partial<RouteData> = {
         id: state.routeId,
         name: state.name,
@@ -285,25 +342,21 @@ function RouteEditor({
         type: state.type,
         stops: state.stops,
         waypoints,
+        polyline: geometry.polyline,
+        distanceMeters: geometry.distanceMeters,
+        duration: geometry.duration,
       };
 
       if (state.mode === "create") {
         // Guard against duplicate route IDs — check existence first
-        const { getDoc } = await import("firebase/firestore");
-        const existing = await getDoc(doc(db, "routes", state.routeId));
-        if (existing.exists()) {
-          alert(`A route with ID "${state.routeId}" already exists. Choose a different ID.`);
-          setSaving(false);
-          return;
-        }
         await setDoc(doc(db, "routes", state.routeId), routeData as RouteData);
       } else {
-        // Edit mode — merge so existing polyline/distanceMeters/duration are preserved
+        // Edit mode — persist the freshly computed geometry with the changed stops.
         await updateDoc(doc(db, "routes", state.routeId), routeData);
       }
       onSaved();
-    } catch (err: any) {
-      alert("Failed to save: " + err.message);
+    } catch (error: unknown) {
+      alert("Failed to save: " + errorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -391,6 +444,7 @@ function RouteEditor({
             <MapCenter center={mapCenter} />
             <DirectionsRoute
               stops={routeStops}
+              polyline={state.mode === "edit" ? state.polyline : undefined}
               color={state.color}
               hasBuses={false}
             />
@@ -475,7 +529,7 @@ function RouteEditor({
   );
 }
 
-/* ── Main Route Management Panel ────────────────────────────────────────────── */
+/* â”€â”€ Main Route Management Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function RouteManagementPanel() {
   const { routes, loading } = useRoutes();
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -491,6 +545,7 @@ export default function RouteManagementPanel() {
       color: route.color || "#3B82F6",
       type: (route.type as EditorState["type"]) || "circular",
       stops: route.stops ?? [],
+      polyline: route.polyline,
     });
 
   const handleSaved = () => {
@@ -502,7 +557,7 @@ export default function RouteManagementPanel() {
   const handleDelete = async (id: string) => {
     if (!confirm(`Delete route "${routes.find(r => r.id === id)?.name ?? id}"? This cannot be undone.`)) return;
     try { await deleteDoc(doc(db, "routes", id)); }
-    catch (e: any) { alert("Failed to delete: " + e.message); }
+    catch (error: unknown) { alert("Failed to delete: " + errorMessage(error)); }
   };
 
   if (editor) {

@@ -3,20 +3,66 @@ import { startETATracking, stopETATracking, haversineMeters } from "../lib/etaSe
 import type { TripState, MotionState } from "../types";
 
 interface RouteStop { id: string; lat: number; lng: number; name: string; }
-interface BusTripContext {
-  stops: RouteStop[];
-  tripState: TripState;
-  currentStopIndex: number;
-  latestLocation?: { lat: number; lng: number };
-}
-
 const latestLocations = new Map<string, {lat: number, lng: number}>();
 const routeStopsCache = new Map<string, RouteStop[]>();
 const routeDestCache = new Map<string, {lat: number, lng: number}>();
 const activeETATracking = new Map<string, string>();
 const completedTimeouts = new Map<string, NodeJS.Timeout>();
+const persistedFleetState = new Map<string, string>();
+const fleetWriteQueues = new Map<string, Promise<void>>();
 
 const STOP_GEOFENCE_M = 20;
+function readIntervalMs(value: string | undefined, fallback: number, minimum: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= minimum ? Math.floor(parsed) : fallback;
+}
+
+const STALE_BUS_MS = readIntervalMs(process.env.BUS_STALE_MS, 300_000, 90_000);
+const ETA_INTERVAL_MS = readIntervalMs(process.env.ETA_INTERVAL_MS, 180_000, 30_000);
+
+/**
+ * Firestore is the durable fleet-state store, not a second telemetry stream.
+ * Persist only lifecycle changes; coordinates, speed and heartbeat data remain
+ * in RTDB, which prevents a Firestore write for every GNSS update.
+ */
+function persistFleetState(data: Record<string, unknown>, lastSeen: string): void {
+  const busId = typeof data.busId === "string" ? data.busId : null;
+  if (!busId) return;
+
+  const state = {
+    routeId: typeof data.routeId === "string" ? data.routeId : null,
+    driverId: typeof data.driverId === "string" ? data.driverId : null,
+    status: typeof data.status === "string" ? data.status : "active",
+    deviceState: typeof data.deviceState === "string" ? data.deviceState : "online",
+    tripState: typeof data.tripState === "string" ? data.tripState : "pre_departure",
+  };
+  const fingerprint = JSON.stringify(state);
+  if (persistedFleetState.get(busId) === fingerprint) return;
+
+  persistedFleetState.set(busId, fingerprint);
+  // RTDB child events can arrive faster than Firestore commits. Serialize
+  // lifecycle writes per bus so an older transition cannot finish after a
+  // newer one and overwrite the durable fleet state.
+  const previous = fleetWriteQueues.get(busId) ?? Promise.resolve();
+  const queuedWrite = previous
+    .catch(() => undefined)
+    .then(async () => {
+      await db.collection("bus_locations").doc(busId).set({ ...state, lastSeen }, { merge: true });
+    });
+  fleetWriteQueues.set(busId, queuedWrite);
+
+  void queuedWrite.then(
+    () => {
+      if (fleetWriteQueues.get(busId) === queuedWrite) fleetWriteQueues.delete(busId);
+    },
+    (error) => {
+      // Do not discard a newer fingerprint when an earlier queued write fails.
+      if (persistedFleetState.get(busId) === fingerprint) persistedFleetState.delete(busId);
+      if (fleetWriteQueues.get(busId) === queuedWrite) fleetWriteQueues.delete(busId);
+      console.warn("[TripState] Failed to persist fleet lifecycle state:", error);
+    },
+  );
+}
 
 async function ensureRouteLoaded(routeId: string): Promise<RouteStop[]> {
   if (routeStopsCache.has(routeId)) return routeStopsCache.get(routeId)!;
@@ -86,6 +132,7 @@ export function startTripStateEngine() {
     if (data.lat != null && data.lng != null) {
       latestLocations.set(data.busId, { lat: data.lat, lng: data.lng });
     }
+    persistFleetState(data, new Date().toISOString());
     
     await ensureRouteLoaded(data.routeId);
     
@@ -96,7 +143,7 @@ export function startTripStateEngine() {
         data.routeId, 
         () => latestLocations.get(data.busId) || null, 
         () => routeDestCache.get(data.routeId) || null, 
-        parseInt(process.env.ETA_INTERVAL_MS || "180000", 10)
+        ETA_INTERVAL_MS
       );
     }
   });
@@ -117,7 +164,7 @@ export function startTripStateEngine() {
         clearTimeout(completedTimeouts.get(data.busId));
         completedTimeouts.delete(data.busId);
       }
-      db.collection("bus_locations").doc(data.busId).set({ deviceState: "offline", lastSeen: new Date().toISOString() }, { merge: true }).catch(console.warn);
+      persistFleetState({ ...data, deviceState: "offline", status: "offline" }, new Date().toISOString());
       snapshot.ref.remove().catch(console.error);
       return;
     }
@@ -132,7 +179,7 @@ export function startTripStateEngine() {
         data.routeId, 
         () => latestLocations.get(data.busId) || null, 
         () => routeDestCache.get(data.routeId) || null, 
-        parseInt(process.env.ETA_INTERVAL_MS || "180000", 10)
+        ETA_INTERVAL_MS
       );
     } else if (!currentActiveRoute) {
       activeETATracking.set(data.busId, data.routeId);
@@ -141,7 +188,7 @@ export function startTripStateEngine() {
         data.routeId, 
         () => latestLocations.get(data.busId) || null, 
         () => routeDestCache.get(data.routeId) || null, 
-        parseInt(process.env.ETA_INTERVAL_MS || "180000", 10)
+        ETA_INTERVAL_MS
       );
     }
 
@@ -179,21 +226,22 @@ export function startTripStateEngine() {
         activeETATracking.delete(data.busId);
         stopETATracking(data.busId);
         completedTimeouts.delete(data.busId);
-        db.collection("bus_locations").doc(data.busId).set({ deviceState: "offline", tripState: "completed", lastSeen: completionTimestamp }, { merge: true }).catch(console.warn);
+        persistFleetState({ ...data, deviceState: "offline", status: "offline", tripState: "completed" }, completionTimestamp);
       }, 30_000);
       
       completedTimeouts.set(data.busId, timeoutId);
     }
 
-    db.collection("bus_locations").doc(data.busId).set({
-      ...data, tripState, currentStopIndex, lastSeen: new Date().toISOString()
-    }, { merge: true }).catch(console.error);
+    persistFleetState({ ...data, tripState }, new Date().toISOString());
   });
 
   busesRef.on("child_removed", (snapshot) => {
     const data = snapshot.val();
     if (!data || !data.busId) return;
-    
+
+    // RTDB is the live-presence source. Preserve the final offline lifecycle
+    // state before forgetting a bus removed by the stale sweep.
+    persistFleetState({ ...data, status: "offline", deviceState: "offline" }, new Date().toISOString());
     latestLocations.delete(data.busId);
     activeETATracking.delete(data.busId);
     stopETATracking(data.busId);
@@ -203,4 +251,23 @@ export function startTripStateEngine() {
       completedTimeouts.delete(data.busId);
     }
   });
+
+  // Hardware trackers cannot register an RTDB onDisconnect handler. Sweep only
+  // nodes whose server timestamp has exceeded the client freshness horizon.
+  setInterval(async () => {
+    try {
+      const snapshot = await busesRef.once("value");
+      const now = Date.now();
+      const removals: Promise<unknown>[] = [];
+      snapshot.forEach((child) => {
+        const data = child.val() as { timestamp?: unknown } | null;
+        if (typeof data?.timestamp === "number" && now - data.timestamp > STALE_BUS_MS) {
+          removals.push(child.ref.remove());
+        }
+      });
+      await Promise.all(removals);
+    } catch (error) {
+      console.error("[TripState] stale bus sweep failed:", error);
+    }
+  }, STALE_BUS_MS);
 }

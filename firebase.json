@@ -26,22 +26,29 @@
             "value": "nosniff"
           },
           {
+            "key": "Strict-Transport-Security",
+            "value": "max-age=31536000; includeSubDomains"
+          },
+          {
+            "key": "Cross-Origin-Opener-Policy",
+            "value": "same-origin-allow-popups"
+          },
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://www.google.com https://maps.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.googleusercontent.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebasedatabase.app https://*.firebaseapp.com wss://*.firebaseio.com wss://*.firebasedatabase.app; frame-src https://accounts.google.com https://*.firebaseapp.com; worker-src 'self' blob:; form-action 'self'"
+          },
+          {
             "key": "Referrer-Policy",
             "value": "strict-origin-when-cross-origin"
-          }
-        ]
-      },
-      {
-        "source": "/index.html",
-        "headers": [
+          },
           {
-            "key": "Cache-Control",
-            "value": "no-cache, no-store, must-revalidate"
+            "key": "Permissions-Policy",
+            "value": "camera=(), microphone=(), geolocation=(self), payment=(), usb=()"
           }
         ]
       },
       {
-        "source": "/version.json",
+        "source": "/{,admin,driver,feedback,passenger}",
         "headers": [
           {
             "key": "Cache-Control",
@@ -55,6 +62,15 @@
           {
             "key": "Cache-Control",
             "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "**/*.@(png|jpg|jpeg|webp|svg|ico)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=2592000, stale-while-revalidate=86400"
           }
         ]
       }

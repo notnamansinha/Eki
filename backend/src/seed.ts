@@ -1,5 +1,4 @@
 import { db } from "./lib/firebaseAdmin";
-// @ts-ignore: Intentionally grabbing frontend file
 import { PREDEFINED_ROUTES } from "../../frontend/src/lib/predefinedRoutes";
 import { computeRouteGeometry } from "./lib/googleMaps";
 import * as dotenv from "dotenv";

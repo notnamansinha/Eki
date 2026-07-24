@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { Footprints } from "lucide-react";
 import { RouteData } from "@/hooks/useRoutes";
 
@@ -13,15 +13,10 @@ interface RouteNodeListProps {
 export default function RouteNodeList({
   route,
   targetStopId,
-  activeBusId,
   stopETAs = {},
   walkMinutesToTarget,
 }: RouteNodeListProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => { setMounted(true); }, []);
-
-  if (!mounted || !route || !route.stops || route.stops.length === 0) return null;
+  if (!route || !route.stops || route.stops.length === 0) return null;
 
   const targetIndex = route.stops.findIndex((s) => s.id === targetStopId);
   const routeColor = route.color || "#3b82f6";

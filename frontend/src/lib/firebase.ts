@@ -1,27 +1,13 @@
-import { initializeApp, getApps } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getDatabase } from "firebase/database";
-import { getStorage } from "firebase/storage";
-
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
-};
-
-
-// Initialize Firebase
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-
-export const db = getFirestore(app);
-export const auth = getAuth(app);
-export const rtdb = getDatabase(app); // Firebase Realtime Database for live bus locations
-export const storage = getStorage(app); // Firebase Storage for files
-export const googleProvider = new GoogleAuthProvider();
-export default app;
+/**
+ * firebase.ts — backward-compat re-export barrel.
+ *
+ * All components that import { db, auth, rtdb, googleProvider } from "@/lib/firebase"
+ * continue to work unchanged. Under the hood they now get the singleton instances
+ * from the split modules (firebaseAuth, firebaseFirestore, firebaseDatabase),
+ * which avoids duplicate initializeApp / getAuth / getFirestore / getDatabase calls
+ * and allows better tree-shaking per page bundle.
+ */
+export { auth, googleProvider } from "./firebaseAuth";
+export { db } from "./firebaseFirestore";
+export { rtdb } from "./firebaseDatabase";
+export { firebaseApp as default } from "./firebaseCore";

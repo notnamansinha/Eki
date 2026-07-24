@@ -1,5 +1,10 @@
 # Comprehensive Guide: Auto-Updating Web Apps (PWAs)
 
+> **Current project status:** Eki ships a web app manifest but does **not**
+> register a service worker. This document is a future implementation guide,
+> not a description of deployed behavior. Firebase Auth uses local persistence,
+> so authenticated sessions survive normal reloads without a service worker.
+
 Ensuring a web app automatically hard refreshes *only* when there's a real update—across Chrome, Safari, and installed Home Screen apps (PWAs)—can be notoriously tricky due to aggressive browser caching and Service Worker lifecycles.
 
 Here is the most robust, battle-tested approach to achieve this.

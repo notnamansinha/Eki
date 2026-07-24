@@ -14,33 +14,17 @@ import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 export interface DriverMapProps {
   route: RouteData;
   busId: string;
-  driverLocation: { lat: number; lng: number; heading: number } | null;
+  driverLocation: { lat: number; lng: number; heading: number; speed?: number } | null;
   onEndShift?: () => void;
   isTracking?: boolean;
   selectedRouteIds?: string[];
   onStopIndexChange?: (index: number, routeIdHint?: string) => void;
-  onStartTracking?: () => void;
-  canStartTracking?: boolean;
 }
 
 const SELECTED_ROUTE_COLOR = "#4285F4";
 type NavPhase = "preview" | "navigating";
 
 // ── Traffic layer rendered imperatively ──────────────────────────────────────
-function TrafficLayer() {
-  const map = useMap();
-  const layerRef = useRef<google.maps.TrafficLayer | null>(null);
-
-  useEffect(() => {
-    if (!map) return;
-    layerRef.current = new google.maps.TrafficLayer();
-    layerRef.current.setMap(map);
-    return () => { layerRef.current?.setMap(null); };
-  }, [map]);
-
-  return null;
-}
-
 function MapCenterer({ target, isCentered, navPhase }: { target: { lat: number; lng: number; heading: number } | null, isCentered: boolean, navPhase: string }) {
   const map = useMap();
   useEffect(() => {
@@ -52,8 +36,8 @@ function MapCenterer({ target, isCentered, navPhase }: { target: { lat: number; 
   return null;
 }
 
-function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, selectedRouteIds, onStopIndexChange, onStartTracking, canStartTracking }: DriverMapProps) {
-  const stops = route.stops || [];
+function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, selectedRouteIds, onStopIndexChange }: DriverMapProps) {
+  const stops = useMemo(() => route.stops || [], [route.stops]);
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
   const nextStop = stops[currentStopIndex] ?? stops[stops.length - 1];
   const [showEndShiftConfirm, setShowEndShiftConfirm] = useState(false);
@@ -61,36 +45,22 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
   // to prevent the auto-advance from cascading when driverLocation gets a synthetic position.
   const lastManualSkipRef = useRef<number>(0);
 
-  useEffect(() => {
-    setCurrentStopIndex(0);
-  }, [route.id]);
-
   const [delayMinutes, setDelayMinutes] = useState(0);
-  const lastDelayPushRef = useRef(0);
 
   const pushDelay = useCallback((addMin: number) => {
-    setDelayMinutes(prev => {
-      const next = Math.max(0, prev + addMin);
-      const now = Date.now();
-      const routesToUpdate = selectedRouteIds?.length ? selectedRouteIds : [route.id];
-      routesToUpdate.forEach(routeId => {
-        const activeBusId = busId || "test_bus_1";
-        const busRef = ref(rtdb, `activeBuses/${activeBusId}_${routeId}`);
-        update(busRef, { 
-          busId: activeBusId,
-          routeId,
-          lat: driverLocation?.lat || route.stops?.[currentStopIndex]?.lat || 23.03,
-          lng: driverLocation?.lng || route.stops?.[currentStopIndex]?.lng || 72.55,
-          delayMinutes: next, 
-          timestamp: now,
-          tripState: "in_service",
-          status: "active",
-          deviceState: "online"
-        }).catch(console.error);
-      });
-      return next;
+    const next = Math.max(0, delayMinutes + addMin);
+    setDelayMinutes(next);
+    const now = Date.now();
+    const routesToUpdate = selectedRouteIds?.length ? selectedRouteIds : [route.id];
+    routesToUpdate.forEach(routeId => {
+      const activeBusId = busId || "test_bus_1";
+      const busRef = ref(rtdb, `activeBuses/${activeBusId}_${routeId}`);
+      update(busRef, {
+        delayMinutes: next,
+        timestamp: now,
+      }).catch(console.error);
     });
-  }, [busId, selectedRouteIds, route.id]);
+  }, [busId, delayMinutes, route.id, selectedRouteIds]);
 
   const handleManualNextStop = useCallback(() => {
     lastManualSkipRef.current = Date.now();
@@ -111,33 +81,32 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       { lat: nextStop.lat, lng: nextStop.lng }
     );
     if (dist < 80) {
-      setCurrentStopIndex(i => {
-        const nextIdx = Math.min(i + 1, stops.length - 1);
-        if (onStopIndexChange) onStopIndexChange(nextIdx, route.id);
-        return nextIdx;
-      });
+      const timer = window.setTimeout(() => {
+        setCurrentStopIndex(i => {
+          const nextIdx = Math.min(i + 1, stops.length - 1);
+          if (onStopIndexChange) onStopIndexChange(nextIdx, route.id);
+          return nextIdx;
+        });
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
-  }, [driverLocation?.lat, driverLocation?.lng, nextStop?.lat, nextStop?.lng, currentStopIndex, stops.length, onStopIndexChange, route.id]);
+  }, [driverLocation, nextStop, currentStopIndex, stops.length, onStopIndexChange, route.id]);
 
-  const [navPhase, setNavPhase] = useState<NavPhase>("preview");
+  const [navPhase, setNavPhase] = useState<NavPhase>(isTracking ? "navigating" : "preview");
   const [isCentered, setIsCentered] = useState(true);
-  const [displayDist, setDisplayDist] = useState(0);
-  const [displayDur, setDisplayDur] = useState(0);
-
-  useEffect(() => {
-    if (navPhase !== "navigating" || !driverLocation || !nextStop) return;
+  const displayDur = useMemo(() => {
+    if (navPhase !== "navigating" || !driverLocation || !nextStop) {
+      return 0;
+    }
     const distM = getDistanceMeters(
       { lat: driverLocation.lat, lng: driverLocation.lng },
       { lat: nextStop.lat, lng: nextStop.lng }
     );
-    const speedKmh = (driverLocation as any).speed > 0 ? (driverLocation as any).speed : 35;
+    const speedKmh = driverLocation.speed && driverLocation.speed > 0 ? driverLocation.speed : 35;
     const speedMs = speedKmh / 3.6;
     const durationSec = speedMs > 0 ? distM / speedMs : 0;
-    const roundedDist = Math.round(distM / 10) * 10;
-    const roundedDur  = Math.round(durationSec / 10) * 10;
-    setDisplayDist(prev => prev === roundedDist ? prev : roundedDist);
-    setDisplayDur(prev  => prev === roundedDur  ? prev : roundedDur);
-  }, [navPhase, driverLocation?.lat, driverLocation?.lng, nextStop?.lat, nextStop?.lng]);
+    return Math.round(durationSec / 10) * 10;
+  }, [driverLocation, navPhase, nextStop]);
 
   const defaultCenter = driverLocation
     ? { lat: driverLocation.lat, lng: driverLocation.lng }
@@ -145,29 +114,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
 
   const handleRecenter = useCallback(() => setIsCentered(true), []);
   const handlePointerDown = useCallback(() => setIsCentered(false), []);
-  const handleStartNavigation = useCallback(async () => {
-    if (!canStartTracking) {
-      alert("Please select a Vehicle and Operator in the Transmitter Controls first.");
-      return;
-    }
-    if (onStartTracking) {
-      onStartTracking();
-    }
-    setNavPhase("navigating");
-    setIsCentered(true);
-    setDelayMinutes(0);
-  }, [canStartTracking, onStartTracking]);
   const handleBackToPreview = useCallback(() => setNavPhase("preview"), []);
-
-  useEffect(() => {
-    if (isTracking) {
-      setNavPhase("navigating");
-      setIsCentered(true);
-      setDelayMinutes(0);
-    } else {
-      setNavPhase("preview");
-    }
-  }, [isTracking]);
 
   const upcomingETAs = useMemo(() => {
     const etaMap: Record<string, number> = {};
@@ -182,7 +129,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       }
     }
     return etaMap;
-  }, [displayDur, delayMinutes, nextStop?.id, currentStopIndex, stops]);
+  }, [displayDur, delayMinutes, nextStop, currentStopIndex, stops]);
 
   const snappedHeading = driverLocation ? Math.round(driverLocation.heading / 5) * 5 : 0;
 
@@ -200,10 +147,10 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           style={{ width: "100%", height: "100%" }}
           {...MAP_OPTIONS}
         >
-          <TrafficLayer />
           <MapCenterer target={driverLocation} isCentered={isCentered} navPhase={navPhase} />
           <DirectionsRoute
             stops={routeStops}
+            polyline={route.polyline}
             color={route.color || SELECTED_ROUTE_COLOR}
             hasBuses={navPhase === "navigating"}
           />
@@ -277,6 +224,11 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
         @keyframes ping {
           0% { transform: scale(1); opacity: 0.6; }
           75%, 100% { transform: scale(2); opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          [style*="animation: ripple"], [style*="animation: ping"] {
+            animation: none !important;
+          }
         }
       `}</style>
 
@@ -376,7 +328,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
                 style={{ background: "var(--surface-2)", color: "var(--text-primary)" }}>
                 Cancel
               </button>
-              <button onClick={() => { setShowEndShiftConfirm(false); if (onEndShift) onEndShift(); }} className="flex-1 py-2.5 rounded-xl text-xs font-semibold"
+              <button onClick={() => { setShowEndShiftConfirm(false); setNavPhase("preview"); if (onEndShift) onEndShift(); }} className="flex-1 py-2.5 rounded-xl text-xs font-semibold"
                 style={{ background: "var(--status-danger)", color: "white" }}>
                 Confirm
               </button>
