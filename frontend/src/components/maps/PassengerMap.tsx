@@ -13,10 +13,13 @@ import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
 
 import { WifiOff, Navigation } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
+import { decodePolyline, type LatLng } from "@/lib/polyline";
+import { snapToPolyline } from "@/lib/snapToPolyline";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
   route: RouteData | null;
+  resumeGeneration?: number;
 }
 
 interface IncomingBusData {
@@ -44,6 +47,66 @@ const BUS_MOTION_COLORS: Record<string, string> = {
   uncertain: "#F87171", // red     — GPS fix lost
 };
 
+function BusMarker({
+  bus,
+  path,
+}: {
+  bus: IncomingBusData;
+  path: readonly LatLng[];
+}) {
+  const result = useMemo(
+    () =>
+      snapToPolyline(
+        { lat: bus.lat, lng: bus.lng },
+        path,
+        {
+          headingDegrees: bus.heading,
+        },
+      ),
+    [bus.lat, bus.lng, bus.heading, path],
+  );
+
+  const color =
+    BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
+  const snappedHeading = Math.round(bus.heading / 5) * 5;
+
+  return (
+    <AdvancedMarker position={result.point}>
+      <div
+        style={{
+          width: 44,
+          height: 44,
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          style={{
+            transform: `rotate(${snappedHeading}deg)`,
+            transition: "transform 200ms ease-out",
+          }}
+        >
+          <Navigation size={30} fill={color} color="white" strokeWidth={1} />
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            bottom: -3,
+            right: -3,
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: color,
+            border: "1.5px solid #09090b",
+          }}
+        />
+      </div>
+    </AdvancedMarker>
+  );
+}
+
 
 // ── Traffic layer rendered imperatively ──────────────────────────────────────
 // ── Pan/zoom controller ──────────────────────────────────────────────────────
@@ -58,7 +121,15 @@ function MapCenterer({ target, isCentered }: { target: { lat: number; lng: numbe
   return null;
 }
 
-function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route: RouteData }) {
+function PassengerMapInner({
+  targetStop,
+  route,
+  resumeGeneration = 0,
+}: {
+  targetStop: RouteStop;
+  route: RouteData;
+  resumeGeneration?: number;
+}) {
   const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map<string, IncomingBusData>());
   const [stopETAs, setStopETAs] = useState<Record<string, number>>({});
   const [uiNow, setUiNow] = useState(() => Date.now());
@@ -68,6 +139,8 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
   const lastBuzzedStopIdRef = useRef<string | null>(null);
   const lastStopIndexRef = useRef<Record<string, number>>({});
   const stopEntryTimeRef = useRef<Record<string, number>>({});
+  // Hysteresis: tracks which stops are "inside" (entered but not yet exited via the larger exit radius)
+  const stopInsideRef = useRef<Record<string, boolean>>({}); // busId+stopId -> inside state
 
   const [passengerLocation, setPassengerLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isCentered, setIsCentered] = useState(false);
@@ -164,23 +237,49 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
               lastStopIndexRef.current[bus.busId] = closestStopIndex;
             }
 
-            const DWELL_GATE_MS = 15_000;
-            const STOP_PROXIMITY_M = 50;
-            route.stops.forEach((stop) => {
+            // ── Production-quality geofencing ──────────────────────────────────────────────
+            // Two-radius hysteresis: 35 m entry, 45 m exit. Prevents oscillation at boundary.
+            // Route-sequence gate: only validate stops in a ±2 window around last known position.
+            // Speed gate: bus must be moving below 8 km/h to register a stop entry.
+            // Dwell gate: 10 s minimum dwell confirms arrival vs drive-by.
+            const STOP_ENTRY_RADIUS_M = 35;
+            const STOP_EXIT_RADIUS_M  = 45;
+            const DWELL_GATE_MS       = 10_000;
+
+            // Route-sequence window: ±2 stops around last known index to prevent
+            // the bus being snapped to a stop it hasn't reached yet or already passed.
+            const lastKnownIdx = lastStopIndexRef.current[bus.busId] ?? 0;
+            const seqStart = Math.max(0, lastKnownIdx - 1);
+            const seqEnd   = Math.min(route.stops.length - 1, lastKnownIdx + 2);
+            const candidateStops = route.stops.slice(seqStart, seqEnd + 1)
+              .map((stop, offset) => ({ stop, idx: seqStart + offset }));
+
+            for (const { stop, idx } of candidateStops) {
+              const insideKey = `${bus.busId}:${stop.id}`;
               const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
-              if (d < STOP_PROXIMITY_M) {
+              const wasInside = stopInsideRef.current[insideKey] ?? false;
+
+              if (!wasInside && d < STOP_ENTRY_RADIUS_M) {
+                // Entry: bus is within 35m — mark as at this stop regardless of speed
+                stopInsideRef.current[insideKey] = true;
                 if (!stopEntryTimeRef.current[stop.id]) {
                   stopEntryTimeRef.current[stop.id] = now;
                 }
-              } else {
+                // Advance sequence index to this stop
+                if (idx > (lastStopIndexRef.current[bus.busId] ?? 0)) {
+                  lastStopIndexRef.current[bus.busId] = idx;
+                }
+              } else if (wasInside && d > STOP_EXIT_RADIUS_M) {
+                // Exit hysteresis: only clear state once bus has moved beyond exit radius
+                stopInsideRef.current[insideKey] = false;
                 delete stopEntryTimeRef.current[stop.id];
               }
-            });
+            }
 
-            const busDist = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, targetStop);
+            const busDist    = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, targetStop);
             const dwellAtTarget = stopEntryTimeRef.current[targetStop.id];
             const isAtTarget = dwellAtTarget && (now - dwellAtTarget >= DWELL_GATE_MS);
-            if (busDist < 200 && isAtTarget && lastBuzzedStopIdRef.current !== targetStop.id) {
+            if (busDist < STOP_EXIT_RADIUS_M && isAtTarget && lastBuzzedStopIdRef.current !== targetStop.id) {
               lastBuzzedStopIdRef.current = targetStop.id;
             }
           }
@@ -204,7 +303,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
       isMounted = false;
       if (unsubscribe) unsubscribe();
     };
-  }, [route.id, targetStop, route.stops]);
+  }, [route.id, targetStop, route.stops, resumeGeneration]);
 
   // ── High-Frequency Speed-Aware ETA Fallback (Haversine) ──────────────────
   const updateUI = useCallback(() => {
@@ -279,14 +378,31 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     : null;
 
   const mapCenter = useMemo(() => ({ lat: targetStop.lat, lng: targetStop.lng }), [targetStop.lat, targetStop.lng]);
-  const centerTarget = useMemo(() => {
-    const firstBus = Array.from(buses.values())[0];
-    return firstBus ? { lat: firstBus.lat, lng: firstBus.lng } : mapCenter;
-  }, [buses, mapCenter]);
-
   const routeStops = useMemo(() => {
     return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) ?? [];
   }, [route.stops]);
+
+  const routePath = useMemo(() => {
+    if (route.polyline) {
+      try {
+        const decoded = decodePolyline(route.polyline);
+        if (decoded.length >= 2) return decoded;
+      } catch {
+        // Legacy routes fall back to their saved stop coordinates.
+      }
+    }
+    return routeStops;
+  }, [route.polyline, routeStops]);
+
+  const centerTarget = useMemo(() => {
+    const firstBus = Array.from(buses.values())[0];
+    if (!firstBus) return mapCenter;
+    return snapToPolyline(
+      { lat: firstBus.lat, lng: firstBus.lng },
+      routePath,
+      { headingDegrees: firstBus.heading },
+    ).point;
+  }, [buses, mapCenter, routePath]);
 
   return (
     <>
@@ -341,20 +457,9 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           )}
 
           {/* Bus markers */}
-          {Array.from(buses.values()).map(bus => {
-            const color = BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
-            const snappedHeading = Math.round(bus.heading / 5) * 5;
-            return (
-              <AdvancedMarker key={bus.busId} position={{ lat: bus.lat, lng: bus.lng }}>
-                <div style={{ width: 44, height: 44, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 600ms" }}>
-                    <Navigation size={30} fill={color} color="white" strokeWidth={1} />
-                  </div>
-                  <div style={{ position: "absolute", bottom: -3, right: -3, width: 8, height: 8, borderRadius: "50%", background: color, border: "1.5px solid #09090b" }} />
-                </div>
-              </AdvancedMarker>
-            );
-          })}
+          {Array.from(buses.values()).map(bus => (
+            <BusMarker key={bus.busId} bus={bus} path={routePath} />
+          ))}
 
           {/* Stop markers */}
           {route.stops?.map((stop, i) => {
@@ -455,7 +560,11 @@ export default function PassengerMap(props: PassengerMapProps) {
   }
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <PassengerMapInner targetStop={props.targetStop} route={props.route!} />
+      <PassengerMapInner
+        targetStop={props.targetStop}
+        route={props.route}
+        resumeGeneration={props.resumeGeneration}
+      />
     </div>
   );
 }

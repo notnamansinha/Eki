@@ -8,6 +8,7 @@ Welcome to the deep-dive documentation for the Eki ecosystem.
 - [Architecture & Data Flow](./ARCHITECTURE.md) — Explains the core system architecture, data synchronization flows between Firebase and the backend, and Role-Based Access Control (RBAC).
 - [Zero-Budget Optimizations](./OPTIMIZATIONS.md) — Detailed breakdown of cost-saving architectural strategies including ESP32 telemetry limits and stored route geometry.
 - [GNSS Hardware Migration](./GNSS_HARDWARE_MIGRATION.md) — Comprehensive guide on migrating from browser-based geolocation to the dedicated ESP32 + NEO-M8N GNSS module.
+- [ESP32 Hardware Config & Naming Guide](./HARDWARE_CONFIG_GUIDE.md) — Naming conventions and step-by-step checklist for configuring Bus IDs, Route IDs, and Device Secrets when adding or modifying ESP modules.
 - [Workflow Explanation](./WORKFLOW_EXPLANATION.md) — Visual workflows of the end-to-end hardware-based tracking system, including hardware boot sequences and ETA calculation pipelines.
 - [Google Maps Recovery](./GOOGLE_MAPS_RECOVERY.md) — Historical notes on the migration back to Google Maps.
 

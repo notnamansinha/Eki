@@ -13,6 +13,11 @@
     "deploy": "npm run build && npx firebase deploy",
     "lint": "npm run lint --workspace=frontend && npm run lint --workspace=backend"
   },
+  "overrides": {
+    "next": {
+      "sharp": "0.35.3"
+    }
+  },
   "devDependencies": {
     "@types/google.maps": "^3.65.2",
     "concurrently": "^8.2.2"

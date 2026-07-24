@@ -122,6 +122,7 @@ export default function DriverPage() {
       status: "active",
       deviceState: "online",
       tripState: "in_service",
+      hasDepartedOrigin: false,
       timestamp: Date.now(),
       currentStopIndex: currentStopIndexRef.current,
       delayMinutes: delayMinutesRef.current,

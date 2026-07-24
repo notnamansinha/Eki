@@ -4,13 +4,14 @@ import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
-import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag } from "lucide-react";
+import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff } from "lucide-react";
 import { rtdb } from "@/lib/firebaseDatabase";
 import { ref, onValue } from "firebase/database";
 import { waitForAuth } from "@/lib/authState";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import { useSettings } from "@/hooks/useSettings";
 import { hasValidBusCoordinates, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
+import { useRTDBResume } from "@/hooks/useRTDBResume";
 
 const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTrackingMap"), {
   ssr: false,
@@ -43,6 +44,12 @@ interface ActiveBusData {
 }
 
 export default function PassengerPage() {
+  const {
+    isResuming,
+    resumeGeneration,
+    connectionGeneration,
+    markSnapshotReceived,
+  } = useRTDBResume();
   const { user } = useAuth();
   const { settings } = useSettings();
   const [currentView, setCurrentView] = useState<ViewState>("home");
@@ -99,6 +106,7 @@ export default function PassengerPage() {
 
         latestBusDriversRef.current = driverMap;
         setActiveBuses(newBuses);
+        markSnapshotReceived();
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed:", error.message);
       });
@@ -108,7 +116,7 @@ export default function PassengerPage() {
       isMounted = false;
       if (unsubscribe) unsubscribe();
     };
-  }, []);
+  }, [connectionGeneration, markSnapshotReceived, resumeGeneration]);
 
   const activeRouteIds = Array.from(new Set(activeBuses.map(b => b.routeId)));
   const availableRoutes = routes.filter(r => activeRouteIds.includes(r.id));
@@ -182,6 +190,17 @@ export default function PassengerPage() {
 
   return (
     <div className="relative text-white overflow-hidden" style={{ height: "100dvh", backgroundColor: "var(--surface-0)" }}>
+      {isResuming && (
+        <div
+          className="absolute left-4 right-4 z-50 flex items-center gap-2 rounded-xl border border-amber-400/20 bg-zinc-950 px-4 py-3 text-sm font-semibold text-amber-300 shadow-lg"
+          style={{ top: "calc(env(safe-area-inset-top) + 1rem)" }}
+          role="status"
+          aria-live="polite"
+        >
+          <WifiOff className="size-4 shrink-0" aria-hidden="true" />
+          <span className="text-pretty">Reconnecting to live bus data...</span>
+        </div>
+      )}
       {/* Background Image Layer: Full screen map flowing naturally */}
       <div
         className="absolute inset-0 z-0 pointer-events-none"
@@ -201,6 +220,7 @@ export default function PassengerPage() {
             <PassengerTrackingMap
               targetStop={targetStop!}
               route={activeRoute ?? null}
+              resumeGeneration={resumeGeneration}
             />
           )}
         </div>

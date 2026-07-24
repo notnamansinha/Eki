@@ -257,10 +257,10 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
             </div>
           </div>
 
-          {/* Bus hardware ID */}
+          {/* Bus ID */}
           <div className="flex items-center gap-2 border-t border-white/5 pt-2.5 mt-0.5">
             <Radio className="w-3 h-3 text-white/20" />
-            <span className="text-[9px] text-white/25 font-black uppercase tracking-wider">Hardware ID</span>
+            <span className="text-[9px] text-white/25 font-black uppercase tracking-wider">Bus ID</span>
             <span className="text-[9px] tabular-nums text-white/50 ml-auto">{entry.busId}</span>
           </div>
         </div>
@@ -588,7 +588,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             </div>
             <div>
               <h2 className="font-extrabold text-lg tracking-tight">Fleet Vehicles</h2>
-              <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black">Manage Hardware IDs</p>
+              <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black">Manage Bus IDs</p>
             </div>
           </div>
 
@@ -597,8 +597,8 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             <p className="text-[9px] text-white/20 font-black uppercase tracking-[0.2em]">Register new vehicle</p>
             <input
               value={newBusId} onChange={(e) => setNewBusId(e.target.value)}
-              placeholder="Hardware ID (e.g. BRTS-101)"
-              aria-label="New vehicle hardware ID"
+              placeholder="Bus ID (e.g. bus_01)"
+              aria-label="New vehicle Bus ID"
               className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
             />
             <input

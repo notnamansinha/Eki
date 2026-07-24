@@ -16,7 +16,7 @@ import { MAPS_API_KEY } from "@/config/maps";
  */
 export default function MapProviders({ children }: { children: React.ReactNode }) {
   return (
-    <APIProvider apiKey={MAPS_API_KEY}>
+    <APIProvider apiKey={MAPS_API_KEY} libraries={["places"]}>
       {children}
     </APIProvider>
   );

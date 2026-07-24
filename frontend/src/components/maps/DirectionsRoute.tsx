@@ -2,11 +2,8 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useMap } from "@vis.gl/react-google-maps";
+import { decodePolyline, type LatLng } from "@/lib/polyline";
 
-interface LatLng {
-  lat: number;
-  lng: number;
-}
 
 interface DirectionsRouteProps {
   stops: LatLng[];
@@ -14,38 +11,6 @@ interface DirectionsRouteProps {
   polyline?: string;
   color?: string;
   hasBuses?: boolean;
-}
-
-function decodePolyline(encoded: string): LatLng[] {
-  const coordinates: LatLng[] = [];
-  let index = 0;
-  let lat = 0;
-  let lng = 0;
-
-  while (index < encoded.length) {
-    let result = 0;
-    let shift = 0;
-    let byte: number;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20 && index <= encoded.length);
-    lat += result & 1 ? ~(result >> 1) : result >> 1;
-
-    result = 0;
-    shift = 0;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20 && index <= encoded.length);
-    lng += result & 1 ? ~(result >> 1) : result >> 1;
-
-    coordinates.push({ lat: lat / 1e5, lng: lng / 1e5 });
-  }
-
-  return coordinates;
 }
 
 /**

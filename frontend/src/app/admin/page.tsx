@@ -97,7 +97,7 @@ export default function AdminPage() {
       {/* ── Content — fills remaining height, scrolls internally per panel ── */}
       <div className="flex-1 min-h-0 overflow-hidden bg-brand-dark/20">
         {TABS.map(({ id }) => visitedTabs.includes(id) && (
-          <div key={id} className={activeTab === id ? "h-full" : "hidden"}>
+          <div key={id} className={activeTab === id ? "h-full overflow-y-auto" : "hidden"}>
             {renderPanel(id)}
           </div>
         ))}
