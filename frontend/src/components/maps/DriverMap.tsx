@@ -10,6 +10,8 @@ import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import { rtdb } from "@/lib/firebase";
 import { ref, update } from "firebase/database";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
+import { decodePolyline } from "@/lib/polyline";
+import { snapToPolyline } from "@/lib/snapToPolyline";
 
 export interface DriverMapProps {
   route: RouteData;
@@ -108,10 +110,6 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
     return Math.round(durationSec / 10) * 10;
   }, [driverLocation, navPhase, nextStop]);
 
-  const defaultCenter = driverLocation
-    ? { lat: driverLocation.lat, lng: driverLocation.lng }
-    : (stops.length ? { lat: stops[0].lat, lng: stops[0].lng } : { lat: 23.03, lng: 72.55 });
-
   const handleRecenter = useCallback(() => setIsCentered(true), []);
   const handlePointerDown = useCallback(() => setIsCentered(false), []);
   const handleBackToPreview = useCallback(() => setNavPhase("preview"), []);
@@ -137,6 +135,34 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
     return stops.map(s => ({ lat: s.lat, lng: s.lng }));
   }, [stops]);
 
+  const routePath = useMemo(() => {
+    if (route.polyline) {
+      try {
+        const decoded = decodePolyline(route.polyline);
+        if (decoded.length >= 2) return decoded;
+      } catch {
+        // Legacy routes fall back to their saved stop coordinates.
+      }
+    }
+    return routeStops;
+  }, [route.polyline, routeStops]);
+
+  const snappedDriverLocation = useMemo(() => {
+    if (!driverLocation) return null;
+    const result = snapToPolyline(
+      { lat: driverLocation.lat, lng: driverLocation.lng },
+      routePath,
+      {
+        headingDegrees: driverLocation.heading,
+      },
+    );
+    return { ...result, heading: driverLocation.heading };
+  }, [driverLocation, routePath]);
+
+  const defaultCenter = snappedDriverLocation
+    ? snappedDriverLocation.point
+    : (stops.length ? { lat: stops[0].lat, lng: stops[0].lng } : { lat: 23.03, lng: 72.55 });
+
   return (
     <>
       <div className="absolute inset-0 z-0" onPointerDown={handlePointerDown} onTouchStart={handlePointerDown}>
@@ -147,7 +173,15 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           style={{ width: "100%", height: "100%" }}
           {...MAP_OPTIONS}
         >
-          <MapCenterer target={driverLocation} isCentered={isCentered} navPhase={navPhase} />
+          <MapCenterer
+            target={
+              snappedDriverLocation
+                ? { ...snappedDriverLocation.point, heading: snappedDriverLocation.heading }
+                : null
+            }
+            isCentered={isCentered}
+            navPhase={navPhase}
+          />
           <DirectionsRoute
             stops={routeStops}
             polyline={route.polyline}
@@ -201,11 +235,11 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           })}
 
           {/* Driver bus marker */}
-          {driverLocation && (
-            <AdvancedMarker position={{ lat: driverLocation.lat, lng: driverLocation.lng }}>
+          {driverLocation && snappedDriverLocation && (
+            <AdvancedMarker position={snappedDriverLocation.point}>
               <div style={{ width: 44, height: 44, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "rgba(66,133,244,0.15)", animation: "ping 1s infinite", opacity: 0.6 }} />
-                <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 600ms", zIndex: 10 }}>
+                <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 200ms ease-out", zIndex: 10 }}>
                   <Navigation size={30} fill={SELECTED_ROUTE_COLOR} color="white" strokeWidth={1} />
                 </div>
                 <div style={{ position: "absolute", bottom: -3, right: -3, width: 8, height: 8, borderRadius: "50%", background: SELECTED_ROUTE_COLOR, border: "1.5px solid var(--surface-0)" }} />

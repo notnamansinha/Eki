@@ -29,81 +29,101 @@ const ROUTE_COLORS = [
   "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
 ];
 
-/* ── Google Maps Places Autocomplete search box ─────────────────────────── */
+interface PlacePrediction {
+  name: string;
+  lat: number;
+  lng: number;
+}
+
 function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: number; lng: number }) => void }) {
   const [value, setValue] = useState("");
-  const [predictions, setPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [searching, setSearching] = useState(false);
-  const [ready, setReady] = useState(false);
-  const autocompleteRef = useRef<google.maps.places.AutocompleteService | null>(null);
-  const placesRef = useRef<google.maps.places.PlacesService | null>(null);
-  const dummyRef = useRef<HTMLDivElement>(null);
+  const [searchError, setSearchError] = useState("");
 
-  // Poll until google.maps.places is loaded (handles any mount timing)
   useEffect(() => {
-    const check = () => {
-      if (typeof window !== "undefined" && window.google?.maps?.places && dummyRef.current) {
-        autocompleteRef.current = new window.google.maps.places.AutocompleteService();
-        placesRef.current = new window.google.maps.places.PlacesService(dummyRef.current);
-        setReady(true);
-        return true;
+    if (value.length < 3) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+      const currentUser = auth.currentUser;
+      if (!backendUrl || !currentUser) {
+        setSearchError("Place search is unavailable. Sign in again and retry.");
+        return;
       }
-      return false;
+      setSearching(true);
+      setSearchError("");
+      try {
+        const token = await currentUser.getIdToken();
+        const response = await fetch(
+          `${backendUrl}/api/places/search?q=${encodeURIComponent(value)}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          },
+        );
+        if (!response.ok) {
+          throw new Error("Place search is temporarily unavailable.");
+        }
+        const payload = await response.json() as { results?: PlacePrediction[] };
+        setPredictions(Array.isArray(payload.results) ? payload.results : []);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setPredictions([]);
+          setSearchError(errorMessage(error));
+        }
+      } finally {
+        if (!controller.signal.aborted) setSearching(false);
+      }
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
     };
-    if (check()) return;
-    const id = setInterval(() => { if (check()) clearInterval(id); }, 300);
-    return () => clearInterval(id);
-  }, []);
+  }, [value]);
 
-  useEffect(() => {
-    if (value.length < 3 || !ready) { setPredictions([]); return; }
-    const svc = autocompleteRef.current;
-    if (!svc) return;
-    setSearching(true);
-    svc.getPlacePredictions({ input: value }, (results, status) => {
-      setSearching(false);
-      if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-        setPredictions(results);
-      } else {
-        setPredictions([]);
-      }
-    });
-  }, [value, ready]);
-
-  const handleSelect = (pred: google.maps.places.AutocompletePrediction) => {
-    const svc = placesRef.current;
-    if (!svc) return;
+  const handleSelect = (prediction: PlacePrediction) => {
     setValue("");
     setPredictions([]);
-    svc.getDetails({ placeId: pred.place_id, fields: ["geometry", "name"] }, (place, status) => {
-      if (status === google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
-        onPlaceSelect({
-          name: place.name ?? pred.description,
-          lat: place.geometry.location.lat(),
-          lng: place.geometry.location.lng(),
-        });
-      }
-    });
+    setSearchError("");
+    onPlaceSelect(prediction);
   };
 
   return (
     <div className="relative flex-1">
-      <div ref={dummyRef} style={{ display: "none" }} />
       <div className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none">
         {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
       </div>
       <input
-        type="text" value={value} onChange={e => setValue(e.target.value)}
-        placeholder={ready ? "Search for a stop (Google Maps)…" : "Loading Maps…"}
-        disabled={!ready}
-        className="w-full h-9 bg-[#09090b] border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-medium disabled:opacity-40"
+        type="search"
+        value={value}
+        onChange={(event) => {
+          const nextValue = event.target.value;
+          setValue(nextValue);
+          setSearchError("");
+          if (nextValue.length < 3) setPredictions([]);
+        }}
+        placeholder="Search for a stop"
+        aria-label="Search for a stop"
+        aria-describedby={searchError ? "place-search-error" : undefined}
+        className="w-full h-9 bg-[#09090b] border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-medium"
       />
+      {searchError && (
+        <p id="place-search-error" className="mt-1 text-xs text-red-400" role="alert">
+          {searchError}
+        </p>
+      )}
       {value.length >= 3 && predictions.length > 0 && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-[#0f0f12] border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl">
-          {predictions.map((pred) => (
-            <button key={pred.place_id} className="w-full text-left p-3 hover:bg-white/5 text-xs text-white border-b border-white/5 last:border-0 transition-colors" onClick={() => handleSelect(pred)}>
-              <span className="font-semibold">{pred.structured_formatting.main_text}</span>
-              <span className="text-white/40 ml-1">{pred.structured_formatting.secondary_text}</span>
+          {predictions.map((prediction) => (
+            <button
+              key={`${prediction.lat}-${prediction.lng}-${prediction.name}`}
+              type="button"
+              className="w-full text-left p-3 hover:bg-white/5 text-xs text-white border-b border-white/5 last:border-0 transition-colors"
+              onClick={() => handleSelect(prediction)}
+            >
+              <span className="font-semibold text-pretty">{prediction.name}</span>
             </button>
           ))}
         </div>

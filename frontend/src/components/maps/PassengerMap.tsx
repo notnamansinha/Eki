@@ -13,10 +13,13 @@ import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
 
 import { WifiOff, Navigation } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
+import { decodePolyline, type LatLng } from "@/lib/polyline";
+import { snapToPolyline } from "@/lib/snapToPolyline";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
   route: RouteData | null;
+  resumeGeneration?: number;
 }
 
 interface IncomingBusData {
@@ -44,6 +47,66 @@ const BUS_MOTION_COLORS: Record<string, string> = {
   uncertain: "#F87171", // red     — GPS fix lost
 };
 
+function BusMarker({
+  bus,
+  path,
+}: {
+  bus: IncomingBusData;
+  path: readonly LatLng[];
+}) {
+  const result = useMemo(
+    () =>
+      snapToPolyline(
+        { lat: bus.lat, lng: bus.lng },
+        path,
+        {
+          headingDegrees: bus.heading,
+        },
+      ),
+    [bus.lat, bus.lng, bus.heading, path],
+  );
+
+  const color =
+    BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
+  const snappedHeading = Math.round(bus.heading / 5) * 5;
+
+  return (
+    <AdvancedMarker position={result.point}>
+      <div
+        style={{
+          width: 44,
+          height: 44,
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          style={{
+            transform: `rotate(${snappedHeading}deg)`,
+            transition: "transform 200ms ease-out",
+          }}
+        >
+          <Navigation size={30} fill={color} color="white" strokeWidth={1} />
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            bottom: -3,
+            right: -3,
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: color,
+            border: "1.5px solid #09090b",
+          }}
+        />
+      </div>
+    </AdvancedMarker>
+  );
+}
+
 
 // ── Traffic layer rendered imperatively ──────────────────────────────────────
 // ── Pan/zoom controller ──────────────────────────────────────────────────────
@@ -58,7 +121,15 @@ function MapCenterer({ target, isCentered }: { target: { lat: number; lng: numbe
   return null;
 }
 
-function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route: RouteData }) {
+function PassengerMapInner({
+  targetStop,
+  route,
+  resumeGeneration = 0,
+}: {
+  targetStop: RouteStop;
+  route: RouteData;
+  resumeGeneration?: number;
+}) {
   const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map<string, IncomingBusData>());
   const [stopETAs, setStopETAs] = useState<Record<string, number>>({});
   const [uiNow, setUiNow] = useState(() => Date.now());
@@ -232,7 +303,7 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
       isMounted = false;
       if (unsubscribe) unsubscribe();
     };
-  }, [route.id, targetStop, route.stops]);
+  }, [route.id, targetStop, route.stops, resumeGeneration]);
 
   // ── High-Frequency Speed-Aware ETA Fallback (Haversine) ──────────────────
   const updateUI = useCallback(() => {
@@ -307,14 +378,31 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     : null;
 
   const mapCenter = useMemo(() => ({ lat: targetStop.lat, lng: targetStop.lng }), [targetStop.lat, targetStop.lng]);
-  const centerTarget = useMemo(() => {
-    const firstBus = Array.from(buses.values())[0];
-    return firstBus ? { lat: firstBus.lat, lng: firstBus.lng } : mapCenter;
-  }, [buses, mapCenter]);
-
   const routeStops = useMemo(() => {
     return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) ?? [];
   }, [route.stops]);
+
+  const routePath = useMemo(() => {
+    if (route.polyline) {
+      try {
+        const decoded = decodePolyline(route.polyline);
+        if (decoded.length >= 2) return decoded;
+      } catch {
+        // Legacy routes fall back to their saved stop coordinates.
+      }
+    }
+    return routeStops;
+  }, [route.polyline, routeStops]);
+
+  const centerTarget = useMemo(() => {
+    const firstBus = Array.from(buses.values())[0];
+    if (!firstBus) return mapCenter;
+    return snapToPolyline(
+      { lat: firstBus.lat, lng: firstBus.lng },
+      routePath,
+      { headingDegrees: firstBus.heading },
+    ).point;
+  }, [buses, mapCenter, routePath]);
 
   return (
     <>
@@ -369,20 +457,9 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           )}
 
           {/* Bus markers */}
-          {Array.from(buses.values()).map(bus => {
-            const color = BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
-            const snappedHeading = Math.round(bus.heading / 5) * 5;
-            return (
-              <AdvancedMarker key={bus.busId} position={{ lat: bus.lat, lng: bus.lng }}>
-                <div style={{ width: 44, height: 44, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 600ms" }}>
-                    <Navigation size={30} fill={color} color="white" strokeWidth={1} />
-                  </div>
-                  <div style={{ position: "absolute", bottom: -3, right: -3, width: 8, height: 8, borderRadius: "50%", background: color, border: "1.5px solid #09090b" }} />
-                </div>
-              </AdvancedMarker>
-            );
-          })}
+          {Array.from(buses.values()).map(bus => (
+            <BusMarker key={bus.busId} bus={bus} path={routePath} />
+          ))}
 
           {/* Stop markers */}
           {route.stops?.map((stop, i) => {
@@ -483,7 +560,11 @@ export default function PassengerMap(props: PassengerMapProps) {
   }
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <PassengerMapInner targetStop={props.targetStop} route={props.route!} />
+      <PassengerMapInner
+        targetStop={props.targetStop}
+        route={props.route}
+        resumeGeneration={props.resumeGeneration}
+      />
     </div>
   );
 }
