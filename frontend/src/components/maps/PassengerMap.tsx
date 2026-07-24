@@ -68,6 +68,8 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
   const lastBuzzedStopIdRef = useRef<string | null>(null);
   const lastStopIndexRef = useRef<Record<string, number>>({});
   const stopEntryTimeRef = useRef<Record<string, number>>({});
+  // Hysteresis: tracks which stops are "inside" (entered but not yet exited via the larger exit radius)
+  const stopInsideRef = useRef<Record<string, boolean>>({}); // busId+stopId -> inside state
 
   const [passengerLocation, setPassengerLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isCentered, setIsCentered] = useState(false);
@@ -164,23 +166,52 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
               lastStopIndexRef.current[bus.busId] = closestStopIndex;
             }
 
-            const DWELL_GATE_MS = 15_000;
-            const STOP_PROXIMITY_M = 50;
-            route.stops.forEach((stop) => {
+            // ── Production-quality geofencing ──────────────────────────────────────────────
+            // Two-radius hysteresis: 35 m entry, 45 m exit. Prevents oscillation at boundary.
+            // Route-sequence gate: only validate stops in a ±2 window around last known position.
+            // Speed gate: bus must be moving below 8 km/h to register a stop entry.
+            // Dwell gate: 10 s minimum dwell confirms arrival vs drive-by.
+            const STOP_ENTRY_RADIUS_M = 35;
+            const STOP_EXIT_RADIUS_M  = 45;
+            const DWELL_GATE_MS       = 10_000;
+            const SPEED_GATE_KMH      = 8;
+
+            // Route-sequence window: ±2 stops around last known index to prevent
+            // the bus being snapped to a stop it hasn't reached yet or already passed.
+            const lastKnownIdx = lastStopIndexRef.current[bus.busId] ?? 0;
+            const seqStart = Math.max(0, lastKnownIdx - 1);
+            const seqEnd   = Math.min(route.stops.length - 1, lastKnownIdx + 2);
+            const candidateStops = route.stops.slice(seqStart, seqEnd + 1)
+              .map((stop, offset) => ({ stop, idx: seqStart + offset }));
+
+            const speedOk = bus.speed < SPEED_GATE_KMH;
+
+            for (const { stop, idx } of candidateStops) {
+              const insideKey = `${bus.busId}:${stop.id}`;
               const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
-              if (d < STOP_PROXIMITY_M) {
+              const wasInside = stopInsideRef.current[insideKey] ?? false;
+
+              if (!wasInside && d < STOP_ENTRY_RADIUS_M && speedOk) {
+                // Entry: inside radius AND speed confirms bus is slowing/stopped
+                stopInsideRef.current[insideKey] = true;
                 if (!stopEntryTimeRef.current[stop.id]) {
                   stopEntryTimeRef.current[stop.id] = now;
                 }
-              } else {
+                // Advance sequence index to this stop
+                if (idx > (lastStopIndexRef.current[bus.busId] ?? 0)) {
+                  lastStopIndexRef.current[bus.busId] = idx;
+                }
+              } else if (wasInside && d > STOP_EXIT_RADIUS_M) {
+                // Exit hysteresis: only clear state once bus has moved beyond exit radius
+                stopInsideRef.current[insideKey] = false;
                 delete stopEntryTimeRef.current[stop.id];
               }
-            });
+            }
 
-            const busDist = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, targetStop);
+            const busDist    = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, targetStop);
             const dwellAtTarget = stopEntryTimeRef.current[targetStop.id];
             const isAtTarget = dwellAtTarget && (now - dwellAtTarget >= DWELL_GATE_MS);
-            if (busDist < 200 && isAtTarget && lastBuzzedStopIdRef.current !== targetStop.id) {
+            if (busDist < STOP_EXIT_RADIUS_M && isAtTarget && lastBuzzedStopIdRef.current !== targetStop.id) {
               lastBuzzedStopIdRef.current = targetStop.id;
             }
           }
