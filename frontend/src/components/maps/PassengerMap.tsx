@@ -174,7 +174,6 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
             const STOP_ENTRY_RADIUS_M = 35;
             const STOP_EXIT_RADIUS_M  = 45;
             const DWELL_GATE_MS       = 10_000;
-            const SPEED_GATE_KMH      = 8;
 
             // Route-sequence window: ±2 stops around last known index to prevent
             // the bus being snapped to a stop it hasn't reached yet or already passed.
@@ -184,15 +183,13 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
             const candidateStops = route.stops.slice(seqStart, seqEnd + 1)
               .map((stop, offset) => ({ stop, idx: seqStart + offset }));
 
-            const speedOk = bus.speed < SPEED_GATE_KMH;
-
             for (const { stop, idx } of candidateStops) {
               const insideKey = `${bus.busId}:${stop.id}`;
               const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
               const wasInside = stopInsideRef.current[insideKey] ?? false;
 
-              if (!wasInside && d < STOP_ENTRY_RADIUS_M && speedOk) {
-                // Entry: inside radius AND speed confirms bus is slowing/stopped
+              if (!wasInside && d < STOP_ENTRY_RADIUS_M) {
+                // Entry: bus is within 35m — mark as at this stop regardless of speed
                 stopInsideRef.current[insideKey] = true;
                 if (!stopEntryTimeRef.current[stop.id]) {
                   stopEntryTimeRef.current[stop.id] = now;

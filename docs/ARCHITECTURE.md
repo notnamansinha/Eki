@@ -132,10 +132,20 @@ graph LR
     style RTDB fill:#ffca28,stroke:#f57f17,stroke-width:2px,color:black
 ```
 
-### 3.1 Client-Side ETA Mathematics
+### 3.1 Client-Side ETA Mathematics & Autonomous Tracking
 If a bus loses GPS signal or stops transmitting, the client does not wait helplessly. The architecture gracefully falls back to a **35km/h internal estimation math** (matching 4-wheeler transit speeds) overlaid onto the Haversine distance remaining to the next stop. This guarantees that passengers always see a highly accurate, speed-aware ETA projection even when GNSS hardware briefly fails.
 
-### 3.2 Custom Map Overlays (Semantic UI)
+When running autonomously with an **ESP32 + NEO-8M GNSS module** (without a human driver operating a web console), `currentStopIndex` is omitted from the hardware stream. The client automatically runs continuous proximity matching against the assigned route's stop list to infer the closest stop index, dimming passed stops and highlighting the next stop seamlessly.
+
+### 3.2 Production Stop Detection & Geofencing Architecture
+To prevent false-positive station arrivals and UI flickering caused by GNSS drift (NEO-8M ~2.5m CEP accuracy), stop detection in `PassengerMap.tsx` implements a **dual-radius hysteresis** and **route-sequence gated** geofencing engine:
+
+* **Entry Radius (`35 meters`):** When the bus comes within 35m of an upcoming stop on its route, the system marks entry and sets `inside = true`.
+* **Exit Hysteresis Radius (`45 meters`):** To prevent boundary oscillation (e.g., GPS drifting back and forth around 35m while parked at a stand), the "inside" state is held until the bus moves past 45m away.
+* **Dwell Gate (`10 seconds`):** A minimum 10-second residence inside the geofence confirms arrival for passenger notification/alert triggers.
+* **Route-Sequence Window (`±2 stops`):** Geofence evaluation is scoped to a ±2 stop window around the last-known stop index. This prevents out-of-order false snaps if a bus passes near a non-sequential station.
+
+### 3.3 Custom Map Overlays (Semantic UI)
 To prevent native Google Maps controls from interfering with our highly styled floating action buttons (FABs), we explicitly pass `options={{ disableDefaultUI: true }}` to the `@vis.gl` wrapper. We then implement our own semantic layers (e.g. `LocateFixed`/`Navigation` buttons tracking the active bus or passenger, `MessageCircle` for live chat).
 
 ## 4. Admin Panel Rewrite Architecture
@@ -144,7 +154,9 @@ The Admin Panel has been rebuilt into a unified 5-tab interface (`Dashboard`, `R
 
 To avoid the cost of opening 5 different WebSocket listeners to Firebase RTDB/Firestore, the admin panel architecture heavily relies on conditionally mounted tabs using `&&` and isolated Context boundaries.
 
-* **Layout Client Boundary:** `layout.tsx` is `"use client"` so it can wrap all panels in `RoleGuard` and `MapProviders`.
+* **Layout Client Boundary:** `layout.tsx` is `"use client"` so it can wrap all panels in `RoleGuard` and `MapProviders`. `MapProviders` mounts the Google Maps JS SDK with `libraries={["places"]}` for place search.
+* **Route Management & Google Places Integration:** Route creation uses Google Maps Places Autocomplete (`google.maps.places.AutocompleteService` / `PlacesService`) directly in the toolbar for accurate place searching (e.g., Indian landmarks and campuses). Stop pins on the map are fully draggable (`AdvancedMarker draggable={true}`), updating `lat`/`lng` coordinates in real-time.
+* **Bus ID Standardisation:** Terminology throughout the Fleet Management panel aligns strictly with firmware conventions (`Bus ID` and `bus_01` placeholders instead of legacy `Hardware ID` / `BRTS-101`).
 * **Shared Firebase Connections:** Instead of using React Context for Firebase RTDB, tabs only mount when active, guaranteeing that `DashboardPanel` and `FleetManagementPanel` never accidentally double-subscribe to Firebase at the same time.
 * **Singleton `useSettings`:** For Firestore globals, `useSettings.ts` sits at the module level. Even if 10 components on the page consume settings, exactly 1 Firestore `onSnapshot` is spawned.
 
