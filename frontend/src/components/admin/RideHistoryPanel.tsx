@@ -45,7 +45,7 @@ export default function RideHistoryPanel() {
   const sortedSessions = [...sessions].sort((a, b) => b.startTime - a.startTime);
 
   return (
-    <div className="h-full overflow-y-auto p-4 sm:p-6 space-y-4">
+    <div className="w-full max-w-4xl mx-auto p-4 sm:p-6 space-y-4 animate-slide-up">
       <h2 className="text-xl font-bold text-white mb-4">Ride History</h2>
       {sortedSessions.length === 0 ? (
         <div className="text-white/50 text-sm text-center py-10">No rides recorded yet.</div>

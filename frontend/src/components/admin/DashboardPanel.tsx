@@ -446,7 +446,7 @@ export default function DashboardPanel() {
   }, []);
 
   return (
-    <div className="flex flex-col lg:flex-row w-full" style={{ height: "calc(100vh - 88px)" }}>
+    <div className="h-full flex flex-col lg:flex-row w-full overflow-y-auto lg:overflow-hidden">
       {/* â”€â”€ Map â”€â”€ */}
       <div className="flex-1 relative min-h-[300px] lg:min-h-0">
         <GoogleMap

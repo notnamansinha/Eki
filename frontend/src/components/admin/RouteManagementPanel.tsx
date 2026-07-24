@@ -367,7 +367,7 @@ function RouteEditor({
   }, [state.stops]);
 
   return (
-    <div className="flex flex-col w-full animate-slide-up" style={{ height: "calc(100vh - 88px)" }}>
+    <div className="h-full flex flex-col w-full overflow-y-auto lg:overflow-hidden animate-slide-up">
       {/* Toolbar */}
       <div className="shrink-0 border-b border-white/5 bg-[#0f0f12]/90 backdrop-blur-2xl px-4 py-3 flex flex-wrap gap-3 items-end">
         <button onClick={onCancel} className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors shrink-0 self-center">
