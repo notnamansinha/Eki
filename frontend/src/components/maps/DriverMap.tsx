@@ -10,7 +10,7 @@ import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import { rtdb } from "@/lib/firebase";
 import { ref, update } from "firebase/database";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
-import { decodePolyline } from "@/lib/polyline";
+import { decodePolyline, getPolylineDistanceMeters } from "@/lib/polyline";
 import { snapToPolyline } from "@/lib/snapToPolyline";
 
 export interface DriverMapProps {
@@ -46,6 +46,8 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
   // Timestamp of last manual skip — geofence is suppressed for 3s after a manual advance
   // to prevent the auto-advance from cascading when driverLocation gets a synthetic position.
   const lastManualSkipRef = useRef<number>(0);
+  const hasDepartedOriginRef = useRef<boolean>(false);
+  const lastSegmentIdxRef = useRef<number | undefined>(undefined);
 
   const [delayMinutes, setDelayMinutes] = useState(0);
 
@@ -66,6 +68,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
 
   const handleManualNextStop = useCallback(() => {
     lastManualSkipRef.current = Date.now();
+    hasDepartedOriginRef.current = true;
     setCurrentStopIndex(i => {
       const nextIdx = Math.min(i + 1, stops.length - 1);
       if (onStopIndexChange) onStopIndexChange(nextIdx, route.id);
@@ -74,15 +77,30 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
   }, [stops.length, onStopIndexChange, route.id]);
 
   useEffect(() => {
-    if (!driverLocation || !nextStop || currentStopIndex >= stops.length - 1) return;
-    // Suppress geofence auto-advance for 3s after a manual skip to prevent cascading
-    // when the bus position is temporarily set to a synthetic (stop-coord) fallback.
+    if (!driverLocation || stops.length === 0 || currentStopIndex >= stops.length - 1) return;
     if (Date.now() - lastManualSkipRef.current < 3000) return;
-    const dist = getDistanceMeters(
-      { lat: driverLocation.lat, lng: driverLocation.lng },
-      { lat: nextStop.lat, lng: nextStop.lng }
-    );
-    if (dist < 80) {
+
+    const originStop = stops[0];
+    const busPos = { lat: driverLocation.lat, lng: driverLocation.lng };
+
+    // Track origin departure: bus must move > 40m away from Stop 0 before advancing to Stop 1
+    if (!hasDepartedOriginRef.current && originStop) {
+      const distFromOrigin = getDistanceMeters(busPos, originStop);
+      if (distFromOrigin > 40) {
+        hasDepartedOriginRef.current = true;
+      }
+    }
+
+    // The next stop to reach is stops[currentStopIndex + 1] (or stops[currentStopIndex] if at origin)
+    const targetIdx = currentStopIndex === 0 && !hasDepartedOriginRef.current ? 0 : Math.min(currentStopIndex + 1, stops.length - 1);
+    const targetStop = stops[targetIdx];
+
+    if (!targetStop) return;
+
+    const distToTarget = getDistanceMeters(busPos, targetStop);
+
+    // Only auto-advance when approaching target stop AND origin has been departed
+    if (distToTarget < 60 && (currentStopIndex > 0 || hasDepartedOriginRef.current)) {
       const timer = window.setTimeout(() => {
         setCurrentStopIndex(i => {
           const nextIdx = Math.min(i + 1, stops.length - 1);
@@ -92,44 +110,10 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       }, 0);
       return () => window.clearTimeout(timer);
     }
-  }, [driverLocation, nextStop, currentStopIndex, stops.length, onStopIndexChange, route.id]);
+  }, [driverLocation, currentStopIndex, stops, onStopIndexChange, route.id]);
 
   const [navPhase, setNavPhase] = useState<NavPhase>(isTracking ? "navigating" : "preview");
   const [isCentered, setIsCentered] = useState(true);
-  const displayDur = useMemo(() => {
-    if (navPhase !== "navigating" || !driverLocation || !nextStop) {
-      return 0;
-    }
-    const distM = getDistanceMeters(
-      { lat: driverLocation.lat, lng: driverLocation.lng },
-      { lat: nextStop.lat, lng: nextStop.lng }
-    );
-    const speedKmh = driverLocation.speed && driverLocation.speed > 0 ? driverLocation.speed : 35;
-    const speedMs = speedKmh / 3.6;
-    const durationSec = speedMs > 0 ? distM / speedMs : 0;
-    return Math.round(durationSec / 10) * 10;
-  }, [driverLocation, navPhase, nextStop]);
-
-  const handleRecenter = useCallback(() => setIsCentered(true), []);
-  const handlePointerDown = useCallback(() => setIsCentered(false), []);
-  const handleBackToPreview = useCallback(() => setNavPhase("preview"), []);
-
-  const upcomingETAs = useMemo(() => {
-    const etaMap: Record<string, number> = {};
-    let accumTime = displayDur;
-    if (nextStop?.id) {
-      etaMap[nextStop.id] = Math.round((accumTime / 60) + delayMinutes);
-      for (let i = currentStopIndex + 1; i < stops.length; i++) {
-        const dist = (getDistanceMeters(stops[i - 1], stops[i]) * 1.3) + 125;
-        // 583 meters per min is ~35 km/h (4-wheeler speed)
-        accumTime += (dist / 583) * 60;
-        etaMap[stops[i].id] = Math.round((accumTime / 60) + delayMinutes);
-      }
-    }
-    return etaMap;
-  }, [displayDur, delayMinutes, nextStop, currentStopIndex, stops]);
-
-  const snappedHeading = driverLocation ? Math.round(driverLocation.heading / 5) * 5 : 0;
 
   const routeStops = useMemo(() => {
     return stops.map(s => ({ lat: s.lat, lng: s.lng }));
@@ -147,6 +131,42 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
     return routeStops;
   }, [route.polyline, routeStops]);
 
+  const displayDur = useMemo(() => {
+    if (navPhase !== "navigating" || !driverLocation || !nextStop) {
+      return 0;
+    }
+    const distM = getPolylineDistanceMeters(
+      { lat: driverLocation.lat, lng: driverLocation.lng },
+      { lat: nextStop.lat, lng: nextStop.lng },
+      routePath
+    );
+    const speedKmh = driverLocation.speed && driverLocation.speed > 0 ? driverLocation.speed : 35;
+    const speedMs = speedKmh / 3.6;
+    const durationSec = speedMs > 0 ? distM / speedMs : 0;
+    return Math.round(durationSec / 10) * 10;
+  }, [driverLocation, navPhase, nextStop, routePath]);
+
+  const handleRecenter = useCallback(() => setIsCentered(true), []);
+  const handlePointerDown = useCallback(() => setIsCentered(false), []);
+  const handleBackToPreview = useCallback(() => setNavPhase("preview"), []);
+
+  const upcomingETAs = useMemo(() => {
+    const etaMap: Record<string, number> = {};
+    let accumTime = displayDur;
+    if (nextStop?.id) {
+      etaMap[nextStop.id] = Math.round((accumTime / 60) + delayMinutes);
+      for (let i = currentStopIndex + 1; i < stops.length; i++) {
+        const dist = getPolylineDistanceMeters(stops[i - 1], stops[i], routePath) + 125;
+        // 583 meters per min is ~35 km/h (4-wheeler speed)
+        accumTime += (dist / 583) * 60;
+        etaMap[stops[i].id] = Math.round((accumTime / 60) + delayMinutes);
+      }
+    }
+    return etaMap;
+  }, [displayDur, delayMinutes, nextStop, currentStopIndex, stops, routePath]);
+
+  const snappedHeading = driverLocation ? Math.round(driverLocation.heading / 5) * 5 : 0;
+
   const snappedDriverLocation = useMemo(() => {
     if (!driverLocation) return null;
     const result = snapToPolyline(
@@ -154,10 +174,15 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       routePath,
       {
         headingDegrees: driverLocation.heading,
+        preferredSegmentIndex: lastSegmentIdxRef.current,
       },
     );
+    if (result.snapped && result.segmentIndex >= 0) {
+      lastSegmentIdxRef.current = result.segmentIndex;
+    }
     return { ...result, heading: driverLocation.heading };
   }, [driverLocation, routePath]);
+
 
   const defaultCenter = snappedDriverLocation
     ? snappedDriverLocation.point

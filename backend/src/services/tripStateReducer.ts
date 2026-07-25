@@ -76,7 +76,7 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
   }
 
   if (currentTripState === "in_service") {
-    const completionProgressIndex = Math.max(0, stops.length - 2);
+    const completionProgressIndex = stops.length > 2 ? stops.length - 2 : stops.length - 1;
     const canComplete =
       hasDepartedOrigin &&
       currentStopIndex >= completionProgressIndex &&

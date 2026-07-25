@@ -1,3 +1,6 @@
+import { getDistanceMeters } from "./mapUtils";
+import { snapToPolyline } from "./snapToPolyline";
+
 export interface LatLng {
   lat: number;
   lng: number;
@@ -29,6 +32,7 @@ function decodeCoordinate(encoded: string, startIndex: number): {
   throw new Error("Truncated encoded polyline");
 }
 
+
 export function decodePolyline(encoded: string): LatLng[] {
   if (!encoded) return [];
 
@@ -58,3 +62,45 @@ export function decodePolyline(encoded: string): LatLng[] {
 
   return coordinates;
 }
+
+export function getPolylineDistanceMeters(
+  from: LatLng,
+  to: LatLng,
+  polylinePath: readonly LatLng[]
+): number {
+  if (polylinePath.length < 2) {
+    return getDistanceMeters(from, to);
+  }
+
+  const snapFrom = snapToPolyline(from, polylinePath);
+  const snapTo = snapToPolyline(to, polylinePath);
+
+  if (!snapFrom.snapped || !snapTo.snapped) {
+    return getDistanceMeters(from, to);
+  }
+
+  const startIdx = snapFrom.segmentIndex;
+  const endIdx = snapTo.segmentIndex;
+
+  if (startIdx === endIdx) {
+    return getDistanceMeters(snapFrom.point, snapTo.point);
+  }
+
+  let totalDist = 0;
+  if (startIdx < endIdx) {
+    totalDist += getDistanceMeters(snapFrom.point, polylinePath[startIdx + 1]);
+    for (let i = startIdx + 1; i < endIdx; i++) {
+      totalDist += getDistanceMeters(polylinePath[i], polylinePath[i + 1]);
+    }
+    totalDist += getDistanceMeters(polylinePath[endIdx], snapTo.point);
+  } else {
+    totalDist += getDistanceMeters(snapFrom.point, polylinePath[startIdx]);
+    for (let i = startIdx - 1; i > endIdx; i--) {
+      totalDist += getDistanceMeters(polylinePath[i + 1], polylinePath[i]);
+    }
+    totalDist += getDistanceMeters(polylinePath[endIdx + 1], snapTo.point);
+  }
+
+  return totalDist;
+}
+

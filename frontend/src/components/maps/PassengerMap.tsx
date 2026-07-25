@@ -13,7 +13,7 @@ import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
 
 import { WifiOff, Navigation } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
-import { decodePolyline, type LatLng } from "@/lib/polyline";
+import { decodePolyline, getPolylineDistanceMeters, type LatLng } from "@/lib/polyline";
 import { snapToPolyline } from "@/lib/snapToPolyline";
 
 export interface PassengerMapProps {
@@ -54,15 +54,22 @@ function BusMarker({
   bus: IncomingBusData;
   path: readonly LatLng[];
 }) {
+  const lastSegmentIdxRef = useRef<number | undefined>(undefined);
   const result = useMemo(
-    () =>
-      snapToPolyline(
+    () => {
+      const snap = snapToPolyline(
         { lat: bus.lat, lng: bus.lng },
         path,
         {
           headingDegrees: bus.heading,
+          preferredSegmentIndex: lastSegmentIdxRef.current,
         },
-      ),
+      );
+      if (snap.snapped && snap.segmentIndex >= 0) {
+        lastSegmentIdxRef.current = snap.segmentIndex;
+      }
+      return snap;
+    },
     [bus.lat, bus.lng, bus.heading, path],
   );
 
@@ -85,7 +92,7 @@ function BusMarker({
         <div
           style={{
             transform: `rotate(${snappedHeading}deg)`,
-            transition: "transform 200ms ease-out",
+            transition: "transform 300ms ease-out",
           }}
         >
           <Navigation size={30} fill={color} color="white" strokeWidth={1} />
@@ -106,6 +113,7 @@ function BusMarker({
     </AdvancedMarker>
   );
 }
+
 
 
 // ── Traffic layer rendered imperatively ──────────────────────────────────────
@@ -341,10 +349,9 @@ function PassengerMapInner({
 
         for (let i = 0; i < remainingStops.length; i++) {
           const stop = remainingStops[i];
-          const distToStop = getDistanceMeters(lastPt, { lat: stop.lat, lng: stop.lng });
+          const distToStop = getPolylineDistanceMeters(lastPt, { lat: stop.lat, lng: stop.lng }, routePath);
           
-          // 1.3 topology multiplier + adding 45s dwell time per stop for realistic transit ETAs
-          accumDistMeters += (distToStop * 1.3);
+          accumDistMeters += distToStop;
           let totalSeconds = accumDistMeters / speedMs;
           if (i > 0) totalSeconds += (i * 45); 
 
@@ -365,7 +372,7 @@ function PassengerMapInner({
     fetchETAs();
     const interval = setInterval(fetchETAs, 60000);
     return () => clearInterval(interval);
-  }, [buses, route.stops, updateUI]);
+  }, [buses, route.stops, routePath, updateUI]);
 
   // ── ETA Smooth Interpolation ───────────────────────────────────────────────
   useEffect(() => {
