@@ -44,6 +44,38 @@ service cloud.firestore {
         session.data.passengers[request.auth.uid].userId == request.auth.uid;
     }
 
+    function messageRateDoc(sessionId, uid) {
+      return /databases/$(database)/documents/ride_sessions/$(sessionId)/messageRateLimits/$(uid);
+    }
+
+    function messageRateAdvanced(sessionId) {
+      let before = get(messageRateDoc(sessionId, request.auth.uid));
+      let after = getAfter(messageRateDoc(sessionId, request.auth.uid));
+      return after.data.keys().hasOnly(['userId', 'windowStartedAt', 'lastSentAt', 'count']) &&
+        after.data.userId == request.auth.uid &&
+        after.data.lastSentAt == request.time &&
+        after.data.count is int &&
+        after.data.count >= 1 &&
+        after.data.count <= 60 &&
+        (
+          !exists(messageRateDoc(sessionId, request.auth.uid)) &&
+          after.data.windowStartedAt == request.time &&
+          after.data.count == 1
+        ||
+          exists(messageRateDoc(sessionId, request.auth.uid)) &&
+          request.time - before.data.lastSentAt >= duration.value(3, 's') &&
+          (
+            request.time - before.data.windowStartedAt >= duration.value(1, 'h') &&
+            after.data.windowStartedAt == request.time &&
+            after.data.count == 1
+          ||
+            request.time - before.data.windowStartedAt < duration.value(1, 'h') &&
+            after.data.windowStartedAt == before.data.windowStartedAt &&
+            after.data.count == before.data.count + 1
+          )
+        );
+    }
+
     // ── User Profiles — Store User Data & Roles ──
     match /users/{uid} {
       // Users can read their own profile
@@ -66,7 +98,8 @@ service cloud.firestore {
     // ── Routes collection — PUBLIC read, write by admins only ──
     match /routes/{routeId} {
       allow read: if isAuthenticated();
-      allow create, update, delete: if isAdmin();
+      // Route geometry and stop validation are enforced by the admin API.
+      allow create, update, delete: if false;
     }
 
     // ── Bus locations — PUBLIC read, write by drivers/admins ──
@@ -94,8 +127,15 @@ service cloud.firestore {
         request.resource.data.lng is number && request.resource.data.lng >= -180 && request.resource.data.lng <= 180 &&
         request.resource.data.status == 'pending' &&
         request.resource.data.createdAt == request.time;
-      // Only admins and drivers can update/delete requests
-      allow update, delete: if isAdmin() ||
+      // Drivers may only transition status; immutable passenger/location fields
+      // cannot be replaced through a broad document update.
+      allow update: if isAdmin() ||
+        (isAuthenticated() && request.auth.token.role == 'driver' &&
+         resource.data.busId == request.auth.token.assignedBusId &&
+         request.resource.data.busId == resource.data.busId &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+         request.resource.data.status in ['pending', 'accepted', 'completed', 'cancelled']);
+      allow delete: if isAdmin() ||
         (isAuthenticated() && request.auth.token.role == 'driver' &&
          resource.data.busId == request.auth.token.assignedBusId);
     }
@@ -103,7 +143,8 @@ service cloud.firestore {
     // ── Buses collection ──
     match /buses/{busId} {
       allow read: if isAuthenticated();
-      allow create, update, delete: if isAdmin();
+      // Fleet writes also update Auth claims and RTDB authorization mirrors.
+      allow create, update, delete: if false;
     }
     
     // ── Ride Sessions ──
@@ -111,34 +152,9 @@ service cloud.firestore {
       // Passenger manifests contain personal travel information. Only trusted
       // operator roles may read them; passengers can update their own entry.
       allow read: if isSessionOperator(sessionId);
-      allow create: if isAuthenticated() &&
-        request.auth.token.role == 'driver' &&
-        request.resource.data.keys().hasOnly([
-          'id', 'busId', 'driverId', 'routeId', 'startTime', 'status', 'passengers'
-        ]) &&
-        request.resource.data.id == sessionId &&
-        request.resource.data.driverId == request.auth.token.driverId &&
-        request.resource.data.busId == request.auth.token.assignedBusId &&
-        request.resource.data.routeId is string &&
-        request.resource.data.routeId.size() <= 128 &&
-        request.resource.data.startTime is number &&
-        request.resource.data.status == 'active' &&
-        request.resource.data.passengers is map &&
-        request.resource.data.passengers.size() == 0;
-      allow update: if isAdmin() ||
-        (
-          isSessionOperator(sessionId) &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status', 'endTime', 'stopsReached']) &&
-          request.resource.data.busId == resource.data.busId &&
-          request.resource.data.driverId == resource.data.driverId &&
-          request.resource.data.routeId == resource.data.routeId &&
-          request.resource.data.status in ['active', 'completed'] &&
-          (!('endTime' in request.resource.data) || request.resource.data.endTime is number) &&
-          (!('stopsReached' in request.resource.data) ||
-            (request.resource.data.stopsReached is list &&
-             request.resource.data.stopsReached.size() <= 1000))
-        ) ||
+      // Session lifecycle and stop history are backend-authoritative.
+      allow create: if false;
+      allow update: if
         (
           isAuthenticated() &&
           resource.data.status == 'active' &&
@@ -169,8 +185,38 @@ service cloud.firestore {
             (isSessionOperator(sessionId) && request.resource.data.from == 'driver') ||
             (isSessionPassenger(sessionId) && request.resource.data.from == 'passenger')
           ) &&
-          request.resource.data.timestamp == request.time;
+          request.resource.data.timestamp == request.time &&
+          messageRateAdvanced(sessionId);
         allow update, delete: if false;
+      }
+
+      match /messageRateLimits/{uid} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid) &&
+          request.resource.data.keys().hasOnly(['userId', 'windowStartedAt', 'lastSentAt', 'count']) &&
+          request.resource.data.userId == uid &&
+          request.resource.data.windowStartedAt == request.time &&
+          request.resource.data.lastSentAt == request.time &&
+          request.resource.data.count == 1;
+        allow update: if isOwner(uid) &&
+          resource.data.userId == uid &&
+          request.resource.data.userId == uid &&
+          request.resource.data.keys().hasOnly(['userId', 'windowStartedAt', 'lastSentAt', 'count']) &&
+          request.resource.data.lastSentAt == request.time &&
+          request.time - resource.data.lastSentAt >= duration.value(3, 's') &&
+          request.resource.data.count is int &&
+          request.resource.data.count >= 1 &&
+          request.resource.data.count <= 60 &&
+          (
+            request.time - resource.data.windowStartedAt >= duration.value(1, 'h') &&
+            request.resource.data.windowStartedAt == request.time &&
+            request.resource.data.count == 1
+          ||
+            request.time - resource.data.windowStartedAt < duration.value(1, 'h') &&
+            request.resource.data.windowStartedAt == resource.data.windowStartedAt &&
+            request.resource.data.count == resource.data.count + 1
+          );
+        allow delete: if false;
       }
     }
     
@@ -180,7 +226,7 @@ service cloud.firestore {
         (isAuthenticated() &&
          request.auth.token.role == 'driver' &&
          resource.data.authUid == request.auth.uid);
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if false;
     }
 
     // ── Completed trips collection ──
@@ -205,10 +251,12 @@ service cloud.firestore {
           'status'
         ]) &&
         request.resource.data.userId == request.auth.uid &&
-        request.resource.data.userName is string &&
+        request.resource.data.userName is string && request.resource.data.userName.size() <= 100 &&
         request.resource.data.type in ['ride', 'general'] &&
-        (request.resource.data.busId == null || request.resource.data.busId is string) &&
-        (request.resource.data.driverId == null || request.resource.data.driverId is string) &&
+        (request.resource.data.busId == null ||
+          (request.resource.data.busId is string && request.resource.data.busId.size() <= 128)) &&
+        (request.resource.data.driverId == null ||
+          (request.resource.data.driverId is string && request.resource.data.driverId.size() <= 128)) &&
         (request.resource.data.rating == null ||
           (request.resource.data.rating is number &&
             request.resource.data.rating >= 1 &&
@@ -242,8 +290,8 @@ service cloud.firestore {
 
     // ── Devices collection — server-side Admin SDK access only ──
     // Device secrets MUST never be readable by any client.
-    // The backend POST /api/devices/auth uses Admin SDK which bypasses these rules,
-    // but making the deny explicit prevents accidental misconfiguration.
+    // The MQTT ingestor uses Admin SDK, which bypasses these rules. Devices
+    // never receive Firebase credentials.
     match /devices/{deviceId} {
       allow read, write: if false;
     }

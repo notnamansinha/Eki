@@ -1,59 +1,26 @@
 {
   "rules": {
+    ".read": false,
+    ".write": false,
     "activeBuses": {
       ".read": "auth != null",
-      ".indexOn": ["routeId"],
+      ".write": false,
+      ".indexOn": ["routeId", "busId"],
       "$busKey": {
-        ".write": "auth != null && (auth.token.role === 'admin' || (auth.token.role === 'driver' && auth.token.assignedBusId != null && auth.token.driverId != null && newData.child('busId').val() === auth.token.assignedBusId && newData.child('driverId').val() === auth.token.driverId && $busKey === auth.token.assignedBusId + '_' + newData.child('routeId').val() && root.child('driverRouteAssignments').child(auth.token.driverId).child(auth.token.assignedBusId).child(newData.child('routeId').val()).val() === true) || (auth.token.role === 'device' && auth.token.deviceId != null && auth.token.routeId != null && newData.child('meta').child('busId').val() === auth.token.deviceId && newData.child('meta').child('routeId').val() === auth.token.routeId && $busKey === auth.token.deviceId + '_' + auth.token.routeId))",
-        "lat": { ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90" },
-        "lng": { ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180" },
-        "speed": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 200" },
-        "heading": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 360" },
-        "timestamp": { ".validate": "newData.isNumber() && newData.val() <= now + 10000" },
-        "motionState": { ".validate": "newData.val() === 'moving' || newData.val() === 'stopped' || newData.val() === 'uncertain'" },
-        "deviceState": { ".validate": "newData.val() === 'online' || newData.val() === 'offline'" },
-        "tripState": { ".validate": "newData.val() === 'pre_departure' || newData.val() === 'in_service' || newData.val() === 'completed' || newData.val() === 'maintenance' || newData.val() === 'ended'" },
-        "currentStopIndex": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000" },
-        "delayMinutes": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1440" },
-        "lowAccuracy": { ".validate": "newData.isBoolean()" },
-        "satellites": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
-        "hdop": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
-        "hasDepartedOrigin": { ".validate": "newData.isBoolean()" },
-        "status": { ".validate": "newData.val() === 'active' || newData.val() === 'offline'" },
-        "busId": { ".validate": "newData.isString() && newData.val().length <= 128" },
-        "driverId": { ".validate": "newData.isString() && newData.val().length <= 128" },
-        "routeId": { ".validate": "newData.isString() && newData.val().length <= 128" },
-        "sessionId": { ".validate": "newData.isString() && newData.val().length <= 128" },
-        "meta": {
-          ".validate": "newData.hasChildren(['busId', 'routeId', 'driverId', 'source'])",
-          "busId": { ".validate": "newData.isString() && newData.val().length <= 128" },
-          "routeId": { ".validate": "newData.isString() && newData.val().length <= 128" },
-          "driverId": { ".validate": "newData.isString() && newData.val().length <= 128" },
-          "source": { ".validate": "newData.val() === 'gnss_hw'" }
-        }
+        ".write": false
       }
     },
+    "driverRouteAssignments": {
+      ".read": false,
+      ".write": false
+    },
     "messages": {
-      "sessions": {
-        "$sessionId": {
-          ".read": "false",
-          "$msgId": {
-            ".write": "false",
-            ".validate": "newData.hasChildren(['text', 'from', 'senderName', 'senderId', 'timestamp']) && newData.child('senderId').val() === auth.uid && newData.child('text').isString() && newData.child('text').val().length <= 500 && newData.child('from').isString() && ((auth.token.role === 'driver' && newData.child('from').val() === 'driver') || (auth.token.role === 'admin' && newData.child('from').val() === 'driver') || ((auth.token.role === 'passenger' || auth.token.role === null) && newData.child('from').val() === 'passenger')) && newData.child('senderName').isString() && newData.child('senderName').val().length <= 100 && newData.child('timestamp').isNumber()"
-          }
-        }
-      },
-      "$busId": {
-        ".read": "false",
-        "$msgId": {
-          ".write": "false",
-          ".validate": "newData.hasChildren(['text', 'from', 'senderName', 'senderId', 'timestamp']) && newData.child('senderId').val() === auth.uid && newData.child('text').isString() && newData.child('text').val().length <= 500 && newData.child('from').isString() && ((auth.token.role === 'driver' && newData.child('from').val() === 'driver') || (auth.token.role === 'admin' && newData.child('from').val() === 'driver') || ((auth.token.role === 'passenger' || auth.token.role === null) && newData.child('from').val() === 'passenger')) && newData.child('senderName').isString() && newData.child('senderName').val().length <= 100 && newData.child('timestamp').isNumber()"
-        }
-      }
+      ".read": false,
+      ".write": false
     },
     "users": {
       "$uid": {
-        ".read": "auth != null && auth.uid == $uid",
+        ".read": "auth != null && auth.uid === $uid",
         ".write": false
       }
     }
