@@ -1,6 +1,7 @@
 "use client";
 
 import { AuthProvider } from "@/hooks/useAuth";
+import "@/lib/firebaseAppCheck";
 
 /**
  * Root providers — intentionally lean.

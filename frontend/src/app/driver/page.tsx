@@ -11,9 +11,9 @@ import { useRoutes } from "@/hooks/useRoutes";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useBuses } from "@/hooks/useBuses";
 import { Map, CircleUserRound as User, MessageCircle, ArrowLeft } from "lucide-react";
-import { db, rtdb, auth } from "@/lib/firebase";
-import { collection, doc, setDoc, updateDoc, arrayUnion, serverTimestamp as firestoreServerTimestamp } from "firebase/firestore";
-import { ref, update, onValue } from "firebase/database";
+import { rtdb, auth } from "@/lib/firebase";
+import { ref, onValue } from "firebase/database";
+import { useRTDBResume } from "@/hooks/useRTDBResume";
 
 const DriverMap = dynamic(() => import("@/components/maps/DriverMap"), {
   ssr: false,
@@ -23,6 +23,7 @@ const DriverMap = dynamic(() => import("@/components/maps/DriverMap"), {
 type Tab = "map" | "profile";
 
 export default function DriverPage() {
+  const { resumeGeneration } = useRTDBResume();
   const router = useRouter();
   const { user } = useAuth();
   const { routes } = useRoutes();
@@ -41,57 +42,17 @@ export default function DriverPage() {
   const [activeTab, setActiveTab] = useState<Tab>("map");
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [currentStopIndex, setCurrentStopIndex] = useState(0);
+  const [lifecycleError, setLifecycleError] = useState("");
+  const [isLifecyclePending, setIsLifecyclePending] = useState(false);
 
   const busIdRef = useRef("");
   const routeIdsRef = useRef<string[]>([]);
-  const currentStopIndexRef = useRef<number>(0);
-  const delayMinutesRef = useRef<number>(0);
-  const driverLocationRef = useRef<{ lat: number; lng: number } | null>(null);
-
-
-  const handleStopIndexChange = useCallback((index: number, routeIdHint?: string) => {
-    currentStopIndexRef.current = index;
-    
-    // Log the stop reached to Firestore
-    const currentSessionId = activeSessionIds[selectedRouteIds[0]];
-    if (currentSessionId && activeRoute?.stops?.[index]) {
-      updateDoc(doc(db, "ride_sessions", currentSessionId), {
-        stopsReached: arrayUnion({
-          stopIndex: index,
-          stopId: activeRoute.stops[index].id,
-          stopName: activeRoute.stops[index].name,
-          timestamp: firestoreServerTimestamp()
-        })
-      }).catch(console.error);
-    }
-
-    // Sync stop changes to Passenger Panels instantly via RTDB
-    // Use the most specific route IDs available (hint from DriverMap > routeIdsRef > activeRoute)
-    const routesToUpdate = routeIdsRef.current.length > 0
-      ? routeIdsRef.current
-      : routeIdHint
-        ? [routeIdHint]
-        : activeRoute
-          ? [activeRoute.id]
-          : [];
-
-    routesToUpdate.forEach(routeId => {
-      const activeBusId = busIdRef.current || "test_bus_1";
-
-      const busRef = ref(rtdb, `activeBuses/${activeBusId}_${routeId}`);
-      update(busRef, {
-        currentStopIndex: index,
-        timestamp: Date.now(),
-        tripState: "in_service",
-      }).catch(console.error);
-    });
-  }, [activeSessionIds, selectedRouteIds, activeRoute]);
 
   useEffect(() => { busIdRef.current = busId; }, [busId]);
   useEffect(() => { routeIdsRef.current = selectedRouteIds; }, [selectedRouteIds]);
-  useEffect(() => { driverLocationRef.current = driverLocation; }, [driverLocation]);
 
-  const handleStartTracking = useCallback(() => {
+  const handleStartTracking = useCallback(async () => {
     const activeBus = buses.find((bus) => bus.id === busId);
     const assignedRouteIds = activeBus?.assignedRoutes ??
       (activeBus?.assignedRouteId ? [activeBus.assignedRouteId] : []);
@@ -104,73 +65,66 @@ export default function DriverPage() {
       return;
     }
 
-    setIsTracking(true);
-
-    const currentBusId = busId;
-    const currentRouteIds = selectedRouteIds;
-    
-    // Generate session IDs for each route being tracked
-    const newSessionIds: Record<string, string> = {};
-    currentRouteIds.forEach(routeId => {
-      newSessionIds[routeId] = doc(collection(db, "ride_sessions")).id;
-    });
-    setActiveSessionIds(newSessionIds);
-    
-    const basePayload = {
-      busId: currentBusId,
-      driverId: driverId || auth.currentUser?.uid || "driver",
-      status: "active",
-      deviceState: "online",
-      tripState: "in_service",
-      hasDepartedOrigin: false,
-      timestamp: Date.now(),
-      currentStopIndex: currentStopIndexRef.current,
-      delayMinutes: delayMinutesRef.current,
-    };
-
-    const doWrite = () => {
-      currentRouteIds.forEach(routeId => {
-        const sessionId = newSessionIds[routeId];
-        const payload = { ...basePayload, routeId, sessionId };
-        
-        // 1. RTDB Update
-        const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
-        update(busRef, payload)
-          .catch(err => console.error("[Driver] RTDB write failed:", err.code, err.message));
-        
-        // 2. Firestore Session Record
-        setDoc(doc(db, "ride_sessions", sessionId), {
-          id: sessionId,
-          busId: currentBusId,
-          driverId: driverId || auth.currentUser?.uid || "driver",
-          routeId: routeId,
-          startTime: Date.now(),
-          status: "active",
-          passengers: {}
-        }).catch(err => console.error("[Driver] Firestore write failed:", err));
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+    if (!backendUrl) {
+      setLifecycleError("Shift service is not configured.");
+      return;
+    }
+    setLifecycleError("");
+    setIsLifecyclePending(true);
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const routeId = selectedRouteIds[0];
+      const response = await fetch(`${backendUrl}/api/shifts/start`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ busId, routeId }),
       });
-    };
-
-    doWrite();
+      const result = await response.json() as { sessionId?: string; error?: string };
+      if (!response.ok || !result.sessionId) {
+        throw new Error(result.error || "Unable to start shift.");
+      }
+      setCurrentStopIndex(0);
+      setActiveSessionIds({ [routeId]: result.sessionId });
+      setIsTracking(true);
+    } catch (error) {
+      setLifecycleError(error instanceof Error ? error.message : "Unable to start shift.");
+    } finally {
+      setIsLifecyclePending(false);
+    }
   }, [busId, buses, selectedRouteIds, driverId, drivers]);
 
-  // Pure GNSS listener (read-only mode for driver location)
+  // Backend-authoritative live shift listener. It also restores an active
+  // session after refresh/background eviction.
   useEffect(() => {
-    if (!busId || !isTracking) return;
+    if (!busId || selectedRouteIds.length !== 1) return;
 
     if (!auth.currentUser) return;
 
     const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
     const unsubscribe = onValue(busRef, (snapshot) => {
         const data = snapshot.val();
-        if (data && data.lat && data.lng) {
+        if (data && Number.isFinite(data.lat) && Number.isFinite(data.lng)) {
           setDriverLocation({
             lat: data.lat,
             lng: data.lng,
             heading: data.heading || 0,
             speed: data.speed || 0,
           });
-
+        }
+        if (
+          data?.driverId === driverId &&
+          data?.status === "active" &&
+          typeof data?.sessionId === "string"
+        ) {
+          setActiveSessionIds({ [selectedRouteIds[0]]: data.sessionId });
+          setCurrentStopIndex(Number.isInteger(data.currentStopIndex) ? data.currentStopIndex : 0);
+          setIsTracking(true);
+        } else {
+          setIsTracking(false);
         }
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed in GNSS listener:", error.message);
@@ -179,38 +133,39 @@ export default function DriverPage() {
     return () => {
       unsubscribe();
     };
-  }, [busId, selectedRouteIds, isTracking]);
+  }, [busId, driverId, selectedRouteIds, resumeGeneration]);
 
-  const handleStopTracking = useCallback(() => {
+  const handleStopTracking = useCallback(async () => {
     const currentBusId = busIdRef.current;
     const currentRouteIds = routeIdsRef.current;
-    setIsTracking(false);
-    setDriverLocation(null);
+    const routeId = currentRouteIds[0];
+    const sessionId = activeSessionIds[routeId];
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+    if (!backendUrl || !routeId || !sessionId || !auth.currentUser) return;
 
-    currentRouteIds.forEach(routeId => {
-      // End RTDB tracking
-      const busRef = ref(rtdb, `activeBuses/${currentBusId}_${routeId}`);
-      update(busRef, { 
-        status: "offline", 
-        deviceState: "offline", 
-        tripState: "ended",
-      }).catch(console.error);
-
-      // End Firestore session
-      const sessionId = activeSessionIds[routeId];
-      if (sessionId) {
-        updateDoc(doc(db, "ride_sessions", sessionId), {
-          endTime: Date.now(),
-          status: "completed"
-        }).catch(console.error);
-      }
-    });
-
-    setActiveSessionIds({});
-
-    // Optional: Only clear legacy messages if using busId path, but we are using sessionId now.
-    // const messagesRef = ref(rtdb, `messages/${currentBusId}`);
-    // remove(messagesRef).catch(console.error);
+    setLifecycleError("");
+    setIsLifecyclePending(true);
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const response = await fetch(`${backendUrl}/api/shifts/stop`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ busId: currentBusId, routeId, sessionId }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Unable to stop shift.");
+      setIsTracking(false);
+      setDriverLocation(null);
+      setCurrentStopIndex(0);
+      setActiveSessionIds({});
+    } catch (error) {
+      setLifecycleError(error instanceof Error ? error.message : "Unable to stop shift.");
+    } finally {
+      setIsLifecyclePending(false);
+    }
   }, [activeSessionIds]);
 
   const handleRouteUpdate = useCallback((routeIds: string[]) => {
@@ -229,16 +184,23 @@ export default function DriverPage() {
         <div className={`absolute inset-0 z-0 flex flex-col ${activeTab === "map" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
           <div className="flex-1 relative z-0 min-h-0">
             {activeRoute && (
-              <DriverMap
-                key={`${activeRoute.id}-${isTracking ? "tracking" : "preview"}`}
-                route={activeRoute}
-                driverLocation={driverLocation}
-                busId={busId}
-                onEndShift={handleStopTracking}
-                isTracking={isTracking}
-                selectedRouteIds={selectedRouteIds}
-                onStopIndexChange={handleStopIndexChange}
-              />
+              <>
+                <DriverMap
+                  key={`${activeRoute.id}-${isTracking ? "tracking" : "preview"}`}
+                  route={activeRoute}
+                  driverLocation={driverLocation}
+                  busId={busId}
+                  onEndShift={handleStopTracking}
+                  isTracking={isTracking}
+                  selectedRouteIds={selectedRouteIds}
+                  currentStopIndex={currentStopIndex}
+                />
+                {(lifecycleError || isLifecyclePending) && (
+                  <p className="absolute bottom-3 left-4 right-4 z-50 px-3 py-2 rounded-lg text-xs" role="status" style={{ background: "var(--surface-2)", color: lifecycleError ? "var(--status-danger)" : "var(--text-secondary)" }}>
+                    {lifecycleError || "Updating shift…"}
+                  </p>
+                )}
+              </>
             )}
           </div>
 
@@ -273,7 +235,7 @@ export default function DriverPage() {
           <div className="absolute top-4 left-4 z-50">
             <button
               onClick={() => router.back()}
-              className="w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-95"
+              className="w-11 h-11 rounded-xl flex items-center justify-center transition-all active:scale-95"
               style={{ 
                 background: "var(--surface-2)", 
                 border: "1px solid var(--border-default)",
@@ -291,7 +253,7 @@ export default function DriverPage() {
           <div className="absolute top-4 right-4 z-50">
             <button
               onClick={handleOpenMessaging}
-              className="w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-95 relative"
+              className="w-11 h-11 rounded-xl flex items-center justify-center transition-all active:scale-95 relative"
               style={{ 
                 background: "var(--surface-2)", 
                 border: "1px solid var(--border-default)",

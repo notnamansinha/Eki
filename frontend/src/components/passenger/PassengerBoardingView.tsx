@@ -12,7 +12,7 @@ interface Props {
   route: RouteData;
   userId: string;
   userName: string;
-  onBoarded: () => void;
+  onBoardingStopChange?: (stopId: string) => void;
 }
 
 const formatStopName = (name: string) => {
@@ -21,7 +21,7 @@ const formatStopName = (name: string) => {
   return name;
 };
 
-export default function PassengerBoardingView({ sessionId, route, userId, userName }: Props) {
+export default function PassengerBoardingView({ sessionId, route, userId, userName, onBoardingStopChange }: Props) {
   const [boardingStopId, setBoardingStopId] = useState<string>("");
   const [alightingStopId, setAlightingStopId] = useState<string>("");
 
@@ -73,9 +73,13 @@ export default function PassengerBoardingView({ sessionId, route, userId, userNa
     <div className="flex flex-col w-full animate-fade-in pointer-events-auto gap-2">
       <div className="relative w-full">
         <select
+          aria-label="Boarding stop"
           value={boardingStopId}
-          onChange={(e) => setBoardingStopId(e.target.value)}
-          className="w-full h-10 rounded-xl pl-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none transition-all truncate shadow-sm m-0"
+          onChange={(e) => {
+            setBoardingStopId(e.target.value);
+            onBoardingStopChange?.(e.target.value);
+          }}
+          className="w-full h-11 rounded-xl pl-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none transition-all truncate shadow-sm m-0"
           style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
         >
           <option value="">Boarding...</option>
@@ -87,9 +91,10 @@ export default function PassengerBoardingView({ sessionId, route, userId, userNa
       </div>
       <div className="relative w-full">
         <select
+          aria-label="Destination stop"
           value={alightingStopId}
           onChange={(e) => setAlightingStopId(e.target.value)}
-          className="w-full h-10 rounded-xl pl-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none transition-all truncate shadow-sm m-0"
+          className="w-full h-11 rounded-xl pl-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none transition-all truncate shadow-sm m-0"
           style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
         >
           <option value="">Destination (Optional)...</option>

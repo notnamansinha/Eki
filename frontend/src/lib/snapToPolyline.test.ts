@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { decodePolyline } from "./polyline";
 import { snapToPolyline } from "./snapToPolyline";
+import { distanceAlongPolyline } from "./polylineDistance";
 
 describe("decodePolyline", () => {
   it("decodes the documented Google polyline example", () => {
@@ -84,5 +85,40 @@ describe("snapToPolyline", () => {
     );
 
     expect(result.segmentIndex).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("distanceAlongPolyline", () => {
+  const path = [
+    { lat: 23, lng: 72 },
+    { lat: 23, lng: 72.001 },
+    { lat: 23.001, lng: 72.001 },
+  ];
+
+  it("measures the saved road shape rather than a straight-line multiplier", () => {
+    const distance = distanceAlongPolyline(path[0], path[2], path);
+
+    expect(distance).toBeGreaterThan(205);
+    expect(distance).toBeLessThan(220);
+  });
+
+  it("accounts for partial first and last segments", () => {
+    const distance = distanceAlongPolyline(
+      { lat: 23, lng: 72.0005 },
+      { lat: 23.0005, lng: 72.001 },
+      path,
+    );
+
+    expect(distance).toBeGreaterThan(100);
+    expect(distance).toBeLessThan(112);
+  });
+
+  it("falls back to direct distance when geometry cannot be snapped", () => {
+    const from = { lat: 24, lng: 73 };
+    const to = { lat: 24.001, lng: 73 };
+    const distance = distanceAlongPolyline(from, to, path);
+
+    expect(distance).toBeGreaterThan(110);
+    expect(distance).toBeLessThan(112);
   });
 });

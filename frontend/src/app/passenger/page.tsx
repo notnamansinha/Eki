@@ -5,9 +5,7 @@ import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff } from "lucide-react";
-import { rtdb } from "@/lib/firebaseDatabase";
-import { ref, onValue } from "firebase/database";
-import { waitForAuth } from "@/lib/authState";
+import { subscribeLiveBuses } from "@/lib/liveBusStore";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import { useSettings } from "@/hooks/useSettings";
 import { hasValidBusCoordinates, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
@@ -34,7 +32,7 @@ interface ActiveBusData {
   speed: number;
   status?: string; // "active" | "offline"
   deviceState: string;
-  tripState: string;
+  tripState: "pre_departure" | "in_service" | "completed" | "maintenance" | "ended";
   motionState: string;
   timestamp: number;
   driverId?: string;
@@ -55,6 +53,7 @@ export default function PassengerPage() {
   const [currentView, setCurrentView] = useState<ViewState>("home");
   const { routes } = useRoutes();
   const [selectedRouteId, setSelectedRouteId] = useState("");
+  const [selectedBoardingStopId, setSelectedBoardingStopId] = useState("");
   const [activeBuses, setActiveBuses] = useState<ActiveBusData[]>([]);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -64,6 +63,7 @@ export default function PassengerPage() {
   const trackingBusIdRef = useRef<string | null>(null);
   const trackingDriverIdRef = useRef<string | null>(null);
   const latestBusDriversRef = useRef<Map<string, string>>(new Map());
+  const latestTripStatesRef = useRef<Map<string, ActiveBusData["tripState"]>>(new Map());
   const [endedMessage, setEndedMessage] = useState(false);
 
   // Listen to Firebase Realtime Database for active buses using the existing
@@ -71,21 +71,15 @@ export default function PassengerPage() {
   // Visibility is now driven purely by tripState (computed by the backend trip
   // state machine). The old frontend departure-detection hack is gone.
   useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-    let isMounted = true;
-
-    waitForAuth().then(() => {
-      if (!isMounted) return;
-      const busesRef = ref(rtdb, "activeBuses");
-
-      unsubscribe = onValue(busesRef, (snapshot) => {
-        const data = snapshot.val();
+    const unsubscribe = subscribeLiveBuses((snapshot) => {
+        const data = snapshot as Record<string, ActiveBusData> | null;
         const newBuses: ActiveBusData[] = [];
         const driverMap = new Map<string, string>();
 
         if (data) {
           Object.entries(data as Record<string, ActiveBusData>).forEach(([key, bus]) => {
             bus.busId = bus.busId || key.split("_")[0];
+            latestTripStatesRef.current.set(bus.busId, bus.tripState);
             // Safety net: discard stale entries while RTDB cleanup catches up.
             const isFresh = isLiveBusTimestamp(bus.timestamp);
             if (!bus.routeId || !bus.busId || !isFresh || !hasValidBusCoordinates(bus.lat, bus.lng)) {
@@ -110,11 +104,9 @@ export default function PassengerPage() {
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed:", error.message);
       });
-    });
 
     return () => {
-      isMounted = false;
-      if (unsubscribe) unsubscribe();
+      unsubscribe();
     };
   }, [connectionGeneration, markSnapshotReceived, resumeGeneration]);
 
@@ -125,7 +117,10 @@ export default function PassengerPage() {
     ? selectedRouteId
     : displayRoutes[0]?.id ?? "";
   const activeRoute = displayRoutes.find(route => route.id === effectiveRouteId);
-  const effectiveStopId = activeRoute?.stops?.[0]?.id ?? "";
+  const effectiveStopId =
+    activeRoute?.stops?.some((stop) => stop.id === selectedBoardingStopId)
+      ? selectedBoardingStopId
+      : activeRoute?.stops?.[0]?.id ?? "";
 
   const targetStop = activeRoute?.stops?.find(s => s.id === effectiveStopId) ||
     (activeRoute?.stops && activeRoute.stops.length > 0
@@ -161,6 +156,10 @@ export default function PassengerPage() {
     } else if (trackingBusIdRef.current) {
       const finishedBusId = trackingBusIdRef.current;
       const finishedDriverId = trackingDriverIdRef.current;
+      const lastTripState = latestTripStatesRef.current.get(finishedBusId);
+      if (lastTripState !== "completed" && lastTripState !== "ended") {
+        return;
+      }
       noticeTimer = setTimeout(() => setEndedMessage(true), 0);
       feedbackTimer = setTimeout(() => {
         setFeedbackBusId(finishedBusId);
@@ -295,7 +294,7 @@ export default function PassengerPage() {
                 <div className="flex items-center gap-4 max-w-lg mx-auto pt-12">
                   <button
                     onClick={() => setCurrentView("home")}
-                    className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 hover:opacity-90 shadow-sm cursor-pointer"
+                    className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 hover:opacity-90 shadow-sm cursor-pointer"
                     style={{ backgroundColor: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}
                     aria-label="Back to home"
                     onPointerDown={(e) => (e.currentTarget.style.backgroundColor = "var(--surface-4)")}
@@ -311,7 +310,7 @@ export default function PassengerPage() {
                         route={activeRoute}
                         userId={user?.uid || "anonymous"}
                         userName={user?.displayName || "Rider"}
-                        onBoarded={() => {}}
+                        onBoardingStopChange={setSelectedBoardingStopId}
                       />
                     </div>
                   ) : (

@@ -1,17 +1,21 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
-import { LocateFixed as GPS, ArrowLeft, ChevronRight, Navigation } from "lucide-react";
+import { LocateFixed as GPS, ArrowLeft, Navigation } from "lucide-react";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteData } from "@/hooks/useRoutes";
-import { getDistanceMeters } from "@/lib/mapUtils";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
-import { rtdb } from "@/lib/firebase";
-import { ref, update } from "firebase/database";
+import { auth } from "@/lib/firebase";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 import { decodePolyline } from "@/lib/polyline";
 import { snapToPolyline } from "@/lib/snapToPolyline";
+import { distanceAlongPolyline } from "@/lib/polylineDistance";
+import { useSmoothPosition } from "@/hooks/useSmoothPosition";
+import {
+  ETA_SPEED_FLOOR_KMH,
+  ETA_SPEED_FLOOR_METERS_PER_MINUTE,
+} from "@/lib/etaConstants";
 
 export interface DriverMapProps {
   route: RouteData;
@@ -20,7 +24,7 @@ export interface DriverMapProps {
   onEndShift?: () => void;
   isTracking?: boolean;
   selectedRouteIds?: string[];
-  onStopIndexChange?: (index: number, routeIdHint?: string) => void;
+  currentStopIndex: number;
 }
 
 const SELECTED_ROUTE_COLOR = "#4285F4";
@@ -38,98 +42,14 @@ function MapCenterer({ target, isCentered, navPhase }: { target: { lat: number; 
   return null;
 }
 
-function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, selectedRouteIds, onStopIndexChange }: DriverMapProps) {
+function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, selectedRouteIds, currentStopIndex }: DriverMapProps) {
   const stops = useMemo(() => route.stops || [], [route.stops]);
-  const [currentStopIndex, setCurrentStopIndex] = useState(0);
   const nextStop = stops[currentStopIndex] ?? stops[stops.length - 1];
   const [showEndShiftConfirm, setShowEndShiftConfirm] = useState(false);
   // Timestamp of last manual skip — geofence is suppressed for 3s after a manual advance
   // to prevent the auto-advance from cascading when driverLocation gets a synthetic position.
-  const lastManualSkipRef = useRef<number>(0);
 
   const [delayMinutes, setDelayMinutes] = useState(0);
-
-  const pushDelay = useCallback((addMin: number) => {
-    const next = Math.max(0, delayMinutes + addMin);
-    setDelayMinutes(next);
-    const now = Date.now();
-    const routesToUpdate = selectedRouteIds?.length ? selectedRouteIds : [route.id];
-    routesToUpdate.forEach(routeId => {
-      const activeBusId = busId || "test_bus_1";
-      const busRef = ref(rtdb, `activeBuses/${activeBusId}_${routeId}`);
-      update(busRef, {
-        delayMinutes: next,
-        timestamp: now,
-      }).catch(console.error);
-    });
-  }, [busId, delayMinutes, route.id, selectedRouteIds]);
-
-  const handleManualNextStop = useCallback(() => {
-    lastManualSkipRef.current = Date.now();
-    setCurrentStopIndex(i => {
-      const nextIdx = Math.min(i + 1, stops.length - 1);
-      if (onStopIndexChange) onStopIndexChange(nextIdx, route.id);
-      return nextIdx;
-    });
-  }, [stops.length, onStopIndexChange, route.id]);
-
-  useEffect(() => {
-    if (!driverLocation || !nextStop || currentStopIndex >= stops.length - 1) return;
-    // Suppress geofence auto-advance for 3s after a manual skip to prevent cascading
-    // when the bus position is temporarily set to a synthetic (stop-coord) fallback.
-    if (Date.now() - lastManualSkipRef.current < 3000) return;
-    const dist = getDistanceMeters(
-      { lat: driverLocation.lat, lng: driverLocation.lng },
-      { lat: nextStop.lat, lng: nextStop.lng }
-    );
-    if (dist < 80) {
-      const timer = window.setTimeout(() => {
-        setCurrentStopIndex(i => {
-          const nextIdx = Math.min(i + 1, stops.length - 1);
-          if (onStopIndexChange) onStopIndexChange(nextIdx, route.id);
-          return nextIdx;
-        });
-      }, 0);
-      return () => window.clearTimeout(timer);
-    }
-  }, [driverLocation, nextStop, currentStopIndex, stops.length, onStopIndexChange, route.id]);
-
-  const [navPhase, setNavPhase] = useState<NavPhase>(isTracking ? "navigating" : "preview");
-  const [isCentered, setIsCentered] = useState(true);
-  const displayDur = useMemo(() => {
-    if (navPhase !== "navigating" || !driverLocation || !nextStop) {
-      return 0;
-    }
-    const distM = getDistanceMeters(
-      { lat: driverLocation.lat, lng: driverLocation.lng },
-      { lat: nextStop.lat, lng: nextStop.lng }
-    );
-    const speedKmh = driverLocation.speed && driverLocation.speed > 0 ? driverLocation.speed : 35;
-    const speedMs = speedKmh / 3.6;
-    const durationSec = speedMs > 0 ? distM / speedMs : 0;
-    return Math.round(durationSec / 10) * 10;
-  }, [driverLocation, navPhase, nextStop]);
-
-  const handleRecenter = useCallback(() => setIsCentered(true), []);
-  const handlePointerDown = useCallback(() => setIsCentered(false), []);
-  const handleBackToPreview = useCallback(() => setNavPhase("preview"), []);
-
-  const upcomingETAs = useMemo(() => {
-    const etaMap: Record<string, number> = {};
-    let accumTime = displayDur;
-    if (nextStop?.id) {
-      etaMap[nextStop.id] = Math.round((accumTime / 60) + delayMinutes);
-      for (let i = currentStopIndex + 1; i < stops.length; i++) {
-        const dist = (getDistanceMeters(stops[i - 1], stops[i]) * 1.3) + 125;
-        // 583 meters per min is ~35 km/h (4-wheeler speed)
-        accumTime += (dist / 583) * 60;
-        etaMap[stops[i].id] = Math.round((accumTime / 60) + delayMinutes);
-      }
-    }
-    return etaMap;
-  }, [displayDur, delayMinutes, nextStop, currentStopIndex, stops]);
-
-  const snappedHeading = driverLocation ? Math.round(driverLocation.heading / 5) * 5 : 0;
 
   const routeStops = useMemo(() => {
     return stops.map(s => ({ lat: s.lat, lng: s.lng }));
@@ -147,6 +67,76 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
     return routeStops;
   }, [route.polyline, routeStops]);
 
+  const pushDelay = useCallback((addMin: number) => {
+    const next = Math.max(0, delayMinutes + addMin);
+    setDelayMinutes(next);
+    if (!busId) {
+      console.warn("[DriverMap] Delay was not synced because no bus is assigned.");
+      return;
+    }
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+    const currentUser = auth.currentUser;
+    if (!backendUrl || !currentUser) {
+      console.warn("[DriverMap] Delay was not synced because the shift service is unavailable.");
+      return;
+    }
+    const routesToUpdate = selectedRouteIds?.length ? selectedRouteIds : [route.id];
+    void currentUser.getIdToken().then((token) =>
+      Promise.all(routesToUpdate.map(async (routeId) => {
+        const response = await fetch(`${backendUrl}/api/shifts/delay`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ busId, routeId, delayMinutes: next }),
+        });
+        if (!response.ok) throw new Error(`Delay update failed with HTTP ${response.status}`);
+      })),
+    ).catch((error) => console.error("[DriverMap] Delay sync failed:", error));
+  }, [busId, delayMinutes, route.id, selectedRouteIds]);
+
+  const [navPhase, setNavPhase] = useState<NavPhase>(isTracking ? "navigating" : "preview");
+  const [isCentered, setIsCentered] = useState(true);
+  const displayDur = useMemo(() => {
+    if (navPhase !== "navigating" || !driverLocation || !nextStop) {
+      return 0;
+    }
+    const distM = distanceAlongPolyline(
+      { lat: driverLocation.lat, lng: driverLocation.lng },
+      { lat: nextStop.lat, lng: nextStop.lng },
+      routePath,
+    );
+    const speedKmh = Math.max(
+      driverLocation.speed || ETA_SPEED_FLOOR_KMH,
+      ETA_SPEED_FLOOR_KMH,
+    );
+    const speedMs = speedKmh / 3.6;
+    const durationSec = speedMs > 0 ? distM / speedMs : 0;
+    return Math.round(durationSec / 10) * 10;
+  }, [driverLocation, navPhase, nextStop, routePath]);
+
+  const handleRecenter = useCallback(() => setIsCentered(true), []);
+  const handlePointerDown = useCallback(() => setIsCentered(false), []);
+  const handleBackToPreview = useCallback(() => setNavPhase("preview"), []);
+
+  const upcomingETAs = useMemo(() => {
+    const etaMap: Record<string, number> = {};
+    let accumTime = displayDur;
+    if (nextStop?.id) {
+      etaMap[nextStop.id] = Math.round((accumTime / 60) + delayMinutes);
+      for (let i = currentStopIndex + 1; i < stops.length; i++) {
+        const dist = distanceAlongPolyline(stops[i - 1], stops[i], routePath) + 125;
+        accumTime += (dist / ETA_SPEED_FLOOR_METERS_PER_MINUTE) * 60;
+        etaMap[stops[i].id] = Math.round((accumTime / 60) + delayMinutes);
+      }
+    }
+    return etaMap;
+  }, [displayDur, delayMinutes, nextStop, currentStopIndex, stops, routePath]);
+
+  const snappedHeading = driverLocation ? Math.round(driverLocation.heading / 5) * 5 : 0;
+
+  const [preferredSegmentIndex, setPreferredSegmentIndex] = useState(-1);
   const snappedDriverLocation = useMemo(() => {
     if (!driverLocation) return null;
     const result = snapToPolyline(
@@ -154,13 +144,25 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
       routePath,
       {
         headingDegrees: driverLocation.heading,
+        preferredSegmentIndex,
+        maxSegmentJump: 25,
       },
     );
     return { ...result, heading: driverLocation.heading };
-  }, [driverLocation, routePath]);
+  }, [driverLocation, preferredSegmentIndex, routePath]);
+  useEffect(() => {
+    if (!snappedDriverLocation?.snapped) return;
+    const frame = requestAnimationFrame(() =>
+      setPreferredSegmentIndex(snappedDriverLocation.segmentIndex),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [snappedDriverLocation]);
+  const smoothDriverPosition = useSmoothPosition(
+    snappedDriverLocation?.point ?? null,
+  );
 
-  const defaultCenter = snappedDriverLocation
-    ? snappedDriverLocation.point
+  const defaultCenter = smoothDriverPosition
+    ? smoothDriverPosition
     : (stops.length ? { lat: stops[0].lat, lng: stops[0].lng } : { lat: 23.03, lng: 72.55 });
 
   return (
@@ -175,8 +177,8 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
         >
           <MapCenterer
             target={
-              snappedDriverLocation
-                ? { ...snappedDriverLocation.point, heading: snappedDriverLocation.heading }
+              smoothDriverPosition && snappedDriverLocation
+                ? { ...smoothDriverPosition, heading: snappedDriverLocation.heading }
                 : null
             }
             isCentered={isCentered}
@@ -235,8 +237,8 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
           })}
 
           {/* Driver bus marker */}
-          {driverLocation && snappedDriverLocation && (
-            <AdvancedMarker position={snappedDriverLocation.point}>
+          {driverLocation && snappedDriverLocation && smoothDriverPosition && (
+            <AdvancedMarker position={smoothDriverPosition}>
               <div style={{ width: 44, height: 44, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "rgba(66,133,244,0.15)", animation: "ping 1s infinite", opacity: 0.6 }} />
                 <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 200ms ease-out", zIndex: 10 }}>
@@ -320,9 +322,9 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
               <div className="flex items-center gap-2 justify-between w-full">
                 <div className="flex items-center gap-1.5">
                   <span className="text-[9px] font-semibold mr-1" style={{ color: "var(--text-ghost)" }}>Delay</span>
-                  <button onClick={() => pushDelay(-2)} className="h-8 w-10 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
+                  <button onClick={() => pushDelay(-2)} aria-label="Decrease delay by 2 minutes" className="h-11 w-11 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
                     style={{ background: "rgba(59,130,246,0.10)", border: "1px solid rgba(59,130,246,0.15)", color: "#60A5FA" }}>-2</button>
-                  <button onClick={() => pushDelay(-1)} className="h-8 w-10 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
+                  <button onClick={() => pushDelay(-1)} aria-label="Decrease delay by 1 minute" className="h-11 w-11 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
                     style={{ background: "rgba(59,130,246,0.10)", border: "1px solid rgba(59,130,246,0.15)", color: "#60A5FA" }}>-1</button>
                   <div className="px-2 min-w-[32px] text-center">
                     <span className="text-sm font-semibold" style={{ color: delayMinutes > 0 ? "var(--status-warning)" : "var(--text-ghost)", fontVariantNumeric: "tabular-nums" }}>
@@ -330,18 +332,14 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
                     </span>
                     <div className="text-[7px] font-semibold" style={{ color: "var(--text-ghost)" }}>min</div>
                   </div>
-                  <button onClick={() => pushDelay(1)} className="h-8 w-10 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
+                  <button onClick={() => pushDelay(1)} aria-label="Increase delay by 1 minute" className="h-11 w-11 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
                     style={{ background: "var(--status-warning-bg)", border: "1px solid rgba(251,191,36,0.15)", color: "var(--status-warning)" }}>+1</button>
-                  <button onClick={() => pushDelay(2)} className="h-8 w-10 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
+                  <button onClick={() => pushDelay(2)} aria-label="Increase delay by 2 minutes" className="h-11 w-11 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
                     style={{ background: "var(--status-warning-bg)", border: "1px solid rgba(251,191,36,0.15)", color: "var(--status-warning)" }}>+2</button>
                 </div>
-                {currentStopIndex < stops.length - 1 && (
-                  <button onClick={handleManualNextStop} className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-[9px] font-semibold active:scale-90 transition-all"
-                    style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)", color: "var(--text-secondary)" }}>
-                    Next Stop
-                    <ChevronRight className="w-3 h-3" />
-                  </button>
-                )}
+                <span className="text-[9px] font-semibold" style={{ color: "var(--text-ghost)" }}>
+                  Stop progress updates automatically
+                </span>
               </div>
             }
           />

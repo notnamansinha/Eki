@@ -22,12 +22,31 @@ interface RideSession {
   status: "active" | "completed";
   passengers?: PassengerRecord[] | Record<string, PassengerRecord>;
   path?: { lat: number; lng: number; timestamp: number }[];
-  stopsReached?: { stopIndex: number; stopId: string; stopName: string; timestamp: number }[];
+  stopsReached?:
+    | StopReachedRecord[]
+    | Record<string, StopReachedRecord>;
+}
+
+interface StopReachedRecord {
+  stopIndex: number;
+  stopId: string;
+  stopName: string;
+  timestamp: number | { toDate: () => Date };
 }
 
 function passengerRecords(passengers: RideSession["passengers"]): PassengerRecord[] {
   if (!passengers) return [];
   return Array.isArray(passengers) ? passengers : Object.values(passengers);
+}
+
+function stopRecords(stops: RideSession["stopsReached"]): StopReachedRecord[] {
+  if (!stops) return [];
+  const values = Array.isArray(stops) ? stops : Object.values(stops);
+  return values.sort((a, b) => a.stopIndex - b.stopIndex);
+}
+
+function timestampDate(value: StopReachedRecord["timestamp"]): Date {
+  return typeof value === "number" ? new Date(value) : value.toDate();
 }
 
 export default function RideHistoryPanel() {
@@ -52,6 +71,7 @@ export default function RideHistoryPanel() {
       ) : (
         sortedSessions.map(session => {
           const passengers = passengerRecords(session.passengers);
+          const stopsReached = stopRecords(session.stopsReached);
 
           return (
           <div key={session.id} className="bg-brand-surface border border-white/10 rounded-xl overflow-hidden transition-all">
@@ -107,14 +127,14 @@ export default function RideHistoryPanel() {
                   </div>
                 )}
                 
-                {session.stopsReached && session.stopsReached.length > 0 && (
+                {stopsReached.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-white/10">
                     <h4 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-3 flex items-center gap-2">
                       <MapPin className="w-3 h-3"/> 
                       Route Log ({session.path?.length || 0} GPS breadcrumbs saved)
                     </h4>
                     <div className="space-y-3 relative before:absolute before:inset-0 before:ml-[39px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-white/10 before:to-transparent">
-                      {session.stopsReached.map((s, i) => (
+                      {stopsReached.map((s, i) => (
                         <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
                           <div className="flex items-center justify-center w-6 h-6 rounded-full border border-white/20 bg-brand-dark text-white/50 group-[.is-active]:text-brand-accent shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 ml-7 md:ml-0">
                             <div className="w-2 h-2 bg-brand-accent rounded-full"></div>
@@ -122,7 +142,7 @@ export default function RideHistoryPanel() {
                           <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded bg-white/5 border border-white/10">
                             <div className="flex items-center justify-between mb-1">
                               <span className="font-bold text-white text-sm">{s.stopName}</span>
-                              <span className="text-brand-accent font-mono text-xs">{new Date(s.timestamp).toLocaleTimeString()}</span>
+                              <span className="text-brand-accent font-mono text-xs">{timestampDate(s.timestamp).toLocaleTimeString()}</span>
                             </div>
                             <p className="text-xs text-white/50">Stop Index: {s.stopIndex}</p>
                           </div>

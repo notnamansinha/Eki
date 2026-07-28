@@ -6,8 +6,7 @@ import {
 } from "@vis.gl/react-google-maps";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { useRoutes, RouteData, RouteStop } from "@/hooks/useRoutes";
-import { doc, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 import {
   Trash2, Plus, X, CheckCircle, MapPin, Loader2, Search,
   Pencil, GripVertical, Save,
@@ -107,7 +106,7 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
         placeholder="Search for a stop"
         aria-label="Search for a stop"
         aria-describedby={searchError ? "place-search-error" : undefined}
-        className="w-full h-9 bg-[#09090b] border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-medium"
+        className="w-full h-11 bg-[#09090b] border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-medium"
       />
       {searchError && (
         <p id="place-search-error" className="mt-1 text-xs text-red-400" role="alert">
@@ -153,16 +152,16 @@ function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () =
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-          <button onClick={onEdit} className="p-2 rounded-lg text-white/30 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Edit route">
+          <button onClick={onEdit} aria-label={`Edit route ${route.name}`} className="w-11 h-11 rounded-lg text-white/30 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Edit route">
             <Pencil className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => onDelete(route.id)} className="p-2 rounded-lg text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete route">
+          <button onClick={() => onDelete(route.id)} aria-label={`Delete route ${route.name}`} className="w-11 h-11 rounded-lg text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete route">
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
       <div className="px-4 pb-3 flex items-center gap-2">
-        <button onClick={() => setStopsOpen(o => !o)} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 text-[9px] font-black tracking-widest text-white/50 uppercase hover:text-white/60 transition-colors">
+        <button onClick={() => setStopsOpen(o => !o)} aria-expanded={stopsOpen} className="min-h-11 flex items-center gap-1.5 px-3 rounded-full bg-white/5 text-[9px] font-black tracking-widest text-white/50 uppercase hover:text-white/60 transition-colors">
           <MapPin className="w-2.5 h-2.5" />
           {route.stops?.length ?? 0} Stops
           {stopsOpen ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
@@ -216,18 +215,20 @@ function StopItem({ stop, index, onRemove, onNameChange }: {
           onBlur={() => { onNameChange(index, val); setEditing(false); }}
           onKeyDown={e => e.key === "Enter" && (onNameChange(index, val), setEditing(false))}
           autoFocus
-          className="flex-1 h-8 bg-white/5 border border-white/20 rounded-lg px-2 text-sm text-white focus:outline-none focus:border-white/40"
+          aria-label={`Rename stop ${stop.name}`}
+          className="flex-1 h-11 bg-white/5 border border-white/20 rounded-lg px-2 text-sm text-white focus:outline-none focus:border-white/40"
         />
       ) : (
-        <span
-          className="flex-1 text-sm text-white/80 font-medium truncate cursor-text min-w-0"
+        <button
+          type="button"
+          className="flex-1 min-h-11 text-left text-sm text-white/80 font-medium truncate cursor-text min-w-0"
           onClick={() => setEditing(true)}
           title="Click to rename"
         >
           {stop.name}
-        </span>
+        </button>
       )}
-      <button onClick={() => onRemove(index)} className="p-1.5 rounded-lg text-white/15 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+      <button onClick={() => onRemove(index)} aria-label={`Remove stop ${stop.name}`} className="w-11 h-11 rounded-lg text-white/15 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all shrink-0">
         <X className="w-3.5 h-3.5" />
       </button>
     </div>
@@ -338,16 +339,6 @@ function RouteEditor({
     setSaving(true);
 
     try {
-      const waypoints = state.stops.map(s => ({ lat: s.lat, lng: s.lng }));
-      if (state.mode === "create") {
-        const { getDoc } = await import("firebase/firestore");
-        const existing = await getDoc(doc(db, "routes", state.routeId));
-        if (existing.exists()) {
-          alert(`A route with ID "${state.routeId}" already exists. Choose a different ID.`);
-          return;
-        }
-      }
-
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
       const currentUser = auth.currentUser;
       if (!backendUrl || !currentUser) {
@@ -355,13 +346,19 @@ function RouteEditor({
       }
 
       const token = await currentUser.getIdToken(true);
-      const geometryResponse = await fetch(`${backendUrl}/api/routes/compute-polyline`, {
-        method: "POST",
+      const geometryResponse = await fetch(`${backendUrl}/api/routes/${encodeURIComponent(state.routeId)}`, {
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ waypoints }),
+        body: JSON.stringify({
+          name: state.name,
+          color: state.color,
+          type: state.type,
+          mode: state.mode,
+          stops: state.stops,
+        }),
       });
       if (!geometryResponse.ok) {
         throw new Error("Unable to compute route geometry. The route was not saved.");
@@ -375,25 +372,6 @@ function RouteEditor({
         throw new Error("Route geometry service returned an invalid result.");
       }
 
-      const routeData: Partial<RouteData> = {
-        id: state.routeId,
-        name: state.name,
-        color: state.color,
-        type: state.type,
-        stops: state.stops,
-        waypoints,
-        polyline: geometry.polyline,
-        distanceMeters: geometry.distanceMeters,
-        duration: geometry.duration,
-      };
-
-      if (state.mode === "create") {
-        // Guard against duplicate route IDs — check existence first
-        await setDoc(doc(db, "routes", state.routeId), routeData as RouteData);
-      } else {
-        // Edit mode — persist the freshly computed geometry with the changed stops.
-        await updateDoc(doc(db, "routes", state.routeId), routeData);
-      }
       onSaved();
     } catch (error: unknown) {
       alert("Failed to save: " + errorMessage(error));
@@ -410,7 +388,7 @@ function RouteEditor({
     <div className="h-full flex flex-col w-full overflow-y-auto lg:overflow-hidden animate-slide-up">
       {/* Toolbar */}
       <div className="shrink-0 border-b border-white/5 bg-[#0f0f12]/90 backdrop-blur-2xl px-4 py-3 flex flex-wrap gap-3 items-end relative z-10 overflow-visible">
-        <button onClick={onCancel} className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors shrink-0 self-center">
+        <button onClick={onCancel} aria-label="Cancel route editing" className="w-11 h-11 rounded-xl bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors shrink-0 self-center">
           <ArrowLeft className="w-4 h-4 text-white/60" />
         </button>
 
@@ -421,7 +399,7 @@ function RouteEditor({
             onChange={e => setField("routeId", e.target.value)}
             disabled={state.mode === "edit"}
             placeholder="route_101"
-            className="h-9 bg-[#09090b] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/15 font-medium disabled:opacity-40"
+            className="h-11 bg-[#09090b] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/15 font-medium disabled:opacity-40"
           />
         </div>
 
@@ -435,7 +413,7 @@ function RouteEditor({
           <select
             value={state.type}
             onChange={e => setField("type", e.target.value as EditorState["type"])}
-            className="h-9 bg-[#09090b] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 font-medium appearance-none cursor-pointer"
+            className="h-11 bg-[#09090b] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 font-medium appearance-none cursor-pointer"
           >
             <option value="circular">Circular</option>
             <option value="up">Up</option>
@@ -445,7 +423,7 @@ function RouteEditor({
 
         <div className="flex flex-col gap-1">
           <label className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Colour</label>
-          <div className="flex items-center gap-1.5 h-9">
+          <div className="flex items-center gap-1.5 h-11">
             {ROUTE_COLORS.map(c => (
               <button
                 key={c}
@@ -461,7 +439,7 @@ function RouteEditor({
           <button
             onClick={handleSave}
             disabled={saving || state.stops.length < 2}
-            className="h-9 px-5 rounded-xl bg-white text-[#09090b] font-black text-xs uppercase tracking-widest transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-white/90 shadow-lg"
+            className="h-11 px-5 rounded-xl bg-white text-[#09090b] font-black text-xs uppercase tracking-widest transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-white/90 shadow-lg"
           >
             {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</> : <><Save className="w-3.5 h-3.5" /> {state.mode === "edit" ? "Update" : "Deploy"}</>}
           </button>
@@ -522,7 +500,7 @@ function RouteEditor({
               value={state.name}
               onChange={e => setField("name", e.target.value)}
               placeholder="e.g. Shela to LD"
-              className="w-full h-9 bg-[#0f0f12] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/15 font-medium"
+              className="w-full h-11 bg-[#0f0f12] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/15 font-medium"
             />
           </div>
           <div className="px-4 py-3 flex items-center justify-between bg-[#0f0f12]/80 backdrop-blur-xl border-b border-white/5">
@@ -583,6 +561,13 @@ export default function RouteManagementPanel() {
   const { routes, loading } = useRoutes();
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [successMsg, setSuccessMsg] = useState("");
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    };
+  }, []);
 
   const openCreate = () => setEditor({ ...EMPTY_EDITOR, mode: "create" });
 
@@ -600,12 +585,24 @@ export default function RouteManagementPanel() {
   const handleSaved = () => {
     setEditor(null);
     setSuccessMsg(editor?.mode === "edit" ? "Route updated!" : "Route deployed!");
-    setTimeout(() => setSuccessMsg(""), 4000);
+    if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    successTimerRef.current = setTimeout(() => setSuccessMsg(""), 4000);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm(`Delete route "${routes.find(r => r.id === id)?.name ?? id}"? This cannot be undone.`)) return;
-    try { await deleteDoc(doc(db, "routes", id)); }
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+      const currentUser = auth.currentUser;
+      if (!backendUrl || !currentUser) throw new Error("Route service is unavailable.");
+      const token = await currentUser.getIdToken();
+      const response = await fetch(`${backendUrl}/api/routes/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Unable to delete route.");
+    }
     catch (error: unknown) { alert("Failed to delete: " + errorMessage(error)); }
   };
 
@@ -622,7 +619,7 @@ export default function RouteManagementPanel() {
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-[#09090b] font-bold text-sm hover:bg-white/90 transition-colors shadow-lg"
+          className="min-h-11 flex items-center gap-2 px-4 py-3 rounded-xl bg-white text-[#09090b] font-bold text-sm hover:bg-white/90 transition-colors shadow-lg"
         >
           <Plus className="w-4 h-4" /> Add Route
         </button>

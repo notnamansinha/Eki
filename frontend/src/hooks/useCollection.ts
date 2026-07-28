@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, limit, onSnapshot, query } from "firebase/firestore";
 import { db } from "@/lib/firebaseFirestore";
 import { waitForAuth } from "@/lib/authState";
 
@@ -56,7 +56,7 @@ export function useCollection<T>(collectionName: string) {
         // Double check if we still need it after auth resolves
         if (currentEntry.listenerCount > 0 && !currentEntry.unsubscribe) {
           currentEntry.unsubscribe = onSnapshot(
-            collection(db, collectionName),
+            query(collection(db, collectionName), limit(250)),
             (snapshot) => {
               currentEntry.data = snapshot.docs.map((doc) => ({
                 id: doc.id,

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Map as GoogleMap, AdvancedMarker, useMap,
 } from "@vis.gl/react-google-maps";
-import { ref, onValue, update, remove } from "firebase/database";
+import { ref, onValue } from "firebase/database";
 import { onAuthStateChanged } from "firebase/auth";
 import { rtdb, auth } from "@/lib/firebase";
 import { useBuses } from "@/hooks/useBuses";
@@ -34,7 +34,7 @@ interface ActiveBusEntry {
   tripState?: "pre_departure" | "in_service" | "completed" | "maintenance";
   currentStopIndex?: number;
   delayMinutes?: number;
-  lowAccuracy?: boolean;
+  sessionId?: string;
 }
 
 /* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -69,6 +69,12 @@ function useActiveBuses(): ActiveBusEntry[] {
   useEffect(() => {
     let unsub: (() => void) | undefined;
     const authUnsub = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        unsub?.();
+        unsub = undefined;
+        setActive([]);
+        return;
+      }
       if (user && !unsub) {
         unsub = onValue(ref(rtdb, "activeBuses"), (snap) => {
           const data = snap.val() as Record<string, ActiveBusEntry> | null;
@@ -118,8 +124,36 @@ function OverrideDrawer({
   const [stopIdx, setStopIdx] = useState(String(entry.currentStopIndex ?? 0));
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const rtdbKey = entry.routeId ? `${entry.busId}_${entry.routeId}` : entry.busId;
+  useEffect(() => {
+    return () => {
+      if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
+    };
+  }, []);
+
+  const clearMessageLater = () => {
+    if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
+    messageTimerRef.current = setTimeout(() => setMsg(""), 2000);
+  };
+
+  const adminRequest = async (path: string, init: RequestInit) => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+    const currentUser = auth.currentUser;
+    if (!backendUrl || !currentUser) throw new Error("Backend service is unavailable.");
+    const token = await currentUser.getIdToken();
+    const response = await fetch(`${backendUrl}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
+      },
+    });
+    const result = await response.json().catch(() => ({})) as { error?: string };
+    if (!response.ok) throw new Error(result.error || `Request failed with HTTP ${response.status}`);
+    return result;
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -163,9 +197,14 @@ function OverrideDrawer({
         patch.currentStopIndex = idxVal;
       }
 
-      await update(ref(rtdb, `activeBuses/${rtdbKey}`), patch);
+      if (!entry.routeId) throw new Error("This live entry has no route ID.");
+      delete patch.timestamp;
+      await adminRequest(
+        `/api/buses/${encodeURIComponent(entry.busId)}/${encodeURIComponent(entry.routeId)}`,
+        { method: "PATCH", body: JSON.stringify(patch) },
+      );
       setMsg("Saved ✓");
-      setTimeout(() => setMsg(""), 2000);
+      clearMessageLater();
     } catch (error: unknown) { setMsg("Error: " + errorMessage(error)); }
     finally { setSaving(false); }
   };
@@ -173,23 +212,31 @@ function OverrideDrawer({
   const handleForceOffline = async () => {
     if (!confirm(`Force ${entry.busId} offline? This will remove it from the passenger map.`)) return;
     try {
-      await update(ref(rtdb, `activeBuses/${rtdbKey}`), {
-        deviceState: "offline",
-        tripState: "completed",
-        timestamp: Date.now(),
-      });
+      if (!entry.routeId) throw new Error("This live entry has no route ID.");
+      await adminRequest(
+        `/api/buses/${encodeURIComponent(entry.busId)}/${encodeURIComponent(entry.routeId)}/offline`,
+        { method: "POST" },
+      );
       onClose();
     } catch (error: unknown) { alert("Error: " + errorMessage(error)); }
   };
 
   const handleWipeMessages = async () => {
     if (!confirm(`Clear all messages for ${entry.busId}?`)) return;
-    try { await remove(ref(rtdb, `messages/${entry.busId}`)); setMsg("Messages cleared ✓"); setTimeout(() => setMsg(""), 2000); }
+    try {
+      if (!entry.sessionId) throw new Error("This vehicle has no active message session.");
+      await adminRequest(
+        `/api/shifts/${encodeURIComponent(entry.sessionId)}/messages`,
+        { method: "DELETE" },
+      );
+      setMsg("Messages cleared ✓");
+      clearMessageLater();
+    }
     catch (error: unknown) { setMsg("Error: " + errorMessage(error)); }
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div role="dialog" aria-modal="true" aria-label={`Live override for ${entry.busId}`} className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-md bg-[#0f0f12] border border-white/10 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/5">
           <div>
@@ -197,7 +244,7 @@ function OverrideDrawer({
             <p className="font-bold text-white">{entry.busId}</p>
             <p className="text-xs text-white/50">{routeName}</p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
+          <button onClick={onClose} aria-label="Close live override" className="w-11 h-11 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
             <X className="w-4 h-4 text-white/60" />
           </button>
         </div>
@@ -207,22 +254,22 @@ function OverrideDrawer({
           <div className="flex flex-col gap-2">
             <p className="text-[10px] text-white/30 uppercase tracking-widest font-black flex items-center gap-1.5"><MapPin className="w-3 h-3" /> Position Override</p>
             <div className="grid grid-cols-2 gap-2">
-              <input value={lat} onChange={e => setLat(e.target.value)} placeholder="Latitude" className="input-rc h-10 text-sm" />
-              <input value={lng} onChange={e => setLng(e.target.value)} placeholder="Longitude" className="input-rc h-10 text-sm" />
+              <input aria-label="Latitude override" value={lat} onChange={e => setLat(e.target.value)} placeholder="Latitude" className="input-rc h-11 text-sm" />
+              <input aria-label="Longitude override" value={lng} onChange={e => setLng(e.target.value)} placeholder="Longitude" className="input-rc h-11 text-sm" />
             </div>
           </div>
 
           {/* Delay */}
           <div className="flex flex-col gap-2">
             <p className="text-[10px] text-white/30 uppercase tracking-widest font-black flex items-center gap-1.5"><Clock className="w-3 h-3" /> Delay (minutes)</p>
-            <input value={delay} onChange={e => setDelay(e.target.value)} type="number" min="0" className="input-rc h-10 text-sm" />
+            <input aria-label="Delay in minutes" value={delay} onChange={e => setDelay(e.target.value)} type="number" min="0" className="input-rc h-11 text-sm" />
           </div>
 
           {/* Stop index */}
           {stopCount > 0 && (
             <div className="flex flex-col gap-2">
               <p className="text-[10px] text-white/30 uppercase tracking-widest font-black flex items-center gap-1.5"><Navigation className="w-3 h-3" /> Stop Index (0–{stopCount - 1})</p>
-              <input value={stopIdx} onChange={e => setStopIdx(e.target.value)} type="number" min="0" max={stopCount - 1} className="input-rc h-10 text-sm" />
+              <input aria-label="Current stop index" value={stopIdx} onChange={e => setStopIdx(e.target.value)} type="number" min="0" max={stopCount - 1} className="input-rc h-11 text-sm" />
             </div>
           )}
 
@@ -235,10 +282,10 @@ function OverrideDrawer({
           </button>
 
           <div className="grid grid-cols-2 gap-2">
-            <button onClick={handleForceOffline} className="h-10 flex items-center justify-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 text-xs font-bold hover:bg-red-500/20 transition-colors">
+            <button onClick={handleForceOffline} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 text-xs font-bold hover:bg-red-500/20 transition-colors">
               <WifiOff className="w-3.5 h-3.5" /> Force Offline
             </button>
-            <button onClick={handleWipeMessages} className="h-10 flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors">
+            <button onClick={handleWipeMessages} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors">
               <MessageCircle className="w-3.5 h-3.5" /> Wipe Messages
             </button>
           </div>

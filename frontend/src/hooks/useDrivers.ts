@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { collection, limit, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebaseFirestore";
 import { waitForAuth } from "@/lib/authState";
 import { useAuth } from "./useAuth";
@@ -32,8 +32,8 @@ export function useDrivers() {
     void waitForAuth().then(() => {
       if (!active) return;
       const source = user.role === "admin"
-        ? collection(db, "drivers")
-        : query(collection(db, "drivers"), where("authUid", "==", user.uid));
+        ? query(collection(db, "drivers"), limit(250))
+        : query(collection(db, "drivers"), where("authUid", "==", user.uid), limit(1));
 
       unsubscribe = onSnapshot(
         source,
