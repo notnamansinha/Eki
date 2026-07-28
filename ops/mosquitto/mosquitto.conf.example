@@ -1,0 +1,28 @@
+# Eki MQTT broker baseline. Replace every /etc/eki path with an absolute path.
+# Expose only TCP/8883 through the firewall; never expose an anonymous listener.
+per_listener_settings true
+listener 8883 0.0.0.0
+protocol mqtt
+allow_anonymous false
+password_file /etc/eki/mosquitto/passwords
+acl_file /etc/eki/mosquitto/acl
+
+cafile /etc/eki/mosquitto/ca.pem
+certfile /etc/eki/mosquitto/server.pem
+keyfile /etc/eki/mosquitto/server.key
+tls_version tlsv1.2
+require_certificate false
+
+persistence true
+persistence_location /var/lib/mosquitto/
+autosave_interval 60
+max_packet_size 1024
+message_size_limit 512
+max_inflight_messages 10
+max_queued_messages 10
+max_keepalive 60
+connection_messages false
+log_type error
+log_type warning
+log_type notice
+
