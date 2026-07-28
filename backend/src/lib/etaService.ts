@@ -25,6 +25,8 @@ export interface ETAUpdate {
   timestamp: number;
 }
 
+export const ETA_SPEED_FLOOR_KMH = 25;
+
 // ── Haversine distance (no API call needed) ──
 export function haversineMeters(a: LatLng, b: LatLng): number {
   const R = 6371e3;
@@ -47,19 +49,21 @@ import { decodePolyline, closestPolylineIndex, LatLng } from "./polylineUtils";
  * @param busLocation   Current bus lat/lng
  * @param destination   Destination lat/lng (last stop of route)
  * @param polylineCoords  Decoded polyline waypoints from routePolylineCache
- * @param busSpeedKmh   Bus speed; floored to 20 km/h to prevent infinite ETAs
+ * @param busSpeedKmh   Bus speed; floored to 25 km/h to match client ETAs
  */
-function computeETAFromPolyline(
+export function computeETAFromPolyline(
   busLocation: LatLng,
   destination: LatLng,
   polylineCoords: LatLng[],
-  busSpeedKmh: number = 25
+  busSpeedKmh: number = ETA_SPEED_FLOOR_KMH
 ): { etaSeconds: number; distanceMeters: number } {
   if (polylineCoords.length < 2) {
     // Fallback: straight-line estimate at 25 km/h
     const dist = haversineMeters(busLocation, destination);
     return {
-      etaSeconds: Math.round((dist / 1000 / 25) * 3600),
+      etaSeconds: Math.round(
+        (dist / 1000 / ETA_SPEED_FLOOR_KMH) * 3600,
+      ),
       distanceMeters: Math.round(dist),
     };
   }
@@ -79,8 +83,10 @@ function computeETAFromPolyline(
     distMeters += haversineMeters(polylineCoords[i], polylineCoords[i + 1]);
   }
 
-  // Speed floor of 20 km/h prevents unrealistically long ETAs at idle/stopped
-  const effectiveSpeed = Math.max(busSpeedKmh, 20);
+  const effectiveSpeed = Math.max(
+    busSpeedKmh || ETA_SPEED_FLOOR_KMH,
+    ETA_SPEED_FLOOR_KMH,
+  );
   const etaSeconds = Math.round((distMeters / 1000 / effectiveSpeed) * 3600);
 
   return { etaSeconds, distanceMeters: Math.round(distMeters) };
@@ -108,7 +114,7 @@ const decodedPolylineCache = new Map<string, LatLng[]>();
  */
 export async function preloadRoutePolylines(): Promise<void> {
   try {
-    const snapshot = await db.collection("routes").get();
+    const snapshot = await db.collection("routes").limit(250).get();
     snapshot.forEach((doc) => {
       const data = doc.data();
       if (data.polyline) {
@@ -138,6 +144,21 @@ export function getCachedDecodedPolyline(routeId: string): LatLng[] {
   return decodedPolylineCache.get(routeId) || [];
 }
 
+export function updateRoutePolylineCache(routeId: string, encoded?: string): void {
+  if (!encoded) {
+    routePolylineCache.delete(routeId);
+    decodedPolylineCache.delete(routeId);
+    return;
+  }
+  routePolylineCache.set(routeId, encoded);
+  try {
+    decodedPolylineCache.set(routeId, decodePolyline(encoded));
+  } catch {
+    decodedPolylineCache.delete(routeId);
+    console.warn(`[ETA] Ignoring invalid polyline for route ${routeId}.`);
+  }
+}
+
 /**
  * Starts periodic ETA computation for a bus.
  * Computes once immediately, then every intervalMs.
@@ -150,7 +171,8 @@ export function startETATracking(
   routeId: string,
   getLocation: () => LatLng | null,
   getDestination: () => LatLng | null,
-  intervalMs: number = 180_000 // Default: 3 minutes
+  intervalMs: number = 180_000, // Default: 3 minutes
+  getSpeedKmh: () => number | null = () => null,
 ): void {
   // Clear any existing interval for this bus
   stopETATracking(busId);
@@ -172,10 +194,11 @@ export function startETATracking(
 
     // ── Polyline-based ETA computation (zero API cost) ────────────────────
     const polylineCoords = getCachedDecodedPolyline(routeId);
-    const busSpeed = (() => {
-      // If we can get bus speed from active buses, use it; otherwise floor at 25
-      return 25; // Caller can extend this if they pass speed as a parameter
-    })();
+    const liveSpeed = getSpeedKmh();
+    const busSpeed =
+      typeof liveSpeed === "number" && Number.isFinite(liveSpeed)
+        ? liveSpeed
+        : ETA_SPEED_FLOOR_KMH;
 
     const result = computeETAFromPolyline(loc, dest, polylineCoords, busSpeed);
     const etaMinutes = Math.max(1, Math.ceil(result.etaSeconds / 60));
@@ -201,7 +224,9 @@ export function startETATracking(
       etaMinutes: update.etaMinutes,
       distanceKm: update.distanceKm,
       etaTimestamp: update.timestamp,
-    }).catch(console.error);
+    }).catch((error) => {
+      console.warn(`[ETA] Failed to publish ETA for bus ${busId} on route ${routeId}:`, error);
+    });
 
     console.log(`📍 ETA update for bus ${busId}: ${etaMinutes} min, ${distKm} km (polyline-based, $0 cost)`);
   };
@@ -230,10 +255,10 @@ export function stopETATracking(busId: string): void {
   if (existing) {
     clearInterval(existing);
     etaIntervals.delete(busId);
-    lastETAResults.delete(busId);
-    lastETALocation.delete(busId);
     console.log(`🛑 ETA tracking stopped for bus ${busId}`);
   }
+  lastETAResults.delete(busId);
+  lastETALocation.delete(busId);
 }
 
 /**

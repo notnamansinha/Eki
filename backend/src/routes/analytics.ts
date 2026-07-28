@@ -8,7 +8,7 @@ const router = Router();
 router.get("/fleet", requireAdmin, async (_req, res) => {
   try {
     // Get persistent bus count from Firestore
-    const busSnapshot = await db.collection("bus_locations").get();
+    const busSnapshot = await db.collection("bus_locations").limit(1_000).get();
     let activeCount = 0;
     let idleCount = 0;
     let maintenanceCount = 0;

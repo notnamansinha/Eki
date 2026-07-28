@@ -31,6 +31,36 @@ interface RouteDoc {
   polyline: string;
 }
 
+const ROUTE_CACHE_MS = 5 * 60 * 1000;
+const routeCache = new Map<string, {
+  route: RouteDoc;
+  fullCoords: { lat: number; lng: number }[];
+  expiresAt: number;
+}>();
+
+export function invalidatePlanRoute(routeId: string): void {
+  routeCache.delete(routeId);
+}
+
+async function getCachedRoute(routeId: string) {
+  const cached = routeCache.get(routeId);
+  if (cached && cached.expiresAt > Date.now()) return cached;
+  const document = await db.collection("routes").doc(routeId).get();
+  if (!document.exists) return null;
+  const route = document.data() as RouteDoc;
+  const value = {
+    route,
+    fullCoords: route.polyline ? decodePolyline(route.polyline) : [],
+    expiresAt: Date.now() + ROUTE_CACHE_MS,
+  };
+  if (routeCache.size >= 250) {
+    const oldestKey = routeCache.keys().next().value;
+    if (oldestKey) routeCache.delete(oldestKey);
+  }
+  routeCache.set(routeId, value);
+  return value;
+}
+
 
 
 /**
@@ -65,12 +95,12 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
   }
 
   try {
-    const doc = await db.collection("routes").doc(routeId).get();
-    if (!doc.exists) {
+    const cached = await getCachedRoute(routeId);
+    if (!cached) {
       res.status(404).json({ error: `Route '${routeId}' not found in Firestore` });
       return;
     }
-    const route = doc.data() as RouteDoc;
+    const { route, fullCoords } = cached;
 
     if (!route.stops || route.stops.length < 2) {
       res.status(422).json({ error: "Route has no stops data. Please re-seed the database." });
@@ -103,8 +133,6 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
     }
 
     // ── Decode the pre-stored full route polyline (no API call) ─────────────
-    const fullCoords = decodePolyline(route.polyline);
-
     // Find closest polyline indices for each stop
     const startIdx = closestPolylineIndex(fullCoords, { lat: startStop.lat, lng: startStop.lng });
     const endIdx   = closestPolylineIndex(fullCoords, { lat: endStop.lat,   lng: endStop.lng });

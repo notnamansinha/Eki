@@ -7,6 +7,7 @@ integration, authenticated REST operations, and secure Firebase Admin access.
 - Node.js ≥ 20.x
 - A Google Cloud Service Account JSON for Firebase Admin.
 - A Google Maps Server API Key (restricted to your backend IPs).
+- A TLS MQTT 3.1.1 broker with per-device credentials and topic ACLs.
 
 ## Environment Variables
 Copy `.env.example` to `.env` and fill it out:
@@ -17,8 +18,9 @@ cp .env.example .env
 
 Critical variables include:
 - `FIREBASE_SERVICE_ACCOUNT`: Stringified JSON of your service account.
-- `GOOGLE_MAPS_API_KEY`: Server-side API key for Routes API.
-- `NOMINATIM_USER_AGENT`: Identifying contact string for the admin-only place-search proxy.
+- `GOOGLE_MAPS_API_KEY`: Server-side API key for Routes and Places Text Search APIs.
+- `MQTT_BROKER_URL`: Must use `mqtts://` in production.
+- `MQTT_USERNAME` / `MQTT_PASSWORD`: Read-only telemetry ingestor credential.
 
 ## Running the Application
 ```bash
@@ -43,16 +45,16 @@ npm run seed
 
 ## Role claims
 
-Realtime Database write access is authorized with Firebase custom claims rather
-than client-writable profile data. After changing a user's Firestore `role`, a
-driver assignment, or a bus's assigned routes, run:
+Realtime Database is client-read/server-write. Browsers and hardware devices
+cannot mutate live state. Fleet changes made through the admin UI synchronize
+claims and revoke stale tokens immediately. For bulk/imported data, run:
 
 ```bash
 npm run sync-role-claims
 ```
 
-Affected users must refresh their Firebase ID token (sign out and back in) before
-the new role takes effect.
+The script revokes refresh tokens when an assignment is invalid. Affected users
+must sign in again.
 
 ## Core Modules
 - `src/server.ts`: The main Express application and security middleware.
