@@ -1,43 +1,25 @@
 #pragma once
 
 /**
- * SECURITY: This file is the TEMPLATE — copy it to secrets.h and fill in your values.
- *
- * !! NEVER commit secrets.h to git. It is gitignored.
- * !! Never store a real WiFi password or Firebase private key in any tracked file.
- *
- * Setup:
- *   cp include/secrets.example.h include/secrets.h
- *   # Edit include/secrets.h with your real credentials
+ * Copy to secrets.h and replace every placeholder. secrets.h is gitignored.
+ * Never commit Wi-Fi, MQTT credentials, private keys, or production endpoints.
  */
-
-// ── WiFi Credentials ──────────────────────────────────────────────
 #define WIFI_SSID "YOUR_WIFI_SSID"
 #define WIFI_PASS "YOUR_WIFI_PASSWORD"
 
-// ── Firebase Configuration ────────────────────────────────────────
-#define FIREBASE_HOST "your-project-id-default-rtdb.firebaseio.com"
-#define FIREBASE_API_KEY "YOUR_FIREBASE_API_KEY"
+// Stable device identity. The broker ACL must allow this credential to publish
+// only to MQTT_TOPIC_PREFIX/DEVICE_ID.
+#define DEVICE_ID "device_01"
+#define MQTT_CLIENT_ID "eki-device-01"
+#define MQTT_USERNAME "device_01"
+#define MQTT_PASSWORD "GENERATE_AT_LEAST_20_RANDOM_CHARACTERS"
 
-#define BUS_ID "bus_01"
-#define ROUTE_ID "route_01"
-#define DRIVER_ID "hw_device"
-
-// ── Backend Authentication ────────────────────────────────────────
-// The backend URL where the ESP32 will fetch its Firebase Custom Token
-#define BACKEND_URL "https://your-backend.example.com"
-
-// PEM root certificate for the CA that issued BACKEND_URL's certificate.
-// Keep this as a macro: main.cpp verifies its presence at compile time.
-#define BACKEND_ROOT_CA R"EOF(
------BEGIN CERTIFICATE-----
-REPLACE_WITH_YOUR_BACKEND_CA_CERTIFICATE
------END CERTIFICATE-----
-)EOF"
-
-// Keep disabled in deployed firmware. Enable only for an isolated local
-// development backend where credentials are not sensitive.
-#define BACKEND_ALLOW_INSECURE_HTTP 0
-
-// The secret for this specific device, verified by the backend
-#define DEVICE_SECRET "YOUR_DEVICE_SECRET"
+// TLS is mandatory. Use the broker DNS hostname, not an IP address, so
+// WiFiClientSecure can verify the certificate hostname.
+#define MQTT_HOST "mqtt.university.example"
+#define MQTT_PORT 8883
+#define MQTT_TOPIC_PREFIX "eki/v1/telemetry"
+#define MQTT_ROOT_CA \
+  "-----BEGIN CERTIFICATE-----\n" \
+  "REPLACE_WITH_THE_CA_THAT_ISSUED_THE_BROKER_CERTIFICATE\n" \
+  "-----END CERTIFICATE-----\n"

@@ -31,7 +31,16 @@ pio device monitor
 ```
 
 ## How It Works
-The hardware automatically boots when the bus ignition is turned on. It acquires a GPS lock and connects to the WiFi. Once connected, it authenticates with the backend server via a custom JWT to obtain Firebase credentials, and then begins streaming optimized location deltas directly to the Firebase Realtime Database.
+The hardware automatically boots when the bus ignition is turned on, acquires a
+GNSS fix, synchronizes its clock, and opens a certificate-verified TLS
+connection to the university MQTT broker. It publishes with MQTT QoS 1 to
+`eki/v1/telemetry/<deviceId>`. The payload contains exactly `lat`, `lng`,
+`speed`, `heading`, `motionState`, and `timestamp`.
+
+The device never receives Firebase credentials and cannot write RTDB. The
+backend MQTT ingestor validates the broker topic, device registry assignment,
+payload schema, freshness, duplicate timestamp, and rate budget before its
+Admin SDK updates RTDB.
 
 ## Future Scaling & Security Hardening
 As the fleet scales and physical access to the ESP32 modules becomes difficult, the following two features should be implemented before mass production:

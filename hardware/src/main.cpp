@@ -1,763 +1,298 @@
 #include "secrets.h"
 #include <Arduino.h>
-#include <Firebase_ESP_Client.h>
-#include <WiFi.h>
-#include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <MQTT.h>
 #include <TinyGPSPlus.h>
+#include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <esp_system.h>
+#include <sys/time.h>
 
-// ── Bus Identity ──────────────────────────────────────────────────
-#ifndef BACKEND_ROOT_CA
-#error "BACKEND_ROOT_CA must be defined in include/secrets.h for TLS verification."
+#ifndef MQTT_ROOT_CA
+#error "MQTT_ROOT_CA must be defined in include/secrets.h."
+#endif
+#ifndef DEVICE_ID
+#error "DEVICE_ID must be defined in include/secrets.h."
+#endif
+#ifndef MQTT_HOST
+#error "MQTT_HOST must be defined in include/secrets.h."
 #endif
 
-// ── Unified Adaptive Transmission Thresholds ──────────────────────
-// Uses net coordinate displacement (Haversine) rather than rigid speed splits.
-// Works seamlessly for both walking tests (on foot) and live bus routes.
-#define DISTANCE_THRESHOLD_M        8.0    // Minimum meters moved to trigger send (handles walking & driving)
-#define HEADING_THRESHOLD_DEG       15.0   // Minimum heading change (degrees)
-#define SPEED_THRESHOLD_KMH         5.0    // Minimum speed change (km/h)
+namespace {
+constexpr double DISTANCE_THRESHOLD_M = 8.0;
+constexpr double HEADING_THRESHOLD_DEG = 15.0;
+constexpr double SPEED_THRESHOLD_KMH = 5.0;
+constexpr double MOVING_SPEED_KMH = 2.5;
+constexpr double STOP_SPEED_KMH = 1.5;
+constexpr double HDOP_REJECT_THRESHOLD = 4.0;
+constexpr uint32_t MIN_PUBLISH_INTERVAL_MS = 3000;
+constexpr uint32_t MOVING_HEARTBEAT_MS = 30000;
+constexpr uint32_t STOPPED_HEARTBEAT_MS = 120000;
+constexpr uint32_t WIFI_RETRY_MS = 5000;
+constexpr uint32_t MQTT_RETRY_MS = 5000;
+constexpr uint16_t MQTT_BUFFER_BYTES = 512;
+constexpr int MQTT_QOS = 1;
 
-// Tiered heartbeat: 30s when moving, 2 min when parked in depot/terminus.
-// Keep a safety margin below the backend's 5-minute stale-record sweep.
-#define MAX_SILENT_INTERVAL_MOVING  30000  // 30 s when active/moving
-#define MAX_SILENT_INTERVAL_IDLE   120000  // 2 min when idle (stationary at stop/terminus)
-
-#define STOP_SPEED_KMH              1.5    // Below this = "stopped"
-#define MOVING_SPEED_KMH            2.5    // Above this = "moving" (jitter filter)
-
-// ── HDOP Dual Threshold ───────────────────────────────────────────
-// HDOP < 2.5  → accurate, write normally
-// 2.5 ≤ HDOP ≤ 4.0 → write with lowAccuracy:true flag (frontend shows "near stop X")
-// HDOP > 4.0  → reject write entirely (positional error > ±20m in urban canyons)
-#define HDOP_REJECT_THRESHOLD       4.0
-#define HDOP_LOW_ACCURACY_THRESHOLD 2.5
-
-// ── Hysteresis for active/idle status transitions ─────────────────
-// Prevents rapid active↔idle oscillation at threshold boundary
-#define ACTIVE_SPEED_THRESHOLD_KMH  4.0    // Enter active state
-#define IDLE_SPEED_THRESHOLD_KMH    2.0    // Drop to idle state
-#define HYSTERESIS_READINGS         3      // Must hold state for N consecutive readings
-
-// ── WiFi reconnect interval ──────────────────────────────────────
-// Power is not a concern (12V bus ignition), so we retry aggressively.
-#define WIFI_RETRY_INTERVAL_MS      5000   // 5 s between reconnect attempts
-
-// ── RTDB write failure backoff ────────────────────────────────────
-// Prevents hammering Firebase RTDB at 1Hz when it is experiencing issues.
-#define RTDB_INITIAL_BACKOFF_MS     1500
-#define RTDB_MAX_BACKOFF_MS        8000
-#define RTDB_BACKOFF_JITTER_MS      250
-
-// ── GPS buffer for WiFi outage periods ───────────────────────
-// Stores the last fix while WiFi is down. On reconnect, sends only the
-// most-recent fix (avoids stale teleport artifact on passenger map).
-
-// ── Objects ───────────────────────────────────────────────────────
 TinyGPSPlus gps;
-#define gpsSerial Serial2
-FirebaseData fbData;
-FirebaseAuth fbAuth;
-FirebaseConfig fbConfig;
+HardwareSerial &gpsSerial = Serial2;
+WiFiClientSecure tlsClient;
+MQTTClient mqttClient(MQTT_BUFFER_BYTES);
 
-// ── State tracking ────────────────────────────────────────────────
-double smoothedLat = 0.0;
-double smoothedLng = 0.0;
-double lastSuccessfulLat = 0.0;
-double lastSuccessfulLng = 0.0;
-bool hasSuccessfulLocation = false;
-double lastSentHeading = 0.0;
-double lastSentSpeed = 0.0;
-unsigned long lastSendTime = 0;
-unsigned long lastCheckTime = 0;
-bool wasMoving = false;
-bool firebaseReady = false;
-
-// ── Hysteresis state ──────────────────────────────────────────────
-static uint8_t consecutiveActiveReadings = 0;
-static uint8_t consecutiveIdleReadings = 0;
-static bool statusActive = false;  // Current hysteresis-gated status
-
-// ── GPS fix-loss tracking ─────────────────────────────────────────
-static bool gpsFixLost = false;
-static unsigned long fixLostTime = 0;
-static bool fixLostStatusWritten = false; // Only write maintenance status once per outage
-
-// ── Token tracking ────────────────────────────────────────────────
-unsigned long lastTokenFetch = 0;
-const unsigned long TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 min (before 60-min expiry)
-
-// ── GPS buffer for WiFi outage periods ───────────────────────
-// On extended WiFi outage, we overwrite the old entry. On reconnect,
-// only the latest (most recent) fix is sent — prevents marker teleporting.
-struct BufferedFix {
-    double lat, lng, speed, heading;
-    int satellites;
-    double hdop;
-    bool valid;
-};
-static BufferedFix lastBufferedFix = {0, 0, 0, 0, 0, 0, false};
-
-// ── WiFi reconnect cooldown ──────────────────────────────────────
-static unsigned long lastWifiAttemptTime = 0;
-
-// ── RTDB write failure backoff state ─────────────────────────────
-static unsigned long nextRtdbBackoffMs = RTDB_INITIAL_BACKOFF_MS;
-static unsigned long scheduledRtdbBackoffMs = 0;
-static unsigned long lastRtdbFailTime = 0;
-static bool rtdbInBackoff = false;
-
-enum class SendResult : uint8_t {
-    Sent,
-    Deferred,
-    Failed
+struct TelemetryFix {
+  double lat = 0;
+  double lng = 0;
+  double speed = 0;
+  double heading = 0;
+  const char *motionState = "uncertain";
+  int64_t timestamp = 0;
+  bool valid = false;
 };
 
-// ── Meta write flag ───────────────────────────────────────────────
-// Trip-start static metadata is written once to the active-bus node — not
-// repeated on every coordinate update. This lets the hardware tracker remain
-// visible even before the driver web console opens a shift.
-static bool metaWritten = false;
+TelemetryFix bufferedFix;
+double lastLat = 0;
+double lastLng = 0;
+double lastSpeed = 0;
+double lastHeading = 0;
+bool hasPublishedLocation = false;
+bool moving = false;
+uint8_t movingReadings = 0;
+uint8_t stoppedReadings = 0;
+uint32_t lastPublishAt = 0;
+uint32_t lastEvaluationAt = 0;
+uint32_t lastWifiAttemptAt = 0;
+uint32_t lastMqttAttemptAt = 0;
+uint32_t lastGpsWarningAt = 0;
+bool gpsFixWasLost = false;
+bool lossMessagePublished = false;
 
-// ── Safe elapsed time helper (handles millis() uint32 overflow at 49.7 days) ──
-inline unsigned long elapsed(unsigned long since) {
-    return millis() - since; // Unsigned subtraction wraps correctly on overflow
+uint32_t elapsed(uint32_t since) {
+  return millis() - since;
 }
 
-SendResult writeBusMeta();
-
-bool rtdbBackoffActive() {
-    return rtdbInBackoff && elapsed(lastRtdbFailTime) < scheduledRtdbBackoffMs;
+String telemetryTopic() {
+  String prefix = MQTT_TOPIC_PREFIX;
+  while (prefix.endsWith("/")) prefix.remove(prefix.length() - 1);
+  return prefix + "/" + DEVICE_ID;
 }
 
-void resetRtdbBackoff() {
-    nextRtdbBackoffMs = RTDB_INITIAL_BACKOFF_MS;
-    scheduledRtdbBackoffMs = 0;
-    rtdbInBackoff = false;
+bool clockIsSynchronized() {
+  return time(nullptr) > 1700000000;
 }
 
-void scheduleRtdbBackoff() {
-    const unsigned long jitter = (unsigned long)random(0, RTDB_BACKOFF_JITTER_MS + 1);
-    scheduledRtdbBackoffMs = min(
-        nextRtdbBackoffMs + jitter,
-        (unsigned long)RTDB_MAX_BACKOFF_MS
-    );
-    lastRtdbFailTime = millis();
-    rtdbInBackoff = true;
-    nextRtdbBackoffMs = min(
-        nextRtdbBackoffMs * 2,
-        (unsigned long)RTDB_MAX_BACKOFF_MS
-    );
-    Serial.printf("[RTDB] Backoff engaged. Next retry in %lums.\n", scheduledRtdbBackoffMs);
+int64_t epochMilliseconds() {
+  timeval tv{};
+  gettimeofday(&tv, nullptr);
+  return static_cast<int64_t>(tv.tv_sec) * 1000 + tv.tv_usec / 1000;
 }
 
-void recordSuccessfulSend(
-    double lat,
-    double lng,
-    double speed,
-    double heading,
-    bool moving
-) {
-    lastSuccessfulLat = lat;
-    lastSuccessfulLng = lng;
-    hasSuccessfulLocation = true;
-    lastSentHeading = heading;
-    lastSentSpeed = speed;
-    lastSendTime = millis();
-    wasMoving = moving;
-
-    if (smoothedLat == 0.0) {
-        smoothedLat = lat;
-        smoothedLng = lng;
-    } else {
-        const double alpha = 0.3;
-        smoothedLat = (alpha * lat) + ((1.0 - alpha) * smoothedLat);
-        smoothedLng = (alpha * lng) + ((1.0 - alpha) * smoothedLng);
-    }
+double haversineMeters(double lat1, double lng1, double lat2, double lng2) {
+  const double dLat = radians(lat2 - lat1);
+  const double dLng = radians(lng2 - lng1);
+  const double a = sin(dLat / 2) * sin(dLat / 2) +
+                   cos(radians(lat1)) * cos(radians(lat2)) *
+                   sin(dLng / 2) * sin(dLng / 2);
+  return 6371000.0 * 2 * atan2(sqrt(a), sqrt(1 - a));
 }
 
-void logRtdbResult(const char* operation, unsigned long startedAt, bool success) {
-    Serial.printf(
-        "[RTDB] %s %s in %lums | HTTP: %d | RSSI: %d dBm | Heap: %u\n",
-        operation,
-        success ? "succeeded" : "failed",
-        elapsed(startedAt),
-        fbData.httpCode(),
-        WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0,
-        ESP.getFreeHeap()
-    );
+double headingDelta(double current, double previous) {
+  double delta = fabs(current - previous);
+  return delta > 180 ? 360 - delta : delta;
+}
+
+const char *updateMotionState(double speed) {
+  if (speed >= MOVING_SPEED_KMH) {
+    movingReadings = min<uint8_t>(movingReadings + 1, 3);
+    stoppedReadings = 0;
+    if (movingReadings >= 3) moving = true;
+  } else if (speed <= STOP_SPEED_KMH) {
+    stoppedReadings = min<uint8_t>(stoppedReadings + 1, 3);
+    movingReadings = 0;
+    if (stoppedReadings >= 3) moving = false;
+  }
+  return moving ? "moving" : "stopped";
 }
 
 void connectWiFi() {
-    if (WiFi.status() == WL_CONNECTED) return;
+  if (WiFi.status() == WL_CONNECTED) return;
+  if (lastWifiAttemptAt && elapsed(lastWifiAttemptAt) < WIFI_RETRY_MS) return;
+  lastWifiAttemptAt = millis();
 
-    // Cooldown: don't spam reconnect attempts — wait 5s between tries
-    if (lastWifiAttemptTime != 0 && elapsed(lastWifiAttemptTime) < WIFI_RETRY_INTERVAL_MS) {
-        return;
-    }
-    lastWifiAttemptTime = millis();
-
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_STA);
-
-    Serial.printf("[WiFi] Connecting to WPA2 Personal AP %s...\n", WIFI_SSID);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-    // Wait up to 10s, feeding GPS serial throughout to prevent buffer overflow
-    unsigned long waitStart = millis();
-    while (WiFi.status() != WL_CONNECTED && elapsed(waitStart) < 10000) {
-        while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
-        delay(200);
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.printf("[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
-        configTime(0, 0, "pool.ntp.org"); // Start async SNTP time sync for SSL/TLS cert validation
-    } else {
-        Serial.println("[WiFi] Attempt failed. Will retry in 5s.");
-    }
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Serial.printf("[WiFi] Connecting to %s\n", WIFI_SSID);
 }
 
-bool fetchCustomToken() {
-    if (WiFi.status() != WL_CONNECTED) return false;
+void connectMqtt() {
+  if (WiFi.status() != WL_CONNECTED || mqttClient.connected()) return;
+  if (!clockIsSynchronized()) return;
+  if (lastMqttAttemptAt && elapsed(lastMqttAttemptAt) < MQTT_RETRY_MS) return;
+  lastMqttAttemptAt = millis();
 
-    struct tm timeInfo;
-    if (!getLocalTime(&timeInfo, 0) || timeInfo.tm_year <= 70) {
-        Serial.println("[Auth] NTP time is not synchronized; deferring authenticated connection.");
-        return false;
-    }
-
-    String url = String(BACKEND_URL) + "/api/devices/auth";
-    const bool useHttps = url.startsWith("https://");
-    if (!useHttps && !url.startsWith("http://")) {
-        Serial.println("[Auth] BACKEND_URL must start with http:// or https://.");
-        return false;
-    }
-
-#if !defined(BACKEND_ALLOW_INSECURE_HTTP) || !BACKEND_ALLOW_INSECURE_HTTP
-    if (!useHttps) {
-        Serial.println("[Auth] BACKEND_URL must use HTTPS; refusing to send device credentials.");
-        return false;
-    }
-#endif
-
-    HTTPClient http;
-    WiFiClientSecure clientSecure;
-    if (useHttps) {
-        clientSecure.setCACert(BACKEND_ROOT_CA);
-        http.begin(clientSecure, url);
-    } else {
-        Serial.println("[Auth] WARNING: using insecure HTTP for local development.");
-        http.begin(url);
-    }
-    http.addHeader("Content-Type", "application/json");
-
-    JsonDocument doc;
-    doc["deviceId"] = BUS_ID;
-    doc["secret"] = DEVICE_SECRET;
-    
-    String requestBody;
-    serializeJson(doc, requestBody);
-
-    Serial.println("[Auth] Fetching custom token from backend...");
-    int httpResponseCode = http.POST(requestBody);
-
-    if (httpResponseCode == 200) {
-        String response = http.getString();
-        JsonDocument respDoc;
-        deserializeJson(respDoc, response);
-        
-        const char* token = respDoc["token"];
-        if (token) {
-            Firebase.setCustomToken(&fbConfig, token);
-            lastTokenFetch = millis();
-            http.end();
-            Serial.println("[Auth] Token obtained.");
-            return true;
-        }
-    } else {
-        Serial.printf("[Auth] Error code: %d, response: %s\n", httpResponseCode, http.getString().c_str());
-    }
-    
-    http.end();
-    return false;
+  Serial.printf("[MQTT] Connecting securely to %s:%u\n", MQTT_HOST, MQTT_PORT);
+  if (mqttClient.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
+    Serial.println("[MQTT] Connected (persistent session, telemetry QoS 1).");
+  } else {
+    Serial.printf(
+      "[MQTT] Connection failed (error=%d return=%d).\n",
+      static_cast<int>(mqttClient.lastError()),
+      static_cast<int>(mqttClient.returnCode())
+    );
+  }
 }
 
-// CR-09: Wait for NTP time sync before initializing Firebase.
-// configTime() is async; TLS cert validation fails if the clock is still at epoch.
-// Feeds GPS serial during the wait to prevent hardware buffer overflow.
-// Returns true if time synced within timeoutMs, false if timed out.
-bool waitForNtpSync(uint32_t timeoutMs) {
-    struct tm timeInfo;
-    unsigned long waitStart = millis();
-    Serial.print("[NTP] Waiting for time sync");
-    while (elapsed(waitStart) < timeoutMs) {
-        // Keep GPS serial drained to avoid 512-byte hardware buffer overflow
-        while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
-        if (getLocalTime(&timeInfo, 0) && timeInfo.tm_year > 70) {
-            Serial.printf(" OK (epoch: %lld)\n", (long long)mktime(&timeInfo));
-            return true;
-        }
-        Serial.print(".");
-        delay(200);
-    }
-    Serial.println(" TIMEOUT — proceeding without confirmed time sync.");
-    return false;
+bool publishFix(const TelemetryFix &fix) {
+  if (!fix.valid || !mqttClient.connected() || !clockIsSynchronized()) return false;
+
+  JsonDocument document;
+  // Closed telemetry contract: these are the only transmitted parameters.
+  document["lat"] = fix.lat;
+  document["lng"] = fix.lng;
+  document["speed"] = fix.speed;
+  document["heading"] = fix.heading;
+  document["motionState"] = fix.motionState;
+  document["timestamp"] = fix.timestamp;
+
+  String payload;
+  serializeJson(document, payload);
+  const uint32_t startedAt = millis();
+  const bool acknowledged = mqttClient.publish(
+    telemetryTopic(),
+    payload,
+    false,
+    MQTT_QOS
+  );
+  Serial.printf(
+    "[MQTT] QoS1 publish %s in %lums (%u bytes, RSSI %d dBm)\n",
+    acknowledged ? "acknowledged" : "failed",
+    elapsed(startedAt),
+    payload.length(),
+    WiFi.RSSI()
+  );
+  if (!acknowledged) return false;
+
+  lastLat = fix.lat;
+  lastLng = fix.lng;
+  lastSpeed = fix.speed;
+  lastHeading = fix.heading;
+  lastPublishAt = millis();
+  hasPublishedLocation = true;
+  return true;
 }
 
-void startFirebaseWithCurrentToken() {
-    // Fix for ESP32 SSL memory limitation and "ssl engine closed" / BR_SSL_SENDAPP errors
-    fbData.setBSSLBufferSize(4096, 1024);
-    fbData.setResponseSize(4096);
+TelemetryFix currentFix() {
+  TelemetryFix fix;
+  if (
+    !gps.location.isValid() ||
+    gps.location.age() > 5000 ||
+    !gps.hdop.isValid() ||
+    gps.hdop.hdop() > HDOP_REJECT_THRESHOLD
+  ) {
+    return fix;
+  }
 
-    Firebase.begin(&fbConfig, &fbAuth);
-    Firebase.reconnectNetwork(true);
-
-    Serial.println("[Firebase] Initializing and waiting for token...");
-    unsigned long fbWait = millis();
-    while (!Firebase.ready()) {
-        Serial.print(".");
-        delay(500);
-        // Safety timeout: don't block indefinitely on boot if RTDB is unreachable
-        if (elapsed(fbWait) > 30000) {
-            Serial.println("\n[Firebase] Timed out waiting for ready state. Continuing anyway.");
-            break;
-        }
-    }
-    Serial.println("\n[Firebase] Ready!");
-    firebaseReady = true;
-
-    // Announce the trip as soon as the authenticated Firebase session is
-    // available.  Previously this was deferred until the first valid GPS fix,
-    // which made a test journey appear to start only after reaching a stop.
-    if (!metaWritten) {
-        Serial.println("[Journey] Started — publishing active bus status.");
-        writeBusMeta();
-    }
+  fix.lat = gps.location.lat();
+  fix.lng = gps.location.lng();
+  fix.speed = gps.speed.isValid() && gps.speed.kmph() >= MOVING_SPEED_KMH
+    ? min(gps.speed.kmph(), 200.0)
+    : 0.0;
+  fix.heading = gps.course.isValid() ? fmod(max(gps.course.deg(), 0.0), 360.0) : 0.0;
+  fix.motionState = updateMotionState(fix.speed);
+  fix.timestamp = epochMilliseconds();
+  fix.valid = clockIsSynchronized();
+  return fix;
 }
 
-void initFirebase() {
-    fbConfig.host = FIREBASE_HOST;
-    fbConfig.api_key = FIREBASE_API_KEY;
+bool shouldPublish(const TelemetryFix &fix) {
+  if (!fix.valid) return false;
+  if (!hasPublishedLocation) return true;
+  if (elapsed(lastPublishAt) < MIN_PUBLISH_INTERVAL_MS) return false;
 
-    // Block until NTP time is synchronized (needed for SSL/TLS cert validation).
-    // Defer rather than weakening TLS or attempting an epoch-dated handshake.
-    if (WiFi.status() != WL_CONNECTED || !waitForNtpSync(5000)) {
-        Serial.println("[NTP] Firebase init deferred; will retry after time synchronization.");
-        return;
-    }
-
-    // Do NOT call Firebase.begin() if the device token is unavailable.
-    // An unauthenticated Firebase session will fail all RTDB writes silently.
-    if (!fetchCustomToken()) {
-        Serial.println("[Auth] Failed to get initial token. Firebase init deferred — will retry in loop.");
-        return;
-    }
-
-    startFirebaseWithCurrentToken();
+  const double moved = haversineMeters(lastLat, lastLng, fix.lat, fix.lng);
+  const bool materiallyChanged =
+    moved >= DISTANCE_THRESHOLD_M ||
+    headingDelta(fix.heading, lastHeading) >= HEADING_THRESHOLD_DEG ||
+    fabs(fix.speed - lastSpeed) >= SPEED_THRESHOLD_KMH;
+  const uint32_t heartbeat = moving ? MOVING_HEARTBEAT_MS : STOPPED_HEARTBEAT_MS;
+  return materiallyChanged || elapsed(lastPublishAt) >= heartbeat;
 }
 
-// Haversine distance in meters between two GPS points
-double haversineMeters(double lat1, double lng1, double lat2, double lng2) {
-    double dLat = radians(lat2 - lat1);
-    double dLng = radians(lng2 - lng1);
-    double a = sin(dLat / 2) * sin(dLat / 2) +
-               cos(radians(lat1)) * cos(radians(lat2)) *
-               sin(dLng / 2) * sin(dLng / 2);
-    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    return 6371000.0 * c;
+void evaluateTelemetry() {
+  const TelemetryFix fix = currentFix();
+  if (!fix.valid) {
+    if (!gpsFixWasLost) {
+      gpsFixWasLost = true;
+      lossMessagePublished = false;
+      Serial.println("[GPS] Trustworthy fix lost.");
+    }
+    if (hasPublishedLocation && !lossMessagePublished && mqttClient.connected()) {
+      TelemetryFix uncertain;
+      uncertain.lat = lastLat;
+      uncertain.lng = lastLng;
+      uncertain.speed = 0;
+      uncertain.heading = lastHeading;
+      uncertain.motionState = "uncertain";
+      uncertain.timestamp = epochMilliseconds();
+      uncertain.valid = clockIsSynchronized();
+      lossMessagePublished = publishFix(uncertain);
+    }
+    return;
+  }
+
+  if (gpsFixWasLost) {
+    gpsFixWasLost = false;
+    lossMessagePublished = false;
+    Serial.println("[GPS] Trustworthy fix restored.");
+  }
+
+  if (!shouldPublish(fix)) return;
+  if (!mqttClient.connected()) {
+    bufferedFix = fix;
+    return;
+  }
+  if (publishFix(fix)) bufferedFix.valid = false;
+  else bufferedFix = fix;
 }
-
-// Filter out GPS drift/jitter when stationary
-double getFilteredSpeed() {
-    double s = gps.speed.kmph();
-    return (s < MOVING_SPEED_KMH) ? 0.0 : s;
-}
-
-// ── Update hysteresis state and return motionState string ────────
-// Logic is identical to the old updateAndGetStatus(); only the output labels
-// have changed to reflect the 3-state architecture:
-//   moving    ← was "active"  (speed >= ACTIVE_SPEED_THRESHOLD_KMH for N readings)
-//   stopped   ← was "idle"    (speed <  IDLE_SPEED_THRESHOLD_KMH  for N readings)
-//   uncertain   written directly by the GPS fix-loss handler (was "maintenance")
-// tripState is NOT computed here — the backend owns that via geofencing.
-const char* getMotionState(double speed) {
-    if (speed >= ACTIVE_SPEED_THRESHOLD_KMH) {
-        consecutiveActiveReadings = min((int)consecutiveActiveReadings + 1, (int)HYSTERESIS_READINGS);
-        consecutiveIdleReadings = 0;
-    } else if (speed < IDLE_SPEED_THRESHOLD_KMH) {
-        consecutiveIdleReadings = min((int)consecutiveIdleReadings + 1, (int)HYSTERESIS_READINGS);
-        consecutiveActiveReadings = 0;
-    }
-    // In the dead-band (IDLE_THRESHOLD ≤ speed < ACTIVE_THRESHOLD): hold current state
-
-    if (consecutiveActiveReadings >= HYSTERESIS_READINGS) statusActive = true;
-    if (consecutiveIdleReadings   >= HYSTERESIS_READINGS) statusActive = false;
-
-    return statusActive ? "moving" : "stopped";
-}
-
-bool shouldSendUpdate() {
-    if (!gps.location.isValid()) return false;
-
-    double currentLat = gps.location.lat();
-    double currentLng = gps.location.lng();
-    double currentSpeed = getFilteredSpeed();
-    double currentHeading = gps.course.deg();
-
-    // First fix ever — always send
-    if (!hasSuccessfulLocation) return true;
-
-    // ── HDOP gate (evaluated BEFORE heartbeat) ──────────────────────────────
-    // Hard-reject writes when HDOP exceeds reject threshold.
-    // This prevents bad coordinates from contaminating the EMA or showing wrong stops.
-    if (gps.hdop.isValid() && gps.hdop.hdop() > HDOP_REJECT_THRESHOLD) {
-        return false; // Never write — not even heartbeat — during poor accuracy
-    }
-
-    // ── Tiered heartbeat ────────────────────────────────────────────────────
-    // Use shorter interval when moving, longer when idle to reduce RTDB writes
-    // during long terminus dwells (e.g., 30-min stop → 6 writes vs. 60).
-    bool isCurrentlyIdle = getFilteredSpeed() <= STOP_SPEED_KMH;
-    unsigned long maxSilent = isCurrentlyIdle
-        ? MAX_SILENT_INTERVAL_IDLE    // 5 min
-        : MAX_SILENT_INTERVAL_MOVING; // 30 s
-    if (elapsed(lastSendTime) >= maxSilent) return true;
-
-    // Distance moved exceeds threshold
-    double dist = haversineMeters(lastSuccessfulLat, lastSuccessfulLng, currentLat, currentLng);
-    if (dist >= DISTANCE_THRESHOLD_M) {
-        if (currentSpeed > 0.0) return true;
-    }
-
-    // Heading changed significantly (handles 350° → 10° wraparound)
-    double headingDiff = fabs(currentHeading - lastSentHeading);
-    if (headingDiff > 180.0) headingDiff = 360.0 - headingDiff;
-    if (headingDiff >= HEADING_THRESHOLD_DEG) {
-        if (currentSpeed > 0.0) return true;
-    }
-
-    // Speed changed significantly
-    if (fabs(currentSpeed - lastSentSpeed) >= SPEED_THRESHOLD_KMH) return true;
-
-    // Bus just stopped or started
-    bool isMoving = currentSpeed > STOP_SPEED_KMH;
-    if (wasMoving && !isMoving) return true;
-    if (!wasMoving && isMoving) return true;
-
-    return false;
-}
-
-// ── Push current GPS fix into the buffer ─────────────────────
-// Called when WiFi is down and a location update is due.
-// Old entries are overwritten.
-void bufferCurrentFix() {
-    if (!gps.location.isValid()) return;
-    lastBufferedFix = BufferedFix{
-        gps.location.lat(),
-        gps.location.lng(),
-        getFilteredSpeed(),
-        gps.course.deg(),
-        (int)gps.satellites.value(),
-        gps.hdop.isValid() ? gps.hdop.hdop() : 99.9,
-        true
-    };
-    Serial.println("[GPS] Fix buffered (1 in queue).");
-}
-
-// ── Flush the buffer — send only the newest fix ──────────────
-// Discards intermediate buffered fixes to avoid marker teleporting on the
-// passenger map. Only the most-recently-recorded position is transmitted.
-SendResult flushBufferedFix() {
-    if (!lastBufferedFix.valid) return SendResult::Deferred;
-    if (WiFi.status() != WL_CONNECTED || rtdbBackoffActive()) {
-        return SendResult::Deferred;
-    }
-
-    Serial.println("[GPS] Flushing buffered fix.");
-
-    String path = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID;
-    FirebaseJson payload;
-    payload.set("lat",         lastBufferedFix.lat);
-    payload.set("lng",         lastBufferedFix.lng);
-    payload.set("heading",     lastBufferedFix.heading);
-    payload.set("speed",       lastBufferedFix.speed);
-    payload.set("deviceState", "online");
-    const char* motionState = getMotionState(lastBufferedFix.speed);
-    payload.set("motionState", motionState);
-    payload.set("timestamp/.sv", "timestamp");
-    payload.set("satellites",  lastBufferedFix.satellites);
-    payload.set("hdop",        lastBufferedFix.hdop);
-    payload.set("lowAccuracy", lastBufferedFix.hdop > HDOP_LOW_ACCURACY_THRESHOLD);
-
-    const unsigned long writeStartedAt = millis();
-    const bool sent = Firebase.RTDB.updateNode(&fbData, path.c_str(), &payload);
-    logRtdbResult("Buffered write", writeStartedAt, sent);
-    if (sent) {
-        Serial.println("[RTDB] Buffered fix sent.");
-        resetRtdbBackoff();
-        recordSuccessfulSend(
-            lastBufferedFix.lat,
-            lastBufferedFix.lng,
-            lastBufferedFix.speed,
-            lastBufferedFix.heading,
-            strcmp(motionState, "moving") == 0
-        );
-        lastBufferedFix.valid = false;
-        return SendResult::Sent;
-    } else {
-        Serial.printf("[RTDB] Buffered fix send failed: %s\n", fbData.errorReason().c_str());
-        scheduleRtdbBackoff();
-        return SendResult::Failed;
-    }
-}
-
-// ── Write static trip metadata once per session ───────────────────
-// Identity and service fields live at the active-bus root for passenger/admin
-// listeners. The mirrored /meta fields are retained for the device RTDB rule.
-// Subsequent coordinate patches omit all of these static fields.
-SendResult writeBusMeta() {
-    String busPath = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID;
-    FirebaseJson meta;
-    meta.set("busId",         BUS_ID);
-    meta.set("driverId",      DRIVER_ID);
-    meta.set("routeId",       ROUTE_ID);
-    meta.set("status",        "active");
-    meta.set("deviceState",   "online");
-    meta.set("tripState",     "pre_departure");
-    meta.set("currentStopIndex", 0);
-    meta.set("hasDepartedOrigin", false);
-    meta.set("timestamp/.sv", "timestamp");
-    meta.set("meta/busId",    BUS_ID);
-    meta.set("meta/driverId", DRIVER_ID);
-    meta.set("meta/routeId",  ROUTE_ID);
-    meta.set("meta/source",   "gnss_hw");
-
-    const unsigned long writeStartedAt = millis();
-    const bool sent = Firebase.RTDB.updateNode(&fbData, busPath.c_str(), &meta);
-    logRtdbResult("Metadata write", writeStartedAt, sent);
-    if (sent) {
-        Serial.println("[RTDB] Static bus metadata written.");
-        metaWritten = true;
-        resetRtdbBackoff();
-        return SendResult::Sent;
-    } else {
-        Serial.printf("[RTDB] Meta write failed: %s\n", fbData.errorReason().c_str());
-        scheduleRtdbBackoff();
-        return SendResult::Failed;
-    }
-}
-
-SendResult sendLocationToRTDB() {
-    if (!gps.location.isValid()) {
-        Serial.println("[GPS] No valid fix yet. Skipping send.");
-        return SendResult::Deferred;
-    }
-
-    // ── WiFi down: push to ring buffer and return ─────────────────────────
-    if (WiFi.status() != WL_CONNECTED) {
-        bufferCurrentFix();
-        return SendResult::Deferred;
-    }
-
-    // ── RTDB write backoff guard ──────────────────────────────────────────
-    // If RTDB is in a backoff period (due to repeated write failures), skip
-    // this update entirely to avoid hammering Firebase during an outage.
-    if (rtdbBackoffActive()) {
-        Serial.printf("[RTDB] In backoff — skipping write for %lums.\n",
-                      scheduledRtdbBackoffMs - elapsed(lastRtdbFailTime));
-        return SendResult::Deferred;
-    }
-
-    // Write static meta once per trip (reduces per-update payload size)
-    if (!metaWritten) {
-        const SendResult metaResult = writeBusMeta();
-        if (metaResult != SendResult::Sent) {
-            return metaResult;
-        }
-    }
-
-    double lat = gps.location.lat();
-    double lng = gps.location.lng();
-    double speed = getFilteredSpeed();
-    double heading = gps.course.deg();
-    int sats = gps.satellites.value();
-    double hdop = gps.hdop.isValid() ? gps.hdop.hdop() : 99.9;
-
-    // ── Build lean coordinate payload (~120 bytes vs. ~285 bytes full payload) ──
-    // Static fields (busId, routeId, driverId, source) are in /meta — written once.
-    String path = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID;
-    FirebaseJson payload;
-    payload.set("lat",       lat);
-    payload.set("lng",       lng);
-    payload.set("heading",   heading);
-    payload.set("speed",     speed);
-
-    // ── Hysteresis-gated motionState (prevents rapid moving/stopped oscillation) ──
-    const char* motionState = getMotionState(speed);
-    // deviceState is always "online" when this function is executing on a connected device.
-    // The backend sets deviceState:"offline" on socket disconnect / power cut.
-    payload.set("deviceState", "online");
-    payload.set("motionState", motionState);
-    // tripState is intentionally NOT written here — the backend computes it
-    // by geofencing the bus position against the route's stop coordinates.
-
-    payload.set("timestamp/.sv", "timestamp");  // Firebase server-injected timestamp
-    payload.set("satellites", sats);
-    payload.set("hdop",      hdop);
-
-    // ── HDOP accuracy flag (for frontend to downgrade confidence display) ──
-    bool lowAccuracy = hdop > HDOP_LOW_ACCURACY_THRESHOLD;
-    payload.set("lowAccuracy", lowAccuracy);
-
-    // Use PATCH (updateNode) not SET — preserves /meta sub-path and other fields
-    const unsigned long writeStartedAt = millis();
-    const bool sent = Firebase.RTDB.updateNode(&fbData, path.c_str(), &payload);
-    logRtdbResult("Live write", writeStartedAt, sent);
-    if (sent) {
-        Serial.printf("[RTDB] Sent: %.6f, %.6f | Speed: %.1f | Motion: %s | HDOP: %.1f%s\n",
-                      lat, lng, speed, motionState, hdop, lowAccuracy ? " lowAcc" : "");
-        // ── Reset backoff state on successful write ────────────────────────
-        resetRtdbBackoff();
-        recordSuccessfulSend(lat, lng, speed, heading, strcmp(motionState, "moving") == 0);
-        return SendResult::Sent;
-    } else {
-        Serial.printf("[RTDB] Write failed: %s\n", fbData.errorReason().c_str());
-        // ── Engage exponential backoff on repeated RTDB failures ──────────
-        scheduleRtdbBackoff();
-        return SendResult::Failed;
-    }
-}
+} // namespace
 
 void setup() {
-    Serial.begin(115200);
-    Serial.printf("[Boot] Reset reason: %d\n", (int)esp_reset_reason());
-    gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
-    delay(1000);
+  Serial.begin(115200);
+  gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
+  delay(500);
+  Serial.printf("[Boot] Eki MQTT telemetry; reset reason=%d\n", esp_reset_reason());
 
-    Serial.println("\n========================================");
-    Serial.println("  Eki BusTrack — ESP32 Phase 7");
-    Serial.println("  Ring Buffer, Backoff Guards, Overflow-safe Timers");
-    Serial.println("========================================\n");
-
-    connectWiFi();
-    initFirebase();
-    Serial.println("[GPS] Waiting for satellite fix...");
+  tlsClient.setCACert(MQTT_ROOT_CA);
+  mqttClient.begin(MQTT_HOST, MQTT_PORT, tlsClient);
+  mqttClient.setOptions(30, false, 5000);
+  mqttClient.dropOverflow(true);
+  connectWiFi();
 }
 
 void loop() {
-    // Feed NMEA characters to TinyGPS++ parser
-    while (gpsSerial.available() > 0) {
-        gps.encode(gpsSerial.read());
-    }
+  while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
 
-    unsigned long now = millis();
+  const bool wifiConnected = WiFi.status() == WL_CONNECTED;
+  if (!wifiConnected) {
+    if (mqttClient.connected()) mqttClient.disconnect();
+    connectWiFi();
+  } else {
+    if (!clockIsSynchronized()) configTime(0, 0, "pool.ntp.org", "time.google.com");
+    connectMqtt();
+  }
 
-    // ── Token Management (Refresh & Retry) ────────────────────────────────────
-    if (lastTokenFetch == 0 || elapsed(lastTokenFetch) >= TOKEN_REFRESH_INTERVAL_MS) {
-        static unsigned long lastAuthRetry = 0;
-        // Retry every 10s if the initial fetch failed on boot, or if the 50-min refresh fails.
-        if (elapsed(lastAuthRetry) >= 10000) {
-            lastAuthRetry = now;
-            if (fetchCustomToken()) {
-                Serial.println("[Auth] Successfully obtained Custom Token.");
-                // CR-10: If Firebase was never initialized (token failed at boot),
-                // complete initialization now that we have a valid token.
-                if (!firebaseReady && WiFi.status() == WL_CONNECTED) {
-                    Serial.println("[Auth] Completing deferred Firebase initialization.");
-                    startFirebaseWithCurrentToken();
-                }
-            }
-        }
-    }
+  if (mqttClient.connected()) {
+    mqttClient.loop();
+    if (bufferedFix.valid && publishFix(bufferedFix)) bufferedFix.valid = false;
+  }
 
-    // ── GPS fix-loss detection and EMA flush on re-acquisition ────────────────
-    if (!gps.location.isValid()) {
-        if (!gpsFixLost) {
-            gpsFixLost = true;
-            fixLostTime = now;
-            fixLostStatusWritten = false;
-            Serial.println("[GPS] Fix lost — entering maintenance state.");
-        }
+  if (elapsed(lastEvaluationAt) >= 1000) {
+    lastEvaluationAt = millis();
+    evaluateTelemetry();
+  }
 
-        // Write maintenance status once so the frontend shows "GPS signal lost"
-        // instead of showing a frozen marker or misleading idle status.
-        if (
-            firebaseReady &&
-            WiFi.status() == WL_CONNECTED &&
-            !fixLostStatusWritten &&
-            !rtdbBackoffActive()
-        ) {
-            String path = String("/activeBuses/") + BUS_ID + "_" + ROUTE_ID;
-            FirebaseJson statusPayload;
-            // GPS fix lost → deviceState stays "online" (ESP32 is alive), but
-            // motionState becomes "uncertain" (no trustworthy position data).
-            // The backend will set tripState = "maintenance" when it sees this.
-            statusPayload.set("deviceState", "online");
-            statusPayload.set("motionState", "uncertain");
-            statusPayload.set("lowAccuracy", true);
-            statusPayload.set("timestamp/.sv", "timestamp");
-            const unsigned long writeStartedAt = millis();
-            const bool sent = Firebase.RTDB.updateNode(&fbData, path.c_str(), &statusPayload);
-            logRtdbResult("GPS-loss status write", writeStartedAt, sent);
-            if (sent) {
-                fixLostStatusWritten = true;
-                resetRtdbBackoff();
-                Serial.println("[RTDB] motionState:uncertain written (GPS fix lost).");
-            } else {
-                Serial.printf("[RTDB] GPS-loss status failed: %s\n", fbData.errorReason().c_str());
-                scheduleRtdbBackoff();
-            }
-        }
-        return; // Do not attempt shouldSendUpdate() without a valid fix
-    }
-
-    // ── GPS fix re-acquisition: flush EMA to new coordinate ──────────────────
-    if (gpsFixLost) {
-        gpsFixLost = false;
-        // Reset EMA immediately to the new fix so heading and distance
-        // calculations are accurate from the first re-acquired frame.
-        smoothedLat = gps.location.lat();
-        smoothedLng = gps.location.lng();
-        Serial.printf("[GPS] Fix re-acquired after %lums. EMA reset to %.6f, %.6f\n",
-                      elapsed(fixLostTime), smoothedLat, smoothedLng);
-        fixLostTime = 0;
-    }
-
-    // Check every 1 second if we should send (NOT every frame — save CPU)
-    if (elapsed(lastCheckTime) >= 1000) {
-        lastCheckTime = now;
-
-        // ── WiFi reconnect ────────────────────────────────────────────────
-        if (WiFi.status() != WL_CONNECTED) {
-            connectWiFi(); // Non-blocking — respects 5s cooldown internally
-        }
-
-        // Only attempt Firebase writes if we have successfully obtained an auth token
-        if (firebaseReady && lastTokenFetch > 0) {
-            // Flush buffered GPS fixes if WiFi just came back
-            if (WiFi.status() == WL_CONNECTED && lastBufferedFix.valid) {
-                if (rtdbBackoffActive()) {
-                    bufferCurrentFix();
-                } else {
-                    flushBufferedFix();
-                }
-            }
-            // Send live update if movement thresholds are met
-            else if (shouldSendUpdate()) {
-                sendLocationToRTDB();
-            }
-        }
-    }
-
-    // Watchdog: if no NMEA data received in 5 seconds after boot, warn (with cooldown)
-    if (millis() > 5000 && gps.charsProcessed() < 10) {
-        static unsigned long lastGpsWarn = 0;
-        if (elapsed(lastGpsWarn) >= 5000) {
-            lastGpsWarn = millis();
-            Serial.println("[GPS] ⚠️ No GPS data received — check wiring!");
-        }
-    }
+  if (millis() > 5000 && gps.charsProcessed() < 10 && elapsed(lastGpsWarningAt) >= 5000) {
+    lastGpsWarningAt = millis();
+    Serial.println("[GPS] No NMEA data received; check RX/TX wiring.");
+  }
+  delay(5);
 }
