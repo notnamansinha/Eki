@@ -1,5 +1,11 @@
 # ESP32 + NEO-M8N GNSS Hardware Integration — Complete Migration Guide
 
+> **Historical document:** sections describing direct Firebase/HTTP telemetry
+> are superseded. Production firmware now uses certificate-verified MQTT QoS 1
+> and the six-field payload documented in
+> `docs/MQTT_DEPLOYMENT_AND_OWNER_CHECKLIST.md`. Do not provision Firebase
+> tokens, database secrets, or direct RTDB access to an ESP32.
+>
 > **Project**: Eki
 > **Migration**: Browser Geolocation API → Dedicated ESP32 + NEO-M8N GNSS Module
 > **Hardware**: ESP-WROOM-32 (30-Pin, CP2102) + NEO-M8N with Ceramic Active Antenna
@@ -324,13 +330,15 @@ For security, we isolate all credentials from the main code. Create a new direct
 
 // ── Firebase Configuration ────────────────────────────────────────
 #define FIREBASE_HOST "your-project-id-default-rtdb.firebaseio.com"
-#define FIREBASE_PROJECT_ID "your-project-id"
-#define FIREBASE_CLIENT_EMAIL "firebase-adminsdk-xxx@your-project-id.iam.gserviceaccount.com"
-
-static const char FIREBASE_PRIVATE_KEY[] = "-----BEGIN PRIVATE KEY-----\n"
-"YOUR_PRIVATE_KEY_HERE\n"
-"-----END PRIVATE KEY-----\n";
+#define FIREBASE_API_KEY "YOUR_FIREBASE_WEB_API_KEY"
+#define BACKEND_URL "https://your-backend.example.com"
+#define DEVICE_SECRET "YOUR_PER_DEVICE_SECRET"
 ```
+
+Never embed a Firebase service-account private key in firmware. The current
+device authenticates to `POST /api/devices/auth` with its per-device secret,
+then exchanges the returned Firebase custom token for a short-lived session
+whose RTDB writes are restricted to that device and assigned route.
 
 **`src/main.cpp`** (The main application logic using Service Accounts):
 ```cpp
@@ -372,14 +380,14 @@ void setup() {
 
  connectWiFi();
 
- // Initialize Firebase using the Service Account defined in secrets.h
+ // Current production flow: synchronize time, fetch a short-lived custom
+ // token from POST /api/devices/auth, then initialize Firebase with it.
  Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
  fbConfig.database_url = FIREBASE_HOST;
-
- // Set the service account credentials
- fbConfig.service_account.data.client_email = FIREBASE_CLIENT_EMAIL;
- fbConfig.service_account.data.project_id = FIREBASE_PROJECT_ID;
- fbConfig.service_account.data.private_key = FIREBASE_PRIVATE_KEY;
+ if (!fetchCustomToken()) {
+   Serial.println("[Auth] Device authentication deferred.");
+   return;
+ }
 
  // Assign the configuration and authentication to the Firebase instance
  Firebase.begin(&fbConfig, &fbAuth);
@@ -387,7 +395,7 @@ void setup() {
 
  Serial.println("[Firebase] Initializing and waiting for token...");
 
- // Wait for Service Account token generation
+ // Wait for the custom-token session to become ready
  while (!Firebase.ready()) {
  Serial.print(".");
  delay(1000);
@@ -929,38 +937,30 @@ In Phase 1–2, we used a **legacy RTDB database secret** (`FIREBASE_AUTH` const
 |---|---|---|---|
 | **Legacy database secret** | Trivial | Very poor — if firmware is decompiled, entire RTDB is compromised | Development only |
 | **Custom token via backend** | Medium | Good — ESP32 calls your backend to get a short-lived Firebase token | **Recommended** |
-| **Service account on device** | Medium | Moderate — service account JSON in firmware is extractable | Not ideal |
+| **Service account on device** | Medium | Critical — reusable server credentials are extractable from firmware | **Never use** |
 | **Firebase Auth anonymous sign-in** | Easy | Moderate — generates a UID, but any device can do it | Acceptable for MVP |
 
 ### 8.3 — Recommended Approach: Custom Token via Backend
 
+Service-account credentials must never be provisioned to a vehicle; the table
+above is historical comparison only.
+
 **Flow:**
 1. Each ESP32 is provisioned with a unique **device secret** (a random 32-byte string stored in NVS)
 2. On boot, the ESP32 sends an HTTPS POST to your backend: `POST /api/devices/auth` with `{ deviceId: "bus_01", secret: "..." }`
-3. The backend validates the device secret against Firestore's `devices` collection using `bcrypt`
+3. The backend derives and verifies the device secret with `scrypt` and a constant-time comparison
 4. If valid, the backend generates a **Firebase Custom Token** using the Admin SDK: `admin.auth().createCustomToken(deviceId)`
 5. The ESP32 receives the custom token, uses it to authenticate with RTDB
 6. Custom tokens expire after 1 hour — the ESP32 re-authenticates every 50 minutes
 
-**Backend endpoint to add:**
+**Backend endpoint (implemented):**
 ```typescript
 // backend/src/routes/devices.ts
-router.post("/auth", async (req, res) => {
- const { deviceId, secret } = req.body;
- const deviceDoc = await db.collection("devices").doc(deviceId).get();
- 
- if (!deviceDoc.exists) {
-   return res.status(401).json({ error: "Invalid device credentials" });
- }
- 
- const isValid = await bcrypt.compare(secret, deviceDoc.data()?.secretHash);
- if (!isValid) {
-   return res.status(401).json({ error: "Invalid device credentials" });
- }
- 
- const customToken = await auth.createCustomToken(deviceId, { deviceId, role: "device" });
- res.json({ token: customToken, expiresIn: 3600 });
-});
+// The production handler rate-limits failed attempts, validates the device ID,
+// derives `secret` with scrypt using the stored salt, compares with
+// timingSafeEqual, validates the assigned route, and mints claims containing:
+const claims = { role: "device", deviceId, routeId: assignedRouteId };
+const customToken = await auth.createCustomToken(deviceId, claims);
 ```
 
 **ESP32 Firmware addition (Phase 5):**
