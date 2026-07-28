@@ -1,0 +1,3 @@
+export const ETA_SPEED_FLOOR_KMH = 25;
+export const ETA_SPEED_FLOOR_METERS_PER_MINUTE =
+  (ETA_SPEED_FLOOR_KMH * 1_000) / 60;
