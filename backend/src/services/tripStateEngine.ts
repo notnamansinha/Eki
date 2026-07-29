@@ -231,44 +231,11 @@ export function startTripStateEngine(): () => void {
     (error) => console.error("[TripState] Route cache watcher failed:", error),
   );
 
-  const childAddedHandler = async (snapshot: import("firebase-admin/database").DataSnapshot) => {
+  const processLiveSnapshot = async (
+    snapshot: import("firebase-admin/database").DataSnapshot,
+  ) => {
     const data = snapshot.val();
     if (!data || !data.busId || !data.routeId) return;
-    
-    persistFleetState(data, new Date().toISOString());
-    
-    await ensureRouteLoaded(data.routeId);
-
-    const nodeKey = snapshot.key || `${data.busId}_${data.routeId}`;
-    const telemetryTimestamp = Number(data.timestamp);
-    const previousTelemetry = processedTelemetry.get(nodeKey);
-    const isNewTelemetry =
-      Number.isFinite(telemetryTimestamp) &&
-      Number.isFinite(data.lat) &&
-      Number.isFinite(data.lng) &&
-      (!previousTelemetry || telemetryTimestamp > previousTelemetry.timestamp);
-    if (
-      isNewTelemetry
-    ) {
-      processedTelemetry.set(nodeKey, {
-        timestamp: telemetryTimestamp,
-        lat: data.lat,
-        lng: data.lng,
-      });
-    }
-  };
-
-  const processChildChanged = async (snapshot: import("firebase-admin/database").DataSnapshot) => {
-    const data = snapshot.val();
-    if (
-      !data ||
-      !data.busId ||
-      !data.routeId ||
-      !Number.isFinite(data.lat) ||
-      !Number.isFinite(data.lng)
-    ) return;
-
-    const stops = await ensureRouteLoaded(data.routeId);
 
     // If driver marked offline via frontend, handle cleanup
     if (data.status === "offline") {
@@ -279,6 +246,9 @@ export function startTripStateEngine(): () => void {
       persistFleetState({ ...data, deviceState: "offline", status: "offline" }, new Date().toISOString());
       return;
     }
+    if (!Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
+
+    const stops = await ensureRouteLoaded(data.routeId);
 
     const nodeKey = snapshot.key || `${data.busId}_${data.routeId}`;
     const telemetryTimestamp = Number(data.timestamp);
@@ -352,6 +322,7 @@ export function startTripStateEngine(): () => void {
     if (
       typeof data.sessionId === "string" &&
       reachedStopIndex !== null &&
+      tripState !== "completed" &&
       stops[reachedStopIndex]
     ) {
       const stop = stops[reachedStopIndex];
@@ -396,9 +367,22 @@ export function startTripStateEngine(): () => void {
         sessionId: typeof data.sessionId === "string" ? data.sessionId : null,
       }, { merge: true });
       if (typeof data.sessionId === "string") {
+        const finalStop = stops[currentStopIndex];
         batch.set(db.collection("ride_sessions").doc(data.sessionId), {
           status: "completed",
           endTime: Date.now(),
+          ...(finalStop
+            ? {
+                stopsReached: {
+                  [currentStopIndex]: {
+                    stopIndex: currentStopIndex,
+                    stopId: finalStop.id,
+                    stopName: finalStop.name,
+                    timestamp: FieldValue.serverTimestamp(),
+                  },
+                },
+              }
+            : {}),
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
       }
@@ -463,7 +447,7 @@ export function startTripStateEngine(): () => void {
     persistFleetState({ ...data, tripState }, new Date().toISOString());
   };
 
-  const childChangedHandler = (
+  const liveSnapshotHandler = (
     snapshot: import("firebase-admin/database").DataSnapshot,
   ) => {
     const nodeKey = snapshot.key;
@@ -471,7 +455,7 @@ export function startTripStateEngine(): () => void {
     const previous = telemetryQueues.get(nodeKey) ?? Promise.resolve();
     const queued = previous
       .catch(() => undefined)
-      .then(() => processChildChanged(snapshot))
+      .then(() => processLiveSnapshot(snapshot))
       .catch((error) => {
         console.error(`[TripState] Failed to process telemetry for ${nodeKey}:`, error);
       });
@@ -507,8 +491,8 @@ export function startTripStateEngine(): () => void {
     }
   };
 
-  busesRef.on("child_added", childAddedHandler);
-  busesRef.on("child_changed", childChangedHandler);
+  busesRef.on("child_added", liveSnapshotHandler);
+  busesRef.on("child_changed", liveSnapshotHandler);
   busesRef.on("child_removed", childRemovedHandler);
 
   // Hardware trackers cannot register an RTDB onDisconnect handler. Sweep only
@@ -552,8 +536,8 @@ export function startTripStateEngine(): () => void {
 
   return () => {
     unsubscribeRoutes();
-    busesRef.off("child_added", childAddedHandler);
-    busesRef.off("child_changed", childChangedHandler);
+    busesRef.off("child_added", liveSnapshotHandler);
+    busesRef.off("child_changed", liveSnapshotHandler);
     busesRef.off("child_removed", childRemovedHandler);
     clearInterval(staleSweepTimer);
     completedTimeouts.forEach(clearTimeout);

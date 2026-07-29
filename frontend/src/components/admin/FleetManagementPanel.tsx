@@ -152,8 +152,8 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
   const TsIcon = ts.Icon;
   const stopsTotal = route?.stops?.length ?? 0;
   const stopIdx = (entry.currentStopIndex ?? 0) + 1;
-  const currentStop = route?.stops?.[entry.currentStopIndex ?? 0];
-  const nextStop = route?.stops?.[(entry.currentStopIndex ?? 0) + 1];
+  const nextStop = route?.stops?.[entry.currentStopIndex ?? 0];
+  const followingStop = route?.stops?.[(entry.currentStopIndex ?? 0) + 1];
 
   return (
     <div className="bg-brand-surface border border-border-thin rounded-md overflow-hidden transition-colors hover:border-white/30">
@@ -235,16 +235,16 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
                 />
               </div>
               <div className="grid grid-cols-2 gap-2 mt-0.5">
-                {currentStop && (
-                  <div className="flex flex-col">
-                    <span className="text-[8px] text-white/25 uppercase font-black tracking-wider">Current Stop</span>
-                    <span className="text-[10px] font-semibold text-white truncate">{currentStop.name}</span>
-                  </div>
-                )}
                 {nextStop && (
                   <div className="flex flex-col">
                     <span className="text-[8px] text-white/25 uppercase font-black tracking-wider">Next Stop</span>
-                    <span className="text-[10px] font-semibold text-white/60 truncate">{nextStop.name}</span>
+                    <span className="text-[10px] font-semibold text-white truncate">{nextStop.name}</span>
+                  </div>
+                )}
+                {followingStop && (
+                  <div className="flex flex-col">
+                    <span className="text-[8px] text-white/25 uppercase font-black tracking-wider">Following Stop</span>
+                    <span className="text-[10px] font-semibold text-white/60 truncate">{followingStop.name}</span>
                   </div>
                 )}
               </div>

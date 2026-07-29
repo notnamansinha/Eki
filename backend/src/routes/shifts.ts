@@ -123,35 +123,37 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
     ) {
       const sessionStatus =
         current.tripState === "pre_departure" ? "armed" : "active";
-      await db.collection("ride_sessions").doc(current.sessionId).set({
-        id: current.sessionId,
-        busId: assignment.busId,
-        driverId: assignment.driverId,
-        routeId: assignment.routeId,
-        status: sessionStatus,
-      }, { merge: true });
-      await db.collection("active_rides")
-        .doc(activeRideId(assignment.busId, assignment.routeId))
-        .set({
-          sessionId: current.sessionId,
+      await Promise.all([
+        db.collection("ride_sessions").doc(current.sessionId).set({
+          id: current.sessionId,
           busId: assignment.busId,
           driverId: assignment.driverId,
           routeId: assignment.routeId,
-          status: "active",
-          tripState:
-            current.tripState === "in_service"
-              ? "in_service"
-              : "pre_departure",
-          currentStopIndex: Number.isInteger(current.currentStopIndex)
-            ? current.currentStopIndex
-            : 0,
-          hasDepartedOrigin: current.hasDepartedOrigin === true,
-          delayMinutes:
-            typeof current.delayMinutes === "number"
-              ? current.delayMinutes
+          status: sessionStatus,
+        }, { merge: true }),
+        db.collection("active_rides")
+          .doc(activeRideId(assignment.busId, assignment.routeId))
+          .set({
+            sessionId: current.sessionId,
+            busId: assignment.busId,
+            driverId: assignment.driverId,
+            routeId: assignment.routeId,
+            status: "active",
+            tripState:
+              current.tripState === "in_service"
+                ? "in_service"
+                : "pre_departure",
+            currentStopIndex: Number.isInteger(current.currentStopIndex)
+              ? current.currentStopIndex
               : 0,
-          updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
+            hasDepartedOrigin: current.hasDepartedOrigin === true,
+            delayMinutes:
+              typeof current.delayMinutes === "number"
+                ? current.delayMinutes
+                : 0,
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true }),
+      ]);
       res.json({ sessionId: current.sessionId, resumed: true });
       return;
     }

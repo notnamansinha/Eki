@@ -50,6 +50,7 @@ export type TelemetryIngestResult =
 
 const credentialCache = new Map<string, CredentialCacheEntry>();
 const durableRideMisses = new Map<string, number>();
+const durableRideRestores = new Map<string, Promise<void>>();
 const rateBuckets = new Map<string, RateBucket>();
 const status: HttpsTelemetryStatus = {
   accepted: 0,
@@ -296,6 +297,28 @@ async function restoreDurableRide(
   });
 }
 
+function scheduleDurableRideRestore(
+  assignment: DeviceAssignment,
+  sample: TelemetryPayload,
+): void {
+  const nodeKey = `${assignment.busId}_${assignment.routeId}`;
+  if (durableRideRestores.has(nodeKey)) return;
+
+  const restore = restoreDurableRide(assignment, sample)
+    .catch((error) => {
+      console.warn(
+        `[Devices] Durable ride recovery failed for ${nodeKey}:`,
+        error,
+      );
+    })
+    .finally(() => {
+      if (durableRideRestores.get(nodeKey) === restore) {
+        durableRideRestores.delete(nodeKey);
+      }
+    });
+  durableRideRestores.set(nodeKey, restore);
+}
+
 async function persistTelemetry(
   assignment: DeviceAssignment,
   sample: TelemetryPayload,
@@ -371,7 +394,10 @@ export async function ingestDeviceTelemetry(
 
   const persisted = await persistTelemetry(assignment, sample);
   if (!persisted.hasSession) {
-    await restoreDurableRide(assignment, sample);
+    // RTDB already contains the accepted fix at this point. Recover the
+    // durable lifecycle immediately in the background so the hardware response
+    // is not delayed by an additional Firestore read.
+    scheduleDurableRideRestore(assignment, sample);
   }
   if (persisted.committed) {
     status.accepted += 1;

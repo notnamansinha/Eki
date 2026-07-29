@@ -8,8 +8,7 @@
  * - Start the server and listen on PORT from .env
  *
  * Security notes:
- * - Socket connections require a valid Firebase ID token in socket.handshake.auth.token
- * - unauthenticated sockets are rejected before any event handlers run
+ * - Authenticated API routes require a valid Firebase ID token
  */
 
 import "dotenv/config";
@@ -155,8 +154,6 @@ app.use("/api/places", placesRoutes);
 app.use("/api/shifts", writeLimiter, shiftsRoutes);
 app.use("/api/fleet", writeLimiter, fleetRoutes);
 app.use("/api/privacy", writeLimiter, privacyRoutes);
-
-// Socket.IO has been removed in favor of native Firebase streams.
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 let firebaseReady = false;

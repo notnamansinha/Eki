@@ -335,13 +335,13 @@ function FleetCard({
                 <div className="grid grid-cols-2 gap-2 mt-2">
                   {route?.stops?.[entry.currentStopIndex ?? 0] && (
                     <div>
-                      <span className="text-[8px] text-white/25 uppercase font-black">Current Stop</span>
+                      <span className="text-[8px] text-white/25 uppercase font-black">Next Stop</span>
                       <p className="text-[10px] font-semibold text-white truncate">{route.stops[entry.currentStopIndex ?? 0].name}</p>
                     </div>
                   )}
                   {route?.stops?.[(entry.currentStopIndex ?? 0) + 1] && (
                     <div>
-                      <span className="text-[8px] text-white/25 uppercase font-black">Next Stop</span>
+                      <span className="text-[8px] text-white/25 uppercase font-black">Following Stop</span>
                       <p className="text-[10px] font-semibold text-white/60 truncate">{route.stops[(entry.currentStopIndex ?? 0) + 1].name}</p>
                     </div>
                   )}

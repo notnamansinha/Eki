@@ -17,7 +17,6 @@ interface Props {
   selectedRouteIds: string[];
   setSelectedRouteIds: (ids: string[]) => void;
   onStartTracking: () => void;
-  isSocketConnected?: boolean;
 }
 
 export default function TransmitterControls({
@@ -30,7 +29,6 @@ export default function TransmitterControls({
   selectedRouteIds,
   setSelectedRouteIds,
   onStartTracking,
-  isSocketConnected = false,
 }: Props) {
   const [isExpanded, setIsExpanded] = useState(true);
   const { routes } = useRoutes();
@@ -182,21 +180,12 @@ export default function TransmitterControls({
           <button
               aria-label="Arm ride for automatic start at stop one"
               onClick={onStartTracking}
-              disabled={!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0 || !isSocketConnected}
+              disabled={!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0}
               className="w-full py-4 rounded-xl font-semibold text-[14px] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 disabled:opacity-30 disabled:cursor-not-allowed"
               style={{ background: "var(--text-primary)", color: "var(--surface-0)" }}
             >
-              {!isSocketConnected ? (
-                <>
-                  <span className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: "var(--status-warning)" }} />
-                  Connecting…
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" style={{ fill: "var(--surface-0)" }} />
-                  Arm Ride
-                </>
-              )}
+              <Play className="w-4 h-4" style={{ fill: "var(--surface-0)" }} />
+              Arm Ride
             </button>
         </div>
       </div>

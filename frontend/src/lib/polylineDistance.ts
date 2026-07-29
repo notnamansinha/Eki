@@ -35,10 +35,8 @@ export function positionAlongPolyline(
   if (path.length < 2) return null;
   const snap = snapToPolyline(point, path, options);
   if (!snap.snapped) return null;
-  const segmentLength = getDistanceMeters(
-    path[snap.segmentIndex],
-    path[snap.segmentIndex + 1],
-  );
+  const segmentLength =
+    cumulative[snap.segmentIndex + 1] - cumulative[snap.segmentIndex];
   return cumulative[snap.segmentIndex] + segmentLength * snap.segmentFraction;
 }
 

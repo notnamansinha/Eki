@@ -37,7 +37,7 @@ export default function DriverPage() {
   const busId = selectedBusId || activeDriver?.assignedBusId || "";
 
   const [selectedRouteIds, setSelectedRouteIds] = useState<string[]>([]);
-  const activeRoute = routes.find(r => selectedRouteIds.includes(r.id)) || routes.find(r => r.id === selectedRouteIds[0]);
+  const activeRoute = routes.find(r => selectedRouteIds.includes(r.id));
   const [isTracking, setIsTracking] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number; heading: number; speed?: number } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("map");
@@ -179,7 +179,6 @@ export default function DriverPage() {
                 selectedRouteIds={selectedRouteIds}
                 setSelectedRouteIds={setSelectedRouteIds}
                 onStartTracking={handleStartTracking}
-                isSocketConnected={true}
               />
             </div>
           )}

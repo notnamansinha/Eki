@@ -92,10 +92,12 @@ export function startWorkerCoordinator(): () => Promise<void> {
     clearInterval(timer);
     stopWork();
     try {
-      const snapshot = await leaseRef.get();
-      if (snapshot.data()?.ownerId === ownerId) {
-        await leaseRef.delete();
-      }
+      await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(leaseRef);
+        if (snapshot.data()?.ownerId === ownerId) {
+          transaction.delete(leaseRef);
+        }
+      });
     } catch (error) {
       console.warn("[Worker] Lease release failed:", error);
     }

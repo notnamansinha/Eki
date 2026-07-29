@@ -1,6 +1,7 @@
 #include "secrets.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <cstring>
 #include <HTTPClient.h>
 #include <TinyGPSPlus.h>
 #include <WiFi.h>
@@ -25,7 +26,7 @@ static_assert(sizeof(DEVICE_SECRET) - 1 >= 20,
               "DEVICE_SECRET must contain at least 20 characters.");
 
 namespace {
-constexpr double DISTANCE_THRESHOLD_M = 8.0;
+constexpr double DISTANCE_THRESHOLD_M = 5.0;
 constexpr double HEADING_THRESHOLD_DEG = 15.0;
 constexpr double SPEED_THRESHOLD_KMH = 5.0;
 constexpr double MOVING_SPEED_KMH = 2.5;
@@ -61,6 +62,7 @@ double lastLng = 0;
 double lastSpeed = 0;
 double lastHeading = 0;
 bool hasPublishedLocation = false;
+const char *lastPublishedMotionState = nullptr;
 bool moving = false;
 uint8_t movingReadings = 0;
 uint8_t stoppedReadings = 0;
@@ -212,6 +214,7 @@ bool publishFix(const TelemetryFix &fix) {
   lastLng = fix.lng;
   lastSpeed = fix.speed;
   lastHeading = fix.heading;
+  lastPublishedMotionState = fix.motionState;
   lastPublishAt = millis();
   hasPublishedLocation = true;
   return true;
@@ -247,8 +250,12 @@ bool shouldPublish(const TelemetryFix &fix) {
   if (!hasPublishedLocation) return true;
   if (elapsed(lastPublishAt) < MIN_PUBLISH_INTERVAL_MS) return false;
 
+  const bool motionStateChanged =
+    lastPublishedMotionState == nullptr ||
+    std::strcmp(fix.motionState, lastPublishedMotionState) != 0;
   const double moved = haversineMeters(lastLat, lastLng, fix.lat, fix.lng);
   const bool materiallyChanged =
+    motionStateChanged ||
     moved >= DISTANCE_THRESHOLD_M ||
     headingDelta(fix.heading, lastHeading) >= HEADING_THRESHOLD_DEG ||
     fabs(fix.speed - lastSpeed) >= SPEED_THRESHOLD_KMH;

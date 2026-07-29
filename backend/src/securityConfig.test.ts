@@ -185,6 +185,7 @@ describe("production security configuration", () => {
     const tripStateEngine = workspaceFile("backend/src/services/tripStateEngine.ts");
 
     expect(firmware).toContain("STOPPED_HEARTBEAT_MS = 60000");
+    expect(firmware).toContain("motionStateChanged");
     expect(tripStateEngine).toContain("const STALE_BUS_MS = readIntervalMs");
     expect(firmware).toContain("bufferedFix");
     expect(firmware).toContain("HTTPS_RETRY_MS");
@@ -253,6 +254,8 @@ describe("production security configuration", () => {
     );
 
     expect(engine).toContain("telemetryTimestamp > previousTelemetry.timestamp");
+    expect(engine).toContain('busesRef.on("child_added", liveSnapshotHandler)');
+    expect(engine).toContain('busesRef.on("child_changed", liveSnapshotHandler)');
     expect(engine).toContain("processedTelemetry.delete");
     expect(engine).toContain("forgetAfterWrite");
     expect(engine).toContain("stopsReached:");
@@ -264,6 +267,12 @@ describe("production security configuration", () => {
     expect(completionBlock.indexOf("await snapshot.ref.update({")).toBeGreaterThan(
       completionBlock.indexOf("await batch.commit()"),
     );
+    const telemetry = workspaceFile(
+      "backend/src/services/deviceTelemetryService.ts",
+    );
+    expect(telemetry).toContain("durableRideRestores");
+    expect(telemetry).toContain("scheduleDurableRideRestore(assignment, sample)");
+    expect(telemetry).not.toContain("await restoreDurableRide(assignment, sample)");
   });
 
   it("revokes fleet assignments through an admin backend boundary", () => {
