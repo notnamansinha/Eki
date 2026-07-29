@@ -1,18 +1,16 @@
 import { db, rtdb } from "../lib/firebaseAdmin";
-import { startETATracking, stopETATracking, updateRoutePolylineCache } from "../lib/etaService";
 import { FieldValue } from "firebase-admin/firestore";
 import { reduceTripState } from "./tripStateReducer";
 
 interface RouteStop { id: string; lat: number; lng: number; name: string; }
-interface LiveLocation { lat: number; lng: number; speed: number | null; }
-const latestLocations = new Map<string, LiveLocation>();
 const routeStopsCache = new Map<string, RouteStop[]>();
-const routeDestCache = new Map<string, {lat: number, lng: number}>();
 const routeLoadPromises = new Map<string, Promise<RouteStop[]>>();
-const activeETATracking = new Map<string, string>();
 const completedTimeouts = new Map<string, NodeJS.Timeout>();
 const persistedFleetState = new Map<string, string>();
 const fleetWriteQueues = new Map<string, Promise<void>>();
+const persistedActiveRideState = new Map<string, string>();
+const activeRideWriteQueues = new Map<string, Promise<void>>();
+const telemetryQueues = new Map<string, Promise<void>>();
 interface TelemetrySample {
   timestamp: number;
   lat: number;
@@ -26,7 +24,6 @@ function readIntervalMs(value: string | undefined, fallback: number, minimum: nu
 }
 
 const STALE_BUS_MS = readIntervalMs(process.env.BUS_STALE_MS, 300_000, 90_000);
-const ETA_INTERVAL_MS = readIntervalMs(process.env.ETA_INTERVAL_MS, 180_000, 30_000);
 
 /**
  * Firestore is the durable fleet-state store, not a second telemetry stream.
@@ -107,8 +104,6 @@ async function ensureRouteLoaded(routeId: string): Promise<RouteStop[]> {
 function cacheRoute(routeId: string, routeData: Record<string, any> | undefined): void {
   if (!routeData) {
     routeStopsCache.delete(routeId);
-    routeDestCache.delete(routeId);
-    updateRoutePolylineCache(routeId);
     return;
   }
   const stops = Array.isArray(routeData.stops)
@@ -128,16 +123,6 @@ function cacheRoute(routeId: string, routeData: Record<string, any> | undefined)
       }))
     : [];
   routeStopsCache.set(routeId, stops);
-  const destination = stops.at(-1);
-  if (destination) {
-    routeDestCache.set(routeId, { lat: destination.lat, lng: destination.lng });
-  } else {
-    routeDestCache.delete(routeId);
-  }
-  updateRoutePolylineCache(
-    routeId,
-    typeof routeData.polyline === "string" ? routeData.polyline : undefined,
-  );
 }
 
 function activeRideDocumentId(
@@ -153,7 +138,7 @@ function persistActiveRideLifecycle(
   tripState: "pre_departure" | "in_service",
   currentStopIndex: number,
   hasDepartedOrigin: boolean,
-): void {
+): Promise<void> {
   const documentId = activeRideDocumentId(data);
   if (
     !documentId ||
@@ -161,9 +146,9 @@ function persistActiveRideLifecycle(
     typeof data.sessionId !== "string" ||
     typeof data.driverId !== "string"
   ) {
-    return;
+    return Promise.resolve();
   }
-  db.collection("active_rides").doc(documentId).set({
+  const state = {
     sessionId: data.sessionId,
     busId: data.busId,
     driverId: data.driverId,
@@ -174,13 +159,43 @@ function persistActiveRideLifecycle(
     hasDepartedOrigin,
     delayMinutes:
       typeof data.delayMinutes === "number" ? data.delayMinutes : 0,
-    updatedAt: FieldValue.serverTimestamp(),
-  }, { merge: true }).catch((error) => {
-    console.warn(
-      `[TripState] Failed to persist active ride ${documentId}:`,
-      error,
-    );
-  });
+  };
+  const fingerprint = JSON.stringify(state);
+  if (persistedActiveRideState.get(documentId) === fingerprint) {
+    return activeRideWriteQueues.get(documentId) ?? Promise.resolve();
+  }
+
+  persistedActiveRideState.set(documentId, fingerprint);
+  const previous = activeRideWriteQueues.get(documentId) ?? Promise.resolve();
+  const write: Promise<void> = previous
+    .catch(() => undefined)
+    .then(async () => {
+      await db.collection("active_rides").doc(documentId).set({
+        ...state,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    });
+  activeRideWriteQueues.set(documentId, write);
+  void write.then(
+    () => {
+      if (activeRideWriteQueues.get(documentId) === write) {
+        activeRideWriteQueues.delete(documentId);
+      }
+    },
+    (error) => {
+      if (persistedActiveRideState.get(documentId) === fingerprint) {
+        persistedActiveRideState.delete(documentId);
+      }
+      if (activeRideWriteQueues.get(documentId) === write) {
+        activeRideWriteQueues.delete(documentId);
+      }
+      console.warn(
+        `[TripState] Failed to persist active ride ${documentId}:`,
+        error,
+      );
+    },
+  );
+  return write;
 }
 
 function activateRideSession(sessionId: string): void {
@@ -207,7 +222,7 @@ function activateRideSession(sessionId: string): void {
 export function startTripStateEngine(): () => void {
   console.log("🚀 Trip State Engine started, listening to RTDB /activeBuses");
   const busesRef = rtdb.ref("activeBuses");
-  const unsubscribeRoutes = db.collection("routes").onSnapshot(
+  const unsubscribeRoutes = db.collection("routes").limit(500).onSnapshot(
     (snapshot) => {
       snapshot.docChanges().forEach((change) => {
         cacheRoute(change.doc.id, change.type === "removed" ? undefined : change.doc.data());
@@ -220,28 +235,9 @@ export function startTripStateEngine(): () => void {
     const data = snapshot.val();
     if (!data || !data.busId || !data.routeId) return;
     
-    if (Number.isFinite(data.lat) && Number.isFinite(data.lng)) {
-      latestLocations.set(data.busId, {
-        lat: data.lat,
-        lng: data.lng,
-        speed: Number.isFinite(data.speed) ? data.speed : null,
-      });
-    }
     persistFleetState(data, new Date().toISOString());
     
     await ensureRouteLoaded(data.routeId);
-    
-    if (!activeETATracking.has(data.busId)) {
-      activeETATracking.set(data.busId, data.routeId);
-      startETATracking(
-        data.busId, 
-        data.routeId, 
-        () => latestLocations.get(data.busId) || null, 
-        () => routeDestCache.get(data.routeId) || null, 
-        ETA_INTERVAL_MS,
-        () => latestLocations.get(data.busId)?.speed ?? null,
-      );
-    }
 
     const nodeKey = snapshot.key || `${data.busId}_${data.routeId}`;
     const telemetryTimestamp = Number(data.timestamp);
@@ -262,7 +258,7 @@ export function startTripStateEngine(): () => void {
     }
   };
 
-  const childChangedHandler = async (snapshot: import("firebase-admin/database").DataSnapshot) => {
+  const processChildChanged = async (snapshot: import("firebase-admin/database").DataSnapshot) => {
     const data = snapshot.val();
     if (
       !data ||
@@ -272,49 +268,16 @@ export function startTripStateEngine(): () => void {
       !Number.isFinite(data.lng)
     ) return;
 
-    latestLocations.set(data.busId, {
-      lat: data.lat,
-      lng: data.lng,
-      speed: Number.isFinite(data.speed) ? data.speed : null,
-    });
     const stops = await ensureRouteLoaded(data.routeId);
 
     // If driver marked offline via frontend, handle cleanup
     if (data.status === "offline") {
-      latestLocations.delete(data.busId);
-      activeETATracking.delete(data.busId);
-      stopETATracking(data.busId);
       if (completedTimeouts.has(data.busId)) {
         clearTimeout(completedTimeouts.get(data.busId));
         completedTimeouts.delete(data.busId);
       }
       persistFleetState({ ...data, deviceState: "offline", status: "offline" }, new Date().toISOString());
       return;
-    }
-
-    // Handle route changes
-    const currentActiveRoute = activeETATracking.get(data.busId);
-    if (currentActiveRoute && currentActiveRoute !== data.routeId) {
-      stopETATracking(data.busId);
-      activeETATracking.set(data.busId, data.routeId);
-      startETATracking(
-        data.busId, 
-        data.routeId, 
-        () => latestLocations.get(data.busId) || null, 
-        () => routeDestCache.get(data.routeId) || null, 
-        ETA_INTERVAL_MS,
-        () => latestLocations.get(data.busId)?.speed ?? null,
-      );
-    } else if (!currentActiveRoute) {
-      activeETATracking.set(data.busId, data.routeId);
-      startETATracking(
-        data.busId, 
-        data.routeId, 
-        () => latestLocations.get(data.busId) || null, 
-        () => routeDestCache.get(data.routeId) || null, 
-        ETA_INTERVAL_MS,
-        () => latestLocations.get(data.busId)?.speed ?? null,
-      );
     }
 
     const nodeKey = snapshot.key || `${data.busId}_${data.routeId}`;
@@ -350,16 +313,24 @@ export function startTripStateEngine(): () => void {
           hasDepartedOrigin: data.hasDepartedOrigin === true,
         };
 
-    if (
+    const liveStateChanged =
       tripState !== data.tripState ||
       currentStopIndex !== data.currentStopIndex ||
-      hasDepartedOrigin !== (data.hasDepartedOrigin === true)
-    ) {
-      snapshot.ref
-        .update({ tripState, currentStopIndex, hasDepartedOrigin })
-        .catch((error) => {
-          console.error(`[TripState] Failed to update live state for ${nodeKey}:`, error);
+      hasDepartedOrigin !== (data.hasDepartedOrigin === true);
+    if (liveStateChanged && tripState !== "completed") {
+      try {
+        await snapshot.ref.update({
+          tripState,
+          currentStopIndex,
+          hasDepartedOrigin,
         });
+      } catch (error) {
+        console.error(
+          `[TripState] Failed to update live state for ${nodeKey}:`,
+          error,
+        );
+        return;
+      }
     }
 
     if (
@@ -434,17 +405,26 @@ export function startTripStateEngine(): () => void {
       if (activeRideId) {
         batch.delete(db.collection("active_rides").doc(activeRideId));
       }
-      batch.commit().catch((error) => {
+      try {
+        await batch.commit();
+        if (activeRideId) {
+          persistedActiveRideState.delete(activeRideId);
+          activeRideWriteQueues.delete(activeRideId);
+        }
+        await snapshot.ref.update({
+          tripState,
+          currentStopIndex,
+          hasDepartedOrigin,
+        });
+      } catch (error) {
         console.warn(
           `[TripState] Failed to persist completion ${completionId}:`,
           error,
         );
-      });
+        return;
+      }
 
       const timeoutId = setTimeout(() => {
-        latestLocations.delete(data.busId);
-        activeETATracking.delete(data.busId);
-        stopETATracking(data.busId);
         completedTimeouts.delete(data.busId);
         // Do not recreate a node removed by the stale sweep, and do not mark a
         // newer shift offline if the same bus/route key was reused meanwhile.
@@ -473,7 +453,7 @@ export function startTripStateEngine(): () => void {
     }
 
     if (tripState === "pre_departure" || tripState === "in_service") {
-      persistActiveRideLifecycle(
+      await persistActiveRideLifecycle(
         data,
         tripState,
         currentStopIndex,
@@ -481,6 +461,26 @@ export function startTripStateEngine(): () => void {
       );
     }
     persistFleetState({ ...data, tripState }, new Date().toISOString());
+  };
+
+  const childChangedHandler = (
+    snapshot: import("firebase-admin/database").DataSnapshot,
+  ) => {
+    const nodeKey = snapshot.key;
+    if (!nodeKey) return;
+    const previous = telemetryQueues.get(nodeKey) ?? Promise.resolve();
+    const queued = previous
+      .catch(() => undefined)
+      .then(() => processChildChanged(snapshot))
+      .catch((error) => {
+        console.error(`[TripState] Failed to process telemetry for ${nodeKey}:`, error);
+      });
+    telemetryQueues.set(nodeKey, queued);
+    void queued.then(() => {
+      if (telemetryQueues.get(nodeKey) === queued) {
+        telemetryQueues.delete(nodeKey);
+      }
+    });
   };
 
   const childRemovedHandler = (snapshot: import("firebase-admin/database").DataSnapshot) => {
@@ -494,11 +494,13 @@ export function startTripStateEngine(): () => void {
       new Date().toISOString(),
       true,
     );
-    latestLocations.delete(data.busId);
     processedTelemetry.delete(snapshot.key || `${data.busId}_${data.routeId || ""}`);
-    activeETATracking.delete(data.busId);
-    stopETATracking(data.busId);
-    
+    const activeRideId = activeRideDocumentId(data);
+    if (activeRideId) {
+      persistedActiveRideState.delete(activeRideId);
+      activeRideWriteQueues.delete(activeRideId);
+    }
+    if (snapshot.key) telemetryQueues.delete(snapshot.key);
     if (completedTimeouts.has(data.busId)) {
       clearTimeout(completedTimeouts.get(data.busId));
       completedTimeouts.delete(data.busId);
@@ -556,10 +558,10 @@ export function startTripStateEngine(): () => void {
     clearInterval(staleSweepTimer);
     completedTimeouts.forEach(clearTimeout);
     completedTimeouts.clear();
-    activeETATracking.forEach((_routeId, busId) => stopETATracking(busId));
-    activeETATracking.clear();
-    latestLocations.clear();
     processedTelemetry.clear();
+    persistedActiveRideState.clear();
+    activeRideWriteQueues.clear();
+    telemetryQueues.clear();
     console.log("[TripState] Engine stopped.");
   };
 }

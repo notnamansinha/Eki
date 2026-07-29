@@ -35,12 +35,15 @@ constexpr uint32_t MIN_PUBLISH_INTERVAL_MS = 3000;
 constexpr uint32_t MOVING_HEARTBEAT_MS = 30000;
 constexpr uint32_t STOPPED_HEARTBEAT_MS = 60000;
 constexpr uint32_t WIFI_RETRY_MS = 5000;
+constexpr uint32_t TIME_SYNC_RETRY_MS = 10000;
 constexpr uint32_t HTTPS_RETRY_MS = 5000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
 
 TinyGPSPlus gps;
 HardwareSerial &gpsSerial = Serial2;
 WiFiClientSecure tlsClient;
+String telemetryEndpoint;
+String authorizationHeader;
 
 struct TelemetryFix {
   double lat = 0;
@@ -64,16 +67,18 @@ uint8_t stoppedReadings = 0;
 uint32_t lastPublishAt = 0;
 uint32_t lastEvaluationAt = 0;
 uint32_t lastWifiAttemptAt = 0;
+uint32_t lastTimeSyncAttemptAt = 0;
 uint32_t lastHttpsAttemptAt = 0;
 uint32_t lastGpsWarningAt = 0;
 bool gpsFixWasLost = false;
 bool lossMessagePublished = false;
+bool wifiConfigured = false;
 
 uint32_t elapsed(uint32_t since) {
   return millis() - since;
 }
 
-String telemetryUrl() {
+String buildTelemetryUrl() {
   String base = BACKEND_URL;
   while (base.endsWith("/")) base.remove(base.length() - 1);
   return base + "/api/devices/" + DEVICE_ID + "/telemetry";
@@ -122,10 +127,29 @@ void connectWiFi() {
   lastWifiAttemptAt = millis();
 
   tlsClient.stop();
-  WiFi.disconnect();
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  Serial.printf("[WiFi] Connecting to %s\n", WIFI_SSID);
+  if (!wifiConfigured) {
+    WiFi.mode(WIFI_STA);
+    WiFi.persistent(false);
+    WiFi.setAutoReconnect(true);
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    wifiConfigured = true;
+    Serial.printf("[WiFi] Connecting to %s\n", WIFI_SSID);
+  } else {
+    WiFi.reconnect();
+    Serial.println("[WiFi] Reconnecting.");
+  }
+}
+
+void synchronizeClock() {
+  if (clockIsSynchronized()) return;
+  if (
+    lastTimeSyncAttemptAt &&
+    elapsed(lastTimeSyncAttemptAt) < TIME_SYNC_RETRY_MS
+  ) {
+    return;
+  }
+  lastTimeSyncAttemptAt = millis();
+  configTime(0, 0, "pool.ntp.org", "time.google.com");
 }
 
 bool publishFix(const TelemetryFix &fix) {
@@ -150,6 +174,7 @@ bool publishFix(const TelemetryFix &fix) {
   document["timestamp"] = fix.timestamp;
 
   String payload;
+  payload.reserve(192);
   serializeJson(document, payload);
   if (payload.length() > 512) {
     Serial.println("[HTTPS] Refusing oversized telemetry payload.");
@@ -160,11 +185,11 @@ bool publishFix(const TelemetryFix &fix) {
   http.setConnectTimeout(HTTP_TIMEOUT_MS);
   http.setTimeout(HTTP_TIMEOUT_MS);
   http.setReuse(true);
-  if (!http.begin(tlsClient, telemetryUrl())) {
+  if (!http.begin(tlsClient, telemetryEndpoint)) {
     Serial.println("[HTTPS] Unable to initialize telemetry request.");
     return false;
   }
-  http.addHeader("Authorization", String("Device ") + DEVICE_SECRET);
+  http.addHeader("Authorization", authorizationHeader);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Cache-Control", "no-store");
 
@@ -284,6 +309,8 @@ void setup() {
   );
 
   tlsClient.setCACert(BACKEND_ROOT_CA);
+  telemetryEndpoint = buildTelemetryUrl();
+  authorizationHeader = String("Device ") + DEVICE_SECRET;
   connectWiFi();
 }
 
@@ -293,9 +320,7 @@ void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     connectWiFi();
   } else {
-    if (!clockIsSynchronized()) {
-      configTime(0, 0, "pool.ntp.org", "time.google.com");
-    }
+    synchronizeClock();
     if (bufferedFix.valid && publishFix(bufferedFix)) {
       bufferedFix.valid = false;
     }

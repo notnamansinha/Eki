@@ -10,6 +10,19 @@ function validId(value: unknown): value is string {
   return typeof value === "string" && SAFE_ID.test(value);
 }
 
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
+
 async function demoteDriverAccount(authUid: string): Promise<void> {
   const user = await auth.getUser(authUid);
   const claims = { ...(user.customClaims ?? {}) };
@@ -27,7 +40,7 @@ export async function applyDriverAuthorization(
   driverId: string,
   authUid: string,
   assignedBusId: string | null,
-): Promise<void> {
+): Promise<boolean> {
   const user = await auth.getUser(authUid);
   const existing = user.customClaims ?? {};
   const claims = { ...existing };
@@ -36,15 +49,32 @@ export async function applyDriverAuthorization(
   delete claims.assignedBusId;
 
   if (!assignedBusId) {
-    await Promise.all([
-      auth.setCustomUserClaims(authUid, { ...claims, role: "driver" }),
-      auth.revokeRefreshTokens(authUid),
-      rtdb.ref(`driverRouteAssignments/${driverId}`).remove(),
-    ]);
-    return;
+    const mirrorRef = rtdb.ref(`driverRouteAssignments/${driverId}`);
+    const mirror = (await mirrorRef.once("value")).val();
+    const claimsChanged =
+      existing.role !== "driver" ||
+      existing.admin !== undefined ||
+      existing.driverId !== undefined ||
+      existing.assignedBusId !== undefined;
+    if (!claimsChanged && mirror === null) return false;
+
+    const updates: Promise<unknown>[] = [];
+    if (claimsChanged) {
+      updates.push(
+        auth.setCustomUserClaims(authUid, { ...claims, role: "driver" }),
+        auth.revokeRefreshTokens(authUid),
+      );
+    }
+    if (mirror !== null) updates.push(mirrorRef.remove());
+    await Promise.all(updates);
+    return true;
   }
 
-  const busDoc = await db.collection("buses").doc(assignedBusId).get();
+  const mirrorRef = rtdb.ref(`driverRouteAssignments/${driverId}`);
+  const [busDoc, mirrorSnapshot] = await Promise.all([
+    db.collection("buses").doc(assignedBusId).get(),
+    mirrorRef.once("value"),
+  ]);
   const bus = busDoc.data();
   const routeIds = (Array.isArray(bus?.assignedRoutes)
     ? bus.assignedRoutes
@@ -55,18 +85,32 @@ export async function applyDriverAuthorization(
     throw new Error("Assigned bus must have at least one valid route.");
   }
 
-  await Promise.all([
-    auth.setCustomUserClaims(authUid, {
+  const expectedMirror = {
+    [assignedBusId]: Object.fromEntries(
+      [...new Set(routeIds)].sort().map((routeId) => [routeId, true]),
+    ),
+  };
+  const claimsChanged =
+    existing.role !== "driver" ||
+    existing.admin !== undefined ||
+    existing.driverId !== driverId ||
+    existing.assignedBusId !== assignedBusId;
+  const mirrorChanged =
+    stableJson(mirrorSnapshot.val()) !== stableJson(expectedMirror);
+  if (!claimsChanged && !mirrorChanged) return false;
+
+  const updates: Promise<unknown>[] = [];
+  if (claimsChanged) {
+    updates.push(auth.setCustomUserClaims(authUid, {
       ...claims,
       role: "driver",
       driverId,
       assignedBusId,
-    }),
-    auth.revokeRefreshTokens(authUid),
-    rtdb.ref(`driverRouteAssignments/${driverId}`).set({
-      [assignedBusId]: Object.fromEntries(routeIds.map((routeId) => [routeId, true])),
-    }),
-  ]);
+    }), auth.revokeRefreshTokens(authUid));
+  }
+  if (mirrorChanged) updates.push(mirrorRef.set(expectedMirror));
+  await Promise.all(updates);
+  return true;
 }
 
 export async function reconcileFleetAuthorization(): Promise<{
@@ -77,23 +121,27 @@ export async function reconcileFleetAuthorization(): Promise<{
   const drivers = await db.collection("drivers").limit(500).get();
   let repaired = 0;
   let failed = 0;
-  for (const driver of drivers.docs) {
-    const data = driver.data();
-    if (!validId(data.authUid)) {
-      failed += 1;
-      continue;
-    }
-    try {
-      await applyDriverAuthorization(
-        driver.id,
-        data.authUid,
-        validId(data.assignedBusId) ? data.assignedBusId : null,
-      );
-      repaired += 1;
-    } catch (error) {
-      failed += 1;
-      console.error(`[Fleet] Reconciliation failed for ${driver.id}:`, error);
-    }
+  for (let index = 0; index < drivers.docs.length; index += 10) {
+    const chunk = drivers.docs.slice(index, index + 10);
+    await Promise.all(chunk.map(async (driver) => {
+      const data = driver.data();
+      if (!validId(data.authUid)) {
+        failed += 1;
+        return;
+      }
+      try {
+        if (await applyDriverAuthorization(
+          driver.id,
+          data.authUid,
+          validId(data.assignedBusId) ? data.assignedBusId : null,
+        )) {
+          repaired += 1;
+        }
+      } catch (error) {
+        failed += 1;
+        console.error(`[Fleet] Reconciliation failed for ${driver.id}:`, error);
+      }
+    }));
   }
   return { checked: drivers.size, repaired, failed };
 }

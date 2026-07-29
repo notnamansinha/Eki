@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Map as GoogleMap, AdvancedMarker, useMap,
 } from "@vis.gl/react-google-maps";
-import { auth } from "@/lib/firebase";
+import { auth } from "@/lib/firebaseAuth";
 import { useBuses } from "@/hooks/useBuses";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
@@ -73,8 +73,10 @@ function useActiveBuses(): ActiveBusEntry[] {
         return;
       }
       const visibleBuses: ActiveBusEntry[] = [];
-      Object.entries(data).forEach(([key, bus]) => {
-        bus.busId = bus.busId || key.split("_")[0];
+      Object.entries(data).forEach(([key, incoming]) => {
+        const bus = incoming.busId
+          ? incoming
+          : { ...incoming, busId: key.split("_")[0] };
         if (
           isLiveBusTimestamp(bus.timestamp) ||
           isActiveRideSnapshot(

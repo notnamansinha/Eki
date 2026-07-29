@@ -6,7 +6,7 @@ import { LocateFixed as GPS, ArrowLeft, Navigation } from "lucide-react";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteData } from "@/hooks/useRoutes";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
-import { auth } from "@/lib/firebase";
+import { auth } from "@/lib/firebaseAuth";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 import { decodePolyline } from "@/lib/polyline";
 import { snapToPolyline } from "@/lib/snapToPolyline";

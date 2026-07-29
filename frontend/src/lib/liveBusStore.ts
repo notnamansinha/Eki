@@ -4,6 +4,7 @@ import { onValue, ref } from "firebase/database";
 import { waitForAuth } from "@/lib/authState";
 import { rtdb } from "@/lib/firebaseDatabase";
 import {
+  millisecondsUntilNextPrune,
   pruneExpiredLiveBuses,
   type LiveBusSnapshot,
 } from "@/lib/liveBusSnapshot";
@@ -18,26 +19,36 @@ const subscribers = new Set<Subscriber>();
 let cached: LiveBusSnapshot | null = null;
 let unsubscribe: (() => void) | null = null;
 let starting = false;
-let expiryTimer: ReturnType<typeof setInterval> | null = null;
+let expiryTimer: ReturnType<typeof setTimeout> | null = null;
 
 function notifySubscribers(value: LiveBusSnapshot | null): void {
   subscribers.forEach((subscriber) => subscriber.next(value));
 }
 
-function ensureExpiryTimer(): void {
-  if (expiryTimer || subscribers.size === 0) return;
-  expiryTimer = setInterval(() => {
+function scheduleExpiry(): void {
+  if (expiryTimer) clearTimeout(expiryTimer);
+  expiryTimer = null;
+  if (!cached || subscribers.size === 0) return;
+  const delay = millisecondsUntilNextPrune(cached);
+  if (delay === null) return;
+  expiryTimer = setTimeout(() => {
+    expiryTimer = null;
     if (!cached) return;
     const fresh = pruneExpiredLiveBuses(cached);
     if (fresh !== cached) {
       cached = fresh;
       notifySubscribers(cached);
     }
-  }, 1_000);
+    scheduleExpiry();
+  }, Math.max(1, delay + 1));
 }
 
 export function invalidateLiveBusCache(): void {
   cached = null;
+  if (expiryTimer) {
+    clearTimeout(expiryTimer);
+    expiryTimer = null;
+  }
   notifySubscribers(null);
 }
 
@@ -53,6 +64,7 @@ async function ensureListener() {
         const value = snapshot.val() as LiveBusSnapshot | null;
         cached = value ? pruneExpiredLiveBuses(value) : null;
         notifySubscribers(cached);
+        scheduleExpiry();
       },
       (error) => subscribers.forEach((subscriber) => subscriber.error?.(error)),
     );
@@ -67,7 +79,7 @@ export function subscribeLiveBuses(
 ): () => void {
   const subscriber = { next, error };
   subscribers.add(subscriber);
-  ensureExpiryTimer();
+  scheduleExpiry();
   if (cached !== null) next(cached);
   void ensureListener();
 
@@ -78,7 +90,7 @@ export function subscribeLiveBuses(
       unsubscribe = null;
       cached = null;
       if (expiryTimer) {
-        clearInterval(expiryTimer);
+        clearTimeout(expiryTimer);
         expiryTimer = null;
       }
     }

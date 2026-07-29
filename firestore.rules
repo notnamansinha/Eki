@@ -157,7 +157,7 @@ service cloud.firestore {
       allow update: if
         (
           isAuthenticated() &&
-          resource.data.status == 'active' &&
+          resource.data.status in ['armed', 'active'] &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['passengers']) &&
           request.resource.data.passengers is map &&
           resource.data.passengers is map &&

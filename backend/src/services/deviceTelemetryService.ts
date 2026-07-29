@@ -12,7 +12,9 @@ const scryptAsync = promisify(scrypt);
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const CREDENTIAL_CACHE_MS = 60_000;
 const NEGATIVE_CACHE_MS = 5_000;
+const DURABLE_RIDE_MISS_CACHE_MS = 30_000;
 const MAX_CREDENTIAL_CACHE_ENTRIES = 1_000;
+const MAX_DURABLE_RIDE_MISSES = 1_000;
 const MAX_RATE_BUCKETS = 2_000;
 const DEFAULT_DEVICE_RATE_PER_MINUTE = 30;
 
@@ -47,6 +49,7 @@ export type TelemetryIngestResult =
     };
 
 const credentialCache = new Map<string, CredentialCacheEntry>();
+const durableRideMisses = new Map<string, number>();
 const rateBuckets = new Map<string, RateBucket>();
 const status: HttpsTelemetryStatus = {
   accepted: 0,
@@ -238,13 +241,33 @@ async function restoreDurableRide(
   sample: TelemetryPayload,
 ): Promise<void> {
   const nodeKey = `${assignment.busId}_${assignment.routeId}`;
+  const now = Date.now();
+  const missExpiresAt = durableRideMisses.get(nodeKey) ?? 0;
+  if (missExpiresAt > now) return;
+
   const activeRide = await db.collection("active_rides").doc(nodeKey).get();
   const lifecycle = activeRide.exists
     ? durableLifecycle(
         activeRide.data() as Record<string, unknown>,
       )
     : null;
-  if (!lifecycle) return;
+  if (!lifecycle) {
+    if (
+      !durableRideMisses.has(nodeKey) &&
+      durableRideMisses.size >= MAX_DURABLE_RIDE_MISSES
+    ) {
+      for (const [key, expiresAt] of durableRideMisses) {
+        if (expiresAt <= now) durableRideMisses.delete(key);
+      }
+      if (durableRideMisses.size >= MAX_DURABLE_RIDE_MISSES) {
+        const oldest = durableRideMisses.keys().next().value;
+        if (oldest) durableRideMisses.delete(oldest);
+      }
+    }
+    durableRideMisses.set(nodeKey, now + DURABLE_RIDE_MISS_CACHE_MS);
+    return;
+  }
+  durableRideMisses.delete(nodeKey);
 
   await rtdb.ref(`activeBuses/${nodeKey}`).transaction((current) => {
     const live = current as Record<string, unknown> | null;

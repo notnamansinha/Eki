@@ -6,7 +6,7 @@ import {
 } from "@vis.gl/react-google-maps";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { useRoutes, RouteData, RouteStop } from "@/hooks/useRoutes";
-import { auth } from "@/lib/firebase";
+import { auth } from "@/lib/firebaseAuth";
 import {
   Trash2, Plus, X, CheckCircle, MapPin, Loader2, Search,
   Pencil, GripVertical, Save,

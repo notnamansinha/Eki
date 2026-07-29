@@ -29,8 +29,8 @@ Record the final non-secret values:
 
 - [ ] Install dependencies with `npm install`.
 - [ ] Fill `backend/.env` and `frontend/.env.local`; do not commit either file.
-- [ ] For the bus test, set `ETA_INTERVAL_MS=30000` and keep
-  `BUS_STALE_MS=300000`.
+- [ ] For the bus test, keep `BUS_STALE_MS=300000`; passenger ETA updates
+  automatically from the live telemetry stream.
 - [ ] Run `npm run verify` successfully.
 - [ ] Run `npm run dev`; confirm frontend `http://localhost:3000` and backend
   `http://localhost:4000/health`.

@@ -14,7 +14,11 @@ import { WifiOff, Navigation } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 import { decodePolyline, type LatLng } from "@/lib/polyline";
 import { snapToPolyline } from "@/lib/snapToPolyline";
-import { distanceAlongPolyline } from "@/lib/polylineDistance";
+import {
+  distanceAlongPolyline,
+  positionAlongPolyline,
+  preparePolylineDistanceIndex,
+} from "@/lib/polylineDistance";
 import { ETA_SPEED_FLOOR_KMH } from "@/lib/etaConstants";
 import { useSmoothPosition } from "@/hooks/useSmoothPosition";
 
@@ -164,7 +168,6 @@ function PassengerMapInner({
   const [geolocationNotice, setGeolocationNotice] = useState<string | null>(null);
   const [isCentered, setIsCentered] = useState(false);
   const arrivalTimestampsRef = useRef<Record<string, number>>({});
-  const lastTrafficFetchRef = useRef<number>(0);
   const routeStops = useMemo(() => {
     return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) ?? [];
   }, [route.stops]);
@@ -179,6 +182,20 @@ function PassengerMapInner({
     }
     return routeStops;
   }, [route.polyline, routeStops]);
+  const routeDistanceIndex = useMemo(
+    () => preparePolylineDistanceIndex(routePath),
+    [routePath],
+  );
+  const stopPathPositions = useMemo(
+    () =>
+      new Map(
+        (route.stops ?? []).map((stop) => [
+          stop.id,
+          positionAlongPolyline(stop, routeDistanceIndex),
+        ]),
+      ),
+    [route.stops, routeDistanceIndex],
+  );
 
   // ── Passenger geolocation (read-only — ESP32 is sole source for bus GPS) ──
   useEffect(() => {
@@ -232,16 +249,18 @@ function PassengerMapInner({
         const newSignalLost = new Set<string>();
         let oldestTimestamp: number | null = null;
 
-        Object.entries(data).forEach(([key, bus]) => {
-          bus.busId = bus.busId || key.split("_")[0];
+        Object.entries(data).forEach(([key, incoming]) => {
+          const bus: IncomingBusData = incoming.busId
+            ? incoming
+            : { ...incoming, busId: key.split("_")[0] };
           if (
             !bus.routeId ||
             !bus.busId ||
             !hasValidBusCoordinates(bus.lat, bus.lng) ||
-            !isActiveRideSnapshot(
-              bus as unknown as Record<string, unknown>,
-            )
-          ) return;
+            !isActiveRideSnapshot(bus as unknown as Record<string, unknown>)
+          ) {
+            return;
+          }
 
           activeBuses.set(bus.busId, bus);
 
@@ -257,79 +276,87 @@ function PassengerMapInner({
             }
           }
 
-          if (currentRoute.stops && currentRoute.stops.length > 0) {
-            let closestStopIndex: number;
-            if (bus.currentStopIndex !== undefined) {
-              // Driver panel / ESP32 is the source of truth — always trust it and store it
-              closestStopIndex = bus.currentStopIndex;
-              lastStopIndexRef.current[bus.busId] = closestStopIndex;
-            } else {
-              const lastKnown = lastStopIndexRef.current[bus.busId] ?? 0;
-              const searchStart = Math.max(0, lastKnown - 1);
-              const searchEnd = Math.min(currentRoute.stops.length - 1, lastKnown + 3);
-              let minD = Infinity;
-              closestStopIndex = lastKnown;
-              for (let i = searchStart; i <= searchEnd; i++) {
-                const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, currentRoute.stops[i]);
-                if (d < minD) { minD = d; closestStopIndex = i; }
-              }
-              if (minD > 500) {
-                currentRoute.stops.forEach((stop, idx) => {
-                  const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
-                  if (d < minD) { minD = d; closestStopIndex = idx; }
-                });
-              }
-              lastStopIndexRef.current[bus.busId] = closestStopIndex;
-            }
+          if (!currentRoute.stops?.length) return;
 
-            // ── Production-quality geofencing ──────────────────────────────────────────────
-            // Two-radius hysteresis: 35 m entry, 45 m exit. Prevents oscillation at boundary.
-            // Route-sequence gate: only validate stops in a ±2 window around last known position.
-            // Speed gate: bus must be moving below 8 km/h to register a stop entry.
-            // Dwell gate: 10 s minimum dwell confirms arrival vs drive-by.
-            const STOP_ENTRY_RADIUS_M = 35;
-            const STOP_EXIT_RADIUS_M  = 45;
-            const DWELL_GATE_MS       = 10_000;
-
-            // Route-sequence window: ±2 stops around last known index to prevent
-            // the bus being snapped to a stop it hasn't reached yet or already passed.
-            const lastKnownIdx = lastStopIndexRef.current[bus.busId] ?? 0;
-            const seqStart = Math.max(0, lastKnownIdx - 1);
-            const seqEnd   = Math.min(currentRoute.stops.length - 1, lastKnownIdx + 2);
-            const candidateStops = currentRoute.stops.slice(seqStart, seqEnd + 1)
-              .map((stop, offset) => ({ stop, idx: seqStart + offset }));
-
-            for (const { stop, idx } of candidateStops) {
-              const insideKey = `${bus.busId}:${stop.id}`;
-              const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
-              const wasInside = stopInsideRef.current[insideKey] ?? false;
-
-              if (!wasInside && d < STOP_ENTRY_RADIUS_M) {
-                // Entry: bus is within 35m — mark as at this stop regardless of speed
-                stopInsideRef.current[insideKey] = true;
-                if (!stopEntryTimeRef.current[insideKey]) {
-                  stopEntryTimeRef.current[insideKey] = now;
-                }
-                // Advance sequence index to this stop
-                if (idx > (lastStopIndexRef.current[bus.busId] ?? 0)) {
-                  lastStopIndexRef.current[bus.busId] = idx;
-                }
-              } else if (wasInside && d > STOP_EXIT_RADIUS_M) {
-                // Exit hysteresis: only clear state once bus has moved beyond exit radius
-                stopInsideRef.current[insideKey] = false;
-                delete stopEntryTimeRef.current[insideKey];
+          let closestStopIndex: number;
+          if (bus.currentStopIndex !== undefined) {
+            closestStopIndex = bus.currentStopIndex;
+            lastStopIndexRef.current[bus.busId] = closestStopIndex;
+          } else {
+            const lastKnown = lastStopIndexRef.current[bus.busId] ?? 0;
+            const searchStart = Math.max(0, lastKnown - 1);
+            const searchEnd = Math.min(
+              currentRoute.stops.length - 1,
+              lastKnown + 3,
+            );
+            let minDistance = Number.POSITIVE_INFINITY;
+            closestStopIndex = lastKnown;
+            for (let index = searchStart; index <= searchEnd; index += 1) {
+              const distance = getDistanceMeters(bus, currentRoute.stops[index]);
+              if (distance < minDistance) {
+                minDistance = distance;
+                closestStopIndex = index;
               }
             }
+            if (minDistance > 500) {
+              currentRoute.stops.forEach((stop, index) => {
+                const distance = getDistanceMeters(bus, stop);
+                if (distance < minDistance) {
+                  minDistance = distance;
+                  closestStopIndex = index;
+                }
+              });
+            }
+            lastStopIndexRef.current[bus.busId] = closestStopIndex;
+          }
 
-            const busDist    = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, currentTargetStop);
-            const dwellAtTarget = stopEntryTimeRef.current[`${bus.busId}:${currentTargetStop.id}`];
-            const isAtTarget = dwellAtTarget && (now - dwellAtTarget >= DWELL_GATE_MS);
-            if (busDist < STOP_EXIT_RADIUS_M && isAtTarget && lastBuzzedStopIdRef.current !== currentTargetStop.id) {
-              lastBuzzedStopIdRef.current = currentTargetStop.id;
+          const STOP_ENTRY_RADIUS_M = 35;
+          const STOP_EXIT_RADIUS_M = 45;
+          const DWELL_GATE_MS = 10_000;
+          const lastKnownIndex = lastStopIndexRef.current[bus.busId] ?? 0;
+          const sequenceStart = Math.max(0, lastKnownIndex - 1);
+          const sequenceEnd = Math.min(
+            currentRoute.stops.length - 1,
+            lastKnownIndex + 2,
+          );
+          const candidateStops = currentRoute.stops
+            .slice(sequenceStart, sequenceEnd + 1)
+            .map((stop, offset) => ({
+              stop,
+              index: sequenceStart + offset,
+            }));
+
+          for (const { stop, index } of candidateStops) {
+            const insideKey = bus.busId + ":" + stop.id;
+            const distance = getDistanceMeters(bus, stop);
+            const wasInside = stopInsideRef.current[insideKey] ?? false;
+
+            if (!wasInside && distance < STOP_ENTRY_RADIUS_M) {
+              stopInsideRef.current[insideKey] = true;
+              stopEntryTimeRef.current[insideKey] ??= now;
+              if (index > (lastStopIndexRef.current[bus.busId] ?? 0)) {
+                lastStopIndexRef.current[bus.busId] = index;
+              }
+            } else if (wasInside && distance > STOP_EXIT_RADIUS_M) {
+              stopInsideRef.current[insideKey] = false;
+              delete stopEntryTimeRef.current[insideKey];
             }
           }
-        });
 
+          const busDistance = getDistanceMeters(bus, currentTargetStop);
+          const dwellAtTarget =
+            stopEntryTimeRef.current[bus.busId + ":" + currentTargetStop.id];
+          const isAtTarget =
+            dwellAtTarget !== undefined &&
+            now - dwellAtTarget >= DWELL_GATE_MS;
+          if (
+            busDistance < STOP_EXIT_RADIUS_M &&
+            isAtTarget &&
+            lastBuzzedStopIdRef.current !== currentTargetStop.id
+          ) {
+            lastBuzzedStopIdRef.current = currentTargetStop.id;
+          }
+        });
         setBuses(activeBuses);
         setSignalLostBuses(newSignalLost);
         setSignalLostLastSeen(oldestTimestamp);
@@ -362,17 +389,20 @@ function PassengerMapInner({
   useEffect(() => {
     if (!route.stops || route.stops.length === 0 || buses.size === 0) return;
 
-    const fetchETAs = async () => {
+    const fetchETAs = () => {
       const now = Date.now();
-      // Re-calculate ETAs instantly on driver state changes (since it's lightweight local math)
-      lastTrafficFetchRef.current = now;
-
       const newArrivals: Record<string, number> = {};
 
       for (const bus of Array.from(buses.values())) {
         const closestStopIdx = lastStopIndexRef.current[bus.busId] ?? 0;
         const remainingStops = route.stops.slice(closestStopIdx);
         if (remainingStops.length === 0) continue;
+        const busPoint = { lat: bus.lat, lng: bus.lng };
+        const busPathPosition = positionAlongPolyline(
+          busPoint,
+          routeDistanceIndex,
+          { headingDegrees: bus.heading },
+        );
 
         const speedKmh = Math.max(
           bus.speed || ETA_SPEED_FLOOR_KMH,
@@ -381,19 +411,17 @@ function PassengerMapInner({
         const speedMs = speedKmh / 3.6;
         const busDelaySec = (bus.delayMinutes || 0) * 60;
 
-        let accumDistMeters = 0;
-        let lastPt = { lat: bus.lat, lng: bus.lng };
-
         for (let i = 0; i < remainingStops.length; i++) {
           const stop = remainingStops[i];
-          const distToStop = distanceAlongPolyline(
-            lastPt,
-            { lat: stop.lat, lng: stop.lng },
-            routePath,
-          );
+          const stopPathPosition = stopPathPositions.get(stop.id);
+          const accumDistMeters =
+            busPathPosition !== null &&
+            stopPathPosition !== null &&
+            stopPathPosition !== undefined
+              ? Math.abs(stopPathPosition - busPathPosition)
+              : distanceAlongPolyline(busPoint, stop, routePath);
           
-          // 1.3 topology multiplier + adding 45s dwell time per stop for realistic transit ETAs
-          accumDistMeters += distToStop;
+          // Add 45 seconds of dwell time per intermediate stop.
           let totalSeconds = accumDistMeters / speedMs;
           if (i > 0) totalSeconds += (i * 45); 
 
@@ -402,7 +430,6 @@ function PassengerMapInner({
           if (!newArrivals[stop.id] || arrivalTimestamp < newArrivals[stop.id]) {
             newArrivals[stop.id] = arrivalTimestamp;
           }
-          lastPt = { lat: stop.lat, lng: stop.lng };
         }
       }
 
@@ -414,7 +441,14 @@ function PassengerMapInner({
     fetchETAs();
     const interval = setInterval(fetchETAs, 60000);
     return () => clearInterval(interval);
-  }, [buses, route.stops, routePath, updateUI]);
+  }, [
+    buses,
+    route.stops,
+    routePath,
+    routeDistanceIndex,
+    stopPathPositions,
+    updateUI,
+  ]);
 
   // ── ETA Smooth Interpolation ───────────────────────────────────────────────
   useEffect(() => {

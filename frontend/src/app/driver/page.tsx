@@ -11,7 +11,8 @@ import { useRoutes } from "@/hooks/useRoutes";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useBuses } from "@/hooks/useBuses";
 import { Map, CircleUserRound as User, MessageCircle, ArrowLeft } from "lucide-react";
-import { rtdb, auth } from "@/lib/firebase";
+import { auth } from "@/lib/firebaseAuth";
+import { rtdb } from "@/lib/firebaseDatabase";
 import { ref, onValue } from "firebase/database";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
 

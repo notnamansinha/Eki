@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Star, HeartHandshake, X, Send, Check } from "lucide-react";
-import { auth, db } from "@/lib/firebase";
+import { auth } from "@/lib/firebaseAuth";
+import { db } from "@/lib/firebaseFirestore";
 import {
   collection,
   doc,

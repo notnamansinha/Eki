@@ -49,7 +49,9 @@ describe("production security configuration", () => {
     expect(analytics).not.toContain('data.tripState === "maintenance"');
     expect(tripStateEngine).toContain("function readIntervalMs");
     expect(tripStateEngine).toContain("fleetWriteQueues");
-    expect(tripStateEngine).toContain("const ETA_INTERVAL_MS = readIntervalMs");
+    expect(tripStateEngine).toContain("telemetryQueues");
+    expect(tripStateEngine).toContain("persistedActiveRideState");
+    expect(tripStateEngine).not.toContain("etaTimestamp");
   });
 
   it("keeps sensitive Firestore collections and chat identity protected", () => {
@@ -92,7 +94,9 @@ describe("production security configuration", () => {
     expect(driverPage).not.toContain("lat: activeRoute?.stops");
     expect(driverPage).toContain("/api/shifts/start");
     expect(driverPage).not.toContain("updateDoc(");
-    expect(passengerPage).toContain("hasValidBusCoordinates(bus.lat, bus.lng)");
+    expect(passengerPage).toContain(
+      "hasValidBusCoordinates(normalizedBus.lat, normalizedBus.lng)",
+    );
     expect(driverPage).toContain("!assignedRouteIds.includes(selectedRouteIds[0])");
   });
 
@@ -114,6 +118,7 @@ describe("production security configuration", () => {
     expect(server).toContain("const routeComputeLimiter");
     expect(server).toContain('app.use("/api/routes", routeComputeLimiter, polylineRoutes)');
     expect(server).toContain("const routePlanLimiter");
+    expect(server).toContain('express.json({ limit: "512b", strict: true })');
     expect(devices).toContain("telemetryLimiter");
     expect(devices).toContain('"/:deviceId/telemetry"');
     expect(telemetry).toContain("HTTPS_DEVICE_RATE_PER_MINUTE");
@@ -143,6 +148,7 @@ describe("production security configuration", () => {
 
     expect(authHook).toContain("clearCollectionCache();");
     expect(authHook).toContain("clearSettingsCache();");
+    expect(authHook).toContain("invalidateLiveBusCache();");
     expect(collectionHook).toContain("export function clearCollectionCache");
     expect(settingsHook).toContain("export function clearSettingsCache");
   });
@@ -152,7 +158,10 @@ describe("production security configuration", () => {
     expect(firmware).toContain("tlsClient.setCACert(BACKEND_ROOT_CA)");
     expect(firmware).toContain("HTTPClient");
     expect(firmware).toContain(
-      'http.addHeader("Authorization", String("Device ") + DEVICE_SECRET)',
+      'authorizationHeader = String("Device ") + DEVICE_SECRET',
+    );
+    expect(firmware).toContain(
+      'http.addHeader("Authorization", authorizationHeader)',
     );
     expect(firmware).not.toContain("Firebase_ESP_Client");
     expect(firmware).not.toContain("setInsecure(");
@@ -192,6 +201,7 @@ describe("production security configuration", () => {
 
     expect(routes).toContain("allow create, update, delete: if false;");
     expect(sessions).toContain("allow create: if false;");
+    expect(sessions).toContain("resource.data.status in ['armed', 'active']");
     expect(routeEditor).toContain('method: "PUT"');
     expect(routeEditor).not.toContain("setDoc(");
     expect(routeEditor).not.toContain("updateDoc(");
@@ -235,6 +245,12 @@ describe("production security configuration", () => {
 
   it("bounds telemetry recovery state and records stop history with merge semantics", () => {
     const engine = workspaceFile("backend/src/services/tripStateEngine.ts");
+    const completionBlock = engine.slice(
+      engine.indexOf('if (tripState === "completed"'),
+      engine.indexOf(
+        'if (tripState === "pre_departure" || tripState === "in_service")',
+      ),
+    );
 
     expect(engine).toContain("telemetryTimestamp > previousTelemetry.timestamp");
     expect(engine).toContain("processedTelemetry.delete");
@@ -244,6 +260,10 @@ describe("production security configuration", () => {
     expect(engine).not.toContain('.doc(data.sessionId).update({');
     expect(engine).toContain("live.sessionId !== data.sessionId");
     expect(engine).not.toContain("snapshot.ref.update({ status: \"offline\" })");
+    expect(completionBlock.indexOf("await batch.commit()")).toBeGreaterThan(-1);
+    expect(completionBlock.indexOf("await snapshot.ref.update({")).toBeGreaterThan(
+      completionBlock.indexOf("await batch.commit()"),
+    );
   });
 
   it("revokes fleet assignments through an admin backend boundary", () => {

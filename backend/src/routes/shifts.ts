@@ -291,7 +291,7 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           ...live,
           status: "offline",
           deviceState: "offline",
-          tripState: "ended",
+          tripState: "pre_departure",
           lifecycleUpdatedAt: { ".sv": "timestamp" },
         };
       }).catch((rollbackError) => {

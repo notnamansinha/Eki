@@ -5,7 +5,8 @@ import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
 import { useRoutes, type RouteData } from "@/hooks/useRoutes";
 import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
-import { db, auth } from "@/lib/firebase";
+import { auth } from "@/lib/firebaseAuth";
+import { db } from "@/lib/firebaseFirestore";
 import { subscribeLiveBuses } from "@/lib/liveBusStore";
 import {
   Bus, User, Trash2, Plus, ArrowRight,

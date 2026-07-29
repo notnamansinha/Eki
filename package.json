@@ -16,9 +16,6 @@
     "test": "npm run test --workspace=backend && npm run test --workspace=frontend",
     "verify": "npm run lint && npm test && npm run build && npm audit --omit=dev --omit=optional"
   },
-  "dependencies": {
-    "@google-cloud/firestore": "8.7.0"
-  },
   "overrides": {
     "postcss": "^8.5.23",
     "glob": "11.1.0",
@@ -28,7 +25,6 @@
     }
   },
   "devDependencies": {
-    "@types/google.maps": "^3.65.2",
     "concurrently": "^8.2.2",
     "glob": "11.1.0",
     "minimatch": "10.2.5"

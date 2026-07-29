@@ -4,7 +4,6 @@ import rateLimit from "express-rate-limit";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { db } from "../lib/firebaseAdmin";
 import {
-  hashDeviceSecret,
   ingestDeviceTelemetry,
   invalidateDeviceCredentialCache,
   parseDeviceAuthorization,
@@ -15,7 +14,7 @@ const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const telemetryLimiter = rateLimit({
   windowMs: 60_000,
-  max: 300,
+  max: 120,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Telemetry request limit exceeded." },
@@ -136,40 +135,6 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
   } catch (error) {
     console.error("[Devices] Registry update failed:", error);
     res.status(500).json({ error: "Unable to update device registry." });
-  }
-});
-
-router.post("/hash-secret", requireAdmin, async (req: Request, res: Response) => {
-  const { deviceId, plainSecret } = req.body;
-  if (
-    typeof deviceId !== "string" ||
-    !SAFE_ID.test(deviceId) ||
-    typeof plainSecret !== "string" ||
-    plainSecret.length < 20 ||
-    plainSecret.length > 512
-  ) {
-    res.status(400).json({ error: "Missing or invalid deviceId or plainSecret." });
-    return;
-  }
-
-  try {
-    const deviceRef = db.collection("devices").doc(deviceId);
-    const doc = await deviceRef.get();
-    if (!doc.exists) {
-      res.status(404).json({ error: "Device not found." });
-      return;
-    }
-
-    await deviceRef.update({
-      secretHash: await hashDeviceSecret(plainSecret),
-      secret: FieldValue.delete(),
-      credentialRotatedAt: FieldValue.serverTimestamp(),
-    });
-    invalidateDeviceCredentialCache(deviceId);
-    res.json({ success: true });
-  } catch (error) {
-    console.error("[Devices] Secret inventory update failed:", error);
-    res.status(500).json({ error: "Unable to update device credential inventory." });
   }
 });
 

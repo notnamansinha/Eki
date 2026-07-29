@@ -4,7 +4,7 @@
  * Responsibilities:
  * - Initialize Express app with middleware (CORS, JSON, Helmet, rate-limit, dotenv)
  * - Create the HTTP server and mount protected REST API route groups
- * - Initialize Firebase-backed trip-state and ETA services
+ * - Initialize Firebase-backed trip-state and recovery services
  * - Start the server and listen on PORT from .env
  *
  * Security notes:
@@ -20,7 +20,6 @@ import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { deleteApp } from "firebase-admin/app";
-import { preloadRoutePolylines } from "./lib/etaService";
 import { db, firebaseAdminApp, rtdb } from "./lib/firebaseAdmin";
 import { getHttpsTelemetryStatus } from "./services/deviceTelemetryService";
 import { startWorkerCoordinator } from "./services/workerCoordinator";
@@ -48,8 +47,8 @@ if (process.env.NODE_ENV === "production") {
 }
 const httpServer = http.createServer(app);
 httpServer.requestTimeout = 15_000;
-httpServer.headersTimeout = 10_000;
-httpServer.keepAliveTimeout = 5_000;
+httpServer.headersTimeout = 70_000;
+httpServer.keepAliveTimeout = 65_000;
 httpServer.maxRequestsPerSocket = 100;
 
 // ── Security Middleware ───────────────────────────────────────────────────────
@@ -95,12 +94,12 @@ const writeLimiter = rateLimit({
 });
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
-const CORS_ORIGINS = [
+const CORS_ORIGINS = [...new Set([
   ...configuredCorsOrigins,
   "https://bustrack-be165.web.app",
   "https://bustrack-be165.firebaseapp.com",
   ...(process.env.NODE_ENV === "production" ? [] : ["http://localhost:3000"]),
-];
+])];
 app.use(cors({ origin: CORS_ORIGINS, credentials: false }));
 app.use((req, res, next) => {
   if (req.method === "TRACE" || req.method === "CONNECT") {
@@ -127,7 +126,14 @@ const routePlanLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Route planning rate limit exceeded." },
 });
-app.use(express.json({ limit: "16kb" })); // Prevent request body size attacks
+// Enforce the hardware contract against the original request bytes before the
+// broader API parser runs. This prevents whitespace or duplicate-key payloads
+// from bypassing the 512-byte telemetry limit after JSON normalization.
+app.use(
+  "/api/devices/:deviceId/telemetry",
+  express.json({ limit: "512b", strict: true }),
+);
+app.use(express.json({ limit: "16kb", strict: true })); // Prevent request body size attacks
 
 // ── REST Routes ───────────────────────────────────────────────────────────────
 app.use("/api/buses", writeLimiter, busRoutes);
@@ -189,14 +195,43 @@ app.get("/health", (_req, res) => {
   });
 });
 
+app.use((
+  error: unknown,
+  _req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  const parserError = error as { type?: unknown; status?: unknown };
+  if (
+    parserError?.type === "entity.too.large" ||
+    parserError?.type === "entity.parse.failed"
+  ) {
+    res.status(parserError.type === "entity.too.large" ? 413 : 400).json({
+      error:
+        parserError.type === "entity.too.large"
+          ? "Request body is too large."
+          : "Invalid JSON body.",
+    });
+    return;
+  }
+  next(error);
+});
+
+app.use((
+  error: unknown,
+  _req: express.Request,
+  res: express.Response,
+  _next: express.NextFunction,
+) => {
+  void _next;
+  console.error("[Server] Unhandled request error:", error);
+  res.status(500).json({ error: "Internal server error." });
+});
+
 // ── Start Server ──────────────────────────────────────────────────────────────
 let stopWorkers: (() => Promise<void>) | null = null;
 httpServer.listen(Number(PORT), "0.0.0.0", () => {
   console.log(`✅ BusTrack backend running on port ${PORT} (0.0.0.0)`);
-  // Pre-load route polylines from Firestore into memory for zero-cost serving
-  preloadRoutePolylines().catch((err) =>
-    console.error("Failed to preload polylines:", err)
-  );
   stopWorkers = startWorkerCoordinator();
 });
 

@@ -33,7 +33,7 @@ interface ActiveBusData {
   speed: number;
   status?: string; // "active" | "offline"
   deviceState: string;
-  tripState: "pre_departure" | "in_service" | "completed" | "ended";
+  tripState: "pre_departure" | "in_service" | "completed";
   motionState: string;
   timestamp: number;
   driverId?: string;
@@ -79,13 +79,18 @@ export default function PassengerPage() {
 
         if (data) {
           Object.entries(data as Record<string, ActiveBusData>).forEach(([key, bus]) => {
-            bus.busId = bus.busId || key.split("_")[0];
-            latestTripStatesRef.current.set(bus.busId, bus.tripState);
+            const normalizedBus = bus.busId
+              ? bus
+              : { ...bus, busId: key.split("_")[0] };
+            latestTripStatesRef.current.set(
+              normalizedBus.busId,
+              normalizedBus.tripState,
+            );
             // Safety net: discard stale entries while RTDB cleanup catches up.
             if (
-              !bus.routeId ||
-              !bus.busId ||
-              !hasValidBusCoordinates(bus.lat, bus.lng)
+              !normalizedBus.routeId ||
+              !normalizedBus.busId ||
+              !hasValidBusCoordinates(normalizedBus.lat, normalizedBus.lng)
             ) {
               return;
             }
@@ -94,12 +99,14 @@ export default function PassengerPage() {
             // backend tripState geofence doesn't hide a freshly started driver.
             if (
               !isActiveRideSnapshot(
-                bus as unknown as Record<string, unknown>,
+                normalizedBus as unknown as Record<string, unknown>,
               )
             ) return;
 
-            newBuses.push(bus);
-            if (bus.driverId) driverMap.set(bus.busId, bus.driverId);
+            newBuses.push(normalizedBus);
+            if (normalizedBus.driverId) {
+              driverMap.set(normalizedBus.busId, normalizedBus.driverId);
+            }
           });
         }
 
@@ -162,7 +169,7 @@ export default function PassengerPage() {
       const finishedBusId = trackingBusIdRef.current;
       const finishedDriverId = trackingDriverIdRef.current;
       const lastTripState = latestTripStatesRef.current.get(finishedBusId);
-      if (lastTripState !== "completed" && lastTripState !== "ended") {
+      if (lastTripState !== "completed") {
         return;
       }
       noticeTimer = setTimeout(() => setEndedMessage(true), 0);

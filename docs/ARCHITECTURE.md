@@ -73,7 +73,7 @@ offline after the stale threshold. Passenger, driver, and admin panels retain
 the ride and show signal interruption. When the ESP reconnects, the backend
 restores the same session and stop index before processing subsequent ordered
 stops. The worker uses a Firestore lease so only one backend instance owns trip
-state, ETA, cleanup, and retention work.
+state, cleanup, and retention work.
 
 ## Latency and cost
 
@@ -84,8 +84,11 @@ state, ETA, cleanup, and retention work.
 - RTDB provides push updates to web apps; one shared listener per browser
   avoids duplicate streams.
 - Client map motion is smoothed without delaying authoritative updates.
-- ETA refresh is separately bounded by `ETA_INTERVAL_MS` because Routes API
-  calls cost money; location updates do not wait for ETA recomputation.
+- Passenger ETA uses the stored route polyline with cached distance indexes
+  and recalculates from RTDB push updates. It makes no runtime Routes API call
+  and adds no second backend write per telemetry sample.
+- Durable `active_rides` writes occur only when lifecycle state, stop progress,
+  delay, or session identity changes—not for every location sample.
 
 Actual latency still depends on mobile data, HTTPS endpoint distance, Firebase
 region, browser connection, and GNSS sky visibility. It must be measured on the

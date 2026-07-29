@@ -8,7 +8,6 @@ endpoints require the trusted admin custom claim.
 | GET | `/health` | Public | Firebase, worker, and HTTPS-ingestion health. |
 | POST | `/api/devices/:deviceId/telemetry` | Device secret | Validate and accept the closed GNSS payload. |
 | PUT | `/api/devices/:deviceId` | Admin | Bind a device to an existing bus/route. |
-| POST | `/api/devices/hash-secret` | Admin | Store a salted verifier for a device secret. |
 | POST | `/api/devices/:deviceId/disable` | Admin | Disable ingestion for a device. |
 | GET | `/api/buses` | Signed in | Read live bus snapshots. |
 | GET | `/api/buses/:busId` | Signed in | Read one live bus snapshot. |

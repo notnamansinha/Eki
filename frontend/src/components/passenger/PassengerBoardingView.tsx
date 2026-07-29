@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db } from "@/lib/firebaseFirestore";
 import { RouteData } from "@/hooks/useRoutes";
 import { ChevronDown } from "lucide-react";
 import { errorMessage } from "@/lib/errors";

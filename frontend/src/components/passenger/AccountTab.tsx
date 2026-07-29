@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CircleUserRound, LogOut, ChevronRight, LogIn, HeartHandshake, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import FeedbackModal from "@/components/shared/FeedbackModal";
-import { auth } from "@/lib/firebase";
+import { auth } from "@/lib/firebaseAuth";
 
 export default function AccountTab() {
   const { user, loginWithGoogle, logout } = useAuth();

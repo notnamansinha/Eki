@@ -16,7 +16,7 @@ local professor demonstration.
   logs.
 - [ ] Set exact `CORS_ORIGIN`, `FIREBASE_DATABASE_URL`,
   `GOOGLE_MAPS_API_KEY`, retention values, and worker settings.
-- [ ] Ensure exactly one healthy worker lease owner processes lifecycle, ETA,
+- [ ] Ensure exactly one healthy worker lease owner processes lifecycle,
   stale-state, and retention jobs.
 
 ## Identity and device provisioning
