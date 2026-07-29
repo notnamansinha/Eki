@@ -290,9 +290,15 @@ service cloud.firestore {
 
     // ── Devices collection — server-side Admin SDK access only ──
     // Device secrets MUST never be readable by any client.
-    // The MQTT ingestor uses Admin SDK, which bypasses these rules. Devices
-    // never receive Firebase credentials.
+    // HTTPS ingestion uses the Admin SDK, which bypasses these rules. Devices
+    // receive only an independent per-device HTTPS secret.
     match /devices/{deviceId} {
+      allow read, write: if false;
+    }
+
+    // Canonical active-ride recovery records are backend-only. Clients receive
+    // their public projection from Realtime Database.
+    match /active_rides/{rideId} {
       allow read, write: if false;
     }
 

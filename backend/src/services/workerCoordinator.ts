@@ -1,20 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { Timestamp } from "firebase-admin/firestore";
 import { db } from "../lib/firebaseAdmin";
-import { startMqttIngestor } from "./mqttIngestor";
 import { startTripStateEngine } from "./tripStateEngine";
 import { startRetentionSweeper } from "./retentionSweeper";
 import { reconcileFleetAuthorization } from "../routes/fleet";
 import { startPrivacyDeletionWorker } from "./privacyDeletionWorker";
 
-const LEASE_ID = "telemetry-trip-state-worker";
+const LEASE_ID = "trip-state-worker";
 const LEASE_DURATION_MS = 45_000;
 const RENEW_INTERVAL_MS = 15_000;
 
-export function startWorkerCoordinator(): () => void {
+export function startWorkerCoordinator(): () => Promise<void> {
   if (process.env.WORKER_ENABLED === "false") {
     console.log("[Worker] Disabled by WORKER_ENABLED=false.");
-    return () => undefined;
+    return async () => undefined;
   }
 
   const ownerId = process.env.WORKER_INSTANCE_ID || randomUUID();
@@ -22,7 +21,6 @@ export function startWorkerCoordinator(): () => void {
   let stopped = false;
   let active = false;
   let stopTripEngine: (() => void) | null = null;
-  let stopMqtt: (() => void) | null = null;
   let stopRetention: (() => void) | null = null;
   let fleetReconcileTimer: NodeJS.Timeout | null = null;
   let stopPrivacyDeletion: (() => void) | null = null;
@@ -31,12 +29,10 @@ export function startWorkerCoordinator(): () => void {
     if (!active) return;
     active = false;
     stopTripEngine?.();
-    stopMqtt?.();
     stopRetention?.();
     if (fleetReconcileTimer) clearInterval(fleetReconcileTimer);
     stopPrivacyDeletion?.();
     stopTripEngine = null;
-    stopMqtt = null;
     stopRetention = null;
     fleetReconcileTimer = null;
     stopPrivacyDeletion = null;
@@ -66,7 +62,6 @@ export function startWorkerCoordinator(): () => void {
       if (acquired && !active) {
         active = true;
         stopTripEngine = startTripStateEngine();
-        stopMqtt = startMqttIngestor();
         stopRetention = startRetentionSweeper();
         stopPrivacyDeletion = startPrivacyDeletionWorker();
         void reconcileFleetAuthorization().catch((error) => {
@@ -92,13 +87,17 @@ export function startWorkerCoordinator(): () => void {
   const timer = setInterval(() => void renew(), RENEW_INTERVAL_MS);
   timer.unref();
 
-  return () => {
+  return async () => {
     stopped = true;
     clearInterval(timer);
     stopWork();
-    void leaseRef.get().then((snapshot) => {
-      if (snapshot.data()?.ownerId === ownerId) return leaseRef.delete();
-      return undefined;
-    }).catch((error) => console.warn("[Worker] Lease release failed:", error));
+    try {
+      const snapshot = await leaseRef.get();
+      if (snapshot.data()?.ownerId === ownerId) {
+        await leaseRef.delete();
+      }
+    } catch (error) {
+      console.warn("[Worker] Lease release failed:", error);
+    }
   };
 }

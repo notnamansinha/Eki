@@ -12,6 +12,7 @@
     "lint": "eslint src --ext .ts",
     "seed": "tsx src/seed.ts",
     "sync-role-claims": "tsx src/syncRoleClaims.ts",
+    "provision-device": "tsx src/provisionDevice.ts",
     "patch-stops": "tsx src/patch-stops.ts",
     "test": "vitest run src"
   },
@@ -22,8 +23,7 @@
     "express": "^4.22.2",
     "express-rate-limit": "^8.6.0",
     "firebase-admin": "^14.2.0",
-    "helmet": "^8.1.0",
-    "mqtt": "^5.15.2"
+    "helmet": "^8.1.0"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.1",

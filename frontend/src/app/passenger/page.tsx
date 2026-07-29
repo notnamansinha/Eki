@@ -8,7 +8,8 @@ import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, 
 import { subscribeLiveBuses } from "@/lib/liveBusStore";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import { useSettings } from "@/hooks/useSettings";
-import { hasValidBusCoordinates, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
+import { hasValidBusCoordinates } from "@/lib/liveBusFreshness";
+import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
 
 const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTrackingMap"), {
@@ -32,7 +33,7 @@ interface ActiveBusData {
   speed: number;
   status?: string; // "active" | "offline"
   deviceState: string;
-  tripState: "pre_departure" | "in_service" | "completed" | "maintenance" | "ended";
+  tripState: "pre_departure" | "in_service" | "completed" | "ended";
   motionState: string;
   timestamp: number;
   driverId?: string;
@@ -81,17 +82,21 @@ export default function PassengerPage() {
             bus.busId = bus.busId || key.split("_")[0];
             latestTripStatesRef.current.set(bus.busId, bus.tripState);
             // Safety net: discard stale entries while RTDB cleanup catches up.
-            const isFresh = isLiveBusTimestamp(bus.timestamp);
-            if (!bus.routeId || !bus.busId || !isFresh || !hasValidBusCoordinates(bus.lat, bus.lng)) {
+            if (
+              !bus.routeId ||
+              !bus.busId ||
+              !hasValidBusCoordinates(bus.lat, bus.lng)
+            ) {
               return;
             }
 
             // Show bus if it's actively tracking — allow pre_departure so the
             // backend tripState geofence doesn't hide a freshly started driver.
-            const isActive = bus.tripState === "in_service" || bus.tripState === "pre_departure";
-            // Only skip if explicitly marked offline by driver stop action
-            const isOffline = bus.status === "offline" || bus.deviceState === "offline";
-            if (!isActive || isOffline) return;
+            if (
+              !isActiveRideSnapshot(
+                bus as unknown as Record<string, unknown>,
+              )
+            ) return;
 
             newBuses.push(bus);
             if (bus.driverId) driverMap.set(bus.busId, bus.driverId);
@@ -310,6 +315,7 @@ export default function PassengerPage() {
                         route={activeRoute}
                         userId={user?.uid || "anonymous"}
                         userName={user?.displayName || "Rider"}
+                        tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
                         onBoardingStopChange={setSelectedBoardingStopId}
                       />
                     </div>

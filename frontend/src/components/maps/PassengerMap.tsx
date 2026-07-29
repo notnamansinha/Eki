@@ -8,6 +8,7 @@ import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
 import { SIGNAL_LOST_MS, hasValidBusCoordinates, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
 import { subscribeLiveBuses } from "@/lib/liveBusStore";
+import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
 
 import { WifiOff, Navigation } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
@@ -34,7 +35,7 @@ interface IncomingBusData {
   status?: string; // "active" | "offline"
   deviceState: "online" | "offline";
   motionState: "moving" | "stopped" | "uncertain"; // Physical movement state from hardware
-  tripState: "pre_departure" | "in_service" | "completed" | "maintenance"; // Service visibility
+  tripState: "pre_departure" | "in_service" | "completed"; // Service visibility
   currentStopIndex?: number;
   delayMinutes?: number;
 }
@@ -233,17 +234,23 @@ function PassengerMapInner({
 
         Object.entries(data).forEach(([key, bus]) => {
           bus.busId = bus.busId || key.split("_")[0];
-          const isFresh = isLiveBusTimestamp(bus.timestamp);
-          if (!bus.routeId || !bus.busId || !isFresh || !hasValidBusCoordinates(bus.lat, bus.lng)) return;
-
-          const isActive = bus.tripState === "in_service" || bus.tripState === "pre_departure";
-          const isOffline = bus.status === "offline" || bus.deviceState === "offline";
-          if (!isActive || isOffline) return;
+          if (
+            !bus.routeId ||
+            !bus.busId ||
+            !hasValidBusCoordinates(bus.lat, bus.lng) ||
+            !isActiveRideSnapshot(
+              bus as unknown as Record<string, unknown>,
+            )
+          ) return;
 
           activeBuses.set(bus.busId, bus);
 
           const age = now - bus.timestamp;
-          if (age > SIGNAL_LOST_MS) {
+          if (
+            !isLiveBusTimestamp(bus.timestamp, now) ||
+            age > SIGNAL_LOST_MS ||
+            bus.deviceState === "offline"
+          ) {
             newSignalLost.add(bus.busId);
             if (oldestTimestamp === null || bus.timestamp < oldestTimestamp) {
               oldestTimestamp = bus.timestamp;

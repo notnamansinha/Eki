@@ -151,11 +151,35 @@ router.put("/buses/:id", async (req: Request, res: Response) => {
     return;
   }
   try {
-    const routeDocs = await Promise.all(
-      assignedRoutes.map((routeId) => db.collection("routes").doc(routeId).get()),
-    );
+    const [routeDocs, activeRides, devices] = await Promise.all([
+      Promise.all(
+        assignedRoutes.map((routeId) => db.collection("routes").doc(routeId).get()),
+      ),
+      db.collection("active_rides").where("busId", "==", id).limit(50).get(),
+      db.collection("devices").where("busId", "==", id).limit(250).get(),
+    ]);
     if (routeDocs.some((route) => !route.exists)) {
       res.status(400).json({ error: "One or more assigned routes do not exist." });
+      return;
+    }
+    if (
+      activeRides.docs.some(
+        (ride) => !assignedRoutes.includes(ride.data().routeId),
+      )
+    ) {
+      res.status(409).json({
+        error: "An active ride route cannot be removed before its final stop.",
+      });
+      return;
+    }
+    if (
+      devices.docs.some(
+        (device) => !assignedRoutes.includes(device.data().routeId),
+      )
+    ) {
+      res.status(409).json({
+        error: "Reassign every bound device before removing its route.",
+      });
       return;
     }
     await db.collection("buses").doc(id).set({ id, name, assignedRoutes });
@@ -181,10 +205,24 @@ router.delete("/buses/:id", async (req: Request, res: Response) => {
     return;
   }
   try {
-    const [drivers, activeSnapshot] = await Promise.all([
+    const [drivers, activeSnapshot, activeRides, devices] = await Promise.all([
       db.collection("drivers").where("assignedBusId", "==", id).limit(250).get(),
       rtdb.ref("activeBuses").once("value"),
+      db.collection("active_rides").where("busId", "==", id).limit(1).get(),
+      db.collection("devices").where("busId", "==", id).limit(1).get(),
     ]);
+    if (!activeRides.empty) {
+      res.status(409).json({
+        error: "A vehicle with an active ride cannot be deleted before its final stop.",
+      });
+      return;
+    }
+    if (!devices.empty) {
+      res.status(409).json({
+        error: "Reassign the bound hardware device before deleting this vehicle.",
+      });
+      return;
+    }
     const batch = db.batch();
     batch.delete(db.collection("buses").doc(id));
     batch.delete(db.collection("bus_locations").doc(id));
@@ -230,6 +268,20 @@ router.put("/drivers/:id", async (req: Request, res: Response) => {
   try {
     const existingDriver = await db.collection("drivers").doc(id).get();
     const previousAuthUid = existingDriver.data()?.authUid;
+    const previousBusId = existingDriver.data()?.assignedBusId ?? null;
+    const activeRides = await db.collection("active_rides")
+      .where("driverId", "==", id)
+      .limit(1)
+      .get();
+    if (
+      !activeRides.empty &&
+      (authUid !== previousAuthUid || assignedBusId !== previousBusId)
+    ) {
+      res.status(409).json({
+        error: "An active ride operator cannot be reassigned before the final stop.",
+      });
+      return;
+    }
     const duplicate = await db.collection("drivers").where("authUid", "==", authUid).limit(2).get();
     if (duplicate.docs.some((doc) => doc.id !== id)) {
       res.status(409).json({ error: "That Auth UID is already assigned to another operator." });
@@ -262,6 +314,16 @@ router.delete("/drivers/:id", async (req: Request, res: Response) => {
     const driverDoc = await driverRef.get();
     if (!driverDoc.exists) {
       res.status(404).json({ error: "Operator not found." });
+      return;
+    }
+    const activeRides = await db.collection("active_rides")
+      .where("driverId", "==", id)
+      .limit(1)
+      .get();
+    if (!activeRides.empty) {
+      res.status(409).json({
+        error: "An operator with an active ride cannot be deleted before the final stop.",
+      });
       return;
     }
     const authUid = driverDoc.data()?.authUid;

@@ -9,6 +9,15 @@ let appCheck: AppCheck | null = null;
 
 export function initializeFirebaseAppCheck(): AppCheck | null {
   if (typeof window === "undefined" || appCheck) return appCheck;
+  const debugToken = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_DEBUG_TOKEN;
+  if (process.env.NODE_ENV !== "production" && debugToken) {
+    (
+      self as typeof self & {
+        FIREBASE_APPCHECK_DEBUG_TOKEN?: boolean | string;
+      }
+    ).FIREBASE_APPCHECK_DEBUG_TOKEN =
+      debugToken === "true" ? true : debugToken;
+  }
   const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY;
   if (!siteKey) {
     if (process.env.NODE_ENV === "production") {

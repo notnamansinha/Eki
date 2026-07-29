@@ -140,6 +140,70 @@ function cacheRoute(routeId: string, routeData: Record<string, any> | undefined)
   );
 }
 
+function activeRideDocumentId(
+  data: Record<string, unknown>,
+): string | null {
+  return typeof data.busId === "string" && typeof data.routeId === "string"
+    ? `${data.busId}_${data.routeId}`
+    : null;
+}
+
+function persistActiveRideLifecycle(
+  data: Record<string, unknown>,
+  tripState: "pre_departure" | "in_service",
+  currentStopIndex: number,
+  hasDepartedOrigin: boolean,
+): void {
+  const documentId = activeRideDocumentId(data);
+  if (
+    !documentId ||
+    data.status !== "active" ||
+    typeof data.sessionId !== "string" ||
+    typeof data.driverId !== "string"
+  ) {
+    return;
+  }
+  db.collection("active_rides").doc(documentId).set({
+    sessionId: data.sessionId,
+    busId: data.busId,
+    driverId: data.driverId,
+    routeId: data.routeId,
+    status: "active",
+    tripState,
+    currentStopIndex,
+    hasDepartedOrigin,
+    delayMinutes:
+      typeof data.delayMinutes === "number" ? data.delayMinutes : 0,
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true }).catch((error) => {
+    console.warn(
+      `[TripState] Failed to persist active ride ${documentId}:`,
+      error,
+    );
+  });
+}
+
+function activateRideSession(sessionId: string): void {
+  const sessionRef = db.collection("ride_sessions").doc(sessionId);
+  void db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(sessionRef);
+    const session = snapshot.data();
+    if (!snapshot.exists || session?.status === "active") return;
+    if (session?.status !== "armed" && session?.status !== "pending") return;
+    transaction.set(sessionRef, {
+      status: "active",
+      startTime: Date.now(),
+      activatedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }).catch((error) => {
+    console.warn(
+      `[TripState] Failed to activate session ${sessionId}:`,
+      error,
+    );
+  });
+}
+
 export function startTripStateEngine(): () => void {
   console.log("🚀 Trip State Engine started, listening to RTDB /activeBuses");
   const busesRef = rtdb.ref("activeBuses");
@@ -298,8 +362,18 @@ export function startTripStateEngine(): () => void {
         });
     }
 
+    if (
+      data.tripState === "pre_departure" &&
+      tripState === "in_service" &&
+      typeof data.sessionId === "string"
+    ) {
+      activateRideSession(data.sessionId);
+    }
+
     const reachedStopIndex =
-      tripState === "completed" && data.tripState !== "completed"
+      data.tripState === "pre_departure" && tripState === "in_service"
+        ? 0
+        : tripState === "completed" && data.tripState !== "completed"
         ? currentStopIndex
         : currentStopIndex !== data.currentStopIndex
           ? Math.max(0, currentStopIndex - 1)
@@ -338,7 +412,10 @@ export function startTripStateEngine(): () => void {
         typeof data.sessionId === "string" && data.sessionId
           ? data.sessionId
           : nodeKey;
-      db.collection("completed_trips").doc(completionId).set({
+      const activeRideId = activeRideDocumentId(data);
+      const completedRef = db.collection("completed_trips").doc(completionId);
+      const batch = db.batch();
+      batch.set(completedRef, {
         busId: data.busId,
         driverId: data.driverId || "unknown",
         routeId: data.routeId,
@@ -346,13 +423,23 @@ export function startTripStateEngine(): () => void {
         stopCount: stops.length,
         stopNames: stops.map(s => s.name),
         sessionId: typeof data.sessionId === "string" ? data.sessionId : null,
-      }, { merge: true }).catch(console.warn);
+      }, { merge: true });
       if (typeof data.sessionId === "string") {
-        db.collection("ride_sessions").doc(data.sessionId).set({
+        batch.set(db.collection("ride_sessions").doc(data.sessionId), {
           status: "completed",
           endTime: Date.now(),
-        }, { merge: true }).catch(console.warn);
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
       }
+      if (activeRideId) {
+        batch.delete(db.collection("active_rides").doc(activeRideId));
+      }
+      batch.commit().catch((error) => {
+        console.warn(
+          `[TripState] Failed to persist completion ${completionId}:`,
+          error,
+        );
+      });
 
       const timeoutId = setTimeout(() => {
         latestLocations.delete(data.busId);
@@ -374,7 +461,7 @@ export function startTripStateEngine(): () => void {
             ...live,
             status: "offline",
             deviceState: "offline",
-            timestamp: { ".sv": "timestamp" },
+            lifecycleUpdatedAt: { ".sv": "timestamp" },
           };
         }).catch((error) => {
           console.warn(`[TripState] Failed to retire completed session ${data.sessionId}:`, error);
@@ -385,6 +472,14 @@ export function startTripStateEngine(): () => void {
       completedTimeouts.set(data.busId, timeoutId);
     }
 
+    if (tripState === "pre_departure" || tripState === "in_service") {
+      persistActiveRideLifecycle(
+        data,
+        tripState,
+        currentStopIndex,
+        hasDepartedOrigin,
+      );
+    }
     persistFleetState({ ...data, tripState }, new Date().toISOString());
   };
 
@@ -422,9 +517,28 @@ export function startTripStateEngine(): () => void {
       const now = Date.now();
       const removals: Promise<unknown>[] = [];
       snapshot.forEach((child) => {
-        const data = child.val() as { timestamp?: unknown } | null;
+        const data = child.val() as {
+          timestamp?: unknown;
+          status?: unknown;
+          tripState?: unknown;
+          deviceState?: unknown;
+        } | null;
         if (typeof data?.timestamp === "number" && now - data.timestamp > STALE_BUS_MS) {
-          removals.push(child.ref.remove());
+          const rideIsActive =
+            data.status === "active" &&
+            (data.tripState === "pre_departure" ||
+              data.tripState === "in_service");
+          if (rideIsActive) {
+            if (data.deviceState !== "offline") {
+              removals.push(child.ref.update({
+                deviceState: "offline",
+                signalState: "lost",
+                lifecycleUpdatedAt: { ".sv": "timestamp" },
+              }));
+            }
+          } else {
+            removals.push(child.ref.remove());
+          }
         }
       });
       await Promise.all(removals);

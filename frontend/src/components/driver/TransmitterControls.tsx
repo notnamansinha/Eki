@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRoutes } from "@/hooks/useRoutes";
-import { BusFront as Bus, Navigation, Play, Square, ChevronDown, ChevronUp, MapPin } from "lucide-react";
+import { Navigation, Play, ChevronDown, ChevronUp } from "lucide-react";
 
 import { DriverData } from "@/hooks/useDrivers";
 import { BusData } from "@/hooks/useBuses";
@@ -16,10 +16,7 @@ interface Props {
   drivers: DriverData[];
   selectedRouteIds: string[];
   setSelectedRouteIds: (ids: string[]) => void;
-  isTracking: boolean;
   onStartTracking: () => void;
-  onStopTracking: () => void;
-  onRouteUpdate?: (routeIds: string[]) => void;
   isSocketConnected?: boolean;
 }
 
@@ -32,15 +29,12 @@ export default function TransmitterControls({
   drivers,
   selectedRouteIds,
   setSelectedRouteIds,
-  isTracking,
   onStartTracking,
-  onStopTracking,
-  onRouteUpdate,
   isSocketConnected = false,
 }: Props) {
   const [isExpanded, setIsExpanded] = useState(true);
   const { routes } = useRoutes();
-  const expanded = !isTracking && isExpanded;
+  const expanded = isExpanded;
 
   return (
     <div className="flex flex-col w-full rounded-t-2xl overflow-hidden relative transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
@@ -48,13 +42,13 @@ export default function TransmitterControls({
       {/* Handle / Header */}
       <div 
         className="w-full h-[52px] flex items-center justify-between px-5 cursor-pointer relative"
-        onClick={() => !isTracking && setIsExpanded(!isExpanded)}
+        onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full" style={{ background: "var(--surface-4)" }} />
         <div className="flex items-center gap-2.5 mt-1">
           <Navigation className="w-3.5 h-3.5" style={{ color: "var(--text-ghost)" }} />
           <span className="text-[11px] font-semibold" style={{ color: "var(--text-secondary)" }}>
-            Transmitter Controls
+            Ride Setup
           </span>
         </div>
         <div className="mt-1" style={{ color: "var(--text-ghost)" }}>
@@ -65,55 +59,32 @@ export default function TransmitterControls({
       <div className={`px-5 gap-4 flex-col overflow-y-auto max-h-[55vh] ${expanded ? 'flex pb-6' : 'hidden'}`}>
 
         {/* Vehicle Selector */}
-        {!isTracking ? (
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
-              Vehicle
-            </label>
-            <div className="relative">
-              <select
-                value={busId}
-                onChange={(e) => setSelectedBusId(e.target.value)}
-                className="w-full h-12 rounded-xl px-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none cursor-pointer transition-all"
-                style={{ 
-                  background: "var(--surface-3)", 
-                  border: "1px solid var(--border-default)", 
-                  color: "var(--text-primary)" 
-                }}
-              >
-                <option value="" style={{ background: "var(--surface-2)" }}>Select vehicle…</option>
-                {buses.map((b) => (
-                  <option key={b.id} value={b.id} style={{ background: "var(--surface-2)" }}>{b.name} ({b.id})</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--text-ghost)" }} />
-            </div>
+        <div className="space-y-1.5">
+          <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
+            Vehicle
+          </label>
+          <div className="relative">
+            <select
+              value={busId}
+              onChange={(e) => setSelectedBusId(e.target.value)}
+              className="w-full h-12 rounded-xl px-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none cursor-pointer transition-all"
+              style={{
+                background: "var(--surface-3)",
+                border: "1px solid var(--border-default)",
+                color: "var(--text-primary)"
+              }}
+            >
+              <option value="" style={{ background: "var(--surface-2)" }}>Select vehicle…</option>
+              {buses.map((b) => (
+                <option key={b.id} value={b.id} style={{ background: "var(--surface-2)" }}>{b.name} ({b.id})</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--text-ghost)" }} />
           </div>
-        ) : (
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
-              Vehicle
-            </label>
-            <div className="w-full rounded-xl px-4 py-3 text-[13px] flex items-center justify-between"
-              style={{ background: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}>
-              <div className="flex items-center gap-3">
-                <Bus className="w-4 h-4" style={{ color: "var(--text-ghost)" }} />
-                <span className="font-semibold tabular-nums tracking-wide" style={{ color: "var(--text-secondary)" }}>
-                  {busId || "UNASSIGNED"}
-                </span>
-              </div>
-              {isTracking && (
-                <div className="status-live" style={{ fontSize: "9px", padding: "2px 8px" }}>
-                  Live
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        </div>
 
         {/* Operator Selector */}
-        {!isTracking && (
-          <div className="space-y-1.5">
+        <div className="space-y-1.5">
             <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
               Operator
             </label>
@@ -136,8 +107,7 @@ export default function TransmitterControls({
               </select>
               <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--text-ghost)" }} />
             </div>
-          </div>
-        )}
+        </div>
 
         {/* Route Selector */}
         <div className="space-y-1.5">
@@ -190,10 +160,8 @@ export default function TransmitterControls({
                       name="transmitterRoute"
                       className="sr-only"
                       checked={isSelected}
-                      disabled={isTracking}
                       onChange={() => {
                         setSelectedRouteIds([r.id]);
-                        if (isTracking) onRouteUpdate?.([r.id]);
                       }}
                     />
                     <div className="flex flex-col">
@@ -211,9 +179,8 @@ export default function TransmitterControls({
         
         {/* Action Button */}
         <div className="pt-2">
-          {!isTracking ? (
           <button
-              aria-label="Go live and start transmitting location"
+              aria-label="Arm ride for automatic start at stop one"
               onClick={onStartTracking}
               disabled={!busId || !driverId || !drivers.some(d => d.id === driverId) || selectedRouteIds.length === 0 || !isSocketConnected}
               className="w-full py-4 rounded-xl font-semibold text-[14px] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 disabled:opacity-30 disabled:cursor-not-allowed"
@@ -227,52 +194,12 @@ export default function TransmitterControls({
               ) : (
                 <>
                   <Play className="w-4 h-4" style={{ fill: "var(--surface-0)" }} />
-                  Go Live
+                  Arm Ride
                 </>
               )}
             </button>
-          ) : (
-          <button
-              aria-label="End shift and stop transmitting"
-              onClick={onStopTracking}
-              className="w-full py-4 rounded-xl font-semibold text-[14px] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5"
-              style={{ background: "var(--status-danger)", color: "white" }}
-            >
-              <Square className="w-4 h-4" style={{ fill: "white" }} />
-              End Shift
-            </button>
-          )}
         </div>
       </div>
-
-      {/* Collapsed Tracking Bar */}
-      {!isExpanded && isTracking && (
-        <div className="px-5 pb-5 flex items-center justify-between gap-4 animate-slide-up">
-          <div className="flex flex-col flex-1 cursor-pointer" onClick={() => setIsExpanded(true)}>
-             <div className="status-live mb-1" style={{ fontSize: "9px", padding: "2px 8px", width: "fit-content" }}>
-               Transmitting
-             </div>
-             <div className="flex items-center gap-1.5">
-                <MapPin className="w-3 h-3" style={{ color: "var(--text-ghost)" }} />
-                <span className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
-                  {selectedRouteIds.length} Route{selectedRouteIds.length !== 1 ? 's' : ''} Active
-                </span>
-             </div>
-          </div>
-          <button
-            aria-label="Stop transmitting and go offline"
-            onClick={onStopTracking}
-            className="h-10 px-5 rounded-xl text-[11px] font-semibold transition-all"
-            style={{ 
-              background: "var(--status-danger-bg)", 
-              border: "1px solid rgba(248,113,113,0.15)", 
-              color: "var(--status-danger)" 
-            }}
-          >
-            End Shift
-          </button>
-        </div>
-      )}
     </div>
   );
 }

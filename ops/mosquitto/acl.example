@@ -1,9 +1,0 @@
-# Generate one unique username/password per device. Never reuse a password.
-# A device may publish only to its own identity topic and may not subscribe.
-user device_01
-topic write eki/v1/telemetry/device_01
-
-# The backend ingestor may read telemetry but must not publish device messages.
-user eki-backend
-topic read eki/v1/telemetry/+
-

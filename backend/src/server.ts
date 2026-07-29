@@ -19,9 +19,10 @@ import http from "http";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { deleteApp } from "firebase-admin/app";
 import { preloadRoutePolylines } from "./lib/etaService";
-import { db, rtdb } from "./lib/firebaseAdmin";
-import { getMqttIngestStatus } from "./services/mqttIngestor";
+import { db, firebaseAdminApp, rtdb } from "./lib/firebaseAdmin";
+import { getHttpsTelemetryStatus } from "./services/deviceTelemetryService";
 import { startWorkerCoordinator } from "./services/workerCoordinator";
 import busRoutes from "./routes/buses";
 import analyticsRoutes from "./routes/analytics";
@@ -66,6 +67,13 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
+function isDeviceTelemetryRequest(req: express.Request): boolean {
+  return (
+    req.method === "POST" &&
+    /^\/api\/devices\/[A-Za-z0-9_-]{1,128}\/telemetry$/.test(req.path)
+  );
+}
+
 // Global HTTP rate limiter — prevents DoS on all REST endpoints
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,  // 1 minute window
@@ -73,6 +81,7 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please slow down." },
+  skip: isDeviceTelemetryRequest,
 });
 app.use(globalLimiter);
 
@@ -128,7 +137,14 @@ app.use("/api/routes", routeComputeLimiter, polylineRoutes);
 // Route planner — zero Google Maps API cost at runtime
 app.use("/api/plan", routePlanLimiter, planRoutes);
 app.use("/api/routes-list", routesListRoutes);
-app.use("/api/devices", writeLimiter, devicesRoutes);
+app.use(
+  "/api/devices",
+  (req, res, next) =>
+    req.method === "POST" && /\/telemetry$/.test(req.path)
+      ? next()
+      : writeLimiter(req, res, next),
+  devicesRoutes,
+);
 app.use("/api/places", placesRoutes);
 app.use("/api/shifts", writeLimiter, shiftsRoutes);
 app.use("/api/fleet", writeLimiter, fleetRoutes);
@@ -158,22 +174,23 @@ healthProbeTimer.unref();
 // Return cached readiness so a public health-check flood cannot amplify into
 // billable Firestore/RTDB reads on every request.
 app.get("/health", (_req, res) => {
-  const mqtt = getMqttIngestStatus();
-  const ready = firebaseReady && (
-    process.env.NODE_ENV !== "production" ||
-    process.env.WORKER_ENABLED === "false" ||
-    mqtt.connected
-  );
+  const telemetry = getHttpsTelemetryStatus();
+  const ready = firebaseReady;
   res.status(ready ? 200 : 503).json({
     status: ready ? "ok" : "degraded",
     firebase: firebaseReady ? "connected" : "disconnected",
-    mqtt: mqtt.configured ? (mqtt.connected ? "connected" : "disconnected") : "not_configured",
+    telemetry: {
+      transport: "https",
+      accepted: telemetry.accepted,
+      rejected: telemetry.rejected,
+      lastAcceptedAt: telemetry.lastAcceptedAt,
+    },
     checkedAt: lastHealthProbeAt,
   });
 });
 
 // ── Start Server ──────────────────────────────────────────────────────────────
-let stopWorkers: (() => void) | null = null;
+let stopWorkers: (() => Promise<void>) | null = null;
 httpServer.listen(Number(PORT), "0.0.0.0", () => {
   console.log(`✅ BusTrack backend running on port ${PORT} (0.0.0.0)`);
   // Pre-load route polylines from Firestore into memory for zero-cost serving
@@ -183,15 +200,22 @@ httpServer.listen(Number(PORT), "0.0.0.0", () => {
   stopWorkers = startWorkerCoordinator();
 });
 
-function shutdown(signal: string) {
+let shuttingDown = false;
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log(`[Server] ${signal} received; shutting down.`);
-  stopWorkers?.();
-  httpServer.close((error) => {
-    process.exit(error ? 1 : 0);
+  clearInterval(healthProbeTimer);
+  const closeError = await new Promise<Error | undefined>((resolve) => {
+    httpServer.close((error) => resolve(error));
   });
-  setTimeout(() => process.exit(1), 10_000).unref();
+  await stopWorkers?.();
+  await deleteApp(firebaseAdminApp).catch((error) => {
+    console.warn("[Server] Firebase shutdown failed:", error);
+  });
+  process.exitCode = closeError ? 1 : 0;
 }
-process.once("SIGTERM", () => shutdown("SIGTERM"));
-process.once("SIGINT", () => shutdown("SIGINT"));
+process.once("SIGTERM", () => void shutdown("SIGTERM"));
+process.once("SIGINT", () => void shutdown("SIGINT"));
 
 export {};

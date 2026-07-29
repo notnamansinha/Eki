@@ -4,9 +4,14 @@ import { requireAuth } from "../middleware/requireAuth";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { haversineMeters } from "../lib/geo";
+import { STOP_GEOFENCE_M } from "../services/tripStateReducer";
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+function activeRideId(busId: string, routeId: string): string {
+  return `${busId}_${routeId}`;
+}
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -85,7 +90,15 @@ router.patch("/delay", requireAuth, async (req: AuthenticatedRequest, res: Respo
       res.status(409).json({ error: "No active shift exists for this vehicle and route." });
       return;
     }
-    await nodeRef.update({ delayMinutes });
+    await Promise.all([
+      nodeRef.update({ delayMinutes }),
+      db.collection("active_rides")
+        .doc(activeRideId(assignment.busId, assignment.routeId))
+        .set({
+          delayMinutes,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true }),
+    ]);
     res.json({ saved: true, delayMinutes });
   } catch (error) {
     console.error("[Shifts] Failed to update delay:", error);
@@ -108,14 +121,37 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
       current?.driverId === assignment.driverId &&
       typeof current.sessionId === "string"
     ) {
+      const sessionStatus =
+        current.tripState === "pre_departure" ? "armed" : "active";
       await db.collection("ride_sessions").doc(current.sessionId).set({
         id: current.sessionId,
         busId: assignment.busId,
         driverId: assignment.driverId,
         routeId: assignment.routeId,
-        status: "active",
-        passengers: {},
+        status: sessionStatus,
       }, { merge: true });
+      await db.collection("active_rides")
+        .doc(activeRideId(assignment.busId, assignment.routeId))
+        .set({
+          sessionId: current.sessionId,
+          busId: assignment.busId,
+          driverId: assignment.driverId,
+          routeId: assignment.routeId,
+          status: "active",
+          tripState:
+            current.tripState === "in_service"
+              ? "in_service"
+              : "pre_departure",
+          currentStopIndex: Number.isInteger(current.currentStopIndex)
+            ? current.currentStopIndex
+            : 0,
+          hasDepartedOrigin: current.hasDepartedOrigin === true,
+          delayMinutes:
+            typeof current.delayMinutes === "number"
+              ? current.delayMinutes
+              : 0,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
       res.json({ sessionId: current.sessionId, resumed: true });
       return;
     }
@@ -146,24 +182,22 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
       res.status(422).json({ error: "This route has no valid origin coordinate." });
       return;
     }
-    if (
+    const arrivedAtOrigin =
+      current?.motionState !== "uncertain" &&
       haversineMeters(
         { lat: currentLat, lng: currentLng },
         { lat: origin.lat, lng: origin.lng },
-      ) > 250
-    ) {
-      res.status(409).json({ error: "Vehicle must be near the route origin to start a shift." });
-      return;
-    }
-
+      ) <= STOP_GEOFENCE_M;
+    const initialTripState =
+      arrivedAtOrigin ? "in_service" : "pre_departure";
     const sessionRef = db.collection("ride_sessions").doc();
-    const startedAt = Date.now();
+    const armedAt = Date.now();
     await sessionRef.create({
       id: sessionRef.id,
       busId: assignment.busId,
       driverId: assignment.driverId,
       routeId: assignment.routeId,
-      startTime: startedAt,
+      armedAt,
       status: "pending",
       passengers: {},
       stopsReached: {},
@@ -190,11 +224,11 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           sessionId: sessionRef.id,
           status: "active",
           deviceState: "online",
-          tripState: "in_service",
+          tripState: initialTripState,
           hasDepartedOrigin: false,
           currentStopIndex: 0,
           delayMinutes: 0,
-          timestamp: { ".sv": "timestamp" },
+          lifecycleUpdatedAt: { ".sv": "timestamp" },
         };
       });
       if (!claim.committed) {
@@ -214,10 +248,41 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         res.status(409).json({ error: "This bus already has an active shift." });
         return;
       }
-      await sessionRef.set({
-        status: "active",
-        activatedAt: FieldValue.serverTimestamp(),
+      const activeRideRef = db.collection("active_rides")
+        .doc(activeRideId(assignment.busId, assignment.routeId));
+      const batch = db.batch();
+      batch.set(sessionRef, {
+        status: arrivedAtOrigin ? "active" : "armed",
+        armedAt,
+        ...(arrivedAtOrigin
+          ? {
+              startTime: armedAt,
+              activatedAt: FieldValue.serverTimestamp(),
+              stopsReached: {
+                0: {
+                  stopIndex: 0,
+                  stopId: typeof origin.id === "string" ? origin.id : "",
+                  stopName: typeof origin.name === "string" ? origin.name : "",
+                  timestamp: FieldValue.serverTimestamp(),
+                },
+              },
+            }
+          : {}),
+        updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
+      batch.set(activeRideRef, {
+        sessionId: sessionRef.id,
+        busId: assignment.busId,
+        driverId: assignment.driverId,
+        routeId: assignment.routeId,
+        status: "active",
+        tripState: initialTripState,
+        currentStopIndex: 0,
+        hasDepartedOrigin: false,
+        delayMinutes: 0,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      await batch.commit();
     } catch (error) {
       await nodeRef.transaction((liveValue) => {
         const live = liveValue as Record<string, unknown> | null;
@@ -227,11 +292,15 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           status: "offline",
           deviceState: "offline",
           tripState: "ended",
-          timestamp: { ".sv": "timestamp" },
+          lifecycleUpdatedAt: { ".sv": "timestamp" },
         };
       }).catch((rollbackError) => {
         console.error("[Shifts] Failed to roll back live shift claim:", rollbackError);
       });
+      await db.collection("active_rides")
+        .doc(activeRideId(assignment.busId, assignment.routeId))
+        .delete()
+        .catch(() => undefined);
       await sessionRef.set({
         status: "failed",
         endTime: Date.now(),
@@ -269,21 +338,13 @@ router.post("/stop", requireAuth, async (req: AuthenticatedRequest, res: Respons
       return;
     }
 
-    const endedAt = Date.now();
-    // Persist the durable record first. If the live update fails, the driver
-    // remains in tracking mode and can safely retry the idempotent stop call.
-    await sessionRef.set({
-      status: "completed",
-      endTime: endedAt,
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
-    await rtdb.ref(`activeBuses/${assignment.busId}_${assignment.routeId}`).update({
-      status: "offline",
-      deviceState: "offline",
-      tripState: "ended",
-      timestamp: { ".sv": "timestamp" },
+    if (data?.status === "completed") {
+      res.json({ stopped: true, alreadyCompleted: true });
+      return;
+    }
+    res.status(409).json({
+      error: "This ride ends automatically after the final ordered stop.",
     });
-    res.json({ stopped: true });
   } catch (error) {
     console.error("[Shifts] Failed to stop shift:", error);
     res.status(500).json({ error: "Unable to stop shift." });

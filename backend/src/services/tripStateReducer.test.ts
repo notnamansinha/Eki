@@ -159,7 +159,7 @@ describe("reduceTripState", () => {
     });
   });
 
-  it("recovers progress when the bus reaches a downstream stop", () => {
+  it("does not skip the expected stop when the bus reaches a downstream stop", () => {
     const missed = { lat: origin.lat + 0.002, lng: origin.lng };
     const downstream = { lat: origin.lat + 0.004, lng: origin.lng };
     const terminal = { lat: origin.lat + 0.006, lng: origin.lng };
@@ -173,7 +173,7 @@ describe("reduceTripState", () => {
       }),
     );
 
-    expect(result.currentStopIndex).toBe(3);
+    expect(result.currentStopIndex).toBe(1);
     expect(result.tripState).toBe("in_service");
   });
 
@@ -205,7 +205,7 @@ describe("reduceTripState", () => {
     expect(result.tripState).toBe("completed");
   });
 
-  it("preserves maintenance recovery behavior", () => {
+  it("keeps the ride active when GNSS becomes uncertain", () => {
     const lost = reduceTripState(input({ motionState: "uncertain" }));
     const recovered = reduceTripState(
       input({
@@ -214,7 +214,29 @@ describe("reduceTripState", () => {
       }),
     );
 
-    expect(lost.tripState).toBe("maintenance");
+    expect(lost.tripState).toBe("in_service");
     expect(recovered.tripState).toBe("in_service");
+  });
+
+  it("starts only when a trustworthy fix enters the origin geofence", () => {
+    const waiting = reduceTripState(
+      input({
+        currentTripState: "pre_departure",
+        lat: origin.lat + 0.001,
+      }),
+    );
+    const uncertainAtOrigin = reduceTripState(
+      input({
+        currentTripState: "pre_departure",
+        motionState: "uncertain",
+      }),
+    );
+    const arrived = reduceTripState(
+      input({ currentTripState: "pre_departure" }),
+    );
+
+    expect(waiting.tripState).toBe("pre_departure");
+    expect(uncertainAtOrigin.tripState).toBe("pre_departure");
+    expect(arrived.tripState).toBe("in_service");
   });
 });

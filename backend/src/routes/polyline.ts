@@ -187,6 +187,18 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
       res.status(404).json({ error: "The route no longer exists." });
       return;
     }
+    if (mode === "edit") {
+      const activeRide = await db.collection("active_rides")
+        .where("routeId", "==", routeId)
+        .limit(1)
+        .get();
+      if (!activeRide.empty) {
+        res.status(409).json({
+          error: "An active ride route cannot be edited before its final stop.",
+        });
+        return;
+      }
+    }
     const waypoints = stops.map(({ lat, lng }) => ({ lat, lng }));
     const geometry = await computePolyline(waypoints);
     const routeData = {
@@ -218,12 +230,21 @@ router.delete("/:routeId", requireAdmin, async (req: Request, res: Response) => 
     return;
   }
   try {
-    const [modernAssignments, legacyAssignments] = await Promise.all([
+    const [modernAssignments, legacyAssignments, activeRides, devices] = await Promise.all([
       db.collection("buses").where("assignedRoutes", "array-contains", routeId).limit(1).get(),
       db.collection("buses").where("assignedRouteId", "==", routeId).limit(1).get(),
+      db.collection("active_rides").where("routeId", "==", routeId).limit(1).get(),
+      db.collection("devices").where("routeId", "==", routeId).limit(1).get(),
     ]);
-    if (!modernAssignments.empty || !legacyAssignments.empty) {
-      res.status(409).json({ error: "Unassign this route from every vehicle before deleting it." });
+    if (
+      !modernAssignments.empty ||
+      !legacyAssignments.empty ||
+      !activeRides.empty ||
+      !devices.empty
+    ) {
+      res.status(409).json({
+        error: "Unassign this route from every vehicle and device before deleting it.",
+      });
       return;
     }
     await db.collection("routes").doc(routeId).delete();

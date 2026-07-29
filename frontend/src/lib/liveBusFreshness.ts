@@ -13,9 +13,12 @@ export const BUS_EXPIRY_MS =
 
 export const SIGNAL_LOST_MS = Math.min(90_000, Math.floor(BUS_EXPIRY_MS / 2));
 
-export function isLiveBusTimestamp(timestamp?: number): boolean {
+export function isLiveBusTimestamp(
+  timestamp?: number,
+  now = Date.now(),
+): boolean {
   if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) return false;
-  const age = Date.now() - timestamp;
+  const age = now - timestamp;
   // Reject future timestamps (allow max 10s forward clock skew for IoT NTP drift),
   // and reject stale timestamps older than BUS_EXPIRY_MS.
   return age >= -10_000 && age < BUS_EXPIRY_MS;

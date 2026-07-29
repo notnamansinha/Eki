@@ -1,4 +1,4 @@
-import type { MotionState, TripState } from "../types";
+import type { LegacyTripState, MotionState, TripState } from "../types";
 import { haversineMeters } from "../lib/geo";
 
 export interface TripRouteStop {
@@ -11,7 +11,7 @@ export interface TripStateInput {
   lng: number;
   previousPosition?: TripRouteStop;
   motionState: MotionState;
-  currentTripState: TripState;
+  currentTripState: LegacyTripState;
   currentStopIndex: number;
   stops: TripRouteStop[];
   hasDepartedOrigin: boolean;
@@ -90,7 +90,10 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
 
   if (stops.length === 0) {
     return {
-      tripState: "in_service",
+      tripState:
+        currentTripState === "maintenance"
+          ? "in_service"
+          : currentTripState,
       currentStopIndex: 0,
       hasDepartedOrigin: input.hasDepartedOrigin,
     };
@@ -98,7 +101,10 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
 
   if (motionState === "uncertain") {
     return {
-      tripState: "maintenance",
+      tripState:
+        currentTripState === "maintenance"
+          ? "in_service"
+          : currentTripState,
       currentStopIndex,
       hasDepartedOrigin: input.hasDepartedOrigin,
     };
@@ -140,28 +146,25 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
       };
     }
 
-    // A fast vehicle can cross a stop between two GNSS writes. Search all
-    // downstream stops and also test the bounded segment between consecutive
-    // fixes. The segment cap rejects tunnel reconnects and implausible GPS
-    // jumps while still covering normal 5-10 second telemetry gaps.
-    let furthestReachedIndex = -1;
-    for (let index = Math.max(1, safeCurrentIndex); index <= lastIndex; index++) {
-      if (wasStopReached(stops[index], position, input.previousPosition)) {
-        furthestReachedIndex = index;
-      }
-    }
-
-    if (furthestReachedIndex >= 0 && furthestReachedIndex < lastIndex) {
+    // Only the next expected stop may advance the trip. The bounded segment
+    // check still catches a fast crossing between two fixes, but it never
+    // permits a downstream stop to skip one or more configured stops.
+    const expectedStop = stops[safeCurrentIndex];
+    const reachedExpectedStop =
+      safeCurrentIndex > 0 &&
+      wasStopReached(expectedStop, position, input.previousPosition);
+    if (reachedExpectedStop && safeCurrentIndex < lastIndex) {
       return {
         tripState: "in_service",
-        currentStopIndex: furthestReachedIndex + 1,
+        currentStopIndex: safeCurrentIndex + 1,
         hasDepartedOrigin,
       };
     }
 
     const canComplete =
       hasDepartedOrigin &&
-      furthestReachedIndex === lastIndex &&
+      safeCurrentIndex === lastIndex &&
+      reachedExpectedStop &&
       wasStopReached(lastStop, position, input.previousPosition);
 
     return {

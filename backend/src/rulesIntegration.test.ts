@@ -51,6 +51,11 @@ rulesDescribe("Firebase security rules integration", () => {
       await setDoc(doc(context.firestore(), "devices", "device_1"), {
         secretHash: "never-client-readable",
       });
+      await setDoc(doc(context.firestore(), "active_rides", "bus_1_route_1"), {
+        sessionId: "session_1",
+        status: "active",
+        tripState: "in_service",
+      });
     });
   });
 
@@ -69,11 +74,12 @@ rulesDescribe("Firebase security rules integration", () => {
     await assertFails(set(ref(device.database(), "activeBuses/x"), { lat: 1 }));
   });
 
-  it("denies browser route/device/session mutations and device reads", async () => {
+  it("denies browser route/device/session mutations and recovery-state reads", async () => {
     const admin = environment.authenticatedContext("admin_1", { role: "admin", admin: true });
     await assertSucceeds(getDoc(doc(admin.firestore(), "routes", "route_1")));
     await assertFails(setDoc(doc(admin.firestore(), "routes", "route_2"), { name: "Bypass" }));
     await assertFails(getDoc(doc(admin.firestore(), "devices", "device_1")));
+    await assertFails(getDoc(doc(admin.firestore(), "active_rides", "bus_1_route_1")));
     await assertFails(setDoc(doc(admin.firestore(), "ride_sessions", "session_1"), {
       status: "active",
     }));

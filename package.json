@@ -2,7 +2,7 @@
   "name": "eki-ecosystem",
   "version": "1.0.0",
   "private": true,
-  "description": "University bus tracking MVP using MQTT QoS 1 telemetry, a hardened server-side ingestion layer, and a Next.js frontend.",
+  "description": "University bus tracking with authenticated HTTPS GNSS telemetry, resilient ordered trip state, and a Next.js frontend.",
   "workspaces": [
     "frontend",
     "backend"

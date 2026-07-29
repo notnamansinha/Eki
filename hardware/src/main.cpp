@@ -1,22 +1,28 @@
 #include "secrets.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <MQTT.h>
+#include <HTTPClient.h>
 #include <TinyGPSPlus.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <esp_system.h>
 #include <sys/time.h>
 
-#ifndef MQTT_ROOT_CA
-#error "MQTT_ROOT_CA must be defined in include/secrets.h."
+#ifndef BACKEND_ROOT_CA
+#error "BACKEND_ROOT_CA must be defined in include/secrets.h."
+#endif
+#ifndef BACKEND_URL
+#error "BACKEND_URL must be defined in include/secrets.h."
 #endif
 #ifndef DEVICE_ID
 #error "DEVICE_ID must be defined in include/secrets.h."
 #endif
-#ifndef MQTT_HOST
-#error "MQTT_HOST must be defined in include/secrets.h."
+#ifndef DEVICE_SECRET
+#error "DEVICE_SECRET must be defined in include/secrets.h."
 #endif
+
+static_assert(sizeof(DEVICE_SECRET) - 1 >= 20,
+              "DEVICE_SECRET must contain at least 20 characters.");
 
 namespace {
 constexpr double DISTANCE_THRESHOLD_M = 8.0;
@@ -27,16 +33,14 @@ constexpr double STOP_SPEED_KMH = 1.5;
 constexpr double HDOP_REJECT_THRESHOLD = 4.0;
 constexpr uint32_t MIN_PUBLISH_INTERVAL_MS = 3000;
 constexpr uint32_t MOVING_HEARTBEAT_MS = 30000;
-constexpr uint32_t STOPPED_HEARTBEAT_MS = 120000;
+constexpr uint32_t STOPPED_HEARTBEAT_MS = 60000;
 constexpr uint32_t WIFI_RETRY_MS = 5000;
-constexpr uint32_t MQTT_RETRY_MS = 5000;
-constexpr uint16_t MQTT_BUFFER_BYTES = 512;
-constexpr int MQTT_QOS = 1;
+constexpr uint32_t HTTPS_RETRY_MS = 5000;
+constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
 
 TinyGPSPlus gps;
 HardwareSerial &gpsSerial = Serial2;
 WiFiClientSecure tlsClient;
-MQTTClient mqttClient(MQTT_BUFFER_BYTES);
 
 struct TelemetryFix {
   double lat = 0;
@@ -60,7 +64,7 @@ uint8_t stoppedReadings = 0;
 uint32_t lastPublishAt = 0;
 uint32_t lastEvaluationAt = 0;
 uint32_t lastWifiAttemptAt = 0;
-uint32_t lastMqttAttemptAt = 0;
+uint32_t lastHttpsAttemptAt = 0;
 uint32_t lastGpsWarningAt = 0;
 bool gpsFixWasLost = false;
 bool lossMessagePublished = false;
@@ -69,10 +73,10 @@ uint32_t elapsed(uint32_t since) {
   return millis() - since;
 }
 
-String telemetryTopic() {
-  String prefix = MQTT_TOPIC_PREFIX;
-  while (prefix.endsWith("/")) prefix.remove(prefix.length() - 1);
-  return prefix + "/" + DEVICE_ID;
+String telemetryUrl() {
+  String base = BACKEND_URL;
+  while (base.endsWith("/")) base.remove(base.length() - 1);
+  return base + "/api/devices/" + DEVICE_ID + "/telemetry";
 }
 
 bool clockIsSynchronized() {
@@ -117,35 +121,27 @@ void connectWiFi() {
   if (lastWifiAttemptAt && elapsed(lastWifiAttemptAt) < WIFI_RETRY_MS) return;
   lastWifiAttemptAt = millis();
 
-  WiFi.disconnect(true);
+  tlsClient.stop();
+  WiFi.disconnect();
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   Serial.printf("[WiFi] Connecting to %s\n", WIFI_SSID);
 }
 
-void connectMqtt() {
-  if (WiFi.status() != WL_CONNECTED || mqttClient.connected()) return;
-  if (!clockIsSynchronized()) return;
-  if (lastMqttAttemptAt && elapsed(lastMqttAttemptAt) < MQTT_RETRY_MS) return;
-  lastMqttAttemptAt = millis();
-
-  Serial.printf("[MQTT] Connecting securely to %s:%u\n", MQTT_HOST, MQTT_PORT);
-  if (mqttClient.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
-    Serial.println("[MQTT] Connected (persistent session, telemetry QoS 1).");
-  } else {
-    Serial.printf(
-      "[MQTT] Connection failed (error=%d return=%d).\n",
-      static_cast<int>(mqttClient.lastError()),
-      static_cast<int>(mqttClient.returnCode())
-    );
-  }
-}
-
 bool publishFix(const TelemetryFix &fix) {
-  if (!fix.valid || !mqttClient.connected() || !clockIsSynchronized()) return false;
+  if (
+    !fix.valid ||
+    WiFi.status() != WL_CONNECTED ||
+    !clockIsSynchronized()
+  ) {
+    return false;
+  }
+  if (lastHttpsAttemptAt && elapsed(lastHttpsAttemptAt) < HTTPS_RETRY_MS) {
+    return false;
+  }
+  lastHttpsAttemptAt = millis();
 
   JsonDocument document;
-  // Closed telemetry contract: these are the only transmitted parameters.
   document["lat"] = fix.lat;
   document["lng"] = fix.lng;
   document["speed"] = fix.speed;
@@ -155,21 +151,37 @@ bool publishFix(const TelemetryFix &fix) {
 
   String payload;
   serializeJson(document, payload);
+  if (payload.length() > 512) {
+    Serial.println("[HTTPS] Refusing oversized telemetry payload.");
+    return false;
+  }
+
+  HTTPClient http;
+  http.setConnectTimeout(HTTP_TIMEOUT_MS);
+  http.setTimeout(HTTP_TIMEOUT_MS);
+  http.setReuse(true);
+  if (!http.begin(tlsClient, telemetryUrl())) {
+    Serial.println("[HTTPS] Unable to initialize telemetry request.");
+    return false;
+  }
+  http.addHeader("Authorization", String("Device ") + DEVICE_SECRET);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Cache-Control", "no-store");
+
   const uint32_t startedAt = millis();
-  const bool acknowledged = mqttClient.publish(
-    telemetryTopic(),
-    payload,
-    false,
-    MQTT_QOS
-  );
+  const int responseCode = http.POST(payload);
+  const bool accepted = responseCode == HTTP_CODE_OK ||
+                        responseCode == HTTP_CODE_ACCEPTED;
   Serial.printf(
-    "[MQTT] QoS1 publish %s in %lums (%u bytes, RSSI %d dBm)\n",
-    acknowledged ? "acknowledged" : "failed",
+    "[HTTPS] Telemetry %s (HTTP %d) in %lums (%u bytes, RSSI %d dBm)\n",
+    accepted ? "accepted" : "failed",
+    responseCode,
     elapsed(startedAt),
     payload.length(),
     WiFi.RSSI()
   );
-  if (!acknowledged) return false;
+  http.end();
+  if (!accepted) return false;
 
   lastLat = fix.lat;
   lastLng = fix.lng;
@@ -196,7 +208,9 @@ TelemetryFix currentFix() {
   fix.speed = gps.speed.isValid() && gps.speed.kmph() >= MOVING_SPEED_KMH
     ? min(gps.speed.kmph(), 200.0)
     : 0.0;
-  fix.heading = gps.course.isValid() ? fmod(max(gps.course.deg(), 0.0), 360.0) : 0.0;
+  fix.heading = gps.course.isValid()
+    ? fmod(max(gps.course.deg(), 0.0), 360.0)
+    : 0.0;
   fix.motionState = updateMotionState(fix.speed);
   fix.timestamp = epochMilliseconds();
   fix.valid = clockIsSynchronized();
@@ -213,7 +227,9 @@ bool shouldPublish(const TelemetryFix &fix) {
     moved >= DISTANCE_THRESHOLD_M ||
     headingDelta(fix.heading, lastHeading) >= HEADING_THRESHOLD_DEG ||
     fabs(fix.speed - lastSpeed) >= SPEED_THRESHOLD_KMH;
-  const uint32_t heartbeat = moving ? MOVING_HEARTBEAT_MS : STOPPED_HEARTBEAT_MS;
+  const uint32_t heartbeat = moving
+    ? MOVING_HEARTBEAT_MS
+    : STOPPED_HEARTBEAT_MS;
   return materiallyChanged || elapsed(lastPublishAt) >= heartbeat;
 }
 
@@ -225,7 +241,11 @@ void evaluateTelemetry() {
       lossMessagePublished = false;
       Serial.println("[GPS] Trustworthy fix lost.");
     }
-    if (hasPublishedLocation && !lossMessagePublished && mqttClient.connected()) {
+    if (
+      hasPublishedLocation &&
+      !lossMessagePublished &&
+      WiFi.status() == WL_CONNECTED
+    ) {
       TelemetryFix uncertain;
       uncertain.lat = lastLat;
       uncertain.lng = lastLng;
@@ -246,12 +266,11 @@ void evaluateTelemetry() {
   }
 
   if (!shouldPublish(fix)) return;
-  if (!mqttClient.connected()) {
+  if (publishFix(fix)) {
+    bufferedFix.valid = false;
+  } else {
     bufferedFix = fix;
-    return;
   }
-  if (publishFix(fix)) bufferedFix.valid = false;
-  else bufferedFix = fix;
 }
 } // namespace
 
@@ -259,30 +278,27 @@ void setup() {
   Serial.begin(115200);
   gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
   delay(500);
-  Serial.printf("[Boot] Eki MQTT telemetry; reset reason=%d\n", esp_reset_reason());
+  Serial.printf(
+    "[Boot] Eki HTTPS telemetry; reset reason=%d\n",
+    esp_reset_reason()
+  );
 
-  tlsClient.setCACert(MQTT_ROOT_CA);
-  mqttClient.begin(MQTT_HOST, MQTT_PORT, tlsClient);
-  mqttClient.setOptions(30, false, 5000);
-  mqttClient.dropOverflow(true);
+  tlsClient.setCACert(BACKEND_ROOT_CA);
   connectWiFi();
 }
 
 void loop() {
   while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
 
-  const bool wifiConnected = WiFi.status() == WL_CONNECTED;
-  if (!wifiConnected) {
-    if (mqttClient.connected()) mqttClient.disconnect();
+  if (WiFi.status() != WL_CONNECTED) {
     connectWiFi();
   } else {
-    if (!clockIsSynchronized()) configTime(0, 0, "pool.ntp.org", "time.google.com");
-    connectMqtt();
-  }
-
-  if (mqttClient.connected()) {
-    mqttClient.loop();
-    if (bufferedFix.valid && publishFix(bufferedFix)) bufferedFix.valid = false;
+    if (!clockIsSynchronized()) {
+      configTime(0, 0, "pool.ntp.org", "time.google.com");
+    }
+    if (bufferedFix.valid && publishFix(bufferedFix)) {
+      bufferedFix.valid = false;
+    }
   }
 
   if (elapsed(lastEvaluationAt) >= 1000) {
@@ -290,7 +306,11 @@ void loop() {
     evaluateTelemetry();
   }
 
-  if (millis() > 5000 && gps.charsProcessed() < 10 && elapsed(lastGpsWarningAt) >= 5000) {
+  if (
+    millis() > 5000 &&
+    gps.charsProcessed() < 10 &&
+    elapsed(lastGpsWarningAt) >= 5000
+  ) {
     lastGpsWarningAt = millis();
     Serial.println("[GPS] No NMEA data received; check RX/TX wiring.");
   }

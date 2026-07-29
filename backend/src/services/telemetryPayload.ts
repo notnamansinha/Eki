@@ -22,21 +22,10 @@ export type TelemetryParseResult =
 
 const MOTION_STATES = new Set(["moving", "stopped", "uncertain"]);
 
-export function parseTelemetryPayload(
-  payload: Buffer,
+export function parseTelemetryValue(
+  value: unknown,
   now = Date.now(),
 ): TelemetryParseResult {
-  if (payload.length === 0 || payload.length > 512) {
-    return { ok: false, reason: "payload_size" };
-  }
-
-  let value: unknown;
-  try {
-    value = JSON.parse(payload.toString("utf8"));
-  } catch {
-    return { ok: false, reason: "invalid_json" };
-  }
-
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, reason: "invalid_shape" };
   }
@@ -93,3 +82,17 @@ export function parseTelemetryPayload(
   };
 }
 
+export function parseTelemetryPayload(
+  payload: Buffer,
+  now = Date.now(),
+): TelemetryParseResult {
+  if (payload.length === 0 || payload.length > 512) {
+    return { ok: false, reason: "payload_size" };
+  }
+
+  try {
+    return parseTelemetryValue(JSON.parse(payload.toString("utf8")), now);
+  } catch {
+    return { ok: false, reason: "invalid_json" };
+  }
+}

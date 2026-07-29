@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseTelemetryPayload, TELEMETRY_FIELDS } from "./telemetryPayload";
+import {
+  parseTelemetryPayload,
+  parseTelemetryValue,
+  TELEMETRY_FIELDS,
+} from "./telemetryPayload";
 
 const now = 1_800_000_000_000;
 const valid = {
@@ -20,6 +24,14 @@ describe("parseTelemetryPayload", () => {
     const parsed = parseTelemetryPayload(encode(valid), now);
     expect(parsed).toEqual({ ok: true, value: valid });
     expect(TELEMETRY_FIELDS).toHaveLength(6);
+  });
+
+  it("validates an already parsed HTTPS JSON body with the same contract", () => {
+    expect(parseTelemetryValue(valid, now)).toEqual({ ok: true, value: valid });
+    expect(parseTelemetryValue({ ...valid, routeId: "route_1" }, now)).toEqual({
+      ok: false,
+      reason: "unexpected_fields",
+    });
   });
 
   it.each(["busId", "routeId", "driverId", "hdop", "satellites", "lowAccuracy"])(

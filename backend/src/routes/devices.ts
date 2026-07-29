@@ -1,24 +1,82 @@
-import { randomBytes, scrypt } from "node:crypto";
-import { promisify } from "node:util";
 import { Router, type Request, type Response } from "express";
 import { FieldValue } from "firebase-admin/firestore";
+import rateLimit from "express-rate-limit";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { db } from "../lib/firebaseAdmin";
+import {
+  hashDeviceSecret,
+  ingestDeviceTelemetry,
+  invalidateDeviceCredentialCache,
+  parseDeviceAuthorization,
+} from "../services/deviceTelemetryService";
+import { parseTelemetryValue } from "../services/telemetryPayload";
 
 const router = Router();
-const scryptAsync = promisify(scrypt);
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const telemetryLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Telemetry request limit exceeded." },
+});
 
 /**
- * Device telemetry is MQTT-only. There is deliberately no browser/firmware
- * HTTP authentication endpoint and no Firebase device token minting endpoint.
- * The MQTT broker authenticates each device and limits it by ACL to:
- *   eki/v1/telemetry/<deviceId>
- *
- * This admin endpoint stores the application-side registry and a one-way
- * verifier for credential inventory/rotation checks. The broker credential
- * must also be provisioned in the broker's own secret store.
+ * ESP32 devices send a closed six-field payload over certificate-verified
+ * HTTPS. The device secret is transmitted only in the Authorization header,
+ * compared against a scrypt verifier, and never returned or logged. Routing
+ * identity comes exclusively from the server-side device registry.
  */
+router.post(
+  "/:deviceId/telemetry",
+  telemetryLimiter,
+  async (req: Request, res: Response) => {
+    const deviceId = req.params.deviceId;
+    const secret = parseDeviceAuthorization(req.get("authorization"));
+    let encodedLength = Number.POSITIVE_INFINITY;
+    try {
+      encodedLength = Buffer.byteLength(JSON.stringify(req.body), "utf8");
+    } catch {
+      // parseTelemetryValue returns the generic shape error below.
+    }
+    const parsed =
+      encodedLength <= 512
+        ? parseTelemetryValue(req.body)
+        : { ok: false as const, reason: "payload_size" };
+    if (!SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
+      res.set("Cache-Control", "no-store");
+      res.status(!secret ? 401 : 400).json({
+        error: !secret ? "Invalid device credentials." : "Invalid telemetry payload.",
+      });
+      return;
+    }
+
+    try {
+      const result = await ingestDeviceTelemetry(
+        deviceId,
+        secret,
+        parsed.value,
+      );
+      res.set("Cache-Control", "no-store");
+      if (!result.ok) {
+        if (result.reason === "rate_limit") {
+          res.status(429).json({ error: "Telemetry rate limit exceeded." });
+        } else {
+          res.status(401).json({ error: "Invalid device credentials." });
+        }
+        return;
+      }
+      res.status(result.duplicate ? 200 : 202).json({
+        accepted: true,
+        duplicate: result.duplicate,
+      });
+    } catch (error) {
+      console.error("[Devices] HTTPS telemetry ingestion failed:", error);
+      res.status(503).json({ error: "Telemetry service unavailable." });
+    }
+  },
+);
+
 router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
   const deviceId = req.params.deviceId;
   const busId = req.body?.busId;
@@ -36,9 +94,11 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
   }
 
   try {
-    const [busDoc, routeDoc] = await Promise.all([
+    const deviceRef = db.collection("devices").doc(deviceId);
+    const [busDoc, routeDoc, existingDevice] = await Promise.all([
       db.collection("buses").doc(busId).get(),
       db.collection("routes").doc(routeId).get(),
+      deviceRef.get(),
     ]);
     const bus = busDoc.data();
     const assignedRoutes = Array.isArray(bus?.assignedRoutes)
@@ -50,10 +110,28 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
       res.status(400).json({ error: "Device assignment must match an existing bus route." });
       return;
     }
-    await db.collection("devices").doc(deviceId).set(
+    const previous = existingDevice.data();
+    if (
+      existingDevice.exists &&
+      (previous?.busId !== busId || previous?.routeId !== routeId) &&
+      typeof previous?.busId === "string" &&
+      typeof previous?.routeId === "string"
+    ) {
+      const activeRide = await db.collection("active_rides")
+        .doc(`${previous.busId}_${previous.routeId}`)
+        .get();
+      if (activeRide.exists) {
+        res.status(409).json({
+          error: "An active ride device cannot be reassigned before the final stop.",
+        });
+        return;
+      }
+    }
+    await deviceRef.set(
       { deviceId, busId, routeId, enabled, updatedAt: FieldValue.serverTimestamp() },
       { merge: true },
     );
+    invalidateDeviceCredentialCache(deviceId);
     res.json({ saved: true });
   } catch (error) {
     console.error("[Devices] Registry update failed:", error);
@@ -82,13 +160,12 @@ router.post("/hash-secret", requireAdmin, async (req: Request, res: Response) =>
       return;
     }
 
-    const salt = randomBytes(16).toString("hex");
-    const derivedKey = (await scryptAsync(plainSecret, salt, 64) as Buffer).toString("hex");
     await deviceRef.update({
-      secretHash: `${salt}:${derivedKey}`,
+      secretHash: await hashDeviceSecret(plainSecret),
       secret: FieldValue.delete(),
       credentialRotatedAt: FieldValue.serverTimestamp(),
     });
+    invalidateDeviceCredentialCache(deviceId);
     res.json({ success: true });
   } catch (error) {
     console.error("[Devices] Secret inventory update failed:", error);
@@ -107,6 +184,7 @@ router.post("/:deviceId/disable", requireAdmin, async (req: Request, res: Respon
       { enabled: false, disabledAt: FieldValue.serverTimestamp() },
       { merge: true },
     );
+    invalidateDeviceCredentialCache(deviceId);
     res.json({ disabled: true });
   } catch (error) {
     console.error("[Devices] Disable failed:", error);

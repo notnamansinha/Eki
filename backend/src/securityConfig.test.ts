@@ -37,16 +37,16 @@ describe("production security configuration", () => {
     const syncRoles = workspaceFile("backend/src/syncRoleClaims.ts");
     expect(syncRoles).toContain("driverRouteAssignments/");
     expect(syncRoles).toContain("previousDriverId");
-    expect(syncRoles).toContain("previousDriverId");
     expect(database.rules.activeBuses[".indexOn"]).toContain("busId");
   });
 
-  it("keeps maintenance fleet state and lifecycle persistence ordered", () => {
+  it("keeps signal loss separate from lifecycle and persistence ordered", () => {
     const analytics = workspaceFile("backend/src/routes/analytics.ts");
     const tripStateEngine = workspaceFile("backend/src/services/tripStateEngine.ts");
 
-    expect(analytics.indexOf('data.tripState === "maintenance"'))
-      .toBeLessThan(analytics.indexOf('data.status === "active"'));
+    expect(analytics).toContain('data.deviceState === "offline"');
+    expect(analytics).toContain('data.motionState === "uncertain"');
+    expect(analytics).not.toContain('data.tripState === "maintenance"');
     expect(tripStateEngine).toContain("function readIntervalMs");
     expect(tripStateEngine).toContain("fleetWriteQueues");
     expect(tripStateEngine).toContain("const ETA_INTERVAL_MS = readIntervalMs");
@@ -55,9 +55,11 @@ describe("production security configuration", () => {
   it("keeps sensitive Firestore collections and chat identity protected", () => {
     const rules = workspaceFile("firestore.rules");
     const devices = ruleBlock(rules, "match /devices/{deviceId}");
+    const activeRides = ruleBlock(rules, "match /active_rides/{rideId}");
     const messages = ruleBlock(rules, "match /messages/{messageId}");
 
     expect(devices).toContain("allow read, write: if false;");
+    expect(activeRides).toContain("allow read, write: if false;");
     expect(messages).toContain("request.resource.data.senderId == request.auth.uid");
     expect(messages).toContain("request.resource.data.from == 'passenger'");
     expect(messages).toContain("request.resource.data.from == 'driver'");
@@ -104,15 +106,19 @@ describe("production security configuration", () => {
     expect(directionsRoute).not.toContain("DirectionsRenderer");
   });
 
-  it("rate-limits billable route computation and MQTT device telemetry", () => {
+  it("rate-limits billable routes and authenticated HTTPS device telemetry", () => {
     const server = workspaceFile("backend/src/server.ts");
-    const ingestor = workspaceFile("backend/src/services/mqttIngestor.ts");
+    const devices = workspaceFile("backend/src/routes/devices.ts");
+    const telemetry = workspaceFile("backend/src/services/deviceTelemetryService.ts");
 
     expect(server).toContain("const routeComputeLimiter");
     expect(server).toContain('app.use("/api/routes", routeComputeLimiter, polylineRoutes)');
     expect(server).toContain("const routePlanLimiter");
-    expect(ingestor).toContain("MQTT_DEVICE_RATE_PER_MINUTE");
-    expect(ingestor).toContain("packet.qos !== 1");
+    expect(devices).toContain("telemetryLimiter");
+    expect(devices).toContain('"/:deviceId/telemetry"');
+    expect(telemetry).toContain("HTTPS_DEVICE_RATE_PER_MINUTE");
+    expect(telemetry).toContain("withinDeviceRateLimit");
+    expect(telemetry).toContain("timingSafeEqual");
   });
 
   it("keeps admin place searches authenticated and server-side", () => {
@@ -141,16 +147,18 @@ describe("production security configuration", () => {
     expect(settingsHook).toContain("export function clearSettingsCache");
   });
 
-  it("requires verified MQTT TLS for hardware credentials", () => {
+  it("requires verified HTTPS TLS for hardware credentials", () => {
     const firmware = workspaceFile("hardware/src/main.cpp");
-    expect(firmware).toContain("tlsClient.setCACert(MQTT_ROOT_CA)");
-    expect(firmware).toContain("MQTT_QOS = 1");
-    expect(firmware).not.toContain("HTTPClient");
+    expect(firmware).toContain("tlsClient.setCACert(BACKEND_ROOT_CA)");
+    expect(firmware).toContain("HTTPClient");
+    expect(firmware).toContain(
+      'http.addHeader("Authorization", String("Device ") + DEVICE_SECRET)',
+    );
     expect(firmware).not.toContain("Firebase_ESP_Client");
     expect(firmware).not.toContain("setInsecure(");
   });
 
-  it("keeps routing identity outside the closed MQTT payload", () => {
+  it("keeps routing identity outside the closed HTTPS payload", () => {
     const firmware = workspaceFile("hardware/src/main.cpp");
     const publisher = firmware.slice(
       firmware.indexOf("bool publishFix"),
@@ -167,10 +175,10 @@ describe("production security configuration", () => {
     const firmware = workspaceFile("hardware/src/main.cpp");
     const tripStateEngine = workspaceFile("backend/src/services/tripStateEngine.ts");
 
-    expect(firmware).toContain("STOPPED_HEARTBEAT_MS = 120000");
+    expect(firmware).toContain("STOPPED_HEARTBEAT_MS = 60000");
     expect(tripStateEngine).toContain("const STALE_BUS_MS = readIntervalMs");
     expect(firmware).toContain("bufferedFix");
-    expect(firmware).toContain("MQTT_QOS");
+    expect(firmware).toContain("HTTPS_RETRY_MS");
     expect(tripStateEngine).not.toContain("snapshot.ref.remove().catch(console.error);");
   });
 
@@ -189,7 +197,9 @@ describe("production security configuration", () => {
     expect(routeEditor).not.toContain("updateDoc(");
     expect(driverMap).toContain("/api/shifts/delay");
     expect(driverMap).not.toContain("update(busRef");
-    expect(dashboard).toContain("/api/buses/");
+    expect(dashboard).not.toContain('method: "PATCH"');
+    expect(dashboard).not.toContain("Force Offline");
+    expect(dashboard).not.toContain("Position Override");
     expect(dashboard).not.toContain("update(ref(rtdb");
   });
 
@@ -204,14 +214,23 @@ describe("production security configuration", () => {
   it("uses backend-authoritative shift lifecycle endpoints", () => {
     const server = workspaceFile("backend/src/server.ts");
     const driverPage = workspaceFile("frontend/src/app/driver/page.tsx");
+    const driverMap = workspaceFile("frontend/src/components/maps/DriverMap.tsx");
+    const passengerBoarding = workspaceFile(
+      "frontend/src/components/passenger/PassengerBoardingView.tsx",
+    );
     const shifts = workspaceFile("backend/src/routes/shifts.ts");
 
     expect(server).toContain('app.use("/api/shifts"');
     expect(driverPage).toContain("/api/shifts/start");
-    expect(driverPage).toContain("/api/shifts/stop");
+    expect(driverPage).not.toContain("/api/shifts/stop");
     expect(driverPage).not.toContain("arrayUnion(");
     expect(driverPage).not.toContain("test_bus_1");
     expect(shifts).toContain("nodeRef.transaction");
+    expect(shifts).toContain("final ordered stop");
+    expect(shifts).toContain("STOP_GEOFENCE_M");
+    expect(shifts).toContain("arrivedAtOrigin");
+    expect(driverMap).toContain("Armed · awaiting stop 1");
+    expect(passengerBoarding).toContain("Ride in service");
   });
 
   it("bounds telemetry recovery state and records stop history with merge semantics", () => {
@@ -230,12 +249,17 @@ describe("production security configuration", () => {
   it("revokes fleet assignments through an admin backend boundary", () => {
     const server = workspaceFile("backend/src/server.ts");
     const fleetPanel = workspaceFile("frontend/src/components/admin/FleetManagementPanel.tsx");
+    const fleet = workspaceFile("backend/src/routes/fleet.ts");
+    const routes = workspaceFile("backend/src/routes/polyline.ts");
 
     expect(server).toContain('app.use("/api/fleet"');
     expect(fleetPanel).toContain("fleetRequest(`/drivers/");
     expect(fleetPanel).toContain("fleetRequest(`/buses/");
     expect(fleetPanel).not.toContain("deleteDoc(");
-    expect(workspaceFile("backend/src/routes/fleet.ts")).toContain("demoteDriverAccount(previousAuthUid)");
+    expect(fleet).toContain("demoteDriverAccount(previousAuthUid)");
+    expect(fleet).toContain('collection("active_rides")');
+    expect(fleet).toContain("cannot be deleted before its final stop");
+    expect(routes).toContain("active ride route cannot be edited");
   });
 
   it("ships exact browser security headers", () => {

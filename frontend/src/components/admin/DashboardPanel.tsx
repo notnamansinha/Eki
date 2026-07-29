@@ -4,19 +4,19 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Map as GoogleMap, AdvancedMarker, useMap,
 } from "@vis.gl/react-google-maps";
-import { ref, onValue } from "firebase/database";
-import { onAuthStateChanged } from "firebase/auth";
-import { rtdb, auth } from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 import { useBuses } from "@/hooks/useBuses";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { isLiveBusTimestamp } from "@/lib/liveBusFreshness";
+import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
+import { subscribeLiveBuses } from "@/lib/liveBusStore";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
 import {
-  Activity, Navigation, Clock, MapPin, AlertTriangle,
+  Activity, Navigation, Clock, AlertTriangle,
   TrendingUp, X, ChevronDown, ChevronUp,
-  Sliders, Wifi, WifiOff, Loader2, MessageCircle, Target,
+  Eye, Wifi, MessageCircle,
 } from "lucide-react";
 
 /* â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -31,7 +31,7 @@ interface ActiveBusEntry {
   timestamp?: number;
   deviceState?: "online" | "offline";
   motionState?: "moving" | "stopped" | "uncertain";
-  tripState?: "pre_departure" | "in_service" | "completed" | "maintenance";
+  tripState?: "pre_departure" | "in_service" | "completed";
   currentStopIndex?: number;
   delayMinutes?: number;
   sessionId?: string;
@@ -39,10 +39,9 @@ interface ActiveBusEntry {
 
 /* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const TRIP_STATE: Record<string, { label: string; color: string; bg: string; dot: string }> = {
-  pre_departure: { label: "At Depot",   color: "text-white/50",    bg: "bg-white/5",        dot: "bg-white/30" },
+  pre_departure: { label: "Awaiting Stop 1", color: "text-white/50", bg: "bg-white/5", dot: "bg-white/30" },
   in_service:    { label: "In Service", color: "text-emerald-400", bg: "bg-emerald-500/10", dot: "bg-emerald-400" },
   completed:     { label: "Completed",  color: "text-blue-400",    bg: "bg-blue-500/10",    dot: "bg-blue-400" },
-  maintenance:   { label: "GPS Lost",   color: "text-amber-400",   bg: "bg-amber-500/10",   dot: "bg-amber-400" },
 };
 const MOTION_STATE: Record<string, { label: string; color: string }> = {
   moving:    { label: "Moving",  color: "text-emerald-400" },
@@ -67,32 +66,29 @@ function headingLabel(d?: number): string {
 function useActiveBuses(): ActiveBusEntry[] {
   const [active, setActive] = useState<ActiveBusEntry[]>([]);
   useEffect(() => {
-    let unsub: (() => void) | undefined;
-    const authUnsub = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        unsub?.();
-        unsub = undefined;
+    const unsubscribe = subscribeLiveBuses((snapshot) => {
+      const data = snapshot as Record<string, ActiveBusEntry> | null;
+      if (!data) {
         setActive([]);
         return;
       }
-      if (user && !unsub) {
-        unsub = onValue(ref(rtdb, "activeBuses"), (snap) => {
-          const data = snap.val() as Record<string, ActiveBusEntry> | null;
-          if (!data) {
-            setActive([]);
-            return;
-          }
-          const freshBuses: ActiveBusEntry[] = [];
-          Object.entries(data).forEach(([key, bus]) => {
-            bus.busId = bus.busId || key.split("_")[0];
-            const isFresh = isLiveBusTimestamp(bus.timestamp);
-            if (isFresh) freshBuses.push(bus);
-          });
-          setActive(freshBuses);
-        }, (err) => console.warn("[RTDB] activeBuses:", err.message));
-      }
+      const visibleBuses: ActiveBusEntry[] = [];
+      Object.entries(data).forEach(([key, bus]) => {
+        bus.busId = bus.busId || key.split("_")[0];
+        if (
+          isLiveBusTimestamp(bus.timestamp) ||
+          isActiveRideSnapshot(
+            bus as unknown as Record<string, unknown>,
+          )
+        ) {
+          visibleBuses.push(bus);
+        }
+      });
+      setActive(visibleBuses);
+    }, (error) => {
+      console.warn("[RTDB] activeBuses:", error.message);
     });
-    return () => { authUnsub(); unsub?.(); };
+    return unsubscribe;
   }, []);
   return active;
 }
@@ -106,23 +102,16 @@ function MapCenter({ center }: { center: { lat: number; lng: number } | null }) 
   return null;
 }
 
-/* â”€â”€ Override Drawer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-function OverrideDrawer({
+/* Live ride details */
+function LiveDetailsDrawer({
   entry,
   routeName,
-  stopCount,
   onClose,
 }: {
   entry: ActiveBusEntry;
   routeName: string;
-  stopCount: number;
   onClose: () => void;
 }) {
-  const [lat, setLat] = useState(String(entry.lat ?? ""));
-  const [lng, setLng] = useState(String(entry.lng ?? ""));
-  const [delay, setDelay] = useState(String(entry.delayMinutes ?? 0));
-  const [stopIdx, setStopIdx] = useState(String(entry.currentStopIndex ?? 0));
-  const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -155,72 +144,6 @@ function OverrideDrawer({
     return result;
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const patch: Record<string, unknown> = { timestamp: Date.now() };
-
-      if (lat && lng) {
-        const latVal = parseFloat(lat);
-        const lngVal = parseFloat(lng);
-        if (!isFinite(latVal) || latVal < -90 || latVal > 90) {
-          setMsg("Error: Latitude must be a finite number between -90 and 90.");
-          setSaving(false);
-          return;
-        }
-        if (!isFinite(lngVal) || lngVal < -180 || lngVal > 180) {
-          setMsg("Error: Longitude must be a finite number between -180 and 180.");
-          setSaving(false);
-          return;
-        }
-        patch.lat = latVal;
-        patch.lng = lngVal;
-      }
-
-      if (delay !== "") {
-        const delayVal = parseFloat(delay);
-        if (!isFinite(delayVal)) {
-          setMsg("Error: Delay must be a finite number.");
-          setSaving(false);
-          return;
-        }
-        patch.delayMinutes = delayVal;
-      }
-
-      if (stopIdx !== "" && stopCount > 0) {
-        const idxVal = parseInt(stopIdx, 10);
-        if (!Number.isInteger(idxVal) || idxVal < 0 || idxVal >= stopCount) {
-          setMsg(`Error: Stop index must be an integer between 0 and ${stopCount - 1}.`);
-          setSaving(false);
-          return;
-        }
-        patch.currentStopIndex = idxVal;
-      }
-
-      if (!entry.routeId) throw new Error("This live entry has no route ID.");
-      delete patch.timestamp;
-      await adminRequest(
-        `/api/buses/${encodeURIComponent(entry.busId)}/${encodeURIComponent(entry.routeId)}`,
-        { method: "PATCH", body: JSON.stringify(patch) },
-      );
-      setMsg("Saved ✓");
-      clearMessageLater();
-    } catch (error: unknown) { setMsg("Error: " + errorMessage(error)); }
-    finally { setSaving(false); }
-  };
-
-  const handleForceOffline = async () => {
-    if (!confirm(`Force ${entry.busId} offline? This will remove it from the passenger map.`)) return;
-    try {
-      if (!entry.routeId) throw new Error("This live entry has no route ID.");
-      await adminRequest(
-        `/api/buses/${encodeURIComponent(entry.busId)}/${encodeURIComponent(entry.routeId)}/offline`,
-        { method: "POST" },
-      );
-      onClose();
-    } catch (error: unknown) { alert("Error: " + errorMessage(error)); }
-  };
-
   const handleWipeMessages = async () => {
     if (!confirm(`Clear all messages for ${entry.busId}?`)) return;
     try {
@@ -236,59 +159,47 @@ function OverrideDrawer({
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={`Live override for ${entry.busId}`} className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div role="dialog" aria-modal="true" aria-label={`Live details for ${entry.busId}`} className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-md bg-[#0f0f12] border border-white/10 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/5">
           <div>
-            <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Live Override</p>
+            <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Live Details</p>
             <p className="font-bold text-white">{entry.busId}</p>
             <p className="text-xs text-white/50">{routeName}</p>
           </div>
-          <button onClick={onClose} aria-label="Close live override" className="w-11 h-11 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
+          <button onClick={onClose} aria-label="Close live details" className="w-11 h-11 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
             <X className="w-4 h-4 text-white/60" />
           </button>
         </div>
 
         <div className="p-5 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
-          {/* Position override */}
-          <div className="flex flex-col gap-2">
-            <p className="text-[10px] text-white/30 uppercase tracking-widest font-black flex items-center gap-1.5"><MapPin className="w-3 h-3" /> Position Override</p>
-            <div className="grid grid-cols-2 gap-2">
-              <input aria-label="Latitude override" value={lat} onChange={e => setLat(e.target.value)} placeholder="Latitude" className="input-rc h-11 text-sm" />
-              <input aria-label="Longitude override" value={lng} onChange={e => setLng(e.target.value)} placeholder="Longitude" className="input-rc h-11 text-sm" />
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Trip state</p>
+              <p className="mt-1 text-sm font-semibold text-white">{TRIP_STATE[entry.tripState ?? "pre_departure"]?.label ?? "Pre-Departure"}</p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Signal</p>
+              <p className="mt-1 text-sm font-semibold text-white">{entry.deviceState === "offline" || entry.motionState === "uncertain" ? "Interrupted" : "Connected"}</p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Current stop</p>
+              <p className="mt-1 text-sm font-semibold text-white">{Math.max(0, Number(entry.currentStopIndex ?? 0)) + 1}</p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Delay</p>
+              <p className="mt-1 text-sm font-semibold text-white">{Math.max(0, Number(entry.delayMinutes ?? 0))} min</p>
             </div>
           </div>
-
-          {/* Delay */}
-          <div className="flex flex-col gap-2">
-            <p className="text-[10px] text-white/30 uppercase tracking-widest font-black flex items-center gap-1.5"><Clock className="w-3 h-3" /> Delay (minutes)</p>
-            <input aria-label="Delay in minutes" value={delay} onChange={e => setDelay(e.target.value)} type="number" min="0" className="input-rc h-11 text-sm" />
-          </div>
-
-          {/* Stop index */}
-          {stopCount > 0 && (
-            <div className="flex flex-col gap-2">
-              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black flex items-center gap-1.5"><Navigation className="w-3 h-3" /> Stop Index (0–{stopCount - 1})</p>
-              <input aria-label="Current stop index" value={stopIdx} onChange={e => setStopIdx(e.target.value)} type="number" min="0" max={stopCount - 1} className="input-rc h-11 text-sm" />
-            </div>
-          )}
 
           {msg && <p className="text-xs text-emerald-400 font-semibold">{msg}</p>}
 
-          {/* Actions */}
-          <button onClick={handleSave} disabled={saving} className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold">
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Target className="w-4 h-4" />}
-            Apply Override
+          <p className="text-xs leading-relaxed text-white/45">
+            Position and stop progress come only from authenticated GNSS telemetry. The ride starts at the first ordered stop and completes at the final ordered stop.
+          </p>
+          <button onClick={handleWipeMessages} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors">
+            <MessageCircle className="w-3.5 h-3.5" /> Clear Messages
           </button>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={handleForceOffline} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 text-xs font-bold hover:bg-red-500/20 transition-colors">
-              <WifiOff className="w-3.5 h-3.5" /> Force Offline
-            </button>
-            <button onClick={handleWipeMessages} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors">
-              <MessageCircle className="w-3.5 h-3.5" /> Wipe Messages
-            </button>
-          </div>
         </div>
       </div>
     </div>
@@ -301,7 +212,7 @@ function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => v
   const markerColor =
     entry.tripState === "in_service"
       ? entry.motionState === "moving" ? "#34D399" : "#FBBF24"
-      : entry.tripState === "maintenance" ? "#FB923C" : "#94949C";
+      : entry.deviceState === "offline" || entry.motionState === "uncertain" ? "#FB923C" : "#94949C";
 
   if (!entry.lat || !entry.lng) return null;
   return (
@@ -339,7 +250,7 @@ function FleetCard({
   selected: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const bus = buses.find(b => b.id === entry.busId);
   const route = routes.find(r => r.id === entry.routeId);
   const driver = drivers.find(d => d.id === entry.driverId);
@@ -350,12 +261,11 @@ function FleetCard({
 
   return (
     <>
-      {overrideOpen && (
-        <OverrideDrawer
+      {detailsOpen && (
+        <LiveDetailsDrawer
           entry={entry}
           routeName={route?.name ?? entry.routeId ?? "—"}
-          stopCount={stopCount}
-          onClose={() => setOverrideOpen(false)}
+          onClose={() => setDetailsOpen(false)}
         />
       )}
       <div
@@ -386,11 +296,11 @@ function FleetCard({
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <button
-              onClick={e => { e.stopPropagation(); setOverrideOpen(true); }}
+              onClick={e => { e.stopPropagation(); setDetailsOpen(true); }}
               className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center hover:bg-brand-accent/20 hover:text-brand-accent transition-colors"
-              title="Override"
+              title="Live details"
             >
-              <Sliders className="w-3.5 h-3.5 text-white/50" />
+              <Eye className="w-3.5 h-3.5 text-white/50" />
             </button>
             {expanded ? <ChevronUp className="w-3.5 h-3.5 text-white/30" /> : <ChevronDown className="w-3.5 h-3.5 text-white/30" />}
           </div>
@@ -484,8 +394,8 @@ export default function DashboardPanel() {
 
   const inService  = activeEntries.filter(e => e.tripState === "in_service").length;
   const moving     = activeEntries.filter(e => e.motionState === "moving").length;
-  const gpsLost    = activeEntries.filter(e => e.tripState === "maintenance").length;
-  const atDepot    = activeEntries.filter(e => e.tripState === "pre_departure").length;
+  const gpsLost    = activeEntries.filter(e => e.deviceState === "offline" || e.motionState === "uncertain").length;
+  const awaitingStart = activeEntries.filter(e => e.tripState === "pre_departure").length;
 
   const handleSelectBus = useCallback((entry: ActiveBusEntry) => {
     setSelectedBusId(prev => prev === entry.busId ? null : entry.busId);
@@ -532,7 +442,7 @@ export default function DashboardPanel() {
           {[
             { label: "In Service", value: inService,  color: "text-emerald-400", Icon: Activity },
             { label: "Moving",     value: moving,     color: "text-blue-400",    Icon: TrendingUp },
-            { label: "At Depot",   value: atDepot,    color: "text-white/50",    Icon: Clock },
+            { label: "Awaiting Start", value: awaitingStart, color: "text-white/50", Icon: Clock },
             { label: "GPS Lost",   value: gpsLost,    color: "text-amber-400",   Icon: AlertTriangle },
           ].map(({ label, value, color, Icon }) => (
             <div key={label} className="flex flex-col items-center justify-center gap-0.5 py-3 border-r border-white/5 last:border-0">

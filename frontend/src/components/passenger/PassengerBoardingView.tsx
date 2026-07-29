@@ -12,6 +12,7 @@ interface Props {
   route: RouteData;
   userId: string;
   userName: string;
+  tripState: "pre_departure" | "in_service";
   onBoardingStopChange?: (stopId: string) => void;
 }
 
@@ -21,7 +22,7 @@ const formatStopName = (name: string) => {
   return name;
 };
 
-export default function PassengerBoardingView({ sessionId, route, userId, userName, onBoardingStopChange }: Props) {
+export default function PassengerBoardingView({ sessionId, route, userId, userName, tripState, onBoardingStopChange }: Props) {
   const [boardingStopId, setBoardingStopId] = useState<string>("");
   const [alightingStopId, setAlightingStopId] = useState<string>("");
 
@@ -71,6 +72,13 @@ export default function PassengerBoardingView({ sessionId, route, userId, userNa
 
   return (
     <div className="flex flex-col w-full animate-fade-in pointer-events-auto gap-2">
+      <p
+        className="text-[10px] font-bold uppercase tracking-wider"
+        style={{ color: tripState === "in_service" ? "var(--status-live)" : "var(--status-warning)" }}
+        role="status"
+      >
+        {tripState === "in_service" ? "Ride in service" : "Ride armed · awaiting stop 1"}
+      </p>
       <div className="relative w-full">
         <select
           aria-label="Boarding stop"

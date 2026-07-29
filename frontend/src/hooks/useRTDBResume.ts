@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { goOffline, goOnline, onValue, ref } from "firebase/database";
 import { rtdb } from "@/lib/firebaseDatabase";
+import { invalidateLiveBusCache } from "@/lib/liveBusStore";
 import {
   initialRTDBResumeLifecycle,
   reduceRTDBResumeLifecycle,
@@ -31,6 +32,7 @@ export function useRTDBResume(): RTDBResumeState {
     if (reconnectPendingRef.current) return;
     reconnectPendingRef.current = true;
     dispatch({ type: "reconnect-requested" });
+    invalidateLiveBusCache();
     goOffline(rtdb);
     goOnline(rtdb);
     reconnectCooldownRef.current = window.setTimeout(() => {
@@ -43,6 +45,7 @@ export function useRTDBResume(): RTDBResumeState {
     const connectedRef = ref(rtdb, ".info/connected");
     const unsubscribe = onValue(connectedRef, (snapshot) => {
       const connected = snapshot.val() === true;
+      if (!connected) invalidateLiveBusCache();
       dispatch({ type: "connection", connected });
     });
 
@@ -57,6 +60,7 @@ export function useRTDBResume(): RTDBResumeState {
       }
     };
     const handleOffline = () => {
+      invalidateLiveBusCache();
       dispatch({ type: "connection", connected: false });
     };
     const handleOnline = () => reconnect();

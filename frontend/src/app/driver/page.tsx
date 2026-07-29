@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import TransmitterControls from "@/components/driver/TransmitterControls";
@@ -43,14 +43,9 @@ export default function DriverPage() {
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
+  const [tripState, setTripState] = useState<"pre_departure" | "in_service">("pre_departure");
   const [lifecycleError, setLifecycleError] = useState("");
   const [isLifecyclePending, setIsLifecyclePending] = useState(false);
-
-  const busIdRef = useRef("");
-  const routeIdsRef = useRef<string[]>([]);
-
-  useEffect(() => { busIdRef.current = busId; }, [busId]);
-  useEffect(() => { routeIdsRef.current = selectedRouteIds; }, [selectedRouteIds]);
 
   const handleStartTracking = useCallback(async () => {
     const activeBus = buses.find((bus) => bus.id === busId);
@@ -122,9 +117,13 @@ export default function DriverPage() {
         ) {
           setActiveSessionIds({ [selectedRouteIds[0]]: data.sessionId });
           setCurrentStopIndex(Number.isInteger(data.currentStopIndex) ? data.currentStopIndex : 0);
+          setTripState(data.tripState === "in_service" ? "in_service" : "pre_departure");
           setIsTracking(true);
         } else {
           setIsTracking(false);
+          setActiveSessionIds({});
+          setCurrentStopIndex(0);
+          setTripState("pre_departure");
         }
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed in GNSS listener:", error.message);
@@ -134,43 +133,6 @@ export default function DriverPage() {
       unsubscribe();
     };
   }, [busId, driverId, selectedRouteIds, resumeGeneration]);
-
-  const handleStopTracking = useCallback(async () => {
-    const currentBusId = busIdRef.current;
-    const currentRouteIds = routeIdsRef.current;
-    const routeId = currentRouteIds[0];
-    const sessionId = activeSessionIds[routeId];
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
-    if (!backendUrl || !routeId || !sessionId || !auth.currentUser) return;
-
-    setLifecycleError("");
-    setIsLifecyclePending(true);
-    try {
-      const token = await auth.currentUser.getIdToken();
-      const response = await fetch(`${backendUrl}/api/shifts/stop`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ busId: currentBusId, routeId, sessionId }),
-      });
-      const result = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(result.error || "Unable to stop shift.");
-      setIsTracking(false);
-      setDriverLocation(null);
-      setCurrentStopIndex(0);
-      setActiveSessionIds({});
-    } catch (error) {
-      setLifecycleError(error instanceof Error ? error.message : "Unable to stop shift.");
-    } finally {
-      setIsLifecyclePending(false);
-    }
-  }, [activeSessionIds]);
-
-  const handleRouteUpdate = useCallback((routeIds: string[]) => {
-    routeIdsRef.current = routeIds;
-  }, []);
 
   const handleOpenMessaging = () => {
     setIsMessagingOpen(true);
@@ -190,10 +152,10 @@ export default function DriverPage() {
                   route={activeRoute}
                   driverLocation={driverLocation}
                   busId={busId}
-                  onEndShift={handleStopTracking}
                   isTracking={isTracking}
                   selectedRouteIds={selectedRouteIds}
                   currentStopIndex={currentStopIndex}
+                  tripState={tripState}
                 />
                 {(lifecycleError || isLifecyclePending) && (
                   <p className="absolute bottom-3 left-4 right-4 z-50 px-3 py-2 rounded-lg text-xs" role="status" style={{ background: "var(--surface-2)", color: lifecycleError ? "var(--status-danger)" : "var(--text-secondary)" }}>
@@ -215,10 +177,7 @@ export default function DriverPage() {
                 drivers={drivers}
                 selectedRouteIds={selectedRouteIds}
                 setSelectedRouteIds={setSelectedRouteIds}
-                isTracking={isTracking}
                 onStartTracking={handleStartTracking}
-                onStopTracking={handleStopTracking}
-                onRouteUpdate={handleRouteUpdate}
                 isSocketConnected={true}
               />
             </div>
@@ -227,7 +186,7 @@ export default function DriverPage() {
 
         <div className={`absolute inset-0 z-10 flex flex-col transition-opacity duration-300 ${activeTab === "profile" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
           style={{ background: "var(--surface-0)" }}>
-          <DriverProfileTab driverId={driverId || "UNASSIGNED"} busId={busId || "UNASSIGNED"} onStopTracking={handleStopTracking} isTracking={isTracking} />
+          <DriverProfileTab driverId={driverId || "UNASSIGNED"} busId={busId || "UNASSIGNED"} isTracking={isTracking} />
         </div>
 
         {/* Back Button FAB */}

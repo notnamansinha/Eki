@@ -5,9 +5,8 @@ import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
 import { useRoutes, type RouteData } from "@/hooks/useRoutes";
 import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
-import { db, rtdb, auth } from "@/lib/firebase";
-import { ref, onValue } from "firebase/database";
-import { onAuthStateChanged } from "firebase/auth";
+import { db, auth } from "@/lib/firebase";
+import { subscribeLiveBuses } from "@/lib/liveBusStore";
 import {
   Bus, User, Trash2, Plus, ArrowRight,
   ChevronDown, ChevronUp, Pencil, Check, X, AlertCircle,
@@ -44,7 +43,7 @@ interface ActiveBusEntry {
   timestamp?: number;
   deviceState?: "online" | "offline";
   motionState?: "moving" | "stopped" | "uncertain";
-  tripState?: "pre_departure" | "in_service" | "completed" | "maintenance";
+  tripState?: "pre_departure" | "in_service" | "completed";
   currentStopIndex?: number;
 }
 
@@ -62,29 +61,13 @@ interface CompletedTrip {
 function useActiveBuses(): ActiveBusEntry[] {
   const [active, setActive] = useState<ActiveBusEntry[]>([]);
   useEffect(() => {
-    let unsub: (() => void) | undefined;
-    const authUnsub = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        unsub?.();
-        unsub = undefined;
-        setActive([]);
-        return;
-      }
-      if (user && !unsub) {
-        const r = ref(rtdb, "activeBuses");
-        unsub = onValue(r, (snap) => {
-          const data = snap.val() as Record<string, ActiveBusEntry> | null;
-          setActive(data ? Object.values(data) : []);
-        }, (error) => {
-          console.warn("[RTDB] activeBuses read failed:", error.message);
-        });
-      }
+    const unsubscribe = subscribeLiveBuses((snapshot) => {
+      const data = snapshot as Record<string, ActiveBusEntry> | null;
+      setActive(data ? Object.values(data) : []);
+    }, (error) => {
+      console.warn("[RTDB] activeBuses read failed:", error.message);
     });
-    
-    return () => {
-      authUnsub();
-      unsub?.();
-    };
+    return unsubscribe;
   }, []);
   return active;
 }
@@ -128,10 +111,9 @@ function headingLabel(deg?: number): string {
 }
 
 const TRIP_STATE_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: ComponentType<{ className?: string }> }> = {
-  pre_departure: { label: "At Depot",    color: "text-white/50",     bg: "bg-white/5",        Icon: Clock         },
+  pre_departure: { label: "Awaiting Stop 1", color: "text-white/50", bg: "bg-white/5", Icon: Clock },
   in_service:    { label: "In Service",  color: "text-emerald-400",  bg: "bg-emerald-500/10", Icon: Navigation    },
   completed:     { label: "Completed",   color: "text-blue-400",     bg: "bg-blue-500/10",    Icon: CheckCircle2  },
-  maintenance:   { label: "GPS Lost",    color: "text-amber-400",    bg: "bg-amber-500/10",   Icon: AlertTriangle },
 };
 
 const MOTION_STATE_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
@@ -507,8 +489,8 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
 
   // â”€â”€ Fleet summary stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const inServiceCount  = filteredActiveEntries.filter(e => e.tripState === "in_service").length;
-  const atDepotCount    = filteredActiveEntries.filter(e => e.tripState === "pre_departure").length;
-  const gpsLostCount    = filteredActiveEntries.filter(e => e.tripState === "maintenance").length;
+  const awaitingStartCount = filteredActiveEntries.filter(e => e.tripState === "pre_departure").length;
+  const gpsLostCount    = filteredActiveEntries.filter(e => e.deviceState === "offline" || e.motionState === "uncertain").length;
   const movingCount     = filteredActiveEntries.filter(e => e.motionState === "moving").length;
 
   return (
@@ -527,7 +509,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
           {[
             { icon: Activity,     label: "In Service",  value: inServiceCount,  color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
             { icon: TrendingUp,   label: "Moving",      value: movingCount,     color: "text-blue-400",    bg: "bg-blue-500/10",    border: "border-blue-500/20"    },
-            { icon: Clock,        label: "At Depot",    value: atDepotCount,    color: "text-white/50",    bg: "bg-white/5",        border: "border-white/10"       },
+            { icon: Clock,        label: "Awaiting Start", value: awaitingStartCount, color: "text-white/50", bg: "bg-white/5", border: "border-white/10" },
             { icon: AlertTriangle,label: "GPS Issues",  value: gpsLostCount,    color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20"   },
           ].map(({ icon: Icon, label, value, color, bg, border }) => (
             <div key={label} className={`${bg} border ${border} rounded-2xl p-3 flex flex-col gap-1.5`}>

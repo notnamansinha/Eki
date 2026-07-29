@@ -21,10 +21,10 @@ export interface DriverMapProps {
   route: RouteData;
   busId: string;
   driverLocation: { lat: number; lng: number; heading: number; speed?: number } | null;
-  onEndShift?: () => void;
   isTracking?: boolean;
   selectedRouteIds?: string[];
   currentStopIndex: number;
+  tripState: "pre_departure" | "in_service";
 }
 
 const SELECTED_ROUTE_COLOR = "#4285F4";
@@ -42,13 +42,9 @@ function MapCenterer({ target, isCentered, navPhase }: { target: { lat: number; 
   return null;
 }
 
-function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, selectedRouteIds, currentStopIndex }: DriverMapProps) {
+function DriverMapInner({ route, driverLocation, busId, isTracking, selectedRouteIds, currentStopIndex, tripState }: DriverMapProps) {
   const stops = useMemo(() => route.stops || [], [route.stops]);
   const nextStop = stops[currentStopIndex] ?? stops[stops.length - 1];
-  const [showEndShiftConfirm, setShowEndShiftConfirm] = useState(false);
-  // Timestamp of last manual skip — geofence is suppressed for 3s after a manual advance
-  // to prevent the auto-advance from cascading when driverLocation gets a synthetic position.
-
   const [delayMinutes, setDelayMinutes] = useState(0);
 
   const routeStops = useMemo(() => {
@@ -300,7 +296,7 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
               <div className="flex items-center w-full justify-between mt-2 pl-2">
                 <div className="flex items-center gap-2">
                   <div className="status-live" style={{ fontSize: "9px", padding: "2px 8px" }}>
-                    Transmitting
+                    {tripState === "in_service" ? "Ride in service" : "Armed · awaiting stop 1"}
                   </div>
                   {delayMinutes > 0 && (
                     <span className="px-2 py-0.5 rounded text-[9px] font-semibold"
@@ -309,13 +305,9 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
                     </span>
                   )}
                 </div>
-                {onEndShift && isTracking && (
-                  <button onClick={(e) => { e.stopPropagation(); setShowEndShiftConfirm(true); }} 
-                    className="h-7 px-3 rounded-lg text-[9px] font-semibold transition-all"
-                    style={{ background: "var(--status-danger-bg)", border: "1px solid rgba(248,113,113,0.15)", color: "var(--status-danger)" }}>
-                    End Shift
-                  </button>
-                )}
+                <span className="text-[9px] font-semibold" style={{ color: "var(--text-ghost)" }}>
+                  Ends automatically at final stop
+                </span>
               </div>
             }
             bottomControls={
@@ -346,28 +338,6 @@ function DriverMapInner({ route, driverLocation, busId, onEndShift, isTracking, 
         )}
       </div>
 
-      {showEndShiftConfirm && (
-        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowEndShiftConfirm(false)}>
-          <div className="p-5 rounded-2xl w-[280px] text-center flex flex-col gap-4 shadow-2xl" 
-               style={{ background: "var(--surface-1)", border: "1px solid var(--surface-2)" }} 
-               onClick={e => e.stopPropagation()}>
-            <div className="flex flex-col gap-2">
-              <h3 className="font-bold text-base" style={{ color: "var(--text-primary)" }}>End Shift?</h3>
-              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Are you sure you want to end your tracking session? Passengers will no longer see this bus.</p>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setShowEndShiftConfirm(false)} className="flex-1 py-2.5 rounded-xl text-xs font-semibold"
-                style={{ background: "var(--surface-2)", color: "var(--text-primary)" }}>
-                Cancel
-              </button>
-              <button onClick={() => { setShowEndShiftConfirm(false); setNavPhase("preview"); if (onEndShift) onEndShift(); }} className="flex-1 py-2.5 rounded-xl text-xs font-semibold"
-                style={{ background: "var(--status-danger)", color: "white" }}>
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }
