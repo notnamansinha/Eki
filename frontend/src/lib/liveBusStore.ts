@@ -9,7 +9,6 @@ import {
   type LiveBusSnapshot,
 } from "@/lib/liveBusSnapshot";
 
-export type { LiveBusSnapshot } from "@/lib/liveBusSnapshot";
 type Subscriber = {
   next: (value: LiveBusSnapshot | null) => void;
   error?: (error: Error) => void;

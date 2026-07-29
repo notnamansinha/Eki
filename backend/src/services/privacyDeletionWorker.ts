@@ -53,7 +53,7 @@ async function processDeletion(uid: string): Promise<void> {
   await db.collection("_privacy_deletion_requests").doc(uid).delete();
 }
 
-export async function runPrivacyDeletionQueue(): Promise<void> {
+async function runPrivacyDeletionQueue(): Promise<void> {
   const requests = await db.collection("_privacy_deletion_requests")
     .where("status", "==", "pending")
     .limit(20)

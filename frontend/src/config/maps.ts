@@ -22,7 +22,6 @@ export const MAPS_MAP_ID  = process.env.NEXT_PUBLIC_GOOGLE_MAP_ID ?? "";
 
 /** Ahmedabad city center — default map center */
 export const DEFAULT_CENTER = { lat: 23.0347, lng: 72.5483 } as const;
-export const DEFAULT_ZOOM = 14;
 
 /** Map styling: dark basemap matching the app's dark theme */
 export const MAP_OPTIONS = {

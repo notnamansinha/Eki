@@ -50,7 +50,14 @@ function timestampDate(value: StopReachedRecord["timestamp"]): Date {
 }
 
 export default function RideHistoryPanel() {
-  const { data: sessions, loading } = useCollection<RideSession>("ride_sessions");
+  const { data: sessions, loading } = useCollection<RideSession>(
+    "ride_sessions",
+    {
+      maxResults: 100,
+      orderByDirection: "desc",
+      orderByField: "startTime",
+    },
+  );
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (loading) {
@@ -61,15 +68,13 @@ export default function RideHistoryPanel() {
     );
   }
 
-  const sortedSessions = [...sessions].sort((a, b) => b.startTime - a.startTime);
-
   return (
     <div className="w-full max-w-4xl mx-auto p-4 sm:p-6 space-y-4 animate-slide-up">
       <h2 className="text-xl font-bold text-white mb-4">Ride History</h2>
-      {sortedSessions.length === 0 ? (
+      {sessions.length === 0 ? (
         <div className="text-white/50 text-sm text-center py-10">No rides recorded yet.</div>
       ) : (
-        sortedSessions.map(session => {
+        sessions.map(session => {
           const passengers = passengerRecords(session.passengers);
           const stopsReached = stopRecords(session.stopsReached);
 

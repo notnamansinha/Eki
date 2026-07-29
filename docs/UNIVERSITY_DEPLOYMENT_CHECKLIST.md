@@ -15,7 +15,10 @@ local professor demonstration.
   store service-account JSON or secrets in the repository or firmware build
   logs.
 - [ ] Set exact `CORS_ORIGIN`, `FIREBASE_DATABASE_URL`,
-  `GOOGLE_MAPS_API_KEY`, retention values, and worker settings.
+  `GOOGLE_MAPS_API_KEY`, `AUTH_REVOCATION_CACHE_MS`, retention values, and
+  worker settings.
+- [ ] Deploy and monitor the committed `firestore.indexes.json`; retention and
+  privacy deletion depend on those indexes.
 - [ ] Ensure exactly one healthy worker lease owner processes lifecycle,
   stale-state, and retention jobs.
 

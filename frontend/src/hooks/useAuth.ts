@@ -13,7 +13,7 @@ import { notifyAuthReady } from "@/lib/authState";
 
 export type UserRole = "passenger" | "driver" | "admin" | null;
 
-export interface AppUser {
+interface AppUser {
   uid: string;
   email: string | null;
   displayName: string | null;

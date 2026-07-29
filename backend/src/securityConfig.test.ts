@@ -188,7 +188,11 @@ describe("production security configuration", () => {
     expect(firmware).toContain("motionStateChanged");
     expect(tripStateEngine).toContain("const STALE_BUS_MS = readIntervalMs");
     expect(firmware).toContain("bufferedFix");
-    expect(firmware).toContain("HTTPS_RETRY_MS");
+    expect(firmware).toContain("HTTPS_RETRY_BASE_MS");
+    expect(firmware).toContain("HTTPS_RETRY_MAX_MS");
+    expect(firmware).toContain("httpsRetryIsPending()");
+    expect(firmware).toContain("resetHttpsRetry()");
+    expect(firmware).toContain("setRxBufferSize(GPS_RX_BUFFER_BYTES)");
     expect(tripStateEngine).not.toContain("snapshot.ref.remove().catch(console.error);");
   });
 
@@ -303,5 +307,33 @@ describe("production security configuration", () => {
     expect(headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(headers.get("X-Frame-Options")).toBe("DENY");
     expect(headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
+  });
+
+  it("ships every Firestore index manifest referenced by Firebase", () => {
+    const firebase = JSON.parse(workspaceFile("firebase.json"));
+    const indexPath = firebase.firestore.indexes as string;
+    const manifest = JSON.parse(workspaceFile(indexPath));
+
+    expect(indexPath).toBe("firestore.indexes.json");
+    expect(manifest.indexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          collectionGroup: "ride_sessions",
+          queryScope: "COLLECTION",
+        }),
+      ]),
+    );
+    expect(manifest.fieldOverrides).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          collectionGroup: "messages",
+          fieldPath: "senderId",
+        }),
+        expect.objectContaining({
+          collectionGroup: "messageRateLimits",
+          fieldPath: "userId",
+        }),
+      ]),
+    );
   });
 });

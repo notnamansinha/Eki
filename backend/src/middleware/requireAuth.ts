@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { auth } from "../lib/firebaseAdmin";
+import { verifyRevocationAwareIdToken } from "../services/authTokenVerifier";
 
 /**
  * Express middleware that verifies a Firebase ID token from the Authorization header.
@@ -20,15 +20,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   const idToken = authHeader.split("Bearer ")[1];
 
   try {
-    // Check revocation as well as signature/expiry. This makes a disabled user
-    // lose API access immediately instead of retaining it until token expiry.
-    const decoded = await auth.verifyIdToken(idToken, true);
+    // Check revocation as well as signature/expiry. The shared verifier keeps
+    // only a short hashed-token cache to avoid repeated Auth network trips.
+    const decoded = await verifyRevocationAwareIdToken(idToken);
     
     // Attach user info to request for downstream handlers
-    (req as any).user = decoded;
+    req.user = decoded;
     next();
-  } catch (err) {
-    console.error("❌ [Auth] Token verification failed:", err);
+  } catch {
     res.status(401).json({ error: "Invalid or expired token." });
   }
 }

@@ -1,7 +1,7 @@
 import type { LegacyTripState, MotionState, TripState } from "../types";
 import { haversineMeters } from "../lib/geo";
 
-export interface TripRouteStop {
+interface TripRouteStop {
   lat: number;
   lng: number;
 }
@@ -25,7 +25,7 @@ export interface TripStateResult {
 
 export const STOP_GEOFENCE_M = 20;
 export const ORIGIN_DEPARTURE_M = 150;
-export const MAX_TELEMETRY_SEGMENT_M = 250;
+const MAX_TELEMETRY_SEGMENT_M = 250;
 
 function distanceToSegmentMeters(
   point: TripRouteStop,

@@ -36,7 +36,7 @@ async function demoteDriverAccount(authUid: string): Promise<void> {
   ]);
 }
 
-export async function applyDriverAuthorization(
+async function applyDriverAuthorization(
   driverId: string,
   authUid: string,
   assignedBusId: string | null,

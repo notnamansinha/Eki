@@ -29,6 +29,9 @@ Record the final non-secret values:
 
 - [ ] Install dependencies with `npm install`.
 - [ ] Fill `backend/.env` and `frontend/.env.local`; do not commit either file.
+- [ ] Keep `AUTH_REVOCATION_CACHE_MS=15000` for the demo; `0` is a
+  troubleshooting option that adds a Firebase Auth network round trip to every
+  protected backend action.
 - [ ] For the bus test, keep `BUS_STALE_MS=300000`; passenger ETA updates
   automatically from the live telemetry stream.
 - [ ] Run `npm run verify` successfully.

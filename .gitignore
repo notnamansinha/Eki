@@ -47,6 +47,7 @@ service-account.json
 !*config.json
 !firebase.json
 !database.rules.json
+!firestore.indexes.json
 
 # Misc
 .DS_Store

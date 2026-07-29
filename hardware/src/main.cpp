@@ -37,8 +37,12 @@ constexpr uint32_t MOVING_HEARTBEAT_MS = 30000;
 constexpr uint32_t STOPPED_HEARTBEAT_MS = 60000;
 constexpr uint32_t WIFI_RETRY_MS = 5000;
 constexpr uint32_t TIME_SYNC_RETRY_MS = 10000;
-constexpr uint32_t HTTPS_RETRY_MS = 5000;
+constexpr uint32_t HTTPS_RETRY_BASE_MS = 1000;
+constexpr uint32_t HTTPS_RETRY_MAX_MS = 30000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
+// At 9,600 baud, a seven-second HTTPS call can overlap roughly 6.7 KiB of
+// incoming NMEA data. HardwareSerial defaults to only 256 bytes.
+constexpr size_t GPS_RX_BUFFER_BYTES = 8192;
 
 TinyGPSPlus gps;
 HardwareSerial &gpsSerial = Serial2;
@@ -70,8 +74,10 @@ uint32_t lastPublishAt = 0;
 uint32_t lastEvaluationAt = 0;
 uint32_t lastWifiAttemptAt = 0;
 uint32_t lastTimeSyncAttemptAt = 0;
-uint32_t lastHttpsAttemptAt = 0;
+uint32_t lastHttpsFailureAt = 0;
+uint32_t httpsRetryDelayMs = 0;
 uint32_t lastGpsWarningAt = 0;
+uint8_t consecutiveHttpsFailures = 0;
 bool gpsFixWasLost = false;
 bool lossMessagePublished = false;
 bool wifiConfigured = false;
@@ -88,6 +94,31 @@ String buildTelemetryUrl() {
 
 bool clockIsSynchronized() {
   return time(nullptr) > 1700000000;
+}
+
+bool httpsRetryIsPending() {
+  return httpsRetryDelayMs > 0 &&
+         elapsed(lastHttpsFailureAt) < httpsRetryDelayMs;
+}
+
+void scheduleHttpsRetry() {
+  const uint8_t exponent = min<uint8_t>(consecutiveHttpsFailures, 4);
+  const uint32_t exponentialDelay = HTTPS_RETRY_BASE_MS << exponent;
+  // Per-device jitter prevents a recovering hotspot/backend from receiving a
+  // synchronized retry wave from the whole fleet.
+  const uint32_t jitter = esp_random() % HTTPS_RETRY_BASE_MS;
+  httpsRetryDelayMs = min<uint32_t>(
+    exponentialDelay + jitter,
+    HTTPS_RETRY_MAX_MS
+  );
+  lastHttpsFailureAt = millis();
+  consecutiveHttpsFailures =
+    min<uint8_t>(consecutiveHttpsFailures + 1, 5);
+}
+
+void resetHttpsRetry() {
+  consecutiveHttpsFailures = 0;
+  httpsRetryDelayMs = 0;
 }
 
 int64_t epochMilliseconds() {
@@ -162,10 +193,7 @@ bool publishFix(const TelemetryFix &fix) {
   ) {
     return false;
   }
-  if (lastHttpsAttemptAt && elapsed(lastHttpsAttemptAt) < HTTPS_RETRY_MS) {
-    return false;
-  }
-  lastHttpsAttemptAt = millis();
+  if (httpsRetryIsPending()) return false;
 
   JsonDocument document;
   document["lat"] = fix.lat;
@@ -189,6 +217,7 @@ bool publishFix(const TelemetryFix &fix) {
   http.setReuse(true);
   if (!http.begin(tlsClient, telemetryEndpoint)) {
     Serial.println("[HTTPS] Unable to initialize telemetry request.");
+    scheduleHttpsRetry();
     return false;
   }
   http.addHeader("Authorization", authorizationHeader);
@@ -208,8 +237,13 @@ bool publishFix(const TelemetryFix &fix) {
     WiFi.RSSI()
   );
   http.end();
-  if (!accepted) return false;
+  if (!accepted) {
+    tlsClient.stop();
+    scheduleHttpsRetry();
+    return false;
+  }
 
+  resetHttpsRetry();
   lastLat = fix.lat;
   lastLng = fix.lng;
   lastSpeed = fix.speed;
@@ -308,11 +342,13 @@ void evaluateTelemetry() {
 
 void setup() {
   Serial.begin(115200);
+  const size_t gpsRxBuffer = gpsSerial.setRxBufferSize(GPS_RX_BUFFER_BYTES);
   gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
   delay(500);
   Serial.printf(
-    "[Boot] Eki HTTPS telemetry; reset reason=%d\n",
-    esp_reset_reason()
+    "[Boot] Eki HTTPS telemetry; reset reason=%d; GNSS RX buffer=%u bytes\n",
+    esp_reset_reason(),
+    gpsRxBuffer
   );
 
   tlsClient.setCACert(BACKEND_ROOT_CA);
@@ -328,6 +364,16 @@ void loop() {
     connectWiFi();
   } else {
     synchronizeClock();
+    if (
+      bufferedFix.valid &&
+      clockIsSynchronized() &&
+      epochMilliseconds() - bufferedFix.timestamp > 55000
+    ) {
+      // The backend rejects measurements older than 60 seconds. Drop the
+      // nearly stale buffered sample so it cannot trigger failure backoff and
+      // delay the next current fix after connectivity returns.
+      bufferedFix.valid = false;
+    }
     if (bufferedFix.valid && publishFix(bufferedFix)) {
       bufferedFix.valid = false;
     }

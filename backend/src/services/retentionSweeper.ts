@@ -26,7 +26,7 @@ async function deleteDocuments(query: Query, recursive = false): Promise<number>
   return deleted;
 }
 
-export async function runRetentionSweep(now = Date.now()): Promise<void> {
+async function runRetentionSweep(now = Date.now()): Promise<void> {
   if (process.env.RETENTION_SWEEPER_ENABLED === "false") return;
   const rideDays = readDays(process.env.RIDE_SESSION_RETENTION_DAYS, 90);
   const feedbackDays = readDays(process.env.FEEDBACK_RETENTION_DAYS, 180);
@@ -76,4 +76,3 @@ export function startRetentionSweeper(): () => void {
   timer.unref();
   return () => clearInterval(timer);
 }
-

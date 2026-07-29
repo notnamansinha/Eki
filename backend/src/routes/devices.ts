@@ -30,6 +30,7 @@ router.post(
   "/:deviceId/telemetry",
   telemetryLimiter,
   async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
     const deviceId = req.params.deviceId;
     const secret = parseDeviceAuthorization(req.get("authorization"));
     let encodedLength = Number.POSITIVE_INFINITY;
@@ -43,7 +44,6 @@ router.post(
         ? parseTelemetryValue(req.body)
         : { ok: false as const, reason: "payload_size" };
     if (!SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
-      res.set("Cache-Control", "no-store");
       res.status(!secret ? 401 : 400).json({
         error: !secret ? "Invalid device credentials." : "Invalid telemetry payload.",
       });
@@ -56,7 +56,6 @@ router.post(
         secret,
         parsed.value,
       );
-      res.set("Cache-Control", "no-store");
       if (!result.ok) {
         if (result.reason === "rate_limit") {
           res.status(429).json({ error: "Telemetry rate limit exceeded." });

@@ -3,12 +3,9 @@ import { db } from "../lib/firebaseAdmin";
 import { requireAdmin } from "../middleware/requireAdmin";
 
 const router = Router();
+const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 const ALLOWED_REQUEST_STATUSES = new Set<string>(["pending", "accepted", "completed", "cancelled"]);
-
-function isNonEmptyString(val: unknown, maxLen = 256): val is string {
-  return typeof val === "string" && val.trim().length > 0 && val.length <= maxLen;
-}
 
 // Passenger requests are created directly through the constrained Firestore
 // rule; this API exposes only administrator lifecycle overrides.
@@ -17,7 +14,7 @@ function isNonEmptyString(val: unknown, maxLen = 256): val is string {
 // Admin patch completion override — SEC-10 fix: requires Firebase admin token
 router.patch("/:id", requireAdmin, async (req, res) => {
   const id = req.params.id;
-  if (!isNonEmptyString(id, 128)) {
+  if (!SAFE_ID.test(id)) {
     res.status(400).json({ error: "Invalid request id" });
     return;
   }
@@ -47,7 +44,7 @@ router.patch("/:id", requireAdmin, async (req, res) => {
 // Cancel a request by ID — SEC-10 fix: requires Firebase admin token
 router.delete("/:id", requireAdmin, async (req, res) => {
   const id = req.params.id;
-  if (!isNonEmptyString(id, 128)) {
+  if (!SAFE_ID.test(id)) {
     res.status(400).json({ error: "Invalid request id" });
     return;
   }

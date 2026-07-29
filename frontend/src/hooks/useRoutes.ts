@@ -1,6 +1,6 @@
 import { useCollection } from "./useCollection";
 
-export interface RouteWaypoint {
+interface RouteWaypoint {
   lat: number;
   lng: number;
 }

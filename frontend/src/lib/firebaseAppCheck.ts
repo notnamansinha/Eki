@@ -7,7 +7,7 @@ import { firebaseApp } from "./firebaseCore";
 
 let appCheck: AppCheck | null = null;
 
-export function initializeFirebaseAppCheck(): AppCheck | null {
+function initializeFirebaseAppCheck(): AppCheck | null {
   if (typeof window === "undefined" || appCheck) return appCheck;
   const debugToken = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_DEBUG_TOKEN;
   if (process.env.NODE_ENV !== "production" && debugToken) {
@@ -32,5 +32,4 @@ export function initializeFirebaseAppCheck(): AppCheck | null {
   return appCheck;
 }
 
-export const firebaseAppCheck =
-  typeof window === "undefined" ? null : initializeFirebaseAppCheck();
+if (typeof window !== "undefined") initializeFirebaseAppCheck();
