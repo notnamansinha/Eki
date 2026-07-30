@@ -132,20 +132,44 @@ export default function MessagingPanel({
       await runTransaction(db, async (transaction) => {
         const rateSnapshot = await transaction.get(rateRef);
         const existing = rateSnapshot.data() as {
+          sentAt?: Timestamp[];
+          lastSentAt?: Timestamp;
           count?: number;
           windowStartedAt?: Timestamp;
         } | undefined;
-        const windowStartedAt = existing?.windowStartedAt?.toMillis();
-        const resetWindow =
-          !Number.isFinite(windowStartedAt) ||
-          now - Number(windowStartedAt) >= 60 * 60 * 1000;
-        const count = resetWindow ? 1 : Number(existing?.count ?? 0) + 1;
+        let sentAt: Timestamp[] = [];
+        if (
+          Array.isArray(existing?.sentAt) &&
+          existing?.lastSentAt instanceof Timestamp
+        ) {
+          sentAt = [...existing.sentAt, existing.lastSentAt];
+        } else if (
+          existing?.windowStartedAt instanceof Timestamp &&
+          existing?.lastSentAt instanceof Timestamp
+        ) {
+          const legacyCount = Math.max(1, Math.min(60, Number(existing.count) || 1));
+          if (now - existing.windowStartedAt.toMillis() < 60 * 60 * 1000) {
+            sentAt = [
+              ...Array<Timestamp>(legacyCount - 1).fill(existing.windowStartedAt),
+              existing.lastSentAt,
+            ];
+          }
+        }
+        if (sentAt.length >= 60) {
+          if (now - sentAt[0].toMillis() < 60 * 60 * 1000) {
+            const rateLimitError = new Error("Rolling message limit reached.") as Error & {
+              code: string;
+            };
+            rateLimitError.code = "rate-limit";
+            throw rateLimitError;
+          }
+          sentAt = sentAt.slice(1);
+        }
 
         transaction.set(rateRef, {
           userId: currentUserId,
-          windowStartedAt: resetWindow ? serverTimestamp() : existing!.windowStartedAt,
+          sentAt,
           lastSentAt: serverTimestamp(),
-          count,
         });
         transaction.set(messageRef, {
           text: censoredContent,
@@ -160,7 +184,7 @@ export default function MessagingPanel({
       const code = typeof error === "object" && error !== null && "code" in error
         ? String(error.code)
         : "";
-      if (code.includes("permission-denied")) {
+      if (code.includes("permission-denied") || code === "rate-limit") {
         setRateLimitMsg("Please wait before sending another message.");
       } else {
         console.error("Failed to send message", error);

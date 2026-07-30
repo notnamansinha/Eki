@@ -48,30 +48,63 @@ service cloud.firestore {
       return /databases/$(database)/documents/ride_sessions/$(sessionId)/messageRateLimits/$(uid);
     }
 
+    function messageRateShapeValid(after) {
+      return after.data.keys().hasOnly(['userId', 'sentAt', 'lastSentAt']) &&
+        after.data.userId == request.auth.uid &&
+        after.data.sentAt is list &&
+        after.data.sentAt.size() <= 59 &&
+        after.data.lastSentAt == request.time;
+    }
+
+    function rollingMessageRateAdvanced(before, after) {
+      let previous = before.data.sentAt.concat([before.data.lastSentAt]);
+      return before.data.keys().hasOnly(['userId', 'sentAt', 'lastSentAt']) &&
+        before.data.userId == request.auth.uid &&
+        before.data.sentAt is list &&
+        before.data.sentAt.size() <= 59 &&
+        after.data.sentAt is list &&
+        request.time - before.data.lastSentAt >= duration.value(3, 's') &&
+        (
+          previous.size() < 60 &&
+          after.data.sentAt == previous
+        ||
+          previous.size() == 60 &&
+          request.time - previous[0] >= duration.value(1, 'h') &&
+          after.data.sentAt == previous[1:60]
+        );
+    }
+
+    function legacyMessageRateAdvanced(before, after) {
+      return before.data.keys().hasOnly(['userId', 'windowStartedAt', 'lastSentAt', 'count']) &&
+        before.data.userId == request.auth.uid &&
+        before.data.count is int &&
+        before.data.count >= 1 &&
+        before.data.count <= 60 &&
+        request.time - before.data.lastSentAt >= duration.value(3, 's') &&
+        (
+          request.time - before.data.windowStartedAt >= duration.value(1, 'h') &&
+          after.data.sentAt.size() == 0
+        ||
+          request.time - before.data.windowStartedAt < duration.value(1, 'h') &&
+          before.data.count < 60 &&
+          after.data.sentAt.size() == before.data.count &&
+          after.data.sentAt[0:before.data.count - 1].hasOnly([before.data.windowStartedAt]) &&
+          after.data.sentAt[before.data.count - 1] == before.data.lastSentAt
+        );
+    }
+
     function messageRateAdvanced(sessionId) {
       let before = get(messageRateDoc(sessionId, request.auth.uid));
       let after = getAfter(messageRateDoc(sessionId, request.auth.uid));
-      return after.data.keys().hasOnly(['userId', 'windowStartedAt', 'lastSentAt', 'count']) &&
-        after.data.userId == request.auth.uid &&
-        after.data.lastSentAt == request.time &&
-        after.data.count is int &&
-        after.data.count >= 1 &&
-        after.data.count <= 60 &&
+      return messageRateShapeValid(after) &&
         (
-          !exists(messageRateDoc(sessionId, request.auth.uid)) &&
-          after.data.windowStartedAt == request.time &&
-          after.data.count == 1
+          !exists(messageRateDoc(sessionId, request.auth.uid))
         ||
           exists(messageRateDoc(sessionId, request.auth.uid)) &&
-          request.time - before.data.lastSentAt >= duration.value(3, 's') &&
           (
-            request.time - before.data.windowStartedAt >= duration.value(1, 'h') &&
-            after.data.windowStartedAt == request.time &&
-            after.data.count == 1
+            rollingMessageRateAdvanced(before, after)
           ||
-            request.time - before.data.windowStartedAt < duration.value(1, 'h') &&
-            after.data.windowStartedAt == before.data.windowStartedAt &&
-            after.data.count == before.data.count + 1
+            legacyMessageRateAdvanced(before, after)
           )
         );
     }
@@ -193,28 +226,16 @@ service cloud.firestore {
       match /messageRateLimits/{uid} {
         allow read: if isOwner(uid);
         allow create: if isOwner(uid) &&
-          request.resource.data.keys().hasOnly(['userId', 'windowStartedAt', 'lastSentAt', 'count']) &&
-          request.resource.data.userId == uid &&
-          request.resource.data.windowStartedAt == request.time &&
-          request.resource.data.lastSentAt == request.time &&
-          request.resource.data.count == 1;
+          messageRateShapeValid(request.resource) &&
+          request.resource.data.sentAt.size() == 0;
         allow update: if isOwner(uid) &&
           resource.data.userId == uid &&
           request.resource.data.userId == uid &&
-          request.resource.data.keys().hasOnly(['userId', 'windowStartedAt', 'lastSentAt', 'count']) &&
-          request.resource.data.lastSentAt == request.time &&
-          request.time - resource.data.lastSentAt >= duration.value(3, 's') &&
-          request.resource.data.count is int &&
-          request.resource.data.count >= 1 &&
-          request.resource.data.count <= 60 &&
+          messageRateShapeValid(request.resource) &&
           (
-            request.time - resource.data.windowStartedAt >= duration.value(1, 'h') &&
-            request.resource.data.windowStartedAt == request.time &&
-            request.resource.data.count == 1
+            rollingMessageRateAdvanced(resource, request.resource)
           ||
-            request.time - resource.data.windowStartedAt < duration.value(1, 'h') &&
-            request.resource.data.windowStartedAt == resource.data.windowStartedAt &&
-            request.resource.data.count == resource.data.count + 1
+            legacyMessageRateAdvanced(resource, request.resource)
           );
         allow delete: if false;
       }
