@@ -93,42 +93,84 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
 
   try {
     const deviceRef = db.collection("devices").doc(deviceId);
-    const [busDoc, routeDoc, existingDevice] = await Promise.all([
-      db.collection("buses").doc(busId).get(),
-      db.collection("routes").doc(routeId).get(),
-      deviceRef.get(),
-    ]);
-    const bus = busDoc.data();
-    const assignedRoutes = Array.isArray(bus?.assignedRoutes)
-      ? bus.assignedRoutes
-      : typeof bus?.assignedRouteId === "string"
-        ? [bus.assignedRouteId]
-        : [];
-    if (!busDoc.exists || !routeDoc.exists || !assignedRoutes.includes(routeId)) {
+    const result = await db.runTransaction(async (transaction) => {
+      const busRef = db.collection("buses").doc(busId);
+      const routeRef = db.collection("routes").doc(routeId);
+      const targetRideRef = db.collection("active_rides").doc(`${busId}_${routeId}`);
+      const targetDevicesQuery = db.collection("devices")
+        .where("busId", "==", busId)
+        .where("routeId", "==", routeId);
+      const [busDoc, routeDoc, existingDevice, targetRide, targetDevices] =
+        await Promise.all([
+          transaction.get(busRef),
+          transaction.get(routeRef),
+          transaction.get(deviceRef),
+          transaction.get(targetRideRef),
+          transaction.get(targetDevicesQuery),
+        ]);
+      const bus = busDoc.data();
+      const assignedRoutes = Array.isArray(bus?.assignedRoutes)
+        ? bus.assignedRoutes
+        : typeof bus?.assignedRouteId === "string"
+          ? [bus.assignedRouteId]
+          : [];
+      if (!busDoc.exists || !routeDoc.exists || !assignedRoutes.includes(routeId)) {
+        return "invalid_assignment" as const;
+      }
+
+      const previous = existingDevice.data();
+      const assignmentChanged =
+        !existingDevice.exists ||
+        previous?.busId !== busId ||
+        previous?.routeId !== routeId;
+      const targetOwnedByAnotherDevice = targetDevices.docs.some(
+        (candidate) => candidate.id !== deviceId,
+      );
+      if (
+        targetOwnedByAnotherDevice ||
+        (assignmentChanged && targetRide.exists)
+      ) {
+        return "target_conflict" as const;
+      }
+
+      if (
+        existingDevice.exists &&
+        assignmentChanged &&
+        typeof previous?.busId === "string" &&
+        typeof previous?.routeId === "string"
+      ) {
+        const previousRide = await transaction.get(
+          db.collection("active_rides")
+            .doc(`${previous.busId}_${previous.routeId}`),
+        );
+        if (previousRide.exists) {
+          return "active_previous_ride" as const;
+        }
+      }
+
+      transaction.set(
+        deviceRef,
+        { deviceId, busId, routeId, enabled, updatedAt: FieldValue.serverTimestamp() },
+        { merge: true },
+      );
+      return "saved" as const;
+    });
+    if (result === "invalid_assignment") {
       res.status(400).json({ error: "Device assignment must match an existing bus route." });
       return;
     }
-    const previous = existingDevice.data();
-    if (
-      existingDevice.exists &&
-      (previous?.busId !== busId || previous?.routeId !== routeId) &&
-      typeof previous?.busId === "string" &&
-      typeof previous?.routeId === "string"
-    ) {
-      const activeRide = await db.collection("active_rides")
-        .doc(`${previous.busId}_${previous.routeId}`)
-        .get();
-      if (activeRide.exists) {
-        res.status(409).json({
-          error: "An active ride device cannot be reassigned before the final stop.",
-        });
-        return;
-      }
+    if (result === "target_conflict") {
+      res.status(409).json({
+        error: "The target bus route already has an active ride or registered device.",
+      });
+      return;
     }
-    await deviceRef.set(
-      { deviceId, busId, routeId, enabled, updatedAt: FieldValue.serverTimestamp() },
-      { merge: true },
-    );
+    if (result === "active_previous_ride") {
+      res.status(409).json({
+        error: "An active ride device cannot be reassigned before the final stop.",
+      });
+      return;
+    }
     invalidateDeviceCredentialCache(deviceId);
     res.json({ saved: true });
   } catch (error) {
