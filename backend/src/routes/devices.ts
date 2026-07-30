@@ -14,7 +14,7 @@ const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const telemetryLimiter = rateLimit({
   windowMs: 60_000,
-  max: 120,
+  limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Telemetry request limit exceeded." },
