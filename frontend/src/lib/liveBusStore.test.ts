@@ -8,10 +8,12 @@ import {
 
 describe("live bus snapshot expiry", () => {
   const now = 2_000_000_000_000;
+  const recentAgeMs = BUS_EXPIRY_MS / 4;
+  const olderFreshAgeMs = BUS_EXPIRY_MS / 2;
 
   it("preserves a snapshot when every entry is fresh", () => {
     const snapshot: LiveBusSnapshot = {
-      fresh: { timestamp: now - 1_000 },
+      fresh: { timestamp: now - recentAgeMs },
     };
 
     expect(pruneExpiredLiveBuses(snapshot, now)).toBe(snapshot);
@@ -19,14 +21,14 @@ describe("live bus snapshot expiry", () => {
 
   it("removes expired, malformed, and far-future entries", () => {
     const snapshot: LiveBusSnapshot = {
-      fresh: { timestamp: now - 1_000 },
+      fresh: { timestamp: now - recentAgeMs },
       expired: { timestamp: now - BUS_EXPIRY_MS },
       missing: {},
       future: { timestamp: now + 10_001 },
     };
 
     expect(pruneExpiredLiveBuses(snapshot, now)).toEqual({
-      fresh: { timestamp: now - 1_000 },
+      fresh: { timestamp: now - recentAgeMs },
     });
   });
 
@@ -52,8 +54,8 @@ describe("live bus snapshot expiry", () => {
 
   it("schedules one expiry at the earliest inactive deadline", () => {
     const snapshot: LiveBusSnapshot = {
-      later: { timestamp: now - 1_000 },
-      earlier: { timestamp: now - 5_000 },
+      later: { timestamp: now - recentAgeMs },
+      earlier: { timestamp: now - olderFreshAgeMs },
       active: {
         timestamp: now - BUS_EXPIRY_MS,
         status: "active",
@@ -63,7 +65,7 @@ describe("live bus snapshot expiry", () => {
     };
 
     expect(millisecondsUntilNextPrune(snapshot, now)).toBe(
-      BUS_EXPIRY_MS - 5_000,
+      BUS_EXPIRY_MS - olderFreshAgeMs,
     );
     expect(millisecondsUntilNextPrune({ active: snapshot.active }, now)).toBeNull();
   });
