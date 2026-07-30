@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DecodedIdToken } from "firebase-admin/auth";
 
 const verifyIdToken = vi.hoisted(() => vi.fn());
@@ -12,7 +12,10 @@ import {
   verifyRevocationAwareIdToken,
 } from "./authTokenVerifier";
 
-const decoded = { uid: "user-1" } as DecodedIdToken;
+const decoded = {
+  uid: "user-1",
+  exp: Math.floor(Date.now() / 1_000) + 3_600,
+} as DecodedIdToken;
 
 describe("revocation-aware token verification", () => {
   beforeEach(() => {
@@ -20,6 +23,10 @@ describe("revocation-aware token verification", () => {
     verifyIdToken.mockReset();
     verifyIdToken.mockResolvedValue(decoded);
     delete process.env.AUTH_REVOCATION_CACHE_MS;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("coalesces concurrent checks and caches only a verified result", async () => {
@@ -55,5 +62,20 @@ describe("revocation-aware token verification", () => {
 
     expect(verifyIdToken).toHaveBeenCalledTimes(2);
     expect(verifyIdToken).toHaveBeenLastCalledWith("uncached-token", true);
+  });
+
+  it("does not serve a cached token past its JWT expiry", async () => {
+    const now = 1_700_000_000_000;
+    const exp = Math.floor(now / 1_000) + 5;
+    const expiringDecoded = { uid: "user-1", exp } as DecodedIdToken;
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    verifyIdToken.mockResolvedValue(expiringDecoded);
+
+    await verifyRevocationAwareIdToken("expiring-token");
+    vi.setSystemTime(exp * 1_000 + 1);
+    await verifyRevocationAwareIdToken("expiring-token");
+
+    expect(verifyIdToken).toHaveBeenCalledTimes(2);
   });
 });

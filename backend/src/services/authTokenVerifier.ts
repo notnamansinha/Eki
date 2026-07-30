@@ -46,9 +46,10 @@ function cacheVerifiedToken(
       if (oldest) verifiedTokens.delete(oldest);
     }
   }
+  const tokenExpiresAt = decoded.exp * 1_000;
   verifiedTokens.set(key, {
     decoded,
-    expiresAt: now + duration,
+    expiresAt: Math.min(now + duration, tokenExpiresAt),
   });
 }
 
