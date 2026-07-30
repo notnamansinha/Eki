@@ -203,6 +203,10 @@ app.use((
     parserError?.type === "entity.too.large" ||
     parserError?.type === "entity.parse.failed"
   ) {
+    if (res.headersSent) {
+      next(error);
+      return;
+    }
     res.status(parserError.type === "entity.too.large" ? 413 : 400).json({
       error:
         parserError.type === "entity.too.large"
