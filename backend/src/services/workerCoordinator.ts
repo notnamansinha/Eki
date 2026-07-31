@@ -5,6 +5,7 @@ import { startTripStateEngine } from "./tripStateEngine";
 import { startRetentionSweeper } from "./retentionSweeper";
 import { reconcileFleetAuthorization } from "../routes/fleet";
 import { startPrivacyDeletionWorker } from "./privacyDeletionWorker";
+import { startAbandonedRideReconciler } from "./abandonedRideReconciler";
 
 const LEASE_ID = "trip-state-worker";
 const LEASE_DURATION_MS = 45_000;
@@ -24,6 +25,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
   let stopRetention: (() => void) | null = null;
   let fleetReconcileTimer: NodeJS.Timeout | null = null;
   let stopPrivacyDeletion: (() => void) | null = null;
+  let stopRideReconciliation: (() => void) | null = null;
 
   const stopWork = () => {
     if (!active) return;
@@ -32,10 +34,12 @@ export function startWorkerCoordinator(): () => Promise<void> {
     stopRetention?.();
     if (fleetReconcileTimer) clearInterval(fleetReconcileTimer);
     stopPrivacyDeletion?.();
+    stopRideReconciliation?.();
     stopTripEngine = null;
     stopRetention = null;
     fleetReconcileTimer = null;
     stopPrivacyDeletion = null;
+    stopRideReconciliation = null;
     console.warn(`[Worker] Leadership lost by ${ownerId}; background work stopped.`);
   };
 
@@ -64,6 +68,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
         stopTripEngine = startTripStateEngine();
         stopRetention = startRetentionSweeper();
         stopPrivacyDeletion = startPrivacyDeletionWorker();
+        stopRideReconciliation = startAbandonedRideReconciler();
         void reconcileFleetAuthorization().catch((error) => {
           console.error("[Worker] Initial fleet reconciliation failed:", error);
         });
