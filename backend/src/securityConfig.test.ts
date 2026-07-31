@@ -59,6 +59,9 @@ describe("production security configuration", () => {
     const devices = ruleBlock(rules, "match /devices/{deviceId}");
     const activeRides = ruleBlock(rules, "match /active_rides/{rideId}");
     const messages = ruleBlock(rules, "match /messages/{messageId}");
+    const messageRateLimits = ruleBlock(rules, "match /messageRateLimits/{uid}");
+    const sessions = ruleBlock(rules, "match /ride_sessions/{sessionId}");
+    const feedback = ruleBlock(rules, "match /feedbacks/{feedbackId}");
 
     expect(devices).toContain("allow read, write: if false;");
     expect(activeRides).toContain("allow read, write: if false;");
@@ -66,7 +69,30 @@ describe("production security configuration", () => {
     expect(messages).toContain("request.resource.data.from == 'passenger'");
     expect(messages).toContain("request.resource.data.from == 'driver'");
     expect(messages).toContain("messageRateAdvanced(sessionId)");
+    expect(messages).toContain("request.resource.data.text.size() > 0");
+    expect(messageRateLimits).toContain("isSessionPassenger(sessionId)");
+    expect(messageRateLimits).toContain("isSessionOperator(sessionId)");
+    expect(sessions).toContain("boardingStopId.size() <= 128");
+    expect(sessions).toContain("alightingStopId.size() <= 128");
+    expect(feedback).toContain("isSessionPassenger(request.resource.data.sessionId)");
+    expect(feedback).toContain("sessionDoc(request.resource.data.sessionId).data.status == 'completed'");
+    expect(feedback).toContain("request.resource.data.rating is int");
+    expect(feedback).toContain("sessionDoc(request.resource.data.sessionId).data.busId");
     expect(workspaceFile("frontend/src/components/shared/MessagingPanel.tsx")).toContain("limitToLast(200)");
+  });
+
+  it("gates post-ride feedback on a stop selection scoped to the current session", () => {
+    const passengerPage = workspaceFile("frontend/src/app/passenger/page.tsx");
+    const boardingView = workspaceFile(
+      "frontend/src/components/passenger/PassengerBoardingView.tsx",
+    );
+
+    expect(passengerPage).toContain("recordStopSelection(");
+    expect(passengerPage).toContain("isPostRideFeedbackEligible(");
+    expect(passengerPage).toContain("key={activeSessionId}");
+    expect(passengerPage).toContain("sessionId={feedbackSessionId}");
+    expect(boardingView).toContain("onStopSelected?.(");
+    expect(boardingView).toContain("hasSelectedRideStop(boardingStopId, nextAlightingStopId)");
   });
 
   it("requires sign-in for live application data and route APIs", () => {
