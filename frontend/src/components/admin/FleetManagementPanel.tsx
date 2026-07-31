@@ -14,6 +14,8 @@ import {
   Navigation, Gauge, MapPin, Clock, Radio, Activity, BarChart2,
   TrendingUp, AlertTriangle, CheckCircle2,
 } from "lucide-react";
+import CustomSelect from "@/components/ui/CustomSelect";
+import ConfirmModal from "@/components/ui/ConfirmModal";
 import { errorMessage } from "@/lib/errors";
 import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
 
@@ -369,34 +371,39 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
     : activeEntries.filter((e) => registeredBusIds.has(e.busId)); // buses loaded — filter to registered only
   const activeBusIds = new Set(filteredActiveEntries.map((e) => e.busId));
 
-  // â”€â”€ Error state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Error state ──────────────────────────────────────────────────────────
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // â”€â”€ Bus add form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Modal confirmation states ──────────────────────────────────────────────
+  const [confirmDeleteBusId, setConfirmDeleteBusId] = useState<string | null>(null);
+  const [confirmDeleteDriverId, setConfirmDeleteDriverId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // ── Bus CRUD ─────────────────────────────────────────────────────────────
   const [newBusId, setNewBusId] = useState("");
   const [newBusName, setNewBusName] = useState("");
   const [newBusRoutes, setNewBusRoutes] = useState<string[]>([]);
   const [busListOpen, setBusListOpen] = useState(true);
 
-  // â”€â”€ Bus inline edit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Bus inline edit ──────────────────────────────────────────────────────
   const [editingBusId, setEditingBusId] = useState<string | null>(null);
   const [editBusName, setEditBusName] = useState("");
   const [editBusRoutes, setEditBusRoutes] = useState<string[]>([]);
 
-  // â”€â”€ Driver add form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Driver add form ──────────────────────────────────────────────────────
   const [newDriverId, setNewDriverId] = useState("");
   const [newDriverName, setNewDriverName] = useState("");
   const [newDriverAuthUid, setNewDriverAuthUid] = useState("");
   const [newDriverBusId, setNewDriverBusId] = useState("");
   const [driverListOpen, setDriverListOpen] = useState(true);
 
-  // â”€â”€ Driver inline edit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Driver inline edit ───────────────────────────────────────────────────
   const [editingDriverId, setEditingDriverId] = useState<string | null>(null);
   const [editDriverName, setEditDriverName] = useState("");
   const [editDriverAuthUid, setEditDriverAuthUid] = useState("");
   const [editDriverBusId, setEditDriverBusId] = useState("");
 
-  // â”€â”€ Route togglers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Route togglers ───────────────────────────────────────────────────────
   const toggleRoute = (id: string) =>
     setNewBusRoutes((prev) =>
       prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]
@@ -419,12 +426,21 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
     } catch (error: unknown) { setErrorMsg("Failed to add Vehicle: " + errorMessage(error)); }
   };
 
-  const handleDeleteBus = async (id: string) => {
-    if (!confirm("Delete this vehicle? This cannot be undone.")) return;
+  const handleDeleteBus = (id: string) => {
+    setConfirmDeleteBusId(id);
+  };
+
+  const confirmDeleteBus = async () => {
+    if (!confirmDeleteBusId) return;
+    const id = confirmDeleteBusId;
+    setIsDeleting(true);
     try {
       await fleetRequest(`/buses/${encodeURIComponent(id)}`, "DELETE");
+      setConfirmDeleteBusId(null);
     } catch (error: unknown) {
       setErrorMsg("Failed to delete Vehicle: " + errorMessage(error));
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -462,10 +478,22 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
     } catch (error: unknown) { setErrorMsg("Failed to add Operator: " + errorMessage(error)); }
   };
 
-  const handleDeleteDriver = async (id: string) => {
-    if (!confirm("Delete this operator? This cannot be undone.")) return;
-    try { await fleetRequest(`/drivers/${encodeURIComponent(id)}`, "DELETE"); }
-    catch (error: unknown) { setErrorMsg("Failed to delete Operator: " + errorMessage(error)); }
+  const handleDeleteDriver = (id: string) => {
+    setConfirmDeleteDriverId(id);
+  };
+
+  const confirmDeleteDriver = async () => {
+    if (!confirmDeleteDriverId) return;
+    const id = confirmDeleteDriverId;
+    setIsDeleting(true);
+    try {
+      await fleetRequest(`/drivers/${encodeURIComponent(id)}`, "DELETE");
+      setConfirmDeleteDriverId(null);
+    } catch (error: unknown) {
+      setErrorMsg("Failed to delete Operator: " + errorMessage(error));
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const startEditDriver = (driver: DriverData) => {
@@ -799,17 +827,17 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               aria-label="Firebase Auth UID for new operator"
               className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
             />
-            <div className="relative">
-              <select
-                value={newDriverBusId} onChange={(e) => setNewDriverBusId(e.target.value)}
-                aria-label="Assign vehicle to new operator"
-                className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 pr-8 text-sm text-white focus:border-white/40 outline-none transition-colors font-semibold appearance-none cursor-pointer"
-              >
-                <option value="" className="bg-[#1a1c29]">— Assign Vehicle —</option>
-                {buses.map((b) => <option key={b.id} value={b.id} className="bg-[#1a1c29]">{b.name} ({b.id})</option>)}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 pointer-events-none" />
-            </div>
+            <CustomSelect
+              value={newDriverBusId}
+              onChange={(val) => setNewDriverBusId(val)}
+              ariaLabel="Assign vehicle to new operator"
+              placeholder="— Assign Vehicle —"
+              options={[
+                { value: "", label: "— Assign Vehicle —" },
+                ...buses.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` })),
+              ]}
+              style={{ background: "rgba(10, 12, 20, 0.6)", border: "1px solid rgba(255, 255, 255, 0.1)" }}
+            />
             <button
               onClick={handleAddDriver}
               aria-label="Add new operator"
@@ -921,18 +949,17 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                               aria-label="Firebase Auth UID for operator"
                               className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
                             />
-                            <div className="relative">
-                              <select
-                                value={editDriverBusId}
-                                onChange={(e) => setEditDriverBusId(e.target.value)}
-                                aria-label="Edit assigned vehicle"
-                                className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 pr-8 text-sm text-white focus:border-blue-400/60 outline-none transition-colors font-semibold appearance-none cursor-pointer"
-                              >
-                                <option value="" className="bg-[#1a1c29]">— Unassign Vehicle —</option>
-                                {buses.map((b) => <option key={b.id} value={b.id} className="bg-[#1a1c29]">{b.name} ({b.id})</option>)}
-                              </select>
-                              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 pointer-events-none" />
-                            </div>
+                            <CustomSelect
+                              value={editDriverBusId}
+                              onChange={(val) => setEditDriverBusId(val)}
+                              ariaLabel="Edit assigned vehicle"
+                              placeholder="— Unassign Vehicle —"
+                              options={[
+                                { value: "", label: "— Unassign Vehicle —" },
+                                ...buses.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` })),
+                              ]}
+                              style={{ background: "rgba(10, 12, 20, 0.6)", border: "1px solid rgba(255, 255, 255, 0.1)" }}
+                            />
                             <button
                               onClick={() => handleSaveDriver(driver.id)}
                               aria-label="Save operator changes"
@@ -951,6 +978,31 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
         </div>
         )}
       </div>
+
+      {/* In-app confirm modals */}
+      <ConfirmModal
+        isOpen={Boolean(confirmDeleteBusId)}
+        title="Delete Vehicle?"
+        description={`Are you sure you want to delete vehicle "${confirmDeleteBusId}"? This action cannot be undone.`}
+        confirmText="Delete Vehicle"
+        cancelText="Cancel"
+        variant="danger"
+        loading={isDeleting}
+        onConfirm={confirmDeleteBus}
+        onCancel={() => setConfirmDeleteBusId(null)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(confirmDeleteDriverId)}
+        title="Delete Operator?"
+        description={`Are you sure you want to delete operator "${confirmDeleteDriverId}"? This action cannot be undone.`}
+        confirmText="Delete Operator"
+        cancelText="Cancel"
+        variant="danger"
+        loading={isDeleting}
+        onConfirm={confirmDeleteDriver}
+        onCancel={() => setConfirmDeleteDriverId(null)}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { useSettings, GlobalSettings } from "@/hooks/useSettings";
 import { Save, Loader2, Eye, EyeOff, Megaphone, Clock, MessageSquare, Info } from "lucide-react";
+import AlertModal from "@/components/ui/AlertModal";
 import { errorMessage } from "@/lib/errors";
 
 function Field({
@@ -45,6 +46,7 @@ export default function SettingsPanel() {
   const draft = { ...settings, ...overrides };
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -65,7 +67,7 @@ export default function SettingsPanel() {
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
       savedTimerRef.current = setTimeout(() => setSaved(false), 3000);
     } catch (error: unknown) {
-      alert("Failed to save: " + errorMessage(error));
+      setAlertMessage("Failed to save: " + errorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -212,6 +214,12 @@ export default function SettingsPanel() {
           : <><Save className="w-4 h-4" /> Save All Settings</>
         }
       </button>
+
+      <AlertModal
+        isOpen={Boolean(alertMessage)}
+        message={alertMessage || ""}
+        onClose={() => setAlertMessage(null)}
+      />
     </div>
   );
 }
