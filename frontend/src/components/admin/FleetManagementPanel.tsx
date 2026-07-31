@@ -15,6 +15,7 @@ import {
   TrendingUp, AlertTriangle, CheckCircle2,
 } from "lucide-react";
 import { errorMessage } from "@/lib/errors";
+import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
 
 async function fleetRequest(path: string, method: "PUT" | "DELETE", body?: object) {
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
@@ -349,6 +350,12 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   const { drivers, loading: driversLoading } = useDrivers();
   const { routes } = useRoutes();
   const activeEntries = useActiveBuses();
+  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setFreshnessNow(Date.now()), 15_000);
+    return () => window.clearInterval(interval);
+  }, []);
   // Only show buses that are registered in the Firestore `buses` collection.
   // This acts as a defense-in-depth guard: even if RTDB cleanup is delayed
   // or a stale entry exists, deleted buses will never render in the UI.
@@ -491,7 +498,11 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   // â”€â”€ Fleet summary stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const inServiceCount  = filteredActiveEntries.filter(e => e.tripState === "in_service").length;
   const awaitingStartCount = filteredActiveEntries.filter(e => e.tripState === "pre_departure").length;
-  const gpsLostCount    = filteredActiveEntries.filter(e => e.deviceState === "offline" || e.motionState === "uncertain").length;
+  const gpsLostCount    = filteredActiveEntries.filter(e =>
+    e.deviceState === "offline" ||
+    e.motionState === "uncertain" ||
+    isLiveBusSignalLost(e.timestamp, freshnessNow)
+  ).length;
   const movingCount     = filteredActiveEntries.filter(e => e.motionState === "moving").length;
 
   return (

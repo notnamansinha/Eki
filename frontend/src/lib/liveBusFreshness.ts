@@ -24,6 +24,16 @@ export function isLiveBusTimestamp(
   return age >= -10_000 && age < BUS_EXPIRY_MS;
 }
 
+export function isLiveBusSignalLost(
+  timestamp?: number,
+  now = Date.now(),
+): boolean {
+  if (typeof timestamp !== "number" || !isLiveBusTimestamp(timestamp, now)) {
+    return true;
+  }
+  return now - timestamp > SIGNAL_LOST_MS;
+}
+
 export function hasValidBusCoordinates(lat?: number, lng?: number): boolean {
   return Number.isFinite(lat) && Number.isFinite(lng) &&
     lat! >= -90 && lat! <= 90 && lng! >= -180 && lng! <= 180;

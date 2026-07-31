@@ -8,7 +8,8 @@ import { auth } from "@/lib/firebaseAuth";
 import { useBuses } from "@/hooks/useBuses";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
-import { isLiveBusTimestamp } from "@/lib/liveBusFreshness";
+import { useRTDBResume } from "@/hooks/useRTDBResume";
+import { isLiveBusSignalLost, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
 import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
 import { subscribeLiveBuses } from "@/lib/liveBusStore";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
@@ -16,7 +17,7 @@ import { errorMessage } from "@/lib/errors";
 import {
   Activity, Navigation, Clock, AlertTriangle,
   TrendingUp, X, ChevronDown, ChevronUp,
-  Eye, Wifi, MessageCircle,
+  Eye, Wifi, WifiOff, MessageCircle,
 } from "lucide-react";
 
 /* â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -63,11 +64,16 @@ function headingLabel(d?: number): string {
 }
 
 /* â”€â”€ Live bus hook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-function useActiveBuses(): ActiveBusEntry[] {
+function useActiveBuses(
+  connectionGeneration: number,
+  resumeGeneration: number,
+  markSnapshotReceived: () => void,
+): ActiveBusEntry[] {
   const [active, setActive] = useState<ActiveBusEntry[]>([]);
   useEffect(() => {
     const unsubscribe = subscribeLiveBuses((snapshot) => {
       const data = snapshot as Record<string, ActiveBusEntry> | null;
+      markSnapshotReceived();
       if (!data) {
         setActive([]);
         return;
@@ -91,7 +97,7 @@ function useActiveBuses(): ActiveBusEntry[] {
       console.warn("[RTDB] activeBuses:", error.message);
     });
     return unsubscribe;
-  }, []);
+  }, [connectionGeneration, markSnapshotReceived, resumeGeneration]);
   return active;
 }
 
@@ -372,12 +378,28 @@ function FleetCard({
 
 /* â”€â”€ Main Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function DashboardPanel() {
-  const activeEntries = useActiveBuses();
+  const {
+    isResuming,
+    connectionGeneration,
+    resumeGeneration,
+    markSnapshotReceived,
+  } = useRTDBResume();
+  const activeEntries = useActiveBuses(
+    connectionGeneration,
+    resumeGeneration,
+    markSnapshotReceived,
+  );
   const { buses } = useBuses();
   const { drivers } = useDrivers();
   const { routes } = useRoutes();
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setFreshnessNow(Date.now()), 15_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   // â”€â”€ Traffic layer rendered imperatively â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const TrafficLayer = () => {
@@ -396,7 +418,11 @@ export default function DashboardPanel() {
 
   const inService  = activeEntries.filter(e => e.tripState === "in_service").length;
   const moving     = activeEntries.filter(e => e.motionState === "moving").length;
-  const gpsLost    = activeEntries.filter(e => e.deviceState === "offline" || e.motionState === "uncertain").length;
+  const gpsLost    = activeEntries.filter(e =>
+    e.deviceState === "offline" ||
+    e.motionState === "uncertain" ||
+    isLiveBusSignalLost(e.timestamp, freshnessNow)
+  ).length;
   const awaitingStart = activeEntries.filter(e => e.tripState === "pre_departure").length;
 
   const handleSelectBus = useCallback((entry: ActiveBusEntry) => {
@@ -405,7 +431,7 @@ export default function DashboardPanel() {
   }, []);
 
   return (
-    <div className="h-full flex flex-col lg:flex-row w-full overflow-y-auto lg:overflow-hidden">
+    <div className="relative h-full flex flex-col lg:flex-row w-full overflow-y-auto lg:overflow-hidden">
       {/* â”€â”€ Map â”€â”€ */}
       <div className="flex-1 relative min-h-[300px] lg:min-h-0">
         <GoogleMap
@@ -427,11 +453,21 @@ export default function DashboardPanel() {
         </GoogleMap>
 
         {/* Map overlay stats */}
-        <div className="absolute top-3 left-3 flex flex-col gap-2 pointer-events-none">
+        <div className="absolute top-3 left-3 right-3 flex flex-col items-start gap-2 pointer-events-none">
+          {isResuming && (
+            <div
+              className="flex items-center gap-2 rounded-xl border border-amber-400/20 bg-zinc-950/95 px-3 py-2 text-xs font-semibold text-amber-300 shadow-lg"
+              role="status"
+              aria-live="polite"
+            >
+              <WifiOff className="size-4 shrink-0" aria-hidden="true" />
+              <span>Offline / reconnecting to live data...</span>
+            </div>
+          )}
           <div className="flex items-center gap-2 bg-[#09090b]/90 backdrop-blur-sm border border-white/10 rounded-xl px-3 py-2">
-            <span className={`w-2 h-2 rounded-full ${activeEntries.length > 0 ? "bg-emerald-400 animate-pulse" : "bg-white/20"}`} />
+            <span className={`w-2 h-2 rounded-full ${!isResuming && activeEntries.length > 0 ? "bg-emerald-400 animate-pulse" : "bg-white/20"}`} />
             <span className="text-[10px] font-black uppercase tracking-widest text-white/70">
-              {activeEntries.length} Bus{activeEntries.length !== 1 ? "es" : ""} Live
+              {isResuming ? "Live data unavailable" : `${activeEntries.length} Bus${activeEntries.length !== 1 ? "es" : ""} Live`}
             </span>
           </div>
         </div>
@@ -459,9 +495,11 @@ export default function DashboardPanel() {
         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
           <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 px-1">Live Fleet</p>
           {activeEntries.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center opacity-30 gap-2">
-              <Wifi className="w-8 h-8" />
-              <p className="text-xs font-semibold uppercase tracking-widest">No buses active</p>
+            <div className={`flex flex-col items-center justify-center py-16 text-center gap-2 ${isResuming ? "text-amber-300" : "opacity-30"}`}>
+              {isResuming ? <WifiOff className="w-8 h-8" /> : <Wifi className="w-8 h-8" />}
+              <p className="text-xs font-semibold uppercase tracking-widest">
+                {isResuming ? "Live data unavailable" : "No buses active"}
+              </p>
             </div>
           ) : (
             activeEntries.map(entry => (
