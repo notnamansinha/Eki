@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebaseFirestore";
 import { RouteData } from "@/hooks/useRoutes";
 import { ChevronDown } from "lucide-react";
 import { errorMessage } from "@/lib/errors";
+import { hasSelectedRideStop } from "@/lib/rideFeedbackEligibility";
 
 interface Props {
   sessionId: string;
@@ -14,6 +15,7 @@ interface Props {
   userName: string;
   tripState: "pre_departure" | "in_service";
   onBoardingStopChange?: (stopId: string) => void;
+  onStopSelected?: (hasSelectedStop: boolean) => void;
 }
 
 const formatStopName = (name: string) => {
@@ -22,20 +24,21 @@ const formatStopName = (name: string) => {
   return name;
 };
 
-export default function PassengerBoardingView({ sessionId, route, userId, userName, tripState, onBoardingStopChange }: Props) {
+export default function PassengerBoardingView({
+  sessionId,
+  route,
+  userId,
+  userName,
+  tripState,
+  onBoardingStopChange,
+  onStopSelected,
+}: Props) {
   const [boardingStopId, setBoardingStopId] = useState<string>("");
   const [alightingStopId, setAlightingStopId] = useState<string>("");
 
-  const isMounted = useRef(false);
-
   useEffect(() => {
-    if (!isMounted.current) {
-      isMounted.current = true;
-      return;
-    }
-    
     // Auto sync when selection changes
-    if (!boardingStopId) return;
+    if (!hasSelectedRideStop(boardingStopId, alightingStopId)) return;
 
     const syncPassenger = async () => {
       try {
@@ -84,8 +87,10 @@ export default function PassengerBoardingView({ sessionId, route, userId, userNa
           aria-label="Boarding stop"
           value={boardingStopId}
           onChange={(e) => {
-            setBoardingStopId(e.target.value);
-            onBoardingStopChange?.(e.target.value);
+            const nextBoardingStopId = e.target.value;
+            setBoardingStopId(nextBoardingStopId);
+            onBoardingStopChange?.(nextBoardingStopId);
+            onStopSelected?.(hasSelectedRideStop(nextBoardingStopId, alightingStopId));
           }}
           className="w-full h-11 rounded-xl pl-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none transition-all truncate shadow-sm m-0"
           style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
@@ -101,7 +106,11 @@ export default function PassengerBoardingView({ sessionId, route, userId, userNa
         <select
           aria-label="Destination stop"
           value={alightingStopId}
-          onChange={(e) => setAlightingStopId(e.target.value)}
+          onChange={(e) => {
+            const nextAlightingStopId = e.target.value;
+            setAlightingStopId(nextAlightingStopId);
+            onStopSelected?.(hasSelectedRideStop(boardingStopId, nextAlightingStopId));
+          }}
           className="w-full h-11 rounded-xl pl-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none transition-all truncate shadow-sm m-0"
           style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
         >
