@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect } from "react";
-import { AlertCircle, AlertTriangle, CheckCircle2, Info } from "lucide-react";
+import { AlertCircle, AlertTriangle, Info } from "lucide-react";
 
 interface AlertModalProps {
   isOpen: boolean;

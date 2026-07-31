@@ -670,6 +670,24 @@ export default function RouteManagementPanel() {
           ))
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={Boolean(deleteRouteId)}
+        title="Delete Route?"
+        description={`Are you sure you want to delete route "${selectedRouteName}"? This action cannot be undone.`}
+        confirmText="Delete Route"
+        cancelText="Cancel"
+        variant="danger"
+        loading={isDeleting}
+        onConfirm={confirmDeleteRoute}
+        onCancel={() => setDeleteRouteId(null)}
+      />
+
+      <AlertModal
+        isOpen={Boolean(panelAlertMsg)}
+        message={panelAlertMsg || ""}
+        onClose={() => setPanelAlertMsg(null)}
+      />
     </div>
   );
 }

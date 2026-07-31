@@ -1,11 +1,9 @@
 "use client";
-"use client";
 
 import { useState, useEffect } from "react";
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebaseFirestore";
 import { RouteData } from "@/hooks/useRoutes";
-import { ChevronDown } from "lucide-react";
 import CustomSelect from "@/components/ui/CustomSelect";
 import { errorMessage } from "@/lib/errors";
 import { hasSelectedRideStop } from "@/lib/rideFeedbackEligibility";
