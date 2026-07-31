@@ -47,6 +47,7 @@ service-account.json
 !*config.json
 !firebase.json
 !database.rules.json
+!firestore.indexes.json
 
 # Misc
 .DS_Store
@@ -83,7 +84,6 @@ simulator.js
 serve.js
 frontend/fetch_route.js
 frontend/google_maps_recovery_instructions.md
-backend/src/patch-stops.ts
 
 # Build artifacts
 frontend/tsconfig.tsbuildinfo

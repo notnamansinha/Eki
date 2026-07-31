@@ -1,8 +1,18 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { db } from "@/lib/firebase";
-import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp, Timestamp } from "firebase/firestore";
+import { db } from "@/lib/firebaseFirestore";
+import {
+  collection,
+  doc,
+  limitToLast,
+  onSnapshot,
+  orderBy,
+  query,
+  runTransaction,
+  serverTimestamp,
+  Timestamp,
+} from "firebase/firestore";
 import { Send, X, MessageCircle } from "lucide-react";
 
 interface Message {
@@ -38,6 +48,8 @@ export default function MessagingPanel({
   const [rateLimitMsg, setRateLimitMsg] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastSeenCountRef = useRef(0);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rateLimitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     lastSeenCountRef.current = 0;
@@ -45,7 +57,11 @@ export default function MessagingPanel({
     if (!sessionId) return;
 
     const unsubscribe = onSnapshot(
-      query(collection(db, "ride_sessions", sessionId, "messages"), orderBy("timestamp", "asc")),
+      query(
+        collection(db, "ride_sessions", sessionId, "messages"),
+        orderBy("timestamp", "asc"),
+        limitToLast(200),
+      ),
       (snapshot) => {
           const msgs = snapshot.docs.map((message) => ({ id: message.id, ...message.data() })) as Message[];
           setMessages(msgs);
@@ -59,7 +75,8 @@ export default function MessagingPanel({
             lastSeenCountRef.current = othersCount;
           }
 
-          setTimeout(() => {
+          if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+          scrollTimerRef.current = setTimeout(() => {
             messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
           }, 100);
       }, (error) => {
@@ -69,6 +86,7 @@ export default function MessagingPanel({
 
     return () => {
       unsubscribe();
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     };
   }, [sessionId, currentUserId, onUnreadCountChange]);
 
@@ -93,7 +111,8 @@ export default function MessagingPanel({
     
     if (recentMessages.length >= 60) {
       setRateLimitMsg("Limit reached — 60 messages/hour");
-      setTimeout(() => setRateLimitMsg(""), 3000);
+      if (rateLimitTimerRef.current) clearTimeout(rateLimitTimerRef.current);
+      rateLimitTimerRef.current = setTimeout(() => setRateLimitMsg(""), 3000);
       return;
     }
     
@@ -108,18 +127,76 @@ export default function MessagingPanel({
     const roleForMsg = currentUserRole === "admin" ? "driver" : currentUserRole;
 
     try {
-      await addDoc(collection(db, "ride_sessions", sessionId, "messages"), {
-        text: censoredContent,
-        from: roleForMsg,
-        senderName: currentUserName || (roleForMsg === "driver" ? "Operator" : "Rider"),
-        senderId: currentUserId || "anonymous",
-        timestamp: serverTimestamp()
+      const messageRef = doc(collection(db, "ride_sessions", sessionId, "messages"));
+      const rateRef = doc(db, "ride_sessions", sessionId, "messageRateLimits", currentUserId);
+      await runTransaction(db, async (transaction) => {
+        const rateSnapshot = await transaction.get(rateRef);
+        const existing = rateSnapshot.data() as {
+          sentAt?: Timestamp[];
+          lastSentAt?: Timestamp;
+          count?: number;
+          windowStartedAt?: Timestamp;
+        } | undefined;
+        let sentAt: Timestamp[] = [];
+        if (
+          Array.isArray(existing?.sentAt) &&
+          existing?.lastSentAt instanceof Timestamp
+        ) {
+          sentAt = [...existing.sentAt, existing.lastSentAt];
+        } else if (
+          existing?.windowStartedAt instanceof Timestamp &&
+          existing?.lastSentAt instanceof Timestamp
+        ) {
+          const legacyCount = Math.max(1, Math.min(60, Number(existing.count) || 1));
+          if (now - existing.windowStartedAt.toMillis() < 60 * 60 * 1000) {
+            sentAt = [
+              ...Array<Timestamp>(legacyCount - 1).fill(existing.windowStartedAt),
+              existing.lastSentAt,
+            ];
+          }
+        }
+        if (sentAt.length >= 60) {
+          if (now - sentAt[0].toMillis() < 60 * 60 * 1000) {
+            const rateLimitError = new Error("Rolling message limit reached.") as Error & {
+              code: string;
+            };
+            rateLimitError.code = "rate-limit";
+            throw rateLimitError;
+          }
+          sentAt = sentAt.slice(1);
+        }
+
+        transaction.set(rateRef, {
+          userId: currentUserId,
+          sentAt,
+          lastSentAt: serverTimestamp(),
+        });
+        transaction.set(messageRef, {
+          text: censoredContent,
+          from: roleForMsg,
+          senderName: currentUserName || (roleForMsg === "driver" ? "Operator" : "Rider"),
+          senderId: currentUserId,
+          timestamp: serverTimestamp(),
+        });
       });
       setNewMessage("");
-    } catch (error) {
-      console.error("Failed to send message", error);
+    } catch (error: unknown) {
+      const code = typeof error === "object" && error !== null && "code" in error
+        ? String(error.code)
+        : "";
+      if (code.includes("permission-denied") || code === "rate-limit") {
+        setRateLimitMsg("Please wait before sending another message.");
+      } else {
+        console.error("Failed to send message", error);
+      }
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (rateLimitTimerRef.current) clearTimeout(rateLimitTimerRef.current);
+    };
+  }, []);
 
   return (
     <div className={`flex flex-col h-full relative overflow-hidden ${isOverlay ? 'rounded-t-2xl' : 'rounded-2xl'}`}
@@ -143,7 +220,7 @@ export default function MessagingPanel({
         {isOverlay && onClose && (
           <button 
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+            className="w-11 h-11 rounded-lg flex items-center justify-center transition-colors"
             style={{ background: "var(--surface-3)", color: "var(--text-tertiary)" }}
             aria-label="Close chat"
           >

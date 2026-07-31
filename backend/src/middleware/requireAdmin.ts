@@ -1,5 +1,24 @@
 import { Request, Response, NextFunction } from "express";
-import { auth } from "../lib/firebaseAdmin";
+import { verifyRevocationAwareIdToken } from "../services/authTokenVerifier";
+
+const EXPECTED_AUTH_ERROR_CODES = new Set([
+  "auth/argument-error",
+  "auth/id-token-expired",
+  "auth/id-token-revoked",
+  "auth/invalid-id-token",
+  "auth/user-disabled",
+  "auth/user-not-found",
+]);
+
+function authErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const candidate = error as {
+    code?: unknown;
+    errorInfo?: { code?: unknown };
+  };
+  const code = candidate.code ?? candidate.errorInfo?.code;
+  return typeof code === "string" ? code : undefined;
+}
 
 /**
  * Express middleware that verifies a Firebase ID token from the Authorization header
@@ -20,7 +39,7 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
   const idToken = authHeader.split("Bearer ")[1];
 
   try {
-    const decoded = await auth.verifyIdToken(idToken, true);
+    const decoded = await verifyRevocationAwareIdToken(idToken);
 
     // Check for admin custom claim
     if (!decoded.admin) {
@@ -29,10 +48,16 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
     }
 
     // Attach user info to request for downstream handlers
-    (req as any).user = decoded;
+    req.user = decoded;
     next();
-  } catch (err) {
-    console.error("❌ [Auth] Token verification failed:", err);
+  } catch (error: unknown) {
+    const code = authErrorCode(error);
+    if (!code || !EXPECTED_AUTH_ERROR_CODES.has(code)) {
+      console.error("[Auth] Admin token verification failed unexpectedly.", {
+        code: code ?? "unknown",
+        message: error instanceof Error ? error.message : "Non-Error thrown",
+      });
+    }
     res.status(401).json({ error: "Invalid or expired token." });
   }
 }

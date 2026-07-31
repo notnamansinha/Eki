@@ -1,14 +1,41 @@
 "use client";
 
 import { useState } from "react";
-import { CircleUserRound, LogOut, ChevronRight, LogIn, HeartHandshake } from "lucide-react";
+import { CircleUserRound, LogOut, ChevronRight, LogIn, HeartHandshake, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import FeedbackModal from "@/components/shared/FeedbackModal";
+import { auth } from "@/lib/firebaseAuth";
 
 export default function AccountTab() {
   const { user, loginWithGoogle, logout } = useAuth();
   const [showFeedback, setShowFeedback] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [deletionStatus, setDeletionStatus] = useState("");
+
+  const requestDeletion = async () => {
+    if (
+      !window.confirm(
+        "Permanently delete your Eki account and associated personal data? This cannot be undone.",
+      )
+    ) return;
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+    if (!backendUrl || !auth.currentUser) {
+      setDeletionStatus("Account deletion is unavailable until the university API is configured.");
+      return;
+    }
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const response = await fetch(`${backendUrl}/api/privacy/deletion-request`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Deletion request failed.");
+      setDeletionStatus("Deletion queued. Your account will be removed shortly.");
+    } catch (error) {
+      setDeletionStatus(error instanceof Error ? error.message : "Deletion request failed.");
+    }
+  };
   return (
     <div className="flex-1 overflow-y-auto flex flex-col pt-safe px-5" style={{ background: "var(--surface-0)" }}>
       <div className="w-full max-w-lg mx-auto space-y-6 mt-10 pb-32">
@@ -78,20 +105,39 @@ export default function AccountTab() {
           </button>
 
           {user ? (
-            <button
-              onClick={() => setShowLogoutConfirm(true)}
-              className="w-full flex items-center justify-between p-4 bg-transparent hover:bg-[var(--surface-3)] transition-colors group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                  style={{ background: "var(--status-danger-bg)" }}>
-                   <LogOut className="w-4 h-4" style={{ color: "var(--status-danger)" }} />
+            <>
+              <button
+                onClick={() => setShowLogoutConfirm(true)}
+                className="w-full flex items-center justify-between p-4 bg-transparent hover:bg-[var(--surface-3)] transition-colors group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center"
+                    style={{ background: "var(--status-danger-bg)" }}>
+                    <LogOut className="w-4 h-4" style={{ color: "var(--status-danger)" }} />
+                  </div>
+                  <span className="text-[13px] font-semibold" style={{ color: "var(--status-danger)" }}>
+                    Sign Out
+                  </span>
                 </div>
-                <span className="text-[13px] font-semibold" style={{ color: "var(--status-danger)" }}>
-                  Sign Out
-                </span>
-              </div>
-            </button>
+              </button>
+              {user.role === "passenger" && (
+                <button
+                  onClick={() => void requestDeletion()}
+                  className="w-full flex items-center justify-between p-4 bg-transparent hover:bg-[var(--surface-3)] transition-colors group"
+                  style={{ borderTop: "1px solid var(--border-subtle)" }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center"
+                      style={{ background: "var(--status-danger-bg)" }}>
+                      <Trash2 className="w-4 h-4" style={{ color: "var(--status-danger)" }} />
+                    </div>
+                    <span className="text-[13px] font-semibold" style={{ color: "var(--status-danger)" }}>
+                      Delete Account
+                    </span>
+                  </div>
+                </button>
+              )}
+            </>
           ) : (
             <button
               onClick={loginWithGoogle}
@@ -111,6 +157,11 @@ export default function AccountTab() {
             </button>
           )}
         </div>
+        {deletionStatus && (
+          <p className="text-center text-xs" role="status" style={{ color: "var(--text-secondary)" }}>
+            {deletionStatus}
+          </p>
+        )}
         
         {showFeedback && (
           <FeedbackModal

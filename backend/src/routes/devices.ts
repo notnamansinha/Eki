@@ -1,136 +1,200 @@
-import { Router, Request, Response } from "express";
-import { db, auth } from "../lib/firebaseAdmin";
+import { Router, type Request, type Response } from "express";
 import { FieldValue } from "firebase-admin/firestore";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
-import { promisify } from "util";
 import rateLimit from "express-rate-limit";
 import { requireAdmin } from "../middleware/requireAdmin";
+import { db } from "../lib/firebaseAdmin";
+import {
+  ingestDeviceTelemetry,
+  invalidateDeviceCredentialCache,
+  parseDeviceAuthorization,
+} from "../services/deviceTelemetryService";
+import { parseTelemetryValue } from "../services/telemetryPayload";
 
 const router = Router();
-const scryptAsync = promisify(scrypt);
-const deviceAuthLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 8,
-  skipSuccessfulRequests: true,
+const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const telemetryLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too many device authentication attempts. Please retry shortly." },
+  message: { error: "Telemetry request limit exceeded." },
 });
 
 /**
- * POST /api/devices/auth
- *
- * Authenticates an ESP32 hardware device using deviceId + secret.
- * Returns a Firebase Custom Token valid for 1 hour.
- *
- * Security hardening applied:
- *  1. The custom token includes `deviceId` as a claim so RTDB rules can
- *     lock writes to /activeBuses/<deviceId>_* paths only.
- *  2. Secrets are derived with scrypt and compared in constant time.
- *     Plaintext credentials are never accepted.
+ * ESP32 devices send a closed six-field payload over certificate-verified
+ * HTTPS. The device secret is transmitted only in the Authorization header,
+ * compared against a scrypt verifier, and never returned or logged. Routing
+ * identity comes exclusively from the server-side device registry.
  */
-router.post("/auth", deviceAuthLimiter, async (req: Request, res: Response): Promise<any> => {
-  try {
-    const { deviceId, secret } = req.body;
-
-    if (!deviceId || !secret) {
-      return res.status(400).json({ error: "Missing deviceId or secret" });
+router.post(
+  "/:deviceId/telemetry",
+  telemetryLimiter,
+  async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    const deviceId = req.params.deviceId;
+    const secret = parseDeviceAuthorization(req.get("authorization"));
+    let encodedLength = Number.POSITIVE_INFINITY;
+    try {
+      encodedLength = Buffer.byteLength(JSON.stringify(req.body), "utf8");
+    } catch {
+      // parseTelemetryValue returns the generic shape error below.
+    }
+    const parsed =
+      encodedLength <= 512
+        ? parseTelemetryValue(req.body)
+        : { ok: false as const, reason: "payload_size" };
+    if (!SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
+      res.status(!secret ? 401 : 400).json({
+        error: !secret ? "Invalid device credentials." : "Invalid telemetry payload.",
+      });
+      return;
     }
 
-    // Validate input lengths and characters to prevent path injection abuse
-    if (typeof deviceId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(deviceId) ||
-        typeof secret !== "string" || secret.length > 512) {
-      return res.status(400).json({ error: "Invalid deviceId or secret format" });
-    }
-
-    const deviceDoc = await db.collection("devices").doc(deviceId).get();
-
-    if (!deviceDoc.exists) {
-      // Use same error message as wrong secret to prevent device enumeration
-      return res.status(401).json({ error: "Invalid device credentials" });
-    }
-
-    const deviceData = deviceDoc.data()!;
-
-    // ── Secret verification ────────────────────────────────────────────────
-    // Verify the scrypt-derived secretHash value.
-    let authenticated = false;
-    if (deviceData.secretHash) {
-      const parts = deviceData.secretHash.split(":");
-      if (parts.length === 2) {
-        const [salt, key] = parts;
-        const derivedKey = await scryptAsync(secret, salt, 64) as Buffer;
-        const storedKey = Buffer.from(key, "hex");
-        if (derivedKey.length === storedKey.length) {
-          authenticated = timingSafeEqual(derivedKey, storedKey);
+    try {
+      const result = await ingestDeviceTelemetry(
+        deviceId,
+        secret,
+        parsed.value,
+      );
+      if (!result.ok) {
+        if (result.reason === "rate_limit") {
+          res.status(429).json({ error: "Telemetry rate limit exceeded." });
+        } else {
+          res.status(401).json({ error: "Invalid device credentials." });
         }
+        return;
       }
+      res.status(result.duplicate ? 200 : 202).json({
+        accepted: true,
+        duplicate: result.duplicate,
+      });
+    } catch (error) {
+      console.error("[Devices] HTTPS telemetry ingestion failed:", error);
+      res.status(503).json({ error: "Telemetry service unavailable." });
     }
+  },
+);
 
-    if (!authenticated) {
-      return res.status(401).json({ error: "Invalid device credentials" });
-    }
-
-    // ── Mint Custom Token with deviceId claim ─────────────────────────────
-    // The `deviceId` claim is checked in RTDB rules:
-    //   $busKey.matches(auth.token.deviceId + '_.*')
-    // This prevents a compromised bus_02 from overwriting bus_01's RTDB path.
-    const assignedRouteId = deviceData.routeId;
-    if (typeof assignedRouteId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(assignedRouteId)) {
-      console.error(`Device ${deviceId} has no valid routeId assignment.`);
-      return res.status(403).json({ error: "Device is not assigned to a valid route" });
-    }
-
-    const customToken = await auth.createCustomToken(deviceId, {
-      role: "device",
-      deviceId,
-      routeId: assignedRouteId,
-    });
-
-    return res.json({ token: customToken, expiresIn: 3600 });
-  } catch (error) {
-    console.error("Device auth error:", error);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-/**
- * POST /api/devices/hash-secret
- *
- * Utility endpoint (admin-only) to hash a plaintext secret and update the
- * device document. Call this once per device to migrate from plaintext secrets.
- *
- * Body: { deviceId, plainSecret }
- * Protected by a verified Firebase administrator ID token.
- */
-router.post("/hash-secret", requireAdmin, async (req: Request, res: Response): Promise<any> => {
-  const { deviceId, plainSecret } = req.body;
-
-  if (typeof deviceId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(deviceId) ||
-      typeof plainSecret !== "string" || plainSecret.length < 16 || plainSecret.length > 512) {
-    return res.status(400).json({ error: "Missing or invalid deviceId or plainSecret" });
+router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
+  const deviceId = req.params.deviceId;
+  const busId = req.body?.busId;
+  const routeId = req.body?.routeId;
+  const enabled = req.body?.enabled !== false;
+  if (
+    !SAFE_ID.test(deviceId) ||
+    typeof busId !== "string" ||
+    !SAFE_ID.test(busId) ||
+    typeof routeId !== "string" ||
+    !SAFE_ID.test(routeId)
+  ) {
+    res.status(400).json({ error: "Invalid device, bus, or route ID." });
+    return;
   }
 
   try {
     const deviceRef = db.collection("devices").doc(deviceId);
-    const doc = await deviceRef.get();
-    
-    if (!doc.exists) {
-      return res.status(404).json({ error: "Device not found" });
-    }
+    const result = await db.runTransaction(async (transaction) => {
+      const busRef = db.collection("buses").doc(busId);
+      const routeRef = db.collection("routes").doc(routeId);
+      const targetRideRef = db.collection("active_rides").doc(`${busId}_${routeId}`);
+      const targetDevicesQuery = db.collection("devices")
+        .where("busId", "==", busId)
+        .where("routeId", "==", routeId);
+      const [busDoc, routeDoc, existingDevice, targetRide, targetDevices] =
+        await Promise.all([
+          transaction.get(busRef),
+          transaction.get(routeRef),
+          transaction.get(deviceRef),
+          transaction.get(targetRideRef),
+          transaction.get(targetDevicesQuery),
+        ]);
+      const bus = busDoc.data();
+      const assignedRoutes = Array.isArray(bus?.assignedRoutes)
+        ? bus.assignedRoutes
+        : typeof bus?.assignedRouteId === "string"
+          ? [bus.assignedRouteId]
+          : [];
+      if (!busDoc.exists || !routeDoc.exists || !assignedRoutes.includes(routeId)) {
+        return "invalid_assignment" as const;
+      }
 
-    const salt = randomBytes(16).toString("hex");
-    const derivedKey = (await scryptAsync(plainSecret, salt, 64) as Buffer).toString("hex");
-    const hashed = `${salt}:${derivedKey}`;
-    await deviceRef.update({
-      secretHash: hashed,
-      // Securely delete the plaintext credential from the database after migration
-      secret: FieldValue.delete(),
+      const previous = existingDevice.data();
+      const assignmentChanged =
+        !existingDevice.exists ||
+        previous?.busId !== busId ||
+        previous?.routeId !== routeId;
+      const targetOwnedByAnotherDevice = targetDevices.docs.some(
+        (candidate) => candidate.id !== deviceId,
+      );
+      if (
+        targetOwnedByAnotherDevice ||
+        (assignmentChanged && targetRide.exists)
+      ) {
+        return "target_conflict" as const;
+      }
+
+      if (
+        existingDevice.exists &&
+        assignmentChanged &&
+        typeof previous?.busId === "string" &&
+        typeof previous?.routeId === "string"
+      ) {
+        const previousRide = await transaction.get(
+          db.collection("active_rides")
+            .doc(`${previous.busId}_${previous.routeId}`),
+        );
+        if (previousRide.exists) {
+          return "active_previous_ride" as const;
+        }
+      }
+
+      transaction.set(
+        deviceRef,
+        { deviceId, busId, routeId, enabled, updatedAt: FieldValue.serverTimestamp() },
+        { merge: true },
+      );
+      return "saved" as const;
     });
-    return res.json({ success: true, message: `Secret hashed for device ${deviceId}` });
-  } catch (err) {
-    console.error("Hash-secret error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    if (result === "invalid_assignment") {
+      res.status(400).json({ error: "Device assignment must match an existing bus route." });
+      return;
+    }
+    if (result === "target_conflict") {
+      res.status(409).json({
+        error: "The target bus route already has an active ride or registered device.",
+      });
+      return;
+    }
+    if (result === "active_previous_ride") {
+      res.status(409).json({
+        error: "An active ride device cannot be reassigned before the final stop.",
+      });
+      return;
+    }
+    invalidateDeviceCredentialCache(deviceId);
+    res.json({ saved: true });
+  } catch (error) {
+    console.error("[Devices] Registry update failed:", error);
+    res.status(500).json({ error: "Unable to update device registry." });
+  }
+});
+
+router.post("/:deviceId/disable", requireAdmin, async (req: Request, res: Response) => {
+  const deviceId = req.params.deviceId;
+  if (!SAFE_ID.test(deviceId)) {
+    res.status(400).json({ error: "Invalid device ID." });
+    return;
+  }
+  try {
+    await db.collection("devices").doc(deviceId).set(
+      { enabled: false, disabledAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+    invalidateDeviceCredentialCache(deviceId);
+    res.json({ disabled: true });
+  } catch (error) {
+    console.error("[Devices] Disable failed:", error);
+    res.status(500).json({ error: "Unable to disable device." });
   }
 });
 

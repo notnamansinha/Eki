@@ -18,6 +18,7 @@ NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
 NEXT_PUBLIC_FIREBASE_APP_ID=...
+NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY=...
 
 # Google Maps — BROWSER key (restrict to your domain)
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_browser_key_here
@@ -26,12 +27,17 @@ NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_browser_key_here
 NEXT_PUBLIC_BACKEND_URL=http://localhost:4000
 ```
 
+For professor phones, use the frontend/backend HTTPS-tunnel procedure in the
+[live demo runbook](../docs/LIVE_DEMO_RUNBOOK.md). When App Check enforcement
+is enabled for a local demo, register a temporary debug token and set
+`NEXT_PUBLIC_FIREBASE_APPCHECK_DEBUG_TOKEN`; never set it in production.
+
 ## Running the Application
 ```bash
 # Install dependencies (run from root or here)
 npm install
 
-# Start development server on localhost:3000
+# Start development server on port 3000, reachable on the laptop LAN
 npm run dev
 
 # Build for production

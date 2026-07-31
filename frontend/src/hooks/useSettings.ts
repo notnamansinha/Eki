@@ -20,7 +20,7 @@ export interface GlobalSettings {
   announcementActive: boolean;
 }
 
-export const DEFAULT_SETTINGS: GlobalSettings = {
+const DEFAULT_SETTINGS: GlobalSettings = {
   serviceStartTime: "8:00 am",
   noBusesMessage: "No buses running",
   noBusesSubMessage: "Service starts at {time}",

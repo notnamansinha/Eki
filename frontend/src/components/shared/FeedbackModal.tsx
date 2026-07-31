@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Star, HeartHandshake, X, Send, Check } from "lucide-react";
-import { auth, db } from "@/lib/firebase";
+import { auth } from "@/lib/firebaseAuth";
+import { db } from "@/lib/firebaseFirestore";
 import {
   collection,
   doc,
@@ -51,6 +52,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
   const [submitted, setSubmitted] = useState(false);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [error, setError] = useState("");
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resolvedUserId = auth.currentUser?.uid ?? userId;
   const cooldownStorageKey = `feedbackCooldown:${resolvedUserId}`;
@@ -77,6 +79,12 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
     const intervalId = window.setInterval(updateCooldown, 10000); // Check every 10s is enough for hours
     return () => window.clearInterval(intervalId);
   }, [cooldownStorageKey]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,7 +154,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
       } catch {}
       
       setSubmitted(true);
-      setTimeout(() => {
+      closeTimerRef.current = setTimeout(() => {
         onClose();
       }, 2000);
     } catch (err) {
@@ -214,7 +222,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
               )}
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-full transition-all hover:bg-white/10 active:scale-95"
+          <button onClick={onClose} className="min-w-11 min-h-11 p-2 rounded-full transition-all hover:bg-white/10 active:scale-95"
             style={{ color: "var(--text-ghost)" }}
             aria-label="Close feedback">
             <X className="w-5 h-5" />
@@ -240,7 +248,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
                     aria-label={`Rate ${star} stars`}
                   >
                     <Star 
-                      className={`w-8 h-8 transition-all ${
+                      className={`w-11 h-11 transition-all ${
                         star <= (hoverRating || rating) 
                           ? 'fill-amber-400 text-amber-400' 
                           : ''

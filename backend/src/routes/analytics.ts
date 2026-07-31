@@ -8,17 +8,18 @@ const router = Router();
 router.get("/fleet", requireAdmin, async (_req, res) => {
   try {
     // Get persistent bus count from Firestore
-    const busSnapshot = await db.collection("bus_locations").get();
+    const busSnapshot = await db.collection("bus_locations").limit(1_000).get();
     let activeCount = 0;
     let idleCount = 0;
-    let maintenanceCount = 0;
+    let signalLostCount = 0;
 
     busSnapshot.forEach((doc) => {
       const data = doc.data();
-      // A GNSS-loss/maintenance lifecycle state takes precedence over the
-      // transport heartbeat, which can legitimately still be "active".
-      if (data.tripState === "maintenance") maintenanceCount++;
-      else if (data.status === "active") activeCount++;
+      if (
+        data.deviceState === "offline" ||
+        data.motionState === "uncertain"
+      ) signalLostCount++;
+      if (data.status === "active") activeCount++;
       else idleCount++;
     });
 
@@ -26,7 +27,7 @@ router.get("/fleet", requireAdmin, async (_req, res) => {
       totalBuses: busSnapshot.size,
       activeBuses: activeCount,
       idleBuses: idleCount,
-      maintenanceBuses: maintenanceCount,
+      signalLostBuses: signalLostCount,
       ongoingTrips: activeCount,
       passengerCount: null, // Requires a dedicated analytics collection
     });

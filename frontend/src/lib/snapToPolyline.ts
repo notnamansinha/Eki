@@ -3,6 +3,7 @@ import type { LatLng } from "./polyline";
 const EARTH_RADIUS_M = 6_371_000;
 const TO_RADIANS = Math.PI / 180;
 const TO_DEGREES = 180 / Math.PI;
+const segmentHeadingCache = new WeakMap<object, readonly number[]>();
 
 export interface SnapOptions {
   maxDistanceM?: number;
@@ -33,6 +34,18 @@ function segmentHeading(a: LatLng, b: LatLng): number {
     Math.cos(lat1) * Math.sin(lat2) -
     Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLng);
   return (Math.atan2(y, x) * TO_DEGREES + 360) % 360;
+}
+
+function segmentHeadings(path: readonly LatLng[]): readonly number[] {
+  const cached = segmentHeadingCache.get(path);
+  if (cached) return cached;
+
+  const headings = new Array<number>(Math.max(0, path.length - 1));
+  for (let index = 0; index < path.length - 1; index += 1) {
+    headings[index] = segmentHeading(path[index], path[index + 1]);
+  }
+  segmentHeadingCache.set(path, headings);
+  return headings;
 }
 
 function projectToSegment(point: LatLng, a: LatLng, b: LatLng) {
@@ -98,6 +111,8 @@ export function snapToPolyline(
   const maxJump = options.maxSegmentJump ?? 25;
   const hasContinuityHint =
     preferred !== undefined && preferred >= 0 && preferred < path.length - 1;
+  const headings =
+    options.headingDegrees === undefined ? null : segmentHeadings(path);
 
   let best:
     | {
@@ -124,7 +139,7 @@ export function snapToPolyline(
         ? 0
         : angularDifference(
             options.headingDegrees,
-            segmentHeading(path[segmentIndex], path[segmentIndex + 1]),
+            headings![segmentIndex],
           ) / 18;
     const score = projection.distanceM + headingPenalty;
 

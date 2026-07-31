@@ -17,7 +17,8 @@ import "dotenv/config";
  * supplied service-account value is malformed. When no JSON credential is
  * supplied, Application Default Credentials are used for managed runtimes.
  */
-if (!getApps().length) {
+let firebaseAdminApp = getApps()[0];
+if (!firebaseAdminApp) {
   const rawServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
   const databaseURL = process.env.FIREBASE_DATABASE_URL;
 
@@ -36,12 +37,13 @@ if (!getApps().length) {
     credential = applicationDefault();
   }
 
-  initializeApp({
+  firebaseAdminApp = initializeApp({
     credential,
     ...(databaseURL ? { databaseURL } : {}),
   });
 }
 
-export const db = getFirestore();
-export const auth = getAuth();
-export const rtdb = getDatabase();
+export { firebaseAdminApp };
+export const db = getFirestore(firebaseAdminApp);
+export const auth = getAuth(firebaseAdminApp);
+export const rtdb = getDatabase(firebaseAdminApp);

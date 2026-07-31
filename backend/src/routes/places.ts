@@ -27,42 +27,58 @@ router.get("/search", placeSearchLimiter, requireAdmin, async (req: Request, res
     return;
   }
 
-  const cacheKey = query.toLocaleLowerCase();
+  const cacheKey = query.toLowerCase();
   const cached = searchCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     res.json({ results: cached.results });
     return;
   }
 
-  const userAgent = process.env.NOMINATIM_USER_AGENT;
-  if (!userAgent) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
     res.status(503).json({ error: "Place search is not configured on the server." });
     return;
   }
 
   try {
-    const url = new URL("https://nominatim.openstreetmap.org/search");
-    url.searchParams.set("format", "jsonv2");
-    url.searchParams.set("q", query);
-    url.searchParams.set("limit", "5");
-
-    const response = await fetch(url, {
-      headers: { Accept: "application/json", "User-Agent": userAgent },
-      signal: AbortSignal.timeout(5_000),
-    });
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), 5_000);
+    let response: globalThis.Response;
+    try {
+      response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location",
+        },
+        body: JSON.stringify({ textQuery: query, maxResultCount: 5 }),
+        signal: timeoutController.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
     if (!response.ok) {
+      const upstreamBody = (await response.text()).slice(0, 1_000);
+      console.warn(
+        `[Places] Upstream request failed with HTTP ${response.status}: ${upstreamBody}`,
+      );
       res.status(502).json({ error: "Place search service is unavailable." });
       return;
     }
 
-    const payload = await response.json() as unknown;
-    const results = Array.isArray(payload)
-      ? payload.flatMap((entry): PlaceResult[] => {
+    const payload = await response.json() as { places?: unknown };
+    const results = Array.isArray(payload.places)
+      ? payload.places.flatMap((entry): PlaceResult[] => {
           if (!entry || typeof entry !== "object") return [];
           const value = entry as Record<string, unknown>;
-          const name = typeof value.display_name === "string" ? value.display_name : "";
-          const lat = Number(value.lat);
-          const lng = Number(value.lon);
+          const displayName = value.displayName as { text?: unknown } | undefined;
+          const location = value.location as { latitude?: unknown; longitude?: unknown } | undefined;
+          const title = typeof displayName?.text === "string" ? displayName.text : "";
+          const address = typeof value.formattedAddress === "string" ? value.formattedAddress : "";
+          const name = address && address !== title ? `${title} — ${address}` : title;
+          const lat = Number(location?.latitude);
+          const lng = Number(location?.longitude);
           return name && Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180
             ? [{ name, lat, lng }]
             : [];

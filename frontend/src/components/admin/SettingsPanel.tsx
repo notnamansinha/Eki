@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ComponentType } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import { useSettings, GlobalSettings } from "@/hooks/useSettings";
 import { Save, Loader2, Eye, EyeOff, Megaphone, Clock, MessageSquare, Info } from "lucide-react";
 import { errorMessage } from "@/lib/errors";
@@ -45,6 +45,13 @@ export default function SettingsPanel() {
   const draft = { ...settings, ...overrides };
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    };
+  }, []);
 
   const set = <K extends keyof GlobalSettings>(k: K, v: GlobalSettings[K]) =>
     setOverrides(current => ({ ...current, [k]: v }));
@@ -55,7 +62,8 @@ export default function SettingsPanel() {
       await saveSettings(draft);
       setOverrides({});
       setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setSaved(false), 3000);
     } catch (error: unknown) {
       alert("Failed to save: " + errorMessage(error));
     } finally {
@@ -82,7 +90,7 @@ export default function SettingsPanel() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-[#09090b] font-bold text-sm hover:bg-white/90 transition-colors shadow-lg disabled:opacity-50"
+          className="min-h-11 flex items-center gap-2 px-4 py-3 rounded-xl bg-white text-[#09090b] font-bold text-sm hover:bg-white/90 transition-colors shadow-lg disabled:opacity-50"
         >
           {saving
             ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
@@ -104,7 +112,7 @@ export default function SettingsPanel() {
             value={draft.serviceStartTime}
             onChange={e => set("serviceStartTime", e.target.value)}
             placeholder="e.g. 6:30 am"
-            className="input-rc h-10"
+            className="input-rc h-11"
           />
         </Field>
       </div>
@@ -119,7 +127,7 @@ export default function SettingsPanel() {
             value={draft.noBusesMessage}
             onChange={e => set("noBusesMessage", e.target.value)}
             placeholder="No buses running"
-            className="input-rc h-10"
+            className="input-rc h-11"
           />
         </Field>
 
@@ -133,7 +141,7 @@ export default function SettingsPanel() {
             value={draft.noBusesSubMessage}
             onChange={e => set("noBusesSubMessage", e.target.value)}
             placeholder="Service starts at {time}"
-            className="input-rc h-10"
+            className="input-rc h-11"
           />
           <div className="flex items-center gap-1.5 bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2 text-xs text-blue-400">
             <Info className="w-3.5 h-3.5 shrink-0" />

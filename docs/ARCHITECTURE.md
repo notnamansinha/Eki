@@ -1,192 +1,107 @@
-# Eki Architecture & Data Flow
+# Architecture and trip lifecycle
 
-This document details the core architecture, data synchronization flows, and Role-Based Access Control (RBAC) hierarchy of the Eki ecosystem.
+## Decision
 
-## 1. High-Level Architecture
-
-Eki uses a modern hybrid, real-time architecture leveraging Firebase as the core streaming layer, a containerized Node.js backend for heavy computation, and an ESP32 hardware telemetry edge layer.
-
-```mermaid
-graph TD
-    subgraph Frontend [Next.js Client Applications]
-        P["Passenger App<br/>(Reads Live Data)"]
-        D["Driver Console<br/>(Writes Live Data)"]
-        A["Admin Dashboard<br/>(Full Access)"]
-    end
-
-    subgraph Firebase Ecosystem
-        Auth[Firebase Auth Base]
-        RTDB[("Realtime Database<br/>High-Frequency GPS")]
-        FS[("Firestore<br/>Persistent Data/Roles")]
-        Hosting["Firebase Hosting<br/>Static CDN"]
-    end
-
-    subgraph Cloud Container [Backend Server - Cloud Run/Render]
-        Express[Node.js + Express]
-        API[Authenticated REST API]
-        RoutesAPI["Google Maps<br/>Routes API v2"]
-    end
-
-    %% Web connections
-    Hosting -.->|Delivers Static Built App| Frontend
-    Frontend -->|Authenticates| Auth
-    Auth -->|Returns Token| Frontend
-    
-    %% Realtime Connections
-    ESP -->|Push GPS telemetry| RTDB
-    RTDB -->|Listen Updates| P
-    D -->|Shift control / read state| RTDB
-    A -->|Listen and Override| RTDB
-    RTDB -->|Listen and Override| A
-
-    %% Backend Connections
-    Frontend -->|Authenticated REST| Express
-    Express -->|Authenticated REST| Frontend
-    Express -->|Validates/Updates| FS
-    Express -->|Computes Polylines| RoutesAPI
-```
-
-## 2. Role-Based Access Control (RBAC) & Custom Claims Architecture
-
-The system employs a strict hierarchical Role-Based Access Control pattern backed by immutable **Firebase Custom Claims** (`auth.token.role`).
-
-### 2.1 Custom Claims Authorization Model
-Unlike legacy client-writable database roles, role authorization in Eki is issued server-side by an admin synchronization task (`npm run sync-role-claims`) using the Firebase Admin SDK:
-* **Admin:** Issued `role: "admin"` and `admin: true` claims. Access to `/admin`, `/driver`, and `/passenger`.
-* **Driver:** Issued `role: "driver"` claim. Access to `/driver` and `/passenger`.
-* **Passenger:** Issued `role: "passenger"` claim (or default). Access to `/passenger`.
-* **Device:** Hardware units are issued temporary custom tokens containing `role: "device"` and `deviceId: "<hardwareId>"`.
-
-The synchronization task also mirrors each driver's assigned bus routes into a
-server-only RTDB path. RTDB rules use that mirror to prevent a valid driver
-from publishing their assigned bus on an unassigned route. Run the task after
-changing a driver, a driver's bus, or a bus's route assignment.
-
-### 2.2 Global AuthProvider Singleton
-The frontend uses a top-level `<AuthProvider>` in `Providers.tsx` ([useAuth.ts](../frontend/src/hooks/useAuth.ts)) that maintains a single `onAuthStateChanged` listener across all route changes:
-1. On initial mount or page refresh, `useAuth` inspects `firebaseUser.getIdTokenResult().claims.role`.
-2. If custom claims exist in the active session token, the role is immediately initialized without waiting for a Firestore read.
-3. If no custom claim is present (new or legacy users), it falls back to a single read of `users/{uid}` in Firestore.
-
-### 2.3 Presentation vs Enforcement Boundaries
-* **Presentation Layer:** `RoleGuard.tsx` checks the authenticated user's role and renders UI or a 403 fallback.
-* **Database Security Layer:** Firebase Realtime Database rules (`database.rules.json`) strictly evaluate `auth.token.role` and `auth.token.deviceId`:
-  - Client writes to `/users/$uid` are disabled (`.write: false`).
-  - Active bus writes under `/activeBuses/$busKey` require `auth.token.role === 'driver' | 'admin'` or a path-isolated hardware token matching `auth.token.deviceId`.
-  - Chat messages under `/messages` are append-only (`!data.exists()`) with strict schema and sender verification.
+Hardware telemetry uses HTTPS directly to the backend. There is no message
+broker or direct device access to Firebase.
 
 ```mermaid
-sequenceDiagram
-    participant User
-    participant AuthProvider
-    participant Firebase Auth
-    participant RoleGuard
-    participant Protected Page
-
-    User->>AuthProvider: Opens Web Application
-    AuthProvider->>Firebase Auth: Attach onAuthStateChanged Listener
-    Firebase Auth-->>AuthProvider: Returns firebaseUser Session Token
-    
-    alt Custom Claim Exists in Token
-        Note over AuthProvider: Read tokenResult.claims.role<br>('admin' / 'driver' / 'passenger')
-    else Token missing claim
-        AuthProvider->>Firestore: Fallback Read users/{uid}
-        Firestore-->>AuthProvider: Returns Firestore Role
-    end
-
-    User->>RoleGuard: Navigates to Route (e.g., /admin)
-    RoleGuard->>AuthProvider: Consume Context (user, loading)
-    
-    alt Role Authorized
-        RoleGuard->>Protected Page: Render Route
-    else Role Unauthorized
-        RoleGuard-->>User: Render 403 Access Restricted
-    end
+flowchart LR
+  GNSS["NEO-M8N"] --> ESP["ESP32"]
+  ESP -->|"POST /api/devices/{id}/telemetry\nAuthorization: Device secret"| API["Express backend"]
+  API -->|"validate, authenticate,\nrate-limit, deduplicate"| INGEST["Telemetry service"]
+  INGEST -->|"live projection"| RTDB["RTDB activeBuses"]
+  INGEST -->|"restore session"| ACTIVE["Firestore active_rides"]
+  RTDB --> ENGINE["Trip-state worker"]
+  ENGINE --> ACTIVE
+  ENGINE --> HISTORY["ride_sessions + completed_trips"]
+  RTDB --> APPS["Passenger, driver, admin"]
 ```
 
-## 3. Real-Time GPS Tracking Data Flow
+This keeps the demo simple while preserving the important boundary: the ESP
+knows only its own device ID, secret, backend URL, and TLS root certificate.
+Bus and route identity come from the protected server-side device registry.
 
-Location updates happen completely outside the standard Node.js server. The ESP32 hardware modules physically on the buses stream directly to the Firebase Realtime Database (RTDB) using an adaptive transmission cadence of 2–10 seconds (or a 30-second stationary heartbeat). RTDB then broadcasts updates to the Passenger app.
+## Telemetry contract
+
+The request body must be JSON of at most 512 bytes containing exactly:
+
+```json
+{
+  "lat": 23.034,
+  "lng": 72.55,
+  "speed": 18.2,
+  "heading": 94.0,
+  "motionState": "moving",
+  "timestamp": 1800000000000
+}
+```
+
+The backend rejects extra/missing fields, invalid coordinates, speeds above
+200 km/h, invalid headings, stale/future timestamps, duplicate timestamps,
+disabled devices, invalid assignments, bad credentials, and excess traffic.
+Secrets are stored as salted scrypt verifiers and never returned to clients.
+
+## Authoritative lifecycle
 
 ```mermaid
-graph LR
-    subgraph Edge Layer [Hardware]
-        GPS1[NEO-M8N GPS]
-        ESP[ESP32 Hardware]
-        GPS1 -->|1. NMEA sentences| ESP
-        ESP -->|2. Delta changes only| RTDB
-    end
-
-    subgraph Firebase [Google Cloud]
-        RTDB[( Firebase Realtime Database )]
-    end
-
-    subgraph Subscribers [Listeners]
-        PApp[Passenger Live Map]
-        AApp[Admin Fleet Map]
-    end
-    
-    RTDB -->|3. Data Sync Stream| PApp
-    RTDB -->|3. Data Sync Stream| AApp
-
-    style RTDB fill:#ffca28,stroke:#f57f17,stroke-width:2px,color:black
+stateDiagram-v2
+  [*] --> PreDeparture: assigned driver arms ride
+  PreDeparture --> InService: GNSS enters stop 1 geofence
+  InService --> InService: next expected stop reached
+  InService --> Completed: final expected stop reached
+  Completed --> [*]
 ```
 
-### 3.1 Client-Side ETA Mathematics & Autonomous Tracking
-If a bus loses GPS signal or stops transmitting, the client does not wait helplessly. The architecture gracefully falls back to a **35km/h internal estimation math** (matching 4-wheeler transit speeds) overlaid onto the Haversine distance remaining to the next stop. This guarantees that passengers always see a highly accurate, speed-aware ETA projection even when GNSS hardware briefly fails.
+- Arming requires a fresh hardware GNSS fix, but may happen before the bus
+  reaches the first boarding stop.
+- Only the next expected stop can advance progress. A later stop cannot skip an
+  earlier one.
+- Stop crossing between two nearby fixes is accepted, preventing a fast bus
+  from missing a small geofence.
+- GNSS loss sets signal state to lost; it does not change trip lifecycle.
+- Driver and admin interfaces cannot edit GNSS position, stop index, trip
+  state, or manually end an active ride.
 
-When running autonomously with an **ESP32 + NEO-8M GNSS module** (without a human driver operating a web console), `currentStopIndex` is omitted from the hardware stream. The client automatically runs continuous proximity matching against the assigned route's stop list to infer the closest stop index, dimming passed stops and highlighting the next stop seamlessly.
+## Interruption recovery
 
-### 3.2 Production Stop Detection & Geofencing Architecture
-To prevent false-positive station arrivals and UI flickering caused by GNSS drift (NEO-8M ~2.5m CEP accuracy), stop detection in `PassengerMap.tsx` implements a **dual-radius hysteresis** and **route-sequence gated** geofencing engine:
+`active_rides/{busId_routeId}` is the canonical durable recovery record.
+`activeBuses/{busId_routeId}` is the low-latency public live projection.
 
-* **Entry Radius (`35 meters`):** When the bus comes within 35m of an upcoming stop on its route, the system marks entry and sets `inside = true`.
-* **Exit Hysteresis Radius (`45 meters`):** To prevent boundary oscillation (e.g., GPS drifting back and forth around 35m while parked at a stand), the "inside" state is held until the bus moves past 45m away.
-* **Dwell Gate (`10 seconds`):** A minimum 10-second residence inside the geofence confirms arrival for passenger notification/alert triggers.
-* **Route-Sequence Window (`±2 stops`):** Geofence evaluation is scoped to a ±2 stop window around the last-known stop index. This prevents out-of-order false snaps if a bus passes near a non-sequential station.
+If ESP power/Wi-Fi/GNSS stops, the live record remains active and is marked
+offline after the stale threshold. Passenger, driver, and admin panels retain
+the ride and show signal interruption. When the ESP reconnects, the backend
+restores the same session and stop index before processing subsequent ordered
+stops. The worker uses a Firestore lease so only one backend instance owns trip
+state, cleanup, and retention work.
 
-### 3.3 Custom Map Overlays (Semantic UI)
-To prevent native Google Maps controls from interfering with our highly styled floating action buttons (FABs), we explicitly pass `options={{ disableDefaultUI: true }}` to the `@vis.gl` wrapper. We then implement our own semantic layers (e.g. `LocateFixed`/`Navigation` buttons tracking the active bus or passenger, `MessageCircle` for live chat).
+## Latency and cost
 
-## 4. Admin Panel Rewrite Architecture
+- ESP publish gate: 3 seconds while moving; 30-second moving heartbeat;
+  60-second stationary heartbeat.
+- HTTPS credential checks use a bounded 60-second digest cache after the first
+  scrypt verification.
+- RTDB provides push updates to web apps; one shared listener per browser
+  avoids duplicate streams.
+- Client map motion is smoothed without delaying authoritative updates.
+- Passenger ETA uses the stored route polyline with cached distance indexes
+  and recalculates from RTDB push updates. It makes no runtime Routes API call
+  and adds no second backend write per telemetry sample.
+- Durable `active_rides` writes occur only when lifecycle state, stop progress,
+  delay, or session identity changes—not for every location sample.
 
-The Admin Panel has been rebuilt into a unified 5-tab interface (`Dashboard`, `Routes`, `Fleet`, `Personnel`, `Settings`). 
+Actual latency still depends on mobile data, HTTPS endpoint distance, Firebase
+region, browser connection, and GNSS sky visibility. It must be measured on the
+real bus route before acceptance.
 
-To avoid the cost of opening 5 different WebSocket listeners to Firebase RTDB/Firestore, the admin panel architecture heavily relies on conditionally mounted tabs using `&&` and isolated Context boundaries.
+## Security boundaries
 
-* **Layout Client Boundary:** `layout.tsx` is `"use client"` so it can wrap all panels in `RoleGuard` and `MapProviders`. `MapProviders` mounts the Google Maps JS SDK with `libraries={["places"]}` for place search.
-* **Route Management & Google Places Integration:** Route creation uses Google Maps Places Autocomplete (`google.maps.places.AutocompleteService` / `PlacesService`) directly in the toolbar for accurate place searching (e.g., Indian landmarks and campuses). Stop pins on the map are fully draggable (`AdvancedMarker draggable={true}`), updating `lat`/`lng` coordinates in real-time.
-* **Bus ID Standardisation:** Terminology throughout the Fleet Management panel aligns strictly with firmware conventions (`Bus ID` and `bus_01` placeholders instead of legacy `Hardware ID` / `BRTS-101`).
-* **Shared Firebase Connections:** Instead of using React Context for Firebase RTDB, tabs only mount when active, guaranteeing that `DashboardPanel` and `FleetManagementPanel` never accidentally double-subscribe to Firebase at the same time.
-* **Singleton `useSettings`:** For Firestore globals, `useSettings.ts` sits at the module level. Even if 10 components on the page consume settings, exactly 1 Firestore `onSnapshot` is spawned.
-
-## 5. PWA Auto-Update Strategy
-
-To ensure zero downtime and instant rollouts across PWAs and aggressive Safari caches, Eki implements a strict auto-polling strategy.
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant useAutoUpdate
-    participant FirebaseHosting
-    
-    Note over Browser: User backgrounds app
-    Note over Browser: Developer deploys new version
-    
-    Browser->>useAutoUpdate: User opens app (visibilitychange)
-    useAutoUpdate->>FirebaseHosting: Fetch /version.json?t=[timestamp]
-    FirebaseHosting-->>useAutoUpdate: Returns new timestamp
-    
-    Note over useAutoUpdate: Mismatch detected! (New vs Old)
-    
-    useAutoUpdate->>Browser: caches.delete() all PWA Caches
-    useAutoUpdate->>Browser: window.location.reload() (Hard Refresh)
-```
-
-## 6. Backend Dockerization
-
-The Node.js backend (located in the `/backend` directory) includes a `Dockerfile`. While Firebase (RTDB & Firestore) efficiently handles direct client-to-database real-time streaming, the Dockerized Node.js backend securely manages:
-
-* **Heavy Computation:** Interacting with the Google Maps Routes API v2 to compute complex polylines and ETAs (Cost optimization).
-* **Security & Validation:** Hiding sensitive Server API keys and enforcing complex business logic.
-* **Live-data management:** Firebase RTDB/Firestore listeners carry live updates; the backend does not run a Socket.IO gateway.
+- TLS certificate verification is mandatory in firmware; insecure TLS is not
+  supported.
+- Firebase RTDB telemetry is client-read/server-write.
+- `devices` and `active_rides` are inaccessible to browser clients.
+- Browser REST calls use Firebase ID tokens and role/assignment checks.
+- Device credentials are independent from Firebase and scoped by the
+  server-side device-to-bus/route binding.
+- Production must add edge rate limiting, secret management, monitoring,
+  backups, and physical ESP32 secure boot/flash encryption.

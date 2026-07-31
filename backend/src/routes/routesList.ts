@@ -14,7 +14,7 @@ const router = Router();
  */
 router.get("/", requireAuth, async (_req: Request, res: Response) => {
   try {
-    const snapshot = await db.collection("routes").get();
+    const snapshot = await db.collection("routes").limit(250).get();
     const routes = snapshot.docs.map((doc) => {
       const data = doc.data();
       return {

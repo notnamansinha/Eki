@@ -10,10 +10,11 @@ import {
   useState,
 } from "react";
 import { notifyAuthReady } from "@/lib/authState";
+import { ensureAppCheck } from "@/lib/firebaseAppCheck";
 
 export type UserRole = "passenger" | "driver" | "admin" | null;
 
-export interface AppUser {
+interface AppUser {
   uid: string;
   email: string | null;
   displayName: string | null;
@@ -53,125 +54,131 @@ function useAuthState(): AuthContextValue {
       .then(async ([{ browserLocalPersistence, onAuthStateChanged, setPersistence }, { auth }]) => {
         if (disposed) return;
 
+        // Initialise AppCheck here (post first-paint) rather than as a bare
+        // side-effect import in Providers. This keeps the reCAPTCHA iframe
+        // injection off the LCP critical path while still running before any
+        // Firestore / RTDB calls that AppCheck needs to gate.
+        ensureAppCheck();
+
         // Keep an explicitly signed-in account across navigation, PWA restarts
         // and normal reloads. Only an explicit sign-out should end the session.
         await setPersistence(auth, browserLocalPersistence);
         if (disposed) return;
 
         unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      clearTimeout(authTimeout);
-      const currentGen = ++generation;
-      notifyAuthReady();
+          clearTimeout(authTimeout);
+          const currentGen = ++generation;
+          notifyAuthReady();
 
-      if (firebaseUser) {
-        const storedRole = window.localStorage.getItem(`eki:role:${firebaseUser.uid}`);
-        const cachedRole: UserRole =
-          storedRole === "passenger" || storedRole === "driver" || storedRole === "admin"
-            ? storedRole
-            : null;
+          if (firebaseUser) {
+            const storedRole = window.localStorage.getItem(`eki:role:${firebaseUser.uid}`);
+            const cachedRole: UserRole =
+              storedRole === "passenger" || storedRole === "driver" || storedRole === "admin"
+                ? storedRole
+                : null;
 
-        // Restore the last verified role immediately. Firebase claims remain
-        // the authorization boundary and refresh this value in the background.
-        if (cachedRole) {
-          setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName,
-            photoURL: firebaseUser.photoURL,
-            role: cachedRole,
-            isAnonymous: firebaseUser.isAnonymous,
-          });
-          setLoading(false);
-        }
-
-        try {
-          // Role claims are already present in a persisted Firebase session, so
-          // this returns without a Firestore round trip for normal app starts.
-          // They are issued by the trusted admin sync job, unlike client data.
-          const tokenResult = await firebaseUser.getIdTokenResult();
-          const claimedRole = tokenResult.claims.role;
-
-          if (
-            claimedRole === "passenger" ||
-            claimedRole === "driver" ||
-            claimedRole === "admin"
-          ) {
-            if (currentGen !== generation) return;
-            window.localStorage.setItem(`eki:role:${firebaseUser.uid}`, claimedRole);
-            setUser({
-              uid: firebaseUser.uid,
-              email: firebaseUser.email,
-              displayName: firebaseUser.displayName,
-              photoURL: firebaseUser.photoURL,
-              role: claimedRole,
-              isAnonymous: firebaseUser.isAnonymous,
-            });
-            return;
-          }
-
-          // Legacy/new accounts without a custom role claim fall back to
-          // Firestore so their user profile can be created or migrated.
-          const [{ getFirestore, doc, getDoc, setDoc }, { firebaseApp }] =
-            await Promise.all([
-              import("firebase/firestore"),
-              import("@/lib/firebaseCore"),
-            ]);
-          const db = getFirestore(firebaseApp);
-          const userDocRef = doc(db, "users", firebaseUser.uid);
-          const userSnap = await getDoc(userDocRef);
-          
-          if (currentGen !== generation) return;
-
-          let role: UserRole = "passenger";
-
-          if (userSnap.exists()) {
-            role = (userSnap.data()?.role as UserRole) ?? "passenger";
-          } else {
-            const userData = {
-              uid: firebaseUser.uid,
-              email: firebaseUser.email || "",
-              displayName: firebaseUser.displayName || "Unknown User",
-              photoURL: firebaseUser.photoURL || "",
-              role,
-              createdAt: Date.now(),
-            };
-            try {
-              await setDoc(userDocRef, userData);
-            } catch (dbErr) {
-              console.error("Failed to write new user to Firestore:", dbErr);
+            // Restore the last verified role immediately. Firebase claims remain
+            // the authorization boundary and refresh this value in the background.
+            if (cachedRole) {
+              setUser({
+                uid: firebaseUser.uid,
+                email: firebaseUser.email,
+                displayName: firebaseUser.displayName,
+                photoURL: firebaseUser.photoURL,
+                role: cachedRole,
+                isAnonymous: firebaseUser.isAnonymous,
+              });
+              setLoading(false);
             }
+
+            try {
+              // Role claims are already present in a persisted Firebase session, so
+              // this returns without a Firestore round trip for normal app starts.
+              // They are issued by the trusted admin sync job, unlike client data.
+              const tokenResult = await firebaseUser.getIdTokenResult();
+              const claimedRole = tokenResult.claims.role;
+
+              if (
+                claimedRole === "passenger" ||
+                claimedRole === "driver" ||
+                claimedRole === "admin"
+              ) {
+                if (currentGen !== generation) return;
+                window.localStorage.setItem(`eki:role:${firebaseUser.uid}`, claimedRole);
+                setUser({
+                  uid: firebaseUser.uid,
+                  email: firebaseUser.email,
+                  displayName: firebaseUser.displayName,
+                  photoURL: firebaseUser.photoURL,
+                  role: claimedRole,
+                  isAnonymous: firebaseUser.isAnonymous,
+                });
+                return;
+              }
+
+              // Legacy/new accounts without a custom role claim fall back to
+              // Firestore so their user profile can be created or migrated.
+              const [{ getFirestore, doc, getDoc, setDoc }, { firebaseApp }] =
+                await Promise.all([
+                  import("firebase/firestore"),
+                  import("@/lib/firebaseCore"),
+                ]);
+              const db = getFirestore(firebaseApp);
+              const userDocRef = doc(db, "users", firebaseUser.uid);
+              const userSnap = await getDoc(userDocRef);
+
+              if (currentGen !== generation) return;
+
+              let role: UserRole = "passenger";
+
+              if (userSnap.exists()) {
+                role = (userSnap.data()?.role as UserRole) ?? "passenger";
+              } else {
+                const userData = {
+                  uid: firebaseUser.uid,
+                  email: firebaseUser.email || "",
+                  displayName: firebaseUser.displayName || "Unknown User",
+                  photoURL: firebaseUser.photoURL || "",
+                  role,
+                  createdAt: Date.now(),
+                };
+                try {
+                  await setDoc(userDocRef, userData);
+                } catch (dbErr) {
+                  console.error("Failed to write new user to Firestore:", dbErr);
+                }
+              }
+
+              if (currentGen !== generation) return;
+              window.localStorage.setItem(`eki:role:${firebaseUser.uid}`, role || "passenger");
+
+              setUser({
+                uid: firebaseUser.uid,
+                email: firebaseUser.email,
+                displayName: firebaseUser.displayName,
+                photoURL: firebaseUser.photoURL,
+                role,
+                isAnonymous: firebaseUser.isAnonymous,
+              });
+            } catch (err) {
+              console.error("Firestore role fetch failed:", err);
+              if (currentGen !== generation) return;
+              setUser({
+                uid: firebaseUser.uid,
+                email: firebaseUser.email,
+                displayName: firebaseUser.displayName,
+                photoURL: firebaseUser.photoURL,
+                role: cachedRole || "passenger",
+                isAnonymous: firebaseUser.isAnonymous,
+              });
+            } finally {
+              if (currentGen === generation) setLoading(false);
+            }
+          } else {
+            if (currentGen !== generation) return;
+            setUser(null);
+            setLoading(false);
           }
-
-          if (currentGen !== generation) return;
-          window.localStorage.setItem(`eki:role:${firebaseUser.uid}`, role || "passenger");
-
-          setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName,
-            photoURL: firebaseUser.photoURL,
-            role,
-            isAnonymous: firebaseUser.isAnonymous,
-          });
-        } catch (err) {
-          console.error("Firestore role fetch failed:", err);
-          if (currentGen !== generation) return;
-          setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName,
-            photoURL: firebaseUser.photoURL,
-            role: cachedRole || "passenger",
-            isAnonymous: firebaseUser.isAnonymous,
-          });
-        } finally {
-          if (currentGen === generation) setLoading(false);
-        }
-      } else {
-        if (currentGen !== generation) return;
-        setUser(null);
-        setLoading(false);
-      }
         });
       })
       .catch((error) => {
@@ -221,12 +228,18 @@ function useAuthState(): AuthContextValue {
         window.localStorage.removeItem(`eki:role:${signedOutUid}`);
       }
       window.localStorage.removeItem("eki:last-workspace");
-      const [{ clearCollectionCache }, { clearSettingsCache }] = await Promise.all([
+      const [
+        { clearCollectionCache },
+        { clearSettingsCache },
+        { invalidateLiveBusCache },
+      ] = await Promise.all([
         import("@/hooks/useCollection"),
         import("@/hooks/useSettings"),
+        import("@/lib/liveBusStore"),
       ]);
       clearCollectionCache();
       clearSettingsCache();
+      invalidateLiveBusCache();
       setUser(null);
     } catch (error) {
       console.error("Logout failed:", error);

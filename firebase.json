@@ -3,7 +3,8 @@
     "rules": "database.rules.json"
   },
   "firestore": {
-    "rules": "firestore.rules"
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   },
   "hosting": {
     "public": "frontend/out",
@@ -35,7 +36,7 @@
           },
           {
             "key": "Content-Security-Policy",
-            "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://www.google.com https://maps.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.googleusercontent.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebasedatabase.app https://*.firebaseapp.com wss://*.firebaseio.com wss://*.firebasedatabase.app; frame-src https://accounts.google.com https://*.firebaseapp.com; worker-src 'self' blob:; form-action 'self'"
+            "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'sha256-03bT9qIh3IMJ7Pc+dXmBXjKz6fClIYzH6ifwpAvYnGs=' 'sha256-0jehuMSZMVl5UFN83FAi7dJBdKypslLTW/Sw49Gh4/Q=' 'sha256-5eQiQ0HjeLWplVvFkhu8DLCiEU8Px/sbvfGgU5HxHkQ=' 'sha256-9joSeovUzkpgp3qD5bTiEiCv2gxXVc5kkbsd4V8EGLQ=' 'sha256-E7rC4mqDTMqvvA3OJF3uSPVwnekVy5o+uXPcIZzl1k4=' 'sha256-IJPkmI0IptIJwCZ9Hfmhh6f7porON3xmnR5IASuig7U=' 'sha256-LpzEfw7DVWe+3L3M9AZJ850rD1J2MD9IIq7s1K1QRaI=' 'sha256-OAFKlH4ly10Srt4T36bnKKg7JGyc/5jzikALu4eJwPQ=' 'sha256-OBTN3RiyCV4Bq7dFqZ5a2pAXjnCcCYeTJMO2I/LYKeo=' 'sha256-Oe7EKUk9pGOzbh7AfmoM9cAUv/kwIQNnbPyELqlW0Uo=' 'sha256-Ov3qFORZORQ5IOS37+F+M6elQlieBHeal0iCS09JplQ=' 'sha256-P1WcItQJqorVtHPl5zXOf44dcpPfVA86U1CB5G8E2do=' 'sha256-PUc9NnBGsArPNxK0GNMtCXJtbe93+DoBIRglYY0e764=' 'sha256-RIYEZzUuP3jioVKkcXuiyZyzatJwgOgYo8T1iGx1/Mw=' 'sha256-UO7aPygM8weYSyEw8t3HvngT1YUBK6A/yaDAKGqYBaM=' 'sha256-Ve4jenIBfbAupUGDCvMZuyB68fQiGJhVtmz16Fj1bso=' 'sha256-XucZ/iDaOWZ4sPJsvLK5QOTufmCU7qd4xLZDMUEHdvs=' 'sha256-Y/LGc9v3g08BJ79EI9jFezBfPzQo/OKayCW14ZexVXI=' 'sha256-amtpbuTTxAvepejuwSzNbJc184HNO34YsvL4LVnB3P4=' 'sha256-d75ieawl5G1GFaB7KOZgtR6++iz5uO8yKdoh1If+oX4=' 'sha256-dCNSyJ5lUTyOGCqfr4/dw/8AgKx4nALZf3PwpdqUsps=' 'sha256-etCxrwECMN1dMS4oK6YlbectfbUDwnM+9Ymr+WxOBdA=' 'sha256-fJfdrDSlLBwPKcMpxpNlOspONrXyIsFgrPKeB2FEmoQ=' 'sha256-gmJvrFBld9fsQXu8kNOyGrTZbiKBIatvPzCH2z296Nk=' 'sha256-hZ1DhEKFVoA2na6JW4MZxoE9xH9PsVSoyDrPlg1KMVc=' 'sha256-hsHoxl4rWpOEzAXEz6VSAy8EOP5JwFs+WPM2mAwMvao=' 'sha256-idcE7pfxTkuywHUOBV1hmd++xR43H1YcMLSQbRj7S68=' 'sha256-k2/gu1y+AP/WJYVIspWpcoW7v+BBbvmiU88GZuM91bg=' 'sha256-lDxfC6lRysEE0b/bRflIOh1zzQE9GrE0fLEFBuFsTGI=' 'sha256-lxhDnbc+JW5RwiDmzNe/E4uZzX9gV+a8L4bZBBCo1D4=' 'sha256-nzmdl+AXdlsLPaG5B+ouuCXbm2uL+onDzFRTXheLkqo=' 'sha256-o6vrr7DVUK1qUAJpDY120DzYl1AsTVvSJiyNwjGKfS4=' 'sha256-rRRqQQVHhaAWIGFLWeAsprC4z9Cohx11GUeZQQcRj8k=' https://apis.google.com https://www.gstatic.com https://www.google.com https://maps.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.googleusercontent.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebasedatabase.app https://*.firebaseapp.com wss://*.firebaseio.com wss://*.firebasedatabase.app; frame-src https://accounts.google.com https://*.firebaseapp.com; worker-src 'self' blob:; form-action 'self'"
           },
           {
             "key": "Referrer-Policy",
@@ -53,6 +54,19 @@
           {
             "key": "Cache-Control",
             "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/sw.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          },
+          {
+            "key": "Service-Worker-Allowed",
+            "value": "/"
           }
         ]
       },

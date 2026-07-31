@@ -5,12 +5,11 @@ import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff } from "lucide-react";
-import { rtdb } from "@/lib/firebaseDatabase";
-import { ref, onValue } from "firebase/database";
-import { waitForAuth } from "@/lib/authState";
+import { subscribeLiveBuses } from "@/lib/liveBusStore";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import { useSettings } from "@/hooks/useSettings";
-import { hasValidBusCoordinates, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
+import { hasValidBusCoordinates } from "@/lib/liveBusFreshness";
+import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
 
 const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTrackingMap"), {
@@ -34,7 +33,7 @@ interface ActiveBusData {
   speed: number;
   status?: string; // "active" | "offline"
   deviceState: string;
-  tripState: string;
+  tripState: "pre_departure" | "in_service" | "completed";
   motionState: string;
   timestamp: number;
   driverId?: string;
@@ -55,6 +54,7 @@ export default function PassengerPage() {
   const [currentView, setCurrentView] = useState<ViewState>("home");
   const { routes } = useRoutes();
   const [selectedRouteId, setSelectedRouteId] = useState("");
+  const [selectedBoardingStopId, setSelectedBoardingStopId] = useState("");
   const [activeBuses, setActiveBuses] = useState<ActiveBusData[]>([]);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -64,6 +64,7 @@ export default function PassengerPage() {
   const trackingBusIdRef = useRef<string | null>(null);
   const trackingDriverIdRef = useRef<string | null>(null);
   const latestBusDriversRef = useRef<Map<string, string>>(new Map());
+  const latestTripStatesRef = useRef<Map<string, ActiveBusData["tripState"]>>(new Map());
   const [endedMessage, setEndedMessage] = useState(false);
 
   // Listen to Firebase Realtime Database for active buses using the existing
@@ -71,36 +72,41 @@ export default function PassengerPage() {
   // Visibility is now driven purely by tripState (computed by the backend trip
   // state machine). The old frontend departure-detection hack is gone.
   useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-    let isMounted = true;
-
-    waitForAuth().then(() => {
-      if (!isMounted) return;
-      const busesRef = ref(rtdb, "activeBuses");
-
-      unsubscribe = onValue(busesRef, (snapshot) => {
-        const data = snapshot.val();
+    const unsubscribe = subscribeLiveBuses((snapshot) => {
+        const data = snapshot as Record<string, ActiveBusData> | null;
         const newBuses: ActiveBusData[] = [];
         const driverMap = new Map<string, string>();
 
         if (data) {
           Object.entries(data as Record<string, ActiveBusData>).forEach(([key, bus]) => {
-            bus.busId = bus.busId || key.split("_")[0];
+            const normalizedBus = bus.busId
+              ? bus
+              : { ...bus, busId: key.split("_")[0] };
+            latestTripStatesRef.current.set(
+              normalizedBus.busId,
+              normalizedBus.tripState,
+            );
             // Safety net: discard stale entries while RTDB cleanup catches up.
-            const isFresh = isLiveBusTimestamp(bus.timestamp);
-            if (!bus.routeId || !bus.busId || !isFresh || !hasValidBusCoordinates(bus.lat, bus.lng)) {
+            if (
+              !normalizedBus.routeId ||
+              !normalizedBus.busId ||
+              !hasValidBusCoordinates(normalizedBus.lat, normalizedBus.lng)
+            ) {
               return;
             }
 
             // Show bus if it's actively tracking — allow pre_departure so the
             // backend tripState geofence doesn't hide a freshly started driver.
-            const isActive = bus.tripState === "in_service" || bus.tripState === "pre_departure";
-            // Only skip if explicitly marked offline by driver stop action
-            const isOffline = bus.status === "offline" || bus.deviceState === "offline";
-            if (!isActive || isOffline) return;
+            if (
+              !isActiveRideSnapshot(
+                normalizedBus as unknown as Record<string, unknown>,
+              )
+            ) return;
 
-            newBuses.push(bus);
-            if (bus.driverId) driverMap.set(bus.busId, bus.driverId);
+            newBuses.push(normalizedBus);
+            if (normalizedBus.driverId) {
+              driverMap.set(normalizedBus.busId, normalizedBus.driverId);
+            }
           });
         }
 
@@ -110,11 +116,9 @@ export default function PassengerPage() {
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed:", error.message);
       });
-    });
 
     return () => {
-      isMounted = false;
-      if (unsubscribe) unsubscribe();
+      unsubscribe();
     };
   }, [connectionGeneration, markSnapshotReceived, resumeGeneration]);
 
@@ -125,7 +129,10 @@ export default function PassengerPage() {
     ? selectedRouteId
     : displayRoutes[0]?.id ?? "";
   const activeRoute = displayRoutes.find(route => route.id === effectiveRouteId);
-  const effectiveStopId = activeRoute?.stops?.[0]?.id ?? "";
+  const effectiveStopId =
+    activeRoute?.stops?.some((stop) => stop.id === selectedBoardingStopId)
+      ? selectedBoardingStopId
+      : activeRoute?.stops?.[0]?.id ?? "";
 
   const targetStop = activeRoute?.stops?.find(s => s.id === effectiveStopId) ||
     (activeRoute?.stops && activeRoute.stops.length > 0
@@ -161,6 +168,10 @@ export default function PassengerPage() {
     } else if (trackingBusIdRef.current) {
       const finishedBusId = trackingBusIdRef.current;
       const finishedDriverId = trackingDriverIdRef.current;
+      const lastTripState = latestTripStatesRef.current.get(finishedBusId);
+      if (lastTripState !== "completed") {
+        return;
+      }
       noticeTimer = setTimeout(() => setEndedMessage(true), 0);
       feedbackTimer = setTimeout(() => {
         setFeedbackBusId(finishedBusId);
@@ -258,26 +269,43 @@ export default function PassengerPage() {
               className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth hide-scrollbar px-4 pb-32"
               style={{ scrollBehavior: 'smooth', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
-              {settings.announcementActive && settings.announcementText && (
-                <div className="mx-1 mb-3 rounded-xl px-4 py-2.5 flex items-center gap-2" style={{ background: "var(--accent-subtle)", border: "1px solid var(--accent-glow)" }}>
-                  <span className="text-[11px] font-semibold" style={{ color: "var(--accent)" }}>{settings.announcementText}</span>
-                </div>
-              )}
               {displayRoutes.length > 0 ? (
-                <RouteCarousel
-                  routes={displayRoutes}
-                  selectedRouteId={effectiveRouteId}
-                  onClick={handleRouteSelect}
-                  getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
-                />
+                <>
+                  {settings.announcementActive && settings.announcementText && (
+                    <div
+                      className="rounded-2xl p-4 mb-3 mx-1 flex items-center justify-center border text-center"
+                      style={{ background: "#4c0519", borderColor: "#881337" }}
+                    >
+                      <p className="text-[13px] font-black tracking-wider uppercase leading-tight text-[#fecdd3]">
+                        {settings.announcementText}
+                      </p>
+                    </div>
+                  )}
+                  <RouteCarousel
+                    routes={displayRoutes}
+                    selectedRouteId={effectiveRouteId}
+                    onClick={handleRouteSelect}
+                    getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
+                  />
+                </>
               ) : (
-                <div className="rounded-xl p-8 text-center mx-1"
+                <div className="rounded-xl p-8 text-center mx-1 flex flex-col items-center justify-center gap-2"
                   style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
-                  <p className="text-[13px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>
+                  {settings.announcementActive && settings.announcementText && (
+                    <div className="inline-flex items-center px-4 py-1.5 rounded-full border mb-1"
+                      style={{ background: "#4c0519", borderColor: "#881337" }}>
+                      <span className="text-[12px] font-black tracking-wider uppercase text-[#fecdd3]">
+                        {settings.announcementText}
+                      </span>
+                    </div>
+                  )}
+                  <p className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>
                     {settings.noBusesMessage || "No buses running"}
                   </p>
                   <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
-                    {(settings.noBusesSubMessage || "Service starts at {time}").replace("{time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
+                    {isResuming
+                      ? "Unable to reach live data. Check your connection."
+                      : (settings.noBusesSubMessage || "Service starts at {time}").replace("{time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
                   </p>
                 </div>
               )}
@@ -295,7 +323,7 @@ export default function PassengerPage() {
                 <div className="flex items-center gap-4 max-w-lg mx-auto pt-12">
                   <button
                     onClick={() => setCurrentView("home")}
-                    className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 hover:opacity-90 shadow-sm cursor-pointer"
+                    className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 hover:opacity-90 shadow-sm cursor-pointer"
                     style={{ backgroundColor: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}
                     aria-label="Back to home"
                     onPointerDown={(e) => (e.currentTarget.style.backgroundColor = "var(--surface-4)")}
@@ -311,7 +339,8 @@ export default function PassengerPage() {
                         route={activeRoute}
                         userId={user?.uid || "anonymous"}
                         userName={user?.displayName || "Rider"}
-                        onBoarded={() => {}}
+                        tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
+                        onBoardingStopChange={setSelectedBoardingStopId}
                       />
                     </div>
                   ) : (

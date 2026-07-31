@@ -1,7 +1,7 @@
-import type { MotionState, TripState } from "../types";
+import type { LegacyTripState, MotionState, TripState } from "../types";
 import { haversineMeters } from "../lib/geo";
 
-export interface TripRouteStop {
+interface TripRouteStop {
   lat: number;
   lng: number;
 }
@@ -9,8 +9,9 @@ export interface TripRouteStop {
 export interface TripStateInput {
   lat: number;
   lng: number;
+  previousPosition?: TripRouteStop;
   motionState: MotionState;
-  currentTripState: TripState;
+  currentTripState: LegacyTripState;
   currentStopIndex: number;
   stops: TripRouteStop[];
   hasDepartedOrigin: boolean;
@@ -24,6 +25,53 @@ export interface TripStateResult {
 
 export const STOP_GEOFENCE_M = 20;
 export const ORIGIN_DEPARTURE_M = 150;
+const MAX_TELEMETRY_SEGMENT_M = 250;
+
+function distanceToSegmentMeters(
+  point: TripRouteStop,
+  start: TripRouteStop,
+  end: TripRouteStop,
+): number {
+  const metersPerLatitudeDegree = 111_320;
+  const metersPerLongitudeDegree =
+    metersPerLatitudeDegree * Math.cos((point.lat * Math.PI) / 180);
+  const startX = (start.lng - point.lng) * metersPerLongitudeDegree;
+  const startY = (start.lat - point.lat) * metersPerLatitudeDegree;
+  const endX = (end.lng - point.lng) * metersPerLongitudeDegree;
+  const endY = (end.lat - point.lat) * metersPerLatitudeDegree;
+  const deltaX = endX - startX;
+  const deltaY = endY - startY;
+  const lengthSquared = deltaX * deltaX + deltaY * deltaY;
+
+  if (lengthSquared === 0) return Math.hypot(startX, startY);
+
+  const projection = Math.min(
+    1,
+    Math.max(0, -(startX * deltaX + startY * deltaY) / lengthSquared),
+  );
+  return Math.hypot(
+    startX + projection * deltaX,
+    startY + projection * deltaY,
+  );
+}
+
+function wasStopReached(
+  stop: TripRouteStop,
+  position: TripRouteStop,
+  previousPosition: TripRouteStop | undefined,
+): boolean {
+  if (haversineMeters(position, stop) <= STOP_GEOFENCE_M) return true;
+  if (
+    !previousPosition ||
+    haversineMeters(previousPosition, position) > MAX_TELEMETRY_SEGMENT_M
+  ) {
+    return false;
+  }
+  return (
+    distanceToSegmentMeters(stop, previousPosition, position) <=
+    STOP_GEOFENCE_M
+  );
+}
 
 /**
  * Pure trip lifecycle decision. Departure evidence is supplied by and returned
@@ -42,7 +90,10 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
 
   if (stops.length === 0) {
     return {
-      tripState: "in_service",
+      tripState:
+        currentTripState === "maintenance"
+          ? "in_service"
+          : currentTripState,
       currentStopIndex: 0,
       hasDepartedOrigin: input.hasDepartedOrigin,
     };
@@ -50,7 +101,10 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
 
   if (motionState === "uncertain") {
     return {
-      tripState: "maintenance",
+      tripState:
+        currentTripState === "maintenance"
+          ? "in_service"
+          : currentTripState,
       currentStopIndex,
       hasDepartedOrigin: input.hasDepartedOrigin,
     };
@@ -76,15 +130,46 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
   }
 
   if (currentTripState === "in_service") {
-    const completionProgressIndex = Math.max(0, stops.length - 2);
+    const lastIndex = stops.length - 1;
+    const safeCurrentIndex = Math.min(
+      Math.max(Math.trunc(currentStopIndex), 0),
+      lastIndex,
+    );
+
+    // Stop zero represents the origin. It is left only after there is strong
+    // departure evidence, never merely because the client supplied an index.
+    if (safeCurrentIndex === 0 && hasDepartedOrigin && lastIndex > 0) {
+      return {
+        tripState: "in_service",
+        currentStopIndex: 1,
+        hasDepartedOrigin,
+      };
+    }
+
+    // Only the next expected stop may advance the trip. The bounded segment
+    // check still catches a fast crossing between two fixes, but it never
+    // permits a downstream stop to skip one or more configured stops.
+    const expectedStop = stops[safeCurrentIndex];
+    const reachedExpectedStop =
+      safeCurrentIndex > 0 &&
+      wasStopReached(expectedStop, position, input.previousPosition);
+    if (reachedExpectedStop && safeCurrentIndex < lastIndex) {
+      return {
+        tripState: "in_service",
+        currentStopIndex: safeCurrentIndex + 1,
+        hasDepartedOrigin,
+      };
+    }
+
     const canComplete =
       hasDepartedOrigin &&
-      currentStopIndex >= completionProgressIndex &&
-      haversineMeters(position, lastStop) <= STOP_GEOFENCE_M;
+      safeCurrentIndex === lastIndex &&
+      reachedExpectedStop &&
+      wasStopReached(lastStop, position, input.previousPosition);
 
     return {
       tripState: canComplete ? "completed" : "in_service",
-      currentStopIndex: canComplete ? stops.length - 1 : currentStopIndex,
+      currentStopIndex: safeCurrentIndex,
       hasDepartedOrigin,
     };
   }
