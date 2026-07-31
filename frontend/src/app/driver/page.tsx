@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useBuses } from "@/hooks/useBuses";
-import { Map, CircleUserRound as User, MessageCircle, ArrowLeft } from "lucide-react";
+import { Map, CircleUserRound as User, MessageCircle, ArrowLeft, WifiOff } from "lucide-react";
 import { auth } from "@/lib/firebaseAuth";
 import { rtdb } from "@/lib/firebaseDatabase";
 import { ref, onValue } from "firebase/database";
@@ -24,7 +24,7 @@ const DriverMap = dynamic(() => import("@/components/maps/DriverMap"), {
 type Tab = "map" | "profile";
 
 export default function DriverPage() {
-  const { resumeGeneration } = useRTDBResume();
+  const { isResuming, resumeGeneration, markSnapshotReceived } = useRTDBResume();
   const router = useRouter();
   const { user } = useAuth();
   const { routes } = useRoutes();
@@ -102,6 +102,7 @@ export default function DriverPage() {
 
     const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
     const unsubscribe = onValue(busRef, (snapshot) => {
+        markSnapshotReceived();
         const data = snapshot.val();
         if (data && Number.isFinite(data.lat) && Number.isFinite(data.lng)) {
           setDriverLocation({
@@ -133,7 +134,7 @@ export default function DriverPage() {
     return () => {
       unsubscribe();
     };
-  }, [busId, driverId, selectedRouteIds, resumeGeneration]);
+  }, [busId, driverId, markSnapshotReceived, selectedRouteIds, resumeGeneration]);
 
   const handleOpenMessaging = () => {
     setIsMessagingOpen(true);
@@ -142,6 +143,17 @@ export default function DriverPage() {
 
   return (
     <div className="flex flex-col overflow-hidden" style={{ height: "100dvh", background: "var(--surface-0)", color: "var(--text-primary)" }}>
+      {isResuming && Boolean(busId) && selectedRouteIds.length === 1 && (
+        <div
+          className="fixed left-4 right-4 z-[100] flex items-center gap-2 rounded-xl border border-amber-400/20 bg-zinc-950 px-4 py-3 text-sm font-semibold text-amber-300 shadow-lg"
+          style={{ top: "calc(env(safe-area-inset-top) + 1rem)" }}
+          role="status"
+          aria-live="polite"
+        >
+          <WifiOff className="size-4 shrink-0" aria-hidden="true" />
+          <span>Reconnecting to live bus data...</span>
+        </div>
+      )}
       <div className="relative flex-1 flex flex-col overflow-hidden min-h-0">
 
         <div className={`absolute inset-0 z-0 flex flex-col ${activeTab === "map" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
