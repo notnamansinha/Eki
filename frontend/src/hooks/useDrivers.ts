@@ -46,7 +46,12 @@ export function useDrivers() {
           setLoading(false);
         },
         error => {
-          console.error("Error fetching drivers:", error);
+          const code = (error as { code?: string })?.code;
+          if (code === "permission-denied") {
+            console.warn("[useDrivers] Permission denied for drivers list query");
+          } else {
+            console.error("Error fetching drivers:", error);
+          }
           setLoadedScope(scope);
           setLoading(false);
         },

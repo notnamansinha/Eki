@@ -59,13 +59,11 @@ export default function PassengerBoardingView({
         // a legacy array-shaped passengers field in an older ride_session document
         // that can't be updated with map-key dot notation) from other errors.
         if (typeof err === "object" && err !== null && "code" in err && err.code === "permission-denied") {
-          console.error(
-            `[PassengerBoardingView] Boarding sync blocked for session ${sessionId} ` +
-            "— possibly a legacy array-shaped passengers manifest. Backend migration required.",
-            err
+          console.warn(
+            `[PassengerBoardingView] Boarding sync restricted for session ${sessionId}: permission denied.`
           );
         } else {
-          console.error("Failed to sync passenger:", errorMessage(err));
+          console.warn("Failed to sync passenger:", errorMessage(err));
         }
       }
     };

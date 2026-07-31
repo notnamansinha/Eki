@@ -161,7 +161,12 @@ function useAuthState(): AuthContextValue {
                 isAnonymous: firebaseUser.isAnonymous,
               });
             } catch (err) {
-              console.error("Firestore role fetch failed:", err);
+              const code = (err as { code?: string })?.code;
+              if (code === "permission-denied") {
+                console.warn("[Auth] Firestore role document read permission denied");
+              } else {
+                console.error("Firestore role fetch failed:", err);
+              }
               if (currentGen !== generation) return;
               setUser({
                 uid: firebaseUser.uid,

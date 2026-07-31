@@ -97,7 +97,12 @@ export function useCollection<T>(
               currentEntry.callbacks.forEach(cb => cb());
             },
             (error) => {
-              console.error(`Error fetching ${collectionName}:`, error);
+              const code = (error as { code?: string })?.code;
+              if (code === "permission-denied") {
+                console.warn(`[useCollection] Permission denied for ${collectionName}`);
+              } else {
+                console.error(`Error fetching ${collectionName}:`, error);
+              }
               currentEntry.loading = false;
               currentEntry.callbacks.forEach(cb => cb());
             }
