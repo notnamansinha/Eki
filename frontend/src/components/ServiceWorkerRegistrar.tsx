@@ -25,20 +25,49 @@ export default function ServiceWorkerRegistrar() {
       return;
     }
 
+    let cancelled = false;
+    let updateInterval: ReturnType<typeof setInterval> | undefined;
+    let activeRegistration: ServiceWorkerRegistration | undefined;
+    let reloading = false;
+    let hadController = Boolean(navigator.serviceWorker.controller);
+
+    const handleControllerChange = () => {
+      if (!hadController) {
+        hadController = true;
+        return;
+      }
+      if (reloading) return;
+      reloading = true;
+      window.location.reload();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      activeRegistration?.update().catch(() => {
+        // Offline update checks are retried on the next focus or interval.
+      });
+    };
+
+    navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     // Defer registration until after initial paint + load to avoid contention
     // between SW precaching and the page's own critical resource fetches.
     const register = () => {
       navigator.serviceWorker
-        .register("/sw.js", { scope: "/" })
+        .register("/sw.js", { scope: "/", updateViaCache: "none" })
         .then((registration) => {
-          // Check for updates periodically (every 60 minutes).
+          if (cancelled) return;
+          activeRegistration = registration;
+
+          // Check for updates periodically (every 15 minutes).
           // This is important for a campus transit app where the tab may be
           // open for hours — students keep the PWA open all day.
-          const interval = setInterval(() => {
+          updateInterval = setInterval(() => {
             registration.update().catch(() => {
               // Silently ignore update check failures (offline, etc.)
             });
-          }, 60 * 60 * 1000);
+          }, 15 * 60 * 1000);
 
           // If a new SW is already waiting (e.g. updated while another tab
           // was open), activate it immediately. For a transit app, the latest
@@ -58,19 +87,13 @@ export default function ServiceWorkerRegistrar() {
                 navigator.serviceWorker.controller
               ) {
                 // A new SW is installed and there's already an active one.
-                // Tell it to take over immediately — no reload prompt needed
-                // for a transit app where data is always live from Firebase.
+                // Tell it to take over immediately. controllerchange reloads
+                // once so the shell and cache-busted chunks stay in sync.
                 newWorker.postMessage({ type: "SKIP_WAITING" });
               }
             });
           });
 
-          // Clean up interval on page unload
-          window.addEventListener(
-            "beforeunload",
-            () => clearInterval(interval),
-            { once: true }
-          );
         })
         .catch((error) => {
           console.error("[SW] Registration failed:", error);
@@ -82,6 +105,14 @@ export default function ServiceWorkerRegistrar() {
     } else {
       window.addEventListener("load", register, { once: true });
     }
+
+    return () => {
+      cancelled = true;
+      if (updateInterval) clearInterval(updateInterval);
+      window.removeEventListener("load", register);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
+    };
   }, []);
 
   return null;
