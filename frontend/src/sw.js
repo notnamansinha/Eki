@@ -10,7 +10,7 @@
  *                  hero images. Served cache-first with revision hashing.
  *   2. StaleWhileRevalidate – Google Fonts CSS/woff2 (if ever added).
  *   3. CacheFirst – Google Maps tiles, Firebase SDK CDN scripts.
- *   4. NetworkFirst – Firebase REST/RTDB API calls (auth, Firestore, RTDB).
+ *   4. NetworkFirst – Firebase Auth and RTDB REST API calls.
  *   5. NetworkOnly – reCAPTCHA, analytics, non-cacheable third-party.
  *
  * Navigation requests are served from the precache (offline-capable) with
@@ -130,23 +130,21 @@ registerRoute(
   })
 );
 
-// ─── Runtime caching: Firebase REST APIs (Firestore, RTDB, Auth) ────────────
-// Network-first with a 5-second timeout. If the network is unreachable,
-// the user gets stale data (better than nothing for a transit app).
+// ─── Runtime caching: Firebase REST APIs (RTDB and Auth only) ──────────────
+// Exact Google API origins keep Firestore and unrelated Google APIs out of
+// this cache. Live bus updates use RTDB WebSockets and cannot be cached here.
 registerRoute(
   ({ url }) =>
-    url.origin.includes("firebaseio.com") ||
-    url.origin.includes("firebasedatabase.app") ||
-    url.origin.includes("googleapis.com") &&
-      (url.pathname.includes("/identitytoolkit/") ||
-       url.pathname.includes("/securetoken/") ||
-       url.pathname.includes("/firestore/")),
+    url.hostname.endsWith(".firebaseio.com") ||
+    url.hostname.endsWith(".firebasedatabase.app") ||
+    url.origin === "https://identitytoolkit.googleapis.com" ||
+    url.origin === "https://securetoken.googleapis.com",
   new NetworkFirst({
     cacheName: "eki-firebase-api",
     networkTimeoutSeconds: 5,
     plugins: [
       new CacheableResponsePlugin({ statuses: [0, 200] }),
-      new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 5 * 60 }),
+      new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 60 }),
     ],
   })
 );
