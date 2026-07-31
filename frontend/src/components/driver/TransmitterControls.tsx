@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRoutes } from "@/hooks/useRoutes";
 import { Navigation, Play, ChevronDown, ChevronUp } from "lucide-react";
+import CustomSelect from "@/components/ui/CustomSelect";
 
 import { DriverData } from "@/hooks/useDrivers";
 import { BusData } from "@/hooks/useBuses";
@@ -30,23 +31,39 @@ export default function TransmitterControls({
   setSelectedRouteIds,
   onStartTracking,
 }: Props) {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(true);
   const { routes } = useRoutes();
-  const expanded = isExpanded;
+
+  const vehicleOptions = [
+    { value: "", label: "Select vehicle…" },
+    ...buses.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` })),
+  ];
+
+  const assignedDriver = drivers.find((driver) => driver.id === driverId);
+  const operatorOptions = [
+    { value: "", label: "Select operator…" },
+    ...(assignedDriver ? [{ value: assignedDriver.id, label: `${assignedDriver.name} (${assignedDriver.id})` }] : []),
+  ];
 
   return (
-    <div className="flex flex-col w-full rounded-t-2xl overflow-hidden relative transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
-      style={{ background: "var(--surface-1)", borderTop: "1px solid var(--border-default)" }}>
-      {/* Handle / Header */}
+    <div className="w-full shadow-2xl overflow-hidden rounded-2xl animate-fade-in transition-all duration-300"
+      style={{ 
+        background: "var(--surface-2)", 
+        border: "1px solid var(--border-default)" 
+      }}>
+      
+      {/* Header bar */}
       <div 
-        className="w-full h-[52px] flex items-center justify-between px-5 cursor-pointer relative"
-        onClick={() => setIsExpanded(!isExpanded)}
+        className="px-5 py-4 flex items-center justify-between cursor-pointer select-none"
+        onClick={() => setExpanded(!expanded)}
       >
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full" style={{ background: "var(--surface-4)" }} />
-        <div className="flex items-center gap-2.5 mt-1">
-          <Navigation className="w-3.5 h-3.5" style={{ color: "var(--text-ghost)" }} />
-          <span className="text-[11px] font-semibold" style={{ color: "var(--text-secondary)" }}>
-            Ride Setup
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" 
+            style={{ background: "rgba(59, 130, 246, 0.15)", color: "#60a5fa" }}>
+            <Navigation className="w-4 h-4" />
+          </div>
+          <span className="text-[13px] font-semibold tracking-wide" style={{ color: "var(--text-primary)" }}>
+            Trip Setup
           </span>
         </div>
         <div className="mt-1" style={{ color: "var(--text-ghost)" }}>
@@ -61,24 +78,17 @@ export default function TransmitterControls({
           <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
             Vehicle
           </label>
-          <div className="relative">
-            <select
-              value={busId}
-              onChange={(e) => setSelectedBusId(e.target.value)}
-              className="w-full h-12 rounded-xl px-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none cursor-pointer transition-all"
-              style={{
-                background: "var(--surface-3)",
-                border: "1px solid var(--border-default)",
-                color: "var(--text-primary)"
-              }}
-            >
-              <option value="" style={{ background: "var(--surface-2)" }}>Select vehicle…</option>
-              {buses.map((b) => (
-                <option key={b.id} value={b.id} style={{ background: "var(--surface-2)" }}>{b.name} ({b.id})</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--text-ghost)" }} />
-          </div>
+          <CustomSelect
+            value={busId}
+            onChange={(val) => setSelectedBusId(val)}
+            options={vehicleOptions}
+            placeholder="Select vehicle…"
+            style={{
+              background: "var(--surface-3)",
+              border: "1px solid var(--border-default)",
+              color: "var(--text-primary)",
+            }}
+          />
         </div>
 
         {/* Operator Selector */}
@@ -86,25 +96,18 @@ export default function TransmitterControls({
             <label className="text-[10px] font-semibold px-0.5" style={{ color: "var(--text-ghost)" }}>
               Operator
             </label>
-            <div className="relative">
-              <select
-                value={driverId}
-                onChange={(e) => setDriverId(e.target.value)}
-                disabled
-                className="w-full h-12 rounded-xl px-4 pr-10 text-[13px] font-semibold focus:outline-none appearance-none cursor-pointer transition-all"
-                style={{ 
-                  background: "var(--surface-3)", 
-                  border: "1px solid var(--border-default)", 
-                  color: "var(--text-primary)" 
-                }}
-              >
-                <option value="" style={{ background: "var(--surface-2)" }}>Select operator…</option>
-                {drivers.filter((driver) => driver.id === driverId).map((d) => (
-                  <option key={d.id} value={d.id} style={{ background: "var(--surface-2)" }}>{d.name} ({d.id})</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--text-ghost)" }} />
-            </div>
+            <CustomSelect
+              value={driverId}
+              onChange={(val) => setDriverId(val)}
+              disabled
+              options={operatorOptions}
+              placeholder="Select operator…"
+              style={{ 
+                background: "var(--surface-3)", 
+                border: "1px solid var(--border-default)", 
+                color: "var(--text-primary)" 
+              }}
+            />
         </div>
 
         {/* Route Selector */}

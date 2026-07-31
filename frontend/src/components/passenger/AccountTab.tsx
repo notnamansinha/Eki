@@ -4,23 +4,24 @@ import { useState } from "react";
 import { CircleUserRound, LogOut, ChevronRight, LogIn, HeartHandshake, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import FeedbackModal from "@/components/shared/FeedbackModal";
+import ConfirmModal from "@/components/ui/ConfirmModal";
 import { auth } from "@/lib/firebaseAuth";
 
 export default function AccountTab() {
   const { user, loginWithGoogle, logout } = useAuth();
   const [showFeedback, setShowFeedback] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [deletionStatus, setDeletionStatus] = useState("");
 
-  const requestDeletion = async () => {
-    if (
-      !window.confirm(
-        "Permanently delete your Eki account and associated personal data? This cannot be undone.",
-      )
-    ) return;
+  const confirmDeletion = async () => {
+    setIsDeleting(true);
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
     if (!backendUrl || !auth.currentUser) {
       setDeletionStatus("Account deletion is unavailable until the university API is configured.");
+      setShowDeleteConfirm(false);
+      setIsDeleting(false);
       return;
     }
     try {
@@ -32,8 +33,11 @@ export default function AccountTab() {
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error || "Deletion request failed.");
       setDeletionStatus("Deletion queued. Your account will be removed shortly.");
+      setShowDeleteConfirm(false);
     } catch (error) {
       setDeletionStatus(error instanceof Error ? error.message : "Deletion request failed.");
+    } finally {
+      setIsDeleting(false);
     }
   };
   return (
@@ -122,7 +126,7 @@ export default function AccountTab() {
               </button>
               {user.role === "passenger" && (
                 <button
-                  onClick={() => void requestDeletion()}
+                  onClick={() => setShowDeleteConfirm(true)}
                   className="w-full flex items-center justify-between p-4 bg-transparent hover:bg-[var(--surface-3)] transition-colors group"
                   style={{ borderTop: "1px solid var(--border-subtle)" }}
                 >
@@ -199,6 +203,18 @@ export default function AccountTab() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        title="Delete Account?"
+        description="Permanently delete your Eki account and associated personal data? This action cannot be undone."
+        confirmText="Delete Account"
+        cancelText="Cancel"
+        variant="danger"
+        loading={isDeleting}
+        onConfirm={confirmDeletion}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }
