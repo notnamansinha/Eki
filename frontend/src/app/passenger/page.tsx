@@ -288,7 +288,9 @@ export default function PassengerPage() {
                     {settings.noBusesMessage || "No buses running"}
                   </p>
                   <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
-                    {(settings.noBusesSubMessage || "Service starts at {time}").replace("{time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
+                    {isResuming
+                      ? "Unable to reach live data. Check your connection."
+                      : (settings.noBusesSubMessage || "Service starts at {time}").replace("{time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
                   </p>
                 </div>
               )}

@@ -6,7 +6,7 @@ import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
-import { SIGNAL_LOST_MS, hasValidBusCoordinates, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
+import { hasValidBusCoordinates, isLiveBusSignalLost } from "@/lib/liveBusFreshness";
 import { subscribeLiveBuses } from "@/lib/liveBusStore";
 import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
 
@@ -264,10 +264,8 @@ function PassengerMapInner({
 
           activeBuses.set(bus.busId, bus);
 
-          const age = now - bus.timestamp;
           if (
-            !isLiveBusTimestamp(bus.timestamp, now) ||
-            age > SIGNAL_LOST_MS ||
+            isLiveBusSignalLost(bus.timestamp, now) ||
             bus.deviceState === "offline"
           ) {
             newSignalLost.add(bus.busId);
