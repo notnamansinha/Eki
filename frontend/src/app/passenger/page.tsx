@@ -269,22 +269,37 @@ export default function PassengerPage() {
               className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth hide-scrollbar px-4 pb-32"
               style={{ scrollBehavior: 'smooth', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
-              {settings.announcementActive && settings.announcementText && (
-                <div className="mx-1 mb-3 rounded-xl px-4 py-2.5 flex items-center gap-2" style={{ background: "var(--accent-subtle)", border: "1px solid var(--accent-glow)" }}>
-                  <span className="text-[11px] font-semibold" style={{ color: "var(--accent)" }}>{settings.announcementText}</span>
-                </div>
-              )}
               {displayRoutes.length > 0 ? (
-                <RouteCarousel
-                  routes={displayRoutes}
-                  selectedRouteId={effectiveRouteId}
-                  onClick={handleRouteSelect}
-                  getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
-                />
+                <>
+                  {settings.announcementActive && settings.announcementText && (
+                    <div
+                      className="rounded-2xl p-4 mb-3 mx-1 flex items-center justify-center border text-center"
+                      style={{ background: "#4c0519", borderColor: "#881337" }}
+                    >
+                      <p className="text-[13px] font-black tracking-wider uppercase leading-tight text-[#fecdd3]">
+                        {settings.announcementText}
+                      </p>
+                    </div>
+                  )}
+                  <RouteCarousel
+                    routes={displayRoutes}
+                    selectedRouteId={effectiveRouteId}
+                    onClick={handleRouteSelect}
+                    getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
+                  />
+                </>
               ) : (
-                <div className="rounded-xl p-8 text-center mx-1"
+                <div className="rounded-xl p-8 text-center mx-1 flex flex-col items-center justify-center gap-2"
                   style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
-                  <p className="text-[13px] font-medium mb-1" style={{ color: "var(--text-tertiary)" }}>
+                  {settings.announcementActive && settings.announcementText && (
+                    <div className="inline-flex items-center px-4 py-1.5 rounded-full border mb-1"
+                      style={{ background: "#4c0519", borderColor: "#881337" }}>
+                      <span className="text-[12px] font-black tracking-wider uppercase text-[#fecdd3]">
+                        {settings.announcementText}
+                      </span>
+                    </div>
+                  )}
+                  <p className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>
                     {settings.noBusesMessage || "No buses running"}
                   </p>
                   <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
