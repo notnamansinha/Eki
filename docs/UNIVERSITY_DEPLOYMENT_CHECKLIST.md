@@ -61,6 +61,11 @@ University acceptance is complete only after an authorized team observes:
   skip an expected stop.
 - [ ] ESP power loss, network loss, GNSS loss, browser refresh, and backend
   restart preserve the active session and recover its stop index.
+- [ ] With browser throttling set to Slow 3G (about 400 ms RTT) and then
+  Offline, passenger, driver, and admin views show reconnecting status, clear
+  stale live positions, and recover after connectivity returns.
+- [ ] While a production tab stays open, returning to it triggers a service
+  worker update check; an activated update reloads once onto matching assets.
 - [ ] Only the final ordered stop completes the ride.
 - [ ] Disabled/bad device credentials, malformed/stale payloads, and browser
   write attempts are rejected.

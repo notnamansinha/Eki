@@ -37,6 +37,8 @@ jobs:
           --project eki-rules-test
           "npm run test --workspace=backend"
       - run: npm run build
+      # Slow-3G/Offline browser acceptance remains a manual deployment gate;
+      # see docs/UNIVERSITY_DEPLOYMENT_CHECKLIST.md.
       - run: npm audit --omit=dev --omit=optional
 
   firmware:
