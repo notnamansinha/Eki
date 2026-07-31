@@ -20,6 +20,7 @@ interface Props {
   userName: string;
   busId?: string; // If provided, this is a ride feedback. Otherwise, general suggestion.
   driverId?: string; // Links precise operational data to specific admins
+  sessionId?: string; // Required for server-side ride/passenger eligibility checks
   onClose: () => void;
 }
 
@@ -44,7 +45,7 @@ const formatCooldown = (ms: number) => {
   return `${totalMinutes}m`;
 };
 
-export default function FeedbackModal({ userId, userName, busId, driverId, onClose }: Props) {
+export default function FeedbackModal({ userId, userName, busId, driverId, sessionId, onClose }: Props) {
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [comment, setComment] = useState("");
@@ -54,8 +55,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
   const [error, setError] = useState("");
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const resolvedUserId = auth.currentUser?.uid ?? userId;
-  const cooldownStorageKey = `feedbackCooldown:${resolvedUserId}`;
+  const cooldownStorageKey = `feedbackCooldown:${userId}`;
   const wordCount = countWords(comment);
 
   useEffect(() => {
@@ -104,7 +104,14 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error("User must be logged in to submit feedback");
+      if (currentUser.uid !== userId) {
+        throw new Error("Authenticated user changed before feedback submission");
+      }
+      if (busId && !sessionId) {
+        throw new Error("Ride feedback requires a ride session");
+      }
       const currentUserId = currentUser.uid;
+      const submittedUserName = userName.trim().slice(0, 100) || "Rider";
       const feedbackRef = collection(db, "feedbacks");
       const cooldownRef = doc(db, "feedbackCooldowns", currentUserId);
 
@@ -114,7 +121,9 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
 
         if (cooldownSnap.exists()) {
           const data = cooldownSnap.data();
-          lastSubmittedAt = data.lastSubmittedAt as Timestamp | undefined;
+          lastSubmittedAt = data.lastSubmittedAt instanceof Timestamp
+            ? data.lastSubmittedAt
+            : undefined;
         }
 
         const now = Date.now();
@@ -129,8 +138,9 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
         const newFeedbackDoc = doc(feedbackRef);
         transaction.set(newFeedbackDoc, {
           userId: currentUserId,
-          userName,
+          userName: submittedUserName,
           type: busId ? "ride" : "general",
+          sessionId: sessionId || null,
           busId: busId || null,
           driverId: driverId || null,
           rating: busId && rating > 0 ? rating : null,
@@ -159,7 +169,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, onClo
       }, 2000);
     } catch (err) {
       console.error("Feedback error:", err);
-      if (err instanceof Error && (err.message.startsWith("COOLDOWN:") || err.message.startsWith("LIMIT_REACHED:"))) {
+      if (err instanceof Error && err.message.startsWith("LIMIT_REACHED:")) {
         const remaining = Number(err.message.split(":")[1] || 0);
         setCooldownRemaining(remaining);
         setError(`Limit reached. Please try again in ${formatCooldown(remaining)}.`);

@@ -34,7 +34,7 @@ interface FeedbackEntry {
   type: "ride" | "general";
   busId: string | null;
   driverId: string | null;
-  routeId?: string | null;
+  sessionId?: string | null;
   rating: number | null;
   comment: string;
   timestamp: Timestamp | null;
@@ -150,9 +150,9 @@ function FeedbackCard({
                 <User className="w-3 h-3" /> {entry.driverId.slice(0, 12)}…
               </span>
             )}
-            {entry.routeId && (
+            {entry.sessionId && (
               <span className="flex items-center gap-1">
-                <Route className="w-3 h-3" /> {entry.routeId}
+                <Route className="w-3 h-3" /> {entry.sessionId.slice(0, 12)}…
               </span>
             )}
             <span className="flex items-center gap-1">
@@ -193,7 +193,7 @@ function FeedbackCard({
               { label: "User ID", value: entry.userId, icon: User },
               { label: "Bus ID", value: entry.busId || "—", icon: Bus },
               { label: "Driver ID", value: entry.driverId || "—", icon: User },
-              { label: "Route", value: entry.routeId || "—", icon: Route },
+              { label: "Session", value: entry.sessionId || "—", icon: Route },
             ].map(({ label, value, icon: Icon }) => (
               <div
                 key={label}
@@ -288,7 +288,7 @@ export default function FeedbackPage() {
         e.busId?.toLowerCase().includes(q) ||
         e.driverId?.toLowerCase().includes(q) ||
         e.comment?.toLowerCase().includes(q) ||
-        e.routeId?.toLowerCase().includes(q)
+        e.sessionId?.toLowerCase().includes(q)
       );
     }
     return true;
