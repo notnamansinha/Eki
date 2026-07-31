@@ -36,7 +36,7 @@ async function runRetentionSweep(now = Date.now()): Promise<void> {
   const [sessions, feedback, trips, operations] = await Promise.all([
     deleteDocuments(
       db.collection("ride_sessions")
-        .where("status", "in", ["completed", "failed"])
+        .where("status", "in", ["completed", "failed", "interrupted"])
         .where("endTime", "<", now - rideDays * DAY_MS)
         .orderBy("endTime")
         .orderBy(FieldPath.documentId()),

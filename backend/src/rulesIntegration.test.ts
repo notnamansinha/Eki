@@ -7,7 +7,15 @@ import {
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
 import { get, ref, set } from "firebase/database";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  runTransaction,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
 const enabled = process.env.FIREBASE_RULES_TEST === "1";
@@ -56,6 +64,14 @@ rulesDescribe("Firebase security rules integration", () => {
         status: "active",
         tripState: "in_service",
       });
+      await setDoc(doc(context.firestore(), "ride_sessions", "session_1"), {
+        id: "session_1",
+        busId: "bus_1",
+        driverId: "driver_1",
+        routeId: "route_1",
+        status: "active",
+        passengers: {},
+      });
     });
   });
 
@@ -102,6 +118,65 @@ rulesDescribe("Firebase security rules integration", () => {
       photoURL: "",
       role: "admin",
       createdAt: Date.now(),
+    }));
+  });
+
+  it("allows ride feedback only from a passenger in the matching session", async () => {
+    const passenger = environment.authenticatedContext("passenger_1", { role: "passenger" });
+    const outsider = environment.authenticatedContext("passenger_2", { role: "passenger" });
+
+    await assertSucceeds(updateDoc(doc(passenger.firestore(), "ride_sessions", "session_1"), {
+      "passengers.passenger_1": {
+        userId: "passenger_1",
+        userName: "Rider",
+        boardingStopId: "",
+        alightingStopId: "stop_2",
+        joinedAt: serverTimestamp(),
+      },
+    }));
+
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), "ride_sessions", "session_1"), {
+        status: "completed",
+      });
+    });
+
+    await assertSucceeds(runTransaction(passenger.firestore(), async (transaction) => {
+      transaction.set(doc(collection(passenger.firestore(), "feedbacks")), {
+        userId: "passenger_1",
+        userName: "Rider",
+        type: "ride",
+        sessionId: "session_1",
+        busId: "bus_1",
+        driverId: "driver_1",
+        rating: 5,
+        comment: "Safe ride",
+        timestamp: serverTimestamp(),
+        status: "new",
+      });
+      transaction.set(doc(passenger.firestore(), "feedbackCooldowns", "passenger_1"), {
+        userId: "passenger_1",
+        lastSubmittedAt: serverTimestamp(),
+      });
+    }));
+
+    await assertFails(runTransaction(outsider.firestore(), async (transaction) => {
+      transaction.set(doc(collection(outsider.firestore(), "feedbacks")), {
+        userId: "passenger_2",
+        userName: "Outsider",
+        type: "ride",
+        sessionId: "session_1",
+        busId: "bus_1",
+        driverId: "driver_1",
+        rating: 4,
+        comment: "Not my ride",
+        timestamp: serverTimestamp(),
+        status: "new",
+      });
+      transaction.set(doc(outsider.firestore(), "feedbackCooldowns", "passenger_2"), {
+        userId: "passenger_2",
+        lastSubmittedAt: serverTimestamp(),
+      });
     }));
   });
 });

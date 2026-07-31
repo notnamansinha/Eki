@@ -11,6 +11,12 @@ import { useSettings } from "@/hooks/useSettings";
 import { hasValidBusCoordinates } from "@/lib/liveBusFreshness";
 import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
+import {
+  isPostRideFeedbackEligible,
+  observeRide,
+  recordStopSelection,
+  type TrackedRide,
+} from "@/lib/rideFeedbackEligibility";
 
 const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTrackingMap"), {
   ssr: false,
@@ -61,11 +67,10 @@ export default function PassengerPage() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackBusId, setFeedbackBusId] = useState("");
   const [feedbackDriverId, setFeedbackDriverId] = useState("");
-  const trackingBusIdRef = useRef<string | null>(null);
-  const trackingDriverIdRef = useRef<string | null>(null);
-  const latestBusDriversRef = useRef<Map<string, string>>(new Map());
+  const [feedbackSessionId, setFeedbackSessionId] = useState("");
+  const [completedRide, setCompletedRide] = useState<TrackedRide | null>(null);
+  const trackedRideRef = useRef<TrackedRide | null>(null);
   const latestTripStatesRef = useRef<Map<string, ActiveBusData["tripState"]>>(new Map());
-  const [endedMessage, setEndedMessage] = useState(false);
 
   // Listen to Firebase Realtime Database for active buses using the existing
   // Firebase session established by the root auth provider.
@@ -75,17 +80,18 @@ export default function PassengerPage() {
     const unsubscribe = subscribeLiveBuses((snapshot) => {
         const data = snapshot as Record<string, ActiveBusData> | null;
         const newBuses: ActiveBusData[] = [];
-        const driverMap = new Map<string, string>();
 
         if (data) {
           Object.entries(data as Record<string, ActiveBusData>).forEach(([key, bus]) => {
             const normalizedBus = bus.busId
               ? bus
               : { ...bus, busId: key.split("_")[0] };
-            latestTripStatesRef.current.set(
-              normalizedBus.busId,
-              normalizedBus.tripState,
-            );
+            if (normalizedBus.sessionId) {
+              latestTripStatesRef.current.set(
+                normalizedBus.sessionId,
+                normalizedBus.tripState,
+              );
+            }
             // Safety net: discard stale entries while RTDB cleanup catches up.
             if (
               !normalizedBus.routeId ||
@@ -104,13 +110,9 @@ export default function PassengerPage() {
             ) return;
 
             newBuses.push(normalizedBus);
-            if (normalizedBus.driverId) {
-              driverMap.set(normalizedBus.busId, normalizedBus.driverId);
-            }
           });
         }
 
-        latestBusDriversRef.current = driverMap;
         setActiveBuses(newBuses);
         markSnapshotReceived();
       }, (error) => {
@@ -154,40 +156,60 @@ export default function PassengerPage() {
   const activeBusOnRoute = activeBuses.find(b => b.routeId === effectiveRouteId);
   const activeBusOnRouteId = activeBusOnRoute?.busId;
   const activeSessionId = activeBusOnRoute?.sessionId;
+  const endedMessage = completedRide !== null;
 
   const visibleView: ViewState =
     currentView === "tracking" && !activeBusOnRouteId && !endedMessage ? "home" : currentView;
 
   useEffect(() => {
-    let noticeTimer: ReturnType<typeof setTimeout> | undefined;
-    let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
+    if (completedRide) return;
 
-    if (activeBusOnRouteId) {
-      trackingBusIdRef.current = activeBusOnRouteId;
-      trackingDriverIdRef.current = latestBusDriversRef.current.get(activeBusOnRouteId) || null;
-    } else if (trackingBusIdRef.current) {
-      const finishedBusId = trackingBusIdRef.current;
-      const finishedDriverId = trackingDriverIdRef.current;
-      const lastTripState = latestTripStatesRef.current.get(finishedBusId);
-      if (lastTripState !== "completed") {
-        return;
+    const trackedRide = trackedRideRef.current;
+    if (
+      trackedRide &&
+      !activeBuses.some((bus) => bus.sessionId === trackedRide.sessionId)
+    ) {
+      if (latestTripStatesRef.current.get(trackedRide.sessionId) === "completed") {
+        trackedRideRef.current = null;
+        const completionTimer = setTimeout(() => setCompletedRide(trackedRide), 0);
+        return () => clearTimeout(completionTimer);
+      } else if (activeBusOnRoute && activeSessionId) {
+        trackedRideRef.current = observeRide(trackedRide, {
+          sessionId: activeSessionId,
+          busId: activeBusOnRoute.busId,
+          routeId: activeBusOnRoute.routeId,
+          driverId: activeBusOnRoute.driverId || "",
+        });
       }
-      noticeTimer = setTimeout(() => setEndedMessage(true), 0);
-      feedbackTimer = setTimeout(() => {
-        setFeedbackBusId(finishedBusId);
-        setFeedbackDriverId(finishedDriverId || "");
-        setShowFeedbackModal(true);
-        trackingBusIdRef.current = null;
-        trackingDriverIdRef.current = null;
-        setEndedMessage(false);
-      }, 10000);
+      return;
     }
 
-    return () => {
-      if (noticeTimer) clearTimeout(noticeTimer);
-      if (feedbackTimer) clearTimeout(feedbackTimer);
-    };
-  }, [activeBusOnRouteId]);
+    if (activeBusOnRoute && activeSessionId) {
+      trackedRideRef.current = observeRide(trackedRide, {
+        sessionId: activeSessionId,
+        busId: activeBusOnRoute.busId,
+        routeId: activeBusOnRoute.routeId,
+        driverId: activeBusOnRoute.driverId || "",
+      });
+    }
+  }, [activeBusOnRoute, activeSessionId, activeBuses, completedRide]);
+
+  useEffect(() => {
+    if (!completedRide) return;
+
+    const lastTripState = latestTripStatesRef.current.get(completedRide.sessionId);
+    const feedbackTimer = setTimeout(() => {
+      if (isPostRideFeedbackEligible(completedRide, lastTripState)) {
+        setFeedbackSessionId(completedRide.sessionId);
+        setFeedbackBusId(completedRide.busId);
+        setFeedbackDriverId(completedRide.driverId);
+        setShowFeedbackModal(true);
+      }
+      setCompletedRide(null);
+    }, 10000);
+
+    return () => clearTimeout(feedbackTimer);
+  }, [completedRide]);
 
   const handleOpenMessaging = () => {
     setIsMessagingOpen(true);
@@ -196,6 +218,9 @@ export default function PassengerPage() {
 
   const handleRouteSelect = (routeId: string) => {
     setSelectedRouteId(routeId);
+    setSelectedBoardingStopId("");
+    setIsMessagingOpen(false);
+    setUnreadCount(0);
     setCurrentView("tracking");
   };
 
@@ -315,7 +340,7 @@ export default function PassengerPage() {
 
         {/* ── TRACKING VIEW ── */}
         <div className={`absolute inset-0 z-20 pointer-events-none transition-all duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0"}`}>
-          {activeRoute && targetStop ? (
+          {!endedMessage && activeRoute && targetStop ? (
             <>
               {/* Top bar: back + route info */}
               <div className="absolute top-0 w-full z-40 pt-safe px-4 pb-6 pointer-events-auto"
@@ -335,12 +360,20 @@ export default function PassengerPage() {
                   {activeSessionId ? (
                     <div className="flex-1 min-w-0">
                       <PassengerBoardingView 
+                        key={activeSessionId}
                         sessionId={activeSessionId}
                         route={activeRoute}
                         userId={user?.uid || "anonymous"}
                         userName={user?.displayName || "Rider"}
                         tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
                         onBoardingStopChange={setSelectedBoardingStopId}
+                        onStopSelected={(hasSelectedStop) => {
+                          trackedRideRef.current = recordStopSelection(
+                            trackedRideRef.current,
+                            activeSessionId,
+                            hasSelectedStop,
+                          );
+                        }}
                       />
                     </div>
                   ) : (
@@ -420,7 +453,6 @@ export default function PassengerPage() {
               </div>
               <button
                 onClick={() => {
-                  setEndedMessage(false);
                   setCurrentView("home");
                 }}
                 className="mt-6 px-6 py-2.5 rounded-xl text-[13px] font-semibold transition-all active:scale-95"
@@ -444,6 +476,7 @@ export default function PassengerPage() {
           userName={user?.displayName || "Rider"}
           busId={feedbackBusId}
           driverId={feedbackDriverId}
+          sessionId={feedbackSessionId}
           onClose={() => setShowFeedbackModal(false)}
         />
       )}

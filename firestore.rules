@@ -198,11 +198,19 @@ service cloud.firestore {
           request.resource.data.passengers[request.auth.uid].keys().hasOnly(['userId', 'userName', 'boardingStopId', 'alightingStopId', 'joinedAt']) &&
           request.resource.data.passengers[request.auth.uid].userId == request.auth.uid &&
           request.resource.data.passengers[request.auth.uid].userName is string &&
+          request.resource.data.passengers[request.auth.uid].userName.size() > 0 &&
           request.resource.data.passengers[request.auth.uid].userName.size() <= 100 &&
           request.resource.data.passengers[request.auth.uid].boardingStopId is string &&
+          request.resource.data.passengers[request.auth.uid].boardingStopId.size() <= 128 &&
           (
             request.resource.data.passengers[request.auth.uid].alightingStopId == null ||
-            request.resource.data.passengers[request.auth.uid].alightingStopId is string
+            (request.resource.data.passengers[request.auth.uid].alightingStopId is string &&
+             request.resource.data.passengers[request.auth.uid].alightingStopId.size() > 0 &&
+             request.resource.data.passengers[request.auth.uid].alightingStopId.size() <= 128)
+          ) &&
+          (
+            request.resource.data.passengers[request.auth.uid].boardingStopId.size() > 0 ||
+            request.resource.data.passengers[request.auth.uid].alightingStopId != null
           ) &&
           request.resource.data.passengers[request.auth.uid].joinedAt == request.time
         );
@@ -212,8 +220,10 @@ service cloud.firestore {
         allow create: if (isSessionOperator(sessionId) || isSessionPassenger(sessionId)) &&
           request.resource.data.keys().hasOnly(['text', 'from', 'senderName', 'senderId', 'timestamp']) &&
           request.resource.data.senderId == request.auth.uid &&
-          request.resource.data.text is string && request.resource.data.text.size() <= 500 &&
-          request.resource.data.senderName is string && request.resource.data.senderName.size() <= 100 &&
+          request.resource.data.text is string && request.resource.data.text.size() > 0 &&
+          request.resource.data.text.size() <= 500 &&
+          request.resource.data.senderName is string && request.resource.data.senderName.size() > 0 &&
+          request.resource.data.senderName.size() <= 100 &&
           (
             (isSessionOperator(sessionId) && request.resource.data.from == 'driver') ||
             (isSessionPassenger(sessionId) && request.resource.data.from == 'passenger')
@@ -224,11 +234,14 @@ service cloud.firestore {
       }
 
       match /messageRateLimits/{uid} {
-        allow read: if isOwner(uid);
+        allow read: if isOwner(uid) &&
+          (isSessionOperator(sessionId) || isSessionPassenger(sessionId));
         allow create: if isOwner(uid) &&
+          (isSessionOperator(sessionId) || isSessionPassenger(sessionId)) &&
           messageRateShapeValid(request.resource) &&
           request.resource.data.sentAt.size() == 0;
         allow update: if isOwner(uid) &&
+          (isSessionOperator(sessionId) || isSessionPassenger(sessionId)) &&
           resource.data.userId == uid &&
           request.resource.data.userId == uid &&
           messageRateShapeValid(request.resource) &&
@@ -264,6 +277,7 @@ service cloud.firestore {
           'userId',
           'userName',
           'type',
+          'sessionId',
           'busId',
           'driverId',
           'rating',
@@ -272,18 +286,41 @@ service cloud.firestore {
           'status'
         ]) &&
         request.resource.data.userId == request.auth.uid &&
-        request.resource.data.userName is string && request.resource.data.userName.size() <= 100 &&
-        request.resource.data.type in ['ride', 'general'] &&
-        (request.resource.data.busId == null ||
-          (request.resource.data.busId is string && request.resource.data.busId.size() <= 128)) &&
-        (request.resource.data.driverId == null ||
-          (request.resource.data.driverId is string && request.resource.data.driverId.size() <= 128)) &&
-        (request.resource.data.rating == null ||
-          (request.resource.data.rating is number &&
-            request.resource.data.rating >= 1 &&
-            request.resource.data.rating <= 5)) &&
+        request.resource.data.userName is string && request.resource.data.userName.size() > 0 &&
+        request.resource.data.userName.size() <= 100 &&
         request.resource.data.comment is string &&
         request.resource.data.comment.size() <= 2000 &&
+        (
+          (
+            request.resource.data.type == 'general' &&
+            request.resource.data.sessionId == null &&
+            request.resource.data.busId == null &&
+            request.resource.data.driverId == null &&
+            request.resource.data.rating == null &&
+            request.resource.data.comment.size() > 0
+          ) ||
+          (
+            request.resource.data.type == 'ride' &&
+            request.resource.data.sessionId is string &&
+            request.resource.data.sessionId.size() > 0 &&
+            request.resource.data.sessionId.size() <= 128 &&
+            request.resource.data.busId is string &&
+            request.resource.data.busId.size() > 0 &&
+            request.resource.data.busId.size() <= 128 &&
+            request.resource.data.driverId is string &&
+            request.resource.data.driverId.size() > 0 &&
+            request.resource.data.driverId.size() <= 128 &&
+            (request.resource.data.rating == null ||
+              (request.resource.data.rating is int &&
+               request.resource.data.rating >= 1 &&
+               request.resource.data.rating <= 5)) &&
+            (request.resource.data.rating != null || request.resource.data.comment.size() > 0) &&
+            isSessionPassenger(request.resource.data.sessionId) &&
+            sessionDoc(request.resource.data.sessionId).data.status == 'completed' &&
+            sessionDoc(request.resource.data.sessionId).data.busId == request.resource.data.busId &&
+            sessionDoc(request.resource.data.sessionId).data.driverId == request.resource.data.driverId
+          )
+        ) &&
         request.resource.data.timestamp == request.time &&
         request.resource.data.status == 'new' &&
         feedbackCooldownExpired(request.auth.uid) &&

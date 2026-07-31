@@ -19,6 +19,7 @@ import {
   TrendingUp, X, ChevronDown, ChevronUp,
   Eye, Wifi, WifiOff, MessageCircle,
 } from "lucide-react";
+import ConfirmModal from "@/components/ui/ConfirmModal";
 
 /* â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 interface ActiveBusEntry {
@@ -152,8 +153,11 @@ function LiveDetailsDrawer({
     return result;
   };
 
-  const handleWipeMessages = async () => {
-    if (!confirm(`Clear all messages for ${entry.busId}?`)) return;
+  const [showWipeConfirm, setShowWipeConfirm] = useState(false);
+  const [isWiping, setIsWiping] = useState(false);
+
+  const confirmWipeMessages = async () => {
+    setIsWiping(true);
     try {
       if (!entry.sessionId) throw new Error("This vehicle has no active message session.");
       await adminRequest(
@@ -162,8 +166,12 @@ function LiveDetailsDrawer({
       );
       setMsg("Messages cleared ✓");
       clearMessageLater();
+      setShowWipeConfirm(false);
+    } catch (error: unknown) {
+      setMsg("Error: " + errorMessage(error));
+    } finally {
+      setIsWiping(false);
     }
-    catch (error: unknown) { setMsg("Error: " + errorMessage(error)); }
   };
 
   return (
@@ -205,11 +213,23 @@ function LiveDetailsDrawer({
           <p className="text-xs leading-relaxed text-white/45">
             Position and stop progress come only from authenticated GNSS telemetry. The ride starts at the first ordered stop and completes at the final ordered stop.
           </p>
-          <button onClick={handleWipeMessages} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors">
+          <button onClick={() => setShowWipeConfirm(true)} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors">
             <MessageCircle className="w-3.5 h-3.5" /> Clear Messages
           </button>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={showWipeConfirm}
+        title="Clear Messages?"
+        description={`Clear all shift messages for ${entry.busId}?`}
+        confirmText="Clear Messages"
+        cancelText="Cancel"
+        variant="danger"
+        loading={isWiping}
+        onConfirm={confirmWipeMessages}
+        onCancel={() => setShowWipeConfirm(false)}
+      />
     </div>
   );
 }

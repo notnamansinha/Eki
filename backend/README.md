@@ -14,6 +14,9 @@ npm run dev
 Important settings are Firebase Admin credentials/database URL, exact CORS
 origins, server-restricted Maps key, `HTTPS_DEVICE_RATE_PER_MINUTE`,
 `BUS_STALE_MS`, and worker/retention controls.
+Abandoned pending, armed, or active sessions are reconciled after 12 hours by
+default; set `ABANDONED_RIDE_THRESHOLD_HOURS` to a larger service-specific
+window when needed.
 
 Devices post to `/api/devices/{deviceId}/telemetry` with
 `Authorization: Device <secret>`. They never receive Firebase credentials.

@@ -15,6 +15,7 @@ endpoints require the trusted admin custom claim.
 | POST | `/api/shifts/stop` | Assigned driver | Idempotently acknowledge an already completed ride; active rides return 409. |
 | PATCH | `/api/shifts/delay` | Assigned driver | Update delay for the active assigned ride. |
 | DELETE | `/api/shifts/:sessionId/messages` | Admin | Clear one ride's messages. |
+| DELETE | `/api/shifts/:sessionId/history` | Admin | Permanently delete a completed, interrupted, or failed ride session, its subcollections, and matching completed-trip projections; pending, armed, and active rides return 409. |
 | GET | `/api/analytics/fleet` | Admin | Read durable fleet statistics. |
 | PUT/DELETE | `/api/fleet/buses/:id` | Admin | Manage vehicles and assignments. |
 | PUT/DELETE | `/api/fleet/drivers/:id` | Admin | Manage drivers and claims. |

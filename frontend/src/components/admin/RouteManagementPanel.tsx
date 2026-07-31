@@ -12,6 +12,9 @@ import {
   Pencil, GripVertical, Save,
   ChevronDown, ChevronUp, ArrowLeft,
 } from "lucide-react";
+import CustomSelect from "@/components/ui/CustomSelect";
+import ConfirmModal from "@/components/ui/ConfirmModal";
+import AlertModal from "@/components/ui/AlertModal";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
 
@@ -235,7 +238,7 @@ function StopItem({ stop, index, onRemove, onNameChange }: {
   );
 }
 
-/* â”€â”€ Route editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ────────────────────────────────────────────────────────────────────────────────────────────────── */
 type EditorMode = "create" | "edit";
 
 interface EditorState {
@@ -269,8 +272,9 @@ function RouteEditor({
   const [state, setState] = useState<EditorState>(initial);
   const [saving, setSaving] = useState(false);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [editorAlertMsg, setEditorAlertMsg] = useState<string | null>(null);
 
-  // â”€â”€ Traffic layer rendered imperatively â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Traffic layer rendered imperatively ──────────────────────────────────
   const TrafficLayer = () => {
     const map = useMap();
     const layerRef = useRef<google.maps.TrafficLayer | null>(null);
@@ -329,11 +333,11 @@ function RouteEditor({
 
   const handleSave = async () => {
     if (!state.routeId || !state.name || state.stops.length < 2) {
-      alert("Route ID, name, and at least 2 stops are required.");
+      setEditorAlertMsg("Route ID, name, and at least 2 stops are required.");
       return;
     }
     if (state.stops.length > 27) {
-      alert("A route can have at most 27 stops.");
+      setEditorAlertMsg("A route can have at most 27 stops.");
       return;
     }
     setSaving(true);
@@ -408,17 +412,17 @@ function RouteEditor({
           <PlacesSearchBox onPlaceSelect={handlePlaceSelect} />
         </div>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 min-w-[110px]">
           <label className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Type</label>
-          <select
+          <CustomSelect
             value={state.type}
-            onChange={e => setField("type", e.target.value as EditorState["type"])}
-            className="h-11 bg-[#09090b] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 font-medium appearance-none cursor-pointer"
-          >
-            <option value="circular">Circular</option>
-            <option value="up">Up</option>
-            <option value="down">Down</option>
-          </select>
+            onChange={(val) => setField("type", val as EditorState["type"])}
+            options={[
+              { value: "circular", label: "Circular" },
+              { value: "up", label: "Up" },
+              { value: "down", label: "Down" },
+            ]}
+          />
         </div>
 
         <div className="flex flex-col gap-1">
@@ -552,6 +556,12 @@ function RouteEditor({
           )}
         </div>
       </div>
+
+      <AlertModal
+        isOpen={Boolean(editorAlertMsg)}
+        message={editorAlertMsg || ""}
+        onClose={() => setEditorAlertMsg(null)}
+      />
     </div>
   );
 }
@@ -562,6 +572,9 @@ export default function RouteManagementPanel() {
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [successMsg, setSuccessMsg] = useState("");
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [deleteRouteId, setDeleteRouteId] = useState<string | null>(null);
+  const [panelAlertMsg, setPanelAlertMsg] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -589,8 +602,14 @@ export default function RouteManagementPanel() {
     successTimerRef.current = setTimeout(() => setSuccessMsg(""), 4000);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm(`Delete route "${routes.find(r => r.id === id)?.name ?? id}"? This cannot be undone.`)) return;
+  const handleDelete = (id: string) => {
+    setDeleteRouteId(id);
+  };
+
+  const confirmDeleteRoute = async () => {
+    if (!deleteRouteId) return;
+    const id = deleteRouteId;
+    setIsDeleting(true);
     try {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
       const currentUser = auth.currentUser;
@@ -602,13 +621,19 @@ export default function RouteManagementPanel() {
       });
       const result = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(result.error || "Unable to delete route.");
+      setDeleteRouteId(null);
+    } catch (error: unknown) {
+      setPanelAlertMsg("Failed to delete: " + errorMessage(error));
+    } finally {
+      setIsDeleting(false);
     }
-    catch (error: unknown) { alert("Failed to delete: " + errorMessage(error)); }
   };
 
   if (editor) {
     return <RouteEditor initial={editor} onSaved={handleSaved} onCancel={() => setEditor(null)} />;
   }
+
+  const selectedRouteName = deleteRouteId ? (routes.find(r => r.id === deleteRouteId)?.name ?? deleteRouteId) : "";
 
   return (
     <div className="w-full max-w-4xl mx-auto p-4 md:p-6 flex flex-col gap-4 animate-slide-up">
@@ -645,6 +670,24 @@ export default function RouteManagementPanel() {
           ))
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={Boolean(deleteRouteId)}
+        title="Delete Route?"
+        description={`Are you sure you want to delete route "${selectedRouteName}"? This action cannot be undone.`}
+        confirmText="Delete Route"
+        cancelText="Cancel"
+        variant="danger"
+        loading={isDeleting}
+        onConfirm={confirmDeleteRoute}
+        onCancel={() => setDeleteRouteId(null)}
+      />
+
+      <AlertModal
+        isOpen={Boolean(panelAlertMsg)}
+        message={panelAlertMsg || ""}
+        onClose={() => setPanelAlertMsg(null)}
+      />
     </div>
   );
 }
