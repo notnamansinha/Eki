@@ -5,6 +5,10 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { haversineMeters } from "../lib/geo";
 import { STOP_GEOFENCE_M } from "../services/tripStateReducer";
+import {
+  deleteTerminalRideHistory,
+  RideHistoryConflictError,
+} from "../services/rideHistoryDeletion";
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -374,6 +378,25 @@ router.delete("/:sessionId/messages", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("[Shifts] Failed to clear messages:", error);
     res.status(500).json({ error: "Unable to clear messages." });
+  }
+});
+
+router.delete("/:sessionId/history", requireAdmin, async (req, res) => {
+  const sessionId = req.params.sessionId;
+  if (!SAFE_ID.test(sessionId)) {
+    res.status(400).json({ error: "Invalid session ID." });
+    return;
+  }
+  try {
+    const result = await deleteTerminalRideHistory(db, sessionId);
+    res.json({ deleted: true, ...result });
+  } catch (error) {
+    if (error instanceof RideHistoryConflictError) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
+    console.error("[Shifts] Failed to delete ride history:", error);
+    res.status(500).json({ error: "Unable to delete ride history." });
   }
 });
 
