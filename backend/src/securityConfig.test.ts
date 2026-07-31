@@ -274,6 +274,23 @@ describe("production security configuration", () => {
     expect(passengerBoarding).toContain("Ride in service");
   });
 
+  it("keeps terminal ride-history deletion behind the admin API", () => {
+    const shifts = workspaceFile("backend/src/routes/shifts.ts");
+    const deletion = workspaceFile("backend/src/services/rideHistoryDeletion.ts");
+
+    expect(shifts).toContain('router.delete("/:sessionId/history", requireAdmin');
+    expect(shifts).toContain("SAFE_ID.test(sessionId)");
+    expect(shifts).toContain("RideHistoryConflictError");
+    expect(deletion).toContain('new Set(["completed", "interrupted", "failed"])');
+    expect(deletion).toContain('collection("ride_sessions")');
+    expect(deletion).toContain("recursiveDelete(sessionRef)");
+    expect(deletion).toContain('collection("completed_trips")');
+    expect(deletion).toContain('.where("sessionId", "==", sessionId)');
+    expect(deletion).not.toContain("feedbacks");
+    expect(deletion).not.toContain("active_rides");
+    expect(deletion).not.toContain("activeBuses");
+  });
+
   it("bounds telemetry recovery state and records stop history with merge semantics", () => {
     const engine = workspaceFile("backend/src/services/tripStateEngine.ts");
     const completionBlock = engine.slice(
