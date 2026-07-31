@@ -32,4 +32,11 @@ function initializeFirebaseAppCheck(): AppCheck | null {
   return appCheck;
 }
 
-if (typeof window !== "undefined") initializeFirebaseAppCheck();
+/**
+ * Call this once from inside a useEffect (post-paint) rather than at module
+ * evaluation time. Calling it multiple times is safe — the inner guard ensures
+ * AppCheck is only initialized once.
+ */
+export function ensureAppCheck(): void {
+  initializeFirebaseAppCheck();
+}
