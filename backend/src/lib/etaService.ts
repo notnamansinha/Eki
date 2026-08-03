@@ -103,6 +103,26 @@ const routePolylineCache = new Map<string, string>();
 const decodedPolylineCache = new Map<string, LatLng[]>();
 
 /**
+ * Caches a single route's polyline (encoded + decoded). Called by the route
+ * cache-invalidation listener whenever a route doc is created/updated so the
+ * backend never serves stale geometry after an admin edit.
+ */
+export function cacheRoutePolyline(routeId: string, encodedPolyline: string): void {
+  if (!routeId || !encodedPolyline) return;
+  routePolylineCache.set(routeId, encodedPolyline);
+  decodedPolylineCache.set(routeId, decodePolyline(encodedPolyline));
+}
+
+/**
+ * Evicts a route's polyline from both caches. Called when a route doc is
+ * deleted so ETAs fall back to straight-line instead of ghost geometry.
+ */
+export function evictRoutePolyline(routeId: string): void {
+  routePolylineCache.delete(routeId);
+  decodedPolylineCache.delete(routeId);
+}
+
+/**
  * Pre-loads all route polylines from Firestore into memory.
  * Call once at server startup.
  */
@@ -112,9 +132,8 @@ export async function preloadRoutePolylines(): Promise<void> {
     snapshot.forEach((doc) => {
       const data = doc.data();
       if (data.polyline) {
-        routePolylineCache.set(doc.id, data.polyline);
         // Pre-decode now so first ETA computation has zero decode cost
-        decodedPolylineCache.set(doc.id, decodePolyline(data.polyline));
+        cacheRoutePolyline(doc.id, data.polyline);
         console.log(`📦 Cached + decoded polyline for route: ${doc.id}`);
       }
     });
@@ -150,7 +169,8 @@ export function startETATracking(
   routeId: string,
   getLocation: () => LatLng | null,
   getDestination: () => LatLng | null,
-  intervalMs: number = 180_000 // Default: 3 minutes
+  intervalMs: number = 180_000, // Default: 3 minutes
+  getSpeedKmh: () => number | null = () => null // Live bus speed; null → fallback
 ): void {
   // Clear any existing interval for this bus
   stopETATracking(busId);
@@ -172,10 +192,14 @@ export function startETATracking(
 
     // ── Polyline-based ETA computation (zero API cost) ────────────────────
     const polylineCoords = getCachedDecodedPolyline(routeId);
-    const busSpeed = (() => {
-      // If we can get bus speed from active buses, use it; otherwise floor at 25
-      return 25; // Caller can extend this if they pass speed as a parameter
-    })();
+    // Use the live reported speed when available; fall back to 25 km/h.
+    // computeETAFromPolyline floors at 20 km/h so a stopped bus never yields
+    // an infinite ETA, and a moving bus gets a realistic, non-optimistic ETA.
+    const liveSpeed = getSpeedKmh();
+    const busSpeed =
+      typeof liveSpeed === "number" && Number.isFinite(liveSpeed) && liveSpeed > 0
+        ? liveSpeed
+        : 25;
 
     const result = computeETAFromPolyline(loc, dest, polylineCoords, busSpeed);
     const etaMinutes = Math.max(1, Math.ceil(result.etaSeconds / 60));

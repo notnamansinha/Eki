@@ -19,7 +19,7 @@ import http from "http";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import { startTripStateEngine } from "./services/tripStateEngine";
+import { startTripStateEngine, stopTripStateEngine } from "./services/tripStateEngine";
 import { preloadRoutePolylines } from "./lib/etaService";
 import { db } from "./lib/firebaseAdmin";
 import busRoutes from "./routes/buses";
@@ -140,5 +140,43 @@ httpServer.listen(Number(PORT), "0.0.0.0", () => {
   // Start Trip State Geofencing Engine
   startTripStateEngine();
 });
+
+// ── Graceful Shutdown ─────────────────────────────────────────────────────────
+// Cloud Run / Render send SIGTERM before stopping the container. Without a
+// handler, the process dies mid-cycle: the stale-sweep and ETA intervals are
+// killed, the 30s trip-completion cleanup timers vanish (leaving completed
+// buses in RTDB), and in-flight Firestore lifecycle writes get truncated.
+let shuttingDown = false;
+async function gracefulShutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n${signal} received — starting graceful shutdown...`);
+
+  // Stop accepting new HTTP connections; let in-flight requests finish.
+  httpServer.close(() => console.log("🔌 HTTP server closed."));
+
+  try {
+    // Stop the trip engine: detaches RTDB/Firestore listeners, clears timers,
+    // stops ETA trackers, and flushes pending fleet-state writes.
+    await stopTripStateEngine();
+  } catch (err) {
+    console.error("Error during trip engine shutdown:", err);
+  }
+
+  // Give httpServer.close a moment to drain, then exit.
+  setTimeout(() => {
+    console.log("👋 Shutdown complete.");
+    process.exit(0);
+  }, 500);
+
+  // Hard backstop: never hang longer than 10s on shutdown.
+  setTimeout(() => {
+    console.warn("⚠️  Forced exit after shutdown timeout.");
+    process.exit(1);
+  }, 10_000).unref();
+}
+
+process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => void gracefulShutdown("SIGINT"));
 
 export {};
