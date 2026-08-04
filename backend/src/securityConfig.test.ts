@@ -59,10 +59,14 @@ describe("production security configuration", () => {
     const engine = workspaceFile("backend/src/services/tripStateEngine.ts");
     const workers = workspaceFile("backend/src/services/workerCoordinator.ts");
 
-    expect(server.indexOf("const shutdownBackstop = setTimeout")).toBeLessThan(
-      server.indexOf("await Promise.allSettled"),
-    );
+    const backstopIndex = server.indexOf("const shutdownBackstop = setTimeout");
+    const drainIndex = server.indexOf("await Promise.allSettled");
+    expect(backstopIndex).toBeGreaterThanOrEqual(0);
+    expect(drainIndex).toBeGreaterThanOrEqual(0);
+    expect(backstopIndex).toBeLessThan(drainIndex);
     expect(server).not.toContain("process.exit(0)");
+    expect(server).toContain("httpServer.closeIdleConnections()");
+    expect(server).toContain("httpServer.closeAllConnections()");
     expect(engine).toContain("drainDynamicPromises");
     expect(engine).toContain("void completion.run()");
     expect(workers).toContain("await stopWork()");

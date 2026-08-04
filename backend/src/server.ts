@@ -237,18 +237,21 @@ httpServer.listen(Number(PORT), "0.0.0.0", () => {
 });
 
 let shuttingDown = false;
+/** Drains network, worker, and Firebase resources within the platform grace period. */
 async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`[Server] ${signal} received; shutting down.`);
   const shutdownBackstop = setTimeout(() => {
     console.error("[Server] Forced exit after 10-second shutdown timeout.");
+    httpServer.closeAllConnections();
     process.exit(1);
   }, 10_000);
 
   clearInterval(healthProbeTimer);
   const closeServer = new Promise<void>((resolve, reject) => {
     httpServer.close((error) => error ? reject(error) : resolve());
+    httpServer.closeIdleConnections();
   });
   const stopBackgroundWorkers = stopWorkers?.() ?? Promise.resolve();
   const [serverResult, workerResult] = await Promise.allSettled([

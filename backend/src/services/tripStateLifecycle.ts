@@ -5,12 +5,14 @@ export interface NormalizedLiveBusData extends Record<string, any> {
 
 const SAFE_IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/;
 
+/** Trims and allowlists a bus or route identifier before it becomes a key. */
 export function normalizeIdentifier(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
   return SAFE_IDENTIFIER.test(normalized) ? normalized : null;
 }
 
+/** Normalizes payload IDs and safely recovers at most one missing ID from its key. */
 export function normalizeLiveBusData(
   value: unknown,
   nodeKey?: string | null,
@@ -41,6 +43,7 @@ export function normalizeLiveBusData(
   return { ...data, busId, routeId };
 }
 
+/** Waits for a fixed promise snapshot without exceeding the shutdown deadline. */
 function settleWithinDeadline(
   promises: Promise<unknown>[],
   timeoutMs: number,

@@ -11,6 +11,7 @@ const LEASE_ID = "trip-state-worker";
 const LEASE_DURATION_MS = 45_000;
 const RENEW_INTERVAL_MS = 15_000;
 
+/** Coordinates singleton background work under a renewable Firestore lease. */
 export function startWorkerCoordinator(): () => Promise<void> {
   if (process.env.WORKER_ENABLED === "false") {
     console.log("[Worker] Disabled by WORKER_ENABLED=false.");
@@ -29,6 +30,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
   let stopWorkPromise: Promise<void> | null = null;
   let renewInFlight: Promise<void> | null = null;
 
+  /** Stops every leader-owned worker and waits for lifecycle cleanup. */
   const stopWork = async (): Promise<void> => {
     if (!active) {
       await stopWorkPromise;
@@ -64,6 +66,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
     if (stopWorkPromise === stopping) stopWorkPromise = null;
   };
 
+  /** Acquires or renews leadership, serializing transitions with shutdown. */
   const renew = async () => {
     if (stopped) return;
     const now = Date.now();
@@ -111,6 +114,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
     }
   };
 
+  /** Prevents overlapping lease transactions when Firestore is slow. */
   const runRenew = () => {
     if (stopped || renewInFlight) return;
     const running = renew().finally(() => {

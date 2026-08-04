@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const rtdbHandlers = new Map<string, (snapshot: any) => void>();
@@ -86,6 +86,10 @@ describe("trip-state engine lifecycle", () => {
       currentStopIndex: 1,
       hasDepartedOrigin: true,
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("reattaches a terminal route listener error and cancels retries on stop", async () => {
