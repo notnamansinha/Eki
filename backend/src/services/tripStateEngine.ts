@@ -1,45 +1,76 @@
 import { db, rtdb } from "../lib/firebaseAdmin";
-import type { DataSnapshot } from "firebase-admin/database";
+import { FieldValue } from "firebase-admin/firestore";
+import { reduceTripState } from "./tripStateReducer";
 import {
-  startETATracking,
-  stopETATracking,
-  haversineMeters,
-  cacheRoutePolyline,
-  evictRoutePolyline,
-} from "../lib/etaService";
-import type { TripState, MotionState } from "../types";
+  drainDynamicPromises,
+  normalizeIdentifier,
+  normalizeLiveBusData,
+} from "./tripStateLifecycle";
 
 interface RouteStop { id: string; lat: number; lng: number; name: string; }
-const latestLocations = new Map<string, {lat: number, lng: number}>();
-// Live reported speed (km/h) per bus, fed into ETA computation.
-const latestSpeeds = new Map<string, number>();
+interface PendingCompletion {
+  timeoutId: NodeJS.Timeout;
+  run: () => Promise<void>;
+}
 const routeStopsCache = new Map<string, RouteStop[]>();
-const routeDestCache = new Map<string, {lat: number, lng: number}>();
-const activeETATracking = new Map<string, string>();
-const completedTimeouts = new Map<string, NodeJS.Timeout>();
+const routeLoadPromises = new Map<string, Promise<RouteStop[]>>();
+const missingRouteUntil = new Map<string, number>();
+const completedTimeouts = new Map<string, PendingCompletion>();
 const persistedFleetState = new Map<string, string>();
 const fleetWriteQueues = new Map<string, Promise<void>>();
+const persistedActiveRideState = new Map<string, string>();
+const activeRideWriteQueues = new Map<string, Promise<void>>();
+const telemetryQueues = new Map<string, Promise<void>>();
+const backgroundTasks = new Set<Promise<void>>();
+interface TelemetrySample {
+  timestamp: number;
+  lat: number;
+  lng: number;
+}
+const processedTelemetry = new Map<string, TelemetrySample>();
 
-const STOP_GEOFENCE_M = 20;
 function readIntervalMs(value: string | undefined, fallback: number, minimum: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= minimum ? Math.floor(parsed) : fallback;
 }
 
 const STALE_BUS_MS = readIntervalMs(process.env.BUS_STALE_MS, 300_000, 90_000);
-const ETA_INTERVAL_MS = readIntervalMs(process.env.ETA_INTERVAL_MS, 180_000, 30_000);
+const MISSING_ROUTE_TTL_MS = 60_000;
+const ROUTE_RECONNECT_INITIAL_MS = 1_000;
+const ROUTE_RECONNECT_MAX_MS = 30_000;
+const ENGINE_SHUTDOWN_TIMEOUT_MS = 8_000;
+
+function trackBackgroundTask(
+  task: Promise<unknown>,
+  failureMessage: string,
+): Promise<void> {
+  const tracked = task
+    .then(() => undefined)
+    .catch((error) => {
+      console.warn(failureMessage, error);
+    })
+    .finally(() => {
+      backgroundTasks.delete(tracked);
+    });
+  backgroundTasks.add(tracked);
+  return tracked;
+}
 
 /**
  * Firestore is the durable fleet-state store, not a second telemetry stream.
  * Persist only lifecycle changes; coordinates, speed and heartbeat data remain
  * in RTDB, which prevents a Firestore write for every GNSS update.
  */
-function persistFleetState(data: Record<string, unknown>, lastSeen: string): void {
-  const busId = typeof data.busId === "string" ? data.busId : null;
+function persistFleetState(
+  data: Record<string, unknown>,
+  lastSeen: string,
+  forgetAfterWrite = false,
+): void {
+  const busId = normalizeIdentifier(data.busId);
   if (!busId) return;
 
   const state = {
-    routeId: typeof data.routeId === "string" ? data.routeId : null,
+    routeId: normalizeIdentifier(data.routeId),
     driverId: typeof data.driverId === "string" ? data.driverId : null,
     status: typeof data.status === "string" ? data.status : "active",
     deviceState: typeof data.deviceState === "string" ? data.deviceState : "online",
@@ -63,6 +94,12 @@ function persistFleetState(data: Record<string, unknown>, lastSeen: string): voi
   void queuedWrite.then(
     () => {
       if (fleetWriteQueues.get(busId) === queuedWrite) fleetWriteQueues.delete(busId);
+      if (
+        forgetAfterWrite &&
+        persistedFleetState.get(busId) === fingerprint
+      ) {
+        persistedFleetState.delete(busId);
+      }
     },
     (error) => {
       // Do not discard a newer fingerprint when an earlier queued write fails.
@@ -73,353 +110,566 @@ function persistFleetState(data: Record<string, unknown>, lastSeen: string): voi
   );
 }
 
-function extractBusAndRoute(snapshot: DataSnapshot): { busId: string | null; routeId: string | null } {
-  const data = snapshot.val() || {};
-  let busId = typeof data.busId === "string" && data.busId.trim() ? data.busId : null;
-  let routeId = typeof data.routeId === "string" && data.routeId.trim() ? data.routeId : null;
-
-  if ((!busId || !routeId) && snapshot.key) {
-    const parts = snapshot.key.split("_");
-    if (!busId && parts[0]) busId = parts[0];
-    if (!routeId && parts[1]) routeId = parts.slice(1).join("_");
-  }
-  return { busId, routeId };
-}
-
 async function ensureRouteLoaded(routeId: string): Promise<RouteStop[]> {
-  if (!routeId) return [];
   if (routeStopsCache.has(routeId)) return routeStopsCache.get(routeId)!;
-  try {
-    const routeDoc = await db.collection("routes").doc(routeId).get();
-    if (!routeDoc.exists) {
-      // Do not cache missing route so future attempts can re-query Firestore if created later
+  const suppressUntil = missingRouteUntil.get(routeId);
+  if (suppressUntil && Date.now() < suppressUntil) return [];
+  if (suppressUntil) missingRouteUntil.delete(routeId);
+  const pending = routeLoadPromises.get(routeId);
+  if (pending) return pending;
+
+  const load = (async () => {
+    try {
+      const routeDoc = await db.collection("routes").doc(routeId).get();
+      if (!routeDoc.exists) {
+        missingRouteUntil.set(routeId, Date.now() + MISSING_ROUTE_TTL_MS);
+        cacheRoute(routeId, undefined);
+        return [];
+      }
+      const routeData = routeDoc.data();
+      missingRouteUntil.delete(routeId);
+      cacheRoute(routeId, routeData);
+      return routeStopsCache.get(routeId) ?? [];
+    } catch (err) {
+      console.error(`[TripState] Failed to load route ${routeId}:`, err);
       return [];
+    } finally {
+      routeLoadPromises.delete(routeId);
     }
-    const routeData = routeDoc.data();
-    const stops: RouteStop[] = (routeData?.stops ?? []).map((s: any) => ({
-      id: s.id ?? "", lat: s.lat ?? 0, lng: s.lng ?? 0, name: s.name ?? "",
-    }));
-    routeStopsCache.set(routeId, stops);
-    
-    if (routeData?.waypoints && routeData.waypoints.length >= 2) {
-      const lastWp = routeData.waypoints[routeData.waypoints.length - 1];
-      routeDestCache.set(routeId, { lat: lastWp.lat, lng: lastWp.lng });
-    }
-    return stops;
-  } catch (err) {
-    console.error(`[TripState] Failed to load route ${routeId}:`, err);
-    return [];
-  }
+  })();
+  routeLoadPromises.set(routeId, load);
+  return load;
 }
 
-function computeTripState(
-  lat: number, lng: number, 
-  motionState: MotionState, 
-  currentTripState: TripState, 
-  currentStopIndex: number, 
-  stops: RouteStop[]
-): { tripState: TripState; currentStopIndex: number } {
-  if (stops.length === 0) return { tripState: "in_service", currentStopIndex: 0 };
-  if (motionState === "uncertain") return { tripState: "maintenance", currentStopIndex };
-
-  const firstStop = stops[0];
-  const lastStop = stops[stops.length - 1];
-
-  if (currentTripState === "pre_departure") {
-    if (haversineMeters({lat, lng}, firstStop) <= STOP_GEOFENCE_M) {
-      return { tripState: "in_service", currentStopIndex: 0 };
-    }
-    return { tripState: "pre_departure", currentStopIndex };
+function cacheRoute(routeId: string, routeData: Record<string, any> | undefined): void {
+  if (!routeData) {
+    routeStopsCache.delete(routeId);
+    return;
   }
-
-  if (currentTripState === "in_service") {
-    if (haversineMeters({lat, lng}, lastStop) <= STOP_GEOFENCE_M) {
-      return { tripState: "completed", currentStopIndex: stops.length - 1 };
-    }
-    // The driver app is the source of truth for intermediate stop progression.
-    // Removed the aggressive "closest of next 5 stops" logic because it causes
-    // phantom skips if a future stop is closer in a straight line than the route.
-    return { tripState: "in_service", currentStopIndex };
-  }
-
-  if (currentTripState === "maintenance") {
-    return { tripState: "in_service", currentStopIndex };
-  }
-  return { tripState: currentTripState, currentStopIndex };
+  const stops = Array.isArray(routeData.stops)
+    ? routeData.stops.filter(
+        (stop: any) =>
+          Number.isFinite(stop?.lat) &&
+          stop.lat >= -90 &&
+          stop.lat <= 90 &&
+          Number.isFinite(stop?.lng) &&
+          stop.lng >= -180 &&
+          stop.lng <= 180,
+      ).map((stop: any) => ({
+        id: typeof stop.id === "string" ? stop.id : "",
+        lat: stop.lat,
+        lng: stop.lng,
+        name: typeof stop.name === "string" ? stop.name : "",
+      }))
+    : [];
+  routeStopsCache.set(routeId, stops);
 }
 
-/**
- * Watches the Firestore `routes` collection and keeps the in-memory route
- * caches (stops, destination, polylines) in sync with admin edits. Without
- * this, the backend geofences and computes ETAs against stale geometry until
- * the next deploy/restart.
- */
-function startRouteCacheInvalidation(): () => void {
-  return db.collection("routes").onSnapshot((snapshot) => {
-    snapshot.docChanges().forEach((change) => {
-      const routeId = change.doc.id;
-      if (change.type === "removed") {
-        routeStopsCache.delete(routeId);
-        routeDestCache.delete(routeId);
-        evictRoutePolyline(routeId);
-        console.log(`🗑️  [RouteCache] Evicted deleted route: ${routeId}`);
-        return;
-      }
-      // added or modified → refresh stops, destination, and polyline caches
-      const data = change.doc.data();
-      const stops: RouteStop[] = (data?.stops ?? []).map((s: any) => ({
-        id: s.id ?? "", lat: s.lat ?? 0, lng: s.lng ?? 0, name: s.name ?? "",
-      }));
-      routeStopsCache.set(routeId, stops);
-      if (Array.isArray(data?.waypoints) && data.waypoints.length >= 2) {
-        const lastWp = data.waypoints[data.waypoints.length - 1];
-        routeDestCache.set(routeId, { lat: lastWp.lat, lng: lastWp.lng });
-      } else {
-        routeDestCache.delete(routeId);
-      }
-      if (typeof data?.polyline === "string" && data.polyline) {
-        cacheRoutePolyline(routeId, data.polyline);
-      } else {
-        evictRoutePolyline(routeId);
-      }
-      if (change.type === "modified") {
-        console.log(`♻️  [RouteCache] Refreshed modified route: ${routeId}`);
-      }
+function activeRideDocumentId(
+  data: Record<string, unknown>,
+): string | null {
+  const busId = normalizeIdentifier(data.busId);
+  const routeId = normalizeIdentifier(data.routeId);
+  return busId && routeId
+    ? `${busId}_${routeId}`
+    : null;
+}
+
+function persistActiveRideLifecycle(
+  data: Record<string, unknown>,
+  tripState: "pre_departure" | "in_service",
+  currentStopIndex: number,
+  hasDepartedOrigin: boolean,
+): Promise<void> {
+  const documentId = activeRideDocumentId(data);
+  if (
+    !documentId ||
+    data.status !== "active" ||
+    typeof data.sessionId !== "string" ||
+    typeof data.driverId !== "string"
+  ) {
+    return Promise.resolve();
+  }
+  const state = {
+    sessionId: data.sessionId,
+    busId: data.busId,
+    driverId: data.driverId,
+    routeId: data.routeId,
+    status: "active",
+    tripState,
+    currentStopIndex,
+    hasDepartedOrigin,
+    delayMinutes:
+      typeof data.delayMinutes === "number" ? data.delayMinutes : 0,
+  };
+  const fingerprint = JSON.stringify(state);
+  if (persistedActiveRideState.get(documentId) === fingerprint) {
+    return activeRideWriteQueues.get(documentId) ?? Promise.resolve();
+  }
+
+  persistedActiveRideState.set(documentId, fingerprint);
+  const previous = activeRideWriteQueues.get(documentId) ?? Promise.resolve();
+  const write: Promise<void> = previous
+    .catch(() => undefined)
+    .then(async () => {
+      await db.collection("active_rides").doc(documentId).set({
+        ...state,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
     });
-  }, (error) => {
-    console.error("[RouteCache] routes listener error:", error);
-  });
+  activeRideWriteQueues.set(documentId, write);
+  void write.then(
+    () => {
+      if (activeRideWriteQueues.get(documentId) === write) {
+        activeRideWriteQueues.delete(documentId);
+      }
+    },
+    (error) => {
+      if (persistedActiveRideState.get(documentId) === fingerprint) {
+        persistedActiveRideState.delete(documentId);
+      }
+      if (activeRideWriteQueues.get(documentId) === write) {
+        activeRideWriteQueues.delete(documentId);
+      }
+      console.warn(
+        `[TripState] Failed to persist active ride ${documentId}:`,
+        error,
+      );
+    },
+  );
+  return write;
 }
 
-// ── Engine lifecycle handles (for graceful shutdown) ──
-let staleSweepInterval: NodeJS.Timeout | null = null;
-let routeCacheUnsubscribe: (() => void) | null = null;
+function activateRideSession(sessionId: string): void {
+  const sessionRef = db.collection("ride_sessions").doc(sessionId);
+  trackBackgroundTask(db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(sessionRef);
+    const session = snapshot.data();
+    if (!snapshot.exists || session?.status === "active") return;
+    if (session?.status !== "armed" && session?.status !== "pending") return;
+    transaction.set(sessionRef, {
+      status: "active",
+      startTime: Date.now(),
+      activatedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }), `[TripState] Failed to activate session ${sessionId}:`);
+}
 
-export function startTripStateEngine() {
+export function startTripStateEngine(): () => Promise<void> {
   console.log("🚀 Trip State Engine started, listening to RTDB /activeBuses");
   const busesRef = rtdb.ref("activeBuses");
+  let stopping = false;
+  let stopPromise: Promise<void> | null = null;
+  let routeCacheUnsubscribe: (() => void) | null = null;
+  let routeReconnectTimer: NodeJS.Timeout | null = null;
+  let routeReconnectDelayMs = ROUTE_RECONNECT_INITIAL_MS;
 
-  // Keep route caches in sync with admin edits (fixes stale-ETA/geofence bug).
-  routeCacheUnsubscribe = startRouteCacheInvalidation();
+  const attachRouteCacheWatcher = () => {
+    if (stopping) return;
+    routeCacheUnsubscribe = db.collection("routes").onSnapshot(
+      (snapshot) => {
+        routeReconnectDelayMs = ROUTE_RECONNECT_INITIAL_MS;
+        snapshot.docChanges().forEach((change) => {
+          const routeId = change.doc.id;
+          if (change.type === "removed") {
+            missingRouteUntil.set(routeId, Date.now() + MISSING_ROUTE_TTL_MS);
+            cacheRoute(routeId, undefined);
+            return;
+          }
+          missingRouteUntil.delete(routeId);
+          cacheRoute(routeId, change.doc.data());
+        });
+      },
+      (error) => {
+        routeCacheUnsubscribe = null;
+        console.error("[TripState] Route cache watcher failed:", error);
+        if (stopping || routeReconnectTimer) return;
+        const retryInMs = routeReconnectDelayMs;
+        routeReconnectDelayMs = Math.min(
+          routeReconnectDelayMs * 2,
+          ROUTE_RECONNECT_MAX_MS,
+        );
+        routeReconnectTimer = setTimeout(() => {
+          routeReconnectTimer = null;
+          attachRouteCacheWatcher();
+        }, retryInMs);
+        routeReconnectTimer.unref();
+      },
+    );
+  };
+  attachRouteCacheWatcher();
 
-  busesRef.on("child_added", async (snapshot: DataSnapshot) => {
-    const data = snapshot.val() || {};
-    const { busId, routeId } = extractBusAndRoute(snapshot);
-    if (!busId || !routeId) return;
-
-    const fullData = { ...data, busId, routeId };
-
-    if (data.lat != null && data.lng != null) {
-      latestLocations.set(busId, { lat: data.lat, lng: data.lng });
-    }
-    if (typeof data.speed === "number" && Number.isFinite(data.speed)) {
-      latestSpeeds.set(busId, data.speed);
-    }
-    persistFleetState(fullData, new Date().toISOString());
-    
-    await ensureRouteLoaded(routeId);
-    
-    if (!activeETATracking.has(busId)) {
-      activeETATracking.set(busId, routeId);
-      startETATracking(
-        busId, 
-        routeId, 
-        () => latestLocations.get(busId) || null, 
-        () => routeDestCache.get(routeId) || null, 
-        ETA_INTERVAL_MS,
-        () => latestSpeeds.get(busId) ?? null
-      );
-    }
-  });
-
-  busesRef.on("child_changed", async (snapshot: DataSnapshot) => {
-    const data = snapshot.val() || {};
-    const { busId, routeId } = extractBusAndRoute(snapshot);
-    if (!busId || !routeId) return;
-
-    const fullData = { ...data, busId, routeId };
-
-    if (data.lat != null && data.lng != null) {
-      latestLocations.set(busId, { lat: data.lat, lng: data.lng });
-    }
-    if (typeof data.speed === "number" && Number.isFinite(data.speed)) {
-      latestSpeeds.set(busId, data.speed);
-    }
-
-    const stops = await ensureRouteLoaded(routeId);
+  const processLiveSnapshot = async (
+    snapshot: import("firebase-admin/database").DataSnapshot,
+  ) => {
+    const data = normalizeLiveBusData(snapshot.val(), snapshot.key);
+    if (!data) return;
 
     // If driver marked offline via frontend, handle cleanup
     if (data.status === "offline") {
-      latestLocations.delete(busId);
-      latestSpeeds.delete(busId);
-      activeETATracking.delete(busId);
-      stopETATracking(busId);
-      if (completedTimeouts.has(busId)) {
-        clearTimeout(completedTimeouts.get(busId)!);
-        completedTimeouts.delete(busId);
+      if (completedTimeouts.has(data.busId)) {
+        clearTimeout(completedTimeouts.get(data.busId)!.timeoutId);
+        completedTimeouts.delete(data.busId);
       }
-      persistFleetState({ ...fullData, deviceState: "offline", status: "offline" }, new Date().toISOString());
-      snapshot.ref.remove().catch(console.error);
+      persistFleetState({ ...data, deviceState: "offline", status: "offline" }, new Date().toISOString());
       return;
     }
+    if (!Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
 
-    // Handle route changes
-    const currentActiveRoute = activeETATracking.get(busId);
-    if (currentActiveRoute && currentActiveRoute !== routeId) {
-      stopETATracking(busId);
-      activeETATracking.set(busId, routeId);
-      startETATracking(
-        busId, 
-        routeId, 
-        () => latestLocations.get(busId) || null, 
-        () => routeDestCache.get(routeId) || null, 
-        ETA_INTERVAL_MS,
-        () => latestSpeeds.get(busId) ?? null
-      );
-    } else if (!currentActiveRoute) {
-      activeETATracking.set(busId, routeId);
-      startETATracking(
-        busId, 
-        routeId, 
-        () => latestLocations.get(busId) || null, 
-        () => routeDestCache.get(routeId) || null, 
-        ETA_INTERVAL_MS,
-        () => latestSpeeds.get(busId) ?? null
-      );
+    const stops = await ensureRouteLoaded(data.routeId);
+
+    const nodeKey = snapshot.key || `${data.busId}_${data.routeId}`;
+    const telemetryTimestamp = Number(data.timestamp);
+    const previousTelemetry = processedTelemetry.get(nodeKey);
+    const isNewTelemetry =
+      Number.isFinite(telemetryTimestamp) &&
+      (!previousTelemetry || telemetryTimestamp > previousTelemetry.timestamp);
+    if (isNewTelemetry) {
+      processedTelemetry.set(nodeKey, {
+        timestamp: telemetryTimestamp,
+        lat: data.lat,
+        lng: data.lng,
+      });
     }
 
-    if (data.lat != null && data.lng != null) {
-      const { tripState, currentStopIndex } = computeTripState(
-        data.lat, data.lng, 
-        data.motionState || "active", 
-        data.tripState || "pre_departure", 
-        data.currentStopIndex || 0, 
-        stops
-      );
+    const { tripState, currentStopIndex, hasDepartedOrigin } = isNewTelemetry
+      ? reduceTripState({
+      lat: data.lat,
+      lng: data.lng,
+      previousPosition: previousTelemetry
+        ? { lat: previousTelemetry.lat, lng: previousTelemetry.lng }
+        : undefined,
+      motionState: data.motionState || "moving",
+      currentTripState: data.tripState || "pre_departure",
+      currentStopIndex: Number.isInteger(data.currentStopIndex) ? data.currentStopIndex : 0,
+      stops,
+      hasDepartedOrigin: data.hasDepartedOrigin === true,
+      })
+      : {
+          tripState: data.tripState,
+          currentStopIndex: data.currentStopIndex,
+          hasDepartedOrigin: data.hasDepartedOrigin === true,
+        };
 
-      if (tripState !== data.tripState || currentStopIndex !== data.currentStopIndex) {
-        snapshot.ref.update({ tripState, currentStopIndex }).catch(console.error);
+    const liveStateChanged =
+      tripState !== data.tripState ||
+      currentStopIndex !== data.currentStopIndex ||
+      hasDepartedOrigin !== (data.hasDepartedOrigin === true);
+    if (liveStateChanged && tripState !== "completed") {
+      try {
+        await snapshot.ref.update({
+          tripState,
+          currentStopIndex,
+          hasDepartedOrigin,
+        });
+      } catch (error) {
+        console.error(
+          `[TripState] Failed to update live state for ${nodeKey}:`,
+          error,
+        );
+        return;
       }
-
-      if (data.tripState !== "completed" && completedTimeouts.has(busId)) {
-        clearTimeout(completedTimeouts.get(busId)!);
-        completedTimeouts.delete(busId);
-      }
-
-      if (tripState === "completed" && data.tripState !== "completed") {
-        const completionTimestamp = new Date().toISOString();
-        db.collection("completed_trips").add({
-          busId,
-          driverId: data.driverId || "unknown",
-          routeId,
-          completedAt: completionTimestamp,
-          stopCount: stops.length,
-          stopNames: stops.map(s => s.name),
-        }).catch(console.warn);
-
-        const timeoutId = setTimeout(() => {
-          snapshot.ref.remove().catch(console.error);
-          latestLocations.delete(busId);
-          latestSpeeds.delete(busId);
-          activeETATracking.delete(busId);
-          stopETATracking(busId);
-          completedTimeouts.delete(busId);
-          persistFleetState({ ...fullData, deviceState: "offline", status: "offline", tripState: "completed" }, completionTimestamp);
-        }, 30_000);
-        
-        completedTimeouts.set(busId, timeoutId);
-      }
-
-      persistFleetState({ ...fullData, tripState }, new Date().toISOString());
-    } else {
-      persistFleetState(fullData, new Date().toISOString());
     }
-  });
 
-  busesRef.on("child_removed", (snapshot: DataSnapshot) => {
-    const data = snapshot.val() || {};
-    const { busId, routeId } = extractBusAndRoute(snapshot);
-    if (!busId) return;
+    if (
+      data.tripState === "pre_departure" &&
+      tripState === "in_service" &&
+      typeof data.sessionId === "string"
+    ) {
+      activateRideSession(data.sessionId);
+    }
 
-    const fullData = { ...data, busId, routeId };
+    const reachedStopIndex =
+      data.tripState === "pre_departure" && tripState === "in_service"
+        ? 0
+        : tripState === "completed" && data.tripState !== "completed"
+        ? currentStopIndex
+        : currentStopIndex !== data.currentStopIndex
+          ? Math.max(0, currentStopIndex - 1)
+          : null;
+    if (
+      typeof data.sessionId === "string" &&
+      reachedStopIndex !== null &&
+      tripState !== "completed" &&
+      stops[reachedStopIndex]
+    ) {
+      const stop = stops[reachedStopIndex];
+      trackBackgroundTask(db.collection("ride_sessions").doc(data.sessionId).set({
+        stopsReached: {
+          [reachedStopIndex]: {
+            stopIndex: reachedStopIndex,
+            stopId: stop.id,
+            stopName: stop.name,
+            timestamp: FieldValue.serverTimestamp(),
+          },
+        },
+      }, { merge: true }),
+      `[TripState] Failed to record stop ${reachedStopIndex} for session ${data.sessionId}:`);
+    }
+
+    if (data.tripState !== "completed" && completedTimeouts.has(data.busId)) {
+      clearTimeout(completedTimeouts.get(data.busId)!.timeoutId);
+      completedTimeouts.delete(data.busId);
+    }
+
+    if (tripState === "completed" && data.tripState !== "completed") {
+      const completionTimestamp = new Date().toISOString();
+      const completionId =
+        typeof data.sessionId === "string" && data.sessionId
+          ? data.sessionId
+          : nodeKey;
+      const activeRideId = activeRideDocumentId(data);
+      const completedRef = db.collection("completed_trips").doc(completionId);
+      const batch = db.batch();
+      batch.set(completedRef, {
+        busId: data.busId,
+        driverId: data.driverId || "unknown",
+        routeId: data.routeId,
+        completedAt: completionTimestamp,
+        stopCount: stops.length,
+        stopNames: stops.map(s => s.name),
+        sessionId: typeof data.sessionId === "string" ? data.sessionId : null,
+      }, { merge: true });
+      if (typeof data.sessionId === "string") {
+        const finalStop = stops[currentStopIndex];
+        batch.set(db.collection("ride_sessions").doc(data.sessionId), {
+          status: "completed",
+          endTime: Date.now(),
+          ...(finalStop
+            ? {
+                stopsReached: {
+                  [currentStopIndex]: {
+                    stopIndex: currentStopIndex,
+                    stopId: finalStop.id,
+                    stopName: finalStop.name,
+                    timestamp: FieldValue.serverTimestamp(),
+                  },
+                },
+              }
+            : {}),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+      if (activeRideId) {
+        batch.delete(db.collection("active_rides").doc(activeRideId));
+      }
+      try {
+        await batch.commit();
+        if (activeRideId) {
+          persistedActiveRideState.delete(activeRideId);
+          activeRideWriteQueues.delete(activeRideId);
+        }
+        await snapshot.ref.update({
+          tripState,
+          currentStopIndex,
+          hasDepartedOrigin,
+        });
+      } catch (error) {
+        console.warn(
+          `[TripState] Failed to persist completion ${completionId}:`,
+          error,
+        );
+        return;
+      }
+
+      let cleanupPromise: Promise<void> | null = null;
+      const runCleanup = (): Promise<void> => {
+        if (cleanupPromise) return cleanupPromise;
+        completedTimeouts.delete(data.busId);
+        cleanupPromise = trackBackgroundTask((async () => {
+          try {
+            // Do not recreate a node removed by the stale sweep, and do not mark a
+            // newer shift offline if the same bus/route key was reused meanwhile.
+            await snapshot.ref.transaction((current) => {
+              const live = current as Record<string, unknown> | null;
+              if (
+                !live ||
+                live.tripState !== "completed" ||
+                live.sessionId !== data.sessionId
+              ) {
+                return;
+              }
+              return {
+                ...live,
+                status: "offline",
+                deviceState: "offline",
+                lifecycleUpdatedAt: { ".sv": "timestamp" },
+              };
+            });
+          } finally {
+            persistFleetState(
+              { ...data, status: "offline", tripState: "completed" },
+              completionTimestamp,
+            );
+          }
+        })(), `[TripState] Failed to retire completed session ${data.sessionId}:`);
+        return cleanupPromise;
+      };
+      const timeoutId = setTimeout(() => void runCleanup(), 30_000);
+      completedTimeouts.set(data.busId, { timeoutId, run: runCleanup });
+    }
+
+    if (tripState === "pre_departure" || tripState === "in_service") {
+      await persistActiveRideLifecycle(
+        data,
+        tripState,
+        currentStopIndex,
+        hasDepartedOrigin,
+      );
+    }
+    persistFleetState({ ...data, tripState }, new Date().toISOString());
+  };
+
+  const liveSnapshotHandler = (
+    snapshot: import("firebase-admin/database").DataSnapshot,
+  ) => {
+    if (stopping) return;
+    const nodeKey = snapshot.key;
+    if (!nodeKey) return;
+    const previous = telemetryQueues.get(nodeKey) ?? Promise.resolve();
+    const queued = previous
+      .catch(() => undefined)
+      .then(() => processLiveSnapshot(snapshot))
+      .catch((error) => {
+        console.error(`[TripState] Failed to process telemetry for ${nodeKey}:`, error);
+      });
+    telemetryQueues.set(nodeKey, queued);
+    void queued.then(() => {
+      if (telemetryQueues.get(nodeKey) === queued) {
+        telemetryQueues.delete(nodeKey);
+      }
+    });
+  };
+
+  const childRemovedHandler = (snapshot: import("firebase-admin/database").DataSnapshot) => {
+    if (stopping) return;
+    const data = normalizeLiveBusData(snapshot.val(), snapshot.key);
+    if (!data) return;
 
     // RTDB is the live-presence source. Preserve the final offline lifecycle
     // state before forgetting a bus removed by the stale sweep.
-    persistFleetState({ ...fullData, status: "offline", deviceState: "offline" }, new Date().toISOString());
-    latestLocations.delete(busId);
-    latestSpeeds.delete(busId);
-    activeETATracking.delete(busId);
-    stopETATracking(busId);
-    
-    if (completedTimeouts.has(busId)) {
-      clearTimeout(completedTimeouts.get(busId)!);
-      completedTimeouts.delete(busId);
+    persistFleetState(
+      { ...data, status: "offline", deviceState: "offline" },
+      new Date().toISOString(),
+      true,
+    );
+    processedTelemetry.delete(snapshot.key || `${data.busId}_${data.routeId || ""}`);
+    const activeRideId = activeRideDocumentId(data);
+    if (activeRideId) {
+      persistedActiveRideState.delete(activeRideId);
     }
-  });
+    if (completedTimeouts.has(data.busId)) {
+      clearTimeout(completedTimeouts.get(data.busId)!.timeoutId);
+      completedTimeouts.delete(data.busId);
+    }
+  };
+
+  busesRef.on("child_added", liveSnapshotHandler);
+  busesRef.on("child_changed", liveSnapshotHandler);
+  busesRef.on("child_removed", childRemovedHandler);
 
   // Hardware trackers cannot register an RTDB onDisconnect handler. Sweep only
   // nodes whose server timestamp has exceeded the client freshness horizon.
-  staleSweepInterval = setInterval(async () => {
+  let staleSweepInFlight: Promise<void> | null = null;
+  const runStaleSweep = async () => {
     try {
       const snapshot = await busesRef.once("value");
+      if (stopping) return;
       const now = Date.now();
       const removals: Promise<unknown>[] = [];
-      snapshot.forEach((child: DataSnapshot) => {
-        const data = child.val() as { timestamp?: unknown } | null;
+      snapshot.forEach((child) => {
+        const data = child.val() as {
+          timestamp?: unknown;
+          status?: unknown;
+          tripState?: unknown;
+          deviceState?: unknown;
+        } | null;
         if (typeof data?.timestamp === "number" && now - data.timestamp > STALE_BUS_MS) {
-          removals.push(child.ref.remove());
+          const rideIsActive =
+            data.status === "active" &&
+            (data.tripState === "pre_departure" ||
+              data.tripState === "in_service");
+          if (rideIsActive) {
+            if (data.deviceState !== "offline") {
+              removals.push(child.ref.update({
+                deviceState: "offline",
+                signalState: "lost",
+                lifecycleUpdatedAt: { ".sv": "timestamp" },
+              }));
+            }
+          } else {
+            removals.push(child.ref.remove());
+          }
         }
       });
       await Promise.all(removals);
     } catch (error) {
       console.error("[TripState] stale bus sweep failed:", error);
     }
+  };
+  const staleSweepTimer = setInterval(() => {
+    if (stopping || staleSweepInFlight) return;
+    const sweep = runStaleSweep().finally(() => {
+      if (staleSweepInFlight === sweep) staleSweepInFlight = null;
+    });
+    staleSweepInFlight = sweep;
   }, STALE_BUS_MS);
-}
+  staleSweepTimer.unref();
 
-/**
- * Gracefully stops the trip state engine: detaches listeners, clears the
- * stale-sweep interval and all pending completion timeouts, stops ETA
- * trackers, and flushes any in-flight fleet-state writes. Called on SIGTERM
- * so deploys/scale-downs don't leak timers or truncate Firestore writes.
- */
-export async function stopTripStateEngine(): Promise<void> {
-  console.log("🛑 Stopping Trip State Engine...");
+  return () => {
+    if (stopPromise) return stopPromise;
+    stopPromise = (async () => {
+      stopping = true;
+      const deadlineMs = Date.now() + ENGINE_SHUTDOWN_TIMEOUT_MS;
 
-  if (routeCacheUnsubscribe) {
-    routeCacheUnsubscribe();
-    routeCacheUnsubscribe = null;
-  }
-  if (staleSweepInterval) {
-    clearInterval(staleSweepInterval);
-    staleSweepInterval = null;
-  }
+      routeCacheUnsubscribe?.();
+      routeCacheUnsubscribe = null;
+      if (routeReconnectTimer) {
+        clearTimeout(routeReconnectTimer);
+        routeReconnectTimer = null;
+      }
+      busesRef.off("child_added", liveSnapshotHandler);
+      busesRef.off("child_changed", liveSnapshotHandler);
+      busesRef.off("child_removed", childRemovedHandler);
+      clearInterval(staleSweepTimer);
 
-  // Detach RTDB listeners.
-  try {
-    rtdb.ref("activeBuses").off();
-  } catch (err) {
-    console.warn("[TripState] failed to detach activeBuses listener:", err);
-  }
+      const getPendingTasks = () => [
+        ...telemetryQueues.values(),
+        ...fleetWriteQueues.values(),
+        ...activeRideWriteQueues.values(),
+        ...backgroundTasks.values(),
+        ...(staleSweepInFlight ? [staleSweepInFlight] : []),
+      ];
 
-  // Clear pending completion timeouts so they don't fire after shutdown.
-  for (const [busId, timeoutId] of completedTimeouts) {
-    clearTimeout(timeoutId);
-    completedTimeouts.delete(busId);
-  }
+      // Finish handlers already past RTDB off() before collecting completion
+      // timers; those handlers may still enqueue lifecycle writes or cleanup.
+      const handlersDrained = await drainDynamicPromises(getPendingTasks, deadlineMs);
+      if (!handlersDrained) {
+        console.warn("[TripState] Timed out draining active handlers during shutdown.");
+      }
 
-  // Stop all ETA trackers.
-  for (const busId of Array.from(activeETATracking.keys())) {
-    stopETATracking(busId);
-  }
-  activeETATracking.clear();
+      const pendingCompletions = Array.from(completedTimeouts.values());
+      completedTimeouts.clear();
+      for (const completion of pendingCompletions) {
+        clearTimeout(completion.timeoutId);
+      }
+      for (const completion of pendingCompletions) {
+        void completion.run();
+      }
 
-  // Flush in-flight fleet-state writes so lifecycle state isn't truncated.
-  try {
-    await Promise.allSettled(Array.from(fleetWriteQueues.values()));
-  } catch (err) {
-    console.warn("[TripState] error flushing fleet writes:", err);
-  }
+      const writesDrained = await drainDynamicPromises(getPendingTasks, deadlineMs);
+      if (!writesDrained) {
+        console.warn("[TripState] Timed out flushing lifecycle writes during shutdown.");
+      }
 
-  console.log("✅ Trip State Engine stopped.");
+      processedTelemetry.clear();
+      persistedFleetState.clear();
+      persistedActiveRideState.clear();
+      missingRouteUntil.clear();
+      routeStopsCache.clear();
+      console.log("[TripState] Engine stopped.");
+    })();
+    return stopPromise;
+  };
 }

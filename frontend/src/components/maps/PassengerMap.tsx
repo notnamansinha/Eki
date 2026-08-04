@@ -6,17 +6,26 @@ import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
-import { SIGNAL_LOST_MS, hasValidBusCoordinates, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
-import { waitForAuth } from "@/lib/authState";
-import { rtdb } from "@/lib/firebase";
-import { ref, query, orderByChild, equalTo, onValue } from "firebase/database";
+import { hasValidBusCoordinates, isLiveBusSignalLost } from "@/lib/liveBusFreshness";
+import { subscribeLiveBuses } from "@/lib/liveBusStore";
+import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
 
 import { WifiOff, Navigation } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
+import { decodePolyline, type LatLng } from "@/lib/polyline";
+import { snapToPolyline } from "@/lib/snapToPolyline";
+import {
+  distanceAlongPolyline,
+  positionAlongPolyline,
+  preparePolylineDistanceIndex,
+} from "@/lib/polylineDistance";
+import { ETA_SPEED_FLOOR_KMH } from "@/lib/etaConstants";
+import { useSmoothPosition } from "@/hooks/useSmoothPosition";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
   route: RouteData | null;
+  resumeGeneration?: number;
 }
 
 interface IncomingBusData {
@@ -30,10 +39,9 @@ interface IncomingBusData {
   status?: string; // "active" | "offline"
   deviceState: "online" | "offline";
   motionState: "moving" | "stopped" | "uncertain"; // Physical movement state from hardware
-  tripState: "pre_departure" | "in_service" | "completed" | "maintenance"; // Service visibility
+  tripState: "pre_departure" | "in_service" | "completed"; // Service visibility
   currentStopIndex?: number;
   delayMinutes?: number;
-  lowAccuracy?: boolean; // Set by firmware when 2.5 < HDOP ≤ 4.0
 }
 
 const WALKING_KMH = 5;
@@ -43,6 +51,77 @@ const BUS_MOTION_COLORS: Record<string, string> = {
   stopped:   "#FBBF24", // amber   — stopped at station or in traffic
   uncertain: "#F87171", // red     — GPS fix lost
 };
+
+function BusMarker({
+  bus,
+  path,
+}: {
+  bus: IncomingBusData;
+  path: readonly LatLng[];
+}) {
+  const [preferredSegmentIndex, setPreferredSegmentIndex] = useState(-1);
+  const result = useMemo(
+    () =>
+      snapToPolyline(
+        { lat: bus.lat, lng: bus.lng },
+        path,
+        {
+          headingDegrees: bus.heading,
+          preferredSegmentIndex,
+          maxSegmentJump: 25,
+        },
+      ),
+    [bus.lat, bus.lng, bus.heading, path, preferredSegmentIndex],
+  );
+  useEffect(() => {
+    if (!result.snapped) return;
+    const frame = requestAnimationFrame(() =>
+      setPreferredSegmentIndex(result.segmentIndex),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [result]);
+  const smoothPosition = useSmoothPosition(result.point);
+
+  const color =
+    BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
+  const snappedHeading = Math.round(bus.heading / 5) * 5;
+
+  return (
+    <AdvancedMarker position={smoothPosition ?? result.point}>
+      <div
+        style={{
+          width: 44,
+          height: 44,
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          style={{
+            transform: `rotate(${snappedHeading}deg)`,
+            transition: "transform 200ms ease-out",
+          }}
+        >
+          <Navigation size={30} fill={color} color="white" strokeWidth={1} />
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            bottom: -3,
+            right: -3,
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: color,
+            border: "1.5px solid #09090b",
+          }}
+        />
+      </div>
+    </AdvancedMarker>
+  );
+}
 
 
 // ── Traffic layer rendered imperatively ──────────────────────────────────────
@@ -58,7 +137,15 @@ function MapCenterer({ target, isCentered }: { target: { lat: number; lng: numbe
   return null;
 }
 
-function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route: RouteData }) {
+function PassengerMapInner({
+  targetStop,
+  route,
+  resumeGeneration = 0,
+}: {
+  targetStop: RouteStop;
+  route: RouteData;
+  resumeGeneration?: number;
+}) {
   const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map<string, IncomingBusData>());
   const [stopETAs, setStopETAs] = useState<Record<string, number>>({});
   const [uiNow, setUiNow] = useState(() => Date.now());
@@ -68,18 +155,65 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
   const lastBuzzedStopIdRef = useRef<string | null>(null);
   const lastStopIndexRef = useRef<Record<string, number>>({});
   const stopEntryTimeRef = useRef<Record<string, number>>({});
+  // Hysteresis: tracks which stops are "inside" (entered but not yet exited via the larger exit radius)
+  const stopInsideRef = useRef<Record<string, boolean>>({}); // busId+stopId -> inside state
+  const routeRef = useRef(route);
+  const targetStopRef = useRef(targetStop);
+  useEffect(() => {
+    routeRef.current = route;
+    targetStopRef.current = targetStop;
+  }, [route, targetStop]);
 
   const [passengerLocation, setPassengerLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [geolocationNotice, setGeolocationNotice] = useState<string | null>(null);
   const [isCentered, setIsCentered] = useState(false);
   const arrivalTimestampsRef = useRef<Record<string, number>>({});
-  const lastTrafficFetchRef = useRef<number>(0);
+  const routeStops = useMemo(() => {
+    return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) ?? [];
+  }, [route.stops]);
+  const routePath = useMemo(() => {
+    if (route.polyline) {
+      try {
+        const decoded = decodePolyline(route.polyline);
+        if (decoded.length >= 2) return decoded;
+      } catch {
+        // Legacy routes fall back to their saved stop coordinates.
+      }
+    }
+    return routeStops;
+  }, [route.polyline, routeStops]);
+  const routeDistanceIndex = useMemo(
+    () => preparePolylineDistanceIndex(routePath),
+    [routePath],
+  );
+  const stopPathPositions = useMemo(
+    () =>
+      new Map(
+        (route.stops ?? []).map((stop) => [
+          stop.id,
+          positionAlongPolyline(stop, routeDistanceIndex),
+        ]),
+      ),
+    [route.stops, routeDistanceIndex],
+  );
 
   // ── Passenger geolocation (read-only — ESP32 is sole source for bus GPS) ──
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      return;
+    }
     const watchId = navigator.geolocation.watchPosition(
-      (pos) => setPassengerLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => {},
+      (pos) => {
+        setPassengerLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGeolocationNotice(null);
+      },
+      (error) => {
+        setGeolocationNotice(
+          error.code === error.PERMISSION_DENIED
+            ? "Allow location access to show your walking ETA."
+            : "Your location is temporarily unavailable.",
+        );
+      },
       { enableHighAccuracy: false, maximumAge: 30_000, timeout: 10_000 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
@@ -94,21 +228,16 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
 
   // ── RTDB subscription: filtered by routeId ───────────────────────────────
   useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-    let isMounted = true;
-
-    waitForAuth().then(() => {
-      if (!isMounted) return;
-
-      const busesRef = query(
-        ref(rtdb, "activeBuses"),
-        orderByChild("routeId"),
-        equalTo(route.id)
-      );
-
-      unsubscribe = onValue(busesRef, (snapshot) => {
-        const data = snapshot.val() as Record<string, IncomingBusData>;
+    const unsubscribe = subscribeLiveBuses((snapshot) => {
+        const allData = snapshot as Record<string, IncomingBusData> | null;
+        const data = allData
+          ? Object.fromEntries(
+              Object.entries(allData).filter(([, bus]) => bus.routeId === route.id),
+            )
+          : null;
         const now = Date.now();
+        const currentRoute = routeRef.current;
+        const currentTargetStop = targetStopRef.current;
 
         if (!data) {
           setBuses(new Map());
@@ -120,72 +249,112 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
         const newSignalLost = new Set<string>();
         let oldestTimestamp: number | null = null;
 
-        Object.entries(data).forEach(([key, bus]) => {
-          bus.busId = bus.busId || key.split("_")[0];
-          const isFresh = isLiveBusTimestamp(bus.timestamp);
-          if (!bus.routeId || !bus.busId || !isFresh || !hasValidBusCoordinates(bus.lat, bus.lng)) return;
-
-          const isActive = bus.tripState === "in_service" || bus.tripState === "pre_departure";
-          const isOffline = bus.status === "offline" || bus.deviceState === "offline";
-          if (!isActive || isOffline) return;
+        Object.entries(data).forEach(([key, incoming]) => {
+          const bus: IncomingBusData = incoming.busId
+            ? incoming
+            : { ...incoming, busId: key.split("_")[0] };
+          if (
+            !bus.routeId ||
+            !bus.busId ||
+            !hasValidBusCoordinates(bus.lat, bus.lng) ||
+            !isActiveRideSnapshot(bus as unknown as Record<string, unknown>)
+          ) {
+            return;
+          }
 
           activeBuses.set(bus.busId, bus);
 
-          const age = now - bus.timestamp;
-          if (age > SIGNAL_LOST_MS) {
+          if (
+            isLiveBusSignalLost(bus.timestamp, now) ||
+            bus.deviceState === "offline"
+          ) {
             newSignalLost.add(bus.busId);
             if (oldestTimestamp === null || bus.timestamp < oldestTimestamp) {
               oldestTimestamp = bus.timestamp;
             }
           }
 
-          if (route.stops && route.stops.length > 0) {
-            let closestStopIndex: number;
-            if (bus.currentStopIndex !== undefined) {
-              // Driver panel / ESP32 is the source of truth — always trust it and store it
-              closestStopIndex = bus.currentStopIndex;
-              lastStopIndexRef.current[bus.busId] = closestStopIndex;
-            } else {
-              const lastKnown = lastStopIndexRef.current[bus.busId] ?? 0;
-              const searchStart = Math.max(0, lastKnown - 1);
-              const searchEnd = Math.min(route.stops.length - 1, lastKnown + 3);
-              let minD = Infinity;
-              closestStopIndex = lastKnown;
-              for (let i = searchStart; i <= searchEnd; i++) {
-                const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, route.stops[i]);
-                if (d < minD) { minD = d; closestStopIndex = i; }
+          if (!currentRoute.stops?.length) return;
+
+          let closestStopIndex: number;
+          if (bus.currentStopIndex !== undefined) {
+            closestStopIndex = bus.currentStopIndex;
+            lastStopIndexRef.current[bus.busId] = closestStopIndex;
+          } else {
+            const lastKnown = lastStopIndexRef.current[bus.busId] ?? 0;
+            const searchStart = Math.max(0, lastKnown - 1);
+            const searchEnd = Math.min(
+              currentRoute.stops.length - 1,
+              lastKnown + 3,
+            );
+            let minDistance = Number.POSITIVE_INFINITY;
+            closestStopIndex = lastKnown;
+            for (let index = searchStart; index <= searchEnd; index += 1) {
+              const distance = getDistanceMeters(bus, currentRoute.stops[index]);
+              if (distance < minDistance) {
+                minDistance = distance;
+                closestStopIndex = index;
               }
-              if (minD > 500) {
-                route.stops.forEach((stop, idx) => {
-                  const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
-                  if (d < minD) { minD = d; closestStopIndex = idx; }
-                });
-              }
-              lastStopIndexRef.current[bus.busId] = closestStopIndex;
             }
-
-            const DWELL_GATE_MS = 15_000;
-            const STOP_PROXIMITY_M = 50;
-            route.stops.forEach((stop) => {
-              const d = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, stop);
-              if (d < STOP_PROXIMITY_M) {
-                if (!stopEntryTimeRef.current[stop.id]) {
-                  stopEntryTimeRef.current[stop.id] = now;
+            if (minDistance > 500) {
+              currentRoute.stops.forEach((stop, index) => {
+                const distance = getDistanceMeters(bus, stop);
+                if (distance < minDistance) {
+                  minDistance = distance;
+                  closestStopIndex = index;
                 }
-              } else {
-                delete stopEntryTimeRef.current[stop.id];
-              }
-            });
+              });
+            }
+            lastStopIndexRef.current[bus.busId] = closestStopIndex;
+          }
 
-            const busDist = getDistanceMeters({ lat: bus.lat, lng: bus.lng }, targetStop);
-            const dwellAtTarget = stopEntryTimeRef.current[targetStop.id];
-            const isAtTarget = dwellAtTarget && (now - dwellAtTarget >= DWELL_GATE_MS);
-            if (busDist < 200 && isAtTarget && lastBuzzedStopIdRef.current !== targetStop.id) {
-              lastBuzzedStopIdRef.current = targetStop.id;
+          const STOP_ENTRY_RADIUS_M = 35;
+          const STOP_EXIT_RADIUS_M = 45;
+          const DWELL_GATE_MS = 10_000;
+          const lastKnownIndex = lastStopIndexRef.current[bus.busId] ?? 0;
+          const sequenceStart = Math.max(0, lastKnownIndex - 1);
+          const sequenceEnd = Math.min(
+            currentRoute.stops.length - 1,
+            lastKnownIndex + 2,
+          );
+          const candidateStops = currentRoute.stops
+            .slice(sequenceStart, sequenceEnd + 1)
+            .map((stop, offset) => ({
+              stop,
+              index: sequenceStart + offset,
+            }));
+
+          for (const { stop, index } of candidateStops) {
+            const insideKey = bus.busId + ":" + stop.id;
+            const distance = getDistanceMeters(bus, stop);
+            const wasInside = stopInsideRef.current[insideKey] ?? false;
+
+            if (!wasInside && distance < STOP_ENTRY_RADIUS_M) {
+              stopInsideRef.current[insideKey] = true;
+              stopEntryTimeRef.current[insideKey] ??= now;
+              if (index > (lastStopIndexRef.current[bus.busId] ?? 0)) {
+                lastStopIndexRef.current[bus.busId] = index;
+              }
+            } else if (wasInside && distance > STOP_EXIT_RADIUS_M) {
+              stopInsideRef.current[insideKey] = false;
+              delete stopEntryTimeRef.current[insideKey];
             }
           }
-        });
 
+          const busDistance = getDistanceMeters(bus, currentTargetStop);
+          const dwellAtTarget =
+            stopEntryTimeRef.current[bus.busId + ":" + currentTargetStop.id];
+          const isAtTarget =
+            dwellAtTarget !== undefined &&
+            now - dwellAtTarget >= DWELL_GATE_MS;
+          if (
+            busDistance < STOP_EXIT_RADIUS_M &&
+            isAtTarget &&
+            lastBuzzedStopIdRef.current !== currentTargetStop.id
+          ) {
+            lastBuzzedStopIdRef.current = currentTargetStop.id;
+          }
+        });
         setBuses(activeBuses);
         setSignalLostBuses(newSignalLost);
         setSignalLostLastSeen(oldestTimestamp);
@@ -198,13 +367,11 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed:", error.message);
       });
-    });
 
     return () => {
-      isMounted = false;
-      if (unsubscribe) unsubscribe();
+      unsubscribe();
     };
-  }, [route.id, targetStop, route.stops]);
+  }, [route.id, resumeGeneration]);
 
   // ── High-Frequency Speed-Aware ETA Fallback (Haversine) ──────────────────
   const updateUI = useCallback(() => {
@@ -220,32 +387,39 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
   useEffect(() => {
     if (!route.stops || route.stops.length === 0 || buses.size === 0) return;
 
-    const fetchETAs = async () => {
+    const fetchETAs = () => {
       const now = Date.now();
-      // Re-calculate ETAs instantly on driver state changes (since it's lightweight local math)
-      lastTrafficFetchRef.current = now;
-
       const newArrivals: Record<string, number> = {};
 
       for (const bus of Array.from(buses.values())) {
         const closestStopIdx = lastStopIndexRef.current[bus.busId] ?? 0;
         const remainingStops = route.stops.slice(closestStopIdx);
         if (remainingStops.length === 0) continue;
+        const busPoint = { lat: bus.lat, lng: bus.lng };
+        const busPathPosition = positionAlongPolyline(
+          busPoint,
+          routeDistanceIndex,
+          { headingDegrees: bus.heading },
+        );
 
-        // Base speed fallback: 35km/h for city transit. Use actual speed if available.
-        const speedKmh = bus.speed > 0 ? bus.speed : 35;
+        const speedKmh = Math.max(
+          bus.speed || ETA_SPEED_FLOOR_KMH,
+          ETA_SPEED_FLOOR_KMH,
+        );
         const speedMs = speedKmh / 3.6;
         const busDelaySec = (bus.delayMinutes || 0) * 60;
 
-        let accumDistMeters = 0;
-        let lastPt = { lat: bus.lat, lng: bus.lng };
-
         for (let i = 0; i < remainingStops.length; i++) {
           const stop = remainingStops[i];
-          const distToStop = getDistanceMeters(lastPt, { lat: stop.lat, lng: stop.lng });
+          const stopPathPosition = stopPathPositions.get(stop.id);
+          const accumDistMeters =
+            busPathPosition !== null &&
+            stopPathPosition !== null &&
+            stopPathPosition !== undefined
+              ? Math.abs(stopPathPosition - busPathPosition)
+              : distanceAlongPolyline(busPoint, stop, routePath);
           
-          // 1.3 topology multiplier + adding 45s dwell time per stop for realistic transit ETAs
-          accumDistMeters += (distToStop * 1.3);
+          // Add 45 seconds of dwell time per intermediate stop.
           let totalSeconds = accumDistMeters / speedMs;
           if (i > 0) totalSeconds += (i * 45); 
 
@@ -254,7 +428,6 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           if (!newArrivals[stop.id] || arrivalTimestamp < newArrivals[stop.id]) {
             newArrivals[stop.id] = arrivalTimestamp;
           }
-          lastPt = { lat: stop.lat, lng: stop.lng };
         }
       }
 
@@ -266,7 +439,14 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
     fetchETAs();
     const interval = setInterval(fetchETAs, 60000);
     return () => clearInterval(interval);
-  }, [buses, route.stops, updateUI]);
+  }, [
+    buses,
+    route.stops,
+    routePath,
+    routeDistanceIndex,
+    stopPathPositions,
+    updateUI,
+  ]);
 
   // ── ETA Smooth Interpolation ───────────────────────────────────────────────
   useEffect(() => {
@@ -281,12 +461,13 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
   const mapCenter = useMemo(() => ({ lat: targetStop.lat, lng: targetStop.lng }), [targetStop.lat, targetStop.lng]);
   const centerTarget = useMemo(() => {
     const firstBus = Array.from(buses.values())[0];
-    return firstBus ? { lat: firstBus.lat, lng: firstBus.lng } : mapCenter;
-  }, [buses, mapCenter]);
-
-  const routeStops = useMemo(() => {
-    return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) ?? [];
-  }, [route.stops]);
+    if (!firstBus) return mapCenter;
+    return snapToPolyline(
+      { lat: firstBus.lat, lng: firstBus.lng },
+      routePath,
+      { headingDegrees: firstBus.heading },
+    ).point;
+  }, [buses, mapCenter, routePath]);
 
   return (
     <>
@@ -306,6 +487,21 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
                 ? ` · ${signalLostMinutes}m ago`
                 : " · reconnecting…"}
             </span>
+          </div>
+        </div>
+      )}
+      {geolocationNotice && signalLostBuses.size === 0 && (
+        <div className="absolute top-10 left-4 right-4 z-50" role="status">
+          <div
+            className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[12px] font-semibold"
+            style={{
+              background: "var(--surface-2)",
+              border: "1px solid var(--border-default)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            <Navigation className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <span>{geolocationNotice}</span>
           </div>
         </div>
       )}
@@ -341,20 +537,9 @@ function PassengerMapInner({ targetStop, route }: { targetStop: RouteStop; route
           )}
 
           {/* Bus markers */}
-          {Array.from(buses.values()).map(bus => {
-            const color = BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
-            const snappedHeading = Math.round(bus.heading / 5) * 5;
-            return (
-              <AdvancedMarker key={bus.busId} position={{ lat: bus.lat, lng: bus.lng }}>
-                <div style={{ width: 44, height: 44, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ transform: `rotate(${snappedHeading}deg)`, transition: "transform 600ms" }}>
-                    <Navigation size={30} fill={color} color="white" strokeWidth={1} />
-                  </div>
-                  <div style={{ position: "absolute", bottom: -3, right: -3, width: 8, height: 8, borderRadius: "50%", background: color, border: "1.5px solid #09090b" }} />
-                </div>
-              </AdvancedMarker>
-            );
-          })}
+          {Array.from(buses.values()).map(bus => (
+            <BusMarker key={bus.busId} bus={bus} path={routePath} />
+          ))}
 
           {/* Stop markers */}
           {route.stops?.map((stop, i) => {
@@ -455,7 +640,11 @@ export default function PassengerMap(props: PassengerMapProps) {
   }
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <PassengerMapInner targetStop={props.targetStop} route={props.route!} />
+      <PassengerMapInner
+        targetStop={props.targetStop}
+        route={props.route}
+        resumeGeneration={props.resumeGeneration}
+      />
     </div>
   );
 }

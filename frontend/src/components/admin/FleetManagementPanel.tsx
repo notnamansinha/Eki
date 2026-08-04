@@ -4,17 +4,36 @@ import { useState, useEffect, type ComponentType } from "react";
 import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
 import { useRoutes, type RouteData } from "@/hooks/useRoutes";
-import { doc, setDoc, deleteDoc, collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
-import { db, rtdb, auth } from "@/lib/firebase";
-import { ref, onValue, get, remove } from "firebase/database";
-import { onAuthStateChanged } from "firebase/auth";
+import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
+import { auth } from "@/lib/firebaseAuth";
+import { db } from "@/lib/firebaseFirestore";
+import { subscribeLiveBuses } from "@/lib/liveBusStore";
 import {
   Bus, User, Trash2, Plus, ArrowRight,
   ChevronDown, ChevronUp, Pencil, Check, X, AlertCircle,
   Navigation, Gauge, MapPin, Clock, Radio, Activity, BarChart2,
   TrendingUp, AlertTriangle, CheckCircle2,
 } from "lucide-react";
+import CustomSelect from "@/components/ui/CustomSelect";
+import ConfirmModal from "@/components/ui/ConfirmModal";
 import { errorMessage } from "@/lib/errors";
+import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
+
+async function fleetRequest(path: string, method: "PUT" | "DELETE", body?: object) {
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+  if (!backendUrl || !auth.currentUser) throw new Error("Fleet service is not configured.");
+  const token = await auth.currentUser.getIdToken();
+  const response = await fetch(`${backendUrl}/api/fleet${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const result = await response.json() as { error?: string };
+  if (!response.ok) throw new Error(result.error || "Fleet operation failed.");
+}
 
 // â”€â”€ Live bus tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface ActiveBusEntry {
@@ -28,9 +47,8 @@ interface ActiveBusEntry {
   timestamp?: number;
   deviceState?: "online" | "offline";
   motionState?: "moving" | "stopped" | "uncertain";
-  tripState?: "pre_departure" | "in_service" | "completed" | "maintenance";
+  tripState?: "pre_departure" | "in_service" | "completed";
   currentStopIndex?: number;
-  lowAccuracy?: boolean;
 }
 
 // â”€â”€ Completed trip analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -47,23 +65,13 @@ interface CompletedTrip {
 function useActiveBuses(): ActiveBusEntry[] {
   const [active, setActive] = useState<ActiveBusEntry[]>([]);
   useEffect(() => {
-    let unsub: (() => void) | undefined;
-    const authUnsub = onAuthStateChanged(auth, (user) => {
-      if (user && !unsub) {
-        const r = ref(rtdb, "activeBuses");
-        unsub = onValue(r, (snap) => {
-          const data = snap.val() as Record<string, ActiveBusEntry> | null;
-          setActive(data ? Object.values(data) : []);
-        }, (error) => {
-          console.warn("[RTDB] activeBuses read failed:", error.message);
-        });
-      }
+    const unsubscribe = subscribeLiveBuses((snapshot) => {
+      const data = snapshot as Record<string, ActiveBusEntry> | null;
+      setActive(data ? Object.values(data) : []);
+    }, (error) => {
+      console.warn("[RTDB] activeBuses read failed:", error.message);
     });
-    
-    return () => {
-      authUnsub();
-      unsub?.();
-    };
+    return unsubscribe;
   }, []);
   return active;
 }
@@ -76,9 +84,16 @@ function useRecentTrips(count = 10): CompletedTrip[] {
       orderBy("completedAt", "desc"),
       limit(count)
     );
-    const unsub = onSnapshot(q, (snap) => {
-      setTrips(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<CompletedTrip, "id">) })));
-    });
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setTrips(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<CompletedTrip, "id">) })));
+      },
+      (error) => {
+        console.warn("[Fleet] Completed trip history read failed:", error.message);
+        setTrips([]);
+      },
+    );
     return () => unsub();
   }, [count]);
   return trips;
@@ -100,10 +115,9 @@ function headingLabel(deg?: number): string {
 }
 
 const TRIP_STATE_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: ComponentType<{ className?: string }> }> = {
-  pre_departure: { label: "At Depot",    color: "text-white/50",     bg: "bg-white/5",        Icon: Clock         },
+  pre_departure: { label: "Awaiting Stop 1", color: "text-white/50", bg: "bg-white/5", Icon: Clock },
   in_service:    { label: "In Service",  color: "text-emerald-400",  bg: "bg-emerald-500/10", Icon: Navigation    },
   completed:     { label: "Completed",   color: "text-blue-400",     bg: "bg-blue-500/10",    Icon: CheckCircle2  },
-  maintenance:   { label: "GPS Lost",    color: "text-amber-400",    bg: "bg-amber-500/10",   Icon: AlertTriangle },
 };
 
 const MOTION_STATE_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
@@ -141,8 +155,8 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
   const TsIcon = ts.Icon;
   const stopsTotal = route?.stops?.length ?? 0;
   const stopIdx = (entry.currentStopIndex ?? 0) + 1;
-  const currentStop = route?.stops?.[entry.currentStopIndex ?? 0];
-  const nextStop = route?.stops?.[(entry.currentStopIndex ?? 0) + 1];
+  const nextStop = route?.stops?.[entry.currentStopIndex ?? 0];
+  const followingStop = route?.stops?.[(entry.currentStopIndex ?? 0) + 1];
 
   return (
     <div className="bg-brand-surface border border-border-thin rounded-md overflow-hidden transition-colors hover:border-white/30">
@@ -162,9 +176,6 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
               <span className="font-semibold text-white text-sm truncate">
                 {bus?.name ?? entry.busId}
               </span>
-              {entry.lowAccuracy && (
-                <span className="text-[8px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded font-black uppercase tracking-wider">Low Acc</span>
-              )}
             </div>
             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
               <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${ts.color}`}>
@@ -227,16 +238,16 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
                 />
               </div>
               <div className="grid grid-cols-2 gap-2 mt-0.5">
-                {currentStop && (
-                  <div className="flex flex-col">
-                    <span className="text-[8px] text-white/25 uppercase font-black tracking-wider">Current Stop</span>
-                    <span className="text-[10px] font-semibold text-white truncate">{currentStop.name}</span>
-                  </div>
-                )}
                 {nextStop && (
                   <div className="flex flex-col">
                     <span className="text-[8px] text-white/25 uppercase font-black tracking-wider">Next Stop</span>
-                    <span className="text-[10px] font-semibold text-white/60 truncate">{nextStop.name}</span>
+                    <span className="text-[10px] font-semibold text-white truncate">{nextStop.name}</span>
+                  </div>
+                )}
+                {followingStop && (
+                  <div className="flex flex-col">
+                    <span className="text-[8px] text-white/25 uppercase font-black tracking-wider">Following Stop</span>
+                    <span className="text-[10px] font-semibold text-white/60 truncate">{followingStop.name}</span>
                   </div>
                 )}
               </div>
@@ -257,10 +268,10 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
             </div>
           </div>
 
-          {/* Bus hardware ID */}
+          {/* Bus ID */}
           <div className="flex items-center gap-2 border-t border-white/5 pt-2.5 mt-0.5">
             <Radio className="w-3 h-3 text-white/20" />
-            <span className="text-[9px] text-white/25 font-black uppercase tracking-wider">Hardware ID</span>
+            <span className="text-[9px] text-white/25 font-black uppercase tracking-wider">Bus ID</span>
             <span className="text-[9px] tabular-nums text-white/50 ml-auto">{entry.busId}</span>
           </div>
         </div>
@@ -341,6 +352,12 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   const { drivers, loading: driversLoading } = useDrivers();
   const { routes } = useRoutes();
   const activeEntries = useActiveBuses();
+  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setFreshnessNow(Date.now()), 15_000);
+    return () => window.clearInterval(interval);
+  }, []);
   // Only show buses that are registered in the Firestore `buses` collection.
   // This acts as a defense-in-depth guard: even if RTDB cleanup is delayed
   // or a stale entry exists, deleted buses will never render in the UI.
@@ -354,34 +371,39 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
     : activeEntries.filter((e) => registeredBusIds.has(e.busId)); // buses loaded — filter to registered only
   const activeBusIds = new Set(filteredActiveEntries.map((e) => e.busId));
 
-  // â”€â”€ Error state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Error state ──────────────────────────────────────────────────────────
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // â”€â”€ Bus add form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Modal confirmation states ──────────────────────────────────────────────
+  const [confirmDeleteBusId, setConfirmDeleteBusId] = useState<string | null>(null);
+  const [confirmDeleteDriverId, setConfirmDeleteDriverId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // ── Bus CRUD ─────────────────────────────────────────────────────────────
   const [newBusId, setNewBusId] = useState("");
   const [newBusName, setNewBusName] = useState("");
   const [newBusRoutes, setNewBusRoutes] = useState<string[]>([]);
   const [busListOpen, setBusListOpen] = useState(true);
 
-  // â”€â”€ Bus inline edit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Bus inline edit ──────────────────────────────────────────────────────
   const [editingBusId, setEditingBusId] = useState<string | null>(null);
   const [editBusName, setEditBusName] = useState("");
   const [editBusRoutes, setEditBusRoutes] = useState<string[]>([]);
 
-  // â”€â”€ Driver add form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Driver add form ──────────────────────────────────────────────────────
   const [newDriverId, setNewDriverId] = useState("");
   const [newDriverName, setNewDriverName] = useState("");
   const [newDriverAuthUid, setNewDriverAuthUid] = useState("");
   const [newDriverBusId, setNewDriverBusId] = useState("");
   const [driverListOpen, setDriverListOpen] = useState(true);
 
-  // â”€â”€ Driver inline edit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Driver inline edit ───────────────────────────────────────────────────
   const [editingDriverId, setEditingDriverId] = useState<string | null>(null);
   const [editDriverName, setEditDriverName] = useState("");
   const [editDriverAuthUid, setEditDriverAuthUid] = useState("");
   const [editDriverBusId, setEditDriverBusId] = useState("");
 
-  // â”€â”€ Route togglers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Route togglers ───────────────────────────────────────────────────────
   const toggleRoute = (id: string) =>
     setNewBusRoutes((prev) =>
       prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]
@@ -396,51 +418,29 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   const handleAddBus = async () => {
     if (!newBusId || !newBusName) return;
     try {
-      await setDoc(doc(db, "buses", newBusId), {
-        id: newBusId,
+      await fleetRequest(`/buses/${encodeURIComponent(newBusId)}`, "PUT", {
         name: newBusName,
         assignedRoutes: newBusRoutes,
-      } as BusData);
+      });
       setNewBusId(""); setNewBusName(""); setNewBusRoutes([]);
     } catch (error: unknown) { setErrorMsg("Failed to add Vehicle: " + errorMessage(error)); }
   };
 
-  const handleDeleteBus = async (id: string) => {
-    if (!confirm("Delete this vehicle? This cannot be undone.")) return;
+  const handleDeleteBus = (id: string) => {
+    setConfirmDeleteBusId(id);
+  };
+
+  const confirmDeleteBus = async () => {
+    if (!confirmDeleteBusId) return;
+    const id = confirmDeleteBusId;
+    setIsDeleting(true);
     try {
-      // 1. Delete from Firestore buses collection
-      await deleteDoc(doc(db, "buses", id));
-
-      // 2. Clean up all RTDB /activeBuses entries for this bus.
-      //    Keys follow the pattern {busId}_{routeId} so we scan all and
-      //    remove any that start with the deleted bus ID.
-      try {
-        const activeBusesRef = ref(rtdb, "activeBuses");
-        const snapshot = await get(activeBusesRef);
-        if (snapshot.exists()) {
-          const data = snapshot.val() as Record<string, unknown>;
-          const keysToRemove = Object.keys(data).filter(
-            (key) => key === id || key.startsWith(`${id}_`)
-          );
-          await Promise.all(
-            keysToRemove.map((key) => remove(ref(rtdb, `activeBuses/${key}`)))
-          );
-          if (keysToRemove.length > 0) {
-            console.log(`[Delete] Removed ${keysToRemove.length} RTDB activeBuses entries for ${id}`);
-          }
-        }
-      } catch (error: unknown) {
-        console.warn(`[Delete] Failed to clean RTDB for ${id}:`, errorMessage(error));
-      }
-
-      // 3. Remove the persistent bus_locations document (best-effort)
-      try {
-        await deleteDoc(doc(db, "bus_locations", id));
-      } catch (error: unknown) {
-        console.warn(`[Delete] Failed to clean bus_locations for ${id}:`, errorMessage(error));
-      }
+      await fleetRequest(`/buses/${encodeURIComponent(id)}`, "DELETE");
+      setConfirmDeleteBusId(null);
     } catch (error: unknown) {
       setErrorMsg("Failed to delete Vehicle: " + errorMessage(error));
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -453,11 +453,10 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
 
   const handleSaveBus = async (id: string) => {
     try {
-      await setDoc(doc(db, "buses", id), {
-        id,
+      await fleetRequest(`/buses/${encodeURIComponent(id)}`, "PUT", {
         name: editBusName,
         assignedRoutes: editBusRoutes,
-      } as BusData);
+      });
       setEditingBusId(null);
     } catch (error: unknown) { setErrorMsg("Failed to update Vehicle: " + errorMessage(error)); }
   };
@@ -470,20 +469,31 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
       return;
     }
     try {
-      await setDoc(doc(db, "drivers", newDriverId), {
-        id: newDriverId,
+      await fleetRequest(`/drivers/${encodeURIComponent(newDriverId)}`, "PUT", {
         name: newDriverName,
         authUid,
         assignedBusId: newDriverBusId || null,
-      } as DriverData);
+      });
       setNewDriverId(""); setNewDriverName(""); setNewDriverAuthUid(""); setNewDriverBusId("");
     } catch (error: unknown) { setErrorMsg("Failed to add Operator: " + errorMessage(error)); }
   };
 
-  const handleDeleteDriver = async (id: string) => {
-    if (!confirm("Delete this operator? This cannot be undone.")) return;
-    try { await deleteDoc(doc(db, "drivers", id)); }
-    catch (error: unknown) { setErrorMsg("Failed to delete Operator: " + errorMessage(error)); }
+  const handleDeleteDriver = (id: string) => {
+    setConfirmDeleteDriverId(id);
+  };
+
+  const confirmDeleteDriver = async () => {
+    if (!confirmDeleteDriverId) return;
+    const id = confirmDeleteDriverId;
+    setIsDeleting(true);
+    try {
+      await fleetRequest(`/drivers/${encodeURIComponent(id)}`, "DELETE");
+      setConfirmDeleteDriverId(null);
+    } catch (error: unknown) {
+      setErrorMsg("Failed to delete Operator: " + errorMessage(error));
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const startEditDriver = (driver: DriverData) => {
@@ -501,12 +511,11 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
       return;
     }
     try {
-      await setDoc(doc(db, "drivers", id), {
-        id,
+      await fleetRequest(`/drivers/${encodeURIComponent(id)}`, "PUT", {
         name: editDriverName,
         authUid,
         assignedBusId: editDriverBusId || null,
-      } as DriverData);
+      });
       setEditingDriverId(null);
     } catch (error: unknown) { setErrorMsg("Failed to update Operator: " + errorMessage(error)); }
   };
@@ -516,8 +525,12 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
 
   // â”€â”€ Fleet summary stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const inServiceCount  = filteredActiveEntries.filter(e => e.tripState === "in_service").length;
-  const atDepotCount    = filteredActiveEntries.filter(e => e.tripState === "pre_departure").length;
-  const gpsLostCount    = filteredActiveEntries.filter(e => e.tripState === "maintenance").length;
+  const awaitingStartCount = filteredActiveEntries.filter(e => e.tripState === "pre_departure").length;
+  const gpsLostCount    = filteredActiveEntries.filter(e =>
+    e.deviceState === "offline" ||
+    e.motionState === "uncertain" ||
+    isLiveBusSignalLost(e.timestamp, freshnessNow)
+  ).length;
   const movingCount     = filteredActiveEntries.filter(e => e.motionState === "moving").length;
 
   return (
@@ -536,7 +549,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
           {[
             { icon: Activity,     label: "In Service",  value: inServiceCount,  color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
             { icon: TrendingUp,   label: "Moving",      value: movingCount,     color: "text-blue-400",    bg: "bg-blue-500/10",    border: "border-blue-500/20"    },
-            { icon: Clock,        label: "At Depot",    value: atDepotCount,    color: "text-white/50",    bg: "bg-white/5",        border: "border-white/10"       },
+            { icon: Clock,        label: "Awaiting Start", value: awaitingStartCount, color: "text-white/50", bg: "bg-white/5", border: "border-white/10" },
             { icon: AlertTriangle,label: "GPS Issues",  value: gpsLostCount,    color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20"   },
           ].map(({ icon: Icon, label, value, color, bg, border }) => (
             <div key={label} className={`${bg} border ${border} rounded-2xl p-3 flex flex-col gap-1.5`}>
@@ -588,7 +601,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             </div>
             <div>
               <h2 className="font-extrabold text-lg tracking-tight">Fleet Vehicles</h2>
-              <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black">Manage Hardware IDs</p>
+              <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black">Manage Bus IDs</p>
             </div>
           </div>
 
@@ -597,15 +610,15 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             <p className="text-[9px] text-white/20 font-black uppercase tracking-[0.2em]">Register new vehicle</p>
             <input
               value={newBusId} onChange={(e) => setNewBusId(e.target.value)}
-              placeholder="Hardware ID (e.g. BRTS-101)"
-              aria-label="New vehicle hardware ID"
-              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+              placeholder="Bus ID (e.g. bus_01)"
+              aria-label="New vehicle Bus ID"
+              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
             />
             <input
               value={newBusName} onChange={(e) => setNewBusName(e.target.value)}
               placeholder="Display Name (e.g. Red Line Express)"
               aria-label="New vehicle display name"
-              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
             />
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
@@ -737,7 +750,7 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                               onChange={(e) => setEditBusName(e.target.value)}
                               placeholder="Display Name"
                               aria-label="Edit vehicle display name"
-                              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-blue-400/60 outline-none transition-colors placeholder:text-white/20 font-semibold"
+                              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-blue-400/60 outline-none transition-colors placeholder:text-white/20 font-semibold"
                             />
                             <div className="flex flex-col gap-1">
                               <span className="text-[9px] text-white/30 uppercase tracking-[0.2em] font-black">Assigned Routes</span>
@@ -800,31 +813,31 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
               value={newDriverId} onChange={(e) => setNewDriverId(e.target.value)}
               placeholder="Operator ID (e.g. drv_1)"
               aria-label="New operator ID"
-              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
             />
             <input
               value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)}
               placeholder="Display Name (e.g. Ravi Kumar)"
               aria-label="New operator display name"
-              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
             />
             <input
               value={newDriverAuthUid} onChange={(e) => setNewDriverAuthUid(e.target.value)}
               placeholder="Firebase Auth UID"
               aria-label="Firebase Auth UID for new operator"
-              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
             />
-            <div className="relative">
-              <select
-                value={newDriverBusId} onChange={(e) => setNewDriverBusId(e.target.value)}
-                aria-label="Assign vehicle to new operator"
-                className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 pr-8 text-sm text-white focus:border-white/40 outline-none transition-colors font-semibold appearance-none cursor-pointer"
-              >
-                <option value="" className="bg-[#1a1c29]">— Assign Vehicle —</option>
-                {buses.map((b) => <option key={b.id} value={b.id} className="bg-[#1a1c29]">{b.name} ({b.id})</option>)}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 pointer-events-none" />
-            </div>
+            <CustomSelect
+              value={newDriverBusId}
+              onChange={(val) => setNewDriverBusId(val)}
+              ariaLabel="Assign vehicle to new operator"
+              placeholder="— Assign Vehicle —"
+              options={[
+                { value: "", label: "— Assign Vehicle —" },
+                ...buses.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` })),
+              ]}
+              style={{ background: "rgba(10, 12, 20, 0.6)", border: "1px solid rgba(255, 255, 255, 0.1)" }}
+            />
             <button
               onClick={handleAddDriver}
               aria-label="Add new operator"
@@ -927,31 +940,30 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
                               onChange={(e) => setEditDriverName(e.target.value)}
                               placeholder="Display Name"
                               aria-label="Edit operator display name"
-                              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-blue-400/60 outline-none transition-colors placeholder:text-white/20 font-semibold"
+                              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-blue-400/60 outline-none transition-colors placeholder:text-white/20 font-semibold"
                             />
                             <input
                               value={editDriverAuthUid}
                               onChange={(e) => setEditDriverAuthUid(e.target.value)}
                               placeholder="Firebase Auth UID"
                               aria-label="Firebase Auth UID for operator"
-                              className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+                              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
                             />
-                            <div className="relative">
-                              <select
-                                value={editDriverBusId}
-                                onChange={(e) => setEditDriverBusId(e.target.value)}
-                                aria-label="Edit assigned vehicle"
-                                className="w-full h-10 bg-brand-dark/60 border border-white/10 rounded-xl px-3 pr-8 text-sm text-white focus:border-blue-400/60 outline-none transition-colors font-semibold appearance-none cursor-pointer"
-                              >
-                                <option value="" className="bg-[#1a1c29]">— Unassign Vehicle —</option>
-                                {buses.map((b) => <option key={b.id} value={b.id} className="bg-[#1a1c29]">{b.name} ({b.id})</option>)}
-                              </select>
-                              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 pointer-events-none" />
-                            </div>
+                            <CustomSelect
+                              value={editDriverBusId}
+                              onChange={(val) => setEditDriverBusId(val)}
+                              ariaLabel="Edit assigned vehicle"
+                              placeholder="— Unassign Vehicle —"
+                              options={[
+                                { value: "", label: "— Unassign Vehicle —" },
+                                ...buses.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` })),
+                              ]}
+                              style={{ background: "rgba(10, 12, 20, 0.6)", border: "1px solid rgba(255, 255, 255, 0.1)" }}
+                            />
                             <button
                               onClick={() => handleSaveDriver(driver.id)}
                               aria-label="Save operator changes"
-                              className="h-9 bg-blue-500 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+                              className="h-11 bg-blue-500 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
                             >
                               <Check className="w-4 h-4" /> Save Changes
                             </button>
@@ -966,6 +978,31 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
         </div>
         )}
       </div>
+
+      {/* In-app confirm modals */}
+      <ConfirmModal
+        isOpen={Boolean(confirmDeleteBusId)}
+        title="Delete Vehicle?"
+        description={`Are you sure you want to delete vehicle "${confirmDeleteBusId}"? This action cannot be undone.`}
+        confirmText="Delete Vehicle"
+        cancelText="Cancel"
+        variant="danger"
+        loading={isDeleting}
+        onConfirm={confirmDeleteBus}
+        onCancel={() => setConfirmDeleteBusId(null)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(confirmDeleteDriverId)}
+        title="Delete Operator?"
+        description={`Are you sure you want to delete operator "${confirmDeleteDriverId}"? This action cannot be undone.`}
+        confirmText="Delete Operator"
+        cancelText="Cancel"
+        variant="danger"
+        loading={isDeleting}
+        onConfirm={confirmDeleteDriver}
+        onCancel={() => setConfirmDeleteDriverId(null)}
+      />
     </div>
   );
 }

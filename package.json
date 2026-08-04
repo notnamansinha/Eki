@@ -2,19 +2,29 @@
   "name": "eki-ecosystem",
   "version": "1.0.0",
   "private": true,
-  "description": "Open-source GPS tracking MVP using ESP32 GNSS telemetry, streaming to Firebase RTDB with a Next.js routing engine.",
+  "description": "University bus tracking with authenticated HTTPS GNSS telemetry, resilient ordered trip state, and a Next.js frontend.",
   "workspaces": [
     "frontend",
     "backend"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace=frontend\" \"npm run dev --workspace=backend\"",
-    "build": "npm run build --workspace=frontend",
-    "deploy": "npm run build && npx firebase deploy",
-    "lint": "npm run lint --workspace=frontend && npm run lint --workspace=backend"
+    "build": "npm run build --workspace=backend && npm run build --workspace=frontend && node scripts/generate-sw.mjs && node scripts/update-csp.mjs",
+    "build:production": "node scripts/build-production.mjs",
+    "deploy": "npm run build:production && npx firebase deploy",
+    "lint": "npm run lint --workspace=frontend && npm run lint --workspace=backend",
+    "test": "npm run test --workspace=backend && npm run test --workspace=frontend",
+    "verify": "npm run lint && npm test && npm run build && npm audit --omit=dev --omit=optional"
+  },
+  "overrides": {
+    "postcss": "^8.5.23",
+    "glob": "11.1.0",
+    "minimatch": "10.2.5",
+    "next": {
+      "sharp": "0.35.3"
+    }
   },
   "devDependencies": {
-    "@types/google.maps": "^3.65.2",
     "concurrently": "^8.2.2"
   }
 }

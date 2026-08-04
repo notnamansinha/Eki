@@ -64,7 +64,6 @@
   --color-border-thin: var(--border-default);
   --color-status-active: var(--status-live);
   --color-status-idle: var(--status-warning);
-  --color-status-maintenance: var(--accent);
   --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: system-ui, -apple-system, "Segoe UI", sans-serif;
   --radius-xl: var(--radius-lg);

@@ -30,7 +30,6 @@ const config: Config = {
         status: {
           active: "#10b981",    // Green – bus moving / on time
           idle: "#f59e0b",      // Amber – bus stopped / delayed
-          maintenance: "#ef4444", // Red – out of service
         },
       },
       fontFamily: {

@@ -8,7 +8,8 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ["src/seed.ts", "src/*.test.ts"],
+          allowDefaultProject: ["src/seed.ts", "src/*.test.ts", "src/services/*.test.ts"],
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 16,
         },
         tsconfigRootDir: import.meta.dirname,
       },

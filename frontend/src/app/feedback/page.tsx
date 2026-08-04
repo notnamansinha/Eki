@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
+import { db } from "@/lib/firebaseFirestore";
 import {
   collection,
   onSnapshot,
   query,
   orderBy,
+  limit,
   Timestamp,
   doc,
   updateDoc,
@@ -33,7 +34,7 @@ interface FeedbackEntry {
   type: "ride" | "general";
   busId: string | null;
   driverId: string | null;
-  routeId?: string | null;
+  sessionId?: string | null;
   rating: number | null;
   comment: string;
   timestamp: Timestamp | null;
@@ -149,9 +150,9 @@ function FeedbackCard({
                 <User className="w-3 h-3" /> {entry.driverId.slice(0, 12)}…
               </span>
             )}
-            {entry.routeId && (
+            {entry.sessionId && (
               <span className="flex items-center gap-1">
-                <Route className="w-3 h-3" /> {entry.routeId}
+                <Route className="w-3 h-3" /> {entry.sessionId.slice(0, 12)}…
               </span>
             )}
             <span className="flex items-center gap-1">
@@ -192,7 +193,7 @@ function FeedbackCard({
               { label: "User ID", value: entry.userId, icon: User },
               { label: "Bus ID", value: entry.busId || "—", icon: Bus },
               { label: "Driver ID", value: entry.driverId || "—", icon: User },
-              { label: "Route", value: entry.routeId || "—", icon: Route },
+              { label: "Session", value: entry.sessionId || "—", icon: Route },
             ].map(({ label, value, icon: Icon }) => (
               <div
                 key={label}
@@ -248,13 +249,21 @@ export default function FeedbackPage() {
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    const q = query(collection(db, "feedbacks"), orderBy("timestamp", "desc"));
-    const unsub = onSnapshot(q, (snap) => {
-      setEntries(
-        snap.docs.map((d) => ({ id: d.id, ...d.data() } as FeedbackEntry))
-      );
-      setLoading(false);
-    });
+    const q = query(collection(db, "feedbacks"), orderBy("timestamp", "desc"), limit(200));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setEntries(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() } as FeedbackEntry))
+        );
+        setLoading(false);
+      },
+      (error) => {
+        console.warn("[Feedback] Read failed:", error.message);
+        setEntries([]);
+        setLoading(false);
+      },
+    );
     return () => unsub();
   }, []);
 
@@ -279,7 +288,7 @@ export default function FeedbackPage() {
         e.busId?.toLowerCase().includes(q) ||
         e.driverId?.toLowerCase().includes(q) ||
         e.comment?.toLowerCase().includes(q) ||
-        e.routeId?.toLowerCase().includes(q)
+        e.sessionId?.toLowerCase().includes(q)
       );
     }
     return true;
@@ -368,7 +377,7 @@ export default function FeedbackPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by user, bus, driver, or route…"
-              className="w-full h-10 bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-semibold"
+              className="w-full h-11 bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-semibold"
             />
           </div>
           <div className="flex gap-2">
@@ -376,7 +385,7 @@ export default function FeedbackPage() {
               <button
                 key={t}
                 onClick={() => setFilterType(t)}
-                className={`px-3 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                className={`px-3 h-11 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
                   filterType === t
                     ? "bg-white text-brand-dark border-white"
                     : "bg-white/5 text-white/50 border-white/10 hover:border-white/20 hover:text-white/70"
@@ -392,7 +401,7 @@ export default function FeedbackPage() {
                 <button
                   key={s}
                   onClick={() => setFilterStatus(s)}
-                  className={`px-3 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                  className={`px-3 h-11 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
                     filterStatus === s
                       ? "bg-white text-brand-dark border-white"
                       : "bg-white/5 text-white/50 border-white/10 hover:border-white/20 hover:text-white/70"

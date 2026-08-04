@@ -1,4 +1,4 @@
-export interface PredefinedRoute {
+interface PredefinedRoute {
   id: string;
   name: string;
   /** [lng, lat] for each waypoint — OSRM format */
@@ -8,7 +8,7 @@ export interface PredefinedRoute {
 }
 
 /** A named, plannable stop along a BRTS route */
-export interface PredefinedStop {
+interface PredefinedStop {
   id: string;
   name: string;
   shortName: string;
@@ -18,7 +18,7 @@ export interface PredefinedStop {
   waypointIndex: number;
 }
 
-export interface PredefinedRouteWithStops extends PredefinedRoute {
+interface PredefinedRouteWithStops extends PredefinedRoute {
   stops: PredefinedStop[];
 }
 

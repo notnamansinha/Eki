@@ -1,5 +1,12 @@
 import { useState, useEffect } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import {
+  collection,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  type OrderByDirection,
+} from "firebase/firestore";
 import { db } from "@/lib/firebaseFirestore";
 import { waitForAuth } from "@/lib/authState";
 
@@ -10,6 +17,12 @@ interface CacheEntry {
   unsubscribe: (() => void) | null;
   callbacks: Set<() => void>;
   timeoutId?: NodeJS.Timeout;
+}
+
+interface CollectionOptions {
+  maxResults?: number;
+  orderByDirection?: OrderByDirection;
+  orderByField?: string;
 }
 
 const queryCache = new Map<string, CacheEntry>();
@@ -26,11 +39,23 @@ export function clearCollectionCache(): void {
   queryCache.clear();
 }
 
-export function useCollection<T>(collectionName: string) {
+export function useCollection<T>(
+  collectionName: string,
+  options: CollectionOptions = {},
+) {
   const [, forceRender] = useState(0);
+  const maxResults = options.maxResults ?? 250;
+  const orderByField = options.orderByField;
+  const orderByDirection = options.orderByDirection ?? "asc";
+  const cacheKey = [
+    collectionName,
+    orderByField ?? "",
+    orderByDirection,
+    maxResults,
+  ].join(":");
 
   useEffect(() => {
-    let entry = queryCache.get(collectionName);
+    let entry = queryCache.get(cacheKey);
     if (!entry) {
       entry = {
         data: [],
@@ -39,7 +64,7 @@ export function useCollection<T>(collectionName: string) {
         unsubscribe: null,
         callbacks: new Set()
       };
-      queryCache.set(collectionName, entry);
+      queryCache.set(cacheKey, entry);
     }
 
     const currentEntry = entry;
@@ -55,8 +80,14 @@ export function useCollection<T>(collectionName: string) {
       waitForAuth().then(() => {
         // Double check if we still need it after auth resolves
         if (currentEntry.listenerCount > 0 && !currentEntry.unsubscribe) {
+          const constraints = orderByField
+            ? [
+                orderBy(orderByField, orderByDirection),
+                limit(maxResults),
+              ]
+            : [limit(maxResults)];
           currentEntry.unsubscribe = onSnapshot(
-            collection(db, collectionName),
+            query(collection(db, collectionName), ...constraints),
             (snapshot) => {
               currentEntry.data = snapshot.docs.map((doc) => ({
                 id: doc.id,
@@ -66,7 +97,12 @@ export function useCollection<T>(collectionName: string) {
               currentEntry.callbacks.forEach(cb => cb());
             },
             (error) => {
-              console.error(`Error fetching ${collectionName}:`, error);
+              const code = (error as { code?: string })?.code;
+              if (code === "permission-denied") {
+                console.warn(`[useCollection] Permission denied for ${collectionName}`);
+              } else {
+                console.error(`Error fetching ${collectionName}:`, error);
+              }
               currentEntry.loading = false;
               currentEntry.callbacks.forEach(cb => cb());
             }
@@ -96,9 +132,15 @@ export function useCollection<T>(collectionName: string) {
         }, 3000);
       }
     };
-  }, [collectionName]);
+  }, [
+    cacheKey,
+    collectionName,
+    maxResults,
+    orderByDirection,
+    orderByField,
+  ]);
 
-  const entry = queryCache.get(collectionName);
+  const entry = queryCache.get(cacheKey);
   return { 
     data: entry ? entry.data as T[] : [], 
     loading: entry ? entry.loading : true 

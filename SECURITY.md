@@ -24,16 +24,26 @@ Eki enforces strict RBAC across presentation, API, and database perimeters:
 
 ### Hardware Authentication & Isolation
 
-ESP32 GNSS telemetry units authenticate via `/api/devices/auth`:
-- **Scrypt Password Hashing**: Hardware secrets are hashed using `scrypt` with unique salts and compared via constant-time buffer comparison (`timingSafeEqual`). Plaintext secrets are strictly rejected.
-- **Path-Isolated Custom Tokens**: Upon authentication, the backend mints a custom token containing `role: "device"` and `deviceId`.
-- **RTDB Path Isolation**: Realtime Database rules restrict device writes under `/activeBuses/$busKey` so a device can *only* write to keys matching `auth.token.deviceId + '_' + routeId`.
-- **Secret Migration Security**: Secret hashing endpoints (`/api/devices/hash-secret`) require an admin ID token (`requireAdmin`).
+ESP32 GNSS units post a closed six-field payload to
+`/api/devices/{deviceId}/telemetry` over certificate-verified HTTPS:
+
+- **Independent device credentials**: Per-device secrets are stored as salted
+  scrypt verifiers and compared with `timingSafeEqual`. The plaintext is shown
+  once by the local provisioning command and is never returned by an API.
+- **Server-side assignment**: Bus and route IDs come from the protected device
+  registry, not from device-controlled JSON.
+- **Bounded ingestion**: Telemetry has a 512-byte parser limit, exact field and
+  numeric validation, timestamp deduplication, per-IP and per-device limits,
+  and a constant-time credential check.
+- **No Firebase credential on hardware**: Devices cannot read or write Firebase
+  directly. Only the backend Admin SDK writes the live RTDB projection.
 
 ### Firebase Security Rules Perimeter (`database.rules.json`)
 
-- **`/activeBuses`**: Read-accessible to authenticated users; write-gated to custom claim `driver`, `admin`, or path-isolated `device`.
-- **`/messages`**: Append-only (`!data.exists()`). Enforces required fields (`text`, `from`, `senderName`, `senderId`, `timestamp`), max string lengths (text $\le 500$, name $\le 100$), numeric timestamps, and `senderId === auth.uid`.
+- **`/activeBuses`**: Read-accessible to authenticated users and client-write
+  denied. Lifecycle and coordinates are backend-authoritative.
+- **`/driverRouteAssignments` and `/messages`**: Client reads and writes are
+  denied; chat is stored under Firestore ride sessions with scoped rules.
 - **`/users`**: Read-restricted to owner (`auth.uid == $uid`). Writes disabled (`.write: false`).
 
 ### HTTP Security Headers & Infrastructure
@@ -47,4 +57,5 @@ Firebase Hosting (`firebase.json`) enforces strict production security headers:
 ## In-Transit Encryption
 
 - All HTTP traffic enforces HTTPS.
-- Hardware telemetry (ESP32) utilizes TLS via `WiFiClientSecure` when communicating with backend APIs and Firebase.
+- Hardware telemetry uses `WiFiClientSecure` with a configured CA certificate
+  when communicating with the backend API.

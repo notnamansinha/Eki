@@ -1,38 +1,22 @@
 #pragma once
 
 /**
- * SECURITY: This file is the TEMPLATE — copy it to secrets.h and fill in your values.
- *
- * !! NEVER commit secrets.h to git. It is gitignored.
- * !! Never store a real WiFi password or Firebase private key in any tracked file.
- *
- * Setup:
- *   cp include/secrets.example.h include/secrets.h
- *   # Edit include/secrets.h with your real credentials
+ * Copy to secrets.h and replace every placeholder. secrets.h is gitignored.
+ * Never commit Wi-Fi credentials, device secrets, or production endpoints.
  */
-
-// ── WiFi Credentials ──────────────────────────────────────────────
 #define WIFI_SSID "YOUR_WIFI_SSID"
 #define WIFI_PASS "YOUR_WIFI_PASSWORD"
 
-// ── Firebase Configuration ────────────────────────────────────────
-#define FIREBASE_HOST "your-project-id-default-rtdb.firebaseio.com"
-#define FIREBASE_API_KEY "YOUR_FIREBASE_API_KEY"
+// Stable identity registered in the backend devices collection.
+#define DEVICE_ID "device_01"
+#define DEVICE_SECRET "GENERATE_AT_LEAST_20_RANDOM_CHARACTERS"
 
-#define BUS_ID "bus_01"
-#define ROUTE_ID "route_01"
-#define DRIVER_ID "hw_device"
-
-// ── Backend Authentication ────────────────────────────────────────
-// The backend URL where the ESP32 will fetch its Firebase Custom Token
-#define BACKEND_URL "https://your-backend.example.com"
-
-// PEM root certificate for the CA that issued BACKEND_URL's certificate.
-static const char BACKEND_ROOT_CA[] PROGMEM = R"EOF(
+// HTTPS is mandatory. This may be a university URL or an approved HTTPS tunnel
+// to the backend running on the demo laptop.
+#define BACKEND_URL "https://your-backend.example"
+static constexpr char EKI_BACKEND_ROOT_CA[] = R"EOF(
 -----BEGIN CERTIFICATE-----
-REPLACE_WITH_YOUR_BACKEND_CA_CERTIFICATE
+REPLACE_WITH_THE_CA_THAT_ISSUED_THE_BACKEND_CERTIFICATE
 -----END CERTIFICATE-----
 )EOF";
-
-// The secret for this specific device, verified by the backend
-#define DEVICE_SECRET "YOUR_DEVICE_SECRET"
+#define BACKEND_ROOT_CA EKI_BACKEND_ROOT_CA

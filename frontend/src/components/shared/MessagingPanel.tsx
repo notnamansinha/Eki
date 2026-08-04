@@ -1,9 +1,22 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { db } from "@/lib/firebase";
-import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp, Timestamp } from "firebase/firestore";
+import { db } from "@/lib/firebaseFirestore";
+import {
+  collection,
+  doc,
+  limitToLast,
+  onSnapshot,
+  orderBy,
+  query,
+  runTransaction,
+  serverTimestamp,
+  Timestamp,
+} from "firebase/firestore";
 import { Send, X, MessageCircle } from "lucide-react";
+import { auth } from "@/lib/firebaseAuth";
+
+const MAX_MESSAGE_LENGTH = 500;
 
 interface Message {
   id: string;
@@ -35,9 +48,12 @@ export default function MessagingPanel({
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
+  const [sending, setSending] = useState(false);
   const [rateLimitMsg, setRateLimitMsg] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastSeenCountRef = useRef(0);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rateLimitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     lastSeenCountRef.current = 0;
@@ -45,7 +61,11 @@ export default function MessagingPanel({
     if (!sessionId) return;
 
     const unsubscribe = onSnapshot(
-      query(collection(db, "ride_sessions", sessionId, "messages"), orderBy("timestamp", "asc")),
+      query(
+        collection(db, "ride_sessions", sessionId, "messages"),
+        orderBy("timestamp", "asc"),
+        limitToLast(200),
+      ),
       (snapshot) => {
           const msgs = snapshot.docs.map((message) => ({ id: message.id, ...message.data() })) as Message[];
           setMessages(msgs);
@@ -59,7 +79,8 @@ export default function MessagingPanel({
             lastSeenCountRef.current = othersCount;
           }
 
-          setTimeout(() => {
+          if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+          scrollTimerRef.current = setTimeout(() => {
             messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
           }, 100);
       }, (error) => {
@@ -69,6 +90,7 @@ export default function MessagingPanel({
 
     return () => {
       unsubscribe();
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     };
   }, [sessionId, currentUserId, onUnreadCountChange]);
 
@@ -83,43 +105,116 @@ export default function MessagingPanel({
     return text.replace(PROFANITY_REGEX, "***");
   };
 
+  const showTransientMessage = (message: string) => {
+    setRateLimitMsg(message);
+    if (rateLimitTimerRef.current) clearTimeout(rateLimitTimerRef.current);
+    rateLimitTimerRef.current = setTimeout(() => setRateLimitMsg(""), 3000);
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !sessionId) return;
+    if (sending || !newMessage.trim() || !sessionId) return;
+
+    const authenticatedUserId = auth.currentUser?.uid;
+    if (!authenticatedUserId || authenticatedUserId !== currentUserId) {
+      showTransientMessage("Your session changed. Please reopen chat and try again.");
+      return;
+    }
 
     const now = Date.now();
     const oneHourAgo = now - 3600000;
     const recentMessages = messagesSentCounts.filter(m => m.timestamp > oneHourAgo);
     
     if (recentMessages.length >= 60) {
-      setRateLimitMsg("Limit reached — 60 messages/hour");
-      setTimeout(() => setRateLimitMsg(""), 3000);
+      showTransientMessage("Limit reached — 60 messages/hour");
       return;
     }
     
     // Add 3-second quick spam cooldown
     if (recentMessages.length > 0 && (now - recentMessages[recentMessages.length - 1].timestamp < 3000)) {
-      setNewMessage("");
+      showTransientMessage("Please wait three seconds before sending again.");
       return;
     }
 
-    const censoredContent = censorText(newMessage.trim());
-    setMessagesSentCounts([...recentMessages, { timestamp: now }]);
+    const censoredContent = censorText(newMessage.trim()).slice(0, MAX_MESSAGE_LENGTH);
     const roleForMsg = currentUserRole === "admin" ? "driver" : currentUserRole;
 
+    setSending(true);
     try {
-      await addDoc(collection(db, "ride_sessions", sessionId, "messages"), {
-        text: censoredContent,
-        from: roleForMsg,
-        senderName: currentUserName || (roleForMsg === "driver" ? "Operator" : "Rider"),
-        senderId: currentUserId || "anonymous",
-        timestamp: serverTimestamp()
+      const messageRef = doc(collection(db, "ride_sessions", sessionId, "messages"));
+      const rateRef = doc(db, "ride_sessions", sessionId, "messageRateLimits", currentUserId);
+      await runTransaction(db, async (transaction) => {
+        const rateSnapshot = await transaction.get(rateRef);
+        const existing = rateSnapshot.data() as {
+          sentAt?: Timestamp[];
+          lastSentAt?: Timestamp;
+          count?: number;
+          windowStartedAt?: Timestamp;
+        } | undefined;
+        let sentAt: Timestamp[] = [];
+        if (
+          Array.isArray(existing?.sentAt) &&
+          existing?.lastSentAt instanceof Timestamp
+        ) {
+          sentAt = [...existing.sentAt, existing.lastSentAt];
+        } else if (
+          existing?.windowStartedAt instanceof Timestamp &&
+          existing?.lastSentAt instanceof Timestamp
+        ) {
+          const legacyCount = Math.max(1, Math.min(60, Number(existing.count) || 1));
+          if (now - existing.windowStartedAt.toMillis() < 60 * 60 * 1000) {
+            sentAt = [
+              ...Array<Timestamp>(legacyCount - 1).fill(existing.windowStartedAt),
+              existing.lastSentAt,
+            ];
+          }
+        }
+        if (sentAt.length >= 60) {
+          if (now - sentAt[0].toMillis() < 60 * 60 * 1000) {
+            const rateLimitError = new Error("Rolling message limit reached.") as Error & {
+              code: string;
+            };
+            rateLimitError.code = "rate-limit";
+            throw rateLimitError;
+          }
+          sentAt = sentAt.slice(1);
+        }
+
+        transaction.set(rateRef, {
+          userId: currentUserId,
+          sentAt,
+          lastSentAt: serverTimestamp(),
+        });
+        transaction.set(messageRef, {
+          text: censoredContent,
+          from: roleForMsg,
+          senderName: currentUserName.trim().slice(0, 100) || (roleForMsg === "driver" ? "Operator" : "Rider"),
+          senderId: currentUserId,
+          timestamp: serverTimestamp(),
+        });
       });
+      setMessagesSentCounts([...recentMessages, { timestamp: now }]);
       setNewMessage("");
-    } catch (error) {
-      console.error("Failed to send message", error);
+    } catch (error: unknown) {
+      const code = typeof error === "object" && error !== null && "code" in error
+        ? String(error.code)
+        : "";
+      if (code.includes("permission-denied") || code === "rate-limit") {
+        showTransientMessage("Please wait before sending another message.");
+      } else {
+        console.error("Failed to send message", error);
+        showTransientMessage("Message could not be sent. Please try again.");
+      }
+    } finally {
+      setSending(false);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (rateLimitTimerRef.current) clearTimeout(rateLimitTimerRef.current);
+    };
+  }, []);
 
   return (
     <div className={`flex flex-col h-full relative overflow-hidden ${isOverlay ? 'rounded-t-2xl' : 'rounded-2xl'}`}
@@ -143,7 +238,7 @@ export default function MessagingPanel({
         {isOverlay && onClose && (
           <button 
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+            className="w-11 h-11 rounded-lg flex items-center justify-center transition-colors"
             style={{ background: "var(--surface-3)", color: "var(--text-tertiary)" }}
             aria-label="Close chat"
           >
@@ -178,7 +273,7 @@ export default function MessagingPanel({
                     style={{ color: isMe ? "var(--accent)" : "var(--text-ghost)" }}>
                     {isMe ? 'You' : msg.senderName}
                   </span>
-                  {msg.timestamp && (
+                  {msg.timestamp instanceof Timestamp && (
                     <span className="text-[9px] font-medium" style={{ color: "var(--text-ghost)" }}>
                       {msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
@@ -220,7 +315,7 @@ export default function MessagingPanel({
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            maxLength={500}
+            maxLength={MAX_MESSAGE_LENGTH}
             placeholder="Message…"
             className="flex-1 h-11 rounded-xl px-4 text-[14px] font-medium focus:outline-none transition-all"
             style={{
@@ -231,7 +326,7 @@ export default function MessagingPanel({
           />
           <button
             type="submit"
-            disabled={!newMessage.trim()}
+            disabled={sending || !newMessage.trim()}
             className="w-11 h-11 rounded-xl flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 transition-all"
             style={{ background: "var(--accent)", color: "var(--surface-0)" }}
             aria-label="Send message"

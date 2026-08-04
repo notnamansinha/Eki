@@ -4,7 +4,6 @@ import dynamic from "next/dynamic";
 import {
   MapPinned as MapIcon,
   UsersRound as UsersIcon,
-  ShieldCheck,
   BusFront as BusIcon,
   LayoutDashboard,
   Settings as SettingsIcon,
@@ -60,16 +59,6 @@ export default function AdminPage() {
       className="bg-brand-dark text-white flex flex-col font-sans"
       style={{ height: "100dvh", overflow: "hidden" }}
     >
-      {/* ── Slim identity header ── */}
-      <header className="shrink-0 w-full border-b border-white/5 bg-brand-dark/80 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-12 flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded-lg bg-brand-accent/20 flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-3 h-3 text-brand-accent" />
-          </div>
-          <span className="font-bold text-sm text-white">Admin Panel</span>
-        </div>
-      </header>
-
       {/* ── Tab Bar ── */}
       <div className="shrink-0 w-full border-b border-white/5 bg-brand-surface/30 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
@@ -97,7 +86,7 @@ export default function AdminPage() {
       {/* ── Content — fills remaining height, scrolls internally per panel ── */}
       <div className="flex-1 min-h-0 overflow-hidden bg-brand-dark/20">
         {TABS.map(({ id }) => visitedTabs.includes(id) && (
-          <div key={id} className={activeTab === id ? "h-full" : "hidden"}>
+          <div key={id} className={activeTab === id ? "h-full overflow-y-auto" : "hidden"}>
             {renderPanel(id)}
           </div>
         ))}

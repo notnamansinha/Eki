@@ -1,0 +1,54 @@
+name: Production verification
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+        env:
+          # Unit tests import Firebase Admin but never contact RTDB. Admin still
+          # requires a syntactically valid URL during module initialization.
+          FIREBASE_DATABASE_URL: https://eki-unit-test-default-rtdb.firebaseio.com
+      - name: Test Firebase authorization rules in emulators
+        env:
+          FIREBASE_RULES_TEST: "1"
+        run: >-
+          npx --yes firebase-tools@15.14.0 emulators:exec
+          --only firestore,database
+          --project eki-rules-test
+          "npm run test --workspace=backend"
+      - run: npm run build
+      # Slow-3G/Offline browser acceptance remains a manual deployment gate;
+      # see docs/UNIVERSITY_DEPLOYMENT_CHECKLIST.md.
+      - run: npm audit --omit=dev --omit=optional
+
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install platformio
+      - run: cp hardware/include/secrets.example.h hardware/include/secrets.h
+      - run: platformio run --project-dir hardware
