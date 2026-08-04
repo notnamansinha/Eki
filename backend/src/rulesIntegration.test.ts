@@ -1,11 +1,5 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import {
-  assertFails,
-  assertSucceeds,
-  initializeTestEnvironment,
-  type RulesTestEnvironment,
-} from "@firebase/rules-unit-testing";
 import { get, ref, set } from "firebase/database";
 import {
   collection,
@@ -20,7 +14,9 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 const enabled = process.env.FIREBASE_RULES_TEST === "1";
 const rulesDescribe = enabled ? describe : describe.skip;
-let environment: RulesTestEnvironment;
+let environment: any;
+let assertFails: any;
+let assertSucceeds: any;
 
 function emulator(name: "FIRESTORE_EMULATOR_HOST" | "FIREBASE_DATABASE_EMULATOR_HOST") {
   const [host, port] = (process.env[name] || "").split(":");
@@ -30,7 +26,10 @@ function emulator(name: "FIRESTORE_EMULATOR_HOST" | "FIREBASE_DATABASE_EMULATOR_
 
 rulesDescribe("Firebase security rules integration", () => {
   beforeAll(async () => {
-    environment = await initializeTestEnvironment({
+    const rulesModule = await import("@firebase/rules-unit-testing");
+    assertFails = rulesModule.assertFails;
+    assertSucceeds = rulesModule.assertSucceeds;
+    environment = await rulesModule.initializeTestEnvironment({
       projectId: "eki-rules-test",
       firestore: {
         ...emulator("FIRESTORE_EMULATOR_HOST"),
