@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import type { RulesTestEnvironment } from "@firebase/rules-unit-testing";
 import { get, ref, set } from "firebase/database";
 import {
   collection,
@@ -14,7 +15,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 const enabled = process.env.FIREBASE_RULES_TEST === "1";
 const rulesDescribe = enabled ? describe : describe.skip;
-let environment: any;
+let environment: RulesTestEnvironment;
 let assertFails: any;
 let assertSucceeds: any;
 
