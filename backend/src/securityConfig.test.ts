@@ -228,14 +228,15 @@ describe("production security configuration", () => {
 
   it("keeps the parked GNSS heartbeat safely inside stale-record expiry", () => {
     const firmware = workspaceFile("hardware/src/main.cpp");
+    const telemetryPolicy = workspaceFile("hardware/include/telemetry_policy.h");
     const tripStateEngine = workspaceFile("backend/src/services/tripStateEngine.ts");
 
-    expect(firmware).toContain("STOPPED_HEARTBEAT_MS = 60000");
-    expect(firmware).toContain("motionStateChanged");
+    expect(telemetryPolicy).toContain("STOPPED_HEARTBEAT_MS = 60000");
+    expect(telemetryPolicy).toContain("motionStateChanged");
     expect(tripStateEngine).toContain("const STALE_BUS_MS = readIntervalMs");
     expect(firmware).toContain("bufferedFix");
-    expect(firmware).toContain("HTTPS_RETRY_BASE_MS");
-    expect(firmware).toContain("HTTPS_RETRY_MAX_MS");
+    expect(telemetryPolicy).toContain("HTTPS_RETRY_BASE_MS");
+    expect(telemetryPolicy).toContain("HTTPS_RETRY_MAX_MS");
     expect(firmware).toContain("httpsRetryIsPending()");
     expect(firmware).toContain("resetHttpsRetry()");
     expect(firmware).toContain("setRxBufferSize(GPS_RX_BUFFER_BYTES)");
@@ -340,6 +341,38 @@ describe("production security configuration", () => {
     expect(telemetry).toContain("durableRideRestores");
     expect(telemetry).toContain("scheduleDurableRideRestore(assignment, sample)");
     expect(telemetry).not.toContain("await restoreDurableRide(assignment, sample)");
+  });
+
+  it("serializes one active session per bus and makes completion session-safe", () => {
+    const shifts = workspaceFile("backend/src/routes/shifts.ts");
+    const engine = workspaceFile("backend/src/services/tripStateEngine.ts");
+    const reconciler = workspaceFile(
+      "backend/src/services/abandonedRideReconciler.ts",
+    );
+
+    expect(shifts).toContain('collection("_active_bus_locks").doc(busId)');
+    expect(shifts).toContain("transaction.create(lockRef");
+    expect(shifts).toContain("lockData?.driverId !== assignment.driverId");
+    expect(shifts).toContain("winner.sessionId === sessionRef.id");
+    expect(engine).toContain('collection("_active_bus_locks").doc(data.busId)');
+    expect(engine).toContain("lock.data()?.sessionId === data.sessionId");
+    expect(engine).toContain("live.sessionId !== data.sessionId");
+    expect(reconciler).toContain("currentBusLock.data()?.sessionId === sessionId");
+  });
+
+  it("never runtime-caches authenticated API data and fails closed production config", () => {
+    const serviceWorker = workspaceFile("frontend/src/sw.js");
+    const nextConfig = workspaceFile("frontend/next.config.ts");
+    const productionBuild = workspaceFile("scripts/build-production.mjs");
+
+    expect(serviceWorker).toContain("new NetworkOnly()");
+    expect(serviceWorker).toContain("setDefaultHandler(new NetworkOnly())");
+    expect(serviceWorker).not.toContain('cacheName: "eki-firebase-api"');
+    expect(serviceWorker).not.toContain('cacheName: "eki-default"');
+    expect(productionBuild).toContain('EKI_STRICT_PRODUCTION_BUILD = "true"');
+    expect(nextConfig).toContain('process.env.EKI_STRICT_PRODUCTION_BUILD === "true"');
+    expect(nextConfig).toContain('"NEXT_PUBLIC_BACKEND_URL"');
+    expect(nextConfig).toContain("must be a non-local HTTPS URL");
   });
 
   it("revokes fleet assignments through an admin backend boundary", () => {
