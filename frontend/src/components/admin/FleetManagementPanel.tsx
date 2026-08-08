@@ -162,8 +162,11 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
     <div className="bg-brand-surface border border-border-thin rounded-md overflow-hidden transition-colors hover:border-white/30">
       {/* Compact header */}
       <button
+        type="button"
         onClick={() => setExpanded(o => !o)}
         aria-label={`${expanded ? "Collapse" : "Expand"} details for bus ${bus?.name ?? entry.busId}`}
+        aria-expanded={expanded}
+        aria-controls={`live-bus-details-${entry.busId}-${entry.routeId ?? "route"}`}
         className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-white/3 transition-colors text-left"
       >
         <div className="flex items-center gap-3 min-w-0">
@@ -204,7 +207,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
 
       {/* Expanded detail panel */}
       {expanded && (
-        <div className="border-t border-white/5 p-4 flex flex-col gap-3">
+        <div id={`live-bus-details-${entry.busId}-${entry.routeId ?? "route"}`} className="border-t border-white/5 p-4 flex flex-col gap-3">
 
           {/* Stats row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">

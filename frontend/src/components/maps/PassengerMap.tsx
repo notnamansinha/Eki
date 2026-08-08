@@ -387,7 +387,7 @@ function PassengerMapInner({
   useEffect(() => {
     if (!route.stops || route.stops.length === 0 || buses.size === 0) return;
 
-    const fetchETAs = () => {
+    const calculateETAs = () => {
       const now = Date.now();
       const newArrivals: Record<string, number> = {};
 
@@ -436,9 +436,7 @@ function PassengerMapInner({
       updateUI();
     };
 
-    fetchETAs();
-    const interval = setInterval(fetchETAs, 60000);
-    return () => clearInterval(interval);
+    calculateETAs();
   }, [
     buses,
     route.stops,

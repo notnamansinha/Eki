@@ -36,11 +36,9 @@ const TABS: { id: AdminTab; label: string; Icon: React.FC<{ className?: string }
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
-  const [visitedTabs, setVisitedTabs] = useState<AdminTab[]>(["dashboard"]);
 
   const selectTab = (tab: AdminTab) => {
     setActiveTab(tab);
-    setVisitedTabs((current) => current.includes(tab) ? current : [...current, tab]);
   };
 
   const renderPanel = (tab: AdminTab) => {
@@ -62,11 +60,14 @@ export default function AdminPage() {
       {/* ── Tab Bar ── */}
       <div className="shrink-0 w-full border-b border-white/5 bg-brand-surface/30 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex items-stretch overflow-x-auto hide-scrollbar">
+          <div className="flex items-stretch overflow-x-auto hide-scrollbar" role="tablist" aria-label="Administration sections">
             {TABS.map(({ id, label, Icon }) => (
               <button
                 key={id}
                 id={`admin-tab-${id}`}
+                role="tab"
+                aria-selected={activeTab === id}
+                aria-controls={`admin-panel-${id}`}
                 onClick={() => selectTab(id)}
                 className={`relative flex items-center gap-2 px-4 py-3.5 text-sm font-semibold transition-all whitespace-nowrap ${
                   activeTab === id ? "text-white" : "text-white/50 hover:text-white/70"
@@ -84,12 +85,13 @@ export default function AdminPage() {
       </div>
 
       {/* ── Content — fills remaining height, scrolls internally per panel ── */}
-      <div className="flex-1 min-h-0 overflow-hidden bg-brand-dark/20">
-        {TABS.map(({ id }) => visitedTabs.includes(id) && (
-          <div key={id} className={activeTab === id ? "h-full overflow-y-auto" : "hidden"}>
-            {renderPanel(id)}
-          </div>
-        ))}
+      <div
+        id={`admin-panel-${activeTab}`}
+        role="tabpanel"
+        aria-labelledby={`admin-tab-${activeTab}`}
+        className="flex-1 min-h-0 overflow-y-auto bg-brand-dark/20"
+      >
+        {renderPanel(activeTab)}
       </div>
     </main>
   );
