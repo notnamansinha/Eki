@@ -17,6 +17,18 @@ function activeRideId(busId: string, routeId: string): string {
   return `${busId}_${routeId}`;
 }
 
+function activeBusLockRef(busId: string) {
+  return db.collection("_active_bus_locks").doc(busId);
+}
+
+async function releaseActiveBusLock(busId: string, sessionId: string): Promise<void> {
+  const lockRef = activeBusLockRef(busId);
+  await db.runTransaction(async (transaction) => {
+    const lock = await transaction.get(lockRef);
+    if (lock.data()?.sessionId === sessionId) transaction.delete(lockRef);
+  });
+}
+
 type AuthenticatedRequest = Request & {
   user?: {
     uid: string;
@@ -127,6 +139,23 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
     ) {
       const sessionStatus =
         current.tripState === "pre_departure" ? "armed" : "active";
+      const lockRef = activeBusLockRef(assignment.busId);
+      const lockClaimed = await db.runTransaction(async (transaction) => {
+        const lock = await transaction.get(lockRef);
+        if (lock.exists && lock.data()?.sessionId !== current.sessionId) return false;
+        transaction.set(lockRef, {
+          busId: assignment.busId,
+          routeId: assignment.routeId,
+          driverId: assignment.driverId,
+          sessionId: current.sessionId,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+      if (!lockClaimed) {
+        res.status(409).json({ error: "This bus already has an active shift on another route." });
+        return;
+      }
       await Promise.all([
         db.collection("ride_sessions").doc(current.sessionId).set({
           id: current.sessionId,
@@ -196,18 +225,98 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
       ) <= STOP_GEOFENCE_M;
     const initialTripState =
       arrivedAtOrigin ? "in_service" : "pre_departure";
-    const sessionRef = db.collection("ride_sessions").doc();
-    const armedAt = Date.now();
-    await sessionRef.create({
-      id: sessionRef.id,
-      busId: assignment.busId,
-      driverId: assignment.driverId,
-      routeId: assignment.routeId,
-      armedAt,
-      status: "pending",
-      passengers: {},
-      stopsReached: {},
+    const proposedSessionRef = db.collection("ride_sessions").doc();
+    const lockRef = activeBusLockRef(assignment.busId);
+    const proposedArmedAt = Date.now();
+    const lockClaim = await db.runTransaction(async (transaction) => {
+      const lock = await transaction.get(lockRef);
+      if (lock.exists) {
+        const lockData = lock.data();
+        if (
+          lockData?.driverId !== assignment.driverId ||
+          lockData?.routeId !== assignment.routeId ||
+          typeof lockData.sessionId !== "string" ||
+          !SAFE_ID.test(lockData.sessionId)
+        ) {
+          return null;
+        }
+        const existingSession = await transaction.get(
+          db.collection("ride_sessions").doc(lockData.sessionId),
+        );
+        const session = existingSession.data();
+        const sessionStatus = session?.status;
+        if (
+          !existingSession.exists ||
+          (sessionStatus !== "pending" &&
+            sessionStatus !== "armed" &&
+            sessionStatus !== "active")
+        ) {
+          return null;
+        }
+        return {
+          sessionId: lockData.sessionId,
+          armedAt: typeof session?.armedAt === "number" ? session.armedAt : proposedArmedAt,
+          status: sessionStatus,
+          created: false,
+        };
+      }
+      transaction.create(proposedSessionRef, {
+        id: proposedSessionRef.id,
+        busId: assignment.busId,
+        driverId: assignment.driverId,
+        routeId: assignment.routeId,
+        armedAt: proposedArmedAt,
+        status: "pending",
+        passengers: {},
+        stopsReached: {},
+      });
+      transaction.create(lockRef, {
+        busId: assignment.busId,
+        routeId: assignment.routeId,
+        driverId: assignment.driverId,
+        sessionId: proposedSessionRef.id,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return {
+        sessionId: proposedSessionRef.id,
+        armedAt: proposedArmedAt,
+        status: "pending" as const,
+        created: true,
+      };
     });
+    if (!lockClaim) {
+      res.status(409).json({ error: "This bus already has an active shift on another route." });
+      return;
+    }
+    const sessionRef = db.collection("ride_sessions").doc(lockClaim.sessionId);
+    const armedAt = lockClaim.armedAt;
+    let claimedTripState = initialTripState;
+    let claimedStopIndex = 0;
+    let claimedHasDepartedOrigin = false;
+    let claimedDelayMinutes = 0;
+    if (!lockClaim.created && lockClaim.status !== "pending") {
+      const recovery = await db.collection("active_rides")
+        .doc(activeRideId(assignment.busId, assignment.routeId))
+        .get();
+      const recoveryData = recovery.data();
+      if (!recovery.exists || recoveryData?.sessionId !== sessionRef.id) {
+        res.status(409).json({
+          error: "The existing ride is awaiting lifecycle recovery. Retry after telemetry reconnects.",
+        });
+        return;
+      }
+      claimedTripState = recoveryData.tripState === "in_service"
+        ? "in_service"
+        : "pre_departure";
+      claimedStopIndex = Number.isInteger(recoveryData.currentStopIndex)
+        ? recoveryData.currentStopIndex
+        : 0;
+      claimedHasDepartedOrigin = recoveryData.hasDepartedOrigin === true;
+      claimedDelayMinutes = typeof recoveryData.delayMinutes === "number"
+        ? recoveryData.delayMinutes
+        : 0;
+    }
 
     try {
       // Claim the live vehicle atomically. Two near-simultaneous start
@@ -230,27 +339,28 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           sessionId: sessionRef.id,
           status: "active",
           deviceState: "online",
-          tripState: initialTripState,
-          hasDepartedOrigin: false,
-          currentStopIndex: 0,
-          delayMinutes: 0,
+          tripState: claimedTripState,
+          hasDepartedOrigin: claimedHasDepartedOrigin,
+          currentStopIndex: claimedStopIndex,
+          delayMinutes: claimedDelayMinutes,
           lifecycleUpdatedAt: { ".sv": "timestamp" },
         };
       });
       if (!claim.committed) {
         const winner = claim.snapshot.val() as Record<string, unknown> | null;
+        if (
+          winner?.driverId === assignment.driverId &&
+          winner.sessionId === sessionRef.id
+        ) {
+          res.json({ sessionId: winner.sessionId, resumed: true });
+          return;
+        }
         await sessionRef.set({
           status: "failed",
           endTime: Date.now(),
           failureReason: "shift_conflict",
         }, { merge: true });
-        if (
-          winner?.driverId === assignment.driverId &&
-          typeof winner.sessionId === "string"
-        ) {
-          res.json({ sessionId: winner.sessionId, resumed: true });
-          return;
-        }
+        await releaseActiveBusLock(assignment.busId, sessionRef.id);
         res.status(409).json({ error: "This bus already has an active shift." });
         return;
       }
@@ -258,9 +368,9 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         .doc(activeRideId(assignment.busId, assignment.routeId));
       const batch = db.batch();
       batch.set(sessionRef, {
-        status: arrivedAtOrigin ? "active" : "armed",
+        status: claimedTripState === "in_service" ? "active" : "armed",
         armedAt,
-        ...(arrivedAtOrigin
+        ...(claimedTripState === "in_service" && lockClaim.created
           ? {
               startTime: armedAt,
               activatedAt: FieldValue.serverTimestamp(),
@@ -282,40 +392,25 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         driverId: assignment.driverId,
         routeId: assignment.routeId,
         status: "active",
-        tripState: initialTripState,
-        currentStopIndex: 0,
-        hasDepartedOrigin: false,
-        delayMinutes: 0,
+        tripState: claimedTripState,
+        currentStopIndex: claimedStopIndex,
+        hasDepartedOrigin: claimedHasDepartedOrigin,
+        delayMinutes: claimedDelayMinutes,
         updatedAt: FieldValue.serverTimestamp(),
       });
       await batch.commit();
     } catch (error) {
-      await nodeRef.transaction((liveValue) => {
-        const live = liveValue as Record<string, unknown> | null;
-        if (live?.sessionId !== sessionRef.id) return;
-        return {
-          ...live,
-          status: "offline",
-          deviceState: "offline",
-          tripState: "pre_departure",
-          lifecycleUpdatedAt: { ".sv": "timestamp" },
-        };
-      }).catch((rollbackError) => {
-        console.error("[Shifts] Failed to roll back live shift claim:", rollbackError);
-      });
-      await db.collection("active_rides")
-        .doc(activeRideId(assignment.busId, assignment.routeId))
-        .delete()
-        .catch(() => undefined);
-      await sessionRef.set({
-        status: "failed",
-        endTime: Date.now(),
-        failureReason: "live_state_initialization_failed",
-      }, { merge: true });
+      // Preserve the RTDB claim, pending session and bus lock on an ambiguous
+      // Firestore failure. A retry enters the idempotent resume branch and
+      // repairs the durable projections; eager rollback could undo a commit
+      // whose response was lost.
       throw error;
     }
 
-    res.status(201).json({ sessionId: sessionRef.id, resumed: false });
+    res.status(lockClaim.created ? 201 : 200).json({
+      sessionId: sessionRef.id,
+      resumed: !lockClaim.created,
+    });
   } catch (error) {
     console.error("[Shifts] Failed to start shift:", error);
     res.status(500).json({ error: "Unable to start shift." });

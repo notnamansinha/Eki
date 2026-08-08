@@ -76,6 +76,7 @@ describe("production security configuration", () => {
     const rules = workspaceFile("firestore.rules");
     const devices = ruleBlock(rules, "match /devices/{deviceId}");
     const activeRides = ruleBlock(rules, "match /active_rides/{rideId}");
+    const activeBusLocks = ruleBlock(rules, "match /_active_bus_locks/{busId}");
     const messages = ruleBlock(rules, "match /messages/{messageId}");
     const messageRateLimits = ruleBlock(rules, "match /messageRateLimits/{uid}");
     const sessions = ruleBlock(rules, "match /ride_sessions/{sessionId}");
@@ -83,6 +84,7 @@ describe("production security configuration", () => {
 
     expect(devices).toContain("allow read, write: if false;");
     expect(activeRides).toContain("allow read, write: if false;");
+    expect(activeBusLocks).toContain("allow read, write: if false;");
     expect(messages).toContain("request.resource.data.senderId == request.auth.uid");
     expect(messages).toContain("request.resource.data.from == 'passenger'");
     expect(messages).toContain("request.resource.data.from == 'driver'");
@@ -328,9 +330,9 @@ describe("production security configuration", () => {
     expect(engine).not.toContain('.doc(data.sessionId).update({');
     expect(engine).toContain("live.sessionId !== data.sessionId");
     expect(engine).not.toContain("snapshot.ref.update({ status: \"offline\" })");
-    expect(completionBlock.indexOf("await batch.commit()")).toBeGreaterThan(-1);
-    expect(completionBlock.indexOf("await snapshot.ref.update({")).toBeGreaterThan(
-      completionBlock.indexOf("await batch.commit()"),
+    expect(completionBlock.indexOf("await db.runTransaction")).toBeGreaterThan(-1);
+    expect(completionBlock.indexOf("await snapshot.ref.transaction")).toBeGreaterThan(
+      completionBlock.indexOf("await db.runTransaction"),
     );
     const telemetry = workspaceFile(
       "backend/src/services/deviceTelemetryService.ts",

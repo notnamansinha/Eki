@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   hashDeviceSecret,
   parseDeviceAuthorization,
+  summarizeLatencySamples,
   verifyDeviceSecretHash,
 } from "./deviceTelemetryService";
 
@@ -34,5 +35,19 @@ describe("HTTPS device credentials", () => {
     await expect(
       verifyDeviceSecretHash(plainSecret, "malformed"),
     ).resolves.toBe(false);
+  });
+});
+
+describe("telemetry latency summaries", () => {
+  it("reports empty windows without invented zero-latency measurements", () => {
+    expect(summarizeLatencySamples([])).toEqual({
+      samples: 0, average: null, p50: null, p95: null, p99: null,
+    });
+  });
+
+  it("calculates bounded-window averages and nearest-rank percentiles", () => {
+    expect(summarizeLatencySamples([100, 10, 30, 20, 40])).toEqual({
+      samples: 5, average: 40, p50: 30, p95: 100, p99: 100,
+    });
   });
 });

@@ -7,6 +7,7 @@ import {
   ingestDeviceTelemetry,
   invalidateDeviceCredentialCache,
   parseDeviceAuthorization,
+  recordTelemetryRejection,
 } from "../services/deviceTelemetryService";
 import { parseTelemetryValue } from "../services/telemetryPayload";
 
@@ -44,6 +45,7 @@ router.post(
         ? parseTelemetryValue(req.body)
         : { ok: false as const, reason: "payload_size" };
     if (!SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
+      recordTelemetryRejection();
       res.status(!secret ? 401 : 400).json({
         error: !secret ? "Invalid device credentials." : "Invalid telemetry payload.",
       });
@@ -69,6 +71,7 @@ router.post(
         duplicate: result.duplicate,
       });
     } catch (error) {
+      recordTelemetryRejection();
       console.error("[Devices] HTTPS telemetry ingestion failed:", error);
       res.status(503).json({ error: "Telemetry service unavailable." });
     }
@@ -97,15 +100,17 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
       const busRef = db.collection("buses").doc(busId);
       const routeRef = db.collection("routes").doc(routeId);
       const targetRideRef = db.collection("active_rides").doc(`${busId}_${routeId}`);
+      const targetLockRef = db.collection("_active_bus_locks").doc(busId);
       const targetDevicesQuery = db.collection("devices")
         .where("busId", "==", busId)
         .where("routeId", "==", routeId);
-      const [busDoc, routeDoc, existingDevice, targetRide, targetDevices] =
+      const [busDoc, routeDoc, existingDevice, targetRide, targetLock, targetDevices] =
         await Promise.all([
           transaction.get(busRef),
           transaction.get(routeRef),
           transaction.get(deviceRef),
           transaction.get(targetRideRef),
+          transaction.get(targetLockRef),
           transaction.get(targetDevicesQuery),
         ]);
       const bus = busDoc.data();
@@ -128,7 +133,7 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
       );
       if (
         targetOwnedByAnotherDevice ||
-        (assignmentChanged && targetRide.exists)
+        (assignmentChanged && (targetRide.exists || targetLock.exists))
       ) {
         return "target_conflict" as const;
       }
@@ -139,11 +144,13 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
         typeof previous?.busId === "string" &&
         typeof previous?.routeId === "string"
       ) {
-        const previousRide = await transaction.get(
-          db.collection("active_rides")
-            .doc(`${previous.busId}_${previous.routeId}`),
-        );
-        if (previousRide.exists) {
+        const [previousRide, previousLock] = await Promise.all([
+          transaction.get(
+            db.collection("active_rides").doc(`${previous.busId}_${previous.routeId}`),
+          ),
+          transaction.get(db.collection("_active_bus_locks").doc(previous.busId)),
+        ]);
+        if (previousRide.exists || previousLock.exists) {
           return "active_previous_ride" as const;
         }
       }
