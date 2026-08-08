@@ -56,7 +56,7 @@ stateDiagram-v2
 | `scripts/` | Production build, Workbox generation, deterministic CSP hashes |
 | `docs/` | HLD, LLD, data dictionary, telemetry, tests, audit, operations |
 
-The detailed file-by-file module catalog is in [Low-level design](docs/design/LOW_LEVEL_DESIGN.md).
+The detailed file-by-file module catalog is in [Low-level design](../design/LOW_LEVEL_DESIGN.md).
 
 ## Local setup
 
@@ -103,7 +103,7 @@ Content-Type: application/json
 
 The JSON is limited to 512 bytes and exactly six fields. Coordinates, speed (0–200 km/h), heading (0–360), motion state, and timestamp freshness are checked. `202` accepts a new fix; `200` acknowledges a duplicate; `400`, `401`, `429`, and `503` indicate payload, credential, rate, and service failures.
 
-Firmware uses NTP for TLS/time stamps, an 8 KiB UART RX buffer, HDOP ≤ 4, motion hysteresis, a 3-second change floor, 30-second moving heartbeat, 60-second stopped heartbeat, 7-second HTTP timeout, capped jittered retry, and a 15-second watchdog. See [Hardware telemetry](docs/hardware/HARDWARE_TELEMETRY.md).
+Firmware uses NTP for TLS/time stamps, an 8 KiB UART RX buffer, HDOP ≤ 4, motion hysteresis, a 3-second change floor, 30-second moving heartbeat, 60-second stopped heartbeat, 7-second HTTP timeout, capped jittered retry, and a 15-second watchdog. See [Hardware telemetry](../hardware/HARDWARE_TELEMETRY.md).
 
 ## Verification
 
@@ -116,16 +116,16 @@ npm run verify
 
 ## Documentation
 
-- [Documentation index](docs/index/README.md)
-- [High-level design](docs/design/HIGH_LEVEL_DESIGN.md)
-- [Low-level design and module catalog](docs/design/LOW_LEVEL_DESIGN.md)
-- [Firestore and RTDB data dictionary](docs/data/FIREBASE_DATA_MODEL.md)
-- [Hardware telemetry and latency/failure analysis](docs/hardware/HARDWARE_TELEMETRY.md)
-- [Backend API](backend/API.md)
-- [Test strategy and failure matrix](docs/testing/TEST_STRATEGY.md)
-- [Production readiness audit](docs/operations/PRODUCTION_READINESS_AUDIT.md)
-- [Live demo runbook](docs/operations/LIVE_DEMO_RUNBOOK.md)
-- [University deployment checklist](docs/operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md)
+- [Documentation index](../index/README.md)
+- [High-level design](../design/HIGH_LEVEL_DESIGN.md)
+- [Low-level design and module catalog](../design/LOW_LEVEL_DESIGN.md)
+- [Firestore and RTDB data dictionary](../data/FIREBASE_DATA_MODEL.md)
+- [Hardware telemetry and latency/failure analysis](../hardware/HARDWARE_TELEMETRY.md)
+- [Backend API](../backend/API.md)
+- [Test strategy and failure matrix](../testing/TEST_STRATEGY.md)
+- [Production readiness audit](../operations/PRODUCTION_READINESS_AUDIT.md)
+- [Live demo runbook](../operations/LIVE_DEMO_RUNBOOK.md)
+- [University deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md)
 - [Security policy](SECURITY.md)
 
 ## Production boundary

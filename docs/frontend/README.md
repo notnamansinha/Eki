@@ -29,4 +29,4 @@ The root `npm run build` follows Next export with Workbox manifest injection and
 - Service worker precaches the revisioned static app, may cache explicit public maps/fonts/images, and never caches authenticated Firebase/API or unknown requests.
 - Dialogs trap/restore focus and support Escape; selects are native; map smoothing respects reduced motion; private routes are no-index.
 
-See [LLD](../docs/design/LOW_LEVEL_DESIGN.md), [Firebase model](../docs/data/FIREBASE_DATA_MODEL.md), and [test strategy](../docs/testing/TEST_STRATEGY.md).
+See [LLD](../design/LOW_LEVEL_DESIGN.md), [Firebase model](../data/FIREBASE_DATA_MODEL.md), and [test strategy](../testing/TEST_STRATEGY.md).

@@ -1,0 +1,6 @@
+# Private firmware libraries
+
+This directory is currently empty. Keep reusable project-owned embedded
+libraries here only when `src/main.cpp` is split for a concrete reason. Third-
+party dependencies belong in pinned `platformio.ini` `lib_deps`, not copied
+into this directory.
