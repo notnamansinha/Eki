@@ -38,7 +38,7 @@ jobs:
           "npm run test --workspace=backend"
       - run: npm run build
       # Slow-3G/Offline browser acceptance remains a manual deployment gate;
-      # see docs/UNIVERSITY_DEPLOYMENT_CHECKLIST.md.
+      # see docs/operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md.
       - run: npm audit --omit=dev --omit=optional
 
   firmware:
@@ -50,5 +50,6 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install platformio
+      - run: platformio test --project-dir hardware -e native
       - run: cp hardware/include/secrets.example.h hardware/include/secrets.h
-      - run: platformio run --project-dir hardware
+      - run: platformio run --project-dir hardware -e esp32dev

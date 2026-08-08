@@ -1,12 +1,14 @@
 #include "secrets.h"
+#include "telemetry_policy.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <cstring>
 #include <HTTPClient.h>
 #include <TinyGPSPlus.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <esp_system.h>
+#include <esp_idf_version.h>
+#include <esp_task_wdt.h>
 #include <sys/time.h>
 
 #ifndef BACKEND_ROOT_CA
@@ -26,20 +28,11 @@ static_assert(sizeof(DEVICE_SECRET) - 1 >= 20,
               "DEVICE_SECRET must contain at least 20 characters.");
 
 namespace {
-constexpr double DISTANCE_THRESHOLD_M = 5.0;
-constexpr double HEADING_THRESHOLD_DEG = 15.0;
-constexpr double SPEED_THRESHOLD_KMH = 5.0;
-constexpr double MOVING_SPEED_KMH = 2.5;
-constexpr double STOP_SPEED_KMH = 1.5;
 constexpr double HDOP_REJECT_THRESHOLD = 4.0;
-constexpr uint32_t MIN_PUBLISH_INTERVAL_MS = 3000;
-constexpr uint32_t MOVING_HEARTBEAT_MS = 30000;
-constexpr uint32_t STOPPED_HEARTBEAT_MS = 60000;
 constexpr uint32_t WIFI_RETRY_MS = 5000;
 constexpr uint32_t TIME_SYNC_RETRY_MS = 10000;
-constexpr uint32_t HTTPS_RETRY_BASE_MS = 1000;
-constexpr uint32_t HTTPS_RETRY_MAX_MS = 30000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
+constexpr uint32_t WATCHDOG_TIMEOUT_MS = 15000;
 // At 9,600 baud, a seven-second HTTPS call can overlap roughly 6.7 KiB of
 // incoming NMEA data. HardwareSerial defaults to only 256 bytes.
 constexpr size_t GPS_RX_BUFFER_BYTES = 8192;
@@ -67,9 +60,7 @@ double lastSpeed = 0;
 double lastHeading = 0;
 bool hasPublishedLocation = false;
 const char *lastPublishedMotionState = nullptr;
-bool moving = false;
-uint8_t movingReadings = 0;
-uint8_t stoppedReadings = 0;
+eki::telemetry::MotionTracker motionTracker;
 uint32_t lastPublishAt = 0;
 uint32_t lastEvaluationAt = 0;
 uint32_t lastWifiAttemptAt = 0;
@@ -102,18 +93,15 @@ bool httpsRetryIsPending() {
 }
 
 void scheduleHttpsRetry() {
-  const uint8_t exponent = min<uint8_t>(consecutiveHttpsFailures, 4);
-  const uint32_t exponentialDelay = HTTPS_RETRY_BASE_MS << exponent;
   // Per-device jitter prevents a recovering hotspot/backend from receiving a
   // synchronized retry wave from the whole fleet.
-  const uint32_t jitter = esp_random() % HTTPS_RETRY_BASE_MS;
-  httpsRetryDelayMs = min<uint32_t>(
-    exponentialDelay + jitter,
-    HTTPS_RETRY_MAX_MS
+  httpsRetryDelayMs = eki::telemetry::retryDelayMs(
+    consecutiveHttpsFailures,
+    esp_random()
   );
   lastHttpsFailureAt = millis();
   consecutiveHttpsFailures =
-    min<uint8_t>(consecutiveHttpsFailures + 1, 5);
+    min<uint8_t>(consecutiveHttpsFailures + 1, 6);
 }
 
 void resetHttpsRetry() {
@@ -127,33 +115,6 @@ int64_t epochMilliseconds() {
   return static_cast<int64_t>(tv.tv_sec) * 1000 + tv.tv_usec / 1000;
 }
 
-double haversineMeters(double lat1, double lng1, double lat2, double lng2) {
-  const double dLat = radians(lat2 - lat1);
-  const double dLng = radians(lng2 - lng1);
-  const double a = sin(dLat / 2) * sin(dLat / 2) +
-                   cos(radians(lat1)) * cos(radians(lat2)) *
-                   sin(dLng / 2) * sin(dLng / 2);
-  return 6371000.0 * 2 * atan2(sqrt(a), sqrt(1 - a));
-}
-
-double headingDelta(double current, double previous) {
-  double delta = fabs(current - previous);
-  return delta > 180 ? 360 - delta : delta;
-}
-
-const char *updateMotionState(double speed) {
-  if (speed >= MOVING_SPEED_KMH) {
-    movingReadings = min<uint8_t>(movingReadings + 1, 3);
-    stoppedReadings = 0;
-    if (movingReadings >= 3) moving = true;
-  } else if (speed <= STOP_SPEED_KMH) {
-    stoppedReadings = min<uint8_t>(stoppedReadings + 1, 3);
-    movingReadings = 0;
-    if (stoppedReadings >= 3) moving = false;
-  }
-  return moving ? "moving" : "stopped";
-}
-
 void connectWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
   if (lastWifiAttemptAt && elapsed(lastWifiAttemptAt) < WIFI_RETRY_MS) return;
@@ -164,13 +125,35 @@ void connectWiFi() {
     WiFi.mode(WIFI_STA);
     WiFi.persistent(false);
     WiFi.setAutoReconnect(true);
+    // The tracker is vehicle-powered. Disabling modem sleep avoids periodic
+    // wake latency during short HTTPS telemetry bursts.
+    WiFi.setSleep(false);
+    WiFi.setScanMethod(WIFI_FAST_SCAN);
+    WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     wifiConfigured = true;
-    Serial.printf("[WiFi] Connecting to %s\n", WIFI_SSID);
+    Serial.println("[WiFi] Connecting to configured network.");
   } else {
     WiFi.reconnect();
     Serial.println("[WiFi] Reconnecting.");
   }
+}
+
+void configureWatchdog() {
+#if ESP_IDF_VERSION_MAJOR >= 5
+  esp_task_wdt_config_t configuration{};
+  configuration.timeout_ms = WATCHDOG_TIMEOUT_MS;
+  configuration.idle_core_mask = (1U << portNUM_PROCESSORS) - 1U;
+  configuration.trigger_panic = true;
+  esp_err_t result = esp_task_wdt_init(&configuration);
+  if (result == ESP_ERR_INVALID_STATE) {
+    result = esp_task_wdt_reconfigure(&configuration);
+  }
+#else
+  const esp_err_t result = esp_task_wdt_init(WATCHDOG_TIMEOUT_MS / 1000, true);
+#endif
+  const esp_err_t addResult = esp_task_wdt_add(nullptr);
+  Serial.printf("[Watchdog] configure=%d, subscribe=%d\n", result, addResult);
 }
 
 void synchronizeClock() {
@@ -267,36 +250,36 @@ TelemetryFix currentFix() {
 
   fix.lat = gps.location.lat();
   fix.lng = gps.location.lng();
-  fix.speed = gps.speed.isValid() && gps.speed.kmph() >= MOVING_SPEED_KMH
+  fix.speed = gps.speed.isValid() &&
+      gps.speed.kmph() >= eki::telemetry::MOVING_SPEED_KMH
     ? min(gps.speed.kmph(), 200.0)
     : 0.0;
   fix.heading = gps.course.isValid()
     ? fmod(max(gps.course.deg(), 0.0), 360.0)
     : 0.0;
-  fix.motionState = updateMotionState(fix.speed);
+  fix.motionState = motionTracker.update(fix.speed);
   fix.timestamp = epochMilliseconds();
   fix.valid = clockIsSynchronized();
   return fix;
 }
 
 bool shouldPublish(const TelemetryFix &fix) {
-  if (!fix.valid) return false;
-  if (!hasPublishedLocation) return true;
-  if (elapsed(lastPublishAt) < MIN_PUBLISH_INTERVAL_MS) return false;
-
-  const bool motionStateChanged =
-    lastPublishedMotionState == nullptr ||
-    std::strcmp(fix.motionState, lastPublishedMotionState) != 0;
-  const double moved = haversineMeters(lastLat, lastLng, fix.lat, fix.lng);
-  const bool materiallyChanged =
-    motionStateChanged ||
-    moved >= DISTANCE_THRESHOLD_M ||
-    headingDelta(fix.heading, lastHeading) >= HEADING_THRESHOLD_DEG ||
-    fabs(fix.speed - lastSpeed) >= SPEED_THRESHOLD_KMH;
-  const uint32_t heartbeat = moving
-    ? MOVING_HEARTBEAT_MS
-    : STOPPED_HEARTBEAT_MS;
-  return materiallyChanged || elapsed(lastPublishAt) >= heartbeat;
+  return eki::telemetry::shouldPublishFix(
+    fix.valid,
+    hasPublishedLocation,
+    elapsed(lastPublishAt),
+    motionTracker.moving,
+    fix.motionState,
+    lastPublishedMotionState,
+    fix.lat,
+    fix.lng,
+    lastLat,
+    lastLng,
+    fix.speed,
+    lastSpeed,
+    fix.heading,
+    lastHeading
+  );
 }
 
 void evaluateTelemetry() {
@@ -353,11 +336,17 @@ void setup() {
 
   tlsClient.setCACert(BACKEND_ROOT_CA);
   telemetryEndpoint = buildTelemetryUrl();
+  if (!telemetryEndpoint.startsWith("https://")) {
+    Serial.println("[Boot] BACKEND_URL must use HTTPS; telemetry disabled.");
+    while (true) delay(1000);
+  }
   authorizationHeader = String("Device ") + DEVICE_SECRET;
+  configureWatchdog();
   connectWiFi();
 }
 
 void loop() {
+  esp_task_wdt_reset();
   while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
 
   if (WiFi.status() != WL_CONNECTED) {
