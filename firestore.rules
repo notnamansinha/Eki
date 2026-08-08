@@ -43,18 +43,10 @@ service cloud.firestore {
     match /users/{uid} {
       // Users can read their own profile
       allow read: if isOwner(uid);
-      // New users can only insert themselves as a 'passenger'
-      allow create: if isOwner(uid) &&
-        request.resource.data.keys().hasOnly([
-          'uid', 'email', 'displayName', 'photoURL', 'role', 'createdAt'
-        ]) &&
-        request.resource.data.uid == uid &&
-        request.resource.data.email is string && request.resource.data.email.size() <= 320 &&
-        request.resource.data.displayName is string && request.resource.data.displayName.size() <= 100 &&
-        request.resource.data.photoURL is string && request.resource.data.photoURL.size() <= 2048 &&
-        request.resource.data.role == 'passenger' &&
-        request.resource.data.createdAt is number;
-      // Nobody can update/delete their own role (Forces Admin to do it manually in backend)
+      // Profile creation is backend-authoritative (POST /api/users/bootstrap).
+      // The backend always creates profiles as role 'passenger' and never
+      // overwrites an existing role, so clients cannot self-escalate.
+      allow create: if false;
       allow update, delete: if false;
     }
 
@@ -197,7 +189,9 @@ service cloud.firestore {
     // ── Settings collection ──
     match /settings/{document} {
       allow read: if isAuthenticated();
-      allow create, update, delete: if isAdmin();
+      // Settings writes are backend-authoritative (PUT /api/settings, admin
+      // claim enforced server-side). Clients only read.
+      allow create, update, delete: if false;
     }
 
     // ── Default deny — no catch-all, everything not listed above is denied ──

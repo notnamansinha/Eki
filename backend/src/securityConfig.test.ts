@@ -200,6 +200,31 @@ describe("production security configuration", () => {
     expect(editor).not.toContain("https://nominatim.openstreetmap.org/search?format=json");
   });
 
+  it("keeps user profiles and settings backend-authoritative", () => {
+    const rules = workspaceFile("firestore.rules");
+    const users = ruleBlock(rules, "match /users/{uid}");
+    const settings = ruleBlock(rules, "match /settings/{document}");
+    const usersRoute = workspaceFile("backend/src/routes/users.ts");
+    const settingsRoute = workspaceFile("backend/src/routes/settings.ts");
+    const authHook = workspaceFile("frontend/src/hooks/useAuth.ts");
+    const settingsHook = workspaceFile("frontend/src/hooks/useSettings.ts");
+
+    expect(users).toContain("allow read: if isOwner(uid);");
+    expect(users).toContain("allow create: if false;");
+    expect(users).toContain("allow update, delete: if false;");
+    expect(settings).toContain("allow read: if isAuthenticated();");
+    expect(settings).toContain("allow create, update, delete: if false;");
+    expect(usersRoute).toContain('router.post("/bootstrap", requireAuth');
+    expect(usersRoute).toContain('role = "passenger"');
+    expect(settingsRoute).toContain('router.put("/", requireAdmin');
+    expect(settingsRoute).toContain('"announcementActive"');
+    // The frontend asks the backend instead of writing directly.
+    expect(authHook).toContain("/api/users/bootstrap");
+    expect(authHook).not.toContain("setDoc(userDocRef");
+    expect(settingsHook).toContain("/api/settings");
+    expect(settingsHook).not.toContain('setDoc(doc(db, "settings"');
+  });
+
   it("clears in-memory data caches on logout", () => {
     const authHook = workspaceFile("frontend/src/hooks/useAuth.ts");
     const collectionHook = workspaceFile("frontend/src/hooks/useCollection.ts");

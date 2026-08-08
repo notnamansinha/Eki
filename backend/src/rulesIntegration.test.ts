@@ -102,9 +102,12 @@ rulesDescribe("Firebase security rules integration", () => {
     }));
   });
 
-  it("allows a user to create only their own passenger profile", async () => {
+  it("keeps user profiles backend-authoritative: clients cannot create or escalate", async () => {
     const passenger = environment.authenticatedContext("passenger_1", { role: "passenger" });
-    await assertSucceeds(setDoc(doc(passenger.firestore(), "users", "passenger_1"), {
+
+    // Profile creation is server-only (POST /api/users/bootstrap); the client
+    // can read its own profile but never write.
+    await assertFails(setDoc(doc(passenger.firestore(), "users", "passenger_1"), {
       uid: "passenger_1",
       email: "rider@example.edu",
       displayName: "Rider",
@@ -112,14 +115,17 @@ rulesDescribe("Firebase security rules integration", () => {
       role: "passenger",
       createdAt: Date.now(),
     }));
-    await assertFails(setDoc(doc(passenger.firestore(), "users", "admin_1"), {
-      uid: "admin_1",
+    // Even a self-targeted escalation attempt is denied.
+    await assertFails(setDoc(doc(passenger.firestore(), "users", "passenger_1"), {
+      uid: "passenger_1",
       email: "rider@example.edu",
       displayName: "Rider",
       photoURL: "",
       role: "admin",
       createdAt: Date.now(),
     }));
+    // Own-profile read remains allowed (used to resolve the local role).
+    await assertSucceeds(getDoc(doc(passenger.firestore(), "users", "passenger_1")));
   });
 
   it("keeps feedback backend-authoritative and gates ride feedback to session riders", async () => {
