@@ -237,19 +237,42 @@ httpServer.listen(Number(PORT), "0.0.0.0", () => {
 });
 
 let shuttingDown = false;
+/** Drains network, worker, and Firebase resources within the platform grace period. */
 async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`[Server] ${signal} received; shutting down.`);
+  const shutdownBackstop = setTimeout(() => {
+    console.error("[Server] Forced exit after 10-second shutdown timeout.");
+    httpServer.closeAllConnections();
+    process.exit(1);
+  }, 10_000);
+
   clearInterval(healthProbeTimer);
-  const closeError = await new Promise<Error | undefined>((resolve) => {
-    httpServer.close((error) => resolve(error));
+  const closeServer = new Promise<void>((resolve, reject) => {
+    httpServer.close((error) => error ? reject(error) : resolve());
+    httpServer.closeIdleConnections();
   });
-  await stopWorkers?.();
-  await deleteApp(firebaseAdminApp).catch((error) => {
-    console.warn("[Server] Firebase shutdown failed:", error);
-  });
-  process.exitCode = closeError ? 1 : 0;
+  const stopBackgroundWorkers = stopWorkers?.() ?? Promise.resolve();
+  const [serverResult, workerResult] = await Promise.allSettled([
+    closeServer,
+    stopBackgroundWorkers,
+  ]);
+  const firebaseResult = await deleteApp(firebaseAdminApp).then(
+    () => ({ status: "fulfilled" as const }),
+    (reason: unknown) => ({ status: "rejected" as const, reason }),
+  );
+  clearTimeout(shutdownBackstop);
+
+  const failures = [serverResult, workerResult, firebaseResult].filter(
+    (result) => result.status === "rejected",
+  );
+  for (const failure of failures) {
+    if (failure.status === "rejected") {
+      console.warn("[Server] Shutdown task failed:", failure.reason);
+    }
+  }
+  process.exitCode = failures.length > 0 ? 1 : 0;
 }
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 process.once("SIGINT", () => void shutdown("SIGINT"));

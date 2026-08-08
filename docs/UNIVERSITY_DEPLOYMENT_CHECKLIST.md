@@ -54,6 +54,7 @@ local professor demonstration.
 
 University acceptance is complete only after an authorized team observes:
 
+- [ ] Successful execution of `npm run verify` to confirm linting, unit tests, and production bundle generation.
 - [ ] Correct passenger, driver, and admin authorization and assignment.
 - [ ] Fresh GNSS positions appear on all panels at measured acceptable latency.
 - [ ] Stop 1 alone activates a pre-armed ride.
