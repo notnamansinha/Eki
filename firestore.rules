@@ -44,6 +44,9 @@ service cloud.firestore {
         session.data.passengers[request.auth.uid].userId == request.auth.uid;
     }
 
+    // SEC: Boarding is server-issued (POST /api/sessions/:sessionId/join)
+    // after a proximity check against the hardware GNSS fix, so a passenger
+    // cannot inject themselves into a session they are not physically on.
     function messageRateDoc(sessionId, uid) {
       return /databases/$(database)/documents/ride_sessions/$(sessionId)/messageRateLimits/$(uid);
     }
@@ -183,37 +186,17 @@ service cloud.firestore {
     // ── Ride Sessions ──
     match /ride_sessions/{sessionId} {
       // Passenger manifests contain personal travel information. Only trusted
-      // operator roles may read them; passengers can update their own entry.
+      // operator roles may read them.
       allow read: if isSessionOperator(sessionId);
-      // Session lifecycle and stop history are backend-authoritative.
+      // Session lifecycle, stop history AND passenger manifests are all
+      // backend-authoritative. Clients cannot write here at all: boarding is
+      // issued by the backend only after a proximity check against the
+      // hardware GNSS fix (POST /api/sessions/:sessionId/join). This closes
+      // the self-join gap where any signed-in user could inject themselves
+      // into any active session via its public RTDB sessionId.
       allow create: if false;
-      allow update: if
-        (
-          isAuthenticated() &&
-          resource.data.status in ['armed', 'active'] &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['passengers']) &&
-          request.resource.data.passengers is map &&
-          resource.data.passengers is map &&
-          request.resource.data.passengers.diff(resource.data.passengers).affectedKeys().hasOnly([request.auth.uid]) &&
-          request.resource.data.passengers[request.auth.uid].keys().hasOnly(['userId', 'userName', 'boardingStopId', 'alightingStopId', 'joinedAt']) &&
-          request.resource.data.passengers[request.auth.uid].userId == request.auth.uid &&
-          request.resource.data.passengers[request.auth.uid].userName is string &&
-          request.resource.data.passengers[request.auth.uid].userName.size() > 0 &&
-          request.resource.data.passengers[request.auth.uid].userName.size() <= 100 &&
-          request.resource.data.passengers[request.auth.uid].boardingStopId is string &&
-          request.resource.data.passengers[request.auth.uid].boardingStopId.size() <= 128 &&
-          (
-            request.resource.data.passengers[request.auth.uid].alightingStopId == null ||
-            (request.resource.data.passengers[request.auth.uid].alightingStopId is string &&
-             request.resource.data.passengers[request.auth.uid].alightingStopId.size() > 0 &&
-             request.resource.data.passengers[request.auth.uid].alightingStopId.size() <= 128)
-          ) &&
-          (
-            request.resource.data.passengers[request.auth.uid].boardingStopId.size() > 0 ||
-            request.resource.data.passengers[request.auth.uid].alightingStopId != null
-          ) &&
-          request.resource.data.passengers[request.auth.uid].joinedAt == request.time
-        );
+      allow update: if false;
+      allow delete: if false;
 
       match /messages/{messageId} {
         allow read: if isSessionOperator(sessionId) || isSessionPassenger(sessionId);

@@ -90,8 +90,13 @@ describe("production security configuration", () => {
     expect(messages).toContain("request.resource.data.text.size() > 0");
     expect(messageRateLimits).toContain("isSessionPassenger(sessionId)");
     expect(messageRateLimits).toContain("isSessionOperator(sessionId)");
-    expect(sessions).toContain("boardingStopId.size() <= 128");
-    expect(sessions).toContain("alightingStopId.size() <= 128");
+    expect(sessions).toContain("allow read: if isSessionOperator(sessionId)");
+    expect(sessions).toContain("allow update: if false;");
+    expect(sessions).not.toContain("boardingStopId.size() <= 128");
+    // Manifest shape validation now lives in the server-issued join endpoint.
+    const sessionsRoute = workspaceFile("backend/src/routes/sessions.ts");
+    expect(sessionsRoute).toContain("boardingStopId.length <= 128");
+    expect(sessionsRoute).toContain("alightingStopId.length <= 128");
     expect(feedback).toContain("isSessionPassenger(request.resource.data.sessionId)");
     expect(feedback).toContain("sessionDoc(request.resource.data.sessionId).data.status == 'completed'");
     expect(feedback).toContain("request.resource.data.rating is int");
@@ -250,7 +255,8 @@ describe("production security configuration", () => {
 
     expect(routes).toContain("allow create, update, delete: if false;");
     expect(sessions).toContain("allow create: if false;");
-    expect(sessions).toContain("resource.data.status in ['armed', 'active']");
+    expect(sessions).toContain("allow update: if false;");
+    expect(sessions).not.toContain("resource.data.status in ['armed', 'active']");
     expect(routeEditor).toContain('method: "PUT"');
     expect(routeEditor).not.toContain("setDoc(");
     expect(routeEditor).not.toContain("updateDoc(");
@@ -268,6 +274,32 @@ describe("production security configuration", () => {
 
     expect(requests).toContain("affectedKeys().hasOnly(['status'])");
     expect(requests).toContain("request.resource.data.busId == resource.data.busId");
+  });
+
+  it("gates passenger manifest self-join behind a server-issued proximity join", () => {
+    const rules = workspaceFile("firestore.rules");
+    const sessions = ruleBlock(rules, "match /ride_sessions/{sessionId}");
+    const boarding = workspaceFile(
+      "frontend/src/components/passenger/PassengerBoardingView.tsx",
+    );
+    const sessionsRoute = workspaceFile("backend/src/routes/sessions.ts");
+    const server = workspaceFile("backend/src/server.ts");
+
+    // Clients can never write ride_sessions; the manifest is backend-authoritative.
+    expect(sessions).toContain("allow update: if false;");
+    expect(sessions).toContain("allow delete: if false;");
+    expect(sessions).not.toContain("affectedKeys().hasOnly(['passengers'])");
+    // Boarding is issued by the backend join endpoint.
+    expect(server).toContain('app.use("/api/sessions"');
+    expect(sessionsRoute).toContain('router.post("/:sessionId/join", requireAuth');
+    expect(sessionsRoute).toContain('haversineMeters');
+    expect(sessionsRoute).toContain("JOIN_RADIUS_M");
+    expect(sessionsRoute).toContain("You must be near the bus to board");
+    // The client asks the backend to board; it never writes the manifest.
+    expect(boarding).toContain('/api/sessions/');
+    expect(boarding).toContain('join');
+    expect(boarding).not.toContain('updateDoc');
+    expect(boarding).not.toContain('setDoc');
   });
 
   it("uses backend-authoritative shift lifecycle endpoints", () => {

@@ -31,6 +31,7 @@ import routesListRoutes from "./routes/routesList";
 import devicesRoutes from "./routes/devices";
 import placesRoutes from "./routes/places";
 import shiftsRoutes from "./routes/shifts";
+import sessionsRoutes from "./routes/sessions";
 import fleetRoutes from "./routes/fleet";
 import privacyRoutes from "./routes/privacy";
 
@@ -152,6 +153,7 @@ app.use(
 );
 app.use("/api/places", placesRoutes);
 app.use("/api/shifts", writeLimiter, shiftsRoutes);
+app.use("/api/sessions", writeLimiter, sessionsRoutes);
 app.use("/api/fleet", writeLimiter, fleetRoutes);
 app.use("/api/privacy", writeLimiter, privacyRoutes);
 
