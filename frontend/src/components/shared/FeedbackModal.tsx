@@ -3,14 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Star, HeartHandshake, X, Send, Check } from "lucide-react";
 import { auth } from "@/lib/firebaseAuth";
-import { db } from "@/lib/firebaseFirestore";
-import {
-  collection,
-  doc,
-  runTransaction,
-  serverTimestamp,
-  Timestamp
-} from "firebase/firestore";
 import { FEEDBACK_WORD_LIMIT } from "@/config/passenger";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -110,56 +102,43 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
       if (busId && !sessionId) {
         throw new Error("Ride feedback requires a ride session");
       }
-      const currentUserId = currentUser.uid;
-      const submittedUserName = userName.trim().slice(0, 100) || "Rider";
-      const feedbackRef = collection(db, "feedbacks");
-      const cooldownRef = doc(db, "feedbackCooldowns", currentUserId);
 
-      await runTransaction(db, async (transaction) => {
-        const cooldownSnap = await transaction.get(cooldownRef);
-        let lastSubmittedAt: Timestamp | undefined;
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+      if (!backendUrl) {
+        throw new Error("Feedback service is not configured");
+      }
 
-        if (cooldownSnap.exists()) {
-          const data = cooldownSnap.data();
-          lastSubmittedAt = data.lastSubmittedAt instanceof Timestamp
-            ? data.lastSubmittedAt
-            : undefined;
-        }
-
-        const now = Date.now();
-
-        if (lastSubmittedAt) {
-          const remaining = ONE_DAY_MS - (now - lastSubmittedAt.toMillis());
-          if (remaining > 0) {
-            throw new Error(`LIMIT_REACHED:${remaining}`);
-          }
-        }
-
-        const newFeedbackDoc = doc(feedbackRef);
-        transaction.set(newFeedbackDoc, {
-          userId: currentUserId,
-          userName: submittedUserName,
+      // Server-authoritative submission: the backend enforces the 24h
+      // cooldown, the ride/general shape, and ride eligibility before
+      // persisting feedback and the cooldown stamp.
+      const token = await currentUser.getIdToken();
+      const response = await fetch(`${backendUrl}/api/feedback`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
           type: busId ? "ride" : "general",
-          sessionId: sessionId || null,
-          busId: busId || null,
-          driverId: driverId || null,
+          sessionId: sessionId || undefined,
+          busId: busId || undefined,
+          driverId: driverId || undefined,
           rating: busId && rating > 0 ? rating : null,
           comment: comment.trim(),
-          timestamp: serverTimestamp(),
-          status: "new"
-        });
-
-        const cooldownData = {
-          userId: currentUserId,
-          lastSubmittedAt: serverTimestamp()
-        };
-
-        transaction.set(cooldownRef, cooldownData);
+          userName: userName.trim().slice(0, 100) || "Rider",
+        }),
       });
+      const result = (await response.json()) as { error?: string; retryAfterMs?: number };
+      if (!response.ok) {
+        const error = new Error(result.error || "Unable to submit feedback.") as Error & { status?: number; retryAfterMs?: number };
+        error.status = response.status;
+        error.retryAfterMs = result.retryAfterMs;
+        throw error;
+      }
 
       try {
         const now = Date.now();
-        localStorage.setItem(`feedbackCooldown:${currentUserId}`, String(now));
+        localStorage.setItem(`feedbackCooldown:${currentUser.uid}`, String(now));
         setCooldownRemaining(ONE_DAY_MS);
       } catch {}
       
@@ -171,6 +150,10 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
       console.error("Feedback error:", err);
       if (err instanceof Error && err.message.startsWith("LIMIT_REACHED:")) {
         const remaining = Number(err.message.split(":")[1] || 0);
+        setCooldownRemaining(remaining);
+        setError(`Limit reached. Please try again in ${formatCooldown(remaining)}.`);
+      } else if (err instanceof Error && "retryAfterMs" in err && typeof (err as { retryAfterMs?: number }).retryAfterMs === "number") {
+        const remaining = (err as { retryAfterMs?: number }).retryAfterMs ?? 0;
         setCooldownRemaining(remaining);
         setError(`Limit reached. Please try again in ${formatCooldown(remaining)}.`);
       } else {

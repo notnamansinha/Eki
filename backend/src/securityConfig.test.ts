@@ -83,11 +83,11 @@ describe("production security configuration", () => {
 
     expect(devices).toContain("allow read, write: if false;");
     expect(activeRides).toContain("allow read, write: if false;");
-    expect(messages).toContain("request.resource.data.senderId == request.auth.uid");
-    expect(messages).toContain("request.resource.data.from == 'passenger'");
-    expect(messages).toContain("request.resource.data.from == 'driver'");
-    expect(messages).toContain("messageRateAdvanced(sessionId)");
-    expect(messages).toContain("request.resource.data.text.size() > 0");
+    // Message and rate-limit writes are backend-authoritative; clients read only.
+    expect(messages).toContain("allow create, update, delete: if false;");
+    expect(messages).toContain("isSessionPassenger(sessionId)");
+    expect(messages).not.toContain("messageRateAdvanced(sessionId)");
+    expect(messageRateLimits).toContain("allow create, update, delete: if false;");
     expect(messageRateLimits).toContain("isSessionPassenger(sessionId)");
     expect(messageRateLimits).toContain("isSessionOperator(sessionId)");
     expect(sessions).toContain("allow read: if isSessionOperator(sessionId)");
@@ -97,10 +97,20 @@ describe("production security configuration", () => {
     const sessionsRoute = workspaceFile("backend/src/routes/sessions.ts");
     expect(sessionsRoute).toContain("boardingStopId.length <= 128");
     expect(sessionsRoute).toContain("alightingStopId.length <= 128");
-    expect(feedback).toContain("isSessionPassenger(request.resource.data.sessionId)");
-    expect(feedback).toContain("sessionDoc(request.resource.data.sessionId).data.status == 'completed'");
-    expect(feedback).toContain("request.resource.data.rating is int");
-    expect(feedback).toContain("sessionDoc(request.resource.data.sessionId).data.busId");
+    expect(sessionsRoute).toContain('router.post("/:sessionId/messages", requireAuth');
+    expect(sessionsRoute).toContain("evaluateChatRate");
+    expect(sessionsRoute).toContain("censorText");
+    expect(feedback).toContain("allow create: if false;");
+    expect(feedback).toContain("allow update: if isAdmin()");
+    // Ride-eligibility and cooldown enforcement now live in the feedback
+    // endpoint and its service.
+    const feedbackRoute = workspaceFile("backend/src/routes/feedback.ts");
+    const feedbackService = workspaceFile("backend/src/services/feedbackService.ts");
+    expect(feedbackRoute).toContain('router.post("/", requireAuth');
+    expect(feedbackRoute).toContain("evaluateFeedback");
+    expect(feedbackRoute).toContain("feedbackCooldowns");
+    expect(feedbackService).toContain("sessionCompleted");
+    expect(feedbackService).toContain("isSessionPassenger");
     expect(workspaceFile("frontend/src/components/shared/MessagingPanel.tsx")).toContain("limitToLast(200)");
   });
 
