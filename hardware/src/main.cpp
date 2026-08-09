@@ -250,14 +250,14 @@ TelemetryFix currentFix() {
 
   fix.lat = gps.location.lat();
   fix.lng = gps.location.lng();
-  fix.speed = gps.speed.isValid() &&
-      gps.speed.kmph() >= eki::telemetry::MOVING_SPEED_KMH
-    ? min(gps.speed.kmph(), 200.0)
+  const double rawSpeed = gps.speed.isValid()
+    ? min(max(gps.speed.kmph(), 0.0), 200.0)
     : 0.0;
+  fix.speed = rawSpeed;
   fix.heading = gps.course.isValid()
     ? fmod(max(gps.course.deg(), 0.0), 360.0)
     : 0.0;
-  fix.motionState = motionTracker.update(fix.speed);
+  fix.motionState = motionTracker.update(rawSpeed);
   fix.timestamp = epochMilliseconds();
   fix.valid = clockIsSynchronized();
   return fix;
