@@ -144,9 +144,10 @@ export function useSettings(): {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(partial),
+      signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) {
-      const result = (await response.json()) as { error?: string };
+      const result = await response.json().catch(() => ({})) as { error?: string };
       throw new Error(result.error || "Unable to save settings.");
     }
   };

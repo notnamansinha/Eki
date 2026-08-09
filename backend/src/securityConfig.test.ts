@@ -103,7 +103,7 @@ describe("production security configuration", () => {
     expect(sessionsRoute).toContain("evaluateChatRate");
     expect(sessionsRoute).toContain("censorText");
     expect(feedback).toContain("allow create: if false;");
-    expect(feedback).toContain("allow update: if isAdmin()");
+    expect(feedback).toContain("allow update: if false;");
     // Ride-eligibility and cooldown enforcement now live in the feedback
     // endpoint and its service.
     const feedbackRoute = workspaceFile("backend/src/routes/feedback.ts");
@@ -111,9 +111,18 @@ describe("production security configuration", () => {
     expect(feedbackRoute).toContain('router.post("/", requireAuth');
     expect(feedbackRoute).toContain("evaluateFeedback");
     expect(feedbackRoute).toContain("feedbackCooldowns");
+    expect(feedbackRoute).toContain('router.patch("/:feedbackId/status", requireAdmin');
+    expect(feedbackRoute).not.toContain("req.body?.userName");
+    expect(feedbackRoute).toContain("transaction.getAll(cooldownRef");
     expect(feedbackService).toContain("sessionCompleted");
     expect(feedbackService).toContain("isSessionPassenger");
-    expect(workspaceFile("frontend/src/components/shared/MessagingPanel.tsx")).toContain("limitToLast(200)");
+    const messagingPanel = workspaceFile("frontend/src/components/shared/MessagingPanel.tsx");
+    const feedbackPage = workspaceFile("frontend/src/app/feedback/page.tsx");
+    expect(messagingPanel).toContain("limitToLast(200)");
+    expect(messagingPanel).toContain("requestId: pending.requestId");
+    expect(messagingPanel).not.toContain("currentUserName");
+    expect(feedbackPage).toContain("/api/feedback/${id}/status");
+    expect(feedbackPage).not.toContain("updateDoc(");
   });
 
   it("gates post-ride feedback on a stop selection scoped to the current session", () => {
@@ -217,7 +226,10 @@ describe("production security configuration", () => {
     expect(settings).toContain("allow read: if isAuthenticated();");
     expect(settings).toContain("allow create, update, delete: if false;");
     expect(usersRoute).toContain('router.post("/bootstrap", requireAuth');
-    expect(usersRoute).toContain('role = "passenger"');
+    expect(usersRoute).toContain('role: "passenger"');
+    expect(usersRoute).toContain("transaction.create(userRef");
+    expect(usersRoute).toContain("req.user?.email");
+    expect(usersRoute).not.toContain("req.body");
     expect(settingsRoute).toContain('router.put("/", requireAdmin');
     expect(settingsRoute).toContain('"announcementActive"');
     // The frontend asks the backend instead of writing directly.

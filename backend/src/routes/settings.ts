@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { FieldValue } from "firebase-admin/firestore";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { db } from "../lib/firebaseAdmin";
 
@@ -49,6 +50,10 @@ router.put("/", requireAdmin, async (req: AuthenticatedRequest, res: Response) =
         return;
       }
     }
+    if (Object.keys(partial).length === 0) {
+      res.status(400).json({ error: "At least one setting is required." });
+      return;
+    }
 
     const sanitized: Record<string, string | boolean> = {};
     for (const [key, value] of Object.entries(partial)) {
@@ -60,14 +65,22 @@ router.put("/", requireAdmin, async (req: AuthenticatedRequest, res: Response) =
         sanitized[key] = value;
         continue;
       }
-      if (typeof value !== "string" || value.length > (STRING_LIMITS[key] ?? 1000)) {
+      if (
+        typeof value !== "string" ||
+        value.length > (STRING_LIMITS[key] ?? 1000) ||
+        (key !== "announcementText" && value.trim().length === 0)
+      ) {
         res.status(400).json({ error: `Invalid value for ${key}.` });
         return;
       }
       sanitized[key] = value;
     }
 
-    await db.collection("settings").doc("global").set(sanitized, { merge: true });
+    await db.collection("settings").doc("global").set({
+      ...sanitized,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: req.user?.uid ?? "admin",
+    }, { merge: true });
     res.json({ saved: true });
   } catch (error) {
     console.error("[Settings] Failed to save settings:", error);

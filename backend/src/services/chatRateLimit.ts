@@ -23,9 +23,11 @@ export function evaluateChatRate(
   if (existing && Array.isArray(existing.sentAt)) {
     const sentAt = existing.sentAt.filter((t: number) => Number.isFinite(t));
     const last = Number.isFinite(existing.lastSentAt) ? existing.lastSentAt ?? null : null;
-    if (last !== null && sentAt.length <= MAX_MESSAGES_PER_HOUR - 1) {
-      previous = [...sentAt, last];
-      lastSentAt = last;
+    previous = [...sentAt, ...(last === null ? [] : [last])]
+      .sort((left, right) => left - right)
+      .slice(-MAX_MESSAGES_PER_HOUR);
+    if (previous.length > 0) {
+      lastSentAt = previous[previous.length - 1];
     }
   } else if (
     existing &&

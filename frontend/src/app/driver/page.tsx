@@ -324,7 +324,6 @@ export default function DriverPage() {
               sessionId={activeSessionIds[selectedRouteIds[0]] || ""}
               currentUserRole="driver"
               currentUserId={user?.uid || driverId || "operator"}
-              currentUserName={user?.displayName || "Operator"}
               isOverlay={true}
               onClose={() => setIsMessagingOpen(false)}
               onUnreadCountChange={setUnreadCount}

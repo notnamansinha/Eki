@@ -24,6 +24,8 @@ export interface RideContext {
 export type FeedbackCheck =
   | { allowed: true }
   | { allowed: false; reason: "cooldown"; retryAfterMs: number }
+  | { allowed: false; reason: "validation"; message: string }
+  | { allowed: false; reason: "state"; message: string }
   | { allowed: false; reason: "eligibility"; message: string };
 
 /**
@@ -46,6 +48,24 @@ export function evaluateFeedback(
 ): FeedbackCheck {
   const wordCount = comment.trim().match(/\S+/g)?.length ?? 0;
 
+  if (kind === "general") {
+    if (!comment.trim() || wordCount > FEEDBACK_WORD_LIMIT || comment.length > FEEDBACK_COMMENT_MAX) {
+      return { allowed: false, reason: "validation", message: "Comment is required and must be within limits." };
+    }
+  } else {
+    if (wordCount > FEEDBACK_WORD_LIMIT || comment.length > FEEDBACK_COMMENT_MAX) {
+      return { allowed: false, reason: "validation", message: "Comment exceeds the word or length limit." };
+    }
+    if (rating !== null && (!Number.isInteger(rating) || rating < 1 || rating > 5)) {
+      return { allowed: false, reason: "validation", message: "Rating must be an integer from 1 to 5." };
+    }
+    if (rating === null && !comment.trim()) {
+      return { allowed: false, reason: "validation", message: "Rating or comment is required." };
+    }
+  }
+
+  // Validate content before consulting cooldown state so malformed requests
+  // consistently receive 400 instead of being masked as throttling failures.
   if (lastSubmittedAtMs !== undefined && now - lastSubmittedAtMs < FEEDBACK_COOLDOWN_MS) {
     return {
       allowed: false,
@@ -55,39 +75,18 @@ export function evaluateFeedback(
   }
 
   if (kind === "general") {
-    if (!comment.trim() || wordCount > FEEDBACK_WORD_LIMIT || comment.length > FEEDBACK_COMMENT_MAX) {
-      return { allowed: false, reason: "eligibility", message: "Comment is required and must be within limits." };
-    }
     return { allowed: true };
   }
 
-  // ride feedback
-  if (wordCount > FEEDBACK_WORD_LIMIT || comment.length > FEEDBACK_COMMENT_MAX) {
-    return { allowed: false, reason: "eligibility", message: "Comment exceeds the word or length limit." };
-  }
-  if (rating !== null && (!Number.isInteger(rating) || rating < 1 || rating > 5)) {
-    return { allowed: false, reason: "eligibility", message: "Rating must be an integer from 1 to 5." };
-  }
-  if (rating === null && !comment.trim()) {
-    return { allowed: false, reason: "eligibility", message: "Rating or comment is required." };
-  }
+  // Ride feedback authorization and lifecycle checks.
   if (!rideContext.isSessionPassenger) {
     return { allowed: false, reason: "eligibility", message: "Only passengers of this ride may review it." };
   }
   if (!rideContext.sessionCompleted) {
-    return { allowed: false, reason: "eligibility", message: "Ride feedback is available after the ride ends." };
+    return { allowed: false, reason: "state", message: "Ride feedback is available after the ride ends." };
   }
   if (!rideContext.busMatches || !rideContext.driverMatches) {
     return { allowed: false, reason: "eligibility", message: "Ride details do not match the session." };
   }
   return { allowed: true };
-
-  /**
- * POST /api/feedback
- *
- * Server-authoritative feedback submission. The client no longer writes
- * feedback or cooldown docs; the backend enforces the 24h cooldown, the
- * ride/general shape, and ride eligibility (manifest membership + completed
- * session + matching bus/driver) before persisting.
- */
 }

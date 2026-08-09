@@ -39,7 +39,7 @@ describe("evaluateFeedback", () => {
     const result = evaluateFeedback("ride", "Nice", 4, { ...rideOk, sessionCompleted: false }, undefined, now);
     expect(result).toEqual({
       allowed: false,
-      reason: "eligibility",
+      reason: "state",
       message: "Ride feedback is available after the ride ends.",
     });
   });
@@ -55,8 +55,11 @@ describe("evaluateFeedback", () => {
 
   it("rejects a rating outside 1..5", () => {
     const result = evaluateFeedback("ride", "", 7, rideOk, undefined, now);
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toBe("eligibility");
+    expect(result).toEqual({
+      allowed: false,
+      reason: "validation",
+      message: "Rating must be an integer from 1 to 5.",
+    });
   });
 
   it("requires rating or comment for a ride", () => {

@@ -207,9 +207,9 @@ rulesDescribe("Firebase security rules integration", () => {
       });
     }));
 
-    // Admin may still update feedback status (review workflow) but cannot
-    // create, delete, or rewrite other fields from the client.
-    await assertSucceeds(updateDoc(doc(admin.firestore(), "feedbacks", "feedback_1"), {
+    // Even admin status changes go through PATCH /api/feedback/:id/status;
+    // every browser write to feedback documents is denied.
+    await assertFails(updateDoc(doc(admin.firestore(), "feedbacks", "feedback_1"), {
       status: "reviewed",
     }));
     await assertFails(updateDoc(doc(admin.firestore(), "feedbacks", "feedback_1"), {

@@ -10,7 +10,6 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 interface Props {
   userId: string;
-  userName: string;
   busId?: string; // If provided, this is a ride feedback. Otherwise, general suggestion.
   driverId?: string; // Links precise operational data to specific admins
   sessionId?: string; // Required for server-side ride/passenger eligibility checks
@@ -38,7 +37,7 @@ const formatCooldown = (ms: number) => {
   return `${totalMinutes}m`;
 };
 
-export default function FeedbackModal({ userId, userName, busId, driverId, sessionId, onClose }: Props) {
+export default function FeedbackModal({ userId, busId, driverId, sessionId, onClose }: Props) {
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [comment, setComment] = useState("");
@@ -47,6 +46,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [error, setError] = useState("");
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingFeedbackRef = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const titleId = useId();
   const descriptionId = useId();
   const commentId = useId();
@@ -120,29 +120,39 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
       // cooldown, the ride/general shape, and ride eligibility before
       // persisting feedback and the cooldown stamp.
       const token = await currentUser.getIdToken();
+      const payload = {
+        type: busId ? "ride" as const : "general" as const,
+        sessionId: sessionId || undefined,
+        busId: busId || undefined,
+        driverId: driverId || undefined,
+        rating: busId && rating > 0 ? rating : null,
+        comment: comment.trim(),
+      };
+      const fingerprint = JSON.stringify(payload);
+      const pending = pendingFeedbackRef.current?.fingerprint === fingerprint
+        ? pendingFeedbackRef.current
+        : { fingerprint, requestId: crypto.randomUUID() };
+      pendingFeedbackRef.current = pending;
       const response = await fetch(`${backendUrl}/api/feedback`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          type: busId ? "ride" : "general",
-          sessionId: sessionId || undefined,
-          busId: busId || undefined,
-          driverId: driverId || undefined,
-          rating: busId && rating > 0 ? rating : null,
-          comment: comment.trim(),
-          userName: userName.trim().slice(0, 100) || "Rider",
-        }),
+        body: JSON.stringify({ ...payload, requestId: pending.requestId }),
+        signal: AbortSignal.timeout(10_000),
       });
-      const result = (await response.json()) as { error?: string; retryAfterMs?: number };
+      const result = await response.json().catch(() => ({})) as {
+        error?: string;
+        retryAfterMs?: number;
+      };
       if (!response.ok) {
         const error = new Error(result.error || "Unable to submit feedback.") as Error & { status?: number; retryAfterMs?: number };
         error.status = response.status;
         error.retryAfterMs = result.retryAfterMs;
         throw error;
       }
+      pendingFeedbackRef.current = null;
 
       try {
         const now = Date.now();
@@ -156,11 +166,11 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
       }, 2000);
     } catch (err) {
       console.error("Feedback error:", err);
-      if (err instanceof Error && err.message.startsWith("LIMIT_REACHED:")) {
-        const remaining = Number(err.message.split(":")[1] || 0);
-        setCooldownRemaining(remaining);
-        setError(`Limit reached. Please try again in ${formatCooldown(remaining)}.`);
-      } else if (err instanceof Error && "retryAfterMs" in err && typeof (err as { retryAfterMs?: number }).retryAfterMs === "number") {
+      const status = err instanceof Error && "status" in err
+        ? Number((err as { status?: number }).status)
+        : 0;
+      if (status === 409) pendingFeedbackRef.current = null;
+      if (err instanceof Error && "retryAfterMs" in err && typeof (err as { retryAfterMs?: number }).retryAfterMs === "number") {
         const remaining = (err as { retryAfterMs?: number }).retryAfterMs ?? 0;
         setCooldownRemaining(remaining);
         setError(`Limit reached. Please try again in ${formatCooldown(remaining)}.`);

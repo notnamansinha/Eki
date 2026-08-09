@@ -170,7 +170,6 @@ export default function AccountTab() {
         {showFeedback && (
           <FeedbackModal
             userId={user?.uid || "anonymous"}
-            userName={user?.displayName || "Guest"}
             onClose={() => setShowFeedback(false)}
           />
         )}

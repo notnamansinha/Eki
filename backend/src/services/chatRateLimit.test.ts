@@ -45,6 +45,36 @@ describe("evaluateChatRate", () => {
     });
   });
 
+  it("does not reset an exactly-full persisted window", () => {
+    const sentAt = Array.from(
+      { length: MAX_MESSAGES_PER_HOUR },
+      (_, i) => now - 120_000 + i * 1_000,
+    );
+    expect(evaluateChatRate({ sentAt, lastSentAt: now - 5_000 }, now)).toEqual({
+      allowed: false,
+      reason: "hourly",
+      retryAfterMs: expect.any(Number),
+    });
+  });
+
+  it("preserves and enforces a window whose separate last timestamp is missing", () => {
+    const sentAt = [now - 20_000, now - 1_000];
+    expect(evaluateChatRate({ sentAt }, now)).toEqual({
+      allowed: false,
+      reason: "cooldown",
+      retryAfterMs: MIN_GAP_MS - 1_000,
+    });
+  });
+
+  it("sorts persisted timestamps before applying the rolling window", () => {
+    const sentAt = [now - 1_000, now - 20_000];
+    expect(evaluateChatRate({ sentAt }, now)).toEqual({
+      allowed: false,
+      reason: "cooldown",
+      retryAfterMs: MIN_GAP_MS - 1_000,
+    });
+  });
+
   it("drops the oldest entry once the window rolls past an hour", () => {
     const sentAt = Array.from({ length: MAX_MESSAGES_PER_HOUR - 1 }, (_, i) => now - HOUR_MS - 60_000 - i * 10_000);
     const existing = { sentAt, lastSentAt: now - 5_000 };

@@ -29,7 +29,6 @@ interface BaseProps {
   sessionId: string;
   currentUserRole: "driver" | "passenger" | "admin";
   currentUserId: string;
-  currentUserName: string;
   onUnreadCountChange?: (count: number) => void;
 }
 
@@ -42,7 +41,6 @@ export default function MessagingPanel({
   sessionId, 
   currentUserRole, 
   currentUserId, 
-  currentUserName, 
   onClose,
   isOverlay = false,
   onUnreadCountChange,
@@ -55,6 +53,7 @@ export default function MessagingPanel({
   const lastSeenCountRef = useRef(0);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rateLimitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingMessageRef = useRef<{ text: string; requestId: string } | null>(null);
   const titleId = useId();
   const dialogRef = useDialogFocus<HTMLDivElement>(isOverlay, () => onClose?.());
 
@@ -137,7 +136,6 @@ export default function MessagingPanel({
       return;
     }
 
-    const roleForMsg = currentUserRole === "admin" ? "driver" : currentUserRole;
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
     if (!backendUrl) {
       showTransientMessage("Chat service is not configured.");
@@ -146,30 +144,42 @@ export default function MessagingPanel({
 
     setSending(true);
     try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Authentication required.");
+      const text = newMessage.trim().slice(0, MAX_MESSAGE_LENGTH);
+      const pending = pendingMessageRef.current?.text === text
+        ? pendingMessageRef.current
+        : { text, requestId: crypto.randomUUID() };
+      pendingMessageRef.current = pending;
       const response = await fetch(`${backendUrl}/api/sessions/${sessionId}/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${(await auth.currentUser?.getIdToken()) ?? ""}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          text: newMessage.trim().slice(0, MAX_MESSAGE_LENGTH),
-          from: roleForMsg,
-          senderName: currentUserName.trim().slice(0, 100) || (roleForMsg === "driver" ? "Operator" : "Rider"),
+          text,
+          requestId: pending.requestId,
         }),
+        signal: AbortSignal.timeout(10_000),
       });
-      const result = (await response.json()) as { error?: string; retryAfterMs?: number };
+      const result = await response.json().catch(() => ({})) as {
+        error?: string;
+        retryAfterMs?: number;
+      };
       if (!response.ok) {
         const error = new Error(result.error || "Unable to send message.") as Error & { status?: number };
         error.status = response.status;
         throw error;
       }
+      pendingMessageRef.current = null;
       setMessagesSentCounts([...recentMessages, { timestamp: now }]);
       setNewMessage("");
     } catch (error: unknown) {
       const code = typeof error === "object" && error !== null && "status" in error
         ? Number((error as { status?: number }).status)
         : 0;
+      if (code === 409) pendingMessageRef.current = null;
       if (code === 429 || (typeof error === "object" && error !== null && "message" in error && String((error as { message?: string }).message).includes("wait"))) {
         showTransientMessage("Please wait before sending another message.");
       } else {
@@ -238,7 +248,7 @@ export default function MessagingPanel({
           </div>
         ) : (
           messages.map((msg) => {
-            const isMe = msg.senderId === currentUserId || (currentUserRole === 'driver' && msg.from === 'driver');
+            const isMe = msg.senderId === currentUserId;
             
             return (
               <div 

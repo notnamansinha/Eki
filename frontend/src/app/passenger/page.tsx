@@ -421,7 +421,6 @@ export default function PassengerPage() {
                     sessionId={activeBuses.find(b => b.routeId === activeRoute.id)?.sessionId || ""}
                     currentUserRole="passenger"
                     currentUserId={user?.uid || "anonymous"}
-                    currentUserName={user?.displayName || "Rider"}
                     isOverlay={true}
                     onClose={() => setIsMessagingOpen(false)}
                     onUnreadCountChange={setUnreadCount}
@@ -471,7 +470,6 @@ export default function PassengerPage() {
       {showFeedbackModal && (
         <FeedbackModal
           userId={user?.uid || "anonymous"}
-          userName={user?.displayName || "Rider"}
           busId={feedbackBusId}
           driverId={feedbackDriverId}
           sessionId={feedbackSessionId}

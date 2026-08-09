@@ -144,18 +144,23 @@ function useAuthState(): AuthContextValue {
                     const response = await fetch(`${backendUrl}/api/users/bootstrap`, {
                       method: "POST",
                       headers: {
-                        "Content-Type": "application/json",
                         Authorization: `Bearer ${idToken}`,
                       },
-                      body: JSON.stringify({
-                        email: firebaseUser.email || "",
-                        displayName: firebaseUser.displayName || "",
-                        photoURL: firebaseUser.photoURL || "",
-                      }),
+                      signal: AbortSignal.timeout(10_000),
                     });
-                    if (response.ok) {
-                      const result = (await response.json()) as { role?: string };
-                      role = (result.role as UserRole) ?? "passenger";
+                    const result = await response.json().catch(() => ({})) as {
+                      role?: string;
+                      error?: string;
+                    };
+                    if (!response.ok) {
+                      throw new Error(result.error || "Unable to bootstrap user profile.");
+                    }
+                    if (
+                      result.role === "passenger" ||
+                      result.role === "driver" ||
+                      result.role === "admin"
+                    ) {
+                      role = result.role;
                     }
                   }
                 } catch (dbErr) {

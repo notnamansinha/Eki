@@ -23,7 +23,7 @@ not a substitute for the physical and institutional acceptance work in the
 
 ### SEC-01: passengers can self-enrol in an unrelated ride session
 
-- **Severity/status:** High / In review.
+- **Severity/status:** High / Closed by PR #23.
 - **Evidence:** `firestore.rules` denies every client write to
   `ride_sessions/{sessionId}`. The assigned driver obtains a random,
   session-scoped boarding code through an authenticated API; the code is absent
@@ -37,25 +37,27 @@ not a substitute for the physical and institutional acceptance work in the
   session binding, stale/future/uncertain fixes and location accuracy. The final
   Firestore transaction rechecks session state and code, derives identity from
   the token/profile and can update only the authenticated UID's manifest entry.
+  Default-branch workflow run
+  [31298772567](https://github.com/notnamansinha/Eki/actions/runs/31298772567)
+  passed web, emulator and firmware acceptance on merge commit `df3c1d3`.
 
 ### SEC-02: anti-abuse and privileged writes remain client-authoritative
 
 - **Severity/status:** High / In review.
-- **Evidence:** the frontend still performs Firestore transactions or writes for
-  session messages, message-rate documents, feedback, feedback cooldowns, user
-  bootstrap, passenger manifests, and global settings. Firestore rules constrain
-  several shapes, but client-side filters, clocks, and multi-document sequencing
-  are not a trusted enforcement boundary.
+- **Evidence:** candidate PR #53 routes chat, feedback, profile bootstrap,
+  feedback review status and global settings writes through authenticated
+  endpoints, while Firestore rules deny every corresponding browser write.
+  Identity is server-derived; chat membership/rate state and feedback
+  eligibility/cooldown state are transactionally rechecked.
 - **Impact:** bypassed UI logic can weaken rate limits and validation; duplicated
   client/rules logic can drift; multi-document operations can become partially
   applied.
-- **Candidate remediation:** [PR #53](https://github.com/notnamansinha/Eki/pull/53)
-  moves the remaining writes behind authenticated Express endpoints and denies
-  corresponding client writes.
+- **Candidate remediation:** [PR #53](https://github.com/notnamansinha/Eki/pull/53).
 - **Closure evidence:** source search finds no unauthorized client write path;
   emulator tests deny every migrated write; endpoint tests cover authorization,
-  validation, atomicity, throttling, retries, and legacy data; admin-only feedback
-  status changes remain possible without changing other fields.
+  validation, atomicity, exact hourly boundaries, idempotent retries, legacy
+  rate data and request-ID conflicts; admin-only feedback status changes use a
+  dedicated endpoint and preserve other fields.
 
 ### FW-01: synchronous HTTPS and a single telemetry retry slot can lose fixes
 

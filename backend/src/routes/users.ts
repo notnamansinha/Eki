@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { FieldValue } from "firebase-admin/firestore";
 import { requireAuth } from "../middleware/requireAuth";
 import { db } from "../lib/firebaseAdmin";
 
@@ -8,20 +9,23 @@ type AuthenticatedRequest = Request & {
   user?: {
     uid: string;
     role?: string;
-    driverId?: string;
-    assignedBusId?: string;
-    admin?: boolean;
+    name?: string;
+    email?: string;
+    picture?: string;
   };
 };
+
+function cleanClaim(value: unknown, maximumLength: number, fallback = ""): string {
+  return typeof value === "string" && value.trim()
+    ? value.trim().slice(0, maximumLength)
+    : fallback;
+}
 
 /**
  * POST /api/users/bootstrap
  *
- * Server-authoritative user profile bootstrap. New/legacy accounts without a
- * custom role claim previously wrote their own `users/{uid}` doc from the
- * client. The backend now creates the profile; the client only reads.
- * The profile is always created as role "passenger" — the same invariant the
- * old rules enforced — and never overwrites an existing profile.
+ * Creates a passenger profile from verified ID-token claims. The transaction
+ * never overwrites an existing profile or role, including concurrent retries.
  */
 router.post("/bootstrap", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -31,26 +35,30 @@ router.post("/bootstrap", requireAuth, async (req: AuthenticatedRequest, res: Re
       return;
     }
 
-    const { displayName, email, photoURL } = req.body ?? {};
     const userRef = db.collection("users").doc(uid);
-    const userSnap = await userRef.get();
+    const result = await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(userRef);
+      if (snapshot.exists) {
+        const existingRole = snapshot.data()?.role;
+        const role = existingRole === "driver" || existingRole === "admin"
+          ? existingRole
+          : "passenger";
+        return { role, created: false };
+      }
 
-    let role = "passenger";
-    if (userSnap.exists) {
-      const existing = userSnap.data()?.role;
-      role = existing === "driver" || existing === "admin" ? existing : "passenger";
-    } else {
-      await userRef.set({
+      transaction.create(userRef, {
         uid,
-        email: typeof email === "string" ? email.slice(0, 320) : "",
-        displayName: typeof displayName === "string" ? displayName.slice(0, 100) : "Unknown User",
-        photoURL: typeof photoURL === "string" ? photoURL.slice(0, 2048) : "",
-        role,
-        createdAt: Date.now(),
+        email: cleanClaim(req.user?.email, 320),
+        displayName: cleanClaim(req.user?.name, 100, "Unknown User"),
+        photoURL: cleanClaim(req.user?.picture, 2048),
+        role: "passenger",
+        createdAt: FieldValue.serverTimestamp(),
       });
-    }
+      return { role: "passenger", created: true };
+    });
 
-    res.status(201).json({ role });
+    res.setHeader("Cache-Control", "no-store");
+    res.status(result.created ? 201 : 200).json({ role: result.role });
   } catch (error) {
     console.error("[Users] Failed to bootstrap profile:", error);
     res.status(500).json({ error: "Unable to bootstrap profile." });

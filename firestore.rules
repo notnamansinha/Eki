@@ -157,9 +157,7 @@ service cloud.firestore {
       // eligibility (manifest membership, completed session, matching
       // bus/driver). Clients only read via the admin panel.
       allow create: if false;
-      allow update: if isAdmin() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
-        request.resource.data.status in ['new', 'reviewed', 'resolved'];
+      allow update: if false;
       allow delete: if false;
     }
 
