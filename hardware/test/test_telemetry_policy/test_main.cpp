@@ -1,5 +1,7 @@
 #include <unity.h>
 
+#include "clock_policy.h"
+#include "connectivity_policy.h"
 #include "telemetry_policy.h"
 #include "telemetry_queue.h"
 
@@ -54,9 +56,15 @@ void test_http_response_actions_cover_transport_and_status_families() {
       static_cast<int>(httpResponseAction(code))
     );
   }
-  for (const int code : {201, 301, 400, 401, 404, 409, 413, 422}) {
+  for (const int code : {201, 301, 400, 404, 409, 413, 422}) {
     TEST_ASSERT_EQUAL_INT(
       static_cast<int>(HttpResponseAction::DropSample),
+      static_cast<int>(httpResponseAction(code))
+    );
+  }
+  for (const int code : {401, 403}) {
+    TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(HttpResponseAction::HaltCredentials),
       static_cast<int>(httpResponseAction(code))
     );
   }
@@ -71,7 +79,7 @@ void test_retry_after_is_strict_bounded_and_status_aware() {
   TEST_ASSERT_EQUAL_UINT32(60000, minimumHttpRetryDelayMs(429));
   TEST_ASSERT_EQUAL_UINT32(120000, minimumHttpRetryDelayMs(429, 120000));
   TEST_ASSERT_EQUAL_UINT32(HTTPS_RETRY_AFTER_MAX_MS, minimumHttpRetryDelayMs(429, 999999));
-  TEST_ASSERT_EQUAL_UINT32(60000, minimumHttpRetryDelayMs(401));
+  TEST_ASSERT_EQUAL_UINT32(0, minimumHttpRetryDelayMs(401));
   TEST_ASSERT_EQUAL_UINT32(30000, minimumHttpRetryDelayMs(400));
   TEST_ASSERT_EQUAL_UINT32(0, minimumHttpRetryDelayMs(503));
 }
@@ -83,36 +91,142 @@ void test_template_configuration_is_detected_without_logging_secrets() {
     "not-printed",
     "a-real-provisioned-secret",
     "https://api.eki.example.edu",
-    certificate
+    certificate,
+    "a-unique-recovery-password"
   ));
   TEST_ASSERT_TRUE(hasTemplateConfiguration(
     "YOUR_WIFI_SSID",
     "not-printed",
     "a-real-provisioned-secret",
     "https://api.eki.example.edu",
-    certificate
+    certificate,
+    "a-unique-recovery-password"
   ));
   TEST_ASSERT_TRUE(hasTemplateConfiguration(
     "campus-wifi",
     "not-printed",
     "GENERATE_AT_LEAST_20_RANDOM_CHARACTERS",
     "https://api.eki.example.edu",
-    certificate
+    certificate,
+    "a-unique-recovery-password"
   ));
   TEST_ASSERT_TRUE(hasTemplateConfiguration(
     "campus-wifi",
     "not-printed",
     "a-real-provisioned-secret",
     "https://your-backend.example",
-    certificate
+    certificate,
+    "a-unique-recovery-password"
   ));
   TEST_ASSERT_TRUE(hasTemplateConfiguration(
     "campus-wifi",
     "not-printed",
     "a-real-provisioned-secret",
     "https://api.eki.example.edu",
-    "REPLACE_WITH_THE_CA_THAT_ISSUED_THE_BACKEND_CERTIFICATE"
+    "REPLACE_WITH_THE_CA_THAT_ISSUED_THE_BACKEND_CERTIFICATE",
+    "a-unique-recovery-password"
   ));
+  TEST_ASSERT_TRUE(hasTemplateConfiguration(
+    "campus-wifi",
+    "not-printed",
+    "a-real-provisioned-secret",
+    "https://api.eki.example.edu",
+    certificate,
+    "GENERATE_UNIQUE_RECOVERY_PASSWORD"
+  ));
+}
+
+void test_gnss_utc_conversion_and_clock_discipline_are_strict() {
+  eki::clock::UtcDateTime utc{2024, 1, 1, 0, 0, 0, 0};
+  int64_t epochMs = 0;
+  TEST_ASSERT_TRUE(eki::clock::utcToEpochMilliseconds(utc, epochMs));
+  TEST_ASSERT_TRUE(epochMs == 1704067200000LL);
+
+  utc = {2024, 2, 29, 12, 34, 56, 78};
+  TEST_ASSERT_TRUE(eki::clock::utcToEpochMilliseconds(utc, epochMs));
+  TEST_ASSERT_TRUE(epochMs == 1709210096780LL);
+
+  utc = {2023, 2, 29, 12, 0, 0, 0};
+  TEST_ASSERT_FALSE(eki::clock::utcToEpochMilliseconds(utc, epochMs));
+  utc = {2024, 1, 1, 24, 0, 0, 0};
+  TEST_ASSERT_FALSE(eki::clock::utcToEpochMilliseconds(utc, epochMs));
+
+  TEST_ASSERT_TRUE(eki::clock::shouldApplyGnssClock(
+    false, 0, 0, 1704067200000LL
+  ));
+  TEST_ASSERT_FALSE(eki::clock::shouldApplyGnssClock(
+    true, eki::clock::GNSS_CLOCK_REFRESH_MS - 1,
+    1704067200000LL, 1704067205000LL
+  ));
+  TEST_ASSERT_FALSE(eki::clock::shouldApplyGnssClock(
+    true, eki::clock::GNSS_CLOCK_REFRESH_MS,
+    1704067200000LL, 1704067201000LL
+  ));
+  TEST_ASSERT_TRUE(eki::clock::shouldApplyGnssClock(
+    true, eki::clock::GNSS_CLOCK_REFRESH_MS,
+    1704067200000LL, 1704067202000LL
+  ));
+}
+
+void test_wifi_retry_escalates_and_led_codes_are_deterministic() {
+  using namespace eki::connectivity;
+  WifiRetrySupervisor supervisor;
+  supervisor.observe(false, 100);
+  TEST_ASSERT_TRUE(supervisor.attemptDue(100));
+  supervisor.recordAttempt(100);
+  TEST_ASSERT_FALSE(supervisor.attemptDue(5099));
+  TEST_ASSERT_TRUE(supervisor.attemptDue(5100));
+  supervisor.recordAttempt(5100);
+  TEST_ASSERT_FALSE(supervisor.recoveryDue(120099));
+  TEST_ASSERT_TRUE(supervisor.recoveryDue(120100));
+  TEST_ASSERT_TRUE(supervisor.recoveryStartDue(120100));
+  supervisor.recordRecoveryStartAttempt(120100);
+  TEST_ASSERT_FALSE(supervisor.recoveryStartDue(180099));
+  TEST_ASSERT_TRUE(supervisor.recoveryStartDue(180100));
+  supervisor.restartAfterConfiguration(120100);
+  TEST_ASSERT_TRUE(supervisor.attemptDue(120100));
+  supervisor.observe(true, 120101);
+  TEST_ASSERT_FALSE(supervisor.attemptDue(120101));
+
+  TEST_ASSERT_TRUE(wifiCredentialsAreValid(
+    "campus", 6, "password", 8
+  ));
+  TEST_ASSERT_FALSE(wifiCredentialsAreValid(
+    "campus", 6, "short", 5
+  ));
+  TEST_ASSERT_FALSE(wifiCredentialsAreValid(
+    "bad\0ssid", 8, "password", 8
+  ));
+  TEST_ASSERT_FALSE(wifiCredentialsAreValid(
+    "campus", 6, "bad\npassword", 12
+  ));
+  TEST_ASSERT_TRUE(recoveryPasswordIsValid(
+    "recovery-password", 17
+  ));
+  TEST_ASSERT_FALSE(recoveryPasswordIsValid(
+    "too-short", 9
+  ));
+  TEST_ASSERT_FALSE(recoveryPasswordIsValid(
+    "bad\nrecovery-password", 21
+  ));
+  WifiCredentialRecord record{};
+  TEST_ASSERT_TRUE(makeWifiCredentialRecord(
+    "campus", 6, "password", 8, record
+  ));
+  TEST_ASSERT_TRUE(wifiCredentialRecordIsValid(record));
+  record.password[0] = 'P';
+  TEST_ASSERT_FALSE(wifiCredentialRecordIsValid(record));
+  TEST_ASSERT_TRUE(makeWifiCredentialRecord(
+    "campus", 6, "password", 8, record
+  ));
+  ++record.version;
+  TEST_ASSERT_FALSE(wifiCredentialRecordIsValid(record));
+  TEST_ASSERT_FALSE(statusLedOn(FaultCode::None, 0));
+  TEST_ASSERT_TRUE(statusLedOn(FaultCode::WifiRecovery, 0));
+  TEST_ASSERT_TRUE(statusLedOn(FaultCode::WifiRecovery, 300));
+  TEST_ASSERT_FALSE(statusLedOn(FaultCode::WifiRecovery, 600));
+  TEST_ASSERT_TRUE(statusLedOn(FaultCode::CredentialRejected, 600));
+  TEST_ASSERT_FALSE(statusLedOn(FaultCode::CredentialRejected, 900));
 }
 
 void test_publish_policy_handles_floor_changes_and_heartbeats() {
@@ -240,6 +354,8 @@ int main(int, char **) {
   RUN_TEST(test_http_response_actions_cover_transport_and_status_families);
   RUN_TEST(test_retry_after_is_strict_bounded_and_status_aware);
   RUN_TEST(test_template_configuration_is_detected_without_logging_secrets);
+  RUN_TEST(test_gnss_utc_conversion_and_clock_discipline_are_strict);
+  RUN_TEST(test_wifi_retry_escalates_and_led_codes_are_deterministic);
   RUN_TEST(test_publish_policy_handles_floor_changes_and_heartbeats);
   RUN_TEST(test_queue_delivers_newest_first_and_retains_failed_samples);
   RUN_TEST(test_queue_wraparound_drops_oldest_and_counts_overflow);

@@ -49,14 +49,31 @@ void test_corrupted_magic_reinitializes_counters() {
   TEST_ASSERT_EQUAL_UINT32(0, stats.total());
 }
 
+void test_corrupted_counter_reinitializes_counters() {
+  ResetStats stats = powerCycled();
+  stats.initializeOrRecover(1);
+  stats.record(ResetReason::Brownout);
+  stats.counts[static_cast<size_t>(ResetReason::Brownout)] ^= 1u;
+  TEST_ASSERT_FALSE(stats.initializeOrRecover(1));
+  TEST_ASSERT_EQUAL_UINT32(0, stats.total());
+}
+
 void test_record_ignores_out_of_range_reasons() {
   ResetStats stats = powerCycled();
   stats.initializeOrRecover(0);
   stats.record(static_cast<ResetReason>(99));
-  stats.record(
-    static_cast<ResetReason>(static_cast<int>(ResetReason::Sdio) + 1)
-  );
+  stats.record(ResetReason::Count);
   TEST_ASSERT_EQUAL_UINT32(0, stats.total());
+}
+
+void test_counter_saturates_without_wrapping() {
+  ResetStats stats = powerCycled();
+  stats.initializeOrRecover(1);
+  for (uint32_t i = 0; i < 0x10010u; ++i) {
+    stats.record(ResetReason::Panic);
+  }
+  TEST_ASSERT_EQUAL_UINT16(0xFFFFu, stats.count(ResetReason::Panic));
+  TEST_ASSERT_TRUE(stats.initializeOrRecover(1));
 }
 
 void test_reason_names_are_readable() {
@@ -64,6 +81,8 @@ void test_reason_names_are_readable() {
   TEST_ASSERT_EQUAL_STRING("brownout", resetReasonName(ResetReason::Brownout));
   TEST_ASSERT_EQUAL_STRING("panic/crash", resetReasonName(ResetReason::Panic));
   TEST_ASSERT_EQUAL_STRING("task-wdt", resetReasonName(ResetReason::TaskWatchdog));
+  TEST_ASSERT_EQUAL_STRING("power-glitch", resetReasonName(ResetReason::PowerGlitch));
+  TEST_ASSERT_EQUAL_STRING("cpu-lockup", resetReasonName(ResetReason::CpuLockup));
   TEST_ASSERT_EQUAL_STRING("unknown", resetReasonName(ResetReason::Unknown));
   TEST_ASSERT_EQUAL_STRING(
     "unknown",
@@ -86,7 +105,9 @@ int main(int, char **) {
   RUN_TEST(test_fresh_boot_records_and_recovers);
   RUN_TEST(test_configuration_change_reinitializes_counters);
   RUN_TEST(test_corrupted_magic_reinitializes_counters);
+  RUN_TEST(test_corrupted_counter_reinitializes_counters);
   RUN_TEST(test_record_ignores_out_of_range_reasons);
+  RUN_TEST(test_counter_saturates_without_wrapping);
   RUN_TEST(test_reason_names_are_readable);
   RUN_TEST(test_other_count_excludes_tracked_reasons);
   return UNITY_END();

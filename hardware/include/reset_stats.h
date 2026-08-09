@@ -31,9 +31,15 @@ enum class ResetReason : uint8_t {
   DeepSleep,             // ESP_RST_DEEPSLEEP
   Brownout,              // ESP_RST_BROWNOUT
   Sdio,                  // ESP_RST_SDIO
+  Usb,                   // ESP_RST_USB (ESP-IDF >= 5.1)
+  Jtag,                  // ESP_RST_JTAG (ESP-IDF >= 5.1)
+  Efuse,                 // ESP_RST_EFUSE (ESP-IDF >= 5.1)
+  PowerGlitch,           // ESP_RST_PWR_GLITCH (ESP-IDF >= 5.1)
+  CpuLockup,             // ESP_RST_CPU_LOCKUP (ESP-IDF >= 5.1)
+  Count,
 };
 
-constexpr size_t kResetReasonCount = 11;
+constexpr size_t kResetReasonCount = static_cast<size_t>(ResetReason::Count);
 
 inline const char *resetReasonName(ResetReason reason) {
   switch (reason) {
@@ -57,6 +63,16 @@ inline const char *resetReasonName(ResetReason reason) {
       return "brownout";
     case ResetReason::Sdio:
       return "sdio";
+    case ResetReason::Usb:
+      return "usb";
+    case ResetReason::Jtag:
+      return "jtag";
+    case ResetReason::Efuse:
+      return "efuse-error";
+    case ResetReason::PowerGlitch:
+      return "power-glitch";
+    case ResetReason::CpuLockup:
+      return "cpu-lockup";
     case ResetReason::Unknown:
     default:
       return "unknown";
@@ -67,10 +83,11 @@ inline const char *resetReasonName(ResetReason reason) {
 struct ResetStats {
   uint32_t magic;
   uint32_t configurationTag;
+  uint32_t checksum;
   uint16_t counts[kResetReasonCount];
 
   static constexpr uint32_t expectedMagic() {
-    return 0x52455354u;  // "REST"
+    return 0x52535432u;  // "RST2": checksum-protected layout version 2.
   }
 
   /**
@@ -81,6 +98,7 @@ struct ResetStats {
     if (
       magic == expectedMagic() &&
       configurationTag == tag &&
+      checksum == calculatedChecksum() &&
       total() > 0
     ) {
       return true;
@@ -90,19 +108,22 @@ struct ResetStats {
   }
 
   void reset(uint32_t tag) {
-    magic = expectedMagic();
+    // Invalidate the payload until every field and its checksum are coherent.
+    magic = 0;
     configurationTag = tag;
     for (size_t i = 0; i < kResetReasonCount; ++i) {
       counts[i] = 0;
     }
+    checksum = calculatedChecksum();
+    magic = expectedMagic();
   }
 
   /** Record one reset; saturates per reason and ignores unknown indices. */
   void record(ResetReason reason) {
     const size_t index = static_cast<size_t>(reason);
-    if (index < kResetReasonCount && counts[index] < 0xFFFFu) {
-      ++counts[index];
-    }
+    if (index >= kResetReasonCount || counts[index] == 0xFFFFu) return;
+    ++counts[index];
+    checksum = calculatedChecksum();
   }
 
   uint16_t count(ResetReason reason) const {
@@ -125,6 +146,25 @@ struct ResetStats {
       count(ResetReason::Panic) + count(ResetReason::TaskWatchdog) +
       count(ResetReason::InterruptWatchdog) + count(ResetReason::Software);
     return total() > tracked ? total() - tracked : 0;
+  }
+
+ private:
+  static uint32_t mixChecksum(uint32_t hash, uint32_t value) {
+    for (uint8_t shift = 0; shift < 32; shift += 8) {
+      hash ^= (value >> shift) & 0xFFu;
+      hash *= 16777619u;
+    }
+    return hash;
+  }
+
+  uint32_t calculatedChecksum() const {
+    uint32_t hash = mixChecksum(2166136261u, expectedMagic());
+    hash = mixChecksum(hash, configurationTag);
+    hash = mixChecksum(hash, static_cast<uint32_t>(kResetReasonCount));
+    for (size_t i = 0; i < kResetReasonCount; ++i) {
+      hash = mixChecksum(hash, counts[i]);
+    }
+    return hash;
   }
 };
 

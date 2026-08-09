@@ -7,6 +7,10 @@
 #define WIFI_SSID "YOUR_WIFI_SSID"
 #define WIFI_PASS "YOUR_WIFI_PASSWORD"
 
+// Unique 12-63 character printable-ASCII WPA2 password for the local recovery
+// access point. Do not reuse the device API secret or a campus Wi-Fi password.
+#define RECOVERY_AP_PASSWORD "GENERATE_UNIQUE_RECOVERY_PASSWORD"
+
 // Stable identity registered in the backend devices collection.
 #define DEVICE_ID "device_01"
 #define DEVICE_SECRET "GENERATE_AT_LEAST_20_RANDOM_CHARACTERS"

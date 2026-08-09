@@ -12,7 +12,7 @@ npm run verify
 
 `verify` executes frontend/backend ESLint, Vitest, backend TypeScript, Next static production build, Workbox injection, CSP hash regeneration and `npm audit --omit=dev --omit=optional`. The firmware command compiles the real ESP32 target. A production release additionally runs `npm run build:production` with actual deployment variables; it intentionally fails closed when required public configuration is missing.
 
-Last verified 2026-08-09 on integrated merge `163e687`: 149 backend tests passed with six emulator-only cases skipped in the normal run, 43 frontend tests passed, and the Java-backed Firestore/RTDB emulator run passed all 155 backend tests. Backend TypeScript, the hosted frontend production build/CSP generation and the production dependency audit passed with zero vulnerabilities; all seven native firmware-policy tests passed, and ESP32 compilation used 47,292 bytes RAM (14.4%) and 935,829 bytes flash (29.7%). Default-branch workflow run [31301262140](https://github.com/notnamansinha/Eki/actions/runs/31301262140) records the hosted evidence. Re-run rather than trusting these historical numbers.
+Last verified 2026-08-09 on the GNSS-clock/Wi-Fi-recovery candidate: four repository script tests, 150 normal backend tests (six emulator-only cases skipped), and 43 frontend tests passed. Backend TypeScript, the frontend production build/CSP generation and the production dependency audit passed with zero vulnerabilities. All 12 native firmware-policy tests passed; the ESP32 image compiled with 27,080 bytes regular RAM (8.3%), a 5,808-byte RTC queue, and 585,665 bytes flash (18.6%). Emulator and real-device matrices remain separate gates. Re-run rather than trusting these historical numbers.
 
 ## Test layers
 
@@ -25,7 +25,7 @@ Last verified 2026-08-09 on integrated merge `163e687`: 149 backend tests passed
 | Pure frontend units | freshness/expiry, singleton RTDB store, resume state, snapping/distance, history, feedback eligibility | Map/live-data behavior independent of React/browser network |
 | Builds/type/lint | TS, React hooks/a11y-relevant lint, static export, SW/CSP | Integration and packaging consistency |
 | Dependency audit | production npm graph | Known registry advisories in shipped required packages |
-| Firmware native units | shared telemetry policy | Distance/heading math, hysteresis, HTTP response classification, bounded `Retry-After`, retry cap, change floor/thresholds and heartbeats |
+| Firmware native units | shared clock/connectivity/telemetry/queue policies | Strict UTC conversion/discipline, Wi-Fi escalation, LED codes, distance/heading math, hysteresis, credential latching, HTTP classification, bounded `Retry-After`, retry cap, change floor/thresholds, heartbeats and queue recovery |
 | Firmware compile | pinned PlatformIO ESP32 target | API/library compatibility, binary size |
 | Physical acceptance | runbooks below | Radio, GNSS, power, TLS, public path and human workflows |
 
@@ -127,10 +127,12 @@ Key expected HTTP families:
 | Adaptive rate | Replay stationary/moving path | ≥3 s changes, 30/60 s heartbeats, thresholds correct |
 | Payload | Capture backend request in controlled test | Exact six fields, ≤512 bytes, `Device` header, no secrets logged |
 | TLS | Correct/wrong CA, hostname and clock | Correct succeeds; every wrong case fails closed |
-| Retry | Drop backend for 2 minutes | 1–30 s jittered attempts, latest-only buffer, recovery |
-| Watchdog | Controlled >15 s loop block | Panic/reset and reset reason; no permanent hang |
+| GNSS clock | Block NTP with fresh and stale/invalid GNSS UTC | Fresh UTC establishes TLS-valid time; invalid/stale UTC never changes clock; NTP cross-check is non-blocking |
+| Retry | Drop backend for 2 minutes | 1–30 s jittered attempts, bounded newest-first RTC queue, recovery |
+| Watchdog | Controlled >25 s task block | Panic/reset and reset reason; no permanent hang |
 | Power brownout | Controlled supply interruption | Restart/reconnect; durable ride resumes |
-| Wi-Fi loss | Disable hotspot then restore | Offline UI then same session recovers |
+| Wi-Fi loss | Disable hotspot for >2 minutes, open protected recovery AP, replace network, then restore | Two-pulse LED, bounded retries, credential form works without logs/echo, AP stops and same session recovers |
+| Credential rejection | Return 401/403 repeatedly | One rejected attempt latches publishing off, retains the sample until normal freshness eviction, emits three-pulse LED and resumes only after device-credential repair/restart |
 | GNSS loss | Shield/disconnect antenna safely | One uncertain fix at last point; no invented movement |
 | Backend/Firebase outage | Stop service/emulator | Timeouts/backoff/503 metrics; recovery without duplicate progress |
 
