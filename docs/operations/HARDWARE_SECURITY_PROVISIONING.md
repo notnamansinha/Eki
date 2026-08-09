@@ -49,15 +49,23 @@ partition offset. The firmware itself also refuses fleet operation unless both
 hardware protections report active.
 
 With both operators watching the selected spare-board port, upload the secure
-environment and keep uninterrupted power through the first boot:
+application/partition images first, then the signed bootloader through
+PlatformIO's explicit secure-boot target. Secure Boot intentionally excludes
+the bootloader from the ordinary upload command, and the Arduino/ESP-IDF 4.4
+combination does not retain the newer automatic-bootloader sdkconfig switch.
+Keep uninterrupted power throughout both transfers and the first boot:
 
 ```powershell
 platformio run --project-dir hardware -e esp32dev-secure --target upload
+platformio run --project-dir hardware -e esp32dev-secure --target sign --target upload-bootloader
+# Only after both commands succeed, power-cycle the selected spare board.
 platformio device monitor --project-dir hardware --baud 115200
 ```
 
-Capture the complete first-boot log. Power loss during first-boot encryption or
-eFuse provisioning is an acceptance failure; quarantine the board for review.
+Both upload targets suppress their automatic reset so neither image can start
+between transfers. Capture the complete first-boot log. Power loss during
+first-boot encryption or eFuse provisioning is an acceptance failure;
+quarantine the board for review.
 The application must report `fleet-build=yes`, `flash-encryption=enabled`, and
 `secure-boot=enabled`. Any other combination halts before credentials are read
 or networking starts.

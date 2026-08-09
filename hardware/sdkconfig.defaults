@@ -17,7 +17,6 @@ CONFIG_SECURE_BOOT=y
 CONFIG_SECURE_BOOT_V2_ENABLED=y
 CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
 CONFIG_SECURE_BOOT_SIGNING_KEY="keys/secure_boot_signing_key.pem"
-CONFIG_SECURE_BOOT_FLASH_BOOTLOADER_DEFAULT=y
 
 # Fleet flash and NVS confidentiality. Release mode permanently constrains ROM
 # download access on first boot; follow the controlled spare-board runbook.
