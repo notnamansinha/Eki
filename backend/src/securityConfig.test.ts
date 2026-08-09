@@ -192,7 +192,7 @@ describe("production security configuration", () => {
     expect(devices).toContain("telemetryLimiter");
     expect(devices).toContain('"/:deviceId/telemetry"');
     expect(telemetry).toContain("HTTPS_DEVICE_RATE_PER_MINUTE");
-    expect(telemetry).toContain("withinDeviceRateLimit");
+    expect(telemetry).toContain("deviceRateLimitRetryAfterMs");
     expect(telemetry).toContain("timingSafeEqual");
   });
 
@@ -261,6 +261,9 @@ describe("production security configuration", () => {
     expect(firmware).toContain(
       'http.addHeader("Authorization", authorizationHeader)',
     );
+    expect(firmware).toContain("HTTPClient::errorToString(responseCode)");
+    expect(firmware).toContain('http.collectHeaders(responseHeaders, 1)');
+    expect(firmware).toContain("hasTemplateConfiguration(");
     expect(firmware).not.toContain("Firebase_ESP_Client");
     expect(firmware).not.toContain("setInsecure(");
   });
@@ -268,7 +271,7 @@ describe("production security configuration", () => {
   it("keeps routing identity outside the closed HTTPS payload", () => {
     const firmware = workspaceFile("hardware/src/main.cpp");
     const publisher = firmware.slice(
-      firmware.indexOf("bool publishFix"),
+      firmware.indexOf("PublishResult publishFix"),
       firmware.indexOf("TelemetryFix currentFix"),
     );
     expect(publisher).toContain('document["lat"]');
@@ -289,6 +292,8 @@ describe("production security configuration", () => {
     expect(firmware).toContain("bufferedFix");
     expect(telemetryPolicy).toContain("HTTPS_RETRY_BASE_MS");
     expect(telemetryPolicy).toContain("HTTPS_RETRY_MAX_MS");
+    expect(telemetryPolicy).toContain("retryAfterDelayMs");
+    expect(telemetryPolicy).toContain("HttpResponseAction::DropSample");
     expect(firmware).toContain("httpsRetryIsPending()");
     expect(firmware).toContain("resetHttpsRetry()");
     expect(firmware).toContain("setRxBufferSize(GPS_RX_BUFFER_BYTES)");

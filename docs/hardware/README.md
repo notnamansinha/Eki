@@ -23,9 +23,9 @@ platformio run --project-dir hardware --target upload
 platformio device monitor --project-dir hardware --baud 115200
 ```
 
-Fill ignored `secrets.h` with Wi-Fi, device ID/secret, HTTPS backend origin and its issuing root CA. The backend URL must begin `https://`; insecure TLS is unavailable. The secret must be the one-time value printed by backend provisioning.
+Fill ignored `secrets.h` with Wi-Fi, device ID/secret, HTTPS backend origin and its issuing root CA. The backend URL must begin `https://`; insecure TLS is unavailable. The secret must be the one-time value printed by backend provisioning. If any template placeholder remains, firmware stops at boot with an explicit configuration error instead of attempting a misleading request to `your-backend.example`.
 
-Platform/library versions are pinned in `platformio.ini`. The native suite checks distance/heading math, motion hysteresis, retry bounds and publish/heartbeat decisions. Current verified build uses 14.4% RAM and 29.7% flash.
+Platform/library versions are pinned in `platformio.ini`. The native suite checks distance/heading math, motion hysteresis, HTTP response/retry policy and publish/heartbeat decisions. Current verified build uses 14.4% RAM and 29.7% flash.
 
 ## Behavior
 
@@ -33,11 +33,11 @@ Platform/library versions are pinned in `platformio.ini`. The native suite check
 - UART RX buffer is 8 KiB so NMEA survives the seven-second synchronous HTTPS maximum.
 - Fix requires location age ≤5 seconds and HDOP ≤4. Motion has three-reading 2.5/1.5 km/h hysteresis.
 - Publish happens after at least three seconds when distance ≥5 m, heading ≥15°, speed delta ≥5 km/h or motion changes; heartbeat is 30 seconds moving/60 stopped.
-- Failure closes TLS and retries latest-only data with 1–30 second exponential jitter. A buffer older than 55 seconds is dropped.
+- Transport errors, HTTP 408/425/429 and 5xx close TLS and retain the latest-only sample with backoff. HTTP 429 honors bounded `Retry-After`; permanent HTTP rejections drop the bad sample and pause before a fresh fix. A buffer older than 55 seconds is dropped.
 - GNSS loss publishes one `uncertain` sample at the last trustworthy coordinate; no dead-reckoned location is presented as truth.
 - Wi-Fi reconnects without persisting credentials to flash, uses fastest/strongest AP selection and disables modem sleep for vehicle-powered low latency.
 - A 15-second task watchdog resets a hung loop. Reset reason and request time/size/RSSI/status are logged, but SSID/secret are not.
 
-HTTP 202 is a new fix, 200 a duplicate, 400 invalid body/time, 401 credential/registry, 429 rate and 503 dependency outage. TLS failures normally mean URL/hostname/CA/clock.
+HTTP 202 is a new fix, 200 a duplicate, 400 invalid body/time, 401 credential/registry, 429 rate and 503 dependency outage. Negative HTTPClient values are transport failures; serial output includes the library error string and a secret-safe DNS/hostname/CA/clock/reachability checklist.
 
 Read [Hardware telemetry](HARDWARE_TELEMETRY.md) for every parameter, failure point, metrics and bench/vehicle acceptance case. Secure Boot V2, flash encryption and signed OTA/rollback are controlled deployment procedures; test them on spare boards before irreversible eFuse work.

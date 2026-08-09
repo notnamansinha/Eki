@@ -12,7 +12,7 @@ npm run verify
 
 `verify` executes frontend/backend ESLint, Vitest, backend TypeScript, Next static production build, Workbox injection, CSP hash regeneration and `npm audit --omit=dev --omit=optional`. The firmware command compiles the real ESP32 target. A production release additionally runs `npm run build:production` with actual deployment variables; it intentionally fails closed when required public configuration is missing.
 
-Last verified 2026-08-09 on the PR #53 candidate: 143 backend tests passed with six emulator-only cases skipped in the normal run, 43 frontend tests passed, and the Java-backed Firestore/RTDB emulator run passed all 149 backend tests. The normal backend/frontend production build and generated CSP passed, and the production dependency audit reported zero vulnerabilities. Firmware evidence is recorded separately after building the exact candidate commit. Re-run rather than trusting these historical numbers.
+Last verified 2026-08-09 on the integrated firmware HTTP-hardening candidate: 147 backend tests passed with six emulator-only cases skipped in the normal run, 43 frontend tests passed, and the Java-backed Firestore/RTDB emulator run passed all 153 backend tests. Backend TypeScript passed, the production dependency audit reported zero vulnerabilities, all seven native firmware-policy tests passed, and ESP32 compilation used 47,292 bytes RAM (14.4%) and 935,829 bytes flash (29.7%). The hosted gate re-runs the complete frontend production build/CSP generation before merge. Re-run rather than trusting these historical numbers.
 
 ## Test layers
 

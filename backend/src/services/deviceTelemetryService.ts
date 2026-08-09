@@ -34,6 +34,12 @@ interface RateBucket {
   count: number;
 }
 
+export interface DeviceRateLimitDecision {
+  allowed: boolean;
+  next: RateBucket;
+  retryAfterMs: number;
+}
+
 export interface HttpsTelemetryStatus {
   accepted: number;
   rejected: number;
@@ -57,7 +63,12 @@ export type TelemetryIngestResult =
   | { ok: true; duplicate: boolean }
   | {
       ok: false;
-      reason: "credentials" | "rate_limit";
+      reason: "credentials";
+    }
+  | {
+      ok: false;
+      reason: "rate_limit";
+      retryAfterMs: number;
     };
 
 const credentialCache = new Map<string, CredentialCacheEntry>();
@@ -86,6 +97,27 @@ const DUMMY_HASH = Buffer.alloc(64);
 function readPositiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function evaluateDeviceRateLimit(
+  existing: Readonly<RateBucket> | undefined,
+  now: number,
+  limit: number,
+): DeviceRateLimitDecision {
+  if (!existing || now - existing.startedAt >= 60_000) {
+    return {
+      allowed: true,
+      next: { startedAt: now, count: 1 },
+      retryAfterMs: 0,
+    };
+  }
+  const next = { startedAt: existing.startedAt, count: existing.count + 1 };
+  const allowed = next.count <= limit;
+  return {
+    allowed,
+    next,
+    retryAfterMs: allowed ? 0 : Math.max(1, 60_000 - (now - existing.startedAt)),
+  };
 }
 
 function recordSample(samples: number[], value: number): void {
@@ -237,24 +269,26 @@ async function authenticateDevice(
   return assignment;
 }
 
-function withinDeviceRateLimit(deviceId: string, now: number): boolean {
+function deviceRateLimitRetryAfterMs(
+  deviceId: string,
+  now: number,
+): number | null {
   const limit = readPositiveInt(
     process.env.HTTPS_DEVICE_RATE_PER_MINUTE,
     DEFAULT_DEVICE_RATE_PER_MINUTE,
   );
   const current = rateBuckets.get(deviceId);
-  if (!current || now - current.startedAt >= 60_000) {
-    if (!current && rateBuckets.size >= MAX_RATE_BUCKETS) {
+  if (!current) {
+    if (rateBuckets.size >= MAX_RATE_BUCKETS) {
       for (const [key, bucket] of rateBuckets) {
         if (now - bucket.startedAt >= 60_000) rateBuckets.delete(key);
       }
-      if (rateBuckets.size >= MAX_RATE_BUCKETS) return false;
+      if (rateBuckets.size >= MAX_RATE_BUCKETS) return 60_000;
     }
-    rateBuckets.set(deviceId, { startedAt: now, count: 1 });
-    return true;
   }
-  current.count += 1;
-  return current.count <= limit;
+  const decision = evaluateDeviceRateLimit(current, now, limit);
+  rateBuckets.set(deviceId, decision.next);
+  return decision.allowed ? null : decision.retryAfterMs;
 }
 
 function durableLifecycle(
@@ -435,10 +469,11 @@ export async function ingestDeviceTelemetry(
     status.lastRejectedAt = new Date(now).toISOString();
     return { ok: false, reason: "credentials" };
   }
-  if (!withinDeviceRateLimit(deviceId, now)) {
+  const retryAfterMs = deviceRateLimitRetryAfterMs(deviceId, now);
+  if (retryAfterMs !== null) {
     status.rejected += 1;
     status.lastRejectedAt = new Date(now).toISOString();
-    return { ok: false, reason: "rate_limit" };
+    return { ok: false, reason: "rate_limit", retryAfterMs };
   }
 
   const persisted = await persistTelemetry(assignment, sample);

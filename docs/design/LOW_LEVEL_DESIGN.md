@@ -114,7 +114,7 @@ Tests beside pure frontend libraries exercise freshness, RTDB sharing, route dis
 
 `hardware/src/main.cpp` is a single deterministic loop because it has one UART and one network output. It drains UART on every pass, feeds the watchdog, reconnects Wi-Fi, synchronizes NTP, drops nearly stale buffered fixes, retries the latest buffered fix, evaluates GNSS each second, and warns if no NMEA arrives. `hardware/include/telemetry_policy.h` contains the shared, host-testable distance, heading, motion-hysteresis, retry and publish decisions; the native Unity suite executes those exact production helpers.
 
-`TelemetryFix` is the only queued object; replacement intentionally keeps latest data rather than building an unbounded history. HTTPS success updates comparison state. Failure stops TLS and schedules capped jittered retry. GNSS loss sends one `uncertain` sample at the last verified point; it never invents movement.
+`TelemetryFix` is the only queued object; replacement intentionally keeps latest data rather than building an unbounded history. HTTPS 200/202 updates comparison state. Transport errors, 408/425/429 and 5xx retain the latest sample; bounded `Retry-After` is honored. Permanent HTTP rejection drops that sample and delays the next fresh attempt. GNSS loss sends one `uncertain` sample at the last verified point; it never invents movement. Untouched `secrets.h` placeholders fail clearly at boot.
 
 `platformio.ini` pins Espressif32 7.0.1, TinyGPSPlus 1.1.0 and ArduinoJson 7.4.3 and defines a native unit-test environment. `secrets.example.h` defines the compile-time contract; `secrets.h` is ignored. `.clangd` is portable and contains no user paths. Build/download artifacts are ignored.
 
