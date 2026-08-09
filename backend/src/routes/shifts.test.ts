@@ -7,6 +7,8 @@ const harness = vi.hoisted(() => ({
   lock: null as Record<string, unknown> | null,
   docSets: [] as { id: string; data: Record<string, unknown> }[],
   batchSets: [] as { id: string; data: Record<string, unknown> }[],
+  rtdbUpdates: [] as Record<string, unknown>[],
+  failActiveRidesWrite: false,
 }));
 
 vi.mock("../middleware/requireAuth", () => ({
@@ -53,6 +55,9 @@ vi.mock("../lib/firebaseAdmin", () => {
       return snapshot(false);
     },
     set: async (data: unknown) => {
+      if (collectionName === "active_rides" && harness.failActiveRidesWrite) {
+        throw new Error("simulated Firestore failure");
+      }
       harness.docSets.push({
         id: id ?? "new_session_1",
         data: data as Record<string, unknown>,
@@ -106,6 +111,9 @@ vi.mock("../lib/firebaseAdmin", () => {
     rtdb: {
       ref: () => ({
         once: async () => ({ val: () => harness.liveNode }),
+        update: async (data: Record<string, unknown>) => {
+          harness.rtdbUpdates.push(data);
+        },
         transaction: async (callback: (value: unknown) => unknown) => {
           const result = callback(harness.liveNode);
           if (result !== undefined) {
@@ -147,7 +155,9 @@ afterAll(async () => {
 beforeEach(() => {
   harness.docSets = [];
   harness.batchSets = [];
+  harness.rtdbUpdates = [];
   harness.lock = null;
+  harness.failActiveRidesWrite = false;
 });
 
 async function startShift() {
@@ -157,6 +167,61 @@ async function startShift() {
     body: JSON.stringify({ busId: "bus_1", routeId: "route_1" }),
   });
 }
+
+describe("shift delay updates", () => {
+  beforeEach(() => {
+    harness.liveNode = {
+      busId: "bus_1",
+      driverId: "driver_1",
+      routeId: "route_1",
+      status: "active",
+      sessionId: "session_live",
+      delayMinutes: 5,
+    };
+  });
+
+  async function setDelay(delayMinutes: number) {
+    return fetch(`${baseUrl}/api/shifts/delay`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ busId: "bus_1", routeId: "route_1", delayMinutes }),
+    });
+  }
+
+  it("publishes the delay to RTDB first and mirrors it with a timestamp", async () => {
+    const response = await setDelay(15);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.saved).toBe(true);
+    expect(body.delayMinutes).toBe(15);
+
+    expect(harness.rtdbUpdates).toHaveLength(1);
+    expect(harness.rtdbUpdates[0].delayMinutes).toBe(15);
+    expect(typeof harness.rtdbUpdates[0].delayUpdatedAt).toBe("number");
+
+    const durable = harness.docSets.find((entry) => entry.id === "bus_1_route_1");
+    expect(durable?.data.delayMinutes).toBe(15);
+    expect(typeof durable?.data.delayUpdatedAt).toBe("number");
+  });
+
+  it("keeps the live delay when the durable write fails", async () => {
+    harness.failActiveRidesWrite = true;
+    const response = await setDelay(15);
+    // The passenger-facing RTDB value is the source of truth: a Firestore
+    // hiccup must not turn the driver's delay update into a 500.
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.saved).toBe(true);
+    expect(harness.rtdbUpdates[0].delayMinutes).toBe(15);
+    expect(harness.docSets.find((entry) => entry.id === "bus_1_route_1")).toBeUndefined();
+  });
+
+  it("rejects a delay with no active shift", async () => {
+    harness.liveNode = { status: "offline", sessionId: "session_live" };
+    const response = await setDelay(15);
+    expect(response.status).toBe(409);
+  });
+});
 
 describe("shift start after automatic completion", () => {
   it("starts a fresh session instead of resurrecting the completed ride", async () => {

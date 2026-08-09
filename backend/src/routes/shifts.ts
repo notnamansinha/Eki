@@ -106,15 +106,23 @@ router.patch("/delay", requireAuth, async (req: AuthenticatedRequest, res: Respo
       res.status(409).json({ error: "No active shift exists for this vehicle and route." });
       return;
     }
-    await Promise.all([
-      nodeRef.update({ delayMinutes }),
-      db.collection("active_rides")
+    const delayUpdatedAt = Date.now();
+    // RTDB is the live, passenger-facing source of truth: publish it first
+    // so a Firestore hiccup can never block the announced delay. The durable
+    // copy is best-effort; restoreDurableRide compares delayUpdatedAt so a
+    // stale durable value can never overwrite a fresher live one.
+    await nodeRef.update({ delayMinutes, delayUpdatedAt });
+    try {
+      await db.collection("active_rides")
         .doc(activeRideId(assignment.busId, assignment.routeId))
         .set({
           delayMinutes,
+          delayUpdatedAt,
           updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true }),
-    ]);
+        }, { merge: true });
+    } catch (error) {
+      console.error("[Shifts] Failed to persist delay to active_rides:", error);
+    }
     res.json({ saved: true, delayMinutes });
   } catch (error) {
     console.error("[Shifts] Failed to update delay:", error);
