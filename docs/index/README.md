@@ -10,6 +10,7 @@ Read these in order when onboarding:
 6. [Backend API](../backend/API.md) — endpoints, authentication, bodies, responses and status codes.
 7. [Test strategy](../testing/TEST_STRATEGY.md) — automated suites, simulations and physical acceptance matrix.
 8. [Production readiness audit](../operations/PRODUCTION_READINESS_AUDIT.md) — verified outcome, fixes and residual risks.
+9. [Architecture risk register](../operations/ARCHITECTURE_RISK_REGISTER.md) — active source, firmware and deployment risks with closure criteria.
 
 Operational documents:
 
