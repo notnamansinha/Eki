@@ -26,8 +26,11 @@ async function deleteDocuments(query: Query, recursive = false): Promise<number>
   return deleted;
 }
 
+export function isRetentionSweeperEnabled(value: string | undefined): boolean {
+  return value?.trim().toLowerCase() === "true";
+}
+
 async function runRetentionSweep(now = Date.now()): Promise<void> {
-  if (process.env.RETENTION_SWEEPER_ENABLED === "false") return;
   const rideDays = readDays(process.env.RIDE_SESSION_RETENTION_DAYS, 90);
   const feedbackDays = readDays(process.env.FEEDBACK_RETENTION_DAYS, 180);
   const tripDays = readDays(process.env.COMPLETED_TRIP_RETENTION_DAYS, 180);
@@ -65,6 +68,12 @@ async function runRetentionSweep(now = Date.now()): Promise<void> {
 }
 
 export function startRetentionSweeper(): () => void {
+  // Retention deletes durable data, so an absent/misspelled setting must be
+  // safe. Operators have to opt in explicitly after reviewing the periods.
+  if (!isRetentionSweeperEnabled(process.env.RETENTION_SWEEPER_ENABLED)) {
+    console.log("[Retention] Sweeper disabled (set RETENTION_SWEEPER_ENABLED=true to enable)." );
+    return () => undefined;
+  }
   void runRetentionSweep().catch((error) => {
     console.error("[Retention] Initial sweep failed:", error);
   });

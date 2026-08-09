@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useId, useRef } from "react";
 import { db } from "@/lib/firebaseFirestore";
 import {
   collection,
@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import { Send, X, MessageCircle } from "lucide-react";
 import { auth } from "@/lib/firebaseAuth";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 const MAX_MESSAGE_LENGTH = 500;
 
@@ -27,15 +28,18 @@ interface Message {
   timestamp: Timestamp | null;
 }
 
-interface Props {
+interface BaseProps {
   sessionId: string;
   currentUserRole: "driver" | "passenger" | "admin";
   currentUserId: string;
   currentUserName: string;
-  onClose?: () => void;
-  isOverlay?: boolean;
   onUnreadCountChange?: (count: number) => void;
 }
+
+type Props = BaseProps & (
+  | { isOverlay: true; onClose: () => void }
+  | { isOverlay?: false; onClose?: () => void }
+);
 
 export default function MessagingPanel({ 
   sessionId, 
@@ -54,6 +58,8 @@ export default function MessagingPanel({
   const lastSeenCountRef = useRef(0);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rateLimitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(isOverlay, () => onClose?.());
 
   useEffect(() => {
     lastSeenCountRef.current = 0;
@@ -81,7 +87,8 @@ export default function MessagingPanel({
 
           if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
           scrollTimerRef.current = setTimeout(() => {
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            messagesEndRef.current?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth" });
           }, 100);
       }, (error) => {
         console.warn("[Chat] messages read failed:", error.message);
@@ -217,7 +224,13 @@ export default function MessagingPanel({
   }, []);
 
   return (
-    <div className={`flex flex-col h-full relative overflow-hidden ${isOverlay ? 'rounded-t-2xl' : 'rounded-2xl'}`}
+    <div
+      ref={dialogRef}
+      tabIndex={isOverlay ? -1 : undefined}
+      role={isOverlay ? "dialog" : undefined}
+      aria-modal={isOverlay || undefined}
+      aria-labelledby={isOverlay ? titleId : undefined}
+      className={`flex flex-col h-full relative overflow-hidden ${isOverlay ? 'rounded-t-2xl' : 'rounded-2xl'}`}
       style={{ 
         background: "var(--surface-1)", 
         border: "1px solid var(--border-subtle)",
@@ -227,7 +240,7 @@ export default function MessagingPanel({
       <div className="flex items-center justify-between p-4" 
         style={{ borderBottom: "1px solid var(--border-subtle)", background: "var(--surface-2)" }}>
         <div>
-          <h3 className="font-semibold text-[15px] flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+          <h3 id={titleId} className="font-semibold text-[15px] flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
             <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: "var(--status-live)" }} />
             Live Chat
           </h3>
@@ -300,7 +313,7 @@ export default function MessagingPanel({
       {/* Rate limit toast */}
       {rateLimitMsg && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 animate-slide-down">
-          <div className="px-4 py-2 rounded-lg text-[11px] font-semibold"
+          <div role="status" aria-live="polite" className="px-4 py-2 rounded-lg text-[11px] font-semibold"
             style={{ background: "var(--status-warning-bg)", color: "var(--status-warning)" }}>
             {rateLimitMsg}
           </div>
@@ -313,6 +326,7 @@ export default function MessagingPanel({
         <div className="flex items-center gap-2">
           <input
             type="text"
+            aria-label="Chat message"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             maxLength={MAX_MESSAGE_LENGTH}

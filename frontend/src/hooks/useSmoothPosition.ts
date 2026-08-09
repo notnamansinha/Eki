@@ -13,6 +13,11 @@ export function useSmoothPosition(target: LatLng | null, durationMs = 800) {
       currentRef.current = null;
       return;
     }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      currentRef.current = target;
+      const frame = requestAnimationFrame(() => setPosition(target));
+      return () => cancelAnimationFrame(frame);
+    }
     const from = currentRef.current ?? target;
     const startedAt = performance.now();
     let frame = 0;

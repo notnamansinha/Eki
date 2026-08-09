@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => {
   const batchSet = vi.fn();
   const batchDelete = vi.fn();
   const batchCommit = vi.fn(async () => undefined);
+  const transactionDelete = vi.fn();
+  const transactionSet = vi.fn();
+  const transactionGet = vi.fn(async () => ({ exists: false, data: () => undefined }));
   const reduceTripState = vi.fn();
 
   const busesRef = {
@@ -42,7 +45,13 @@ const mocks = vi.hoisted(() => {
       delete: batchDelete,
       commit: batchCommit,
     })),
-    runTransaction: vi.fn(async () => undefined),
+    runTransaction: vi.fn(async (operation: (transaction: any) => unknown) =>
+      operation({
+        delete: transactionDelete,
+        get: transactionGet,
+        set: transactionSet,
+      }),
+    ),
   };
 
   return {
@@ -56,6 +65,9 @@ const mocks = vi.hoisted(() => {
     routeDocumentGet,
     routeListeners,
     rtdbHandlers,
+    transactionDelete,
+    transactionGet,
+    transactionSet,
   };
 });
 
@@ -147,12 +159,12 @@ describe("trip-state engine lifecycle", () => {
 
     mocks.rtdbHandlers.get("child_changed")!(snapshot);
     await flushMicrotasks();
-    expect(mocks.batchCommit).toHaveBeenCalledOnce();
-    expect(transaction).not.toHaveBeenCalled();
+    expect(mocks.db.runTransaction).toHaveBeenCalledOnce();
+    expect(transaction).toHaveBeenCalledOnce();
 
     await stop();
 
-    expect(transaction).toHaveBeenCalledOnce();
+    expect(transaction).toHaveBeenCalledTimes(2);
     expect(mocks.documentSet).toHaveBeenCalledWith(
       "bus_locations",
       "bus_1",

@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useId } from "react";
 import { AlertTriangle, ShieldAlert, Info, Loader2 } from "lucide-react";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -26,17 +27,11 @@ export default function ConfirmModal({
   onCancel,
   loading = false,
 }: ConfirmModalProps) {
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen && !loading) {
-        onCancel();
-      }
-    };
-    if (isOpen) {
-      document.addEventListener("keydown", handleKeyDown);
-    }
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, loading, onCancel]);
+  const titleId = useId();
+  const descriptionId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(isOpen, () => {
+    if (!loading) onCancel();
+  });
 
   if (!isOpen) return null;
 
@@ -73,10 +68,14 @@ export default function ConfirmModal({
     <div
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
       className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150"
       onClick={() => !loading && onCancel()}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="w-full max-w-sm rounded-2xl p-5 shadow-2xl flex flex-col gap-4 border border-white/10"
         style={{ background: "rgba(18, 20, 29, 0.98)" }}
         onClick={(e) => e.stopPropagation()}
@@ -86,14 +85,15 @@ export default function ConfirmModal({
             <Icon className={`w-5 h-5 ${iconColor}`} />
           </div>
           <div className="flex flex-col gap-1 min-w-0">
-            <h3 className="font-bold text-sm text-white tracking-tight leading-snug">{title}</h3>
-            <p className="text-xs text-white/60 leading-relaxed">{description}</p>
+            <h3 id={titleId} className="font-bold text-sm text-white tracking-tight leading-snug">{title}</h3>
+            <p id={descriptionId} className="text-xs text-white/60 leading-relaxed">{description}</p>
           </div>
         </div>
 
         <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-white/5">
           <button
             type="button"
+            data-autofocus
             disabled={loading}
             onClick={onCancel}
             className="px-4 py-2.5 rounded-xl text-xs font-semibold text-white/70 hover:text-white bg-white/5 hover:bg-white/10 transition-colors disabled:opacity-50"

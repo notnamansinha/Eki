@@ -32,6 +32,15 @@ const globalHeaders = firebase.hosting.headers.find((entry) => entry.source === 
 const csp = globalHeaders?.headers.find((header) => header.key === "Content-Security-Policy");
 if (!csp) throw new Error("Global Content-Security-Policy header not found.");
 
+let backendOrigin = null;
+if (process.env.NEXT_PUBLIC_BACKEND_URL?.trim()) {
+  const backendUrl = new URL(process.env.NEXT_PUBLIC_BACKEND_URL);
+  if (backendUrl.protocol !== "https:" && backendUrl.hostname !== "localhost") {
+    throw new Error("NEXT_PUBLIC_BACKEND_URL must use HTTPS outside local development.");
+  }
+  backendOrigin = backendUrl.origin;
+}
+
 const sources = [
   "'self'",
   ...[...hashes].sort(),
@@ -41,6 +50,16 @@ const sources = [
   "https://maps.googleapis.com",
 ].join(" ");
 csp.value = csp.value.replace(/script-src [^;]+;/, `script-src ${sources};`);
+if (backendOrigin) {
+  csp.value = csp.value.replace(
+    /connect-src ([^;]+);/,
+    (_directive, currentSources) => {
+      const uniqueSources = new Set(currentSources.split(/\s+/).filter(Boolean));
+      uniqueSources.add(backendOrigin);
+      return `connect-src ${[...uniqueSources].join(" ")};`;
+    },
+  );
+}
 await writeFile(firebasePath, `${JSON.stringify(firebase, null, 2)}\n`);
 console.log(`Updated CSP with ${hashes.size} inline-script hashes.`);
 

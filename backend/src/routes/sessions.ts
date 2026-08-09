@@ -3,124 +3,236 @@ import { FieldValue } from "firebase-admin/firestore";
 import { requireAuth } from "../middleware/requireAuth";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { haversineMeters } from "../lib/geo";
+import {
+  JOIN_RADIUS_M,
+  boardingCodesMatch,
+  generateBoardingCode,
+  normalizeBoardingCode,
+  validateLiveBoardingProjection,
+  validatePassengerPosition,
+  validateStopSelection,
+} from "../services/boardingPolicy";
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
-// A passenger must be within this distance of the hardware-reported bus
-// position to board. Browser GPS is typically 10–50 m accurate; the bus fix
-// is hardware GNSS, so 150 m firmly excludes remote joins while tolerating
-// stop-side GPS scatter.
-const JOIN_RADIUS_M = 150;
-const MAX_JOIN_FIX_AGE_MS = 60_000;
+const BOARDING_STATUSES = new Set(["armed", "active"]);
 
 type AuthenticatedRequest = Request & {
   user?: {
     uid: string;
     role?: string;
+    name?: string;
     driverId?: string;
     assignedBusId?: string;
   };
 };
 
+class BoardingPolicyError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+function sendBoardingError(res: Response, error: unknown, fallback: string): void {
+  if (error instanceof BoardingPolicyError) {
+    res.status(error.status).json({ error: error.message });
+    return;
+  }
+  console.error(`[Sessions] ${fallback}:`, error);
+  res.status(500).json({ error: fallback });
+}
+
+/**
+ * POST /api/sessions/:sessionId/boarding-code
+ *
+ * Returns the session-scoped code only to the assigned driver. The code is
+ * deliberately absent from RTDB and passenger-readable data. It supplies the
+ * server-verifiable proof that browser geolocation alone cannot provide.
+ */
+router.post("/:sessionId/boarding-code", requireAuth, async (
+  req: AuthenticatedRequest,
+  res: Response,
+) => {
+  const sessionId = req.params.sessionId;
+  const user = req.user;
+  if (!SAFE_ID.test(sessionId)) {
+    res.status(400).json({ error: "Invalid session ID." });
+    return;
+  }
+  if (
+    user?.role !== "driver" ||
+    typeof user.driverId !== "string" ||
+    typeof user.assignedBusId !== "string"
+  ) {
+    res.status(403).json({ error: "Only the assigned driver can view the boarding code." });
+    return;
+  }
+
+  try {
+    const proposedCode = generateBoardingCode();
+    const sessionRef = db.collection("ride_sessions").doc(sessionId);
+    const boardingCode = await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(sessionRef);
+      const data = snapshot.data();
+      if (!snapshot.exists || !data) {
+        throw new BoardingPolicyError(404, "Ride session was not found.");
+      }
+      if (
+        !BOARDING_STATUSES.has(String(data.status)) ||
+        data.driverId !== user.driverId ||
+        data.busId !== user.assignedBusId
+      ) {
+        throw new BoardingPolicyError(403, "Driver is not assigned to this active session.");
+      }
+      const existing = normalizeBoardingCode(data.boardingCode);
+      if (existing) return existing;
+      transaction.update(sessionRef, {
+        boardingCode: proposedCode,
+        boardingCodeIssuedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return proposedCode;
+    });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ sessionId, boardingCode });
+  } catch (error) {
+    sendBoardingError(res, error, "Unable to issue the boarding code.");
+  }
+});
+
 /**
  * POST /api/sessions/:sessionId/join
  *
- * Server-issued boarding join (SEC: closes the passenger self-join gap).
- * The manifest write is backend-authoritative: the client never writes to
- * ride_sessions. The backend only joins a passenger after verifying they are
- * physically near the bus, using the ESP32 GNSS fix already trusted by the
- * telemetry pipeline — never a client-supplied position.
+ * A passenger needs both a driver-visible, session-scoped code and a fresh
+ * browser position near the trusted hardware fix. Browser coordinates are
+ * attacker-controlled and therefore only defense in depth; the boarding code
+ * is the server-verifiable authorization that closes public-session self-join.
  */
-router.post("/:sessionId/join", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/:sessionId/join", requireAuth, async (
+  req: AuthenticatedRequest,
+  res: Response,
+) => {
+  const sessionId = req.params.sessionId;
+  const user = req.user;
+  if (!SAFE_ID.test(sessionId)) {
+    res.status(400).json({ error: "Invalid session ID." });
+    return;
+  }
+  if (!user?.uid || (user.role !== undefined && user.role !== "passenger")) {
+    res.status(403).json({ error: "A passenger account is required to board." });
+    return;
+  }
+
+  const passengerPosition = validatePassengerPosition(
+    req.body?.lat,
+    req.body?.lng,
+    req.body?.accuracy,
+  );
+  const submittedCode = normalizeBoardingCode(req.body?.boardingCode);
+  if (!passengerPosition || !submittedCode) {
+    res.status(400).json({ error: "Invalid boarding details." });
+    return;
+  }
+
   try {
-    const sessionId = req.params.sessionId;
-    const uid = req.user?.uid;
-    if (!SAFE_ID.test(sessionId) || typeof uid !== "string") {
-      res.status(400).json({ error: "Invalid session ID." });
-      return;
-    }
-
-    const { lat, lng, boardingStopId, alightingStopId, userName } = req.body ?? {};
-    const hasPosition =
-      typeof lat === "number" && Number.isFinite(lat) && lat >= -90 && lat <= 90 &&
-      typeof lng === "number" && Number.isFinite(lng) && lng >= -180 && lng <= 180;
-    const validStops =
-      typeof boardingStopId === "string" && boardingStopId.length > 0 && boardingStopId.length <= 128 &&
-      (alightingStopId == null ||
-        (typeof alightingStopId === "string" && alightingStopId.length > 0 && alightingStopId.length <= 128));
-    const validName = typeof userName === "string" && userName.length > 0 && userName.length <= 100;
-
     const sessionRef = db.collection("ride_sessions").doc(sessionId);
     const session = await sessionRef.get();
     const data = session.data();
     if (!session.exists || !data) {
-      res.status(404).json({ error: "Ride session was not found." });
-      return;
+      throw new BoardingPolicyError(404, "Ride session was not found.");
     }
-    if (!["armed", "active"].includes(String(data.status))) {
-      res.status(409).json({ error: "This ride is no longer boarding." });
-      return;
+    if (!BOARDING_STATUSES.has(String(data.status))) {
+      throw new BoardingPolicyError(409, "This ride is no longer boarding.");
     }
-    const busId = typeof data.busId === "string" ? data.busId : "";
-    const routeId = typeof data.routeId === "string" ? data.routeId : "";
+    if (!boardingCodesMatch(data.boardingCode, submittedCode)) {
+      throw new BoardingPolicyError(403, "The boarding code is invalid.");
+    }
+
+    const busId = typeof data.busId === "string" && SAFE_ID.test(data.busId)
+      ? data.busId
+      : "";
+    const routeId = typeof data.routeId === "string" && SAFE_ID.test(data.routeId)
+      ? data.routeId
+      : "";
     if (!busId || !routeId) {
-      res.status(422).json({ error: "This session has no active vehicle." });
-      return;
+      throw new BoardingPolicyError(422, "This session has no active vehicle.");
     }
 
-    const passengers = (data.passengers ?? {}) as Record<string, unknown>;
-    const alreadyJoined =
-      typeof passengers[uid] === "object" && passengers[uid] !== null;
-
-    if (!validStops || !validName || (!alreadyJoined && !hasPosition)) {
-      res.status(400).json({ error: "Invalid boarding details." });
-      return;
+    const [route, profile, liveSnapshot] = await Promise.all([
+      db.collection("routes").doc(routeId).get(),
+      db.collection("users").doc(user.uid).get(),
+      rtdb.ref(`activeBuses/${busId}_${routeId}`).once("value"),
+    ]);
+    const stopSelection = validateStopSelection(
+      route.data()?.stops,
+      req.body?.boardingStopId,
+      req.body?.alightingStopId,
+    );
+    if (!route.exists || !stopSelection) {
+      throw new BoardingPolicyError(400, "Select valid stops in route order.");
     }
 
-    if (!alreadyJoined) {
-      // Proximity gate uses the ESP32 GNSS fix, not the client's location.
-      const live = (
-        await rtdb.ref(`activeBuses/${busId}_${routeId}`).once("value")
-      ).val() as Record<string, unknown> | null;
-      const fixTimestamp = Number(live?.timestamp);
-      const busLat = Number(live?.lat);
-      const busLng = Number(live?.lng);
-      if (
-        !Number.isFinite(busLat) ||
-        !Number.isFinite(busLng) ||
-        !Number.isFinite(fixTimestamp) ||
-        Date.now() - fixTimestamp > MAX_JOIN_FIX_AGE_MS
-      ) {
-        res.status(409).json({
-          error: "The bus position is unavailable right now; please try again.",
-        });
-        return;
-      }
-      const distanceM = haversineMeters(
-        { lat: Number(lat), lng: Number(lng) },
-        { lat: busLat, lng: busLng },
+    const busPosition = validateLiveBoardingProjection(
+      liveSnapshot.val() as Record<string, unknown> | null,
+      { sessionId, busId, routeId },
+    );
+    if (!busPosition) {
+      throw new BoardingPolicyError(
+        409,
+        "The live bus position is unavailable; wait for a fresh hardware fix.",
       );
-      if (distanceM > JOIN_RADIUS_M) {
-        res.status(403).json({ error: "You must be near the bus to board." });
-        return;
-      }
+    }
+    const distanceM = haversineMeters(passengerPosition, busPosition);
+    if (!Number.isFinite(distanceM) || distanceM > JOIN_RADIUS_M) {
+      throw new BoardingPolicyError(403, "You must be near the bus to board.");
     }
 
-    await sessionRef.update({
-      [`passengers.${uid}`]: {
-        userId: uid,
-        userName,
-        boardingStopId,
-        alightingStopId: alightingStopId ?? null,
-        joinedAt: FieldValue.serverTimestamp(),
-      },
-      updatedAt: FieldValue.serverTimestamp(),
+    const profileName = profile.data()?.displayName;
+    const tokenName = user.name;
+    const userName = (
+      typeof profileName === "string" && profileName.trim()
+        ? profileName.trim()
+        : typeof tokenName === "string" && tokenName.trim()
+          ? tokenName.trim()
+          : "Passenger"
+    ).slice(0, 100);
+
+    await db.runTransaction(async (transaction) => {
+      const current = await transaction.get(sessionRef);
+      const currentData = current.data();
+      if (
+        !current.exists ||
+        !currentData ||
+        !BOARDING_STATUSES.has(String(currentData.status)) ||
+        currentData.busId !== busId ||
+        currentData.routeId !== routeId ||
+        !boardingCodesMatch(currentData.boardingCode, submittedCode)
+      ) {
+        throw new BoardingPolicyError(409, "Boarding authorization expired; ask the driver for the current code.");
+      }
+      const passengers =
+        currentData.passengers && typeof currentData.passengers === "object" &&
+        !Array.isArray(currentData.passengers)
+          ? currentData.passengers as Record<string, Record<string, unknown>>
+          : {};
+      const existingPassenger = passengers[user.uid];
+      transaction.update(sessionRef, {
+        passengers: {
+          ...passengers,
+          [user.uid]: {
+            userId: user.uid,
+            userName,
+            ...stopSelection,
+            joinedAt: existingPassenger?.joinedAt ?? FieldValue.serverTimestamp(),
+          },
+        },
+        updatedAt: FieldValue.serverTimestamp(),
+      });
     });
 
     res.json({ joined: true, sessionId });
   } catch (error) {
-    console.error("[Sessions] Failed to join ride:", error);
-    res.status(500).json({ error: "Unable to join the ride." });
+    sendBoardingError(res, error, "Unable to join the ride.");
   }
 });
 

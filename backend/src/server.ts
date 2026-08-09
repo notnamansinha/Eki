@@ -189,6 +189,11 @@ app.get("/health", (_req, res) => {
       accepted: telemetry.accepted,
       rejected: telemetry.rejected,
       lastAcceptedAt: telemetry.lastAcceptedAt,
+      lastRejectedAt: telemetry.lastRejectedAt,
+      credentialCacheHitRate: telemetry.credentialCacheHitRate,
+      processingLatencyMs: telemetry.processingLatencyMs,
+      deviceToServerLatencyMs: telemetry.deviceToServerLatencyMs,
+      rtdbWriteLatencyMs: telemetry.rtdbWriteLatencyMs,
     },
     checkedAt: lastHealthProbeAt,
   });
