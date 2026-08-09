@@ -1,4 +1,7 @@
 #include "secrets.h"
+#include "clock_policy.h"
+#include "connectivity_policy.h"
+#include "recovery_portal.h"
 #include "telemetry_policy.h"
 #include "telemetry_queue.h"
 #include <Arduino.h>
@@ -13,6 +16,7 @@
 #include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <limits>
 #include <sys/time.h>
 
 #ifndef BACKEND_ROOT_CA
@@ -27,14 +31,22 @@
 #ifndef DEVICE_SECRET
 #error "DEVICE_SECRET must be defined in include/secrets.h."
 #endif
+#ifndef RECOVERY_AP_PASSWORD
+#error "RECOVERY_AP_PASSWORD must be defined in include/secrets.h."
+#endif
 
 static_assert(sizeof(DEVICE_SECRET) - 1 >= 20,
               "DEVICE_SECRET must contain at least 20 characters.");
+static_assert(
+  sizeof(RECOVERY_AP_PASSWORD) - 1 >= 12 &&
+  sizeof(RECOVERY_AP_PASSWORD) - 1 <= 63,
+  "RECOVERY_AP_PASSWORD must contain 12 to 63 characters."
+);
 
 namespace {
 constexpr double HDOP_REJECT_THRESHOLD = 4.0;
-constexpr uint32_t WIFI_RETRY_MS = 5000;
-constexpr uint32_t TIME_SYNC_RETRY_MS = 10000;
+constexpr uint32_t GNSS_UTC_MAX_AGE_MS = 2000;
+constexpr uint32_t NTP_CROSS_CHECK_INTERVAL_MS = 6UL * 60 * 60 * 1000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
 constexpr uint32_t WATCHDOG_TIMEOUT_MS = 25000;
 constexpr int64_t TELEMETRY_FRESHNESS_MARGIN_MS = 55000;
@@ -46,6 +58,7 @@ constexpr UBaseType_t PUBLISHER_TASK_PRIORITY = 1;
 // Network work runs on another core, but this buffer still absorbs scheduler
 // jitter and diagnostic output without risking NMEA loss.
 constexpr size_t GPS_RX_BUFFER_BYTES = 8192;
+constexpr uint8_t STATUS_LED_PIN = 2;
 
 TinyGPSPlus gps;
 HardwareSerial &gpsSerial = Serial2;
@@ -94,6 +107,7 @@ enum class PublishResult : uint8_t {
   Accepted,
   RetryLatest,
   Dropped,
+  CredentialFault,
 };
 
 double lastCapturedLat = 0;
@@ -105,16 +119,24 @@ MotionState lastCapturedMotionState = MotionState::Uncertain;
 eki::telemetry::MotionTracker motionTracker;
 uint32_t lastCaptureAt = 0;
 uint32_t lastEvaluationAt = 0;
-uint32_t lastWifiAttemptAt = 0;
-uint32_t lastTimeSyncAttemptAt = 0;
+uint32_t lastNtpCrossCheckAt = 0;
 uint32_t lastHttpsFailureAt = 0;
 uint32_t httpsRetryDelayMs = 0;
 uint32_t lastGpsWarningAt = 0;
 uint32_t lastHealthReportAt = 0;
 uint8_t consecutiveHttpsFailures = 0;
+bool ntpCrossCheckStarted = false;
+bool gnssClockApplied = false;
+uint32_t lastGnssClockAppliedAt = 0;
+bool credentialFaultActive = false;
 bool gpsFixWasLost = false;
 bool lossMessageQueued = false;
 bool wifiConfigured = false;
+eki::connectivity::StationCredentials stationCredentials;
+eki::connectivity::WifiRetrySupervisor wifiRetrySupervisor;
+eki::connectivity::RecoveryPortal recoveryPortal;
+portMUX_TYPE deviceFaultMux = portMUX_INITIALIZER_UNLOCKED;
+eki::connectivity::FaultCode deviceFault = eki::connectivity::FaultCode::None;
 uint32_t uartBufferOverflowCount = 0;
 uint32_t uartFifoOverflowCount = 0;
 uint32_t acceptedFixCount = 0;
@@ -129,6 +151,38 @@ struct HealthCounters {
 
 uint32_t elapsed(uint32_t since) {
   return millis() - since;
+}
+
+void setDeviceFault(eki::connectivity::FaultCode fault) {
+  portENTER_CRITICAL(&deviceFaultMux);
+  deviceFault = fault;
+  portEXIT_CRITICAL(&deviceFaultMux);
+}
+
+eki::connectivity::FaultCode currentDeviceFault() {
+  portENTER_CRITICAL(&deviceFaultMux);
+  const eki::connectivity::FaultCode fault = deviceFault;
+  portEXIT_CRITICAL(&deviceFaultMux);
+  return fault;
+}
+
+void updateStatusLed() {
+  digitalWrite(
+    STATUS_LED_PIN,
+    eki::connectivity::statusLedOn(currentDeviceFault(), millis()) ? HIGH : LOW
+  );
+}
+
+const char *faultCodeName(eki::connectivity::FaultCode fault) {
+  switch (fault) {
+    case eki::connectivity::FaultCode::WifiRecovery:
+      return "wifi-recovery";
+    case eki::connectivity::FaultCode::CredentialRejected:
+      return "credential-rejected";
+    case eki::connectivity::FaultCode::None:
+    default:
+      return "none";
+  }
 }
 
 const char *motionStateName(MotionState state) {
@@ -234,7 +288,8 @@ uint32_t telemetryConfigurationTag() {
 }
 
 bool clockIsSynchronized() {
-  return time(nullptr) > 1700000000;
+  return static_cast<int64_t>(time(nullptr)) * 1000 >=
+    eki::clock::TRUSTED_EPOCH_MIN_MS;
 }
 
 bool httpsRetryIsPending() {
@@ -265,28 +320,137 @@ int64_t epochMilliseconds() {
   return static_cast<int64_t>(tv.tv_sec) * 1000 + tv.tv_usec / 1000;
 }
 
-void connectWiFi() {
-  if (WiFi.status() == WL_CONNECTED) return;
-  if (lastWifiAttemptAt && elapsed(lastWifiAttemptAt) < WIFI_RETRY_MS) return;
-  lastWifiAttemptAt = millis();
+void disciplineClockFromGnss() {
+  if (
+    !gps.date.isValid() ||
+    !gps.time.isValid() ||
+    gps.date.age() > GNSS_UTC_MAX_AGE_MS ||
+    gps.time.age() > GNSS_UTC_MAX_AGE_MS
+  ) {
+    return;
+  }
 
+  const eki::clock::UtcDateTime utc = {
+    gps.date.year(),
+    gps.date.month(),
+    gps.date.day(),
+    gps.time.hour(),
+    gps.time.minute(),
+    gps.time.second(),
+    gps.time.centisecond(),
+  };
+  int64_t gnssEpochMs = 0;
+  if (!eki::clock::utcToEpochMilliseconds(utc, gnssEpochMs)) return;
+  const int64_t gnssEpochSeconds = gnssEpochMs / 1000;
+  if (gnssEpochSeconds > static_cast<int64_t>(std::numeric_limits<time_t>::max())) {
+    Serial.println("[Clock] GNSS UTC exceeds this firmware runtime's time_t range.");
+    return;
+  }
+
+  const int64_t systemEpochMs = epochMilliseconds();
+  if (!eki::clock::shouldApplyGnssClock(
+    gnssClockApplied,
+    elapsed(lastGnssClockAppliedAt),
+    systemEpochMs,
+    gnssEpochMs
+  )) {
+    return;
+  }
+
+  timeval tv{};
+  tv.tv_sec = static_cast<time_t>(gnssEpochSeconds);
+  tv.tv_usec = static_cast<suseconds_t>((gnssEpochMs % 1000) * 1000);
+  if (settimeofday(&tv, nullptr) != 0) {
+    Serial.println("[Clock] GNSS UTC was valid but settimeofday failed.");
+    return;
+  }
+  const bool initialSynchronization = !gnssClockApplied;
+  gnssClockApplied = true;
+  lastGnssClockAppliedAt = millis();
+  if (initialSynchronization) {
+    Serial.println("[Clock] System time established from fresh GNSS UTC.");
+  } else {
+    Serial.printf(
+      "[Clock] GNSS UTC corrected system clock by %lldms; NTP remains a cross-check.\n",
+      static_cast<long long>(eki::clock::absoluteDifference(systemEpochMs, gnssEpochMs))
+    );
+  }
+}
+
+void configureStationRadio() {
+  WiFi.mode(recoveryPortal.active() ? WIFI_AP_STA : WIFI_STA);
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(true);
+  // The tracker is vehicle-powered. Disabling modem sleep avoids periodic
+  // wake latency during short HTTPS telemetry bursts.
+  WiFi.setSleep(false);
+  WiFi.setScanMethod(WIFI_FAST_SCAN);
+  WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+}
+
+void attemptWifiConnection() {
   tlsClient.stop();
   if (!wifiConfigured) {
-    WiFi.mode(WIFI_STA);
-    WiFi.persistent(false);
-    WiFi.setAutoReconnect(true);
-    // The tracker is vehicle-powered. Disabling modem sleep avoids periodic
-    // wake latency during short HTTPS telemetry bursts.
-    WiFi.setSleep(false);
-    WiFi.setScanMethod(WIFI_FAST_SCAN);
-    WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    configureStationRadio();
+    WiFi.begin(stationCredentials.ssid(), stationCredentials.password());
     wifiConfigured = true;
     Serial.println("[WiFi] Connecting to configured network.");
   } else {
     WiFi.reconnect();
-    Serial.println("[WiFi] Reconnecting.");
+    Serial.println("[WiFi] Reconnecting with bounded exponential backoff.");
   }
+}
+
+void updateConnectivityFault() {
+  setDeviceFault(
+    credentialFaultActive
+      ? eki::connectivity::FaultCode::CredentialRejected
+      : recoveryPortal.active()
+        ? eki::connectivity::FaultCode::WifiRecovery
+        : eki::connectivity::FaultCode::None
+  );
+}
+
+void serviceConnectivity() {
+  const uint32_t now = millis();
+  const bool connected = WiFi.status() == WL_CONNECTED;
+  wifiRetrySupervisor.observe(connected, now);
+
+  if (connected && recoveryPortal.active()) {
+    recoveryPortal.stop();
+    Serial.println("[WiFi] Connection restored; recovery portal stopped.");
+  }
+
+  recoveryPortal.handleClient();
+  if (recoveryPortal.consumeCredentialsUpdated()) {
+    tlsClient.stop();
+    WiFi.disconnect(false, false);
+    wifiConfigured = false;
+    wifiRetrySupervisor.restartAfterConfiguration(now);
+    Serial.println("[WiFi] Stored replacement network; reconnecting without exposing credentials.");
+  }
+
+  if (
+    !connected &&
+    wifiRetrySupervisor.recoveryStartDue(now) &&
+    !recoveryPortal.active()
+  ) {
+    wifiRetrySupervisor.recordRecoveryStartAttempt(now);
+    if (recoveryPortal.start(DEVICE_ID, RECOVERY_AP_PASSWORD, stationCredentials)) {
+      Serial.printf(
+        "[WiFi] Persistent outage; protected recovery mode active at http://192.168.4.1 on AP %s.\n",
+        recoveryPortal.accessPointSsid()
+      );
+    } else {
+      Serial.println("[WiFi] Persistent outage; recovery portal failed to start.");
+    }
+  }
+
+  if (!connected && wifiRetrySupervisor.attemptDue(now)) {
+    attemptWifiConnection();
+    wifiRetrySupervisor.recordAttempt(now);
+  }
+  updateConnectivityFault();
 }
 
 void configureWatchdog() {
@@ -307,15 +471,14 @@ void configureWatchdog() {
 }
 
 void synchronizeClock() {
-  if (clockIsSynchronized()) return;
   if (
-    lastTimeSyncAttemptAt &&
-    elapsed(lastTimeSyncAttemptAt) < TIME_SYNC_RETRY_MS
-  ) {
-    return;
-  }
-  lastTimeSyncAttemptAt = millis();
+    ntpCrossCheckStarted &&
+    elapsed(lastNtpCrossCheckAt) < NTP_CROSS_CHECK_INTERVAL_MS
+  ) return;
+  lastNtpCrossCheckAt = millis();
+  ntpCrossCheckStarted = true;
   configTime(0, 0, "pool.ntp.org", "time.google.com");
+  Serial.println("[Clock] NTP cross-check/fallback scheduled.");
 }
 
 PublishResult publishFix(const TelemetryFix &fix) {
@@ -383,16 +546,18 @@ PublishResult publishFix(const TelemetryFix &fix) {
         ? "accepted"
         : action == eki::telemetry::HttpResponseAction::RetrySample
           ? "retryable"
-          : "rejected",
+          : action == eki::telemetry::HttpResponseAction::HaltCredentials
+            ? "credential-fault"
+            : "rejected",
       responseCode,
       elapsed(startedAt),
       payload.length(),
       WiFi.RSSI()
     );
     if (responseCode == 400 || responseCode == 413 || responseCode == 422) {
-      Serial.println("[HTTPS] Check the six-field payload and NTP-synchronized timestamp.");
+      Serial.println("[HTTPS] Check the six-field payload and GNSS/NTP-disciplined timestamp.");
     } else if (responseCode == 401 || responseCode == 403) {
-      Serial.println("[HTTPS] Check DEVICE_ID, provisioned secret, enabled state, and bus/route assignment.");
+      Serial.println("[HTTPS] Credential fault latched; publishing is halted until reprovisioning and restart.");
     } else if (responseCode == 404) {
       Serial.println("[HTTPS] Check BACKEND_URL; the telemetry endpoint was not found.");
     } else if (responseCode == 429) {
@@ -409,6 +574,12 @@ PublishResult publishFix(const TelemetryFix &fix) {
   http.end();
   if (action != eki::telemetry::HttpResponseAction::Accept) {
     tlsClient.stop();
+    if (action == eki::telemetry::HttpResponseAction::HaltCredentials) {
+      credentialFaultActive = true;
+      resetHttpsRetry();
+      updateConnectivityFault();
+      return PublishResult::CredentialFault;
+    }
     scheduleHttpsRetry(
       eki::telemetry::minimumHttpRetryDelayMs(responseCode, retryAfterMs)
     );
@@ -521,7 +692,7 @@ void publisherTask(void *) {
 
   for (;;) {
     esp_task_wdt_reset();
-    connectWiFi();
+    serviceConnectivity();
 
     bool drainedSample = false;
     if (WiFi.status() == WL_CONNECTED) {
@@ -538,12 +709,14 @@ void publisherTask(void *) {
               static_cast<unsigned>(staleDrops)
             );
           }
-          const PublishResult result = publishFix(fix);
-          if (result != PublishResult::RetryLatest) {
-            removeQueuedFix(fix.sequence);
-            recordPublishResult(result == PublishResult::Accepted);
+          if (!credentialFaultActive) {
+            const PublishResult result = publishFix(fix);
+            if (result != PublishResult::RetryLatest) {
+              removeQueuedFix(fix.sequence);
+              recordPublishResult(result == PublishResult::Accepted);
+            }
+            drainedSample = true;
           }
-          drainedSample = true;
         } else if (staleDrops > 0) {
           Serial.printf(
             "[Telemetry] Dropped %u stale queued sample(s); queue is empty.\n",
@@ -566,8 +739,10 @@ void reportHealth() {
   lastHealthReportAt = millis();
   const TelemetryQueue::Stats queue = telemetryQueueStats();
   const HealthCounters counters = healthCounters();
+  const eki::connectivity::FaultCode fault = currentDeviceFault();
   Serial.printf(
-    "[Health] queue=%u/%u high-water=%u overflow-drops=%lu stale-drops=%lu; accepted=%lu rejected=%lu; NMEA checksum-failures=%lu UART-buffer-overflows=%lu UART-FIFO-overflows=%lu.\n",
+    "[Health] fault=%s queue=%u/%u high-water=%u overflow-drops=%lu stale-drops=%lu; accepted=%lu rejected=%lu; NMEA checksum-failures=%lu UART-buffer-overflows=%lu UART-FIFO-overflows=%lu.\n",
+    faultCodeName(fault),
     queue.depth,
     static_cast<unsigned>(TELEMETRY_QUEUE_CAPACITY),
     queue.highWaterMark,
@@ -584,6 +759,8 @@ void reportHealth() {
 
 void setup() {
   Serial.begin(115200);
+  pinMode(STATUS_LED_PIN, OUTPUT);
+  digitalWrite(STATUS_LED_PIN, LOW);
   const size_t gpsRxBuffer = gpsSerial.setRxBufferSize(GPS_RX_BUFFER_BYTES);
   gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
   gpsSerial.onReceiveError(onGpsSerialError);
@@ -594,13 +771,22 @@ void setup() {
     WIFI_PASS,
     DEVICE_SECRET,
     BACKEND_URL,
-    BACKEND_ROOT_CA
+    BACKEND_ROOT_CA,
+    RECOVERY_AP_PASSWORD
   )) {
     Serial.println(
-      "[Boot] secrets.h still contains template placeholders; configure Wi-Fi, provisioned device credentials, HTTPS backend URL, and issuing root CA."
+      "[Boot] secrets.h still contains template placeholders; configure Wi-Fi, recovery access, provisioned device credentials, HTTPS backend URL, and issuing root CA."
     );
     while (true) delay(1000);
   }
+  if (!stationCredentials.load(WIFI_SSID, WIFI_PASS)) {
+    Serial.println("[Boot] Station Wi-Fi credentials are invalid; firmware halted.");
+    while (true) delay(1000);
+  }
+  Serial.printf(
+    "[Boot] Station Wi-Fi source=%s; credential values are not logged.\n",
+    stationCredentials.loadedFromNvs() ? "validated NVS record" : "secrets.h fallback"
+  );
 
   portENTER_CRITICAL(&telemetryQueueMux);
   const bool queueRecovered = telemetryQueue.initializeOrRecover(
@@ -646,6 +832,7 @@ void setup() {
 void loop() {
   esp_task_wdt_reset();
   while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
+  disciplineClockFromGnss();
 
   if (elapsed(lastEvaluationAt) >= 1000) {
     lastEvaluationAt = millis();
@@ -661,5 +848,6 @@ void loop() {
     Serial.println("[GPS] No NMEA data received; check RX/TX wiring.");
   }
   reportHealth();
+  updateStatusLed();
   delay(5);
 }

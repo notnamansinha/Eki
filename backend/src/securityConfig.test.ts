@@ -315,6 +315,37 @@ describe("production security configuration", () => {
     expect(tripStateEngine).not.toContain("snapshot.ref.remove().catch(console.error);");
   });
 
+  it("keeps hardware clock, connectivity recovery, and credential faults fail closed", () => {
+    const firmware = workspaceFile("hardware/src/main.cpp");
+    const clockPolicy = workspaceFile("hardware/include/clock_policy.h");
+    const connectivityPolicy = workspaceFile("hardware/include/connectivity_policy.h");
+    const recoveryPortal = workspaceFile("hardware/src/recovery_portal.cpp");
+    const telemetryPolicy = workspaceFile("hardware/include/telemetry_policy.h");
+    const secretsTemplate = workspaceFile("hardware/include/secrets.example.h");
+
+    expect(firmware).toContain("gps.date.isValid()");
+    expect(firmware).toContain("gps.time.isValid()");
+    expect(firmware).toContain("settimeofday(&tv, nullptr)");
+    expect(firmware).toContain("std::numeric_limits<time_t>::max()");
+    expect(firmware).toContain("NTP_CROSS_CHECK_INTERVAL_MS");
+    expect(clockPolicy).toContain("utcToEpochMilliseconds");
+    expect(clockPolicy).toContain("GNSS_CLOCK_CORRECTION_THRESHOLD_MS");
+
+    expect(connectivityPolicy).toContain("WIFI_RECOVERY_ESCALATION_MS");
+    expect(connectivityPolicy).toContain("statusLedOn");
+    expect(recoveryPortal).toContain("WIFI_AP_STA");
+    expect(recoveryPortal).toContain('server_.on("/wifi", HTTP_POST');
+    expect(recoveryPortal).toContain('server_.sendHeader("Cache-Control", "no-store")');
+    expect(recoveryPortal).toContain("constantTimeTokenEquals");
+    expect(recoveryPortal).toContain("WiFi.softAP(accessPointSsid_, recoveryPassword, 1, false, 1)");
+    expect(recoveryPortal).not.toContain("DEVICE_SECRET");
+    expect(secretsTemplate).toContain("RECOVERY_AP_PASSWORD");
+
+    expect(telemetryPolicy).toContain("HttpResponseAction::HaltCredentials");
+    expect(firmware).toContain("credentialFaultActive = true");
+    expect(firmware).toContain("if (!credentialFaultActive)");
+  });
+
   it("routes all privileged route and delay mutations through the backend", () => {
     const rules = workspaceFile("firestore.rules");
     const routes = ruleBlock(rules, "match /routes/{routeId}");
