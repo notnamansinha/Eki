@@ -23,6 +23,16 @@ const ruleBlock = (rules: string, matchPath: string) => {
 };
 
 describe("production security configuration", () => {
+  it("pins every CI action to an immutable commit", () => {
+    const workflow = workspaceFile(".github/workflows/ci.yml");
+    const references = [...workflow.matchAll(/uses:\s+([^@\s]+)@([^\s#]+)/g)];
+    expect(references.length).toBeGreaterThan(0);
+    for (const [, action, reference] of references) {
+      expect(action).toMatch(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
+      expect(reference).toMatch(/^[a-f0-9]{40}$/);
+    }
+  });
+
   it("keeps realtime telemetry server-only and denies every RTDB client mutation", () => {
     const database = JSON.parse(workspaceFile("database.rules.json"));
     const activeBus = database.rules.activeBuses.$busKey;
