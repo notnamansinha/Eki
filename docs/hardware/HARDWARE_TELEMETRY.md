@@ -19,32 +19,40 @@ Use a fused automotive-rated 12 V-to-5 V buck converter, strain relief, protecte
 - Required: `WIFI_SSID`, `WIFI_PASS`, `DEVICE_ID`, 20+ character `DEVICE_SECRET`, HTTPS `BACKEND_URL`, and issuing `BACKEND_ROOT_CA`.
 - `BACKEND_URL` is runtime-checked for `https://`; insecure configuration halts transmission.
 
-## Runtime loop
+## Runtime tasks
 
 ```mermaid
-flowchart TD
-  LOOP["Loop: feed watchdog"] --> UART["Drain all UART bytes"]
-  UART --> WIFI{"Wi-Fi connected?"}
-  WIFI -->|no| RECONNECT["Reconnect every 5 s"]
-  WIFI -->|yes| NTP["Ensure NTP clock"]
-  NTP --> BUFFER["Drop >55 s buffer; retry latest fix"]
-  BUFFER --> EVAL{"1 s evaluation due?"}
-  EVAL -->|no| WARN["NMEA health warning"]
-  EVAL -->|yes| QUALITY{"fresh location + HDOP <= 4 + clock"}
-  QUALITY -->|no| LOST["Send one uncertain sample at last fix"]
-  QUALITY -->|yes| GATE{"change threshold or heartbeat?"}
-  GATE -->|yes| POST["HTTPS POST"]
-  GATE -->|no| WARN
-  POST -->|200/202| SAVE["Update last-published baseline"]
-  POST -->|"transport, 408/425/429, 5xx"| BACKOFF["Stop TLS; bounded backoff; buffer latest"]
-  POST -->|"other HTTP rejection"| DROP["Discard sample; delay next fresh attempt"]
-  SAVE --> WARN
-  BACKOFF --> WARN
-  DROP --> WARN
-  WARN --> LOOP
+flowchart LR
+  subgraph CAPTURE["Arduino loop task / core 1"]
+    LOOP["Feed watchdog"] --> UART["Drain all UART bytes"]
+    UART --> EVAL{"1 s evaluation due?"}
+    EVAL --> QUALITY{"Fresh location + HDOP <= 4 + clock?"}
+    QUALITY -->|no| LOST["Queue one uncertain sample"]
+    QUALITY -->|yes| GATE{"Change threshold or heartbeat?"}
+    GATE -->|yes| QUEUE["Push RTC ring; evict oldest if full"]
+    GATE -->|no| LOOP
+    LOST --> QUEUE
+    QUEUE --> LOOP
+  end
+
+  subgraph DELIVERY["FreeRTOS publisher task / core 0"]
+    WIFI["Wi-Fi reconnect + NTP"] --> FRESH["Drop and count samples older than 55 s"]
+    FRESH --> NEWEST["Peek newest eligible sample"]
+    NEWEST --> POST["Certificate-verified HTTPS POST"]
+    POST -->|200/202| ACK["Remove acknowledged sequence"]
+    POST -->|"transport, 408/425/429, 5xx"| RETRY["Keep queued; bounded backoff"]
+    POST -->|"other HTTP rejection"| REJECT["Remove rejected sequence"]
+    ACK --> NEWEST
+    RETRY --> WIFI
+    REJECT --> WIFI
+  end
+
+  QUEUE -. "task notification" .-> NEWEST
 ```
 
-The 8,192-byte UART buffer holds roughly 8.5 seconds at 9,600 baud, covering the seven-second network timeout while the synchronous HTTP client runs. Only the most recent failed fix is buffered; this prevents RAM growth and stale replay.
+The two tasks share only a short critical section around the fixed-capacity ring. TLS can consume its full connect/request timeout without delaying NMEA parsing. The 8,192-byte UART buffer remains as protection against scheduler and diagnostic jitter, while HardwareSerial buffer/FIFO overflow callbacks and TinyGPSPlus checksum failures make any loss observable.
+
+The 120-sample queue occupies 5,808 bytes of RTC no-init memory. At the maximum one capture per three seconds it covers six minutes; heartbeats consume less. It survives software/watchdog resets, rejects recovery when the device/backend identity or queue layout changes, and drops the oldest entry on overflow. The backend accepts timestamps only within 60 seconds, so recovery sends newest-first and purges entries outside a 55-second safety margin rather than replaying invalid data.
 
 ## Fix quality and transmission parameters
 
@@ -55,24 +63,25 @@ The 8,192-byte UART buffer holds roughly 8.5 seconds at 9,600 baud, covering the
 | HDOP maximum | 4.0 | Reject poor horizontal geometry |
 | Moving enter / stopped enter | 2.5 / 1.5 km/h | Hysteresis against jitter |
 | Confirmation readings | 3 | Stable motion classification |
-| Minimum changed publish | 3 s | Upper bound write frequency |
+| Minimum changed capture | 3 s | Upper bound queue/write frequency |
 | Distance change | 5 m | Position materiality |
 | Heading change | 15° | Direction materiality |
 | Speed change | 5 km/h | Velocity materiality |
 | Moving/stopped heartbeat | 30 / 60 s | Liveness without excess writes |
 | HTTP connect/request timeout | 7 s | Bound blocked network work |
 | HTTPS retry | 1–30 s + up to 1 s jitter | Recovery without fleet retry storm |
-| Buffered-fix discard | >55 s | Stay within backend freshness window |
-| Task watchdog | 15 s, panic/restart | Recover hung loop/network stack |
+| RTC queue | 120 samples / 5,808 bytes | Bounded store-and-forward with oldest-drop overflow |
+| Queued-fix discard | >55 s | Stay within backend freshness window |
+| Task watchdog | 25 s, panic/restart | Cover both tasks and bounded connect-plus-request latency |
 | NMEA no-data warning | after 5 s, every 5 s | Wiring/baud diagnosis |
 
 Wi-Fi persistence is disabled to avoid flash churn, auto-reconnect is enabled, the strongest known AP is selected with fast scan, and modem sleep is disabled because the tracker is vehicle-powered and latency is preferred over battery life. The SSID and secret are never logged.
 
-The deterministic distance, heading, three-reading motion hysteresis, retry and publish decisions live in `hardware/include/telemetry_policy.h` and are executed on the host by `platformio test -d hardware -e native`. Radio, UART, antenna, TLS, watchdog and power behavior remain physical acceptance concerns.
+The deterministic distance, heading, three-reading motion hysteresis, retry and capture decisions live in `hardware/include/telemetry_policy.h`; queue ordering, wraparound, retry retention, identity validation, overflow and stale eviction live in `hardware/include/telemetry_queue.h`. Both are executed on the host by `platformio test -d hardware -e native`. Radio, UART, antenna, TLS, watchdog and power behavior remain physical acceptance concerns.
 
 ## Payload and HTTP outcomes
 
-The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). The device treats only 200/202 as success. Transport errors, 408/425/429 and 5xx retain the latest sample for retry; other HTTP statuses reject that sample so a permanent 4xx is not replayed forever. HTTP 429 honors the backend's bounded delta-seconds `Retry-After` value.
+The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). The device treats only 200/202 as success. Transport errors, 408/425/429 and 5xx retain the attempted sample for retry; other HTTP statuses remove that sample so a permanent 4xx is not replayed forever. HTTP 429 honors the backend's bounded delta-seconds `Retry-After` value. If a newer fix arrives while a request is in flight, that newer fix becomes the next recovery candidate.
 
 | Symptom | Likely cause | Action |
 |---|---|---|
@@ -84,13 +93,14 @@ The body fields and limits are defined in [Firebase data model](../data/FIREBASE
 | HTTP 400 | Firmware/backend contract mismatch or timestamp/range | Compare exact six fields and clock |
 | HTTP 401 | ID/secret disabled/mismatched or assignment invalid | Reprovision/inspect registry without logging secret |
 | HTTP 429 | IP/device limiter | Check publish loop/config and WAF limits |
-| HTTP 503/timeouts | Backend/Firebase/network outage | Inspect `/health`; backoff retains latest only |
-| Repeated watchdog reset | HTTP/network stack longer than 15 s or loop fault | Inspect reset reason/serial; verify 7 s timeout |
+| HTTP 503/timeouts | Backend/Firebase/network outage | Inspect `/health`; backoff retains the bounded queue |
+| Repeated watchdog reset | HTTP/network stack longer than 25 s or task fault | Inspect reset reason/serial; verify 7 s connect/request timeouts |
+| Non-zero overflow counters | GNSS task starvation, UART pressure or full telemetry queue | Inspect 30-second health line; reproduce against network outage and load |
 | `uncertain` on map | One GNSS-loss notification at last trusted point | Fix antenna/sky view; no guessed motion is shown |
 
 ## Latency analysis
 
-The device serial line is not the normal bottleneck: NMEA arrives continuously and the enlarged buffer prevents loss during HTTPS. For a materially changed fix, designed latency is up to one-second evaluation plus network/TLS/API/RTDB time; a change arriving just after a successful publish can also wait for the three-second floor. If no material change occurs, heartbeat visibility is intentionally 30/60 seconds.
+The device serial line is not the normal bottleneck: NMEA parsing continues while HTTPS blocks the publisher task. For a materially changed fix, designed latency is up to one-second evaluation plus network/TLS/API/RTDB time; a change arriving just after capture can also wait for the three-second floor. On recovery the newest eligible state is restored first. If no material change occurs, heartbeat visibility is intentionally 30/60 seconds.
 
 Backend `/health.telemetry` provides:
 
@@ -106,12 +116,12 @@ Each latency is a rolling in-process 512-sample window with average/p50/p95/p99.
 | Point | Detection | Software behavior | Remaining action |
 |---|---|---|---|
 | Vehicle power/buck/cable | Board resets/no telemetry | Reset reason logged; durable ride retained | Automotive wiring/spares/monitoring |
-| GNSS receiver/antenna/UART | No NMEA or quality rejection | Warning; one uncertain projection | Physical inspection/route survey |
-| Wi-Fi/hotspot | Disconnect/RSSI/timeouts | Auto reconnect and backoff | Coverage/SIM/hotspot redundancy |
+| GNSS receiver/antenna/UART | No NMEA, quality rejection, checksum or UART overflow count | Warning; one uncertain projection; 30 s counters | Physical inspection/route survey |
+| Wi-Fi/hotspot | Disconnect/RSSI/timeouts | Auto reconnect, RTC queue and backoff | Coverage/SIM/hotspot redundancy |
 | Clock | No TLS/invalid timestamp | NTP retry; no invalid fix publish | Allow NTP or provision time strategy |
 | TLS CA rotation | TLS failure | Fail closed | Signed OTA before issuer expiry |
 | Device credential | 401/rejected metric | No Firebase access; negative cache | Disable/rotate securely |
-| Backend/Firebase | 503/latency metrics | Latest fix buffered; jitter retry | Regional managed runtime/alerts |
+| Backend/Firebase | 503/latency metrics | Bounded queue retained; jitter retry | Regional managed runtime/alerts |
 | Process restart | health/worker lease | Durable active ride and reconnect | Runbook/availability deployment |
 | GNSS gap | uncertain/stale UI | No dead-reckoned authoritative point | Accept interruption or add separately-labelled estimate only after safety review |
 

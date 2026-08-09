@@ -64,25 +64,28 @@ not a substitute for the physical and institutional acceptance work in the
   [31301262140](https://github.com/notnamansinha/Eki/actions/runs/31301262140)
   passed again after the firmware HTTP follow-up on merge commit `163e687`.
 
-### FW-01: synchronous HTTPS and a single telemetry retry slot can lose fixes
+### FW-01: asynchronous store-and-forward requires physical recovery evidence
 
-- **Severity/status:** High / Open.
-- **Evidence:** `hardware/src/main.cpp::publishFix` executes `HTTPClient::POST`
-  in the main GNSS loop. Failed delivery retains only one `bufferedFix`, and a
-  newer publish candidate replaces it. The buffered fix is discarded near the
-  backend's 60-second freshness limit. HTTP transport/status classification,
-  bounded `Retry-After`, explicit placeholder detection and secret-safe failure
-  diagnostics reduce retry/configuration ambiguity but do not remove the
-  synchronous/latest-only limitation.
-- **Impact:** a connection or TLS stall can delay NMEA consumption; a longer
-  Wi-Fi outage permanently loses intermediate samples and reduces ride-history
-  fidelity. The current 8 KiB UART buffer and watchdog bound some failure modes
-  but do not provide store-and-forward delivery.
-- **Closure evidence:** move network delivery off the GNSS-consumption path;
-  use a bounded, observable queue with an explicit overflow policy; preserve
-  backend timestamp/freshness rules; test queue ordering, wraparound, outage,
-  retry, 401, 429/`Retry-After`, 5xx, TLS, and reconnect behavior; complete a
-  physical dead-zone and recovery run without UART overflow.
+- **Severity/status:** High / Mitigated in code; field validation pending.
+- **Evidence:** `hardware/src/main.cpp::publisherTask` owns Wi-Fi, NTP, TLS and
+  `HTTPClient::POST` on core 0 while the Arduino loop on core 1 continuously
+  drains GNSS UART. A 120-sample, 5,808-byte RTC no-init ring uses newest-first
+  recovery, oldest-drop overflow, a device/backend identity tag and a 55-second
+  freshness safety margin. Thirty-second health output exposes ring high-water,
+  overflow/stale drops, TinyGPSPlus checksum failures and HardwareSerial
+  buffer/FIFO overflow events.
+- **Impact:** bounded store-and-forward now covers at least six minutes at the
+  maximum three-second capture rate and survives software/watchdog resets. The
+  backend's 60-second timestamp contract intentionally prevents stale replay;
+  older entries are counted and removed rather than submitted as current data.
+- **Repository evidence:** the native suite covers newest-first ordering,
+  in-flight retry retention, arbitrary acknowledgement, wraparound,
+  oldest-drop overflow, stale compaction and RTC configuration identity. HTTP
+  policy tests cover transport errors, 401, 429/`Retry-After` and 5xx. The
+  `esp32dev` target compiles within regular RAM, RTC and flash limits.
+- **Remaining closure evidence:** complete a physical dead-zone/backend-outage
+  and recovery run on the target board, confirming zero UART/FIFO overflow and
+  acceptable queue high-water/reset recovery under real GNSS and TLS load.
 
 ### FW-02: field updates and physical key protection are not production-proven
 
