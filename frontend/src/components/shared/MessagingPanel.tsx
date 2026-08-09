@@ -28,15 +28,18 @@ interface Message {
   timestamp: Timestamp | null;
 }
 
-interface Props {
+interface BaseProps {
   sessionId: string;
   currentUserRole: "driver" | "passenger" | "admin";
   currentUserId: string;
   currentUserName: string;
-  onClose?: () => void;
-  isOverlay?: boolean;
   onUnreadCountChange?: (count: number) => void;
 }
+
+type Props = BaseProps & (
+  | { isOverlay: true; onClose: () => void }
+  | { isOverlay?: false; onClose?: () => void }
+);
 
 export default function MessagingPanel({ 
   sessionId, 

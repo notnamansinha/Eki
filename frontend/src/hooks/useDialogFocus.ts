@@ -81,8 +81,10 @@ export function useDialogFocus<T extends HTMLElement>(
       const stackIndex = dialogStack.lastIndexOf(dialogId);
       if (stackIndex >= 0) dialogStack.splice(stackIndex, 1);
       openDialogCount = Math.max(0, openDialogCount - 1);
-      if (openDialogCount === 0) document.body.style.overflow = originalBodyOverflow;
-      previouslyFocused?.focus();
+      if (openDialogCount === 0) {
+        document.body.style.overflow = originalBodyOverflow;
+        previouslyFocused?.focus();
+      }
     };
   }, [isOpen]);
 

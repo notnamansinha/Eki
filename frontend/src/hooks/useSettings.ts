@@ -93,6 +93,7 @@ export function clearSettingsCache(): void {
   _settings = DEFAULT_SETTINGS;
   _loading = true;
   notifyAll();
+  void ensureListener();
 }
 
 function releaseListener() {
