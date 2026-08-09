@@ -53,6 +53,12 @@ struct TelemetryFix {
   bool valid = false;
 };
 
+enum class PublishResult : uint8_t {
+  Accepted,
+  RetryLatest,
+  Dropped,
+};
+
 TelemetryFix bufferedFix;
 double lastLat = 0;
 double lastLng = 0;
@@ -92,12 +98,12 @@ bool httpsRetryIsPending() {
          elapsed(lastHttpsFailureAt) < httpsRetryDelayMs;
 }
 
-void scheduleHttpsRetry() {
+void scheduleHttpsRetry(uint32_t minimumDelayMs = 0) {
   // Per-device jitter prevents a recovering hotspot/backend from receiving a
   // synchronized retry wave from the whole fleet.
-  httpsRetryDelayMs = eki::telemetry::retryDelayMs(
-    consecutiveHttpsFailures,
-    esp_random()
+  httpsRetryDelayMs = max<uint32_t>(
+    eki::telemetry::retryDelayMs(consecutiveHttpsFailures, esp_random()),
+    minimumDelayMs
   );
   lastHttpsFailureAt = millis();
   consecutiveHttpsFailures =
@@ -168,15 +174,15 @@ void synchronizeClock() {
   configTime(0, 0, "pool.ntp.org", "time.google.com");
 }
 
-bool publishFix(const TelemetryFix &fix) {
+PublishResult publishFix(const TelemetryFix &fix) {
   if (
     !fix.valid ||
     WiFi.status() != WL_CONNECTED ||
     !clockIsSynchronized()
   ) {
-    return false;
+    return PublishResult::RetryLatest;
   }
-  if (httpsRetryIsPending()) return false;
+  if (httpsRetryIsPending()) return PublishResult::RetryLatest;
 
   JsonDocument document;
   document["lat"] = fix.lat;
@@ -191,7 +197,8 @@ bool publishFix(const TelemetryFix &fix) {
   serializeJson(document, payload);
   if (payload.length() > 512) {
     Serial.println("[HTTPS] Refusing oversized telemetry payload.");
-    return false;
+    scheduleHttpsRetry(eki::telemetry::HTTPS_REJECTED_SAMPLE_RETRY_MS);
+    return PublishResult::Dropped;
   }
 
   HTTPClient http;
@@ -201,29 +208,69 @@ bool publishFix(const TelemetryFix &fix) {
   if (!http.begin(tlsClient, telemetryEndpoint)) {
     Serial.println("[HTTPS] Unable to initialize telemetry request.");
     scheduleHttpsRetry();
-    return false;
+    return PublishResult::RetryLatest;
   }
+  const char *responseHeaders[] = {"Retry-After"};
+  http.collectHeaders(responseHeaders, 1);
   http.addHeader("Authorization", authorizationHeader);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Cache-Control", "no-store");
 
   const uint32_t startedAt = millis();
   const int responseCode = http.POST(payload);
-  const bool accepted = responseCode == HTTP_CODE_OK ||
-                        responseCode == HTTP_CODE_ACCEPTED;
-  Serial.printf(
-    "[HTTPS] Telemetry %s (HTTP %d) in %lums (%u bytes, RSSI %d dBm)\n",
-    accepted ? "accepted" : "failed",
-    responseCode,
-    elapsed(startedAt),
-    payload.length(),
-    WiFi.RSSI()
-  );
+  const eki::telemetry::HttpResponseAction action =
+    eki::telemetry::httpResponseAction(responseCode);
+  const uint32_t retryAfterMs = responseCode == 429
+    ? eki::telemetry::retryAfterDelayMs(http.header("Retry-After").c_str())
+    : 0;
+  if (responseCode < 0) {
+    const String transportError = HTTPClient::errorToString(responseCode);
+    Serial.printf(
+      "[HTTPS] Transport failure %d (%s) in %lums (RSSI %d dBm). Check DNS, hostname, CA, clock, and backend reachability.\n",
+      responseCode,
+      transportError.c_str(),
+      elapsed(startedAt),
+      WiFi.RSSI()
+    );
+  } else {
+    Serial.printf(
+      "[HTTPS] Telemetry %s (HTTP %d) in %lums (%u bytes, RSSI %d dBm)\n",
+      action == eki::telemetry::HttpResponseAction::Accept
+        ? "accepted"
+        : action == eki::telemetry::HttpResponseAction::RetrySample
+          ? "retryable"
+          : "rejected",
+      responseCode,
+      elapsed(startedAt),
+      payload.length(),
+      WiFi.RSSI()
+    );
+    if (responseCode == 400 || responseCode == 413 || responseCode == 422) {
+      Serial.println("[HTTPS] Check the six-field payload and NTP-synchronized timestamp.");
+    } else if (responseCode == 401 || responseCode == 403) {
+      Serial.println("[HTTPS] Check DEVICE_ID, provisioned secret, enabled state, and bus/route assignment.");
+    } else if (responseCode == 404) {
+      Serial.println("[HTTPS] Check BACKEND_URL; the telemetry endpoint was not found.");
+    } else if (responseCode == 429) {
+      Serial.printf(
+        "[HTTPS] Rate limited; server retry delay=%lus.\n",
+        static_cast<unsigned long>(
+          eki::telemetry::minimumHttpRetryDelayMs(responseCode, retryAfterMs) / 1000
+        )
+      );
+    } else if (responseCode >= 500) {
+      Serial.println("[HTTPS] Backend dependency is unavailable; retaining the latest fix.");
+    }
+  }
   http.end();
-  if (!accepted) {
+  if (action != eki::telemetry::HttpResponseAction::Accept) {
     tlsClient.stop();
-    scheduleHttpsRetry();
-    return false;
+    scheduleHttpsRetry(
+      eki::telemetry::minimumHttpRetryDelayMs(responseCode, retryAfterMs)
+    );
+    return action == eki::telemetry::HttpResponseAction::RetrySample
+      ? PublishResult::RetryLatest
+      : PublishResult::Dropped;
   }
 
   resetHttpsRetry();
@@ -234,7 +281,7 @@ bool publishFix(const TelemetryFix &fix) {
   lastPublishedMotionState = fix.motionState;
   lastPublishAt = millis();
   hasPublishedLocation = true;
-  return true;
+  return PublishResult::Accepted;
 }
 
 TelemetryFix currentFix() {
@@ -303,7 +350,7 @@ void evaluateTelemetry() {
       uncertain.motionState = "uncertain";
       uncertain.timestamp = epochMilliseconds();
       uncertain.valid = clockIsSynchronized();
-      lossMessagePublished = publishFix(uncertain);
+      lossMessagePublished = publishFix(uncertain) == PublishResult::Accepted;
     }
     return;
   }
@@ -315,9 +362,10 @@ void evaluateTelemetry() {
   }
 
   if (!shouldPublish(fix)) return;
-  if (publishFix(fix)) {
+  const PublishResult result = publishFix(fix);
+  if (result == PublishResult::Accepted || result == PublishResult::Dropped) {
     bufferedFix.valid = false;
-  } else {
+  } else if (result == PublishResult::RetryLatest) {
     bufferedFix = fix;
   }
 }
@@ -333,6 +381,19 @@ void setup() {
     esp_reset_reason(),
     gpsRxBuffer
   );
+
+  if (eki::telemetry::hasTemplateConfiguration(
+    WIFI_SSID,
+    WIFI_PASS,
+    DEVICE_SECRET,
+    BACKEND_URL,
+    BACKEND_ROOT_CA
+  )) {
+    Serial.println(
+      "[Boot] secrets.h still contains template placeholders; configure Wi-Fi, provisioned device credentials, HTTPS backend URL, and issuing root CA."
+    );
+    while (true) delay(1000);
+  }
 
   tlsClient.setCACert(BACKEND_ROOT_CA);
   telemetryEndpoint = buildTelemetryUrl();
@@ -363,8 +424,9 @@ void loop() {
       // delay the next current fix after connectivity returns.
       bufferedFix.valid = false;
     }
-    if (bufferedFix.valid && publishFix(bufferedFix)) {
-      bufferedFix.valid = false;
+    if (bufferedFix.valid) {
+      const PublishResult result = publishFix(bufferedFix);
+      if (result != PublishResult::RetryLatest) bufferedFix.valid = false;
     }
   }
 

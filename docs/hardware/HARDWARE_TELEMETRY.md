@@ -36,9 +36,11 @@ flowchart TD
   GATE -->|yes| POST["HTTPS POST"]
   GATE -->|no| WARN
   POST -->|200/202| SAVE["Update last-published baseline"]
-  POST -->|failure| BACKOFF["Stop TLS; 1–30 s jittered backoff; buffer latest"]
+  POST -->|"transport, 408/425/429, 5xx"| BACKOFF["Stop TLS; bounded backoff; buffer latest"]
+  POST -->|"other HTTP rejection"| DROP["Discard sample; delay next fresh attempt"]
   SAVE --> WARN
   BACKOFF --> WARN
+  DROP --> WARN
   WARN --> LOOP
 ```
 
@@ -70,14 +72,15 @@ The deterministic distance, heading, three-reading motion hysteresis, retry and 
 
 ## Payload and HTTP outcomes
 
-The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). The device treats 200/202 as success; every other code/transport failure triggers TLS close and backoff. In particular:
+The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). The device treats only 200/202 as success. Transport errors, 408/425/429 and 5xx retain the latest sample for retry; other HTTP statuses reject that sample so a permanent 4xx is not replayed forever. HTTP 429 honors the backend's bounded delta-seconds `Retry-After` value.
 
 | Symptom | Likely cause | Action |
 |---|---|---|
 | No NMEA warning | RX/TX reversed, no GNSS power, wrong baud | Check wiring/LED/serial at 9,600 |
 | Never gets valid fix | Indoor/multipath antenna, HDOP >4 | Move antenna to sky view; inspect GNSS output |
 | NTP not synchronized | Wi-Fi/DNS/UDP blocked | Verify hotspot and NTP reachability |
-| TLS failure | Wrong hostname/CA, expired/rotated issuer, bad clock | Verify URL chain and NTP; never use insecure mode |
+| Boot reports template placeholders | `secrets.h` was copied but not configured | Provision the device and replace every template value; never commit the file |
+| Negative HTTPClient/transport failure | DNS/backend unreachable, wrong hostname/CA, expired issuer, bad clock | Use the printed transport string; verify URL chain and NTP; never use insecure mode |
 | HTTP 400 | Firmware/backend contract mismatch or timestamp/range | Compare exact six fields and clock |
 | HTTP 401 | ID/secret disabled/mismatched or assignment invalid | Reprovision/inspect registry without logging secret |
 | HTTP 429 | IP/device limiter | Check publish loop/config and WAF limits |

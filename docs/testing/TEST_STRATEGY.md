@@ -12,7 +12,7 @@ npm run verify
 
 `verify` executes frontend/backend ESLint, Vitest, backend TypeScript, Next static production build, Workbox injection, CSP hash regeneration and `npm audit --omit=dev --omit=optional`. The firmware command compiles the real ESP32 target. A production release additionally runs `npm run build:production` with actual deployment variables; it intentionally fails closed when required public configuration is missing.
 
-Last verified 2026-08-09 on the PR #53 candidate: 143 backend tests passed with six emulator-only cases skipped in the normal run, 43 frontend tests passed, and the Java-backed Firestore/RTDB emulator run passed all 149 backend tests. The normal backend/frontend production build and generated CSP passed, and the production dependency audit reported zero vulnerabilities. Firmware evidence is recorded separately after building the exact candidate commit. Re-run rather than trusting these historical numbers.
+Last verified 2026-08-09 on the integrated firmware HTTP-hardening candidate: 149 backend tests passed with six emulator-only cases skipped in the normal run, 43 frontend tests passed, and the Java-backed Firestore/RTDB emulator run passed all 155 backend tests. Backend TypeScript passed, the production dependency audit reported zero vulnerabilities, all seven native firmware-policy tests passed, and ESP32 compilation used 47,292 bytes RAM (14.4%) and 935,829 bytes flash (29.7%). The hosted gate re-runs the complete frontend production build/CSP generation before merge. Re-run rather than trusting these historical numbers.
 
 ## Test layers
 
@@ -25,7 +25,7 @@ Last verified 2026-08-09 on the PR #53 candidate: 143 backend tests passed with 
 | Pure frontend units | freshness/expiry, singleton RTDB store, resume state, snapping/distance, history, feedback eligibility | Map/live-data behavior independent of React/browser network |
 | Builds/type/lint | TS, React hooks/a11y-relevant lint, static export, SW/CSP | Integration and packaging consistency |
 | Dependency audit | production npm graph | Known registry advisories in shipped required packages |
-| Firmware native units | shared telemetry policy | Distance/heading math, hysteresis, retry cap, change floor/thresholds and heartbeats |
+| Firmware native units | shared telemetry policy | Distance/heading math, hysteresis, HTTP response classification, bounded `Retry-After`, retry cap, change floor/thresholds and heartbeats |
 | Firmware compile | pinned PlatformIO ESP32 target | API/library compatibility, binary size |
 | Physical acceptance | runbooks below | Radio, GNSS, power, TLS, public path and human workflows |
 

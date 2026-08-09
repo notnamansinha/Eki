@@ -1,10 +1,33 @@
 import { describe, expect, it } from "vitest";
 import {
+  evaluateDeviceRateLimit,
   hashDeviceSecret,
   parseDeviceAuthorization,
   summarizeLatencySamples,
   verifyDeviceSecretHash,
 } from "./deviceTelemetryService";
+
+describe("HTTPS device rate-limit timing", () => {
+  it("reports the remaining fixed-window delay and resets exactly at one minute", () => {
+    const startedAt = 1_000_000;
+    const rejected = evaluateDeviceRateLimit(
+      { startedAt, count: 30 },
+      startedAt + 10_000,
+      30,
+    );
+    expect(rejected).toEqual({
+      allowed: false,
+      next: { startedAt, count: 31 },
+      retryAfterMs: 50_000,
+    });
+
+    expect(evaluateDeviceRateLimit(rejected.next, startedAt + 60_000, 30)).toEqual({
+      allowed: true,
+      next: { startedAt: startedAt + 60_000, count: 1 },
+      retryAfterMs: 0,
+    });
+  });
+});
 
 describe("HTTPS device credentials", () => {
   it("accepts only a bounded Device authorization secret", () => {

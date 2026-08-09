@@ -18,6 +18,16 @@ constexpr uint32_t MOVING_HEARTBEAT_MS = 30000;
 constexpr uint32_t STOPPED_HEARTBEAT_MS = 60000;
 constexpr uint32_t HTTPS_RETRY_BASE_MS = 1000;
 constexpr uint32_t HTTPS_RETRY_MAX_MS = 30000;
+constexpr uint32_t HTTPS_RATE_LIMIT_RETRY_MS = 60000;
+constexpr uint32_t HTTPS_CONFIGURATION_RETRY_MS = 60000;
+constexpr uint32_t HTTPS_REJECTED_SAMPLE_RETRY_MS = 30000;
+constexpr uint32_t HTTPS_RETRY_AFTER_MAX_MS = 5 * 60 * 1000;
+
+enum class HttpResponseAction : uint8_t {
+  Accept,
+  RetrySample,
+  DropSample,
+};
 
 struct MotionTracker {
   bool moving = false;
@@ -69,6 +79,91 @@ inline uint32_t retryDelayMs(uint8_t consecutiveFailures, uint32_t jitter) {
     exponentialDelay + (jitter % HTTPS_RETRY_BASE_MS),
     HTTPS_RETRY_MAX_MS
   );
+}
+
+/**
+ * Translate the backend/transport result into delivery behavior. Only the two
+ * statuses in the telemetry API contract acknowledge a fix. Network errors,
+ * throttling, timeouts and server failures retain the latest sample; other
+ * HTTP responses reject that sample so a permanent 4xx cannot be replayed
+ * forever.
+ */
+inline HttpResponseAction httpResponseAction(int responseCode) {
+  if (responseCode == 200 || responseCode == 202) {
+    return HttpResponseAction::Accept;
+  }
+  if (
+    responseCode <= 0 ||
+    responseCode == 408 ||
+    responseCode == 425 ||
+    responseCode == 429 ||
+    (responseCode >= 500 && responseCode <= 599)
+  ) {
+    return HttpResponseAction::RetrySample;
+  }
+  return HttpResponseAction::DropSample;
+}
+
+/** Parse the delta-seconds Retry-After form emitted by the Eki backend. */
+inline uint32_t retryAfterDelayMs(const char *value) {
+  if (value == nullptr) return 0;
+  while (*value == ' ' || *value == '\t') ++value;
+
+  uint32_t seconds = 0;
+  bool hasDigit = false;
+  constexpr uint32_t maximumSeconds = HTTPS_RETRY_AFTER_MAX_MS / 1000;
+  while (*value >= '0' && *value <= '9') {
+    hasDigit = true;
+    const uint32_t digit = static_cast<uint32_t>(*value - '0');
+    seconds = seconds > (maximumSeconds - digit) / 10
+      ? maximumSeconds
+      : seconds * 10 + digit;
+    ++value;
+  }
+  while (*value == ' ' || *value == '\t') ++value;
+  if (!hasDigit || *value != '\0') return 0;
+  return std::min<uint32_t>(seconds * 1000, HTTPS_RETRY_AFTER_MAX_MS);
+}
+
+inline uint32_t minimumHttpRetryDelayMs(
+  int responseCode,
+  uint32_t retryAfterMs = 0
+) {
+  if (responseCode == 429) {
+    return retryAfterMs > 0
+      ? std::min<uint32_t>(retryAfterMs, HTTPS_RETRY_AFTER_MAX_MS)
+      : HTTPS_RATE_LIMIT_RETRY_MS;
+  }
+  if (
+    responseCode == 401 ||
+    responseCode == 403 ||
+    responseCode == 404
+  ) {
+    return HTTPS_CONFIGURATION_RETRY_MS;
+  }
+  return httpResponseAction(responseCode) == HttpResponseAction::DropSample
+    ? HTTPS_REJECTED_SAMPLE_RETRY_MS
+    : 0;
+}
+
+inline bool hasTemplateConfiguration(
+  const char *wifiSsid,
+  const char *wifiPassword,
+  const char *deviceSecret,
+  const char *backendUrl,
+  const char *rootCa
+) {
+  return
+    wifiSsid == nullptr ||
+    wifiPassword == nullptr ||
+    deviceSecret == nullptr ||
+    backendUrl == nullptr ||
+    rootCa == nullptr ||
+    std::strcmp(wifiSsid, "YOUR_WIFI_SSID") == 0 ||
+    std::strcmp(wifiPassword, "YOUR_WIFI_PASSWORD") == 0 ||
+    std::strstr(deviceSecret, "GENERATE_AT_LEAST_") != nullptr ||
+    std::strstr(backendUrl, "your-backend.example") != nullptr ||
+    std::strstr(rootCa, "REPLACE_WITH_THE_CA") != nullptr;
 }
 
 inline bool shouldPublishFix(

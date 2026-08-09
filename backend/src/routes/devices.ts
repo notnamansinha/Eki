@@ -18,7 +18,14 @@ const telemetryLimiter = rateLimit({
   limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Telemetry request limit exceeded." },
+  handler: (_req, res, _next, options) => {
+    const retryAfterMs = options.windowMs;
+    res.set("Retry-After", String(Math.ceil(retryAfterMs / 1000)));
+    res.status(options.statusCode).json({
+      error: "Telemetry request limit exceeded.",
+      retryAfterMs,
+    });
+  },
 });
 
 /**
@@ -65,7 +72,14 @@ router.post(
       );
       if (!result.ok) {
         if (result.reason === "rate_limit") {
-          res.status(429).json({ error: "Telemetry rate limit exceeded." });
+          res.set(
+            "Retry-After",
+            String(Math.max(1, Math.ceil(result.retryAfterMs / 1000))),
+          );
+          res.status(429).json({
+            error: "Telemetry rate limit exceeded.",
+            retryAfterMs: result.retryAfterMs,
+          });
         } else {
           res.status(401).json({ error: "Invalid device credentials." });
         }

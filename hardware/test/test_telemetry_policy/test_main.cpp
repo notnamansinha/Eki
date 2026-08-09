@@ -32,6 +32,82 @@ void test_retry_backoff_is_jittered_and_bounded() {
   TEST_ASSERT_EQUAL_UINT32(30000, retryDelayMs(99, 999));
 }
 
+void test_http_response_actions_cover_transport_and_status_families() {
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(HttpResponseAction::Accept),
+    static_cast<int>(httpResponseAction(200))
+  );
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(HttpResponseAction::Accept),
+    static_cast<int>(httpResponseAction(202))
+  );
+  for (const int code : {-11, 408, 425, 429, 500, 503, 599}) {
+    TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(HttpResponseAction::RetrySample),
+      static_cast<int>(httpResponseAction(code))
+    );
+  }
+  for (const int code : {201, 301, 400, 401, 404, 409, 413, 422}) {
+    TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(HttpResponseAction::DropSample),
+      static_cast<int>(httpResponseAction(code))
+    );
+  }
+}
+
+void test_retry_after_is_strict_bounded_and_status_aware() {
+  TEST_ASSERT_EQUAL_UINT32(0, retryAfterDelayMs(nullptr));
+  TEST_ASSERT_EQUAL_UINT32(0, retryAfterDelayMs(""));
+  TEST_ASSERT_EQUAL_UINT32(0, retryAfterDelayMs("12junk"));
+  TEST_ASSERT_EQUAL_UINT32(12000, retryAfterDelayMs(" 12 "));
+  TEST_ASSERT_EQUAL_UINT32(HTTPS_RETRY_AFTER_MAX_MS, retryAfterDelayMs("999999"));
+  TEST_ASSERT_EQUAL_UINT32(60000, minimumHttpRetryDelayMs(429));
+  TEST_ASSERT_EQUAL_UINT32(120000, minimumHttpRetryDelayMs(429, 120000));
+  TEST_ASSERT_EQUAL_UINT32(HTTPS_RETRY_AFTER_MAX_MS, minimumHttpRetryDelayMs(429, 999999));
+  TEST_ASSERT_EQUAL_UINT32(60000, minimumHttpRetryDelayMs(401));
+  TEST_ASSERT_EQUAL_UINT32(30000, minimumHttpRetryDelayMs(400));
+  TEST_ASSERT_EQUAL_UINT32(0, minimumHttpRetryDelayMs(503));
+}
+
+void test_template_configuration_is_detected_without_logging_secrets() {
+  const char *certificate = "-----BEGIN CERTIFICATE-----\nvalid\n-----END CERTIFICATE-----";
+  TEST_ASSERT_FALSE(hasTemplateConfiguration(
+    "campus-wifi",
+    "not-printed",
+    "a-real-provisioned-secret",
+    "https://api.eki.example.edu",
+    certificate
+  ));
+  TEST_ASSERT_TRUE(hasTemplateConfiguration(
+    "YOUR_WIFI_SSID",
+    "not-printed",
+    "a-real-provisioned-secret",
+    "https://api.eki.example.edu",
+    certificate
+  ));
+  TEST_ASSERT_TRUE(hasTemplateConfiguration(
+    "campus-wifi",
+    "not-printed",
+    "GENERATE_AT_LEAST_20_RANDOM_CHARACTERS",
+    "https://api.eki.example.edu",
+    certificate
+  ));
+  TEST_ASSERT_TRUE(hasTemplateConfiguration(
+    "campus-wifi",
+    "not-printed",
+    "a-real-provisioned-secret",
+    "https://your-backend.example",
+    certificate
+  ));
+  TEST_ASSERT_TRUE(hasTemplateConfiguration(
+    "campus-wifi",
+    "not-printed",
+    "a-real-provisioned-secret",
+    "https://api.eki.example.edu",
+    "REPLACE_WITH_THE_CA_THAT_ISSUED_THE_BACKEND_CERTIFICATE"
+  ));
+}
+
 void test_publish_policy_handles_floor_changes_and_heartbeats() {
   const auto decide = [](
     bool valid,
@@ -80,6 +156,9 @@ int main(int, char **) {
   RUN_TEST(test_haversine_and_heading_wrap);
   RUN_TEST(test_motion_hysteresis_filters_single_noisy_readings);
   RUN_TEST(test_retry_backoff_is_jittered_and_bounded);
+  RUN_TEST(test_http_response_actions_cover_transport_and_status_families);
+  RUN_TEST(test_retry_after_is_strict_bounded_and_status_aware);
+  RUN_TEST(test_template_configuration_is_detected_without_logging_secrets);
   RUN_TEST(test_publish_policy_handles_floor_changes_and_heartbeats);
   return UNITY_END();
 }

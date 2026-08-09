@@ -2,8 +2,9 @@
 
 `test_telemetry_policy` runs on the native host target and exercises the same
 header-only policy used by the ESP32: distance/heading math, three-reading
-motion hysteresis, capped jittered retry, change thresholds, the three-second
-publish floor and moving/stopped heartbeats.
+motion hysteresis, capped jittered retry, HTTP response classification, bounded
+`Retry-After` parsing, change thresholds, the three-second publish floor and
+moving/stopped heartbeats.
 
 Run `platformio test --project-dir hardware -e native`. GNSS/UART/Wi-Fi/TLS,
 watchdog and power behavior still require the bench and vehicle matrix in

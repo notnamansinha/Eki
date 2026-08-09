@@ -65,7 +65,10 @@ not a substitute for the physical and institutional acceptance work in the
 - **Evidence:** `hardware/src/main.cpp::publishFix` executes `HTTPClient::POST`
   in the main GNSS loop. Failed delivery retains only one `bufferedFix`, and a
   newer publish candidate replaces it. The buffered fix is discarded near the
-  backend's 60-second freshness limit.
+  backend's 60-second freshness limit. HTTP transport/status classification,
+  bounded `Retry-After`, explicit placeholder detection and secret-safe failure
+  diagnostics reduce retry/configuration ambiguity but do not remove the
+  synchronous/latest-only limitation.
 - **Impact:** a connection or TLS stall can delay NMEA consumption; a longer
   Wi-Fi outage permanently loses intermediate samples and reduces ride-history
   fidelity. The current 8 KiB UART buffer and watchdog bound some failure modes

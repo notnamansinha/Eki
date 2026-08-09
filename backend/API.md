@@ -51,7 +51,7 @@ Generate `timestamp` immediately before sending (for example, with `Date.now()`)
 
 - 202 `{accepted:true,duplicate:false}`: new RTDB fix.
 - 200 `{accepted:true,duplicate:true}`: equal/older timestamp safely ignored.
-- 400 invalid ID/payload; 401 bad/missing/disabled credential or registry; 413 raw body too large; 429 limiter; 503 Firebase/ingestion failure.
+- 400 invalid ID/payload; 401 bad/missing/disabled credential or registry; 413 raw body too large; 429 limiter with `Retry-After` and `retryAfterMs`; 503 Firebase/ingestion failure.
 - Response has `Cache-Control: no-store`.
 
 ### `PUT /api/devices/:deviceId` — admin
