@@ -7,10 +7,12 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   deleteDoc,
 } from "firebase/firestore";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -259,9 +261,11 @@ rulesDescribe("Firebase security rules integration", () => {
     // ever removed or the query shape changes.
     await environment.withSecurityRulesDisabled(async (context) => {
       const matches = await getDocs(
-        collection(context.firestore(), "devices")
-          .where("busId", "==", "bus_1")
-          .where("routeId", "==", "route_1"),
+        query(
+          collection(context.firestore(), "devices"),
+          where("busId", "==", "bus_1"),
+          where("routeId", "==", "route_1"),
+        ),
       );
       expect(matches.docs.map((entry) => entry.id)).toEqual(["device_1"]);
     });
