@@ -114,7 +114,16 @@ bool RecoveryAccess::loadOrCreate() {
         : storedLength;
     if (recoveryPasswordIsValid(password_, passwordLength)) return true;
   }
+  return generateAndPersist();
+}
 
+bool RecoveryAccess::rotate() {
+  // Explicit rotation replaces the stored password unconditionally; the
+  // caller (the authenticated recovery portal) shows the new value once.
+  return generateAndPersist();
+}
+
+bool RecoveryAccess::generateAndPersist() {
   constexpr char HEX_DIGITS[] = "0123456789abcdef";
   uint8_t randomBytes[12]{};
   esp_fill_random(randomBytes, sizeof(randomBytes));
@@ -124,8 +133,8 @@ bool RecoveryAccess::loadOrCreate() {
   }
   password_[24] = '\0';
 
-  opened = preferences.begin(RECOVERY_NAMESPACE, false);
-  if (!opened) return false;
+  Preferences preferences;
+  if (!preferences.begin(RECOVERY_NAMESPACE, false)) return false;
   const bool written = preferences.putString(RECOVERY_KEY, password_) == 24;
   preferences.end();
   return written;
@@ -233,6 +242,54 @@ void RecoveryPortal::handleProvisioningUpdate() {
   server_.send(202, "application/json", "{\"saved\":true,\"restarting\":true}");
 }
 
+void RecoveryPortal::handleRecoveryRotation() {
+  setSecurityHeaders();
+  if (!clientIsOnAccessPoint()) {
+    server_.client().stop();
+    return;
+  }
+  if (!provisionAttemptAllowed()) {
+    server_.send(
+      429,
+      "application/json",
+      "{\"error\":\"Too many attempts; retry later.\"}"
+    );
+    return;
+  }
+  if (
+    !server_.hasArg("csrf") ||
+    !constantTimeTokenEquals(server_.arg("csrf").c_str(), csrfToken_)
+  ) {
+    server_.send(
+      403,
+      "application/json",
+      "{\"error\":\"Invalid or expired token.\"}"
+    );
+    return;
+  }
+  if (recoveryAccess_ == nullptr || !recoveryAccess_->rotate()) {
+    server_.send(
+      500,
+      "application/json",
+      "{\"error\":\"Unable to rotate the recovery password.\"}"
+    );
+    return;
+  }
+  // Show the new password exactly once; the device restarts shortly so the
+  // running AP adopts it. serviceConnectivity delays the restart a couple of
+  // seconds so this response reliably reaches the operator.
+  const String payload = String("{\"rotated\":true,\"recoveryPassword\":\"") +
+    recoveryAccess_->password() + "\",\"restarting\":true}";
+  recoveryRotationRequested_ = true;
+  server_.send(202, "application/json", payload);
+}
+
+bool RecoveryPortal::consumeRecoveryRotationRequested() {
+  const bool requested = recoveryRotationRequested_;
+  recoveryRotationRequested_ = false;
+  return requested;
+}
+
 void RecoveryPortal::rotateCsrfToken() {
   std::snprintf(
     csrfToken_,
@@ -252,6 +309,11 @@ void RecoveryPortal::registerHandlers() {
     HTTP_POST,
     [this]() { handleProvisioningUpdate(); }
   );
+  server_.on(
+    "/rotate-recovery",
+    HTTP_POST,
+    [this]() { handleRecoveryRotation(); }
+  );
   server_.onNotFound([this]() {
     setSecurityHeaders();
     if (!clientIsOnAccessPoint()) {
@@ -265,10 +327,11 @@ void RecoveryPortal::registerHandlers() {
 
 bool RecoveryPortal::start(
   const char *deviceLabel,
-  const char *recoveryPassword,
+  RecoveryAccess &recoveryAccess,
   DeviceConfiguration &configuration
 ) {
   if (active_) return true;
+  const char *recoveryPassword = recoveryAccess.password();
   const size_t passwordLength = boundedCStringLength(recoveryPassword, 64);
   if (!recoveryPasswordIsValid(recoveryPassword, passwordLength)) return false;
 
@@ -289,11 +352,13 @@ bool RecoveryPortal::start(
   std::snprintf(accessPointSsid_, sizeof(accessPointSsid_), "Eki-Recovery-%s", suffix);
 
   configuration_ = &configuration;
+  recoveryAccess_ = &recoveryAccess;
   rotateCsrfToken();
   registerHandlers();
   WiFi.mode(WIFI_AP_STA);
-  if (!WiFi.softAP(accessPointSsid_, recoveryPassword, 1, false, 1)) {
+  if (!WiFi.softAP(accessPointSsid_, recoveryAccess.password(), 1, false, 1)) {
     configuration_ = nullptr;
+    recoveryAccess_ = nullptr;
     csrfToken_[0] = '\0';
     WiFi.mode(WIFI_STA);
     return false;
@@ -338,8 +403,10 @@ void RecoveryPortal::stop() {
   server_.stop();
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_STA);
+  recoveryAccess_ = nullptr;
   configuration_ = nullptr;
   csrfToken_[0] = '\0';
+  recoveryRotationRequested_ = false;
   active_ = false;
 }
 

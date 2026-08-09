@@ -520,12 +520,19 @@ void serviceConnectivity() {
     delay(250);
     ESP.restart();
   }
+  if (recoveryPortal.consumeRecoveryRotationRequested()) {
+    // Give the operator a couple of seconds to receive and save the new
+    // password before the AP restarts with it.
+    Serial.println("[Provisioning] Recovery AP password rotated; restarting in 2s.");
+    delay(2500);
+    ESP.restart();
+  }
 
   if (!deviceConfiguration.provisioned()) {
     if (!recoveryPortal.active()) {
       if (recoveryPortal.start(
         hardwareDeviceLabel,
-        recoveryAccess.password(),
+        recoveryAccess,
         deviceConfiguration
       )) {
         Serial.printf(
@@ -556,7 +563,7 @@ void serviceConnectivity() {
     wifiRetrySupervisor.recordRecoveryStartAttempt(now);
     if (recoveryPortal.start(
       deviceConfiguration.deviceId(),
-      recoveryAccess.password(),
+      recoveryAccess,
       deviceConfiguration
     )) {
       Serial.printf(
