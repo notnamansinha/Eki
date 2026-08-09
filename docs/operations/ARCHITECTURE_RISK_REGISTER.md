@@ -81,11 +81,21 @@ not a substitute for the physical and institutional acceptance work in the
 - **Repository evidence:** the native suite covers newest-first ordering,
   in-flight retry retention, arbitrary acknowledgement, wraparound,
   oldest-drop overflow, stale compaction and RTC configuration identity. HTTP
-  policy tests cover transport errors, 401, 429/`Retry-After` and 5xx. The
-  `esp32dev` target compiles within regular RAM, RTC and flash limits.
+  policy tests cover transport errors, latched 401/403, 429/`Retry-After` and
+  5xx. Separate pure policies cover strict GNSS UTC calendar conversion,
+  bounded clock discipline, Wi-Fi exponential retry/escalation and two/three
+  pulse LED codes. After a two-minute station outage, the publisher starts a
+  WPA2-protected local Wi-Fi recovery portal while retries continue; replacement
+  credentials use a fixed-size, versioned/checksummed NVS record and are never
+  returned or logged. The `esp32dev` target compiles within regular RAM, RTC and
+  flash limits.
 - **Remaining closure evidence:** complete a physical dead-zone/backend-outage
   and recovery run on the target board, confirming zero UART/FIFO overflow and
   acceptable queue high-water/reset recovery under real GNSS and TLS load.
+  Also prove GNSS-established TLS with NTP blocked, NTP cross-check behavior,
+  the protected recovery portal/LED sequence and credential replacement on a
+  real device. NVS confidentiality remains dependent on the flash-encryption
+  gate below.
 
 ### FW-02: field updates and physical key protection are not production-proven
 

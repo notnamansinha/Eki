@@ -27,6 +27,7 @@ enum class HttpResponseAction : uint8_t {
   Accept,
   RetrySample,
   DropSample,
+  HaltCredentials,
 };
 
 struct MotionTracker {
@@ -85,12 +86,16 @@ inline uint32_t retryDelayMs(uint8_t consecutiveFailures, uint32_t jitter) {
  * Translate the backend/transport result into delivery behavior. Only the two
  * statuses in the telemetry API contract acknowledge a fix. Network errors,
  * throttling, timeouts and server failures retain the latest sample; other
- * HTTP responses reject that sample so a permanent 4xx cannot be replayed
- * forever.
+ * HTTP responses reject that sample so a permanent 4xx cannot be replayed.
+ * Credential/assignment rejection is distinct so the runtime can latch a
+ * technician-visible fault instead of trying a doomed secret forever.
  */
 inline HttpResponseAction httpResponseAction(int responseCode) {
   if (responseCode == 200 || responseCode == 202) {
     return HttpResponseAction::Accept;
+  }
+  if (responseCode == 401 || responseCode == 403) {
+    return HttpResponseAction::HaltCredentials;
   }
   if (
     responseCode <= 0 ||
@@ -135,8 +140,6 @@ inline uint32_t minimumHttpRetryDelayMs(
       : HTTPS_RATE_LIMIT_RETRY_MS;
   }
   if (
-    responseCode == 401 ||
-    responseCode == 403 ||
     responseCode == 404
   ) {
     return HTTPS_CONFIGURATION_RETRY_MS;
@@ -151,7 +154,8 @@ inline bool hasTemplateConfiguration(
   const char *wifiPassword,
   const char *deviceSecret,
   const char *backendUrl,
-  const char *rootCa
+  const char *rootCa,
+  const char *recoveryPassword
 ) {
   return
     wifiSsid == nullptr ||
@@ -159,9 +163,11 @@ inline bool hasTemplateConfiguration(
     deviceSecret == nullptr ||
     backendUrl == nullptr ||
     rootCa == nullptr ||
+    recoveryPassword == nullptr ||
     std::strcmp(wifiSsid, "YOUR_WIFI_SSID") == 0 ||
     std::strcmp(wifiPassword, "YOUR_WIFI_PASSWORD") == 0 ||
     std::strstr(deviceSecret, "GENERATE_AT_LEAST_") != nullptr ||
+    std::strstr(recoveryPassword, "GENERATE_UNIQUE_RECOVERY_") != nullptr ||
     std::strstr(backendUrl, "your-backend.example") != nullptr ||
     std::strstr(rootCa, "REPLACE_WITH_THE_CA") != nullptr;
 }
