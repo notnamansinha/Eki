@@ -66,7 +66,6 @@ Requirements: Node.js 20+, npm 10+, Firebase project, browser/server Google Maps
 npm install
 Copy-Item backend/.env.example backend/.env
 Copy-Item frontend/env.production.example frontend/.env.local
-Copy-Item hardware/include/secrets.example.h hardware/include/secrets.h
 npm run dev
 ```
 
@@ -79,7 +78,7 @@ npm run provision-device --workspace=backend -- `
   --device-id device_01 --bus-id bus_01 --route-id route_01
 ```
 
-The command prints the random device secret once and stores only a salted scrypt verifier. Put the plaintext in ignored `hardware/include/secrets.h`; never put it in Git, screenshots, or documentation.
+The command prints the random device secret once and stores only a salted scrypt verifier. Submit the plaintext with Wi-Fi, backend origin, and CA through the ESP32's protected local provisioning portal; the validated configuration is stored as one NVS record and never compiled into source. Fleet artifacts use the Secure Boot V2/flash-encrypted `esp32dev-secure` environment and the witnessed [hardware security procedure](../operations/HARDWARE_SECURITY_PROVISIONING.md).
 
 ## Hardware contract
 
@@ -103,7 +102,7 @@ Content-Type: application/json
 
 Generate the timestamp immediately before sending (for example, `Date.now()`); it must be a current Unix epoch value in milliseconds. The JSON is limited to 512 bytes and exactly six fields. Coordinates, speed (0–200 km/h), heading (0–360), motion state, and timestamp freshness are checked. `202` accepts a new fix; `200` acknowledges a duplicate; `400`, `401`, `413`, `429`, and `503` indicate payload, credential, body-size, rate, and service failures.
 
-Firmware uses NTP for TLS/time stamps, an 8 KiB UART RX buffer, HDOP ≤ 4, motion hysteresis, a 3-second change floor, 30-second moving heartbeat, 60-second stopped heartbeat, 7-second HTTP timeout, capped jittered retry, and a 15-second watchdog. See [Hardware telemetry](../hardware/HARDWARE_TELEMETRY.md).
+Firmware uses NTP/GNSS time for TLS/time stamps, an 8 KiB UART RX buffer, HDOP ≤ 4, motion hysteresis, a 3-second change floor, 30-second moving heartbeat, 60-second stopped heartbeat, 7-second HTTP timeout, capped jittered retry, and a 25-second watchdog. An authenticated 1 KiB diagnostics channel reports bounded device health and hardware-security state every five minutes without credentials. See [Hardware telemetry](../hardware/HARDWARE_TELEMETRY.md).
 
 ## Verification
 
@@ -126,11 +125,12 @@ npm run verify
 - [Production readiness audit](../operations/PRODUCTION_READINESS_AUDIT.md)
 - [Live demo runbook](../operations/LIVE_DEMO_RUNBOOK.md)
 - [University deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md)
+- [ESP32 fleet security and provisioning](../operations/HARDWARE_SECURITY_PROVISIONING.md)
 - [Security policy](SECURITY.md)
 
 ## Production boundary
 
-The repository is production-oriented but cannot configure university-owned infrastructure or prove physical behavior. Production owners must provide managed TLS/DNS, WAF/global rate limits, monitoring/alerts, backups, key restrictions, App Check enforcement, separate staging/production projects, privacy approval, signed OTA/rollback, Secure Boot V2, flash encryption, automotive power protection, and an observed route acceptance test.
+The repository is production-oriented but cannot configure university-owned infrastructure or prove physical behavior. Production owners must provide managed TLS/DNS, WAF/global rate limits, monitoring/alerts, backups, key restrictions, App Check enforcement, separate staging/production projects, privacy approval, signed OTA/rollback, controlled signing-key custody, physical Secure Boot V2/flash-encryption acceptance on spare boards, automotive power protection, and an observed route acceptance test.
 
 ## License
 

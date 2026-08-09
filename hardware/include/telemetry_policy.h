@@ -149,29 +149,6 @@ inline uint32_t minimumHttpRetryDelayMs(
     : 0;
 }
 
-inline bool hasTemplateConfiguration(
-  const char *wifiSsid,
-  const char *wifiPassword,
-  const char *deviceSecret,
-  const char *backendUrl,
-  const char *rootCa,
-  const char *recoveryPassword
-) {
-  return
-    wifiSsid == nullptr ||
-    wifiPassword == nullptr ||
-    deviceSecret == nullptr ||
-    backendUrl == nullptr ||
-    rootCa == nullptr ||
-    recoveryPassword == nullptr ||
-    std::strcmp(wifiSsid, "YOUR_WIFI_SSID") == 0 ||
-    std::strcmp(wifiPassword, "YOUR_WIFI_PASSWORD") == 0 ||
-    std::strstr(deviceSecret, "GENERATE_AT_LEAST_") != nullptr ||
-    std::strstr(recoveryPassword, "GENERATE_UNIQUE_RECOVERY_") != nullptr ||
-    std::strstr(backendUrl, "your-backend.example") != nullptr ||
-    std::strstr(rootCa, "REPLACE_WITH_THE_CA") != nullptr;
-}
-
 inline bool shouldPublishFix(
   bool valid,
   bool hasPublishedLocation,

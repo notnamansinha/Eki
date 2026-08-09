@@ -69,10 +69,10 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
-function isDeviceTelemetryRequest(req: express.Request): boolean {
+function isDeviceIngressRequest(req: express.Request): boolean {
   return (
     req.method === "POST" &&
-    /^\/api\/devices\/[A-Za-z0-9_-]{1,128}\/telemetry$/.test(req.path)
+    /^\/api\/devices\/[A-Za-z0-9_-]{1,128}\/(telemetry|diagnostics)$/.test(req.path)
   );
 }
 
@@ -83,7 +83,7 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please slow down." },
-  skip: isDeviceTelemetryRequest,
+  skip: isDeviceIngressRequest,
 });
 app.use(globalLimiter);
 
@@ -136,6 +136,10 @@ app.use(
   "/api/devices/:deviceId/telemetry",
   express.json({ limit: "512b", strict: true }),
 );
+app.use(
+  "/api/devices/:deviceId/diagnostics",
+  express.json({ limit: "1kb", strict: true }),
+);
 app.use(express.json({ limit: "16kb", strict: true })); // Prevent request body size attacks
 
 // ── REST Routes ───────────────────────────────────────────────────────────────
@@ -149,7 +153,7 @@ app.use("/api/routes-list", routesListRoutes);
 app.use(
   "/api/devices",
   (req, res, next) =>
-    req.method === "POST" && /\/telemetry$/.test(req.path)
+    req.method === "POST" && /\/(telemetry|diagnostics)$/.test(req.path)
       ? next()
       : writeLimiter(req, res, next),
   devicesRoutes,

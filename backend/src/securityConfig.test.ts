@@ -263,17 +263,23 @@ describe("production security configuration", () => {
 
   it("requires verified HTTPS TLS for hardware credentials", () => {
     const firmware = workspaceFile("hardware/src/main.cpp");
-    expect(firmware).toContain("tlsClient.setCACert(BACKEND_ROOT_CA)");
+    const deviceConfig = workspaceFile("hardware/include/device_config.h");
+    expect(firmware).toContain(
+      "tlsClient.setCACert(deviceConfiguration.backendRootCa())",
+    );
     expect(firmware).toContain("HTTPClient");
     expect(firmware).toContain(
-      'authorizationHeader = String("Device ") + DEVICE_SECRET',
+      'authorizationHeader = String("Device ") + deviceConfiguration.deviceSecret()',
     );
     expect(firmware).toContain(
       'http.addHeader("Authorization", authorizationHeader)',
     );
     expect(firmware).toContain("HTTPClient::errorToString(responseCode)");
     expect(firmware).toContain('http.collectHeaders(responseHeaders, 1)');
-    expect(firmware).toContain("hasTemplateConfiguration(");
+    expect(firmware).toContain("deviceConfiguration.load()");
+    expect(firmware).not.toContain('#include "secrets.h"');
+    expect(deviceConfig).toContain("DeviceConfigurationRecord");
+    expect(deviceConfig).toContain("deviceConfigurationRecordIsValid");
     expect(firmware).not.toContain("Firebase_ESP_Client");
     expect(firmware).not.toContain("setInsecure(");
   });
@@ -321,7 +327,9 @@ describe("production security configuration", () => {
     const connectivityPolicy = workspaceFile("hardware/include/connectivity_policy.h");
     const recoveryPortal = workspaceFile("hardware/src/recovery_portal.cpp");
     const telemetryPolicy = workspaceFile("hardware/include/telemetry_policy.h");
-    const secretsTemplate = workspaceFile("hardware/include/secrets.example.h");
+    const deviceConfig = workspaceFile("hardware/include/device_config.h");
+    const platformConfig = workspaceFile("hardware/platformio.ini");
+    const sdkConfig = workspaceFile("hardware/sdkconfig.defaults");
 
     expect(firmware).toContain("gps.date.isValid()");
     expect(firmware).toContain("gps.time.isValid()");
@@ -336,14 +344,24 @@ describe("production security configuration", () => {
     expect(connectivityPolicy).toContain("WIFI_RECOVERY_ESCALATION_MS");
     expect(connectivityPolicy).toContain("statusLedOn");
     expect(connectivityPolicy).toContain("recoveryPasswordIsValid");
-    expect(connectivityPolicy).toContain("std::memset(&record, 0, sizeof(record))");
+    expect(deviceConfig).toContain("std::memset(&record, 0, sizeof(record))");
     expect(recoveryPortal).toContain("WIFI_AP_STA");
-    expect(recoveryPortal).toContain('server_.on("/wifi", HTTP_POST');
+    expect(recoveryPortal).toContain('"/provision"');
     expect(recoveryPortal).toContain('server_.sendHeader("Cache-Control", "no-store")');
     expect(recoveryPortal).toContain("constantTimeTokenEquals");
     expect(recoveryPortal).toContain("WiFi.softAP(accessPointSsid_, recoveryPassword, 1, false, 1)");
     expect(recoveryPortal).not.toContain("DEVICE_SECRET");
-    expect(secretsTemplate).toContain("RECOVERY_AP_PASSWORD");
+    expect(recoveryPortal).toContain("configuration_->save(");
+    expect(platformConfig).toContain("[env:esp32dev-secure]");
+    expect(platformConfig).toContain("EKI_FLEET_BUILD=1");
+    expect(sdkConfig).toContain("CONFIG_SECURE_BOOT_V2_ENABLED=y");
+    expect(sdkConfig).toContain("CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE=y");
+    expect(sdkConfig).toContain("CONFIG_NVS_ENCRYPTION=y");
+    expect(firmware).toContain("esp_flash_encryption_enabled()");
+    expect(firmware).toContain("esp_secure_boot_enabled()");
+    expect(firmware).toContain(
+      "EKI_FLEET_BUILD && (!flashEncryptionActive || !secureBootActive)",
+    );
 
     expect(telemetryPolicy).toContain("HttpResponseAction::HaltCredentials");
     expect(firmware).toContain("credentialFaultActive = true");

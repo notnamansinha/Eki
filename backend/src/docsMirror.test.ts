@@ -37,7 +37,9 @@ function expectedMirror(source: string) {
       .replaceAll("](docs/", "](../")
       .replaceAll("](backend/", "](../backend/");
   } else if (source === "hardware/README.md") {
-    content = content.replaceAll("](../docs/hardware/", "](");
+    content = content
+      .replaceAll("](../docs/hardware/", "](")
+      .replaceAll("](../docs/operations/", "](../operations/");
   } else if (/^(backend|frontend|hardware)\//.test(source)) {
     content = content.replaceAll("../docs/", "../");
   }

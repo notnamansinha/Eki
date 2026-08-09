@@ -49,10 +49,10 @@ an HTTPS address:
   to the laptop/backend.
 - **Demo option:** an approved HTTPS tunnel to `http://localhost:4000`.
 
-- [ ] Put only the tunnel/public backend origin in `BACKEND_URL`; do not add a
-  path or trailing slash.
-- [ ] Export the issuing root/intermediate CA used by that hostname for
-  `BACKEND_ROOT_CA`.
+- [ ] Record only the tunnel/public HTTPS backend origin for local device
+  provisioning; do not add a path or query.
+- [ ] Export the issuing root/intermediate CA used by that hostname for the
+  local provisioning form.
 - [ ] Test the public URL from a phone on mobile data:
   `https://<backend-host>/health`.
 - [ ] Record `/health.telemetry` processing, device-to-server and RTDB-write
@@ -87,21 +87,24 @@ npm run provision-device --workspace=backend -- `
 ```
 
 The command generates a random secret, stores only its salted verifier, and
-prints the plaintext once. Copy it directly into the ignored `secrets.h`; do
-not paste it into this document, chat, screenshots, or Git.
+prints the plaintext once. Transfer it only into the protected local device
+form; do not paste it into this document, chat, screenshots, shell history, or
+Git.
 
 - [ ] Restart the local backend after provisioning so no old credential cache
   remains.
 
-- [ ] Copy `hardware/include/secrets.example.h` to
-  `hardware/include/secrets.h`.
-- [ ] Fill `WIFI_SSID`, `WIFI_PASS`, `DEVICE_ID`, `DEVICE_SECRET`,
-  `BACKEND_URL`, and the complete `BACKEND_ROOT_CA`.
 - [ ] Use a bus Wi-Fi/hotspot that the ESP can reconnect to automatically.
 - [ ] Run `platformio run --project-dir hardware`.
 - [ ] Connect the ESP32 and run
   `platformio run --project-dir hardware --target upload`.
-- [ ] Open the 115200-baud serial monitor. Confirm Wi-Fi, time sync, GNSS fix,
+- [ ] Open the 115200-baud serial monitor, record the unprovisioned device's
+  random recovery password, connect to `Eki-Recovery-*`, and open
+  `http://192.168.4.1`.
+- [ ] Submit hotspot name/password, device ID/one-time secret, HTTPS backend
+  origin, and complete issuing root CA. Confirm the device restarts without
+  returning or logging the stored values.
+- [ ] Confirm Wi-Fi, time sync, GNSS fix, remote diagnostics,
   and HTTP 200/202 responses. Any 401 means the ID/secret/registry is wrong;
   any TLS error means URL, hostname, clock, or CA is wrong.
 

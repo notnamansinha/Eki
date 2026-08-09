@@ -9,6 +9,9 @@
 *.elf
 *.bin
 
-# Secrets and Credentials
-include/secrets.h
+# Secrets and credentials
 *.json
+include/secrets.h
+sdkconfig.esp32dev-secure
+keys/*.pem
+keys/*.bin

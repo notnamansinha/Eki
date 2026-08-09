@@ -35,9 +35,17 @@ local professor demonstration.
   disablement, lost-device, and reassignment procedures.
 - [ ] Restrict the browser Maps key by HTTPS referrer and API; restrict the
   server key by runtime identity/IP and Routes/Places APIs.
-- [ ] Provision ESP32 Secure Boot V2 and flash encryption on spare hardware
-  before fleet rollout. These eFuse operations are irreversible and require
-  controlled signing-key custody.
+- [ ] Complete the witnessed
+  [ESP32 fleet security and provisioning](HARDWARE_SECURITY_PROVISIONING.md)
+  procedure on spare ECO3-or-newer hardware before fleet rollout. Archive
+  first-boot evidence that Secure Boot V2, release-mode flash encryption, and
+  encrypted NVS are active; these eFuse operations are irreversible.
+- [ ] Confirm every fleet artifact was built with `esp32dev-secure`; development
+  firmware is never installed in a vehicle. Verify the runtime hard gate and
+  remote diagnostic both report flash encryption and Secure Boot active.
+- [ ] Store each device's random local-recovery password in the restricted
+  inventory, provision the full NVS configuration, and demonstrate independent
+  API-secret rotation, revocation, and lost-device disablement.
 - [ ] Define a signed firmware update and rollback process before enabling OTA.
 
 ## Data protection and safety
@@ -91,7 +99,7 @@ measured latency, failures, evidence links, accepted risks, and signatures.
 - [ ] Build/test/firmware logs and dependency audit results.
 - [ ] Architecture, API, storage, and live-demo documents.
 - [ ] Non-secret bus/route/device inventory and wiring diagram.
-- [ ] Open-risk list. Never request committed `.env`, `secrets.h`, service
-  account JSON, private keys, device secrets, or App Check debug tokens.
+- [ ] Open-risk list. Never request committed `.env`, service-account JSON,
+  signing keys, device/recovery secrets, NVS dumps, or App Check debug tokens.
 - [ ] HLD, LLD, exhaustive Firebase dictionary, hardware latency analysis,
   API reference and test/failure matrix from the documentation index.

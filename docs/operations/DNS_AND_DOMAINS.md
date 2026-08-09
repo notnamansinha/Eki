@@ -66,7 +66,7 @@ The Express backend must sit behind a valid TLS/HTTPS endpoint with public or ca
 ### SSL/TLS Requirements
 - Mandatory HTTPS (TLS 1.2+).
 - Managed SSL via Let's Encrypt, Cloudflare, or GCP Managed Certificates.
-- Export the **Root CA certificate** (`BACKEND_ROOT_CA`) if using internal university enterprise CAs, as the ESP32 hardware requires it for TLS validation.
+- Export the **Root CA certificate** if using internal university enterprise CAs, as the ESP32 local provisioning flow requires it for TLS validation.
 
 ---
 
@@ -94,9 +94,9 @@ If custom backend/API domains are used, ensure `firebase.json` headers permit co
 
 The ESP32 tracking hardware connects to the backend API via DNS hostname:
 
-1. `BACKEND_URL` in `hardware/include/secrets.h` must use `https://api.eki.yourdomain.com`.
+1. The backend origin submitted through the protected ESP32 provisioning portal must use `https://api.eki.yourdomain.com`.
 2. Ensure the bus Wi-Fi / cellular hotspot provides working DNS servers (e.g. `8.8.8.8` / `1.1.1.1` or DHCP DNS).
-3. If using an enterprise CA on campus DNS, include the complete root certificate in `BACKEND_ROOT_CA`.
+3. If using an enterprise CA on campus DNS, include the complete root certificate in the provisioning form.
 
 ---
 

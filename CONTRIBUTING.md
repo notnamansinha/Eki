@@ -51,5 +51,5 @@ If you are contributing to the `hardware/` (ESP32) firmware:
   database write spikes.
 - Record real bench/route evidence for timing, GNSS, TLS, power, reconnect and
   watchdog changes. A successful compile is not a physical acceptance test.
-- Never enable insecure TLS, commit `secrets.h`, or automate irreversible
-  Secure Boot/flash-encryption eFuses without an approved provisioning plan.
+- Never enable insecure TLS, commit credential/signing material, or upload the
+  irreversible fleet environment outside the approved witnessed procedure.

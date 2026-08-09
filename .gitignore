@@ -75,9 +75,8 @@ temp/
 *.swp
 *.swo
 
-# Firmware project directory (PlatformIO build files and secrets)
+# Firmware project directory (PlatformIO build files)
 hardware/.pio/
-hardware/include/secrets.h
 
 # Dev utility & one-off scripts (no secrets, but should not be public)
 simulator.js

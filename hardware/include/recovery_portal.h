@@ -1,5 +1,6 @@
 #pragma once
 
+#include "device_config.h"
 #include <Preferences.h>
 #include <WebServer.h>
 #include <cstddef>
@@ -8,26 +9,45 @@
 namespace eki {
 namespace connectivity {
 
-class StationCredentials {
+class DeviceConfiguration {
 public:
-  bool load(const char *fallbackSsid, const char *fallbackPassword);
-  bool save(const char *ssid, size_t ssidLength, const char *password, size_t passwordLength);
-
-  const char *ssid() const { return ssid_; }
-  const char *password() const { return password_; }
-  bool loadedFromNvs() const { return loadedFromNvs_; }
-
-private:
-  bool copyFrom(
-    const char *ssid,
-    size_t ssidLength,
-    const char *password,
-    size_t passwordLength
+  bool load();
+  bool save(
+    const char *wifiSsid,
+    size_t wifiSsidLength,
+    const char *wifiPassword,
+    size_t wifiPasswordLength,
+    const char *deviceId,
+    size_t deviceIdLength,
+    const char *deviceSecret,
+    size_t deviceSecretLength,
+    const char *backendUrl,
+    size_t backendUrlLength,
+    const char *backendRootCa,
+    size_t backendRootCaLength
   );
 
-  char ssid_[33]{};
-  char password_[64]{};
-  bool loadedFromNvs_ = false;
+  const char *wifiSsid() const { return record_.wifiSsid; }
+  const char *wifiPassword() const { return record_.wifiPassword; }
+  const char *deviceId() const { return record_.deviceId; }
+  const char *deviceSecret() const { return record_.deviceSecret; }
+  const char *backendUrl() const { return record_.backendUrl; }
+  const char *backendRootCa() const { return record_.backendRootCa; }
+  bool provisioned() const { return provisioned_; }
+
+private:
+  DeviceConfigurationRecord record_{};
+  DeviceConfigurationRecord candidate_{};
+  bool provisioned_ = false;
+};
+
+class RecoveryAccess {
+public:
+  bool loadOrCreate();
+  const char *password() const { return password_; }
+
+private:
+  char password_[25]{};
 };
 
 class RecoveryPortal {
@@ -35,14 +55,14 @@ public:
   RecoveryPortal();
 
   bool start(
-    const char *deviceId,
+    const char *deviceLabel,
     const char *recoveryPassword,
-    StationCredentials &credentials
+    DeviceConfiguration &configuration
   );
   void handleClient();
   void stop();
   bool active() const { return active_; }
-  bool consumeCredentialsUpdated();
+  bool consumeConfigurationUpdated();
   const char *accessPointSsid() const { return accessPointSsid_; }
 
 private:
@@ -50,16 +70,16 @@ private:
   void setSecurityHeaders();
   void handleRoot();
   void handleStatus();
-  void handleWifiUpdate();
+  void handleProvisioningUpdate();
   void rotateCsrfToken();
 
   WebServer server_;
-  StationCredentials *credentials_ = nullptr;
+  DeviceConfiguration *configuration_ = nullptr;
   char accessPointSsid_[33]{};
   char csrfToken_[17]{};
   bool handlersRegistered_ = false;
   bool active_ = false;
-  bool credentialsUpdated_ = false;
+  bool configurationUpdated_ = false;
 };
 
 } // namespace connectivity

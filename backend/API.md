@@ -1,6 +1,6 @@
 # Backend API reference
 
-Base path is the deployed backend origin. JSON request bodies are strict and limited to 16 KiB except device telemetry (512 bytes). `TRACE` and `CONNECT` return 405. Responses are JSON; errors use `{ "error": "…" }` and do not expose stacks/secrets.
+Base path is the deployed backend origin. JSON request bodies are strict and limited to 16 KiB except device telemetry (512 bytes) and diagnostics (1 KiB). `TRACE` and `CONNECT` return 405. Responses are JSON; errors use `{ "error": "…" }` and do not expose stacks/secrets.
 
 ## Authentication
 
@@ -8,7 +8,7 @@ Base path is the deployed backend origin. JSON request bodies are strict and lim
 - Hardware: `Authorization: Device <per-device secret>`. It is not a Firebase token and must never use `Bearer`.
 - Public: only `GET /health`.
 
-IDs accept 1–128 ASCII letters, digits, `_`, or `-`. Browser writes are broadly limited to 30/minute/IP, normal traffic 200/minute/IP; route compute/plan/place/device telemetry also have dedicated limits. Production needs global edge limits because these counters are process-local.
+IDs accept 1–128 ASCII letters, digits, `_`, or `-`. Browser writes are broadly limited to 30/minute/IP, normal traffic 200/minute/IP; route compute/plan/place/device ingestion also have dedicated limits. Production needs global edge limits because these counters are process-local.
 
 ## Health
 
@@ -54,6 +54,14 @@ Generate `timestamp` immediately before sending (for example, with `Date.now()`)
 - 400 invalid ID/payload; 401 bad/missing/disabled credential or registry; 413 raw body too large; 429 limiter with `Retry-After` and `retryAfterMs`; 503 Firebase/ingestion failure.
 - Response has `Cache-Control: no-store`.
 
+### `POST /api/devices/:deviceId/diagnostics` — device
+
+Accepts the closed 1 KiB firmware-health object: firmware version, uptime, free heap, RSSI, queue depth/high-water/drop counters, accepted/rejected fixes, NMEA/UART errors, reset total, fault code, flash-encryption and Secure-Boot booleans, and device timestamp. Device ID, bus, and route come from the authenticated server registry; credentials and network names are never accepted in the body. The latest report overwrites `_device_diagnostics/{deviceId}` through the Admin SDK. Returns 202, 400, 401, 429, or 503 with `Cache-Control: no-store`.
+
+### `GET /api/devices/:deviceId/diagnostics` — admin
+
+Returns the latest authenticated device report plus registry assignment and server `receivedAt`, or 404 when no report exists. Firebase clients cannot read `_device_diagnostics` directly.
+
 ### `PUT /api/devices/:deviceId` — admin
 
 Body: `{ "busId":"bus_01", "routeId":"route_01", "enabled":true }`. Bus/route must exist and be assigned; a bus/route can have only one device; active ride/lock prevents unsafe reassignment. Does not rotate `secretHash`. Returns `{saved:true}`, 400, 409 or 500.
@@ -62,7 +70,7 @@ Body: `{ "busId":"bus_01", "routeId":"route_01", "enabled":true }`. Bus/route mu
 
 Sets `enabled:false`/`disabledAt`, invalidates credential/rate cache. Returns `{disabled:true}` or 400/500.
 
-Device creation/secret rotation is deliberately local: `npm run provision-device --workspace=backend -- --device-id … --bus-id … --route-id …`.
+Device creation/secret rotation is deliberately local: `npm run provision-device --workspace=backend -- --device-id … --bus-id … --route-id …`. Submit the one-time plaintext only through the ESP32's protected local provisioning portal; it is stored in NVS and never in source.
 
 ## Live bus endpoints
 
