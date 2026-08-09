@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Star, HeartHandshake, X, Send, Check } from "lucide-react";
 import { auth } from "@/lib/firebaseAuth";
 import { FEEDBACK_WORD_LIMIT } from "@/config/passenger";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -46,6 +47,13 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [error, setError] = useState("");
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  const commentId = useId();
+  const feedbackStatusId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(true, () => {
+    if (!submitting) onClose();
+  });
 
   const cooldownStorageKey = `feedbackCooldown:${userId}`;
   const wordCount = countWords(comment);
@@ -68,7 +76,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
     };
 
     updateCooldown();
-    const intervalId = window.setInterval(updateCooldown, 10000); // Check every 10s is enough for hours
+    const intervalId = window.setInterval(updateCooldown, 60_000);
     return () => window.clearInterval(intervalId);
   }, [cooldownStorageKey]);
 
@@ -168,16 +176,16 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
     return (
       <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 animate-fade-in"
         style={{ background: "rgba(0, 0, 0, 0.7)", backdropFilter: "blur(4px)" }}>
-        <div className="rounded-3xl p-8 max-w-sm w-full flex flex-col items-center text-center animate-scale-up relative overflow-hidden"
+        <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} className="rounded-3xl p-8 max-w-sm w-full flex flex-col items-center text-center animate-scale-up relative overflow-hidden"
           style={{ background: "var(--surface-2)", border: "1px solid rgba(255,255,255,0.05)", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)" }}>
           <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/10 to-transparent pointer-events-none" />
           <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5 bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/30 relative z-10">
             <Check className="text-white" strokeWidth={3} size={32} />
           </div>
-          <h2 className="text-xl font-extrabold mb-2 relative z-10" style={{ color: "var(--text-primary)" }}>
+          <h2 id={titleId} className="text-xl font-extrabold mb-2 relative z-10" style={{ color: "var(--text-primary)" }}>
             Thank you!
           </h2>
-          <p className="text-[14px] relative z-10" style={{ color: "var(--text-tertiary)" }}>
+          <p id={descriptionId} className="text-[14px] relative z-10" style={{ color: "var(--text-tertiary)" }}>
             Your feedback helps us improve the experience for everyone.
           </p>
         </div>
@@ -188,7 +196,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
   return (
     <div className="fixed inset-0 z-[999] flex items-end sm:items-center justify-center pb-24 sm:pb-0 sm:p-4 animate-fade-in"
       style={{ background: "rgba(0, 0, 0, 0.7)", backdropFilter: "blur(4px)" }}>
-      <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl flex flex-col animate-slide-up relative overflow-hidden shadow-2xl"
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl flex flex-col animate-slide-up relative overflow-hidden shadow-2xl"
         style={{ background: "var(--surface-1)", border: "1px solid rgba(255,255,255,0.08)" }}>
         
         {/* Subtle top gradient glow */}
@@ -205,7 +213,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
               <HeartHandshake className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-[16px] font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>
+              <h2 id={titleId} className="text-[16px] font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>
                 {busId ? "Rate your ride" : "Send feedback"}
               </h2>
               {busId && (
@@ -215,7 +223,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
               )}
             </div>
           </div>
-          <button onClick={onClose} className="min-w-11 min-h-11 p-2 rounded-full transition-all hover:bg-white/10 active:scale-95"
+          <button type="button" onClick={onClose} disabled={submitting} className="min-w-11 min-h-11 p-2 rounded-full transition-all hover:bg-white/10 active:scale-95 disabled:opacity-50"
             style={{ color: "var(--text-ghost)" }}
             aria-label="Close feedback">
             <X className="w-5 h-5" />
@@ -239,6 +247,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
                     onMouseLeave={() => setHoverRating(0)}
                     className="p-0.5 focus:outline-none transition-transform hover:scale-110"
                     aria-label={`Rate ${star} stars`}
+                    aria-pressed={rating === star}
                   >
                     <Star 
                       className={`w-11 h-11 transition-all ${
@@ -258,11 +267,14 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
 
           {/* Comment */}
           <div className="flex flex-col gap-2">
-            <span className="text-[12px] font-semibold tracking-wide uppercase" style={{ color: "var(--text-ghost)" }}>
+            <label htmlFor={commentId} className="text-[12px] font-semibold tracking-wide uppercase" style={{ color: "var(--text-ghost)" }}>
               {busId ? "Comments (optional)" : "What's on your mind?"}
-            </span>
+            </label>
             <div className="relative group">
               <textarea
+                id={commentId}
+                aria-describedby={feedbackStatusId}
+                aria-invalid={Boolean(error)}
                 value={comment}
                 onChange={(e) => {
                   const nextComment = e.target.value;
@@ -289,7 +301,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
             </div>
             
             <div className="flex items-center justify-between gap-3 text-[11px] font-semibold px-1 mt-1">
-              <span style={{ color: error ? "#F87171" : "var(--text-ghost)" }} className="transition-colors">
+              <span id={feedbackStatusId} role="status" aria-live="polite" style={{ color: error ? "#F87171" : "var(--text-ghost)" }} className="transition-colors">
                 {error || (cooldownRemaining > 0
                   ? `Wait ${formatCooldown(cooldownRemaining)}`
                   : "Ready")}

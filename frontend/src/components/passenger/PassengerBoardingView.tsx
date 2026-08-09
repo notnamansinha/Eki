@@ -1,16 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState } from "react";
 import { RouteData } from "@/hooks/useRoutes";
 import CustomSelect from "@/components/ui/CustomSelect";
 import { errorMessage } from "@/lib/errors";
-import { hasSelectedRideStop } from "@/lib/rideFeedbackEligibility";
+import { auth } from "@/lib/firebaseAuth";
 
 interface Props {
   sessionId: string;
   route: RouteData;
-  userId: string;
-  userName: string;
   tripState: "pre_departure" | "in_service";
   onBoardingStopChange?: (stopId: string) => void;
   onStopSelected?: (hasSelectedStop: boolean) => void;
@@ -24,105 +22,114 @@ const formatStopName = (name: string) => {
   return name;
 };
 
-/** Resolves the browser location once; rejects if unavailable/denied. */
-function getCurrentPosition(): Promise<{ lat: number; lng: number }> {
+function getCurrentPosition(): Promise<{ lat: number; lng: number; accuracy: number }> {
   return new Promise((resolve, reject) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      reject(new Error("geolocation-unavailable"));
+      reject(new Error("Location services are unavailable."));
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      (err) => reject(err),
-      { enableHighAccuracy: false, maximumAge: 30_000, timeout: 10_000 },
+      (position) => resolve({
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+      }),
+      () => reject(new Error("Location access is required to board this bus.")),
+      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 10_000 },
     );
   });
+}
+
+function normalizeCode(value: string): string {
+  return value.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g, "").slice(0, 8);
 }
 
 export default function PassengerBoardingView({
   sessionId,
   route,
-  userId,
-  userName,
   tripState,
   onBoardingStopChange,
   onStopSelected,
 }: Props) {
-  const [boardingStopId, setBoardingStopId] = useState<string>("");
-  const [alightingStopId, setAlightingStopId] = useState<string>("");
+  const [boardingStopId, setBoardingStopId] = useState("");
+  const [alightingStopId, setAlightingStopId] = useState("");
+  const [boardingCode, setBoardingCode] = useState("");
   const [joinState, setJoinState] = useState<JoinState>("idle");
   const [joinError, setJoinError] = useState("");
-  const pendingRef = useRef<number>(0);
-
-  const joinRide = useCallback(async (boardingStopId: string, alightingStopId: string) => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
-    if (!backendUrl) {
-      setJoinState("error");
-      setJoinError("Ride service is not configured.");
-      return;
-    }
-    if (!userId || userId === "anonymous") {
-      setJoinState("error");
-      setJoinError("Sign in is required to board.");
-      return;
-    }
-
-    const attempt = ++pendingRef.current;
-    setJoinState("joining");
-    setJoinError("");
-
-    let position: { lat: number; lng: number };
-    try {
-      position = await getCurrentPosition();
-    } catch {
-      if (attempt === pendingRef.current) {
-        setJoinState("error");
-        setJoinError("Location access is required to board this bus.");
-      }
-      return;
-    }
-
-    try {
-      const response = await fetch(`${backendUrl}/api/sessions/${sessionId}/join`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lat: position.lat,
-          lng: position.lng,
-          boardingStopId,
-          alightingStopId: alightingStopId || null,
-          userName,
-        }),
-      });
-      const result = (await response.json()) as { joined?: boolean; error?: string };
-      if (!response.ok || !result.joined) {
-        throw new Error(result.error || "Unable to board.");
-      }
-      if (attempt === pendingRef.current) {
-        setJoinState("joined");
-      }
-    } catch (err: unknown) {
-      if (attempt === pendingRef.current) {
-        setJoinState("error");
-        setJoinError(errorMessage(err));
-      }
-    }
-  }, [sessionId, userId, userName]);
-
-  // Auto join when the rider has chosen a stop. Selection changes re-issue the
-  // join so the manifest entry stays in sync with the chosen stops.
-  useEffect(() => {
-    if (!hasSelectedRideStop(boardingStopId, alightingStopId)) return;
-    void joinRide(boardingStopId, alightingStopId);
-  }, [boardingStopId, alightingStopId, joinRide]);
+  const [hasJoined, setHasJoined] = useState(false);
 
   const stopOptions = (route.stops ?? []).map((stop) => ({
     value: stop.id,
     label: formatStopName(stop.name),
   }));
 
+  const joinRide = async () => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+    const currentUser = auth.currentUser;
+    if (!backendUrl) {
+      setJoinState("error");
+      setJoinError("Ride service is not configured.");
+      return;
+    }
+    if (!currentUser) {
+      setJoinState("error");
+      setJoinError("Sign in is required to board.");
+      return;
+    }
+    if (!boardingStopId || boardingCode.length !== 8) {
+      setJoinState("error");
+      setJoinError("Choose a boarding stop and enter the 8-character code from the driver.");
+      return;
+    }
+
+    setJoinState("joining");
+    setJoinError("");
+    const updatingExistingPassenger = hasJoined;
+    try {
+      const [token, position] = await Promise.all([
+        currentUser.getIdToken(),
+        updatingExistingPassenger ? Promise.resolve(null) : getCurrentPosition(),
+      ]);
+      const response = await fetch(`${backendUrl}/api/sessions/${sessionId}/join`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...(position ?? {}),
+          boardingCode,
+          boardingStopId,
+          alightingStopId: alightingStopId || null,
+        }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      const result = await response.json().catch(() => ({})) as {
+        joined?: boolean;
+        error?: string;
+      };
+      if (!response.ok || result.joined !== true) {
+        throw new Error(result.error || "Unable to board.");
+      }
+      setHasJoined(true);
+      setJoinState("joined");
+      onStopSelected?.(true);
+    } catch (error) {
+      // If the server no longer sees the prior manifest entry, the next attempt
+      // must perform the first-boarding proximity check again.
+      if (updatingExistingPassenger) setHasJoined(false);
+      setJoinState("error");
+      setJoinError(errorMessage(error));
+    }
+  };
+
+  const selectionChanged = () => {
+    if (joinState === "joined" || joinState === "error") setJoinState("idle");
+    setJoinError("");
+  };
+
   return (
-    <div className="flex flex-col w-full animate-fade-in pointer-events-auto gap-2">
+    <div className="flex w-full flex-col gap-2 animate-fade-in pointer-events-auto">
       <p
         className="text-[10px] font-bold uppercase tracking-wider"
         style={{ color: tripState === "in_service" ? "var(--status-live)" : "var(--status-warning)" }}
@@ -134,10 +141,11 @@ export default function PassengerBoardingView({
         ariaLabel="Boarding stop"
         placeholder="Boarding..."
         value={boardingStopId}
-        onChange={(nextBoardingStopId) => {
-          setBoardingStopId(nextBoardingStopId);
-          onBoardingStopChange?.(nextBoardingStopId);
-          onStopSelected?.(hasSelectedRideStop(nextBoardingStopId, alightingStopId));
+        disabled={joinState === "joining"}
+        onChange={(value) => {
+          setBoardingStopId(value);
+          onBoardingStopChange?.(value);
+          selectionChanged();
         }}
         options={[{ value: "", label: "Boarding..." }, ...stopOptions]}
         style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
@@ -146,17 +154,43 @@ export default function PassengerBoardingView({
         ariaLabel="Destination stop"
         placeholder="Destination (Optional)..."
         value={alightingStopId}
-        onChange={(nextAlightingStopId) => {
-          setAlightingStopId(nextAlightingStopId);
-          onStopSelected?.(hasSelectedRideStop(boardingStopId, nextAlightingStopId));
+        disabled={joinState === "joining"}
+        onChange={(value) => {
+          setAlightingStopId(value);
+          selectionChanged();
         }}
         options={[{ value: "", label: "Destination (Optional)..." }, ...stopOptions]}
         style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
       />
-
+      <div className="flex gap-2">
+        <input
+          value={boardingCode}
+          disabled={joinState === "joining"}
+          onChange={(event) => {
+            setBoardingCode(normalizeCode(event.target.value));
+            selectionChanged();
+          }}
+          className="min-w-0 flex-1 rounded-lg px-3 py-2 text-sm font-bold uppercase tracking-[0.18em] outline-none"
+          style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
+          aria-label="Boarding code"
+          placeholder="DRIVER CODE"
+          autoComplete="one-time-code"
+          inputMode="text"
+          maxLength={8}
+        />
+        <button
+          type="button"
+          onClick={() => void joinRide()}
+          disabled={joinState === "joining" || !boardingStopId || boardingCode.length !== 8}
+          className="rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ background: "var(--status-live)", color: "var(--surface-0)" }}
+        >
+          {joinState === "joining" ? "Checking…" : joinState === "joined" ? "On board" : "Board"}
+        </button>
+      </div>
       {joinState === "joining" && (
-        <p className="text-[11px] font-semibold animate-pulse" style={{ color: "var(--status-warning)" }} role="status">
-          Confirming you are at the bus…
+        <p className="text-[11px] font-semibold" style={{ color: "var(--status-warning)" }} role="status">
+          Verifying the session code and live bus position…
         </p>
       )}
       {joinState === "joined" && (

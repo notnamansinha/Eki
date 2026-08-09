@@ -1,5 +1,9 @@
 # Keep ride-history deletion confirmation inside the web app
 
+Status (2026-08-08): implemented historical design record. The confirmation
+now uses the shared focus-contained dialog behavior described in
+[LLD](../design/LOW_LEVEL_DESIGN.md); the commit below records the original design baseline.
+
 Written against: bc0d320ff07a3fae1766737ef46bff87b35b055a
 
 ## Evidence chain

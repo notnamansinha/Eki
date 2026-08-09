@@ -35,6 +35,8 @@ Record the final non-secret values:
 - [ ] For the bus test, keep `BUS_STALE_MS=300000`; passenger ETA updates
   automatically from the live telemetry stream.
 - [ ] Run `npm run verify` successfully.
+- [ ] Run `platformio run --project-dir hardware` successfully and archive the
+  RAM/flash report.
 - [ ] Run `npm run dev`; confirm frontend `http://localhost:3000` and backend
   `http://localhost:4000/health`.
 - [ ] Prevent laptop sleep, connect the charger/power bank, and disable
@@ -53,6 +55,8 @@ an HTTPS address:
   `BACKEND_ROOT_CA`.
 - [ ] Test the public URL from a phone on mobile data:
   `https://<backend-host>/health`.
+- [ ] Record `/health.telemetry` processing, device-to-server and RTDB-write
+  p50/p95/p99 during rehearsal; empty values before telemetry are expected.
 - [ ] Keep the tunnel process running for the entire ride.
 
 For professor phones, expose the laptop frontend through a **second HTTPS
@@ -120,12 +124,16 @@ passenger, assigned driver, and admin.
 
 - [ ] Before arming, all panels show the correct bus/route assignment.
 - [ ] Arm the ride in the driver panel while a fresh GNSS fix is available.
+- [ ] Attempt to arm another route for the same bus in a second request/session;
+  confirm the durable bus lock returns a conflict and no second ride appears.
 - [ ] Confirm the ride is `pre_departure`; it must not start merely because it
   was armed.
 - [ ] Enter stop 1 and confirm all three panels change to `in_service`.
 - [ ] Visit every stop in order and confirm progress advances one at a time.
 - [ ] At an intermediate stop, unplug ESP power for over five minutes. Confirm
   the ride remains active and panels show signal interruption.
+- [ ] During a controlled bench rehearsal (not while driving), simulate a loop
+  stall and verify the 15-second watchdog reset/recovery and logged reset reason.
 - [ ] Restore power. Confirm the same session and stop progress return without
   arming a new ride.
 - [ ] Refresh each web app and restart the local backend once during a second
@@ -146,6 +154,8 @@ passenger, assigned driver, and admin.
    not end it, and only the final ordered stop completes it.
 6. Drive all stops in order while a second person watches all panels.
 7. Save screenshots, serial log, `/health` output, and final completed trip.
+8. Confirm the final ride has no matching `active_rides` or
+   `_active_bus_locks` record before another arm test.
 
 ## 7. Go/no-go rule and fallback
 

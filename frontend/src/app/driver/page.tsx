@@ -47,6 +47,11 @@ export default function DriverPage() {
   const [tripState, setTripState] = useState<"pre_departure" | "in_service">("pre_departure");
   const [lifecycleError, setLifecycleError] = useState("");
   const [isLifecyclePending, setIsLifecyclePending] = useState(false);
+  const [boardingCode, setBoardingCode] = useState("");
+  const [boardingCodeError, setBoardingCodeError] = useState("");
+  const selectedSessionId = selectedRouteIds.length === 1
+    ? activeSessionIds[selectedRouteIds[0]] || ""
+    : "";
 
   const handleStartTracking = useCallback(async () => {
     const activeBus = buses.find((bus) => bus.id === busId);
@@ -135,6 +140,53 @@ export default function DriverPage() {
       unsubscribe();
     };
   }, [busId, driverId, markSnapshotReceived, selectedRouteIds, resumeGeneration]);
+
+  useEffect(() => {
+    if (!selectedSessionId || !user?.uid) {
+      setBoardingCode("");
+      setBoardingCodeError("");
+      return;
+    }
+    setBoardingCode("");
+    setBoardingCodeError("");
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+    if (!backendUrl || !auth.currentUser) {
+      setBoardingCodeError("Boarding code service is unavailable.");
+      return;
+    }
+
+    const controller = new AbortController();
+    const loadBoardingCode = async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) throw new Error("Driver session is unavailable.");
+        const response = await fetch(
+          `${backendUrl}/api/sessions/${selectedSessionId}/boarding-code`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          },
+        );
+        const result = await response.json().catch(() => ({})) as {
+          boardingCode?: string;
+          error?: string;
+        };
+        if (!response.ok || !result.boardingCode) {
+          throw new Error(result.error || "Unable to load the boarding code.");
+        }
+        if (controller.signal.aborted) return;
+        setBoardingCode(result.boardingCode);
+        setBoardingCodeError("");
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setBoardingCode("");
+        setBoardingCodeError(error instanceof Error ? error.message : "Unable to load the boarding code.");
+      }
+    };
+    void loadBoardingCode();
+    return () => controller.abort();
+  }, [selectedSessionId, user?.uid]);
 
   const handleOpenMessaging = () => {
     setIsMessagingOpen(true);
@@ -240,6 +292,27 @@ export default function DriverPage() {
                 </span>
               )}
             </button>
+          </div>
+        )}
+
+        {isTracking && selectedSessionId && (
+          <div
+            className="absolute left-4 top-[160px] z-50 rounded-xl px-3 py-2 shadow-lg"
+            style={{ background: "var(--surface-2)", border: "1px solid var(--border-default)" }}
+            aria-live="polite"
+          >
+            <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>
+              Passenger boarding code
+            </p>
+            {boardingCode ? (
+              <p className="text-lg font-black tracking-[0.18em]" style={{ color: "var(--status-live)" }}>
+                {boardingCode.slice(0, 4)}-{boardingCode.slice(4)}
+              </p>
+            ) : (
+              <p className="max-w-40 text-[10px]" style={{ color: "var(--status-danger)" }}>
+                {boardingCodeError || "Loading secure code…"}
+              </p>
+            )}
           </div>
         )}
 

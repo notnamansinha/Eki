@@ -39,6 +39,18 @@ export interface HttpsTelemetryStatus {
   rejected: number;
   lastAcceptedAt: string | null;
   lastRejectedAt: string | null;
+  credentialCacheHitRate: number | null;
+  processingLatencyMs: LatencySummary;
+  deviceToServerLatencyMs: LatencySummary;
+  rtdbWriteLatencyMs: LatencySummary;
+}
+
+export interface LatencySummary {
+  samples: number;
+  average: number | null;
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
 }
 
 export type TelemetryIngestResult =
@@ -52,12 +64,21 @@ const credentialCache = new Map<string, CredentialCacheEntry>();
 const durableRideMisses = new Map<string, number>();
 const durableRideRestores = new Map<string, Promise<void>>();
 const rateBuckets = new Map<string, RateBucket>();
-const status: HttpsTelemetryStatus = {
+const status: Pick<
+  HttpsTelemetryStatus,
+  "accepted" | "rejected" | "lastAcceptedAt" | "lastRejectedAt"
+> = {
   accepted: 0,
   rejected: 0,
   lastAcceptedAt: null,
   lastRejectedAt: null,
 };
+const MAX_METRIC_SAMPLES = 512;
+const processingLatencySamples: number[] = [];
+const deviceToServerLatencySamples: number[] = [];
+const rtdbWriteLatencySamples: number[] = [];
+let credentialCacheHits = 0;
+let credentialCacheMisses = 0;
 
 const DUMMY_SALT = "00000000000000000000000000000000";
 const DUMMY_HASH = Buffer.alloc(64);
@@ -65,6 +86,28 @@ const DUMMY_HASH = Buffer.alloc(64);
 function readPositiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function recordSample(samples: number[], value: number): void {
+  if (!Number.isFinite(value) || value < 0) return;
+  if (samples.length >= MAX_METRIC_SAMPLES) samples.shift();
+  samples.push(value);
+}
+
+export function summarizeLatencySamples(samples: readonly number[]): LatencySummary {
+  if (samples.length === 0) {
+    return { samples: 0, average: null, p50: null, p95: null, p99: null };
+  }
+  const ordered = [...samples].sort((left, right) => left - right);
+  const percentile = (value: number) =>
+    ordered[Math.min(ordered.length - 1, Math.ceil(value * ordered.length) - 1)];
+  return {
+    samples: ordered.length,
+    average: Number((ordered.reduce((sum, value) => sum + value, 0) / ordered.length).toFixed(1)),
+    p50: percentile(0.5),
+    p95: percentile(0.95),
+    p99: percentile(0.99),
+  };
 }
 
 function digestSecret(secret: string): Buffer {
@@ -137,6 +180,7 @@ async function authenticateDevice(
   const suppliedDigest = digestSecret(secret);
   const cached = credentialCache.get(deviceId);
   if (cached && cached.expiresAt > now) {
+    credentialCacheHits += 1;
     if (
       cached.assignment &&
       cached.secretDigest &&
@@ -146,6 +190,8 @@ async function authenticateDevice(
     }
     return null;
   }
+
+  credentialCacheMisses += 1;
 
   const deviceDoc = await db.collection("devices").doc(deviceId).get();
   const device = deviceDoc.data() as Record<string, unknown> | undefined;
@@ -323,6 +369,7 @@ async function persistTelemetry(
   assignment: DeviceAssignment,
   sample: TelemetryPayload,
 ): Promise<{ committed: boolean; hasSession: boolean }> {
+  const writeStartedAt = Date.now();
   const nodeKey = `${assignment.busId}_${assignment.routeId}`;
   const ref = rtdb.ref(`activeBuses/${nodeKey}`);
   const transaction = await ref.transaction((current) => {
@@ -353,6 +400,7 @@ async function persistTelemetry(
     };
   });
   const value = transaction.snapshot.val() as Record<string, unknown> | null;
+  recordSample(rtdbWriteLatencySamples, Date.now() - writeStartedAt);
   return {
     committed: transaction.committed,
     hasSession:
@@ -374,6 +422,7 @@ export async function ingestDeviceTelemetry(
   sample: TelemetryPayload,
   now = Date.now(),
 ): Promise<TelemetryIngestResult> {
+  const processingStartedAt = Date.now();
   if (!SAFE_ID.test(deviceId)) {
     status.rejected += 1;
     status.lastRejectedAt = new Date(now).toISOString();
@@ -403,7 +452,19 @@ export async function ingestDeviceTelemetry(
     status.accepted += 1;
     status.lastAcceptedAt = new Date(now).toISOString();
   }
+  recordSample(processingLatencySamples, Date.now() - processingStartedAt);
+  // Device timestamps come from NTP-synchronised wall time. Ignore implausible
+  // values instead of letting a bad device clock corrupt the rolling window.
+  const deviceToServerLatency = Date.now() - sample.timestamp;
+  if (deviceToServerLatency <= 24 * 60 * 60 * 1000) {
+    recordSample(deviceToServerLatencySamples, deviceToServerLatency);
+  }
   return { ok: true, duplicate: !persisted.committed };
+}
+
+export function recordTelemetryRejection(now = Date.now()): void {
+  status.rejected += 1;
+  status.lastRejectedAt = new Date(now).toISOString();
 }
 
 export function invalidateDeviceCredentialCache(deviceId: string): void {
@@ -412,7 +473,17 @@ export function invalidateDeviceCredentialCache(deviceId: string): void {
 }
 
 export function getHttpsTelemetryStatus(): HttpsTelemetryStatus {
-  return { ...status };
+  const credentialAttempts = credentialCacheHits + credentialCacheMisses;
+  return {
+    ...status,
+    credentialCacheHitRate:
+      credentialAttempts === 0
+        ? null
+        : Number((credentialCacheHits / credentialAttempts).toFixed(3)),
+    processingLatencyMs: summarizeLatencySamples(processingLatencySamples),
+    deviceToServerLatencyMs: summarizeLatencySamples(deviceToServerLatencySamples),
+    rtdbWriteLatencyMs: summarizeLatencySamples(rtdbWriteLatencySamples),
+  };
 }
 
 export async function hashDeviceSecret(secret: string): Promise<string> {

@@ -1,50 +1,32 @@
-# Eki — Frontend
+# Eki frontend
 
-This is the Next.js frontend for the Eki application, containing the passenger, driver, and admin portals.
+Next.js 16 App Router static-export PWA with public landing and authenticated passenger, driver, admin and feedback workspaces. Firebase Auth supplies identity; RTDB `onValue` pushes live buses; Firestore `onSnapshot`/queries provide configuration, sessions, messages, settings and feedback. REST mutations use native `fetch` with Firebase bearer tokens.
 
-## Prerequisites
-- Node.js ≥ 20.x
-- Firebase Authentication and Firestore configured.
-- Two Google Maps API keys (Browser and Server).
+## Run
 
-## Environment Variables
-Create a `.env.local` file in this directory based on the following template:
-
-```env
-# Firebase public config (safe to expose)
-NEXT_PUBLIC_FIREBASE_API_KEY=...
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
-NEXT_PUBLIC_FIREBASE_APP_ID=...
-NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY=...
-
-# Google Maps — BROWSER key (restrict to your domain)
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_browser_key_here
-
-# Backend URLs
-NEXT_PUBLIC_BACKEND_URL=http://localhost:4000
-```
-
-For professor phones, use the frontend/backend HTTPS-tunnel procedure in the
-[live demo runbook](../docs/LIVE_DEMO_RUNBOOK.md). When App Check enforcement
-is enabled for a local demo, register a temporary debug token and set
-`NEXT_PUBLIC_FIREBASE_APPCHECK_DEBUG_TOKEN`; never set it in production.
-
-## Running the Application
-```bash
-# Install dependencies (run from root or here)
+```powershell
 npm install
-
-# Start development server on port 3000, reachable on the laptop LAN
-npm run dev
-
-# Build for production
-npm run build
+Copy-Item frontend/env.production.example frontend/.env.local
+npm run dev --workspace=frontend
 ```
 
-## Architecture Notes
-- All rendering is client-heavy due to mapping requirements (`@vis.gl/react-google-maps`).
-- Role-based routing is managed by `RoleGuard`, preventing unauthorized access to the `/admin` and `/driver` portals.
-- **Typography & UI**: The application is globally styled using the `Sora` font via `next/font/google` and utilizes semantic `lucide-react` iconography across all panels.
+The template lists every production-required public variable including RTDB URL, Maps API key/map ID, reCAPTCHA Enterprise App Check key and HTTPS backend. Browser Firebase/Maps values are public identifiers and must be restricted in their consoles. App Check debug tokens are local-only secrets and must never be production/committed.
+
+```powershell
+npm run lint --workspace=frontend
+npm run test --workspace=frontend
+npm run build --workspace=frontend
+```
+
+The root `npm run build` follows Next export with Workbox manifest injection and CSP hash regeneration. `npm run build:production` enables strict required-variable and non-local HTTPS validation.
+
+## Runtime design
+
+- `RoleGuard` improves presentation/routing only; Firestore/RTDB rules and backend middleware are the authorization boundary.
+- `liveBusStore` maintains one shared RTDB subscription and prunes stale non-active entries. Firestore collection/settings hooks also share/auth-gate listeners.
+- Google Maps provider loads once per protected workspace. Stored polylines and local distance/speed math avoid passenger runtime Routes calls.
+- Only the active admin tab is mounted, preventing hidden maps/listeners/timers.
+- Service worker precaches the revisioned static app, may cache explicit public maps/fonts/images, and never caches authenticated Firebase/API or unknown requests.
+- Dialogs trap/restore focus and support Escape; selects are native; map smoothing respects reduced motion; private routes are no-index.
+
+See [LLD](../docs/design/LOW_LEVEL_DESIGN.md), [Firebase model](../docs/data/FIREBASE_DATA_MODEL.md), and [test strategy](../docs/testing/TEST_STRATEGY.md).

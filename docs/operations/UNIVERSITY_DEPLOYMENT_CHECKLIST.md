@@ -21,6 +21,9 @@ local professor demonstration.
   privacy deletion depend on those indexes.
 - [ ] Ensure exactly one healthy worker lease owner processes lifecycle,
   stale-state, and retention jobs.
+- [ ] Alert on `/health` readiness, rejected telemetry, credential-cache rate,
+  device-to-server/processing/RTDB-write p95/p99, watchdog reset reports and
+  worker lease churn. Define targets from a real route load test.
 
 ## Identity and device provisioning
 
@@ -42,7 +45,11 @@ local professor demonstration.
 - [ ] Obtain privacy/legal approval for location purpose, notice, access,
   retention, deletion, incident response, and completed-trip reporting.
 - [ ] Verify Firestore/RTDB rules in emulators and production; `devices`,
-  `active_rides`, and telemetry writes must remain server-only.
+  `active_rides`, `_active_bus_locks`, internal worker/privacy collections, and
+  telemetry writes must remain server-only.
+- [ ] Verify the deployed service worker contains no authenticated/default
+  runtime cache and that account switching on a shared device cannot replay
+  the prior account's data.
 - [ ] Monitor rejected device authentication, rate limits, stale devices,
   worker lease loss, backend errors, Firebase usage, and Maps cost.
 - [ ] Use fused automotive power conversion, safe antenna placement, protected
@@ -60,6 +67,9 @@ University acceptance is complete only after an authorized team observes:
 - [ ] Stop 1 alone activates a pre-armed ride.
 - [ ] Stops advance strictly in configured order; downstream visits cannot
   skip an expected stop.
+- [ ] Parallel start requests on two routes for one bus produce exactly one
+  active session/lock; delayed completion from an old session cannot affect a
+  newly armed ride.
 - [ ] ESP power loss, network loss, GNSS loss, browser refresh, and backend
   restart preserve the active session and recover its stop index.
 - [ ] With browser throttling set to Slow 3G (about 400 ms RTT) and then
@@ -83,3 +93,5 @@ measured latency, failures, evidence links, accepted risks, and signatures.
 - [ ] Non-secret bus/route/device inventory and wiring diagram.
 - [ ] Open-risk list. Never request committed `.env`, `secrets.h`, service
   account JSON, private keys, device secrets, or App Check debug tokens.
+- [ ] HLD, LLD, exhaustive Firebase dictionary, hardware latency analysis,
+  API reference and test/failure matrix from the documentation index.

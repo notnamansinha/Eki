@@ -10,7 +10,7 @@
  *                  hero images. Served cache-first with revision hashing.
  *   2. StaleWhileRevalidate – Google Fonts CSS/woff2 (if ever added).
  *   3. CacheFirst – Google Maps tiles, Firebase SDK CDN scripts.
- *   4. NetworkFirst – Firebase Auth and RTDB REST API calls.
+ *   4. NetworkOnly – authenticated Firebase/API responses.
  *   5. NetworkOnly – reCAPTCHA, analytics, non-cacheable third-party.
  *
  * Navigation requests are served from the precache (offline-capable) with
@@ -26,6 +26,7 @@ import {
 } from "workbox-routing";
 import {
   CacheFirst,
+  NetworkOnly,
   NetworkFirst,
   StaleWhileRevalidate,
 } from "workbox-strategies";
@@ -130,28 +131,22 @@ registerRoute(
   })
 );
 
-// ─── Runtime caching: Firebase REST APIs (RTDB and Auth only) ──────────────
-// Exact Google API origins keep Firestore and unrelated Google APIs out of
-// this cache. Live bus updates use RTDB WebSockets and cannot be cached here.
+// ─── Firebase REST APIs (RTDB and Auth only) ───────────────────────────────
+// Never cache account-scoped responses: a URL cache key does not represent
+// the currently signed-in user. Live RTDB WebSockets also bypass HTTP caches.
 registerRoute(
   ({ url }) =>
     url.hostname.endsWith(".firebaseio.com") ||
     url.hostname.endsWith(".firebasedatabase.app") ||
     url.origin === "https://identitytoolkit.googleapis.com" ||
     url.origin === "https://securetoken.googleapis.com",
-  new NetworkFirst({
-    cacheName: "eki-firebase-api",
-    networkTimeoutSeconds: 5,
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
-      new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 60 }),
-    ],
-  })
+  new NetworkOnly()
 );
 
-// ─── Runtime caching: Static images (user avatars, etc.) ────────────────────
+// ─── Runtime caching: Same-origin static images ─────────────────────────────
 registerRoute(
-  ({ request }) => request.destination === "image",
+  ({ request, url }) =>
+    request.destination === "image" && url.origin === self.location.origin,
   new CacheFirst({
     cacheName: "eki-images",
     plugins: [
@@ -162,17 +157,8 @@ registerRoute(
 );
 
 // ─── Default handler ────────────────────────────────────────────────────────
-// Anything not matched above gets a network-first attempt with graceful
-// fallback to cache. This is the safety net.
-setDefaultHandler(
-  new NetworkFirst({
-    cacheName: "eki-default",
-    networkTimeoutSeconds: 3,
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
-    ],
-  })
-);
+// Unknown requests, including backend APIs, always use the network.
+setDefaultHandler(new NetworkOnly());
 
 // ─── Message handling ───────────────────────────────────────────────────────
 // Allow the app to tell the SW to skip waiting (for update prompts).

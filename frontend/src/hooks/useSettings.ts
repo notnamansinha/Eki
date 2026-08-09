@@ -12,6 +12,7 @@ import { useState, useEffect } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebaseFirestore";
 import { auth } from "@/lib/firebaseAuth";
+import { waitForAuth } from "@/lib/authState";
 
 export interface GlobalSettings {
   serviceStartTime: string;
@@ -34,47 +35,58 @@ let _settings: GlobalSettings = DEFAULT_SETTINGS;
 let _loading = true;
 let _listenerCount = 0;
 let _unsubscribe: (() => void) | null = null;
+let _starting = false;
+let _generation = 0;
 const _listeners = new Set<() => void>();
 
 function notifyAll() {
   _listeners.forEach(fn => fn());
 }
 
-function ensureListener() {
+async function ensureListener() {
   if (_timeoutId) clearTimeout(_timeoutId);
-  if (_unsubscribe) return;
-  _unsubscribe = onSnapshot(
-    doc(db, "settings", "global"),
-    (snap) => {
-      _settings = snap.exists()
-        ? { ...DEFAULT_SETTINGS, ...(snap.data() as Partial<GlobalSettings>) }
-        : DEFAULT_SETTINGS;
-      _loading = false;
-      notifyAll();
-    },
-    (err: unknown) => {
-      const error = err as { code?: unknown; message?: unknown };
-      const code = typeof error.code === "string" ? error.code : "unknown";
-      if (code !== "permission-denied") {
-        console.warn("[Settings] Firestore read failed:", error.message);
-      }
-      _loading = false;
-      _unsubscribe = null;
-      notifyAll();
-      // Most optimized for mobile: Do not retry instantly. 
-      // Do not retry at all on fatal permission errors to prevent battery-draining infinite loops.
-      if (_listenerCount > 0 && code !== 'permission-denied') {
-        if (_timeoutId) clearTimeout(_timeoutId);
-        _timeoutId = setTimeout(ensureListener, 5000);
-      }
-    }
-  );
+  _timeoutId = undefined;
+  if (_unsubscribe || _starting || _listenerCount === 0) return;
+  _starting = true;
+  const generation = _generation;
+  try {
+    await waitForAuth();
+    if (generation !== _generation || _listenerCount === 0 || _unsubscribe) return;
+    _unsubscribe = onSnapshot(
+      doc(db, "settings", "global"),
+      (snap) => {
+        _settings = snap.exists()
+          ? { ...DEFAULT_SETTINGS, ...(snap.data() as Partial<GlobalSettings>) }
+          : DEFAULT_SETTINGS;
+        _loading = false;
+        notifyAll();
+      },
+      (err: unknown) => {
+        const error = err as { code?: unknown; message?: unknown };
+        const code = typeof error.code === "string" ? error.code : "unknown";
+        if (code !== "permission-denied") {
+          console.warn("[Settings] Firestore read failed:", error.message);
+        }
+        _loading = false;
+        _unsubscribe = null;
+        notifyAll();
+        if (_listenerCount > 0 && code !== "permission-denied") {
+          if (_timeoutId) clearTimeout(_timeoutId);
+          _timeoutId = setTimeout(() => void ensureListener(), 5000);
+        }
+      },
+    );
+  } finally {
+    if (generation === _generation) _starting = false;
+  }
 }
 
 let _timeoutId: NodeJS.Timeout | undefined;
 
 /** Prevent a previous account's cached settings from surviving sign-out. */
 export function clearSettingsCache(): void {
+  _generation += 1;
+  _starting = false;
   if (_timeoutId) clearTimeout(_timeoutId);
   _timeoutId = undefined;
   _unsubscribe?.();
@@ -82,6 +94,7 @@ export function clearSettingsCache(): void {
   _settings = DEFAULT_SETTINGS;
   _loading = true;
   notifyAll();
+  void ensureListener();
 }
 
 function releaseListener() {
@@ -105,7 +118,7 @@ export function useSettings(): {
 
   useEffect(() => {
     _listenerCount++;
-    ensureListener();
+    void ensureListener();
     const trigger = () => forceRender(n => n + 1);
     _listeners.add(trigger);
 
@@ -121,6 +134,7 @@ export function useSettings(): {
     // from the client; PUT /api/settings validates and persists them.
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
     if (!backendUrl) throw new Error("Settings service is not configured.");
+    await waitForAuth();
     const token = await auth.currentUser?.getIdToken();
     if (!token) throw new Error("Authentication required.");
     const response = await fetch(`${backendUrl}/api/settings`, {

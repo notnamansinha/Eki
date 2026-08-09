@@ -76,6 +76,7 @@ describe("production security configuration", () => {
     const rules = workspaceFile("firestore.rules");
     const devices = ruleBlock(rules, "match /devices/{deviceId}");
     const activeRides = ruleBlock(rules, "match /active_rides/{rideId}");
+    const activeBusLocks = ruleBlock(rules, "match /_active_bus_locks/{busId}");
     const messages = ruleBlock(rules, "match /messages/{messageId}");
     const messageRateLimits = ruleBlock(rules, "match /messageRateLimits/{uid}");
     const sessions = ruleBlock(rules, "match /ride_sessions/{sessionId}");
@@ -83,6 +84,7 @@ describe("production security configuration", () => {
 
     expect(devices).toContain("allow read, write: if false;");
     expect(activeRides).toContain("allow read, write: if false;");
+    expect(activeBusLocks).toContain("allow read, write: if false;");
     // Message and rate-limit writes are backend-authoritative; clients read only.
     expect(messages).toContain("allow create, update, delete: if false;");
     expect(messages).toContain("isSessionPassenger(sessionId)");
@@ -93,10 +95,10 @@ describe("production security configuration", () => {
     expect(sessions).toContain("allow read: if isSessionOperator(sessionId)");
     expect(sessions).toContain("allow update: if false;");
     expect(sessions).not.toContain("boardingStopId.size() <= 128");
-    // Manifest shape validation now lives in the server-issued join endpoint.
+    // Manifest shape and route-order validation now live in the server join policy.
     const sessionsRoute = workspaceFile("backend/src/routes/sessions.ts");
-    expect(sessionsRoute).toContain("boardingStopId.length <= 128");
-    expect(sessionsRoute).toContain("alightingStopId.length <= 128");
+    expect(sessionsRoute).toContain("validateStopSelection(");
+    expect(sessionsRoute).not.toContain("req.body?.userName");
     expect(sessionsRoute).toContain('router.post("/:sessionId/messages", requireAuth');
     expect(sessionsRoute).toContain("evaluateChatRate");
     expect(sessionsRoute).toContain("censorText");
@@ -124,8 +126,8 @@ describe("production security configuration", () => {
     expect(passengerPage).toContain("isPostRideFeedbackEligible(");
     expect(passengerPage).toContain("key={activeSessionId}");
     expect(passengerPage).toContain("sessionId={feedbackSessionId}");
-    expect(boardingView).toContain("onStopSelected?.(");
-    expect(boardingView).toContain("hasSelectedRideStop(boardingStopId, nextAlightingStopId)");
+    expect(boardingView).toContain("onStopSelected?.(true)");
+    expect(boardingView).not.toContain("hasSelectedRideStop(");
   });
 
   it("requires sign-in for live application data and route APIs", () => {
@@ -266,14 +268,15 @@ describe("production security configuration", () => {
 
   it("keeps the parked GNSS heartbeat safely inside stale-record expiry", () => {
     const firmware = workspaceFile("hardware/src/main.cpp");
+    const telemetryPolicy = workspaceFile("hardware/include/telemetry_policy.h");
     const tripStateEngine = workspaceFile("backend/src/services/tripStateEngine.ts");
 
-    expect(firmware).toContain("STOPPED_HEARTBEAT_MS = 60000");
-    expect(firmware).toContain("motionStateChanged");
+    expect(telemetryPolicy).toContain("STOPPED_HEARTBEAT_MS = 60000");
+    expect(telemetryPolicy).toContain("motionStateChanged");
     expect(tripStateEngine).toContain("const STALE_BUS_MS = readIntervalMs");
     expect(firmware).toContain("bufferedFix");
-    expect(firmware).toContain("HTTPS_RETRY_BASE_MS");
-    expect(firmware).toContain("HTTPS_RETRY_MAX_MS");
+    expect(telemetryPolicy).toContain("HTTPS_RETRY_BASE_MS");
+    expect(telemetryPolicy).toContain("HTTPS_RETRY_MAX_MS");
     expect(firmware).toContain("httpsRetryIsPending()");
     expect(firmware).toContain("resetHttpsRetry()");
     expect(firmware).toContain("setRxBufferSize(GPS_RX_BUFFER_BYTES)");
@@ -311,13 +314,17 @@ describe("production security configuration", () => {
     expect(requests).toContain("request.resource.data.busId == resource.data.busId");
   });
 
-  it("gates passenger manifest self-join behind a server-issued proximity join", () => {
+  it("gates passenger manifest self-join behind driver-issued proof and proximity", () => {
     const rules = workspaceFile("firestore.rules");
     const sessions = ruleBlock(rules, "match /ride_sessions/{sessionId}");
     const boarding = workspaceFile(
       "frontend/src/components/passenger/PassengerBoardingView.tsx",
     );
     const sessionsRoute = workspaceFile("backend/src/routes/sessions.ts");
+    const boardingPolicy = workspaceFile("backend/src/services/boardingPolicy.ts");
+    const driverPage = workspaceFile("frontend/src/app/driver/page.tsx");
+    const cspBuild = workspaceFile("scripts/update-csp.mjs");
+    const cspBackendOrigin = workspaceFile("scripts/csp-backend-origin.mjs");
     const server = workspaceFile("backend/src/server.ts");
 
     // Clients can never write ride_sessions; the manifest is backend-authoritative.
@@ -327,12 +334,26 @@ describe("production security configuration", () => {
     // Boarding is issued by the backend join endpoint.
     expect(server).toContain('app.use("/api/sessions"');
     expect(sessionsRoute).toContain('router.post("/:sessionId/join", requireAuth');
-    expect(sessionsRoute).toContain('haversineMeters');
+    expect(sessionsRoute).toContain('router.post("/:sessionId/boarding-code", requireAuth');
+    expect(sessionsRoute).toContain("user?.role !== \"driver\"");
+    expect(sessionsRoute).toContain("boardingCodesMatch");
+    expect(sessionsRoute).toContain("validateLiveBoardingProjection");
+    expect(sessionsRoute).toContain("db.runTransaction");
+    expect(sessionsRoute).toContain('new FieldPath("passengers", user.uid)');
+    expect(sessionsRoute).toContain("!requiresProximity && !passengerStillExists");
+    expect(boardingPolicy).toContain("timingSafeEqual");
+    expect(boardingPolicy).toContain("timestamp > now + MAX_JOIN_FIX_FUTURE_MS");
     expect(sessionsRoute).toContain("JOIN_RADIUS_M");
     expect(sessionsRoute).toContain("You must be near the bus to board");
     // The client asks the backend to board; it never writes the manifest.
     expect(boarding).toContain('/api/sessions/');
-    expect(boarding).toContain('join');
+    expect(boarding).toContain('Authorization: `Bearer ${token}`');
+    expect(boarding).toContain("position.coords.accuracy");
+    expect(boarding).toContain("updatingExistingPassenger ? Promise.resolve(null)");
+    expect(driverPage).toContain("/boarding-code");
+    expect(cspBuild).toContain("backendOrigin");
+    expect(cspBackendOrigin).toContain('new Set(["http:", "https:"])');
+    expect(cspBackendOrigin).toContain("!HTTP_PROTOCOLS.has(backendUrl.protocol)");
     expect(boarding).not.toContain('updateDoc');
     expect(boarding).not.toContain('setDoc');
   });
@@ -395,9 +416,9 @@ describe("production security configuration", () => {
     expect(engine).not.toContain('.doc(data.sessionId).update({');
     expect(engine).toContain("live.sessionId !== data.sessionId");
     expect(engine).not.toContain("snapshot.ref.update({ status: \"offline\" })");
-    expect(completionBlock.indexOf("await batch.commit()")).toBeGreaterThan(-1);
-    expect(completionBlock.indexOf("await snapshot.ref.update({")).toBeGreaterThan(
-      completionBlock.indexOf("await batch.commit()"),
+    expect(completionBlock.indexOf("await db.runTransaction")).toBeGreaterThan(-1);
+    expect(completionBlock.indexOf("await snapshot.ref.transaction")).toBeGreaterThan(
+      completionBlock.indexOf("await db.runTransaction"),
     );
     const telemetry = workspaceFile(
       "backend/src/services/deviceTelemetryService.ts",
@@ -405,6 +426,39 @@ describe("production security configuration", () => {
     expect(telemetry).toContain("durableRideRestores");
     expect(telemetry).toContain("scheduleDurableRideRestore(assignment, sample)");
     expect(telemetry).not.toContain("await restoreDurableRide(assignment, sample)");
+  });
+
+  it("serializes one active session per bus and makes completion session-safe", () => {
+    const shifts = workspaceFile("backend/src/routes/shifts.ts");
+    const engine = workspaceFile("backend/src/services/tripStateEngine.ts");
+    const reconciler = workspaceFile(
+      "backend/src/services/abandonedRideReconciler.ts",
+    );
+
+    expect(shifts).toContain('collection("_active_bus_locks").doc(busId)');
+    expect(shifts).toContain("transaction.create(lockRef");
+    expect(shifts).toContain("lockData?.driverId !== assignment.driverId");
+    expect(shifts).toContain("winner.sessionId === sessionRef.id");
+    expect(engine).toContain('collection("_active_bus_locks").doc(data.busId)');
+    expect(engine).toContain("data.sessionId.length > 0");
+    expect(engine).toContain("lock.data()?.sessionId === data.sessionId");
+    expect(engine).toContain("live.sessionId !== data.sessionId");
+    expect(reconciler).toContain("currentBusLock.data()?.sessionId === sessionId");
+  });
+
+  it("never runtime-caches authenticated API data and fails closed production config", () => {
+    const serviceWorker = workspaceFile("frontend/src/sw.js");
+    const nextConfig = workspaceFile("frontend/next.config.ts");
+    const productionBuild = workspaceFile("scripts/build-production.mjs");
+
+    expect(serviceWorker).toContain("new NetworkOnly()");
+    expect(serviceWorker).toContain("setDefaultHandler(new NetworkOnly())");
+    expect(serviceWorker).not.toContain('cacheName: "eki-firebase-api"');
+    expect(serviceWorker).not.toContain('cacheName: "eki-default"');
+    expect(productionBuild).toContain('EKI_STRICT_PRODUCTION_BUILD = "true"');
+    expect(nextConfig).toContain('process.env.EKI_STRICT_PRODUCTION_BUILD === "true"');
+    expect(nextConfig).toContain('"NEXT_PUBLIC_BACKEND_URL"');
+    expect(nextConfig).toContain("must be a non-local HTTPS URL");
   });
 
   it("revokes fleet assignments through an admin backend boundary", () => {

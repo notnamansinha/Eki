@@ -33,9 +33,9 @@ service cloud.firestore {
         session.data.passengers[request.auth.uid].userId == request.auth.uid;
     }
 
-    // SEC: Boarding is server-issued (POST /api/sessions/:sessionId/join)
-    // after a proximity check against the hardware GNSS fix, so a passenger
-    // cannot inject themselves into a session they are not physically on.
+    // SEC: Boarding is server-issued (POST /api/sessions/:sessionId/join).
+    // The passenger must present the assigned driver's non-public session code;
+    // fresh hardware/browser proximity is an additional defense-in-depth check.
     // Chat rate limiting and feedback cooldowns are enforced server-side in
     // the matching Express endpoints; the rules simply deny client writes.
 
@@ -109,10 +109,9 @@ service cloud.firestore {
       allow read: if isSessionOperator(sessionId);
       // Session lifecycle, stop history AND passenger manifests are all
       // backend-authoritative. Clients cannot write here at all: boarding is
-      // issued by the backend only after a proximity check against the
-      // hardware GNSS fix (POST /api/sessions/:sessionId/join). This closes
-      // the self-join gap where any signed-in user could inject themselves
-      // into any active session via its public RTDB sessionId.
+      // issued by the backend only after a driver-visible session code and
+      // fresh proximity checks (POST /api/sessions/:sessionId/join). This
+      // closes the self-join gap where a public RTDB sessionId was sufficient.
       allow create: if false;
       allow update: if false;
       allow delete: if false;
@@ -183,6 +182,24 @@ service cloud.firestore {
     // Canonical active-ride recovery records are backend-only. Clients receive
     // their public projection from Realtime Database.
     match /active_rides/{rideId} {
+      allow read, write: if false;
+    }
+
+    // Internal coordination/maintenance documents are Admin-SDK-only. These
+    // explicit denials supplement Firestore's default deny for audit clarity.
+    match /_active_bus_locks/{busId} {
+      allow read, write: if false;
+    }
+    match /_worker_leases/{leaseId} {
+      allow read, write: if false;
+    }
+    match /_privacy_deletion_requests/{uid} {
+      allow read, write: if false;
+    }
+    match /_fleet_operations/{operationId} {
+      allow read, write: if false;
+    }
+    match /_health/{documentId} {
       allow read, write: if false;
     }
 
