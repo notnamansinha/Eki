@@ -103,7 +103,10 @@ function FeedbackCard({
       }`}
     >
       {/* Card Header */}
-      <div
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={`feedback-details-${entry.id}`}
         className="p-4 flex items-start gap-4 cursor-pointer select-none"
         onClick={() => setExpanded((o) => !o)}
       >
@@ -170,11 +173,11 @@ function FeedbackCard({
         <div className="text-white/20 group-hover:text-white/50 transition-colors shrink-0 mt-1">
           {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </div>
-      </div>
+      </button>
 
       {/* Expanded body */}
       {expanded && (
-        <div className="px-4 pb-4 border-t border-white/5 pt-4 flex flex-col gap-4 animate-slide-up">
+        <div id={`feedback-details-${entry.id}`} className="px-4 pb-4 border-t border-white/5 pt-4 flex flex-col gap-4 animate-slide-up">
           {/* Comment */}
           {entry.comment ? (
             <div className="bg-black/20 rounded-xl p-4 border border-white/5">

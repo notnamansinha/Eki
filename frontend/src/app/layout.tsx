@@ -6,7 +6,10 @@ import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 
 
 export const metadata: Metadata = {
-  title: "Eki – Live Transit Tracking",
+  title: {
+    default: "Eki – Live Transit Tracking",
+    template: "%s | Eki",
+  },
   description:
     "Real-time bus tracking for Ahmedabad. Live GPS, speed-aware ETAs, and driver-rider communication.",
   keywords: ["Ahmedabad", "bus tracking", "live GPS", "BRTS", "transit", "Eki"],
@@ -19,8 +22,12 @@ export const metadata: Metadata = {
     title: "Eki Live Transit Tracking",
     description: "Real-time bus tracking for Ahmedabad.",
     siteName: "Eki Transit",
+    images: [{ url: "/images/hero-background.webp", alt: "Eki live transit tracking" }],
   },
-  twitter: { card: "summary" },
+  twitter: {
+    card: "summary_large_image",
+    images: ["/images/hero-background.webp"],
+  },
 };
 
 export default function RootLayout({

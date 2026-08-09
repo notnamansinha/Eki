@@ -230,6 +230,7 @@ export default function RideHistoryPanel() {
                 className="flex w-full cursor-pointer flex-col justify-between gap-4 p-4 text-left hover:bg-white/5 sm:flex-row sm:items-center"
                 onClick={() => setExpandedId(expandedId === session.id ? null : session.id)}
                 aria-expanded={expandedId === session.id}
+                aria-controls={`ride-history-details-${session.id}`}
               >
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
@@ -281,7 +282,7 @@ export default function RideHistoryPanel() {
               </button>
 
               {expandedId === session.id && (
-                <div className="border-t border-white/10 bg-black/20 px-4 pt-4 pb-4">
+                <div id={`ride-history-details-${session.id}`} className="border-t border-white/10 bg-black/20 px-4 pt-4 pb-4">
                   <h4 className="mb-3 text-xs font-semibold uppercase text-white/50">
                     Passenger Manifest
                   </h4>

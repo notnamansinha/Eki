@@ -253,13 +253,14 @@ router.delete("/buses/:id", async (req: Request, res: Response) => {
     return;
   }
   try {
-    const [drivers, activeSnapshot, activeRides, devices] = await Promise.all([
+    const [drivers, activeSnapshot, activeRides, activeBusLock, devices] = await Promise.all([
       db.collection("drivers").where("assignedBusId", "==", id).limit(250).get(),
       rtdb.ref("activeBuses").once("value"),
       db.collection("active_rides").where("busId", "==", id).limit(1).get(),
+      db.collection("_active_bus_locks").doc(id).get(),
       db.collection("devices").where("busId", "==", id).limit(1).get(),
     ]);
-    if (!activeRides.empty) {
+    if (!activeRides.empty || activeBusLock.exists) {
       res.status(409).json({
         error: "A vehicle with an active ride cannot be deleted before its final stop.",
       });

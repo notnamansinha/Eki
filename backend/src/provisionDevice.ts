@@ -20,44 +20,80 @@ async function provision(): Promise<void> {
   const busId = argument("bus-id");
   const routeId = argument("route-id");
   const deviceRef = db.collection("devices").doc(deviceId);
-  const [busDoc, routeDoc, existingDevice] = await Promise.all([
-    db.collection("buses").doc(busId).get(),
-    db.collection("routes").doc(routeId).get(),
-    deviceRef.get(),
-  ]);
-  const bus = busDoc.data();
-  const assignedRoutes = Array.isArray(bus?.assignedRoutes)
-    ? bus.assignedRoutes
-    : typeof bus?.assignedRouteId === "string"
-      ? [bus.assignedRouteId]
-      : [];
-  if (!busDoc.exists || !routeDoc.exists || !assignedRoutes.includes(routeId)) {
+  const plainSecret = randomBytes(32).toString("base64url");
+  const secretHash = await hashDeviceSecret(plainSecret);
+  const result = await db.runTransaction(async (transaction) => {
+    const busRef = db.collection("buses").doc(busId);
+    const routeRef = db.collection("routes").doc(routeId);
+    const targetRideRef = db.collection("active_rides").doc(`${busId}_${routeId}`);
+    const targetLockRef = db.collection("_active_bus_locks").doc(busId);
+    const targetDevices = db.collection("devices")
+      .where("busId", "==", busId)
+      .where("routeId", "==", routeId);
+    const [busDoc, routeDoc, existingDevice, targetRide, targetLock, matchingDevices] =
+      await Promise.all([
+        transaction.get(busRef),
+        transaction.get(routeRef),
+        transaction.get(deviceRef),
+        transaction.get(targetRideRef),
+        transaction.get(targetLockRef),
+        transaction.get(targetDevices),
+      ]);
+    const bus = busDoc.data();
+    const assignedRoutes = Array.isArray(bus?.assignedRoutes)
+      ? bus.assignedRoutes
+      : typeof bus?.assignedRouteId === "string"
+        ? [bus.assignedRouteId]
+        : [];
+    if (!busDoc.exists || !routeDoc.exists || !assignedRoutes.includes(routeId)) {
+      return "invalid_assignment" as const;
+    }
+    if (
+      targetRide.exists ||
+      targetLock.exists ||
+      matchingDevices.docs.some((doc) => doc.id !== deviceId)
+    ) {
+      return "target_conflict" as const;
+    }
+
+    const previous = existingDevice.data();
+    if (
+      existingDevice.exists &&
+      typeof previous?.busId === "string" &&
+      typeof previous?.routeId === "string"
+    ) {
+      const [previousRide, previousLock] = await Promise.all([
+        transaction.get(
+          db.collection("active_rides").doc(`${previous.busId}_${previous.routeId}`),
+        ),
+        transaction.get(db.collection("_active_bus_locks").doc(previous.busId)),
+      ]);
+      if (previousRide.exists || previousLock.exists) {
+        return "active_previous_ride" as const;
+      }
+    }
+
+    transaction.set(deviceRef, {
+      deviceId,
+      busId,
+      routeId,
+      enabled: true,
+      secretHash,
+      secret: FieldValue.delete(),
+      credentialRotatedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return "saved" as const;
+  });
+  if (result === "invalid_assignment") {
     throw new Error("The device must use an existing route assigned to the bus.");
   }
-  const previous = existingDevice.data();
-  if (
-    typeof previous?.busId === "string" &&
-    typeof previous?.routeId === "string"
-  ) {
-    const activeRide = await db.collection("active_rides")
-      .doc(`${previous.busId}_${previous.routeId}`)
-      .get();
-    if (activeRide.exists) {
-      throw new Error("Do not rotate or reassign a device during an active ride.");
-    }
+  if (result === "target_conflict") {
+    throw new Error("The bus route already has an active ride or another device.");
   }
-
-  const plainSecret = randomBytes(32).toString("base64url");
-  await deviceRef.set({
-    deviceId,
-    busId,
-    routeId,
-    enabled: true,
-    secretHash: await hashDeviceSecret(plainSecret),
-    secret: FieldValue.delete(),
-    credentialRotatedAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
+  if (result === "active_previous_ride") {
+    throw new Error("Do not rotate or reassign a device during an active ride.");
+  }
 
   console.log("Device provisioned. Copy this secret now; it is not stored in plaintext:");
   console.log(plainSecret);

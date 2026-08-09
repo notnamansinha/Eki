@@ -431,49 +431,64 @@ export function startTripStateEngine(): () => Promise<void> {
           : nodeKey;
       const activeRideId = activeRideDocumentId(data);
       const completedRef = db.collection("completed_trips").doc(completionId);
-      const batch = db.batch();
-      batch.set(completedRef, {
-        busId: data.busId,
-        driverId: data.driverId || "unknown",
-        routeId: data.routeId,
-        completedAt: completionTimestamp,
-        stopCount: stops.length,
-        stopNames: stops.map(s => s.name),
-        sessionId: typeof data.sessionId === "string" ? data.sessionId : null,
-      }, { merge: true });
-      if (typeof data.sessionId === "string") {
-        const finalStop = stops[currentStopIndex];
-        batch.set(db.collection("ride_sessions").doc(data.sessionId), {
-          status: "completed",
-          endTime: Date.now(),
-          ...(finalStop
-            ? {
-                stopsReached: {
-                  [currentStopIndex]: {
-                    stopIndex: currentStopIndex,
-                    stopId: finalStop.id,
-                    stopName: finalStop.name,
-                    timestamp: FieldValue.serverTimestamp(),
-                  },
-                },
-              }
-            : {}),
-          updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
-      }
-      if (activeRideId) {
-        batch.delete(db.collection("active_rides").doc(activeRideId));
-      }
       try {
-        await batch.commit();
+        await db.runTransaction(async (transaction) => {
+          const activeRideRef = activeRideId
+            ? db.collection("active_rides").doc(activeRideId)
+            : null;
+          const lockRef = db.collection("_active_bus_locks").doc(data.busId);
+          const [activeRide, lock] = await Promise.all([
+            activeRideRef ? transaction.get(activeRideRef) : Promise.resolve(null),
+            transaction.get(lockRef),
+          ]);
+          transaction.set(completedRef, {
+            busId: data.busId,
+            driverId: data.driverId || "unknown",
+            routeId: data.routeId,
+            completedAt: completionTimestamp,
+            stopCount: stops.length,
+            stopNames: stops.map(s => s.name),
+            sessionId: typeof data.sessionId === "string" ? data.sessionId : null,
+          }, { merge: true });
+          if (typeof data.sessionId === "string") {
+            const finalStop = stops[currentStopIndex];
+            transaction.set(db.collection("ride_sessions").doc(data.sessionId), {
+              status: "completed",
+              endTime: Date.now(),
+              ...(finalStop
+                ? {
+                    stopsReached: {
+                      [currentStopIndex]: {
+                        stopIndex: currentStopIndex,
+                        stopId: finalStop.id,
+                        stopName: finalStop.name,
+                        timestamp: FieldValue.serverTimestamp(),
+                      },
+                    },
+                  }
+                : {}),
+              updatedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+          }
+          if (activeRideRef && activeRide?.data()?.sessionId === data.sessionId) {
+            transaction.delete(activeRideRef);
+          }
+          if (
+            typeof data.sessionId === "string" &&
+            data.sessionId.length > 0 &&
+            lock.data()?.sessionId === data.sessionId
+          ) {
+            transaction.delete(lockRef);
+          }
+        });
         if (activeRideId) {
           persistedActiveRideState.delete(activeRideId);
           activeRideWriteQueues.delete(activeRideId);
         }
-        await snapshot.ref.update({
-          tripState,
-          currentStopIndex,
-          hasDepartedOrigin,
+        await snapshot.ref.transaction((current) => {
+          const live = current as Record<string, unknown> | null;
+          if (!live || live.sessionId !== data.sessionId) return;
+          return { ...live, tripState, currentStopIndex, hasDepartedOrigin };
         });
       } catch (error) {
         console.warn(

@@ -10,8 +10,8 @@ const isSafeId = (value: unknown): value is string =>
 import {
   decodePolyline,
   encodePolyline,
-  closestPolylineIndex,
 } from "../lib/polylineUtils";
+import { buildRouteSegment } from "../lib/routeSegment";
 
 interface Stop {
   id: string;
@@ -132,73 +132,17 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    // ── Decode the pre-stored full route polyline (no API call) ─────────────
-    // Find closest polyline indices for each stop
-    const startIdx = closestPolylineIndex(fullCoords, { lat: startStop.lat, lng: startStop.lng });
-    const endIdx   = closestPolylineIndex(fullCoords, { lat: endStop.lat,   lng: endStop.lng });
-
-    if (startIdx === endIdx) {
-      res.status(400).json({ error: "Start and end stops are too close together on the polyline." });
+    let segment;
+    try {
+      segment = buildRouteSegment(fullCoords, stops, startStop, endStop, viaStop);
+    } catch (error) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : "Invalid route segment.",
+      });
       return;
     }
-
-    // Ensure we always slice forward (A before B)
-    const [loIdx, hiIdx] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
-    const isReversed = startIdx > endIdx;
-
-    let segmentCoords: { lat: number; lng: number }[];
-    let stopsOnSegment: Stop[];
-
-    if (viaStop) {
-      // A → via → B: compute two slices and concatenate
-      const viaIdx = closestPolylineIndex(fullCoords, { lat: viaStop.lat, lng: viaStop.lng });
-
-      // Clamp via within start-end range
-      const clampedVia = Math.max(loIdx, Math.min(hiIdx, viaIdx));
-
-      if (isReversed) {
-        // Route goes end→via→start in natural order, reverse the whole thing
-        segmentCoords = [
-          ...fullCoords.slice(clampedVia, endIdx + 1),
-          ...fullCoords.slice(startIdx, clampedVia + 1).reverse(),
-        ].reverse();
-      } else {
-        segmentCoords = [
-          ...fullCoords.slice(startIdx, clampedVia + 1),
-          ...fullCoords.slice(clampedVia, endIdx + 1),
-        ];
-      }
-
-      // Stops on segment with via (ordered: start → via → stop before via → end)
-      stopsOnSegment = stops.filter((s) => {
-        const idx = closestPolylineIndex(fullCoords, { lat: s.lat, lng: s.lng });
-        return idx >= loIdx && idx <= hiIdx;
-      });
-
-    } else {
-      // Simple A → B
-      const rawSlice = fullCoords.slice(loIdx, hiIdx + 1);
-      segmentCoords = isReversed ? [...rawSlice].reverse() : rawSlice;
-
-      // Filter stops that fall within the A→B section (using waypointIndex)
-      stopsOnSegment = stops.filter((s) => {
-        if (s.waypointIndex === undefined) return false;
-        const wi = s.waypointIndex;
-        const startWi = startStop.waypointIndex ?? 0;
-        const endWi   = endStop.waypointIndex ?? stops.length - 1;
-        const [lo, hi] = startWi < endWi ? [startWi, endWi] : [endWi, startWi];
-        return wi >= lo && wi <= hi;
-      });
-
-      // Sort by direction of travel
-      const startWi = startStop.waypointIndex ?? 0;
-      const endWi   = endStop.waypointIndex ?? stops.length - 1;
-      stopsOnSegment.sort((a, b) => {
-        const aWi = a.waypointIndex ?? 0;
-        const bWi = b.waypointIndex ?? 0;
-        return startWi <= endWi ? aWi - bWi : bWi - aWi;
-      });
-    }
+    const segmentCoords = segment.coordinates;
+    const stopsOnSegment = segment.stops;
 
     // ── Re-encode sliced coords (no API call) ────────────────────────────────
     const segmentPolyline = encodePolyline(segmentCoords);

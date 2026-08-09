@@ -9,7 +9,11 @@ import { useBuses } from "@/hooks/useBuses";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
-import { isLiveBusSignalLost, isLiveBusTimestamp } from "@/lib/liveBusFreshness";
+import {
+  hasValidBusCoordinates,
+  isLiveBusSignalLost,
+  isLiveBusTimestamp,
+} from "@/lib/liveBusFreshness";
 import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
 import { subscribeLiveBuses } from "@/lib/liveBusStore";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
@@ -20,6 +24,7 @@ import {
   Eye, Wifi, WifiOff, MessageCircle,
 } from "lucide-react";
 import ConfirmModal from "@/components/ui/ConfirmModal";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 /* â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 interface ActiveBusEntry {
@@ -80,10 +85,9 @@ function useActiveBuses(
         return;
       }
       const visibleBuses: ActiveBusEntry[] = [];
-      Object.entries(data).forEach(([key, incoming]) => {
-        const bus = incoming.busId
-          ? incoming
-          : { ...incoming, busId: key.split("_")[0] };
+      Object.values(data).forEach((incoming) => {
+        if (typeof incoming.busId !== "string" || incoming.busId.length === 0) return;
+        const bus = incoming;
         if (
           isLiveBusTimestamp(bus.timestamp) ||
           isActiveRideSnapshot(
@@ -155,6 +159,9 @@ function LiveDetailsDrawer({
 
   const [showWipeConfirm, setShowWipeConfirm] = useState(false);
   const [isWiping, setIsWiping] = useState(false);
+  const dialogRef = useDialogFocus<HTMLDivElement>(true, () => {
+    if (!isWiping) onClose();
+  });
 
   const confirmWipeMessages = async () => {
     setIsWiping(true);
@@ -176,7 +183,7 @@ function LiveDetailsDrawer({
 
   return (
     <div role="dialog" aria-modal="true" aria-label={`Live details for ${entry.busId}`} className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-md bg-[#0f0f12] border border-white/10 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
+      <div ref={dialogRef} tabIndex={-1} className="w-full max-w-md bg-[#0f0f12] border border-white/10 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/5">
           <div>
             <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Live Details</p>
@@ -242,9 +249,11 @@ function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => v
       ? entry.motionState === "moving" ? "#34D399" : "#FBBF24"
       : entry.deviceState === "offline" || entry.motionState === "uncertain" ? "#FB923C" : "#94949C";
 
-  if (!entry.lat || !entry.lng) return null;
+  const lat = entry.lat;
+  const lng = entry.lng;
+  if (!hasValidBusCoordinates(lat, lng)) return null;
   return (
-    <AdvancedMarker position={{ lat: entry.lat, lng: entry.lng }} onClick={onClick}>
+    <AdvancedMarker position={{ lat: lat as number, lng: lng as number }} onClick={onClick}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }} title={`${entry.busId} — ${ts.label}`}>
         <div style={{
           width: 36, height: 36, borderRadius: 18,
@@ -301,41 +310,43 @@ function FleetCard({
           selected ? "border-brand-accent/40 bg-brand-accent/5" : "border-white/8 bg-white/3 hover:border-white/15"
         }`}
       >
-        <div
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') { setExpanded(o => !o); onSelect(); } }}
-          onClick={() => { setExpanded(o => !o); onSelect(); }}
-          className="w-full p-3 flex items-center gap-3 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/50"
-        >
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${ts.bg}`}>
-            <span className={`w-2 h-2 rounded-full ${ts.dot} ${entry.motionState === "moving" ? "animate-pulse" : ""}`} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-white text-sm truncate">{bus?.name ?? entry.busId}</p>
-            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-              <span className={`text-[9px] font-black uppercase tracking-wider ${ts.color}`}>{ts.label}</span>
-              <span className={`text-[9px] font-semibold ${ms.color}`}>{ms.label}</span>
-              {entry.speed != null && <span className="text-[9px] text-white/30 tabular-nums">{Math.round(entry.speed)} km/h</span>}
-              {(entry.delayMinutes ?? 0) > 0 && (
-                <span className="text-[9px] text-amber-400 font-black">+{entry.delayMinutes}m delay</span>
-              )}
+        <div className="w-full p-3 flex items-center gap-1">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={`fleet-details-${entry.busId}-${entry.routeId ?? "route"}`}
+            onClick={() => { setExpanded(o => !o); onSelect(); }}
+            className="min-w-0 flex-1 flex items-center gap-3 text-left rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/50"
+          >
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${ts.bg}`}>
+              <span className={`w-2 h-2 rounded-full ${ts.dot} ${entry.motionState === "moving" ? "animate-pulse" : ""}`} />
             </div>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={e => { e.stopPropagation(); setDetailsOpen(true); }}
-              className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center hover:bg-brand-accent/20 hover:text-brand-accent transition-colors"
-              title="Live details"
-            >
-              <Eye className="w-3.5 h-3.5 text-white/50" />
-            </button>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-white text-sm truncate">{bus?.name ?? entry.busId}</p>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <span className={`text-[9px] font-black uppercase tracking-wider ${ts.color}`}>{ts.label}</span>
+                <span className={`text-[9px] font-semibold ${ms.color}`}>{ms.label}</span>
+                {entry.speed != null && <span className="text-[9px] text-white/30 tabular-nums">{Math.round(entry.speed)} km/h</span>}
+                {(entry.delayMinutes ?? 0) > 0 && (
+                  <span className="text-[9px] text-amber-400 font-black">+{entry.delayMinutes}m delay</span>
+                )}
+              </div>
+            </div>
             {expanded ? <ChevronUp className="w-3.5 h-3.5 text-white/30" /> : <ChevronDown className="w-3.5 h-3.5 text-white/30" />}
-          </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDetailsOpen(true)}
+            className="w-9 h-9 shrink-0 rounded-lg bg-white/5 flex items-center justify-center hover:bg-brand-accent/20 hover:text-brand-accent transition-colors"
+            title="Live details"
+            aria-label={`Open live details for ${entry.busId}`}
+          >
+            <Eye className="w-3.5 h-3.5 text-white/50" />
+          </button>
         </div>
 
         {expanded && (
-          <div className="border-t border-white/5 p-3 flex flex-col gap-3">
+          <div id={`fleet-details-${entry.busId}-${entry.routeId ?? "route"}`} className="border-t border-white/5 p-3 flex flex-col gap-3">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
                 { label: "Speed", value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "—" },
@@ -384,9 +395,9 @@ function FleetCard({
                 <p className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</p>
               </div>
             </div>
-            {entry.lat && entry.lng && (
+            {hasValidBusCoordinates(entry.lat, entry.lng) && (
               <p className="text-[9px] text-white/20 tabular-nums">
-                {entry.lat.toFixed(5)}, {entry.lng.toFixed(5)}
+                {entry.lat!.toFixed(5)}, {entry.lng!.toFixed(5)}
               </p>
             )}
           </div>
@@ -447,7 +458,9 @@ export default function DashboardPanel() {
 
   const handleSelectBus = useCallback((entry: ActiveBusEntry) => {
     setSelectedBusId(prev => prev === entry.busId ? null : entry.busId);
-    if (entry.lat && entry.lng) setMapCenter({ lat: entry.lat, lng: entry.lng });
+    if (hasValidBusCoordinates(entry.lat, entry.lng)) {
+      setMapCenter({ lat: entry.lat as number, lng: entry.lng as number });
+    }
   }, []);
 
   return (

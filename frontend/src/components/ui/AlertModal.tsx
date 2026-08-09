@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useId } from "react";
 import { AlertCircle, AlertTriangle, Info } from "lucide-react";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 interface AlertModalProps {
   isOpen: boolean;
@@ -20,17 +21,9 @@ export default function AlertModal({
   variant = "error",
   onClose,
 }: AlertModalProps) {
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) {
-        onClose();
-      }
-    };
-    if (isOpen) {
-      document.addEventListener("keydown", handleKeyDown);
-    }
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  const titleId = useId();
+  const messageId = useId();
+  const dialogRef = useDialogFocus<HTMLDivElement>(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -67,10 +60,14 @@ export default function AlertModal({
     <div
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={messageId}
       className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="w-full max-w-sm rounded-2xl p-5 shadow-2xl flex flex-col gap-4 border border-white/10"
         style={{ background: "rgba(18, 20, 29, 0.98)" }}
         onClick={(e) => e.stopPropagation()}
@@ -80,14 +77,15 @@ export default function AlertModal({
             <Icon className={`w-5 h-5 ${iconColor}`} />
           </div>
           <div className="flex flex-col gap-1 min-w-0">
-            <h3 className="font-bold text-sm text-white tracking-tight leading-snug">{title || defaultTitle}</h3>
-            <p className="text-xs text-white/70 leading-relaxed">{message}</p>
+            <h3 id={titleId} className="font-bold text-sm text-white tracking-tight leading-snug">{title || defaultTitle}</h3>
+            <p id={messageId} className="text-xs text-white/70 leading-relaxed">{message}</p>
           </div>
         </div>
 
         <div className="flex items-center justify-end pt-2 border-t border-white/5">
           <button
             type="button"
+            data-autofocus
             onClick={onClose}
             className="px-5 py-2.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg"
           >
