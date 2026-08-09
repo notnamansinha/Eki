@@ -1,14 +1,18 @@
 #include "secrets.h"
 #include "telemetry_policy.h"
+#include "telemetry_queue.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <TinyGPSPlus.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <esp_attr.h>
 #include <esp_system.h>
 #include <esp_idf_version.h>
 #include <esp_task_wdt.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <sys/time.h>
 
 #ifndef BACKEND_ROOT_CA
@@ -32,9 +36,15 @@ constexpr double HDOP_REJECT_THRESHOLD = 4.0;
 constexpr uint32_t WIFI_RETRY_MS = 5000;
 constexpr uint32_t TIME_SYNC_RETRY_MS = 10000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
-constexpr uint32_t WATCHDOG_TIMEOUT_MS = 15000;
-// At 9,600 baud, a seven-second HTTPS call can overlap roughly 6.7 KiB of
-// incoming NMEA data. HardwareSerial defaults to only 256 bytes.
+constexpr uint32_t WATCHDOG_TIMEOUT_MS = 25000;
+constexpr int64_t TELEMETRY_FRESHNESS_MARGIN_MS = 55000;
+constexpr size_t TELEMETRY_QUEUE_CAPACITY = 120;
+constexpr uint32_t HEALTH_REPORT_INTERVAL_MS = 30000;
+constexpr uint32_t PUBLISHER_IDLE_MS = 100;
+constexpr uint32_t PUBLISHER_TASK_STACK_BYTES = 12288;
+constexpr UBaseType_t PUBLISHER_TASK_PRIORITY = 1;
+// Network work runs on another core, but this buffer still absorbs scheduler
+// jitter and diagnostic output without risking NMEA loss.
 constexpr size_t GPS_RX_BUFFER_BYTES = 8192;
 
 TinyGPSPlus gps;
@@ -43,15 +53,42 @@ WiFiClientSecure tlsClient;
 String telemetryEndpoint;
 String authorizationHeader;
 
-struct TelemetryFix {
-  double lat = 0;
-  double lng = 0;
-  double speed = 0;
-  double heading = 0;
-  const char *motionState = "uncertain";
-  int64_t timestamp = 0;
-  bool valid = false;
+enum class MotionState : uint8_t {
+  Moving,
+  Stopped,
+  Uncertain,
 };
+
+struct TelemetryFix {
+  double lat;
+  double lng;
+  double speed;
+  double heading;
+  int64_t timestamp;
+  uint32_t sequence;
+  MotionState motionState;
+  bool valid;
+};
+
+using TelemetryQueue = eki::telemetry::NewestFirstTelemetryQueue<
+  TelemetryFix,
+  TELEMETRY_QUEUE_CAPACITY
+>;
+static_assert(
+  sizeof(TelemetryQueue) <= 6 * 1024,
+  "Telemetry queue must leave headroom in the ESP32's 8 KiB RTC slow memory."
+);
+static_assert(
+  std::is_trivial<TelemetryQueue>::value,
+  "RTC no-init queue must not be rewritten by a global constructor."
+);
+
+// RTC no-init memory preserves the bounded queue across software/watchdog
+// resets. initializeOrRecover() rejects stale firmware layouts explicitly.
+RTC_NOINIT_ATTR TelemetryQueue telemetryQueue;
+portMUX_TYPE telemetryQueueMux = portMUX_INITIALIZER_UNLOCKED;
+portMUX_TYPE healthMetricsMux = portMUX_INITIALIZER_UNLOCKED;
+TaskHandle_t publisherTaskHandle = nullptr;
 
 enum class PublishResult : uint8_t {
   Accepted,
@@ -59,34 +96,141 @@ enum class PublishResult : uint8_t {
   Dropped,
 };
 
-TelemetryFix bufferedFix;
-double lastLat = 0;
-double lastLng = 0;
-double lastSpeed = 0;
-double lastHeading = 0;
-bool hasPublishedLocation = false;
-const char *lastPublishedMotionState = nullptr;
+double lastCapturedLat = 0;
+double lastCapturedLng = 0;
+double lastCapturedSpeed = 0;
+double lastCapturedHeading = 0;
+bool hasCapturedLocation = false;
+MotionState lastCapturedMotionState = MotionState::Uncertain;
 eki::telemetry::MotionTracker motionTracker;
-uint32_t lastPublishAt = 0;
+uint32_t lastCaptureAt = 0;
 uint32_t lastEvaluationAt = 0;
 uint32_t lastWifiAttemptAt = 0;
 uint32_t lastTimeSyncAttemptAt = 0;
 uint32_t lastHttpsFailureAt = 0;
 uint32_t httpsRetryDelayMs = 0;
 uint32_t lastGpsWarningAt = 0;
+uint32_t lastHealthReportAt = 0;
 uint8_t consecutiveHttpsFailures = 0;
 bool gpsFixWasLost = false;
-bool lossMessagePublished = false;
+bool lossMessageQueued = false;
 bool wifiConfigured = false;
+uint32_t uartBufferOverflowCount = 0;
+uint32_t uartFifoOverflowCount = 0;
+uint32_t acceptedFixCount = 0;
+uint32_t rejectedFixCount = 0;
+
+struct HealthCounters {
+  uint32_t uartBufferOverflows;
+  uint32_t uartFifoOverflows;
+  uint32_t acceptedFixes;
+  uint32_t rejectedFixes;
+};
 
 uint32_t elapsed(uint32_t since) {
   return millis() - since;
+}
+
+const char *motionStateName(MotionState state) {
+  switch (state) {
+    case MotionState::Moving:
+      return "moving";
+    case MotionState::Stopped:
+      return "stopped";
+    case MotionState::Uncertain:
+    default:
+      return "uncertain";
+  }
+}
+
+MotionState motionStateFromTracker(const char *state) {
+  return strcmp(state, "moving") == 0
+    ? MotionState::Moving
+    : MotionState::Stopped;
+}
+
+void notifyPublisher() {
+  if (publisherTaskHandle != nullptr) xTaskNotifyGive(publisherTaskHandle);
+}
+
+void enqueueFix(TelemetryFix fix) {
+  portENTER_CRITICAL(&telemetryQueueMux);
+  telemetryQueue.push(fix);
+  portEXIT_CRITICAL(&telemetryQueueMux);
+  notifyPublisher();
+}
+
+bool newestFreshFix(int64_t minimumTimestamp, TelemetryFix &fix, size_t &staleDrops) {
+  portENTER_CRITICAL(&telemetryQueueMux);
+  staleDrops = telemetryQueue.dropOlderThan(minimumTimestamp);
+  const bool available = telemetryQueue.newest(fix);
+  portEXIT_CRITICAL(&telemetryQueueMux);
+  return available;
+}
+
+bool removeQueuedFix(uint32_t sequence) {
+  portENTER_CRITICAL(&telemetryQueueMux);
+  const bool removed = telemetryQueue.remove(sequence);
+  portEXIT_CRITICAL(&telemetryQueueMux);
+  return removed;
+}
+
+TelemetryQueue::Stats telemetryQueueStats() {
+  portENTER_CRITICAL(&telemetryQueueMux);
+  const TelemetryQueue::Stats stats = telemetryQueue.stats();
+  portEXIT_CRITICAL(&telemetryQueueMux);
+  return stats;
+}
+
+void onGpsSerialError(hardwareSerial_error_t error) {
+  portENTER_CRITICAL(&healthMetricsMux);
+  if (error == UART_BUFFER_FULL_ERROR) {
+    ++uartBufferOverflowCount;
+  } else if (error == UART_FIFO_OVF_ERROR) {
+    ++uartFifoOverflowCount;
+  }
+  portEXIT_CRITICAL(&healthMetricsMux);
+}
+
+void recordPublishResult(bool accepted) {
+  portENTER_CRITICAL(&healthMetricsMux);
+  if (accepted) {
+    ++acceptedFixCount;
+  } else {
+    ++rejectedFixCount;
+  }
+  portEXIT_CRITICAL(&healthMetricsMux);
+}
+
+HealthCounters healthCounters() {
+  portENTER_CRITICAL(&healthMetricsMux);
+  const HealthCounters counters = {
+    uartBufferOverflowCount,
+    uartFifoOverflowCount,
+    acceptedFixCount,
+    rejectedFixCount,
+  };
+  portEXIT_CRITICAL(&healthMetricsMux);
+  return counters;
 }
 
 String buildTelemetryUrl() {
   String base = BACKEND_URL;
   while (base.endsWith("/")) base.remove(base.length() - 1);
   return base + "/api/devices/" + DEVICE_ID + "/telemetry";
+}
+
+uint32_t telemetryConfigurationTag() {
+  uint32_t hash = 2166136261UL;
+  for (const char *value : {DEVICE_ID, BACKEND_URL}) {
+    while (*value != '\0') {
+      hash ^= static_cast<uint8_t>(*value++);
+      hash *= 16777619UL;
+    }
+    hash ^= 0xFF;
+    hash *= 16777619UL;
+  }
+  return hash == 0 ? 1 : hash;
 }
 
 bool clockIsSynchronized() {
@@ -189,7 +333,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
   document["lng"] = fix.lng;
   document["speed"] = fix.speed;
   document["heading"] = fix.heading;
-  document["motionState"] = fix.motionState;
+  document["motionState"] = motionStateName(fix.motionState);
   document["timestamp"] = fix.timestamp;
 
   String payload;
@@ -274,18 +418,11 @@ PublishResult publishFix(const TelemetryFix &fix) {
   }
 
   resetHttpsRetry();
-  lastLat = fix.lat;
-  lastLng = fix.lng;
-  lastSpeed = fix.speed;
-  lastHeading = fix.heading;
-  lastPublishedMotionState = fix.motionState;
-  lastPublishAt = millis();
-  hasPublishedLocation = true;
   return PublishResult::Accepted;
 }
 
 TelemetryFix currentFix() {
-  TelemetryFix fix;
+  TelemetryFix fix{};
   if (
     !gps.location.isValid() ||
     gps.location.age() > 5000 ||
@@ -304,29 +441,42 @@ TelemetryFix currentFix() {
   fix.heading = gps.course.isValid()
     ? fmod(max(gps.course.deg(), 0.0), 360.0)
     : 0.0;
-  fix.motionState = motionTracker.update(rawSpeed);
+  fix.motionState = motionStateFromTracker(motionTracker.update(rawSpeed));
   fix.timestamp = epochMilliseconds();
-  fix.valid = clockIsSynchronized();
+  // GNSS quality and wall-clock readiness are separate signals.
+  // evaluateTelemetry() waits for NTP before enqueueing, without misreporting
+  // a healthy receiver as lost.
+  fix.valid = true;
   return fix;
 }
 
-bool shouldPublish(const TelemetryFix &fix) {
+bool shouldCapture(const TelemetryFix &fix) {
   return eki::telemetry::shouldPublishFix(
     fix.valid,
-    hasPublishedLocation,
-    elapsed(lastPublishAt),
+    hasCapturedLocation,
+    elapsed(lastCaptureAt),
     motionTracker.moving,
-    fix.motionState,
-    lastPublishedMotionState,
+    motionStateName(fix.motionState),
+    hasCapturedLocation ? motionStateName(lastCapturedMotionState) : nullptr,
     fix.lat,
     fix.lng,
-    lastLat,
-    lastLng,
+    lastCapturedLat,
+    lastCapturedLng,
     fix.speed,
-    lastSpeed,
+    lastCapturedSpeed,
     fix.heading,
-    lastHeading
+    lastCapturedHeading
   );
+}
+
+void rememberCapturedFix(const TelemetryFix &fix) {
+  lastCapturedLat = fix.lat;
+  lastCapturedLng = fix.lng;
+  lastCapturedSpeed = fix.speed;
+  lastCapturedHeading = fix.heading;
+  lastCapturedMotionState = fix.motionState;
+  lastCaptureAt = millis();
+  hasCapturedLocation = true;
 }
 
 void evaluateTelemetry() {
@@ -334,40 +484,101 @@ void evaluateTelemetry() {
   if (!fix.valid) {
     if (!gpsFixWasLost) {
       gpsFixWasLost = true;
-      lossMessagePublished = false;
+      lossMessageQueued = false;
       Serial.println("[GPS] Trustworthy fix lost.");
     }
-    if (
-      hasPublishedLocation &&
-      !lossMessagePublished &&
-      WiFi.status() == WL_CONNECTED
-    ) {
-      TelemetryFix uncertain;
-      uncertain.lat = lastLat;
-      uncertain.lng = lastLng;
+    if (hasCapturedLocation && !lossMessageQueued && clockIsSynchronized()) {
+      TelemetryFix uncertain{};
+      uncertain.lat = lastCapturedLat;
+      uncertain.lng = lastCapturedLng;
       uncertain.speed = 0;
-      uncertain.heading = lastHeading;
-      uncertain.motionState = "uncertain";
+      uncertain.heading = lastCapturedHeading;
+      uncertain.motionState = MotionState::Uncertain;
       uncertain.timestamp = epochMilliseconds();
-      uncertain.valid = clockIsSynchronized();
-      lossMessagePublished = publishFix(uncertain) == PublishResult::Accepted;
+      uncertain.valid = true;
+      enqueueFix(uncertain);
+      lossMessageQueued = true;
     }
     return;
   }
 
   if (gpsFixWasLost) {
     gpsFixWasLost = false;
-    lossMessagePublished = false;
+    lossMessageQueued = false;
     Serial.println("[GPS] Trustworthy fix restored.");
   }
 
-  if (!shouldPublish(fix)) return;
-  const PublishResult result = publishFix(fix);
-  if (result == PublishResult::Accepted || result == PublishResult::Dropped) {
-    bufferedFix.valid = false;
-  } else if (result == PublishResult::RetryLatest) {
-    bufferedFix = fix;
+  if (!clockIsSynchronized()) return;
+  if (!shouldCapture(fix)) return;
+  enqueueFix(fix);
+  rememberCapturedFix(fix);
+}
+
+void publisherTask(void *) {
+  const esp_err_t watchdogResult = esp_task_wdt_add(nullptr);
+  Serial.printf("[Publisher] Started on core %d; watchdog subscribe=%d.\n",
+                xPortGetCoreID(), watchdogResult);
+
+  for (;;) {
+    esp_task_wdt_reset();
+    connectWiFi();
+
+    bool drainedSample = false;
+    if (WiFi.status() == WL_CONNECTED) {
+      synchronizeClock();
+      if (clockIsSynchronized() && !httpsRetryIsPending()) {
+        TelemetryFix fix{};
+        size_t staleDrops = 0;
+        const int64_t minimumTimestamp =
+          epochMilliseconds() - TELEMETRY_FRESHNESS_MARGIN_MS;
+        if (newestFreshFix(minimumTimestamp, fix, staleDrops)) {
+          if (staleDrops > 0) {
+            Serial.printf(
+              "[Telemetry] Dropped %u stale queued sample(s) before publish.\n",
+              static_cast<unsigned>(staleDrops)
+            );
+          }
+          const PublishResult result = publishFix(fix);
+          if (result != PublishResult::RetryLatest) {
+            removeQueuedFix(fix.sequence);
+            recordPublishResult(result == PublishResult::Accepted);
+          }
+          drainedSample = true;
+        } else if (staleDrops > 0) {
+          Serial.printf(
+            "[Telemetry] Dropped %u stale queued sample(s); queue is empty.\n",
+            static_cast<unsigned>(staleDrops)
+          );
+        }
+      }
+    }
+
+    esp_task_wdt_reset();
+    ulTaskNotifyTake(
+      pdTRUE,
+      pdMS_TO_TICKS(drainedSample ? 1 : PUBLISHER_IDLE_MS)
+    );
   }
+}
+
+void reportHealth() {
+  if (elapsed(lastHealthReportAt) < HEALTH_REPORT_INTERVAL_MS) return;
+  lastHealthReportAt = millis();
+  const TelemetryQueue::Stats queue = telemetryQueueStats();
+  const HealthCounters counters = healthCounters();
+  Serial.printf(
+    "[Health] queue=%u/%u high-water=%u overflow-drops=%lu stale-drops=%lu; accepted=%lu rejected=%lu; NMEA checksum-failures=%lu UART-buffer-overflows=%lu UART-FIFO-overflows=%lu.\n",
+    queue.depth,
+    static_cast<unsigned>(TELEMETRY_QUEUE_CAPACITY),
+    queue.highWaterMark,
+    static_cast<unsigned long>(queue.overflowDrops),
+    static_cast<unsigned long>(queue.staleDrops),
+    static_cast<unsigned long>(counters.acceptedFixes),
+    static_cast<unsigned long>(counters.rejectedFixes),
+    static_cast<unsigned long>(gps.failedChecksum()),
+    static_cast<unsigned long>(counters.uartBufferOverflows),
+    static_cast<unsigned long>(counters.uartFifoOverflows)
+  );
 }
 } // namespace
 
@@ -375,12 +586,8 @@ void setup() {
   Serial.begin(115200);
   const size_t gpsRxBuffer = gpsSerial.setRxBufferSize(GPS_RX_BUFFER_BYTES);
   gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
+  gpsSerial.onReceiveError(onGpsSerialError);
   delay(500);
-  Serial.printf(
-    "[Boot] Eki HTTPS telemetry; reset reason=%d; GNSS RX buffer=%u bytes\n",
-    esp_reset_reason(),
-    gpsRxBuffer
-  );
 
   if (eki::telemetry::hasTemplateConfiguration(
     WIFI_SSID,
@@ -395,6 +602,21 @@ void setup() {
     while (true) delay(1000);
   }
 
+  portENTER_CRITICAL(&telemetryQueueMux);
+  const bool queueRecovered = telemetryQueue.initializeOrRecover(
+    telemetryConfigurationTag()
+  );
+  const TelemetryQueue::Stats bootQueue = telemetryQueue.stats();
+  portEXIT_CRITICAL(&telemetryQueueMux);
+  Serial.printf(
+    "[Boot] Eki asynchronous HTTPS telemetry; reset reason=%d; GNSS RX buffer=%u bytes; RTC queue=%s (%u/%u).\n",
+    esp_reset_reason(),
+    gpsRxBuffer,
+    queueRecovered ? "recovered" : "initialized",
+    bootQueue.depth,
+    static_cast<unsigned>(TELEMETRY_QUEUE_CAPACITY)
+  );
+
   tlsClient.setCACert(BACKEND_ROOT_CA);
   telemetryEndpoint = buildTelemetryUrl();
   if (!telemetryEndpoint.startsWith("https://")) {
@@ -403,32 +625,27 @@ void setup() {
   }
   authorizationHeader = String("Device ") + DEVICE_SECRET;
   configureWatchdog();
-  connectWiFi();
+  const BaseType_t taskResult = xTaskCreatePinnedToCore(
+    publisherTask,
+    "telemetry-publisher",
+    PUBLISHER_TASK_STACK_BYTES,
+    nullptr,
+    PUBLISHER_TASK_PRIORITY,
+    &publisherTaskHandle,
+    0
+  );
+  if (taskResult != pdPASS) {
+    Serial.println("[Boot] Unable to start telemetry publisher task.");
+    while (true) {
+      esp_task_wdt_reset();
+      delay(1000);
+    }
+  }
 }
 
 void loop() {
   esp_task_wdt_reset();
   while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
-
-  if (WiFi.status() != WL_CONNECTED) {
-    connectWiFi();
-  } else {
-    synchronizeClock();
-    if (
-      bufferedFix.valid &&
-      clockIsSynchronized() &&
-      epochMilliseconds() - bufferedFix.timestamp > 55000
-    ) {
-      // The backend rejects measurements older than 60 seconds. Drop the
-      // nearly stale buffered sample so it cannot trigger failure backoff and
-      // delay the next current fix after connectivity returns.
-      bufferedFix.valid = false;
-    }
-    if (bufferedFix.valid) {
-      const PublishResult result = publishFix(bufferedFix);
-      if (result != PublishResult::RetryLatest) bufferedFix.valid = false;
-    }
-  }
 
   if (elapsed(lastEvaluationAt) >= 1000) {
     lastEvaluationAt = millis();
@@ -443,5 +660,6 @@ void loop() {
     lastGpsWarningAt = millis();
     Serial.println("[GPS] No NMEA data received; check RX/TX wiring.");
   }
+  reportHealth();
   delay(5);
 }

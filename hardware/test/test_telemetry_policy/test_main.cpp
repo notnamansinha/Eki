@@ -1,11 +1,18 @@
 #include <unity.h>
 
 #include "telemetry_policy.h"
+#include "telemetry_queue.h"
 
 using namespace eki::telemetry;
 
 void setUp() {}
 void tearDown() {}
+
+struct QueuedSample {
+  int64_t timestamp;
+  uint32_t sequence;
+  int value;
+};
 
 void test_haversine_and_heading_wrap() {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, static_cast<float>(haversineMeters(23.0, 72.0, 23.0, 72.0)));
@@ -151,6 +158,80 @@ void test_publish_policy_handles_floor_changes_and_heartbeats() {
   TEST_ASSERT_TRUE(decide(true, true, 60000, false, "stopped", "stopped", 23.0, 10, 100));
 }
 
+void test_queue_delivers_newest_first_and_retains_failed_samples() {
+  NewestFirstTelemetryQueue<QueuedSample, 4> queue;
+  queue.reset(42);
+  const uint32_t first = queue.push({1000, 0, 1});
+  const uint32_t second = queue.push({2000, 0, 2});
+  const uint32_t third = queue.push({3000, 0, 3});
+
+  QueuedSample sample{};
+  TEST_ASSERT_TRUE(queue.newest(sample));
+  TEST_ASSERT_EQUAL_INT(3, sample.value);
+  TEST_ASSERT_EQUAL_UINT32(third, sample.sequence);
+
+  // A retry does not mutate the queue. If a fresher fix arrives, it is the
+  // next candidate while the failed sample remains available behind it.
+  TEST_ASSERT_TRUE(queue.newest(sample));
+  TEST_ASSERT_EQUAL_UINT32(third, sample.sequence);
+  const uint32_t fourth = queue.push({4000, 0, 4});
+  TEST_ASSERT_TRUE(queue.newest(sample));
+  TEST_ASSERT_EQUAL_UINT32(fourth, sample.sequence);
+  TEST_ASSERT_TRUE(queue.remove(fourth));
+  TEST_ASSERT_TRUE(queue.remove(third));
+  TEST_ASSERT_TRUE(queue.newest(sample));
+  TEST_ASSERT_EQUAL_UINT32(second, sample.sequence);
+  TEST_ASSERT_TRUE(queue.remove(first));
+  TEST_ASSERT_EQUAL_UINT32(1, queue.size());
+}
+
+void test_queue_wraparound_drops_oldest_and_counts_overflow() {
+  NewestFirstTelemetryQueue<QueuedSample, 3> queue;
+  queue.reset();
+  const uint32_t evicted = queue.push({1000, 0, 1});
+  const uint32_t oldest = queue.push({2000, 0, 2});
+  const uint32_t middle = queue.push({3000, 0, 3});
+  const uint32_t newest = queue.push({4000, 0, 4});
+
+  const auto stats = queue.stats();
+  TEST_ASSERT_EQUAL_UINT32(3, stats.depth);
+  TEST_ASSERT_EQUAL_UINT32(3, stats.highWaterMark);
+  TEST_ASSERT_EQUAL_UINT32(1, stats.overflowDrops);
+  TEST_ASSERT_FALSE(queue.remove(evicted));
+
+  QueuedSample sample{};
+  TEST_ASSERT_TRUE(queue.newest(sample));
+  TEST_ASSERT_EQUAL_UINT32(newest, sample.sequence);
+  TEST_ASSERT_EQUAL_INT(4, sample.value);
+
+  // head_ is non-zero after wraparound. Exercise both the wrapped middle
+  // shift and the O(1) oldest-removal path without disturbing the newest fix.
+  TEST_ASSERT_TRUE(queue.remove(middle));
+  TEST_ASSERT_EQUAL_UINT32(2, queue.size());
+  TEST_ASSERT_TRUE(queue.newest(sample));
+  TEST_ASSERT_EQUAL_INT(4, sample.value);
+  TEST_ASSERT_TRUE(queue.remove(oldest));
+  TEST_ASSERT_EQUAL_UINT32(1, queue.size());
+  TEST_ASSERT_TRUE(queue.newest(sample));
+  TEST_ASSERT_EQUAL_UINT32(newest, sample.sequence);
+}
+
+void test_queue_purges_stale_samples_and_validates_rtc_identity() {
+  NewestFirstTelemetryQueue<QueuedSample, 5> queue;
+  queue.reset(7);
+  queue.push({1000, 0, 1});
+  queue.push({4000, 0, 4});
+  queue.push({2000, 0, 2});
+  TEST_ASSERT_EQUAL_UINT32(2, queue.dropOlderThan(3000));
+
+  const auto stats = queue.stats();
+  TEST_ASSERT_EQUAL_UINT32(1, stats.depth);
+  TEST_ASSERT_EQUAL_UINT32(2, stats.staleDrops);
+  TEST_ASSERT_TRUE(queue.initializeOrRecover(7));
+  TEST_ASSERT_FALSE(queue.initializeOrRecover(8));
+  TEST_ASSERT_EQUAL_UINT32(0, queue.size());
+}
+
 int main(int, char **) {
   UNITY_BEGIN();
   RUN_TEST(test_haversine_and_heading_wrap);
@@ -160,5 +241,8 @@ int main(int, char **) {
   RUN_TEST(test_retry_after_is_strict_bounded_and_status_aware);
   RUN_TEST(test_template_configuration_is_detected_without_logging_secrets);
   RUN_TEST(test_publish_policy_handles_floor_changes_and_heartbeats);
+  RUN_TEST(test_queue_delivers_newest_first_and_retains_failed_samples);
+  RUN_TEST(test_queue_wraparound_drops_oldest_and_counts_overflow);
+  RUN_TEST(test_queue_purges_stale_samples_and_validates_rtc_identity);
   return UNITY_END();
 }

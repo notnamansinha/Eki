@@ -294,12 +294,17 @@ describe("production security configuration", () => {
   it("keeps the parked GNSS heartbeat safely inside stale-record expiry", () => {
     const firmware = workspaceFile("hardware/src/main.cpp");
     const telemetryPolicy = workspaceFile("hardware/include/telemetry_policy.h");
+    const telemetryQueue = workspaceFile("hardware/include/telemetry_queue.h");
     const tripStateEngine = workspaceFile("backend/src/services/tripStateEngine.ts");
 
     expect(telemetryPolicy).toContain("STOPPED_HEARTBEAT_MS = 60000");
     expect(telemetryPolicy).toContain("motionStateChanged");
     expect(tripStateEngine).toContain("const STALE_BUS_MS = readIntervalMs");
-    expect(firmware).toContain("bufferedFix");
+    expect(firmware).toContain("TELEMETRY_FRESHNESS_MARGIN_MS = 55000");
+    expect(firmware).toContain("RTC_NOINIT_ATTR TelemetryQueue telemetryQueue");
+    expect(firmware).toContain("xTaskCreatePinnedToCore");
+    expect(telemetryQueue).toContain("dropOlderThan");
+    expect(telemetryQueue).toContain("uint32_t overflowDrops;");
     expect(telemetryPolicy).toContain("HTTPS_RETRY_BASE_MS");
     expect(telemetryPolicy).toContain("HTTPS_RETRY_MAX_MS");
     expect(telemetryPolicy).toContain("retryAfterDelayMs");
