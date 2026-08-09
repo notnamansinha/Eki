@@ -692,7 +692,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
       "[HTTPS] Transport failure %d (%s) in %lums (RSSI %d dBm). Check DNS, hostname, CA, clock, and backend reachability.\n",
       responseCode,
       transportError.c_str(),
-      elapsed(startedAt),
+      static_cast<unsigned long>(elapsed(startedAt)),
       WiFi.RSSI()
     );
   } else {
@@ -706,7 +706,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
             ? "credential-fault"
             : "rejected",
       responseCode,
-      elapsed(startedAt),
+      static_cast<unsigned long>(elapsed(startedAt)),
       payload.length(),
       WiFi.RSSI()
     );
@@ -813,7 +813,7 @@ void publishRemoteDiagnostic() {
   Serial.printf(
     "[Diagnostics] Remote health HTTP %d in %lums.\n",
     responseCode,
-    elapsed(startedAt)
+    static_cast<unsigned long>(elapsed(startedAt))
   );
   if (responseCode == 401 || responseCode == 403) {
     credentialFaultActive = true;
