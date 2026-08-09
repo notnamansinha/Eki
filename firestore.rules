@@ -16,17 +16,6 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == uid;
     }
 
-    function feedbackCooldownDoc(uid) {
-      return /databases/$(database)/documents/feedbackCooldowns/$(uid);
-    }
-
-    function feedbackCooldownExpired(uid) {
-      let cooldownDoc = get(feedbackCooldownDoc(uid));
-      return !exists(feedbackCooldownDoc(uid)) ||
-             !('lastSubmittedAt' in cooldownDoc.data) ||
-             request.time - cooldownDoc.data.lastSubmittedAt >= duration.value(24, 'h');
-    }
-
     function sessionDoc(sessionId) {
       return get(/databases/$(database)/documents/ride_sessions/$(sessionId));
     }
@@ -47,87 +36,17 @@ service cloud.firestore {
     // SEC: Boarding is server-issued (POST /api/sessions/:sessionId/join).
     // The passenger must present the assigned driver's non-public session code;
     // fresh hardware/browser proximity is an additional defense-in-depth check.
-    function messageRateDoc(sessionId, uid) {
-      return /databases/$(database)/documents/ride_sessions/$(sessionId)/messageRateLimits/$(uid);
-    }
-
-    function messageRateShapeValid(after) {
-      return after.data.keys().hasOnly(['userId', 'sentAt', 'lastSentAt']) &&
-        after.data.userId == request.auth.uid &&
-        after.data.sentAt is list &&
-        after.data.sentAt.size() <= 59 &&
-        after.data.lastSentAt == request.time;
-    }
-
-    function rollingMessageRateAdvanced(before, after) {
-      let previous = before.data.sentAt.concat([before.data.lastSentAt]);
-      return before.data.keys().hasOnly(['userId', 'sentAt', 'lastSentAt']) &&
-        before.data.userId == request.auth.uid &&
-        before.data.sentAt is list &&
-        before.data.sentAt.size() <= 59 &&
-        after.data.sentAt is list &&
-        request.time - before.data.lastSentAt >= duration.value(3, 's') &&
-        (
-          previous.size() < 60 &&
-          after.data.sentAt == previous
-        ||
-          previous.size() == 60 &&
-          request.time - previous[0] >= duration.value(1, 'h') &&
-          after.data.sentAt == previous[1:60]
-        );
-    }
-
-    function legacyMessageRateAdvanced(before, after) {
-      return before.data.keys().hasOnly(['userId', 'windowStartedAt', 'lastSentAt', 'count']) &&
-        before.data.userId == request.auth.uid &&
-        before.data.count is int &&
-        before.data.count >= 1 &&
-        before.data.count <= 60 &&
-        request.time - before.data.lastSentAt >= duration.value(3, 's') &&
-        (
-          request.time - before.data.windowStartedAt >= duration.value(1, 'h') &&
-          after.data.sentAt.size() == 0
-        ||
-          request.time - before.data.windowStartedAt < duration.value(1, 'h') &&
-          before.data.count < 60 &&
-          after.data.sentAt.size() == before.data.count &&
-          after.data.sentAt[0:before.data.count - 1].hasOnly([before.data.windowStartedAt]) &&
-          after.data.sentAt[before.data.count - 1] == before.data.lastSentAt
-        );
-    }
-
-    function messageRateAdvanced(sessionId) {
-      let before = get(messageRateDoc(sessionId, request.auth.uid));
-      let after = getAfter(messageRateDoc(sessionId, request.auth.uid));
-      return messageRateShapeValid(after) &&
-        (
-          !exists(messageRateDoc(sessionId, request.auth.uid))
-        ||
-          exists(messageRateDoc(sessionId, request.auth.uid)) &&
-          (
-            rollingMessageRateAdvanced(before, after)
-          ||
-            legacyMessageRateAdvanced(before, after)
-          )
-        );
-    }
+    // Chat rate limiting and feedback cooldowns are enforced server-side in
+    // the matching Express endpoints; the rules simply deny client writes.
 
     // ── User Profiles — Store User Data & Roles ──
     match /users/{uid} {
       // Users can read their own profile
       allow read: if isOwner(uid);
-      // New users can only insert themselves as a 'passenger'
-      allow create: if isOwner(uid) &&
-        request.resource.data.keys().hasOnly([
-          'uid', 'email', 'displayName', 'photoURL', 'role', 'createdAt'
-        ]) &&
-        request.resource.data.uid == uid &&
-        request.resource.data.email is string && request.resource.data.email.size() <= 320 &&
-        request.resource.data.displayName is string && request.resource.data.displayName.size() <= 100 &&
-        request.resource.data.photoURL is string && request.resource.data.photoURL.size() <= 2048 &&
-        request.resource.data.role == 'passenger' &&
-        request.resource.data.createdAt is number;
-      // Nobody can update/delete their own role (Forces Admin to do it manually in backend)
+      // Profile creation is backend-authoritative (POST /api/users/bootstrap).
+      // The backend always creates profiles as role 'passenger' and never
+      // overwrites an existing role, so clients cannot self-escalate.
+      allow create: if false;
       allow update, delete: if false;
     }
 
@@ -199,40 +118,19 @@ service cloud.firestore {
 
       match /messages/{messageId} {
         allow read: if isSessionOperator(sessionId) || isSessionPassenger(sessionId);
-        allow create: if (isSessionOperator(sessionId) || isSessionPassenger(sessionId)) &&
-          request.resource.data.keys().hasOnly(['text', 'from', 'senderName', 'senderId', 'timestamp']) &&
-          request.resource.data.senderId == request.auth.uid &&
-          request.resource.data.text is string && request.resource.data.text.size() > 0 &&
-          request.resource.data.text.size() <= 500 &&
-          request.resource.data.senderName is string && request.resource.data.senderName.size() > 0 &&
-          request.resource.data.senderName.size() <= 100 &&
-          (
-            (isSessionOperator(sessionId) && request.resource.data.from == 'driver') ||
-            (isSessionPassenger(sessionId) && request.resource.data.from == 'passenger')
-          ) &&
-          request.resource.data.timestamp == request.time &&
-          messageRateAdvanced(sessionId);
-        allow update, delete: if false;
+        // Message writes are backend-authoritative (POST /api/sessions/:id/messages).
+        // The server enforces membership, the 60/hr rolling rate limit, the 3s
+        // gap, and the profanity filter — none of which a crafted client could
+        // bypass. Clients only read.
+        allow create, update, delete: if false;
       }
 
       match /messageRateLimits/{uid} {
+        // Read is permitted for the owner so the UI can reflect limits, but
+        // writes are backend-only: the server maintains the rolling window.
         allow read: if isOwner(uid) &&
           (isSessionOperator(sessionId) || isSessionPassenger(sessionId));
-        allow create: if isOwner(uid) &&
-          (isSessionOperator(sessionId) || isSessionPassenger(sessionId)) &&
-          messageRateShapeValid(request.resource) &&
-          request.resource.data.sentAt.size() == 0;
-        allow update: if isOwner(uid) &&
-          (isSessionOperator(sessionId) || isSessionPassenger(sessionId)) &&
-          resource.data.userId == uid &&
-          request.resource.data.userId == uid &&
-          messageRateShapeValid(request.resource) &&
-          (
-            rollingMessageRateAdvanced(resource, request.resource)
-          ||
-            legacyMessageRateAdvanced(resource, request.resource)
-          );
-        allow delete: if false;
+        allow create, update, delete: if false;
       }
     }
     
@@ -254,78 +152,21 @@ service cloud.firestore {
     // ── Feedback collection ──
     match /feedbacks/{feedbackId} {
       allow read: if isAdmin();
-      allow create: if isAuthenticated() &&
-        request.resource.data.keys().hasOnly([
-          'userId',
-          'userName',
-          'type',
-          'sessionId',
-          'busId',
-          'driverId',
-          'rating',
-          'comment',
-          'timestamp',
-          'status'
-        ]) &&
-        request.resource.data.userId == request.auth.uid &&
-        request.resource.data.userName is string && request.resource.data.userName.size() > 0 &&
-        request.resource.data.userName.size() <= 100 &&
-        request.resource.data.comment is string &&
-        request.resource.data.comment.size() <= 2000 &&
-        (
-          (
-            request.resource.data.type == 'general' &&
-            request.resource.data.sessionId == null &&
-            request.resource.data.busId == null &&
-            request.resource.data.driverId == null &&
-            request.resource.data.rating == null &&
-            request.resource.data.comment.size() > 0
-          ) ||
-          (
-            request.resource.data.type == 'ride' &&
-            request.resource.data.sessionId is string &&
-            request.resource.data.sessionId.size() > 0 &&
-            request.resource.data.sessionId.size() <= 128 &&
-            request.resource.data.busId is string &&
-            request.resource.data.busId.size() > 0 &&
-            request.resource.data.busId.size() <= 128 &&
-            request.resource.data.driverId is string &&
-            request.resource.data.driverId.size() > 0 &&
-            request.resource.data.driverId.size() <= 128 &&
-            (request.resource.data.rating == null ||
-              (request.resource.data.rating is int &&
-               request.resource.data.rating >= 1 &&
-               request.resource.data.rating <= 5)) &&
-            (request.resource.data.rating != null || request.resource.data.comment.size() > 0) &&
-            isSessionPassenger(request.resource.data.sessionId) &&
-            sessionDoc(request.resource.data.sessionId).data.status == 'completed' &&
-            sessionDoc(request.resource.data.sessionId).data.busId == request.resource.data.busId &&
-            sessionDoc(request.resource.data.sessionId).data.driverId == request.resource.data.driverId
-          )
-        ) &&
-        request.resource.data.timestamp == request.time &&
-        request.resource.data.status == 'new' &&
-        feedbackCooldownExpired(request.auth.uid) &&
-        getAfter(feedbackCooldownDoc(request.auth.uid)).data.lastSubmittedAt == request.time;
-      allow update: if isAdmin() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
-        request.resource.data.status in ['new', 'reviewed', 'resolved'];
+      // Feedback writes are backend-authoritative (POST /api/feedback). The
+      // server enforces the 24h cooldown, the ride/general shape, and ride
+      // eligibility (manifest membership, completed session, matching
+      // bus/driver). Clients only read via the admin panel.
+      allow create: if false;
+      allow update: if false;
       allow delete: if false;
     }
 
     // Feedback cooldowns
     match /feedbackCooldowns/{uid} {
       allow read: if isOwner(uid);
-      allow create: if isOwner(uid) &&
-        request.resource.data.keys().hasOnly(['userId', 'lastSubmittedAt']) &&
-        request.resource.data.userId == uid &&
-        request.resource.data.lastSubmittedAt == request.time;
-      allow update: if isOwner(uid) &&
-        request.resource.data.keys().hasOnly(['userId', 'lastSubmittedAt']) &&
-        request.resource.data.userId == uid &&
-        request.resource.data.lastSubmittedAt == request.time &&
-        request.time - resource.data.lastSubmittedAt >= duration.value(24, 'h');
-      allow delete: if false;
+      // Cooldown writes are backend-only: the server stamps lastSubmittedAt
+      // atomically with the feedback it approves.
+      allow create, update, delete: if false;
     }
 
     // ── Devices collection — server-side Admin SDK access only ──
@@ -363,7 +204,9 @@ service cloud.firestore {
     // ── Settings collection ──
     match /settings/{document} {
       allow read: if isAuthenticated();
-      allow create, update, delete: if isAdmin();
+      // Settings writes are backend-authoritative (PUT /api/settings, admin
+      // claim enforced server-side). Clients only read.
+      allow create, update, delete: if false;
     }
 
     // ── Default deny — no catch-all, everything not listed above is denied ──

@@ -106,9 +106,12 @@ rulesDescribe("Firebase security rules integration", () => {
     }));
   });
 
-  it("allows a user to create only their own passenger profile", async () => {
+  it("keeps user profiles backend-authoritative: clients cannot create or escalate", async () => {
     const passenger = environment.authenticatedContext("passenger_1", { role: "passenger" });
-    await assertSucceeds(setDoc(doc(passenger.firestore(), "users", "passenger_1"), {
+
+    // Profile creation is server-only (POST /api/users/bootstrap); the client
+    // can read its own profile but never write.
+    await assertFails(setDoc(doc(passenger.firestore(), "users", "passenger_1"), {
       uid: "passenger_1",
       email: "rider@example.edu",
       displayName: "Rider",
@@ -116,23 +119,26 @@ rulesDescribe("Firebase security rules integration", () => {
       role: "passenger",
       createdAt: Date.now(),
     }));
-    await assertFails(setDoc(doc(passenger.firestore(), "users", "admin_1"), {
-      uid: "admin_1",
+    // Even a self-targeted escalation attempt is denied.
+    await assertFails(setDoc(doc(passenger.firestore(), "users", "passenger_1"), {
+      uid: "passenger_1",
       email: "rider@example.edu",
       displayName: "Rider",
       photoURL: "",
       role: "admin",
       createdAt: Date.now(),
     }));
+    // Own-profile read remains allowed (used to resolve the local role).
+    await assertSucceeds(getDoc(doc(passenger.firestore(), "users", "passenger_1")));
   });
 
-  it("allows ride feedback only from a passenger in the matching session", async () => {
+  it("keeps feedback backend-authoritative and gates ride feedback to session riders", async () => {
     const passenger = environment.authenticatedContext("passenger_1", { role: "passenger" });
     const outsider = environment.authenticatedContext("passenger_2", { role: "passenger" });
+    const admin = environment.authenticatedContext("admin_1", { role: "admin", admin: true });
 
-    // The backend issues boarding: it writes the passenger manifest entry only
-    // after a proximity check against the hardware GNSS fix. Simulate that
-    // server-authoritative write here (rules-disabled == Admin SDK path).
+    // The backend issues boarding and feedback: simulate those
+    // server-authoritative writes here (rules-disabled == Admin SDK path).
     await environment.withSecurityRulesDisabled(async (context) => {
       await updateDoc(doc(context.firestore(), "ride_sessions", "session_1"), {
         "passengers.passenger_1": {
@@ -142,17 +148,9 @@ rulesDescribe("Firebase security rules integration", () => {
           alightingStopId: "stop_2",
           joinedAt: serverTimestamp(),
         },
-      });
-    });
-
-    await environment.withSecurityRulesDisabled(async (context) => {
-      await updateDoc(doc(context.firestore(), "ride_sessions", "session_1"), {
         status: "completed",
       });
-    });
-
-    await assertSucceeds(runTransaction(passenger.firestore(), async (transaction) => {
-      transaction.set(doc(collection(passenger.firestore(), "feedbacks")), {
+      await setDoc(doc(context.firestore(), "feedbacks", "feedback_1"), {
         userId: "passenger_1",
         userName: "Rider",
         type: "ride",
@@ -164,12 +162,32 @@ rulesDescribe("Firebase security rules integration", () => {
         timestamp: serverTimestamp(),
         status: "new",
       });
+      await setDoc(doc(context.firestore(), "feedbackCooldowns", "passenger_1"), {
+        userId: "passenger_1",
+        lastSubmittedAt: serverTimestamp(),
+      });
+    });
+
+    // Clients can never create feedback or cooldown docs — the backend is
+    // the only writer (POST /api/feedback).
+    await assertFails(runTransaction(passenger.firestore(), async (transaction) => {
+      transaction.set(doc(collection(passenger.firestore(), "feedbacks")), {
+        userId: "passenger_1",
+        userName: "Rider",
+        type: "general",
+        sessionId: null,
+        busId: null,
+        driverId: null,
+        rating: null,
+        comment: "Hello",
+        timestamp: serverTimestamp(),
+        status: "new",
+      });
       transaction.set(doc(passenger.firestore(), "feedbackCooldowns", "passenger_1"), {
         userId: "passenger_1",
         lastSubmittedAt: serverTimestamp(),
       });
     }));
-
     await assertFails(runTransaction(outsider.firestore(), async (transaction) => {
       transaction.set(doc(collection(outsider.firestore(), "feedbacks")), {
         userId: "passenger_2",
@@ -187,6 +205,15 @@ rulesDescribe("Firebase security rules integration", () => {
         userId: "passenger_2",
         lastSubmittedAt: serverTimestamp(),
       });
+    }));
+
+    // Even admin status changes go through PATCH /api/feedback/:id/status;
+    // every browser write to feedback documents is denied.
+    await assertFails(updateDoc(doc(admin.firestore(), "feedbacks", "feedback_1"), {
+      status: "reviewed",
+    }));
+    await assertFails(updateDoc(doc(admin.firestore(), "feedbacks", "feedback_1"), {
+      comment: "tampered",
     }));
   });
 

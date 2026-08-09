@@ -117,8 +117,9 @@ function useAuthState(): AuthContextValue {
               }
 
               // Legacy/new accounts without a custom role claim fall back to
-              // Firestore so their user profile can be created or migrated.
-              const [{ getFirestore, doc, getDoc, setDoc }, { firebaseApp }] =
+              // Firestore so their user profile can be read. Profile creation
+              // is server-authoritative (POST /api/users/bootstrap).
+              const [{ getFirestore, doc, getDoc }, { firebaseApp }] =
                 await Promise.all([
                   import("firebase/firestore"),
                   import("@/lib/firebaseCore"),
@@ -134,18 +135,36 @@ function useAuthState(): AuthContextValue {
               if (userSnap.exists()) {
                 role = (userSnap.data()?.role as UserRole) ?? "passenger";
               } else {
-                const userData = {
-                  uid: firebaseUser.uid,
-                  email: firebaseUser.email || "",
-                  displayName: firebaseUser.displayName || "Unknown User",
-                  photoURL: firebaseUser.photoURL || "",
-                  role,
-                  createdAt: Date.now(),
-                };
+                // Ask the backend to create the profile (always as 'passenger';
+                // it never overwrites an existing role).
                 try {
-                  await setDoc(userDocRef, userData);
+                  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+                  const idToken = await firebaseUser.getIdToken();
+                  if (backendUrl) {
+                    const response = await fetch(`${backendUrl}/api/users/bootstrap`, {
+                      method: "POST",
+                      headers: {
+                        Authorization: `Bearer ${idToken}`,
+                      },
+                      signal: AbortSignal.timeout(10_000),
+                    });
+                    const result = await response.json().catch(() => ({})) as {
+                      role?: string;
+                      error?: string;
+                    };
+                    if (!response.ok) {
+                      throw new Error(result.error || "Unable to bootstrap user profile.");
+                    }
+                    if (
+                      result.role === "passenger" ||
+                      result.role === "driver" ||
+                      result.role === "admin"
+                    ) {
+                      role = result.role;
+                    }
+                  }
                 } catch (dbErr) {
-                  console.error("Failed to write new user to Firestore:", dbErr);
+                  console.error("Failed to bootstrap user profile:", dbErr);
                 }
               }
 

@@ -3,14 +3,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Star, HeartHandshake, X, Send, Check } from "lucide-react";
 import { auth } from "@/lib/firebaseAuth";
-import { db } from "@/lib/firebaseFirestore";
-import {
-  collection,
-  doc,
-  runTransaction,
-  serverTimestamp,
-  Timestamp
-} from "firebase/firestore";
 import { FEEDBACK_WORD_LIMIT } from "@/config/passenger";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 
@@ -18,7 +10,6 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 interface Props {
   userId: string;
-  userName: string;
   busId?: string; // If provided, this is a ride feedback. Otherwise, general suggestion.
   driverId?: string; // Links precise operational data to specific admins
   sessionId?: string; // Required for server-side ride/passenger eligibility checks
@@ -46,7 +37,7 @@ const formatCooldown = (ms: number) => {
   return `${totalMinutes}m`;
 };
 
-export default function FeedbackModal({ userId, userName, busId, driverId, sessionId, onClose }: Props) {
+export default function FeedbackModal({ userId, busId, driverId, sessionId, onClose }: Props) {
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [comment, setComment] = useState("");
@@ -55,6 +46,7 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [error, setError] = useState("");
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingFeedbackRef = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const titleId = useId();
   const descriptionId = useId();
   const commentId = useId();
@@ -118,56 +110,53 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
       if (busId && !sessionId) {
         throw new Error("Ride feedback requires a ride session");
       }
-      const currentUserId = currentUser.uid;
-      const submittedUserName = userName.trim().slice(0, 100) || "Rider";
-      const feedbackRef = collection(db, "feedbacks");
-      const cooldownRef = doc(db, "feedbackCooldowns", currentUserId);
 
-      await runTransaction(db, async (transaction) => {
-        const cooldownSnap = await transaction.get(cooldownRef);
-        let lastSubmittedAt: Timestamp | undefined;
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+      if (!backendUrl) {
+        throw new Error("Feedback service is not configured");
+      }
 
-        if (cooldownSnap.exists()) {
-          const data = cooldownSnap.data();
-          lastSubmittedAt = data.lastSubmittedAt instanceof Timestamp
-            ? data.lastSubmittedAt
-            : undefined;
-        }
-
-        const now = Date.now();
-
-        if (lastSubmittedAt) {
-          const remaining = ONE_DAY_MS - (now - lastSubmittedAt.toMillis());
-          if (remaining > 0) {
-            throw new Error(`LIMIT_REACHED:${remaining}`);
-          }
-        }
-
-        const newFeedbackDoc = doc(feedbackRef);
-        transaction.set(newFeedbackDoc, {
-          userId: currentUserId,
-          userName: submittedUserName,
-          type: busId ? "ride" : "general",
-          sessionId: sessionId || null,
-          busId: busId || null,
-          driverId: driverId || null,
-          rating: busId && rating > 0 ? rating : null,
-          comment: comment.trim(),
-          timestamp: serverTimestamp(),
-          status: "new"
-        });
-
-        const cooldownData = {
-          userId: currentUserId,
-          lastSubmittedAt: serverTimestamp()
-        };
-
-        transaction.set(cooldownRef, cooldownData);
+      // Server-authoritative submission: the backend enforces the 24h
+      // cooldown, the ride/general shape, and ride eligibility before
+      // persisting feedback and the cooldown stamp.
+      const token = await currentUser.getIdToken();
+      const payload = {
+        type: busId ? "ride" as const : "general" as const,
+        sessionId: sessionId || undefined,
+        busId: busId || undefined,
+        driverId: driverId || undefined,
+        rating: busId && rating > 0 ? rating : null,
+        comment: comment.trim(),
+      };
+      const fingerprint = JSON.stringify(payload);
+      const pending = pendingFeedbackRef.current?.fingerprint === fingerprint
+        ? pendingFeedbackRef.current
+        : { fingerprint, requestId: crypto.randomUUID() };
+      pendingFeedbackRef.current = pending;
+      const response = await fetch(`${backendUrl}/api/feedback`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ ...payload, requestId: pending.requestId }),
+        signal: AbortSignal.timeout(10_000),
       });
+      const result = await response.json().catch(() => ({})) as {
+        error?: string;
+        retryAfterMs?: number;
+      };
+      if (!response.ok) {
+        const error = new Error(result.error || "Unable to submit feedback.") as Error & { status?: number; retryAfterMs?: number };
+        error.status = response.status;
+        error.retryAfterMs = result.retryAfterMs;
+        throw error;
+      }
+      pendingFeedbackRef.current = null;
 
       try {
         const now = Date.now();
-        localStorage.setItem(`feedbackCooldown:${currentUserId}`, String(now));
+        localStorage.setItem(`feedbackCooldown:${currentUser.uid}`, String(now));
         setCooldownRemaining(ONE_DAY_MS);
       } catch {}
       
@@ -177,8 +166,12 @@ export default function FeedbackModal({ userId, userName, busId, driverId, sessi
       }, 2000);
     } catch (err) {
       console.error("Feedback error:", err);
-      if (err instanceof Error && err.message.startsWith("LIMIT_REACHED:")) {
-        const remaining = Number(err.message.split(":")[1] || 0);
+      const status = err instanceof Error && "status" in err
+        ? Number((err as { status?: number }).status)
+        : 0;
+      if (status === 409) pendingFeedbackRef.current = null;
+      if (err instanceof Error && "retryAfterMs" in err && typeof (err as { retryAfterMs?: number }).retryAfterMs === "number") {
+        const remaining = (err as { retryAfterMs?: number }).retryAfterMs ?? 0;
         setCooldownRemaining(remaining);
         setError(`Limit reached. Please try again in ${formatCooldown(remaining)}.`);
       } else {

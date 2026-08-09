@@ -4,13 +4,10 @@ import { useState, useEffect, useId, useRef } from "react";
 import { db } from "@/lib/firebaseFirestore";
 import {
   collection,
-  doc,
   limitToLast,
   onSnapshot,
   orderBy,
   query,
-  runTransaction,
-  serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
 import { Send, X, MessageCircle } from "lucide-react";
@@ -32,7 +29,6 @@ interface BaseProps {
   sessionId: string;
   currentUserRole: "driver" | "passenger" | "admin";
   currentUserId: string;
-  currentUserName: string;
   onUnreadCountChange?: (count: number) => void;
 }
 
@@ -45,7 +41,6 @@ export default function MessagingPanel({
   sessionId, 
   currentUserRole, 
   currentUserId, 
-  currentUserName, 
   onClose,
   isOverlay = false,
   onUnreadCountChange,
@@ -58,6 +53,7 @@ export default function MessagingPanel({
   const lastSeenCountRef = useRef(0);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rateLimitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingMessageRef = useRef<{ text: string; requestId: string } | null>(null);
   const titleId = useId();
   const dialogRef = useDialogFocus<HTMLDivElement>(isOverlay, () => onClose?.());
 
@@ -104,13 +100,8 @@ export default function MessagingPanel({
   // --- Rate Limiting Logic ---
   const [messagesSentCounts, setMessagesSentCounts] = useState<{timestamp: number}[]>([]);
 
-  // --- Profanity Filter ---
-  // Matches generic English, common Hindi/Hinglish profanities
-  const PROFANITY_REGEX = /\b(fuck|shit|bitch|ass|asshole|cunt|dick|pussy|bastard|mc|bc|madarchod|bhenchod|chutiya|gandu|bhosadike|bhosdi|harami|kutta|bitch|slut|whore|randi|muth|bhosada)\b/gi;
-
-  const censorText = (text: string) => {
-    return text.replace(PROFANITY_REGEX, "***");
-  };
+  // --- Profanity filtering is enforced server-side on send; the client
+  // keeps only the quick UX checks below. ---
 
   const showTransientMessage = (message: string) => {
     setRateLimitMsg(message);
@@ -128,85 +119,68 @@ export default function MessagingPanel({
       return;
     }
 
+    // Keep the client-side quick checks for snappy UX; the backend enforces
+    // the authoritative 60/hr rolling limit, the 3s gap, and the profanity
+    // filter when it persists the message.
     const now = Date.now();
     const oneHourAgo = now - 3600000;
     const recentMessages = messagesSentCounts.filter(m => m.timestamp > oneHourAgo);
-    
+
     if (recentMessages.length >= 60) {
       showTransientMessage("Limit reached — 60 messages/hour");
       return;
     }
-    
-    // Add 3-second quick spam cooldown
+
     if (recentMessages.length > 0 && (now - recentMessages[recentMessages.length - 1].timestamp < 3000)) {
       showTransientMessage("Please wait three seconds before sending again.");
       return;
     }
 
-    const censoredContent = censorText(newMessage.trim()).slice(0, MAX_MESSAGE_LENGTH);
-    const roleForMsg = currentUserRole === "admin" ? "driver" : currentUserRole;
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+    if (!backendUrl) {
+      showTransientMessage("Chat service is not configured.");
+      return;
+    }
 
     setSending(true);
     try {
-      const messageRef = doc(collection(db, "ride_sessions", sessionId, "messages"));
-      const rateRef = doc(db, "ride_sessions", sessionId, "messageRateLimits", currentUserId);
-      await runTransaction(db, async (transaction) => {
-        const rateSnapshot = await transaction.get(rateRef);
-        const existing = rateSnapshot.data() as {
-          sentAt?: Timestamp[];
-          lastSentAt?: Timestamp;
-          count?: number;
-          windowStartedAt?: Timestamp;
-        } | undefined;
-        let sentAt: Timestamp[] = [];
-        if (
-          Array.isArray(existing?.sentAt) &&
-          existing?.lastSentAt instanceof Timestamp
-        ) {
-          sentAt = [...existing.sentAt, existing.lastSentAt];
-        } else if (
-          existing?.windowStartedAt instanceof Timestamp &&
-          existing?.lastSentAt instanceof Timestamp
-        ) {
-          const legacyCount = Math.max(1, Math.min(60, Number(existing.count) || 1));
-          if (now - existing.windowStartedAt.toMillis() < 60 * 60 * 1000) {
-            sentAt = [
-              ...Array<Timestamp>(legacyCount - 1).fill(existing.windowStartedAt),
-              existing.lastSentAt,
-            ];
-          }
-        }
-        if (sentAt.length >= 60) {
-          if (now - sentAt[0].toMillis() < 60 * 60 * 1000) {
-            const rateLimitError = new Error("Rolling message limit reached.") as Error & {
-              code: string;
-            };
-            rateLimitError.code = "rate-limit";
-            throw rateLimitError;
-          }
-          sentAt = sentAt.slice(1);
-        }
-
-        transaction.set(rateRef, {
-          userId: currentUserId,
-          sentAt,
-          lastSentAt: serverTimestamp(),
-        });
-        transaction.set(messageRef, {
-          text: censoredContent,
-          from: roleForMsg,
-          senderName: currentUserName.trim().slice(0, 100) || (roleForMsg === "driver" ? "Operator" : "Rider"),
-          senderId: currentUserId,
-          timestamp: serverTimestamp(),
-        });
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Authentication required.");
+      const text = newMessage.trim().slice(0, MAX_MESSAGE_LENGTH);
+      const pending = pendingMessageRef.current?.text === text
+        ? pendingMessageRef.current
+        : { text, requestId: crypto.randomUUID() };
+      pendingMessageRef.current = pending;
+      const response = await fetch(`${backendUrl}/api/sessions/${sessionId}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          text,
+          requestId: pending.requestId,
+        }),
+        signal: AbortSignal.timeout(10_000),
       });
+      const result = await response.json().catch(() => ({})) as {
+        error?: string;
+        retryAfterMs?: number;
+      };
+      if (!response.ok) {
+        const error = new Error(result.error || "Unable to send message.") as Error & { status?: number };
+        error.status = response.status;
+        throw error;
+      }
+      pendingMessageRef.current = null;
       setMessagesSentCounts([...recentMessages, { timestamp: now }]);
       setNewMessage("");
     } catch (error: unknown) {
-      const code = typeof error === "object" && error !== null && "code" in error
-        ? String(error.code)
-        : "";
-      if (code.includes("permission-denied") || code === "rate-limit") {
+      const code = typeof error === "object" && error !== null && "status" in error
+        ? Number((error as { status?: number }).status)
+        : 0;
+      if (code === 409) pendingMessageRef.current = null;
+      if (code === 429 || (typeof error === "object" && error !== null && "message" in error && String((error as { message?: string }).message).includes("wait"))) {
         showTransientMessage("Please wait before sending another message.");
       } else {
         console.error("Failed to send message", error);
@@ -274,7 +248,7 @@ export default function MessagingPanel({
           </div>
         ) : (
           messages.map((msg) => {
-            const isMe = msg.senderId === currentUserId || (currentUserRole === 'driver' && msg.from === 'driver');
+            const isMe = msg.senderId === currentUserId;
             
             return (
               <div 

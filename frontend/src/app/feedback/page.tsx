@@ -9,9 +9,8 @@ import {
   orderBy,
   limit,
   Timestamp,
-  doc,
-  updateDoc,
 } from "firebase/firestore";
+import { auth } from "@/lib/firebaseAuth";
 import {
   Star,
   MessageSquare,
@@ -76,9 +75,11 @@ function StatusBadge({ status }: { status: FeedbackEntry["status"] }) {
 function FeedbackCard({
   entry,
   onStatusChange,
+  updating,
 }: {
   entry: FeedbackEntry;
-  onStatusChange: (id: string, status: FeedbackEntry["status"]) => void;
+  onStatusChange: (id: string, status: FeedbackEntry["status"]) => Promise<void>;
+  updating: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const formattedTime = entry.timestamp
@@ -221,8 +222,8 @@ function FeedbackCard({
             {(["new", "reviewed", "resolved"] as FeedbackEntry["status"][]).map((s) => (
               <button
                 key={s}
-                onClick={() => onStatusChange(entry.id, s)}
-                disabled={entry.status === s}
+                onClick={() => void onStatusChange(entry.id, s)}
+                disabled={entry.status === s || updating}
                 className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
                   s === "resolved"
                     ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30"
@@ -250,6 +251,8 @@ export default function FeedbackPage() {
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [search, setSearch] = useState("");
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState("");
 
   useEffect(() => {
     const q = query(collection(db, "feedbacks"), orderBy("timestamp", "desc"), limit(200));
@@ -274,10 +277,29 @@ export default function FeedbackPage() {
     id: string,
     status: FeedbackEntry["status"]
   ) => {
+    if (updatingId) return;
+    setUpdatingId(id);
+    setStatusError("");
     try {
-      await updateDoc(doc(db, "feedbacks", id), { status });
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+      const token = await auth.currentUser?.getIdToken();
+      if (!backendUrl || !token) throw new Error("Feedback admin service is unavailable.");
+      const response = await fetch(`${backendUrl}/api/feedback/${id}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Unable to update feedback status.");
     } catch (e) {
       console.error("Status update failed:", e);
+      setStatusError(e instanceof Error ? e.message : "Unable to update feedback status.");
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -337,6 +359,11 @@ export default function FeedbackPage() {
       </header>
 
       <div className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col gap-6">
+        {statusError && (
+          <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            {statusError}
+          </div>
+        )}
         {/* Stats Row */}
         <div className="grid grid-cols-3 gap-3">
           {[
@@ -448,6 +475,7 @@ export default function FeedbackPage() {
                 key={entry.id}
                 entry={entry}
                 onStatusChange={handleStatusChange}
+                updating={updatingId !== null}
               />
             ))}
           </div>

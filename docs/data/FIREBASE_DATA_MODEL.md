@@ -62,14 +62,14 @@ RTDB `users/{uid}` is a denied-write legacy/read-owner perimeter; active applica
 
 | Field | Type | Meaning |
 |---|---|---|
-| `uid` | string | Must equal document/auth UID on client create |
+| `uid` | string | Same as verified auth UID |
 | `email` | string ≤320 | Firebase account email |
 | `displayName` | string ≤100 | UI name |
 | `photoURL` | string ≤2048 | Auth avatar URL |
 | `role` | `passenger` / `driver` / `admin` | Presentation mirror; Auth custom claim is API authority |
-| `createdAt` | epoch ms | Client create time |
+| `createdAt` | Firestore Timestamp | Server create time |
 
-Owner can read and create only a passenger-shaped profile. Client update/delete is denied. Server role sync/fleet/privacy flows can mutate/delete.
+Owner can read. All client writes are denied. `POST /api/users/bootstrap` transactionally creates a missing passenger profile from verified ID-token claims and never overwrites an existing role; server role sync/fleet/privacy flows can mutate/delete.
 
 ### `routes/{routeId}`
 
@@ -137,11 +137,11 @@ Admin and the assigned session driver can read. All client writes are denied. Th
 
 #### `ride_sessions/{sessionId}/messages/{messageId}`
 
-Fields: `text` (1–500), `from` (`driver|passenger`), `senderName` (1–100), `senderId` (auth UID), `timestamp` (server time). Session operator/admin and registered session passengers read. The same parties create only their own sender identity; update/delete is denied to clients. Admin API can recursively clear messages.
+Fields: `text` (1–500), `from` (`driver|passenger`), `senderName` (1–100), `senderId` (auth UID), `requestHash` (server idempotency fingerprint), and `timestamp` (server time). Session operator/admin and registered session passengers read; all client writes are denied. The active-session message endpoint derives identity, keys each document from UID plus `requestId`, and writes message/rate state atomically. Admin API can recursively clear messages.
 
 #### `ride_sessions/{sessionId}/messageRateLimits/{uid}`
 
-Fields: `userId`, `sentAt: Timestamp[]` (up to 59 prior sends), `lastSentAt`. The message and rate record advance in the same client transaction. Minimum gap is three seconds and maximum is 60/hour. Owner and session membership are required; client deletion is denied.
+Fields: `userId`, `sentAt: Timestamp[]` (bounded rolling history), `lastSentAt`. The backend advances the message and rate record in one transaction after rechecking live session membership. Minimum gap is three seconds and maximum is 60/hour. Owner/member reads are allowed; all client writes are denied.
 
 ### `completed_trips/{sessionId}`
 
@@ -149,15 +149,15 @@ Fields: `busId`, `driverId`, `routeId`, `completedAt` (ISO string), `stopCount`,
 
 ### `feedbacks/{feedbackId}`
 
-Fields: `userId`, `userName`, `type` (`general|ride`), nullable `sessionId/busId/driverId/rating`, `comment` (≤2000 characters and UI word cap), `timestamp`, `status` (`new|reviewed|resolved`). Authenticated users create their own constrained feedback; ride feedback requires completed-session passenger eligibility. Admin reads and can update only `status`. Client delete is denied; retention/server privacy can delete.
+Fields: `userId`, server-derived `userName`, `type` (`general|ride`), nullable `sessionId/busId/driverId/rating`, `comment` (≤2000 characters and 200 words), `requestHash`, `timestamp`, `status` (`new|reviewed|resolved`), and optional review audit fields. All client writes are denied. The idempotent feedback endpoint checks completed-session passenger eligibility and cooldown in the write transaction; the admin status endpoint changes review state. Retention/server privacy can delete.
 
 ### `feedbackCooldowns/{uid}`
 
-`userId` and `lastSubmittedAt`. Created/advanced atomically with feedback; one submission per 24 hours. Owner reads; owner writes only the exact safe shape/time; no client delete.
+`userId` and `lastSubmittedAt`. Read and advanced inside the same server transaction as feedback, preventing concurrent cooldown bypass; one submission per 24 hours. Owner reads; all client writes are denied.
 
 ### `settings/global`
 
-Fields: `serviceStartTime`, `noBusesMessage`, `noBusesSubMessage`, `announcementText`, `announcementActive`. Authenticated users read through one auth-ready shared snapshot listener. Admin client may create/update/delete. Defaults are applied locally when fields/document are absent.
+Fields: `serviceStartTime`, `noBusesMessage`, `noBusesSubMessage`, `announcementText`, `announcementActive`, `updatedAt`, and `updatedBy`. Authenticated users read through one auth-ready shared snapshot listener. All client writes are denied; the admin settings endpoint validates bounded partial updates. Defaults are applied locally when fields/document are absent.
 
 ## Firestore backend-only collections
 

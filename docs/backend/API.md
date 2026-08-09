@@ -112,8 +112,29 @@ Body: `{ "boardingCode":"ABCD2345", "lat":23.0, "lng":72.5, "accuracy":25, "boar
 
 Requires a valid Firebase bearer token, the driver-issued session code, route-owned stops in forward order, browser accuracy no worse than 100 m, and—on first boarding—a passenger coordinate within 150 m of a fresh nonfuture hardware GNSS projection bound to the exact session/bus/route. Browser location is defense in depth rather than trusted proof; possession of the non-public session code is the server-verifiable authorization. An existing passenger may correct stops without a second location prompt. A Firestore transaction rechecks session state, code, and existing membership when proximity is omitted before adding or updating only the authenticated UID's manifest entry. Display name and timestamps are server-derived. Returns `{joined:true,sessionId}` or 400/403/404/409/422/500.
 
-## Fleet/admin endpoints
+### `POST /api/sessions/:sessionId/messages` — session member/operator
 
+Body: `{ "text":"Bus arriving", "requestId":"browser-generated-uuid" }`. The authenticated UID must be a manifest passenger, the assigned driver on the assigned bus, or an admin, and the session must still be `armed|active`. Sender role/name are server-derived. One transaction rechecks membership/state, applies the three-second and 60-per-hour limits, and writes both message and rate state. `requestId` makes retries idempotent: first success is 201, an identical retry is 200, and reuse with changed content is 409. Throttling is 429 with `Retry-After` and `retryAfterMs`.
+
+## Feedback, profile, and settings endpoints
+
+### `POST /api/feedback` — authenticated
+
+Body: `{ "type":"general|ride", "requestId":"browser-generated-uuid", "comment":"...", "rating":5, "sessionId":"...", "busId":"...", "driverId":"..." }`. Ride identifiers are required only for ride feedback. The backend derives the author name, validates comment/rating limits and completed-ride membership, and reads the per-user 24-hour cooldown in the same transaction that writes feedback/cooldown state. Identical retries are idempotent; request-ID payload conflicts are 409; cooldown is 429.
+
+### `PATCH /api/feedback/:feedbackId/status` — admin
+
+Body: `{ "status":"new|reviewed|resolved" }`. Updates only review state plus server audit metadata. Missing feedback is 404.
+
+### `POST /api/users/bootstrap` — authenticated
+
+Creates a missing `users/{uid}` passenger profile transactionally from verified ID-token claims; request-body identity fields are ignored and existing profiles/roles are never overwritten. Returns 201 when created or 200 when already present, with `Cache-Control: no-store`.
+
+### `PUT /api/settings` — admin
+
+Accepts a non-empty partial object containing only `serviceStartTime`, `noBusesMessage`, `noBusesSubMessage`, `announcementText`, and/or boolean `announcementActive`. Values are bounded and stored with server audit metadata.
+
+## Fleet/admin endpoints
 All `/api/fleet/*` handlers are behind `requireAdmin` plus an idempotency/fingerprint guard for mutations.
 
 ### `POST /api/fleet/reconcile`

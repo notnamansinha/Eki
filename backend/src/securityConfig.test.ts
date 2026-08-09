@@ -85,11 +85,11 @@ describe("production security configuration", () => {
     expect(devices).toContain("allow read, write: if false;");
     expect(activeRides).toContain("allow read, write: if false;");
     expect(activeBusLocks).toContain("allow read, write: if false;");
-    expect(messages).toContain("request.resource.data.senderId == request.auth.uid");
-    expect(messages).toContain("request.resource.data.from == 'passenger'");
-    expect(messages).toContain("request.resource.data.from == 'driver'");
-    expect(messages).toContain("messageRateAdvanced(sessionId)");
-    expect(messages).toContain("request.resource.data.text.size() > 0");
+    // Message and rate-limit writes are backend-authoritative; clients read only.
+    expect(messages).toContain("allow create, update, delete: if false;");
+    expect(messages).toContain("isSessionPassenger(sessionId)");
+    expect(messages).not.toContain("messageRateAdvanced(sessionId)");
+    expect(messageRateLimits).toContain("allow create, update, delete: if false;");
     expect(messageRateLimits).toContain("isSessionPassenger(sessionId)");
     expect(messageRateLimits).toContain("isSessionOperator(sessionId)");
     expect(sessions).toContain("allow read: if isSessionOperator(sessionId)");
@@ -99,11 +99,30 @@ describe("production security configuration", () => {
     const sessionsRoute = workspaceFile("backend/src/routes/sessions.ts");
     expect(sessionsRoute).toContain("validateStopSelection(");
     expect(sessionsRoute).not.toContain("req.body?.userName");
-    expect(feedback).toContain("isSessionPassenger(request.resource.data.sessionId)");
-    expect(feedback).toContain("sessionDoc(request.resource.data.sessionId).data.status == 'completed'");
-    expect(feedback).toContain("request.resource.data.rating is int");
-    expect(feedback).toContain("sessionDoc(request.resource.data.sessionId).data.busId");
-    expect(workspaceFile("frontend/src/components/shared/MessagingPanel.tsx")).toContain("limitToLast(200)");
+    expect(sessionsRoute).toContain('router.post("/:sessionId/messages", requireAuth');
+    expect(sessionsRoute).toContain("evaluateChatRate");
+    expect(sessionsRoute).toContain("censorText");
+    expect(feedback).toContain("allow create: if false;");
+    expect(feedback).toContain("allow update: if false;");
+    // Ride-eligibility and cooldown enforcement now live in the feedback
+    // endpoint and its service.
+    const feedbackRoute = workspaceFile("backend/src/routes/feedback.ts");
+    const feedbackService = workspaceFile("backend/src/services/feedbackService.ts");
+    expect(feedbackRoute).toContain('router.post("/", requireAuth');
+    expect(feedbackRoute).toContain("evaluateFeedback");
+    expect(feedbackRoute).toContain("feedbackCooldowns");
+    expect(feedbackRoute).toContain('router.patch("/:feedbackId/status", requireAdmin');
+    expect(feedbackRoute).not.toContain("req.body?.userName");
+    expect(feedbackRoute).toContain("transaction.getAll(cooldownRef");
+    expect(feedbackService).toContain("sessionCompleted");
+    expect(feedbackService).toContain("isSessionPassenger");
+    const messagingPanel = workspaceFile("frontend/src/components/shared/MessagingPanel.tsx");
+    const feedbackPage = workspaceFile("frontend/src/app/feedback/page.tsx");
+    expect(messagingPanel).toContain("limitToLast(200)");
+    expect(messagingPanel).toContain("requestId: pending.requestId");
+    expect(messagingPanel).not.toContain("currentUserName");
+    expect(feedbackPage).toContain("/api/feedback/${id}/status");
+    expect(feedbackPage).not.toContain("updateDoc(");
   });
 
   it("gates post-ride feedback on a stop selection scoped to the current session", () => {
@@ -190,6 +209,34 @@ describe("production security configuration", () => {
     expect(places).not.toContain("nominatim.openstreetmap.org");
     expect(editor).toContain("/api/places/search");
     expect(editor).not.toContain("https://nominatim.openstreetmap.org/search?format=json");
+  });
+
+  it("keeps user profiles and settings backend-authoritative", () => {
+    const rules = workspaceFile("firestore.rules");
+    const users = ruleBlock(rules, "match /users/{uid}");
+    const settings = ruleBlock(rules, "match /settings/{document}");
+    const usersRoute = workspaceFile("backend/src/routes/users.ts");
+    const settingsRoute = workspaceFile("backend/src/routes/settings.ts");
+    const authHook = workspaceFile("frontend/src/hooks/useAuth.ts");
+    const settingsHook = workspaceFile("frontend/src/hooks/useSettings.ts");
+
+    expect(users).toContain("allow read: if isOwner(uid);");
+    expect(users).toContain("allow create: if false;");
+    expect(users).toContain("allow update, delete: if false;");
+    expect(settings).toContain("allow read: if isAuthenticated();");
+    expect(settings).toContain("allow create, update, delete: if false;");
+    expect(usersRoute).toContain('router.post("/bootstrap", requireAuth');
+    expect(usersRoute).toContain('role: "passenger"');
+    expect(usersRoute).toContain("transaction.create(userRef");
+    expect(usersRoute).toContain("req.user?.email");
+    expect(usersRoute).not.toContain("req.body");
+    expect(settingsRoute).toContain('router.put("/", requireAdmin');
+    expect(settingsRoute).toContain('"announcementActive"');
+    // The frontend asks the backend instead of writing directly.
+    expect(authHook).toContain("/api/users/bootstrap");
+    expect(authHook).not.toContain("setDoc(userDocRef");
+    expect(settingsHook).toContain("/api/settings");
+    expect(settingsHook).not.toContain('setDoc(doc(db, "settings"');
   });
 
   it("clears in-memory data caches on logout", () => {

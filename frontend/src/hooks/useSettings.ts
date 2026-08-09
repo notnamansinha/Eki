@@ -9,8 +9,9 @@
  * when the last subscriber unmounts.
  */
 import { useState, useEffect } from "react";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebaseFirestore";
+import { auth } from "@/lib/firebaseAuth";
 import { waitForAuth } from "@/lib/authState";
 
 export interface GlobalSettings {
@@ -129,7 +130,26 @@ export function useSettings(): {
   }, []);
 
   const saveSettings = async (partial: Partial<GlobalSettings>) => {
-    await setDoc(doc(db, "settings", "global"), partial, { merge: true });
+    // Server-authoritative save: the admin panel no longer writes settings
+    // from the client; PUT /api/settings validates and persists them.
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+    if (!backendUrl) throw new Error("Settings service is not configured.");
+    await waitForAuth();
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) throw new Error("Authentication required.");
+    const response = await fetch(`${backendUrl}/api/settings`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(partial),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      throw new Error(result.error || "Unable to save settings.");
+    }
   };
 
   return { settings: _settings, loading: _loading, saveSettings };
