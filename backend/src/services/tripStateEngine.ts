@@ -473,7 +473,13 @@ export function startTripStateEngine(): () => Promise<void> {
           if (activeRideRef && activeRide?.data()?.sessionId === data.sessionId) {
             transaction.delete(activeRideRef);
           }
-          if (lock.data()?.sessionId === data.sessionId) transaction.delete(lockRef);
+          if (
+            typeof data.sessionId === "string" &&
+            data.sessionId.length > 0 &&
+            lock.data()?.sessionId === data.sessionId
+          ) {
+            transaction.delete(lockRef);
+          }
         });
         if (activeRideId) {
           persistedActiveRideState.delete(activeRideId);

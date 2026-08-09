@@ -355,6 +355,7 @@ describe("production security configuration", () => {
     expect(shifts).toContain("lockData?.driverId !== assignment.driverId");
     expect(shifts).toContain("winner.sessionId === sessionRef.id");
     expect(engine).toContain('collection("_active_bus_locks").doc(data.busId)');
+    expect(engine).toContain("data.sessionId.length > 0");
     expect(engine).toContain("lock.data()?.sessionId === data.sessionId");
     expect(engine).toContain("live.sessionId !== data.sessionId");
     expect(reconciler).toContain("currentBusLock.data()?.sessionId === sessionId");

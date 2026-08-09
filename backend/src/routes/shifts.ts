@@ -355,12 +355,17 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           res.json({ sessionId: winner.sessionId, resumed: true });
           return;
         }
-        await sessionRef.set({
-          status: "failed",
-          endTime: Date.now(),
-          failureReason: "shift_conflict",
-        }, { merge: true });
-        await releaseActiveBusLock(assignment.busId, sessionRef.id);
+        // A reused claim belongs to an existing session. This request did not
+        // create that lock, so it must not fail the session or release its
+        // lock merely because a different live session won the RTDB race.
+        if (lockClaim.created) {
+          await sessionRef.set({
+            status: "failed",
+            endTime: Date.now(),
+            failureReason: "shift_conflict",
+          }, { merge: true });
+          await releaseActiveBusLock(assignment.busId, sessionRef.id);
+        }
         res.status(409).json({ error: "This bus already has an active shift." });
         return;
       }

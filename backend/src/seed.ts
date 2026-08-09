@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./seedEnvironment";
 import { db } from "./lib/firebaseAdmin";
 import { PREDEFINED_ROUTES } from "../../frontend/src/lib/predefinedRoutes";
 import { computeRouteGeometry } from "./lib/googleMaps";

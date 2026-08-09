@@ -46,8 +46,13 @@ router.post(
         : { ok: false as const, reason: "payload_size" };
     if (!SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
       recordTelemetryRejection();
-      res.status(!secret ? 401 : 400).json({
-        error: !secret ? "Invalid device credentials." : "Invalid telemetry payload.",
+      const payloadTooLarge = !parsed.ok && parsed.reason === "payload_size";
+      res.status(!secret ? 401 : payloadTooLarge ? 413 : 400).json({
+        error: !secret
+          ? "Invalid device credentials."
+          : payloadTooLarge
+            ? "Request body is too large."
+            : "Invalid telemetry payload.",
       });
       return;
     }
