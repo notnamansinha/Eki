@@ -4,6 +4,7 @@
 #include "recovery_portal.h"
 #include "telemetry_policy.h"
 #include "telemetry_queue.h"
+#include "reset_stats.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
@@ -100,6 +101,21 @@ static_assert(
 // RTC no-init memory preserves the bounded queue across software/watchdog
 // resets. initializeOrRecover() rejects stale firmware layouts explicitly.
 RTC_NOINIT_ATTR TelemetryQueue telemetryQueue;
+// Reset statistics survive brownout/panic/watchdog resets in RTC no-init
+// memory, so operators see recovery events instead of a silent reboot.
+RTC_NOINIT_ATTR eki::reset::ResetStats resetStats;
+static_assert(
+  sizeof(eki::reset::ResetStats) <= 512,
+  "Reset stats must leave headroom in the ESP32's 8 KiB RTC slow memory."
+);
+static_assert(
+  std::is_trivial<eki::reset::ResetStats>::value,
+  "RTC no-init reset stats must not be rewritten by a global constructor."
+);
+static_assert(
+  sizeof(TelemetryQueue) + sizeof(eki::reset::ResetStats) <= 6 * 1024,
+  "RTC telemetry state must retain at least 2 KiB of slow-memory headroom."
+);
 portMUX_TYPE telemetryQueueMux = portMUX_INITIALIZER_UNLOCKED;
 portMUX_TYPE healthMetricsMux = portMUX_INITIALIZER_UNLOCKED;
 TaskHandle_t publisherTaskHandle = nullptr;
@@ -190,6 +206,46 @@ const char *faultCodeName(eki::connectivity::FaultCode fault) {
     case eki::connectivity::FaultCode::None:
     default:
       return "none";
+  }
+}
+
+eki::reset::ResetReason resetReasonFromEsp(esp_reset_reason_t reason) {
+  switch (reason) {
+    case ESP_RST_POWERON:
+      return eki::reset::ResetReason::PowerOn;
+    case ESP_RST_EXT:
+      return eki::reset::ResetReason::External;
+    case ESP_RST_SW:
+      return eki::reset::ResetReason::Software;
+    case ESP_RST_PANIC:
+      return eki::reset::ResetReason::Panic;
+    case ESP_RST_INT_WDT:
+      return eki::reset::ResetReason::InterruptWatchdog;
+    case ESP_RST_TASK_WDT:
+      return eki::reset::ResetReason::TaskWatchdog;
+    case ESP_RST_WDT:
+      return eki::reset::ResetReason::OtherWatchdog;
+    case ESP_RST_DEEPSLEEP:
+      return eki::reset::ResetReason::DeepSleep;
+    case ESP_RST_BROWNOUT:
+      return eki::reset::ResetReason::Brownout;
+    case ESP_RST_SDIO:
+      return eki::reset::ResetReason::Sdio;
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 0)
+    case ESP_RST_USB:
+      return eki::reset::ResetReason::Usb;
+    case ESP_RST_JTAG:
+      return eki::reset::ResetReason::Jtag;
+    case ESP_RST_EFUSE:
+      return eki::reset::ResetReason::Efuse;
+    case ESP_RST_PWR_GLITCH:
+      return eki::reset::ResetReason::PowerGlitch;
+    case ESP_RST_CPU_LOCKUP:
+      return eki::reset::ResetReason::CpuLockup;
+#endif
+    case ESP_RST_UNKNOWN:
+    default:
+      return eki::reset::ResetReason::Unknown;
   }
 }
 
@@ -814,9 +870,12 @@ void reportHealth() {
   lastHealthReportAt = millis();
   const TelemetryQueue::Stats queue = telemetryQueueStats();
   const HealthCounters counters = healthCounters();
+  // ResetStats is touched only by this (loop) task: setup() records and
+  // reportHealth() reads, so a plain copy is race-free.
+  const eki::reset::ResetStats resets = resetStats;
   const eki::connectivity::FaultCode fault = currentDeviceFault();
   Serial.printf(
-    "[Health] fault=%s queue=%u/%u high-water=%u overflow-drops=%lu stale-drops=%lu; accepted=%lu rejected=%lu; NMEA checksum-failures=%lu UART-buffer-overflows=%lu UART-FIFO-overflows=%lu.\n",
+    "[Health] fault=%s queue=%u/%u high-water=%u overflow-drops=%lu stale-drops=%lu; accepted=%lu rejected=%lu; NMEA checksum-failures=%lu UART-buffer-overflows=%lu UART-FIFO-overflows=%lu; resets: poweron=%u brownout=%u panic=%u task-wdt=%u int-wdt=%u sw=%u other=%u total=%u.\n",
     faultCodeName(fault),
     queue.depth,
     static_cast<unsigned>(TELEMETRY_QUEUE_CAPACITY),
@@ -827,19 +886,49 @@ void reportHealth() {
     static_cast<unsigned long>(counters.rejectedFixes),
     static_cast<unsigned long>(gps.failedChecksum()),
     static_cast<unsigned long>(counters.uartBufferOverflows),
-    static_cast<unsigned long>(counters.uartFifoOverflows)
+    static_cast<unsigned long>(counters.uartFifoOverflows),
+    static_cast<unsigned>(resets.count(eki::reset::ResetReason::PowerOn)),
+    static_cast<unsigned>(resets.count(eki::reset::ResetReason::Brownout)),
+    static_cast<unsigned>(resets.count(eki::reset::ResetReason::Panic)),
+    static_cast<unsigned>(resets.count(eki::reset::ResetReason::TaskWatchdog)),
+    static_cast<unsigned>(resets.count(eki::reset::ResetReason::InterruptWatchdog)),
+    static_cast<unsigned>(resets.count(eki::reset::ResetReason::Software)),
+    static_cast<unsigned>(resets.otherCount()),
+    static_cast<unsigned>(resets.total())
   );
 }
 } // namespace
 
 void setup() {
   Serial.begin(115200);
+  const uint32_t configurationTag = telemetryConfigurationTag();
+  const esp_reset_reason_t espBootReason = esp_reset_reason();
+  const eki::reset::ResetReason bootReason = resetReasonFromEsp(espBootReason);
+  const bool resetStatsRecovered = resetStats.initializeOrRecover(
+    configurationTag
+  );
+  resetStats.record(bootReason);
   pinMode(STATUS_LED_PIN, OUTPUT);
   digitalWrite(STATUS_LED_PIN, LOW);
   const size_t gpsRxBuffer = gpsSerial.setRxBufferSize(GPS_RX_BUFFER_BYTES);
   gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
   gpsSerial.onReceiveError(onGpsSerialError);
   delay(500);
+
+  Serial.printf(
+    "[Boot] Reset cause=%s (%d, total %u); stats %s; poweron=%u brownout=%u panic=%u task-wdt=%u int-wdt=%u sw=%u other=%u.\n",
+    eki::reset::resetReasonName(bootReason),
+    static_cast<int>(espBootReason),
+    static_cast<unsigned>(resetStats.total()),
+    resetStatsRecovered ? "recovered" : "initialized",
+    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::PowerOn)),
+    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::Brownout)),
+    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::Panic)),
+    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::TaskWatchdog)),
+    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::InterruptWatchdog)),
+    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::Software)),
+    static_cast<unsigned>(resetStats.otherCount())
+  );
 
   if (eki::telemetry::hasTemplateConfiguration(
     WIFI_SSID,
@@ -874,13 +963,12 @@ void setup() {
 
   portENTER_CRITICAL(&telemetryQueueMux);
   const bool queueRecovered = telemetryQueue.initializeOrRecover(
-    telemetryConfigurationTag()
+    configurationTag
   );
   const TelemetryQueue::Stats bootQueue = telemetryQueue.stats();
   portEXIT_CRITICAL(&telemetryQueueMux);
   Serial.printf(
-    "[Boot] Eki asynchronous HTTPS telemetry; reset reason=%d; GNSS RX buffer=%u bytes; RTC queue=%s (%u/%u).\n",
-    esp_reset_reason(),
+    "[Boot] Eki asynchronous HTTPS telemetry; GNSS RX buffer=%u bytes; RTC queue=%s (%u/%u).\n",
     gpsRxBuffer,
     queueRecovered ? "recovered" : "initialized",
     bootQueue.depth,
