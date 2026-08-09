@@ -1,6 +1,7 @@
 #include "secrets.h"
 #include "telemetry_policy.h"
 #include "telemetry_queue.h"
+#include "reset_stats.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
@@ -86,6 +87,17 @@ static_assert(
 // RTC no-init memory preserves the bounded queue across software/watchdog
 // resets. initializeOrRecover() rejects stale firmware layouts explicitly.
 RTC_NOINIT_ATTR TelemetryQueue telemetryQueue;
+// Reset statistics survive brownout/panic/watchdog resets in RTC no-init
+// memory, so operators see recovery events instead of a silent reboot.
+RTC_NOINIT_ATTR eki::reset::ResetStats resetStats;
+static_assert(
+  sizeof(eki::reset::ResetStats) <= 512,
+  "Reset stats must leave headroom in the ESP32's 8 KiB RTC slow memory."
+);
+static_assert(
+  std::is_trivial<eki::reset::ResetStats>::value,
+  "RTC no-init reset stats must not be rewritten by a global constructor."
+);
 portMUX_TYPE telemetryQueueMux = portMUX_INITIALIZER_UNLOCKED;
 portMUX_TYPE healthMetricsMux = portMUX_INITIALIZER_UNLOCKED;
 TaskHandle_t publisherTaskHandle = nullptr;
@@ -566,8 +578,11 @@ void reportHealth() {
   lastHealthReportAt = millis();
   const TelemetryQueue::Stats queue = telemetryQueueStats();
   const HealthCounters counters = healthCounters();
+  // ResetStats is touched only by this (loop) task: setup() records and
+  // reportHealth() reads, so a plain copy is race-free.
+  const eki::reset::ResetStats resets = resetStats;
   Serial.printf(
-    "[Health] queue=%u/%u high-water=%u overflow-drops=%lu stale-drops=%lu; accepted=%lu rejected=%lu; NMEA checksum-failures=%lu UART-buffer-overflows=%lu UART-FIFO-overflows=%lu.\n",
+    "[Health] queue=%u/%u high-water=%u overflow-drops=%lu stale-drops=%lu; accepted=%lu rejected=%lu; NMEA checksum-failures=%lu UART-buffer-overflows=%lu UART-FIFO-overflows=%lu; resets: poweron=%u brownout=%u panic=%u task-wdt=%u int-wdt=%u sw=%u other=%u total=%u.\n",
     queue.depth,
     static_cast<unsigned>(TELEMETRY_QUEUE_CAPACITY),
     queue.highWaterMark,
@@ -577,7 +592,15 @@ void reportHealth() {
     static_cast<unsigned long>(counters.rejectedFixes),
     static_cast<unsigned long>(gps.failedChecksum()),
     static_cast<unsigned long>(counters.uartBufferOverflows),
-    static_cast<unsigned long>(counters.uartFifoOverflows)
+    static_cast<unsigned long>(counters.uartFifoOverflows),
+    static_cast<unsigned>(resets.count(eki::reset::ResetReason::PowerOn)),
+    static_cast<unsigned>(resets.count(eki::reset::ResetReason::Brownout)),
+    static_cast<unsigned>(resets.count(eki::reset::ResetReason::Panic)),
+    static_cast<unsigned>(resets.count(eki::reset::ResetReason::TaskWatchdog)),
+    static_cast<unsigned>(resets.count(eki::reset::ResetReason::InterruptWatchdog)),
+    static_cast<unsigned>(resets.count(eki::reset::ResetReason::Software)),
+    static_cast<unsigned>(resets.otherCount()),
+    static_cast<unsigned>(resets.total())
   );
 }
 } // namespace
@@ -615,6 +638,28 @@ void setup() {
     queueRecovered ? "recovered" : "initialized",
     bootQueue.depth,
     static_cast<unsigned>(TELEMETRY_QUEUE_CAPACITY)
+  );
+
+  // Count this boot's reset cause in RTC-backed stats before any later
+  // logging: brownout/panic/watchdog resets are recovery events, not
+  // failures, and the serial monitor should say so explicitly.
+  const eki::reset::ResetReason bootReason =
+    static_cast<eki::reset::ResetReason>(esp_reset_reason());
+  const bool resetStatsRecovered = resetStats.initializeOrRecover(
+    telemetryConfigurationTag()
+  );
+  resetStats.record(bootReason);
+  Serial.printf(
+    "[Boot] Reset cause=%s (total %u); stats %s; poweron=%u brownout=%u panic=%u task-wdt=%u int-wdt=%u sw=%u\n",
+    eki::reset::resetReasonName(bootReason),
+    static_cast<unsigned>(resetStats.total()),
+    resetStatsRecovered ? "recovered" : "initialized",
+    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::PowerOn)),
+    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::Brownout)),
+    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::Panic)),
+    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::TaskWatchdog)),
+    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::InterruptWatchdog)),
+    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::Software))
   );
 
   tlsClient.setCACert(BACKEND_ROOT_CA);
