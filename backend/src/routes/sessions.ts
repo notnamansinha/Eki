@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldPath, FieldValue } from "firebase-admin/firestore";
 import { requireAuth } from "../middleware/requireAuth";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { haversineMeters } from "../lib/geo";
@@ -40,6 +40,19 @@ function sendBoardingError(res: Response, error: unknown, fallback: string): voi
   }
   console.error(`[Sessions] ${fallback}:`, error);
   res.status(500).json({ error: fallback });
+}
+
+function passengerManifest(value: unknown): Record<string, Record<string, unknown>> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, Record<string, unknown>>
+    : {};
+}
+
+function hasPassenger(
+  manifest: Record<string, Record<string, unknown>>,
+  uid: string,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(manifest, uid);
 }
 
 /**
@@ -129,7 +142,7 @@ router.post("/:sessionId/join", requireAuth, async (
     req.body?.accuracy,
   );
   const submittedCode = normalizeBoardingCode(req.body?.boardingCode);
-  if (!passengerPosition || !submittedCode) {
+  if (!submittedCode) {
     res.status(400).json({ error: "Invalid boarding details." });
     return;
   }
@@ -158,10 +171,20 @@ router.post("/:sessionId/join", requireAuth, async (
       throw new BoardingPolicyError(422, "This session has no active vehicle.");
     }
 
+    // An already-authorized passenger may correct their selected stops after
+    // location permission disappears. First-time boarding still requires a
+    // fresh proximity check, and the transaction below rechecks membership.
+    const requiresProximity = !hasPassenger(passengerManifest(data.passengers), user.uid);
+    if (requiresProximity && !passengerPosition) {
+      throw new BoardingPolicyError(400, "Location access is required to board this bus.");
+    }
+
     const [route, profile, liveSnapshot] = await Promise.all([
       db.collection("routes").doc(routeId).get(),
       db.collection("users").doc(user.uid).get(),
-      rtdb.ref(`activeBuses/${busId}_${routeId}`).once("value"),
+      requiresProximity
+        ? rtdb.ref(`activeBuses/${busId}_${routeId}`).once("value")
+        : Promise.resolve(null),
     ]);
     const stopSelection = validateStopSelection(
       route.data()?.stops,
@@ -172,19 +195,21 @@ router.post("/:sessionId/join", requireAuth, async (
       throw new BoardingPolicyError(400, "Select valid stops in route order.");
     }
 
-    const busPosition = validateLiveBoardingProjection(
-      liveSnapshot.val() as Record<string, unknown> | null,
-      { sessionId, busId, routeId },
-    );
-    if (!busPosition) {
-      throw new BoardingPolicyError(
-        409,
-        "The live bus position is unavailable; wait for a fresh hardware fix.",
+    if (requiresProximity) {
+      const busPosition = validateLiveBoardingProjection(
+        liveSnapshot?.val() as Record<string, unknown> | null,
+        { sessionId, busId, routeId },
       );
-    }
-    const distanceM = haversineMeters(passengerPosition, busPosition);
-    if (!Number.isFinite(distanceM) || distanceM > JOIN_RADIUS_M) {
-      throw new BoardingPolicyError(403, "You must be near the bus to board.");
+      if (!busPosition) {
+        throw new BoardingPolicyError(
+          409,
+          "The live bus position is unavailable; wait for a fresh hardware fix.",
+        );
+      }
+      const distanceM = haversineMeters(passengerPosition!, busPosition);
+      if (!Number.isFinite(distanceM) || distanceM > JOIN_RADIUS_M) {
+        throw new BoardingPolicyError(403, "You must be near the bus to board.");
+      }
     }
 
     const profileName = profile.data()?.displayName;
@@ -210,24 +235,27 @@ router.post("/:sessionId/join", requireAuth, async (
       ) {
         throw new BoardingPolicyError(409, "Boarding authorization expired; ask the driver for the current code.");
       }
-      const passengers =
-        currentData.passengers && typeof currentData.passengers === "object" &&
-        !Array.isArray(currentData.passengers)
-          ? currentData.passengers as Record<string, Record<string, unknown>>
-          : {};
-      const existingPassenger = passengers[user.uid];
-      transaction.update(sessionRef, {
-        passengers: {
-          ...passengers,
-          [user.uid]: {
-            userId: user.uid,
-            userName,
-            ...stopSelection,
-            joinedAt: existingPassenger?.joinedAt ?? FieldValue.serverTimestamp(),
-          },
+      const passengers = passengerManifest(currentData.passengers);
+      const passengerStillExists = hasPassenger(passengers, user.uid);
+      const existingPassenger = passengerStillExists ? passengers[user.uid] : undefined;
+      if (!requiresProximity && !passengerStillExists) {
+        throw new BoardingPolicyError(
+          409,
+          "Passenger membership changed; verify proximity and board again.",
+        );
+      }
+      transaction.update(
+        sessionRef,
+        new FieldPath("passengers", user.uid),
+        {
+          userId: user.uid,
+          userName,
+          ...stopSelection,
+          joinedAt: existingPassenger?.joinedAt ?? FieldValue.serverTimestamp(),
         },
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+        "updatedAt",
+        FieldValue.serverTimestamp(),
+      );
     });
 
     res.json({ joined: true, sessionId });

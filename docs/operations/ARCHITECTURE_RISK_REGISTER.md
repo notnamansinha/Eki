@@ -23,7 +23,7 @@ not a substitute for the physical and institutional acceptance work in the
 
 ### SEC-01: passengers can self-enrol in an unrelated ride session
 
-- **Severity/status:** High / Closed by PR #23.
+- **Severity/status:** High / In review.
 - **Evidence:** `firestore.rules` denies every client write to
   `ride_sessions/{sessionId}`. The assigned driver obtains a random,
   session-scoped boarding code through an authenticated API; the code is absent

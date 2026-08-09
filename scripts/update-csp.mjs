@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { backendOriginFromUrl } from "./csp-backend-origin.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const output = path.join(root, "frontend", "out");
@@ -32,14 +33,7 @@ const globalHeaders = firebase.hosting.headers.find((entry) => entry.source === 
 const csp = globalHeaders?.headers.find((header) => header.key === "Content-Security-Policy");
 if (!csp) throw new Error("Global Content-Security-Policy header not found.");
 
-let backendOrigin = null;
-if (process.env.NEXT_PUBLIC_BACKEND_URL?.trim()) {
-  const backendUrl = new URL(process.env.NEXT_PUBLIC_BACKEND_URL);
-  if (backendUrl.protocol !== "https:" && backendUrl.hostname !== "localhost") {
-    throw new Error("NEXT_PUBLIC_BACKEND_URL must use HTTPS outside local development.");
-  }
-  backendOrigin = backendUrl.origin;
-}
+const backendOrigin = backendOriginFromUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
 
 const sources = [
   "'self'",

@@ -56,6 +56,7 @@ export default function PassengerBoardingView({
   const [boardingCode, setBoardingCode] = useState("");
   const [joinState, setJoinState] = useState<JoinState>("idle");
   const [joinError, setJoinError] = useState("");
+  const [hasJoined, setHasJoined] = useState(false);
 
   const stopOptions = (route.stops ?? []).map((stop) => ({
     value: stop.id,
@@ -83,10 +84,11 @@ export default function PassengerBoardingView({
 
     setJoinState("joining");
     setJoinError("");
+    const updatingExistingPassenger = hasJoined;
     try {
-      const [position, token] = await Promise.all([
-        getCurrentPosition(),
+      const [token, position] = await Promise.all([
         currentUser.getIdToken(),
+        updatingExistingPassenger ? Promise.resolve(null) : getCurrentPosition(),
       ]);
       const response = await fetch(`${backendUrl}/api/sessions/${sessionId}/join`, {
         method: "POST",
@@ -95,7 +97,7 @@ export default function PassengerBoardingView({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          ...position,
+          ...(position ?? {}),
           boardingCode,
           boardingStopId,
           alightingStopId: alightingStopId || null,
@@ -109,9 +111,13 @@ export default function PassengerBoardingView({
       if (!response.ok || result.joined !== true) {
         throw new Error(result.error || "Unable to board.");
       }
+      setHasJoined(true);
       setJoinState("joined");
       onStopSelected?.(true);
     } catch (error) {
+      // If the server no longer sees the prior manifest entry, the next attempt
+      // must perform the first-boarding proximity check again.
+      if (updatingExistingPassenger) setHasJoined(false);
       setJoinState("error");
       setJoinError(errorMessage(error));
     }

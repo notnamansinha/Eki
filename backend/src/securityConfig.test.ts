@@ -289,6 +289,7 @@ describe("production security configuration", () => {
     const boardingPolicy = workspaceFile("backend/src/services/boardingPolicy.ts");
     const driverPage = workspaceFile("frontend/src/app/driver/page.tsx");
     const cspBuild = workspaceFile("scripts/update-csp.mjs");
+    const cspBackendOrigin = workspaceFile("scripts/csp-backend-origin.mjs");
     const server = workspaceFile("backend/src/server.ts");
 
     // Clients can never write ride_sessions; the manifest is backend-authoritative.
@@ -303,6 +304,8 @@ describe("production security configuration", () => {
     expect(sessionsRoute).toContain("boardingCodesMatch");
     expect(sessionsRoute).toContain("validateLiveBoardingProjection");
     expect(sessionsRoute).toContain("db.runTransaction");
+    expect(sessionsRoute).toContain('new FieldPath("passengers", user.uid)');
+    expect(sessionsRoute).toContain("!requiresProximity && !passengerStillExists");
     expect(boardingPolicy).toContain("timingSafeEqual");
     expect(boardingPolicy).toContain("timestamp > now + MAX_JOIN_FIX_FUTURE_MS");
     expect(sessionsRoute).toContain("JOIN_RADIUS_M");
@@ -311,8 +314,11 @@ describe("production security configuration", () => {
     expect(boarding).toContain('/api/sessions/');
     expect(boarding).toContain('Authorization: `Bearer ${token}`');
     expect(boarding).toContain("position.coords.accuracy");
+    expect(boarding).toContain("updatingExistingPassenger ? Promise.resolve(null)");
     expect(driverPage).toContain("/boarding-code");
     expect(cspBuild).toContain("backendOrigin");
+    expect(cspBackendOrigin).toContain('new Set(["http:", "https:"])');
+    expect(cspBackendOrigin).toContain("!HTTP_PROTOCOLS.has(backendUrl.protocol)");
     expect(boarding).not.toContain('updateDoc');
     expect(boarding).not.toContain('setDoc');
   });

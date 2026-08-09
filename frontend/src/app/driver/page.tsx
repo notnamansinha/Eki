@@ -147,6 +147,8 @@ export default function DriverPage() {
       setBoardingCodeError("");
       return;
     }
+    setBoardingCode("");
+    setBoardingCodeError("");
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
     if (!backendUrl || !auth.currentUser) {
       setBoardingCodeError("Boarding code service is unavailable.");
@@ -173,6 +175,7 @@ export default function DriverPage() {
         if (!response.ok || !result.boardingCode) {
           throw new Error(result.error || "Unable to load the boarding code.");
         }
+        if (controller.signal.aborted) return;
         setBoardingCode(result.boardingCode);
         setBoardingCodeError("");
       } catch (error) {

@@ -13,7 +13,7 @@
     "build:production": "node scripts/build-production.mjs",
     "deploy": "npm run build:production && npx firebase deploy",
     "lint": "npm run lint --workspace=frontend && npm run lint --workspace=backend",
-    "test": "npm run test --workspace=backend && npm run test --workspace=frontend",
+    "test": "node --test scripts/*.test.mjs && npm run test --workspace=backend && npm run test --workspace=frontend",
     "verify": "npm run lint && npm test && npm run build && npm audit --omit=dev --omit=optional"
   },
   "overrides": {
