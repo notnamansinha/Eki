@@ -135,6 +135,7 @@ export default function PassengerBoardingView({
         ariaLabel="Boarding stop"
         placeholder="Boarding..."
         value={boardingStopId}
+        disabled={joinState === "joining"}
         onChange={(value) => {
           setBoardingStopId(value);
           onBoardingStopChange?.(value);
@@ -147,6 +148,7 @@ export default function PassengerBoardingView({
         ariaLabel="Destination stop"
         placeholder="Destination (Optional)..."
         value={alightingStopId}
+        disabled={joinState === "joining"}
         onChange={(value) => {
           setAlightingStopId(value);
           selectionChanged();
@@ -157,6 +159,7 @@ export default function PassengerBoardingView({
       <div className="flex gap-2">
         <input
           value={boardingCode}
+          disabled={joinState === "joining"}
           onChange={(event) => {
             setBoardingCode(normalizeCode(event.target.value));
             selectionChanged();
