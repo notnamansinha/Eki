@@ -6,13 +6,14 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
   deleteDoc,
 } from "firebase/firestore";
-import { afterAll, beforeAll, describe, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const enabled = process.env.FIREBASE_RULES_TEST === "1";
 const rulesDescribe = enabled ? describe : describe.skip;
@@ -59,6 +60,13 @@ rulesDescribe("Firebase security rules integration", () => {
       });
       await setDoc(doc(context.firestore(), "devices", "device_1"), {
         secretHash: "never-client-readable",
+        busId: "bus_1",
+        routeId: "route_1",
+      });
+      await setDoc(doc(context.firestore(), "devices", "device_2"), {
+        secretHash: "never-client-readable",
+        busId: "bus_1",
+        routeId: "route_2",
       });
       await setDoc(doc(context.firestore(), "active_rides", "bus_1_route_1"), {
         sessionId: "session_1",
@@ -241,6 +249,22 @@ rulesDescribe("Firebase security rules integration", () => {
     }));
     // And deleting a session is backend-only.
     await assertFails(deleteDoc(doc(admin.firestore(), "ride_sessions", "session_1")));
+  });
+
+  it("supports the devices(busId, routeId) compound query used by device provisioning", async () => {
+    // Server-side provisioning (provisionDevice.ts and PATCH /api/devices)
+    // queries devices by bus + route. Production Firestore requires a
+    // composite index for this; the emulator enforces the same requirement
+    // against firestore.indexes.json, so this test fails if the index is
+    // ever removed or the query shape changes.
+    await environment.withSecurityRulesDisabled(async (context) => {
+      const matches = await getDocs(
+        collection(context.firestore(), "devices")
+          .where("busId", "==", "bus_1")
+          .where("routeId", "==", "route_1"),
+      );
+      expect(matches.docs.map((entry) => entry.id)).toEqual(["device_1"]);
+    });
   });
 
   it("keeps passenger requests locked to their owner and assigned drivers", async () => {
