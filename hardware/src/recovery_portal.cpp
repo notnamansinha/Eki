@@ -8,6 +8,7 @@
 #include <cstring>
 #include <esp_random.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
 
 namespace eki {
 namespace connectivity {
@@ -361,6 +362,22 @@ bool RecoveryPortal::start(
     recoveryAccess_ = nullptr;
     csrfToken_[0] = '\0';
     WiFi.mode(WIFI_STA);
+    return false;
+  }
+  // The documented configuration is a WPA2 access point. softAP() derives
+  // WPA2-PSK only when a non-empty passphrase is supplied; verify the running
+  // configuration so a future refactor can never silently expose an open
+  // (unauthenticated) recovery AP.
+  wifi_config_t accessPointConfig{};
+  if (
+    esp_wifi_get_config(WIFI_IF_AP, &accessPointConfig) != ESP_OK ||
+    accessPointConfig.ap.authmode != WIFI_AUTH_WPA2_PSK
+  ) {
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);
+    configuration_ = nullptr;
+    recoveryAccess_ = nullptr;
+    csrfToken_[0] = '\0';
     return false;
   }
   server_.begin();
