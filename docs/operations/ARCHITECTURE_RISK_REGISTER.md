@@ -66,7 +66,7 @@ not a substitute for the physical and institutional acceptance work in the
 
 ### FW-01: asynchronous store-and-forward requires physical recovery evidence
 
-- **Severity/status:** High / Mitigated in code; field validation pending.
+- **Severity/status:** High / External gate (code mitigation complete; field validation pending).
 - **Evidence:** `hardware/src/main.cpp::publisherTask` owns Wi-Fi, NTP, TLS and
   `HTTPClient::POST` on core 0 while the Arduino loop on core 1 continuously
   drains GNSS UART. A 120-sample, 5,808-byte RTC no-init ring uses newest-first

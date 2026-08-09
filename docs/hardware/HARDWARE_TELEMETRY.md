@@ -116,7 +116,7 @@ Each latency is a rolling in-process 512-sample window with average/p50/p95/p99.
 | Point | Detection | Software behavior | Remaining action |
 |---|---|---|---|
 | Vehicle power/buck/cable | Board resets/no telemetry | Reset reason logged; durable ride retained | Automotive wiring/spares/monitoring |
-| GNSS receiver/antenna/UART | No NMEA, quality rejection, checksum or UART overflow count | Warning; one uncertain projection; 30 s counters | Physical inspection/route survey |
+| GNSS receiver/antenna/UART | No NMEA, quality rejection, checksum or UART overflow count | Warning; one uncertain sample; 30 s counters | Physical inspection/route survey |
 | Wi-Fi/hotspot | Disconnect/RSSI/timeouts | Auto reconnect, RTC queue and backoff | Coverage/SIM/hotspot redundancy |
 | Clock | No TLS/invalid timestamp | NTP retry; no invalid fix publish | Allow NTP or provision time strategy |
 | TLS CA rotation | TLS failure | Fail closed | Signed OTA before issuer expiry |

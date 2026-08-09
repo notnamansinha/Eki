@@ -189,8 +189,8 @@ void test_queue_wraparound_drops_oldest_and_counts_overflow() {
   NewestFirstTelemetryQueue<QueuedSample, 3> queue;
   queue.reset();
   const uint32_t evicted = queue.push({1000, 0, 1});
-  queue.push({2000, 0, 2});
-  queue.push({3000, 0, 3});
+  const uint32_t oldest = queue.push({2000, 0, 2});
+  const uint32_t middle = queue.push({3000, 0, 3});
   const uint32_t newest = queue.push({4000, 0, 4});
 
   const auto stats = queue.stats();
@@ -203,6 +203,17 @@ void test_queue_wraparound_drops_oldest_and_counts_overflow() {
   TEST_ASSERT_TRUE(queue.newest(sample));
   TEST_ASSERT_EQUAL_UINT32(newest, sample.sequence);
   TEST_ASSERT_EQUAL_INT(4, sample.value);
+
+  // head_ is non-zero after wraparound. Exercise both the wrapped middle
+  // shift and the O(1) oldest-removal path without disturbing the newest fix.
+  TEST_ASSERT_TRUE(queue.remove(middle));
+  TEST_ASSERT_EQUAL_UINT32(2, queue.size());
+  TEST_ASSERT_TRUE(queue.newest(sample));
+  TEST_ASSERT_EQUAL_INT(4, sample.value);
+  TEST_ASSERT_TRUE(queue.remove(oldest));
+  TEST_ASSERT_EQUAL_UINT32(1, queue.size());
+  TEST_ASSERT_TRUE(queue.newest(sample));
+  TEST_ASSERT_EQUAL_UINT32(newest, sample.sequence);
 }
 
 void test_queue_purges_stale_samples_and_validates_rtc_identity() {

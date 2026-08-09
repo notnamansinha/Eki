@@ -304,7 +304,7 @@ describe("production security configuration", () => {
     expect(firmware).toContain("RTC_NOINIT_ATTR TelemetryQueue telemetryQueue");
     expect(firmware).toContain("xTaskCreatePinnedToCore");
     expect(telemetryQueue).toContain("dropOlderThan");
-    expect(telemetryQueue).toContain("overflowDrops_");
+    expect(telemetryQueue).toContain("uint32_t overflowDrops;");
     expect(telemetryPolicy).toContain("HTTPS_RETRY_BASE_MS");
     expect(telemetryPolicy).toContain("HTTPS_RETRY_MAX_MS");
     expect(telemetryPolicy).toContain("retryAfterDelayMs");

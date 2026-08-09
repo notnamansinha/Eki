@@ -151,6 +151,12 @@ class NewestFirstTelemetryQueue {
   }
 
   void eraseAt(uint16_t logicalIndex) {
+    if (logicalIndex == 0) {
+      head_ = increment(head_);
+      --count_;
+      if (count_ == 0) head_ = 0;
+      return;
+    }
     for (uint16_t index = logicalIndex; index + 1 < count_; ++index) {
       samples_[physicalIndex(index)] = samples_[physicalIndex(index + 1)];
     }

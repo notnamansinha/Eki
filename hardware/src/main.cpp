@@ -418,7 +418,6 @@ PublishResult publishFix(const TelemetryFix &fix) {
   }
 
   resetHttpsRetry();
-  recordPublishResult(true);
   return PublishResult::Accepted;
 }
 
@@ -444,7 +443,10 @@ TelemetryFix currentFix() {
     : 0.0;
   fix.motionState = motionStateFromTracker(motionTracker.update(rawSpeed));
   fix.timestamp = epochMilliseconds();
-  fix.valid = clockIsSynchronized();
+  // GNSS quality and wall-clock readiness are separate signals.
+  // evaluateTelemetry() waits for NTP before enqueueing, without misreporting
+  // a healthy receiver as lost.
+  fix.valid = true;
   return fix;
 }
 
@@ -506,6 +508,7 @@ void evaluateTelemetry() {
     Serial.println("[GPS] Trustworthy fix restored.");
   }
 
+  if (!clockIsSynchronized()) return;
   if (!shouldCapture(fix)) return;
   enqueueFix(fix);
   rememberCapturedFix(fix);
@@ -538,7 +541,7 @@ void publisherTask(void *) {
           const PublishResult result = publishFix(fix);
           if (result != PublishResult::RetryLatest) {
             removeQueuedFix(fix.sequence);
-            if (result == PublishResult::Dropped) recordPublishResult(false);
+            recordPublishResult(result == PublishResult::Accepted);
           }
           drainedSample = true;
         } else if (staleDrops > 0) {
