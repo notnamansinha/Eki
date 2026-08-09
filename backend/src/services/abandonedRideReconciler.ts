@@ -102,6 +102,8 @@ export async function runAbandonedRideReconciliation(
       return;
     }
     const activeRideRef = firestore.collection("active_rides").doc(key);
+    const busId = typeof initialSession.busId === "string" ? initialSession.busId : "";
+    const busLockRef = firestore.collection("_active_bus_locks").doc(busId);
     const initialActiveRideDocument = await activeRideRef.get();
     const initialActiveRide = initialActiveRideDocument.exists
       ? initialActiveRideDocument.data() ?? null
@@ -144,9 +146,10 @@ export async function runAbandonedRideReconciliation(
 
     const transactionResult = await firestore.runTransaction(async (transaction) => {
       const sessionRef = firestore.collection("ride_sessions").doc(sessionId);
-      const [currentSessionDocument, currentActiveRideDocument] = await Promise.all([
+      const [currentSessionDocument, currentActiveRideDocument, currentBusLock] = await Promise.all([
         transaction.get(sessionRef),
         transaction.get(activeRideRef),
+        transaction.get(busLockRef),
       ]);
       if (!currentSessionDocument.exists) return { interrupted: false, deleted: false };
       const currentSession = currentSessionDocument.data()!;
@@ -176,6 +179,9 @@ export async function runAbandonedRideReconciliation(
         latestActiveRideActivity(currentActiveRide!) !== null &&
         latestActiveRideActivity(currentActiveRide!)! <= cutoff;
       if (deleteActiveRide) transaction.delete(activeRideRef);
+      if (currentBusLock.data()?.sessionId === sessionId) {
+        transaction.delete(busLockRef);
+      }
       return { interrupted: true, deleted: deleteActiveRide };
     });
 

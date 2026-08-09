@@ -64,6 +64,9 @@ rulesDescribe("Firebase security rules integration", () => {
         status: "active",
         tripState: "in_service",
       });
+      await setDoc(doc(context.firestore(), "_active_bus_locks", "bus_1"), {
+        sessionId: "session_1",
+      });
       await setDoc(doc(context.firestore(), "ride_sessions", "session_1"), {
         id: "session_1",
         busId: "bus_1",
@@ -96,6 +99,7 @@ rulesDescribe("Firebase security rules integration", () => {
     await assertFails(setDoc(doc(admin.firestore(), "routes", "route_2"), { name: "Bypass" }));
     await assertFails(getDoc(doc(admin.firestore(), "devices", "device_1")));
     await assertFails(getDoc(doc(admin.firestore(), "active_rides", "bus_1_route_1")));
+    await assertFails(getDoc(doc(admin.firestore(), "_active_bus_locks", "bus_1")));
     await assertFails(setDoc(doc(admin.firestore(), "ride_sessions", "session_1"), {
       status: "active",
     }));

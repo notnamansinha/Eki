@@ -53,8 +53,11 @@ export default function TransmitterControls({
       }}>
       
       {/* Header bar */}
-      <div 
-        className="px-5 py-4 flex items-center justify-between cursor-pointer select-none"
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls="trip-setup-controls"
+        className="w-full px-5 py-4 flex items-center justify-between cursor-pointer select-none text-left"
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-center gap-3">
@@ -69,9 +72,9 @@ export default function TransmitterControls({
         <div className="mt-1" style={{ color: "var(--text-ghost)" }}>
           {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
         </div>
-      </div>
+      </button>
 
-      <div className={`px-5 gap-4 flex-col overflow-y-auto max-h-[55vh] ${expanded ? 'flex pb-6' : 'hidden'}`}>
+      <div id="trip-setup-controls" className={`px-5 gap-4 flex-col overflow-y-auto max-h-[55vh] ${expanded ? 'flex pb-6' : 'hidden'}`}>
 
         {/* Vehicle Selector */}
         <div className="space-y-1.5">
@@ -79,6 +82,7 @@ export default function TransmitterControls({
             Vehicle
           </label>
           <CustomSelect
+            ariaLabel="Vehicle"
             value={busId}
             onChange={(val) => setSelectedBusId(val)}
             options={vehicleOptions}
@@ -97,6 +101,7 @@ export default function TransmitterControls({
               Operator
             </label>
             <CustomSelect
+              ariaLabel="Operator"
               value={driverId}
               onChange={(val) => setDriverId(val)}
               disabled

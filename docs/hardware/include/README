@@ -1,0 +1,9 @@
+# Firmware configuration headers
+
+`secrets.example.h` is the tracked contract. Copy it to `secrets.h` and fill
+Wi-Fi, provisioned device ID/secret, HTTPS backend URL and issuing root CA.
+`secrets.h` is ignored and must never be committed or attached to test logs.
+
+The firmware intentionally rejects non-HTTPS backend URLs and device secrets
+shorter than 20 characters. See `../README.md` and
+`../../hardware/HARDWARE_TELEMETRY.md` for provisioning and rotation.

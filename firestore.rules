@@ -360,6 +360,24 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Internal coordination/maintenance documents are Admin-SDK-only. These
+    // explicit denials supplement Firestore's default deny for audit clarity.
+    match /_active_bus_locks/{busId} {
+      allow read, write: if false;
+    }
+    match /_worker_leases/{leaseId} {
+      allow read, write: if false;
+    }
+    match /_privacy_deletion_requests/{uid} {
+      allow read, write: if false;
+    }
+    match /_fleet_operations/{operationId} {
+      allow read, write: if false;
+    }
+    match /_health/{documentId} {
+      allow read, write: if false;
+    }
+
     // ── Settings collection ──
     match /settings/{document} {
       allow read: if isAuthenticated();

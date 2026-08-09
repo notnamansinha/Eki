@@ -415,6 +415,7 @@ function RouteEditor({
         <div className="flex flex-col gap-1 min-w-[110px]">
           <label className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Type</label>
           <CustomSelect
+            ariaLabel="Route type"
             value={state.type}
             onChange={(val) => setField("type", val as EditorState["type"])}
             options={[

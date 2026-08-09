@@ -1,37 +1,28 @@
 # Eki backend
 
-The Express backend authenticates HTTPS GNSS telemetry, owns trip state, writes
-Firebase through the Admin SDK, and exposes role-protected application APIs.
+The TypeScript/Express backend is the authority for hardware ingestion, fleet/route/device commands and ordered ride lifecycle. It uses Firebase Admin with service-account JSON or Application Default Credentials, writes current data to RTDB and durable state to Firestore, and elects one background worker with a Firestore lease.
 
-## Run
-
-```bash
+```powershell
 npm install
-Copy-Item .env.example .env
-npm run dev
+Copy-Item backend/.env.example backend/.env
+npm run dev --workspace=backend
 ```
 
-Important settings are Firebase Admin credentials/database URL, exact CORS
-origins, server-restricted Maps key, `HTTPS_DEVICE_RATE_PER_MINUTE`,
-`BUS_STALE_MS`, and worker/retention controls.
-Abandoned pending, armed, or active sessions are reconciled after 12 hours by
-default; set `ABANDONED_RIDE_THRESHOLD_HOURS` to a larger service-specific
-window when needed.
+Important configuration is fully described in `.env.example`: exact CORS origins, `FIREBASE_DATABASE_URL`, server-restricted Maps key, device/auth limits, stale/reconciliation periods, worker identity and explicit retention opt-in. Production should prefer Workload Identity/ADC; if `FIREBASE_SERVICE_ACCOUNT` is used, provide the complete JSON through a secret manager.
 
-Devices post to `/api/devices/{deviceId}/telemetry` with
-`Authorization: Device <secret>`. They never receive Firebase credentials.
-See [API reference](API.md) and
-[architecture](../docs/ARCHITECTURE.md).
-
-For a local demo, provision one device without placing a secret in shell
-history:
-
-```bash
-npm run provision-device -- --device-id device_01 --bus-id bus_01 --route-id route_01
+```powershell
+npm run lint --workspace=backend
+npm run test --workspace=backend
+npm run build --workspace=backend
 ```
 
-```bash
-npm run lint
-npm test
-npm run build
+Provision a device only after bus and route records exist:
+
+```powershell
+npm run provision-device --workspace=backend -- `
+  --device-id device_01 --bus-id bus_01 --route-id route_01
 ```
+
+This transaction rejects duplicate assignment/active ride/active bus lock, generates a random secret, stores only its salted scrypt verifier, and prints the plaintext once.
+
+See [API reference](API.md), [LLD](../docs/design/LOW_LEVEL_DESIGN.md), [Firebase model](../docs/data/FIREBASE_DATA_MODEL.md), and [test strategy](../docs/testing/TEST_STRATEGY.md).
