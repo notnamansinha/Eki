@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 
 namespace eki {
 namespace connectivity {
@@ -12,18 +11,6 @@ constexpr uint32_t WIFI_RETRY_BASE_MS = 5000;
 constexpr uint32_t WIFI_RETRY_MAX_MS = 60000;
 constexpr uint32_t WIFI_RECOVERY_ESCALATION_MS = 120000;
 constexpr uint32_t WIFI_RECOVERY_START_RETRY_MS = 60000;
-constexpr uint32_t WIFI_RECORD_MAGIC = 0x454B4957UL;
-constexpr uint16_t WIFI_RECORD_VERSION = 1;
-
-struct WifiCredentialRecord {
-  uint32_t magic;
-  uint16_t version;
-  uint16_t reserved;
-  char ssid[33];
-  char password[64];
-  uint32_t checksum;
-};
-
 enum class FaultCode : uint8_t {
   None,
   WifiRecovery,
@@ -141,57 +128,6 @@ inline size_t boundedCStringLength(const char *value, size_t maximum) {
   size_t length = 0;
   while (length < maximum && value[length] != '\0') ++length;
   return length;
-}
-
-inline uint32_t wifiRecordChecksum(const WifiCredentialRecord &record) {
-  const uint8_t *bytes = reinterpret_cast<const uint8_t *>(&record);
-  uint32_t hash = 2166136261UL;
-  for (size_t index = 0; index < offsetof(WifiCredentialRecord, checksum); ++index) {
-    hash ^= bytes[index];
-    hash *= 16777619UL;
-  }
-  return hash;
-}
-
-inline bool makeWifiCredentialRecord(
-  const char *ssid,
-  size_t ssidLength,
-  const char *password,
-  size_t passwordLength,
-  WifiCredentialRecord &record
-) {
-  if (!wifiCredentialsAreValid(ssid, ssidLength, password, passwordLength)) {
-    return false;
-  }
-  // The checksum covers the serialized bytes before checksum, including any
-  // compiler-inserted padding. Clear every byte so the record is deterministic.
-  std::memset(&record, 0, sizeof(record));
-  record.magic = WIFI_RECORD_MAGIC;
-  record.version = WIFI_RECORD_VERSION;
-  std::memcpy(record.ssid, ssid, ssidLength);
-  std::memcpy(record.password, password, passwordLength);
-  record.checksum = wifiRecordChecksum(record);
-  return true;
-}
-
-inline bool wifiCredentialRecordIsValid(const WifiCredentialRecord &record) {
-  const size_t ssidLength = boundedCStringLength(record.ssid, sizeof(record.ssid));
-  const size_t passwordLength = boundedCStringLength(
-    record.password,
-    sizeof(record.password)
-  );
-  return
-    record.magic == WIFI_RECORD_MAGIC &&
-    record.version == WIFI_RECORD_VERSION &&
-    ssidLength < sizeof(record.ssid) &&
-    passwordLength < sizeof(record.password) &&
-    wifiCredentialsAreValid(
-      record.ssid,
-      ssidLength,
-      record.password,
-      passwordLength
-    ) &&
-    record.checksum == wifiRecordChecksum(record);
 }
 
 inline bool statusLedOn(FaultCode fault, uint32_t nowMs) {

@@ -9,6 +9,7 @@ type IngestResult =
 
 const harness = vi.hoisted(() => ({
   result: { ok: true, duplicate: false } as IngestResult,
+  diagnosticsAccepted: true,
 }));
 
 vi.mock("../middleware/requireAdmin", () => ({
@@ -39,6 +40,14 @@ vi.mock("../services/deviceTelemetryService", () => ({
   recordTelemetryRejection: () => undefined,
 }));
 
+vi.mock("../services/deviceDiagnostics", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/deviceDiagnostics")>();
+  return {
+    ...actual,
+    ingestDeviceDiagnostics: async () => harness.diagnosticsAccepted,
+  };
+});
+
 import devicesRouter from "./devices";
 
 let server: Server;
@@ -64,6 +73,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   harness.result = { ok: true, duplicate: false };
+  harness.diagnosticsAccepted = true;
 });
 
 function sendTelemetry() {
@@ -74,6 +84,36 @@ function sendTelemetry() {
       Authorization: `Device ${"a".repeat(20)}`,
     },
     body: JSON.stringify({ sample: true }),
+  });
+}
+
+function sendDiagnostics() {
+  return fetch(`${baseUrl}/api/devices/device_1/diagnostics`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Device ${"a".repeat(20)}`,
+    },
+    body: JSON.stringify({
+      firmwareVersion: "gnss-nvs-v1",
+      uptimeMs: 30_000,
+      freeHeapBytes: 180_000,
+      rssiDbm: -55,
+      queueDepth: 2,
+      queueHighWater: 9,
+      queueOverflowDrops: 0,
+      queueStaleDrops: 1,
+      acceptedFixes: 100,
+      rejectedFixes: 2,
+      nmeaChecksumFailures: 4,
+      uartBufferOverflows: 0,
+      uartFifoOverflows: 0,
+      resetTotal: 3,
+      fault: "none",
+      flashEncryption: true,
+      secureBoot: true,
+      timestamp: 1_800_000_000_000,
+    }),
   });
 }
 
@@ -105,6 +145,13 @@ describe("device telemetry HTTP responses", () => {
 
     expect(response.status).toBe(401);
     expect(response.headers.get("retry-after")).toBeNull();
+  });
+
+  it("accepts authenticated remote diagnostics and rejects bad credentials", async () => {
+    expect((await sendDiagnostics()).status).toBe(202);
+
+    harness.diagnosticsAccepted = false;
+    expect((await sendDiagnostics()).status).toBe(401);
   });
 
   it("returns the same retry contract when the outer IP limiter rejects", async () => {

@@ -1,0 +1,34 @@
+CONFIG_IDF_TARGET="esp32"
+CONFIG_AUTOSTART_ARDUINO=y
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# Arduino-ESP32 2.0.17 wraps its WiFiClientSecure implementation in the
+# "some PSK enabled" compatibility guard even when callers use CA validation.
+# Enable only the smallest PSK mode so the certificate-verified client links;
+# Eki never provisions or passes PSK credentials.
+CONFIG_MBEDTLS_PSK_MODES=y
+CONFIG_MBEDTLS_KEY_EXCHANGE_PSK=y
+
+# Secure Boot V2 requires ESP32 ECO3 or newer.
+CONFIG_ESP32_REV_MIN_3=y
+CONFIG_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_V2_ENABLED=y
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
+CONFIG_SECURE_BOOT_SIGNING_KEY="keys/secure_boot_signing_key.pem"
+
+# Fleet flash and NVS confidentiality. Release mode permanently constrains ROM
+# download access on first boot; follow the controlled spare-board runbook.
+CONFIG_SECURE_FLASH_ENC_ENABLED=y
+CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE=y
+CONFIG_SECURE_DISABLE_ROM_DL_MODE=y
+CONFIG_NVS_ENCRYPTION=y
+CONFIG_NVS_SEC_KEY_PROTECT_USING_FLASH_ENC=y
+
+# Secure boot enlarges the bootloader, so the partition table moves to 64 KiB.
+CONFIG_PARTITION_TABLE_OFFSET=0x10000
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_secure.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_secure.csv"
+CONFIG_BOOTLOADER_LOG_LEVEL_INFO=y

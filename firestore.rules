@@ -200,6 +200,9 @@ service cloud.firestore {
     match /_health/{documentId} {
       allow read, write: if false;
     }
+    match /_device_diagnostics/{deviceId} {
+      allow read, write: if false;
+    }
 
     // ── Settings collection ──
     match /settings/{document} {

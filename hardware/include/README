@@ -1,11 +1,12 @@
 # Firmware configuration headers
 
-`secrets.example.h` is the tracked contract. Copy it to `secrets.h` and fill
-Wi-Fi, a unique recovery-AP password, provisioned device ID/secret, HTTPS
-backend URL and issuing root CA.
-`secrets.h` is ignored and must never be committed or attached to test logs.
+`device_config.h` defines the only accepted local configuration record: Wi-Fi,
+provisioned device ID/secret, HTTPS backend origin and issuing root CA. The
+record is fixed-size, versioned, checksummed, validated before use, and stored
+in NVS by `recovery_portal.cpp`; no credential is compiled into the firmware.
 
-The firmware intentionally rejects non-HTTPS backend URLs, device secrets
-shorter than 20 characters, and recovery passwords outside 12-63 characters.
-See `../README.md` and
-`../../docs/hardware/HARDWARE_TELEMETRY.md` for provisioning and rotation.
+Fleet confidentiality depends on the `esp32dev-secure` flash/NVS encryption
+gate. See `../README.md`,
+`../../docs/hardware/HARDWARE_TELEMETRY.md`, and
+`../../docs/operations/HARDWARE_SECURITY_PROVISIONING.md` for provisioning,
+rotation, key custody, and physical acceptance.

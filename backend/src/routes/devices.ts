@@ -10,6 +10,10 @@ import {
   recordTelemetryRejection,
 } from "../services/deviceTelemetryService";
 import { parseTelemetryValue } from "../services/telemetryPayload";
+import {
+  ingestDeviceDiagnostics,
+  parseDeviceDiagnosticsValue,
+} from "../services/deviceDiagnostics";
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -93,6 +97,64 @@ router.post(
       recordTelemetryRejection();
       console.error("[Devices] HTTPS telemetry ingestion failed:", error);
       res.status(503).json({ error: "Telemetry service unavailable." });
+    }
+  },
+);
+
+router.post(
+  "/:deviceId/diagnostics",
+  telemetryLimiter,
+  async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    const deviceId = req.params.deviceId;
+    const secret = parseDeviceAuthorization(req.get("authorization"));
+    const parsed = parseDeviceDiagnosticsValue(req.body);
+    if (!SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
+      res.status(!secret ? 401 : 400).json({
+        error: !secret
+          ? "Invalid device credentials."
+          : "Invalid diagnostics payload.",
+      });
+      return;
+    }
+    try {
+      const accepted = await ingestDeviceDiagnostics(
+        deviceId,
+        secret,
+        parsed.value,
+      );
+      if (!accepted) {
+        res.status(401).json({ error: "Invalid device credentials." });
+        return;
+      }
+      res.status(202).json({ accepted: true });
+    } catch (error) {
+      console.error("[Devices] Diagnostics ingestion failed:", error);
+      res.status(503).json({ error: "Diagnostics service unavailable." });
+    }
+  },
+);
+
+router.get(
+  "/:deviceId/diagnostics",
+  requireAdmin,
+  async (req: Request, res: Response) => {
+    const deviceId = req.params.deviceId;
+    if (!SAFE_ID.test(deviceId)) {
+      res.status(400).json({ error: "Invalid device ID." });
+      return;
+    }
+    try {
+      const snapshot = await db.collection("_device_diagnostics").doc(deviceId).get();
+      if (!snapshot.exists) {
+        res.status(404).json({ error: "No diagnostics have been received." });
+        return;
+      }
+      res.set("Cache-Control", "no-store");
+      res.json(snapshot.data());
+    } catch (error) {
+      console.error("[Devices] Diagnostics lookup failed:", error);
+      res.status(503).json({ error: "Diagnostics service unavailable." });
     }
   },
 );

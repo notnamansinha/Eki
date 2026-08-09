@@ -51,5 +51,9 @@ jobs:
           python-version: "3.12"
       - run: pip install platformio
       - run: platformio test --project-dir hardware -e native
-      - run: cp hardware/include/secrets.example.h hardware/include/secrets.h
       - run: platformio run --project-dir hardware -e esp32dev
+      - name: Verify signed fleet build with an ephemeral CI-only key
+        run: |
+          mkdir -p hardware/keys
+          openssl genrsa -out hardware/keys/secure_boot_signing_key.pem 3072
+          platformio run --project-dir hardware -e esp32dev-secure

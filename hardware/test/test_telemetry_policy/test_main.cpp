@@ -2,6 +2,7 @@
 
 #include "clock_policy.h"
 #include "connectivity_policy.h"
+#include "device_config.h"
 #include "telemetry_policy.h"
 #include "telemetry_queue.h"
 
@@ -84,56 +85,30 @@ void test_retry_after_is_strict_bounded_and_status_aware() {
   TEST_ASSERT_EQUAL_UINT32(0, minimumHttpRetryDelayMs(503));
 }
 
-void test_template_configuration_is_detected_without_logging_secrets() {
-  const char *certificate = "-----BEGIN CERTIFICATE-----\nvalid\n-----END CERTIFICATE-----";
-  TEST_ASSERT_FALSE(hasTemplateConfiguration(
-    "campus-wifi",
-    "not-printed",
-    "a-real-provisioned-secret",
-    "https://api.eki.example.edu",
-    certificate,
-    "a-unique-recovery-password"
+void test_device_configuration_record_is_closed_and_tamper_evident() {
+  using namespace eki::connectivity;
+  constexpr char CERTIFICATE[] =
+    "-----BEGIN CERTIFICATE-----\nvalid\n-----END CERTIFICATE-----";
+  DeviceConfigurationRecord record{};
+  TEST_ASSERT_TRUE(makeDeviceConfigurationRecord(
+    "campus-wifi", 11,
+    "wifi-password", 13,
+    "device_01", 9,
+    "abcdefghijklmnopqrstuv", 22,
+    "https://api.eki.example.edu/", 28,
+    CERTIFICATE, sizeof(CERTIFICATE) - 1,
+    record
   ));
-  TEST_ASSERT_TRUE(hasTemplateConfiguration(
-    "YOUR_WIFI_SSID",
-    "not-printed",
-    "a-real-provisioned-secret",
-    "https://api.eki.example.edu",
-    certificate,
-    "a-unique-recovery-password"
-  ));
-  TEST_ASSERT_TRUE(hasTemplateConfiguration(
-    "campus-wifi",
-    "not-printed",
-    "GENERATE_AT_LEAST_20_RANDOM_CHARACTERS",
-    "https://api.eki.example.edu",
-    certificate,
-    "a-unique-recovery-password"
-  ));
-  TEST_ASSERT_TRUE(hasTemplateConfiguration(
-    "campus-wifi",
-    "not-printed",
-    "a-real-provisioned-secret",
-    "https://your-backend.example",
-    certificate,
-    "a-unique-recovery-password"
-  ));
-  TEST_ASSERT_TRUE(hasTemplateConfiguration(
-    "campus-wifi",
-    "not-printed",
-    "a-real-provisioned-secret",
-    "https://api.eki.example.edu",
-    "REPLACE_WITH_THE_CA_THAT_ISSUED_THE_BACKEND_CERTIFICATE",
-    "a-unique-recovery-password"
-  ));
-  TEST_ASSERT_TRUE(hasTemplateConfiguration(
-    "campus-wifi",
-    "not-printed",
-    "a-real-provisioned-secret",
-    "https://api.eki.example.edu",
-    certificate,
-    "GENERATE_UNIQUE_RECOVERY_PASSWORD"
-  ));
+  TEST_ASSERT_TRUE(deviceConfigurationRecordIsValid(record));
+  record.deviceSecret[0] = 'Z';
+  TEST_ASSERT_FALSE(deviceConfigurationRecordIsValid(record));
+
+  TEST_ASSERT_FALSE(deviceIdIsValid("bad/device", 10));
+  TEST_ASSERT_FALSE(deviceSecretIsValid("has spaces but long enough", 26));
+  TEST_ASSERT_FALSE(backendUrlIsValid("http://api.example.edu", 22));
+  TEST_ASSERT_FALSE(backendUrlIsValid("https://api.example.edu/path", 28));
+  TEST_ASSERT_FALSE(backendUrlIsValid("https://user@api.example.edu", 28));
+  TEST_ASSERT_FALSE(backendRootCaIsValid("not-a-certificate", 17));
 }
 
 void test_gnss_utc_conversion_and_clock_discipline_are_strict() {
@@ -209,18 +184,6 @@ void test_wifi_retry_escalates_and_led_codes_are_deterministic() {
   TEST_ASSERT_FALSE(recoveryPasswordIsValid(
     "bad\nrecovery-password", 21
   ));
-  WifiCredentialRecord record{};
-  TEST_ASSERT_TRUE(makeWifiCredentialRecord(
-    "campus", 6, "password", 8, record
-  ));
-  TEST_ASSERT_TRUE(wifiCredentialRecordIsValid(record));
-  record.password[0] = 'P';
-  TEST_ASSERT_FALSE(wifiCredentialRecordIsValid(record));
-  TEST_ASSERT_TRUE(makeWifiCredentialRecord(
-    "campus", 6, "password", 8, record
-  ));
-  ++record.version;
-  TEST_ASSERT_FALSE(wifiCredentialRecordIsValid(record));
   TEST_ASSERT_FALSE(statusLedOn(FaultCode::None, 0));
   TEST_ASSERT_TRUE(statusLedOn(FaultCode::WifiRecovery, 0));
   TEST_ASSERT_TRUE(statusLedOn(FaultCode::WifiRecovery, 300));
@@ -353,7 +316,7 @@ int main(int, char **) {
   RUN_TEST(test_retry_backoff_is_jittered_and_bounded);
   RUN_TEST(test_http_response_actions_cover_transport_and_status_families);
   RUN_TEST(test_retry_after_is_strict_bounded_and_status_aware);
-  RUN_TEST(test_template_configuration_is_detected_without_logging_secrets);
+  RUN_TEST(test_device_configuration_record_is_closed_and_tamper_evident);
   RUN_TEST(test_gnss_utc_conversion_and_clock_discipline_are_strict);
   RUN_TEST(test_wifi_retry_escalates_and_led_codes_are_deterministic);
   RUN_TEST(test_publish_policy_handles_floor_changes_and_heartbeats);

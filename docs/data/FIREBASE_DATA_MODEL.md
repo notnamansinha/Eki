@@ -191,6 +191,10 @@ Idempotency/reconciliation operation metadata such as stable request fingerprint
 
 Read-only probe target. The server issues a bounded `limit(1)` every 30 seconds and caches readiness; `/health` does not issue a Firebase read per request. No application data is required here.
 
+### `_device_diagnostics/{deviceId}`
+
+Server-only latest health report received through device-authenticated HTTPS. It contains the registry `deviceId`/`busId`/`routeId`, firmware version, uptime, free heap, RSSI, bounded telemetry/queue/UART/reset counters, current fault, reported flash-encryption/Secure-Boot state, device timestamp, and server `receivedAt`. Each accepted report replaces the prior one; this is operational state, not an unbounded event history. Browser Firebase rules deny all access. Admins read it through `GET /api/devices/:deviceId/diagnostics`; credentials, SSIDs, CA content, and recovery passwords are never accepted.
+
 ## Relationships and deletion
 
 - Changing/deleting a route or bus is blocked while `active_rides` (and for buses, `_active_bus_locks`) references it. Bound devices must be reassigned first.

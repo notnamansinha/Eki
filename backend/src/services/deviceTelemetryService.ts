@@ -18,7 +18,7 @@ const MAX_DURABLE_RIDE_MISSES = 1_000;
 const MAX_RATE_BUCKETS = 2_000;
 const DEFAULT_DEVICE_RATE_PER_MINUTE = 30;
 
-interface DeviceAssignment {
+export interface DeviceAssignment {
   busId: string;
   routeId: string;
 }
@@ -204,7 +204,7 @@ export async function verifyDeviceSecretHash(
   return safeBufferEqual(derived, storedKey) && storedHashIsValid;
 }
 
-async function authenticateDevice(
+export async function authenticateDeviceCredentials(
   deviceId: string,
   secret: string,
   now: number,
@@ -463,7 +463,7 @@ export async function ingestDeviceTelemetry(
     return { ok: false, reason: "credentials" };
   }
 
-  const assignment = await authenticateDevice(deviceId, secret, now);
+  const assignment = await authenticateDeviceCredentials(deviceId, secret, now);
   if (!assignment) {
     status.rejected += 1;
     status.lastRejectedAt = new Date(now).toISOString();

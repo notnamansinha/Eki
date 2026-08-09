@@ -85,30 +85,35 @@ not a substitute for the physical and institutional acceptance work in the
   5xx. Separate pure policies cover strict GNSS UTC calendar conversion,
   bounded clock discipline, Wi-Fi exponential retry/escalation and two/three
   pulse LED codes. After a two-minute station outage, the publisher starts a
-  WPA2-protected local Wi-Fi recovery portal while retries continue; replacement
-  credentials use a fixed-size, versioned/checksummed NVS record and are never
-  returned or logged. The `esp32dev` target compiles within regular RAM, RTC and
-  flash limits.
+  WPA2-protected local provisioning portal while retries continue; replacement
+  Wi-Fi, device identity/secret, backend origin, and CA use one fixed-size,
+  versioned/checksummed NVS record and are never returned. The authenticated
+  diagnostics channel reports bounded health and hardware-security state every
+  five minutes. Both development and signed fleet targets compile within their
+  regular RAM, RTC, and flash limits.
 - **Remaining closure evidence:** complete a physical dead-zone/backend-outage
   and recovery run on the target board, confirming zero UART/FIFO overflow and
   acceptable queue high-water/reset recovery under real GNSS and TLS load.
   Also prove GNSS-established TLS with NTP blocked, NTP cross-check behavior,
   the protected recovery portal/LED sequence and credential replacement on a
-  real device. NVS confidentiality remains dependent on the flash-encryption
-  gate below.
+  real device. Confirm authenticated diagnostics, full credential rotation, and
+  NVS persistence through power loss.
 
 ### FW-02: field updates and physical key protection are not production-proven
 
-- **Severity/status:** High / External gate.
-- **Evidence:** the firmware build defines `DISABLE_OTA` and uses the
-  `huge_app.csv` partition layout. Secure Boot V2, flash encryption, key custody,
-  signed update, rollback, and fleet rotation evidence are not repository-testable.
+- **Severity/status:** High / Partially mitigated; physical/update gate remains.
+- **Evidence:** `esp32dev-secure` requires an ignored RSA-3072 key, builds signed
+  Secure Boot V2 firmware with release-mode flash/NVS encryption and a
+  bootloader-safe partition table, and halts at runtime unless both protections
+  are active. The repository includes a two-operator spare-board procedure and
+  remote security-state evidence. OTA remains disabled; irreversible first boot,
+  key custody, rollback, and fleet rotation are not repository-testable.
 - **Impact:** deployed devices require physical reflashing, and a captured unit
   may expose Wi-Fi/device credentials unless hardware security is provisioned.
-- **Closure evidence:** adopt an OTA-capable partition, signed images and rollback;
-  prove staged update/recovery on spare devices; document signing-key custody and
-  rotation; then provision and verify Secure Boot V2 and flash encryption under
-  an approved irreversible eFuse procedure.
+- **Closure evidence:** execute the committed procedure on spare ECO3-or-newer
+  boards and retain first-boot/tampered-image/rotation evidence; establish real
+  signing-key custody. Then adopt signed OTA-capable partitions and prove staged
+  update/rollback before routine fleet deployment.
 
 ### OPS-01: runtime availability and perimeter controls are not evidenced here
 
