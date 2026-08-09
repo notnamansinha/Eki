@@ -106,4 +106,22 @@ describe("device telemetry HTTP responses", () => {
     expect(response.status).toBe(401);
     expect(response.headers.get("retry-after")).toBeNull();
   });
+
+  it("returns the same retry contract when the outer IP limiter rejects", async () => {
+    let limited: Response | undefined;
+    for (let attempt = 0; attempt < 130; attempt += 1) {
+      const response = await sendTelemetry();
+      if (response.status === 429) {
+        limited = response;
+        break;
+      }
+    }
+
+    expect(limited?.status).toBe(429);
+    expect(limited?.headers.get("retry-after")).toBe("60");
+    await expect(limited?.json()).resolves.toEqual({
+      error: "Telemetry request limit exceeded.",
+      retryAfterMs: 60_000,
+    });
+  });
 });

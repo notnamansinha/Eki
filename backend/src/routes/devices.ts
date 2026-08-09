@@ -18,7 +18,14 @@ const telemetryLimiter = rateLimit({
   limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Telemetry request limit exceeded." },
+  handler: (_req, res, _next, options) => {
+    const retryAfterMs = options.windowMs;
+    res.set("Retry-After", String(Math.ceil(retryAfterMs / 1000)));
+    res.status(options.statusCode).json({
+      error: "Telemetry request limit exceeded.",
+      retryAfterMs,
+    });
+  },
 });
 
 /**

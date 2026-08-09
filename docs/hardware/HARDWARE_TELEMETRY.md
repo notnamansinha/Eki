@@ -36,9 +36,11 @@ flowchart TD
   GATE -->|yes| POST["HTTPS POST"]
   GATE -->|no| WARN
   POST -->|200/202| SAVE["Update last-published baseline"]
-  POST -->|failure| BACKOFF["Stop TLS; 1–30 s jittered backoff; buffer latest"]
+  POST -->|"transport, 408/425/429, 5xx"| BACKOFF["Stop TLS; bounded backoff; buffer latest"]
+  POST -->|"other HTTP rejection"| DROP["Discard sample; delay next fresh attempt"]
   SAVE --> WARN
   BACKOFF --> WARN
+  DROP --> WARN
   WARN --> LOOP
 ```
 
