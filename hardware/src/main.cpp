@@ -471,6 +471,9 @@ void configureStationRadio() {
 
 void attemptWifiConnection() {
   if (!deviceConfiguration.provisioned()) return;
+  // Credential-fault mode is AP-only: the station link is intentionally
+  // dropped and must stay down until the device is re-provisioned.
+  if (credentialFaultActive) return;
   tlsClient.stop();
   if (!wifiConfigured) {
     configureStationRadio();
@@ -494,6 +497,19 @@ void updateConnectivityFault() {
         ? eki::connectivity::FaultCode::WifiRecovery
         : eki::connectivity::FaultCode::None
   );
+}
+
+void latchCredentialFault() {
+  if (credentialFaultActive) return;
+  credentialFaultActive = true;
+  resetHttpsRetry();
+  // Rejected credentials make the station link useless, and leaving it up
+  // exposes the recovery portal on the campus STA interface (the AP password
+  // only guards the soft-AP path). Drop the station and stop auto-reconnect
+  // until the device is re-provisioned and restarts.
+  WiFi.setAutoReconnect(false);
+  WiFi.disconnect();
+  updateConnectivityFault();
 }
 
 void serviceConnectivity() {
@@ -731,9 +747,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
   if (action != eki::telemetry::HttpResponseAction::Accept) {
     tlsClient.stop();
     if (action == eki::telemetry::HttpResponseAction::HaltCredentials) {
-      credentialFaultActive = true;
-      resetHttpsRetry();
-      updateConnectivityFault();
+      latchCredentialFault();
       return PublishResult::CredentialFault;
     }
     scheduleHttpsRetry(
@@ -816,8 +830,7 @@ void publishRemoteDiagnostic() {
     static_cast<unsigned long>(elapsed(startedAt))
   );
   if (responseCode == 401 || responseCode == 403) {
-    credentialFaultActive = true;
-    updateConnectivityFault();
+    latchCredentialFault();
     Serial.println("[Diagnostics] Credential fault latched; local reprovisioning enabled.");
   }
 }

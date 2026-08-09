@@ -68,6 +68,8 @@ public:
 private:
   void registerHandlers();
   void setSecurityHeaders();
+  bool clientIsOnAccessPoint();
+  bool provisionAttemptAllowed();
   void handleRoot();
   void handleStatus();
   void handleProvisioningUpdate();
@@ -77,6 +79,8 @@ private:
   DeviceConfiguration *configuration_ = nullptr;
   char accessPointSsid_[33]{};
   char csrfToken_[17]{};
+  uint32_t provisionWindowStartedAt_ = 0;
+  uint8_t provisionAttempts_ = 0;
   bool handlersRegistered_ = false;
   bool active_ = false;
   bool configurationUpdated_ = false;

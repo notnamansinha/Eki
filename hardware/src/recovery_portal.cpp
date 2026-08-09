@@ -17,6 +17,10 @@ constexpr char CONFIG_NAMESPACE[] = "eki-config";
 constexpr char CONFIG_KEY[] = "active";
 constexpr char RECOVERY_NAMESPACE[] = "eki-recovery";
 constexpr char RECOVERY_KEY[] = "password";
+// Bound how often /provision may be attempted from the AP subnet. The CSRF
+// token is the primary gate; this throttles anything that slips past it.
+constexpr uint32_t PROVISION_WINDOW_MS = 60 * 1000;
+constexpr uint8_t PROVISION_MAX_ATTEMPTS_PER_WINDOW = 5;
 
 bool constantTimeTokenEquals(const char *left, const char *right) {
   if (left == nullptr || right == nullptr) return false;
@@ -138,6 +142,10 @@ void RecoveryPortal::setSecurityHeaders() {
 
 void RecoveryPortal::handleRoot() {
   setSecurityHeaders();
+  if (!clientIsOnAccessPoint()) {
+    server_.client().stop();
+    return;
+  }
   String html(FPSTR(RECOVERY_HTML));
   html.replace("{{csrf}}", csrfToken_);
   server_.send(200, "text/html; charset=utf-8", html);
@@ -145,6 +153,10 @@ void RecoveryPortal::handleRoot() {
 
 void RecoveryPortal::handleStatus() {
   setSecurityHeaders();
+  if (!clientIsOnAccessPoint()) {
+    server_.client().stop();
+    return;
+  }
   const bool connected = WiFi.status() == WL_CONNECTED;
   const bool provisioned = configuration_ != nullptr && configuration_->provisioned();
   server_.send(
@@ -157,6 +169,18 @@ void RecoveryPortal::handleStatus() {
 
 void RecoveryPortal::handleProvisioningUpdate() {
   setSecurityHeaders();
+  if (!clientIsOnAccessPoint()) {
+    server_.client().stop();
+    return;
+  }
+  if (!provisionAttemptAllowed()) {
+    server_.send(
+      429,
+      "application/json",
+      "{\"error\":\"Too many attempts; retry later.\"}"
+    );
+    return;
+  }
   if (
     configuration_ == nullptr ||
     !server_.hasArg("csrf") ||
@@ -230,6 +254,10 @@ void RecoveryPortal::registerHandlers() {
   );
   server_.onNotFound([this]() {
     setSecurityHeaders();
+    if (!clientIsOnAccessPoint()) {
+      server_.client().stop();
+      return;
+    }
     server_.send(404, "application/json", "{\"error\":\"Not found.\"}");
   });
   handlersRegistered_ = true;
@@ -276,7 +304,33 @@ bool RecoveryPortal::start(
 }
 
 void RecoveryPortal::handleClient() {
-  if (active_) server_.handleClient();
+  if (!active_) return;
+  // The WebServer binds 0.0.0.0:80 on every interface. Never serve anything
+  // that did not arrive through the WPA2-protected soft AP: while the device
+  // is in credential-fault mode the portal is also reachable on the campus
+  // STA interface, which would bypass the AP password entirely.
+  if (server_.client().connected() && !clientIsOnAccessPoint()) {
+    server_.client().stop();
+  }
+  server_.handleClient();
+}
+
+bool RecoveryPortal::clientIsOnAccessPoint() {
+  const IPAddress clientIp = server_.client().remoteIP();
+  if (clientIp == IPAddress(0, 0, 0, 0)) return false;
+  const uint32_t client = static_cast<uint32_t>(clientIp);
+  const uint32_t accessPoint = static_cast<uint32_t>(WiFi.softAPIP());
+  const uint32_t subnetMask = static_cast<uint32_t>(WiFi.softAPSubnetMask());
+  return (client & subnetMask) == (accessPoint & subnetMask);
+}
+
+bool RecoveryPortal::provisionAttemptAllowed() {
+  const uint32_t now = millis();
+  if (now - provisionWindowStartedAt_ >= PROVISION_WINDOW_MS) {
+    provisionWindowStartedAt_ = now;
+    provisionAttempts_ = 0;
+  }
+  return ++provisionAttempts_ <= PROVISION_MAX_ATTEMPTS_PER_WINDOW;
 }
 
 void RecoveryPortal::stop() {
