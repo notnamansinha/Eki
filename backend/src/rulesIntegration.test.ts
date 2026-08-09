@@ -10,6 +10,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
@@ -129,15 +130,20 @@ rulesDescribe("Firebase security rules integration", () => {
     const passenger = environment.authenticatedContext("passenger_1", { role: "passenger" });
     const outsider = environment.authenticatedContext("passenger_2", { role: "passenger" });
 
-    await assertSucceeds(updateDoc(doc(passenger.firestore(), "ride_sessions", "session_1"), {
-      "passengers.passenger_1": {
-        userId: "passenger_1",
-        userName: "Rider",
-        boardingStopId: "",
-        alightingStopId: "stop_2",
-        joinedAt: serverTimestamp(),
-      },
-    }));
+    // The backend issues boarding: it writes the passenger manifest entry only
+    // after a proximity check against the hardware GNSS fix. Simulate that
+    // server-authoritative write here (rules-disabled == Admin SDK path).
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), "ride_sessions", "session_1"), {
+        "passengers.passenger_1": {
+          userId: "passenger_1",
+          userName: "Rider",
+          boardingStopId: "stop_1",
+          alightingStopId: "stop_2",
+          joinedAt: serverTimestamp(),
+        },
+      });
+    });
 
     await environment.withSecurityRulesDisabled(async (context) => {
       await updateDoc(doc(context.firestore(), "ride_sessions", "session_1"), {
@@ -181,6 +187,74 @@ rulesDescribe("Firebase security rules integration", () => {
         userId: "passenger_2",
         lastSubmittedAt: serverTimestamp(),
       });
+    }));
+  });
+
+  it("denies every client write to ride session manifests", async () => {
+    const noRequest = environment.authenticatedContext("passenger_2", { role: "passenger" });
+    const admin = environment.authenticatedContext("admin_1", { role: "admin", admin: true });
+
+    const joinPayload = (uid: string, userName: string) => ({
+      [`passengers.${uid}`]: {
+        userId: uid,
+        userName,
+        boardingStopId: "stop_1",
+        alightingStopId: null,
+        joinedAt: serverTimestamp(),
+      },
+    });
+
+    // Manifest self-join is fully denied: the backend is the only writer.
+    await assertFails(updateDoc(doc(noRequest.firestore(), "ride_sessions", "session_1"), joinPayload("passenger_2", "Rider")));
+    // Even an admin cannot write the manifest from the client.
+    await assertFails(updateDoc(doc(admin.firestore(), "ride_sessions", "session_1"), joinPayload("admin_1", "Admin")));
+    // Session lifecycle writes from clients are equally denied.
+    await assertFails(updateDoc(doc(noRequest.firestore(), "ride_sessions", "session_1"), {
+      status: "completed",
+    }));
+    // And deleting a session is backend-only.
+    await assertFails(deleteDoc(doc(admin.firestore(), "ride_sessions", "session_1")));
+  });
+
+  it("keeps passenger requests locked to their owner and assigned drivers", async () => {
+    const passenger = environment.authenticatedContext("passenger_2", { role: "passenger" });
+    const bus1Driver = environment.authenticatedContext("driver_1", {
+      role: "driver",
+      driverId: "driver_1",
+      assignedBusId: "bus_1",
+    });
+    const bus2Driver = environment.authenticatedContext("driver_2", {
+      role: "driver",
+      driverId: "driver_2",
+      assignedBusId: "bus_2",
+    });
+
+    await assertSucceeds(setDoc(doc(passenger.firestore(), "passenger_requests", "passenger_2"), {
+      passengerId: "passenger_2",
+      busId: "bus_1",
+      type: "pickup",
+      lat: 23.0,
+      lng: 72.5,
+      status: "pending",
+      createdAt: serverTimestamp(),
+    }));
+    // A passenger cannot create a request on someone else's behalf.
+    await assertFails(setDoc(doc(passenger.firestore(), "passenger_requests", "passenger_9"), {
+      passengerId: "passenger_9",
+      busId: "bus_1",
+      type: "pickup",
+      lat: 23.0,
+      lng: 72.5,
+      status: "pending",
+      createdAt: serverTimestamp(),
+    }));
+    // The assigned driver can transition status.
+    await assertSucceeds(updateDoc(doc(bus1Driver.firestore(), "passenger_requests", "passenger_2"), {
+      status: "accepted",
+    }));
+    // A driver of a different bus cannot touch it.
+    await assertFails(updateDoc(doc(bus2Driver.firestore(), "passenger_requests", "passenger_2"), {
+      status: "cancelled",
     }));
   });
 });

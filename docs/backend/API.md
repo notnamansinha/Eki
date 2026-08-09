@@ -100,6 +100,18 @@ Deletes messages in batches from the session subcollection. Returns `{deleted:nu
 
 Only `completed|interrupted|failed` sessions. Recursively deletes session/subcollections and same-ID/query-matching completed projections. Returns `{deleted:true,...counts}`. Active/pending/armed is 409; invalid ID 400; absence/errors follow deletion service response.
 
+## Session boarding endpoints
+
+### `POST /api/sessions/:sessionId/boarding-code` — assigned driver
+
+Requires the active session's driver claim, driver ID and assigned bus to match the durable session. Idempotently creates or returns an eight-character, 40-bit boarding code stored only in the operator-readable session record; the code is never projected into passenger-readable RTDB. Responses use `Cache-Control: no-store`.
+
+### `POST /api/sessions/:sessionId/join` — passenger
+
+Body: `{ "boardingCode":"ABCD2345", "lat":23.0, "lng":72.5, "accuracy":25, "boardingStopId":"stop_1", "alightingStopId":"stop_3" }`; `alightingStopId` may be `null`. Coordinates are required on first boarding and may be omitted only when the same authenticated UID updates an existing manifest entry.
+
+Requires a valid Firebase bearer token, the driver-issued session code, route-owned stops in forward order, browser accuracy no worse than 100 m, and—on first boarding—a passenger coordinate within 150 m of a fresh nonfuture hardware GNSS projection bound to the exact session/bus/route. Browser location is defense in depth rather than trusted proof; possession of the non-public session code is the server-verifiable authorization. An existing passenger may correct stops without a second location prompt. A Firestore transaction rechecks session state, code, and existing membership when proximity is omitted before adding or updating only the authenticated UID's manifest entry. Display name and timestamps are server-derived. Returns `{joined:true,sessionId}` or 400/403/404/409/422/500.
+
 ## Fleet/admin endpoints
 
 All `/api/fleet/*` handlers are behind `requireAdmin` plus an idempotency/fingerprint guard for mutations.

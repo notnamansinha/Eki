@@ -92,8 +92,13 @@ describe("production security configuration", () => {
     expect(messages).toContain("request.resource.data.text.size() > 0");
     expect(messageRateLimits).toContain("isSessionPassenger(sessionId)");
     expect(messageRateLimits).toContain("isSessionOperator(sessionId)");
-    expect(sessions).toContain("boardingStopId.size() <= 128");
-    expect(sessions).toContain("alightingStopId.size() <= 128");
+    expect(sessions).toContain("allow read: if isSessionOperator(sessionId)");
+    expect(sessions).toContain("allow update: if false;");
+    expect(sessions).not.toContain("boardingStopId.size() <= 128");
+    // Manifest shape and route-order validation now live in the server join policy.
+    const sessionsRoute = workspaceFile("backend/src/routes/sessions.ts");
+    expect(sessionsRoute).toContain("validateStopSelection(");
+    expect(sessionsRoute).not.toContain("req.body?.userName");
     expect(feedback).toContain("isSessionPassenger(request.resource.data.sessionId)");
     expect(feedback).toContain("sessionDoc(request.resource.data.sessionId).data.status == 'completed'");
     expect(feedback).toContain("request.resource.data.rating is int");
@@ -111,8 +116,8 @@ describe("production security configuration", () => {
     expect(passengerPage).toContain("isPostRideFeedbackEligible(");
     expect(passengerPage).toContain("key={activeSessionId}");
     expect(passengerPage).toContain("sessionId={feedbackSessionId}");
-    expect(boardingView).toContain("onStopSelected?.(");
-    expect(boardingView).toContain("hasSelectedRideStop(boardingStopId, nextAlightingStopId)");
+    expect(boardingView).toContain("onStopSelected?.(true)");
+    expect(boardingView).not.toContain("hasSelectedRideStop(");
   });
 
   it("requires sign-in for live application data and route APIs", () => {
@@ -253,7 +258,8 @@ describe("production security configuration", () => {
 
     expect(routes).toContain("allow create, update, delete: if false;");
     expect(sessions).toContain("allow create: if false;");
-    expect(sessions).toContain("resource.data.status in ['armed', 'active']");
+    expect(sessions).toContain("allow update: if false;");
+    expect(sessions).not.toContain("resource.data.status in ['armed', 'active']");
     expect(routeEditor).toContain('method: "PUT"');
     expect(routeEditor).not.toContain("setDoc(");
     expect(routeEditor).not.toContain("updateDoc(");
@@ -271,6 +277,50 @@ describe("production security configuration", () => {
 
     expect(requests).toContain("affectedKeys().hasOnly(['status'])");
     expect(requests).toContain("request.resource.data.busId == resource.data.busId");
+  });
+
+  it("gates passenger manifest self-join behind driver-issued proof and proximity", () => {
+    const rules = workspaceFile("firestore.rules");
+    const sessions = ruleBlock(rules, "match /ride_sessions/{sessionId}");
+    const boarding = workspaceFile(
+      "frontend/src/components/passenger/PassengerBoardingView.tsx",
+    );
+    const sessionsRoute = workspaceFile("backend/src/routes/sessions.ts");
+    const boardingPolicy = workspaceFile("backend/src/services/boardingPolicy.ts");
+    const driverPage = workspaceFile("frontend/src/app/driver/page.tsx");
+    const cspBuild = workspaceFile("scripts/update-csp.mjs");
+    const cspBackendOrigin = workspaceFile("scripts/csp-backend-origin.mjs");
+    const server = workspaceFile("backend/src/server.ts");
+
+    // Clients can never write ride_sessions; the manifest is backend-authoritative.
+    expect(sessions).toContain("allow update: if false;");
+    expect(sessions).toContain("allow delete: if false;");
+    expect(sessions).not.toContain("affectedKeys().hasOnly(['passengers'])");
+    // Boarding is issued by the backend join endpoint.
+    expect(server).toContain('app.use("/api/sessions"');
+    expect(sessionsRoute).toContain('router.post("/:sessionId/join", requireAuth');
+    expect(sessionsRoute).toContain('router.post("/:sessionId/boarding-code", requireAuth');
+    expect(sessionsRoute).toContain("user?.role !== \"driver\"");
+    expect(sessionsRoute).toContain("boardingCodesMatch");
+    expect(sessionsRoute).toContain("validateLiveBoardingProjection");
+    expect(sessionsRoute).toContain("db.runTransaction");
+    expect(sessionsRoute).toContain('new FieldPath("passengers", user.uid)');
+    expect(sessionsRoute).toContain("!requiresProximity && !passengerStillExists");
+    expect(boardingPolicy).toContain("timingSafeEqual");
+    expect(boardingPolicy).toContain("timestamp > now + MAX_JOIN_FIX_FUTURE_MS");
+    expect(sessionsRoute).toContain("JOIN_RADIUS_M");
+    expect(sessionsRoute).toContain("You must be near the bus to board");
+    // The client asks the backend to board; it never writes the manifest.
+    expect(boarding).toContain('/api/sessions/');
+    expect(boarding).toContain('Authorization: `Bearer ${token}`');
+    expect(boarding).toContain("position.coords.accuracy");
+    expect(boarding).toContain("updatingExistingPassenger ? Promise.resolve(null)");
+    expect(driverPage).toContain("/boarding-code");
+    expect(cspBuild).toContain("backendOrigin");
+    expect(cspBackendOrigin).toContain('new Set(["http:", "https:"])');
+    expect(cspBackendOrigin).toContain("!HTTP_PROTOCOLS.has(backendUrl.protocol)");
+    expect(boarding).not.toContain('updateDoc');
+    expect(boarding).not.toContain('setDoc');
   });
 
   it("uses backend-authoritative shift lifecycle endpoints", () => {

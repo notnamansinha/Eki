@@ -126,12 +126,14 @@ Durable ride record and parent of messages.
 | `activatedAt`, `updatedAt`, `reconciledAt` | Firestore Timestamp | Server audit markers |
 | `failureReason`, `interruptionReason` | string | Terminal explanation when applicable |
 | `passengers` | map keyed UID | Passenger manifest |
-| `passengers.{uid}` | `{userId,userName,boardingStopId,alightingStopId,joinedAt}` | User-owned constrained entry |
+| `passengers.{uid}` | `{userId,userName,boardingStopId,alightingStopId,joinedAt}` | Server-issued entry for the authenticated UID |
+| `boardingCode` | eight-character string | Driver-visible session proof; never projected into RTDB |
+| `boardingCodeIssuedAt` | Firestore Timestamp | Server issuance time |
 | `stopsReached` | map keyed zero-based index | Ordered server evidence |
 | `stopsReached.{i}` | `{stopIndex,stopId,stopName,timestamp}` | Stop evidence |
 | `path` | legacy map/array | Older history tolerated/read/deleted; no current per-fix writes |
 
-Admin and the assigned session driver can read. Server creates/lifecycle-writes. An authenticated passenger may change only their own manifest entry while status is `armed`/`active` and fields satisfy rules.
+Admin and the assigned session driver can read. All client writes are denied. The assigned driver obtains the session code from the authenticated API; a passenger presents that code plus a fresh near-bus position to the join endpoint, which validates route stops and writes the manifest transactionally.
 
 #### `ride_sessions/{sessionId}/messages/{messageId}`
 

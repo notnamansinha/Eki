@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { backendOriginFromUrl } from "./csp-backend-origin.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const output = path.join(root, "frontend", "out");
@@ -32,6 +33,8 @@ const globalHeaders = firebase.hosting.headers.find((entry) => entry.source === 
 const csp = globalHeaders?.headers.find((header) => header.key === "Content-Security-Policy");
 if (!csp) throw new Error("Global Content-Security-Policy header not found.");
 
+const backendOrigin = backendOriginFromUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
+
 const sources = [
   "'self'",
   ...[...hashes].sort(),
@@ -41,6 +44,16 @@ const sources = [
   "https://maps.googleapis.com",
 ].join(" ");
 csp.value = csp.value.replace(/script-src [^;]+;/, `script-src ${sources};`);
+if (backendOrigin) {
+  csp.value = csp.value.replace(
+    /connect-src ([^;]+);/,
+    (_directive, currentSources) => {
+      const uniqueSources = new Set(currentSources.split(/\s+/).filter(Boolean));
+      uniqueSources.add(backendOrigin);
+      return `connect-src ${[...uniqueSources].join(" ")};`;
+    },
+  );
+}
 await writeFile(firebasePath, `${JSON.stringify(firebase, null, 2)}\n`);
 console.log(`Updated CSP with ${hashes.size} inline-script hashes.`);
 

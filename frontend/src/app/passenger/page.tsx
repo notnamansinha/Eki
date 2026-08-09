@@ -363,8 +363,6 @@ export default function PassengerPage() {
                         key={activeSessionId}
                         sessionId={activeSessionId}
                         route={activeRoute}
-                        userId={user?.uid || "anonymous"}
-                        userName={user?.displayName || "Rider"}
                         tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
                         onBoardingStopChange={setSelectedBoardingStopId}
                         onStopSelected={(hasSelectedStop) => {

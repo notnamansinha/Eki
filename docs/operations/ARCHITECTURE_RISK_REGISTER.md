@@ -24,19 +24,19 @@ not a substitute for the physical and institutional acceptance work in the
 ### SEC-01: passengers can self-enrol in an unrelated ride session
 
 - **Severity/status:** High / In review.
-- **Evidence:** `firestore.rules` currently permits an authenticated passenger
-  to add their own entry to `ride_sessions/{sessionId}.passengers`. Authenticated
-  users can read active bus data containing session identifiers, so knowing a
-  session ID is sufficient to attempt enrolment.
+- **Evidence:** `firestore.rules` denies every client write to
+  `ride_sessions/{sessionId}`. The assigned driver obtains a random,
+  session-scoped boarding code through an authenticated API; the code is absent
+  from passenger-readable RTDB. The join endpoint requires that code and also
+  checks a fresh hardware projection plus browser proximity as defense in depth.
 - **Impact:** a user can obtain session-member privileges, including access to
   session chat and ride-scoped feedback, without proof that they are near or on
   the bus.
-- **Candidate remediation:** [PR #23](https://github.com/notnamansinha/Eki/pull/23)
-  moves enrolment behind a server endpoint that checks the hardware GNSS fix.
-- **Closure evidence:** clients cannot create, update, or delete passenger
-  manifests in emulator tests; the endpoint rejects unauthenticated, stale,
-  non-boarding, missing-GNSS, and out-of-radius requests; an eligible nearby
-  passenger can join; stop updates cannot be used to replace another passenger.
+- **Closure evidence:** emulator tests deny client manifest mutations; policy
+  tests cover code normalization/comparison, route-order validation, exact live
+  session binding, stale/future/uncertain fixes and location accuracy. The final
+  Firestore transaction rechecks session state and code, derives identity from
+  the token/profile and can update only the authenticated UID's manifest entry.
 
 ### SEC-02: anti-abuse and privileged writes remain client-authoritative
 
