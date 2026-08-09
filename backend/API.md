@@ -43,11 +43,11 @@ Metrics are a 512-sample in-memory rolling window and reset on restart.
 
 Body must contain exactly:
 
-```json
-{"lat":23.034,"lng":72.55,"speed":18.2,"heading":94,"motionState":"moving","timestamp":1800000000000}
+```jsonc
+{"lat":23.034,"lng":72.55,"speed":18.2,"heading":94,"motionState":"moving","timestamp":<current Unix epoch in milliseconds>}
 ```
 
-Ranges: latitude -90..90, longitude -180..180, speed 0..200 km/h, heading 0..360, `motionState` is `moving|stopped|uncertain`; timestamp must satisfy server freshness/future bounds. Bus/route comes from `devices`, never the body.
+Generate `timestamp` immediately before sending (for example, with `Date.now()`). Ranges: latitude -90..90, longitude -180..180, speed 0..200 km/h, heading 0..360, `motionState` is `moving|stopped|uncertain`; timestamp must satisfy server freshness/future bounds. Bus/route comes from `devices`, never the body.
 
 - 202 `{accepted:true,duplicate:false}`: new RTDB fix.
 - 200 `{accepted:true,duplicate:true}`: equal/older timestamp safely ignored.

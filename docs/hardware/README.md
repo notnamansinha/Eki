@@ -16,11 +16,11 @@ Use fused automotive 12 V-to-5 V conversion, secure cabling/enclosure and clear-
 ## Configure/build/flash
 
 ```powershell
-Copy-Item include/secrets.example.h include/secrets.h
+Copy-Item hardware/include/secrets.example.h hardware/include/secrets.h
 platformio run --project-dir hardware
 platformio test --project-dir hardware -e native
 platformio run --project-dir hardware --target upload
-platformio device monitor --baud 115200
+platformio device monitor --project-dir hardware --baud 115200
 ```
 
 Fill ignored `secrets.h` with Wi-Fi, device ID/secret, HTTPS backend origin and its issuing root CA. The backend URL must begin `https://`; insecure TLS is unavailable. The secret must be the one-time value printed by backend provisioning.
