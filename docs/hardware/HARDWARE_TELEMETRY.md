@@ -46,12 +46,12 @@ flowchart LR
     NEWEST --> POST["Certificate-verified HTTPS POST"]
     POST -->|200/202| ACK["Remove acknowledged sequence"]
     POST -->|"transport, 408/425/429, 5xx"| RETRY["Keep queued; bounded backoff"]
-    POST -->|"401/403"| AUTH["Remove sample; latch credential fault"]
+    POST -->|"401/403"| AUTH["Retain sample; latch credential fault"]
     POST -->|"other HTTP rejection"| REJECT["Remove rejected sequence"]
     ACK --> NEWEST
     RETRY --> WIFI
     REJECT --> WIFI
-    AUTH --> WIFI
+    AUTH --> REPROVISION["Wait for device reprovision + restart"]
   end
 
   QUEUE -. "task notification" .-> NEWEST
@@ -94,7 +94,7 @@ Deterministic UTC conversion/discipline lives in `hardware/include/clock_policy.
 
 ## Payload and HTTP outcomes
 
-The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). The device treats only 200/202 as success. Transport errors, 408/425/429 and 5xx retain the attempted sample for retry; other HTTP statuses remove that sample. HTTP 401/403 additionally latches a credential fault and blocks further POST attempts until credentials are repaired and the device restarts, so a doomed secret cannot create an infinite request loop. HTTP 429 honors the backend's bounded delta-seconds `Retry-After` value. If a newer fix arrives while a retryable request is in flight, that newer fix becomes the next recovery candidate.
+The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). The device treats only 200/202 as success. Transport errors, 408/425/429 and 5xx retain the attempted sample for retry; other permanent HTTP statuses remove that sample. HTTP 401/403 retains the rejected sample in the bounded queue, latches a credential fault, and blocks further POST attempts until device credentials are repaired and the device restarts, so a doomed secret cannot create an infinite request loop. A Wi-Fi recovery update cannot clear this API-authentication latch. Normal freshness eviction still prevents an old retained sample from violating the backend's timestamp contract. HTTP 429 honors the backend's bounded delta-seconds `Retry-After` value. If a newer fix arrives while a retryable request is in flight, that newer fix becomes the next recovery candidate.
 
 | Symptom | Likely cause | Action |
 |---|---|---|

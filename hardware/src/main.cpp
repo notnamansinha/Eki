@@ -11,6 +11,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <esp_attr.h>
+#include <esp_sntp.h>
 #include <esp_system.h>
 #include <esp_idf_version.h>
 #include <esp_task_wdt.h>
@@ -128,6 +129,13 @@ uint8_t consecutiveHttpsFailures = 0;
 bool ntpCrossCheckStarted = false;
 bool gnssClockApplied = false;
 uint32_t lastGnssClockAppliedAt = 0;
+portMUX_TYPE clockCrossCheckMux = portMUX_INITIALIZER_UNLOCKED;
+int64_t latestGnssEpochMs = 0;
+uint32_t latestGnssReferenceAt = 0;
+int64_t pendingNtpDivergenceMs = 0;
+bool latestGnssReferenceValid = false;
+bool pendingNtpCrossCheck = false;
+bool pendingNtpCrossCheckHasGnss = false;
 bool credentialFaultActive = false;
 bool gpsFixWasLost = false;
 bool lossMessageQueued = false;
@@ -341,6 +349,16 @@ void disciplineClockFromGnss() {
   };
   int64_t gnssEpochMs = 0;
   if (!eki::clock::utcToEpochMilliseconds(utc, gnssEpochMs)) return;
+
+  // Keep a fresh, monotonic-time-anchored GNSS reference for the asynchronous
+  // SNTP callback. TinyGPS++ age accounts for time since this sentence arrived.
+  const uint32_t timeAgeMs = gps.time.age();
+  portENTER_CRITICAL(&clockCrossCheckMux);
+  latestGnssEpochMs = gnssEpochMs;
+  latestGnssReferenceAt = millis() - timeAgeMs;
+  latestGnssReferenceValid = true;
+  portEXIT_CRITICAL(&clockCrossCheckMux);
+
   const int64_t gnssEpochSeconds = gnssEpochMs / 1000;
   if (gnssEpochSeconds > static_cast<int64_t>(std::numeric_limits<time_t>::max())) {
     Serial.println("[Clock] GNSS UTC exceeds this firmware runtime's time_t range.");
@@ -423,6 +441,8 @@ void serviceConnectivity() {
 
   recoveryPortal.handleClient();
   if (recoveryPortal.consumeCredentialsUpdated()) {
+    // The local portal updates station Wi-Fi only. It intentionally cannot
+    // clear an API credential fault or mutate DEVICE_ID/DEVICE_SECRET.
     tlsClient.stop();
     WiFi.disconnect(false, false);
     wifiConfigured = false;
@@ -479,6 +499,55 @@ void synchronizeClock() {
   ntpCrossCheckStarted = true;
   configTime(0, 0, "pool.ntp.org", "time.google.com");
   Serial.println("[Clock] NTP cross-check/fallback scheduled.");
+}
+
+void onNtpTimeSynchronized(struct timeval *ntpTime) {
+  const uint32_t now = millis();
+  bool comparableToGnss = false;
+  int64_t divergenceMs = 0;
+
+  portENTER_CRITICAL(&clockCrossCheckMux);
+  if (
+    latestGnssReferenceValid &&
+    now - latestGnssReferenceAt <= GNSS_UTC_MAX_AGE_MS * 2
+  ) {
+    const int64_t projectedGnssEpochMs =
+      latestGnssEpochMs + static_cast<int64_t>(now - latestGnssReferenceAt);
+    const int64_t ntpEpochMs =
+      static_cast<int64_t>(ntpTime->tv_sec) * 1000 + ntpTime->tv_usec / 1000;
+    divergenceMs = ntpEpochMs - projectedGnssEpochMs;
+    comparableToGnss = true;
+  }
+  pendingNtpDivergenceMs = divergenceMs;
+  pendingNtpCrossCheckHasGnss = comparableToGnss;
+  pendingNtpCrossCheck = true;
+  portEXIT_CRITICAL(&clockCrossCheckMux);
+}
+
+void reportNtpCrossCheck() {
+  bool pending = false;
+  bool comparedWithGnss = false;
+  int64_t divergenceMs = 0;
+  portENTER_CRITICAL(&clockCrossCheckMux);
+  pending = pendingNtpCrossCheck;
+  if (pending) {
+    comparedWithGnss = pendingNtpCrossCheckHasGnss;
+    divergenceMs = pendingNtpDivergenceMs;
+    pendingNtpCrossCheck = false;
+  }
+  portEXIT_CRITICAL(&clockCrossCheckMux);
+
+  if (!pending) return;
+  if (comparedWithGnss) {
+    Serial.printf(
+      "[Clock] NTP/GNSS divergence=%lldms; GNSS discipline remains authoritative.\n",
+      static_cast<long long>(divergenceMs)
+    );
+  } else {
+    Serial.println(
+      "[Clock] NTP fallback synchronized system time; awaiting fresh GNSS UTC cross-check."
+    );
+  }
 }
 
 PublishResult publishFix(const TelemetryFix &fix) {
@@ -693,6 +762,7 @@ void publisherTask(void *) {
   for (;;) {
     esp_task_wdt_reset();
     serviceConnectivity();
+    reportNtpCrossCheck();
 
     bool drainedSample = false;
     if (WiFi.status() == WL_CONNECTED) {
@@ -711,9 +781,14 @@ void publisherTask(void *) {
           }
           if (!credentialFaultActive) {
             const PublishResult result = publishFix(fix);
-            if (result != PublishResult::RetryLatest) {
+            if (
+              result != PublishResult::RetryLatest &&
+              result != PublishResult::CredentialFault
+            ) {
               removeQueuedFix(fix.sequence);
               recordPublishResult(result == PublishResult::Accepted);
+            } else if (result == PublishResult::CredentialFault) {
+              recordPublishResult(false);
             }
             drainedSample = true;
           }
@@ -779,6 +854,15 @@ void setup() {
     );
     while (true) delay(1000);
   }
+  if (!eki::connectivity::recoveryPasswordIsValid(
+    RECOVERY_AP_PASSWORD,
+    sizeof(RECOVERY_AP_PASSWORD) - 1
+  )) {
+    Serial.println(
+      "[Boot] Recovery access-point password must be 12-63 printable ASCII characters; firmware halted."
+    );
+    while (true) delay(1000);
+  }
   if (!stationCredentials.load(WIFI_SSID, WIFI_PASS)) {
     Serial.println("[Boot] Station Wi-Fi credentials are invalid; firmware halted.");
     while (true) delay(1000);
@@ -810,6 +894,7 @@ void setup() {
     while (true) delay(1000);
   }
   authorizationHeader = String("Device ") + DEVICE_SECRET;
+  sntp_set_time_sync_notification_cb(onNtpTimeSynchronized);
   configureWatchdog();
   const BaseType_t taskResult = xTaskCreatePinnedToCore(
     publisherTask,

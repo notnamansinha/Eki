@@ -4,7 +4,9 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <cctype>
+#include <cstdio>
 #include <cstring>
+#include <esp_random.h>
 
 namespace eki {
 namespace connectivity {
@@ -193,7 +195,7 @@ bool RecoveryPortal::start(
 ) {
   if (active_) return true;
   const size_t passwordLength = boundedCStringLength(recoveryPassword, 64);
-  if (passwordLength < 12 || passwordLength > 63) return false;
+  if (!recoveryPasswordIsValid(recoveryPassword, passwordLength)) return false;
 
   char suffix[13]{};
   size_t suffixLength = 0;
@@ -215,7 +217,12 @@ bool RecoveryPortal::start(
   rotateCsrfToken();
   registerHandlers();
   WiFi.mode(WIFI_AP_STA);
-  if (!WiFi.softAP(accessPointSsid_, recoveryPassword, 1, false, 1)) return false;
+  if (!WiFi.softAP(accessPointSsid_, recoveryPassword, 1, false, 1)) {
+    credentials_ = nullptr;
+    csrfToken_[0] = '\0';
+    WiFi.mode(WIFI_STA);
+    return false;
+  }
   server_.begin();
   active_ = true;
   return true;
@@ -230,6 +237,8 @@ void RecoveryPortal::stop() {
   server_.stop();
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_STA);
+  credentials_ = nullptr;
+  csrfToken_[0] = '\0';
   active_ = false;
 }
 

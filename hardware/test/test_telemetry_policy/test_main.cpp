@@ -200,6 +200,15 @@ void test_wifi_retry_escalates_and_led_codes_are_deterministic() {
   TEST_ASSERT_FALSE(wifiCredentialsAreValid(
     "campus", 6, "bad\npassword", 12
   ));
+  TEST_ASSERT_TRUE(recoveryPasswordIsValid(
+    "recovery-password", 17
+  ));
+  TEST_ASSERT_FALSE(recoveryPasswordIsValid(
+    "too-short", 9
+  ));
+  TEST_ASSERT_FALSE(recoveryPasswordIsValid(
+    "bad\nrecovery-password", 21
+  ));
   WifiCredentialRecord record{};
   TEST_ASSERT_TRUE(makeWifiCredentialRecord(
     "campus", 6, "password", 8, record

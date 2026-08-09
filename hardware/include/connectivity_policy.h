@@ -125,6 +125,17 @@ inline bool wifiCredentialsAreValid(
   return true;
 }
 
+inline bool recoveryPasswordIsValid(const char *password, size_t passwordLength) {
+  if (password == nullptr || passwordLength < 12 || passwordLength > 63) {
+    return false;
+  }
+  for (size_t index = 0; index < passwordLength; ++index) {
+    const uint8_t character = static_cast<uint8_t>(password[index]);
+    if (character < 0x20 || character > 0x7E) return false;
+  }
+  return true;
+}
+
 inline size_t boundedCStringLength(const char *value, size_t maximum) {
   if (value == nullptr) return 0;
   size_t length = 0;
@@ -152,7 +163,9 @@ inline bool makeWifiCredentialRecord(
   if (!wifiCredentialsAreValid(ssid, ssidLength, password, passwordLength)) {
     return false;
   }
-  record = {};
+  // The checksum covers the serialized bytes before checksum, including any
+  // compiler-inserted padding. Clear every byte so the record is deterministic.
+  std::memset(&record, 0, sizeof(record));
   record.magic = WIFI_RECORD_MAGIC;
   record.version = WIFI_RECORD_VERSION;
   std::memcpy(record.ssid, ssid, ssidLength);

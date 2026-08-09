@@ -328,11 +328,15 @@ describe("production security configuration", () => {
     expect(firmware).toContain("settimeofday(&tv, nullptr)");
     expect(firmware).toContain("std::numeric_limits<time_t>::max()");
     expect(firmware).toContain("NTP_CROSS_CHECK_INTERVAL_MS");
+    expect(firmware).toContain("sntp_set_time_sync_notification_cb");
+    expect(firmware).toContain("NTP/GNSS divergence=");
     expect(clockPolicy).toContain("utcToEpochMilliseconds");
     expect(clockPolicy).toContain("GNSS_CLOCK_CORRECTION_THRESHOLD_MS");
 
     expect(connectivityPolicy).toContain("WIFI_RECOVERY_ESCALATION_MS");
     expect(connectivityPolicy).toContain("statusLedOn");
+    expect(connectivityPolicy).toContain("recoveryPasswordIsValid");
+    expect(connectivityPolicy).toContain("std::memset(&record, 0, sizeof(record))");
     expect(recoveryPortal).toContain("WIFI_AP_STA");
     expect(recoveryPortal).toContain('server_.on("/wifi", HTTP_POST');
     expect(recoveryPortal).toContain('server_.sendHeader("Cache-Control", "no-store")');
@@ -344,6 +348,8 @@ describe("production security configuration", () => {
     expect(telemetryPolicy).toContain("HttpResponseAction::HaltCredentials");
     expect(firmware).toContain("credentialFaultActive = true");
     expect(firmware).toContain("if (!credentialFaultActive)");
+    expect(firmware).toContain("result != PublishResult::CredentialFault");
+    expect(firmware).toContain("result == PublishResult::CredentialFault");
   });
 
   it("routes all privileged route and delay mutations through the backend", () => {
