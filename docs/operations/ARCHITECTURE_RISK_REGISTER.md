@@ -43,8 +43,8 @@ not a substitute for the physical and institutional acceptance work in the
 
 ### SEC-02: anti-abuse and privileged writes remain client-authoritative
 
-- **Severity/status:** High / In review.
-- **Evidence:** candidate PR #53 routes chat, feedback, profile bootstrap,
+- **Severity/status:** High / Closed by PR #53.
+- **Evidence:** PR #53 routes chat, feedback, profile bootstrap,
   feedback review status and global settings writes through authenticated
   endpoints, while Firestore rules deny every corresponding browser write.
   Identity is server-derived; chat membership/rate state and feedback
@@ -52,12 +52,17 @@ not a substitute for the physical and institutional acceptance work in the
 - **Impact:** bypassed UI logic can weaken rate limits and validation; duplicated
   client/rules logic can drift; multi-document operations can become partially
   applied.
-- **Candidate remediation:** [PR #53](https://github.com/notnamansinha/Eki/pull/53).
+- **Remediation:** [PR #53](https://github.com/notnamansinha/Eki/pull/53).
 - **Closure evidence:** source search finds no unauthorized client write path;
   emulator tests deny every migrated write; endpoint tests cover authorization,
   validation, atomicity, exact hourly boundaries, idempotent retries, legacy
   rate data and request-ID conflicts; admin-only feedback status changes use a
-  dedicated endpoint and preserve other fields.
+  dedicated endpoint and preserve other fields. Default-branch workflow run
+  [31300104926](https://github.com/notnamansinha/Eki/actions/runs/31300104926)
+  passed web, emulator and firmware acceptance on PR #53 merge commit `cc147ba`;
+  integrated workflow run
+  [31301262140](https://github.com/notnamansinha/Eki/actions/runs/31301262140)
+  passed again after the firmware HTTP follow-up on merge commit `163e687`.
 
 ### FW-01: synchronous HTTPS and a single telemetry retry slot can lose fixes
 
