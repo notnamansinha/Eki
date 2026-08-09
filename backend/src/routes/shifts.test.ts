@@ -1,0 +1,263 @@
+import type { Server } from "node:http";
+import express from "express";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+const harness = vi.hoisted(() => ({
+  liveNode: {} as Record<string, unknown>,
+  lock: null as Record<string, unknown> | null,
+  docSets: [] as { id: string; data: Record<string, unknown> }[],
+  batchSets: [] as { id: string; data: Record<string, unknown> }[],
+}));
+
+vi.mock("../middleware/requireAuth", () => ({
+  requireAuth: (
+    req: { user?: Record<string, unknown> },
+    _res: unknown,
+    next: () => void,
+  ) => {
+    req.user = {
+      uid: "driver_uid",
+      role: "driver",
+      driverId: "driver_1",
+      assignedBusId: "bus_1",
+    };
+    next();
+  },
+}));
+
+vi.mock("../lib/firebaseAdmin", () => {
+  const snapshot = (exists: boolean, data?: Record<string, unknown>) => ({
+    exists,
+    data: () => data,
+  });
+  const document = (collectionName: string, id?: string) => ({
+    id: id ?? "new_session_1",
+    get: async () => {
+      if (collectionName === "drivers") {
+        return snapshot(true, { authUid: "driver_uid", assignedBusId: "bus_1" });
+      }
+      if (collectionName === "buses") {
+        return snapshot(true, { assignedRoutes: ["route_1"] });
+      }
+      if (collectionName === "routes") {
+        return snapshot(true, {
+          stops: [{ id: "stop_1", name: "Stop 1", lat: 23.0, lng: 72.5 }],
+        });
+      }
+      if (collectionName === "_active_bus_locks") {
+        return snapshot(harness.lock !== null, harness.lock ?? undefined);
+      }
+      if (collectionName === "ride_sessions" && id) {
+        return snapshot(true, { status: "active" });
+      }
+      return snapshot(false);
+    },
+    set: async (data: unknown) => {
+      harness.docSets.push({
+        id: id ?? "new_session_1",
+        data: data as Record<string, unknown>,
+      });
+    },
+  });
+
+  return {
+    db: {
+      collection: (collectionName: string) => ({
+        doc: (id?: string) => document(collectionName, id),
+      }),
+      runTransaction: async (
+        callback: (transaction: {
+          get: (ref: unknown) => Promise<ReturnType<typeof snapshot>>;
+          set: (ref: unknown, data: unknown) => Promise<void>;
+          create: (ref: { id: string }, data: unknown) => Promise<void>;
+          delete: (ref: unknown) => Promise<void>;
+        }) => Promise<unknown>,
+      ) => {
+        return callback({
+          get: async () =>
+            snapshot(harness.lock !== null, harness.lock ?? undefined),
+          set: async (_ref, data) => {
+            harness.docSets.push({
+              id: "lock",
+              data: data as Record<string, unknown>,
+            });
+          },
+          create: async (ref, data) => {
+            harness.docSets.push({
+              id: ref.id,
+              data: data as Record<string, unknown>,
+            });
+          },
+          delete: async () => {
+            harness.lock = null;
+          },
+        });
+      },
+      batch: () => ({
+        set: (ref: { id: string }, data: unknown) => {
+          harness.batchSets.push({
+            id: ref.id,
+            data: data as Record<string, unknown>,
+          });
+        },
+        commit: async () => {},
+      }),
+    },
+    rtdb: {
+      ref: () => ({
+        once: async () => ({ val: () => harness.liveNode }),
+        transaction: async (callback: (value: unknown) => unknown) => {
+          const result = callback(harness.liveNode);
+          if (result !== undefined) {
+            harness.liveNode = result as Record<string, unknown>;
+          }
+          return {
+            committed: true,
+            snapshot: { val: () => harness.liveNode },
+          };
+        },
+      }),
+    },
+  };
+});
+
+import shiftsRouter from "./shifts";
+
+let server: Server;
+let baseUrl = "";
+
+beforeAll(async () => {
+  const app = express();
+  app.use(express.json());
+  app.use("/api/shifts", shiftsRouter);
+  server = await new Promise<Server>((resolve) => {
+    const listener = app.listen(0, "127.0.0.1", () => resolve(listener));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Test server did not bind.");
+  baseUrl = `http://127.0.0.1:${address.port}`;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+});
+
+beforeEach(() => {
+  harness.docSets = [];
+  harness.batchSets = [];
+  harness.lock = null;
+});
+
+async function startShift() {
+  return fetch(`${baseUrl}/api/shifts/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ busId: "bus_1", routeId: "route_1" }),
+  });
+}
+
+describe("shift start after automatic completion", () => {
+  it("starts a fresh session instead of resurrecting the completed ride", async () => {
+    // Live node left by the engine right after completion: status is still
+    // "active" with the old sessionId and terminal tripState "completed",
+    // while the 30s cleanup has not run yet (lock already released).
+    harness.liveNode = {
+      busId: "bus_1",
+      driverId: "driver_1",
+      routeId: "route_1",
+      status: "active",
+      tripState: "completed",
+      sessionId: "session_completed",
+      currentStopIndex: 3,
+      hasDepartedOrigin: true,
+      delayMinutes: 0,
+      lat: 23.2,
+      lng: 72.7,
+      timestamp: Date.now(),
+      motionState: "stopped",
+    };
+    harness.lock = null;
+
+    const response = await startShift();
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.resumed).toBe(false);
+    expect(body.sessionId).toBe("new_session_1");
+
+    // The live node was re-claimed for a fresh pre-departure ride.
+    expect(harness.liveNode.tripState).toBe("pre_departure");
+    expect(harness.liveNode.sessionId).toBe("new_session_1");
+    expect(harness.liveNode.currentStopIndex).toBe(0);
+    expect(harness.liveNode.hasDepartedOrigin).toBe(false);
+
+    // The new ride session is armed; the completed session was NOT revived.
+    const sessionSet = harness.batchSets.find((entry) => entry.id === "new_session_1");
+    expect(sessionSet?.data.status).toBe("armed");
+    expect(harness.docSets.map((entry) => entry.id)).not.toContain("session_completed");
+    expect(harness.batchSets.map((entry) => entry.id)).not.toContain("session_completed");
+  });
+
+  it("still resumes an in-service shift (regression guard)", async () => {
+    harness.liveNode = {
+      busId: "bus_1",
+      driverId: "driver_1",
+      routeId: "route_1",
+      status: "active",
+      tripState: "in_service",
+      sessionId: "session_live",
+      currentStopIndex: 1,
+      hasDepartedOrigin: true,
+      delayMinutes: 0,
+      lat: 23.0,
+      lng: 72.5,
+      timestamp: Date.now(),
+      motionState: "moving",
+    };
+    harness.lock = {
+      busId: "bus_1",
+      routeId: "route_1",
+      driverId: "driver_1",
+      sessionId: "session_live",
+    };
+
+    const response = await startShift();
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.resumed).toBe(true);
+    expect(body.sessionId).toBe("session_live");
+  });
+
+  it("refuses to touch an active shift owned by another driver", async () => {
+    // An in-service node owned by a different driver must not be resumed or
+    // claimed: the resume branch requires the same driver, and the claim
+    // refuses to replace an active, non-completed session.
+    harness.liveNode = {
+      busId: "bus_1",
+      driverId: "driver_other",
+      routeId: "route_1",
+      status: "active",
+      tripState: "in_service",
+      sessionId: "session_live",
+      currentStopIndex: 1,
+      hasDepartedOrigin: true,
+      delayMinutes: 0,
+      lat: 23.0,
+      lng: 72.5,
+      timestamp: Date.now(),
+      motionState: "moving",
+    };
+    harness.lock = {
+      busId: "bus_1",
+      routeId: "route_1",
+      driverId: "driver_other",
+      sessionId: "session_live",
+    };
+
+    const response = await startShift();
+    expect(response.status).toBe(409);
+    expect(harness.liveNode.sessionId).toBe("session_live");
+    expect(harness.liveNode.tripState).toBe("in_service");
+  });
+});

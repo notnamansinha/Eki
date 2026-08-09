@@ -134,6 +134,7 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
     const current = (await nodeRef.once("value")).val() as Record<string, unknown> | null;
     if (
       current?.status === "active" &&
+      current?.tripState !== "completed" &&
       current?.driverId === assignment.driverId &&
       typeof current.sessionId === "string"
     ) {
@@ -190,7 +191,14 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
       res.json({ sessionId: current.sessionId, resumed: true });
       return;
     }
-    if (current?.status === "active" && typeof current?.sessionId === "string") {
+    // A completed ride is terminal: the live node still reports
+    // status="active" until the engine's 30s cleanup, but it must never be
+    // resurrected. Fall through to a fresh start below.
+    if (
+      current?.status === "active" &&
+      current?.tripState !== "completed" &&
+      typeof current?.sessionId === "string"
+    ) {
       res.status(409).json({ error: "This bus already has an active shift." });
       return;
     }
@@ -321,11 +329,14 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
     try {
       // Claim the live vehicle atomically. Two near-simultaneous start
       // requests may both pass the initial read, but only one session is
-      // allowed to replace a node that has no active session.
+      // allowed to replace a node that has no active session. A completed
+      // node is terminal and may be claimed by a fresh session (the engine
+      // cancels its pending completion cleanup once tripState changes).
       const claim = await nodeRef.transaction((liveValue) => {
         const live = liveValue as Record<string, unknown> | null;
         if (
           live?.status === "active" &&
+          live?.tripState !== "completed" &&
           typeof live.sessionId === "string" &&
           live.sessionId.length > 0
         ) {
