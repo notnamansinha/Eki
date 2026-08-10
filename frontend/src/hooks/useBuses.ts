@@ -7,6 +7,11 @@ export interface BusData {
   assignedRouteId?: string; // Legacy single-route assignment
 }
 
+/**
+ * All registered buses from the Firestore `buses` collection, with loading
+ * and error state. Backend-authoritative: buses are provisioned and assigned
+ * server-side.
+ */
 export function useBuses() {
   const { data: buses, loading, error } = useCollection<BusData>("buses");
   return { buses, loading, error };

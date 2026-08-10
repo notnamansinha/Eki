@@ -29,7 +29,11 @@ interface CacheEntry {
 
 const queryCache = new Map<string, CacheEntry>();
 
-/** Clear in-memory snapshots when the Firebase principal changes. */
+/**
+ * Drop all cached collection snapshots and detach the shared listeners.
+ * Called when the Firebase principal changes so data from the previous
+ * account can never leak into the next session.
+ */
 export function clearCollectionCache(): void {
   for (const entry of queryCache.values()) {
     if (entry.timeoutId) clearTimeout(entry.timeoutId);
@@ -42,6 +46,17 @@ export function clearCollectionCache(): void {
   queryCache.clear();
 }
 
+/**
+ * Subscribe to a Firestore collection query through a shared, cache-keyed
+ * listener. Multiple consumers of the same query share one subscription and
+ * its data; the cache key includes every query dimension (collection,
+ * orderBy, limit, where constraints) so queries that differ in any filter
+ * never share a cache entry (#46).
+ *
+ * Returns `error` distinct from empty data: consumers render the failure
+ * state instead of an empty list, and stale data is flagged rather than
+ * presented as live (#47).
+ */
 export function useCollection<T>(
   collectionName: string,
   options: CollectionOptions = {},
