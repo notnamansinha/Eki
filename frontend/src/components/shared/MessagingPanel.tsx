@@ -47,12 +47,17 @@ export default function MessagingPanel({
   onUnreadCountChange,
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [messagesSource, setMessagesSource] = useState<string | null>(null);
   const [chatError, setChatError] = useState<{ sessionId: string; message: string } | null>(null);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [rateLimitMsg, setRateLimitMsg] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastSeenCountRef = useRef(0);
+
+  // Messages belong to one session: after a session switch, prior-session
+  // messages must not render as if they were the new session's chat (#47).
+  const visibleMessages = messagesSource === sessionId ? messages : [];
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rateLimitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingMessageRef = useRef<{ text: string; requestId: string } | null>(null);
@@ -80,6 +85,7 @@ export default function MessagingPanel({
         (snapshot) => {
             const msgs = snapshot.docs.map((message) => ({ id: message.id, ...message.data() })) as Message[];
             setMessages(msgs);
+            setMessagesSource(sessionId);
             setChatError(null);
 
             // Count messages from others to surface unread badge
@@ -249,7 +255,7 @@ export default function MessagingPanel({
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 gap-4 flex flex-col relative z-10 text-sm">
-        {messages.length === 0 ? (
+        {visibleMessages.length === 0 ? (
           chatError && chatError.sessionId === sessionId ? (
             <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
               <AlertCircle className="w-8 h-8 mb-3" style={{ color: "var(--danger, #f87171)" }} />
@@ -272,7 +278,7 @@ export default function MessagingPanel({
             </div>
           )
         ) : (
-          messages.map((msg) => {
+          visibleMessages.map((msg) => {
             const isMe = msg.senderId === currentUserId;
             
             return (

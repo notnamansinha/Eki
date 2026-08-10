@@ -15,6 +15,48 @@ export interface CollectionOptions {
 }
 
 /**
+ * Deterministic, type-aware encoding of a Firestore query value for cache
+ * keys. JSON.stringify would collide distinct values (e.g. a `Date` and the
+ * identical ISO string, or a Timestamp and a matching plain object), which
+ * could make two different queries share one cache entry. Types get explicit
+ * prefixes; plain-object keys are sorted for stability.
+ */
+export function encodeQueryValue(value: unknown): string {
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (typeof value === "string") return `s:${value}`;
+  if (typeof value === "number") return `n:${value}`;
+  if (typeof value === "boolean") return `b:${value}`;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? "d:invalid" : `d:${value.toISOString()}`;
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => encodeQueryValue(entry)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    // Firestore Timestamp-like values are compared by seconds+nanoseconds;
+    // encode them explicitly so a Timestamp never collides with a plain object.
+    const objectKeys = Object.keys(value as object);
+    const seconds = (value as { seconds?: unknown }).seconds;
+    const nanoseconds = (value as { nanoseconds?: unknown }).nanoseconds;
+    if (
+      objectKeys.length === 2 &&
+      typeof seconds === "number" &&
+      typeof nanoseconds === "number" &&
+      "seconds" in (value as object) &&
+      "nanoseconds" in (value as object)
+    ) {
+      return `t:${seconds}:${nanoseconds}`;
+    }
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, entry]) => `${key}=${encodeQueryValue(entry)}`);
+    return `{${entries.join(",")}}`;
+  }
+  return `u:${String(value)}`;
+}
+
+/**
  * Deterministic cache key for a collection query.
  *
  * Every query dimension must be part of the key: collection, orderBy, limit
@@ -32,7 +74,7 @@ export function buildCollectionCacheKey(
   const orderByDirection = options.orderByDirection ?? "asc";
   const whereKey = (options.whereConstraints ?? [])
     .map((constraint) =>
-      `${constraint.fieldPath}:${constraint.op}:${JSON.stringify(constraint.value)}`,
+      `${constraint.fieldPath}:${constraint.op}:${encodeQueryValue(constraint.value)}`,
     )
     .join("|");
   return [collectionName, orderByField, orderByDirection, maxResults, whereKey].join(

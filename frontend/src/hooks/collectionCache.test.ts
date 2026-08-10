@@ -74,6 +74,41 @@ describe("buildCollectionCacheKey", () => {
     });
     expect(inClause).not.toBe(scalar);
   });
+
+  it("distinguishes a Date value from its ISO-string form", () => {
+    const iso = "2026-01-01T00:00:00.000Z";
+    const asDate = buildCollectionCacheKey("ride_sessions", {
+      whereConstraints: [{ fieldPath: "time", op: ">=", value: new Date(iso) }],
+    });
+    const asString = buildCollectionCacheKey("ride_sessions", {
+      whereConstraints: [{ fieldPath: "time", op: ">=", value: iso }],
+    });
+    expect(asDate).not.toBe(asString);
+  });
+
+  it("distinguishes a Firestore Timestamp-like value from a plain object", () => {
+    const timestampLike = buildCollectionCacheKey("ride_sessions", {
+      whereConstraints: [
+        { fieldPath: "time", op: ">=", value: { seconds: 1767225600, nanoseconds: 0 } },
+      ],
+    });
+    const plain = buildCollectionCacheKey("ride_sessions", {
+      whereConstraints: [
+        { fieldPath: "time", op: ">=", value: { seconds: 1767225600, nanoseconds: 0, extra: true } },
+      ],
+    });
+    expect(timestampLike).not.toBe(plain);
+  });
+
+  it("is stable for object values regardless of key order", () => {
+    const forward = buildCollectionCacheKey("buses", {
+      whereConstraints: [{ fieldPath: "tags", op: "==", value: { a: 1, b: 2 } }],
+    });
+    const backward = buildCollectionCacheKey("buses", {
+      whereConstraints: [{ fieldPath: "tags", op: "==", value: { b: 2, a: 1 } }],
+    });
+    expect(forward).toBe(backward);
+  });
 });
 
 describe("describeCollectionError", () => {

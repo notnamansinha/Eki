@@ -311,12 +311,10 @@ function RecentTripsPanel({ routes, buses, drivers }: { routes: RouteData[]; bus
 
       {open && (
         <div className="border-t border-white/5 px-3 pb-3 flex flex-col gap-2">
-          {trips.length === 0 ? (
-            tripsError ? (
-              <p className="text-red-400/80 text-xs text-center py-6 font-semibold uppercase tracking-widest">{tripsError}</p>
-            ) : (
-              <p className="text-white/20 text-xs text-center py-6 font-semibold uppercase tracking-widest">No completed trips yet.</p>
-            )
+          {tripsError ? (
+            <p className="text-red-400/80 text-xs text-center py-6 font-semibold uppercase tracking-widest">{tripsError}</p>
+          ) : trips.length === 0 ? (
+            <p className="text-white/20 text-xs text-center py-6 font-semibold uppercase tracking-widest">No completed trips yet.</p>
           ) : (
             trips.map(trip => {
               const bus = buses.find(b => b.id === trip.busId);

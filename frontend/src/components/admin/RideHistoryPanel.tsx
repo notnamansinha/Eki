@@ -123,8 +123,8 @@ export default function RideHistoryPanel() {
       orderByField: "startTime",
     },
   );
-  const { buses, loading: busesLoading } = useBuses();
-  const { routes, loading: routesLoading } = useRoutes();
+  const { buses, loading: busesLoading, error: busesError } = useBuses();
+  const { routes, loading: routesLoading, error: routesError } = useRoutes();
   const { drivers, loading: driversLoading } = useDrivers();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteStates, setDeleteStates] = useState<Record<string, RideHistoryDeletionState>>({});
@@ -205,12 +205,12 @@ export default function RideHistoryPanel() {
     );
   }
 
-  if (sessionsError) {
+  if (sessionsError || busesError || routesError) {
     return (
       <div className="flex h-full items-center justify-center px-6 text-center">
         <div className="space-y-2 text-sm text-red-400/80">
           <AlertCircle className="mx-auto size-8 opacity-70" />
-          <p>{sessionsError}</p>
+          <p>{sessionsError ?? busesError ?? routesError ?? "Could not load ride history."}</p>
           <p className="text-xs text-white/40">Ride history could not be loaded.</p>
         </div>
       </div>

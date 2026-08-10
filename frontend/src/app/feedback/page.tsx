@@ -450,7 +450,7 @@ export default function FeedbackPage() {
         {/* Results count */}
         <div className="flex items-center gap-2 text-[10px] text-white/30 font-black uppercase tracking-widest -mb-2">
           <CheckCircle className="w-3.5 h-3.5" />
-          {loading ? "Loading…" : `${filtered.length} of ${total} entries`}
+          {loading ? "Loading…" : loadError ? "Couldn't load" : `${filtered.length} of ${total} entries`}
         </div>
 
         {/* Feedback list */}
