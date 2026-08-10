@@ -253,12 +253,11 @@ rulesDescribe("Firebase security rules integration", () => {
     await assertFails(deleteDoc(doc(admin.firestore(), "ride_sessions", "session_1")));
   });
 
-  it("supports the devices(busId, routeId) compound query used by device provisioning", async () => {
+  it("executes the devices(busId, routeId) equality query used by provisioning", async () => {
     // Server-side provisioning (provisionDevice.ts and PATCH /api/devices)
-    // queries devices by bus + route. Production Firestore requires a
-    // composite index for this; the emulator enforces the same requirement
-    // against firestore.indexes.json, so this test fails if the index is
-    // ever removed or the query shape changes.
+    // queries devices by bus + route. Firestore merges the automatic
+    // single-field indexes for multiple equality clauses, so this query must
+    // remain covered without adding a redundant composite index.
     await environment.withSecurityRulesDisabled(async (context) => {
       const matches = await getDocs(
         query(
