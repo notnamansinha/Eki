@@ -6,13 +6,16 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
+  query,
   runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   deleteDoc,
 } from "firebase/firestore";
-import { afterAll, beforeAll, describe, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const enabled = process.env.FIREBASE_RULES_TEST === "1";
 const rulesDescribe = enabled ? describe : describe.skip;
@@ -59,6 +62,13 @@ rulesDescribe("Firebase security rules integration", () => {
       });
       await setDoc(doc(context.firestore(), "devices", "device_1"), {
         secretHash: "never-client-readable",
+        busId: "bus_1",
+        routeId: "route_1",
+      });
+      await setDoc(doc(context.firestore(), "devices", "device_2"), {
+        secretHash: "never-client-readable",
+        busId: "bus_1",
+        routeId: "route_2",
       });
       await setDoc(doc(context.firestore(), "active_rides", "bus_1_route_1"), {
         sessionId: "session_1",
@@ -241,6 +251,23 @@ rulesDescribe("Firebase security rules integration", () => {
     }));
     // And deleting a session is backend-only.
     await assertFails(deleteDoc(doc(admin.firestore(), "ride_sessions", "session_1")));
+  });
+
+  it("executes the devices(busId, routeId) equality query used by provisioning", async () => {
+    // Server-side provisioning (provisionDevice.ts and PATCH /api/devices)
+    // queries devices by bus + route. Firestore merges the automatic
+    // single-field indexes for multiple equality clauses, so this query must
+    // remain covered without adding a redundant composite index.
+    await environment.withSecurityRulesDisabled(async (context) => {
+      const matches = await getDocs(
+        query(
+          collection(context.firestore(), "devices"),
+          where("busId", "==", "bus_1"),
+          where("routeId", "==", "route_1"),
+        ),
+      );
+      expect(matches.docs.map((entry) => entry.id)).toEqual(["device_1"]);
+    });
   });
 
   it("keeps passenger requests locked to their owner and assigned drivers", async () => {
