@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => {
           })
         : undefined,
       doc: (id: string) => ({
+        collectionName: name,
+        id,
         get: name === "routes" ? routeDocumentGet : undefined,
         set: (data: unknown, options: unknown) => documentSet(name, id, data, options),
       }),
@@ -93,6 +95,7 @@ describe("trip-state engine lifecycle", () => {
     mocks.routeListeners.length = 0;
     mocks.rtdbHandlers.clear();
     mocks.routeDocumentGet.mockResolvedValue({ exists: false, data: () => undefined });
+    mocks.transactionGet.mockResolvedValue({ exists: false, data: () => undefined });
     mocks.reduceTripState.mockReturnValue({
       tripState: "completed",
       currentStopIndex: 1,
@@ -135,7 +138,12 @@ describe("trip-state engine lifecycle", () => {
     });
 
     const transaction = vi.fn(async (update: (value: unknown) => unknown) => {
-      update({ tripState: "completed", sessionId: "session-1" });
+      const value = { tripState: "completed", sessionId: "session-1" };
+      const result = update(value);
+      return {
+        committed: result !== undefined,
+        snapshot: { val: () => result ?? value },
+      };
     });
     const snapshot = {
       key: "bus_1_route_2",
@@ -159,15 +167,14 @@ describe("trip-state engine lifecycle", () => {
 
     mocks.rtdbHandlers.get("child_changed")!(snapshot);
     await flushMicrotasks();
-    expect(mocks.db.runTransaction).toHaveBeenCalledOnce();
+    expect(mocks.db.runTransaction).toHaveBeenCalledTimes(2);
     expect(transaction).toHaveBeenCalledOnce();
 
     await stop();
 
     expect(transaction).toHaveBeenCalledTimes(2);
-    expect(mocks.documentSet).toHaveBeenCalledWith(
-      "bus_locations",
-      "bus_1",
+    expect(mocks.transactionSet).toHaveBeenCalledWith(
+      expect.objectContaining({ collectionName: "bus_locations", id: "bus_1" }),
       expect.objectContaining({
         routeId: "route_2",
         status: "offline",
@@ -213,6 +220,238 @@ describe("trip-state engine lifecycle", () => {
     await flushMicrotasks();
 
     expect(mocks.routeDocumentGet).toHaveBeenCalledOnce();
+    await stop();
+  });
+
+  it("preserves a newer durable delay when an older live projection arrives late", async () => {
+    mocks.reduceTripState.mockReturnValue({
+      tripState: "in_service",
+      currentStopIndex: 0,
+      hasDepartedOrigin: true,
+    });
+    mocks.transactionGet.mockImplementation(async (ref: { collectionName?: string }) => {
+      if (ref.collectionName === "_active_bus_locks") {
+        return { exists: true, data: () => ({ sessionId: "session-1" }) };
+      }
+      if (ref.collectionName === "active_rides") {
+        return {
+          exists: true,
+          data: () => ({
+            sessionId: "session-1",
+            delayMinutes: 15,
+            delayUpdatedAt: 200,
+          }),
+        };
+      }
+      return { exists: false, data: () => undefined };
+    });
+    const stop = startTripStateEngine();
+    mocks.routeListeners[0].next({
+      docChanges: () => [{
+        type: "added",
+        doc: {
+          id: "route_2",
+          data: () => ({
+            stops: [
+              { id: "origin", name: "Origin", lat: 23, lng: 72 },
+              { id: "destination", name: "Destination", lat: 23.1, lng: 72.1 },
+            ],
+          }),
+        },
+      }],
+    });
+    mocks.rtdbHandlers.get("child_changed")!({
+      key: "bus_1_route_2",
+      val: () => ({
+        busId: "bus_1",
+        routeId: "route_2",
+        driverId: "driver-1",
+        sessionId: "session-1",
+        status: "active",
+        tripState: "in_service",
+        currentStopIndex: 0,
+        hasDepartedOrigin: true,
+        delayMinutes: 5,
+        delayUpdatedAt: 100,
+        lat: 23.05,
+        lng: 72.05,
+        timestamp: 1,
+      }),
+      ref: {
+        update: vi.fn(async () => undefined),
+        transaction: vi.fn(async () => undefined),
+      },
+    });
+    await flushMicrotasks();
+
+    expect(mocks.transactionSet).toHaveBeenCalledWith(
+      expect.objectContaining({ collectionName: "active_rides", id: "bus_1_route_2" }),
+      expect.objectContaining({ delayMinutes: 15, delayUpdatedAt: 200 }),
+      { merge: true },
+    );
+    await stop();
+  });
+
+  it("does not retire a replacement session when completion cleanup already started", async () => {
+    const stop = startTripStateEngine();
+    mocks.routeListeners[0].next({
+      docChanges: () => [{
+        type: "added",
+        doc: {
+          id: "route_2",
+          data: () => ({
+            stops: [
+              { id: "origin", name: "Origin", lat: 23, lng: 72 },
+              { id: "destination", name: "Destination", lat: 23.1, lng: 72.1 },
+            ],
+          }),
+        },
+      }],
+    });
+    let liveValue: Record<string, unknown> = {
+      tripState: "in_service",
+      sessionId: "session-1",
+    };
+    const transaction = vi.fn(async (update: (value: unknown) => unknown) => {
+      const result = update(liveValue);
+      if (transaction.mock.calls.length === 1) {
+        liveValue = {
+          ...(result as Record<string, unknown>),
+          tripState: "completed",
+        };
+        return { committed: true, snapshot: { val: () => liveValue } };
+      }
+      liveValue = {
+        ...liveValue,
+        tripState: "pre_departure",
+        sessionId: "session-2",
+      };
+      const retryResult = update(liveValue);
+      return {
+        committed: retryResult !== undefined,
+        snapshot: { val: () => liveValue },
+      };
+    });
+    const snapshot = {
+      key: "bus_1_route_2",
+      val: () => ({
+        busId: "bus_1",
+        routeId: "route_2",
+        driverId: "driver-1",
+        sessionId: "session-1",
+        status: "active",
+        tripState: "in_service",
+        currentStopIndex: 0,
+        lat: 23.1,
+        lng: 72.1,
+        timestamp: 1,
+      }),
+      ref: { update: vi.fn(async () => undefined), transaction },
+    };
+
+    mocks.rtdbHandlers.get("child_changed")!(snapshot);
+    await flushMicrotasks();
+    mocks.transactionSet.mockClear();
+    await vi.advanceTimersByTimeAsync(30_000);
+    await flushMicrotasks();
+
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(liveValue.sessionId).toBe("session-2");
+    expect(liveValue.tripState).toBe("pre_departure");
+    expect(mocks.transactionSet).not.toHaveBeenCalledWith(
+      expect.objectContaining({ collectionName: "bus_locations" }),
+      expect.objectContaining({ status: "offline" }),
+      expect.anything(),
+    );
+    await stop();
+  });
+
+  it("keeps a completed route cleanup when another route starts", async () => {
+    const stop = startTripStateEngine();
+    mocks.routeListeners[0].next({
+      docChanges: () => ["route_old", "route_new"].map((id) => ({
+        type: "added",
+        doc: {
+          id,
+          data: () => ({
+            stops: [
+              { id: "origin", name: "Origin", lat: 23, lng: 72 },
+              { id: "destination", name: "Destination", lat: 23.1, lng: 72.1 },
+            ],
+          }),
+        },
+      })),
+    });
+    const oldTransaction = vi.fn(async (update: (value: unknown) => unknown) => {
+      const value = { tripState: "completed", sessionId: "session-old" };
+      const result = update(value);
+      return { committed: result !== undefined, snapshot: { val: () => result ?? value } };
+    });
+    const snapshot = (routeId: string, sessionId: string, transaction: unknown) => ({
+      key: `bus_1_${routeId}`,
+      val: () => ({
+        busId: "bus_1",
+        routeId,
+        driverId: "driver-1",
+        sessionId,
+        status: "active",
+        tripState: routeId === "route_old" ? "in_service" : "pre_departure",
+        currentStopIndex: 0,
+        lat: 23.1,
+        lng: 72.1,
+        timestamp: routeId === "route_old" ? 1 : 2,
+      }),
+      ref: { update: vi.fn(async () => undefined), transaction },
+    });
+
+    mocks.reduceTripState.mockReturnValueOnce({
+      tripState: "completed",
+      currentStopIndex: 1,
+      hasDepartedOrigin: true,
+    }).mockReturnValueOnce({
+      tripState: "pre_departure",
+      currentStopIndex: 0,
+      hasDepartedOrigin: false,
+    });
+    mocks.rtdbHandlers.get("child_changed")!(
+      snapshot("route_old", "session-old", oldTransaction),
+    );
+    await flushMicrotasks();
+    mocks.rtdbHandlers.get("child_changed")!(
+      snapshot("route_new", "session-new", vi.fn()),
+    );
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(30_000);
+    await flushMicrotasks();
+
+    expect(oldTransaction).toHaveBeenCalledTimes(2);
+    await stop();
+  });
+
+  it("does not project an old removed route offline over a newer bus lock", async () => {
+    const stop = startTripStateEngine();
+    mocks.transactionGet.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ sessionId: "session-new" }),
+    });
+    mocks.rtdbHandlers.get("child_removed")!({
+      key: "bus_1_route_old",
+      val: () => ({
+        busId: "bus_1",
+        routeId: "route_old",
+        driverId: "driver-old",
+        sessionId: "session-old",
+        status: "offline",
+        tripState: "completed",
+        currentStopIndex: 1,
+        lat: 23.1,
+        lng: 72.1,
+        timestamp: 1,
+      }),
+    });
+    await flushMicrotasks();
+
+    expect(mocks.transactionSet).not.toHaveBeenCalled();
     await stop();
   });
 });

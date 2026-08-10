@@ -497,7 +497,9 @@ describe("production security configuration", () => {
     expect(engine).toContain('busesRef.on("child_added", liveSnapshotHandler)');
     expect(engine).toContain('busesRef.on("child_changed", liveSnapshotHandler)');
     expect(engine).toContain("processedTelemetry.delete");
-    expect(engine).toContain("forgetAfterWrite");
+    expect(engine).not.toContain("forgetAfterWrite");
+    expect(engine).toContain("persistOfflineFleetState");
+    expect(engine).toContain('db.collection("_active_bus_locks")');
     expect(engine).toContain("stopsReached:");
     expect(engine).toContain("{ merge: true }");
     expect(engine).not.toContain('.doc(data.sessionId).update({');
