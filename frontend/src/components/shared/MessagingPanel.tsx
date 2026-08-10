@@ -10,8 +10,9 @@ import {
   query,
   Timestamp,
 } from "firebase/firestore";
-import { Send, X, MessageCircle } from "lucide-react";
+import { Send, X, MessageCircle, AlertCircle } from "lucide-react";
 import { auth } from "@/lib/firebaseAuth";
+import { waitForAuth } from "@/lib/authState";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 const MAX_MESSAGE_LENGTH = 500;
@@ -46,6 +47,7 @@ export default function MessagingPanel({
   onUnreadCountChange,
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [chatError, setChatError] = useState<{ sessionId: string; message: string } | null>(null);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [rateLimitMsg, setRateLimitMsg] = useState("");
@@ -62,37 +64,48 @@ export default function MessagingPanel({
 
     if (!sessionId) return;
 
-    const unsubscribe = onSnapshot(
-      query(
-        collection(db, "ride_sessions", sessionId, "messages"),
-        orderBy("timestamp", "asc"),
-        limitToLast(200),
-      ),
-      (snapshot) => {
-          const msgs = snapshot.docs.map((message) => ({ id: message.id, ...message.data() })) as Message[];
-          setMessages(msgs);
+    let active = true;
+    let unsubscribe: (() => void) | null = null;
+    // Attach only after the first auth state resolves: attaching before auth
+    // can hit a permanent permission-denied from a claims-less cached token;
+    // onSnapshot does not retry permission-denied (see #47 F1).
+    waitForAuth().then(() => {
+      if (!active || unsubscribe) return;
+      unsubscribe = onSnapshot(
+        query(
+          collection(db, "ride_sessions", sessionId, "messages"),
+          orderBy("timestamp", "asc"),
+          limitToLast(200),
+        ),
+        (snapshot) => {
+            const msgs = snapshot.docs.map((message) => ({ id: message.id, ...message.data() })) as Message[];
+            setMessages(msgs);
+            setChatError(null);
 
-          // Count messages from others to surface unread badge
-          if (onUnreadCountChange) {
-            const othersCount = msgs.filter((m: Message) => m.senderId !== currentUserId).length;
-            if (othersCount > lastSeenCountRef.current) {
-              onUnreadCountChange(othersCount - lastSeenCountRef.current);
+            // Count messages from others to surface unread badge
+            if (onUnreadCountChange) {
+              const othersCount = msgs.filter((m: Message) => m.senderId !== currentUserId).length;
+              if (othersCount > lastSeenCountRef.current) {
+                onUnreadCountChange(othersCount - lastSeenCountRef.current);
+              }
+              lastSeenCountRef.current = othersCount;
             }
-            lastSeenCountRef.current = othersCount;
-          }
 
-          if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
-          scrollTimerRef.current = setTimeout(() => {
-            const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-            messagesEndRef.current?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth" });
-          }, 100);
-      }, (error) => {
-        console.warn("[Chat] messages read failed:", error.message);
-      }
-    );
+            if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+            scrollTimerRef.current = setTimeout(() => {
+              const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+              messagesEndRef.current?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth" });
+            }, 100);
+        }, (error) => {
+          console.warn("[Chat] messages read failed:", error.message);
+          setChatError({ sessionId, message: "Could not load messages. Check your connection and try again." });
+        }
+      );
+    });
 
     return () => {
-      unsubscribe();
+      active = false;
+      unsubscribe?.();
       if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     };
   }, [sessionId, currentUserId, onUnreadCountChange]);
@@ -237,15 +250,27 @@ export default function MessagingPanel({
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 gap-4 flex flex-col relative z-10 text-sm">
         {messages.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
-            <MessageCircle className="w-8 h-8 mb-3" style={{ color: "var(--text-ghost)" }} />
-            <p className="text-[12px] font-semibold text-center" style={{ color: "var(--text-ghost)" }}>
-              No messages yet
-            </p>
-            <p className="text-[11px] mt-1" style={{ color: "var(--text-ghost)" }}>
-              Send a message to the {currentUserRole === "driver" ? "riders" : "driver"}
-            </p>
-          </div>
+          chatError && chatError.sessionId === sessionId ? (
+            <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
+              <AlertCircle className="w-8 h-8 mb-3" style={{ color: "var(--danger, #f87171)" }} />
+              <p className="text-[12px] font-semibold text-center" style={{ color: "var(--danger, #f87171)" }}>
+                Couldn&apos;t load messages
+              </p>
+              <p className="text-[11px] mt-1" style={{ color: "var(--text-ghost)" }}>
+                Check your connection and try again
+              </p>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
+              <MessageCircle className="w-8 h-8 mb-3" style={{ color: "var(--text-ghost)" }} />
+              <p className="text-[12px] font-semibold text-center" style={{ color: "var(--text-ghost)" }}>
+                No messages yet
+              </p>
+              <p className="text-[11px] mt-1" style={{ color: "var(--text-ghost)" }}>
+                Send a message to the {currentUserRole === "driver" ? "riders" : "driver"}
+              </p>
+            </div>
+          )
         ) : (
           messages.map((msg) => {
             const isMe = msg.senderId === currentUserId;

@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   ChevronDown,
   ChevronUp,
+  AlertCircle,
   CheckCircle,
   Inbox,
   Filter,
@@ -248,6 +249,7 @@ type FilterStatus = "all" | "new" | "reviewed" | "resolved";
 export default function FeedbackPage() {
   const [entries, setEntries] = useState<FeedbackEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [search, setSearch] = useState("");
@@ -263,10 +265,11 @@ export default function FeedbackPage() {
           snap.docs.map((d) => ({ id: d.id, ...d.data() } as FeedbackEntry))
         );
         setLoading(false);
+        setLoadError(null);
       },
       (error) => {
         console.warn("[Feedback] Read failed:", error.message);
-        setEntries([]);
+        setLoadError("Failed to load feedback.");
         setLoading(false);
       },
     );
@@ -457,6 +460,14 @@ export default function FeedbackPage() {
             <span className="text-[11px] font-semibold uppercase tracking-widest">
               Loading feedback…
             </span>
+          </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center justify-center py-20 text-red-400/80 text-center">
+            <AlertCircle className="w-10 h-10 mb-4 opacity-60" />
+            <p className="text-sm font-semibold uppercase tracking-widest">
+              Couldn&apos;t load feedback
+            </p>
+            <p className="text-xs mt-1 opacity-70">{loadError}</p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-white/20 text-center">

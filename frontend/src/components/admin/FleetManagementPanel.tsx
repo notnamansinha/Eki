@@ -76,8 +76,9 @@ function useActiveBuses(): ActiveBusEntry[] {
   return active;
 }
 
-function useRecentTrips(count = 10): CompletedTrip[] {
+function useRecentTrips(count = 10): { trips: CompletedTrip[]; error: string | null } {
   const [trips, setTrips] = useState<CompletedTrip[]>([]);
+  const [tripsError, setTripsError] = useState<string | null>(null);
   useEffect(() => {
     const q = query(
       collection(db, "completed_trips"),
@@ -88,15 +89,16 @@ function useRecentTrips(count = 10): CompletedTrip[] {
       q,
       (snap) => {
         setTrips(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<CompletedTrip, "id">) })));
+        setTripsError(null);
       },
       (error) => {
         console.warn("[Fleet] Completed trip history read failed:", error.message);
-        setTrips([]);
+        setTripsError("Failed to load completed trips.");
       },
     );
     return () => unsub();
   }, [count]);
-  return trips;
+  return { trips, error: tripsError };
 }
 
 // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -285,7 +287,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
 
 // â”€â”€ Recent trips analytics section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function RecentTripsPanel({ routes, buses, drivers }: { routes: RouteData[]; buses: BusData[]; drivers: DriverData[] }) {
-  const trips = useRecentTrips(10);
+  const { trips, error: tripsError } = useRecentTrips(10);
   const [open, setOpen] = useState(false);
 
   return (
@@ -310,7 +312,11 @@ function RecentTripsPanel({ routes, buses, drivers }: { routes: RouteData[]; bus
       {open && (
         <div className="border-t border-white/5 px-3 pb-3 flex flex-col gap-2">
           {trips.length === 0 ? (
-            <p className="text-white/20 text-xs text-center py-6 font-semibold uppercase tracking-widest">No completed trips yet.</p>
+            tripsError ? (
+              <p className="text-red-400/80 text-xs text-center py-6 font-semibold uppercase tracking-widest">{tripsError}</p>
+            ) : (
+              <p className="text-white/20 text-xs text-center py-6 font-semibold uppercase tracking-widest">No completed trips yet.</p>
+            )
           ) : (
             trips.map(trip => {
               const bus = buses.find(b => b.id === trip.busId);

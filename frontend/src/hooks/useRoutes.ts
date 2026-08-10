@@ -29,6 +29,6 @@ export interface RouteData {
 }
 
 export function useRoutes() {
-  const { data: routes, loading } = useCollection<RouteData>("routes");
-  return { routes, loading };
+  const { data: routes, loading, error } = useCollection<RouteData>("routes");
+  return { routes, loading, error };
 }

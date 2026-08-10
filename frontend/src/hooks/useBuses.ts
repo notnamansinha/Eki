@@ -8,6 +8,6 @@ export interface BusData {
 }
 
 export function useBuses() {
-  const { data: buses, loading } = useCollection<BusData>("buses");
-  return { buses, loading };
+  const { data: buses, loading, error } = useCollection<BusData>("buses");
+  return { buses, loading, error };
 }

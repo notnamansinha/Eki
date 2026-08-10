@@ -5,24 +5,26 @@ import {
   onSnapshot,
   orderBy,
   query,
-  type OrderByDirection,
+  where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebaseFirestore";
 import { waitForAuth } from "@/lib/authState";
+import {
+  buildCollectionCacheKey,
+  describeCollectionError,
+  type CollectionOptions,
+} from "./collectionCache";
+
+export type { CollectionOptions, WhereConstraint } from "./collectionCache";
 
 interface CacheEntry {
   data: unknown[];
   loading: boolean;
+  error: string | null;
   listenerCount: number;
   unsubscribe: (() => void) | null;
   callbacks: Set<() => void>;
   timeoutId?: NodeJS.Timeout;
-}
-
-interface CollectionOptions {
-  maxResults?: number;
-  orderByDirection?: OrderByDirection;
-  orderByField?: string;
 }
 
 const queryCache = new Map<string, CacheEntry>();
@@ -35,6 +37,7 @@ export function clearCollectionCache(): void {
     entry.unsubscribe = null;
     entry.data = [];
     entry.loading = true;
+    entry.error = null;
   }
   queryCache.clear();
 }
@@ -47,12 +50,8 @@ export function useCollection<T>(
   const maxResults = options.maxResults ?? 250;
   const orderByField = options.orderByField;
   const orderByDirection = options.orderByDirection ?? "asc";
-  const cacheKey = [
-    collectionName,
-    orderByField ?? "",
-    orderByDirection,
-    maxResults,
-  ].join(":");
+  const whereConstraints = options.whereConstraints ?? [];
+  const cacheKey = buildCollectionCacheKey(collectionName, options);
 
   useEffect(() => {
     let entry = queryCache.get(cacheKey);
@@ -60,6 +59,7 @@ export function useCollection<T>(
       entry = {
         data: [],
         loading: true,
+        error: null,
         listenerCount: 0,
         unsubscribe: null,
         callbacks: new Set()
@@ -69,7 +69,7 @@ export function useCollection<T>(
 
     const currentEntry = entry;
     currentEntry.listenerCount++;
-    
+
     // Cancel any pending disconnect
     if (currentEntry.timeoutId) {
       clearTimeout(currentEntry.timeoutId);
@@ -80,12 +80,15 @@ export function useCollection<T>(
       waitForAuth().then(() => {
         // Double check if we still need it after auth resolves
         if (currentEntry.listenerCount > 0 && !currentEntry.unsubscribe) {
-          const constraints = orderByField
-            ? [
-                orderBy(orderByField, orderByDirection),
-                limit(maxResults),
-              ]
-            : [limit(maxResults)];
+          const constraints = [
+            ...whereConstraints.map((constraint) =>
+              where(constraint.fieldPath, constraint.op, constraint.value),
+            ),
+            ...(orderByField
+              ? [orderBy(orderByField, orderByDirection)]
+              : []),
+            limit(maxResults),
+          ];
           currentEntry.unsubscribe = onSnapshot(
             query(collection(db, collectionName), ...constraints),
             (snapshot) => {
@@ -94,15 +97,13 @@ export function useCollection<T>(
                 ...doc.data(),
               })) as T[];
               currentEntry.loading = false;
+              currentEntry.error = null;
               currentEntry.callbacks.forEach(cb => cb());
             },
             (error) => {
-              const code = (error as { code?: string })?.code;
-              if (code === "permission-denied") {
-                console.warn(`[useCollection] Permission denied for ${collectionName}`);
-              } else {
-                console.error(`Error fetching ${collectionName}:`, error);
-              }
+              // Keep any previously fetched data, but flag the failure so
+              // consumers never render stale data as live (see #47/F7).
+              currentEntry.error = describeCollectionError(collectionName, error);
               currentEntry.loading = false;
               currentEntry.callbacks.forEach(cb => cb());
             }
@@ -113,7 +114,7 @@ export function useCollection<T>(
 
     const trigger = () => forceRender(n => n + 1);
     currentEntry.callbacks.add(trigger);
-    
+
     // Trigger initial render if data is already loaded
     if (!currentEntry.loading) trigger();
 
@@ -132,17 +133,16 @@ export function useCollection<T>(
         }, 3000);
       }
     };
-  }, [
-    cacheKey,
-    collectionName,
-    maxResults,
-    orderByDirection,
-    orderByField,
-  ]);
+    // The cache key encodes every query dimension, so it is the only safe
+    // dependency: array options (whereConstraints) would otherwise re-subscribe
+    // on every render when a caller passes a new inline array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheKey]);
 
   const entry = queryCache.get(cacheKey);
-  return { 
-    data: entry ? entry.data as T[] : [], 
-    loading: entry ? entry.loading : true 
+  return {
+    data: entry ? entry.data as T[] : [],
+    loading: entry ? entry.loading : true,
+    error: entry ? entry.error : null,
   };
 }
