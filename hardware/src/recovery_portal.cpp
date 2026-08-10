@@ -18,10 +18,6 @@ constexpr char CONFIG_NAMESPACE[] = "eki-config";
 constexpr char CONFIG_KEY[] = "active";
 constexpr char RECOVERY_NAMESPACE[] = "eki-recovery";
 constexpr char RECOVERY_KEY[] = "password";
-// Bound how often /provision may be attempted from the AP subnet. The CSRF
-// token is the primary gate; this throttles anything that slips past it.
-constexpr uint32_t PROVISION_WINDOW_MS = 60 * 1000;
-constexpr uint8_t PROVISION_MAX_ATTEMPTS_PER_WINDOW = 5;
 
 bool constantTimeTokenEquals(const char *left, const char *right) {
   if (left == nullptr || right == nullptr) return false;
@@ -127,21 +123,52 @@ bool RecoveryAccess::rotate() {
 bool RecoveryAccess::generateAndPersist() {
   constexpr char HEX_DIGITS[] = "0123456789abcdef";
   uint8_t randomBytes[12]{};
+  char candidate[RECOVERY_PASSWORD_LENGTH + 1]{};
   esp_fill_random(randomBytes, sizeof(randomBytes));
   for (size_t index = 0; index < sizeof(randomBytes); ++index) {
-    password_[index * 2] = HEX_DIGITS[randomBytes[index] >> 4];
-    password_[index * 2 + 1] = HEX_DIGITS[randomBytes[index] & 0x0F];
+    candidate[index * 2] = HEX_DIGITS[randomBytes[index] >> 4];
+    candidate[index * 2 + 1] = HEX_DIGITS[randomBytes[index] & 0x0F];
   }
-  password_[24] = '\0';
+  candidate[RECOVERY_PASSWORD_LENGTH] = '\0';
 
   Preferences preferences;
-  if (!preferences.begin(RECOVERY_NAMESPACE, false)) return false;
-  const bool written = preferences.putString(RECOVERY_KEY, password_) == 24;
+  if (!preferences.begin(RECOVERY_NAMESPACE, false)) {
+    std::memset(randomBytes, 0, sizeof(randomBytes));
+    std::memset(candidate, 0, sizeof(candidate));
+    return false;
+  }
+  const size_t persistedLength = preferences.putString(RECOVERY_KEY, candidate);
   preferences.end();
-  return written;
+
+  char verifiedValue[RECOVERY_PASSWORD_LENGTH + 1]{};
+  Preferences verification;
+  const bool verificationOpened = verification.begin(RECOVERY_NAMESPACE, true);
+  const size_t verifiedLength = verificationOpened
+    ? verification.getString(RECOVERY_KEY, verifiedValue, sizeof(verifiedValue))
+    : 0;
+  if (verificationOpened) verification.end();
+  const size_t verifiedPasswordLength =
+    verifiedLength > 0 && verifiedValue[verifiedLength - 1] == '\0'
+      ? verifiedLength - 1
+      : verifiedLength;
+  const bool applied =
+    verifiedPasswordLength == RECOVERY_PASSWORD_LENGTH &&
+    applyPersistedRecoveryPassword(
+      password_,
+      sizeof(password_),
+      candidate,
+      persistedLength,
+      verifiedValue,
+      verifiedPasswordLength
+    );
+  std::memset(randomBytes, 0, sizeof(randomBytes));
+  std::memset(candidate, 0, sizeof(candidate));
+  std::memset(verifiedValue, 0, sizeof(verifiedValue));
+  return applied;
 }
 
-RecoveryPortal::RecoveryPortal() : server_(80) {}
+RecoveryPortal::RecoveryPortal()
+  : server_(IPAddress(192, 168, 4, 1), 80) {}
 
 void RecoveryPortal::setSecurityHeaders() {
   server_.sendHeader("Cache-Control", "no-store");
@@ -329,7 +356,8 @@ void RecoveryPortal::registerHandlers() {
 bool RecoveryPortal::start(
   const char *deviceLabel,
   RecoveryAccess &recoveryAccess,
-  DeviceConfiguration &configuration
+  DeviceConfiguration &configuration,
+  bool allowStationRecovery
 ) {
   if (active_) return true;
   const char *recoveryPassword = recoveryAccess.password();
@@ -356,12 +384,36 @@ bool RecoveryPortal::start(
   recoveryAccess_ = &recoveryAccess;
   rotateCsrfToken();
   registerHandlers();
-  WiFi.mode(WIFI_AP_STA);
+  const wifi_mode_t requestedMode = allowStationRecovery
+    ? WIFI_MODE_APSTA
+    : WIFI_MODE_AP;
+  if (!WiFi.mode(requestedMode) || WiFi.getMode() != requestedMode) {
+    configuration_ = nullptr;
+    recoveryAccess_ = nullptr;
+    csrfToken_[0] = '\0';
+    WiFi.mode(WIFI_OFF);
+    return false;
+  }
+  // Bind the listener to a fixed AP address instead of INADDR_ANY. Handler
+  // checks remain as defence in depth, but STA-originated traffic cannot even
+  // reach the listening socket while AP+STA recovery is active.
+  const IPAddress recoveryAddress(192, 168, 4, 1);
+  if (!WiFi.softAPConfig(
+    recoveryAddress,
+    recoveryAddress,
+    IPAddress(255, 255, 255, 0)
+  )) {
+    configuration_ = nullptr;
+    recoveryAccess_ = nullptr;
+    csrfToken_[0] = '\0';
+    WiFi.mode(allowStationRecovery ? WIFI_STA : WIFI_OFF);
+    return false;
+  }
   if (!WiFi.softAP(accessPointSsid_, recoveryAccess.password(), 1, false, 1)) {
     configuration_ = nullptr;
     recoveryAccess_ = nullptr;
     csrfToken_[0] = '\0';
-    WiFi.mode(WIFI_STA);
+    WiFi.mode(allowStationRecovery ? WIFI_STA : WIFI_OFF);
     return false;
   }
   // The documented configuration is a WPA2 access point. softAP() derives
@@ -374,7 +426,7 @@ bool RecoveryPortal::start(
     accessPointConfig.ap.authmode != WIFI_AUTH_WPA2_PSK
   ) {
     WiFi.softAPdisconnect(true);
-    WiFi.mode(WIFI_STA);
+    WiFi.mode(allowStationRecovery ? WIFI_STA : WIFI_OFF);
     configuration_ = nullptr;
     recoveryAccess_ = nullptr;
     csrfToken_[0] = '\0';
@@ -387,32 +439,24 @@ bool RecoveryPortal::start(
 
 void RecoveryPortal::handleClient() {
   if (!active_) return;
-  // The WebServer binds 0.0.0.0:80 on every interface. Never serve anything
-  // that did not arrive through the WPA2-protected soft AP: while the device
-  // is in credential-fault mode the portal is also reachable on the campus
-  // STA interface, which would bypass the AP password entirely.
-  if (server_.client().connected() && !clientIsOnAccessPoint()) {
-    server_.client().stop();
-  }
+  // WebServer accepts a new socket inside handleClient(), so interface checks
+  // live in every registered handler where the socket's local address exists.
   server_.handleClient();
 }
 
 bool RecoveryPortal::clientIsOnAccessPoint() {
-  const IPAddress clientIp = server_.client().remoteIP();
-  if (clientIp == IPAddress(0, 0, 0, 0)) return false;
-  const uint32_t client = static_cast<uint32_t>(clientIp);
-  const uint32_t accessPoint = static_cast<uint32_t>(WiFi.softAPIP());
-  const uint32_t subnetMask = static_cast<uint32_t>(WiFi.softAPSubnetMask());
-  return (client & subnetMask) == (accessPoint & subnetMask);
+  return recoveryClientUsesAccessPoint(
+    static_cast<uint32_t>(server_.client().localIP()),
+    static_cast<uint32_t>(WiFi.softAPIP())
+  );
 }
 
 bool RecoveryPortal::provisionAttemptAllowed() {
-  const uint32_t now = millis();
-  if (now - provisionWindowStartedAt_ >= PROVISION_WINDOW_MS) {
-    provisionWindowStartedAt_ = now;
-    provisionAttempts_ = 0;
-  }
-  return ++provisionAttempts_ <= PROVISION_MAX_ATTEMPTS_PER_WINDOW;
+  return recordRecoveryAttempt(
+    millis(),
+    provisionWindowStartedAt_,
+    provisionAttempts_
+  );
 }
 
 void RecoveryPortal::stop() {

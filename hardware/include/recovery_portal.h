@@ -59,7 +59,8 @@ public:
   bool start(
     const char *deviceLabel,
     RecoveryAccess &recoveryAccess,
-    DeviceConfiguration &configuration
+    DeviceConfiguration &configuration,
+    bool allowStationRecovery
   );
   void handleClient();
   void stop();

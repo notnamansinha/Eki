@@ -508,7 +508,13 @@ void latchCredentialFault() {
   // only guards the soft-AP path). Drop the station and stop auto-reconnect
   // until the device is re-provisioned and restarts.
   WiFi.setAutoReconnect(false);
-  WiFi.disconnect();
+  const bool disconnected = WiFi.disconnect(true, false);
+  const bool radioDisabled = WiFi.mode(WIFI_OFF);
+  if (!disconnected || !radioDisabled || WiFi.getMode() != WIFI_MODE_NULL) {
+    Serial.println(
+      "[Security] Station isolation reported a failure; recovery portal will remain disabled unless AP-only mode is verified."
+    );
+  }
   updateConnectivityFault();
 }
 
@@ -533,7 +539,8 @@ void serviceConnectivity() {
       if (recoveryPortal.start(
         hardwareDeviceLabel,
         recoveryAccess,
-        deviceConfiguration
+        deviceConfiguration,
+        false
       )) {
         Serial.printf(
           "[Provisioning] Unprovisioned device; connect to %s and open http://192.168.4.1.\n",
@@ -564,7 +571,8 @@ void serviceConnectivity() {
     if (recoveryPortal.start(
       deviceConfiguration.deviceId(),
       recoveryAccess,
-      deviceConfiguration
+      deviceConfiguration,
+      !credentialFaultActive
     )) {
       Serial.printf(
         "[Provisioning] Protected local configuration mode active at http://192.168.4.1 on AP %s.\n",

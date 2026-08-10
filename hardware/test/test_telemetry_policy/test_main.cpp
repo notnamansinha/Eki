@@ -192,6 +192,78 @@ void test_wifi_retry_escalates_and_led_codes_are_deterministic() {
   TEST_ASSERT_FALSE(statusLedOn(FaultCode::CredentialRejected, 900));
 }
 
+void test_recovery_portal_interface_and_rate_gates_fail_closed() {
+  using namespace eki::connectivity;
+  constexpr uint32_t ACCESS_POINT_IP = 0x0104A8C0;
+  constexpr uint32_t OVERLAPPING_STA_IP = 0x1404A8C0;
+  TEST_ASSERT_TRUE(recoveryClientUsesAccessPoint(
+    ACCESS_POINT_IP,
+    ACCESS_POINT_IP
+  ));
+  TEST_ASSERT_FALSE(recoveryClientUsesAccessPoint(
+    OVERLAPPING_STA_IP,
+    ACCESS_POINT_IP
+  ));
+  TEST_ASSERT_FALSE(recoveryClientUsesAccessPoint(0, ACCESS_POINT_IP));
+
+  uint32_t windowStartedAt = 0;
+  uint8_t attempts = 0;
+  for (uint8_t index = 0; index < RECOVERY_MAX_ATTEMPTS_PER_WINDOW; ++index) {
+    TEST_ASSERT_TRUE(recordRecoveryAttempt(1000 + index, windowStartedAt, attempts));
+  }
+  TEST_ASSERT_FALSE(recordRecoveryAttempt(2000, windowStartedAt, attempts));
+  TEST_ASSERT_TRUE(recordRecoveryAttempt(
+    RECOVERY_ATTEMPT_WINDOW_MS,
+    windowStartedAt,
+    attempts
+  ));
+  TEST_ASSERT_EQUAL_UINT8(1, attempts);
+}
+
+void test_recovery_password_changes_only_after_verified_persistence() {
+  using namespace eki::connectivity;
+  char active[RECOVERY_PASSWORD_LENGTH + 1] = "aaaaaaaaaaaaaaaaaaaaaaaa";
+  constexpr char CANDIDATE[] = "0123456789abcdef01234567";
+  constexpr char MISMATCH[] = "fedcba9876543210fedcba98";
+
+  TEST_ASSERT_FALSE(applyPersistedRecoveryPassword(
+    active,
+    sizeof(active),
+    CANDIDATE,
+    0,
+    CANDIDATE,
+    RECOVERY_PASSWORD_LENGTH
+  ));
+  TEST_ASSERT_EQUAL_STRING("aaaaaaaaaaaaaaaaaaaaaaaa", active);
+  TEST_ASSERT_FALSE(applyPersistedRecoveryPassword(
+    active,
+    sizeof(active),
+    CANDIDATE,
+    RECOVERY_PASSWORD_LENGTH,
+    CANDIDATE,
+    0
+  ));
+  TEST_ASSERT_EQUAL_STRING("aaaaaaaaaaaaaaaaaaaaaaaa", active);
+  TEST_ASSERT_FALSE(applyPersistedRecoveryPassword(
+    active,
+    sizeof(active),
+    CANDIDATE,
+    RECOVERY_PASSWORD_LENGTH,
+    MISMATCH,
+    RECOVERY_PASSWORD_LENGTH
+  ));
+  TEST_ASSERT_EQUAL_STRING("aaaaaaaaaaaaaaaaaaaaaaaa", active);
+  TEST_ASSERT_TRUE(applyPersistedRecoveryPassword(
+    active,
+    sizeof(active),
+    CANDIDATE,
+    RECOVERY_PASSWORD_LENGTH,
+    CANDIDATE,
+    RECOVERY_PASSWORD_LENGTH
+  ));
+  TEST_ASSERT_EQUAL_STRING(CANDIDATE, active);
+}
+
 void test_publish_policy_handles_floor_changes_and_heartbeats() {
   const auto decide = [](
     bool valid,
@@ -319,6 +391,8 @@ int main(int, char **) {
   RUN_TEST(test_device_configuration_record_is_closed_and_tamper_evident);
   RUN_TEST(test_gnss_utc_conversion_and_clock_discipline_are_strict);
   RUN_TEST(test_wifi_retry_escalates_and_led_codes_are_deterministic);
+  RUN_TEST(test_recovery_portal_interface_and_rate_gates_fail_closed);
+  RUN_TEST(test_recovery_password_changes_only_after_verified_persistence);
   RUN_TEST(test_publish_policy_handles_floor_changes_and_heartbeats);
   RUN_TEST(test_queue_delivers_newest_first_and_retains_failed_samples);
   RUN_TEST(test_queue_wraparound_drops_oldest_and_counts_overflow);
