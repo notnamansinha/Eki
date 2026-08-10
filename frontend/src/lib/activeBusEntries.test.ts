@@ -1,0 +1,120 @@
+import { describe, expect, it } from "vitest";
+import { BUS_EXPIRY_MS } from "./liveBusFreshness";
+import { filterActiveBusEntries, isActiveBusEntry } from "./activeBusEntries";
+
+describe("isActiveBusEntry", () => {
+  const now = 2_000_000_000_000;
+
+  it("rejects non-objects and missing identities", () => {
+    expect(isActiveBusEntry(null, now)).toBe(false);
+    expect(isActiveBusEntry("bus_1", now)).toBe(false);
+    expect(isActiveBusEntry(undefined, now)).toBe(false);
+    expect(isActiveBusEntry({}, now)).toBe(false);
+    expect(isActiveBusEntry({ busId: "" }, now)).toBe(false);
+  });
+
+  it("accepts fresh telemetry and active rides", () => {
+    expect(isActiveBusEntry({ busId: "bus_1", timestamp: now - 1_000 }, now)).toBe(true);
+    expect(
+      isActiveBusEntry(
+        { busId: "bus_1", timestamp: now - BUS_EXPIRY_MS, status: "active", sessionId: "s1", tripState: "pre_departure" },
+        now,
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects stale telemetry outside a ride", () => {
+    expect(isActiveBusEntry({ busId: "bus_1", timestamp: now - BUS_EXPIRY_MS }, now)).toBe(false);
+  });
+});
+
+describe("filterActiveBusEntries", () => {
+  const now = 2_000_000_000_000;
+
+  it("returns an empty list for null or empty snapshots", () => {
+    expect(filterActiveBusEntries(null, now)).toEqual([]);
+    expect(filterActiveBusEntries(undefined, now)).toEqual([]);
+    expect(filterActiveBusEntries({}, now)).toEqual([]);
+  });
+
+  it("keeps an entry with fresh telemetry", () => {
+    const entries = filterActiveBusEntries(
+      {
+        bus_1_route_1: {
+          busId: "bus_1",
+          routeId: "route_1",
+          timestamp: now - 5_000,
+          motionState: "moving",
+        },
+      },
+      now,
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0].busId).toBe("bus_1");
+  });
+
+  it("drops stale telemetry that is not part of an active ride", () => {
+    const entries = filterActiveBusEntries(
+      {
+        bus_1_route_1: {
+          busId: "bus_1",
+          timestamp: now - BUS_EXPIRY_MS,
+        },
+      },
+      now,
+    );
+    expect(entries).toEqual([]);
+  });
+
+  it("keeps a stale node when it is part of an active ride", () => {
+    const entries = filterActiveBusEntries(
+      {
+        bus_1_route_1: {
+          busId: "bus_1",
+          timestamp: now - BUS_EXPIRY_MS,
+          status: "active",
+          sessionId: "session_1",
+          tripState: "in_service",
+        },
+      },
+      now,
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0].sessionId).toBe("session_1");
+  });
+
+  it("keeps a completed-but-fresh node and drops it once stale", () => {
+    const completed = {
+      busId: "bus_1",
+      status: "active",
+      sessionId: "session_1",
+      tripState: "completed" as const,
+    };
+    expect(filterActiveBusEntries({ bus_1_route_1: { ...completed, timestamp: now - 1_000 } }, now)).toHaveLength(1);
+    expect(
+      filterActiveBusEntries({ bus_1_route_1: { ...completed, timestamp: now - BUS_EXPIRY_MS } }, now),
+    ).toEqual([]);
+  });
+
+  it("drops entries without a valid busId", () => {
+    const entries = filterActiveBusEntries(
+      {
+        malformed: { timestamp: now - 1_000 },
+        emptyId: { busId: "", timestamp: now - 1_000 },
+        ok: { busId: "bus_1", timestamp: now - 1_000 },
+      },
+      now,
+    );
+    expect(entries.map((entry) => entry.busId)).toEqual(["bus_1"]);
+  });
+
+  it("rejects far-future timestamps beyond the clock-skew allowance", () => {
+    const entries = filterActiveBusEntries(
+      {
+        bus_1_route_1: { busId: "bus_1", timestamp: now + 20_000 },
+      },
+      now,
+    );
+    expect(entries).toEqual([]);
+  });
+});
