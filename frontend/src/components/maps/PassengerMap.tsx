@@ -385,7 +385,16 @@ function PassengerMapInner({
   }, []);
 
   useEffect(() => {
-    if (!route.stops || route.stops.length === 0 || buses.size === 0) return;
+    if (!route.stops || route.stops.length === 0 || buses.size === 0) {
+      // No bus to compute arrivals for (route empty or bus gone): clear any
+      // previous route's arrival timestamps so stale countdowns never outlive
+      // the bus that produced them (#67).
+      if (Object.keys(arrivalTimestampsRef.current).length > 0) {
+        arrivalTimestampsRef.current = {};
+        setStopETAs({});
+      }
+      return;
+    }
 
     const calculateETAs = () => {
       const now = Date.now();
@@ -439,6 +448,7 @@ function PassengerMapInner({
     calculateETAs();
   }, [
     buses,
+    route.id,
     route.stops,
     routePath,
     routeDistanceIndex,
