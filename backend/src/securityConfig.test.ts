@@ -345,11 +345,18 @@ describe("production security configuration", () => {
     expect(connectivityPolicy).toContain("statusLedOn");
     expect(connectivityPolicy).toContain("recoveryPasswordIsValid");
     expect(deviceConfig).toContain("std::memset(&record, 0, sizeof(record))");
-    expect(recoveryPortal).toContain("WIFI_AP_STA");
+    expect(recoveryPortal).toContain("WIFI_MODE_APSTA");
+    expect(recoveryPortal).toContain("WIFI_MODE_AP");
+    expect(recoveryPortal).toContain("server_(IPAddress(192, 168, 4, 1), 80)");
+    expect(recoveryPortal).toContain("WiFi.softAPConfig(");
+    expect(recoveryPortal).toContain("server_.client().localIP()");
+    expect(recoveryPortal).not.toContain("server_.client().remoteIP()");
     expect(recoveryPortal).toContain('"/provision"');
     expect(recoveryPortal).toContain('server_.sendHeader("Cache-Control", "no-store")');
     expect(recoveryPortal).toContain("constantTimeTokenEquals");
-    expect(recoveryPortal).toContain("WiFi.softAP(accessPointSsid_, recoveryPassword, 1, false, 1)");
+    expect(recoveryPortal).toContain("WiFi.softAP(accessPointSsid_, recoveryAccess.password(), 1, false, 1)");
+    expect(recoveryPortal).toContain("accessPointConfig.ap.authmode != WIFI_AUTH_WPA2_PSK");
+    expect(recoveryPortal).toContain("applyPersistedRecoveryPassword");
     expect(recoveryPortal).not.toContain("DEVICE_SECRET");
     expect(recoveryPortal).toContain("configuration_->save(");
     expect(platformConfig).toContain("[env:esp32dev-secure]");
@@ -365,6 +372,8 @@ describe("production security configuration", () => {
 
     expect(telemetryPolicy).toContain("HttpResponseAction::HaltCredentials");
     expect(firmware).toContain("credentialFaultActive = true");
+    expect(firmware).toContain("WiFi.disconnect(true, false)");
+    expect(firmware).toContain("WiFi.mode(WIFI_OFF)");
     expect(firmware).toContain("if (!credentialFaultActive)");
     expect(firmware).toContain("result != PublishResult::CredentialFault");
     expect(firmware).toContain("result == PublishResult::CredentialFault");
