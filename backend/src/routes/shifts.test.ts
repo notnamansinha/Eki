@@ -8,6 +8,9 @@ const harness = vi.hoisted(() => ({
   docSets: [] as { id: string; data: Record<string, unknown> }[],
   batchSets: [] as { id: string; data: Record<string, unknown> }[],
   rtdbUpdates: [] as Record<string, unknown>[],
+  activeRide: null as Record<string, unknown> | null,
+  eventLog: [] as string[],
+  afterRtdbTransaction: null as (() => void) | null,
   failActiveRidesWrite: false,
 }));
 
@@ -33,6 +36,7 @@ vi.mock("../lib/firebaseAdmin", () => {
     data: () => data,
   });
   const document = (collectionName: string, id?: string) => ({
+    collectionName,
     id: id ?? "new_session_1",
     get: async () => {
       if (collectionName === "drivers") {
@@ -51,6 +55,9 @@ vi.mock("../lib/firebaseAdmin", () => {
       }
       if (collectionName === "ride_sessions" && id) {
         return snapshot(true, { status: "active" });
+      }
+      if (collectionName === "active_rides") {
+        return snapshot(harness.activeRide !== null, harness.activeRide ?? undefined);
       }
       return snapshot(false);
     },
@@ -73,17 +80,36 @@ vi.mock("../lib/firebaseAdmin", () => {
       runTransaction: async (
         callback: (transaction: {
           get: (ref: unknown) => Promise<ReturnType<typeof snapshot>>;
-          set: (ref: unknown, data: unknown) => Promise<void>;
-          create: (ref: { id: string }, data: unknown) => Promise<void>;
-          delete: (ref: unknown) => Promise<void>;
+          set: (ref: unknown, data: unknown) => void;
+          create: (ref: { id: string }, data: unknown) => void;
+          delete: (ref: unknown) => void;
         }) => Promise<unknown>,
       ) => {
         return callback({
-          get: async () =>
-            snapshot(harness.lock !== null, harness.lock ?? undefined),
-          set: async (_ref, data) => {
+          get: async (ref) => {
+            const typedRef = ref as { collectionName?: string };
+            if (typedRef.collectionName === "active_rides") {
+              return snapshot(
+                harness.activeRide !== null,
+                harness.activeRide ?? undefined,
+              );
+            }
+            return snapshot(harness.lock !== null, harness.lock ?? undefined);
+          },
+          set: (ref, data) => {
+            const typedRef = ref as { collectionName?: string; id?: string };
+            if (typedRef.collectionName === "active_rides") {
+              if (harness.failActiveRidesWrite) {
+                throw new Error("simulated Firestore failure");
+              }
+              harness.activeRide = {
+                ...(harness.activeRide ?? {}),
+                ...(data as Record<string, unknown>),
+              };
+              harness.eventLog.push("firestore");
+            }
             harness.docSets.push({
-              id: "lock",
+              id: typedRef.id ?? "lock",
               data: data as Record<string, unknown>,
             });
           },
@@ -116,9 +142,15 @@ vi.mock("../lib/firebaseAdmin", () => {
         },
         transaction: async (callback: (value: unknown) => unknown) => {
           const result = callback(harness.liveNode);
-          if (result !== undefined) {
-            harness.liveNode = result as Record<string, unknown>;
+          if (result === undefined) {
+            return {
+              committed: false,
+              snapshot: { val: () => harness.liveNode },
+            };
           }
+          harness.liveNode = result as Record<string, unknown>;
+          harness.eventLog.push("rtdb");
+          harness.afterRtdbTransaction?.();
           return {
             committed: true,
             snapshot: { val: () => harness.liveNode },
@@ -156,6 +188,9 @@ beforeEach(() => {
   harness.docSets = [];
   harness.batchSets = [];
   harness.rtdbUpdates = [];
+  harness.activeRide = null;
+  harness.eventLog = [];
+  harness.afterRtdbTransaction = null;
   harness.lock = null;
   harness.failActiveRidesWrite = false;
 });
@@ -175,8 +210,20 @@ describe("shift delay updates", () => {
       driverId: "driver_1",
       routeId: "route_1",
       status: "active",
+      tripState: "in_service",
       sessionId: "session_live",
       delayMinutes: 5,
+      delayUpdatedAt: 100,
+    };
+    harness.activeRide = {
+      busId: "bus_1",
+      driverId: "driver_1",
+      routeId: "route_1",
+      status: "active",
+      tripState: "in_service",
+      sessionId: "session_live",
+      delayMinutes: 5,
+      delayUpdatedAt: 100,
     };
   });
 
@@ -194,10 +241,11 @@ describe("shift delay updates", () => {
     const body = await response.json();
     expect(body.saved).toBe(true);
     expect(body.delayMinutes).toBe(15);
+    expect(body.durable).toBe(true);
 
-    expect(harness.rtdbUpdates).toHaveLength(1);
-    expect(harness.rtdbUpdates[0].delayMinutes).toBe(15);
-    expect(typeof harness.rtdbUpdates[0].delayUpdatedAt).toBe("number");
+    expect(harness.liveNode.delayMinutes).toBe(15);
+    expect(typeof harness.liveNode.delayUpdatedAt).toBe("number");
+    expect(harness.eventLog).toEqual(["rtdb", "firestore"]);
 
     const durable = harness.docSets.find((entry) => entry.id === "bus_1_route_1");
     expect(durable?.data.delayMinutes).toBe(15);
@@ -212,14 +260,56 @@ describe("shift delay updates", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.saved).toBe(true);
-    expect(harness.rtdbUpdates[0].delayMinutes).toBe(15);
+    expect(body.durable).toBe(false);
+    expect(harness.liveNode.delayMinutes).toBe(15);
     expect(harness.docSets.find((entry) => entry.id === "bus_1_route_1")).toBeUndefined();
+  });
+
+  it("does not mirror a delay into a replacement session", async () => {
+    harness.afterRtdbTransaction = () => {
+      harness.activeRide = {
+        ...harness.activeRide,
+        sessionId: "session_replacement",
+        delayMinutes: 0,
+        delayUpdatedAt: 0,
+      };
+    };
+    const response = await setDelay(15);
+    expect(response.status).toBe(200);
+    expect((await response.json()).durable).toBe(false);
+    expect(harness.activeRide?.sessionId).toBe("session_replacement");
+    expect(harness.activeRide?.delayMinutes).toBe(0);
+  });
+
+  it("advances the live revision monotonically across clock skew", async () => {
+    const futureRevision = Date.now() + 60_000;
+    harness.liveNode.delayUpdatedAt = futureRevision;
+    harness.activeRide!.delayUpdatedAt = futureRevision;
+    const response = await setDelay(20);
+    expect(response.status).toBe(200);
+    expect(harness.liveNode.delayUpdatedAt).toBe(futureRevision + 1);
+    expect(harness.activeRide?.delayUpdatedAt).toBe(futureRevision + 1);
   });
 
   it("rejects a delay with no active shift", async () => {
     harness.liveNode = { status: "offline", sessionId: "session_live" };
     const response = await setDelay(15);
     expect(response.status).toBe(409);
+  });
+
+  it("rejects a delay after the shift has reached its terminal state", async () => {
+    harness.liveNode.tripState = "completed";
+    const response = await setDelay(15);
+    expect(response.status).toBe(409);
+    expect(harness.eventLog).toEqual([]);
+    expect(harness.liveNode.delayMinutes).toBe(5);
+  });
+
+  it("rejects fractional delay values before touching either store", async () => {
+    const response = await setDelay(1.5);
+    expect(response.status).toBe(400);
+    expect(harness.eventLog).toEqual([]);
+    expect(harness.liveNode.delayMinutes).toBe(5);
   });
 });
 
@@ -237,7 +327,8 @@ describe("shift start after automatic completion", () => {
       sessionId: "session_completed",
       currentStopIndex: 3,
       hasDepartedOrigin: true,
-      delayMinutes: 0,
+      delayMinutes: 12,
+      delayUpdatedAt: 9_000,
       lat: 23.2,
       lng: 72.7,
       timestamp: Date.now(),
@@ -256,10 +347,15 @@ describe("shift start after automatic completion", () => {
     expect(harness.liveNode.sessionId).toBe("new_session_1");
     expect(harness.liveNode.currentStopIndex).toBe(0);
     expect(harness.liveNode.hasDepartedOrigin).toBe(false);
+    expect(harness.liveNode.delayMinutes).toBe(0);
+    expect(harness.liveNode.delayUpdatedAt).toBe(0);
 
     // The new ride session is armed; the completed session was NOT revived.
     const sessionSet = harness.batchSets.find((entry) => entry.id === "new_session_1");
     expect(sessionSet?.data.status).toBe("armed");
+    const activeRideSet = harness.batchSets.find((entry) => entry.id === "bus_1_route_1");
+    expect(activeRideSet?.data.delayMinutes).toBe(0);
+    expect(activeRideSet?.data.delayUpdatedAt).toBe(0);
     expect(harness.docSets.map((entry) => entry.id)).not.toContain("session_completed");
     expect(harness.batchSets.map((entry) => entry.id)).not.toContain("session_completed");
   });

@@ -64,6 +64,18 @@ export interface DelayPreference {
   delayUpdatedAt: number;
 }
 
+function validDelayMinutes(value: unknown): number | null {
+  return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 1440
+    ? Number(value)
+    : null;
+}
+
+function validDelayRevision(value: unknown): number {
+  return Number.isSafeInteger(value) && Number(value) >= 0
+    ? Number(value)
+    : 0;
+}
+
 /**
  * Pick the freshest announced delay between the live RTDB node and the
  * durable active_rides copy.
@@ -78,14 +90,10 @@ export function freshestDelayMinutes(
   live: Record<string, unknown> | null,
   durable: Record<string, unknown> | null,
 ): DelayPreference {
-  const liveMinutes =
-    typeof live?.delayMinutes === "number" ? live.delayMinutes : null;
-  const durableMinutes =
-    typeof durable?.delayMinutes === "number" ? durable.delayMinutes : null;
-  const liveAt =
-    typeof live?.delayUpdatedAt === "number" ? live.delayUpdatedAt : 0;
-  const durableAt =
-    typeof durable?.delayUpdatedAt === "number" ? durable.delayUpdatedAt : 0;
+  const liveMinutes = validDelayMinutes(live?.delayMinutes);
+  const durableMinutes = validDelayMinutes(durable?.delayMinutes);
+  const liveAt = validDelayRevision(live?.delayUpdatedAt);
+  const durableAt = validDelayRevision(durable?.delayUpdatedAt);
 
   if (durableMinutes !== null && (liveMinutes === null || durableAt > liveAt)) {
     return { delayMinutes: durableMinutes, delayUpdatedAt: durableAt };
