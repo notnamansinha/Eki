@@ -12,8 +12,8 @@ import { hasValidBusCoordinates } from "@/lib/liveBusFreshness";
 import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
 import {
+  decideRideTracking,
   isPostRideFeedbackEligible,
-  observeRide,
   recordStopSelection,
   type TrackedRide,
 } from "@/lib/rideFeedbackEligibility";
@@ -164,34 +164,39 @@ export default function PassengerPage() {
   useEffect(() => {
     if (completedRide) return;
 
-    const trackedRide = trackedRideRef.current;
-    if (
-      trackedRide &&
-      !activeBuses.some((bus) => bus.sessionId === trackedRide.sessionId)
-    ) {
-      if (latestTripStatesRef.current.get(trackedRide.sessionId) === "completed") {
-        trackedRideRef.current = null;
-        const completionTimer = setTimeout(() => setCompletedRide(trackedRide), 0);
-        return () => clearTimeout(completionTimer);
-      } else if (activeBusOnRoute && activeSessionId) {
-        trackedRideRef.current = observeRide(trackedRide, {
-          sessionId: activeSessionId,
-          busId: activeBusOnRoute.busId,
-          routeId: activeBusOnRoute.routeId,
-          driverId: activeBusOnRoute.driverId || "",
-        });
-      }
-      return;
-    }
+    const action = decideRideTracking(
+      trackedRideRef.current,
+      new Set(
+        activeBuses
+          .map((bus) => bus.sessionId)
+          .filter((sessionId): sessionId is string => typeof sessionId === "string"),
+      ),
+      activeBusOnRoute && activeSessionId
+        ? {
+            sessionId: activeSessionId,
+            busId: activeBusOnRoute.busId,
+            routeId: activeBusOnRoute.routeId,
+            driverId: activeBusOnRoute.driverId || "",
+          }
+        : null,
+      (sessionId) => latestTripStatesRef.current.get(sessionId),
+    );
 
-    if (activeBusOnRoute && activeSessionId) {
-      trackedRideRef.current = observeRide(trackedRide, {
-        sessionId: activeSessionId,
-        busId: activeBusOnRoute.busId,
-        routeId: activeBusOnRoute.routeId,
-        driverId: activeBusOnRoute.driverId || "",
-      });
+    switch (action.type) {
+      case "complete":
+        trackedRideRef.current = null;
+        const completionTimer = setTimeout(() => setCompletedRide(action.ride), 0);
+        return () => clearTimeout(completionTimer);
+      case "observe":
+        trackedRideRef.current = action.ride;
+        break;
+      case "freeze":
+      case "none":
+        // Freeze keeps the original ride identity: never re-bind to a
+        // different session after the tracked ride vanished (#68).
+        break;
     }
+    return undefined;
   }, [activeBusOnRoute, activeSessionId, activeBuses, completedRide]);
 
   useEffect(() => {

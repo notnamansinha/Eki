@@ -47,3 +47,39 @@ export function isPostRideFeedbackEligible(
 ): boolean {
   return ride.hasSelectedStop && lastTripState === "completed";
 }
+
+export type RideTrackingAction =
+  | { type: "complete"; ride: TrackedRide }
+  | { type: "freeze" }
+  | { type: "observe"; ride: TrackedRide }
+  | { type: "none" };
+
+/**
+ * Pure decision for the passenger's tracked-ride effect.
+ *
+ * Rules:
+ * - A tracked session that is still live is re-observed (participation kept).
+ * - A tracked session that vanished after `completed` finishes the ride flow.
+ * - A tracked session that vanished WITHOUT a completed snapshot (driver
+ *   ended/re-armed the shift, interrupted update) FREEZES the ride. It is
+ *   never re-bound to a different session (#68): the passenger rode the
+ *   original session, and feedback against a new session would be rejected by
+ *   the backend manifest rules anyway.
+ */
+export function decideRideTracking(
+  current: TrackedRide | null,
+  activeSessions: ReadonlySet<string>,
+  activeRide: RideIdentity | null,
+  lastTripState: (sessionId: string) => RideTripState | undefined,
+): RideTrackingAction {
+  if (current && !activeSessions.has(current.sessionId)) {
+    if (lastTripState(current.sessionId) === "completed") {
+      return { type: "complete", ride: current };
+    }
+    return { type: "freeze" };
+  }
+  if (activeRide) {
+    return { type: "observe", ride: observeRide(current, activeRide) };
+  }
+  return { type: "none" };
+}
