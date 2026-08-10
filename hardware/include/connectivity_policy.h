@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 namespace eki {
 namespace connectivity {
@@ -11,6 +12,9 @@ constexpr uint32_t WIFI_RETRY_BASE_MS = 5000;
 constexpr uint32_t WIFI_RETRY_MAX_MS = 60000;
 constexpr uint32_t WIFI_RECOVERY_ESCALATION_MS = 120000;
 constexpr uint32_t WIFI_RECOVERY_START_RETRY_MS = 60000;
+constexpr uint32_t RECOVERY_ATTEMPT_WINDOW_MS = 60000;
+constexpr uint8_t RECOVERY_MAX_ATTEMPTS_PER_WINDOW = 5;
+constexpr size_t RECOVERY_PASSWORD_LENGTH = 24;
 enum class FaultCode : uint8_t {
   None,
   WifiRecovery,
@@ -120,6 +124,76 @@ inline bool recoveryPasswordIsValid(const char *password, size_t passwordLength)
     const uint8_t character = static_cast<uint8_t>(password[index]);
     if (character < 0x20 || character > 0x7E) return false;
   }
+  return true;
+}
+
+inline bool recoveryClientUsesAccessPoint(
+  uint32_t socketLocalAddress,
+  uint32_t accessPointAddress
+) {
+  return socketLocalAddress != 0 &&
+    accessPointAddress != 0 &&
+    socketLocalAddress == accessPointAddress;
+}
+
+inline bool recordRecoveryAttempt(
+  uint32_t nowMs,
+  uint32_t &windowStartedAt,
+  uint8_t &attempts
+) {
+  if (nowMs - windowStartedAt >= RECOVERY_ATTEMPT_WINDOW_MS) {
+    windowStartedAt = nowMs;
+    attempts = 0;
+  }
+  if (attempts < UINT8_MAX) ++attempts;
+  return attempts <= RECOVERY_MAX_ATTEMPTS_PER_WINDOW;
+}
+
+inline bool recoveryPasswordsEqual(
+  const char *left,
+  size_t leftLength,
+  const char *right,
+  size_t rightLength
+) {
+  if (
+    left == nullptr ||
+    right == nullptr ||
+    leftLength != RECOVERY_PASSWORD_LENGTH ||
+    rightLength != RECOVERY_PASSWORD_LENGTH
+  ) return false;
+  uint8_t difference = 0;
+  for (size_t index = 0; index < RECOVERY_PASSWORD_LENGTH; ++index) {
+    difference |= static_cast<uint8_t>(left[index] ^ right[index]);
+  }
+  return difference == 0 &&
+    left[RECOVERY_PASSWORD_LENGTH] == '\0' &&
+    right[RECOVERY_PASSWORD_LENGTH] == '\0';
+}
+
+inline bool applyPersistedRecoveryPassword(
+  char *activePassword,
+  size_t activeCapacity,
+  const char *candidate,
+  size_t persistedLength,
+  const char *verifiedValue,
+  size_t verifiedLength
+) {
+  if (
+    activePassword == nullptr ||
+    activeCapacity < RECOVERY_PASSWORD_LENGTH + 1 ||
+    persistedLength != RECOVERY_PASSWORD_LENGTH ||
+    !recoveryPasswordIsValid(candidate, RECOVERY_PASSWORD_LENGTH) ||
+    !recoveryPasswordIsValid(verifiedValue, verifiedLength) ||
+    !recoveryPasswordsEqual(
+      candidate,
+      RECOVERY_PASSWORD_LENGTH,
+      verifiedValue,
+      verifiedLength
+    )
+  ) {
+    return false;
+  }
+  std::memcpy(activePassword, candidate, RECOVERY_PASSWORD_LENGTH + 1);
   return true;
 }
 

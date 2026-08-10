@@ -8,6 +8,7 @@
 #include <cstring>
 #include <esp_random.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
 
 namespace eki {
 namespace connectivity {
@@ -110,24 +111,64 @@ bool RecoveryAccess::loadOrCreate() {
         : storedLength;
     if (recoveryPasswordIsValid(password_, passwordLength)) return true;
   }
-
-  constexpr char HEX_DIGITS[] = "0123456789abcdef";
-  uint8_t randomBytes[12]{};
-  esp_fill_random(randomBytes, sizeof(randomBytes));
-  for (size_t index = 0; index < sizeof(randomBytes); ++index) {
-    password_[index * 2] = HEX_DIGITS[randomBytes[index] >> 4];
-    password_[index * 2 + 1] = HEX_DIGITS[randomBytes[index] & 0x0F];
-  }
-  password_[24] = '\0';
-
-  opened = preferences.begin(RECOVERY_NAMESPACE, false);
-  if (!opened) return false;
-  const bool written = preferences.putString(RECOVERY_KEY, password_) == 24;
-  preferences.end();
-  return written;
+  return generateAndPersist();
 }
 
-RecoveryPortal::RecoveryPortal() : server_(80) {}
+bool RecoveryAccess::rotate() {
+  // Explicit rotation replaces the stored password unconditionally; the
+  // caller (the authenticated recovery portal) shows the new value once.
+  return generateAndPersist();
+}
+
+bool RecoveryAccess::generateAndPersist() {
+  constexpr char HEX_DIGITS[] = "0123456789abcdef";
+  uint8_t randomBytes[12]{};
+  char candidate[RECOVERY_PASSWORD_LENGTH + 1]{};
+  esp_fill_random(randomBytes, sizeof(randomBytes));
+  for (size_t index = 0; index < sizeof(randomBytes); ++index) {
+    candidate[index * 2] = HEX_DIGITS[randomBytes[index] >> 4];
+    candidate[index * 2 + 1] = HEX_DIGITS[randomBytes[index] & 0x0F];
+  }
+  candidate[RECOVERY_PASSWORD_LENGTH] = '\0';
+
+  Preferences preferences;
+  if (!preferences.begin(RECOVERY_NAMESPACE, false)) {
+    std::memset(randomBytes, 0, sizeof(randomBytes));
+    std::memset(candidate, 0, sizeof(candidate));
+    return false;
+  }
+  const size_t persistedLength = preferences.putString(RECOVERY_KEY, candidate);
+  preferences.end();
+
+  char verifiedValue[RECOVERY_PASSWORD_LENGTH + 1]{};
+  Preferences verification;
+  const bool verificationOpened = verification.begin(RECOVERY_NAMESPACE, true);
+  const size_t verifiedLength = verificationOpened
+    ? verification.getString(RECOVERY_KEY, verifiedValue, sizeof(verifiedValue))
+    : 0;
+  if (verificationOpened) verification.end();
+  const size_t verifiedPasswordLength =
+    verifiedLength > 0 && verifiedValue[verifiedLength - 1] == '\0'
+      ? verifiedLength - 1
+      : verifiedLength;
+  const bool applied =
+    verifiedPasswordLength == RECOVERY_PASSWORD_LENGTH &&
+    applyPersistedRecoveryPassword(
+      password_,
+      sizeof(password_),
+      candidate,
+      persistedLength,
+      verifiedValue,
+      verifiedPasswordLength
+    );
+  std::memset(randomBytes, 0, sizeof(randomBytes));
+  std::memset(candidate, 0, sizeof(candidate));
+  std::memset(verifiedValue, 0, sizeof(verifiedValue));
+  return applied;
+}
+
+RecoveryPortal::RecoveryPortal()
+  : server_(IPAddress(192, 168, 4, 1), 80) {}
 
 void RecoveryPortal::setSecurityHeaders() {
   server_.sendHeader("Cache-Control", "no-store");
@@ -138,6 +179,10 @@ void RecoveryPortal::setSecurityHeaders() {
 
 void RecoveryPortal::handleRoot() {
   setSecurityHeaders();
+  if (!clientIsOnAccessPoint()) {
+    server_.client().stop();
+    return;
+  }
   String html(FPSTR(RECOVERY_HTML));
   html.replace("{{csrf}}", csrfToken_);
   server_.send(200, "text/html; charset=utf-8", html);
@@ -145,6 +190,10 @@ void RecoveryPortal::handleRoot() {
 
 void RecoveryPortal::handleStatus() {
   setSecurityHeaders();
+  if (!clientIsOnAccessPoint()) {
+    server_.client().stop();
+    return;
+  }
   const bool connected = WiFi.status() == WL_CONNECTED;
   const bool provisioned = configuration_ != nullptr && configuration_->provisioned();
   server_.send(
@@ -157,6 +206,18 @@ void RecoveryPortal::handleStatus() {
 
 void RecoveryPortal::handleProvisioningUpdate() {
   setSecurityHeaders();
+  if (!clientIsOnAccessPoint()) {
+    server_.client().stop();
+    return;
+  }
+  if (!provisionAttemptAllowed()) {
+    server_.send(
+      429,
+      "application/json",
+      "{\"error\":\"Too many attempts; retry later.\"}"
+    );
+    return;
+  }
   if (
     configuration_ == nullptr ||
     !server_.hasArg("csrf") ||
@@ -209,6 +270,54 @@ void RecoveryPortal::handleProvisioningUpdate() {
   server_.send(202, "application/json", "{\"saved\":true,\"restarting\":true}");
 }
 
+void RecoveryPortal::handleRecoveryRotation() {
+  setSecurityHeaders();
+  if (!clientIsOnAccessPoint()) {
+    server_.client().stop();
+    return;
+  }
+  if (!provisionAttemptAllowed()) {
+    server_.send(
+      429,
+      "application/json",
+      "{\"error\":\"Too many attempts; retry later.\"}"
+    );
+    return;
+  }
+  if (
+    !server_.hasArg("csrf") ||
+    !constantTimeTokenEquals(server_.arg("csrf").c_str(), csrfToken_)
+  ) {
+    server_.send(
+      403,
+      "application/json",
+      "{\"error\":\"Invalid or expired token.\"}"
+    );
+    return;
+  }
+  if (recoveryAccess_ == nullptr || !recoveryAccess_->rotate()) {
+    server_.send(
+      500,
+      "application/json",
+      "{\"error\":\"Unable to rotate the recovery password.\"}"
+    );
+    return;
+  }
+  // Show the new password exactly once; the device restarts shortly so the
+  // running AP adopts it. serviceConnectivity delays the restart a couple of
+  // seconds so this response reliably reaches the operator.
+  const String payload = String("{\"rotated\":true,\"recoveryPassword\":\"") +
+    recoveryAccess_->password() + "\",\"restarting\":true}";
+  recoveryRotationRequested_ = true;
+  server_.send(202, "application/json", payload);
+}
+
+bool RecoveryPortal::consumeRecoveryRotationRequested() {
+  const bool requested = recoveryRotationRequested_;
+  recoveryRotationRequested_ = false;
+  return requested;
+}
+
 void RecoveryPortal::rotateCsrfToken() {
   std::snprintf(
     csrfToken_,
@@ -228,8 +337,17 @@ void RecoveryPortal::registerHandlers() {
     HTTP_POST,
     [this]() { handleProvisioningUpdate(); }
   );
+  server_.on(
+    "/rotate-recovery",
+    HTTP_POST,
+    [this]() { handleRecoveryRotation(); }
+  );
   server_.onNotFound([this]() {
     setSecurityHeaders();
+    if (!clientIsOnAccessPoint()) {
+      server_.client().stop();
+      return;
+    }
     server_.send(404, "application/json", "{\"error\":\"Not found.\"}");
   });
   handlersRegistered_ = true;
@@ -237,10 +355,12 @@ void RecoveryPortal::registerHandlers() {
 
 bool RecoveryPortal::start(
   const char *deviceLabel,
-  const char *recoveryPassword,
-  DeviceConfiguration &configuration
+  RecoveryAccess &recoveryAccess,
+  DeviceConfiguration &configuration,
+  bool allowStationRecovery
 ) {
   if (active_) return true;
+  const char *recoveryPassword = recoveryAccess.password();
   const size_t passwordLength = boundedCStringLength(recoveryPassword, 64);
   if (!recoveryPasswordIsValid(recoveryPassword, passwordLength)) return false;
 
@@ -261,13 +381,55 @@ bool RecoveryPortal::start(
   std::snprintf(accessPointSsid_, sizeof(accessPointSsid_), "Eki-Recovery-%s", suffix);
 
   configuration_ = &configuration;
+  recoveryAccess_ = &recoveryAccess;
   rotateCsrfToken();
   registerHandlers();
-  WiFi.mode(WIFI_AP_STA);
-  if (!WiFi.softAP(accessPointSsid_, recoveryPassword, 1, false, 1)) {
+  const wifi_mode_t requestedMode = allowStationRecovery
+    ? WIFI_MODE_APSTA
+    : WIFI_MODE_AP;
+  if (!WiFi.mode(requestedMode) || WiFi.getMode() != requestedMode) {
     configuration_ = nullptr;
+    recoveryAccess_ = nullptr;
     csrfToken_[0] = '\0';
-    WiFi.mode(WIFI_STA);
+    WiFi.mode(WIFI_OFF);
+    return false;
+  }
+  // Bind the listener to a fixed AP address instead of INADDR_ANY. Handler
+  // checks remain as defence in depth, but STA-originated traffic cannot even
+  // reach the listening socket while AP+STA recovery is active.
+  const IPAddress recoveryAddress(192, 168, 4, 1);
+  if (!WiFi.softAPConfig(
+    recoveryAddress,
+    recoveryAddress,
+    IPAddress(255, 255, 255, 0)
+  )) {
+    configuration_ = nullptr;
+    recoveryAccess_ = nullptr;
+    csrfToken_[0] = '\0';
+    WiFi.mode(allowStationRecovery ? WIFI_STA : WIFI_OFF);
+    return false;
+  }
+  if (!WiFi.softAP(accessPointSsid_, recoveryAccess.password(), 1, false, 1)) {
+    configuration_ = nullptr;
+    recoveryAccess_ = nullptr;
+    csrfToken_[0] = '\0';
+    WiFi.mode(allowStationRecovery ? WIFI_STA : WIFI_OFF);
+    return false;
+  }
+  // The documented configuration is a WPA2 access point. softAP() derives
+  // WPA2-PSK only when a non-empty passphrase is supplied; verify the running
+  // configuration so a future refactor can never silently expose an open
+  // (unauthenticated) recovery AP.
+  wifi_config_t accessPointConfig{};
+  if (
+    esp_wifi_get_config(WIFI_IF_AP, &accessPointConfig) != ESP_OK ||
+    accessPointConfig.ap.authmode != WIFI_AUTH_WPA2_PSK
+  ) {
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(allowStationRecovery ? WIFI_STA : WIFI_OFF);
+    configuration_ = nullptr;
+    recoveryAccess_ = nullptr;
+    csrfToken_[0] = '\0';
     return false;
   }
   server_.begin();
@@ -276,7 +438,25 @@ bool RecoveryPortal::start(
 }
 
 void RecoveryPortal::handleClient() {
-  if (active_) server_.handleClient();
+  if (!active_) return;
+  // WebServer accepts a new socket inside handleClient(), so interface checks
+  // live in every registered handler where the socket's local address exists.
+  server_.handleClient();
+}
+
+bool RecoveryPortal::clientIsOnAccessPoint() {
+  return recoveryClientUsesAccessPoint(
+    static_cast<uint32_t>(server_.client().localIP()),
+    static_cast<uint32_t>(WiFi.softAPIP())
+  );
+}
+
+bool RecoveryPortal::provisionAttemptAllowed() {
+  return recordRecoveryAttempt(
+    millis(),
+    provisionWindowStartedAt_,
+    provisionAttempts_
+  );
 }
 
 void RecoveryPortal::stop() {
@@ -284,8 +464,10 @@ void RecoveryPortal::stop() {
   server_.stop();
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_STA);
+  recoveryAccess_ = nullptr;
   configuration_ = nullptr;
   csrfToken_[0] = '\0';
+  recoveryRotationRequested_ = false;
   active_ = false;
 }
 

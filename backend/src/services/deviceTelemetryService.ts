@@ -59,6 +59,51 @@ export interface LatencySummary {
   p99: number | null;
 }
 
+export interface DelayPreference {
+  delayMinutes: number;
+  delayUpdatedAt: number;
+}
+
+function validDelayMinutes(value: unknown): number | null {
+  return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 1440
+    ? Number(value)
+    : null;
+}
+
+function validDelayRevision(value: unknown): number {
+  return Number.isSafeInteger(value) && Number(value) >= 0
+    ? Number(value)
+    : 0;
+}
+
+/**
+ * Pick the freshest announced delay between the live RTDB node and the
+ * durable active_rides copy.
+ *
+ * The delay route writes both stores with the same `delayUpdatedAt` epoch,
+ * but the two writes are not atomic, so one can be stale after a partial
+ * failure. The newer timestamp wins; on a tie the live value is preferred
+ * because it is what passengers are currently seeing. Legacy rows without
+ * a timestamp default to 0 and therefore never override a newer value.
+ */
+export function freshestDelayMinutes(
+  live: Record<string, unknown> | null,
+  durable: Record<string, unknown> | null,
+): DelayPreference {
+  const liveMinutes = validDelayMinutes(live?.delayMinutes);
+  const durableMinutes = validDelayMinutes(durable?.delayMinutes);
+  const liveAt = validDelayRevision(live?.delayUpdatedAt);
+  const durableAt = validDelayRevision(durable?.delayUpdatedAt);
+
+  if (durableMinutes !== null && (liveMinutes === null || durableAt > liveAt)) {
+    return { delayMinutes: durableMinutes, delayUpdatedAt: durableAt };
+  }
+  return {
+    delayMinutes: liveMinutes ?? durableMinutes ?? 0,
+    delayUpdatedAt: liveAt,
+  };
+}
+
 export type TelemetryIngestResult =
   | { ok: true; duplicate: boolean }
   | {
@@ -314,6 +359,8 @@ function durableLifecycle(
     hasDepartedOrigin: value.hasDepartedOrigin === true,
     delayMinutes:
       typeof value.delayMinutes === "number" ? value.delayMinutes : 0,
+    delayUpdatedAt:
+      typeof value.delayUpdatedAt === "number" ? value.delayUpdatedAt : 0,
   };
 }
 
@@ -364,10 +411,14 @@ async function restoreDurableRide(
       existingTimestamp > sample.timestamp
         ? {}
         : sample;
+    // The durable lifecycle can hold a delay older than the live node if a
+    // delay update only partially landed; never regress the announced value.
+    const delay = freshestDelayMinutes(live, lifecycle);
     return {
       ...(live ?? {}),
       ...telemetry,
       ...lifecycle,
+      ...delay,
       busId: assignment.busId,
       routeId: assignment.routeId,
       deviceState: "online",

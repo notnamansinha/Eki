@@ -44,9 +44,11 @@ private:
 class RecoveryAccess {
 public:
   bool loadOrCreate();
+  bool rotate();
   const char *password() const { return password_; }
 
 private:
+  bool generateAndPersist();
   char password_[25]{};
 };
 
@@ -56,30 +58,39 @@ public:
 
   bool start(
     const char *deviceLabel,
-    const char *recoveryPassword,
-    DeviceConfiguration &configuration
+    RecoveryAccess &recoveryAccess,
+    DeviceConfiguration &configuration,
+    bool allowStationRecovery
   );
   void handleClient();
   void stop();
   bool active() const { return active_; }
   bool consumeConfigurationUpdated();
+  bool consumeRecoveryRotationRequested();
   const char *accessPointSsid() const { return accessPointSsid_; }
 
 private:
   void registerHandlers();
   void setSecurityHeaders();
+  bool clientIsOnAccessPoint();
+  bool provisionAttemptAllowed();
   void handleRoot();
   void handleStatus();
   void handleProvisioningUpdate();
+  void handleRecoveryRotation();
   void rotateCsrfToken();
 
   WebServer server_;
+  RecoveryAccess *recoveryAccess_ = nullptr;
   DeviceConfiguration *configuration_ = nullptr;
   char accessPointSsid_[33]{};
   char csrfToken_[17]{};
+  uint32_t provisionWindowStartedAt_ = 0;
+  uint8_t provisionAttempts_ = 0;
   bool handlersRegistered_ = false;
   bool active_ = false;
   bool configurationUpdated_ = false;
+  bool recoveryRotationRequested_ = false;
 };
 
 } // namespace connectivity

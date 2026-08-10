@@ -39,9 +39,19 @@ Platform/library versions are pinned in `platformio.ini`. The native suite check
 - On recovery, the publisher sends the newest sample first. Transport errors, HTTP 408/425/429 and 5xx keep that sample queued with backoff. HTTP 429 honors bounded `Retry-After`; permanent HTTP rejections remove only the rejected sample. Samples older than the 55-second safety margin are counted and removed before they can violate the backend's 60-second timestamp contract.
 - GNSS loss queues one `uncertain` sample at the last trustworthy coordinate; no dead-reckoned location is presented as truth.
 - Wi-Fi retries with bounded 5-60 second exponential backoff, uses fastest/strongest AP selection and disables modem sleep for vehicle-powered low latency. An unprovisioned device starts the protected local portal immediately; a configured device exposes it after a continuous two-minute outage or an API credential rejection. Replacing configuration requires every field, writes one closed NVS record, and restarts so old identity state cannot leak into the new assignment.
+- The recovery AP password is generated once at first boot and printed over the controlled serial connection only while unprovisioned. It can be rotated from the authenticated portal (`POST /rotate-recovery` with the page CSRF token): the portal returns the new password once, then the device restarts so the AP adopts it. Save the new value before the restart; the old password stops working when the restart completes.
 - GPIO2 is the status LED: two short pulses every two seconds mean Wi-Fi recovery mode; three mean a latched device-credential fault. A successful station connection stops the recovery AP automatically.
 - A 25-second task watchdog covers both the GNSS loop and publisher while allowing bounded connect-plus-request latency. Reset reason, active fault code, queue health, request time/size/RSSI/status and overflow counters are logged, but SSID/secret are not. Every five minutes, an idle publisher sends the same bounded health state plus firmware version, heap, and hardware-security status to the device-authenticated diagnostics endpoint; it never sends credentials.
 
 HTTP 202 is a new fix, 200 a duplicate, 400 invalid body/time, 401/403 credential/registry, 429 rate and 503 dependency outage. A 401/403 retains the rejected sample in the bounded queue, latches publishing off, and enables protected local reprovisioning instead of retrying a doomed secret forever; normal freshness eviction still applies. HTTP 429 honors the backend's bounded `Retry-After`; transport and 5xx failures retain the newest eligible sample. Negative HTTPClient values include the library error string and a secret-safe DNS/hostname/CA/clock/reachability checklist.
+
+To rotate from a controlled PowerShell workstation connected to the recovery AP, fetch the one-time form token and immediately submit it. Record the returned password before the device restarts:
+
+```powershell
+$page = Invoke-WebRequest http://192.168.4.1/
+$csrf = [regex]::Match($page.Content, 'name="csrf" value="([0-9a-f]{16})"').Groups[1].Value
+$rotation = Invoke-RestMethod -Method Post -Uri http://192.168.4.1/rotate-recovery -Body @{ csrf = $csrf }
+$rotation.recoveryPassword
+```
 
 Read [Hardware telemetry](../docs/hardware/HARDWARE_TELEMETRY.md) for every parameter, failure point, metrics and bench/vehicle acceptance case. Signed OTA/rollback remains a separate deployment prerequisite; the committed build and runtime gates do not replace physical spare-board acceptance.
