@@ -9,20 +9,6 @@
       "$busKey": {
         ".write": false
       }
-    },
-    "driverRouteAssignments": {
-      ".read": false,
-      ".write": false
-    },
-    "messages": {
-      ".read": false,
-      ".write": false
-    },
-    "users": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        ".write": false
-      }
     }
   }
 }
