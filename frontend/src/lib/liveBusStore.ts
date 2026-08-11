@@ -9,6 +9,7 @@ import {
   type LiveBusSnapshot,
 } from "@/lib/liveBusSnapshot";
 import type { LiveBusDeliverySource } from "@/lib/liveBusDelivery";
+import { liveBusRetryDelayMs } from "@/lib/liveBusRetry";
 
 type Subscriber = {
   next: (
@@ -23,6 +24,8 @@ let cached: LiveBusSnapshot | null = null;
 let unsubscribe: (() => void) | null = null;
 let starting = false;
 let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryAttempt = 0;
 
 function notifySubscribers(
   value: LiveBusSnapshot | null,
@@ -59,7 +62,7 @@ export function invalidateLiveBusCache(): void {
 }
 
 async function ensureListener() {
-  if (unsubscribe || starting || subscribers.size === 0) return;
+  if (unsubscribe || starting || retryTimer || subscribers.size === 0) return;
   starting = true;
   try {
     await waitForAuth();
@@ -67,13 +70,39 @@ async function ensureListener() {
     unsubscribe = onValue(
       ref(rtdb, "activeBuses"),
       (snapshot) => {
+        retryAttempt = 0;
         const value = snapshot.val() as LiveBusSnapshot | null;
         cached = value ? pruneExpiredLiveBuses(value) : null;
         notifySubscribers(cached, "listener");
         scheduleExpiry();
       },
-      (error) => subscribers.forEach((subscriber) => subscriber.error?.(error)),
+      (error) => {
+        unsubscribe?.();
+        unsubscribe = null;
+        cached = null;
+        if (expiryTimer) clearTimeout(expiryTimer);
+        expiryTimer = null;
+        notifySubscribers(null, "invalidation");
+        subscribers.forEach((subscriber) => subscriber.error?.(error));
+        if (subscribers.size > 0 && !retryTimer) {
+          const delay = liveBusRetryDelayMs(retryAttempt++);
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            void ensureListener();
+          }, delay);
+        }
+      },
     );
+  } catch (error) {
+    const listenerError = error instanceof Error ? error : new Error("Live bus listener failed.");
+    subscribers.forEach((subscriber) => subscriber.error?.(listenerError));
+    if (subscribers.size > 0 && !retryTimer) {
+      const delay = liveBusRetryDelayMs(retryAttempt++);
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        void ensureListener();
+      }, delay);
+    }
   } finally {
     starting = false;
   }
@@ -95,6 +124,11 @@ export function subscribeLiveBuses(
       unsubscribe?.();
       unsubscribe = null;
       cached = null;
+      retryAttempt = 0;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
       if (expiryTimer) {
         clearTimeout(expiryTimer);
         expiryTimer = null;
