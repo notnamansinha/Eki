@@ -429,19 +429,32 @@ int64_t epochMilliseconds() {
   const uint32_t now = millis();
   int64_t epochMs = 0;
   portENTER_CRITICAL(&clockCrossCheckMux);
-  if (latestGnssReferenceValid) {
-    eki::clock::projectEpochMillisecondsIfFresh(
-      latestGnssEpochMs,
-      latestGnssReferenceAt,
-      now,
-      GNSS_EPOCH_REFERENCE_MAX_AGE_MS,
-      epochMs
-    );
-  }
+  eki::clock::projectEpochMillisecondsFromReference(
+    latestGnssReferenceValid,
+    latestGnssEpochMs,
+    latestGnssReferenceAt,
+    now,
+    GNSS_EPOCH_REFERENCE_MAX_AGE_MS,
+    epochMs
+  );
   portEXIT_CRITICAL(&clockCrossCheckMux);
   return epochMs >= eki::clock::TRUSTED_EPOCH_MIN_MS
     ? epochMs
     : systemEpochMilliseconds();
+}
+
+void expireGnssEpochReference(uint32_t now) {
+  int64_t ignoredEpochMs = 0;
+  portENTER_CRITICAL(&clockCrossCheckMux);
+  eki::clock::projectEpochMillisecondsFromReference(
+    latestGnssReferenceValid,
+    latestGnssEpochMs,
+    latestGnssReferenceAt,
+    now,
+    GNSS_EPOCH_REFERENCE_MAX_AGE_MS,
+    ignoredEpochMs
+  );
+  portEXIT_CRITICAL(&clockCrossCheckMux);
 }
 
 bool clockIsSynchronized() {
@@ -1281,6 +1294,9 @@ void loop() {
 
   if (elapsed(lastEvaluationAt) >= 1000) {
     lastEvaluationAt = millis();
+    // Expire stale monotonic references while the 32-bit counter is still in
+    // its current cycle, so rollover cannot make an old reference look fresh.
+    expireGnssEpochReference(lastEvaluationAt);
     // TinyGPSPlus belongs exclusively to this loop task. Only the protected
     // scalar snapshot crosses to the publisher task for diagnostics.
     portENTER_CRITICAL(&healthMetricsMux);

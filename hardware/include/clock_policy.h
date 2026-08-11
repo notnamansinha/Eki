@@ -98,6 +98,28 @@ inline bool projectEpochMillisecondsIfFresh(
   return true;
 }
 
+inline bool projectEpochMillisecondsFromReference(
+  bool &referenceValid,
+  int64_t referenceEpochMs,
+  uint32_t referenceMonotonicMs,
+  uint32_t nowMonotonicMs,
+  uint32_t maximumAgeMs,
+  int64_t &projectedEpochMs
+) {
+  if (!referenceValid) return false;
+  if (!projectEpochMillisecondsIfFresh(
+    referenceEpochMs,
+    referenceMonotonicMs,
+    nowMonotonicMs,
+    maximumAgeMs,
+    projectedEpochMs
+  )) {
+    referenceValid = false;
+    return false;
+  }
+  return true;
+}
+
 inline bool shouldApplyGnssClock(
   bool gnssClockHasBeenApplied,
   uint32_t elapsedSinceLastApplication,

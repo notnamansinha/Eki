@@ -187,6 +187,16 @@ void test_gnss_utc_conversion_and_clock_discipline_are_strict() {
   TEST_ASSERT_FALSE(eki::clock::projectEpochMillisecondsIfFresh(
     epochMs, 1000, 2001, 1000, projectedEpochMs
   ));
+  bool referenceValid = true;
+  TEST_ASSERT_FALSE(eki::clock::projectEpochMillisecondsFromReference(
+    referenceValid, epochMs, 1000, 2001, 1000, projectedEpochMs
+  ));
+  TEST_ASSERT_FALSE(referenceValid);
+  // Once expired before rollover, the same reference cannot become valid
+  // again when a later counter cycle has a deceptively small modulo age.
+  TEST_ASSERT_FALSE(eki::clock::projectEpochMillisecondsFromReference(
+    referenceValid, epochMs, 1000, 1500, 1000, projectedEpochMs
+  ));
 
   TEST_ASSERT_TRUE(eki::clock::shouldApplyGnssClock(
     false, 0, 0, 1704067200000LL
