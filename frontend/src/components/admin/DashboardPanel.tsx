@@ -420,9 +420,9 @@ export default function DashboardPanel() {
     resumeGeneration,
     markSnapshotReceived,
   );
-  const { buses } = useBuses();
+  const { buses, error: busesError, retry: retryBuses } = useBuses();
   const { drivers } = useDrivers();
-  const { routes } = useRoutes();
+  const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
@@ -487,6 +487,25 @@ export default function DashboardPanel() {
 
         {/* Map overlay stats */}
         <div className="absolute top-3 left-3 right-3 flex flex-col items-start gap-2 pointer-events-none">
+          {(busesError || routesError) && (
+            <div
+              className="pointer-events-auto flex w-full max-w-lg items-start gap-2 rounded-xl border border-red-400/20 bg-zinc-950/95 px-3 py-2 text-xs text-red-300 shadow-lg"
+              role="alert"
+            >
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="flex-1">Fleet metadata is unavailable. {busesError || routesError}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (busesError) retryBuses();
+                  if (routesError) retryRoutes();
+                }}
+                className="rounded-md bg-white/10 px-2 py-1 font-semibold text-white"
+              >
+                Retry
+              </button>
+            </div>
+          )}
           {isResuming && (
             <div
               className="flex items-center gap-2 rounded-xl border border-amber-400/20 bg-zinc-950/95 px-3 py-2 text-xs font-semibold text-amber-300 shadow-lg"

@@ -13,6 +13,6 @@ export interface BusData {
  * server-side.
  */
 export function useBuses() {
-  const { data: buses, loading, error } = useCollection<BusData>("buses");
-  return { buses, loading, error };
+  const { data: buses, loading, error, retry } = useCollection<BusData>("buses");
+  return { buses, loading, error, retry };
 }

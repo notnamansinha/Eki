@@ -33,6 +33,6 @@ export interface RouteData {
  * state. Each route carries its ordered stops and pre-computed geometry.
  */
 export function useRoutes() {
-  const { data: routes, loading, error } = useCollection<RouteData>("routes");
-  return { routes, loading, error };
+  const { data: routes, loading, error, retry } = useCollection<RouteData>("routes");
+  return { routes, loading, error, retry };
 }

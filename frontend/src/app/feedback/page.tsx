@@ -1,16 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { db } from "@/lib/firebaseFirestore";
-import {
-  collection,
-  onSnapshot,
-  query,
-  orderBy,
-  limit,
-  Timestamp,
-} from "firebase/firestore";
+import { useState } from "react";
+import { Timestamp } from "firebase/firestore";
 import { auth } from "@/lib/firebaseAuth";
+import { useCollection } from "@/hooks/useCollection";
 import {
   Star,
   MessageSquare,
@@ -247,34 +240,21 @@ type FilterType = "all" | "ride" | "general";
 type FilterStatus = "all" | "new" | "reviewed" | "resolved";
 
 export default function FeedbackPage() {
-  const [entries, setEntries] = useState<FeedbackEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const {
+    data: entries,
+    loading,
+    error: loadError,
+    retry: retryFeedback,
+  } = useCollection<FeedbackEntry>("feedbacks", {
+    maxResults: 200,
+    orderByDirection: "desc",
+    orderByField: "timestamp",
+  });
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [search, setSearch] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [statusError, setStatusError] = useState("");
-
-  useEffect(() => {
-    const q = query(collection(db, "feedbacks"), orderBy("timestamp", "desc"), limit(200));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setEntries(
-          snap.docs.map((d) => ({ id: d.id, ...d.data() } as FeedbackEntry))
-        );
-        setLoading(false);
-        setLoadError(null);
-      },
-      (error) => {
-        console.warn("[Feedback] Read failed:", error.message);
-        setLoadError("Failed to load feedback.");
-        setLoading(false);
-      },
-    );
-    return () => unsub();
-  }, []);
 
   const handleStatusChange = async (
     id: string,
@@ -367,6 +347,23 @@ export default function FeedbackPage() {
             {statusError}
           </div>
         )}
+        {loadError ? (
+          <div className="flex flex-col items-center justify-center py-20 text-red-400/80 text-center" role="alert">
+            <AlertCircle className="w-10 h-10 mb-4 opacity-60" />
+            <p className="text-sm font-semibold uppercase tracking-widest">
+              Couldn&apos;t load feedback
+            </p>
+            <p className="text-xs mt-1 opacity-70">{loadError}</p>
+            <button
+              type="button"
+              onClick={retryFeedback}
+              className="mt-4 rounded-lg bg-white/10 px-4 py-2 text-xs font-semibold text-white"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <>
         {/* Stats Row */}
         <div className="grid grid-cols-3 gap-3">
           {[
@@ -461,14 +458,6 @@ export default function FeedbackPage() {
               Loading feedback…
             </span>
           </div>
-        ) : loadError ? (
-          <div className="flex flex-col items-center justify-center py-20 text-red-400/80 text-center">
-            <AlertCircle className="w-10 h-10 mb-4 opacity-60" />
-            <p className="text-sm font-semibold uppercase tracking-widest">
-              Couldn&apos;t load feedback
-            </p>
-            <p className="text-xs mt-1 opacity-70">{loadError}</p>
-          </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-white/20 text-center">
             <Inbox className="w-10 h-10 mb-4 opacity-30" />
@@ -490,6 +479,8 @@ export default function FeedbackPage() {
               />
             ))}
           </div>
+        )}
+          </>
         )}
       </div>
     </main>

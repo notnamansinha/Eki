@@ -49,6 +49,7 @@ export default function MessagingPanel({
   const [messages, setMessages] = useState<Message[]>([]);
   const [messagesSource, setMessagesSource] = useState<string | null>(null);
   const [chatError, setChatError] = useState<{ sessionId: string; message: string } | null>(null);
+  const [retryGeneration, setRetryGeneration] = useState(0);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [rateLimitMsg, setRateLimitMsg] = useState("");
@@ -114,7 +115,7 @@ export default function MessagingPanel({
       unsubscribe?.();
       if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     };
-  }, [sessionId, currentUserId, onUnreadCountChange]);
+  }, [sessionId, currentUserId, onUnreadCountChange, retryGeneration]);
 
   // --- Rate Limiting Logic ---
   const [messagesSentCounts, setMessagesSentCounts] = useState<{timestamp: number}[]>([]);
@@ -255,8 +256,7 @@ export default function MessagingPanel({
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 gap-4 flex flex-col relative z-10 text-sm">
-        {visibleMessages.length === 0 ? (
-          chatError && chatError.sessionId === sessionId ? (
+        {chatError && chatError.sessionId === sessionId ? (
             <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
               <AlertCircle className="w-8 h-8 mb-3" style={{ color: "var(--danger, #f87171)" }} />
               <p className="text-[12px] font-semibold text-center" style={{ color: "var(--danger, #f87171)" }}>
@@ -265,8 +265,20 @@ export default function MessagingPanel({
               <p className="text-[11px] mt-1" style={{ color: "var(--text-ghost)" }}>
                 Check your connection and try again
               </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setChatError(null);
+                  setMessagesSource(null);
+                  setRetryGeneration((generation) => generation + 1);
+                }}
+                className="mt-4 rounded-lg px-4 py-2 text-[11px] font-semibold"
+                style={{ background: "var(--surface-3)", color: "var(--text-primary)" }}
+              >
+                Retry
+              </button>
             </div>
-          ) : (
+        ) : visibleMessages.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
               <MessageCircle className="w-8 h-8 mb-3" style={{ color: "var(--text-ghost)" }} />
               <p className="text-[12px] font-semibold text-center" style={{ color: "var(--text-ghost)" }}>
@@ -276,7 +288,6 @@ export default function MessagingPanel({
                 Send a message to the {currentUserRole === "driver" ? "riders" : "driver"}
               </p>
             </div>
-          )
         ) : (
           visibleMessages.map((msg) => {
             const isMe = msg.senderId === currentUserId;

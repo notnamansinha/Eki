@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   collection,
   limit,
@@ -9,9 +9,11 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebaseFirestore";
 import { waitForAuth } from "@/lib/authState";
+import { useAuth } from "./useAuth";
 import {
   buildCollectionCacheKey,
-  describeCollectionError,
+  normalizeCollectionError,
+  type CollectionLoadError,
   type CollectionOptions,
 } from "./collectionCache";
 
@@ -20,7 +22,7 @@ export type { CollectionOptions, WhereConstraint } from "./collectionCache";
 interface CacheEntry {
   data: unknown[];
   loading: boolean;
-  error: string | null;
+  error: CollectionLoadError | null;
   listenerCount: number;
   unsubscribe: (() => void) | null;
   callbacks: Set<() => void>;
@@ -61,12 +63,22 @@ export function useCollection<T>(
   collectionName: string,
   options: CollectionOptions = {},
 ) {
+  const { user } = useAuth();
   const [, forceRender] = useState(0);
+  const [retryGeneration, setRetryGeneration] = useState(0);
   const maxResults = options.maxResults ?? 250;
   const orderByField = options.orderByField;
   const orderByDirection = options.orderByDirection ?? "asc";
   const whereConstraints = options.whereConstraints ?? [];
-  const cacheKey = buildCollectionCacheKey(collectionName, options);
+  const queryKey = buildCollectionCacheKey(collectionName, options);
+  const principalScope = user
+    ? `${user.uid}:${user.role ?? "unverified"}`
+    : "signed-out";
+  const cacheKey = JSON.stringify([
+    "principal-query-v1",
+    principalScope,
+    queryKey,
+  ]);
 
   useEffect(() => {
     let entry = queryCache.get(cacheKey);
@@ -92,37 +104,55 @@ export function useCollection<T>(
     }
 
     if (!currentEntry.unsubscribe) {
+      const reportListenerError = (error: unknown) => {
+        // Keep the last snapshot only in `staleData`; live `data` is hidden
+        // until a new listener produces an authoritative snapshot.
+        const normalizedError = normalizeCollectionError(collectionName, error);
+        console.warn(
+          `[useCollection] ${collectionName} listener failed (${normalizedError.code}).`,
+        );
+        currentEntry.error = normalizedError;
+        currentEntry.loading = false;
+        // Firestore listener errors are terminal. Mark the subscription
+        // detached so an explicit retry can create a fresh listener.
+        currentEntry.unsubscribe = null;
+        currentEntry.callbacks.forEach(cb => cb());
+      };
+
       waitForAuth().then(() => {
         // Double check if we still need it after auth resolves
         if (currentEntry.listenerCount > 0 && !currentEntry.unsubscribe) {
-          const constraints = [
-            ...whereConstraints.map((constraint) =>
-              where(constraint.fieldPath, constraint.op, constraint.value),
-            ),
-            ...(orderByField
-              ? [orderBy(orderByField, orderByDirection)]
-              : []),
-            limit(maxResults),
-          ];
-          currentEntry.unsubscribe = onSnapshot(
-            query(collection(db, collectionName), ...constraints),
-            (snapshot) => {
-              currentEntry.data = snapshot.docs.map((doc) => ({
-                id: doc.id,
-                ...doc.data(),
-              })) as T[];
-              currentEntry.loading = false;
-              currentEntry.error = null;
-              currentEntry.callbacks.forEach(cb => cb());
-            },
-            (error) => {
-              // Keep any previously fetched data, but flag the failure so
-              // consumers never render stale data as live (see #47/F7).
-              currentEntry.error = describeCollectionError(collectionName, error);
-              currentEntry.loading = false;
-              currentEntry.callbacks.forEach(cb => cb());
-            }
-          );
+          try {
+            const constraints = [
+              ...whereConstraints.map((constraint) =>
+                where(constraint.fieldPath, constraint.op, constraint.value),
+              ),
+              ...(orderByField
+                ? [orderBy(orderByField, orderByDirection)]
+                : []),
+              limit(maxResults),
+            ];
+            let listenerFailedSynchronously = false;
+            const unsubscribe = onSnapshot(
+              query(collection(db, collectionName), ...constraints),
+              (snapshot) => {
+                currentEntry.data = snapshot.docs.map((doc) => ({
+                  id: doc.id,
+                  ...doc.data(),
+                })) as T[];
+                currentEntry.loading = false;
+                currentEntry.error = null;
+                currentEntry.callbacks.forEach(cb => cb());
+              },
+              (error) => {
+                listenerFailedSynchronously = true;
+                reportListenerError(error);
+              },
+            );
+            currentEntry.unsubscribe = listenerFailedSynchronously ? null : unsubscribe;
+          } catch (error) {
+            reportListenerError(error);
+          }
         }
       });
     }
@@ -143,7 +173,9 @@ export function useCollection<T>(
           if (currentEntry.listenerCount === 0 && currentEntry.unsubscribe) {
             currentEntry.unsubscribe();
             currentEntry.unsubscribe = null;
-            // We intentionally keep the cached data so next mount is instant
+            // Preserve the last snapshot only as explicitly stale data. Once
+            // detached, it must be revalidated before `data` is live again.
+            currentEntry.loading = true;
           }
         }, 3000);
       }
@@ -152,12 +184,28 @@ export function useCollection<T>(
     // dependency: array options (whereConstraints) would otherwise re-subscribe
     // on every render when a caller passes a new inline array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cacheKey]);
+  }, [cacheKey, retryGeneration]);
 
   const entry = queryCache.get(cacheKey);
+  const retry = useCallback(() => {
+    const currentEntry = queryCache.get(cacheKey);
+    if (currentEntry) {
+      currentEntry.unsubscribe?.();
+      currentEntry.unsubscribe = null;
+      currentEntry.error = null;
+      currentEntry.loading = true;
+      currentEntry.callbacks.forEach((callback) => callback());
+    }
+    setRetryGeneration((generation) => generation + 1);
+  }, [cacheKey]);
+  const staleData = entry ? entry.data as T[] : [];
   return {
-    data: entry ? entry.data as T[] : [],
+    data: entry?.error || entry?.loading ? [] : staleData,
+    staleData,
     loading: entry ? entry.loading : true,
-    error: entry ? entry.error : null,
+    error: entry?.error?.message ?? null,
+    errorCode: entry?.error?.code ?? null,
+    errorDetails: entry?.error ?? null,
+    retry,
   };
 }

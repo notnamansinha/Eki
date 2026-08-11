@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRoutes } from "@/hooks/useRoutes";
 import { Navigation, Play, ChevronDown, ChevronUp } from "lucide-react";
 import CustomSelect from "@/components/ui/CustomSelect";
 
 import { DriverData } from "@/hooks/useDrivers";
 import { BusData } from "@/hooks/useBuses";
+import { RouteData } from "@/hooks/useRoutes";
 
 interface Props {
   busId: string;
@@ -15,6 +15,7 @@ interface Props {
   buses: BusData[];
   setSelectedBusId: (id: string) => void;
   drivers: DriverData[];
+  routes: RouteData[];
   selectedRouteIds: string[];
   setSelectedRouteIds: (ids: string[]) => void;
   onStartTracking: () => void;
@@ -27,12 +28,12 @@ export default function TransmitterControls({
   buses,
   setSelectedBusId,
   drivers,
+  routes,
   selectedRouteIds,
   setSelectedRouteIds,
   onStartTracking,
 }: Props) {
   const [expanded, setExpanded] = useState(true);
-  const { routes } = useRoutes();
 
   const vehicleOptions = [
     { value: "", label: "Select vehicle…" },

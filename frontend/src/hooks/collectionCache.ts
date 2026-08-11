@@ -1,4 +1,11 @@
-import type { OrderByDirection, WhereFilterOp } from "firebase/firestore";
+import {
+  Bytes,
+  DocumentReference,
+  GeoPoint,
+  Timestamp,
+  type OrderByDirection,
+  type WhereFilterOp,
+} from "firebase/firestore";
 
 /** One Firestore equality/range clause; fieldPath is a plain dotted path. */
 export interface WhereConstraint {
@@ -14,6 +21,11 @@ export interface CollectionOptions {
   whereConstraints?: WhereConstraint[];
 }
 
+export interface CollectionLoadError {
+  code: string;
+  message: string;
+}
+
 /**
  * Deterministic, type-aware encoding of a Firestore query value for cache
  * keys. JSON.stringify would collide distinct values (e.g. a `Date` and the
@@ -21,39 +33,74 @@ export interface CollectionOptions {
  * could make two different queries share one cache entry. Types get explicit
  * prefixes; plain-object keys are sorted for stability.
  */
-export function encodeQueryValue(value: unknown): string {
-  if (value === null) return "null";
-  if (value === undefined) return "undefined";
-  if (typeof value === "string") return `s:${value}`;
-  if (typeof value === "number") return `n:${value}`;
-  if (typeof value === "boolean") return `b:${value}`;
+function canonicalQueryValue(
+  value: unknown,
+  ancestors: Set<object>,
+): unknown {
+  if (value === null) return ["null"];
+  if (typeof value === "string") return ["string", value];
+  if (typeof value === "boolean") return ["boolean", value];
+  if (typeof value === "number") {
+    if (Number.isNaN(value)) return ["number", "NaN"];
+    if (value === Number.POSITIVE_INFINITY) return ["number", "+Infinity"];
+    if (value === Number.NEGATIVE_INFINITY) return ["number", "-Infinity"];
+    if (Object.is(value, -0)) return ["number", "-0"];
+    return ["number", value];
+  }
   if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? "d:invalid" : `d:${value.toISOString()}`;
+    if (Number.isNaN(value.getTime())) {
+      throw new TypeError("Firestore query values cannot contain an invalid Date.");
+    }
+    return ["date", value.toISOString()];
   }
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => encodeQueryValue(entry)).join(",")}]`;
+  if (value instanceof Timestamp) {
+    return ["timestamp", value.seconds, value.nanoseconds];
   }
-  if (typeof value === "object") {
-    // Firestore Timestamp-like values are compared by seconds+nanoseconds;
-    // encode them explicitly so a Timestamp never collides with a plain object.
-    const objectKeys = Object.keys(value as object);
-    const seconds = (value as { seconds?: unknown }).seconds;
-    const nanoseconds = (value as { nanoseconds?: unknown }).nanoseconds;
-    if (
-      objectKeys.length === 2 &&
-      typeof seconds === "number" &&
-      typeof nanoseconds === "number" &&
-      "seconds" in (value as object) &&
-      "nanoseconds" in (value as object)
-    ) {
-      return `t:${seconds}:${nanoseconds}`;
+  if (value instanceof DocumentReference) {
+    return ["reference", value.path];
+  }
+  if (value instanceof GeoPoint) {
+    return ["geopoint", value.latitude, value.longitude];
+  }
+  if (value instanceof Bytes) {
+    return ["bytes", value.toBase64()];
+  }
+  if (typeof value !== "object" || value === undefined) {
+    throw new TypeError(`Unsupported Firestore query value: ${typeof value}.`);
+  }
+  if (ancestors.has(value)) {
+    throw new TypeError("Firestore query values cannot contain cycles.");
+  }
+
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return [
+        "array",
+        value.map((entry) => canonicalQueryValue(entry, ancestors)),
+      ];
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError(
+        `Unsupported Firestore query object: ${value.constructor?.name ?? "unknown"}.`,
+      );
     }
     const entries = Object.entries(value as Record<string, unknown>)
       .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-      .map(([key, entry]) => `${key}=${encodeQueryValue(entry)}`);
-    return `{${entries.join(",")}}`;
+      .map(([key, entry]) => [
+        key,
+        canonicalQueryValue(entry, ancestors),
+      ]);
+    return ["map", entries];
+  } finally {
+    ancestors.delete(value);
   }
-  return `u:${String(value)}`;
+}
+
+export function encodeQueryValue(value: unknown): string {
+  return JSON.stringify(canonicalQueryValue(value, new Set()));
 }
 
 /**
@@ -72,14 +119,27 @@ export function buildCollectionCacheKey(
   const maxResults = options.maxResults ?? 250;
   const orderByField = options.orderByField ?? "";
   const orderByDirection = options.orderByDirection ?? "asc";
-  const whereKey = (options.whereConstraints ?? [])
-    .map((constraint) =>
-      `${constraint.fieldPath}:${constraint.op}:${encodeQueryValue(constraint.value)}`,
-    )
-    .join("|");
-  return [collectionName, orderByField, orderByDirection, maxResults, whereKey].join(
-    ":",
+  const whereKey = (options.whereConstraints ?? []).map((constraint) => [
+    constraint.fieldPath,
+    constraint.op,
+    encodeQueryValue(constraint.value),
+  ]);
+  return JSON.stringify(
+    ["collection-query-v2", collectionName, orderByField, orderByDirection, maxResults, whereKey],
   );
+}
+
+/** Preserve the Firebase error code while producing a safe display message. */
+export function normalizeCollectionError(
+  collectionName: string,
+  error: unknown,
+): CollectionLoadError {
+  const candidateCode = (error as { code?: unknown })?.code;
+  const code = typeof candidateCode === "string" ? candidateCode : "unknown";
+  if (code === "permission-denied") {
+    return { code, message: `Permission denied reading ${collectionName}.` };
+  }
+  return { code, message: `Failed to load ${collectionName}.` };
 }
 
 /**
@@ -90,9 +150,5 @@ export function describeCollectionError(
   collectionName: string,
   error: unknown,
 ): string {
-  const code = (error as { code?: string })?.code;
-  if (code === "permission-denied") {
-    return `Permission denied reading ${collectionName}.`;
-  }
-  return `Failed to load ${collectionName}.`;
+  return normalizeCollectionError(collectionName, error).message;
 }

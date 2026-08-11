@@ -1,9 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+import { deleteApp, initializeApp } from "firebase/app";
+import { doc, getFirestore, Timestamp } from "firebase/firestore";
 import {
   buildCollectionCacheKey,
   describeCollectionError,
+  normalizeCollectionError,
   type CollectionOptions,
 } from "./collectionCache";
+
+const firebaseApp = initializeApp(
+  { projectId: "collection-cache-test" },
+  "collection-cache-test",
+);
+
+afterAll(async () => {
+  await deleteApp(firebaseApp);
+});
 
 describe("buildCollectionCacheKey", () => {
   const base: CollectionOptions = { maxResults: 250 };
@@ -87,17 +99,22 @@ describe("buildCollectionCacheKey", () => {
   });
 
   it("distinguishes a Firestore Timestamp-like value from a plain object", () => {
-    const timestampLike = buildCollectionCacheKey("ride_sessions", {
+    const timestamp = Timestamp.fromMillis(1_767_225_600_000);
+    const timestampKey = buildCollectionCacheKey("ride_sessions", {
       whereConstraints: [
-        { fieldPath: "time", op: ">=", value: { seconds: 1767225600, nanoseconds: 0 } },
+        { fieldPath: "time", op: ">=", value: timestamp },
       ],
     });
-    const plain = buildCollectionCacheKey("ride_sessions", {
+    const plainMapKey = buildCollectionCacheKey("ride_sessions", {
       whereConstraints: [
-        { fieldPath: "time", op: ">=", value: { seconds: 1767225600, nanoseconds: 0, extra: true } },
+        {
+          fieldPath: "time",
+          op: ">=",
+          value: { seconds: timestamp.seconds, nanoseconds: timestamp.nanoseconds },
+        },
       ],
     });
-    expect(timestampLike).not.toBe(plain);
+    expect(timestampKey).not.toBe(plainMapKey);
   });
 
   it("is stable for object values regardless of key order", () => {
@@ -108,6 +125,46 @@ describe("buildCollectionCacheKey", () => {
       whereConstraints: [{ fieldPath: "tags", op: "==", value: { b: 2, a: 1 } }],
     });
     expect(forward).toBe(backward);
+  });
+
+  it("escapes delimiters so structurally different constraints never alias", () => {
+    const embeddedConstraint = buildCollectionCacheKey("devices", {
+      whereConstraints: [
+        { fieldPath: "a", op: "==", value: "x|b:==:s:y" },
+      ],
+    });
+    const twoConstraints = buildCollectionCacheKey("devices", {
+      whereConstraints: [
+        { fieldPath: "a", op: "==", value: "x" },
+        { fieldPath: "b", op: "==", value: "y" },
+      ],
+    });
+    expect(embeddedConstraint).not.toBe(twoConstraints);
+  });
+
+  it("encodes DocumentReference values without traversing SDK internals", () => {
+    const firestore = getFirestore(firebaseApp);
+    const first = buildCollectionCacheKey("devices", {
+      whereConstraints: [
+        { fieldPath: "owner", op: "==", value: doc(firestore, "users/one") },
+      ],
+    });
+    const second = buildCollectionCacheKey("devices", {
+      whereConstraints: [
+        { fieldPath: "owner", op: "==", value: doc(firestore, "users/two") },
+      ],
+    });
+    expect(first).not.toBe(second);
+  });
+
+  it("rejects cyclic query maps deterministically", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(() =>
+      buildCollectionCacheKey("devices", {
+        whereConstraints: [{ fieldPath: "metadata", op: "==", value: cyclic }],
+      }),
+    ).toThrow(/cycles/i);
   });
 });
 
@@ -123,5 +180,16 @@ describe("describeCollectionError", () => {
 
   it("falls back to a generic failure message", () => {
     expect(describeCollectionError("messages", new Error("boom"))).toContain("messages");
+  });
+
+  it("preserves the Firebase code for programmatic recovery and logging", () => {
+    expect(normalizeCollectionError("routes", { code: "unavailable" })).toEqual({
+      code: "unavailable",
+      message: "Failed to load routes.",
+    });
+    expect(normalizeCollectionError("routes", new Error("network"))).toEqual({
+      code: "unknown",
+      message: "Failed to load routes.",
+    });
   });
 });
