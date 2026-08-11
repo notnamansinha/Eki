@@ -1,15 +1,15 @@
 "use client";
 
 import { onValue, ref } from "firebase/database";
-import { waitForAuth } from "@/lib/authState";
-import { rtdb } from "@/lib/firebaseDatabase";
+import { waitForAuth } from "./authState";
+import { rtdb } from "./firebaseDatabase";
 import {
   millisecondsUntilNextPrune,
   pruneExpiredLiveBuses,
   type LiveBusSnapshot,
-} from "@/lib/liveBusSnapshot";
-import type { LiveBusDeliverySource } from "@/lib/liveBusDelivery";
-import { liveBusRetryDelayMs } from "@/lib/liveBusRetry";
+} from "./liveBusSnapshot";
+import type { LiveBusDeliverySource } from "./liveBusDelivery";
+import { liveBusRetryDelayMs } from "./liveBusRetry";
 
 type Subscriber = {
   next: (
@@ -32,6 +32,26 @@ function notifySubscribers(
   source: LiveBusDeliverySource,
 ): void {
   subscribers.forEach((subscriber) => subscriber.next(value, source));
+}
+
+function notifySubscriberErrors(error: Error): void {
+  subscribers.forEach((subscriber) => {
+    try {
+      subscriber.error?.(error);
+    } catch (subscriberError) {
+      console.error("Live bus subscriber error handler failed:", subscriberError);
+    }
+  });
+}
+
+function scheduleRetry(): void {
+  if (subscribers.size === 0 || retryTimer) return;
+  const delay = liveBusRetryDelayMs(retryAttempt);
+  retryAttempt = Math.min(retryAttempt + 1, 5);
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void ensureListener();
+  }, delay);
 }
 
 function scheduleExpiry(): void {
@@ -83,26 +103,16 @@ async function ensureListener() {
         if (expiryTimer) clearTimeout(expiryTimer);
         expiryTimer = null;
         notifySubscribers(null, "invalidation");
-        subscribers.forEach((subscriber) => subscriber.error?.(error));
-        if (subscribers.size > 0 && !retryTimer) {
-          const delay = liveBusRetryDelayMs(retryAttempt++);
-          retryTimer = setTimeout(() => {
-            retryTimer = null;
-            void ensureListener();
-          }, delay);
-        }
+        notifySubscriberErrors(error);
+        // Retry while the view is subscribed; the interval is capped, and
+        // teardown cancels the loop when the final subscriber leaves.
+        scheduleRetry();
       },
     );
   } catch (error) {
     const listenerError = error instanceof Error ? error : new Error("Live bus listener failed.");
-    subscribers.forEach((subscriber) => subscriber.error?.(listenerError));
-    if (subscribers.size > 0 && !retryTimer) {
-      const delay = liveBusRetryDelayMs(retryAttempt++);
-      retryTimer = setTimeout(() => {
-        retryTimer = null;
-        void ensureListener();
-      }, delay);
-    }
+    notifySubscriberErrors(listenerError);
+    scheduleRetry();
   } finally {
     starting = false;
   }
