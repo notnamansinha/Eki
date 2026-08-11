@@ -22,6 +22,13 @@ constexpr uint32_t HTTPS_RATE_LIMIT_RETRY_MS = 60000;
 constexpr uint32_t HTTPS_CONFIGURATION_RETRY_MS = 60000;
 constexpr uint32_t HTTPS_REJECTED_SAMPLE_RETRY_MS = 30000;
 constexpr uint32_t HTTPS_RETRY_AFTER_MAX_MS = 5 * 60 * 1000;
+constexpr uint32_t DIAGNOSTIC_RETRY_MAX_MS = 60UL * 1000;
+
+inline uint32_t diagnosticRetryDelayMs(uint8_t consecutiveFailures) {
+  if (consecutiveFailures == 0) return 0;
+  const uint8_t exponent = std::min<uint8_t>(consecutiveFailures - 1, 4);
+  return std::min<uint32_t>(5000UL << exponent, DIAGNOSTIC_RETRY_MAX_MS);
+}
 
 enum class HttpResponseAction : uint8_t {
   Accept,

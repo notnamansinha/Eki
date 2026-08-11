@@ -132,7 +132,10 @@ uint32_t httpsRetryDelayMs = 0;
 uint32_t lastGpsWarningAt = 0;
 uint32_t lastHealthReportAt = 0;
 uint32_t lastRemoteDiagnosticAt = 0;
-bool remoteDiagnosticAttempted = false;
+bool remoteDiagnosticPublished = false;
+uint32_t remoteDiagnosticRetryStartedAt = 0;
+uint32_t remoteDiagnosticRetryDelayMs = 0;
+uint8_t consecutiveRemoteDiagnosticFailures = 0;
 uint8_t consecutiveHttpsFailures = 0;
 bool ntpCrossCheckStarted = false;
 bool gnssClockApplied = false;
@@ -778,9 +781,22 @@ PublishResult publishFix(const TelemetryFix &fix) {
 }
 
 bool remoteDiagnosticIsDue() {
-  return remoteDiagnosticAttempted
+  if (remoteDiagnosticRetryDelayMs > 0) {
+    return elapsed(remoteDiagnosticRetryStartedAt) >= remoteDiagnosticRetryDelayMs;
+  }
+  return remoteDiagnosticPublished
     ? elapsed(lastRemoteDiagnosticAt) >= REMOTE_DIAGNOSTIC_INTERVAL_MS
     : millis() >= FIRST_REMOTE_DIAGNOSTIC_DELAY_MS;
+}
+
+void scheduleRemoteDiagnosticRetry() {
+  if (consecutiveRemoteDiagnosticFailures < UINT8_MAX) {
+    ++consecutiveRemoteDiagnosticFailures;
+  }
+  remoteDiagnosticRetryStartedAt = millis();
+  remoteDiagnosticRetryDelayMs = eki::telemetry::diagnosticRetryDelayMs(
+    consecutiveRemoteDiagnosticFailures
+  );
 }
 
 void publishRemoteDiagnostic() {
@@ -819,10 +835,9 @@ void publishRemoteDiagnostic() {
   String payload;
   payload.reserve(512);
   serializeJson(document, payload);
-  remoteDiagnosticAttempted = true;
-  lastRemoteDiagnosticAt = millis();
   if (payload.length() > 1024) {
     Serial.println("[Diagnostics] Refusing oversized health payload.");
+    scheduleRemoteDiagnosticRetry();
     return;
   }
 
@@ -831,6 +846,7 @@ void publishRemoteDiagnostic() {
   http.setTimeout(HTTP_TIMEOUT_MS);
   if (!http.begin(tlsClient, diagnosticsEndpoint)) {
     Serial.println("[Diagnostics] Unable to initialize remote health request.");
+    scheduleRemoteDiagnosticRetry();
     return;
   }
   http.addHeader("Authorization", authorizationHeader);
@@ -847,6 +863,15 @@ void publishRemoteDiagnostic() {
   if (responseCode == 401 || responseCode == 403) {
     latchCredentialFault();
     Serial.println("[Diagnostics] Credential fault latched; local reprovisioning enabled.");
+    return;
+  }
+  if (responseCode >= 200 && responseCode < 300) {
+    remoteDiagnosticPublished = true;
+    lastRemoteDiagnosticAt = millis();
+    consecutiveRemoteDiagnosticFailures = 0;
+    remoteDiagnosticRetryDelayMs = 0;
+  } else {
+    scheduleRemoteDiagnosticRetry();
   }
 }
 
