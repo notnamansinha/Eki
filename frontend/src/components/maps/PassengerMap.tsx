@@ -649,6 +649,7 @@ export default function PassengerMap(props: PassengerMapProps) {
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <PassengerMapInner
+        key={props.route.id}
         targetStop={props.targetStop}
         route={props.route}
         resumeGeneration={props.resumeGeneration}

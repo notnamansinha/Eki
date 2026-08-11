@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   decideRideTracking,
-  hasSelectedRideStop,
   isPostRideFeedbackEligible,
   observeRide,
-  recordStopSelection,
+  recordSuccessfulJoin,
   type RideIdentity,
 } from "./rideFeedbackEligibility";
 
@@ -17,40 +16,17 @@ const ride = (overrides: Partial<RideIdentity> = {}): RideIdentity => ({
 });
 
 describe("post-ride feedback eligibility", () => {
-  it("treats either a boarding or destination choice as participation", () => {
-    expect(hasSelectedRideStop("boarding", "")).toBe(true);
-    expect(hasSelectedRideStop("", "destination")).toBe(true);
-    expect(hasSelectedRideStop("", "")).toBe(false);
-  });
-
   it("never prompts a spectator when a ride completes", () => {
     const tracked = observeRide(null, ride());
 
     expect(isPostRideFeedbackEligible(tracked, "completed")).toBe(false);
   });
 
-  it("prompts a participating passenger only after completion", () => {
-    const observed = observeRide(null, ride());
-    const tracked = recordStopSelection(observed, "session-a", true);
+  it("prompts a successfully joined passenger only after completion", () => {
+    const tracked = recordSuccessfulJoin(null, ride());
 
-    expect(tracked).not.toBeNull();
-    expect(isPostRideFeedbackEligible(tracked!, "in_service")).toBe(false);
-    expect(isPostRideFeedbackEligible(tracked!, "completed")).toBe(true);
-  });
-
-  it("does not clear participation if the user later clears the selectors", () => {
-    const joined = recordStopSelection(observeRide(null, ride()), "session-a", true);
-
-    expect(recordStopSelection(joined, "session-a", false)?.hasSelectedStop).toBe(true);
-  });
-
-  it("ignores stale callbacks and resets participation for a new session", () => {
-    const oldRide = recordStopSelection(observeRide(null, ride()), "session-a", true);
-    const newRide = observeRide(oldRide, ride({ sessionId: "session-b" }));
-
-    expect(recordStopSelection(newRide, "session-a", true)).toEqual(newRide);
-    expect(newRide.hasSelectedStop).toBe(false);
-    expect(isPostRideFeedbackEligible(newRide, "completed")).toBe(false);
+    expect(isPostRideFeedbackEligible(tracked, "in_service")).toBe(false);
+    expect(isPostRideFeedbackEligible(tracked, "completed")).toBe(true);
   });
 });
 
@@ -58,35 +34,32 @@ describe("decideRideTracking", () => {
   const noStates = () => undefined;
   const stateOf = (map: Record<string, "completed" | "in_service">) =>
     (sessionId: string) => map[sessionId];
+  const activeRides = (...rides: RideIdentity[]) =>
+    new Map(rides.map((activeRide) => [activeRide.sessionId, activeRide]));
 
-  it("starts tracking the active ride when nothing is tracked yet", () => {
-    const action = decideRideTracking(null, new Set(["session-a"]), ride(), noStates);
-    expect(action.type).toBe("observe");
-    if (action.type === "observe") {
-      expect(action.ride.sessionId).toBe("session-a");
-      expect(action.ride.hasSelectedStop).toBe(false);
-    }
+  it("does not start tracking from passive observation", () => {
+    const action = decideRideTracking(null, activeRides(ride()), noStates);
+    expect(action.type).toBe("none");
   });
 
   it("does nothing when nothing is tracked and no ride is active", () => {
-    expect(decideRideTracking(null, new Set(), null, noStates).type).toBe("none");
+    expect(decideRideTracking(null, new Map(), noStates).type).toBe("none");
   });
 
   it("keeps observing the tracked session while it is still active", () => {
-    const tracked = recordStopSelection(observeRide(null, ride()), "session-a", true);
-    const action = decideRideTracking(tracked, new Set(["session-a"]), ride(), noStates);
+    const tracked = recordSuccessfulJoin(null, ride());
+    const action = decideRideTracking(tracked, activeRides(ride()), noStates);
     expect(action.type).toBe("observe");
     if (action.type === "observe") {
-      expect(action.ride.hasSelectedStop).toBe(true);
+      expect(action.ride.hasJoined).toBe(true);
     }
   });
 
   it("completes the ride when the tracked session vanished after completion", () => {
-    const tracked = recordStopSelection(observeRide(null, ride()), "session-a", true);
+    const tracked = recordSuccessfulJoin(null, ride());
     const action = decideRideTracking(
       tracked,
-      new Set(),
-      null,
+      new Map(),
       stateOf({ "session-a": "completed" }),
     );
     expect(action.type).toBe("complete");
@@ -97,16 +70,45 @@ describe("decideRideTracking", () => {
     // The driver ended/re-armed the shift: the tracked session is gone and a
     // NEW session is active on the same route. The passenger rode the old
     // session, so tracking must freeze instead of silently switching.
-    const tracked = recordStopSelection(observeRide(null, ride()), "session-a", true);
+    const tracked = recordSuccessfulJoin(null, ride());
     const rearmed = ride({ sessionId: "session-b" });
-    const action = decideRideTracking(tracked, new Set(["session-b"]), rearmed, noStates);
+    const action = decideRideTracking(tracked, activeRides(rearmed), noStates);
     expect(action.type).toBe("freeze");
+  });
+
+  it("observes the tracked identity when two sessions share a route", () => {
+    const tracked = recordSuccessfulJoin(null, ride());
+    const other = ride({ sessionId: "session-b", busId: "bus-b" });
+    const action = decideRideTracking(
+      tracked,
+      activeRides(other, ride()),
+      noStates,
+    );
+    expect(action.type).toBe("observe");
+    if (action.type === "observe") {
+      expect(action.ride.sessionId).toBe("session-a");
+      expect(action.ride.busId).toBe("bus-a");
+      expect(action.ride.hasJoined).toBe(true);
+    }
   });
 
   it("freezes even when the vanished ride never reached a completed state", () => {
     const tracked = observeRide(null, ride());
     expect(
-      decideRideTracking(tracked, new Set(), null, stateOf({ "session-a": "in_service" })).type,
+      decideRideTracking(tracked, new Map(), stateOf({ "session-a": "in_service" })).type,
     ).toBe("freeze");
+  });
+
+  it("lets an explicit successful join replace a frozen spectator ride", () => {
+    const spectator = observeRide(null, ride());
+    const joined = recordSuccessfulJoin(
+      spectator,
+      ride({ sessionId: "session-b", busId: "bus-b" }),
+    );
+    expect(joined).toMatchObject({
+      sessionId: "session-b",
+      busId: "bus-b",
+      hasJoined: true,
+    });
   });
 });

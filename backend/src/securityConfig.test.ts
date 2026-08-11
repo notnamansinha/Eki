@@ -135,18 +135,19 @@ describe("production security configuration", () => {
     expect(feedbackPage).not.toContain("updateDoc(");
   });
 
-  it("gates post-ride feedback on a stop selection scoped to the current session", () => {
+  it("gates post-ride feedback on a successful join scoped to the current session", () => {
     const passengerPage = workspaceFile("frontend/src/app/passenger/page.tsx");
     const boardingView = workspaceFile(
       "frontend/src/components/passenger/PassengerBoardingView.tsx",
     );
 
-    expect(passengerPage).toContain("recordStopSelection(");
+    expect(passengerPage).toContain("recordSuccessfulJoin(");
     expect(passengerPage).toContain("isPostRideFeedbackEligible(");
     expect(passengerPage).toContain("key={activeSessionId}");
     expect(passengerPage).toContain("sessionId={feedbackSessionId}");
-    expect(boardingView).toContain("onStopSelected?.(true)");
-    expect(boardingView).not.toContain("hasSelectedRideStop(");
+    expect(boardingView).toContain("result.joined !== true");
+    expect(boardingView).toContain("onJoined?.()");
+    expect(passengerPage).not.toContain("recordStopSelection(");
   });
 
   it("requires sign-in for live application data and route APIs", () => {
