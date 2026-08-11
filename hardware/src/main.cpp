@@ -64,7 +64,6 @@ constexpr uint32_t GNSS_UTC_MAX_AGE_MS = 2000;
 constexpr uint32_t NTP_CROSS_CHECK_INTERVAL_MS = 6UL * 60 * 60 * 1000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
 constexpr uint32_t WATCHDOG_TIMEOUT_MS = 25000;
-constexpr int64_t TELEMETRY_FRESHNESS_MARGIN_MS = 55000;
 constexpr size_t TELEMETRY_QUEUE_CAPACITY = 120;
 constexpr uint32_t HEALTH_REPORT_INTERVAL_MS = 30000;
 constexpr uint32_t FIRST_REMOTE_DIAGNOSTIC_DELAY_MS = 30000;
@@ -761,7 +760,12 @@ PublishResult publishFix(const TelemetryFix &fix) {
   if (!http.begin(tlsClient, telemetryEndpoint)) {
     Serial.println("[HTTPS] Unable to initialize telemetry request.");
     scheduleHttpsRetry();
-    return PublishResult::RetryLatest;
+    return eki::telemetry::retryKeepsSampleFresh(
+      fix.timestamp,
+      epochMilliseconds(),
+      httpsRetryDelayMs,
+      eki::telemetry::TELEMETRY_FRESHNESS_MARGIN_MS
+    ) ? PublishResult::RetryLatest : PublishResult::Dropped;
   }
   const char *responseHeaders[] = {"Retry-After"};
   http.collectHeaders(responseHeaders, 1);
@@ -828,9 +832,15 @@ PublishResult publishFix(const TelemetryFix &fix) {
     scheduleHttpsRetry(
       eki::telemetry::minimumHttpRetryDelayMs(responseCode, retryAfterMs)
     );
-    return action == eki::telemetry::HttpResponseAction::RetrySample
-      ? PublishResult::RetryLatest
-      : PublishResult::Dropped;
+    const bool retryableAndFresh =
+      action == eki::telemetry::HttpResponseAction::RetrySample &&
+      eki::telemetry::retryKeepsSampleFresh(
+        fix.timestamp,
+        epochMilliseconds(),
+        httpsRetryDelayMs,
+        eki::telemetry::TELEMETRY_FRESHNESS_MARGIN_MS
+      );
+    return retryableAndFresh ? PublishResult::RetryLatest : PublishResult::Dropped;
   }
 
   resetHttpsRetry();
@@ -1053,7 +1063,7 @@ void publisherTask(void *) {
         TelemetryFix fix{};
         size_t staleDrops = 0;
         const int64_t minimumTimestamp =
-          epochMilliseconds() - TELEMETRY_FRESHNESS_MARGIN_MS;
+          epochMilliseconds() - eki::telemetry::TELEMETRY_FRESHNESS_MARGIN_MS;
         if (newestFreshFix(minimumTimestamp, fix, staleDrops)) {
           if (staleDrops > 0) {
             Serial.printf(

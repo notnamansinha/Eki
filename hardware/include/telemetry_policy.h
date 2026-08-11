@@ -27,6 +27,7 @@ constexpr uint32_t HTTPS_RATE_LIMIT_RETRY_MS = 60000;
 constexpr uint32_t HTTPS_CONFIGURATION_RETRY_MS = 60000;
 constexpr uint32_t HTTPS_REJECTED_SAMPLE_RETRY_MS = 30000;
 constexpr uint32_t HTTPS_RETRY_AFTER_MAX_MS = 5 * 60 * 1000;
+constexpr int64_t TELEMETRY_FRESHNESS_MARGIN_MS = 55000;
 constexpr uint32_t DIAGNOSTIC_RETRY_BASE_MS = 5000;
 constexpr uint32_t DIAGNOSTIC_RETRY_MAX_MS = 60UL * 1000;
 
@@ -185,6 +186,19 @@ inline uint32_t minimumHttpRetryDelayMs(
   return httpResponseAction(responseCode) == HttpResponseAction::DropSample
     ? HTTPS_REJECTED_SAMPLE_RETRY_MS
     : 0;
+}
+
+inline bool retryKeepsSampleFresh(
+  int64_t sampleTimestampMs,
+  int64_t nowMs,
+  uint32_t retryDelayMs,
+  int64_t freshnessMarginMs
+) {
+  const int64_t ageMs = nowMs - sampleTimestampMs;
+  // Future timestamps are dropped even though the backend has a small clock
+  // tolerance: retrying an ambiguously ordered sample is less safe than loss.
+  if (ageMs < 0 || ageMs >= freshnessMarginMs) return false;
+  return static_cast<int64_t>(retryDelayMs) < freshnessMarginMs - ageMs;
 }
 
 inline bool shouldPublishFix(

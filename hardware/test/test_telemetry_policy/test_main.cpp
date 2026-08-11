@@ -119,6 +119,18 @@ void test_retry_after_is_strict_bounded_and_status_aware() {
   TEST_ASSERT_EQUAL_UINT32(0, minimumHttpRetryDelayMs(503));
 }
 
+void test_retry_retains_only_samples_that_can_stay_fresh() {
+  constexpr int64_t now = 1000000;
+  constexpr int64_t margin = TELEMETRY_FRESHNESS_MARGIN_MS;
+  TEST_ASSERT_TRUE(retryKeepsSampleFresh(now, now, 30000, margin));
+  TEST_ASSERT_TRUE(retryKeepsSampleFresh(now - 20000, now, 30000, margin));
+  TEST_ASSERT_FALSE(retryKeepsSampleFresh(now, now, 60000, margin));
+  TEST_ASSERT_FALSE(retryKeepsSampleFresh(now - 30000, now, 30000, margin));
+  TEST_ASSERT_FALSE(retryKeepsSampleFresh(now - margin, now, 0, margin));
+  TEST_ASSERT_FALSE(retryKeepsSampleFresh(now - 25000, now, 30000, margin));
+  TEST_ASSERT_FALSE(retryKeepsSampleFresh(now + 1, now, 1000, margin));
+}
+
 void test_device_configuration_record_is_closed_and_tamper_evident() {
   using namespace eki::connectivity;
   constexpr char CERTIFICATE[] =
@@ -442,6 +454,7 @@ int main(int, char **) {
   RUN_TEST(test_diagnostic_retry_backoff_is_bounded);
   RUN_TEST(test_http_response_actions_cover_transport_and_status_families);
   RUN_TEST(test_retry_after_is_strict_bounded_and_status_aware);
+  RUN_TEST(test_retry_retains_only_samples_that_can_stay_fresh);
   RUN_TEST(test_device_configuration_record_is_closed_and_tamper_evident);
   RUN_TEST(test_gnss_utc_conversion_and_clock_discipline_are_strict);
   RUN_TEST(test_wifi_retry_escalates_and_led_codes_are_deterministic);
