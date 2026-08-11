@@ -72,8 +72,8 @@ credential_definitions = (
     ),
 )
 credential_scan_paths = [project_dir / "platformio.ini", *project_dir.glob("sdkconfig*")]
-for source_dir in (project_dir / "include", project_dir / "src"):
-    for suffix in ("*.h", "*.hpp", "*.c", "*.cpp", "*.ino"):
+for source_dir in (project_dir / "include", project_dir / "src", project_dir / "lib"):
+    for suffix in ("*.h", "*.hh", "*.hpp", "*.c", "*.cc", "*.cpp", "*.cxx", "*.ino"):
         credential_scan_paths.extend(source_dir.rglob(suffix))
 
 for path in credential_scan_paths:
