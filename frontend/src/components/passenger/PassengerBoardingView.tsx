@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RouteData } from "@/hooks/useRoutes";
 import CustomSelect from "@/components/ui/CustomSelect";
 import { errorMessage } from "@/lib/errors";
@@ -11,7 +11,7 @@ interface Props {
   route: RouteData;
   tripState: "pre_departure" | "in_service";
   onBoardingStopChange?: (stopId: string) => void;
-  onStopSelected?: (hasSelectedStop: boolean) => void;
+  onJoined?: () => void;
 }
 
 type JoinState = "idle" | "joining" | "joined" | "error";
@@ -49,7 +49,7 @@ export default function PassengerBoardingView({
   route,
   tripState,
   onBoardingStopChange,
-  onStopSelected,
+  onJoined,
 }: Props) {
   const [boardingStopId, setBoardingStopId] = useState("");
   const [alightingStopId, setAlightingStopId] = useState("");
@@ -57,6 +57,17 @@ export default function PassengerBoardingView({
   const [joinState, setJoinState] = useState<JoinState>("idle");
   const [joinError, setJoinError] = useState("");
   const [hasJoined, setHasJoined] = useState(false);
+  const joinAbortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      joinAbortRef.current?.abort();
+      joinAbortRef.current = null;
+    };
+  }, []);
 
   const stopOptions = (route.stops ?? []).map((stop) => ({
     value: stop.id,
@@ -85,6 +96,10 @@ export default function PassengerBoardingView({
     setJoinState("joining");
     setJoinError("");
     const updatingExistingPassenger = hasJoined;
+    const controller = new AbortController();
+    joinAbortRef.current?.abort();
+    joinAbortRef.current = controller;
+    const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
     try {
       const [token, position] = await Promise.all([
         currentUser.getIdToken(),
@@ -102,7 +117,7 @@ export default function PassengerBoardingView({
           boardingStopId,
           alightingStopId: alightingStopId || null,
         }),
-        signal: AbortSignal.timeout(10_000),
+        signal: controller.signal,
       });
       const result = await response.json().catch(() => ({})) as {
         joined?: boolean;
@@ -111,15 +126,24 @@ export default function PassengerBoardingView({
       if (!response.ok || result.joined !== true) {
         throw new Error(result.error || "Unable to board.");
       }
+      if (!mountedRef.current || controller.signal.aborted) return;
       setHasJoined(true);
       setJoinState("joined");
-      onStopSelected?.(true);
+      onJoined?.();
     } catch (error) {
+      if (!mountedRef.current) return;
       // If the server no longer sees the prior manifest entry, the next attempt
       // must perform the first-boarding proximity check again.
       if (updatingExistingPassenger) setHasJoined(false);
       setJoinState("error");
-      setJoinError(errorMessage(error));
+      setJoinError(
+        controller.signal.aborted
+          ? "The boarding request timed out. Please try again."
+          : errorMessage(error),
+      );
+    } finally {
+      window.clearTimeout(timeoutId);
+      if (joinAbortRef.current === controller) joinAbortRef.current = null;
     }
   };
 
