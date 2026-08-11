@@ -22,6 +22,63 @@ export interface ActiveBusEntry {
   sessionId?: string;
 }
 
+const OPTIONAL_STRING_FIELDS = ["driverId", "routeId", "sessionId"] as const;
+const OPTIONAL_NUMBER_FIELDS = [
+  "lat",
+  "lng",
+  "speed",
+  "heading",
+  "timestamp",
+  "currentStopIndex",
+  "delayMinutes",
+] as const;
+
+function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
+  for (const field of OPTIONAL_STRING_FIELDS) {
+    if (bus[field] !== undefined && typeof bus[field] !== "string") return false;
+  }
+  for (const field of OPTIONAL_NUMBER_FIELDS) {
+    if (
+      bus[field] !== undefined &&
+      (typeof bus[field] !== "number" || !Number.isFinite(bus[field]))
+    ) {
+      return false;
+    }
+  }
+  if (typeof bus.lat === "number" && (bus.lat < -90 || bus.lat > 90)) return false;
+  if (typeof bus.lng === "number" && (bus.lng < -180 || bus.lng > 180)) return false;
+  if (
+    typeof bus.currentStopIndex === "number" &&
+    (!Number.isInteger(bus.currentStopIndex) || bus.currentStopIndex < 0)
+  ) {
+    return false;
+  }
+  if (
+    bus.deviceState !== undefined &&
+    bus.deviceState !== "online" &&
+    bus.deviceState !== "offline"
+  ) {
+    return false;
+  }
+  if (
+    bus.motionState !== undefined &&
+    bus.motionState !== "moving" &&
+    bus.motionState !== "stopped" &&
+    bus.motionState !== "uncertain"
+  ) {
+    return false;
+  }
+  if (
+    bus.tripState !== undefined &&
+    bus.tripState !== "pre_departure" &&
+    bus.tripState !== "in_service" &&
+    bus.tripState !== "completed"
+  ) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Sound type guard for raw RTDB snapshot values. Every ActiveBusEntry field
  * is optional except `busId`, so a valid string busId (plus fresh telemetry
@@ -33,7 +90,8 @@ export function isActiveBusEntry(
 ): value is ActiveBusEntry {
   if (typeof value !== "object" || value === null) return false;
   const bus = value as Record<string, unknown>;
-  if (typeof bus.busId !== "string" || bus.busId.length === 0) return false;
+  if (typeof bus.busId !== "string" || bus.busId.trim().length === 0) return false;
+  if (!hasValidOptionalFields(bus)) return false;
   const fresh = isLiveBusTimestamp(
     typeof bus.timestamp === "number" ? bus.timestamp : undefined,
     now,

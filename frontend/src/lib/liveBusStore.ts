@@ -8,9 +8,13 @@ import {
   pruneExpiredLiveBuses,
   type LiveBusSnapshot,
 } from "@/lib/liveBusSnapshot";
+import type { LiveBusDeliverySource } from "@/lib/liveBusDelivery";
 
 type Subscriber = {
-  next: (value: LiveBusSnapshot | null) => void;
+  next: (
+    value: LiveBusSnapshot | null,
+    source: LiveBusDeliverySource,
+  ) => void;
   error?: (error: Error) => void;
 };
 
@@ -20,8 +24,11 @@ let unsubscribe: (() => void) | null = null;
 let starting = false;
 let expiryTimer: ReturnType<typeof setTimeout> | null = null;
 
-function notifySubscribers(value: LiveBusSnapshot | null): void {
-  subscribers.forEach((subscriber) => subscriber.next(value));
+function notifySubscribers(
+  value: LiveBusSnapshot | null,
+  source: LiveBusDeliverySource,
+): void {
+  subscribers.forEach((subscriber) => subscriber.next(value, source));
 }
 
 function scheduleExpiry(): void {
@@ -36,7 +43,7 @@ function scheduleExpiry(): void {
     const fresh = pruneExpiredLiveBuses(cached);
     if (fresh !== cached) {
       cached = fresh;
-      notifySubscribers(cached);
+      notifySubscribers(cached, "expiry");
     }
     scheduleExpiry();
   }, Math.max(1, delay + 1));
@@ -48,7 +55,7 @@ export function invalidateLiveBusCache(): void {
     clearTimeout(expiryTimer);
     expiryTimer = null;
   }
-  notifySubscribers(null);
+  notifySubscribers(null, "invalidation");
 }
 
 async function ensureListener() {
@@ -62,7 +69,7 @@ async function ensureListener() {
       (snapshot) => {
         const value = snapshot.val() as LiveBusSnapshot | null;
         cached = value ? pruneExpiredLiveBuses(value) : null;
-        notifySubscribers(cached);
+        notifySubscribers(cached, "listener");
         scheduleExpiry();
       },
       (error) => subscribers.forEach((subscriber) => subscriber.error?.(error)),
@@ -79,7 +86,7 @@ export function subscribeLiveBuses(
   const subscriber = { next, error };
   subscribers.add(subscriber);
   scheduleExpiry();
-  if (cached !== null) next(cached);
+  if (cached !== null) next(cached, "cache");
   void ensureListener();
 
   return () => {

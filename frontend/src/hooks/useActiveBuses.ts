@@ -6,6 +6,7 @@ import {
   filterActiveBusEntries,
   type ActiveBusEntry,
 } from "@/lib/activeBusEntries";
+import { isAuthoritativeLiveBusDelivery } from "@/lib/liveBusDelivery";
 
 export type { ActiveBusEntry } from "@/lib/activeBusEntries";
 
@@ -31,8 +32,10 @@ export function useActiveBuses(options: UseActiveBusesOptions = {}): ActiveBusEn
 
   useEffect(() => {
     const unsubscribe = subscribeLiveBuses(
-      (snapshot) => {
-        markSnapshotReceived?.();
+      (snapshot, source) => {
+        if (isAuthoritativeLiveBusDelivery(source)) {
+          markSnapshotReceived?.();
+        }
         setActive(
           filterActiveBusEntries(snapshot as Record<string, unknown> | null),
         );

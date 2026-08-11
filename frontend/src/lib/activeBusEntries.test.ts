@@ -26,6 +26,24 @@ describe("isActiveBusEntry", () => {
   it("rejects stale telemetry outside a ride", () => {
     expect(isActiveBusEntry({ busId: "bus_1", timestamp: now - BUS_EXPIRY_MS }, now)).toBe(false);
   });
+
+  it("rejects malformed optional fields before they reach renderers", () => {
+    const malformed = [
+      { busId: "bus_1", timestamp: now - 1_000, lat: "23.0" },
+      { busId: "bus_1", timestamp: now - 1_000, lng: 181 },
+      { busId: "bus_1", timestamp: now - 1_000, speed: Number.NaN },
+      { busId: "bus_1", timestamp: now - 1_000, currentStopIndex: 1.5 },
+      { busId: "bus_1", timestamp: now - 1_000, deviceState: "unknown" },
+      { busId: "bus_1", timestamp: now - 1_000, motionState: "flying" },
+      { busId: "bus_1", timestamp: now - 1_000, tripState: "paused" },
+      { busId: "bus_1", timestamp: now - 1_000, routeId: 42 },
+    ];
+
+    for (const entry of malformed) {
+      expect(isActiveBusEntry(entry, now)).toBe(false);
+      expect(filterActiveBusEntries({ malformed: entry }, now)).toEqual([]);
+    }
+  });
 });
 
 describe("filterActiveBusEntries", () => {
