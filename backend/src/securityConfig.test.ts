@@ -82,6 +82,22 @@ describe("production security configuration", () => {
     expect(workers).toContain("await stopWork()");
   });
 
+  it("reads the session document once for chat access checks", () => {
+    const rules = workspaceFile("firestore.rules");
+    const messages = ruleBlock(rules, "match /messages/{messageId}");
+    const rateLimits = ruleBlock(rules, "match /messageRateLimits/{uid}");
+    const helper = ruleBlock(rules, "function canReadSession");
+
+    // Chat reads check operator OR passenger membership in one get() instead of
+    // two (issue #40): a passenger reading chat must not pay for two billable
+    // session fetches per request.
+    expect(messages).toContain("canReadSession(sessionId)");
+    expect(rateLimits).toContain("canReadSession(sessionId)");
+    expect(helper).not.toContain("isSessionOperator");
+    expect(helper.split("sessionDoc(").length - 1).toBe(1);
+    expect(rules).not.toContain("function isSessionPassenger");
+  });
+
   it("keeps sensitive Firestore collections and chat identity protected", () => {
     const rules = workspaceFile("firestore.rules");
     const devices = ruleBlock(rules, "match /devices/{deviceId}");
