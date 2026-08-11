@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import express from "express";
 import {
   bearerTokenUid,
+  createIdentityAwareLimiter,
   deviceIngressRateLimitKey,
   identityRateLimitKey,
 } from "./rateLimitIdentity";
@@ -63,5 +67,63 @@ describe("deviceIngressRateLimitKey", () => {
   it("keys on the client IP when no Device secret is presented", () => {
     expect(deviceIngressRateLimitKey("bus_42", undefined, "203.0.113.9")).toBe("ip:203.0.113.9");
     expect(deviceIngressRateLimitKey("bus_42", "Bearer abc", "203.0.113.9")).toBe("ip:203.0.113.9");
+  });
+});
+
+async function bootLimitedServer(limit: number) {
+  const app = express();
+  app.use(
+    createIdentityAwareLimiter({
+      windowMs: 60_000,
+      limit,
+      message: { error: "Too many requests, please slow down." },
+    }),
+  );
+  app.get("/", (_req, res) => res.json({ ok: true }));
+  const server = await new Promise<Server>((resolve) => {
+    const listener = app.listen(0, "127.0.0.1", () => resolve(listener));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Test server did not bind.");
+  return { server, baseUrl: `http://127.0.0.1:${(address as AddressInfo).port}` };
+}
+
+describe("createIdentityAwareLimiter", () => {
+  it("gives two authenticated users behind one campus IP independent budgets", async () => {
+    const { server, baseUrl } = await bootLimitedServer(3);
+    try {
+      const tokenA = firebaseStyleToken({ uid: "passenger_a" });
+      const tokenB = firebaseStyleToken({ uid: "passenger_b" });
+      const send = (authorization: string | undefined) =>
+        fetch(baseUrl + "/", {
+          headers: authorization ? { Authorization: authorization } : {},
+        }).then((response) => response.status);
+
+      const aStatuses = await Promise.all([1, 2, 3, 4].map(() => send(`Bearer ${tokenA}`)));
+      expect(aStatuses.filter((status) => status === 429).length).toBe(1);
+
+      const bStatuses = await Promise.all([1, 2, 3].map(() => send(`Bearer ${tokenB}`)));
+      expect(bStatuses).toEqual([200, 200, 200]);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("still caps anonymous traffic per client IP", async () => {
+    const { server, baseUrl } = await bootLimitedServer(3);
+    try {
+      const statuses = await Promise.all(
+        [1, 2, 3, 4].map(() =>
+          fetch(baseUrl + "/").then((response) => response.status),
+        ),
+      );
+      expect(statuses.filter((status) => status === 429).length).toBe(1);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   });
 });
