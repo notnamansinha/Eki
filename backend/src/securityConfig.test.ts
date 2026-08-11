@@ -281,7 +281,7 @@ describe("production security configuration", () => {
     expect(firmware).toContain(
       'http.addHeader("Authorization", authorizationHeader)',
     );
-    expect(firmware).toContain("HTTPClient::errorToString(responseCode)");
+    expect(firmware).not.toContain("HTTPClient::errorToString(responseCode)");
     expect(firmware).toContain('http.collectHeaders(responseHeaders, 1)');
     expect(firmware).toContain("deviceConfiguration.load()");
     expect(firmware).not.toContain('#include "secrets.h"');

@@ -747,11 +747,9 @@ PublishResult publishFix(const TelemetryFix &fix) {
     ? eki::telemetry::retryAfterDelayMs(http.header("Retry-After").c_str())
     : 0;
   if (responseCode < 0) {
-    const String transportError = HTTPClient::errorToString(responseCode);
     Serial.printf(
-      "[HTTPS] Transport failure %d (%s) in %lums (RSSI %d dBm). Check DNS, hostname, CA, clock, and backend reachability.\n",
+      "[HTTPS] Transport failure %d in %lums (RSSI %d dBm). Check DNS, hostname, CA, clock, and backend reachability.\n",
       responseCode,
-      transportError.c_str(),
       static_cast<unsigned long>(elapsed(startedAt)),
       WiFi.RSSI()
     );
