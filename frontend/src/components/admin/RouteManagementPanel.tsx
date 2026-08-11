@@ -569,7 +569,7 @@ function RouteEditor({
 
 /* â”€â”€ Main Route Management Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function RouteManagementPanel() {
-  const { routes, loading } = useRoutes();
+  const { routes, loading, error: routesError, retry: retryRoutes } = useRoutes();
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [successMsg, setSuccessMsg] = useState("");
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -658,7 +658,19 @@ export default function RouteManagementPanel() {
       )}
 
       <div className="flex flex-col gap-3">
-        {loading ? (
+        {routesError ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/5 py-16 text-center text-red-300" role="alert">
+            <span className="text-sm font-semibold">Couldn&apos;t load routes.</span>
+            <span className="mt-1 text-xs text-red-300/70">{routesError}</span>
+            <button
+              type="button"
+              onClick={retryRoutes}
+              className="mt-4 rounded-lg bg-white/10 px-4 py-2 text-xs font-semibold text-white"
+            >
+              Retry
+            </button>
+          </div>
+        ) : loading ? (
           <div className="flex flex-col items-center justify-center py-16 text-white/20 gap-3">
             <Loader2 className="w-6 h-6 animate-spin" />
             <span className="text-xs font-semibold uppercase tracking-widest">Loading routes…</span>

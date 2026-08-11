@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useBuses } from "@/hooks/useBuses";
-import { Map, CircleUserRound as User, MessageCircle, ArrowLeft, WifiOff } from "lucide-react";
+import { Map, CircleUserRound as User, MessageCircle, ArrowLeft, WifiOff, AlertCircle } from "lucide-react";
 import { auth } from "@/lib/firebaseAuth";
 import { rtdb } from "@/lib/firebaseDatabase";
 import { ref, onValue } from "firebase/database";
@@ -27,9 +27,9 @@ export default function DriverPage() {
   const { isResuming, resumeGeneration, markSnapshotReceived } = useRTDBResume();
   const router = useRouter();
   const { user } = useAuth();
-  const { routes } = useRoutes();
+  const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const { drivers } = useDrivers();
-  const { buses } = useBuses();
+  const { buses, error: busesError, retry: retryBuses } = useBuses();
   const [selectedBusId, setSelectedBusId] = useState("");
   const [activeSessionIds, setActiveSessionIds] = useState<Record<string, string>>({});
   const activeDriver = drivers.find((driver) => driver.authUid === user?.uid);
@@ -206,6 +206,29 @@ export default function DriverPage() {
           <span>Reconnecting to live bus data...</span>
         </div>
       )}
+      {(routesError || busesError) && (
+        <div
+          className="fixed left-4 right-4 z-[100] flex items-start gap-3 rounded-xl border border-red-400/20 bg-zinc-950 px-4 py-3 text-sm text-red-300 shadow-lg"
+          style={{ top: isResuming ? "calc(env(safe-area-inset-top) + 5rem)" : "calc(env(safe-area-inset-top) + 1rem)" }}
+          role="alert"
+        >
+          <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <div className="flex-1">
+            <p className="font-semibold">Trip setup data is unavailable.</p>
+            <p className="mt-0.5 text-xs text-red-300/70">{routesError || busesError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (routesError) retryRoutes();
+              if (busesError) retryBuses();
+            }}
+            className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <div className="relative flex-1 flex flex-col overflow-hidden min-h-0">
 
         <div className={`absolute inset-0 z-0 flex flex-col ${activeTab === "map" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
@@ -240,6 +263,7 @@ export default function DriverPage() {
                 buses={buses}
                 setSelectedBusId={setSelectedBusId}
                 drivers={drivers}
+                routes={routes}
                 selectedRouteIds={selectedRouteIds}
                 setSelectedRouteIds={setSelectedRouteIds}
                 onStartTracking={handleStartTracking}

@@ -9,13 +9,11 @@ import { useBuses } from "@/hooks/useBuses";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
+import { useActiveBuses, type ActiveBusEntry } from "@/hooks/useActiveBuses";
 import {
   hasValidBusCoordinates,
   isLiveBusSignalLost,
-  isLiveBusTimestamp,
 } from "@/lib/liveBusFreshness";
-import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
-import { subscribeLiveBuses } from "@/lib/liveBusStore";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
 import {
@@ -25,24 +23,6 @@ import {
 } from "lucide-react";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
-
-/* â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-interface ActiveBusEntry {
-  busId: string;
-  driverId?: string;
-  routeId?: string;
-  lat?: number;
-  lng?: number;
-  speed?: number;
-  heading?: number;
-  timestamp?: number;
-  deviceState?: "online" | "offline";
-  motionState?: "moving" | "stopped" | "uncertain";
-  tripState?: "pre_departure" | "in_service" | "completed";
-  currentStopIndex?: number;
-  delayMinutes?: number;
-  sessionId?: string;
-}
 
 /* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const TRIP_STATE: Record<string, { label: string; color: string; bg: string; dot: string }> = {
@@ -67,43 +47,6 @@ function headingLabel(d?: number): string {
   if (d == null) return "—";
   const dirs = ["N","NE","E","SE","S","SW","W","NW","N"];
   return dirs[Math.round(d / 45) % 8] + ` ${Math.round(d)}°`;
-}
-
-/* â”€â”€ Live bus hook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-function useActiveBuses(
-  connectionGeneration: number,
-  resumeGeneration: number,
-  markSnapshotReceived: () => void,
-): ActiveBusEntry[] {
-  const [active, setActive] = useState<ActiveBusEntry[]>([]);
-  useEffect(() => {
-    const unsubscribe = subscribeLiveBuses((snapshot) => {
-      const data = snapshot as Record<string, ActiveBusEntry> | null;
-      markSnapshotReceived();
-      if (!data) {
-        setActive([]);
-        return;
-      }
-      const visibleBuses: ActiveBusEntry[] = [];
-      Object.values(data).forEach((incoming) => {
-        if (typeof incoming.busId !== "string" || incoming.busId.length === 0) return;
-        const bus = incoming;
-        if (
-          isLiveBusTimestamp(bus.timestamp) ||
-          isActiveRideSnapshot(
-            bus as unknown as Record<string, unknown>,
-          )
-        ) {
-          visibleBuses.push(bus);
-        }
-      });
-      setActive(visibleBuses);
-    }, (error) => {
-      console.warn("[RTDB] activeBuses:", error.message);
-    });
-    return unsubscribe;
-  }, [connectionGeneration, markSnapshotReceived, resumeGeneration]);
-  return active;
 }
 
 /* â”€â”€ Map centering helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -415,14 +358,14 @@ export default function DashboardPanel() {
     resumeGeneration,
     markSnapshotReceived,
   } = useRTDBResume();
-  const activeEntries = useActiveBuses(
+  const activeEntries = useActiveBuses({
     connectionGeneration,
     resumeGeneration,
     markSnapshotReceived,
-  );
-  const { buses } = useBuses();
+  });
+  const { buses, error: busesError, retry: retryBuses } = useBuses();
   const { drivers } = useDrivers();
-  const { routes } = useRoutes();
+  const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
@@ -487,6 +430,25 @@ export default function DashboardPanel() {
 
         {/* Map overlay stats */}
         <div className="absolute top-3 left-3 right-3 flex flex-col items-start gap-2 pointer-events-none">
+          {(busesError || routesError) && (
+            <div
+              className="pointer-events-auto flex w-full max-w-lg items-start gap-2 rounded-xl border border-red-400/20 bg-zinc-950/95 px-3 py-2 text-xs text-red-300 shadow-lg"
+              role="alert"
+            >
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="flex-1">Fleet metadata is unavailable. {busesError || routesError}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (busesError) retryBuses();
+                  if (routesError) retryRoutes();
+                }}
+                className="rounded-md bg-white/10 px-2 py-1 font-semibold text-white"
+              >
+                Retry
+              </button>
+            </div>
+          )}
           {isResuming && (
             <div
               className="flex items-center gap-2 rounded-xl border border-amber-400/20 bg-zinc-950/95 px-3 py-2 text-xs font-semibold text-amber-300 shadow-lg"
