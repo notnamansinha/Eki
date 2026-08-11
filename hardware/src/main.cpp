@@ -471,6 +471,9 @@ void configureStationRadio() {
 
 void attemptWifiConnection() {
   if (!deviceConfiguration.provisioned()) return;
+  // Credential-fault mode is AP-only: the station link is intentionally
+  // dropped and must stay down until the device is re-provisioned.
+  if (credentialFaultActive) return;
   tlsClient.stop();
   if (!wifiConfigured) {
     configureStationRadio();
@@ -496,6 +499,25 @@ void updateConnectivityFault() {
   );
 }
 
+void latchCredentialFault() {
+  if (credentialFaultActive) return;
+  credentialFaultActive = true;
+  resetHttpsRetry();
+  // Rejected credentials make the station link useless, and leaving it up
+  // exposes the recovery portal on the campus STA interface (the AP password
+  // only guards the soft-AP path). Drop the station and stop auto-reconnect
+  // until the device is re-provisioned and restarts.
+  WiFi.setAutoReconnect(false);
+  const bool disconnected = WiFi.disconnect(true, false);
+  const bool radioDisabled = WiFi.mode(WIFI_OFF);
+  if (!disconnected || !radioDisabled || WiFi.getMode() != WIFI_MODE_NULL) {
+    Serial.println(
+      "[Security] Station isolation reported a failure; recovery portal will remain disabled unless AP-only mode is verified."
+    );
+  }
+  updateConnectivityFault();
+}
+
 void serviceConnectivity() {
   const uint32_t now = millis();
   recoveryPortal.handleClient();
@@ -504,13 +526,21 @@ void serviceConnectivity() {
     delay(250);
     ESP.restart();
   }
+  if (recoveryPortal.consumeRecoveryRotationRequested()) {
+    // Give the operator a couple of seconds to receive and save the new
+    // password before the AP restarts with it.
+    Serial.println("[Provisioning] Recovery AP password rotated; restarting in 2s.");
+    delay(2500);
+    ESP.restart();
+  }
 
   if (!deviceConfiguration.provisioned()) {
     if (!recoveryPortal.active()) {
       if (recoveryPortal.start(
         hardwareDeviceLabel,
-        recoveryAccess.password(),
-        deviceConfiguration
+        recoveryAccess,
+        deviceConfiguration,
+        false
       )) {
         Serial.printf(
           "[Provisioning] Unprovisioned device; connect to %s and open http://192.168.4.1.\n",
@@ -540,8 +570,9 @@ void serviceConnectivity() {
     wifiRetrySupervisor.recordRecoveryStartAttempt(now);
     if (recoveryPortal.start(
       deviceConfiguration.deviceId(),
-      recoveryAccess.password(),
-      deviceConfiguration
+      recoveryAccess,
+      deviceConfiguration,
+      !credentialFaultActive
     )) {
       Serial.printf(
         "[Provisioning] Protected local configuration mode active at http://192.168.4.1 on AP %s.\n",
@@ -731,9 +762,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
   if (action != eki::telemetry::HttpResponseAction::Accept) {
     tlsClient.stop();
     if (action == eki::telemetry::HttpResponseAction::HaltCredentials) {
-      credentialFaultActive = true;
-      resetHttpsRetry();
-      updateConnectivityFault();
+      latchCredentialFault();
       return PublishResult::CredentialFault;
     }
     scheduleHttpsRetry(
@@ -816,8 +845,7 @@ void publishRemoteDiagnostic() {
     static_cast<unsigned long>(elapsed(startedAt))
   );
   if (responseCode == 401 || responseCode == 403) {
-    credentialFaultActive = true;
-    updateConnectivityFault();
+    latchCredentialFault();
     Serial.println("[Diagnostics] Credential fault latched; local reprovisioning enabled.");
   }
 }

@@ -5,8 +5,8 @@ import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
 import { useRoutes, type RouteData } from "@/hooks/useRoutes";
 import { useCollection } from "@/hooks/useCollection";
+import { useActiveBuses, type ActiveBusEntry } from "@/hooks/useActiveBuses";
 import { auth } from "@/lib/firebaseAuth";
-import { subscribeLiveBuses } from "@/lib/liveBusStore";
 import {
   Bus, User, Trash2, Plus, ArrowRight,
   ChevronDown, ChevronUp, Pencil, Check, X, AlertCircle,
@@ -34,22 +34,6 @@ async function fleetRequest(path: string, method: "PUT" | "DELETE", body?: objec
   if (!response.ok) throw new Error(result.error || "Fleet operation failed.");
 }
 
-// â”€â”€ Live bus tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-interface ActiveBusEntry {
-  busId: string;
-  driverId?: string;
-  routeId?: string;
-  lat?: number;
-  lng?: number;
-  speed?: number;
-  heading?: number;
-  timestamp?: number;
-  deviceState?: "online" | "offline";
-  motionState?: "moving" | "stopped" | "uncertain";
-  tripState?: "pre_departure" | "in_service" | "completed";
-  currentStopIndex?: number;
-}
-
 // â”€â”€ Completed trip analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface CompletedTrip {
   id: string;
@@ -59,20 +43,6 @@ interface CompletedTrip {
   completedAt: string;
   stopCount: number;
   stopNames: string[];
-}
-
-function useActiveBuses(): ActiveBusEntry[] {
-  const [active, setActive] = useState<ActiveBusEntry[]>([]);
-  useEffect(() => {
-    const unsubscribe = subscribeLiveBuses((snapshot) => {
-      const data = snapshot as Record<string, ActiveBusEntry> | null;
-      setActive(data ? Object.values(data) : []);
-    }, (error) => {
-      console.warn("[RTDB] activeBuses read failed:", error.message);
-    });
-    return unsubscribe;
-  }, []);
-  return active;
 }
 
 function useRecentTrips(count = 10) {

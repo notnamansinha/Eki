@@ -17,6 +17,18 @@ function activeRideId(busId: string, routeId: string): string {
   return `${busId}_${routeId}`;
 }
 
+function normalizedDelayRevision(value: unknown): number {
+  return Number.isSafeInteger(value) && Number(value) >= 0
+    ? Number(value)
+    : 0;
+}
+
+function normalizedDelayMinutes(value: unknown): number {
+  return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 1440
+    ? Number(value)
+    : 0;
+}
+
 function activeBusLockRef(busId: string) {
   return db.collection("_active_bus_locks").doc(busId);
 }
@@ -87,8 +99,7 @@ router.patch("/delay", requireAuth, async (req: AuthenticatedRequest, res: Respo
     const delayMinutes = req.body?.delayMinutes;
     if (
       !assignment ||
-      typeof delayMinutes !== "number" ||
-      !Number.isFinite(delayMinutes) ||
+      !Number.isSafeInteger(delayMinutes) ||
       delayMinutes < 0 ||
       delayMinutes > 1440
     ) {
@@ -96,26 +107,90 @@ router.patch("/delay", requireAuth, async (req: AuthenticatedRequest, res: Respo
       return;
     }
     const nodeRef = rtdb.ref(`activeBuses/${assignment.busId}_${assignment.routeId}`);
-    const current = (await nodeRef.once("value")).val() as Record<string, unknown> | null;
+    const requestedAt = Date.now();
+    const liveUpdate = await nodeRef.transaction((value) => {
+      const current = value as Record<string, unknown> | null;
+      if (
+        !current ||
+        current.busId !== assignment.busId ||
+        current.routeId !== assignment.routeId ||
+        current.driverId !== assignment.driverId ||
+        current.status !== "active" ||
+        (current.tripState !== "pre_departure" && current.tripState !== "in_service") ||
+        typeof current.sessionId !== "string" ||
+        !SAFE_ID.test(current.sessionId)
+      ) {
+        return;
+      }
+      const previousRevision =
+        Number.isSafeInteger(current.delayUpdatedAt) &&
+        Number(current.delayUpdatedAt) >= 0 &&
+        Number(current.delayUpdatedAt) < Number.MAX_SAFE_INTEGER
+          ? Number(current.delayUpdatedAt)
+          : 0;
+      return {
+        ...current,
+        delayMinutes,
+        // RTDB transactions retry on contention. Advancing from the live
+        // revision makes ordering monotonic even if backend clocks differ.
+        delayUpdatedAt: Math.max(requestedAt, previousRevision + 1),
+      };
+    });
+    const committed = liveUpdate.snapshot.val() as Record<string, unknown> | null;
     if (
-      !current ||
-      current.driverId !== assignment.driverId ||
-      current.status !== "active" ||
-      typeof current.sessionId !== "string"
+      !liveUpdate.committed ||
+      !committed ||
+      committed.driverId !== assignment.driverId ||
+      committed.status !== "active" ||
+      (committed.tripState !== "pre_departure" && committed.tripState !== "in_service") ||
+      typeof committed.sessionId !== "string" ||
+      !SAFE_ID.test(committed.sessionId) ||
+      typeof committed.delayUpdatedAt !== "number"
     ) {
       res.status(409).json({ error: "No active shift exists for this vehicle and route." });
       return;
     }
-    await Promise.all([
-      nodeRef.update({ delayMinutes }),
-      db.collection("active_rides")
-        .doc(activeRideId(assignment.busId, assignment.routeId))
-        .set({
+    const sessionId = committed.sessionId;
+    const delayUpdatedAt = committed.delayUpdatedAt;
+    const activeRideRef = db.collection("active_rides")
+      .doc(activeRideId(assignment.busId, assignment.routeId));
+    let durable = false;
+    try {
+      durable = await db.runTransaction(async (transaction) => {
+        const activeRide = await transaction.get(activeRideRef);
+        const activeRideData = activeRide.data();
+        if (
+          !activeRide.exists ||
+          activeRideData?.status !== "active" ||
+          activeRideData?.sessionId !== sessionId
+        ) {
+          return false;
+        }
+        const durableRevision =
+          Number.isSafeInteger(activeRideData.delayUpdatedAt) &&
+          Number(activeRideData.delayUpdatedAt) >= 0
+            ? Number(activeRideData.delayUpdatedAt)
+            : 0;
+        if (durableRevision > delayUpdatedAt) return false;
+        transaction.set(activeRideRef, {
           delayMinutes,
+          delayUpdatedAt,
           updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true }),
-    ]);
-    res.json({ saved: true, delayMinutes });
+        }, { merge: true });
+        return true;
+      });
+      if (!durable) {
+        console.warn(
+          `[Shifts] Skipped stale delay mirror for ${assignment.busId}/${assignment.routeId} session ${sessionId}.`,
+        );
+      }
+    } catch (error) {
+      console.error(
+        `[Shifts] Failed to persist delay for ${assignment.busId}/${assignment.routeId} session ${sessionId}:`,
+        error,
+      );
+    }
+    res.json({ saved: true, delayMinutes, delayUpdatedAt, durable });
   } catch (error) {
     console.error("[Shifts] Failed to update delay:", error);
     res.status(500).json({ error: "Unable to update delay." });
@@ -134,8 +209,10 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
     const current = (await nodeRef.once("value")).val() as Record<string, unknown> | null;
     if (
       current?.status === "active" &&
+      current?.tripState !== "completed" &&
       current?.driverId === assignment.driverId &&
-      typeof current.sessionId === "string"
+      typeof current.sessionId === "string" &&
+      SAFE_ID.test(current.sessionId)
     ) {
       const sessionStatus =
         current.tripState === "pre_departure" ? "armed" : "active";
@@ -180,17 +257,23 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
               ? current.currentStopIndex
               : 0,
             hasDepartedOrigin: current.hasDepartedOrigin === true,
-            delayMinutes:
-              typeof current.delayMinutes === "number"
-                ? current.delayMinutes
-                : 0,
+            delayMinutes: normalizedDelayMinutes(current.delayMinutes),
+            delayUpdatedAt: normalizedDelayRevision(current.delayUpdatedAt),
             updatedAt: FieldValue.serverTimestamp(),
           }, { merge: true }),
       ]);
       res.json({ sessionId: current.sessionId, resumed: true });
       return;
     }
-    if (current?.status === "active" && typeof current?.sessionId === "string") {
+    // A completed ride is terminal: the live node still reports
+    // status="active" until the engine's 30s cleanup, but it must never be
+    // resurrected. Fall through to a fresh start below.
+    if (
+      current?.status === "active" &&
+      current?.tripState !== "completed" &&
+      typeof current?.sessionId === "string" &&
+      SAFE_ID.test(current.sessionId)
+    ) {
       res.status(409).json({ error: "This bus already has an active shift." });
       return;
     }
@@ -295,6 +378,7 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
     let claimedStopIndex = 0;
     let claimedHasDepartedOrigin = false;
     let claimedDelayMinutes = 0;
+    let claimedDelayUpdatedAt = 0;
     if (!lockClaim.created && lockClaim.status !== "pending") {
       const recovery = await db.collection("active_rides")
         .doc(activeRideId(assignment.busId, assignment.routeId))
@@ -313,19 +397,21 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         ? recoveryData.currentStopIndex
         : 0;
       claimedHasDepartedOrigin = recoveryData.hasDepartedOrigin === true;
-      claimedDelayMinutes = typeof recoveryData.delayMinutes === "number"
-        ? recoveryData.delayMinutes
-        : 0;
+      claimedDelayMinutes = normalizedDelayMinutes(recoveryData.delayMinutes);
+      claimedDelayUpdatedAt = normalizedDelayRevision(recoveryData.delayUpdatedAt);
     }
 
     try {
       // Claim the live vehicle atomically. Two near-simultaneous start
       // requests may both pass the initial read, but only one session is
-      // allowed to replace a node that has no active session.
+      // allowed to replace a node that has no active session. A completed
+      // node is terminal and may be claimed by a fresh session (the engine
+      // cancels its pending completion cleanup once tripState changes).
       const claim = await nodeRef.transaction((liveValue) => {
         const live = liveValue as Record<string, unknown> | null;
         if (
           live?.status === "active" &&
+          live?.tripState !== "completed" &&
           typeof live.sessionId === "string" &&
           live.sessionId.length > 0
         ) {
@@ -343,6 +429,7 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           hasDepartedOrigin: claimedHasDepartedOrigin,
           currentStopIndex: claimedStopIndex,
           delayMinutes: claimedDelayMinutes,
+          delayUpdatedAt: claimedDelayUpdatedAt,
           lifecycleUpdatedAt: { ".sv": "timestamp" },
         };
       });
@@ -401,6 +488,7 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         currentStopIndex: claimedStopIndex,
         hasDepartedOrigin: claimedHasDepartedOrigin,
         delayMinutes: claimedDelayMinutes,
+        delayUpdatedAt: claimedDelayUpdatedAt,
         updatedAt: FieldValue.serverTimestamp(),
       });
       await batch.commit();
