@@ -29,6 +29,8 @@ void test_implausible_speed_is_rejected_instead_of_clamped() {
   TEST_ASSERT_FALSE(speedIsPlausible(-0.1));
   TEST_ASSERT_FALSE(speedIsPlausible(200.1));
   TEST_ASSERT_FALSE(speedIsPlausible(NAN));
+  TEST_ASSERT_FALSE(speedIsPlausible(INFINITY));
+  TEST_ASSERT_FALSE(speedIsPlausible(-INFINITY));
 }
 
 void test_motion_hysteresis_filters_single_noisy_readings() {

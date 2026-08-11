@@ -270,6 +270,10 @@ describe("production security configuration", () => {
     );
     expect(firmware).toContain("HTTPClient");
     expect(firmware).toContain("char authorizationHeader[");
+    expect(firmware).toContain(
+      "char authorizationHeader[eki::connectivity::DEVICE_SECRET_MAX_LENGTH + 8]",
+    );
+    expect(firmware).toContain("constexpr size_t ENDPOINT_MAX_LENGTH");
     expect(firmware).toContain('"Device %s"');
     expect(firmware).not.toContain(
       'authorizationHeader = String("Device ")',
