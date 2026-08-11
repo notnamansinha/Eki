@@ -13,7 +13,7 @@ interface RoleGuardProps {
 }
 
 export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
-  const { user, loading, loginLoading, loginWithGoogle, logout } = useAuth();
+  const { user, loading, roleError, loginLoading, loginWithGoogle, logout } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const pathname = usePathname();
 
@@ -80,6 +80,37 @@ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
           )}
           {loginLoading ? "Opening Google…" : "Sign in with Google"}
         </button>
+      </div>
+    );
+  }
+
+  if (roleError) {
+    return (
+      <div
+        className="w-full flex flex-col items-center justify-center px-6 text-center"
+        style={{ height: "100dvh", background: "var(--surface-0)" }}
+        role="alert"
+      >
+        <ShieldAlert className="mb-5 h-8 w-8" style={{ color: "var(--status-danger)" }} />
+        <h1 className="mb-2 text-2xl font-extrabold" style={{ color: "var(--text-primary)" }}>
+          Access could not be verified
+        </h1>
+        <p className="mb-6 max-w-sm text-sm" style={{ color: "var(--text-secondary)" }}>
+          {roleError}
+        </p>
+        <div className="flex items-center gap-4">
+          <button type="button" className="btn-primary px-5 py-2.5 text-sm" onClick={() => window.location.reload()}>
+            Try again
+          </button>
+          <button
+            type="button"
+            className="text-sm font-semibold"
+            style={{ color: "var(--text-secondary)" }}
+            onClick={() => void logout()}
+          >
+            Sign out
+          </button>
+        </div>
       </div>
     );
   }
