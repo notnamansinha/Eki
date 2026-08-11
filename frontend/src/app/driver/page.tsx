@@ -15,6 +15,7 @@ import { auth } from "@/lib/firebaseAuth";
 import { rtdb } from "@/lib/firebaseDatabase";
 import { ref, onValue } from "firebase/database";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
+import { apiRequest } from "@/lib/apiClient";
 
 const DriverMap = dynamic(() => import("@/components/maps/DriverMap"), {
   ssr: false,
@@ -66,8 +67,7 @@ export default function DriverPage() {
       return;
     }
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
-    if (!backendUrl) {
+    if (!process.env.NEXT_PUBLIC_BACKEND_URL) {
       setLifecycleError("Shift service is not configured.");
       return;
     }
@@ -76,16 +76,16 @@ export default function DriverPage() {
     try {
       const token = await auth.currentUser.getIdToken();
       const routeId = selectedRouteIds[0];
-      const response = await fetch(`${backendUrl}/api/shifts/start`, {
+      const result = await apiRequest<{ sessionId?: string; error?: string }>("/api/shifts/start", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ busId, routeId }),
+        fallbackError: "Unable to start shift.",
       });
-      const result = await response.json() as { sessionId?: string; error?: string };
-      if (!response.ok || !result.sessionId) {
+      if (!result.sessionId) {
         throw new Error(result.error || "Unable to start shift.");
       }
       setCurrentStopIndex(0);
@@ -149,8 +149,7 @@ export default function DriverPage() {
     }
     setBoardingCode("");
     setBoardingCodeError("");
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
-    if (!backendUrl || !auth.currentUser) {
+    if (!process.env.NEXT_PUBLIC_BACKEND_URL || !auth.currentUser) {
       setBoardingCodeError("Boarding code service is unavailable.");
       return;
     }
@@ -160,19 +159,16 @@ export default function DriverPage() {
       try {
         const token = await auth.currentUser?.getIdToken();
         if (!token) throw new Error("Driver session is unavailable.");
-        const response = await fetch(
-          `${backendUrl}/api/sessions/${selectedSessionId}/boarding-code`,
+        const result = await apiRequest<{ boardingCode?: string; error?: string }>(
+          `/api/sessions/${selectedSessionId}/boarding-code`,
           {
             method: "POST",
             headers: { Authorization: `Bearer ${token}` },
             signal: controller.signal,
+            fallbackError: "Unable to load the boarding code.",
           },
         );
-        const result = await response.json().catch(() => ({})) as {
-          boardingCode?: string;
-          error?: string;
-        };
-        if (!response.ok || !result.boardingCode) {
+        if (!result.boardingCode) {
           throw new Error(result.error || "Unable to load the boarding code.");
         }
         if (controller.signal.aborted) return;
