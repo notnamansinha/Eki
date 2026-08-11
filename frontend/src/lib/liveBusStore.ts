@@ -1,14 +1,15 @@
 "use client";
 
 import { onValue, ref } from "firebase/database";
-import { waitForAuth } from "@/lib/authState";
-import { rtdb } from "@/lib/firebaseDatabase";
+import { waitForAuth } from "./authState";
+import { rtdb } from "./firebaseDatabase";
 import {
   millisecondsUntilNextPrune,
   pruneExpiredLiveBuses,
   type LiveBusSnapshot,
-} from "@/lib/liveBusSnapshot";
-import type { LiveBusDeliverySource } from "@/lib/liveBusDelivery";
+} from "./liveBusSnapshot";
+import type { LiveBusDeliverySource } from "./liveBusDelivery";
+import { liveBusRetryDelayMs } from "./liveBusRetry";
 
 type Subscriber = {
   next: (
@@ -23,12 +24,40 @@ let cached: LiveBusSnapshot | null = null;
 let unsubscribe: (() => void) | null = null;
 let starting = false;
 let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryAttempt = 0;
 
 function notifySubscribers(
   value: LiveBusSnapshot | null,
   source: LiveBusDeliverySource,
 ): void {
-  subscribers.forEach((subscriber) => subscriber.next(value, source));
+  subscribers.forEach((subscriber) => {
+    try {
+      subscriber.next(value, source);
+    } catch (subscriberError) {
+      console.error("Live bus subscriber failed:", subscriberError);
+    }
+  });
+}
+
+function notifySubscriberErrors(error: Error): void {
+  subscribers.forEach((subscriber) => {
+    try {
+      subscriber.error?.(error);
+    } catch (subscriberError) {
+      console.error("Live bus subscriber error handler failed:", subscriberError);
+    }
+  });
+}
+
+function scheduleRetry(): void {
+  if (subscribers.size === 0 || retryTimer) return;
+  const delay = liveBusRetryDelayMs(retryAttempt);
+  retryAttempt = Math.min(retryAttempt + 1, 5);
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void ensureListener();
+  }, delay);
 }
 
 function scheduleExpiry(): void {
@@ -59,7 +88,7 @@ export function invalidateLiveBusCache(): void {
 }
 
 async function ensureListener() {
-  if (unsubscribe || starting || subscribers.size === 0) return;
+  if (unsubscribe || starting || retryTimer || subscribers.size === 0) return;
   starting = true;
   try {
     await waitForAuth();
@@ -67,13 +96,29 @@ async function ensureListener() {
     unsubscribe = onValue(
       ref(rtdb, "activeBuses"),
       (snapshot) => {
+        retryAttempt = 0;
         const value = snapshot.val() as LiveBusSnapshot | null;
         cached = value ? pruneExpiredLiveBuses(value) : null;
         notifySubscribers(cached, "listener");
         scheduleExpiry();
       },
-      (error) => subscribers.forEach((subscriber) => subscriber.error?.(error)),
+      (error) => {
+        unsubscribe?.();
+        unsubscribe = null;
+        cached = null;
+        if (expiryTimer) clearTimeout(expiryTimer);
+        expiryTimer = null;
+        notifySubscribers(null, "invalidation");
+        notifySubscriberErrors(error);
+        // Retry while the view is subscribed; the interval is capped, and
+        // teardown cancels the loop when the final subscriber leaves.
+        scheduleRetry();
+      },
     );
+  } catch (error) {
+    const listenerError = error instanceof Error ? error : new Error("Live bus listener failed.");
+    notifySubscriberErrors(listenerError);
+    scheduleRetry();
   } finally {
     starting = false;
   }
@@ -95,6 +140,11 @@ export function subscribeLiveBuses(
       unsubscribe?.();
       unsubscribe = null;
       cached = null;
+      retryAttempt = 0;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
       if (expiryTimer) {
         clearTimeout(expiryTimer);
         expiryTimer = null;
