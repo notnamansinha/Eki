@@ -795,7 +795,8 @@ void scheduleRemoteDiagnosticRetry() {
   }
   remoteDiagnosticRetryStartedAt = millis();
   remoteDiagnosticRetryDelayMs = eki::telemetry::diagnosticRetryDelayMs(
-    consecutiveRemoteDiagnosticFailures
+    consecutiveRemoteDiagnosticFailures,
+    esp_random()
   );
 }
 

@@ -45,7 +45,9 @@ void test_retry_backoff_is_jittered_and_bounded() {
 void test_diagnostic_retry_backoff_is_bounded() {
   TEST_ASSERT_EQUAL_UINT32(0, diagnosticRetryDelayMs(0));
   TEST_ASSERT_EQUAL_UINT32(5000, diagnosticRetryDelayMs(1));
+  TEST_ASSERT_EQUAL_UINT32(9999, diagnosticRetryDelayMs(1, 4999));
   TEST_ASSERT_EQUAL_UINT32(10000, diagnosticRetryDelayMs(2));
+  TEST_ASSERT_EQUAL_UINT32(20000, diagnosticRetryDelayMs(3));
   TEST_ASSERT_EQUAL_UINT32(40000, diagnosticRetryDelayMs(4));
   TEST_ASSERT_EQUAL_UINT32(60000, diagnosticRetryDelayMs(5));
   TEST_ASSERT_EQUAL_UINT32(60000, diagnosticRetryDelayMs(100));
