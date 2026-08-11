@@ -3,31 +3,57 @@ export interface LatLng {
   lng: number;
 }
 
-export function decodePolyline(encoded: string): LatLng[] {
-  const coords: LatLng[] = [];
-  let index = 0, lat = 0, lng = 0;
+function decodeCoordinate(encoded: string, startIndex: number): {
+  value: number;
+  nextIndex: number;
+} {
+  let result = 0;
+  let shift = 0;
+  let index = startIndex;
 
   while (index < encoded.length) {
-    let b, shift = 0, result = 0;
-    do {
-      b = encoded.charCodeAt(index++) - 63;
-      result |= (b & 0x1f) << shift;
-      shift += 5;
-    } while (b >= 0x20);
-    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lat += dlat;
+    const byte = encoded.charCodeAt(index++) - 63;
+    if (byte < 0 || byte > 63 || shift > 30) {
+      throw new Error("Invalid encoded polyline");
+    }
+    result |= (byte & 0x1f) << shift;
+    if (byte < 0x20) {
+      return {
+        value: result & 1 ? ~(result >> 1) : result >> 1,
+        nextIndex: index,
+      };
+    }
+    shift += 5;
+  }
 
-    shift = 0;
-    result = 0;
-    do {
-      b = encoded.charCodeAt(index++) - 63;
-      result |= (b & 0x1f) << shift;
-      shift += 5;
-    } while (b >= 0x20);
-    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lng += dlng;
+  throw new Error("Truncated encoded polyline");
+}
 
-    coords.push({ lat: lat / 1e5, lng: lng / 1e5 });
+export function decodePolyline(encoded: string): LatLng[] {
+  if (!encoded) return [];
+
+  const coords: LatLng[] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    const latitude = decodeCoordinate(encoded, index);
+    const longitude = decodeCoordinate(encoded, latitude.nextIndex);
+    index = longitude.nextIndex;
+    lat += latitude.value;
+    lng += longitude.value;
+
+    const point = { lat: lat / 1e5, lng: lng / 1e5 };
+    if (
+      !Number.isFinite(point.lat) ||
+      !Number.isFinite(point.lng) ||
+      Math.abs(point.lat) > 90 ||
+      Math.abs(point.lng) > 180
+    ) {
+      throw new Error("Encoded polyline contains invalid coordinates");
+    }
+    coords.push(point);
   }
   return coords;
 }
