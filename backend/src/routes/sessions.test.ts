@@ -7,6 +7,7 @@ const harness = vi.hoisted(() => ({
   removePassengerBeforeTransaction: false,
   sessionPassengers: {} as Record<string, Record<string, unknown>>,
   updates: [] as unknown[][],
+  joinUid: "passenger_1",
 }));
 
 vi.mock("../middleware/requireAuth", () => ({
@@ -15,7 +16,7 @@ vi.mock("../middleware/requireAuth", () => ({
     _res: unknown,
     next: () => void,
   ) => {
-    req.user = { uid: "passenger_1", role: "passenger", name: "Token Name" };
+    req.user = { uid: harness.joinUid, role: "passenger", name: "Token Name" };
     next();
   },
 }));
@@ -112,6 +113,7 @@ beforeEach(() => {
   harness.removePassengerBeforeTransaction = false;
   harness.sessionPassengers = {};
   harness.updates = [];
+  harness.joinUid = "passenger_1";
 });
 
 async function join(body: Record<string, unknown>) {
@@ -189,5 +191,56 @@ describe("session passenger join route", () => {
     expect(response.status).toBe(409);
     expect(harness.liveReads).toBe(0);
     expect(harness.updates).toHaveLength(0);
+  });
+
+  it("rejects a new passenger when the ride manifest is at capacity", async () => {
+    harness.joinUid = "passenger_new";
+    harness.sessionPassengers = Object.fromEntries(
+      Array.from({ length: 1000 }, (_, index) => [
+        `existing_${index}`,
+        { userId: `existing_${index}`, joinedAt: 1 },
+      ]),
+    );
+
+    const response = await join({ lat: 23, lng: 72.5, accuracy: 20 });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "This ride is at capacity; no more passengers can join.",
+    });
+    expect(harness.updates).toHaveLength(0);
+  });
+
+  it("allows a new passenger to fill the last free manifest slot", async () => {
+    harness.joinUid = "passenger_new";
+    harness.sessionPassengers = Object.fromEntries(
+      Array.from({ length: 999 }, (_, index) => [
+        `existing_${index}`,
+        { userId: `existing_${index}`, joinedAt: 1 },
+      ]),
+    );
+
+    const response = await join({ lat: 23, lng: 72.5, accuracy: 20 });
+
+    expect(response.status).toBe(200);
+    expect(harness.updates).toHaveLength(1);
+  });
+
+  it("lets an existing member update their stops even when the ride is full", async () => {
+    harness.joinUid = "passenger_full";
+    harness.sessionPassengers = {
+      passenger_full: { userId: "passenger_full", joinedAt: 1 },
+      ...Object.fromEntries(
+        Array.from({ length: 999 }, (_, index) => [
+          `existing_${index}`,
+          { userId: `existing_${index}`, joinedAt: 1 },
+        ]),
+      ),
+    };
+
+    const response = await join({});
+
+    expect(response.status).toBe(200);
+    expect(harness.updates).toHaveLength(1);
   });
 });
