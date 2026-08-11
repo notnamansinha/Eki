@@ -1,4 +1,5 @@
-import type { Request } from "express";
+import type { Request, RequestHandler } from "express";
+import rateLimit from "express-rate-limit";
 
 /**
  * Rate-limit bucket resolution.
@@ -84,4 +85,26 @@ export function deviceIngressKeyGenerator(req: Request): string {
     req.headers.authorization,
     req.ip ?? "unknown",
   );
+}
+
+/**
+ * Rate limiter for browser-facing endpoints that keys on the authenticated
+ * uid (falling back to IP for anonymous traffic), so a classroom sharing one
+ * campus IP never exhausts a single shared budget.
+ */
+export function createIdentityAwareLimiter(options: {
+  windowMs: number;
+  limit: number;
+  message: { error: string };
+  skip?: (req: Request) => boolean;
+}): RequestHandler {
+  return rateLimit({
+    windowMs: options.windowMs,
+    limit: options.limit,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: options.message,
+    ...(options.skip ? { skip: options.skip } : {}),
+    keyGenerator: identityKeyGenerator,
+  });
 }

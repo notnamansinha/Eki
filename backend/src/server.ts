@@ -22,6 +22,7 @@ import { deleteApp } from "firebase-admin/app";
 import { db, firebaseAdminApp, rtdb } from "./lib/firebaseAdmin";
 import { getHttpsTelemetryStatus } from "./services/deviceTelemetryService";
 import { createHealthState } from "./lib/healthState";
+import { createIdentityAwareLimiter } from "./lib/rateLimitIdentity";
 import { startWorkerCoordinator } from "./services/workerCoordinator";
 import busRoutes from "./routes/buses";
 import analyticsRoutes from "./routes/analytics";
@@ -84,23 +85,22 @@ function isDeviceIngressRequest(req: express.Request): boolean {
   );
 }
 
-// Global HTTP rate limiter — prevents DoS on all REST endpoints
-const globalLimiter = rateLimit({
+// Global HTTP rate limiter — prevents DoS on all REST endpoints. Buckets are
+// keyed by the authenticated uid when a Bearer token is presented and by IP
+// for anonymous traffic: on campus many browsers share one NAT egress IP, so
+// an IP-only budget would 429 an entire lecture demo (issue #74).
+const globalLimiter = createIdentityAwareLimiter({
   windowMs: 60 * 1000,  // 1 minute window
-  max: 200,             // Max 200 requests per IP per minute
-  standardHeaders: true,
-  legacyHeaders: false,
+  limit: 200,            // Max 200 requests per identity per minute
   message: { error: "Too many requests, please slow down." },
   skip: isDeviceIngressRequest,
 });
 app.use(globalLimiter);
 
-// Tighter limit for write-heavy mutation endpoints
-const writeLimiter = rateLimit({
+// Tighter limit for write-heavy mutation endpoints, keyed the same way.
+const writeLimiter = createIdentityAwareLimiter({
   windowMs: 60 * 1000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
+  limit: 30,
   message: { error: "Write rate limit exceeded." },
 });
 
