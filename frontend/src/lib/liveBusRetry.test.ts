@@ -7,4 +7,11 @@ describe("liveBusRetryDelayMs", () => {
       1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000,
     ]);
   });
+
+  it("normalizes invalid attempts to a safe first retry", () => {
+    expect(liveBusRetryDelayMs(-1)).toBe(1_000);
+    expect(liveBusRetryDelayMs(1.9)).toBe(2_000);
+    expect(liveBusRetryDelayMs(Number.NaN)).toBe(1_000);
+    expect(liveBusRetryDelayMs(Number.POSITIVE_INFINITY)).toBe(1_000);
+  });
 });

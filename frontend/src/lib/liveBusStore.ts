@@ -31,7 +31,13 @@ function notifySubscribers(
   value: LiveBusSnapshot | null,
   source: LiveBusDeliverySource,
 ): void {
-  subscribers.forEach((subscriber) => subscriber.next(value, source));
+  subscribers.forEach((subscriber) => {
+    try {
+      subscriber.next(value, source);
+    } catch (subscriberError) {
+      console.error("Live bus subscriber failed:", subscriberError);
+    }
+  });
 }
 
 function notifySubscriberErrors(error: Error): void {

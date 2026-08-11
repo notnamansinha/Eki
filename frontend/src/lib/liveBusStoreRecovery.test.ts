@@ -33,6 +33,7 @@ describe("live bus listener recovery", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -88,5 +89,28 @@ describe("live bus listener recovery", () => {
     dispose();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(onValue).toHaveBeenCalledOnce();
+  });
+
+  it("continues recovery when one subscriber callback throws", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { onValue } = await import("firebase/database");
+    vi.mocked(onValue).mockClear();
+    const { subscribeLiveBuses } = await import("./liveBusStore");
+    const firstDispose = subscribeLiveBuses(() => {
+      throw new Error("subscriber failed");
+    });
+    const next = vi.fn();
+    const secondDispose = subscribeLiveBuses(next);
+    await flushPromises();
+
+    listenerState.failure?.(new Error("terminal failure"));
+    expect(next).toHaveBeenCalledWith(null, "invalidation");
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+    expect(onValue).toHaveBeenCalledTimes(2);
+
+    firstDispose();
+    secondDispose();
+    consoleError.mockRestore();
   });
 });
