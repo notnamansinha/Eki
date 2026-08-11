@@ -149,6 +149,17 @@ inline uint32_t minimumHttpRetryDelayMs(
     : 0;
 }
 
+inline bool retryKeepsSampleFresh(
+  int64_t sampleTimestampMs,
+  int64_t nowMs,
+  uint32_t retryDelayMs,
+  int64_t freshnessMarginMs
+) {
+  const int64_t ageMs = nowMs - sampleTimestampMs;
+  if (ageMs < 0 || ageMs >= freshnessMarginMs) return false;
+  return static_cast<int64_t>(retryDelayMs) < freshnessMarginMs - ageMs;
+}
+
 inline bool shouldPublishFix(
   bool valid,
   bool hasPublishedLocation,

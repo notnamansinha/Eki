@@ -702,7 +702,12 @@ PublishResult publishFix(const TelemetryFix &fix) {
   if (!http.begin(tlsClient, telemetryEndpoint)) {
     Serial.println("[HTTPS] Unable to initialize telemetry request.");
     scheduleHttpsRetry();
-    return PublishResult::RetryLatest;
+    return eki::telemetry::retryKeepsSampleFresh(
+      fix.timestamp,
+      epochMilliseconds(),
+      httpsRetryDelayMs,
+      TELEMETRY_FRESHNESS_MARGIN_MS
+    ) ? PublishResult::RetryLatest : PublishResult::Dropped;
   }
   const char *responseHeaders[] = {"Retry-After"};
   http.collectHeaders(responseHeaders, 1);
@@ -768,9 +773,15 @@ PublishResult publishFix(const TelemetryFix &fix) {
     scheduleHttpsRetry(
       eki::telemetry::minimumHttpRetryDelayMs(responseCode, retryAfterMs)
     );
-    return action == eki::telemetry::HttpResponseAction::RetrySample
-      ? PublishResult::RetryLatest
-      : PublishResult::Dropped;
+    const bool retryableAndFresh =
+      action == eki::telemetry::HttpResponseAction::RetrySample &&
+      eki::telemetry::retryKeepsSampleFresh(
+        fix.timestamp,
+        epochMilliseconds(),
+        httpsRetryDelayMs,
+        TELEMETRY_FRESHNESS_MARGIN_MS
+      );
+    return retryableAndFresh ? PublishResult::RetryLatest : PublishResult::Dropped;
   }
 
   resetHttpsRetry();
