@@ -6,7 +6,7 @@ type ApiRequestOptions = RequestInit & {
 
 function configuredBackendUrl(): string {
   const configured = process.env.NEXT_PUBLIC_BACKEND_URL;
-  if (!configured) throw new Error("Backend service is not configured.");
+  if (!configured) throw new Error("Backend URL is invalid or not configured.");
   try {
     const url = new URL(configured);
     if (
@@ -20,7 +20,7 @@ function configuredBackendUrl(): string {
     }
     return url.href.replace(/\/+$/, "");
   } catch {
-    throw new Error("Backend service is not configured.");
+    throw new Error("Backend URL is invalid or not configured.");
   }
 }
 
@@ -30,28 +30,48 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const backendUrl = configuredBackendUrl();
 
-  const timeoutSignal = AbortSignal.timeout(API_TIMEOUT_MS);
-  const requestSignal = signal
-    ? AbortSignal.any([signal, timeoutSignal])
-    : timeoutSignal;
+  const requestController = new AbortController();
+  let abortSource: "caller" | "timeout" | null = null;
+  const abortFromCaller = () => {
+    if (requestController.signal.aborted) return;
+    abortSource = "caller";
+    requestController.abort(signal?.reason);
+  };
+  if (signal?.aborted) abortFromCaller();
+  else signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = setTimeout(() => {
+    if (requestController.signal.aborted) return;
+    abortSource = "timeout";
+    requestController.abort(new DOMException("Request timed out.", "TimeoutError"));
+  }, API_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${backendUrl}${path}`, { ...init, signal: requestSignal });
-    let result: T & { error?: string };
+    const response = await fetch(`${backendUrl}${path}`, {
+      ...init,
+      signal: requestController.signal,
+    });
+    if (response.status === 204) return undefined as T;
+    let result: T & { error?: unknown };
     try {
-      result = await response.json() as T & { error?: string };
+      result = await response.json() as T & { error?: unknown };
     } catch (error) {
       if (response.ok) throw error;
       result = {} as T & { error?: string };
     }
     if (!response.ok) {
-      throw new Error(result.error || `${fallbackError} (HTTP ${response.status})`);
+      const message = typeof result.error === "string" && result.error.trim()
+        ? result.error
+        : `${fallbackError} (HTTP ${response.status})`;
+      throw new Error(message);
     }
     return result;
   } catch (error) {
-    if (timeoutSignal.aborted && !signal?.aborted) {
+    if (abortSource === "timeout") {
       throw new Error("The request timed out. Please try again.");
     }
     throw error;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortFromCaller);
   }
 }

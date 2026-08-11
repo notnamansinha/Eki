@@ -3,6 +3,7 @@ import { apiRequest } from "./apiClient";
 
 describe("apiRequest", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
@@ -29,6 +30,24 @@ describe("apiRequest", () => {
     ));
 
     await expect(apiRequest("/api/test")).rejects.toThrow("Denied");
+  });
+
+  it("uses the HTTP fallback for empty or non-string server errors", async () => {
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(new Response("not-json", { status: 502 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "denied" } }), { status: 403 })));
+
+    await expect(apiRequest("/api/test", { fallbackError: "Unavailable" }))
+      .rejects.toThrow("Unavailable (HTTP 502)");
+    await expect(apiRequest("/api/test", { fallbackError: "Denied" }))
+      .rejects.toThrow("Denied (HTTP 403)");
+  });
+
+  it("returns undefined for a successful no-content response", async () => {
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+    await expect(apiRequest<void>("/api/test")).resolves.toBeUndefined();
   });
 
   it("normalizes trailing slashes and rejects unsafe backend URLs", async () => {
@@ -63,14 +82,28 @@ describe("apiRequest", () => {
     await expect(request).rejects.toMatchObject({ name: "AbortError" });
   });
 
+  it("propagates a network failure and an already-aborted caller signal", async () => {
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
+    const networkError = new TypeError("Network request failed");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(networkError));
+    await expect(apiRequest("/api/test")).rejects.toBe(networkError);
+
+    const controller = new AbortController();
+    controller.abort();
+    vi.stubGlobal("fetch", vi.fn((_url, init: RequestInit = {}) =>
+      Promise.reject(init.signal?.reason),
+    ));
+    await expect(apiRequest("/api/test", { signal: controller.signal }))
+      .rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("times out while reading a response body", async () => {
     vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
-    const timeout = new AbortController();
+    vi.useFakeTimers();
     let markBodyStarted = () => {};
     const bodyStarted = new Promise<void>((resolve) => {
       markBodyStarted = resolve;
     });
-    vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeout.signal);
     vi.stubGlobal("fetch", vi.fn((_url, init: RequestInit = {}) => Promise.resolve({
       ok: true,
       status: 200,
@@ -81,9 +114,18 @@ describe("apiRequest", () => {
     } as Response)));
 
     const request = apiRequest("/api/test");
+    const rejection = expect(request).rejects.toThrow("timed out");
     await bodyStarted;
-    timeout.abort();
-    await expect(request).rejects.toThrow("timed out");
+    await vi.advanceTimersByTimeAsync(10_000);
+    await rejection;
+  });
+
+  it("rejects a missing backend URL before fetching", async () => {
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(apiRequest("/api/test")).rejects.toThrow("invalid or not configured");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("does not hide malformed JSON from a successful response", async () => {
