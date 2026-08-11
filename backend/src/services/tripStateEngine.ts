@@ -48,6 +48,9 @@ function fleetLifecycleState(data: Record<string, unknown>) {
     status: typeof data.status === "string" ? data.status : "active",
     deviceState: typeof data.deviceState === "string" ? data.deviceState : "online",
     tripState: typeof data.tripState === "string" ? data.tripState : "pre_departure",
+    // Persist the live GNSS state so analytics can count signal loss; without
+    // it the admin panel's signalLost count under-reported (issue #48 L2).
+    motionState: typeof data.motionState === "string" ? data.motionState : null,
   };
 }
 
