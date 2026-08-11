@@ -77,7 +77,11 @@ export function parseTelemetryValue(
       speed,
       heading,
       motionState: motionState as TelemetryPayload["motionState"],
-      timestamp,
+      // Clamp accepted future timestamps to wall clock: a device clock a few
+      // seconds ahead is allowed by the +10s window, but storing a future
+      // timestamp poisons the engine's newness comparison and the stale sweep
+      // (issue #48 L3).
+      timestamp: Math.min(timestamp, now),
     },
   };
 }
