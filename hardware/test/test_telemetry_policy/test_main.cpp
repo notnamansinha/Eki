@@ -320,9 +320,11 @@ void test_publish_policy_handles_floor_changes_and_heartbeats() {
 void test_queue_delivers_newest_first_and_retains_failed_samples() {
   NewestFirstTelemetryQueue<QueuedSample, 4> queue;
   queue.reset(42);
+  TEST_ASSERT_TRUE(queue.integrityIsValid());
   const uint32_t first = queue.push({1000, 0, 1});
   const uint32_t second = queue.push({2000, 0, 2});
   const uint32_t third = queue.push({3000, 0, 3});
+  TEST_ASSERT_TRUE(queue.integrityIsValid());
 
   QueuedSample sample{};
   TEST_ASSERT_TRUE(queue.newest(sample));
@@ -338,10 +340,25 @@ void test_queue_delivers_newest_first_and_retains_failed_samples() {
   TEST_ASSERT_EQUAL_UINT32(fourth, sample.sequence);
   TEST_ASSERT_TRUE(queue.remove(fourth));
   TEST_ASSERT_TRUE(queue.remove(third));
+  TEST_ASSERT_TRUE(queue.integrityIsValid());
   TEST_ASSERT_TRUE(queue.newest(sample));
   TEST_ASSERT_EQUAL_UINT32(second, sample.sequence);
   TEST_ASSERT_TRUE(queue.remove(first));
   TEST_ASSERT_EQUAL_UINT32(1, queue.size());
+}
+
+void test_queue_rejects_corrupted_rtc_state() {
+  NewestFirstTelemetryQueue<QueuedSample, 4> queue;
+  queue.reset(42);
+  queue.push({1000, 0, 1});
+  auto *bytes = reinterpret_cast<uint8_t *>(&queue);
+  // The middle of this fixed-capacity layout lies in the samples array.
+  bytes[sizeof(queue) / 2] ^= 0x5A;
+
+  TEST_ASSERT_FALSE(queue.integrityIsValid());
+  TEST_ASSERT_FALSE(queue.initializeOrRecover(42));
+  TEST_ASSERT_TRUE(queue.integrityIsValid());
+  TEST_ASSERT_EQUAL_UINT32(0, queue.size());
 }
 
 void test_queue_wraparound_drops_oldest_and_counts_overflow() {
@@ -406,6 +423,7 @@ int main(int, char **) {
   RUN_TEST(test_recovery_password_changes_only_after_verified_persistence);
   RUN_TEST(test_publish_policy_handles_floor_changes_and_heartbeats);
   RUN_TEST(test_queue_delivers_newest_first_and_retains_failed_samples);
+  RUN_TEST(test_queue_rejects_corrupted_rtc_state);
   RUN_TEST(test_queue_wraparound_drops_oldest_and_counts_overflow);
   RUN_TEST(test_queue_purges_stale_samples_and_validates_rtc_identity);
   return UNITY_END();
