@@ -1,6 +1,7 @@
 Import("env")
 
 from pathlib import Path
+import re
 
 
 project_dir = Path(env.subst("$PROJECT_DIR"))
@@ -29,6 +30,24 @@ if (project_dir / "include" / "secrets.h").exists():
     raise RuntimeError(
         "Compile-time secrets are forbidden; provision device credentials into encrypted NVS."
     )
+
+credential_name = r"(?:SECRET|PASSWORD|TOKEN|API_KEY|WIFI_SSID)"
+credential_definitions = (
+    re.compile(rf"^\s*#\s*define\s+\w*{credential_name}\w*", re.IGNORECASE | re.MULTILINE),
+    re.compile(rf"(?:^|\s)-D\s*\w*{credential_name}\w*(?:\s*=|=|\s|$)", re.IGNORECASE),
+    re.compile(rf"^\s*CONFIG_\w*{credential_name}\w*\s*=", re.IGNORECASE | re.MULTILINE),
+)
+credential_scan_paths = [project_dir / "platformio.ini", *project_dir.glob("sdkconfig*")]
+for source_dir in (project_dir / "include", project_dir / "src"):
+    for suffix in ("*.h", "*.hpp", "*.c", "*.cpp", "*.ino"):
+        credential_scan_paths.extend(source_dir.rglob(suffix))
+
+for path in credential_scan_paths:
+    contents = path.read_text(encoding="utf-8")
+    if any(pattern.search(contents) for pattern in credential_definitions):
+        raise RuntimeError(
+            f"Compile-time credential definition is forbidden in {path.relative_to(project_dir)}."
+        )
 
 provisioning_source = (project_dir / "src" / "recovery_portal.cpp").read_text(
     encoding="utf-8"
