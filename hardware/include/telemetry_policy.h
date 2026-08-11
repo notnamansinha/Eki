@@ -17,6 +17,7 @@ constexpr double HEADING_THRESHOLD_DEG = 15.0;
 constexpr double SPEED_THRESHOLD_KMH = 5.0;
 constexpr double MOVING_SPEED_KMH = 2.5;
 constexpr double STOP_SPEED_KMH = 1.5;
+constexpr uint32_t GNSS_FIX_MAX_AGE_MS = 5000;
 constexpr uint32_t MIN_PUBLISH_INTERVAL_MS = 3000;
 constexpr uint32_t MOVING_HEARTBEAT_MS = 30000;
 constexpr uint32_t STOPPED_HEARTBEAT_MS = 60000;
@@ -33,6 +34,24 @@ enum class HttpResponseAction : uint8_t {
   DropSample,
   HaltCredentials,
 };
+
+inline bool gnssFixFieldsAreFresh(
+  bool locationValid,
+  uint32_t locationAgeMs,
+  bool hdopValid,
+  uint32_t hdopAgeMs,
+  bool speedValid,
+  uint32_t speedAgeMs,
+  bool courseValid,
+  uint32_t courseAgeMs
+) {
+  return locationValid &&
+         locationAgeMs <= GNSS_FIX_MAX_AGE_MS &&
+         hdopValid &&
+         hdopAgeMs <= GNSS_FIX_MAX_AGE_MS &&
+         (!speedValid || speedAgeMs <= GNSS_FIX_MAX_AGE_MS) &&
+         (!courseValid || courseAgeMs <= GNSS_FIX_MAX_AGE_MS);
+}
 
 struct MotionTracker {
   bool moving = false;

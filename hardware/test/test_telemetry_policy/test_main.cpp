@@ -23,6 +23,19 @@ void test_haversine_and_heading_wrap() {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, static_cast<float>(headingDelta(1.0, 359.0)));
 }
 
+void test_gnss_fix_requires_fresh_coherent_fields() {
+  const uint32_t fresh = GNSS_FIX_MAX_AGE_MS;
+  const uint32_t stale = GNSS_FIX_MAX_AGE_MS + 1;
+  TEST_ASSERT_TRUE(gnssFixFieldsAreFresh(true, fresh, true, fresh, false, 0, false, 0));
+  TEST_ASSERT_TRUE(gnssFixFieldsAreFresh(true, 0, true, 0, true, fresh, true, fresh));
+  TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(false, 0, true, 0, false, 0, false, 0));
+  TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, stale, true, 0, false, 0, false, 0));
+  TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, 0, false, 0, false, 0, false, 0));
+  TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, 0, true, stale, false, 0, false, 0));
+  TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, 0, true, 0, true, stale, false, 0));
+  TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, 0, true, 0, false, 0, true, stale));
+}
+
 void test_implausible_speed_is_rejected_instead_of_clamped() {
   TEST_ASSERT_TRUE(speedIsPlausible(0.0));
   TEST_ASSERT_TRUE(speedIsPlausible(200.0));
@@ -411,6 +424,7 @@ void test_queue_purges_stale_samples_and_validates_rtc_identity() {
 int main(int, char **) {
   UNITY_BEGIN();
   RUN_TEST(test_haversine_and_heading_wrap);
+  RUN_TEST(test_gnss_fix_requires_fresh_coherent_fields);
   RUN_TEST(test_implausible_speed_is_rejected_instead_of_clamped);
   RUN_TEST(test_motion_hysteresis_filters_single_noisy_readings);
   RUN_TEST(test_retry_backoff_is_jittered_and_bounded);

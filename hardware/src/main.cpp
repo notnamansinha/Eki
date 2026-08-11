@@ -912,11 +912,20 @@ void publishRemoteDiagnostic() {
 TelemetryFix currentFix() {
   TelemetryFix fix{};
   if (
-    !gps.location.isValid() ||
-    gps.location.age() > 5000 ||
-    !gps.hdop.isValid() ||
+    !eki::telemetry::gnssFixFieldsAreFresh(
+      gps.location.isValid(),
+      gps.location.age(),
+      gps.hdop.isValid(),
+      gps.hdop.age(),
+      gps.speed.isValid(),
+      gps.speed.age(),
+      gps.course.isValid(),
+      gps.course.age()
+    ) ||
     gps.hdop.hdop() > HDOP_REJECT_THRESHOLD
   ) {
+    // Reject mixed-epoch GNSS fields as one sample; publishing only the fresh
+    // subset would misrepresent receiver quality and motion at this position.
     return fix;
   }
 
