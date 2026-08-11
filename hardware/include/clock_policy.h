@@ -76,6 +76,15 @@ inline int64_t absoluteDifference(int64_t left, int64_t right) {
   return left >= right ? left - right : right - left;
 }
 
+inline int64_t projectEpochMilliseconds(
+  int64_t referenceEpochMs,
+  uint32_t referenceMonotonicMs,
+  uint32_t nowMonotonicMs
+) {
+  return referenceEpochMs +
+    static_cast<int64_t>(nowMonotonicMs - referenceMonotonicMs);
+}
+
 inline bool shouldApplyGnssClock(
   bool gnssClockHasBeenApplied,
   uint32_t elapsedSinceLastApplication,

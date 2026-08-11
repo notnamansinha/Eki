@@ -136,6 +136,7 @@ bool remoteDiagnosticAttempted = false;
 uint8_t consecutiveHttpsFailures = 0;
 bool ntpCrossCheckStarted = false;
 bool gnssClockApplied = false;
+bool timeRangeWarningLogged = false;
 uint32_t lastGnssClockAppliedAt = 0;
 portMUX_TYPE clockCrossCheckMux = portMUX_INITIALIZER_UNLOCKED;
 int64_t latestGnssEpochMs = 0;
@@ -358,9 +359,31 @@ uint32_t telemetryConfigurationTag() {
   return hash == 0 ? 1 : hash;
 }
 
+int64_t systemEpochMilliseconds() {
+  timeval tv{};
+  gettimeofday(&tv, nullptr);
+  return static_cast<int64_t>(tv.tv_sec) * 1000 + tv.tv_usec / 1000;
+}
+
+int64_t epochMilliseconds() {
+  const uint32_t now = millis();
+  int64_t epochMs = 0;
+  portENTER_CRITICAL(&clockCrossCheckMux);
+  if (latestGnssReferenceValid) {
+    epochMs = eki::clock::projectEpochMilliseconds(
+      latestGnssEpochMs,
+      latestGnssReferenceAt,
+      now
+    );
+  }
+  portEXIT_CRITICAL(&clockCrossCheckMux);
+  return epochMs >= eki::clock::TRUSTED_EPOCH_MIN_MS
+    ? epochMs
+    : systemEpochMilliseconds();
+}
+
 bool clockIsSynchronized() {
-  return static_cast<int64_t>(time(nullptr)) * 1000 >=
-    eki::clock::TRUSTED_EPOCH_MIN_MS;
+  return epochMilliseconds() >= eki::clock::TRUSTED_EPOCH_MIN_MS;
 }
 
 bool httpsRetryIsPending() {
@@ -383,12 +406,6 @@ void scheduleHttpsRetry(uint32_t minimumDelayMs = 0) {
 void resetHttpsRetry() {
   consecutiveHttpsFailures = 0;
   httpsRetryDelayMs = 0;
-}
-
-int64_t epochMilliseconds() {
-  timeval tv{};
-  gettimeofday(&tv, nullptr);
-  return static_cast<int64_t>(tv.tv_sec) * 1000 + tv.tv_usec / 1000;
 }
 
 void disciplineClockFromGnss() {
@@ -424,11 +441,16 @@ void disciplineClockFromGnss() {
 
   const int64_t gnssEpochSeconds = gnssEpochMs / 1000;
   if (gnssEpochSeconds > static_cast<int64_t>(std::numeric_limits<time_t>::max())) {
-    Serial.println("[Clock] GNSS UTC exceeds this firmware runtime's time_t range.");
+    if (!timeRangeWarningLogged) {
+      Serial.println(
+        "[Clock] System time_t range exhausted; telemetry continues on the 64-bit GNSS clock. TLS depends on platform support."
+      );
+      timeRangeWarningLogged = true;
+    }
     return;
   }
 
-  const int64_t systemEpochMs = epochMilliseconds();
+  const int64_t systemEpochMs = systemEpochMilliseconds();
   if (!eki::clock::shouldApplyGnssClock(
     gnssClockApplied,
     elapsed(lastGnssClockAppliedAt),
