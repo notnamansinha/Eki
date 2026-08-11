@@ -173,6 +173,21 @@ describe("device telemetry HTTP responses", () => {
     expect(statuses).not.toContain(429);
   });
 
+  it("still caps unauthenticated telemetry by client IP", async () => {
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 130; attempt += 1) {
+      const deviceId = attempt % 2 === 0 ? "device_1" : "device_2";
+      const response = await fetch(`${baseUrl}/api/devices/${deviceId}/telemetry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sample: true }),
+      });
+      statuses.push(response.status);
+    }
+
+    expect(statuses.filter((status) => status === 429).length).toBeGreaterThan(0);
+  });
+
   it("returns the same retry contract when the outer per-device limiter rejects", async () => {
     let limited: Response | undefined;
     for (let attempt = 0; attempt < 130; attempt += 1) {
