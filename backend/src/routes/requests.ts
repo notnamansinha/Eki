@@ -7,8 +7,9 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 const ALLOWED_REQUEST_STATUSES = new Set<string>(["pending", "accepted", "completed", "cancelled"]);
 
-// Passenger requests are created directly through the constrained Firestore
-// rule; this API exposes only administrator lifecycle overrides.
+// Passenger requests are backend-authoritative: clients have no write surface
+// in firestore.rules (issues #72 + #73). Only this admin route manages
+// lifecycle overrides through the Admin SDK.
 
 
 // Admin patch completion override — SEC-10 fix: requires Firebase admin token

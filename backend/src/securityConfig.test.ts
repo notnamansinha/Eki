@@ -417,7 +417,7 @@ describe("production security configuration", () => {
     // admin /api/requests route (issues #72 + #73). An explicit client create
     // rule with no consumer is a latent write surface with no retention.
     expect(requests).toBe("");
-    expect(rules).not.toContain("passenger_requests");
+    expect(rules).not.toContain("match /passenger_requests");
   });
 
   it("gates passenger manifest self-join behind driver-issued proof and proximity", () => {

@@ -62,38 +62,9 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // ── Passenger requests — own requests for passengers, full access for drivers/admins ──
-    match /passenger_requests/{requestId} {
-      // Anyone authenticated can read their own requests (admins/drivers see all)
-      allow read: if isAdmin() ||
-        (isAuthenticated() && request.auth.token.role == 'driver' &&
-         resource.data.busId == request.auth.token.assignedBusId) ||
-        (isAuthenticated() && resource.data.passengerId == request.auth.uid);
-      // Passengers can only create requests for themselves
-      allow create: if isAuthenticated() &&
-        requestId == request.auth.uid &&
-        request.resource.data.keys().hasOnly([
-          'passengerId', 'busId', 'type', 'lat', 'lng', 'status', 'createdAt'
-        ]) &&
-        request.resource.data.passengerId == request.auth.uid &&
-        request.resource.data.busId is string && request.resource.data.busId.size() <= 128 &&
-        request.resource.data.type in ['pickup', 'dropoff'] &&
-        request.resource.data.lat is number && request.resource.data.lat >= -90 && request.resource.data.lat <= 90 &&
-        request.resource.data.lng is number && request.resource.data.lng >= -180 && request.resource.data.lng <= 180 &&
-        request.resource.data.status == 'pending' &&
-        request.resource.data.createdAt == request.time;
-      // Drivers may only transition status; immutable passenger/location fields
-      // cannot be replaced through a broad document update.
-      allow update: if isAdmin() ||
-        (isAuthenticated() && request.auth.token.role == 'driver' &&
-         resource.data.busId == request.auth.token.assignedBusId &&
-         request.resource.data.busId == resource.data.busId &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
-         request.resource.data.status in ['pending', 'accepted', 'completed', 'cancelled']);
-      allow delete: if isAdmin() ||
-        (isAuthenticated() && request.auth.token.role == 'driver' &&
-         resource.data.busId == request.auth.token.assignedBusId);
-    }
+    // passenger_requests is backend-authoritative: no client rule block. The
+    // admin /api/requests route manages lifecycle via the Admin SDK (issues
+    // #72 + #73 removed the dead client create/transition surface).
     
     // ── Buses collection ──
     match /buses/{busId} {

@@ -205,7 +205,8 @@ Body status is one of `pending|accepted|completed|cancelled`; updates existing r
 
 Deletes existing request. Returns `{message:"Deleted successfully"}` or 400/404/500.
 
-Passengers normally create the tightly constrained request directly through Firestore rules; assigned drivers have constrained rule-based status transitions.
+Passenger requests are backend-authoritative: clients have no Firestore write
+surface (issues #72 + #73); the admin route above is the only lifecycle path.
 
 ### `POST /api/privacy/deletion-request` — passenger
 
