@@ -17,16 +17,20 @@ async function deleteQuery(
   }
 }
 
-async function removePassengerManifest(uid: string): Promise<number> {
+/** Removes one passenger from every ride manifest, indexed by passengerIds. */
+export async function removePassengerManifest(uid: string): Promise<number> {
   let count = 0;
   while (true) {
     const sessions = await db.collection("ride_sessions")
-      .where(new FieldPath("passengers", uid, "userId"), "==", uid)
+      .where("passengerIds", "array-contains", uid)
       .limit(BATCH_SIZE)
       .get();
     if (sessions.empty) return count;
     const batch = db.batch();
     sessions.docs.forEach((session) => {
+      batch.update(session.ref, {
+        passengerIds: FieldValue.arrayRemove(uid),
+      });
       batch.update(session.ref, new FieldPath("passengers", uid), FieldValue.delete());
     });
     await batch.commit();

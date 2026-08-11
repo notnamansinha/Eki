@@ -308,6 +308,11 @@ router.post("/:sessionId/join", requireAuth, async (
         },
         "updatedAt",
         FieldValue.serverTimestamp(),
+        // Indexable membership mirror: privacy deletion queries array-contains
+        // instead of the unindexable passengers.{uid}.userId map path
+        // (issue #49 L3).
+        "passengerIds",
+        FieldValue.arrayUnion(user.uid),
       );
     });
 
