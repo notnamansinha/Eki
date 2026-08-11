@@ -1,4 +1,4 @@
-export const DRIVER_SHIFT_UPDATE_STATE_KEY = "eki:driver-shift-update-leases";
+export const DRIVER_SHIFT_UPDATE_STATE_KEY_PREFIX = "eki:driver-shift-update-lease:";
 export const DRIVER_SHIFT_UPDATE_EVENT = "eki:driver-shift-update-state-change";
 export const DRIVER_SHIFT_LEASE_TTL_MS = 15_000;
 export const DRIVER_SHIFT_LEASE_HEARTBEAT_MS = 5_000;
@@ -18,36 +18,47 @@ function validState(value: unknown): value is DriverShiftUpdateState {
   return value === "checking" || value === "active" || value === "inactive";
 }
 
-function readStoredLeases(): DriverShiftLeases {
+function storageKey(leaseId: string): string {
+  return `${DRIVER_SHIFT_UPDATE_STATE_KEY_PREFIX}${leaseId}`;
+}
+
+function readStoredLeases(): { leases: DriverShiftLeases; readable: boolean } {
+  const leases: DriverShiftLeases = {};
   try {
-    const value = window.localStorage.getItem(DRIVER_SHIFT_UPDATE_STATE_KEY);
-    if (!value) return {};
-    const parsed = JSON.parse(value) as Record<string, Partial<DriverShiftLease>>;
-    return Object.fromEntries(
-      Object.entries(parsed).filter(
-        (entry): entry is [string, DriverShiftLease] =>
-          validState(entry[1]?.state) && Number.isFinite(entry[1]?.updatedAt),
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (!key?.startsWith(DRIVER_SHIFT_UPDATE_STATE_KEY_PREFIX)) continue;
+      const leaseId = key.slice(DRIVER_SHIFT_UPDATE_STATE_KEY_PREFIX.length);
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      try {
+        const parsed = JSON.parse(raw) as Partial<DriverShiftLease>;
+        if (validState(parsed?.state) && Number.isFinite(parsed?.updatedAt)) {
+          leases[leaseId] = parsed as DriverShiftLease;
+        }
+      } catch {
+        // Ignore only this malformed lease; storage itself remains usable.
+      }
+    }
+    return { leases, readable: true };
+  } catch {
+    return { leases: {}, readable: false };
+  }
+}
+
+function currentLeases(now: number): { leases: DriverShiftLeases; readable: boolean } {
+  const stored = readStoredLeases();
+  return {
+    readable: stored.readable,
+    leases: Object.fromEntries(
+      Object.entries({ ...stored.leases, ...memoryLeases }).filter(
+        ([, lease]) => now - lease.updatedAt <= DRIVER_SHIFT_LEASE_TTL_MS,
       ),
-    );
-  } catch {
-    return {};
-  }
-}
-
-function currentLeases(now: number): DriverShiftLeases {
-  return Object.fromEntries(
-    Object.entries({ ...readStoredLeases(), ...memoryLeases }).filter(
-      ([, lease]) => now - lease.updatedAt <= DRIVER_SHIFT_LEASE_TTL_MS,
     ),
-  );
+  };
 }
 
-function persistLeases(leases: DriverShiftLeases): void {
-  try {
-    window.localStorage.setItem(DRIVER_SHIFT_UPDATE_STATE_KEY, JSON.stringify(leases));
-  } catch {
-    // The in-memory lease still protects this tab when storage is unavailable.
-  }
+function dispatchLeaseChange(): void {
   window.dispatchEvent(new Event(DRIVER_SHIFT_UPDATE_EVENT));
 }
 
@@ -61,19 +72,32 @@ export function setDriverShiftUpdateState(
   state: DriverShiftUpdateState,
   now = Date.now(),
 ): void {
-  memoryLeases[leaseId] = { state, updatedAt: now };
-  persistLeases({ ...currentLeases(now), [leaseId]: memoryLeases[leaseId] });
+  const lease = { state, updatedAt: now };
+  memoryLeases[leaseId] = lease;
+  try {
+    // A separate key per tab avoids a read-modify-write race between tabs.
+    window.localStorage.setItem(storageKey(leaseId), JSON.stringify(lease));
+  } catch {
+    // The in-memory lease still protects this tab. Activation also fails
+    // closed while storage cannot be read, protecting other open driver tabs.
+  }
+  dispatchLeaseChange();
 }
 
-export function clearDriverShiftUpdateState(leaseId: string, now = Date.now()): void {
+export function clearDriverShiftUpdateState(leaseId: string): void {
   delete memoryLeases[leaseId];
-  const leases = currentLeases(now);
-  delete leases[leaseId];
-  persistLeases(leases);
+  try {
+    window.localStorage.removeItem(storageKey(leaseId));
+  } catch {
+    // A stale stored lease expires after DRIVER_SHIFT_LEASE_TTL_MS.
+  }
+  dispatchLeaseChange();
 }
 
 export function canActivateServiceWorker(now = Date.now()): boolean {
-  return !Object.values(currentLeases(now)).some(
+  const current = currentLeases(now);
+  if (!current.readable) return false;
+  return !Object.values(current.leases).some(
     (lease) => lease.state === "checking" || lease.state === "active",
   );
 }

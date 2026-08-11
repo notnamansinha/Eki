@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import {
   canActivateServiceWorker,
   DRIVER_SHIFT_UPDATE_EVENT,
-  DRIVER_SHIFT_UPDATE_STATE_KEY,
+  DRIVER_SHIFT_UPDATE_STATE_KEY_PREFIX,
 } from "@/lib/serviceWorkerUpdate";
 
 /**
@@ -52,7 +52,9 @@ export default function ServiceWorkerRegistrar() {
     };
 
     const handleStorage = (event: StorageEvent) => {
-      if (event.key === DRIVER_SHIFT_UPDATE_STATE_KEY) scheduleWaitingWorkerActivation();
+      if (event.key?.startsWith(DRIVER_SHIFT_UPDATE_STATE_KEY_PREFIX)) {
+        scheduleWaitingWorkerActivation();
+      }
     };
 
     const handleControllerChange = () => {
