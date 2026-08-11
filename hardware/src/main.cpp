@@ -190,12 +190,14 @@ uint32_t uartBufferOverflowCount = 0;
 uint32_t uartFifoOverflowCount = 0;
 uint32_t acceptedFixCount = 0;
 uint32_t rejectedFixCount = 0;
+uint32_t nmeaChecksumFailureCount = 0;
 
 struct HealthCounters {
   uint32_t uartBufferOverflows;
   uint32_t uartFifoOverflows;
   uint32_t acceptedFixes;
   uint32_t rejectedFixes;
+  uint32_t nmeaChecksumFailures;
 };
 
 uint32_t elapsed(uint32_t since) {
@@ -352,6 +354,7 @@ HealthCounters healthCounters() {
     uartFifoOverflowCount,
     acceptedFixCount,
     rejectedFixCount,
+    nmeaChecksumFailureCount,
   };
   portEXIT_CRITICAL(&healthMetricsMux);
   return counters;
@@ -861,7 +864,7 @@ void publishRemoteDiagnostic() {
   document["queueStaleDrops"] = queue.staleDrops;
   document["acceptedFixes"] = counters.acceptedFixes;
   document["rejectedFixes"] = counters.rejectedFixes;
-  document["nmeaChecksumFailures"] = gps.failedChecksum();
+  document["nmeaChecksumFailures"] = counters.nmeaChecksumFailures;
   document["uartBufferOverflows"] = counters.uartBufferOverflows;
   document["uartFifoOverflows"] = counters.uartFifoOverflows;
   document["resetTotal"] = resets.total();
@@ -1073,7 +1076,7 @@ void reportHealth() {
     static_cast<unsigned long>(queue.staleDrops),
     static_cast<unsigned long>(counters.acceptedFixes),
     static_cast<unsigned long>(counters.rejectedFixes),
-    static_cast<unsigned long>(gps.failedChecksum()),
+    static_cast<unsigned long>(counters.nmeaChecksumFailures),
     static_cast<unsigned long>(counters.uartBufferOverflows),
     static_cast<unsigned long>(counters.uartFifoOverflows),
     static_cast<unsigned>(resets.count(eki::reset::ResetReason::PowerOn)),
@@ -1203,6 +1206,11 @@ void loop() {
 
   if (elapsed(lastEvaluationAt) >= 1000) {
     lastEvaluationAt = millis();
+    // TinyGPSPlus belongs exclusively to this loop task. Only the protected
+    // scalar snapshot crosses to the publisher task for diagnostics.
+    portENTER_CRITICAL(&healthMetricsMux);
+    nmeaChecksumFailureCount = gps.failedChecksum();
+    portEXIT_CRITICAL(&healthMetricsMux);
     evaluateTelemetry();
   }
 
