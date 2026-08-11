@@ -49,15 +49,18 @@ describe("removePassengerManifest", () => {
 
   it("removes the passenger from the manifest and the passengerIds array", async () => {
     const sessionRef = { id: "session_1" };
+    let pageCalls = 0;
     mocks.db.collection = vi.fn((name: string) =>
       name === "ride_sessions"
         ? {
             where: () => ({
               limit: () => ({
-                get: async () => ({
-                  empty: false,
-                  docs: [{ ref: sessionRef }],
-                }),
+                get: async () => {
+                  pageCalls += 1;
+                  return pageCalls === 1
+                    ? { empty: false, size: 1, docs: [{ ref: sessionRef }] }
+                    : { empty: true, docs: [] };
+                },
               }),
             }),
           }
@@ -71,9 +74,17 @@ describe("removePassengerManifest", () => {
     const count = await removePassengerManifest("uid_1");
 
     expect(count).toBe(1);
-    expect(mocks.batchUpdates[0].data).toMatchObject({
-      passengerIds: expect.anything(),
-    });
-    expect(JSON.stringify(mocks.batchUpdates[0].data)).toContain("arrayRemove");
+    // Pagination terminates: the first page is non-empty, the second is empty,
+    // so the while(true) loop exits. Previously the mock ALWAYS returned a
+    // non-empty page, the loop never ended, and the worker OOM'd in CI.
+    expect(pageCalls).toBe(2);
+    const passengerIdsUpdate = mocks.batchUpdates[0].data.passengerIds as {
+      elements: string[];
+    };
+    // arrayRemove is an ArrayRemoveTransform (arrayUnion is ArrayUnionTransform);
+    // JSON.stringify can't distinguish them and omits the transform name, so
+    // assert on the transform type directly.
+    expect(passengerIdsUpdate.elements).toEqual(["uid_1"]);
+    expect(passengerIdsUpdate.constructor.name).toBe("ArrayRemoveTransform");
   });
 });
