@@ -8,6 +8,10 @@
 namespace eki {
 namespace telemetry {
 
+inline bool speedIsPlausible(double speedKmh) {
+  return std::isfinite(speedKmh) && speedKmh >= 0.0 && speedKmh <= 200.0;
+}
+
 constexpr double DISTANCE_THRESHOLD_M = 5.0;
 constexpr double HEADING_THRESHOLD_DEG = 15.0;
 constexpr double SPEED_THRESHOLD_KMH = 5.0;

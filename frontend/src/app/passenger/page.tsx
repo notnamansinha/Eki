@@ -158,13 +158,7 @@ export default function PassengerPage() {
         lng: activeRoute.waypoints[activeRoute.waypoints.length - 1].lng,
         name: "Final Destination",
         shortName: "TERMINUS"
-      } : {
-        id: "live-endpoint",
-        lat: 23.0347,
-        lng: 72.5483,
-        name: "Tracking Area",
-        shortName: "LIVE"
-      }));
+      } : null));
 
   const busesOnRoute = activeBuses.filter(
     (bus) => bus.routeId === effectiveRouteId,
