@@ -490,10 +490,32 @@ export function startTripStateEngine(): () => Promise<void> {
       hasDepartedOrigin !== (data.hasDepartedOrigin === true);
     if (liveStateChanged && tripState !== "completed") {
       try {
-        await snapshot.ref.update({
-          tripState,
-          currentStopIndex,
-          hasDepartedOrigin,
+        // Guarded write: the plain update() could recreate a node the stale
+        // sweep removed (phantom bus with no coords/timestamp) or clobber a
+        // newer session that reused this key (issue #66). The transaction
+        // aborts when the node is gone, belongs to another session, or has
+        // reached a terminal/offline state.
+        await snapshot.ref.transaction((current) => {
+          const live = current as Record<string, unknown> | null;
+          if (!live) return;
+          if (
+            typeof data.sessionId === "string" &&
+            live.sessionId !== data.sessionId
+          ) {
+            return;
+          }
+          if (
+            live.tripState === "completed" ||
+            live.deviceState === "offline"
+          ) {
+            return;
+          }
+          return {
+            ...live,
+            tripState,
+            currentStopIndex,
+            hasDepartedOrigin,
+          };
         });
       } catch (error) {
         console.error(
