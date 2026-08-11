@@ -11,6 +11,9 @@ import {
 } from "react";
 import { notifyAuthReady } from "@/lib/authState";
 import { ensureAppCheck } from "@/lib/firebaseAppCheck";
+import { withTimeout } from "@/lib/promiseTimeout";
+
+const ROLE_VERIFICATION_TIMEOUT_MS = 10_000;
 
 export type UserRole = "passenger" | "driver" | "admin" | null;
 
@@ -97,7 +100,11 @@ function useAuthState(): AuthContextValue {
               // Role claims are already present in a persisted Firebase session, so
               // this returns without a Firestore round trip for normal app starts.
               // They are issued by the trusted admin sync job, unlike client data.
-              const tokenResult = await firebaseUser.getIdTokenResult();
+              const tokenResult = await withTimeout(
+                firebaseUser.getIdTokenResult(),
+                ROLE_VERIFICATION_TIMEOUT_MS,
+                "Role verification timed out.",
+              );
               const claimedRole = tokenResult.claims.role;
 
               if (
@@ -128,7 +135,11 @@ function useAuthState(): AuthContextValue {
                 ]);
               const db = getFirestore(firebaseApp);
               const userDocRef = doc(db, "users", firebaseUser.uid);
-              const userSnap = await getDoc(userDocRef);
+              const userSnap = await withTimeout(
+                getDoc(userDocRef),
+                ROLE_VERIFICATION_TIMEOUT_MS,
+                "Role verification timed out.",
+              );
 
               if (currentGen !== generation) return;
 
@@ -190,7 +201,11 @@ function useAuthState(): AuthContextValue {
                 console.error("Firestore role fetch failed:", err);
               }
               if (currentGen !== generation) return;
-              setRoleError("We could not verify your access. Check your connection and try again.");
+              setRoleError(
+                code === "permission-denied"
+                  ? "Your account is not permitted to verify this workspace."
+                  : "We could not verify your access. Check your connection and try again.",
+              );
               setUser({
                 uid: firebaseUser.uid,
                 email: firebaseUser.email,
@@ -270,6 +285,7 @@ function useAuthState(): AuthContextValue {
       clearSettingsCache();
       invalidateLiveBusCache();
       setUser(null);
+      setRoleError(null);
     } catch (error) {
       console.error("Logout failed:", error);
     }

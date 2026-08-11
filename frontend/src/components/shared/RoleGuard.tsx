@@ -98,9 +98,19 @@ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
         <p className="mb-6 max-w-sm text-sm" style={{ color: "var(--text-secondary)" }}>
           {roleError}
         </p>
-        <button type="button" className="btn-primary px-5 py-2.5 text-sm" onClick={() => window.location.reload()}>
-          Try again
-        </button>
+        <div className="flex items-center gap-4">
+          <button type="button" className="btn-primary px-5 py-2.5 text-sm" onClick={() => window.location.reload()}>
+            Try again
+          </button>
+          <button
+            type="button"
+            className="text-sm font-semibold"
+            style={{ color: "var(--text-secondary)" }}
+            onClick={() => void logout()}
+          >
+            Sign out
+          </button>
+        </div>
       </div>
     );
   }
