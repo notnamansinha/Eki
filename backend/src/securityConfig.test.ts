@@ -269,13 +269,19 @@ describe("production security configuration", () => {
       "tlsClient.setCACert(deviceConfiguration.backendRootCa())",
     );
     expect(firmware).toContain("HTTPClient");
+    expect(firmware).toContain("char authorizationHeader[");
     expect(firmware).toContain(
-      'authorizationHeader = String("Device ") + deviceConfiguration.deviceSecret()',
+      "char authorizationHeader[eki::connectivity::DEVICE_SECRET_MAX_LENGTH + 8]",
+    );
+    expect(firmware).toContain("constexpr size_t ENDPOINT_MAX_LENGTH");
+    expect(firmware).toContain('"Device %s"');
+    expect(firmware).not.toContain(
+      'authorizationHeader = String("Device ")',
     );
     expect(firmware).toContain(
       'http.addHeader("Authorization", authorizationHeader)',
     );
-    expect(firmware).toContain("HTTPClient::errorToString(responseCode)");
+    expect(firmware).not.toContain("HTTPClient::errorToString(responseCode)");
     expect(firmware).toContain('http.collectHeaders(responseHeaders, 1)');
     expect(firmware).toContain("deviceConfiguration.load()");
     expect(firmware).not.toContain('#include "secrets.h"');
@@ -307,7 +313,7 @@ describe("production security configuration", () => {
     expect(telemetryPolicy).toContain("STOPPED_HEARTBEAT_MS = 60000");
     expect(telemetryPolicy).toContain("motionStateChanged");
     expect(tripStateEngine).toContain("const STALE_BUS_MS = readIntervalMs");
-    expect(firmware).toContain("TELEMETRY_FRESHNESS_MARGIN_MS = 55000");
+    expect(telemetryPolicy).toContain("TELEMETRY_FRESHNESS_MARGIN_MS = 55000");
     expect(firmware).toContain("RTC_NOINIT_ATTR TelemetryQueue telemetryQueue");
     expect(firmware).toContain("xTaskCreatePinnedToCore");
     expect(telemetryQueue).toContain("dropOlderThan");
