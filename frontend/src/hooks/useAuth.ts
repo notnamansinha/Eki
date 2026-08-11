@@ -26,6 +26,7 @@ interface AppUser {
 interface AuthContextValue {
   user: AppUser | null;
   loading: boolean;
+  roleError: string | null;
   loginLoading: boolean;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
@@ -36,6 +37,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 function useAuthState(): AuthContextValue {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [roleError, setRoleError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
 
   useEffect(() => {
@@ -71,24 +73,24 @@ function useAuthState(): AuthContextValue {
           notifyAuthReady();
 
           if (firebaseUser) {
+            setRoleError(null);
             const storedRole = window.localStorage.getItem(`eki:role:${firebaseUser.uid}`);
             const cachedRole: UserRole =
               storedRole === "passenger" || storedRole === "driver" || storedRole === "admin"
                 ? storedRole
                 : null;
 
-            // Restore the last verified role immediately. Firebase claims remain
-            // the authorization boundary and refresh this value in the background.
+            // Restore identity for display only. A cached role must never unlock a
+            // workspace while authoritative claims/profile verification is pending.
             if (cachedRole) {
               setUser({
                 uid: firebaseUser.uid,
                 email: firebaseUser.email,
                 displayName: firebaseUser.displayName,
                 photoURL: firebaseUser.photoURL,
-                role: cachedRole,
+                role: null,
                 isAnonymous: firebaseUser.isAnonymous,
               });
-              setLoading(false);
             }
 
             try {
@@ -169,6 +171,7 @@ function useAuthState(): AuthContextValue {
               }
 
               if (currentGen !== generation) return;
+              setRoleError(null);
               window.localStorage.setItem(`eki:role:${firebaseUser.uid}`, role || "passenger");
 
               setUser({
@@ -187,12 +190,13 @@ function useAuthState(): AuthContextValue {
                 console.error("Firestore role fetch failed:", err);
               }
               if (currentGen !== generation) return;
+              setRoleError("We could not verify your access. Check your connection and try again.");
               setUser({
                 uid: firebaseUser.uid,
                 email: firebaseUser.email,
                 displayName: firebaseUser.displayName,
                 photoURL: firebaseUser.photoURL,
-                role: cachedRole || "passenger",
+                role: null,
                 isAnonymous: firebaseUser.isAnonymous,
               });
             } finally {
@@ -201,6 +205,7 @@ function useAuthState(): AuthContextValue {
           } else {
             if (currentGen !== generation) return;
             setUser(null);
+            setRoleError(null);
             setLoading(false);
           }
         });
@@ -270,7 +275,7 @@ function useAuthState(): AuthContextValue {
     }
   }, []);
 
-  return { user, loading, loginLoading, loginWithGoogle, logout };
+  return { user, loading, roleError, loginLoading, loginWithGoogle, logout };
 }
 
 /**
