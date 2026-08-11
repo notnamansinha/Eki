@@ -65,6 +65,17 @@ void test_retry_backoff_is_jittered_and_bounded() {
   TEST_ASSERT_EQUAL_UINT32(30000, retryDelayMs(99, 999));
 }
 
+void test_diagnostic_retry_backoff_is_bounded() {
+  TEST_ASSERT_EQUAL_UINT32(0, diagnosticRetryDelayMs(0));
+  TEST_ASSERT_EQUAL_UINT32(5000, diagnosticRetryDelayMs(1));
+  TEST_ASSERT_EQUAL_UINT32(9999, diagnosticRetryDelayMs(1, 4999));
+  TEST_ASSERT_EQUAL_UINT32(10000, diagnosticRetryDelayMs(2));
+  TEST_ASSERT_EQUAL_UINT32(20000, diagnosticRetryDelayMs(3));
+  TEST_ASSERT_EQUAL_UINT32(40000, diagnosticRetryDelayMs(4));
+  TEST_ASSERT_EQUAL_UINT32(60000, diagnosticRetryDelayMs(5));
+  TEST_ASSERT_EQUAL_UINT32(60000, diagnosticRetryDelayMs(100));
+}
+
 void test_http_response_actions_cover_transport_and_status_families() {
   TEST_ASSERT_EQUAL_INT(
     static_cast<int>(HttpResponseAction::Accept),
@@ -428,6 +439,7 @@ int main(int, char **) {
   RUN_TEST(test_implausible_speed_is_rejected_instead_of_clamped);
   RUN_TEST(test_motion_hysteresis_filters_single_noisy_readings);
   RUN_TEST(test_retry_backoff_is_jittered_and_bounded);
+  RUN_TEST(test_diagnostic_retry_backoff_is_bounded);
   RUN_TEST(test_http_response_actions_cover_transport_and_status_families);
   RUN_TEST(test_retry_after_is_strict_bounded_and_status_aware);
   RUN_TEST(test_device_configuration_record_is_closed_and_tamper_evident);
