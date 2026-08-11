@@ -26,11 +26,16 @@ service cloud.firestore {
          request.auth.token.driverId == sessionDoc(sessionId).data.driverId);
     }
 
-    function isSessionPassenger(sessionId) {
+    // Operator OR passenger membership with a single get(): chat reads check
+    // both roles in one billable session fetch instead of two (issue #40).
+    function canReadSession(sessionId) {
       let session = sessionDoc(sessionId);
-      return isAuthenticated() && session.data.passengers is map &&
-        request.auth.uid in session.data.passengers &&
-        session.data.passengers[request.auth.uid].userId == request.auth.uid;
+      return isAdmin() ||
+        (isAuthenticated() && request.auth.token.role == 'driver' &&
+         request.auth.token.driverId == session.data.driverId) ||
+        (isAuthenticated() && session.data.passengers is map &&
+         request.auth.uid in session.data.passengers &&
+         session.data.passengers[request.auth.uid].userId == request.auth.uid);
     }
 
     // SEC: Boarding is server-issued (POST /api/sessions/:sessionId/join).
@@ -88,7 +93,7 @@ service cloud.firestore {
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if isSessionOperator(sessionId) || isSessionPassenger(sessionId);
+        allow read: if canReadSession(sessionId);
         // Message writes are backend-authoritative (POST /api/sessions/:id/messages).
         // The server enforces membership, the 60/hr rolling rate limit, the 3s
         // gap, and the profanity filter — none of which a crafted client could
@@ -99,8 +104,7 @@ service cloud.firestore {
       match /messageRateLimits/{uid} {
         // Read is permitted for the owner so the UI can reflect limits, but
         // writes are backend-only: the server maintains the rolling window.
-        allow read: if isOwner(uid) &&
-          (isSessionOperator(sessionId) || isSessionPassenger(sessionId));
+        allow read: if isOwner(uid) && canReadSession(sessionId);
         allow create, update, delete: if false;
       }
     }

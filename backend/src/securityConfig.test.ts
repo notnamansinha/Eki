@@ -113,11 +113,10 @@ describe("production security configuration", () => {
     expect(activeBusLocks).toContain("allow read, write: if false;");
     // Message and rate-limit writes are backend-authoritative; clients read only.
     expect(messages).toContain("allow create, update, delete: if false;");
-    expect(messages).toContain("isSessionPassenger(sessionId)");
+    expect(messages).toContain("canReadSession(sessionId)");
     expect(messages).not.toContain("messageRateAdvanced(sessionId)");
     expect(messageRateLimits).toContain("allow create, update, delete: if false;");
-    expect(messageRateLimits).toContain("isSessionPassenger(sessionId)");
-    expect(messageRateLimits).toContain("isSessionOperator(sessionId)");
+    expect(messageRateLimits).toContain("canReadSession(sessionId)");
     expect(sessions).toContain("allow read: if isSessionOperator(sessionId)");
     expect(sessions).toContain("allow update: if false;");
     expect(sessions).not.toContain("boardingStopId.size() <= 128");
