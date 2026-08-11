@@ -17,6 +17,7 @@ import ConfirmModal from "@/components/ui/ConfirmModal";
 import AlertModal from "@/components/ui/AlertModal";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
+import { apiRequest } from "@/lib/apiClient";
 
 
 /* ────────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -47,9 +48,8 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
     if (value.length < 3) return;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
       const currentUser = auth.currentUser;
-      if (!backendUrl || !currentUser) {
+      if (!currentUser) {
         setSearchError("Place search is unavailable. Sign in again and retry.");
         return;
       }
@@ -57,17 +57,14 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
       setSearchError("");
       try {
         const token = await currentUser.getIdToken();
-        const response = await fetch(
-          `${backendUrl}/api/places/search?q=${encodeURIComponent(value)}`,
+        const payload = await apiRequest<{ results?: PlacePrediction[] }>(
+          `/api/places/search?q=${encodeURIComponent(value)}`,
           {
             headers: { Authorization: `Bearer ${token}` },
             signal: controller.signal,
+            fallbackError: "Place search is temporarily unavailable.",
           },
         );
-        if (!response.ok) {
-          throw new Error("Place search is temporarily unavailable.");
-        }
-        const payload = await response.json() as { results?: PlacePrediction[] };
         setPredictions(Array.isArray(payload.results) ? payload.results : []);
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -343,14 +340,17 @@ function RouteEditor({
     setSaving(true);
 
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
       const currentUser = auth.currentUser;
-      if (!backendUrl || !currentUser) {
+      if (!currentUser) {
         throw new Error("Route geometry service is unavailable. Sign in again and retry.");
       }
 
       const token = await currentUser.getIdToken(true);
-      const geometryResponse = await fetch(`${backendUrl}/api/routes/${encodeURIComponent(state.routeId)}`, {
+      const geometry = await apiRequest<{
+        polyline?: string;
+        distanceMeters?: number;
+        duration?: string;
+      }>(`/api/routes/${encodeURIComponent(state.routeId)}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -363,15 +363,8 @@ function RouteEditor({
           mode: state.mode,
           stops: state.stops,
         }),
+        fallbackError: "Unable to compute route geometry. The route was not saved.",
       });
-      if (!geometryResponse.ok) {
-        throw new Error("Unable to compute route geometry. The route was not saved.");
-      }
-      const geometry = await geometryResponse.json() as {
-        polyline?: string;
-        distanceMeters?: number;
-        duration?: string;
-      };
       if (!geometry.polyline || typeof geometry.distanceMeters !== "number" || typeof geometry.duration !== "string") {
         throw new Error("Route geometry service returned an invalid result.");
       }
@@ -612,16 +605,14 @@ export default function RouteManagementPanel() {
     const id = deleteRouteId;
     setIsDeleting(true);
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
       const currentUser = auth.currentUser;
-      if (!backendUrl || !currentUser) throw new Error("Route service is unavailable.");
+      if (!currentUser) throw new Error("Route service is unavailable.");
       const token = await currentUser.getIdToken();
-      const response = await fetch(`${backendUrl}/api/routes/${encodeURIComponent(id)}`, {
+      await apiRequest(`/api/routes/${encodeURIComponent(id)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
+        fallbackError: "Unable to delete route.",
       });
-      const result = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(result.error || "Unable to delete route.");
       setDeleteRouteId(null);
     } catch (error: unknown) {
       setPanelAlertMsg("Failed to delete: " + errorMessage(error));

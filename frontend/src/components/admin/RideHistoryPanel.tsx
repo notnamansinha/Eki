@@ -19,6 +19,7 @@ import {
   type RideHistoryDeletionState,
 } from "@/lib/rideHistory";
 import { auth } from "@/lib/firebaseAuth";
+import { apiRequest } from "@/lib/apiClient";
 import { errorMessage } from "@/lib/errors";
 import { Bus, Loader2, MapPin, Trash2, User, Users, AlertCircle } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
@@ -95,23 +96,19 @@ function formatServiceTime(value: TimestampValue): string {
 }
 
 async function deleteRideHistoryRequest(sessionId: string): Promise<void> {
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
   const currentUser = auth.currentUser;
-  if (!backendUrl || !currentUser) {
+  if (!currentUser) {
     throw new Error("Ride history service is unavailable.");
   }
   const token = await currentUser.getIdToken();
-  const response = await fetch(
-    `${backendUrl}/api/shifts/${encodeURIComponent(sessionId)}/history`,
+  await apiRequest(
+    `/api/shifts/${encodeURIComponent(sessionId)}/history`,
     {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
+      fallbackError: "Unable to delete ride history.",
     },
   );
-  const result = await response.json().catch(() => ({})) as { error?: string };
-  if (!response.ok) {
-    throw new Error(result.error || "Unable to delete ride history.");
-  }
 }
 
 export default function RideHistoryPanel() {

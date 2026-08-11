@@ -34,10 +34,8 @@ import { ExpirationPlugin } from "workbox-expiration";
 import { CacheableResponsePlugin } from "workbox-cacheable-response";
 
 // ─── Lifecycle ──────────────────────────────────────────────────────────────
-// Skip the waiting phase so the new SW takes over immediately after install.
-// Combined with clientsClaim(), returning users always get the latest shell
-// without needing to close all tabs.
-self.skipWaiting();
+// The application asks an installed worker to activate only when no driver
+// shift is active. This prevents controllerchange from reloading a live shift.
 clientsClaim();
 
 // Remove entries from previous precache versions that are no longer in the

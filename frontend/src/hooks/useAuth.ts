@@ -11,6 +11,9 @@ import {
 } from "react";
 import { notifyAuthReady } from "@/lib/authState";
 import { ensureAppCheck } from "@/lib/firebaseAppCheck";
+import { withTimeout } from "@/lib/promiseTimeout";
+
+const ROLE_VERIFICATION_TIMEOUT_MS = 10_000;
 
 export type UserRole = "passenger" | "driver" | "admin" | null;
 
@@ -26,6 +29,7 @@ interface AppUser {
 interface AuthContextValue {
   user: AppUser | null;
   loading: boolean;
+  roleError: string | null;
   loginLoading: boolean;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
@@ -36,6 +40,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 function useAuthState(): AuthContextValue {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [roleError, setRoleError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
 
   useEffect(() => {
@@ -71,31 +76,35 @@ function useAuthState(): AuthContextValue {
           notifyAuthReady();
 
           if (firebaseUser) {
+            setRoleError(null);
             const storedRole = window.localStorage.getItem(`eki:role:${firebaseUser.uid}`);
             const cachedRole: UserRole =
               storedRole === "passenger" || storedRole === "driver" || storedRole === "admin"
                 ? storedRole
                 : null;
 
-            // Restore the last verified role immediately. Firebase claims remain
-            // the authorization boundary and refresh this value in the background.
+            // Restore identity for display only. A cached role must never unlock a
+            // workspace while authoritative claims/profile verification is pending.
             if (cachedRole) {
               setUser({
                 uid: firebaseUser.uid,
                 email: firebaseUser.email,
                 displayName: firebaseUser.displayName,
                 photoURL: firebaseUser.photoURL,
-                role: cachedRole,
+                role: null,
                 isAnonymous: firebaseUser.isAnonymous,
               });
-              setLoading(false);
             }
 
             try {
               // Role claims are already present in a persisted Firebase session, so
               // this returns without a Firestore round trip for normal app starts.
               // They are issued by the trusted admin sync job, unlike client data.
-              const tokenResult = await firebaseUser.getIdTokenResult();
+              const tokenResult = await withTimeout(
+                firebaseUser.getIdTokenResult(),
+                ROLE_VERIFICATION_TIMEOUT_MS,
+                "Role verification timed out.",
+              );
               const claimedRole = tokenResult.claims.role;
 
               if (
@@ -126,7 +135,11 @@ function useAuthState(): AuthContextValue {
                 ]);
               const db = getFirestore(firebaseApp);
               const userDocRef = doc(db, "users", firebaseUser.uid);
-              const userSnap = await getDoc(userDocRef);
+              const userSnap = await withTimeout(
+                getDoc(userDocRef),
+                ROLE_VERIFICATION_TIMEOUT_MS,
+                "Role verification timed out.",
+              );
 
               if (currentGen !== generation) return;
 
@@ -169,6 +182,7 @@ function useAuthState(): AuthContextValue {
               }
 
               if (currentGen !== generation) return;
+              setRoleError(null);
               window.localStorage.setItem(`eki:role:${firebaseUser.uid}`, role || "passenger");
 
               setUser({
@@ -187,12 +201,17 @@ function useAuthState(): AuthContextValue {
                 console.error("Firestore role fetch failed:", err);
               }
               if (currentGen !== generation) return;
+              setRoleError(
+                code === "permission-denied"
+                  ? "Your account is not permitted to verify this workspace."
+                  : "We could not verify your access. Check your connection and try again.",
+              );
               setUser({
                 uid: firebaseUser.uid,
                 email: firebaseUser.email,
                 displayName: firebaseUser.displayName,
                 photoURL: firebaseUser.photoURL,
-                role: cachedRole || "passenger",
+                role: null,
                 isAnonymous: firebaseUser.isAnonymous,
               });
             } finally {
@@ -201,6 +220,7 @@ function useAuthState(): AuthContextValue {
           } else {
             if (currentGen !== generation) return;
             setUser(null);
+            setRoleError(null);
             setLoading(false);
           }
         });
@@ -265,12 +285,13 @@ function useAuthState(): AuthContextValue {
       clearSettingsCache();
       invalidateLiveBusCache();
       setUser(null);
+      setRoleError(null);
     } catch (error) {
       console.error("Logout failed:", error);
     }
   }, []);
 
-  return { user, loading, loginLoading, loginWithGoogle, logout };
+  return { user, loading, roleError, loginLoading, loginWithGoogle, logout };
 }
 
 /**

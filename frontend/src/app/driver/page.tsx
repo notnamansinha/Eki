@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import TransmitterControls from "@/components/driver/TransmitterControls";
@@ -15,6 +15,14 @@ import { auth } from "@/lib/firebaseAuth";
 import { rtdb } from "@/lib/firebaseDatabase";
 import { ref, onValue } from "firebase/database";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
+import {
+  clearDriverShiftUpdateState,
+  createDriverShiftLeaseId,
+  DRIVER_SHIFT_LEASE_HEARTBEAT_MS,
+  setDriverShiftUpdateState,
+  type DriverShiftUpdateState,
+} from "@/lib/serviceWorkerUpdate";
+import { apiRequest } from "@/lib/apiClient";
 
 const DriverMap = dynamic(() => import("@/components/maps/DriverMap"), {
   ssr: false,
@@ -39,6 +47,7 @@ export default function DriverPage() {
   const [selectedRouteIds, setSelectedRouteIds] = useState<string[]>([]);
   const activeRoute = routes.find(r => selectedRouteIds.includes(r.id));
   const [isTracking, setIsTracking] = useState(false);
+  const [shiftStatusKnown, setShiftStatusKnown] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number; heading: number; speed?: number } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("map");
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
@@ -52,6 +61,33 @@ export default function DriverPage() {
   const selectedSessionId = selectedRouteIds.length === 1
     ? activeSessionIds[selectedRouteIds[0]] || ""
     : "";
+  const shiftLeaseIdRef = useRef<string | null>(null);
+  const shiftUpdateState: DriverShiftUpdateState =
+    !busId || selectedRouteIds.length !== 1
+      ? "inactive"
+      : !shiftStatusKnown
+        ? "checking"
+        : isTracking
+          ? "active"
+          : "inactive";
+
+  useEffect(() => {
+    setShiftStatusKnown(!busId || selectedRouteIds.length !== 1);
+  }, [busId, selectedRouteIds]);
+
+  useEffect(() => {
+    const leaseId = shiftLeaseIdRef.current ?? createDriverShiftLeaseId();
+    shiftLeaseIdRef.current = leaseId;
+    const publishLease = () => setDriverShiftUpdateState(leaseId, shiftUpdateState);
+    publishLease();
+    if (shiftUpdateState === "inactive") return undefined;
+    const heartbeat = setInterval(publishLease, DRIVER_SHIFT_LEASE_HEARTBEAT_MS);
+    return () => clearInterval(heartbeat);
+  }, [shiftUpdateState]);
+
+  useEffect(() => () => {
+    if (shiftLeaseIdRef.current) clearDriverShiftUpdateState(shiftLeaseIdRef.current);
+  }, []);
 
   const handleStartTracking = useCallback(async () => {
     const activeBus = buses.find((bus) => bus.id === busId);
@@ -66,8 +102,7 @@ export default function DriverPage() {
       return;
     }
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
-    if (!backendUrl) {
+    if (!process.env.NEXT_PUBLIC_BACKEND_URL) {
       setLifecycleError("Shift service is not configured.");
       return;
     }
@@ -76,16 +111,16 @@ export default function DriverPage() {
     try {
       const token = await auth.currentUser.getIdToken();
       const routeId = selectedRouteIds[0];
-      const response = await fetch(`${backendUrl}/api/shifts/start`, {
+      const result = await apiRequest<{ sessionId?: string; error?: string }>("/api/shifts/start", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ busId, routeId }),
+        fallbackError: "Unable to start shift.",
       });
-      const result = await response.json() as { sessionId?: string; error?: string };
-      if (!response.ok || !result.sessionId) {
+      if (!result.sessionId) {
         throw new Error(result.error || "Unable to start shift.");
       }
       setCurrentStopIndex(0);
@@ -108,6 +143,7 @@ export default function DriverPage() {
     const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
     const unsubscribe = onValue(busRef, (snapshot) => {
         markSnapshotReceived();
+        setShiftStatusKnown(true);
         const data = snapshot.val();
         if (data && Number.isFinite(data.lat) && Number.isFinite(data.lng)) {
           setDriverLocation({
@@ -134,6 +170,9 @@ export default function DriverPage() {
         }
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed in GNSS listener:", error.message);
+        // Preserve a known active state, but do not leave an initial restore
+        // permanently stuck in "checking" after a terminal listener error.
+        setShiftStatusKnown(true);
       });
 
     return () => {
@@ -149,8 +188,7 @@ export default function DriverPage() {
     }
     setBoardingCode("");
     setBoardingCodeError("");
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
-    if (!backendUrl || !auth.currentUser) {
+    if (!process.env.NEXT_PUBLIC_BACKEND_URL || !auth.currentUser) {
       setBoardingCodeError("Boarding code service is unavailable.");
       return;
     }
@@ -160,19 +198,16 @@ export default function DriverPage() {
       try {
         const token = await auth.currentUser?.getIdToken();
         if (!token) throw new Error("Driver session is unavailable.");
-        const response = await fetch(
-          `${backendUrl}/api/sessions/${selectedSessionId}/boarding-code`,
+        const result = await apiRequest<{ boardingCode?: string; error?: string }>(
+          `/api/sessions/${selectedSessionId}/boarding-code`,
           {
             method: "POST",
             headers: { Authorization: `Bearer ${token}` },
             signal: controller.signal,
+            fallbackError: "Unable to load the boarding code.",
           },
         );
-        const result = await response.json().catch(() => ({})) as {
-          boardingCode?: string;
-          error?: string;
-        };
-        if (!response.ok || !result.boardingCode) {
+        if (!result.boardingCode) {
           throw new Error(result.error || "Unable to load the boarding code.");
         }
         if (controller.signal.aborted) return;

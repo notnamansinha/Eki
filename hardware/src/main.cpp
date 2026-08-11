@@ -19,6 +19,8 @@
 #include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <cstdio>
+#include <cstring>
 #include <limits>
 #include <sys/time.h>
 
@@ -27,6 +29,33 @@
 #endif
 #ifndef EKI_FIRMWARE_VERSION
 #define EKI_FIRMWARE_VERSION "development"
+#endif
+
+#if EKI_FLEET_BUILD
+#if !defined(CONFIG_ESP32_REV_MIN_3) || !CONFIG_ESP32_REV_MIN_3
+#error "Fleet builds require ESP32 ECO3 or newer."
+#endif
+#if !defined(CONFIG_SECURE_BOOT) || !CONFIG_SECURE_BOOT
+#error "Fleet builds require secure boot."
+#endif
+#if !defined(CONFIG_SECURE_BOOT_V2_ENABLED) || !CONFIG_SECURE_BOOT_V2_ENABLED
+#error "Fleet builds require Secure Boot V2."
+#endif
+#if !defined(CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES) || !CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES
+#error "Fleet builds require signed application binaries."
+#endif
+#if !defined(CONFIG_SECURE_FLASH_ENC_ENABLED) || !CONFIG_SECURE_FLASH_ENC_ENABLED
+#error "Fleet builds require flash encryption."
+#endif
+#if !defined(CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE) || !CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE
+#error "Fleet builds require release-mode flash encryption."
+#endif
+#if !defined(CONFIG_NVS_ENCRYPTION) || !CONFIG_NVS_ENCRYPTION
+#error "Fleet builds require encrypted NVS."
+#endif
+#if !defined(CONFIG_SECURE_DISABLE_ROM_DL_MODE) || !CONFIG_SECURE_DISABLE_ROM_DL_MODE
+#error "Fleet builds require ROM download mode lockdown."
+#endif
 #endif
 
 namespace {
@@ -50,9 +79,12 @@ constexpr uint8_t STATUS_LED_PIN = 2;
 TinyGPSPlus gps;
 HardwareSerial &gpsSerial = Serial2;
 WiFiClientSecure tlsClient;
-String telemetryEndpoint;
-String diagnosticsEndpoint;
-String authorizationHeader;
+constexpr size_t ENDPOINT_MAX_LENGTH =
+  eki::connectivity::BACKEND_URL_MAX_LENGTH +
+  eki::connectivity::DEVICE_ID_MAX_LENGTH + 32;
+char telemetryEndpoint[ENDPOINT_MAX_LENGTH]{};
+char diagnosticsEndpoint[ENDPOINT_MAX_LENGTH]{};
+char authorizationHeader[eki::connectivity::DEVICE_SECRET_MAX_LENGTH + 8]{};
 bool flashEncryptionActive = false;
 bool secureBootActive = false;
 char hardwareDeviceLabel[13]{};
@@ -131,7 +163,10 @@ uint32_t httpsRetryDelayMs = 0;
 uint32_t lastGpsWarningAt = 0;
 uint32_t lastHealthReportAt = 0;
 uint32_t lastRemoteDiagnosticAt = 0;
-bool remoteDiagnosticAttempted = false;
+bool remoteDiagnosticPublished = false;
+uint32_t remoteDiagnosticRetryStartedAt = 0;
+uint32_t remoteDiagnosticRetryDelayMs = 0;
+uint8_t consecutiveRemoteDiagnosticFailures = 0;
 uint8_t consecutiveHttpsFailures = 0;
 bool ntpCrossCheckStarted = false;
 bool gnssClockApplied = false;
@@ -157,12 +192,14 @@ uint32_t uartBufferOverflowCount = 0;
 uint32_t uartFifoOverflowCount = 0;
 uint32_t acceptedFixCount = 0;
 uint32_t rejectedFixCount = 0;
+uint32_t nmeaChecksumFailureCount = 0;
 
 struct HealthCounters {
   uint32_t uartBufferOverflows;
   uint32_t uartFifoOverflows;
   uint32_t acceptedFixes;
   uint32_t rejectedFixes;
+  uint32_t nmeaChecksumFailures;
 };
 
 uint32_t elapsed(uint32_t since) {
@@ -319,21 +356,44 @@ HealthCounters healthCounters() {
     uartFifoOverflowCount,
     acceptedFixCount,
     rejectedFixCount,
+    nmeaChecksumFailureCount,
   };
   portEXIT_CRITICAL(&healthMetricsMux);
   return counters;
 }
 
-String buildTelemetryUrl() {
-  String base = deviceConfiguration.backendUrl();
-  while (base.endsWith("/")) base.remove(base.length() - 1);
-  return base + "/api/devices/" + deviceConfiguration.deviceId() + "/telemetry";
-}
-
-String buildDiagnosticsUrl() {
-  String base = deviceConfiguration.backendUrl();
-  while (base.endsWith("/")) base.remove(base.length() - 1);
-  return base + "/api/devices/" + deviceConfiguration.deviceId() + "/diagnostics";
+bool initializeRequestStrings() {
+  const char *base = deviceConfiguration.backendUrl();
+  size_t baseLength = std::strlen(base);
+  while (baseLength > 0 && base[baseLength - 1] == '/') --baseLength;
+  const int telemetryLength = std::snprintf(
+    telemetryEndpoint,
+    sizeof(telemetryEndpoint),
+    "%.*s/api/devices/%s/telemetry",
+    static_cast<int>(baseLength),
+    base,
+    deviceConfiguration.deviceId()
+  );
+  const int diagnosticsLength = std::snprintf(
+    diagnosticsEndpoint,
+    sizeof(diagnosticsEndpoint),
+    "%.*s/api/devices/%s/diagnostics",
+    static_cast<int>(baseLength),
+    base,
+    deviceConfiguration.deviceId()
+  );
+  const int authorizationLength = std::snprintf(
+    authorizationHeader,
+    sizeof(authorizationHeader),
+    "Device %s",
+    deviceConfiguration.deviceSecret()
+  );
+  return telemetryLength > 0 &&
+         static_cast<size_t>(telemetryLength) < sizeof(telemetryEndpoint) &&
+         diagnosticsLength > 0 &&
+         static_cast<size_t>(diagnosticsLength) < sizeof(diagnosticsEndpoint) &&
+         authorizationLength > 0 &&
+         static_cast<size_t>(authorizationLength) < sizeof(authorizationHeader);
 }
 
 uint32_t telemetryConfigurationTag() {
@@ -685,10 +745,9 @@ PublishResult publishFix(const TelemetryFix &fix) {
   document["motionState"] = motionStateName(fix.motionState);
   document["timestamp"] = fix.timestamp;
 
-  String payload;
-  payload.reserve(192);
-  serializeJson(document, payload);
-  if (payload.length() > 512) {
+  char payload[512]{};
+  const size_t payloadLength = serializeJson(document, payload, sizeof(payload));
+  if (payloadLength == 0 || payloadLength >= sizeof(payload)) {
     Serial.println("[HTTPS] Refusing oversized telemetry payload.");
     scheduleHttpsRetry(eki::telemetry::HTTPS_REJECTED_SAMPLE_RETRY_MS);
     return PublishResult::Dropped;
@@ -715,18 +774,19 @@ PublishResult publishFix(const TelemetryFix &fix) {
   http.addHeader("Cache-Control", "no-store");
 
   const uint32_t startedAt = millis();
-  const int responseCode = http.POST(payload);
+  const int responseCode = http.POST(
+    reinterpret_cast<uint8_t *>(payload),
+    payloadLength
+  );
   const eki::telemetry::HttpResponseAction action =
     eki::telemetry::httpResponseAction(responseCode);
   const uint32_t retryAfterMs = responseCode == 429
     ? eki::telemetry::retryAfterDelayMs(http.header("Retry-After").c_str())
     : 0;
   if (responseCode < 0) {
-    const String transportError = HTTPClient::errorToString(responseCode);
     Serial.printf(
-      "[HTTPS] Transport failure %d (%s) in %lums (RSSI %d dBm). Check DNS, hostname, CA, clock, and backend reachability.\n",
+      "[HTTPS] Transport failure %d in %lums (RSSI %d dBm). Check DNS, hostname, CA, clock, and backend reachability.\n",
       responseCode,
-      transportError.c_str(),
       static_cast<unsigned long>(elapsed(startedAt)),
       WiFi.RSSI()
     );
@@ -742,7 +802,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
             : "rejected",
       responseCode,
       static_cast<unsigned long>(elapsed(startedAt)),
-      payload.length(),
+      payloadLength,
       WiFi.RSSI()
     );
     if (responseCode == 400 || responseCode == 413 || responseCode == 422) {
@@ -788,9 +848,23 @@ PublishResult publishFix(const TelemetryFix &fix) {
 }
 
 bool remoteDiagnosticIsDue() {
-  return remoteDiagnosticAttempted
+  if (remoteDiagnosticRetryDelayMs > 0) {
+    return elapsed(remoteDiagnosticRetryStartedAt) >= remoteDiagnosticRetryDelayMs;
+  }
+  return remoteDiagnosticPublished
     ? elapsed(lastRemoteDiagnosticAt) >= REMOTE_DIAGNOSTIC_INTERVAL_MS
     : millis() >= FIRST_REMOTE_DIAGNOSTIC_DELAY_MS;
+}
+
+void scheduleRemoteDiagnosticRetry() {
+  if (consecutiveRemoteDiagnosticFailures < UINT8_MAX) {
+    ++consecutiveRemoteDiagnosticFailures;
+  }
+  remoteDiagnosticRetryStartedAt = millis();
+  remoteDiagnosticRetryDelayMs = eki::telemetry::diagnosticRetryDelayMs(
+    consecutiveRemoteDiagnosticFailures,
+    esp_random()
+  );
 }
 
 void publishRemoteDiagnostic() {
@@ -817,7 +891,7 @@ void publishRemoteDiagnostic() {
   document["queueStaleDrops"] = queue.staleDrops;
   document["acceptedFixes"] = counters.acceptedFixes;
   document["rejectedFixes"] = counters.rejectedFixes;
-  document["nmeaChecksumFailures"] = gps.failedChecksum();
+  document["nmeaChecksumFailures"] = counters.nmeaChecksumFailures;
   document["uartBufferOverflows"] = counters.uartBufferOverflows;
   document["uartFifoOverflows"] = counters.uartFifoOverflows;
   document["resetTotal"] = resets.total();
@@ -826,13 +900,11 @@ void publishRemoteDiagnostic() {
   document["secureBoot"] = secureBootActive;
   document["timestamp"] = epochMilliseconds();
 
-  String payload;
-  payload.reserve(512);
-  serializeJson(document, payload);
-  remoteDiagnosticAttempted = true;
-  lastRemoteDiagnosticAt = millis();
-  if (payload.length() > 1024) {
+  char payload[1024]{};
+  const size_t payloadLength = serializeJson(document, payload, sizeof(payload));
+  if (payloadLength == 0 || payloadLength >= sizeof(payload)) {
     Serial.println("[Diagnostics] Refusing oversized health payload.");
+    scheduleRemoteDiagnosticRetry();
     return;
   }
 
@@ -841,13 +913,17 @@ void publishRemoteDiagnostic() {
   http.setTimeout(HTTP_TIMEOUT_MS);
   if (!http.begin(tlsClient, diagnosticsEndpoint)) {
     Serial.println("[Diagnostics] Unable to initialize remote health request.");
+    scheduleRemoteDiagnosticRetry();
     return;
   }
   http.addHeader("Authorization", authorizationHeader);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Cache-Control", "no-store");
   const uint32_t startedAt = millis();
-  const int responseCode = http.POST(payload);
+  const int responseCode = http.POST(
+    reinterpret_cast<uint8_t *>(payload),
+    payloadLength
+  );
   http.end();
   Serial.printf(
     "[Diagnostics] Remote health HTTP %d in %lums.\n",
@@ -857,25 +933,42 @@ void publishRemoteDiagnostic() {
   if (responseCode == 401 || responseCode == 403) {
     latchCredentialFault();
     Serial.println("[Diagnostics] Credential fault latched; local reprovisioning enabled.");
+    return;
+  }
+  if (responseCode >= 200 && responseCode < 300) {
+    remoteDiagnosticPublished = true;
+    lastRemoteDiagnosticAt = millis();
+    consecutiveRemoteDiagnosticFailures = 0;
+    remoteDiagnosticRetryDelayMs = 0;
+  } else {
+    scheduleRemoteDiagnosticRetry();
   }
 }
 
 TelemetryFix currentFix() {
   TelemetryFix fix{};
   if (
-    !gps.location.isValid() ||
-    gps.location.age() > 5000 ||
-    !gps.hdop.isValid() ||
+    !eki::telemetry::gnssFixFieldsAreFresh(
+      gps.location.isValid(),
+      gps.location.age(),
+      gps.hdop.isValid(),
+      gps.hdop.age(),
+      gps.speed.isValid(),
+      gps.speed.age(),
+      gps.course.isValid(),
+      gps.course.age()
+    ) ||
     gps.hdop.hdop() > HDOP_REJECT_THRESHOLD
   ) {
+    // Reject mixed-epoch GNSS fields as one sample; publishing only the fresh
+    // subset would misrepresent receiver quality and motion at this position.
     return fix;
   }
 
   fix.lat = gps.location.lat();
   fix.lng = gps.location.lng();
-  const double rawSpeed = gps.speed.isValid()
-    ? min(max(gps.speed.kmph(), 0.0), 200.0)
-    : 0.0;
+  const double rawSpeed = gps.speed.isValid() ? gps.speed.kmph() : 0.0;
+  if (!eki::telemetry::speedIsPlausible(rawSpeed)) return fix;
   fix.speed = rawSpeed;
   fix.heading = gps.course.isValid()
     ? fmod(max(gps.course.deg(), 0.0), 360.0)
@@ -1028,7 +1121,7 @@ void reportHealth() {
     static_cast<unsigned long>(queue.staleDrops),
     static_cast<unsigned long>(counters.acceptedFixes),
     static_cast<unsigned long>(counters.rejectedFixes),
-    static_cast<unsigned long>(gps.failedChecksum()),
+    static_cast<unsigned long>(counters.nmeaChecksumFailures),
     static_cast<unsigned long>(counters.uartBufferOverflows),
     static_cast<unsigned long>(counters.uartFifoOverflows),
     static_cast<unsigned>(resets.count(eki::reset::ResetReason::PowerOn)),
@@ -1126,9 +1219,10 @@ void setup() {
 
   if (provisioned) {
     tlsClient.setCACert(deviceConfiguration.backendRootCa());
-    telemetryEndpoint = buildTelemetryUrl();
-    diagnosticsEndpoint = buildDiagnosticsUrl();
-    authorizationHeader = String("Device ") + deviceConfiguration.deviceSecret();
+    if (!initializeRequestStrings()) {
+      Serial.println("[Boot] Provisioned request configuration is too long; halted.");
+      while (true) delay(1000);
+    }
   }
   sntp_set_time_sync_notification_cb(onNtpTimeSynchronized);
   configureWatchdog();
@@ -1157,6 +1251,11 @@ void loop() {
 
   if (elapsed(lastEvaluationAt) >= 1000) {
     lastEvaluationAt = millis();
+    // TinyGPSPlus belongs exclusively to this loop task. Only the protected
+    // scalar snapshot crosses to the publisher task for diagnostics.
+    portENTER_CRITICAL(&healthMetricsMux);
+    nmeaChecksumFailureCount = gps.failedChecksum();
+    portEXIT_CRITICAL(&healthMetricsMux);
     evaluateTelemetry();
   }
 
