@@ -31,7 +31,6 @@
 
 namespace {
 constexpr double HDOP_REJECT_THRESHOLD = 4.0;
-constexpr uint32_t GNSS_FIX_MAX_AGE_MS = 5000;
 constexpr uint32_t GNSS_UTC_MAX_AGE_MS = 2000;
 constexpr uint32_t NTP_CROSS_CHECK_INTERVAL_MS = 6UL * 60 * 60 * 1000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
@@ -854,14 +853,20 @@ void publishRemoteDiagnostic() {
 TelemetryFix currentFix() {
   TelemetryFix fix{};
   if (
-    !gps.location.isValid() ||
-    gps.location.age() > GNSS_FIX_MAX_AGE_MS ||
-    !gps.hdop.isValid() ||
-    gps.hdop.age() > GNSS_FIX_MAX_AGE_MS ||
-    (gps.speed.isValid() && gps.speed.age() > GNSS_FIX_MAX_AGE_MS) ||
-    (gps.course.isValid() && gps.course.age() > GNSS_FIX_MAX_AGE_MS) ||
+    !eki::telemetry::gnssFixFieldsAreFresh(
+      gps.location.isValid(),
+      gps.location.age(),
+      gps.hdop.isValid(),
+      gps.hdop.age(),
+      gps.speed.isValid(),
+      gps.speed.age(),
+      gps.course.isValid(),
+      gps.course.age()
+    ) ||
     gps.hdop.hdop() > HDOP_REJECT_THRESHOLD
   ) {
+    // Reject mixed-epoch GNSS fields as one sample; publishing only the fresh
+    // subset would misrepresent receiver quality and motion at this position.
     return fix;
   }
 
