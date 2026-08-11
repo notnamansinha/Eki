@@ -76,6 +76,50 @@ inline int64_t absoluteDifference(int64_t left, int64_t right) {
   return left >= right ? left - right : right - left;
 }
 
+inline int64_t projectEpochMilliseconds(
+  int64_t referenceEpochMs,
+  uint32_t referenceMonotonicMs,
+  uint32_t nowMonotonicMs
+) {
+  return referenceEpochMs +
+    static_cast<int64_t>(nowMonotonicMs - referenceMonotonicMs);
+}
+
+inline bool projectEpochMillisecondsIfFresh(
+  int64_t referenceEpochMs,
+  uint32_t referenceMonotonicMs,
+  uint32_t nowMonotonicMs,
+  uint32_t maximumAgeMs,
+  int64_t &projectedEpochMs
+) {
+  const uint32_t ageMs = nowMonotonicMs - referenceMonotonicMs;
+  if (ageMs > maximumAgeMs) return false;
+  projectedEpochMs = referenceEpochMs + static_cast<int64_t>(ageMs);
+  return true;
+}
+
+inline bool projectEpochMillisecondsFromReference(
+  bool &referenceValid,
+  int64_t referenceEpochMs,
+  uint32_t referenceMonotonicMs,
+  uint32_t nowMonotonicMs,
+  uint32_t maximumAgeMs,
+  int64_t &projectedEpochMs
+) {
+  if (!referenceValid) return false;
+  if (!projectEpochMillisecondsIfFresh(
+    referenceEpochMs,
+    referenceMonotonicMs,
+    nowMonotonicMs,
+    maximumAgeMs,
+    projectedEpochMs
+  )) {
+    referenceValid = false;
+    return false;
+  }
+  return true;
+}
+
 inline bool shouldApplyGnssClock(
   bool gnssClockHasBeenApplied,
   uint32_t elapsedSinceLastApplication,

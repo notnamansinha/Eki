@@ -61,6 +61,7 @@
 namespace {
 constexpr double HDOP_REJECT_THRESHOLD = 4.0;
 constexpr uint32_t GNSS_UTC_MAX_AGE_MS = 2000;
+constexpr uint32_t GNSS_EPOCH_REFERENCE_MAX_AGE_MS = 24UL * 60 * 60 * 1000;
 constexpr uint32_t NTP_CROSS_CHECK_INTERVAL_MS = 6UL * 60 * 60 * 1000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
 constexpr uint32_t WATCHDOG_TIMEOUT_MS = 25000;
@@ -170,6 +171,7 @@ uint8_t consecutiveRemoteDiagnosticFailures = 0;
 uint8_t consecutiveHttpsFailures = 0;
 bool ntpCrossCheckStarted = false;
 bool gnssClockApplied = false;
+bool timeRangeWarningLogged = false;
 uint32_t lastGnssClockAppliedAt = 0;
 portMUX_TYPE clockCrossCheckMux = portMUX_INITIALIZER_UNLOCKED;
 int64_t latestGnssEpochMs = 0;
@@ -417,9 +419,46 @@ uint32_t telemetryConfigurationTag() {
   return hash == 0 ? 1 : hash;
 }
 
+int64_t systemEpochMilliseconds() {
+  timeval tv{};
+  gettimeofday(&tv, nullptr);
+  return static_cast<int64_t>(tv.tv_sec) * 1000 + tv.tv_usec / 1000;
+}
+
+int64_t epochMilliseconds() {
+  const uint32_t now = millis();
+  int64_t epochMs = 0;
+  portENTER_CRITICAL(&clockCrossCheckMux);
+  eki::clock::projectEpochMillisecondsFromReference(
+    latestGnssReferenceValid,
+    latestGnssEpochMs,
+    latestGnssReferenceAt,
+    now,
+    GNSS_EPOCH_REFERENCE_MAX_AGE_MS,
+    epochMs
+  );
+  portEXIT_CRITICAL(&clockCrossCheckMux);
+  return epochMs >= eki::clock::TRUSTED_EPOCH_MIN_MS
+    ? epochMs
+    : systemEpochMilliseconds();
+}
+
+void expireGnssEpochReference(uint32_t now) {
+  int64_t ignoredEpochMs = 0;
+  portENTER_CRITICAL(&clockCrossCheckMux);
+  eki::clock::projectEpochMillisecondsFromReference(
+    latestGnssReferenceValid,
+    latestGnssEpochMs,
+    latestGnssReferenceAt,
+    now,
+    GNSS_EPOCH_REFERENCE_MAX_AGE_MS,
+    ignoredEpochMs
+  );
+  portEXIT_CRITICAL(&clockCrossCheckMux);
+}
+
 bool clockIsSynchronized() {
-  return static_cast<int64_t>(time(nullptr)) * 1000 >=
-    eki::clock::TRUSTED_EPOCH_MIN_MS;
+  return epochMilliseconds() >= eki::clock::TRUSTED_EPOCH_MIN_MS;
 }
 
 bool httpsRetryIsPending() {
@@ -442,12 +481,6 @@ void scheduleHttpsRetry(uint32_t minimumDelayMs = 0) {
 void resetHttpsRetry() {
   consecutiveHttpsFailures = 0;
   httpsRetryDelayMs = 0;
-}
-
-int64_t epochMilliseconds() {
-  timeval tv{};
-  gettimeofday(&tv, nullptr);
-  return static_cast<int64_t>(tv.tv_sec) * 1000 + tv.tv_usec / 1000;
 }
 
 void disciplineClockFromGnss() {
@@ -483,11 +516,16 @@ void disciplineClockFromGnss() {
 
   const int64_t gnssEpochSeconds = gnssEpochMs / 1000;
   if (gnssEpochSeconds > static_cast<int64_t>(std::numeric_limits<time_t>::max())) {
-    Serial.println("[Clock] GNSS UTC exceeds this firmware runtime's time_t range.");
+    if (!timeRangeWarningLogged) {
+      Serial.println(
+        "[Clock] System time_t range exhausted; telemetry continues on the 64-bit GNSS clock. TLS depends on platform support."
+      );
+      timeRangeWarningLogged = true;
+    }
     return;
   }
 
-  const int64_t systemEpochMs = epochMilliseconds();
+  const int64_t systemEpochMs = systemEpochMilliseconds();
   if (!eki::clock::shouldApplyGnssClock(
     gnssClockApplied,
     elapsed(lastGnssClockAppliedAt),
@@ -683,12 +721,17 @@ void onNtpTimeSynchronized(struct timeval *ntpTime) {
   int64_t divergenceMs = 0;
 
   portENTER_CRITICAL(&clockCrossCheckMux);
+  int64_t projectedGnssEpochMs = 0;
   if (
     latestGnssReferenceValid &&
-    now - latestGnssReferenceAt <= GNSS_UTC_MAX_AGE_MS * 2
+    eki::clock::projectEpochMillisecondsIfFresh(
+      latestGnssEpochMs,
+      latestGnssReferenceAt,
+      now,
+      GNSS_UTC_MAX_AGE_MS * 2,
+      projectedGnssEpochMs
+    )
   ) {
-    const int64_t projectedGnssEpochMs =
-      latestGnssEpochMs + static_cast<int64_t>(now - latestGnssReferenceAt);
     const int64_t ntpEpochMs =
       static_cast<int64_t>(ntpTime->tv_sec) * 1000 + ntpTime->tv_usec / 1000;
     divergenceMs = ntpEpochMs - projectedGnssEpochMs;
@@ -1251,6 +1294,9 @@ void loop() {
 
   if (elapsed(lastEvaluationAt) >= 1000) {
     lastEvaluationAt = millis();
+    // Expire stale monotonic references while the 32-bit counter is still in
+    // its current cycle, so rollover cannot make an old reference look fresh.
+    expireGnssEpochReference(lastEvaluationAt);
     // TinyGPSPlus belongs exclusively to this loop task. Only the protected
     // scalar snapshot crosses to the publisher task for diagnostics.
     portENTER_CRITICAL(&healthMetricsMux);

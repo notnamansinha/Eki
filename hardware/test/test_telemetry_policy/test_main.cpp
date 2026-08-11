@@ -172,6 +172,32 @@ void test_gnss_utc_conversion_and_clock_discipline_are_strict() {
   utc = {2024, 1, 1, 24, 0, 0, 0};
   TEST_ASSERT_FALSE(eki::clock::utcToEpochMilliseconds(utc, epochMs));
 
+  utc = {2040, 1, 1, 0, 0, 0, 0};
+  TEST_ASSERT_TRUE(eki::clock::utcToEpochMilliseconds(utc, epochMs));
+  TEST_ASSERT_TRUE(epochMs > 2147483647000LL);
+  TEST_ASSERT_TRUE(
+    eki::clock::projectEpochMilliseconds(epochMs, UINT32_MAX - 500, 499) ==
+    epochMs + 1000
+  );
+  int64_t projectedEpochMs = 0;
+  TEST_ASSERT_TRUE(eki::clock::projectEpochMillisecondsIfFresh(
+    epochMs, UINT32_MAX - 500, 499, 1000, projectedEpochMs
+  ));
+  TEST_ASSERT_TRUE(projectedEpochMs == epochMs + 1000);
+  TEST_ASSERT_FALSE(eki::clock::projectEpochMillisecondsIfFresh(
+    epochMs, 1000, 2001, 1000, projectedEpochMs
+  ));
+  bool referenceValid = true;
+  TEST_ASSERT_FALSE(eki::clock::projectEpochMillisecondsFromReference(
+    referenceValid, epochMs, 1000, 2001, 1000, projectedEpochMs
+  ));
+  TEST_ASSERT_FALSE(referenceValid);
+  // Once expired before rollover, the same reference cannot become valid
+  // again when a later counter cycle has a deceptively small modulo age.
+  TEST_ASSERT_FALSE(eki::clock::projectEpochMillisecondsFromReference(
+    referenceValid, epochMs, 1000, 1500, 1000, projectedEpochMs
+  ));
+
   TEST_ASSERT_TRUE(eki::clock::shouldApplyGnssClock(
     false, 0, 0, 1704067200000LL
   ));
