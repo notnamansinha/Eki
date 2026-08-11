@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import {
   canActivateServiceWorker,
   DRIVER_SHIFT_UPDATE_EVENT,
+  DRIVER_SHIFT_UPDATE_STATE_KEY,
 } from "@/lib/serviceWorkerUpdate";
 
 /**
@@ -34,11 +35,24 @@ export default function ServiceWorkerRegistrar() {
     let activeRegistration: ServiceWorkerRegistration | undefined;
     let reloading = false;
     let hadController = Boolean(navigator.serviceWorker.controller);
+    let activationTimer: ReturnType<typeof setTimeout> | undefined;
+    let pendingWorker: ServiceWorker | undefined;
 
-    const activateWaitingWorker = () => {
-      if (canActivateServiceWorker()) {
-        activeRegistration?.waiting?.postMessage({ type: "SKIP_WAITING" });
-      }
+    const scheduleWaitingWorkerActivation = () => {
+      if (activationTimer) clearTimeout(activationTimer);
+      activationTimer = undefined;
+      if (!canActivateServiceWorker()) return;
+      // Re-check after a short grace period so a concurrent shift start can
+      // publish its lease before activation becomes origin-wide.
+      activationTimer = setTimeout(() => {
+        activationTimer = undefined;
+        if (!canActivateServiceWorker()) return;
+        (pendingWorker ?? activeRegistration?.waiting)?.postMessage({ type: "SKIP_WAITING" });
+      }, 500);
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === DRIVER_SHIFT_UPDATE_STATE_KEY) scheduleWaitingWorkerActivation();
     };
 
     const handleControllerChange = () => {
@@ -60,7 +74,8 @@ export default function ServiceWorkerRegistrar() {
 
     navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener(DRIVER_SHIFT_UPDATE_EVENT, activateWaitingWorker);
+    window.addEventListener(DRIVER_SHIFT_UPDATE_EVENT, scheduleWaitingWorkerActivation);
+    window.addEventListener("storage", handleStorage);
 
     // Defer registration until after initial paint + load to avoid contention
     // between SW precaching and the page's own critical resource fetches.
@@ -70,6 +85,7 @@ export default function ServiceWorkerRegistrar() {
         .then((registration) => {
           if (cancelled) return;
           activeRegistration = registration;
+          pendingWorker = registration.waiting ?? undefined;
 
           // Check for updates periodically (every 15 minutes).
           // This is important for a campus transit app where the tab may be
@@ -81,7 +97,7 @@ export default function ServiceWorkerRegistrar() {
           }, 15 * 60 * 1000);
 
           // A live or not-yet-restored driver shift keeps this worker waiting.
-          activateWaitingWorker();
+          scheduleWaitingWorkerActivation();
 
           // Listen for new SWs that finish installing while the page is open.
           registration.addEventListener("updatefound", () => {
@@ -93,7 +109,8 @@ export default function ServiceWorkerRegistrar() {
                 newWorker.state === "installed" &&
                 navigator.serviceWorker.controller
               ) {
-                activateWaitingWorker();
+                pendingWorker = newWorker;
+                scheduleWaitingWorkerActivation();
               }
             });
           });
@@ -113,9 +130,11 @@ export default function ServiceWorkerRegistrar() {
     return () => {
       cancelled = true;
       if (updateInterval) clearInterval(updateInterval);
+      if (activationTimer) clearTimeout(activationTimer);
       window.removeEventListener("load", register);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener(DRIVER_SHIFT_UPDATE_EVENT, activateWaitingWorker);
+      window.removeEventListener(DRIVER_SHIFT_UPDATE_EVENT, scheduleWaitingWorkerActivation);
+      window.removeEventListener("storage", handleStorage);
       navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
     };
   }, []);

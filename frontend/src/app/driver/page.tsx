@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import TransmitterControls from "@/components/driver/TransmitterControls";
@@ -15,7 +15,13 @@ import { auth } from "@/lib/firebaseAuth";
 import { rtdb } from "@/lib/firebaseDatabase";
 import { ref, onValue } from "firebase/database";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
-import { setDriverShiftUpdateState } from "@/lib/serviceWorkerUpdate";
+import {
+  clearDriverShiftUpdateState,
+  createDriverShiftLeaseId,
+  DRIVER_SHIFT_LEASE_HEARTBEAT_MS,
+  setDriverShiftUpdateState,
+  type DriverShiftUpdateState,
+} from "@/lib/serviceWorkerUpdate";
 
 const DriverMap = dynamic(() => import("@/components/maps/DriverMap"), {
   ssr: false,
@@ -54,26 +60,33 @@ export default function DriverPage() {
   const selectedSessionId = selectedRouteIds.length === 1
     ? activeSessionIds[selectedRouteIds[0]] || ""
     : "";
+  const shiftLeaseIdRef = useRef<string | null>(null);
+  const shiftUpdateState: DriverShiftUpdateState =
+    !busId || selectedRouteIds.length !== 1
+      ? "inactive"
+      : !shiftStatusKnown
+        ? "checking"
+        : isTracking
+          ? "active"
+          : "inactive";
 
   useEffect(() => {
-    setDriverShiftUpdateState("checking");
-  }, []);
-
-  useEffect(() => {
-    if (!busId || selectedRouteIds.length !== 1) {
-      setShiftStatusKnown(true);
-      setDriverShiftUpdateState("inactive");
-    } else {
-      setShiftStatusKnown(false);
-      setDriverShiftUpdateState("checking");
-    }
+    setShiftStatusKnown(!busId || selectedRouteIds.length !== 1);
   }, [busId, selectedRouteIds]);
 
   useEffect(() => {
-    if (shiftStatusKnown) {
-      setDriverShiftUpdateState(isTracking ? "active" : "inactive");
-    }
-  }, [isTracking, shiftStatusKnown]);
+    const leaseId = shiftLeaseIdRef.current ?? createDriverShiftLeaseId();
+    shiftLeaseIdRef.current = leaseId;
+    const publishLease = () => setDriverShiftUpdateState(leaseId, shiftUpdateState);
+    publishLease();
+    if (shiftUpdateState === "inactive") return undefined;
+    const heartbeat = setInterval(publishLease, DRIVER_SHIFT_LEASE_HEARTBEAT_MS);
+    return () => clearInterval(heartbeat);
+  }, [shiftUpdateState]);
+
+  useEffect(() => () => {
+    if (shiftLeaseIdRef.current) clearDriverShiftUpdateState(shiftLeaseIdRef.current);
+  }, []);
 
   const handleStartTracking = useCallback(async () => {
     const activeBus = buses.find((bus) => bus.id === busId);
@@ -157,6 +170,9 @@ export default function DriverPage() {
         }
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed in GNSS listener:", error.message);
+        // Preserve a known active state, but do not leave an initial restore
+        // permanently stuck in "checking" after a terminal listener error.
+        setShiftStatusKnown(true);
       });
 
     return () => {
