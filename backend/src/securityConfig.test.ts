@@ -269,8 +269,10 @@ describe("production security configuration", () => {
       "tlsClient.setCACert(deviceConfiguration.backendRootCa())",
     );
     expect(firmware).toContain("HTTPClient");
-    expect(firmware).toContain(
-      'authorizationHeader = String("Device ") + deviceConfiguration.deviceSecret()',
+    expect(firmware).toContain("char authorizationHeader[");
+    expect(firmware).toContain('"Device %s"');
+    expect(firmware).not.toContain(
+      'authorizationHeader = String("Device ")',
     );
     expect(firmware).toContain(
       'http.addHeader("Authorization", authorizationHeader)',
