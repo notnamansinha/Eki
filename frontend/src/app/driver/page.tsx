@@ -15,6 +15,7 @@ import { auth } from "@/lib/firebaseAuth";
 import { rtdb } from "@/lib/firebaseDatabase";
 import { ref, onValue } from "firebase/database";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
+import { setDriverShiftUpdateState } from "@/lib/serviceWorkerUpdate";
 
 const DriverMap = dynamic(() => import("@/components/maps/DriverMap"), {
   ssr: false,
@@ -39,6 +40,7 @@ export default function DriverPage() {
   const [selectedRouteIds, setSelectedRouteIds] = useState<string[]>([]);
   const activeRoute = routes.find(r => selectedRouteIds.includes(r.id));
   const [isTracking, setIsTracking] = useState(false);
+  const [shiftStatusKnown, setShiftStatusKnown] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number; heading: number; speed?: number } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("map");
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
@@ -52,6 +54,26 @@ export default function DriverPage() {
   const selectedSessionId = selectedRouteIds.length === 1
     ? activeSessionIds[selectedRouteIds[0]] || ""
     : "";
+
+  useEffect(() => {
+    setDriverShiftUpdateState("checking");
+  }, []);
+
+  useEffect(() => {
+    if (!busId || selectedRouteIds.length !== 1) {
+      setShiftStatusKnown(true);
+      setDriverShiftUpdateState("inactive");
+    } else {
+      setShiftStatusKnown(false);
+      setDriverShiftUpdateState("checking");
+    }
+  }, [busId, selectedRouteIds]);
+
+  useEffect(() => {
+    if (shiftStatusKnown) {
+      setDriverShiftUpdateState(isTracking ? "active" : "inactive");
+    }
+  }, [isTracking, shiftStatusKnown]);
 
   const handleStartTracking = useCallback(async () => {
     const activeBus = buses.find((bus) => bus.id === busId);
@@ -108,6 +130,7 @@ export default function DriverPage() {
     const busRef = ref(rtdb, `activeBuses/${busId}_${selectedRouteIds[0]}`);
     const unsubscribe = onValue(busRef, (snapshot) => {
         markSnapshotReceived();
+        setShiftStatusKnown(true);
         const data = snapshot.val();
         if (data && Number.isFinite(data.lat) && Number.isFinite(data.lng)) {
           setDriverLocation({

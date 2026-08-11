@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect } from "react";
+import {
+  canActivateServiceWorker,
+  DRIVER_SHIFT_UPDATE_EVENT,
+} from "@/lib/serviceWorkerUpdate";
 
 /**
  * Registers the Workbox service worker after hydration.
@@ -31,6 +35,12 @@ export default function ServiceWorkerRegistrar() {
     let reloading = false;
     let hadController = Boolean(navigator.serviceWorker.controller);
 
+    const activateWaitingWorker = () => {
+      if (canActivateServiceWorker()) {
+        activeRegistration?.waiting?.postMessage({ type: "SKIP_WAITING" });
+      }
+    };
+
     const handleControllerChange = () => {
       if (!hadController) {
         hadController = true;
@@ -50,6 +60,7 @@ export default function ServiceWorkerRegistrar() {
 
     navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener(DRIVER_SHIFT_UPDATE_EVENT, activateWaitingWorker);
 
     // Defer registration until after initial paint + load to avoid contention
     // between SW precaching and the page's own critical resource fetches.
@@ -69,12 +80,8 @@ export default function ServiceWorkerRegistrar() {
             });
           }, 15 * 60 * 1000);
 
-          // If a new SW is already waiting (e.g. updated while another tab
-          // was open), activate it immediately. For a transit app, the latest
-          // version is always the right version.
-          if (registration.waiting) {
-            registration.waiting.postMessage({ type: "SKIP_WAITING" });
-          }
+          // A live or not-yet-restored driver shift keeps this worker waiting.
+          activateWaitingWorker();
 
           // Listen for new SWs that finish installing while the page is open.
           registration.addEventListener("updatefound", () => {
@@ -86,10 +93,7 @@ export default function ServiceWorkerRegistrar() {
                 newWorker.state === "installed" &&
                 navigator.serviceWorker.controller
               ) {
-                // A new SW is installed and there's already an active one.
-                // Tell it to take over immediately. controllerchange reloads
-                // once so the shell and cache-busted chunks stay in sync.
-                newWorker.postMessage({ type: "SKIP_WAITING" });
+                activateWaitingWorker();
               }
             });
           });
@@ -111,6 +115,7 @@ export default function ServiceWorkerRegistrar() {
       if (updateInterval) clearInterval(updateInterval);
       window.removeEventListener("load", register);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener(DRIVER_SHIFT_UPDATE_EVENT, activateWaitingWorker);
       navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
     };
   }, []);
