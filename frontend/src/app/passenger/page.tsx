@@ -139,7 +139,9 @@ export default function PassengerPage() {
 
   const activeRouteIds = Array.from(new Set(activeBuses.map(b => b.routeId)));
   const availableRoutes = routes.filter(r => activeRouteIds.includes(r.id));
-  const displayRoutes = availableRoutes;
+  const displayRoutes = availableRoutes.filter(
+    (route) => (route.stops?.length ?? 0) > 0 || (route.waypoints?.length ?? 0) > 0,
+  );
   const effectiveRouteId = displayRoutes.some(route => route.id === selectedRouteId)
     ? selectedRouteId
     : displayRoutes[0]?.id ?? "";
@@ -158,13 +160,7 @@ export default function PassengerPage() {
         lng: activeRoute.waypoints[activeRoute.waypoints.length - 1].lng,
         name: "Final Destination",
         shortName: "TERMINUS"
-      } : {
-        id: "live-endpoint",
-        lat: 23.0347,
-        lng: 72.5483,
-        name: "Tracking Area",
-        shortName: "LIVE"
-      }));
+      } : null));
 
   const busesOnRoute = activeBuses.filter(
     (bus) => bus.routeId === effectiveRouteId,
@@ -299,10 +295,10 @@ export default function PassengerPage() {
 
         {/* Map layer — only present on tracking */}
         <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-          {visibleView === "tracking" && (
+          {visibleView === "tracking" && activeRoute && targetStop && (
             <PassengerTrackingMap
-              targetStop={targetStop!}
-              route={activeRoute ?? null}
+              targetStop={targetStop}
+              route={activeRoute}
               resumeGeneration={resumeGeneration}
             />
           )}

@@ -23,6 +23,16 @@ void test_haversine_and_heading_wrap() {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, static_cast<float>(headingDelta(1.0, 359.0)));
 }
 
+void test_implausible_speed_is_rejected_instead_of_clamped() {
+  TEST_ASSERT_TRUE(speedIsPlausible(0.0));
+  TEST_ASSERT_TRUE(speedIsPlausible(200.0));
+  TEST_ASSERT_FALSE(speedIsPlausible(-0.1));
+  TEST_ASSERT_FALSE(speedIsPlausible(200.1));
+  TEST_ASSERT_FALSE(speedIsPlausible(NAN));
+  TEST_ASSERT_FALSE(speedIsPlausible(INFINITY));
+  TEST_ASSERT_FALSE(speedIsPlausible(-INFINITY));
+}
+
 void test_motion_hysteresis_filters_single_noisy_readings() {
   MotionTracker tracker;
   TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(3.0));
@@ -384,6 +394,7 @@ void test_queue_purges_stale_samples_and_validates_rtc_identity() {
 int main(int, char **) {
   UNITY_BEGIN();
   RUN_TEST(test_haversine_and_heading_wrap);
+  RUN_TEST(test_implausible_speed_is_rejected_instead_of_clamped);
   RUN_TEST(test_motion_hysteresis_filters_single_noisy_readings);
   RUN_TEST(test_retry_backoff_is_jittered_and_bounded);
   RUN_TEST(test_http_response_actions_cover_transport_and_status_families);

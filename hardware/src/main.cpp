@@ -19,6 +19,8 @@
 #include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <cstdio>
+#include <cstring>
 #include <limits>
 #include <sys/time.h>
 
@@ -51,9 +53,12 @@ constexpr uint8_t STATUS_LED_PIN = 2;
 TinyGPSPlus gps;
 HardwareSerial &gpsSerial = Serial2;
 WiFiClientSecure tlsClient;
-String telemetryEndpoint;
-String diagnosticsEndpoint;
-String authorizationHeader;
+constexpr size_t ENDPOINT_MAX_LENGTH =
+  eki::connectivity::BACKEND_URL_MAX_LENGTH +
+  eki::connectivity::DEVICE_ID_MAX_LENGTH + 32;
+char telemetryEndpoint[ENDPOINT_MAX_LENGTH]{};
+char diagnosticsEndpoint[ENDPOINT_MAX_LENGTH]{};
+char authorizationHeader[eki::connectivity::DEVICE_SECRET_MAX_LENGTH + 8]{};
 bool flashEncryptionActive = false;
 bool secureBootActive = false;
 char hardwareDeviceLabel[13]{};
@@ -325,16 +330,38 @@ HealthCounters healthCounters() {
   return counters;
 }
 
-String buildTelemetryUrl() {
-  String base = deviceConfiguration.backendUrl();
-  while (base.endsWith("/")) base.remove(base.length() - 1);
-  return base + "/api/devices/" + deviceConfiguration.deviceId() + "/telemetry";
-}
-
-String buildDiagnosticsUrl() {
-  String base = deviceConfiguration.backendUrl();
-  while (base.endsWith("/")) base.remove(base.length() - 1);
-  return base + "/api/devices/" + deviceConfiguration.deviceId() + "/diagnostics";
+bool initializeRequestStrings() {
+  const char *base = deviceConfiguration.backendUrl();
+  size_t baseLength = std::strlen(base);
+  while (baseLength > 0 && base[baseLength - 1] == '/') --baseLength;
+  const int telemetryLength = std::snprintf(
+    telemetryEndpoint,
+    sizeof(telemetryEndpoint),
+    "%.*s/api/devices/%s/telemetry",
+    static_cast<int>(baseLength),
+    base,
+    deviceConfiguration.deviceId()
+  );
+  const int diagnosticsLength = std::snprintf(
+    diagnosticsEndpoint,
+    sizeof(diagnosticsEndpoint),
+    "%.*s/api/devices/%s/diagnostics",
+    static_cast<int>(baseLength),
+    base,
+    deviceConfiguration.deviceId()
+  );
+  const int authorizationLength = std::snprintf(
+    authorizationHeader,
+    sizeof(authorizationHeader),
+    "Device %s",
+    deviceConfiguration.deviceSecret()
+  );
+  return telemetryLength > 0 &&
+         static_cast<size_t>(telemetryLength) < sizeof(telemetryEndpoint) &&
+         diagnosticsLength > 0 &&
+         static_cast<size_t>(diagnosticsLength) < sizeof(diagnosticsEndpoint) &&
+         authorizationLength > 0 &&
+         static_cast<size_t>(authorizationLength) < sizeof(authorizationHeader);
 }
 
 uint32_t telemetryConfigurationTag() {
@@ -686,10 +713,9 @@ PublishResult publishFix(const TelemetryFix &fix) {
   document["motionState"] = motionStateName(fix.motionState);
   document["timestamp"] = fix.timestamp;
 
-  String payload;
-  payload.reserve(192);
-  serializeJson(document, payload);
-  if (payload.length() > 512) {
+  char payload[512]{};
+  const size_t payloadLength = serializeJson(document, payload, sizeof(payload));
+  if (payloadLength == 0 || payloadLength >= sizeof(payload)) {
     Serial.println("[HTTPS] Refusing oversized telemetry payload.");
     scheduleHttpsRetry(eki::telemetry::HTTPS_REJECTED_SAMPLE_RETRY_MS);
     return PublishResult::Dropped;
@@ -711,18 +737,19 @@ PublishResult publishFix(const TelemetryFix &fix) {
   http.addHeader("Cache-Control", "no-store");
 
   const uint32_t startedAt = millis();
-  const int responseCode = http.POST(payload);
+  const int responseCode = http.POST(
+    reinterpret_cast<uint8_t *>(payload),
+    payloadLength
+  );
   const eki::telemetry::HttpResponseAction action =
     eki::telemetry::httpResponseAction(responseCode);
   const uint32_t retryAfterMs = responseCode == 429
     ? eki::telemetry::retryAfterDelayMs(http.header("Retry-After").c_str())
     : 0;
   if (responseCode < 0) {
-    const String transportError = HTTPClient::errorToString(responseCode);
     Serial.printf(
-      "[HTTPS] Transport failure %d (%s) in %lums (RSSI %d dBm). Check DNS, hostname, CA, clock, and backend reachability.\n",
+      "[HTTPS] Transport failure %d in %lums (RSSI %d dBm). Check DNS, hostname, CA, clock, and backend reachability.\n",
       responseCode,
-      transportError.c_str(),
       static_cast<unsigned long>(elapsed(startedAt)),
       WiFi.RSSI()
     );
@@ -738,7 +765,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
             : "rejected",
       responseCode,
       static_cast<unsigned long>(elapsed(startedAt)),
-      payload.length(),
+      payloadLength,
       WiFi.RSSI()
     );
     if (responseCode == 400 || responseCode == 413 || responseCode == 422) {
@@ -816,12 +843,11 @@ void publishRemoteDiagnostic() {
   document["secureBoot"] = secureBootActive;
   document["timestamp"] = epochMilliseconds();
 
-  String payload;
-  payload.reserve(512);
-  serializeJson(document, payload);
+  char payload[1024]{};
+  const size_t payloadLength = serializeJson(document, payload, sizeof(payload));
   remoteDiagnosticAttempted = true;
   lastRemoteDiagnosticAt = millis();
-  if (payload.length() > 1024) {
+  if (payloadLength == 0 || payloadLength >= sizeof(payload)) {
     Serial.println("[Diagnostics] Refusing oversized health payload.");
     return;
   }
@@ -837,7 +863,10 @@ void publishRemoteDiagnostic() {
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Cache-Control", "no-store");
   const uint32_t startedAt = millis();
-  const int responseCode = http.POST(payload);
+  const int responseCode = http.POST(
+    reinterpret_cast<uint8_t *>(payload),
+    payloadLength
+  );
   http.end();
   Serial.printf(
     "[Diagnostics] Remote health HTTP %d in %lums.\n",
@@ -863,9 +892,8 @@ TelemetryFix currentFix() {
 
   fix.lat = gps.location.lat();
   fix.lng = gps.location.lng();
-  const double rawSpeed = gps.speed.isValid()
-    ? min(max(gps.speed.kmph(), 0.0), 200.0)
-    : 0.0;
+  const double rawSpeed = gps.speed.isValid() ? gps.speed.kmph() : 0.0;
+  if (!eki::telemetry::speedIsPlausible(rawSpeed)) return fix;
   fix.speed = rawSpeed;
   fix.heading = gps.course.isValid()
     ? fmod(max(gps.course.deg(), 0.0), 360.0)
@@ -1116,9 +1144,10 @@ void setup() {
 
   if (provisioned) {
     tlsClient.setCACert(deviceConfiguration.backendRootCa());
-    telemetryEndpoint = buildTelemetryUrl();
-    diagnosticsEndpoint = buildDiagnosticsUrl();
-    authorizationHeader = String("Device ") + deviceConfiguration.deviceSecret();
+    if (!initializeRequestStrings()) {
+      Serial.println("[Boot] Provisioned request configuration is too long; halted.");
+      while (true) delay(1000);
+    }
   }
   sntp_set_time_sync_notification_cb(onNtpTimeSynchronized);
   configureWatchdog();

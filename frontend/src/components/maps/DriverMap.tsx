@@ -7,7 +7,7 @@ import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteData } from "@/hooks/useRoutes";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import { auth } from "@/lib/firebaseAuth";
-import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
+import { DEFAULT_CENTER, MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 import { decodePolyline } from "@/lib/polyline";
 import { snapToPolyline } from "@/lib/snapToPolyline";
 import { distanceAlongPolyline } from "@/lib/polylineDistance";
@@ -159,7 +159,7 @@ function DriverMapInner({ route, driverLocation, busId, isTracking, selectedRout
 
   const defaultCenter = smoothDriverPosition
     ? smoothDriverPosition
-    : (stops.length ? { lat: stops[0].lat, lng: stops[0].lng } : { lat: 23.03, lng: 72.55 });
+    : (stops.length ? { lat: stops[0].lat, lng: stops[0].lng } : DEFAULT_CENTER);
 
   return (
     <>
