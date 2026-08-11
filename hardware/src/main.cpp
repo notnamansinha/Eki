@@ -32,6 +32,7 @@
 namespace {
 constexpr double HDOP_REJECT_THRESHOLD = 4.0;
 constexpr uint32_t GNSS_UTC_MAX_AGE_MS = 2000;
+constexpr uint32_t GNSS_EPOCH_REFERENCE_MAX_AGE_MS = 24UL * 60 * 60 * 1000;
 constexpr uint32_t NTP_CROSS_CHECK_INTERVAL_MS = 6UL * 60 * 60 * 1000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
 constexpr uint32_t WATCHDOG_TIMEOUT_MS = 25000;
@@ -370,10 +371,12 @@ int64_t epochMilliseconds() {
   int64_t epochMs = 0;
   portENTER_CRITICAL(&clockCrossCheckMux);
   if (latestGnssReferenceValid) {
-    epochMs = eki::clock::projectEpochMilliseconds(
+    eki::clock::projectEpochMillisecondsIfFresh(
       latestGnssEpochMs,
       latestGnssReferenceAt,
-      now
+      now,
+      GNSS_EPOCH_REFERENCE_MAX_AGE_MS,
+      epochMs
     );
   }
   portEXIT_CRITICAL(&clockCrossCheckMux);
@@ -646,12 +649,17 @@ void onNtpTimeSynchronized(struct timeval *ntpTime) {
   int64_t divergenceMs = 0;
 
   portENTER_CRITICAL(&clockCrossCheckMux);
+  int64_t projectedGnssEpochMs = 0;
   if (
     latestGnssReferenceValid &&
-    now - latestGnssReferenceAt <= GNSS_UTC_MAX_AGE_MS * 2
+    eki::clock::projectEpochMillisecondsIfFresh(
+      latestGnssEpochMs,
+      latestGnssReferenceAt,
+      now,
+      GNSS_UTC_MAX_AGE_MS * 2,
+      projectedGnssEpochMs
+    )
   ) {
-    const int64_t projectedGnssEpochMs =
-      latestGnssEpochMs + static_cast<int64_t>(now - latestGnssReferenceAt);
     const int64_t ntpEpochMs =
       static_cast<int64_t>(ntpTime->tv_sec) * 1000 + ntpTime->tv_usec / 1000;
     divergenceMs = ntpEpochMs - projectedGnssEpochMs;

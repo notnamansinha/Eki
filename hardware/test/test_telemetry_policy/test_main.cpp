@@ -133,6 +133,14 @@ void test_gnss_utc_conversion_and_clock_discipline_are_strict() {
     eki::clock::projectEpochMilliseconds(epochMs, UINT32_MAX - 500, 499) ==
     epochMs + 1000
   );
+  int64_t projectedEpochMs = 0;
+  TEST_ASSERT_TRUE(eki::clock::projectEpochMillisecondsIfFresh(
+    epochMs, UINT32_MAX - 500, 499, 1000, projectedEpochMs
+  ));
+  TEST_ASSERT_TRUE(projectedEpochMs == epochMs + 1000);
+  TEST_ASSERT_FALSE(eki::clock::projectEpochMillisecondsIfFresh(
+    epochMs, 1000, 2001, 1000, projectedEpochMs
+  ));
 
   TEST_ASSERT_TRUE(eki::clock::shouldApplyGnssClock(
     false, 0, 0, 1704067200000LL
