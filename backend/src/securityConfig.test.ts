@@ -82,6 +82,19 @@ describe("production security configuration", () => {
     expect(workers).toContain("await stopWork()");
   });
 
+  it("denies every unlisted path with an explicit catch-all and keeps comments accurate", () => {
+    const rules = workspaceFile("firestore.rules");
+
+    // Explicit catch-all deny: overlapping rules use OR semantics, so this
+    // never overrides a narrower allow, and unlisted collections fail closed
+    // with documented intent (issue #49 L6).
+    expect(rules).toContain("match /{document=**}");
+    expect(rules).toContain("allow read, write: if false;");
+    // Routes/bus_locations comments no longer claim PUBLIC when the rules
+    // require authentication or admin (issue #49 L5).
+    expect(rules).not.toContain("PUBLIC read");
+  });
+
   it("reads the session document once for chat access checks", () => {
     const rules = workspaceFile("firestore.rules");
     const messages = ruleBlock(rules, "match /messages/{messageId}");
