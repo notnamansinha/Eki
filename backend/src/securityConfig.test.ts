@@ -307,7 +307,7 @@ describe("production security configuration", () => {
     expect(telemetryPolicy).toContain("STOPPED_HEARTBEAT_MS = 60000");
     expect(telemetryPolicy).toContain("motionStateChanged");
     expect(tripStateEngine).toContain("const STALE_BUS_MS = readIntervalMs");
-    expect(firmware).toContain("TELEMETRY_FRESHNESS_MARGIN_MS = 55000");
+    expect(telemetryPolicy).toContain("TELEMETRY_FRESHNESS_MARGIN_MS = 55000");
     expect(firmware).toContain("RTC_NOINIT_ATTR TelemetryQueue telemetryQueue");
     expect(firmware).toContain("xTaskCreatePinnedToCore");
     expect(telemetryQueue).toContain("dropOlderThan");

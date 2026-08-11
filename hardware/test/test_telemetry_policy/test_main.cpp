@@ -87,11 +87,13 @@ void test_retry_after_is_strict_bounded_and_status_aware() {
 
 void test_retry_retains_only_samples_that_can_stay_fresh() {
   constexpr int64_t now = 1000000;
-  constexpr int64_t margin = 55000;
+  constexpr int64_t margin = TELEMETRY_FRESHNESS_MARGIN_MS;
   TEST_ASSERT_TRUE(retryKeepsSampleFresh(now, now, 30000, margin));
   TEST_ASSERT_TRUE(retryKeepsSampleFresh(now - 20000, now, 30000, margin));
   TEST_ASSERT_FALSE(retryKeepsSampleFresh(now, now, 60000, margin));
   TEST_ASSERT_FALSE(retryKeepsSampleFresh(now - 30000, now, 30000, margin));
+  TEST_ASSERT_FALSE(retryKeepsSampleFresh(now - margin, now, 0, margin));
+  TEST_ASSERT_FALSE(retryKeepsSampleFresh(now - 25000, now, 30000, margin));
   TEST_ASSERT_FALSE(retryKeepsSampleFresh(now + 1, now, 1000, margin));
 }
 
