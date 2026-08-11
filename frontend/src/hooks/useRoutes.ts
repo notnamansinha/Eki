@@ -28,7 +28,11 @@ export interface RouteData {
   duration?: string;
 }
 
+/**
+ * All routes from the Firestore `routes` collection, with loading and error
+ * state. Each route carries its ordered stops and pre-computed geometry.
+ */
 export function useRoutes() {
-  const { data: routes, loading } = useCollection<RouteData>("routes");
-  return { routes, loading };
+  const { data: routes, loading, error, retry } = useCollection<RouteData>("routes");
+  return { routes, loading, error, retry };
 }

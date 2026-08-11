@@ -20,7 +20,7 @@ import {
 } from "@/lib/rideHistory";
 import { auth } from "@/lib/firebaseAuth";
 import { errorMessage } from "@/lib/errors";
-import { Bus, Loader2, MapPin, Trash2, User, Users } from "lucide-react";
+import { Bus, Loader2, MapPin, Trash2, User, Users, AlertCircle } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 interface PassengerRecord {
@@ -115,7 +115,12 @@ async function deleteRideHistoryRequest(sessionId: string): Promise<void> {
 }
 
 export default function RideHistoryPanel() {
-  const { data: sessions, loading: sessionsLoading } = useCollection<RideSession>(
+  const {
+    data: sessions,
+    loading: sessionsLoading,
+    error: sessionsError,
+    retry: retrySessions,
+  } = useCollection<RideSession>(
     "ride_sessions",
     {
       maxResults: 100,
@@ -123,8 +128,8 @@ export default function RideHistoryPanel() {
       orderByField: "startTime",
     },
   );
-  const { buses, loading: busesLoading } = useBuses();
-  const { routes, loading: routesLoading } = useRoutes();
+  const { buses, loading: busesLoading, error: busesError, retry: retryBuses } = useBuses();
+  const { routes, loading: routesLoading, error: routesError, retry: retryRoutes } = useRoutes();
   const { drivers, loading: driversLoading } = useDrivers();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteStates, setDeleteStates] = useState<Record<string, RideHistoryDeletionState>>({});
@@ -201,6 +206,29 @@ export default function RideHistoryPanel() {
     return (
       <div className="flex h-full items-center justify-center">
         <Loader2 className="size-8 animate-spin text-brand-accent" />
+      </div>
+    );
+  }
+
+  if (sessionsError || busesError || routesError) {
+    return (
+      <div className="flex h-full items-center justify-center px-6 text-center">
+        <div className="space-y-2 text-sm text-red-400/80">
+          <AlertCircle className="mx-auto size-8 opacity-70" />
+          <p>{sessionsError ?? busesError ?? routesError ?? "Could not load ride history."}</p>
+          <p className="text-xs text-white/40">Ride history could not be loaded.</p>
+          <button
+            type="button"
+            onClick={() => {
+              if (sessionsError) retrySessions();
+              if (busesError) retryBuses();
+              if (routesError) retryRoutes();
+            }}
+            className="rounded-lg bg-white/10 px-4 py-2 text-xs font-semibold text-white"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }

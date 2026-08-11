@@ -4,10 +4,9 @@ import { useState, useEffect, type ComponentType } from "react";
 import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
 import { useRoutes, type RouteData } from "@/hooks/useRoutes";
+import { useCollection } from "@/hooks/useCollection";
 import { useActiveBuses, type ActiveBusEntry } from "@/hooks/useActiveBuses";
-import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
 import { auth } from "@/lib/firebaseAuth";
-import { db } from "@/lib/firebaseFirestore";
 import {
   Bus, User, Trash2, Plus, ArrowRight,
   ChevronDown, ChevronUp, Pencil, Check, X, AlertCircle,
@@ -45,27 +44,17 @@ interface CompletedTrip {
   stopCount: number;
   stopNames: string[];
 }
-function useRecentTrips(count = 10): CompletedTrip[] {
-  const [trips, setTrips] = useState<CompletedTrip[]>([]);
-  useEffect(() => {
-    const q = query(
-      collection(db, "completed_trips"),
-      orderBy("completedAt", "desc"),
-      limit(count)
-    );
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setTrips(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<CompletedTrip, "id">) })));
-      },
-      (error) => {
-        console.warn("[Fleet] Completed trip history read failed:", error.message);
-        setTrips([]);
-      },
-    );
-    return () => unsub();
-  }, [count]);
-  return trips;
+
+function useRecentTrips(count = 10) {
+  const { data, error, loading, retry } = useCollection<CompletedTrip>(
+    "completed_trips",
+    {
+      maxResults: count,
+      orderByDirection: "desc",
+      orderByField: "completedAt",
+    },
+  );
+  return { trips: data, error, loading, retry };
 }
 
 // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -254,7 +243,12 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
 
 // â”€â”€ Recent trips analytics section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function RecentTripsPanel({ routes, buses, drivers }: { routes: RouteData[]; buses: BusData[]; drivers: DriverData[] }) {
-  const trips = useRecentTrips(10);
+  const {
+    trips,
+    error: tripsError,
+    loading: tripsLoading,
+    retry: retryTrips,
+  } = useRecentTrips(10);
   const [open, setOpen] = useState(false);
 
   return (
@@ -278,7 +272,14 @@ function RecentTripsPanel({ routes, buses, drivers }: { routes: RouteData[]; bus
 
       {open && (
         <div className="border-t border-white/5 px-3 pb-3 flex flex-col gap-2">
-          {trips.length === 0 ? (
+          {tripsError ? (
+            <div className="py-6 text-center">
+              <p className="text-red-400/80 text-xs font-semibold uppercase tracking-widest">{tripsError}</p>
+              <button type="button" onClick={retryTrips} className="mt-3 text-xs font-semibold text-white/60 hover:text-white">Retry</button>
+            </div>
+          ) : tripsLoading ? (
+            <p className="text-white/20 text-xs text-center py-6 font-semibold uppercase tracking-widest">Loading completed trips…</p>
+          ) : trips.length === 0 ? (
             <p className="text-white/20 text-xs text-center py-6 font-semibold uppercase tracking-widest">No completed trips yet.</p>
           ) : (
             trips.map(trip => {
@@ -320,9 +321,14 @@ interface Props {
 }
 
 export default function FleetManagementPanel({ mode = "fleet" }: Props) {
-  const { buses, loading: busesLoading } = useBuses();
+  const {
+    buses,
+    loading: busesLoading,
+    error: busesError,
+    retry: retryBuses,
+  } = useBuses();
   const { drivers, loading: driversLoading } = useDrivers();
-  const { routes } = useRoutes();
+  const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const activeEntries = useActiveBuses();
   const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
 
@@ -504,6 +510,26 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
     isLiveBusSignalLost(e.timestamp, freshnessNow)
   ).length;
   const movingCount     = filteredActiveEntries.filter(e => e.motionState === "moving").length;
+
+  if (busesError || routesError) {
+    return (
+      <div className="mx-auto flex w-full max-w-3xl flex-col items-center justify-center gap-3 p-12 text-center text-red-300" role="alert">
+        <AlertCircle className="size-9" aria-hidden="true" />
+        <p className="text-sm font-semibold">Fleet data could not be loaded.</p>
+        <p className="text-xs text-red-300/70">{busesError || routesError}</p>
+        <button
+          type="button"
+          onClick={() => {
+            if (busesError) retryBuses();
+            if (routesError) retryRoutes();
+          }}
+          className="mt-1 rounded-lg bg-white/10 px-4 py-2 text-xs font-semibold text-white"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-5 p-3 md:p-6 animate-slide-up">
