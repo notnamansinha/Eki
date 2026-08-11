@@ -92,6 +92,10 @@ export function isActiveBusEntry(
   const bus = value as Record<string, unknown>;
   if (typeof bus.busId !== "string" || bus.busId.trim().length === 0) return false;
   if (!hasValidOptionalFields(bus)) return false;
+  // A terminal ride is no longer live even if its final telemetry sample is
+  // still inside the freshness window. Completion must take precedence over
+  // generic telemetry freshness so fleet views do not show ended service.
+  if (bus.tripState === "completed") return false;
   const fresh = isLiveBusTimestamp(
     typeof bus.timestamp === "number" ? bus.timestamp : undefined,
     now,
@@ -101,7 +105,8 @@ export function isActiveBusEntry(
 
 /**
  * The single filter semantics shared by every fleet view: an entry is shown
- * when it has a valid bus identity AND either fresh telemetry or a live ride.
+ * when it is non-terminal, has a valid bus identity, AND has either fresh
+ * telemetry or a live ride.
  *
  * Before this function existed, the admin dashboard and the fleet panel each
  * implemented their own filtering (Dashboard: valid busId + fresh/active-ride;

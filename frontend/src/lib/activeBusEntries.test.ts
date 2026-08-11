@@ -101,14 +101,19 @@ describe("filterActiveBusEntries", () => {
     expect(entries[0].sessionId).toBe("session_1");
   });
 
-  it("keeps a completed-but-fresh node and drops it once stale", () => {
+  it("drops a completed node even while its final telemetry is fresh", () => {
     const completed = {
       busId: "bus_1",
       status: "active",
       sessionId: "session_1",
       tripState: "completed" as const,
     };
-    expect(filterActiveBusEntries({ bus_1_route_1: { ...completed, timestamp: now - 1_000 } }, now)).toHaveLength(1);
+    expect(
+      filterActiveBusEntries(
+        { bus_1_route_1: { ...completed, timestamp: now - 1_000 } },
+        now,
+      ),
+    ).toEqual([]);
     expect(
       filterActiveBusEntries({ bus_1_route_1: { ...completed, timestamp: now - BUS_EXPIRY_MS } }, now),
     ).toEqual([]);
