@@ -409,12 +409,15 @@ describe("production security configuration", () => {
     expect(dashboard).not.toContain("update(ref(rtdb");
   });
 
-  it("restricts drivers to status-only passenger request updates", () => {
+  it("removes the dead passenger-request client surface entirely", () => {
     const rules = workspaceFile("firestore.rules");
     const requests = ruleBlock(rules, "match /passenger_requests/{requestId}");
 
-    expect(requests).toContain("affectedKeys().hasOnly(['status'])");
-    expect(requests).toContain("request.resource.data.busId == resource.data.busId");
+    // No client write surface: the collection is backend-authoritative via the
+    // admin /api/requests route (issues #72 + #73). An explicit client create
+    // rule with no consumer is a latent write surface with no retention.
+    expect(requests).toBe("");
+    expect(rules).not.toContain("passenger_requests");
   });
 
   it("gates passenger manifest self-join behind driver-issued proof and proximity", () => {
