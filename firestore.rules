@@ -55,14 +55,14 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // ── Routes collection — PUBLIC read, write by admins only ──
+    // ── Routes collection — authenticated read, write by admins only ──
     match /routes/{routeId} {
       allow read: if isAuthenticated();
       // Route geometry and stop validation are enforced by the admin API.
       allow create, update, delete: if false;
     }
 
-    // ── Bus locations — PUBLIC read, write by drivers/admins ──
+    // ── Bus locations — authenticated-admin read/write (fleet projection) ──
     match /bus_locations/{busId} {
       allow read, write: if isAdmin();
     }
@@ -187,7 +187,11 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    // ── Default deny — no catch-all, everything not listed above is denied ──
-    // (Firestore denies by default, but this comment makes the intent explicit)
+    // ── Default deny — explicit catch-all (issue #49 L6) ──
+    // Overlapping rules use OR semantics, so this never overrides a narrower
+    // allow above; every collection not explicitly matched fails closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }
