@@ -29,6 +29,21 @@
 #define EKI_FIRMWARE_VERSION "development"
 #endif
 
+#if EKI_FLEET_BUILD
+#if !defined(CONFIG_SECURE_BOOT_V2_ENABLED) || !CONFIG_SECURE_BOOT_V2_ENABLED
+#error "Fleet builds require Secure Boot V2."
+#endif
+#if !defined(CONFIG_SECURE_FLASH_ENC_ENABLED) || !CONFIG_SECURE_FLASH_ENC_ENABLED
+#error "Fleet builds require flash encryption."
+#endif
+#if !defined(CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE) || !CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE
+#error "Fleet builds require release-mode flash encryption."
+#endif
+#if !defined(CONFIG_NVS_ENCRYPTION) || !CONFIG_NVS_ENCRYPTION
+#error "Fleet builds require encrypted NVS."
+#endif
+#endif
+
 namespace {
 constexpr double HDOP_REJECT_THRESHOLD = 4.0;
 constexpr uint32_t GNSS_UTC_MAX_AGE_MS = 2000;
