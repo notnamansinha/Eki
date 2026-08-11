@@ -62,6 +62,17 @@ describe("parseTelemetryPayload", () => {
     ).toEqual({ ok: false, reason: "stale_or_invalid_timestamp" });
   });
 
+  it("clamps an accepted future timestamp to wall clock so a skewed device clock cannot wedge a node", () => {
+    const future = parseTelemetryPayload(encode({ ...valid, timestamp: now + 5_000 }), now);
+    expect(future).toEqual({ ok: true, value: { ...valid, timestamp: now } });
+
+    const boundary = parseTelemetryValue({ ...valid, timestamp: now + 10_000 }, now);
+    expect(boundary).toEqual({ ok: true, value: { ...valid, timestamp: now } });
+
+    const beyond = parseTelemetryValue({ ...valid, timestamp: now + 10_001 }, now);
+    expect(beyond).toEqual({ ok: false, reason: "stale_or_invalid_timestamp" });
+  });
+
   it("rejects oversized and malformed JSON", () => {
     expect(parseTelemetryPayload(Buffer.alloc(513), now)).toEqual({
       ok: false,
