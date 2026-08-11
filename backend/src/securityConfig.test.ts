@@ -114,6 +114,40 @@ describe("production security configuration", () => {
     expect(rules).not.toContain("function isSessionPassenger");
   });
 
+  it("keeps rules get() cost bounded: one session fetch, no write-path gets (issue #40)", () => {
+    const rules = workspaceFile("firestore.rules");
+    const feedback = ruleBlock(rules, "match /feedbacks/{feedbackId}");
+    const messages = ruleBlock(rules, "match /messages/{messageId}");
+    const rateLimits = ruleBlock(rules, "match /messageRateLimits/{uid}");
+    const cooldowns = ruleBlock(rules, "match /feedbackCooldowns/{uid}");
+    const operator = ruleBlock(rules, "function isSessionOperator");
+    const sessionHelper = ruleBlock(rules, "function canReadSession");
+
+    // Chat create used to cost 2 session get()s + 2 rate-limit get()/getAfter();
+    // feedback create cost 3 session get()s (issue #40). Those writes are now
+    // backend-authoritative, so the ONLY get() left in the whole rules file is
+    // the single session fetch shared by read checks. This guard fails if a
+    // future rule reintroduces a second fetch or a write-path get().
+    // (Comments are stripped so "single get()" prose doesn't count.)
+    const code = rules.replace(/\/\/.*$/gm, "");
+    expect(code.match(/get\(/g) ?? []).toHaveLength(1);
+    expect(code).not.toContain("getAfter(");
+
+    // The one allowed get() lives in the sessionDoc helper and is shared by
+    // exactly the two read helpers; client write rules must never call it.
+    expect(sessionHelper).toContain("sessionDoc(sessionId)");
+    expect(rules.match(/sessionDoc\(/g) ?? []).toHaveLength(3);
+    expect(operator.split("sessionDoc(").length - 1).toBe(1);
+    expect(feedback).not.toContain("sessionDoc(");
+    expect(messages).not.toContain("sessionDoc(");
+    expect(rateLimits).not.toContain("sessionDoc(");
+    expect(cooldowns).not.toContain("sessionDoc(");
+
+    // Rate-limit reads short-circuit the cheap ownership check before paying
+    // for the session fetch, so a non-owner read costs zero get()s.
+    expect(rateLimits.indexOf("isOwner(uid)")).toBeLessThan(rateLimits.indexOf("canReadSession(sessionId)"));
+  });
+
   it("keeps sensitive Firestore collections and chat identity protected", () => {
     const rules = workspaceFile("firestore.rules");
     const devices = ruleBlock(rules, "match /devices/{deviceId}");
