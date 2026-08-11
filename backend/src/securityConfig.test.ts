@@ -33,7 +33,7 @@ describe("production security configuration", () => {
     }
   });
 
-  it("keeps realtime telemetry server-only and denies every RTDB client mutation", () => {
+  it("keeps realtime telemetry server-only and removes dead RTDB rule blocks", () => {
     const database = JSON.parse(workspaceFile("database.rules.json"));
     const activeBus = database.rules.activeBuses.$busKey;
 
@@ -41,13 +41,16 @@ describe("production security configuration", () => {
     expect(database.rules[".write"]).toBe(false);
     expect(database.rules.activeBuses[".write"]).toBe(false);
     expect(activeBus[".write"]).toBe(false);
-    expect(database.rules.driverRouteAssignments[".read"]).toBe(false);
-    expect(database.rules.driverRouteAssignments[".write"]).toBe(false);
-    expect(database.rules.messages[".write"]).toBe(false);
+    expect(database.rules.activeBuses[".indexOn"]).toContain("busId");
+    // Dead rule blocks are gone: nothing reads RTDB messages/users, and the
+    // driverRouteAssignments mirror is Admin-SDK-only (default-deny for
+    // clients is identical to the removed explicit denies) (issue #49 L2).
+    expect(database.rules.driverRouteAssignments).toBeUndefined();
+    expect(database.rules.messages).toBeUndefined();
+    expect(database.rules.users).toBeUndefined();
     const syncRoles = workspaceFile("backend/src/syncRoleClaims.ts");
     expect(syncRoles).toContain("driverRouteAssignments/");
     expect(syncRoles).toContain("previousDriverId");
-    expect(database.rules.activeBuses[".indexOn"]).toContain("busId");
   });
 
   it("keeps signal loss separate from lifecycle and persistence ordered", () => {
