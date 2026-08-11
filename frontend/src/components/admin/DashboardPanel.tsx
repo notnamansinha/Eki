@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
+import { apiRequest } from "@/lib/apiClient";
 
 /* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const TRIP_STATE: Record<string, { label: string; color: string; bg: string; dot: string }> = {
@@ -83,21 +84,18 @@ function LiveDetailsDrawer({
   };
 
   const adminRequest = async (path: string, init: RequestInit) => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
     const currentUser = auth.currentUser;
-    if (!backendUrl || !currentUser) throw new Error("Backend service is unavailable.");
+    if (!currentUser) throw new Error("Backend service is unavailable.");
     const token = await currentUser.getIdToken();
-    const response = await fetch(`${backendUrl}${path}`, {
+    return apiRequest<{ error?: string }>(path, {
       ...init,
       headers: {
         Authorization: `Bearer ${token}`,
         ...(init.body ? { "Content-Type": "application/json" } : {}),
         ...init.headers,
       },
+      fallbackError: "Admin request failed.",
     });
-    const result = await response.json().catch(() => ({})) as { error?: string };
-    if (!response.ok) throw new Error(result.error || `Request failed with HTTP ${response.status}`);
-    return result;
   };
 
   const [showWipeConfirm, setShowWipeConfirm] = useState(false);

@@ -17,21 +17,20 @@ import CustomSelect from "@/components/ui/CustomSelect";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { errorMessage } from "@/lib/errors";
 import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
+import { apiRequest } from "@/lib/apiClient";
 
 async function fleetRequest(path: string, method: "PUT" | "DELETE", body?: object) {
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
-  if (!backendUrl || !auth.currentUser) throw new Error("Fleet service is not configured.");
+  if (!auth.currentUser) throw new Error("Fleet service is not configured.");
   const token = await auth.currentUser.getIdToken();
-  const response = await fetch(`${backendUrl}/api/fleet${path}`, {
+  await apiRequest(`/api/fleet${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
       ...(body ? { "Content-Type": "application/json" } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
+    fallbackError: "Fleet operation failed.",
   });
-  const result = await response.json() as { error?: string };
-  if (!response.ok) throw new Error(result.error || "Fleet operation failed.");
 }
 
 // â”€â”€ Completed trip analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
