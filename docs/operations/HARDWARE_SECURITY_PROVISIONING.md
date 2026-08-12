@@ -44,9 +44,9 @@ unidentified serial port.
 
 The `esp32dev-secure` environment is the only fleet environment. Its committed
 configuration enables Secure Boot V2, signed binaries, release-mode flash
-encryption, encrypted NVS, ROM-download lockdown, and a larger bootloader-safe
-partition offset. The firmware itself also refuses fleet operation unless both
-hardware protections report active.
+encryption, ROM-download lockdown, RAM-only Wi-Fi driver state, and a larger
+bootloader-safe partition offset. The firmware refuses fleet operation unless
+both hardware protections report active and the backend origin is HTTPS.
 
 With both operators watching the selected spare-board port, upload the secure
 application/partition images first, then the signed bootloader through
@@ -70,24 +70,33 @@ The application must report `fleet-build=yes`, `flash-encryption=enabled`, and
 `secure-boot=enabled`. Any other combination halts before credentials are read
 or networking starts.
 
-## Local configuration and rotation
+## Compile-time configuration and rotation
 
-An empty device creates a random 24-character recovery password in NVS and
-prints it only while the device remains unprovisioned over the controlled serial
-connection. Record it in the restricted device inventory; never reuse it.
+There is no local configuration or recovery service. Each device's Wi-Fi,
+device ID/secret, HTTPS backend origin, and issuing root CA are compiled into
+its signed, flash-encrypted application image.
 
 1. Provision the backend registry with `npm run provision-device --workspace=backend -- --device-id ... --bus-id ... --route-id ...`. Capture the one-time device secret without putting it in shell history, tickets, screenshots, or source control.
-2. Connect to the WPA2 `Eki-Recovery-*` access point using the recorded recovery
-   password and open `http://192.168.4.1`.
-3. Submit Wi-Fi, device ID, one-time device secret, HTTPS backend origin, and
-   issuing root CA. The form never returns stored values. The firmware validates
-   and writes one versioned, checksummed NVS record, then restarts.
-4. Verify HTTPS telemetry and the authenticated diagnostics endpoint. Confirm
-   the server record reports both hardware-security booleans as `true`.
-5. For rotation, run the backend provisioner again outside an active ride, then
-   enter the complete replacement configuration through the protected local
-   portal. A 401/403 automatically exposes that portal and latches publishing
-   off until a valid replacement is stored.
+2. In the approved signing environment, copy
+   `hardware/include/secrets.example.h` to the ignored
+   `hardware/include/secrets.h` and set the device-specific values. Never print
+   the file or pass values as command-line build flags.
+3. Build the `esp32dev-secure` artifact. The build gate verifies required
+   definitions, HTTPS-only fleet configuration, Secure Boot/flash-encryption
+   settings, and the absence of NVS/Preferences-backed configuration and
+   recovery code. The RTC no-init telemetry queue remains intentionally present.
+4. Flash the selected device using the witnessed secure procedure, then remove
+   the plaintext `secrets.h` and any unencrypted intermediate artifact from the
+   signing workspace according to university key-handling policy.
+5. Verify HTTPS telemetry and authenticated diagnostics. Confirm both reported
+   hardware-security booleans are `true`.
+6. For secret or device-ID rotation, create the new backend value outside an
+   active ride, rebuild the complete device-specific image, physically reflash
+   it, and restart the device. If the compiled ID and secret remain correct but
+   a credential was disabled or its backend registry/assignment is wrong,
+   repair the backend record and restart the device without reflashing. A
+   401/403 latches publishing off and disables the station radio until the
+   applicable repair is followed by that restart.
 
 ## Acceptance evidence
 
@@ -98,8 +107,8 @@ For each spare-board rehearsal and production unit, retain:
 - witnessed preflight summary and complete first-boot serial log;
 - cold-boot evidence that only the signed image runs and both protections remain
   active;
-- successful NVS provisioning, power-cycle persistence, telemetry, remote
-  diagnostics, credential rotation/revocation, and lost-device disablement;
+- successful device-specific configuration build, telemetry, remote
+  diagnostics, signed credential reflash/revocation, and lost-device disablement;
 - failure evidence for a wrong secret, malformed configuration, and an artifact
   signed by an untrusted test key;
 - operator names, date, anomalies, quarantined boards, and approval signatures.

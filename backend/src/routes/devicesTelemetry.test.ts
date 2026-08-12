@@ -95,7 +95,7 @@ function sendDiagnostics() {
       Authorization: `Device ${"a".repeat(20)}`,
     },
     body: JSON.stringify({
-      firmwareVersion: "gnss-nvs-v1",
+      firmwareVersion: "gnss-compiletime-v1",
       uptimeMs: 30_000,
       freeHeapBytes: 180_000,
       rssiDbm: -55,

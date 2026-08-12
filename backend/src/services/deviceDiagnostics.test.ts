@@ -3,7 +3,7 @@ import { parseDeviceDiagnosticsValue } from "./deviceDiagnostics";
 
 function validDiagnostics() {
   return {
-    firmwareVersion: "gnss-nvs-v1",
+    firmwareVersion: "gnss-compiletime-v1",
     uptimeMs: 30_000,
     freeHeapBytes: 180_000,
     rssiDbm: -55,
@@ -44,6 +44,10 @@ describe("device diagnostics payload", () => {
     expect(parseDeviceDiagnosticsValue({
       ...validDiagnostics(),
       fault: "arbitrary",
+    })).toEqual({ ok: false });
+    expect(parseDeviceDiagnosticsValue({
+      ...validDiagnostics(),
+      fault: "wifi-recovery",
     })).toEqual({ ok: false });
   });
 });

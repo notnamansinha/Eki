@@ -70,7 +70,7 @@ Body: `{ "busId":"bus_01", "routeId":"route_01", "enabled":true }`. Bus/route mu
 
 Sets `enabled:false`/`disabledAt`, invalidates credential/rate cache. Returns `{disabled:true}` or 400/500.
 
-Device creation/secret rotation is deliberately local: `npm run provision-device --workspace=backend -- --device-id … --bus-id … --route-id …`. Submit the one-time plaintext only through the ESP32's protected local provisioning portal; it is stored in NVS and never in source.
+Device creation/secret rotation is deliberately local: `npm run provision-device --workspace=backend -- --device-id … --bus-id … --route-id …`. Transfer the one-time plaintext only into the ignored `hardware/include/secrets.h` inside the controlled signing environment, build the device-specific protected artifact, and reflash the tracker. Never commit the plaintext or retain an unencrypted firmware image.
 
 ## Live bus endpoints
 

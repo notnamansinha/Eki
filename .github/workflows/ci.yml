@@ -50,6 +50,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install platformio
+      - name: Install non-production firmware build configuration
+        run: cp hardware/include/secrets.example.h hardware/include/secrets.h
       - run: platformio test --project-dir hardware -e native
       - run: platformio run --project-dir hardware -e esp32dev
       - name: Verify signed fleet build with an ephemeral CI-only key

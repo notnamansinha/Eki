@@ -38,7 +38,7 @@ export interface DeviceDiagnosticsPayload {
   uartBufferOverflows: number;
   uartFifoOverflows: number;
   resetTotal: number;
-  fault: "none" | "wifi-recovery" | "credential-rejected";
+  fault: "none" | "credential-rejected";
   flashEncryption: boolean;
   secureBoot: boolean;
   timestamp: number;
@@ -87,9 +87,7 @@ export function parseDeviceDiagnosticsValue(value: unknown): ParseResult {
     !isBoundedInteger(record.uartBufferOverflows, 0, 0xFFFFFFFF) ||
     !isBoundedInteger(record.uartFifoOverflows, 0, 0xFFFFFFFF) ||
     !isBoundedInteger(record.resetTotal, 0, 0xFFFF) ||
-    (fault !== "none" &&
-      fault !== "wifi-recovery" &&
-      fault !== "credential-rejected") ||
+    (fault !== "none" && fault !== "credential-rejected") ||
     typeof record.flashEncryption !== "boolean" ||
     typeof record.secureBoot !== "boolean" ||
     !isBoundedInteger(record.timestamp, 1_700_000_000_000, 9_999_999_999_999)

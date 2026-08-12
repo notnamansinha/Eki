@@ -2,7 +2,8 @@
 
 #include "clock_policy.h"
 #include "connectivity_policy.h"
-#include "device_config.h"
+#include "firmware_config.h"
+#include "secrets.example.h"
 #include "telemetry_policy.h"
 #include "telemetry_queue.h"
 
@@ -131,37 +132,11 @@ void test_retry_retains_only_samples_that_can_stay_fresh() {
   TEST_ASSERT_FALSE(retryKeepsSampleFresh(now + 1, now, 1000, margin));
 }
 
-void test_device_configuration_record_is_closed_and_tamper_evident() {
-  using namespace eki::connectivity;
+void test_firmware_configuration_validation_identifies_the_failing_field() {
+  using namespace eki::config;
   constexpr char CERTIFICATE[] =
     "-----BEGIN CERTIFICATE-----\nvalid\n-----END CERTIFICATE-----";
-  DeviceConfigurationRecord record{};
-  TEST_ASSERT_TRUE(makeDeviceConfigurationRecord(
-    "campus-wifi", 11,
-    "wifi-password", 13,
-    "device_01", 9,
-    "abcdefghijklmnopqrstuv", 22,
-    "https://api.eki.example.edu/", 28,
-    CERTIFICATE, sizeof(CERTIFICATE) - 1,
-    record
-  ));
-  TEST_ASSERT_TRUE(deviceConfigurationRecordIsValid(record));
-  record.deviceSecret[0] = 'Z';
-  TEST_ASSERT_FALSE(deviceConfigurationRecordIsValid(record));
-
-  TEST_ASSERT_FALSE(deviceIdIsValid("bad/device", 10));
-  TEST_ASSERT_FALSE(deviceSecretIsValid("has spaces but long enough", 26));
-  TEST_ASSERT_FALSE(backendUrlIsValid("http://api.example.edu", 22));
-  TEST_ASSERT_FALSE(backendUrlIsValid("https://api.example.edu/path", 28));
-  TEST_ASSERT_FALSE(backendUrlIsValid("https://user@api.example.edu", 28));
-  TEST_ASSERT_FALSE(backendRootCaIsValid("not-a-certificate", 17));
-}
-
-void test_device_configuration_validation_identifies_the_failing_field() {
-  using namespace eki::connectivity;
-  constexpr char CERTIFICATE[] =
-    "-----BEGIN CERTIFICATE-----\nvalid\n-----END CERTIFICATE-----";
-  const auto validate = [](
+  const auto check = [](
     const char *ssid,
     const char *wifiPassword,
     const char *deviceId,
@@ -169,7 +144,7 @@ void test_device_configuration_validation_identifies_the_failing_field() {
     const char *backendUrl,
     const char *certificate
   ) {
-    return validateDeviceConfiguration(
+    return validate(
       ssid, std::strlen(ssid),
       wifiPassword, std::strlen(wifiPassword),
       deviceId, std::strlen(deviceId),
@@ -180,117 +155,119 @@ void test_device_configuration_validation_identifies_the_failing_field() {
   };
 
   constexpr char VALID_SECRET[] = "abcdefghijklmnopqrstuv";
+  constexpr char SHORT_SECRET[] = "abcdefghijklmnopqrs";
+  char oversizedDeviceId[DEVICE_ID_MAX_LENGTH + 2]{};
+  std::memset(oversizedDeviceId, 'a', DEVICE_ID_MAX_LENGTH + 1);
+  char oversizedBackendUrl[BACKEND_URL_MAX_LENGTH + 2]{};
+  std::memcpy(oversizedBackendUrl, "https://", sizeof("https://") - 1);
+  std::memset(
+    oversizedBackendUrl + sizeof("https://") - 1,
+    'a',
+    BACKEND_URL_MAX_LENGTH + 1 - (sizeof("https://") - 1)
+  );
   TEST_ASSERT_EQUAL_INT(
-    static_cast<int>(DeviceConfigurationValidationError::None),
-    static_cast<int>(validate(
+    static_cast<int>(ValidationError::None),
+    static_cast<int>(check(
       "campus-wifi", "wifi-password", "device_01", VALID_SECRET,
       "https://api.eki.example.edu", CERTIFICATE
     ))
   );
   TEST_ASSERT_EQUAL_INT(
-    static_cast<int>(DeviceConfigurationValidationError::WifiSsid),
-    static_cast<int>(validate(
+    static_cast<int>(ValidationError::WifiSsid),
+    static_cast<int>(check(
       "", "wifi-password", "device_01", VALID_SECRET,
       "https://api.eki.example.edu", CERTIFICATE
     ))
   );
   TEST_ASSERT_EQUAL_INT(
-    static_cast<int>(DeviceConfigurationValidationError::WifiPassword),
-    static_cast<int>(validate(
+    static_cast<int>(ValidationError::WifiPassword),
+    static_cast<int>(check(
       "campus-wifi", "short", "device_01", VALID_SECRET,
       "https://api.eki.example.edu", CERTIFICATE
     ))
   );
   TEST_ASSERT_EQUAL_INT(
-    static_cast<int>(DeviceConfigurationValidationError::DeviceId),
-    static_cast<int>(validate(
+    static_cast<int>(ValidationError::DeviceId),
+    static_cast<int>(check(
       "campus-wifi", "wifi-password", "bad/device", VALID_SECRET,
       "https://api.eki.example.edu", CERTIFICATE
     ))
   );
   TEST_ASSERT_EQUAL_INT(
-    static_cast<int>(DeviceConfigurationValidationError::DeviceSecret),
-    static_cast<int>(validate(
+    static_cast<int>(ValidationError::DeviceSecret),
+    static_cast<int>(check(
       "campus-wifi", "wifi-password", "device_01", "has spaces but long enough",
       "https://api.eki.example.edu", CERTIFICATE
     ))
   );
   TEST_ASSERT_EQUAL_INT(
-    static_cast<int>(DeviceConfigurationValidationError::BackendUrl),
-    static_cast<int>(validate(
+    static_cast<int>(ValidationError::DeviceSecret),
+    static_cast<int>(check(
+      "campus-wifi", "wifi-password", "device_01", SHORT_SECRET,
+      "https://api.eki.example.edu", CERTIFICATE
+    ))
+  );
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(ValidationError::DeviceId),
+    static_cast<int>(check(
+      "campus-wifi", "wifi-password", oversizedDeviceId, VALID_SECRET,
+      "https://api.eki.example.edu", CERTIFICATE
+    ))
+  );
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(ValidationError::BackendUrl),
+    static_cast<int>(check(
+      "campus-wifi", "wifi-password", "device_01", VALID_SECRET,
+      oversizedBackendUrl, CERTIFICATE
+    ))
+  );
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(ValidationError::BackendUrl),
+    static_cast<int>(check(
       "campus-wifi", "wifi-password", "device_01", VALID_SECRET,
       "https://api.eki.example.edu/path", CERTIFICATE
     ))
   );
   TEST_ASSERT_EQUAL_INT(
-    static_cast<int>(DeviceConfigurationValidationError::BackendRootCa),
-    static_cast<int>(validate(
+    static_cast<int>(ValidationError::BackendRootCa),
+    static_cast<int>(check(
       "campus-wifi", "wifi-password", "device_01", VALID_SECRET,
       "https://api.eki.example.edu", "not-a-certificate"
     ))
   );
+  TEST_ASSERT_FALSE(backendRootCaIsValid(
+    "-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----",
+    sizeof("-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----") - 1
+  ));
+  char unterminatedCertificate[sizeof(CERTIFICATE)]{};
+  std::memcpy(unterminatedCertificate, CERTIFICATE, sizeof(CERTIFICATE));
+  unterminatedCertificate[sizeof(CERTIFICATE) - 1] = 'x';
+  TEST_ASSERT_FALSE(backendRootCaIsValid(
+    unterminatedCertificate,
+    sizeof(unterminatedCertificate) - 1
+  ));
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(ValidationError::None),
+    static_cast<int>(check(
+      "campus-wifi", "wifi-password", "device_01", VALID_SECRET,
+      "http://127.0.0.1:3000", ""
+    ))
+  );
 }
 
-void test_wifi_recovery_preserves_device_identity_and_backend_trust() {
-  using namespace eki::connectivity;
-  constexpr char CERTIFICATE[] =
-    "-----BEGIN CERTIFICATE-----\nvalid\n-----END CERTIFICATE-----";
-  DeviceConfigurationRecord existing{};
-  TEST_ASSERT_TRUE(makeDeviceConfigurationRecord(
-    "old-network", 11,
-    "old-password", 12,
-    "device_01", 9,
-    "abcdefghijklmnopqrstuv", 22,
-    "https://api.eki.example.edu", 27,
-    CERTIFICATE, sizeof(CERTIFICATE) - 1,
-    existing
-  ));
-
-  DeviceConfigurationRecord updated{};
-  TEST_ASSERT_TRUE(makeWifiUpdatedDeviceConfigurationRecord(
-    existing,
-    "new-network", 11,
-    "new-password", 12,
-    updated
-  ));
-  TEST_ASSERT_EQUAL_STRING("new-network", updated.wifiSsid);
-  TEST_ASSERT_EQUAL_STRING("new-password", updated.wifiPassword);
-  TEST_ASSERT_EQUAL_MEMORY(
-    existing.deviceId,
-    updated.deviceId,
-    sizeof(existing.deviceId)
+void test_example_configuration_compiles_but_cannot_boot_unchanged() {
+  const eki::config::ValidationError error = eki::config::validate(
+    WIFI_SSID, std::strlen(WIFI_SSID),
+    WIFI_PASS, std::strlen(WIFI_PASS),
+    DEVICE_ID, std::strlen(DEVICE_ID),
+    DEVICE_SECRET, std::strlen(DEVICE_SECRET),
+    BACKEND_URL, std::strlen(BACKEND_URL),
+    BACKEND_ROOT_CA, std::strlen(BACKEND_ROOT_CA)
   );
-  TEST_ASSERT_EQUAL_MEMORY(
-    existing.deviceSecret,
-    updated.deviceSecret,
-    sizeof(existing.deviceSecret)
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(eki::config::ValidationError::DeviceSecret),
+    static_cast<int>(error)
   );
-  TEST_ASSERT_EQUAL_MEMORY(
-    existing.backendUrl,
-    updated.backendUrl,
-    sizeof(existing.backendUrl)
-  );
-  TEST_ASSERT_EQUAL_MEMORY(
-    existing.backendRootCa,
-    updated.backendRootCa,
-    sizeof(existing.backendRootCa)
-  );
-  TEST_ASSERT_TRUE(deviceConfigurationRecordIsValid(updated));
-
-  DeviceConfigurationRecord invalidExisting = existing;
-  invalidExisting.deviceSecret[0] = 'Z';
-  TEST_ASSERT_FALSE(makeWifiUpdatedDeviceConfigurationRecord(
-    invalidExisting,
-    "new-network", 11,
-    "new-password", 12,
-    updated
-  ));
-  TEST_ASSERT_FALSE(makeWifiUpdatedDeviceConfigurationRecord(
-    existing,
-    "new-network", 11,
-    "short", 5,
-    updated
-  ));
 }
 
 void test_gnss_utc_conversion_and_clock_discipline_are_strict() {
@@ -351,7 +328,7 @@ void test_gnss_utc_conversion_and_clock_discipline_are_strict() {
   ));
 }
 
-void test_wifi_retry_escalates_and_led_codes_are_deterministic() {
+void test_wifi_retry_and_led_code_are_deterministic() {
   using namespace eki::connectivity;
   WifiRetrySupervisor supervisor;
   supervisor.observe(false, 100);
@@ -360,16 +337,10 @@ void test_wifi_retry_escalates_and_led_codes_are_deterministic() {
   TEST_ASSERT_FALSE(supervisor.attemptDue(5099));
   TEST_ASSERT_TRUE(supervisor.attemptDue(5100));
   supervisor.recordAttempt(5100);
-  TEST_ASSERT_FALSE(supervisor.recoveryDue(120099));
-  TEST_ASSERT_TRUE(supervisor.recoveryDue(120100));
-  TEST_ASSERT_TRUE(supervisor.recoveryStartDue(120100));
-  supervisor.recordRecoveryStartAttempt(120100);
-  TEST_ASSERT_FALSE(supervisor.recoveryStartDue(180099));
-  TEST_ASSERT_TRUE(supervisor.recoveryStartDue(180100));
-  supervisor.restartAfterConfiguration(120100);
-  TEST_ASSERT_TRUE(supervisor.attemptDue(120100));
-  supervisor.observe(true, 120101);
-  TEST_ASSERT_FALSE(supervisor.attemptDue(120101));
+  TEST_ASSERT_FALSE(supervisor.attemptDue(15099));
+  TEST_ASSERT_TRUE(supervisor.attemptDue(15100));
+  supervisor.observe(true, 15101);
+  TEST_ASSERT_FALSE(supervisor.attemptDue(15101));
 
   TEST_ASSERT_TRUE(wifiCredentialsAreValid(
     "campus", 6, "password", 8
@@ -383,93 +354,16 @@ void test_wifi_retry_escalates_and_led_codes_are_deterministic() {
   TEST_ASSERT_FALSE(wifiCredentialsAreValid(
     "campus", 6, "bad\npassword", 12
   ));
-  TEST_ASSERT_TRUE(recoveryPasswordIsValid(
-    "recovery-password", 17
-  ));
-  TEST_ASSERT_FALSE(recoveryPasswordIsValid(
-    "too-short", 9
-  ));
-  TEST_ASSERT_FALSE(recoveryPasswordIsValid(
-    "bad\nrecovery-password", 21
-  ));
   TEST_ASSERT_FALSE(statusLedOn(FaultCode::None, 0));
-  TEST_ASSERT_TRUE(statusLedOn(FaultCode::WifiRecovery, 0));
-  TEST_ASSERT_TRUE(statusLedOn(FaultCode::WifiRecovery, 300));
-  TEST_ASSERT_FALSE(statusLedOn(FaultCode::WifiRecovery, 600));
+  TEST_ASSERT_TRUE(statusLedOn(FaultCode::CredentialRejected, 0));
+  TEST_ASSERT_TRUE(statusLedOn(FaultCode::CredentialRejected, 300));
   TEST_ASSERT_TRUE(statusLedOn(FaultCode::CredentialRejected, 600));
   TEST_ASSERT_FALSE(statusLedOn(FaultCode::CredentialRejected, 900));
-}
-
-void test_recovery_portal_interface_and_rate_gates_fail_closed() {
-  using namespace eki::connectivity;
-  constexpr uint32_t ACCESS_POINT_IP = 0x0104A8C0;
-  constexpr uint32_t OVERLAPPING_STA_IP = 0x1404A8C0;
-  TEST_ASSERT_TRUE(recoveryClientUsesAccessPoint(
-    ACCESS_POINT_IP,
-    ACCESS_POINT_IP
-  ));
-  TEST_ASSERT_FALSE(recoveryClientUsesAccessPoint(
-    OVERLAPPING_STA_IP,
-    ACCESS_POINT_IP
-  ));
-  TEST_ASSERT_FALSE(recoveryClientUsesAccessPoint(0, ACCESS_POINT_IP));
-
-  uint32_t windowStartedAt = 0;
-  uint8_t attempts = 0;
-  for (uint8_t index = 0; index < RECOVERY_MAX_ATTEMPTS_PER_WINDOW; ++index) {
-    TEST_ASSERT_TRUE(recordRecoveryAttempt(1000 + index, windowStartedAt, attempts));
-  }
-  TEST_ASSERT_FALSE(recordRecoveryAttempt(2000, windowStartedAt, attempts));
-  TEST_ASSERT_TRUE(recordRecoveryAttempt(
-    RECOVERY_ATTEMPT_WINDOW_MS,
-    windowStartedAt,
-    attempts
-  ));
-  TEST_ASSERT_EQUAL_UINT8(1, attempts);
-}
-
-void test_recovery_password_changes_only_after_verified_persistence() {
-  using namespace eki::connectivity;
-  char active[RECOVERY_PASSWORD_LENGTH + 1] = "aaaaaaaaaaaaaaaaaaaaaaaa";
-  constexpr char CANDIDATE[] = "0123456789abcdef01234567";
-  constexpr char MISMATCH[] = "fedcba9876543210fedcba98";
-
-  TEST_ASSERT_FALSE(applyPersistedRecoveryPassword(
-    active,
-    sizeof(active),
-    CANDIDATE,
-    0,
-    CANDIDATE,
-    RECOVERY_PASSWORD_LENGTH
-  ));
-  TEST_ASSERT_EQUAL_STRING("aaaaaaaaaaaaaaaaaaaaaaaa", active);
-  TEST_ASSERT_FALSE(applyPersistedRecoveryPassword(
-    active,
-    sizeof(active),
-    CANDIDATE,
-    RECOVERY_PASSWORD_LENGTH,
-    CANDIDATE,
-    0
-  ));
-  TEST_ASSERT_EQUAL_STRING("aaaaaaaaaaaaaaaaaaaaaaaa", active);
-  TEST_ASSERT_FALSE(applyPersistedRecoveryPassword(
-    active,
-    sizeof(active),
-    CANDIDATE,
-    RECOVERY_PASSWORD_LENGTH,
-    MISMATCH,
-    RECOVERY_PASSWORD_LENGTH
-  ));
-  TEST_ASSERT_EQUAL_STRING("aaaaaaaaaaaaaaaaaaaaaaaa", active);
-  TEST_ASSERT_TRUE(applyPersistedRecoveryPassword(
-    active,
-    sizeof(active),
-    CANDIDATE,
-    RECOVERY_PASSWORD_LENGTH,
-    CANDIDATE,
-    RECOVERY_PASSWORD_LENGTH
-  ));
-  TEST_ASSERT_EQUAL_STRING(CANDIDATE, active);
+  TEST_ASSERT_TRUE(pulsePatternLedOn(2, 0));
+  TEST_ASSERT_TRUE(pulsePatternLedOn(2, 300));
+  TEST_ASSERT_FALSE(pulsePatternLedOn(2, 600));
+  TEST_ASSERT_TRUE(pulsePatternLedOn(4, 900));
+  TEST_ASSERT_FALSE(pulsePatternLedOn(4, 1200));
 }
 
 void test_publish_policy_handles_floor_changes_and_heartbeats() {
@@ -617,13 +511,10 @@ int main(int, char **) {
   RUN_TEST(test_http_response_actions_cover_transport_and_status_families);
   RUN_TEST(test_retry_after_is_strict_bounded_and_status_aware);
   RUN_TEST(test_retry_retains_only_samples_that_can_stay_fresh);
-  RUN_TEST(test_device_configuration_record_is_closed_and_tamper_evident);
-  RUN_TEST(test_device_configuration_validation_identifies_the_failing_field);
-  RUN_TEST(test_wifi_recovery_preserves_device_identity_and_backend_trust);
+  RUN_TEST(test_firmware_configuration_validation_identifies_the_failing_field);
+  RUN_TEST(test_example_configuration_compiles_but_cannot_boot_unchanged);
   RUN_TEST(test_gnss_utc_conversion_and_clock_discipline_are_strict);
-  RUN_TEST(test_wifi_retry_escalates_and_led_codes_are_deterministic);
-  RUN_TEST(test_recovery_portal_interface_and_rate_gates_fail_closed);
-  RUN_TEST(test_recovery_password_changes_only_after_verified_persistence);
+  RUN_TEST(test_wifi_retry_and_led_code_are_deterministic);
   RUN_TEST(test_publish_policy_handles_floor_changes_and_heartbeats);
   RUN_TEST(test_queue_delivers_newest_first_and_retains_failed_samples);
   RUN_TEST(test_queue_rejects_corrupted_rtc_state);
