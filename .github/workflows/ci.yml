@@ -31,12 +31,10 @@ jobs:
       - name: Test Firebase authorization rules in emulators
         env:
           FIREBASE_RULES_TEST: "1"
-        run: >-
-          node scripts/rules-for-emulator.mjs &&
-          npx --yes firebase-tools@15.14.0 emulators:exec
-          --only firestore,database
-          --project eki-rules-test
-          "npm run test:rules-integration --workspace=backend"
+        # Emulator rules tests run against App Check-free copies written to a
+        # temp dir (scripts/run-rules-emulator.mjs); the committed rule files
+        # are never modified (audit #113).
+        run: node scripts/run-rules-emulator.mjs
       - name: Strict production build (fail-closed gate + CSP regeneration)
         # Issue #39 D1: the strict build (EKI_STRICT_PRODUCTION_BUILD) and the
         # CSP hash regeneration were never exercised in CI. Placeholder values

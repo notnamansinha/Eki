@@ -14,7 +14,7 @@
     "deploy": "npm run build:production && npx firebase deploy",
     "lint": "npm run lint --workspace=frontend && npm run lint --workspace=backend",
     "test": "node --test scripts/*.test.mjs && npm run test --workspace=backend && npm run test --workspace=frontend",
-    "test:rules": "node scripts/rules-for-emulator.mjs && npx --yes firebase-tools@15.14.0 emulators:exec --only firestore,database --project eki-rules-test \"npm run test:rules-integration --workspace=backend\"",
+    "test:rules": "node scripts/run-rules-emulator.mjs",
     "verify": "npm run lint && npm test && npm run build && npm audit --omit=dev --omit=optional"
   },
   "overrides": {

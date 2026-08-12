@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
-import { stripRulesText } from "./rules-for-emulator.mjs";
+import { stripRulesText, writeEmulatorRuleset } from "./rules-for-emulator.mjs";
 
 describe("stripRulesText (App Check removal for emulator tests)", () => {
   it("removes every isAppChecked() gate from Firestore rules", () => {
@@ -16,11 +16,11 @@ describe("stripRulesText (App Check removal for emulator tests)", () => {
       "    }",
       "",
       "match /users/{uid} {",
-      "  allow read: if isOwner(uid) && isAppChecked();",
+      "  allow read: if isAppChecked() && isOwner(uid);",
       "  allow create: if false;",
       "}",
       "match /routes/{routeId} {",
-      "  allow read: if isAuthenticated() && isAppChecked();",
+      "  allow read: if isAppChecked() && isAuthenticated();",
       "}",
     ].join("\n");
 
@@ -46,7 +46,7 @@ describe("stripRulesText (App Check removal for emulator tests)", () => {
       "    }\r\n" +
       "\r\n" +
       "match /users/{uid} {\r\n" +
-      "  allow read: if isOwner(uid) && isAppChecked();\r\n" +
+      "  allow read: if isAppChecked() && isOwner(uid);\r\n" +
       "}\r\n";
 
     const { firestore } = stripRulesText(input, "{}");
@@ -76,7 +76,8 @@ describe("stripRulesText (App Check removal for emulator tests)", () => {
   });
 
   it("fails loudly when an isAppChecked() call survives stripping", () => {
-    // A gate written differently (no ' && ' prefix) must not slip through.
+    // A gate written differently (no 'isAppChecked() && ' prefix) must not slip
+    // through — e.g. an OR-bypass that the fragment replacement cannot reach.
     const input = [
       "match /users/{uid} {",
       "  allow read: if isAppChecked() || isOwner(uid);",
@@ -86,7 +87,6 @@ describe("stripRulesText (App Check removal for emulator tests)", () => {
   });
 
   it("keeps the real committed Firestore rules balanced after stripping", async () => {
-    const { readFile } = await import("node:fs/promises");
     const firestore = await readFile(
       new URL("../firestore.rules", import.meta.url),
       "utf8",
@@ -103,5 +103,44 @@ describe("stripRulesText (App Check removal for emulator tests)", () => {
       else if (char === "}") depth -= 1;
     }
     assert.equal(depth, 0);
+  });
+});
+
+describe("writeEmulatorRuleset (temp-dir output, audit #113)", () => {
+  it("writes stripped rules into a temp dir and never touches repo files", async () => {
+    const before = await readFile(
+      new URL("../firestore.rules", import.meta.url),
+      "utf8",
+    );
+    const { dir, configPath, firestorePath, databasePath } =
+      await writeEmulatorRuleset();
+
+    try {
+      // The temp output is a fresh directory outside the repo.
+      assert.ok(dir.includes("eki-rules-"));
+      assert.ok(!firestorePath.includes("\\Eki\\Eki\\firestore.rules"));
+      assert.ok(!databasePath.includes("\\Eki\\Eki\\database.rules.json"));
+
+      const stripped = await readFile(firestorePath, "utf8");
+      assert.ok(!stripped.includes("isAppChecked"));
+      const strippedDb = await readFile(databasePath, "utf8");
+      assert.ok(!strippedDb.includes("request.app"));
+
+      // The temp firebase.json references the temp rules by absolute path.
+      const config = JSON.parse(await readFile(configPath, "utf8"));
+      assert.equal(config.firestore.rules, firestorePath);
+      assert.equal(config.database.rules, databasePath);
+    } finally {
+      await import("node:fs/promises").then(({ rm }) =>
+        rm(dir, { recursive: true, force: true }),
+      );
+    }
+
+    // The deployable repo rules are byte-identical to before the run.
+    const after = await readFile(
+      new URL("../firestore.rules", import.meta.url),
+      "utf8",
+    );
+    assert.equal(after, before);
   });
 });

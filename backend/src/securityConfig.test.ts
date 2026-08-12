@@ -244,10 +244,10 @@ describe("production security configuration", () => {
     const planRoute = workspaceFile("backend/src/routes/plan.ts");
     const routesList = workspaceFile("backend/src/routes/routesList.ts");
 
-    expect(routes).toContain("allow read: if isAuthenticated() && isAppChecked();");
-    expect(buses).toContain("allow read: if isAuthenticated() && isAppChecked();");
-    expect(settings).toContain("allow read: if isAuthenticated() && isAppChecked();");
-    expect(locations).toContain("allow read, write: if isAdmin() && isAppChecked();");
+    expect(routes).toContain("allow read: if isAppChecked() && isAuthenticated();");
+    expect(buses).toContain("allow read: if isAppChecked() && isAuthenticated();");
+    expect(settings).toContain("allow read: if isAppChecked() && isAuthenticated();");
+    expect(locations).toContain("allow read, write: if isAppChecked() && isAdmin();");
     expect(planRoute).toContain('router.post("/", requireAuth');
     expect(routesList).toContain('router.get("/", requireAuth');
   });
@@ -255,53 +255,34 @@ describe("production security configuration", () => {
   it("enforces App Check on every client-facing rule (issue #39)", () => {
     const rules = workspaceFile("firestore.rules");
     const helper = ruleBlock(rules, "function isAppChecked");
-    const users = ruleBlock(rules, "match /users/{uid}");
-    const locations = ruleBlock(rules, "match /bus_locations/{busId}");
-    const sessions = ruleBlock(rules, "match /ride_sessions/{sessionId}");
-    const messages = ruleBlock(rules, "match /messages/{messageId}");
-    const rateLimits = ruleBlock(rules, "match /messageRateLimits/{uid}");
-    const drivers = ruleBlock(rules, "match /drivers/{driverId}");
-    const trips = ruleBlock(rules, "match /completed_trips/{tripId}");
-    const feedback = ruleBlock(rules, "match /feedbacks/{feedbackId}");
-    const cooldowns = ruleBlock(rules, "match /feedbackCooldowns/{uid}");
-    const requests = ruleBlock(rules, "match /passenger_requests/{requestId}");
 
-    // Every allow that a browser can hit requires a valid App Check token.
-    // The Admin SDK bypasses rules, so server writes are unaffected.
     expect(helper).toContain("request.app != null");
-    expect(users).toContain("isOwner(uid) && isAppChecked()");
-    expect(locations).toContain("isAdmin() && isAppChecked()");
-    expect(sessions).toContain("isSessionOperator(sessionId) && isAppChecked()");
-    expect(messages).toContain("isAppChecked()");
-    expect(rateLimits).toContain("isAppChecked()");
-    expect(drivers).toContain("isAppChecked()");
-    expect(trips).toContain("isAdmin() && isAppChecked()");
-    expect(feedback).toContain("isAdmin() && isAppChecked()");
-    expect(cooldowns).toContain("isOwner(uid) && isAppChecked()");
-    expect(requests).toContain("isAppChecked()");
 
-    // Precedence guard (review fix): on multi-branch allows the gate must wrap
-    // the WHOLE condition. `A || B && isAppChecked()` would let admin/driver
-    // branches skip App Check entirely (&& binds tighter than ||).
-    expect(requests).toContain("allow read: if (isAdmin() ||");
-    expect(requests).toContain("allow update: if (isAdmin() ||");
-    expect(requests).toContain("allow delete: if (isAdmin() ||");
-    expect(drivers).toContain("allow read: if (isAdmin() ||");
-
-    // Depth-based scan: no gated allow may contain a TOP-LEVEL `||` before the
-    // gate — a top-level OR outside the parenthesized condition would mean the
-    // gate binds to only part of the chain (&& binds tighter than ||).
-    const gatedAllows = [
-      ...rules.matchAll(/allow (?:read|write|create|update|delete): if [^;]+;/gs),
+    // UNIVERSAL scan (audit #113): extract EVERY non-false allow predicate in
+    // the rules file — not just the ones already containing isAppChecked() —
+    // and require each to start with the App Check gate. A newly added
+    // ungated client-facing rule fails this immediately.
+    const clientAllows = [
+      ...rules.matchAll(/allow [a-z, ]+: if (?!false)[^;]+;/gs),
     ]
       .map(m => m[0])
-      .filter(rule => rule.includes("isAppChecked()"));
-    expect(gatedAllows.length).toBeGreaterThan(0);
+      .filter(rule => !rule.trimStart().startsWith("//"));
+    expect(clientAllows.length).toBeGreaterThan(0);
+    for (const rule of clientAllows) {
+      expect(rule).toMatch(/if isAppChecked\(\) && /);
+    }
+
+    // Ordering + precedence scan: the gate must be evaluated FIRST (before any
+    // auth/role predicate or session lookup), and the remainder of every allow
+    // must contain no TOP-LEVEL `||` — otherwise a branch could bypass the gate
+    // through &&/|| precedence (e.g. `isAppChecked() && A || B` parses as
+    // `(isAppChecked() && A) || B`).
     const violations: string[] = [];
-    for (const rule of gatedAllows) {
-      const gate = rule.indexOf("&& isAppChecked();");
+    for (const rule of clientAllows) {
+      const gateEnd =
+        rule.indexOf("if isAppChecked() && ") + "if isAppChecked() && ".length;
       let depth = 0;
-      for (const ch of rule.slice(0, gate)) {
+      for (const ch of rule.slice(gateEnd)) {
         if (ch === "(") depth += 1;
         else if (ch === ")") depth -= 1;
         else if (ch === "|" && depth === 0) {
@@ -312,8 +293,23 @@ describe("production security configuration", () => {
     }
     expect(violations).toEqual([]);
 
-    // Denied-by-default write paths never get an App Check bypass.
-    expect(rules).not.toContain("isAppChecked() ||");
+    // Rule ordering (audit #113): authentication and App Check must be
+    // evaluated before any billable session get(). A denied unauthenticated
+    // read must not trigger sessionDoc()/get().
+    const operator = ruleBlock(rules, "function isSessionOperator");
+    const passenger = ruleBlock(rules, "function isSessionPassenger");
+    expect(operator.indexOf("isAuthenticated()")).toBeGreaterThan(-1);
+    expect(operator.indexOf("isAuthenticated()")).toBeLessThan(
+      operator.indexOf("sessionDoc("),
+    );
+    // isSessionPassenger must not bind the session fetch before auth.
+    expect(passenger).toContain("if (!isAuthenticated())");
+    expect(passenger.indexOf("!isAuthenticated()")).toBeLessThan(
+      passenger.indexOf("sessionDoc("),
+    );
+    // The authorized read path still costs exactly one get() (the sessionDoc
+    // helper shared by isSessionOperator and isSessionPassenger).
+    expect(rules.match(/get\(/g) ?? []).toHaveLength(1);
   });
 
   it("enforces App Check on Realtime Database client reads (issue #39)", () => {
@@ -347,6 +343,16 @@ describe("production security configuration", () => {
     // Production is approval-gated via a protected environment, not automated.
     expect(deploy).toContain("environment: production");
     expect(deploy).toContain("workflow_dispatch");
+
+    // Audit #113: workflow_run deploys only follow successful same-repository
+    // push runs on main, check out the exact head_sha, and manual dispatches
+    // (staging AND production) require the main branch.
+    expect(deploy).toContain("github.event.workflow_run.conclusion == 'success'");
+    expect(deploy).toContain("github.event.workflow_run.event == 'push'");
+    expect(deploy).toContain("github.event.workflow_run.head_branch == 'main'");
+    expect(deploy).toContain("github.event.workflow_run.repository.full_name == github.repository");
+    expect(deploy).toContain("github.event.workflow_run.head_sha");
+    expect(deploy).toContain("github.ref == 'refs/heads/main'");
   });
 
   it("does not let the browser seed or take down hardware GNSS coordinates", () => {
@@ -413,10 +419,10 @@ describe("production security configuration", () => {
     const authHook = workspaceFile("frontend/src/hooks/useAuth.ts");
     const settingsHook = workspaceFile("frontend/src/hooks/useSettings.ts");
 
-    expect(users).toContain("allow read: if isOwner(uid) && isAppChecked();");
+    expect(users).toContain("allow read: if isAppChecked() && isOwner(uid);");
     expect(users).toContain("allow create: if false;");
     expect(users).toContain("allow update, delete: if false;");
-    expect(settings).toContain("allow read: if isAuthenticated() && isAppChecked();");
+    expect(settings).toContain("allow read: if isAppChecked() && isAuthenticated();");
     expect(settings).toContain("allow create, update, delete: if false;");
     expect(usersRoute).toContain('router.post("/bootstrap", requireAuth');
     expect(usersRoute).toContain('role: "passenger"');
