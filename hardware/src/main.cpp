@@ -8,8 +8,8 @@
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <TinyGPSPlus.h>
-#include <WiFi.h>
 #include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 #include <esp_attr.h>
 #include <esp_flash_encrypt.h>
 #include <esp_sntp.h>
@@ -78,7 +78,9 @@ constexpr uint8_t STATUS_LED_PIN = 2;
 
 TinyGPSPlus gps;
 HardwareSerial &gpsSerial = Serial2;
-WiFiClient netClient;
+WiFiClientSecure tlsClient;
+WiFiClient plainClient;
+
 constexpr size_t ENDPOINT_MAX_LENGTH =
   eki::connectivity::BACKEND_URL_MAX_LENGTH +
   eki::connectivity::DEVICE_ID_MAX_LENGTH + 32;
@@ -184,6 +186,13 @@ bool gpsWiringWarningLogged = false;
 bool lossMessageQueued = false;
 bool wifiConfigured = false;
 eki::connectivity::DeviceConfiguration deviceConfiguration;
+
+WiFiClient &getNetworkClient() {
+  if (strncmp(deviceConfiguration.backendUrl(), "http://", 7) == 0) {
+    return plainClient;
+  }
+  return tlsClient;
+}
 eki::connectivity::RecoveryAccess recoveryAccess;
 eki::connectivity::WifiRetrySupervisor wifiRetrySupervisor;
 eki::connectivity::RecoveryPortal recoveryPortal;
@@ -568,7 +577,7 @@ void attemptWifiConnection() {
   // Credential-fault mode is AP-only: the station link is intentionally
   // dropped and must stay down until the device is re-provisioned.
   if (credentialFaultActive) return;
-  netClient.stop();
+  getNetworkClient().stop();
   if (!wifiConfigured) {
     configureStationRadio();
     WiFi.begin(
@@ -801,7 +810,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
   http.setConnectTimeout(HTTP_TIMEOUT_MS);
   http.setTimeout(HTTP_TIMEOUT_MS);
   http.setReuse(true);
-  if (!http.begin(netClient, telemetryEndpoint)) {
+  if (!http.begin(getNetworkClient(), telemetryEndpoint)) {
     Serial.println("[HTTPS] Unable to initialize telemetry request.");
     scheduleHttpsRetry();
     return eki::telemetry::retryKeepsSampleFresh(
@@ -868,7 +877,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
   }
   http.end();
   if (action != eki::telemetry::HttpResponseAction::Accept) {
-    netClient.stop();
+    getNetworkClient().stop();
     if (action == eki::telemetry::HttpResponseAction::HaltCredentials) {
       latchCredentialFault();
       return PublishResult::CredentialFault;
@@ -955,7 +964,7 @@ void publishRemoteDiagnostic() {
   HTTPClient http;
   http.setConnectTimeout(HTTP_TIMEOUT_MS);
   http.setTimeout(HTTP_TIMEOUT_MS);
-  if (!http.begin(netClient, diagnosticsEndpoint)) {
+  if (!http.begin(getNetworkClient(), diagnosticsEndpoint)) {
     Serial.println("[Diagnostics] Unable to initialize remote health request.");
     scheduleRemoteDiagnosticRetry();
     return;
@@ -1225,7 +1234,7 @@ void setup() {
   }
 
   if (provisioned) {
-    // netClient.setCACert(deviceConfiguration.backendRootCa());
+    tlsClient.setCACert(deviceConfiguration.backendRootCa());
     if (!initializeRequestStrings()) {
       Serial.println("[Boot] Provisioned request configuration is too long; halted.");
       while (true) delay(1000);
