@@ -17,6 +17,26 @@ local professor demonstration.
 - [ ] Set exact `CORS_ORIGIN`, `FIREBASE_DATABASE_URL`,
   `GOOGLE_MAPS_API_KEY`, `AUTH_REVOCATION_CACHE_MS`, retention values, and
   worker settings.
+- [ ] Enforce App Check (console toggle) on Firestore and Realtime Database in
+  both projects; rules already require `request.app != null` on every
+  client-facing allow. The Admin SDK backend is unaffected. Emulator tests
+  strip the App Check gates via `scripts/rules-for-emulator.mjs` (the
+  rules-unit-testing SDK cannot attach App Check tokens).
+
+## Staging and deployment pipeline
+
+- [ ] Create the `eki-staging` and `eki-production` Firebase projects and
+  configure each with App Check (ReCaptcha Enterprise) and its own data.
+- [ ] Configure the `staging` and `production` GitHub environments with
+  `FIREBASE_TOKEN` plus all `NEXT_PUBLIC_*` build variables listed in
+  `.github/workflows/deploy.yml`.
+- [ ] `.firebaserc` defaults to `eki-staging`, so an unqualified
+  `firebase deploy` can never reach production. Production deploys run only
+  through the explicit `--project eki-production` job behind the protected
+  `production` environment (manual `workflow_dispatch` + approval).
+- [ ] Verify the `Deploy` workflow promotes main to staging automatically after
+  a green `Production verification` run, and that staging smoke checks (rules,
+  hosting headers, App Check) pass before any production dispatch.
 - [ ] Deploy and monitor the committed `firestore.indexes.json`; retention and
   privacy deletion depend on those indexes.
 - [ ] Ensure exactly one healthy worker lease owner processes lifecycle,
@@ -56,6 +76,9 @@ local professor demonstration.
 - [ ] Verify Firestore/RTDB rules in emulators and production; `devices`,
   `active_rides`, `_active_bus_locks`, internal worker/privacy collections, and
   telemetry writes must remain server-only.
+- [ ] Confirm the strict production build (`npm run build:production`) runs in
+  CI with the fail-closed env gate and CSP regeneration (issue #39 D1), and
+  that the API fails closed without `CORS_ORIGIN` in production (issue #39 D6).
 - [ ] Verify the deployed service worker contains no authenticated/default
   runtime cache and that account switching on a shared device cannot replay
   the prior account's data.
