@@ -157,6 +157,80 @@ void test_device_configuration_record_is_closed_and_tamper_evident() {
   TEST_ASSERT_FALSE(backendRootCaIsValid("not-a-certificate", 17));
 }
 
+void test_device_configuration_validation_identifies_the_failing_field() {
+  using namespace eki::connectivity;
+  constexpr char CERTIFICATE[] =
+    "-----BEGIN CERTIFICATE-----\nvalid\n-----END CERTIFICATE-----";
+  const auto validate = [](
+    const char *ssid,
+    const char *wifiPassword,
+    const char *deviceId,
+    const char *deviceSecret,
+    const char *backendUrl,
+    const char *certificate
+  ) {
+    return validateDeviceConfiguration(
+      ssid, std::strlen(ssid),
+      wifiPassword, std::strlen(wifiPassword),
+      deviceId, std::strlen(deviceId),
+      deviceSecret, std::strlen(deviceSecret),
+      backendUrl, std::strlen(backendUrl),
+      certificate, std::strlen(certificate)
+    );
+  };
+
+  constexpr char VALID_SECRET[] = "abcdefghijklmnopqrstuv";
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(DeviceConfigurationValidationError::None),
+    static_cast<int>(validate(
+      "campus-wifi", "wifi-password", "device_01", VALID_SECRET,
+      "https://api.eki.example.edu", CERTIFICATE
+    ))
+  );
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(DeviceConfigurationValidationError::WifiSsid),
+    static_cast<int>(validate(
+      "", "wifi-password", "device_01", VALID_SECRET,
+      "https://api.eki.example.edu", CERTIFICATE
+    ))
+  );
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(DeviceConfigurationValidationError::WifiPassword),
+    static_cast<int>(validate(
+      "campus-wifi", "short", "device_01", VALID_SECRET,
+      "https://api.eki.example.edu", CERTIFICATE
+    ))
+  );
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(DeviceConfigurationValidationError::DeviceId),
+    static_cast<int>(validate(
+      "campus-wifi", "wifi-password", "bad/device", VALID_SECRET,
+      "https://api.eki.example.edu", CERTIFICATE
+    ))
+  );
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(DeviceConfigurationValidationError::DeviceSecret),
+    static_cast<int>(validate(
+      "campus-wifi", "wifi-password", "device_01", "has spaces but long enough",
+      "https://api.eki.example.edu", CERTIFICATE
+    ))
+  );
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(DeviceConfigurationValidationError::BackendUrl),
+    static_cast<int>(validate(
+      "campus-wifi", "wifi-password", "device_01", VALID_SECRET,
+      "https://api.eki.example.edu/path", CERTIFICATE
+    ))
+  );
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(DeviceConfigurationValidationError::BackendRootCa),
+    static_cast<int>(validate(
+      "campus-wifi", "wifi-password", "device_01", VALID_SECRET,
+      "https://api.eki.example.edu", "not-a-certificate"
+    ))
+  );
+}
+
 void test_gnss_utc_conversion_and_clock_discipline_are_strict() {
   eki::clock::UtcDateTime utc{2024, 1, 1, 0, 0, 0, 0};
   int64_t epochMs = 0;
@@ -482,6 +556,7 @@ int main(int, char **) {
   RUN_TEST(test_retry_after_is_strict_bounded_and_status_aware);
   RUN_TEST(test_retry_retains_only_samples_that_can_stay_fresh);
   RUN_TEST(test_device_configuration_record_is_closed_and_tamper_evident);
+  RUN_TEST(test_device_configuration_validation_identifies_the_failing_field);
   RUN_TEST(test_gnss_utc_conversion_and_clock_discipline_are_strict);
   RUN_TEST(test_wifi_retry_escalates_and_led_codes_are_deterministic);
   RUN_TEST(test_recovery_portal_interface_and_rate_gates_fail_closed);

@@ -31,11 +31,34 @@ bool constantTimeTokenEquals(const char *left, const char *right) {
 
 const char RECOVERY_HTML[] PROGMEM = R"HTML(<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'">
-<title>Eki device provisioning</title><style>body{font:16px system-ui;max-width:38rem;margin:2rem auto;padding:0 1rem;color:#17202a}label{display:block;margin-top:1rem}input,textarea,button{box-sizing:border-box;width:100%;padding:.8rem;margin-top:.35rem}textarea{min-height:12rem;font:12px monospace}button{font-weight:700}</style>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}'; connect-src 'self'; form-action 'self'; base-uri 'none'">
+<title>Eki device provisioning</title><style>body{font:16px system-ui;max-width:38rem;margin:2rem auto;padding:0 1rem;color:#17202a}label{display:block;margin-top:1rem}input,textarea,button{box-sizing:border-box;width:100%;padding:.8rem;margin-top:.35rem}textarea{min-height:12rem;font:12px monospace}button{font-weight:700}#result{min-height:1.5rem;font-weight:600}</style>
 <h1>Eki device provisioning</h1><p>Enter the complete replacement configuration. Values stay on this device, are never returned by this page, and take effect after an automatic restart.</p>
-<form method="post" action="/provision"><input type="hidden" name="csrf" value="{{csrf}}"><label>Wi-Fi name<input name="ssid" required maxlength="32" autocomplete="off"></label><label>Wi-Fi password<input name="wifiPassword" type="password" required minlength="8" maxlength="63" autocomplete="new-password"></label><label>Device ID<input name="deviceId" required maxlength="128" pattern="[A-Za-z0-9_-]+" autocomplete="off"></label><label>Device API secret<input name="deviceSecret" type="password" required minlength="20" maxlength="128" pattern="[A-Za-z0-9_-]+" autocomplete="new-password"></label><label>HTTPS backend origin<input name="backendUrl" type="url" required maxlength="256" placeholder="https://api.example.edu" autocomplete="off"></label><label>Backend root CA certificate<textarea name="backendRootCa" required maxlength="3072" spellcheck="false" autocomplete="off"></textarea></label><button type="submit">Store configuration and restart</button></form>
+<form method="post" action="/provision" novalidate><input type="hidden" name="csrf" value="{{csrf}}"><label>Wi-Fi name<input name="ssid" required maxlength="32" autocomplete="off"></label><label>Wi-Fi password<input name="wifiPassword" type="password" required minlength="8" maxlength="63" autocomplete="new-password"></label><label>Device ID<input name="deviceId" required maxlength="128" pattern="[A-Za-z0-9_-]+" autocomplete="off"></label><label>Device API secret<input name="deviceSecret" type="password" required minlength="20" maxlength="128" pattern="[A-Za-z0-9_-]+" autocomplete="new-password"></label><label>HTTPS backend origin<input name="backendUrl" type="url" required maxlength="256" placeholder="https://api.example.edu" autocomplete="off"></label><label>Backend root CA certificate<textarea name="backendRootCa" required maxlength="3072" spellcheck="false" autocomplete="off"></textarea></label><button type="submit">Store configuration and restart</button></form><p id="result" role="alert" aria-live="polite"></p>
+<script nonce="{{nonce}}">const form=document.querySelector('form'),result=document.querySelector('#result'),button=form.querySelector('button');form.addEventListener('submit',async event=>{event.preventDefault();form.querySelectorAll('[aria-invalid]').forEach(field=>field.removeAttribute('aria-invalid'));button.disabled=true;result.textContent='Checking and storing configuration...';try{const response=await fetch(form.action,{method:'POST',body:new FormData(form)}),payload=await response.json();if(!response.ok){result.textContent=payload.error+(payload.hint?' '+payload.hint:'');const field=payload.field&&form.elements.namedItem(payload.field);if(field){field.setAttribute('aria-invalid','true');field.focus()}button.disabled=false;return}result.textContent='Configuration saved. The device is restarting.'}catch(error){result.textContent='The device did not return a valid response. Reconnect to the recovery network and try again.';button.disabled=false}});</script>
 </html>)HTML";
+
+const char *configurationValidationPayload(
+  DeviceConfigurationValidationError error
+) {
+  switch (error) {
+    case DeviceConfigurationValidationError::WifiSsid:
+      return "{\"error\":\"Invalid Wi-Fi name.\",\"field\":\"ssid\",\"hint\":\"Enter a network name between 1 and 32 bytes.\"}";
+    case DeviceConfigurationValidationError::WifiPassword:
+      return "{\"error\":\"Invalid Wi-Fi password.\",\"field\":\"wifiPassword\",\"hint\":\"Use an 8-63 character printable WPA2 passphrase; 64-character raw keys are not accepted.\"}";
+    case DeviceConfigurationValidationError::DeviceId:
+      return "{\"error\":\"Invalid device ID.\",\"field\":\"deviceId\",\"hint\":\"Use only letters, numbers, underscores, and hyphens.\"}";
+    case DeviceConfigurationValidationError::DeviceSecret:
+      return "{\"error\":\"Invalid device API secret.\",\"field\":\"deviceSecret\",\"hint\":\"Paste the 20-128 character base64url secret using only letters, numbers, underscores, and hyphens.\"}";
+    case DeviceConfigurationValidationError::BackendUrl:
+      return "{\"error\":\"Invalid HTTPS backend origin.\",\"field\":\"backendUrl\",\"hint\":\"Use an https:// origin such as https://api.example.edu, with no path, credentials, query, or fragment.\"}";
+    case DeviceConfigurationValidationError::BackendRootCa:
+      return "{\"error\":\"Invalid backend root CA certificate.\",\"field\":\"backendRootCa\",\"hint\":\"Paste a PEM certificate including the BEGIN CERTIFICATE and END CERTIFICATE lines.\"}";
+    case DeviceConfigurationValidationError::None:
+      break;
+  }
+  return "{\"error\":\"Configuration validation failed.\"}";
+}
 
 } // namespace
 
@@ -185,6 +208,7 @@ void RecoveryPortal::handleRoot() {
   }
   String html(FPSTR(RECOVERY_HTML));
   html.replace("{{csrf}}", csrfToken_);
+  html.replace("{{nonce}}", cspNonce_);
   server_.send(200, "text/html; charset=utf-8", html);
 }
 
@@ -218,17 +242,20 @@ void RecoveryPortal::handleProvisioningUpdate() {
     );
     return;
   }
-  if (
-    configuration_ == nullptr ||
-    !server_.hasArg("csrf") ||
-    !server_.hasArg("ssid") ||
-    !server_.hasArg("wifiPassword") ||
-    !server_.hasArg("deviceId") ||
-    !server_.hasArg("deviceSecret") ||
-    !server_.hasArg("backendUrl") ||
-    !server_.hasArg("backendRootCa")
-  ) {
-    server_.send(400, "application/json", "{\"error\":\"Missing configuration.\"}");
+  if (configuration_ == nullptr) {
+    server_.send(
+      500,
+      "application/json",
+      "{\"error\":\"The provisioning service is not ready.\",\"hint\":\"Restart the device and reconnect to the recovery network.\"}"
+    );
+    return;
+  }
+  if (!server_.hasArg("csrf")) {
+    server_.send(
+      400,
+      "application/json",
+      "{\"error\":\"The provisioning form token is missing.\",\"hint\":\"Reload the form and try again.\"}"
+    );
     return;
   }
 
@@ -244,6 +271,29 @@ void RecoveryPortal::handleProvisioningUpdate() {
   const String deviceSecret = server_.arg("deviceSecret");
   const String backendUrl = server_.arg("backendUrl");
   const String backendRootCa = server_.arg("backendRootCa");
+  const DeviceConfigurationValidationError validationError =
+    validateDeviceConfiguration(
+      ssid.c_str(),
+      ssid.length(),
+      wifiPassword.c_str(),
+      wifiPassword.length(),
+      deviceId.c_str(),
+      deviceId.length(),
+      deviceSecret.c_str(),
+      deviceSecret.length(),
+      backendUrl.c_str(),
+      backendUrl.length(),
+      backendRootCa.c_str(),
+      backendRootCa.length()
+    );
+  if (validationError != DeviceConfigurationValidationError::None) {
+    server_.send(
+      400,
+      "application/json",
+      configurationValidationPayload(validationError)
+    );
+    return;
+  }
   if (!configuration_->save(
     ssid.c_str(),
     ssid.length(),
@@ -259,14 +309,14 @@ void RecoveryPortal::handleProvisioningUpdate() {
     backendRootCa.length()
   )) {
     server_.send(
-      400,
+      500,
       "application/json",
-      "{\"error\":\"Configuration is invalid or could not be stored.\"}"
+      "{\"error\":\"The validated configuration could not be stored.\",\"hint\":\"Restart the device and retry. If this continues, inspect or erase the device NVS partition.\"}"
     );
     return;
   }
   configurationUpdated_ = true;
-  rotateCsrfToken();
+  rotateFormTokens();
   server_.send(202, "application/json", "{\"saved\":true,\"restarting\":true}");
 }
 
@@ -318,11 +368,20 @@ bool RecoveryPortal::consumeRecoveryRotationRequested() {
   return requested;
 }
 
-void RecoveryPortal::rotateCsrfToken() {
+void RecoveryPortal::rotateFormTokens() {
   std::snprintf(
     csrfToken_,
     sizeof(csrfToken_),
     "%08lx%08lx",
+    static_cast<unsigned long>(esp_random()),
+    static_cast<unsigned long>(esp_random())
+  );
+  std::snprintf(
+    cspNonce_,
+    sizeof(cspNonce_),
+    "%08lx%08lx%08lx%08lx",
+    static_cast<unsigned long>(esp_random()),
+    static_cast<unsigned long>(esp_random()),
     static_cast<unsigned long>(esp_random()),
     static_cast<unsigned long>(esp_random())
   );
@@ -382,7 +441,7 @@ bool RecoveryPortal::start(
 
   configuration_ = &configuration;
   recoveryAccess_ = &recoveryAccess;
-  rotateCsrfToken();
+  rotateFormTokens();
   registerHandlers();
   const wifi_mode_t requestedMode = allowStationRecovery
     ? WIFI_MODE_APSTA
@@ -391,6 +450,7 @@ bool RecoveryPortal::start(
     configuration_ = nullptr;
     recoveryAccess_ = nullptr;
     csrfToken_[0] = '\0';
+    cspNonce_[0] = '\0';
     WiFi.mode(WIFI_OFF);
     return false;
   }
@@ -406,6 +466,7 @@ bool RecoveryPortal::start(
     configuration_ = nullptr;
     recoveryAccess_ = nullptr;
     csrfToken_[0] = '\0';
+    cspNonce_[0] = '\0';
     WiFi.mode(allowStationRecovery ? WIFI_STA : WIFI_OFF);
     return false;
   }
@@ -413,6 +474,7 @@ bool RecoveryPortal::start(
     configuration_ = nullptr;
     recoveryAccess_ = nullptr;
     csrfToken_[0] = '\0';
+    cspNonce_[0] = '\0';
     WiFi.mode(allowStationRecovery ? WIFI_STA : WIFI_OFF);
     return false;
   }
@@ -430,6 +492,7 @@ bool RecoveryPortal::start(
     configuration_ = nullptr;
     recoveryAccess_ = nullptr;
     csrfToken_[0] = '\0';
+    cspNonce_[0] = '\0';
     return false;
   }
   server_.begin();
@@ -467,6 +530,7 @@ void RecoveryPortal::stop() {
   recoveryAccess_ = nullptr;
   configuration_ = nullptr;
   csrfToken_[0] = '\0';
+  cspNonce_[0] = '\0';
   recoveryRotationRequested_ = false;
   active_ = false;
 }

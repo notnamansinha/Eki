@@ -92,28 +92,33 @@ private:
   uint32_t lastRecoveryStartAttemptAt_ = 0;
 };
 
-inline bool wifiCredentialsAreValid(
-  const char *ssid,
-  size_t ssidLength,
-  const char *password,
-  size_t passwordLength
-) {
-  if (!(
-    ssid != nullptr &&
-    password != nullptr &&
-    ssidLength >= 1 &&
-    ssidLength <= 32 &&
-    passwordLength >= 8 &&
-    passwordLength <= 63
-  )) return false;
+inline bool wifiSsidIsValid(const char *ssid, size_t ssidLength) {
+  if (ssid == nullptr || ssidLength < 1 || ssidLength > 32) return false;
   for (size_t index = 0; index < ssidLength; ++index) {
     if (ssid[index] == '\0') return false;
+  }
+  return true;
+}
+
+inline bool wifiPasswordIsValid(const char *password, size_t passwordLength) {
+  if (password == nullptr || passwordLength < 8 || passwordLength > 63) {
+    return false;
   }
   for (size_t index = 0; index < passwordLength; ++index) {
     const uint8_t character = static_cast<uint8_t>(password[index]);
     if (character < 0x20 || character > 0x7E) return false;
   }
   return true;
+}
+
+inline bool wifiCredentialsAreValid(
+  const char *ssid,
+  size_t ssidLength,
+  const char *password,
+  size_t passwordLength
+) {
+  return wifiSsidIsValid(ssid, ssidLength) &&
+    wifiPasswordIsValid(password, passwordLength);
 }
 
 inline bool recoveryPasswordIsValid(const char *password, size_t passwordLength) {
