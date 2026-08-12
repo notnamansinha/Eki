@@ -49,10 +49,10 @@ an HTTPS address:
   to the laptop/backend.
 - **Demo option:** an approved HTTPS tunnel to `http://localhost:4000`.
 
-- [ ] Record only the tunnel/public HTTPS backend origin for local device
-  provisioning; do not add a path or query.
+- [ ] Record only the tunnel/public HTTPS backend origin for the device-specific
+  firmware configuration; do not add a path or query.
 - [ ] Export the issuing root/intermediate CA used by that hostname for the
-  local provisioning form.
+  ignored firmware `secrets.h`.
 - [ ] Test the public URL from a phone on mobile data:
   `https://<backend-host>/health`.
 - [ ] Record `/health.telemetry` processing, device-to-server and RTDB-write
@@ -87,23 +87,21 @@ npm run provision-device --workspace=backend -- `
 ```
 
 The command generates a random secret, stores only its salted verifier, and
-prints the plaintext once. Transfer it only into the protected local device
-form; do not paste it into this document, chat, screenshots, shell history, or
-Git.
+prints the plaintext once. Transfer it only into the ignored
+`hardware/include/secrets.h` in the controlled build workspace; do not paste it
+into this document, chat, screenshots, shell history, or Git.
 
 - [ ] Restart the local backend after provisioning so no old credential cache
   remains.
 
 - [ ] Use a bus Wi-Fi/hotspot that the ESP can reconnect to automatically.
+- [ ] Copy `hardware/include/secrets.example.h` to the ignored `secrets.h` and
+  set hotspot name/password, device ID/secret, HTTPS backend origin, and CA.
 - [ ] Run `platformio run --project-dir hardware`.
 - [ ] Connect the ESP32 and run
   `platformio run --project-dir hardware --target upload`.
-- [ ] Open the 115200-baud serial monitor, record the unprovisioned device's
-  random recovery password, connect to `Eki-Recovery-*`, and open
-  `http://192.168.4.1`.
-- [ ] Submit hotspot name/password, device ID/one-time secret, HTTPS backend
-  origin, and complete issuing root CA. Confirm the device restarts without
-  returning or logging the stored values.
+- [ ] Open the 115200-baud serial monitor and confirm the firmware accepts the
+  compile-time configuration without printing any credential value.
 - [ ] Confirm Wi-Fi, time sync, GNSS fix, remote diagnostics,
   and HTTP 200/202 responses. Any 401 means the ID/secret/registry is wrong;
   any TLS error means URL, hostname, clock, or CA is wrong.

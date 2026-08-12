@@ -78,7 +78,7 @@ npm run provision-device --workspace=backend -- `
   --device-id device_01 --bus-id bus_01 --route-id route_01
 ```
 
-The command prints the random device secret once and stores only a salted scrypt verifier. Submit the plaintext with Wi-Fi, backend origin, and CA through the ESP32's protected local provisioning portal; the validated configuration is stored as one NVS record and never compiled into source. Fleet artifacts use the Secure Boot V2/flash-encrypted `esp32dev-secure` environment and the witnessed [hardware security procedure](docs/operations/HARDWARE_SECURITY_PROVISIONING.md).
+The command prints the random device secret once and stores only a salted scrypt verifier. In the controlled firmware-signing environment, place that plaintext with Wi-Fi, backend origin, and CA in the ignored `hardware/include/secrets.h`, then build and flash the device-specific image. The firmware has no local configuration portal or application credential store; every change requires a reflash. Fleet artifacts use the Secure Boot V2/flash-encrypted `esp32dev-secure` environment and the witnessed [hardware security procedure](docs/operations/HARDWARE_SECURITY_PROVISIONING.md).
 
 ## Hardware contract
 

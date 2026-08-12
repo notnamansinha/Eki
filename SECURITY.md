@@ -80,8 +80,10 @@ stale authenticated responses crossing accounts on shared browsers.
   them by hostname/API and enforce App Check after staged validation.
 - Device secrets, service-account JSON, App Check debug tokens and ignored
   environment files must never be committed or logged. Provisioning displays a
-  device secret once, stores only its salted scrypt verifier server-side, and
-  transfers plaintext only through the protected local ESP32 form into NVS.
+  device secret once and stores only its salted scrypt verifier server-side.
+  Hardware operators transfer the plaintext only inside the controlled signing
+  environment into the ignored `hardware/include/secrets.h`; it is embedded in
+  a device-specific flash-encrypted image and replaced only by reflashing.
 - Production should use Workload Identity/Secret Manager, university WAF/global
   rate limits, monitored rotation, signed OTA, controlled signing-key custody,
   and the witnessed Secure Boot V2/release-mode flash-encryption procedure. See

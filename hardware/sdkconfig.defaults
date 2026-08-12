@@ -18,12 +18,15 @@ CONFIG_SECURE_BOOT_V2_ENABLED=y
 CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
 CONFIG_SECURE_BOOT_SIGNING_KEY="keys/secure_boot_signing_key.pem"
 
-# Fleet flash and NVS confidentiality. Release mode permanently constrains ROM
-# download access on first boot; follow the controlled spare-board runbook.
+# Fleet flash confidentiality. Release mode permanently constrains ROM download
+# access on first boot; follow the controlled spare-board runbook.
 CONFIG_SECURE_FLASH_ENC_ENABLED=y
 CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE=y
 CONFIG_SECURE_DISABLE_ROM_DL_MODE=y
-CONFIG_NVS_ENCRYPTION=y
+
+# Eki never stores Wi-Fi or device credentials in the ESP-IDF key-value store.
+# The secure build keeps Wi-Fi driver state in RAM for the entire boot.
+# CONFIG_ESP32_WIFI_NVS_ENABLED is not set
 
 # Secure boot enlarges the bootloader, so the partition table moves to 64 KiB.
 CONFIG_PARTITION_TABLE_OFFSET=0x10000

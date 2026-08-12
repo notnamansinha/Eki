@@ -38,14 +38,15 @@ local professor demonstration.
 - [ ] Complete the witnessed
   [ESP32 fleet security and provisioning](HARDWARE_SECURITY_PROVISIONING.md)
   procedure on spare ECO3-or-newer hardware before fleet rollout. Archive
-  first-boot evidence that Secure Boot V2, release-mode flash encryption, and
-  encrypted NVS are active; these eFuse operations are irreversible.
+  first-boot evidence that Secure Boot V2 and release-mode flash encryption are
+  active; these eFuse operations are irreversible.
 - [ ] Confirm every fleet artifact was built with `esp32dev-secure`; development
   firmware is never installed in a vehicle. Verify the runtime hard gate and
   remote diagnostic both report flash encryption and Secure Boot active.
-- [ ] Store each device's random local-recovery password in the restricted
-  inventory, provision the full NVS configuration, and demonstrate independent
-  API-secret rotation, revocation, and lost-device disablement.
+- [ ] Build each device-specific configuration only in the controlled signing
+  environment, protect/delete plaintext `secrets.h` and unencrypted artifacts,
+  and demonstrate independent signed-reflash secret rotation, revocation, and
+  lost-device disablement.
 - [ ] Define a signed firmware update and rollback process before enabling OTA.
 
 ## Data protection and safety
@@ -100,6 +101,6 @@ measured latency, failures, evidence links, accepted risks, and signatures.
 - [ ] Architecture, API, storage, and live-demo documents.
 - [ ] Non-secret bus/route/device inventory and wiring diagram.
 - [ ] Open-risk list. Never request committed `.env`, service-account JSON,
-  signing keys, device/recovery secrets, NVS dumps, or App Check debug tokens.
+  signing keys, device secrets, firmware binaries, or App Check debug tokens.
 - [ ] HLD, LLD, exhaustive Firebase dictionary, hardware latency analysis,
   API reference and test/failure matrix from the documentation index.

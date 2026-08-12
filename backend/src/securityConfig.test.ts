@@ -264,14 +264,12 @@ describe("production security configuration", () => {
 
   it("requires verified HTTPS TLS for hardware credentials", () => {
     const firmware = workspaceFile("hardware/src/main.cpp");
-    const deviceConfig = workspaceFile("hardware/include/device_config.h");
-    expect(firmware).toContain(
-      "tlsClient.setCACert(deviceConfiguration.backendRootCa())",
-    );
+    const firmwareConfig = workspaceFile("hardware/include/firmware_config.h");
+    expect(firmware).toContain("tlsClient.setCACert(BACKEND_ROOT_CA)");
     expect(firmware).toContain("HTTPClient");
     expect(firmware).toContain("char authorizationHeader[");
     expect(firmware).toContain(
-      "char authorizationHeader[eki::connectivity::DEVICE_SECRET_MAX_LENGTH + 8]",
+      "char authorizationHeader[eki::config::DEVICE_SECRET_MAX_LENGTH + 8]",
     );
     expect(firmware).toContain("constexpr size_t ENDPOINT_MAX_LENGTH");
     expect(firmware).toContain('"Device %s"');
@@ -283,10 +281,11 @@ describe("production security configuration", () => {
     );
     expect(firmware).not.toContain("HTTPClient::errorToString(responseCode)");
     expect(firmware).toContain('http.collectHeaders(responseHeaders, 1)');
-    expect(firmware).toContain("deviceConfiguration.load()");
-    expect(firmware).not.toContain('#include "secrets.h"');
-    expect(deviceConfig).toContain("DeviceConfigurationRecord");
-    expect(deviceConfig).toContain("deviceConfigurationRecordIsValid");
+    expect(firmware).toContain('#include "secrets.h"');
+    expect(firmware).toContain("eki::config::validate(");
+    expect(firmwareConfig).toContain("backendUrlUsesHttps");
+    expect(firmwareConfig).toContain("backendRootCaIsValid");
+    expect(firmware).not.toContain("Preferences");
     expect(firmware).not.toContain("Firebase_ESP_Client");
     expect(firmware).not.toContain("setInsecure(");
   });
@@ -328,13 +327,13 @@ describe("production security configuration", () => {
     expect(tripStateEngine).not.toContain("snapshot.ref.remove().catch(console.error);");
   });
 
-  it("keeps hardware clock, connectivity recovery, and credential faults fail closed", () => {
+  it("keeps hardware clock, connectivity retry, and credential faults fail closed", () => {
     const firmware = workspaceFile("hardware/src/main.cpp");
     const clockPolicy = workspaceFile("hardware/include/clock_policy.h");
     const connectivityPolicy = workspaceFile("hardware/include/connectivity_policy.h");
-    const recoveryPortal = workspaceFile("hardware/src/recovery_portal.cpp");
     const telemetryPolicy = workspaceFile("hardware/include/telemetry_policy.h");
-    const deviceConfig = workspaceFile("hardware/include/device_config.h");
+    const firmwareConfig = workspaceFile("hardware/include/firmware_config.h");
+    const buildGate = workspaceFile("hardware/scripts/verify_secure_fleet.py");
     const platformConfig = workspaceFile("hardware/platformio.ini");
     const sdkConfig = workspaceFile("hardware/sdkconfig.defaults");
 
@@ -348,39 +347,21 @@ describe("production security configuration", () => {
     expect(clockPolicy).toContain("utcToEpochMilliseconds");
     expect(clockPolicy).toContain("GNSS_CLOCK_CORRECTION_THRESHOLD_MS");
 
-    expect(connectivityPolicy).toContain("WIFI_RECOVERY_ESCALATION_MS");
+    expect(connectivityPolicy).toContain("WIFI_RETRY_MAX_MS");
     expect(connectivityPolicy).toContain("statusLedOn");
-    expect(connectivityPolicy).toContain("recoveryPasswordIsValid");
-    expect(deviceConfig).toContain("std::memset(&record, 0, sizeof(record))");
-    expect(recoveryPortal).toContain("WIFI_MODE_APSTA");
-    expect(recoveryPortal).toContain("WIFI_MODE_AP");
-    expect(recoveryPortal).toContain("server_(IPAddress(192, 168, 4, 1), 80)");
-    expect(recoveryPortal).toContain("WiFi.softAPConfig(");
-    expect(recoveryPortal).toContain("server_.client().localIP()");
-    expect(recoveryPortal).not.toContain("server_.client().remoteIP()");
-    expect(recoveryPortal).toContain('"/provision"');
-    expect(recoveryPortal).toContain('server_.sendHeader("Cache-Control", "no-store")');
-    expect(recoveryPortal).toContain("constantTimeTokenEquals");
-    expect(recoveryPortal).toContain("WiFi.softAP(accessPointSsid_, recoveryAccess.password(), 1, false, 1)");
-    expect(recoveryPortal).toContain("accessPointConfig.ap.authmode != WIFI_AUTH_WPA2_PSK");
-    expect(recoveryPortal).toContain("applyPersistedRecoveryPassword");
-    expect(recoveryPortal).not.toContain("DEVICE_SECRET");
-    expect(recoveryPortal).toContain("configuration_->updateWifiCredentials(");
-    expect(recoveryPortal).not.toContain('name="deviceId"');
-    expect(recoveryPortal).not.toContain('name="deviceSecret"');
-    expect(recoveryPortal).not.toContain('name="backendUrl"');
-    expect(recoveryPortal).not.toContain('name="backendRootCa"');
-    expect(recoveryPortal).not.toContain('server_.arg("deviceId")');
-    expect(recoveryPortal).not.toContain('server_.arg("deviceSecret")');
-    expect(recoveryPortal).not.toContain('server_.arg("backendUrl")');
-    expect(recoveryPortal).not.toContain('server_.arg("backendRootCa")');
-    expect(deviceConfig).toContain("updated = existing;");
-    expect(deviceConfig).toContain("updated.checksum = deviceConfigurationChecksum(updated)");
+    expect(firmwareConfig).toContain("ValidationError validate(");
+    expect(firmware).toContain("WiFi.persistent(false)");
+    expect(firmware.indexOf("WiFi.persistent(false)")).toBeLessThan(
+      firmware.indexOf("WiFi.mode(WIFI_STA)"),
+    );
+    expect(firmware).not.toContain("WIFI_AP");
+    expect(firmware).not.toContain("WebServer");
+    expect(buildGate).toContain("Application persistent storage is forbidden");
     expect(platformConfig).toContain("[env:esp32dev-secure]");
     expect(platformConfig).toContain("EKI_FLEET_BUILD=1");
     expect(sdkConfig).toContain("CONFIG_SECURE_BOOT_V2_ENABLED=y");
     expect(sdkConfig).toContain("CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE=y");
-    expect(sdkConfig).toContain("CONFIG_NVS_ENCRYPTION=y");
+    expect(sdkConfig).toContain("# CONFIG_ESP32_WIFI_NVS_ENABLED is not set");
     expect(firmware).toContain("esp_flash_encryption_enabled()");
     expect(firmware).toContain("esp_secure_boot_enabled()");
     expect(firmware).toContain(
@@ -393,7 +374,7 @@ describe("production security configuration", () => {
     expect(firmware).toContain("WiFi.mode(WIFI_OFF)");
     expect(firmware).toContain("if (!credentialFaultActive)");
     expect(firmware).toContain("result != PublishResult::CredentialFault");
-    expect(recoveryPortal).toContain("preferences.begin(CONFIG_NAMESPACE, false)");
+    expect(firmware).not.toContain("Preferences");
     expect(firmware).not.toContain("[Health]");
     expect(firmware).not.toContain("[Publisher] Started");
     expect(firmware).not.toContain("System time established from fresh GNSS UTC");

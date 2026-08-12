@@ -5,7 +5,7 @@ header-only policy used by the ESP32: strict GNSS UTC conversion and clock
 discipline, Wi-Fi retry escalation, LED fault patterns, distance/heading math,
 three-reading motion hysteresis, capped jittered retry, HTTP response
 classification (including credential latching), bounded `Retry-After` parsing,
-closed NVS configuration validation/checksums, change thresholds, the
+compile-time firmware configuration validation, change thresholds, the
 three-second publish floor and moving/stopped heartbeats.
 
 Run `platformio test --project-dir hardware -e native`. GNSS/UART/Wi-Fi/TLS,

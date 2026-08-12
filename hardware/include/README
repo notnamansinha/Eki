@@ -1,12 +1,12 @@
-# Firmware configuration headers
+# Firmware policy and configuration headers
 
-`device_config.h` defines the only accepted local configuration record: Wi-Fi,
-provisioned device ID/secret, HTTPS backend origin and issuing root CA. The
-record is fixed-size, versioned, checksummed, validated before use, and stored
-in NVS by `recovery_portal.cpp`; no credential is compiled into the firmware.
+`firmware_config.h` validates the compile-time Wi-Fi, device identity/secret,
+backend origin, and root CA supplied by the ignored `secrets.h` file.
+`secrets.example.h` is the tracked template. Changing configuration requires a
+new firmware build and reflash; the application has no persistent credential
+store or local recovery service.
 
-Fleet confidentiality depends on the `esp32dev-secure` flash/NVS encryption
-gate. See `../README.md`,
+Fleet confidentiality depends on the `esp32dev-secure` Secure Boot V2 and
+release-mode flash-encryption gate. See `../README.md`,
 `../../docs/hardware/HARDWARE_TELEMETRY.md`, and
-`../../docs/operations/HARDWARE_SECURITY_PROVISIONING.md` for provisioning,
-rotation, key custody, and physical acceptance.
+`../../docs/operations/HARDWARE_SECURITY_PROVISIONING.md`.

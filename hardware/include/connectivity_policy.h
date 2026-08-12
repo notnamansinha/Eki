@@ -10,14 +10,8 @@ namespace connectivity {
 
 constexpr uint32_t WIFI_RETRY_BASE_MS = 5000;
 constexpr uint32_t WIFI_RETRY_MAX_MS = 60000;
-constexpr uint32_t WIFI_RECOVERY_ESCALATION_MS = 120000;
-constexpr uint32_t WIFI_RECOVERY_START_RETRY_MS = 60000;
-constexpr uint32_t RECOVERY_ATTEMPT_WINDOW_MS = 60000;
-constexpr uint8_t RECOVERY_MAX_ATTEMPTS_PER_WINDOW = 5;
-constexpr size_t RECOVERY_PASSWORD_LENGTH = 24;
 enum class FaultCode : uint8_t {
   None,
-  WifiRecovery,
   CredentialRejected,
 };
 
@@ -51,27 +45,6 @@ public:
     completedAttempts_ = std::min<uint8_t>(completedAttempts_ + 1, 31);
   }
 
-  bool recoveryDue(uint32_t nowMs) const {
-    return outageActive_ &&
-      nowMs - outageStartedAt_ >= WIFI_RECOVERY_ESCALATION_MS;
-  }
-
-  bool recoveryStartDue(uint32_t nowMs) const {
-    return recoveryDue(nowMs) &&
-      (!recoveryStartAttempted_ ||
-       nowMs - lastRecoveryStartAttemptAt_ >= WIFI_RECOVERY_START_RETRY_MS);
-  }
-
-  void recordRecoveryStartAttempt(uint32_t nowMs) {
-    recoveryStartAttempted_ = true;
-    lastRecoveryStartAttemptAt_ = nowMs;
-  }
-
-  void restartAfterConfiguration(uint32_t nowMs) {
-    reset();
-    observe(false, nowMs);
-  }
-
   uint8_t completedAttempts() const { return completedAttempts_; }
 
 private:
@@ -80,16 +53,12 @@ private:
     outageStartedAt_ = 0;
     lastAttemptAt_ = 0;
     completedAttempts_ = 0;
-    recoveryStartAttempted_ = false;
-    lastRecoveryStartAttemptAt_ = 0;
   }
 
   bool outageActive_ = false;
   uint32_t outageStartedAt_ = 0;
   uint32_t lastAttemptAt_ = 0;
   uint8_t completedAttempts_ = 0;
-  bool recoveryStartAttempted_ = false;
-  uint32_t lastRecoveryStartAttemptAt_ = 0;
 };
 
 inline bool wifiSsidIsValid(const char *ssid, size_t ssidLength) {
@@ -121,99 +90,10 @@ inline bool wifiCredentialsAreValid(
     wifiPasswordIsValid(password, passwordLength);
 }
 
-inline bool recoveryPasswordIsValid(const char *password, size_t passwordLength) {
-  if (password == nullptr || passwordLength < 12 || passwordLength > 63) {
-    return false;
-  }
-  for (size_t index = 0; index < passwordLength; ++index) {
-    const uint8_t character = static_cast<uint8_t>(password[index]);
-    if (character < 0x20 || character > 0x7E) return false;
-  }
-  return true;
-}
-
-inline bool recoveryClientUsesAccessPoint(
-  uint32_t socketLocalAddress,
-  uint32_t accessPointAddress
-) {
-  return socketLocalAddress != 0 &&
-    accessPointAddress != 0 &&
-    socketLocalAddress == accessPointAddress;
-}
-
-inline bool recordRecoveryAttempt(
-  uint32_t nowMs,
-  uint32_t &windowStartedAt,
-  uint8_t &attempts
-) {
-  if (nowMs - windowStartedAt >= RECOVERY_ATTEMPT_WINDOW_MS) {
-    windowStartedAt = nowMs;
-    attempts = 0;
-  }
-  if (attempts < UINT8_MAX) ++attempts;
-  return attempts <= RECOVERY_MAX_ATTEMPTS_PER_WINDOW;
-}
-
-inline bool recoveryPasswordsEqual(
-  const char *left,
-  size_t leftLength,
-  const char *right,
-  size_t rightLength
-) {
-  if (
-    left == nullptr ||
-    right == nullptr ||
-    leftLength != RECOVERY_PASSWORD_LENGTH ||
-    rightLength != RECOVERY_PASSWORD_LENGTH
-  ) return false;
-  uint8_t difference = 0;
-  for (size_t index = 0; index < RECOVERY_PASSWORD_LENGTH; ++index) {
-    difference |= static_cast<uint8_t>(left[index] ^ right[index]);
-  }
-  return difference == 0 &&
-    left[RECOVERY_PASSWORD_LENGTH] == '\0' &&
-    right[RECOVERY_PASSWORD_LENGTH] == '\0';
-}
-
-inline bool applyPersistedRecoveryPassword(
-  char *activePassword,
-  size_t activeCapacity,
-  const char *candidate,
-  size_t persistedLength,
-  const char *verifiedValue,
-  size_t verifiedLength
-) {
-  if (
-    activePassword == nullptr ||
-    activeCapacity < RECOVERY_PASSWORD_LENGTH + 1 ||
-    persistedLength != RECOVERY_PASSWORD_LENGTH ||
-    !recoveryPasswordIsValid(candidate, RECOVERY_PASSWORD_LENGTH) ||
-    !recoveryPasswordIsValid(verifiedValue, verifiedLength) ||
-    !recoveryPasswordsEqual(
-      candidate,
-      RECOVERY_PASSWORD_LENGTH,
-      verifiedValue,
-      verifiedLength
-    )
-  ) {
-    return false;
-  }
-  std::memcpy(activePassword, candidate, RECOVERY_PASSWORD_LENGTH + 1);
-  return true;
-}
-
-inline size_t boundedCStringLength(const char *value, size_t maximum) {
-  if (value == nullptr) return 0;
-  size_t length = 0;
-  while (length < maximum && value[length] != '\0') ++length;
-  return length;
-}
-
 inline bool statusLedOn(FaultCode fault, uint32_t nowMs) {
   if (fault == FaultCode::None) return false;
   const uint32_t phase = nowMs % 2000;
-  const uint8_t pulses = fault == FaultCode::CredentialRejected ? 3 : 2;
-  return phase < static_cast<uint32_t>(pulses) * 300 && phase % 300 < 150;
+  return phase < 900 && phase % 300 < 150;
 }
 
 } // namespace connectivity

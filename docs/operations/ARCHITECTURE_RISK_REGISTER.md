@@ -83,11 +83,10 @@ not a substitute for the physical and institutional acceptance work in the
   oldest-drop overflow, stale compaction and RTC configuration identity. HTTP
   policy tests cover transport errors, latched 401/403, 429/`Retry-After` and
   5xx. Separate pure policies cover strict GNSS UTC calendar conversion,
-  bounded clock discipline, Wi-Fi exponential retry/escalation and two/three
-  pulse LED codes. After a two-minute station outage, the publisher starts a
-  WPA2-protected local provisioning portal while retries continue; replacement
-  Wi-Fi, device identity/secret, backend origin, and CA use one fixed-size,
-  versioned/checksummed NVS record and are never returned. The authenticated
+  bounded clock discipline, Wi-Fi exponential retry and a three-pulse
+  credential-fault LED code. Wi-Fi, device identity/secret, backend origin, and
+  CA are compiled into a device-specific image and validated before networking;
+  no local configuration service or application persistent store exists. The authenticated
   diagnostics channel reports bounded health and hardware-security state every
   five minutes. Both development and signed fleet targets compile within their
   regular RAM, RTC, and flash limits.
@@ -95,15 +94,14 @@ not a substitute for the physical and institutional acceptance work in the
   and recovery run on the target board, confirming zero UART/FIFO overflow and
   acceptable queue high-water/reset recovery under real GNSS and TLS load.
   Also prove GNSS-established TLS with NTP blocked, NTP cross-check behavior,
-  the protected recovery portal/LED sequence and credential replacement on a
-  real device. Confirm authenticated diagnostics, full credential rotation, and
-  NVS persistence through power loss.
+  the credential-fault LED/radio shutdown and device-specific signed reflash on
+  a real device. Confirm authenticated diagnostics and full credential rotation.
 
 ### FW-02: field updates and physical key protection are not production-proven
 
 - **Severity/status:** High / Partially mitigated; physical/update gate remains.
 - **Evidence:** `esp32dev-secure` requires an ignored RSA-3072 key, builds signed
-  Secure Boot V2 firmware with release-mode flash/NVS encryption and a
+  Secure Boot V2 firmware with release-mode flash encryption and a
   bootloader-safe partition table, and halts at runtime unless both protections
   are active. The repository includes a two-operator spare-board procedure and
   remote security-state evidence. OTA remains disabled; irreversible first boot,

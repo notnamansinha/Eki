@@ -122,7 +122,7 @@ The software does not promise an absolute end-to-end SLA without real deployment
 
 The static frontend is deployed to Firebase Hosting. The Express container/runtime must expose managed HTTPS near the Firebase region and use Application Default Credentials/Workload Identity or a secret-managed service-account JSON. It should sit behind university WAF/global rate limits. The worker lease supports multiple API replicas while keeping one background owner.
 
-The vehicle needs fused 12 V-to-5 V conversion, stable ground, secure enclosure/cabling, a clear-sky antenna, and cellular/Wi-Fi access. The fleet build enables Secure Boot V2 and release-mode flash/NVS encryption and refuses operation if either is inactive; their irreversible first boot still requires the witnessed spare-board procedure. Signed OTA/rollback remains a deployment prerequisite.
+The vehicle needs fused 12 V-to-5 V conversion, stable ground, secure enclosure/cabling, a clear-sky antenna, and cellular/Wi-Fi access. The fleet build embeds device-specific configuration, enables Secure Boot V2 and release-mode flash encryption, and refuses operation if either protection is inactive; its irreversible first boot still requires the witnessed spare-board procedure. Signed OTA/rollback remains a deployment prerequisite.
 
 ## Residual risks
 

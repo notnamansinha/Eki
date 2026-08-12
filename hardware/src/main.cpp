@@ -1,6 +1,7 @@
 #include "clock_policy.h"
 #include "connectivity_policy.h"
-#include "recovery_portal.h"
+#include "firmware_config.h"
+#include "secrets.h"
 #include "telemetry_policy.h"
 #include "telemetry_queue.h"
 #include "reset_stats.h"
@@ -32,6 +33,16 @@
 #endif
 
 #if EKI_FLEET_BUILD
+static_assert(
+  BACKEND_URL[0] == 'h' && BACKEND_URL[1] == 't' &&
+  BACKEND_URL[2] == 't' && BACKEND_URL[3] == 'p' &&
+  BACKEND_URL[4] == 's' && BACKEND_URL[5] == ':' &&
+  BACKEND_URL[6] == '/' && BACKEND_URL[7] == '/',
+  "Fleet builds require an HTTPS BACKEND_URL in secrets.h."
+);
+#endif
+
+#if EKI_FLEET_BUILD
 #if !defined(CONFIG_ESP32_REV_MIN_3) || !CONFIG_ESP32_REV_MIN_3
 #error "Fleet builds require ESP32 ECO3 or newer."
 #endif
@@ -49,9 +60,6 @@
 #endif
 #if !defined(CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE) || !CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE
 #error "Fleet builds require release-mode flash encryption."
-#endif
-#if !defined(CONFIG_NVS_ENCRYPTION) || !CONFIG_NVS_ENCRYPTION
-#error "Fleet builds require encrypted NVS."
 #endif
 #if !defined(CONFIG_SECURE_DISABLE_ROM_DL_MODE) || !CONFIG_SECURE_DISABLE_ROM_DL_MODE
 #error "Fleet builds require ROM download mode lockdown."
@@ -82,14 +90,13 @@ WiFiClientSecure tlsClient;
 WiFiClient plainClient;
 
 constexpr size_t ENDPOINT_MAX_LENGTH =
-  eki::connectivity::BACKEND_URL_MAX_LENGTH +
-  eki::connectivity::DEVICE_ID_MAX_LENGTH + 32;
+  eki::config::BACKEND_URL_MAX_LENGTH +
+  eki::config::DEVICE_ID_MAX_LENGTH + 32;
 char telemetryEndpoint[ENDPOINT_MAX_LENGTH]{};
 char diagnosticsEndpoint[ENDPOINT_MAX_LENGTH]{};
-char authorizationHeader[eki::connectivity::DEVICE_SECRET_MAX_LENGTH + 8]{};
+char authorizationHeader[eki::config::DEVICE_SECRET_MAX_LENGTH + 8]{};
 bool flashEncryptionActive = false;
 bool secureBootActive = false;
-char hardwareDeviceLabel[13]{};
 
 enum class MotionState : uint8_t {
   Moving,
@@ -185,17 +192,14 @@ bool trustworthyGpsFixObserved = false;
 bool gpsWiringWarningLogged = false;
 bool lossMessageQueued = false;
 bool wifiConfigured = false;
-eki::connectivity::DeviceConfiguration deviceConfiguration;
 
 WiFiClient &getNetworkClient() {
-  if (strncmp(deviceConfiguration.backendUrl(), "http://", 7) == 0) {
+  if (std::strncmp(BACKEND_URL, "http://", 7) == 0) {
     return plainClient;
   }
   return tlsClient;
 }
-eki::connectivity::RecoveryAccess recoveryAccess;
 eki::connectivity::WifiRetrySupervisor wifiRetrySupervisor;
-eki::connectivity::RecoveryPortal recoveryPortal;
 portMUX_TYPE deviceFaultMux = portMUX_INITIALIZER_UNLOCKED;
 eki::connectivity::FaultCode deviceFault = eki::connectivity::FaultCode::None;
 uint32_t uartBufferOverflowCount = 0;
@@ -238,8 +242,6 @@ void updateStatusLed() {
 
 const char *faultCodeName(eki::connectivity::FaultCode fault) {
   switch (fault) {
-    case eki::connectivity::FaultCode::WifiRecovery:
-      return "wifi-recovery";
     case eki::connectivity::FaultCode::CredentialRejected:
       return "credential-rejected";
     case eki::connectivity::FaultCode::None:
@@ -373,7 +375,7 @@ HealthCounters healthCounters() {
 }
 
 bool initializeRequestStrings() {
-  const char *base = deviceConfiguration.backendUrl();
+  const char *base = BACKEND_URL;
   size_t baseLength = std::strlen(base);
   while (baseLength > 0 && base[baseLength - 1] == '/') --baseLength;
   const int telemetryLength = std::snprintf(
@@ -382,7 +384,7 @@ bool initializeRequestStrings() {
     "%.*s/api/devices/%s/telemetry",
     static_cast<int>(baseLength),
     base,
-    deviceConfiguration.deviceId()
+    DEVICE_ID
   );
   const int diagnosticsLength = std::snprintf(
     diagnosticsEndpoint,
@@ -390,13 +392,13 @@ bool initializeRequestStrings() {
     "%.*s/api/devices/%s/diagnostics",
     static_cast<int>(baseLength),
     base,
-    deviceConfiguration.deviceId()
+    DEVICE_ID
   );
   const int authorizationLength = std::snprintf(
     authorizationHeader,
     sizeof(authorizationHeader),
     "Device %s",
-    deviceConfiguration.deviceSecret()
+    DEVICE_SECRET
   );
   return telemetryLength > 0 &&
          static_cast<size_t>(telemetryLength) < sizeof(telemetryEndpoint) &&
@@ -408,14 +410,7 @@ bool initializeRequestStrings() {
 
 uint32_t telemetryConfigurationTag() {
   uint32_t hash = 2166136261UL;
-  const char *values[] = {
-    deviceConfiguration.provisioned()
-      ? deviceConfiguration.deviceId()
-      : hardwareDeviceLabel,
-    deviceConfiguration.provisioned()
-      ? deviceConfiguration.backendUrl()
-      : "unprovisioned",
-  };
+  const char *values[] = {DEVICE_ID, BACKEND_URL};
   for (const char *value : values) {
     while (*value != '\0') {
       hash ^= static_cast<uint8_t>(*value++);
@@ -562,8 +557,10 @@ void disciplineClockFromGnss() {
 }
 
 void configureStationRadio() {
-  WiFi.mode(recoveryPortal.active() ? WIFI_AP_STA : WIFI_STA);
+  // This must be set before mode() initializes the driver; setting it later
+  // leaves the Arduino Wi-Fi layer backed by flash for the current boot.
   WiFi.persistent(false);
+  WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   // The tracker is vehicle-powered. Disabling modem sleep avoids periodic
   // wake latency during short HTTPS telemetry bursts.
@@ -573,17 +570,11 @@ void configureStationRadio() {
 }
 
 void attemptWifiConnection() {
-  if (!deviceConfiguration.provisioned()) return;
-  // Credential-fault mode is AP-only: the station link is intentionally
-  // dropped and must stay down until the device is re-provisioned.
   if (credentialFaultActive) return;
   getNetworkClient().stop();
   if (!wifiConfigured) {
     configureStationRadio();
-    WiFi.begin(
-      deviceConfiguration.wifiSsid(),
-      deviceConfiguration.wifiPassword()
-    );
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
     wifiConfigured = true;
     Serial.println("[WiFi] Connecting to configured network.");
   } else {
@@ -595,9 +586,7 @@ void updateConnectivityFault() {
   setDeviceFault(
     credentialFaultActive
       ? eki::connectivity::FaultCode::CredentialRejected
-      : recoveryPortal.active()
-        ? eki::connectivity::FaultCode::WifiRecovery
-        : eki::connectivity::FaultCode::None
+      : eki::connectivity::FaultCode::None
   );
 }
 
@@ -605,87 +594,23 @@ void latchCredentialFault() {
   if (credentialFaultActive) return;
   credentialFaultActive = true;
   resetHttpsRetry();
-  // Rejected credentials make the station link useless, and leaving it up
-  // exposes the recovery portal on the campus STA interface (the AP password
-  // only guards the soft-AP path). Drop the station and stop auto-reconnect
-  // until the device is re-provisioned and restarts.
+  // Compile-time credentials can only be replaced by reflashing. Stop the
+  // radio after a definitive rejection so the device cannot retry stale
+  // credentials until corrected firmware is installed.
   WiFi.setAutoReconnect(false);
   const bool disconnected = WiFi.disconnect(true, false);
   const bool radioDisabled = WiFi.mode(WIFI_OFF);
   if (!disconnected || !radioDisabled || WiFi.getMode() != WIFI_MODE_NULL) {
-    Serial.println(
-      "[Security] Station isolation reported a failure; recovery portal will remain disabled unless AP-only mode is verified."
-    );
+    Serial.println("[Security] Station isolation reported a failure.");
   }
   updateConnectivityFault();
 }
 
 void serviceConnectivity() {
   const uint32_t now = millis();
-  recoveryPortal.handleClient();
-  if (recoveryPortal.consumeConfigurationUpdated()) {
-    Serial.println("[WiFi] Updated credentials stored; restarting.");
-    delay(250);
-    ESP.restart();
-  }
-  if (recoveryPortal.consumeRecoveryRotationRequested()) {
-    // Give the operator a couple of seconds to receive and save the new
-    // password before the AP restarts with it.
-    Serial.println("[Provisioning] Recovery AP password rotated; restarting in 2s.");
-    delay(2500);
-    ESP.restart();
-  }
-
-  if (!deviceConfiguration.provisioned()) {
-    if (!recoveryPortal.active()) {
-      if (recoveryPortal.start(
-        hardwareDeviceLabel,
-        recoveryAccess,
-        deviceConfiguration,
-        false
-      )) {
-        Serial.printf(
-          "[Provisioning] Unprovisioned device; connect to %s and open http://192.168.4.1.\n",
-          recoveryPortal.accessPointSsid()
-        );
-      } else {
-        Serial.println("[Provisioning] Unable to start local provisioning portal.");
-      }
-    }
-    updateConnectivityFault();
-    return;
-  }
-
   const bool connected = WiFi.status() == WL_CONNECTED;
   wifiRetrySupervisor.observe(connected, now);
-
-  if (connected && recoveryPortal.active() && !credentialFaultActive) {
-    recoveryPortal.stop();
-    Serial.println("[WiFi] Connection restored; recovery portal stopped.");
-  }
-
-  if (
-    (credentialFaultActive ||
-      (!connected && wifiRetrySupervisor.recoveryStartDue(now))) &&
-    !recoveryPortal.active()
-  ) {
-    wifiRetrySupervisor.recordRecoveryStartAttempt(now);
-    if (recoveryPortal.start(
-      deviceConfiguration.deviceId(),
-      recoveryAccess,
-      deviceConfiguration,
-      !credentialFaultActive
-    )) {
-      Serial.printf(
-        "[WiFi] Recovery available at http://192.168.4.1 on AP %s.\n",
-        recoveryPortal.accessPointSsid()
-      );
-    } else {
-      Serial.println("[WiFi] Persistent outage; recovery portal failed to start.");
-    }
-  }
-
-  if (!connected && wifiRetrySupervisor.attemptDue(now)) {
+  if (!connected && !credentialFaultActive && wifiRetrySupervisor.attemptDue(now)) {
     attemptWifiConnection();
     wifiRetrySupervisor.recordAttempt(now);
   }
@@ -782,7 +707,6 @@ void reportNtpCrossCheck() {
 PublishResult publishFix(const TelemetryFix &fix) {
   if (
     !fix.valid ||
-    !deviceConfiguration.provisioned() ||
     WiFi.status() != WL_CONNECTED ||
     !clockIsSynchronized()
   ) {
@@ -861,7 +785,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
     if (responseCode == 400 || responseCode == 413 || responseCode == 422) {
       Serial.println("[HTTPS] Check the six-field payload and GNSS/NTP-disciplined timestamp.");
     } else if (responseCode == 401 || responseCode == 403) {
-      Serial.println("[HTTPS] Credential fault latched; publishing is halted until reprovisioning and restart.");
+      Serial.println("[HTTPS] Credential fault latched; correct secrets.h and reflash the device.");
     } else if (responseCode == 404) {
       Serial.println("[HTTPS] Check BACKEND_URL; the telemetry endpoint was not found.");
     } else if (responseCode == 429) {
@@ -922,7 +846,6 @@ void scheduleRemoteDiagnosticRetry() {
 
 void publishRemoteDiagnostic() {
   if (
-    !deviceConfiguration.provisioned() ||
     WiFi.status() != WL_CONNECTED ||
     !clockIsSynchronized() ||
     credentialFaultActive ||
@@ -980,7 +903,7 @@ void publishRemoteDiagnostic() {
   http.end();
   if (responseCode == 401 || responseCode == 403) {
     latchCredentialFault();
-    Serial.println("[Diagnostics] Credential fault latched; local reprovisioning enabled.");
+    Serial.println("[Diagnostics] Credential fault latched; firmware reflash required.");
     return;
   }
   if (responseCode >= 200 && responseCode < 300) {
@@ -1115,7 +1038,7 @@ void publisherTask(void *) {
     reportNtpCrossCheck();
 
     bool drainedSample = false;
-    if (deviceConfiguration.provisioned() && WiFi.status() == WL_CONNECTED) {
+    if (WiFi.status() == WL_CONNECTED) {
       synchronizeClock();
       if (clockIsSynchronized() && !httpsRetryIsPending()) {
         TelemetryFix fix{};
@@ -1164,12 +1087,31 @@ void publisherTask(void *) {
 
 void setup() {
   Serial.begin(115200);
-  std::snprintf(
-    hardwareDeviceLabel,
-    sizeof(hardwareDeviceLabel),
-    "%012llX",
-    static_cast<unsigned long long>(ESP.getEfuseMac() & 0xFFFFFFFFFFFFULL)
+  const eki::config::ValidationError configurationError = eki::config::validate(
+    WIFI_SSID,
+    std::strlen(WIFI_SSID),
+    WIFI_PASS,
+    std::strlen(WIFI_PASS),
+    DEVICE_ID,
+    std::strlen(DEVICE_ID),
+    DEVICE_SECRET,
+    std::strlen(DEVICE_SECRET),
+    BACKEND_URL,
+    std::strlen(BACKEND_URL),
+    BACKEND_ROOT_CA,
+    std::strlen(BACKEND_ROOT_CA)
   );
+  if (configurationError != eki::config::ValidationError::None) {
+    Serial.printf(
+      "[Boot] Invalid compile-time configuration field %s; halted.\n",
+      eki::config::validationErrorName(configurationError)
+    );
+    while (true) delay(1000);
+  }
+  if (EKI_FLEET_BUILD && !eki::config::backendUrlUsesHttps(BACKEND_URL)) {
+    Serial.println("[Security] Fleet firmware requires an HTTPS backend; halted.");
+    while (true) delay(1000);
+  }
   flashEncryptionActive = esp_flash_encryption_enabled();
   secureBootActive = esp_secure_boot_enabled();
   Serial.printf(
@@ -1183,17 +1125,6 @@ void setup() {
       "[Security] Fleet firmware refuses to run until Flash Encryption and Secure Boot V2 are both verified."
     );
     while (true) delay(1000);
-  }
-  if (!recoveryAccess.loadOrCreate()) {
-    Serial.println("[Boot] Unable to create protected local recovery access; halted.");
-    while (true) delay(1000);
-  }
-  const bool provisioned = deviceConfiguration.load();
-  if (!provisioned) {
-    Serial.printf(
-      "[Provisioning] Record this one-device recovery password over the controlled serial connection: %s\n",
-      recoveryAccess.password()
-    );
   }
   const uint32_t configurationTag = telemetryConfigurationTag();
   const esp_reset_reason_t espBootReason = esp_reset_reason();
@@ -1233,12 +1164,12 @@ void setup() {
     );
   }
 
-  if (provisioned) {
-    tlsClient.setCACert(deviceConfiguration.backendRootCa());
-    if (!initializeRequestStrings()) {
-      Serial.println("[Boot] Provisioned request configuration is too long; halted.");
-      while (true) delay(1000);
-    }
+  if (eki::config::backendUrlUsesHttps(BACKEND_URL)) {
+    tlsClient.setCACert(BACKEND_ROOT_CA);
+  }
+  if (!initializeRequestStrings()) {
+    Serial.println("[Boot] Compile-time request configuration is too long; halted.");
+    while (true) delay(1000);
   }
   sntp_set_time_sync_notification_cb(onNtpTimeSynchronized);
   configureWatchdog();

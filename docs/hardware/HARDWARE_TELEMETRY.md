@@ -14,11 +14,11 @@ Use a fused automotive-rated 12 V-to-5 V buck converter, strain relief, protecte
 ## Firmware build contract
 
 - Development: `esp32dev`, Arduino, `huge_app.csv`; OTA compiled disabled.
-- Fleet: `esp32dev-secure`, Arduino as an ESP-IDF component, Secure Boot V2, release-mode flash encryption, encrypted NVS, ROM-download lockdown, and a bootloader-safe custom partition table.
+- Fleet: `esp32dev-secure`, Arduino as an ESP-IDF component, Secure Boot V2, release-mode flash encryption, ROM-download lockdown, RAM-only Wi-Fi state, and a bootloader-safe custom partition table.
 - Pinned platform/libraries: Espressif32 7.0.1, TinyGPSPlus 1.1.0, ArduinoJson 7.4.3.
-- Runtime configuration: one validated, versioned, checksummed NVS record containing Wi-Fi, device ID/base64url secret, HTTPS backend origin, and issuing root CA. No operational credential is compiled into firmware.
-- Local access: a random 24-character password is generated per device and stored in NVS; the complete protected provisioning form never returns stored values.
-- Fleet runtime refuses to read configuration or start networking unless flash encryption and Secure Boot both report active.
+- Runtime configuration: Wi-Fi, device ID/base64url secret, backend origin, and issuing root CA are compiled from the ignored `hardware/include/secrets.h` and validated before networking starts.
+- There is no local configuration portal or persistent Eki credential store. Configuration replacement requires a new firmware image and physical reflash.
+- Fleet runtime refuses to start networking unless flash encryption and Secure Boot both report active; fleet builds also reject non-HTTPS backend origins.
 
 ## Runtime tasks
 
@@ -42,7 +42,7 @@ flowchart LR
   end
 
   subgraph DELIVERY["FreeRTOS publisher task / core 0"]
-    WIFI["Bounded Wi-Fi recovery + NTP cross-check"] --> FRESH["Drop and count samples older than 55 s"]
+    WIFI["Bounded Wi-Fi retry + NTP cross-check"] --> FRESH["Drop and count samples older than 55 s"]
     FRESH --> NEWEST["Peek newest eligible sample"]
     NEWEST --> POST["Certificate-verified HTTPS POST"]
     POST -->|200/202| ACK["Remove acknowledged sequence"]
@@ -52,7 +52,7 @@ flowchart LR
     ACK --> NEWEST
     RETRY --> WIFI
     REJECT --> WIFI
-    AUTH --> REPROVISION["Wait for device reprovision + restart"]
+    AUTH --> REFLASH["Wait for corrected firmware reflash"]
   end
 
   QUEUE -. "task notification" .-> NEWEST
@@ -82,7 +82,7 @@ The 120-sample queue occupies 5,808 bytes of RTC no-init memory. At the maximum 
 | GNSS UTC maximum age | 2 s | Reject stale date/time sentences |
 | GNSS correction | >=1.5 s, at most once/minute | Primary clock discipline without rapid jumps |
 | NTP cross-check | startup after Wi-Fi, then six-hour schedule | Independent fallback/check; not a publish dependency |
-| Wi-Fi retry / escalation | 5-60 s exponential / 2 min | Bound radio churn; enter technician recovery mode |
+| Wi-Fi retry | 5-60 s exponential | Bound radio churn while retrying indefinitely |
 | HTTPS retry | 1–30 s + up to 1 s jitter | Recovery without fleet retry storm |
 | RTC queue | 120 samples / 5,808 bytes | Bounded store-and-forward with oldest-drop overflow |
 | Queued-fix discard | >55 s | Stay within backend freshness window |
@@ -90,28 +90,27 @@ The 120-sample queue occupies 5,808 bytes of RTC no-init memory. At the maximum 
 | Remote diagnostics | first at 30 s, then every 5 min while idle | Authenticated bounded health without delaying a queued fix |
 | NMEA no-data warning | after 5 s, every 5 s | Wiring/baud diagnosis |
 
-Wi-Fi SDK persistence is disabled to avoid reconnect churn, auto-reconnect is enabled, the strongest known AP is selected with fast scan, and modem sleep is disabled because the tracker is vehicle-powered and latency is preferred over battery life. An unprovisioned unit exposes the WPA2 `Eki-Recovery-*` portal immediately; a configured unit exposes it after a continuous two-minute outage or a 401/403. The HTTP listener is bound specifically to the fixed soft-AP address `192.168.4.1`, and every handler independently rejects sockets whose local destination is not that AP address. Credential faults disable the station radio before starting AP-only recovery; outage recovery may keep STA retries active without exposing the listener on the STA address. The form requires every configuration field, validates one closed NVS record, and restarts without returning stored credentials. A successful station connection stops outage recovery. GPIO2 emits two short pulses for recovery mode and three for a latched credential fault. The fleet build and runtime gate make flash/NVS encryption mandatory in vehicles.
+Wi-Fi persistence is disabled before the driver starts, auto-reconnect is enabled, the strongest known AP is selected with fast scan, and modem sleep is disabled because the tracker is vehicle-powered and latency is preferred over battery life. Outages retry indefinitely with bounded exponential delay; the firmware never starts a soft AP or HTTP server. A credential fault disables the station radio and GPIO2 emits three short pulses every two seconds until corrected firmware is flashed. Fleet builds require release-mode flash encryption and Secure Boot, and explicitly disable ESP32 Wi-Fi key-value persistence.
 
-Deterministic UTC conversion/discipline lives in `hardware/include/clock_policy.h`; Wi-Fi escalation and LED patterns in `hardware/include/connectivity_policy.h`; distance, heading, motion hysteresis, HTTP outcomes and capture decisions in `hardware/include/telemetry_policy.h`; and queue ordering/recovery in `hardware/include/telemetry_queue.h`. The hardware-specific, local-only credential portal is isolated in `hardware/src/recovery_portal.cpp`. Pure policies are executed on the host by `platformio test -d hardware -e native`. Radio, UART, antenna, TLS, portal interoperability, watchdog and power behavior remain physical acceptance concerns.
+Deterministic UTC conversion/discipline lives in `hardware/include/clock_policy.h`; Wi-Fi retry and LED behavior in `hardware/include/connectivity_policy.h`; compile-time secret validation in `hardware/include/firmware_config.h`; distance, heading, motion hysteresis, HTTP outcomes and capture decisions in `hardware/include/telemetry_policy.h`; and queue ordering/recovery in `hardware/include/telemetry_queue.h`. Pure policies are executed on the host by `platformio test -d hardware -e native`. Radio, UART, antenna, TLS, watchdog and power behavior remain physical acceptance concerns.
 
 ## Payload and HTTP outcomes
 
-The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). The device treats only 200/202 as telemetry success. Transport errors, 408/425/429 and 5xx retain the attempted sample for retry; other permanent HTTP statuses remove that sample. HTTP 401/403 retains the rejected sample, latches a credential fault, blocks further telemetry, and enables protected full reprovisioning so a doomed secret cannot create an infinite loop. Normal freshness eviction still prevents an old retained sample from violating the backend's timestamp contract. HTTP 429 honors the bounded delta-seconds `Retry-After` value. If a newer fix arrives during a retryable request, it becomes the next recovery candidate. Remote diagnostics is a separate best-effort 1 KiB POST containing only bounded counters/state; its failure never evicts or delays a queued fix.
+The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). The device treats only 200/202 as telemetry success. Transport errors, 408/425/429 and 5xx retain the attempted sample for retry; other permanent HTTP statuses remove that sample. HTTP 401/403 retains the rejected sample, latches a credential fault, disables the station radio, and requires a corrected firmware reflash so a doomed secret cannot create an infinite loop. Normal freshness eviction still prevents an old retained sample from violating the backend's timestamp contract. HTTP 429 honors the bounded delta-seconds `Retry-After` value. If a newer fix arrives during a retryable request, it becomes the next recovery candidate. Remote diagnostics is a separate best-effort 1 KiB POST containing only bounded counters/state; its failure never evicts or delays a queued fix.
 
 | Symptom | Likely cause | Action |
 |---|---|---|
 | No NMEA warning | RX/TX reversed, no GNSS power, wrong baud | Check wiring/LED/serial at 9,600 |
 | Never gets valid fix | Indoor/multipath antenna, HDOP >4 | Move antenna to sky view; inspect GNSS output |
 | Clock not synchronized | Stale/invalid GNSS date-time and NTP blocked | Check NMEA date/time freshness; then Wi-Fi/DNS/UDP |
-| Boot says awaiting provisioning | No valid NVS configuration record | Use the controlled serial recovery password and protected local portal |
+| Boot halts on compile-time configuration | Missing/invalid value in `secrets.h` | Correct the named field, rebuild, and reflash |
 | Fleet firmware halts at security gate | Flash encryption or Secure Boot inactive | Quarantine the unit; repeat only the witnessed spare-board procedure, never bypass the gate |
 | Negative HTTPClient/transport failure | DNS/backend unreachable, wrong hostname/CA, expired issuer, bad clock | Use the printed transport string; verify URL chain and NTP; never use insecure mode |
 | HTTP 400 | Firmware/backend contract mismatch or timestamp/range | Compare exact six fields and clock |
-| HTTP 401/403 + three LED pulses | ID/secret disabled/mismatched or assignment invalid | Rotate/inspect registry, then submit the complete replacement configuration locally |
+| HTTP 401/403 + three LED pulses | ID/secret disabled/mismatched or assignment invalid | Rotate/inspect registry, update `secrets.h`, build a protected artifact, and reflash |
 | HTTP 429 | IP/device limiter | Check publish loop/config and WAF limits |
 | HTTP 503/timeouts | Backend/Firebase/network outage | Inspect `/health`; backoff retains the bounded queue |
 | Repeated watchdog reset | HTTP/network stack longer than 25 s or task fault | Inspect reset reason/serial; verify 7 s connect/request timeouts |
-| Two LED pulses / `Eki-Recovery-*` AP | Unprovisioned, station outage exceeded two minutes, or configuration recovery | Join with the device recovery password; submit the complete configuration at `192.168.4.1` |
 | Non-zero overflow counters | GNSS task starvation, UART pressure or full telemetry queue | Inspect authenticated remote diagnostics; reproduce against network outage and load |
 | `uncertain` on map | One GNSS-loss notification at last trusted point | Fix antenna/sky view; no guessed motion is shown |
 
@@ -134,10 +133,10 @@ Each latency is a rolling in-process 512-sample window with average/p50/p95/p99.
 |---|---|---|---|
 | Vehicle power/buck/cable | Board resets/no telemetry | Reset reason logged; durable ride retained | Automotive wiring/spares/monitoring |
 | GNSS receiver/antenna/UART | No NMEA, quality rejection, checksum or UART overflow count | Warning; one uncertain sample; 30 s counters | Physical inspection/route survey |
-| Wi-Fi/hotspot | Disconnect/RSSI/timeouts | Exponential retry, RTC queue, protected local recovery and two-pulse LED | Coverage/SIM/hotspot redundancy; field-test portal |
+| Wi-Fi/hotspot | Disconnect/RSSI/timeouts | Exponential retry and RTC queue | Coverage/SIM/hotspot redundancy; reflash if credentials change |
 | Clock | No TLS/invalid timestamp | Fresh GNSS UTC primary; NTP cross-check/fallback; no invalid publish | Validate receiver UTC and NTP paths on target hardware |
 | TLS CA rotation | TLS failure | Fail closed | Signed OTA before issuer expiry |
-| Device credential | 401/403, rejected metric, three-pulse LED | Publishing latches off; protected local reprovisioning starts | Rotate registry secret, submit complete config, verify diagnostics |
+| Device credential | 401/403, rejected metric, three-pulse LED | Publishing latches off and station radio stops | Rotate registry secret, reflash complete config, verify diagnostics |
 | Hardware security | Boot gate and remote diagnostic booleans | Fleet firmware halts unless both protections are active | Witness first boot and retain spare-board evidence |
 | Backend/Firebase | 503/latency metrics | Bounded queue retained; jitter retry | Regional managed runtime/alerts |
 | Process restart | health/worker lease | Durable active ride and reconnect | Runbook/availability deployment |
@@ -145,8 +144,8 @@ Each latency is a rolling in-process 512-sample window with average/p50/p95/p99.
 
 ## Security deployment
 
-The `esp32dev-secure` environment builds a signed Secure Boot V2 image with release-mode flash/NVS encryption and ROM-download lockdown. Its first boot irreversibly provisions security eFuses, so repository automation never uploads it. Follow the witnessed [fleet security and provisioning procedure](../operations/HARDWARE_SECURITY_PROVISIONING.md) on spare ECO3-or-newer boards, retain evidence, and only then approve production units. Rotate devices independently, keep credentials and key material out of source/build logs, and maintain CA/firmware/signing-key lifecycle records. Signed OTA/rollback remains required before routine fleet updates.
+The `esp32dev-secure` environment builds a signed Secure Boot V2 image with release-mode flash encryption and ROM-download lockdown. Its first boot irreversibly provisions security eFuses, so repository automation never uploads it. Because credentials are embedded in the application image, configuration must happen only in the approved encrypted signing environment and plaintext/unprotected artifacts must never be archived. Follow the witnessed [fleet security and provisioning procedure](../operations/HARDWARE_SECURITY_PROVISIONING.md) on spare ECO3-or-newer boards, retain evidence, and only then approve production units. Signed OTA/rollback remains required before routine fleet updates.
 
 ## Physical acceptance
 
-Bench compile is necessary but insufficient. Test cold/warm GNSS acquisition, stationary drift, urban multipath, tunnel/covered loss, Wi-Fi loss/recovery, backend outage/recovery, power cycling during active ride, CA/credential rejection, long HTTP failure, every route geofence in order, and final completion. For recovery specifically, verify that outage AP+STA mode serves `192.168.4.1` only after joining the recovery AP while the station IP refuses/does not answer port 80; verify a credential fault drops STA and starts AP-only mode; submit six invalid protected actions within a minute and observe the sixth return 429; rotate the password, record the returned value, then confirm after restart and a power cycle that the old password fails and the new password joins. Record p50/p95/p99 display latency, serial reset/failure logs, commit, firmware hash, route/weather and evidence.
+Bench compile is necessary but insufficient. Test cold/warm GNSS acquisition, stationary drift, urban multipath, tunnel/covered loss, Wi-Fi loss/recovery, backend outage/recovery, power cycling during active ride, CA/credential rejection, long HTTP failure, every route geofence in order, and final completion. Verify Wi-Fi credentials are never recovered after reflashing a different `secrets.h`, no soft AP or port-80 listener appears during outages, a 401/403 drops STA and latches the three-pulse fault, and only a corrected signed reflash restores publishing. Record p50/p95/p99 display latency, serial reset/failure logs, commit, firmware hash, route/weather and evidence.
