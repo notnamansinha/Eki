@@ -270,20 +270,18 @@ rulesDescribe("Firebase security rules integration", () => {
     });
   });
 
-  it("keeps passenger requests locked to their owner and assigned drivers", async () => {
+  it("denies all client access to passenger requests", async () => {
     const passenger = environment.authenticatedContext("passenger_2", { role: "passenger" });
     const bus1Driver = environment.authenticatedContext("driver_1", {
       role: "driver",
       driverId: "driver_1",
       assignedBusId: "bus_1",
     });
-    const bus2Driver = environment.authenticatedContext("driver_2", {
-      role: "driver",
-      driverId: "driver_2",
-      assignedBusId: "bus_2",
-    });
 
-    await assertSucceeds(setDoc(doc(passenger.firestore(), "passenger_requests", "passenger_2"), {
+    // The collection is backend-authoritative (issues #72 + #73): passengers
+    // cannot create their own request, and no client — including the assigned
+    // driver — can transition status or read through the rules.
+    await assertFails(setDoc(doc(passenger.firestore(), "passenger_requests", "passenger_2"), {
       passengerId: "passenger_2",
       busId: "bus_1",
       type: "pickup",
@@ -292,23 +290,9 @@ rulesDescribe("Firebase security rules integration", () => {
       status: "pending",
       createdAt: serverTimestamp(),
     }));
-    // A passenger cannot create a request on someone else's behalf.
-    await assertFails(setDoc(doc(passenger.firestore(), "passenger_requests", "passenger_9"), {
-      passengerId: "passenger_9",
-      busId: "bus_1",
-      type: "pickup",
-      lat: 23.0,
-      lng: 72.5,
-      status: "pending",
-      createdAt: serverTimestamp(),
-    }));
-    // The assigned driver can transition status.
-    await assertSucceeds(updateDoc(doc(bus1Driver.firestore(), "passenger_requests", "passenger_2"), {
+    await assertFails(updateDoc(doc(bus1Driver.firestore(), "passenger_requests", "passenger_2"), {
       status: "accepted",
     }));
-    // A driver of a different bus cannot touch it.
-    await assertFails(updateDoc(doc(bus2Driver.firestore(), "passenger_requests", "passenger_2"), {
-      status: "cancelled",
-    }));
+    await assertFails(getDoc(doc(passenger.firestore(), "passenger_requests", "passenger_2")));
   });
 });

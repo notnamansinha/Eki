@@ -100,18 +100,18 @@ Compact server lifecycle projection: `routeId`, `driverId`, `status`, `deviceSta
 
 ### `passenger_requests/{uid}`
 
-One current request per passenger because document ID equals UID.
+Legacy collection; one document per passenger (document ID equals UID). Clients are fully denied (reads and writes) by the explicit catch-all — no client rule block exists (issues #72 + #73 removed the dead surface). Only the Admin SDK touches it via the admin request routes.
 
 | Field | Type | Constraint |
 |---|---|---|
-| `passengerId` | string | Must equal auth UID |
+| `passengerId` | string | Equals the passenger UID |
 | `busId` | string ≤128 | Requested bus |
 | `type` | `pickup` / `dropoff` | Request kind |
 | `lat`, `lng` | number | Valid world coordinate |
-| `status` | `pending` initially; then `accepted/completed/cancelled` | Driver/admin transition |
-| `createdAt` | server timestamp | Must equal request time |
+| `status` | `pending` initially; then `accepted/completed/cancelled` | Admin transition |
+| `createdAt` | server timestamp | Creation marker |
 
-Passenger reads/creates own; assigned driver reads and may change only `status`; admin has full lifecycle access. Driver/admin delete rules exist, and the backend request routes are admin-protected.
+No frontend or hardware consumer exists (the passenger flow is session-based); the admin `PATCH/DELETE /api/requests/:uid` routes are the only lifecycle path.
 
 ### `ride_sessions/{sessionId}`
 
