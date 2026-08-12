@@ -231,6 +231,68 @@ void test_device_configuration_validation_identifies_the_failing_field() {
   );
 }
 
+void test_wifi_recovery_preserves_device_identity_and_backend_trust() {
+  using namespace eki::connectivity;
+  constexpr char CERTIFICATE[] =
+    "-----BEGIN CERTIFICATE-----\nvalid\n-----END CERTIFICATE-----";
+  DeviceConfigurationRecord existing{};
+  TEST_ASSERT_TRUE(makeDeviceConfigurationRecord(
+    "old-network", 11,
+    "old-password", 12,
+    "device_01", 9,
+    "abcdefghijklmnopqrstuv", 22,
+    "https://api.eki.example.edu", 27,
+    CERTIFICATE, sizeof(CERTIFICATE) - 1,
+    existing
+  ));
+
+  DeviceConfigurationRecord updated{};
+  TEST_ASSERT_TRUE(makeWifiUpdatedDeviceConfigurationRecord(
+    existing,
+    "new-network", 11,
+    "new-password", 12,
+    updated
+  ));
+  TEST_ASSERT_EQUAL_STRING("new-network", updated.wifiSsid);
+  TEST_ASSERT_EQUAL_STRING("new-password", updated.wifiPassword);
+  TEST_ASSERT_EQUAL_MEMORY(
+    existing.deviceId,
+    updated.deviceId,
+    sizeof(existing.deviceId)
+  );
+  TEST_ASSERT_EQUAL_MEMORY(
+    existing.deviceSecret,
+    updated.deviceSecret,
+    sizeof(existing.deviceSecret)
+  );
+  TEST_ASSERT_EQUAL_MEMORY(
+    existing.backendUrl,
+    updated.backendUrl,
+    sizeof(existing.backendUrl)
+  );
+  TEST_ASSERT_EQUAL_MEMORY(
+    existing.backendRootCa,
+    updated.backendRootCa,
+    sizeof(existing.backendRootCa)
+  );
+  TEST_ASSERT_TRUE(deviceConfigurationRecordIsValid(updated));
+
+  DeviceConfigurationRecord invalidExisting = existing;
+  invalidExisting.deviceSecret[0] = 'Z';
+  TEST_ASSERT_FALSE(makeWifiUpdatedDeviceConfigurationRecord(
+    invalidExisting,
+    "new-network", 11,
+    "new-password", 12,
+    updated
+  ));
+  TEST_ASSERT_FALSE(makeWifiUpdatedDeviceConfigurationRecord(
+    existing,
+    "new-network", 11,
+    "short", 5,
+    updated
+  ));
+}
+
 void test_gnss_utc_conversion_and_clock_discipline_are_strict() {
   eki::clock::UtcDateTime utc{2024, 1, 1, 0, 0, 0, 0};
   int64_t epochMs = 0;
@@ -557,6 +619,7 @@ int main(int, char **) {
   RUN_TEST(test_retry_retains_only_samples_that_can_stay_fresh);
   RUN_TEST(test_device_configuration_record_is_closed_and_tamper_evident);
   RUN_TEST(test_device_configuration_validation_identifies_the_failing_field);
+  RUN_TEST(test_wifi_recovery_preserves_device_identity_and_backend_trust);
   RUN_TEST(test_gnss_utc_conversion_and_clock_discipline_are_strict);
   RUN_TEST(test_wifi_retry_escalates_and_led_codes_are_deterministic);
   RUN_TEST(test_recovery_portal_interface_and_rate_gates_fail_closed);

@@ -96,12 +96,32 @@ for path in credential_scan_paths:
 provisioning_source = (project_dir / "src" / "recovery_portal.cpp").read_text(
     encoding="utf-8"
 )
-save_start = provisioning_source.find("bool DeviceConfiguration::save(")
-save_end = provisioning_source.find("bool RecoveryAccess::loadOrCreate()", save_start)
-save_source = provisioning_source[save_start:save_end]
+update_start = provisioning_source.find(
+    "bool DeviceConfiguration::updateWifiCredentials("
+)
+update_end = provisioning_source.find(
+    "bool RecoveryAccess::loadOrCreate()", update_start
+)
+update_source = provisioning_source[update_start:update_end]
 persists_configuration = re.search(
     r"preferences\.putBytes\s*\(\s*CONFIG_KEY\s*,\s*&?candidate_\s*,\s*sizeof\s*\(\s*candidate_\s*\)\s*\)",
-    save_source,
+    update_source,
 )
-if save_start < 0 or save_end < 0 or "Preferences preferences;" not in save_source or not persists_configuration:
+if (
+    update_start < 0
+    or update_end < 0
+    or "makeWifiUpdatedDeviceConfigurationRecord(" not in update_source
+    or "Preferences preferences;" not in update_source
+    or not persists_configuration
+):
     raise RuntimeError("Fleet device configuration must be persisted through NVS.")
+
+for protected_field in ("deviceId", "deviceSecret", "backendUrl", "backendRootCa"):
+    if f'name="{protected_field}"' in provisioning_source:
+        raise RuntimeError(
+            f"Recovery portal must not render the protected {protected_field} field."
+        )
+    if f'server_.arg("{protected_field}")' in provisioning_source:
+        raise RuntimeError(
+            f"Recovery portal must not accept the protected {protected_field} field."
+        )

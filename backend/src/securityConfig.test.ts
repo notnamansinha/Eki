@@ -365,7 +365,17 @@ describe("production security configuration", () => {
     expect(recoveryPortal).toContain("accessPointConfig.ap.authmode != WIFI_AUTH_WPA2_PSK");
     expect(recoveryPortal).toContain("applyPersistedRecoveryPassword");
     expect(recoveryPortal).not.toContain("DEVICE_SECRET");
-    expect(recoveryPortal).toContain("configuration_->save(");
+    expect(recoveryPortal).toContain("configuration_->updateWifiCredentials(");
+    expect(recoveryPortal).not.toContain('name="deviceId"');
+    expect(recoveryPortal).not.toContain('name="deviceSecret"');
+    expect(recoveryPortal).not.toContain('name="backendUrl"');
+    expect(recoveryPortal).not.toContain('name="backendRootCa"');
+    expect(recoveryPortal).not.toContain('server_.arg("deviceId")');
+    expect(recoveryPortal).not.toContain('server_.arg("deviceSecret")');
+    expect(recoveryPortal).not.toContain('server_.arg("backendUrl")');
+    expect(recoveryPortal).not.toContain('server_.arg("backendRootCa")');
+    expect(deviceConfig).toContain("updated = existing;");
+    expect(deviceConfig).toContain("updated.checksum = deviceConfigurationChecksum(updated)");
     expect(platformConfig).toContain("[env:esp32dev-secure]");
     expect(platformConfig).toContain("EKI_FLEET_BUILD=1");
     expect(sdkConfig).toContain("CONFIG_SECURE_BOOT_V2_ENABLED=y");
