@@ -61,9 +61,12 @@ describe("production security configuration", () => {
     expect(analytics).toContain('data.motionState === "uncertain"');
     expect(analytics).not.toContain('data.tripState === "maintenance"');
     expect(tripStateEngine).toContain("function readIntervalMs");
-    expect(tripStateEngine).toContain("fleetWriteQueues");
-    expect(tripStateEngine).toContain("telemetryQueues");
-    expect(tripStateEngine).toContain("persistedActiveRideState");
+    // Per-key serialized writers keep fleet, active-ride and telemetry
+    // persistence ordered (one generic writer used for all three streams).
+    expect(tripStateEngine).toContain("new SerializedChangeWriter()");
+    expect(tripStateEngine).toContain("fleetWrites.enqueue");
+    expect(tripStateEngine).toContain("activeRideWrites.enqueue");
+    expect(tripStateEngine).toContain("telemetryWrites.enqueue");
     expect(tripStateEngine).not.toContain("etaTimestamp");
   });
 

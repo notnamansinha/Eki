@@ -1,5 +1,6 @@
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
+import { SerializedChangeWriter } from "./serializedChangeWriter";
 import { reduceTripState } from "./tripStateReducer";
 import {
   drainDynamicPromises,
@@ -16,11 +17,11 @@ const routeStopsCache = new Map<string, RouteStop[]>();
 const routeLoadPromises = new Map<string, Promise<RouteStop[]>>();
 const missingRouteUntil = new Map<string, number>();
 const completedTimeouts = new Map<string, PendingCompletion>();
-const persistedFleetState = new Map<string, string>();
-const fleetWriteQueues = new Map<string, Promise<void>>();
-const persistedActiveRideState = new Map<string, string>();
-const activeRideWriteQueues = new Map<string, Promise<void>>();
-const telemetryQueues = new Map<string, Promise<void>>();
+// Serialized change-only writers: per-key FIFO queues plus fingerprint dedup
+// for the durable fleet projection, the active-ride projection and telemetry.
+const fleetWrites = new SerializedChangeWriter();
+const activeRideWrites = new SerializedChangeWriter();
+const telemetryWrites = new SerializedChangeWriter();
 const backgroundTasks = new Set<Promise<void>>();
 interface TelemetrySample {
   timestamp: number;
@@ -109,18 +110,14 @@ function persistFleetState(
   const sessionId = normalizeIdentifier(data.sessionId);
   if (!sessionId) return;
   const fingerprint = lifecycleFingerprint(data, state);
-  if (persistedFleetState.get(busId) === fingerprint) return;
 
-  persistedFleetState.set(busId, fingerprint);
   // RTDB child events can arrive faster than Firestore commits. Serialize
   // lifecycle writes per bus so an older transition cannot finish after a
   // newer one and overwrite the durable fleet state.
-  const previous = fleetWriteQueues.get(busId) ?? Promise.resolve();
-  const queuedWrite = previous
-    .catch(() => undefined)
-    .then(async () => {
-      const lockRef = db.collection("_active_bus_locks").doc(busId);
-      const locationRef = db.collection("bus_locations").doc(busId);
+  void fleetWrites.enqueue(busId, fingerprint, async () => {
+    const lockRef = db.collection("_active_bus_locks").doc(busId);
+    const locationRef = db.collection("bus_locations").doc(busId);
+    try {
       const persisted = await db.runTransaction(async (transaction) => {
         const lock = await transaction.get(lockRef);
         if (!lock.exists || normalizeIdentifier(lock.data()?.sessionId) !== sessionId) {
@@ -129,23 +126,15 @@ function persistFleetState(
         transaction.set(locationRef, { ...state, lastSeen }, { merge: true });
         return true;
       });
-      if (!persisted && persistedFleetState.get(busId) === fingerprint) {
-        persistedFleetState.delete(busId);
-      }
-    });
-  fleetWriteQueues.set(busId, queuedWrite);
-
-  void queuedWrite.then(
-    () => {
-      if (fleetWriteQueues.get(busId) === queuedWrite) fleetWriteQueues.delete(busId);
-    },
-    (error) => {
+      // The lock check failed, so this state was not persisted. Allow a later
+      // identical event to retry instead of suppressing it as a no-change.
+      if (!persisted) fleetWrites.retry(busId, fingerprint);
+    } catch (error) {
       // Do not discard a newer fingerprint when an earlier queued write fails.
-      if (persistedFleetState.get(busId) === fingerprint) persistedFleetState.delete(busId);
-      if (fleetWriteQueues.get(busId) === queuedWrite) fleetWriteQueues.delete(busId);
+      fleetWrites.retry(busId, fingerprint);
       console.warn("[TripState] Failed to persist fleet lifecycle state:", error);
-    },
-  );
+    }
+  });
 }
 
 /**
@@ -166,44 +155,30 @@ async function persistOfflineFleetState(
     deviceState: "offline",
   });
   const fingerprint = lifecycleFingerprint(data, state);
-  persistedFleetState.set(busId, fingerprint);
   const lockRef = db.collection("_active_bus_locks").doc(busId);
   const locationRef = db.collection("bus_locations").doc(busId);
-  const previous = fleetWriteQueues.get(busId) ?? Promise.resolve();
-  const queuedResult = previous
-    .catch(() => undefined)
-    .then(() => db.runTransaction(async (transaction) => {
-      const lock = await transaction.get(lockRef);
-      const lockSessionId = normalizeIdentifier(lock.data()?.sessionId);
-      if (
-        lock.exists &&
-        (!expectedSessionId || lockSessionId !== expectedSessionId)
-      ) {
-        return false;
-      }
-      transaction.set(locationRef, { ...state, lastSeen }, { merge: true });
-      return true;
-    }));
-  const queuedWrite = queuedResult.then(
-    () => undefined,
-    () => undefined,
-  );
-  fleetWriteQueues.set(busId, queuedWrite);
   try {
-    const persisted = await queuedResult;
-    if (!persisted && persistedFleetState.get(busId) === fingerprint) {
-      persistedFleetState.delete(busId);
-    }
+    const persisted = await fleetWrites.enqueue(busId, fingerprint, () =>
+      db.runTransaction(async (transaction) => {
+        const lock = await transaction.get(lockRef);
+        const lockSessionId = normalizeIdentifier(lock.data()?.sessionId);
+        if (
+          lock.exists &&
+          (!expectedSessionId || lockSessionId !== expectedSessionId)
+        ) {
+          return false;
+        }
+        transaction.set(locationRef, { ...state, lastSeen }, { merge: true });
+        return true;
+      }),
+    );
+    // The lock check failed, so this state was not persisted. Allow a later
+    // identical event to retry instead of suppressing it as a no-change.
+    if (!persisted) fleetWrites.retry(busId, fingerprint);
     return persisted;
   } catch (error) {
-    if (persistedFleetState.get(busId) === fingerprint) {
-      persistedFleetState.delete(busId);
-    }
+    fleetWrites.retry(busId, fingerprint);
     throw error;
-  } finally {
-    if (fleetWriteQueues.get(busId) === queuedWrite) {
-      fleetWriteQueues.delete(busId);
-    }
   }
 }
 
@@ -309,17 +284,11 @@ function persistActiveRideLifecycle(
     delayUpdatedAt,
   };
   const fingerprint = JSON.stringify(state);
-  if (persistedActiveRideState.get(documentId) === fingerprint) {
-    return activeRideWriteQueues.get(documentId) ?? Promise.resolve();
-  }
 
-  persistedActiveRideState.set(documentId, fingerprint);
-  const previous = activeRideWriteQueues.get(documentId) ?? Promise.resolve();
-  const write: Promise<void> = previous
-    .catch(() => undefined)
-    .then(async () => {
-      const activeRideRef = db.collection("active_rides").doc(documentId);
-      const lockRef = db.collection("_active_bus_locks").doc(busId);
+  return activeRideWrites.enqueue(documentId, fingerprint, async () => {
+    const activeRideRef = db.collection("active_rides").doc(documentId);
+    const lockRef = db.collection("_active_bus_locks").doc(busId);
+    try {
       const persisted = await db.runTransaction(async (transaction) => {
         const [activeRide, lock] = await Promise.all([
           transaction.get(activeRideRef),
@@ -344,31 +313,19 @@ function persistActiveRideLifecycle(
         }, { merge: true });
         return true;
       });
-      if (!persisted && persistedActiveRideState.get(documentId) === fingerprint) {
-        persistedActiveRideState.delete(documentId);
-      }
-    });
-  activeRideWriteQueues.set(documentId, write);
-  void write.then(
-    () => {
-      if (activeRideWriteQueues.get(documentId) === write) {
-        activeRideWriteQueues.delete(documentId);
-      }
-    },
-    (error) => {
-      if (persistedActiveRideState.get(documentId) === fingerprint) {
-        persistedActiveRideState.delete(documentId);
-      }
-      if (activeRideWriteQueues.get(documentId) === write) {
-        activeRideWriteQueues.delete(documentId);
-      }
+      // The lock check failed, so this state was not persisted. Allow a later
+      // identical event to retry instead of suppressing it as a no-change.
+      if (!persisted) activeRideWrites.retry(documentId, fingerprint);
+    } catch (error) {
+      activeRideWrites.retry(documentId, fingerprint);
       console.warn(
         `[TripState] Failed to persist active ride ${documentId}:`,
         error,
       );
-    },
-  );
-  return write;
+      // Surface to the telemetry handler, which logs its own context.
+      throw error;
+    }
+  });
 }
 
 /** Activates an armed ride without delaying the telemetry hot path. */
@@ -629,8 +586,7 @@ export function startTripStateEngine(): () => Promise<void> {
           }
         });
         if (activeRideId) {
-          persistedActiveRideState.delete(activeRideId);
-          activeRideWriteQueues.delete(activeRideId);
+          activeRideWrites.invalidate(activeRideId);
         }
         await snapshot.ref.transaction((current) => {
           const live = current as Record<string, unknown> | null;
@@ -711,17 +667,11 @@ export function startTripStateEngine(): () => Promise<void> {
     if (stopping) return;
     const nodeKey = snapshot.key;
     if (!nodeKey) return;
-    const previous = telemetryQueues.get(nodeKey) ?? Promise.resolve();
-    const queued = previous
-      .catch(() => undefined)
-      .then(() => processLiveSnapshot(snapshot))
-      .catch((error) => {
+    telemetryWrites.enqueue(nodeKey, null, async () => {
+      try {
+        await processLiveSnapshot(snapshot);
+      } catch (error) {
         console.error(`[TripState] Failed to process telemetry for ${nodeKey}:`, error);
-      });
-    telemetryQueues.set(nodeKey, queued);
-    void queued.then(() => {
-      if (telemetryQueues.get(nodeKey) === queued) {
-        telemetryQueues.delete(nodeKey);
       }
     });
   };
@@ -742,7 +692,9 @@ export function startTripStateEngine(): () => Promise<void> {
     processedTelemetry.delete(nodeKey);
     const activeRideId = activeRideDocumentId(data);
     if (activeRideId) {
-      persistedActiveRideState.delete(activeRideId);
+      // The next event for this ride may belong to a fresh session with
+      // identical lifecycle fields, so drop the dedup fingerprint.
+      activeRideWrites.forgetFingerprint(activeRideId);
     }
     if (completedTimeouts.has(nodeKey)) {
       clearTimeout(completedTimeouts.get(nodeKey)!.timeoutId);
@@ -822,9 +774,9 @@ export function startTripStateEngine(): () => Promise<void> {
       clearInterval(staleSweepTimer);
 
       const getPendingTasks = () => [
-        ...telemetryQueues.values(),
-        ...fleetWriteQueues.values(),
-        ...activeRideWriteQueues.values(),
+        ...telemetryWrites.pending(),
+        ...fleetWrites.pending(),
+        ...activeRideWrites.pending(),
         ...backgroundTasks.values(),
         ...(staleSweepInFlight ? [staleSweepInFlight] : []),
       ];
@@ -862,8 +814,9 @@ export function startTripStateEngine(): () => Promise<void> {
       }
 
       processedTelemetry.clear();
-      persistedFleetState.clear();
-      persistedActiveRideState.clear();
+      fleetWrites.clear();
+      activeRideWrites.clear();
+      telemetryWrites.clear();
       missingRouteUntil.clear();
       routeStopsCache.clear();
       console.log("[TripState] Engine stopped.");
