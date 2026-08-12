@@ -23,6 +23,12 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const SAFE_REQUEST_ID = /^[A-Za-z0-9_-]{16,128}$/;
 const BOARDING_STATUSES = new Set(["armed", "active"]);
 const CHAT_STATUSES = new Set(["armed", "active"]);
+// Each manifest entry is at most ~200 bytes (userName capped at 100 chars, a
+// fixed stop selection, and one timestamp). Capping at 1000 entries keeps the
+// worst-case manifest near 200 KB — a 5× margin under Firestore's 1 MiB
+// document cap — so a boarding-code spammer cannot brick the session doc for
+// every other passenger (issue #75).
+const MAX_PASSENGER_MANIFEST_ENTRIES = 1000;
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -275,6 +281,15 @@ router.post("/:sessionId/join", requireAuth, async (
       }
       const passengers = passengerManifest(currentData.passengers);
       const passengerStillExists = hasPassenger(passengers, user.uid);
+      if (
+        !passengerStillExists &&
+        Object.keys(passengers).length >= MAX_PASSENGER_MANIFEST_ENTRIES
+      ) {
+        throw new BoardingPolicyError(
+          409,
+          "This ride is at capacity; no more passengers can join.",
+        );
+      }
       const existingPassenger = passengerStillExists ? passengers[user.uid] : undefined;
       if (!requiresProximity && !passengerStillExists) {
         throw new BoardingPolicyError(

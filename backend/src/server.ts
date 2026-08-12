@@ -21,6 +21,7 @@ import rateLimit from "express-rate-limit";
 import { deleteApp } from "firebase-admin/app";
 import { db, firebaseAdminApp, rtdb } from "./lib/firebaseAdmin";
 import { getHttpsTelemetryStatus } from "./services/deviceTelemetryService";
+import { createHealthState } from "./lib/healthState";
 import { startWorkerCoordinator } from "./services/workerCoordinator";
 import busRoutes from "./routes/buses";
 import analyticsRoutes from "./routes/analytics";
@@ -168,32 +169,24 @@ app.use("/api/fleet", writeLimiter, fleetRoutes);
 app.use("/api/privacy", writeLimiter, privacyRoutes);
 
 // ── Health Check ──────────────────────────────────────────────────────────────
-let firebaseReady = false;
-let lastHealthProbeAt: string | null = null;
-async function probeFirebase(): Promise<void> {
-  try {
-    await Promise.all([
-      db.collection("_health").limit(1).get(),
-      rtdb.ref(".info/connected").once("value"),
-    ]);
-    firebaseReady = true;
-  } catch {
-    firebaseReady = false;
-  }
-  lastHealthProbeAt = new Date().toISOString();
-}
-void probeFirebase();
-const healthProbeTimer = setInterval(() => void probeFirebase(), 30_000);
+const health = createHealthState();
+const probeFirestore = () => db.collection("_health").limit(1).get();
+const probeRtdb = () => rtdb.ref(".info/connected").once("value");
+void health.probe(probeFirestore, probeRtdb);
+const healthProbeTimer = setInterval(() => {
+  void health.probe(probeFirestore, probeRtdb);
+}, 30_000);
 healthProbeTimer.unref();
 
 // Return cached readiness so a public health-check flood cannot amplify into
 // billable Firestore/RTDB reads on every request.
 app.get("/health", (_req, res) => {
   const telemetry = getHttpsTelemetryStatus();
-  const ready = firebaseReady;
-  res.status(ready ? 200 : 503).json({
-    status: ready ? "ok" : "degraded",
-    firebase: firebaseReady ? "connected" : "disconnected",
+  const state = health.snapshot();
+  res.status(state.ready ? 200 : 503).json({
+    status: state.ready ? "ok" : "degraded",
+    firestore: state.firestore,
+    rtdb: state.rtdb,
     telemetry: {
       transport: "https",
       accepted: telemetry.accepted,
@@ -205,7 +198,7 @@ app.get("/health", (_req, res) => {
       deviceToServerLatencyMs: telemetry.deviceToServerLatencyMs,
       rtdbWriteLatencyMs: telemetry.rtdbWriteLatencyMs,
     },
-    checkedAt: lastHealthProbeAt,
+    checkedAt: state.checkedAt,
   });
 });
 

@@ -497,6 +497,42 @@ describe("trip-state engine lifecycle", () => {
     });
   };
 
+  it("persists motionState so analytics can count signal loss", async () => {
+    mocks.reduceTripState.mockReturnValue({
+      tripState: "in_service",
+      currentStopIndex: 0,
+      hasDepartedOrigin: true,
+    });
+    mocks.transactionGet.mockImplementation(async (ref: { collectionName?: string }) => {
+      if (ref.collectionName === "_active_bus_locks") {
+        return { exists: true, data: () => ({ sessionId: "session-1" }) };
+      }
+      if (ref.collectionName === "active_rides") {
+        return { exists: true, data: () => ({ sessionId: "session-1" }) };
+      }
+      return { exists: false, data: () => undefined };
+    });
+    const stop = startTripStateEngine();
+    armRoute();
+    const snapshot = {
+      key: "bus_48d_route_2",
+      val: () => ({
+        busId: "bus_1", routeId: "route_2", driverId: "driver-1", sessionId: "session-1",
+        status: "active", deviceState: "online", tripState: "in_service", currentStopIndex: 0,
+        hasDepartedOrigin: true, motionState: "uncertain", lat: 23.1, lng: 72.1, timestamp: 1,
+      }),
+      ref: { update: vi.fn(async () => undefined), transaction: vi.fn(async () => undefined) },
+    };
+    mocks.rtdbHandlers.get("child_changed")!(snapshot);
+    await flushMicrotasks();
+    expect(mocks.transactionSet).toHaveBeenCalledWith(
+      expect.objectContaining({ collectionName: "bus_locations", id: "bus_1" }),
+      expect.objectContaining({ motionState: "uncertain" }),
+      { merge: true },
+    );
+    await stop();
+  });
+
   const queuedSnapshot = (store: ReturnType<typeof makeNodeRef>, nodeKey: string) => ({
     key: nodeKey,
     val: () => ({
