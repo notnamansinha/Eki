@@ -187,7 +187,7 @@ describe("production security configuration", () => {
     expect(messages).not.toContain("messageRateAdvanced(sessionId)");
     expect(messageRateLimits).toContain("allow create, update, delete: if false;");
     expect(messageRateLimits).toContain("canReadSession(sessionId)");
-    expect(sessions).toContain("allow read: if isSessionOperator(sessionId)");
+    expect(sessions).toContain("allow read: if isAppChecked() && isSessionOperator(sessionId)");
     expect(sessions).toContain("allow update: if false;");
     expect(sessions).not.toContain("boardingStopId.size() <= 128");
     // Manifest shape and route-order validation now live in the server join policy.
@@ -307,9 +307,11 @@ describe("production security configuration", () => {
     expect(passenger.indexOf("!isAuthenticated()")).toBeLessThan(
       passenger.indexOf("sessionDoc("),
     );
-    // The authorized read path still costs exactly one get() (the sessionDoc
-    // helper shared by isSessionOperator and isSessionPassenger).
-    expect(rules.match(/get\(/g) ?? []).toHaveLength(1);
+    // The authorized read path still costs exactly one get() — only the
+    // sessionDoc helper calls get(), and there is no getAfter() anywhere
+    // (audit #113: cost guards must stay accurate).
+    expect(rules.match(/return get\(/g) ?? []).toHaveLength(1);
+    expect(rules).not.toContain("getAfter(");
   });
 
   it("enforces App Check on Realtime Database client reads (issue #39)", () => {
