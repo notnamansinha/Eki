@@ -86,6 +86,7 @@ frontend/google_maps_recovery_instructions.md
 
 # Build artifacts
 frontend/tsconfig.tsbuildinfo
+__pycache__/
 
 .agents/
 .git/
