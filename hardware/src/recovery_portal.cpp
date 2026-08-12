@@ -60,7 +60,10 @@ const char *configurationValidationPayload(
 
 bool DeviceConfiguration::load() {
   Preferences preferences;
-  const bool opened = preferences.begin(CONFIG_NAMESPACE, true);
+  // A read-only open logs ESP_ERR_NVS_NOT_FOUND on every fresh device. Open
+  // read/write so Preferences creates the empty namespace quietly; this does
+  // not create a configuration record or mark the device provisioned.
+  const bool opened = preferences.begin(CONFIG_NAMESPACE, false);
   const bool loaded =
     opened &&
     preferences.getBytesLength(CONFIG_KEY) == sizeof(record_) &&

@@ -393,6 +393,12 @@ describe("production security configuration", () => {
     expect(firmware).toContain("WiFi.mode(WIFI_OFF)");
     expect(firmware).toContain("if (!credentialFaultActive)");
     expect(firmware).toContain("result != PublishResult::CredentialFault");
+    expect(recoveryPortal).toContain("preferences.begin(CONFIG_NAMESPACE, false)");
+    expect(firmware).not.toContain("[Health]");
+    expect(firmware).not.toContain("[Publisher] Started");
+    expect(firmware).not.toContain("System time established from fresh GNSS UTC");
+    expect(firmware).not.toContain("Eki asynchronous HTTPS telemetry");
+    expect(firmware).not.toContain("[Watchdog] configure=");
     expect(firmware).toContain("result == PublishResult::CredentialFault");
   });
 
