@@ -114,6 +114,26 @@ describe("production security configuration", () => {
     expect(rules).not.toContain("function isSessionPassenger");
   });
 
+  it("evaluates authentication before the session fetch (audit #112)", () => {
+    const rules = workspaceFile("firestore.rules");
+    const helper = ruleBlock(rules, "function canReadSession");
+    const operator = ruleBlock(rules, "function isSessionOperator");
+
+    // A denied unauthenticated read must never evaluate the billable get(): the
+    // auth short-circuit must appear before any sessionDoc() call in both read
+    // helpers, and the helper must not bind the session eagerly.
+    for (const block of [helper, operator]) {
+      const authIdx = block.indexOf("isAuthenticated()");
+      const sessionIdx = block.indexOf("sessionDoc(");
+      expect(authIdx).toBeGreaterThan(-1);
+      expect(authIdx).toBeLessThan(sessionIdx);
+    }
+    expect(helper).toContain("if (!isAuthenticated())");
+    expect(helper.indexOf("!isAuthenticated()")).toBeLessThan(
+      helper.indexOf("sessionDoc("),
+    );
+  });
+
   it("keeps rules get() cost bounded: one session fetch, no write-path gets (issue #40)", () => {
     const rules = workspaceFile("firestore.rules");
     const feedback = ruleBlock(rules, "match /feedbacks/{feedbackId}");
