@@ -3,6 +3,7 @@
 #include "clock_policy.h"
 #include "connectivity_policy.h"
 #include "firmware_config.h"
+#include "secrets.example.h"
 #include "telemetry_policy.h"
 #include "telemetry_queue.h"
 
@@ -209,6 +210,21 @@ void test_firmware_configuration_validation_identifies_the_failing_field() {
       "campus-wifi", "wifi-password", "device_01", VALID_SECRET,
       "http://127.0.0.1:3000", ""
     ))
+  );
+}
+
+void test_example_configuration_compiles_but_cannot_boot_unchanged() {
+  const eki::config::ValidationError error = eki::config::validate(
+    WIFI_SSID, std::strlen(WIFI_SSID),
+    WIFI_PASS, std::strlen(WIFI_PASS),
+    DEVICE_ID, std::strlen(DEVICE_ID),
+    DEVICE_SECRET, std::strlen(DEVICE_SECRET),
+    BACKEND_URL, std::strlen(BACKEND_URL),
+    BACKEND_ROOT_CA, std::strlen(BACKEND_ROOT_CA)
+  );
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(eki::config::ValidationError::DeviceSecret),
+    static_cast<int>(error)
   );
 }
 
@@ -449,6 +465,7 @@ int main(int, char **) {
   RUN_TEST(test_retry_after_is_strict_bounded_and_status_aware);
   RUN_TEST(test_retry_retains_only_samples_that_can_stay_fresh);
   RUN_TEST(test_firmware_configuration_validation_identifies_the_failing_field);
+  RUN_TEST(test_example_configuration_compiles_but_cannot_boot_unchanged);
   RUN_TEST(test_gnss_utc_conversion_and_clock_discipline_are_strict);
   RUN_TEST(test_wifi_retry_and_led_code_are_deterministic);
   RUN_TEST(test_publish_policy_handles_floor_changes_and_heartbeats);
