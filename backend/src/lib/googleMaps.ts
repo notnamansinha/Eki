@@ -15,6 +15,10 @@ export interface RouteGeometry {
   duration: string;
 }
 
+// Matches the runtime callers (polyline.ts 10s, places.ts 5s) so a hung
+// upstream cannot hang `npm run seed` indefinitely (issue #76).
+export const ROUTE_GEOMETRY_TIMEOUT_MS = 10_000;
+
 /**
  * Computes route geometry using Google Maps Routes API v2
  */
@@ -62,30 +66,37 @@ export async function computeRouteGeometry(
     units: "METRIC",
   };
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
-    },
-    body: JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ROUTE_GEOMETRY_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
+      },
+      body: JSON.stringify(body),
+    });
 
-  if (!response.ok) {
-    const errorData = (await response.json()) as any;
-    throw new Error(errorData.error?.message || "Failed to compute route via Routes API v2");
+    if (!response.ok) {
+      const errorData = (await response.json()) as any;
+      throw new Error(errorData.error?.message || "Failed to compute route via Routes API v2");
+    }
+
+    const data = (await response.json()) as any;
+    if (!data.routes || data.routes.length === 0) {
+      throw new Error("No routes found for the given waypoints");
+    }
+
+    const route = data.routes[0];
+    return {
+      encodedPolyline: route.polyline.encodedPolyline,
+      distanceMeters: route.distanceMeters,
+      duration: route.duration,
+    };
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  const data = (await response.json()) as any;
-  if (!data.routes || data.routes.length === 0) {
-    throw new Error("No routes found for the given waypoints");
-  }
-
-  const route = data.routes[0];
-  return {
-    encodedPolyline: route.polyline.encodedPolyline,
-    distanceMeters: route.distanceMeters,
-    duration: route.duration,
-  };
 }
