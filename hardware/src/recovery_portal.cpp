@@ -32,10 +32,10 @@ bool constantTimeTokenEquals(const char *left, const char *right) {
 const char RECOVERY_HTML[] PROGMEM = R"HTML(<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}'; connect-src 'self'; form-action 'self'; base-uri 'none'">
-<title>Eki device provisioning</title><style>body{font:16px system-ui;max-width:38rem;margin:2rem auto;padding:0 1rem;color:#17202a}label{display:block;margin-top:1rem}input,textarea,button{box-sizing:border-box;width:100%;padding:.8rem;margin-top:.35rem}textarea{min-height:12rem;font:12px monospace}button{font-weight:700}#result{min-height:1.5rem;font-weight:600}</style>
-<h1>Eki device provisioning</h1><p>Enter the complete replacement configuration. Values stay on this device, are never returned by this page, and take effect after an automatic restart.</p>
-<form method="post" action="/provision" novalidate><input type="hidden" name="csrf" value="{{csrf}}"><label>Wi-Fi name<input name="ssid" required maxlength="32" autocomplete="off"></label><label>Wi-Fi password<input name="wifiPassword" type="password" required minlength="8" maxlength="63" autocomplete="new-password"></label><label>Device ID<input name="deviceId" required maxlength="128" pattern="[A-Za-z0-9_-]+" autocomplete="off"></label><label>Device API secret<input name="deviceSecret" type="password" required minlength="20" maxlength="128" pattern="[A-Za-z0-9_-]+" autocomplete="new-password"></label><label>HTTPS backend origin<input name="backendUrl" type="url" required maxlength="256" placeholder="https://api.example.edu" autocomplete="off"></label><label>Backend root CA certificate<textarea name="backendRootCa" required maxlength="3072" spellcheck="false" autocomplete="off"></textarea></label><button type="submit">Store configuration and restart</button></form><p id="result" role="alert" aria-live="polite"></p>
-<script nonce="{{nonce}}">const form=document.querySelector('form'),result=document.querySelector('#result'),button=form.querySelector('button');form.addEventListener('submit',async event=>{event.preventDefault();form.querySelectorAll('[aria-invalid]').forEach(field=>field.removeAttribute('aria-invalid'));button.disabled=true;result.textContent='Checking and storing configuration...';try{const response=await fetch(form.action,{method:'POST',body:new FormData(form)}),payload=await response.json();if(!response.ok){result.textContent=payload.error+(payload.hint?' '+payload.hint:'');const field=payload.field&&form.elements.namedItem(payload.field);if(field){field.setAttribute('aria-invalid','true');field.focus()}button.disabled=false;return}result.textContent='Configuration saved. The device is restarting.'}catch(error){result.textContent='The device did not return a valid response. Reconnect to the recovery network and try again.';button.disabled=false}});</script>
+<title>Eki Wi-Fi recovery</title><style>body{font:16px system-ui;max-width:38rem;margin:2rem auto;padding:0 1rem;color:#17202a}label{display:block;margin-top:1rem}input,button{box-sizing:border-box;width:100%;padding:.8rem;margin-top:.35rem}button{font-weight:700}#result{min-height:1.5rem;font-weight:600}</style>
+<h1>Eki Wi-Fi recovery</h1><p>Replace only the station Wi-Fi credentials. Device identity, API credentials, backend origin, and backend trust remain unchanged. The update takes effect after an automatic restart.</p>
+<form method="post" action="/provision" novalidate><input type="hidden" name="csrf" value="{{csrf}}"><label>Wi-Fi name<input name="ssid" required maxlength="32" autocomplete="off"></label><label>Wi-Fi password<input name="wifiPassword" type="password" required minlength="8" maxlength="63" autocomplete="new-password"></label><button type="submit">Store Wi-Fi credentials and restart</button></form><p id="result" role="alert" aria-live="polite"></p>
+<script nonce="{{nonce}}">const form=document.querySelector('form'),result=document.querySelector('#result'),button=form.querySelector('button');form.addEventListener('submit',async event=>{event.preventDefault();form.querySelectorAll('[aria-invalid]').forEach(field=>field.removeAttribute('aria-invalid'));button.disabled=true;result.textContent='Checking and storing Wi-Fi credentials...';try{const response=await fetch(form.action,{method:'POST',body:new FormData(form)}),payload=await response.json();if(!response.ok){result.textContent=payload.error+(payload.hint?' '+payload.hint:'');const field=payload.field&&form.elements.namedItem(payload.field);if(field){field.setAttribute('aria-invalid','true');field.focus()}button.disabled=false;return}result.textContent='Wi-Fi credentials saved. The device is restarting.'}catch(error){result.textContent='The device did not return a valid response. Reconnect to the recovery network and try again.';button.disabled=false}});</script>
 </html>)HTML";
 
 const char *configurationValidationPayload(
@@ -47,13 +47,9 @@ const char *configurationValidationPayload(
     case DeviceConfigurationValidationError::WifiPassword:
       return "{\"error\":\"Invalid Wi-Fi password.\",\"field\":\"wifiPassword\",\"hint\":\"Use an 8-63 character printable WPA2 passphrase; 64-character raw keys are not accepted.\"}";
     case DeviceConfigurationValidationError::DeviceId:
-      return "{\"error\":\"Invalid device ID.\",\"field\":\"deviceId\",\"hint\":\"Use only letters, numbers, underscores, and hyphens.\"}";
     case DeviceConfigurationValidationError::DeviceSecret:
-      return "{\"error\":\"Invalid device API secret.\",\"field\":\"deviceSecret\",\"hint\":\"Paste the 20-128 character base64url secret using only letters, numbers, underscores, and hyphens.\"}";
     case DeviceConfigurationValidationError::BackendUrl:
-      return "{\"error\":\"Invalid HTTPS backend origin.\",\"field\":\"backendUrl\",\"hint\":\"Use an https:// origin such as https://api.example.edu, with no path, credentials, query, or fragment.\"}";
     case DeviceConfigurationValidationError::BackendRootCa:
-      return "{\"error\":\"Invalid backend root CA certificate.\",\"field\":\"backendRootCa\",\"hint\":\"Paste a PEM certificate including the BEGIN CERTIFICATE and END CERTIFICATE lines.\"}";
     case DeviceConfigurationValidationError::None:
       break;
   }
@@ -76,33 +72,18 @@ bool DeviceConfiguration::load() {
   return loaded;
 }
 
-bool DeviceConfiguration::save(
+bool DeviceConfiguration::updateWifiCredentials(
   const char *wifiSsid,
   size_t wifiSsidLength,
   const char *wifiPassword,
-  size_t wifiPasswordLength,
-  const char *deviceId,
-  size_t deviceIdLength,
-  const char *deviceSecret,
-  size_t deviceSecretLength,
-  const char *backendUrl,
-  size_t backendUrlLength,
-  const char *backendRootCa,
-  size_t backendRootCaLength
+  size_t wifiPasswordLength
 ) {
-  if (!makeDeviceConfigurationRecord(
+  if (!provisioned_ || !makeWifiUpdatedDeviceConfigurationRecord(
+    record_,
     wifiSsid,
     wifiSsidLength,
     wifiPassword,
     wifiPasswordLength,
-    deviceId,
-    deviceIdLength,
-    deviceSecret,
-    deviceSecretLength,
-    backendUrl,
-    backendUrlLength,
-    backendRootCa,
-    backendRootCaLength,
     candidate_
   )) return false;
 
@@ -258,34 +239,32 @@ void RecoveryPortal::handleProvisioningUpdate() {
     );
     return;
   }
-
   const String csrf = server_.arg("csrf");
   if (!constantTimeTokenEquals(csrf.c_str(), csrfToken_)) {
     server_.send(403, "application/json", "{\"error\":\"Provisioning form expired.\"}");
     return;
   }
+  if (!configuration_->provisioned()) {
+    server_.send(
+      409,
+      "application/json",
+      "{\"error\":\"Device enrollment is incomplete.\",\"hint\":\"Enroll device identity and backend trust through the controlled provisioning process before using Wi-Fi recovery.\"}"
+    );
+    return;
+  }
 
   const String ssid = server_.arg("ssid");
   const String wifiPassword = server_.arg("wifiPassword");
-  const String deviceId = server_.arg("deviceId");
-  const String deviceSecret = server_.arg("deviceSecret");
-  const String backendUrl = server_.arg("backendUrl");
-  const String backendRootCa = server_.arg("backendRootCa");
-  const DeviceConfigurationValidationError validationError =
-    validateDeviceConfiguration(
-      ssid.c_str(),
-      ssid.length(),
-      wifiPassword.c_str(),
-      wifiPassword.length(),
-      deviceId.c_str(),
-      deviceId.length(),
-      deviceSecret.c_str(),
-      deviceSecret.length(),
-      backendUrl.c_str(),
-      backendUrl.length(),
-      backendRootCa.c_str(),
-      backendRootCa.length()
-    );
+  DeviceConfigurationValidationError validationError =
+    DeviceConfigurationValidationError::None;
+  if (!wifiSsidIsValid(ssid.c_str(), ssid.length())) {
+    validationError = DeviceConfigurationValidationError::WifiSsid;
+  } else if (!wifiPasswordIsValid(
+    wifiPassword.c_str(),
+    wifiPassword.length()
+  )) {
+    validationError = DeviceConfigurationValidationError::WifiPassword;
+  }
   if (validationError != DeviceConfigurationValidationError::None) {
     server_.send(
       400,
@@ -294,24 +273,16 @@ void RecoveryPortal::handleProvisioningUpdate() {
     );
     return;
   }
-  if (!configuration_->save(
+  if (!configuration_->updateWifiCredentials(
     ssid.c_str(),
     ssid.length(),
     wifiPassword.c_str(),
-    wifiPassword.length(),
-    deviceId.c_str(),
-    deviceId.length(),
-    deviceSecret.c_str(),
-    deviceSecret.length(),
-    backendUrl.c_str(),
-    backendUrl.length(),
-    backendRootCa.c_str(),
-    backendRootCa.length()
+    wifiPassword.length()
   )) {
     server_.send(
       500,
       "application/json",
-      "{\"error\":\"The validated configuration could not be stored.\",\"hint\":\"Restart the device and retry. If this continues, inspect or erase the device NVS partition.\"}"
+      "{\"error\":\"The validated Wi-Fi credentials could not be stored.\",\"hint\":\"Restart the device and retry. If this continues, inspect the device NVS partition.\"}"
     );
     return;
   }

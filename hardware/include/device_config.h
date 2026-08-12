@@ -248,5 +248,32 @@ inline bool deviceConfigurationRecordIsValid(
     record.checksum == deviceConfigurationChecksum(record);
 }
 
+inline bool makeWifiUpdatedDeviceConfigurationRecord(
+  const DeviceConfigurationRecord &existing,
+  const char *wifiSsid,
+  size_t wifiSsidLength,
+  const char *wifiPassword,
+  size_t wifiPasswordLength,
+  DeviceConfigurationRecord &updated
+) {
+  if (
+    !deviceConfigurationRecordIsValid(existing) ||
+    !wifiCredentialsAreValid(
+      wifiSsid,
+      wifiSsidLength,
+      wifiPassword,
+      wifiPasswordLength
+    )
+  ) return false;
+
+  updated = existing;
+  std::memset(updated.wifiSsid, 0, sizeof(updated.wifiSsid));
+  std::memset(updated.wifiPassword, 0, sizeof(updated.wifiPassword));
+  std::memcpy(updated.wifiSsid, wifiSsid, wifiSsidLength);
+  std::memcpy(updated.wifiPassword, wifiPassword, wifiPasswordLength);
+  updated.checksum = deviceConfigurationChecksum(updated);
+  return true;
+}
+
 } // namespace connectivity
 } // namespace eki

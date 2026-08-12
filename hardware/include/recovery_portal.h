@@ -12,19 +12,11 @@ namespace connectivity {
 class DeviceConfiguration {
 public:
   bool load();
-  bool save(
+  bool updateWifiCredentials(
     const char *wifiSsid,
     size_t wifiSsidLength,
     const char *wifiPassword,
-    size_t wifiPasswordLength,
-    const char *deviceId,
-    size_t deviceIdLength,
-    const char *deviceSecret,
-    size_t deviceSecretLength,
-    const char *backendUrl,
-    size_t backendUrlLength,
-    const char *backendRootCa,
-    size_t backendRootCaLength
+    size_t wifiPasswordLength
   );
 
   const char *wifiSsid() const { return record_.wifiSsid; }
