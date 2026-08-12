@@ -6,9 +6,14 @@ import {
 } from "node:crypto";
 import { promisify } from "node:util";
 import { db, rtdb } from "../lib/firebaseAdmin";
+import { createConcurrencyLimiter } from "../lib/concurrency";
 import type { TelemetryPayload } from "./telemetryPayload";
 
 const scryptAsync = promisify(scrypt);
+// scrypt is memory-hard; cap concurrent verifications so a burst of credential
+// cache misses cannot exhaust CPU/ memory on the request path (issue #48 L1).
+const SCRYPT_MAX_CONCURRENT = 4;
+const scryptLimiter = createConcurrencyLimiter(SCRYPT_MAX_CONCURRENT);
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const CREDENTIAL_CACHE_MS = 60_000;
 const NEGATIVE_CACHE_MS = 5_000;
@@ -245,7 +250,7 @@ export async function verifyDeviceSecretHash(
       storedHashIsValid = true;
     }
   }
-  const derived = (await scryptAsync(secret, salt, 64)) as Buffer;
+  const derived = (await scryptLimiter.run(() => scryptAsync(secret, salt, 64))) as Buffer;
   return safeBufferEqual(derived, storedKey) && storedHashIsValid;
 }
 
@@ -574,6 +579,6 @@ export function getHttpsTelemetryStatus(): HttpsTelemetryStatus {
 
 export async function hashDeviceSecret(secret: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
-  const derived = (await scryptAsync(secret, salt, 64)) as Buffer;
+  const derived = (await scryptLimiter.run(() => scryptAsync(secret, salt, 64))) as Buffer;
   return `${salt}:${derived.toString("hex")}`;
 }
