@@ -13,7 +13,8 @@
     "seed": "tsx src/seed.ts",
     "sync-role-claims": "tsx src/syncRoleClaims.ts",
     "provision-device": "tsx src/provisionDevice.ts",
-    "test": "vitest run src"
+    "test": "vitest run src",
+    "test:rules-integration": "vitest run src/rulesIntegration.test.ts"
   },
   "dependencies": {
     "@google-cloud/firestore": "8.7.0",

@@ -4,6 +4,8 @@
 
 Firestore is durable/queryable; RTDB is the low-latency latest-state projection. `server` means Firebase Admin SDK and therefore not governed by client rules. Timestamps are called out because this repository contains both Firestore `Timestamp`, ISO strings, RTDB server milliseconds and epoch-millisecond numbers.
 
+Access model: every client-facing Firestore allow and the RTDB `activeBuses` read require authentication **and** a valid App Check token (`request.app != null`, issue #39). Server/Admin SDK writes bypass rules. The emulator integration suite strips the App Check gates for simulation (`scripts/rules-for-emulator.mjs`).
+
 ```mermaid
 erDiagram
   BUSES ||--o{ ROUTES : assignedRoutes
@@ -46,7 +48,7 @@ One latest projection per assigned bus/route. The key is an internal composite l
 | `delayMinutes` | number | Driver API value, 0–1440 |
 | `lifecycleUpdatedAt` | RTDB server epoch ms | Server lifecycle/status mutation time |
 
-Read: any authenticated Firebase user (`.read: auth != null`). Write: denied to all clients; server only. Indexed by `routeId`, `busId`. Active rides survive stale hardware and are marked offline; stale non-active nodes can be removed.
+Read: any authenticated Firebase user (`.read: auth != null && request.app != null`). Write: denied to all clients; server only. Indexed by `routeId`, `busId`. Active rides survive stale hardware and are marked offline; stale non-active nodes can be removed.
 
 ### `driverRouteAssignments/{driverId}`
 

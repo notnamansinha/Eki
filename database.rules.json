@@ -3,7 +3,7 @@
     ".read": false,
     ".write": false,
     "activeBuses": {
-      ".read": "auth != null",
+      ".read": "auth != null && request.app != null",
       ".write": false,
       ".indexOn": ["routeId", "busId"],
       "$busKey": {

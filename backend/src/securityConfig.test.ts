@@ -244,12 +244,109 @@ describe("production security configuration", () => {
     const planRoute = workspaceFile("backend/src/routes/plan.ts");
     const routesList = workspaceFile("backend/src/routes/routesList.ts");
 
-    expect(routes).toContain("allow read: if isAuthenticated();");
-    expect(buses).toContain("allow read: if isAuthenticated();");
-    expect(settings).toContain("allow read: if isAuthenticated();");
-    expect(locations).toContain("allow read, write: if isAdmin();");
+    expect(routes).toContain("allow read: if isAuthenticated() && isAppChecked();");
+    expect(buses).toContain("allow read: if isAuthenticated() && isAppChecked();");
+    expect(settings).toContain("allow read: if isAuthenticated() && isAppChecked();");
+    expect(locations).toContain("allow read, write: if isAdmin() && isAppChecked();");
     expect(planRoute).toContain('router.post("/", requireAuth');
     expect(routesList).toContain('router.get("/", requireAuth');
+  });
+
+  it("enforces App Check on every client-facing rule (issue #39)", () => {
+    const rules = workspaceFile("firestore.rules");
+    const helper = ruleBlock(rules, "function isAppChecked");
+    const users = ruleBlock(rules, "match /users/{uid}");
+    const locations = ruleBlock(rules, "match /bus_locations/{busId}");
+    const sessions = ruleBlock(rules, "match /ride_sessions/{sessionId}");
+    const messages = ruleBlock(rules, "match /messages/{messageId}");
+    const rateLimits = ruleBlock(rules, "match /messageRateLimits/{uid}");
+    const drivers = ruleBlock(rules, "match /drivers/{driverId}");
+    const trips = ruleBlock(rules, "match /completed_trips/{tripId}");
+    const feedback = ruleBlock(rules, "match /feedbacks/{feedbackId}");
+    const cooldowns = ruleBlock(rules, "match /feedbackCooldowns/{uid}");
+    const requests = ruleBlock(rules, "match /passenger_requests/{requestId}");
+
+    // Every allow that a browser can hit requires a valid App Check token.
+    // The Admin SDK bypasses rules, so server writes are unaffected.
+    expect(helper).toContain("request.app != null");
+    expect(users).toContain("isOwner(uid) && isAppChecked()");
+    expect(locations).toContain("isAdmin() && isAppChecked()");
+    expect(sessions).toContain("isSessionOperator(sessionId) && isAppChecked()");
+    expect(messages).toContain("isAppChecked()");
+    expect(rateLimits).toContain("isAppChecked()");
+    expect(drivers).toContain("isAppChecked()");
+    expect(trips).toContain("isAdmin() && isAppChecked()");
+    expect(feedback).toContain("isAdmin() && isAppChecked()");
+    expect(cooldowns).toContain("isOwner(uid) && isAppChecked()");
+    expect(requests).toContain("isAppChecked()");
+
+    // Precedence guard (review fix): on multi-branch allows the gate must wrap
+    // the WHOLE condition. `A || B && isAppChecked()` would let admin/driver
+    // branches skip App Check entirely (&& binds tighter than ||).
+    expect(requests).toContain("allow read: if (isAdmin() ||");
+    expect(requests).toContain("allow update: if (isAdmin() ||");
+    expect(requests).toContain("allow delete: if (isAdmin() ||");
+    expect(drivers).toContain("allow read: if (isAdmin() ||");
+
+    // Depth-based scan: no gated allow may contain a TOP-LEVEL `||` before the
+    // gate — a top-level OR outside the parenthesized condition would mean the
+    // gate binds to only part of the chain (&& binds tighter than ||).
+    const gatedAllows = [
+      ...rules.matchAll(/allow (?:read|write|create|update|delete): if [^;]+;/gs),
+    ]
+      .map(m => m[0])
+      .filter(rule => rule.includes("isAppChecked()"));
+    expect(gatedAllows.length).toBeGreaterThan(0);
+    const violations: string[] = [];
+    for (const rule of gatedAllows) {
+      const gate = rule.indexOf("&& isAppChecked();");
+      let depth = 0;
+      for (const ch of rule.slice(0, gate)) {
+        if (ch === "(") depth += 1;
+        else if (ch === ")") depth -= 1;
+        else if (ch === "|" && depth === 0) {
+          violations.push(rule);
+          break;
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+
+    // Denied-by-default write paths never get an App Check bypass.
+    expect(rules).not.toContain("isAppChecked() ||");
+  });
+
+  it("enforces App Check on Realtime Database client reads (issue #39)", () => {
+    const database = JSON.parse(workspaceFile("database.rules.json"));
+    expect(database.rules.activeBuses[".read"]).toContain("request.app != null");
+    expect(database.rules.activeBuses[".write"]).toBe(false);
+    expect(database.rules[".read"]).toBe(false);
+  });
+
+  it("makes CORS origins env-driven and fails closed in production (issue #39 D6)", () => {
+    const server = workspaceFile("backend/src/server.ts");
+
+    // No hardcoded project-specific origins; production refuses to start
+    // without an explicit CORS_ORIGIN allowlist.
+    expect(server).not.toContain("bustrack-be165");
+    expect(server).toContain("CORS_ORIGIN must be set");
+    expect(server).toContain("configuredCorsOrigins.length === 0");
+    expect(server).toContain("process.env.CORS_ORIGIN");
+    expect(server).not.toContain('"https://bustrack-be165.web.app"');
+  });
+
+  it("targets staging by default and deploys to production explicitly (issue #39 M4)", () => {
+    const firebaserc = JSON.parse(workspaceFile(".firebaserc"));
+    const deploy = workspaceFile(".github/workflows/deploy.yml");
+
+    // A forgotten --project deploys to staging, never production.
+    expect(firebaserc.projects.default).toBe("eki-staging");
+    // Both environments deploy with an explicit --project.
+    expect(deploy).toContain("--project eki-staging");
+    expect(deploy).toContain("--project eki-production");
+    // Production is approval-gated via a protected environment, not automated.
+    expect(deploy).toContain("environment: production");
+    expect(deploy).toContain("workflow_dispatch");
   });
 
   it("does not let the browser seed or take down hardware GNSS coordinates", () => {
@@ -316,10 +413,10 @@ describe("production security configuration", () => {
     const authHook = workspaceFile("frontend/src/hooks/useAuth.ts");
     const settingsHook = workspaceFile("frontend/src/hooks/useSettings.ts");
 
-    expect(users).toContain("allow read: if isOwner(uid);");
+    expect(users).toContain("allow read: if isOwner(uid) && isAppChecked();");
     expect(users).toContain("allow create: if false;");
     expect(users).toContain("allow update, delete: if false;");
-    expect(settings).toContain("allow read: if isAuthenticated();");
+    expect(settings).toContain("allow read: if isAuthenticated() && isAppChecked();");
     expect(settings).toContain("allow create, update, delete: if false;");
     expect(usersRoute).toContain('router.post("/bootstrap", requireAuth');
     expect(usersRoute).toContain('role: "passenger"');
