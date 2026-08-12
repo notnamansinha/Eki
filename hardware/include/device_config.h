@@ -28,6 +28,16 @@ struct DeviceConfigurationRecord {
   uint32_t checksum;
 };
 
+enum class DeviceConfigurationValidationError : uint8_t {
+  None,
+  WifiSsid,
+  WifiPassword,
+  DeviceId,
+  DeviceSecret,
+  BackendUrl,
+  BackendRootCa,
+};
+
 inline bool deviceIdIsValid(const char *value, size_t length) {
   if (value == nullptr || length == 0 || length > DEVICE_ID_MAX_LENGTH) {
     return false;
@@ -95,6 +105,41 @@ inline bool backendRootCaIsValid(const char *value, size_t length) {
          std::strstr(value, END_MARKER) != nullptr;
 }
 
+inline DeviceConfigurationValidationError validateDeviceConfiguration(
+  const char *wifiSsid,
+  size_t wifiSsidLength,
+  const char *wifiPassword,
+  size_t wifiPasswordLength,
+  const char *deviceId,
+  size_t deviceIdLength,
+  const char *deviceSecret,
+  size_t deviceSecretLength,
+  const char *backendUrl,
+  size_t backendUrlLength,
+  const char *backendRootCa,
+  size_t backendRootCaLength
+) {
+  if (!wifiSsidIsValid(wifiSsid, wifiSsidLength)) {
+    return DeviceConfigurationValidationError::WifiSsid;
+  }
+  if (!wifiPasswordIsValid(wifiPassword, wifiPasswordLength)) {
+    return DeviceConfigurationValidationError::WifiPassword;
+  }
+  if (!deviceIdIsValid(deviceId, deviceIdLength)) {
+    return DeviceConfigurationValidationError::DeviceId;
+  }
+  if (!deviceSecretIsValid(deviceSecret, deviceSecretLength)) {
+    return DeviceConfigurationValidationError::DeviceSecret;
+  }
+  if (!backendUrlIsValid(backendUrl, backendUrlLength)) {
+    return DeviceConfigurationValidationError::BackendUrl;
+  }
+  if (!backendRootCaIsValid(backendRootCa, backendRootCaLength)) {
+    return DeviceConfigurationValidationError::BackendRootCa;
+  }
+  return DeviceConfigurationValidationError::None;
+}
+
 inline uint32_t deviceConfigurationChecksum(
   const DeviceConfigurationRecord &record
 ) {
@@ -126,18 +171,20 @@ inline bool makeDeviceConfigurationRecord(
   size_t backendRootCaLength,
   DeviceConfigurationRecord &record
 ) {
-  if (
-    !wifiCredentialsAreValid(
-      wifiSsid,
-      wifiSsidLength,
-      wifiPassword,
-      wifiPasswordLength
-    ) ||
-    !deviceIdIsValid(deviceId, deviceIdLength) ||
-    !deviceSecretIsValid(deviceSecret, deviceSecretLength) ||
-    !backendUrlIsValid(backendUrl, backendUrlLength) ||
-    !backendRootCaIsValid(backendRootCa, backendRootCaLength)
-  ) return false;
+  if (validateDeviceConfiguration(
+    wifiSsid,
+    wifiSsidLength,
+    wifiPassword,
+    wifiPasswordLength,
+    deviceId,
+    deviceIdLength,
+    deviceSecret,
+    deviceSecretLength,
+    backendUrl,
+    backendUrlLength,
+    backendRootCa,
+    backendRootCaLength
+  ) != DeviceConfigurationValidationError::None) return false;
 
   std::memset(&record, 0, sizeof(record));
   record.magic = DEVICE_CONFIG_MAGIC;
