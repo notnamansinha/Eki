@@ -455,6 +455,48 @@ describe("trip-state engine lifecycle", () => {
     await stop();
   });
 
+  /** RTDB-boundary mock: update() merges, transaction() aborts on undefined. */
+  const makeNodeRef = (initialValue: unknown) => {
+    let nodeValue = initialValue;
+    const refUpdate = vi.fn(async (patch: Record<string, unknown>) => {
+      nodeValue =
+        nodeValue && typeof nodeValue === "object"
+          ? { ...(nodeValue as Record<string, unknown>), ...patch }
+          : { ...patch };
+    });
+    const refTransaction = vi.fn(
+      async (update: (current: unknown) => unknown) => {
+        const result = update(nodeValue);
+        if (result !== undefined) nodeValue = result;
+        return {
+          committed: result !== undefined,
+          snapshot: { val: () => result ?? nodeValue },
+        };
+      },
+    );
+    return {
+      nodeValue: () => nodeValue,
+      ref: { update: refUpdate, transaction: refTransaction },
+    };
+  };
+
+  const armRoute = () => {
+    mocks.routeListeners[0].next({
+      docChanges: () => [{
+        type: "added",
+        doc: {
+          id: "route_2",
+          data: () => ({
+            stops: [
+              { id: "origin", name: "Origin", lat: 23, lng: 72 },
+              { id: "destination", name: "Destination", lat: 23.1, lng: 72.1 },
+            ],
+          }),
+        },
+      }],
+    });
+  };
+
   it("persists motionState so analytics can count signal loss", async () => {
     mocks.reduceTripState.mockReturnValue({
       tripState: "in_service",
@@ -471,51 +513,116 @@ describe("trip-state engine lifecycle", () => {
       return { exists: false, data: () => undefined };
     });
     const stop = startTripStateEngine();
-    mocks.routeListeners[0].next({
-      docChanges: () => [{
-        type: "added",
-        doc: {
-          id: "route_2",
-          data: () => ({
-            stops: [
-              { id: "origin", name: "Origin", lat: 23, lng: 72 },
-              { id: "destination", name: "Destination", lat: 23.1, lng: 72.1 },
-            ],
-          }),
-        },
-      }],
-    });
+    armRoute();
     const snapshot = {
       key: "bus_48d_route_2",
       val: () => ({
-        busId: "bus_1",
-        routeId: "route_2",
-        driverId: "driver-1",
-        sessionId: "session-1",
-        status: "active",
-        deviceState: "online",
-        tripState: "in_service",
-        currentStopIndex: 0,
-        hasDepartedOrigin: true,
-        motionState: "uncertain",
-        lat: 23.1,
-        lng: 72.1,
-        timestamp: 1,
+        busId: "bus_1", routeId: "route_2", driverId: "driver-1", sessionId: "session-1",
+        status: "active", deviceState: "online", tripState: "in_service", currentStopIndex: 0,
+        hasDepartedOrigin: true, motionState: "uncertain", lat: 23.1, lng: 72.1, timestamp: 1,
       }),
-      ref: {
-        update: vi.fn(async () => undefined),
-        transaction: vi.fn(async () => undefined),
-      },
+      ref: { update: vi.fn(async () => undefined), transaction: vi.fn(async () => undefined) },
     };
-
     mocks.rtdbHandlers.get("child_changed")!(snapshot);
     await flushMicrotasks();
-
     expect(mocks.transactionSet).toHaveBeenCalledWith(
       expect.objectContaining({ collectionName: "bus_locations", id: "bus_1" }),
       expect.objectContaining({ motionState: "uncertain" }),
       { merge: true },
     );
+    await stop();
+  });
+
+  const queuedSnapshot = (store: ReturnType<typeof makeNodeRef>, nodeKey: string) => ({
+    key: nodeKey,
+    val: () => ({
+      busId: "bus_1",
+      routeId: "route_2",
+      driverId: "driver-1",
+      sessionId: "session-1",
+      status: "active",
+      tripState: "pre_departure",
+      currentStopIndex: 0,
+      lat: 23.1,
+      lng: 72.1,
+      timestamp: 1,
+    }),
+    ref: store.ref,
+  });
+
+  it("does not resurrect a node removed by the stale sweep", async () => {
+    mocks.reduceTripState.mockReturnValue({
+      tripState: "in_service",
+      currentStopIndex: 1,
+      hasDepartedOrigin: true,
+    });
+    const stop = startTripStateEngine();
+    armRoute();
+    // The stale sweep already removed the node before the queued snapshot ran.
+    // Unique key so the module-level processedTelemetry map stays order-independent.
+    const store = makeNodeRef(null);
+
+    mocks.rtdbHandlers.get("child_changed")!(queuedSnapshot(store, "bus_66a_route_2"));
+    await flushMicrotasks();
+
+    expect(store.nodeValue()).toBeNull();
+    await stop();
+  });
+
+  it("does not clobber a newer session that reused the node key", async () => {
+    mocks.reduceTripState.mockReturnValue({
+      tripState: "in_service",
+      currentStopIndex: 1,
+      hasDepartedOrigin: true,
+    });
+    const stop = startTripStateEngine();
+    armRoute();
+    // The node now belongs to a newer session; the queued snapshot is stale.
+    const store = makeNodeRef({
+      busId: "bus_1",
+      routeId: "route_2",
+      sessionId: "session-2",
+      status: "active",
+      deviceState: "online",
+      tripState: "pre_departure",
+      currentStopIndex: 0,
+      hasDepartedOrigin: false,
+      timestamp: 200,
+    });
+
+    mocks.rtdbHandlers.get("child_changed")!(queuedSnapshot(store, "bus_66b_route_2"));
+    await flushMicrotasks();
+
+    expect(store.nodeValue().tripState).toBe("pre_departure");
+    expect(store.nodeValue().sessionId).toBe("session-2");
+    await stop();
+  });
+
+  it("still updates live state when the node exists with the same session", async () => {
+    mocks.reduceTripState.mockReturnValue({
+      tripState: "in_service",
+      currentStopIndex: 1,
+      hasDepartedOrigin: true,
+    });
+    const stop = startTripStateEngine();
+    armRoute();
+    const store = makeNodeRef({
+      busId: "bus_1",
+      routeId: "route_2",
+      sessionId: "session-1",
+      status: "active",
+      deviceState: "online",
+      tripState: "pre_departure",
+      currentStopIndex: 0,
+      hasDepartedOrigin: false,
+      timestamp: 1,
+    });
+
+    mocks.rtdbHandlers.get("child_changed")!(queuedSnapshot(store, "bus_66c_route_2"));
+    await flushMicrotasks();
+
+    expect(store.nodeValue().tripState).toBe("in_service");
+    expect(store.nodeValue().currentStopIndex).toBe(1);
     await stop();
   });
 });
