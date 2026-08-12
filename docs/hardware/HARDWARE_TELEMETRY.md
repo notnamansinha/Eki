@@ -112,7 +112,7 @@ The body fields and limits are defined in [Firebase data model](../data/FIREBASE
 | HTTP 503/timeouts | Backend/Firebase/network outage | Inspect `/health`; backoff retains the bounded queue |
 | Repeated watchdog reset | HTTP/network stack longer than 25 s or task fault | Inspect reset reason/serial; verify 7 s connect/request timeouts |
 | Two LED pulses / `Eki-Recovery-*` AP | Unprovisioned, station outage exceeded two minutes, or configuration recovery | Join with the device recovery password; submit the complete configuration at `192.168.4.1` |
-| Non-zero overflow counters | GNSS task starvation, UART pressure or full telemetry queue | Inspect 30-second fault/health line; reproduce against network outage and load |
+| Non-zero overflow counters | GNSS task starvation, UART pressure or full telemetry queue | Inspect authenticated remote diagnostics; reproduce against network outage and load |
 | `uncertain` on map | One GNSS-loss notification at last trusted point | Fix antenna/sky view; no guessed motion is shown |
 
 ## Latency analysis

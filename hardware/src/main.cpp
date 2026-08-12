@@ -66,7 +66,6 @@ constexpr uint32_t NTP_CROSS_CHECK_INTERVAL_MS = 6UL * 60 * 60 * 1000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
 constexpr uint32_t WATCHDOG_TIMEOUT_MS = 25000;
 constexpr size_t TELEMETRY_QUEUE_CAPACITY = 120;
-constexpr uint32_t HEALTH_REPORT_INTERVAL_MS = 30000;
 constexpr uint32_t FIRST_REMOTE_DIAGNOSTIC_DELAY_MS = 30000;
 constexpr uint32_t REMOTE_DIAGNOSTIC_INTERVAL_MS = 5UL * 60 * 1000;
 constexpr uint32_t PUBLISHER_IDLE_MS = 100;
@@ -161,8 +160,6 @@ uint32_t lastEvaluationAt = 0;
 uint32_t lastNtpCrossCheckAt = 0;
 uint32_t lastHttpsFailureAt = 0;
 uint32_t httpsRetryDelayMs = 0;
-uint32_t lastGpsWarningAt = 0;
-uint32_t lastHealthReportAt = 0;
 uint32_t lastRemoteDiagnosticAt = 0;
 bool remoteDiagnosticPublished = false;
 uint32_t remoteDiagnosticRetryStartedAt = 0;
@@ -182,6 +179,8 @@ bool pendingNtpCrossCheck = false;
 bool pendingNtpCrossCheckHasGnss = false;
 bool credentialFaultActive = false;
 bool gpsFixWasLost = false;
+bool trustworthyGpsFixObserved = false;
+bool gpsWiringWarningLogged = false;
 bool lossMessageQueued = false;
 bool wifiConfigured = false;
 eki::connectivity::DeviceConfiguration deviceConfiguration;
@@ -545,9 +544,7 @@ void disciplineClockFromGnss() {
   const bool initialSynchronization = !gnssClockApplied;
   gnssClockApplied = true;
   lastGnssClockAppliedAt = millis();
-  if (initialSynchronization) {
-    Serial.println("[Clock] System time established from fresh GNSS UTC.");
-  } else {
+  if (!initialSynchronization) {
     Serial.printf(
       "[Clock] GNSS UTC corrected system clock by %lldms; NTP remains a cross-check.\n",
       static_cast<long long>(eki::clock::absoluteDifference(systemEpochMs, gnssEpochMs))
@@ -582,7 +579,6 @@ void attemptWifiConnection() {
     Serial.println("[WiFi] Connecting to configured network.");
   } else {
     WiFi.reconnect();
-    Serial.println("[WiFi] Reconnecting with bounded exponential backoff.");
   }
 }
 
@@ -619,7 +615,7 @@ void serviceConnectivity() {
   const uint32_t now = millis();
   recoveryPortal.handleClient();
   if (recoveryPortal.consumeConfigurationUpdated()) {
-    Serial.println("[Provisioning] Valid NVS configuration stored; restarting.");
+    Serial.println("[WiFi] Updated credentials stored; restarting.");
     delay(250);
     ESP.restart();
   }
@@ -672,7 +668,7 @@ void serviceConnectivity() {
       !credentialFaultActive
     )) {
       Serial.printf(
-        "[Provisioning] Protected local configuration mode active at http://192.168.4.1 on AP %s.\n",
+        "[WiFi] Recovery available at http://192.168.4.1 on AP %s.\n",
         recoveryPortal.accessPointSsid()
       );
     } else {
@@ -701,7 +697,13 @@ void configureWatchdog() {
   const esp_err_t result = esp_task_wdt_init(WATCHDOG_TIMEOUT_MS / 1000, true);
 #endif
   const esp_err_t addResult = esp_task_wdt_add(nullptr);
-  Serial.printf("[Watchdog] configure=%d, subscribe=%d\n", result, addResult);
+  if (result != ESP_OK || addResult != ESP_OK) {
+    Serial.printf(
+      "[Watchdog] Setup failed (configure=%d, subscribe=%d).\n",
+      result,
+      addResult
+    );
+  }
 }
 
 void synchronizeClock() {
@@ -712,7 +714,6 @@ void synchronizeClock() {
   lastNtpCrossCheckAt = millis();
   ntpCrossCheckStarted = true;
   configTime(0, 0, "pool.ntp.org", "time.google.com");
-  Serial.println("[Clock] NTP cross-check/fallback scheduled.");
 }
 
 void onNtpTimeSynchronized(struct timeval *ntpTime) {
@@ -833,7 +834,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
       static_cast<unsigned long>(elapsed(startedAt)),
       WiFi.RSSI()
     );
-  } else {
+  } else if (action != eki::telemetry::HttpResponseAction::Accept) {
     Serial.printf(
       "[HTTPS] Telemetry %s (HTTP %d) in %lums (%u bytes, RSSI %d dBm)\n",
       action == eki::telemetry::HttpResponseAction::Accept
@@ -968,11 +969,6 @@ void publishRemoteDiagnostic() {
     payloadLength
   );
   http.end();
-  Serial.printf(
-    "[Diagnostics] Remote health HTTP %d in %lums.\n",
-    responseCode,
-    static_cast<unsigned long>(elapsed(startedAt))
-  );
   if (responseCode == 401 || responseCode == 403) {
     latchCredentialFault();
     Serial.println("[Diagnostics] Credential fault latched; local reprovisioning enabled.");
@@ -984,6 +980,11 @@ void publishRemoteDiagnostic() {
     consecutiveRemoteDiagnosticFailures = 0;
     remoteDiagnosticRetryDelayMs = 0;
   } else {
+    Serial.printf(
+      "[Diagnostics] Remote health failed (HTTP %d, %lums).\n",
+      responseCode,
+      static_cast<unsigned long>(elapsed(startedAt))
+    );
     scheduleRemoteDiagnosticRetry();
   }
 }
@@ -1057,7 +1058,7 @@ void rememberCapturedFix(const TelemetryFix &fix) {
 void evaluateTelemetry() {
   const TelemetryFix fix = currentFix();
   if (!fix.valid) {
-    if (!gpsFixWasLost) {
+    if (trustworthyGpsFixObserved && !gpsFixWasLost) {
       gpsFixWasLost = true;
       lossMessageQueued = false;
       Serial.println("[GPS] Trustworthy fix lost.");
@@ -1082,6 +1083,7 @@ void evaluateTelemetry() {
     lossMessageQueued = false;
     Serial.println("[GPS] Trustworthy fix restored.");
   }
+  trustworthyGpsFixObserved = true;
 
   if (!clockIsSynchronized()) return;
   if (!shouldCapture(fix)) return;
@@ -1091,8 +1093,12 @@ void evaluateTelemetry() {
 
 void publisherTask(void *) {
   const esp_err_t watchdogResult = esp_task_wdt_add(nullptr);
-  Serial.printf("[Publisher] Started on core %d; watchdog subscribe=%d.\n",
-                xPortGetCoreID(), watchdogResult);
+  if (watchdogResult != ESP_OK) {
+    Serial.printf(
+      "[Watchdog] Publisher subscription failed (%d).\n",
+      watchdogResult
+    );
+  }
 
   for (;;) {
     esp_task_wdt_reset();
@@ -1145,38 +1151,6 @@ void publisherTask(void *) {
   }
 }
 
-void reportHealth() {
-  if (elapsed(lastHealthReportAt) < HEALTH_REPORT_INTERVAL_MS) return;
-  lastHealthReportAt = millis();
-  const TelemetryQueue::Stats queue = telemetryQueueStats();
-  const HealthCounters counters = healthCounters();
-  // ResetStats is touched only by this (loop) task: setup() records and
-  // reportHealth() reads, so a plain copy is race-free.
-  const eki::reset::ResetStats resets = resetStats;
-  const eki::connectivity::FaultCode fault = currentDeviceFault();
-  Serial.printf(
-    "[Health] fault=%s queue=%u/%u high-water=%u overflow-drops=%lu stale-drops=%lu; accepted=%lu rejected=%lu; NMEA checksum-failures=%lu UART-buffer-overflows=%lu UART-FIFO-overflows=%lu; resets: poweron=%u brownout=%u panic=%u task-wdt=%u int-wdt=%u sw=%u other=%u total=%u.\n",
-    faultCodeName(fault),
-    queue.depth,
-    static_cast<unsigned>(TELEMETRY_QUEUE_CAPACITY),
-    queue.highWaterMark,
-    static_cast<unsigned long>(queue.overflowDrops),
-    static_cast<unsigned long>(queue.staleDrops),
-    static_cast<unsigned long>(counters.acceptedFixes),
-    static_cast<unsigned long>(counters.rejectedFixes),
-    static_cast<unsigned long>(counters.nmeaChecksumFailures),
-    static_cast<unsigned long>(counters.uartBufferOverflows),
-    static_cast<unsigned long>(counters.uartFifoOverflows),
-    static_cast<unsigned>(resets.count(eki::reset::ResetReason::PowerOn)),
-    static_cast<unsigned>(resets.count(eki::reset::ResetReason::Brownout)),
-    static_cast<unsigned>(resets.count(eki::reset::ResetReason::Panic)),
-    static_cast<unsigned>(resets.count(eki::reset::ResetReason::TaskWatchdog)),
-    static_cast<unsigned>(resets.count(eki::reset::ResetReason::InterruptWatchdog)),
-    static_cast<unsigned>(resets.count(eki::reset::ResetReason::Software)),
-    static_cast<unsigned>(resets.otherCount()),
-    static_cast<unsigned>(resets.total())
-  );
-}
 } // namespace
 
 void setup() {
@@ -1215,9 +1189,7 @@ void setup() {
   const uint32_t configurationTag = telemetryConfigurationTag();
   const esp_reset_reason_t espBootReason = esp_reset_reason();
   const eki::reset::ResetReason bootReason = resetReasonFromEsp(espBootReason);
-  const bool resetStatsRecovered = resetStats.initializeOrRecover(
-    configurationTag
-  );
+  resetStats.initializeOrRecover(configurationTag);
   resetStats.record(bootReason);
   pinMode(STATUS_LED_PIN, OUTPUT);
   digitalWrite(STATUS_LED_PIN, LOW);
@@ -1226,39 +1198,31 @@ void setup() {
   gpsSerial.onReceiveError(onGpsSerialError);
   delay(500);
 
-  Serial.printf(
-    "[Boot] Reset cause=%s (%d, total %u); stats %s; poweron=%u brownout=%u panic=%u task-wdt=%u int-wdt=%u sw=%u other=%u.\n",
-    eki::reset::resetReasonName(bootReason),
-    static_cast<int>(espBootReason),
-    static_cast<unsigned>(resetStats.total()),
-    resetStatsRecovered ? "recovered" : "initialized",
-    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::PowerOn)),
-    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::Brownout)),
-    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::Panic)),
-    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::TaskWatchdog)),
-    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::InterruptWatchdog)),
-    static_cast<unsigned>(resetStats.count(eki::reset::ResetReason::Software)),
-    static_cast<unsigned>(resetStats.otherCount())
-  );
-
-  Serial.printf(
-    "[Boot] Device configuration=%s; credential values are not logged.\n",
-    provisioned ? "validated NVS record" : "awaiting local provisioning"
-  );
+  if (
+    bootReason == eki::reset::ResetReason::Brownout ||
+    bootReason == eki::reset::ResetReason::Panic ||
+    bootReason == eki::reset::ResetReason::TaskWatchdog ||
+    bootReason == eki::reset::ResetReason::InterruptWatchdog ||
+    bootReason == eki::reset::ResetReason::OtherWatchdog
+  ) {
+    Serial.printf(
+      "[Boot] Recovered from %s reset (%d); reset total=%u.\n",
+      eki::reset::resetReasonName(bootReason),
+      static_cast<int>(espBootReason),
+      static_cast<unsigned>(resetStats.total())
+    );
+  }
 
   portENTER_CRITICAL(&telemetryQueueMux);
-  const bool queueRecovered = telemetryQueue.initializeOrRecover(
-    configurationTag
-  );
-  const TelemetryQueue::Stats bootQueue = telemetryQueue.stats();
+  telemetryQueue.initializeOrRecover(configurationTag);
   portEXIT_CRITICAL(&telemetryQueueMux);
-  Serial.printf(
-    "[Boot] Eki asynchronous HTTPS telemetry; GNSS RX buffer=%u bytes; RTC queue=%s (%u/%u).\n",
-    gpsRxBuffer,
-    queueRecovered ? "recovered" : "initialized",
-    bootQueue.depth,
-    static_cast<unsigned>(TELEMETRY_QUEUE_CAPACITY)
-  );
+  if (gpsRxBuffer != GPS_RX_BUFFER_BYTES) {
+    Serial.printf(
+      "[GPS] RX buffer setup returned %u bytes; expected %u.\n",
+      static_cast<unsigned>(gpsRxBuffer),
+      static_cast<unsigned>(GPS_RX_BUFFER_BYTES)
+    );
+  }
 
   if (provisioned) {
     // netClient.setCACert(deviceConfiguration.backendRootCa());
@@ -1306,14 +1270,13 @@ void loop() {
   }
 
   if (
+    !gpsWiringWarningLogged &&
     millis() > 5000 &&
-    gps.charsProcessed() < 10 &&
-    elapsed(lastGpsWarningAt) >= 5000
+    gps.charsProcessed() < 10
   ) {
-    lastGpsWarningAt = millis();
+    gpsWiringWarningLogged = true;
     Serial.println("[GPS] No NMEA data received; check RX/TX wiring.");
   }
-  reportHealth();
   updateStatusLed();
   delay(5);
 }
