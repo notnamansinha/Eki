@@ -155,6 +155,16 @@ void test_firmware_configuration_validation_identifies_the_failing_field() {
   };
 
   constexpr char VALID_SECRET[] = "abcdefghijklmnopqrstuv";
+  constexpr char SHORT_SECRET[] = "abcdefghijklmnopqrs";
+  char oversizedDeviceId[DEVICE_ID_MAX_LENGTH + 2]{};
+  std::memset(oversizedDeviceId, 'a', DEVICE_ID_MAX_LENGTH + 1);
+  char oversizedBackendUrl[BACKEND_URL_MAX_LENGTH + 2]{};
+  std::memcpy(oversizedBackendUrl, "https://", sizeof("https://") - 1);
+  std::memset(
+    oversizedBackendUrl + sizeof("https://") - 1,
+    'a',
+    BACKEND_URL_MAX_LENGTH + 1 - (sizeof("https://") - 1)
+  );
   TEST_ASSERT_EQUAL_INT(
     static_cast<int>(ValidationError::None),
     static_cast<int>(check(
@@ -191,6 +201,27 @@ void test_firmware_configuration_validation_identifies_the_failing_field() {
     ))
   );
   TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(ValidationError::DeviceSecret),
+    static_cast<int>(check(
+      "campus-wifi", "wifi-password", "device_01", SHORT_SECRET,
+      "https://api.eki.example.edu", CERTIFICATE
+    ))
+  );
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(ValidationError::DeviceId),
+    static_cast<int>(check(
+      "campus-wifi", "wifi-password", oversizedDeviceId, VALID_SECRET,
+      "https://api.eki.example.edu", CERTIFICATE
+    ))
+  );
+  TEST_ASSERT_EQUAL_INT(
+    static_cast<int>(ValidationError::BackendUrl),
+    static_cast<int>(check(
+      "campus-wifi", "wifi-password", "device_01", VALID_SECRET,
+      oversizedBackendUrl, CERTIFICATE
+    ))
+  );
+  TEST_ASSERT_EQUAL_INT(
     static_cast<int>(ValidationError::BackendUrl),
     static_cast<int>(check(
       "campus-wifi", "wifi-password", "device_01", VALID_SECRET,
@@ -204,6 +235,17 @@ void test_firmware_configuration_validation_identifies_the_failing_field() {
       "https://api.eki.example.edu", "not-a-certificate"
     ))
   );
+  TEST_ASSERT_FALSE(backendRootCaIsValid(
+    "-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----",
+    sizeof("-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----") - 1
+  ));
+  char unterminatedCertificate[sizeof(CERTIFICATE)]{};
+  std::memcpy(unterminatedCertificate, CERTIFICATE, sizeof(CERTIFICATE));
+  unterminatedCertificate[sizeof(CERTIFICATE) - 1] = 'x';
+  TEST_ASSERT_FALSE(backendRootCaIsValid(
+    unterminatedCertificate,
+    sizeof(unterminatedCertificate) - 1
+  ));
   TEST_ASSERT_EQUAL_INT(
     static_cast<int>(ValidationError::None),
     static_cast<int>(check(
@@ -317,6 +359,11 @@ void test_wifi_retry_and_led_code_are_deterministic() {
   TEST_ASSERT_TRUE(statusLedOn(FaultCode::CredentialRejected, 300));
   TEST_ASSERT_TRUE(statusLedOn(FaultCode::CredentialRejected, 600));
   TEST_ASSERT_FALSE(statusLedOn(FaultCode::CredentialRejected, 900));
+  TEST_ASSERT_TRUE(pulsePatternLedOn(2, 0));
+  TEST_ASSERT_TRUE(pulsePatternLedOn(2, 300));
+  TEST_ASSERT_FALSE(pulsePatternLedOn(2, 600));
+  TEST_ASSERT_TRUE(pulsePatternLedOn(4, 900));
+  TEST_ASSERT_FALSE(pulsePatternLedOn(4, 1200));
 }
 
 void test_publish_policy_handles_floor_changes_and_heartbeats() {

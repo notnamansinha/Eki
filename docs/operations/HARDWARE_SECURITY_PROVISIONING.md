@@ -83,15 +83,20 @@ its signed, flash-encrypted application image.
    the file or pass values as command-line build flags.
 3. Build the `esp32dev-secure` artifact. The build gate verifies required
    definitions, HTTPS-only fleet configuration, Secure Boot/flash-encryption
-   settings, and the absence of application persistent-storage code.
+   settings, and the absence of NVS/Preferences-backed configuration and
+   recovery code. The RTC no-init telemetry queue remains intentionally present.
 4. Flash the selected device using the witnessed secure procedure, then remove
    the plaintext `secrets.h` and any unencrypted intermediate artifact from the
    signing workspace according to university key-handling policy.
 5. Verify HTTPS telemetry and authenticated diagnostics. Confirm both reported
    hardware-security booleans are `true`.
-6. For rotation, create a new backend secret outside an active ride, rebuild a
-   complete device-specific image, and physically reflash it. A 401/403 latches
-   publishing off and disables the station radio until that reflash.
+6. For secret or device-ID rotation, create the new backend value outside an
+   active ride, rebuild the complete device-specific image, physically reflash
+   it, and restart the device. If the compiled ID and secret remain correct but
+   a credential was disabled or its backend registry/assignment is wrong,
+   repair the backend record and restart the device without reflashing. A
+   401/403 latches publishing off and disables the station radio until the
+   applicable repair is followed by that restart.
 
 ## Acceptance evidence
 

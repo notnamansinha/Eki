@@ -97,9 +97,10 @@ into this document, chat, screenshots, shell history, or Git.
 - [ ] Use a bus Wi-Fi/hotspot that the ESP can reconnect to automatically.
 - [ ] Copy `hardware/include/secrets.example.h` to the ignored `secrets.h` and
   set hotspot name/password, device ID/secret, HTTPS backend origin, and CA.
-- [ ] Run `platformio run --project-dir hardware`.
+- [ ] In the witnessed signing environment, run
+  `platformio run --project-dir hardware -e esp32dev-secure`.
 - [ ] Connect the ESP32 and run
-  `platformio run --project-dir hardware --target upload`.
+  `platformio run --project-dir hardware -e esp32dev-secure --target upload`.
 - [ ] Open the 115200-baud serial monitor and confirm the firmware accepts the
   compile-time configuration without printing any credential value.
 - [ ] Confirm Wi-Fi, time sync, GNSS fix, remote diagnostics,

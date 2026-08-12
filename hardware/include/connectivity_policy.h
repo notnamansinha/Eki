@@ -90,10 +90,14 @@ inline bool wifiCredentialsAreValid(
     wifiPasswordIsValid(password, passwordLength);
 }
 
-inline bool statusLedOn(FaultCode fault, uint32_t nowMs) {
-  if (fault == FaultCode::None) return false;
+inline bool pulsePatternLedOn(uint8_t pulseCount, uint32_t nowMs) {
+  if (pulseCount == 0) return false;
   const uint32_t phase = nowMs % 2000;
-  return phase < 900 && phase % 300 < 150;
+  return phase < static_cast<uint32_t>(pulseCount) * 300 && phase % 300 < 150;
+}
+
+inline bool statusLedOn(FaultCode fault, uint32_t nowMs) {
+  return fault == FaultCode::CredentialRejected && pulsePatternLedOn(3, nowMs);
 }
 
 } // namespace connectivity

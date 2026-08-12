@@ -45,7 +45,7 @@ if effective_sdkconfig_path.exists():
     )
     if missing_effective_options:
         raise RuntimeError(
-            "Fleet build security options are disabled in the effective sdkconfig: "
+            "Fleet build security options are missing from the effective sdkconfig: "
             + ", ".join(missing_effective_options)
         )
     incorrectly_enabled_options = sorted(
@@ -57,6 +57,17 @@ if effective_sdkconfig_path.exists():
         raise RuntimeError(
             "Fleet build options are unexpectedly enabled in the effective sdkconfig: "
             + ", ".join(incorrectly_enabled_options)
+        )
+    missing_effective_disabled_options = sorted(
+        option
+        for option in disabled_security_options
+        if f"{option}=n" not in effective_sdkconfig.splitlines()
+        and f"# {option} is not set" not in effective_sdkconfig.splitlines()
+    )
+    if missing_effective_disabled_options:
+        raise RuntimeError(
+            "Fleet build options must be explicitly disabled in the effective sdkconfig: "
+            + ", ".join(missing_effective_disabled_options)
         )
 
 secrets_path = project_dir / "include" / "secrets.h"

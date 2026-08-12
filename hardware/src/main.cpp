@@ -34,10 +34,12 @@
 
 #if EKI_FLEET_BUILD
 static_assert(
-  BACKEND_URL[0] == 'h' && BACKEND_URL[1] == 't' &&
-  BACKEND_URL[2] == 't' && BACKEND_URL[3] == 'p' &&
-  BACKEND_URL[4] == 's' && BACKEND_URL[5] == ':' &&
-  BACKEND_URL[6] == '/' && BACKEND_URL[7] == '/',
+  eki::config::literalStartsWith(
+    BACKEND_URL,
+    sizeof(BACKEND_URL) - 1,
+    "https://",
+    sizeof("https://") - 1
+  ),
   "Fleet builds require an HTTPS BACKEND_URL in secrets.h."
 );
 #endif
@@ -590,6 +592,17 @@ void updateConnectivityFault() {
   );
 }
 
+[[noreturn]] void haltWithStatusLed(uint8_t pulseCount, bool feedWatchdog = false) {
+  while (true) {
+    if (feedWatchdog) esp_task_wdt_reset();
+    digitalWrite(
+      STATUS_LED_PIN,
+      eki::connectivity::pulsePatternLedOn(pulseCount, millis()) ? HIGH : LOW
+    );
+    delay(25);
+  }
+}
+
 void latchCredentialFault() {
   if (credentialFaultActive) return;
   credentialFaultActive = true;
@@ -1087,6 +1100,8 @@ void publisherTask(void *) {
 
 void setup() {
   Serial.begin(115200);
+  pinMode(STATUS_LED_PIN, OUTPUT);
+  digitalWrite(STATUS_LED_PIN, LOW);
   const eki::config::ValidationError configurationError = eki::config::validate(
     WIFI_SSID,
     std::strlen(WIFI_SSID),
@@ -1106,33 +1121,25 @@ void setup() {
       "[Boot] Invalid compile-time configuration field %s; halted.\n",
       eki::config::validationErrorName(configurationError)
     );
-    while (true) delay(1000);
+    haltWithStatusLed(2);
   }
   if (EKI_FLEET_BUILD && !eki::config::backendUrlUsesHttps(BACKEND_URL)) {
     Serial.println("[Security] Fleet firmware requires an HTTPS backend; halted.");
-    while (true) delay(1000);
+    haltWithStatusLed(4);
   }
   flashEncryptionActive = esp_flash_encryption_enabled();
   secureBootActive = esp_secure_boot_enabled();
-  Serial.printf(
-    "[Security] fleet-build=%s flash-encryption=%s secure-boot=%s.\n",
-    EKI_FLEET_BUILD ? "yes" : "no",
-    flashEncryptionActive ? "enabled" : "disabled",
-    secureBootActive ? "enabled" : "disabled"
-  );
   if (EKI_FLEET_BUILD && (!flashEncryptionActive || !secureBootActive)) {
     Serial.println(
       "[Security] Fleet firmware refuses to run until Flash Encryption and Secure Boot V2 are both verified."
     );
-    while (true) delay(1000);
+    haltWithStatusLed(4);
   }
   const uint32_t configurationTag = telemetryConfigurationTag();
   const esp_reset_reason_t espBootReason = esp_reset_reason();
   const eki::reset::ResetReason bootReason = resetReasonFromEsp(espBootReason);
   resetStats.initializeOrRecover(configurationTag);
   resetStats.record(bootReason);
-  pinMode(STATUS_LED_PIN, OUTPUT);
-  digitalWrite(STATUS_LED_PIN, LOW);
   const size_t gpsRxBuffer = gpsSerial.setRxBufferSize(GPS_RX_BUFFER_BYTES);
   gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
   gpsSerial.onReceiveError(onGpsSerialError);
@@ -1169,7 +1176,7 @@ void setup() {
   }
   if (!initializeRequestStrings()) {
     Serial.println("[Boot] Compile-time request configuration is too long; halted.");
-    while (true) delay(1000);
+    haltWithStatusLed(2);
   }
   sntp_set_time_sync_notification_cb(onNtpTimeSynchronized);
   configureWatchdog();
@@ -1184,10 +1191,7 @@ void setup() {
   );
   if (taskResult != pdPASS) {
     Serial.println("[Boot] Unable to start telemetry publisher task.");
-    while (true) {
-      esp_task_wdt_reset();
-      delay(1000);
-    }
+    haltWithStatusLed(2, true);
   }
 }
 

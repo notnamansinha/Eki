@@ -24,6 +24,24 @@ enum class ValidationError : uint8_t {
   BackendRootCa,
 };
 
+constexpr bool literalStartsWith(
+  const char *value,
+  size_t valueLength,
+  const char *prefix,
+  size_t prefixLength
+) {
+  return prefixLength == 0
+    ? true
+    : value == nullptr || prefix == nullptr || valueLength == 0
+      ? false
+      : value[0] == prefix[0] && literalStartsWith(
+          value + 1,
+          valueLength - 1,
+          prefix + 1,
+          prefixLength - 1
+        );
+}
+
 inline bool deviceIdIsValid(const char *value, size_t length) {
   if (value == nullptr || length == 0 || length > DEVICE_ID_MAX_LENGTH) {
     return false;
@@ -51,7 +69,13 @@ inline bool deviceSecretIsValid(const char *value, size_t length) {
 }
 
 inline bool backendUrlUsesHttps(const char *value) {
-  return value != nullptr && std::strncmp(value, "https://", 8) == 0;
+  constexpr char HTTPS_PREFIX[] = "https://";
+  return value != nullptr && literalStartsWith(
+    value,
+    std::strlen(value),
+    HTTPS_PREFIX,
+    sizeof(HTTPS_PREFIX) - 1
+  );
 }
 
 inline bool backendUrlIsValid(const char *value, size_t length) {
@@ -61,13 +85,23 @@ inline bool backendUrlIsValid(const char *value, size_t length) {
   if (
     value != nullptr &&
     length > sizeof(HTTPS_PREFIX) - 1 &&
-    std::memcmp(value, HTTPS_PREFIX, sizeof(HTTPS_PREFIX) - 1) == 0
+    literalStartsWith(
+      value,
+      length,
+      HTTPS_PREFIX,
+      sizeof(HTTPS_PREFIX) - 1
+    )
   ) {
     prefixLength = sizeof(HTTPS_PREFIX) - 1;
   } else if (
     value != nullptr &&
     length > sizeof(HTTP_PREFIX) - 1 &&
-    std::memcmp(value, HTTP_PREFIX, sizeof(HTTP_PREFIX) - 1) == 0
+    literalStartsWith(
+      value,
+      length,
+      HTTP_PREFIX,
+      sizeof(HTTP_PREFIX) - 1
+    )
   ) {
     prefixLength = sizeof(HTTP_PREFIX) - 1;
   } else {
@@ -91,6 +125,22 @@ inline bool backendUrlIsValid(const char *value, size_t length) {
   return hasAuthorityCharacter;
 }
 
+inline size_t boundedFind(
+  const char *value,
+  size_t length,
+  const char *marker,
+  size_t markerLength,
+  size_t start
+) {
+  if (markerLength == 0 || start > length || markerLength > length - start) {
+    return length;
+  }
+  for (size_t index = start; index <= length - markerLength; ++index) {
+    if (std::memcmp(value + index, marker, markerLength) == 0) return index;
+  }
+  return length;
+}
+
 inline bool backendRootCaIsValid(const char *value, size_t length) {
   constexpr char BEGIN_MARKER[] = "-----BEGIN CERTIFICATE-----";
   constexpr char END_MARKER[] = "-----END CERTIFICATE-----";
@@ -102,8 +152,23 @@ inline bool backendRootCaIsValid(const char *value, size_t length) {
   for (size_t index = 0; index < length; ++index) {
     if (value[index] == '\0') return false;
   }
-  return std::strstr(value, BEGIN_MARKER) != nullptr &&
-         std::strstr(value, END_MARKER) != nullptr;
+  if (value[length] != '\0') return false;
+
+  const size_t begin = boundedFind(
+    value,
+    length,
+    BEGIN_MARKER,
+    sizeof(BEGIN_MARKER) - 1,
+    0
+  );
+  if (begin == length) return false;
+  return boundedFind(
+    value,
+    length,
+    END_MARKER,
+    sizeof(END_MARKER) - 1,
+    begin + sizeof(BEGIN_MARKER) - 1
+  ) != length;
 }
 
 inline ValidationError validate(

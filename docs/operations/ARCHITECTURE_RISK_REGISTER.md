@@ -86,10 +86,12 @@ not a substitute for the physical and institutional acceptance work in the
   bounded clock discipline, Wi-Fi exponential retry and a three-pulse
   credential-fault LED code. Wi-Fi, device identity/secret, backend origin, and
   CA are compiled into a device-specific image and validated before networking;
-  no local configuration service or application persistent store exists. The authenticated
-  diagnostics channel reports bounded health and hardware-security state every
-  five minutes. Both development and signed fleet targets compile within their
-  regular RAM, RTC, and flash limits.
+  no local configuration service or NVS/Preferences-backed configuration and
+  recovery store exists. The RTC no-init telemetry queue remains the bounded
+  store-and-forward mechanism. The authenticated diagnostics channel reports
+  bounded health and hardware-security state every five minutes. Both
+  development and signed fleet targets compile within their regular RAM, RTC,
+  and flash limits.
 - **Remaining closure evidence:** complete a physical dead-zone/backend-outage
   and recovery run on the target board, confirming zero UART/FIFO overflow and
   acceptable queue high-water/reset recovery under real GNSS and TLS load.
