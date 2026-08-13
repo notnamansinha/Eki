@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { FieldValue } from "firebase-admin/firestore";
 import rateLimit from "express-rate-limit";
 import { requireAdmin } from "../middleware/requireAdmin";
-import { deviceIngressKeyGenerator } from "../lib/rateLimitIdentity";
+import { ipKeyGenerator } from "../lib/rateLimitIdentity";
 import { db } from "../lib/firebaseAdmin";
 import {
   ingestDeviceTelemetry,
@@ -18,17 +18,15 @@ import {
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
-// Per-device (not per-IP) bucket: on campus many buses share one NAT egress
-// IP, so an IP-keyed cap would throttle the whole fleet together (issue #74).
-// The deviceId is the identity claim on the ingress contract; the service
-// layer still enforces the authoritative per-device budget after credential
-// verification. Requests without a Device secret fall back to an IP bucket.
+// This is the pre-auth DoS limit, so it must not trust a deviceId or Device
+// header supplied by the caller. ingestDeviceTelemetry keeps the authoritative
+// per-device budget after credential verification.
 const telemetryLimiter = rateLimit({
   windowMs: 60_000,
   limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: deviceIngressKeyGenerator,
+  keyGenerator: ipKeyGenerator,
   handler: (_req, res, _next, options) => {
     const retryAfterMs = options.windowMs;
     res.set("Retry-After", String(Math.ceil(retryAfterMs / 1000)));
