@@ -144,7 +144,7 @@ describe("SerializedChangeWriter", () => {
     expect(calls).toEqual(["first", "second"]);
   });
 
-  it("invalidate() drops dedup state and any pending write", async () => {
+  it("invalidate() drops dedup state but preserves ordering with in-flight work", async () => {
     const writer = new SerializedChangeWriter();
     const calls: string[] = [];
 
@@ -154,8 +154,9 @@ describe("SerializedChangeWriter", () => {
     });
     writer.invalidate("bus-1");
 
-    // A new enqueue starts a fresh queue instead of chaining behind the
-    // dropped write, and its fingerprint is no longer suppressed.
+    // The fingerprint is no longer suppressed, but the fresh write must stay
+    // behind the old one: an in-flight persistence operation cannot safely be
+    // cancelled and must never race to overwrite newer state.
     await writer.enqueue("bus-1", "fingerprint-1", async () => {
       calls.push("fresh");
     });
@@ -163,7 +164,7 @@ describe("SerializedChangeWriter", () => {
     expect(calls).toEqual(["pending", "fresh"]);
   });
 
-  it("pending() reports in-flight writes and clear() resets everything", async () => {
+  it("pending() reports in-flight writes and clear() preserves their ordering", async () => {
     const writer = new SerializedChangeWriter();
     const calls: string[] = [];
     let release!: () => void;
@@ -181,17 +182,18 @@ describe("SerializedChangeWriter", () => {
     expect(Array.from(writer.pending())).toHaveLength(1);
 
     writer.clear();
-    expect(Array.from(writer.pending())).toHaveLength(0);
+    expect(Array.from(writer.pending())).toHaveLength(1);
 
-    // The dedup fingerprint is gone too: the same state can be written again
-    // on a fresh queue instead of chaining behind the dropped write.
-    await writer.enqueue("bus-1", "fingerprint-1", async () => {
+    // The dedup fingerprint is gone, but the fresh write remains queued behind
+    // the still-running operation.
+    const afterClear = writer.enqueue("bus-1", "fingerprint-1", async () => {
       calls.push("after-clear");
     });
-    expect(calls).toEqual(["pending", "after-clear"]);
+    expect(calls).toEqual(["pending"]);
 
     release();
     await pending;
-    expect(calls).toEqual(["pending", "after-clear", "done"]);
+    await afterClear;
+    expect(calls).toEqual(["pending", "done", "after-clear"]);
   });
 });

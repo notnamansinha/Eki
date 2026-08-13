@@ -69,10 +69,15 @@ export class SerializedChangeWriter {
     this.fingerprints.delete(key);
   }
 
-  /** Forgets the fingerprint and drops any pending write for `key`. */
+  /**
+   * Forgets the fingerprint for `key` without detaching in-flight work.
+   *
+   * Promises cannot be cancelled safely here. Keeping the queue means a new
+   * write still runs after an older one, rather than racing it and allowing a
+   * stale persistence operation to finish last.
+   */
   invalidate(key: string): void {
     this.fingerprints.delete(key);
-    this.queues.delete(key);
   }
 
   /** In-flight writes for every key, for shutdown draining. */
@@ -80,9 +85,8 @@ export class SerializedChangeWriter {
     return this.queues.values();
   }
 
-  /** Resets all queued writes and dedup fingerprints. */
+  /** Clears dedup fingerprints while preserving active write ordering. */
   clear(): void {
-    this.queues.clear();
     this.fingerprints.clear();
   }
 }
