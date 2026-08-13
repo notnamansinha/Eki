@@ -54,14 +54,14 @@ describe("stripRulesText (App Check removal for emulator tests)", () => {
     assert.ok(firestore.includes("allow read: if isOwner(uid);"));
   });
 
-  it("removes request.app from Realtime Database rules", () => {
+  it("leaves valid Realtime Database rules unchanged", () => {
     const database = JSON.stringify(
       {
         rules: {
           ".read": false,
           ".write": false,
           activeBuses: {
-            ".read": "auth != null && request.app != null",
+            ".read": "auth != null",
             ".write": false,
           },
         },
@@ -71,7 +71,6 @@ describe("stripRulesText (App Check removal for emulator tests)", () => {
     );
 
     const { database: stripped } = stripRulesText("{}", database);
-    assert.ok(!stripped.includes("request.app"));
     assert.ok(stripped.includes('".read": "auth != null"'));
   });
 

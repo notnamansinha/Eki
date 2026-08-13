@@ -18,9 +18,10 @@ local professor demonstration.
   `GOOGLE_MAPS_API_KEY`, `AUTH_REVOCATION_CACHE_MS`, retention values, and
   worker settings.
 - [ ] Enforce App Check (console toggle) on Firestore and Realtime Database in
-  both projects; rules already require `request.app != null` on every
-  client-facing allow. The Admin SDK backend is unaffected. Emulator tests
-  strip the App Check gates via `scripts/rules-for-emulator.mjs` (the
+  both projects. Firestore rules also require `request.app != null`; RTDB
+  enforcement is configured in Firebase because RTDB rules do not expose that
+  variable. The Admin SDK backend is unaffected. Emulator tests strip the
+  Firestore App Check gates via `scripts/rules-for-emulator.mjs` (the
   rules-unit-testing SDK cannot attach App Check tokens).
 
 ## Staging and deployment pipeline

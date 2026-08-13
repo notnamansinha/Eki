@@ -29,7 +29,6 @@ const REPO_CONFIG = path.join(ROOT, "firebase.json");
 // evaluated FIRST (before auth/session lookups), so the Firestore fragment
 // carries a trailing " && ".
 const FIRESTORE_GATE = "isAppChecked() && ";
-const DATABASE_GATE = " && request.app != null";
 
 // The helper function block (comment + function) added for App Check; removed
 // wholesale so the emulator ruleset contains no App Check residue at all.
@@ -41,17 +40,12 @@ export function stripRulesText(firestoreText, databaseText) {
     .split(FIRESTORE_GATE)
     .join("")
     .replace(FIRESTORE_HELPER, "");
-  const strippedDatabase = databaseText.split(DATABASE_GATE).join("");
+  const strippedDatabase = databaseText;
 
   if (strippedFirestore.includes("isAppChecked(")) {
     throw new Error(
       "firestore.rules still contains isAppChecked() after stripping; " +
         "the gate fragment must be exactly 'isAppChecked() && '.",
-    );
-  }
-  if (strippedDatabase.includes("request.app")) {
-    throw new Error(
-      "database.rules.json still contains request.app after stripping.",
     );
   }
   return { firestore: strippedFirestore, database: strippedDatabase };

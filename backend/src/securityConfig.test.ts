@@ -156,7 +156,7 @@ describe("production security configuration", () => {
     // The one allowed get() lives in the sessionDoc helper and is shared by
     // exactly the two read helpers; client write rules must never call it.
     expect(sessionHelper).toContain("sessionDoc(sessionId)");
-    expect(rules.match(/sessionDoc\(/g) ?? []).toHaveLength(6);
+    expect(rules.match(/sessionDoc\(/g) ?? []).toHaveLength(7);
     expect(operator.split("sessionDoc(").length - 1).toBe(1);
     expect(feedback).not.toContain("sessionDoc(");
     expect(messages).not.toContain("sessionDoc(");
@@ -297,15 +297,15 @@ describe("production security configuration", () => {
     // evaluated before any billable session get(). A denied unauthenticated
     // read must not trigger sessionDoc()/get().
     const operator = ruleBlock(rules, "function isSessionOperator");
-    const passenger = ruleBlock(rules, "function isSessionPassenger");
+    const sessionReader = ruleBlock(rules, "function canReadSession");
     expect(operator.indexOf("isAuthenticated()")).toBeGreaterThan(-1);
     expect(operator.indexOf("isAuthenticated()")).toBeLessThan(
       operator.indexOf("sessionDoc("),
     );
-    // isSessionPassenger must not bind the session fetch before auth.
-    expect(passenger).toContain("if (!isAuthenticated())");
-    expect(passenger.indexOf("!isAuthenticated()")).toBeLessThan(
-      passenger.indexOf("sessionDoc("),
+    // Passenger membership is part of canReadSession and is behind the same
+    // authentication short-circuit.
+    expect(sessionReader.indexOf("isAuthenticated()")).toBeLessThan(
+      sessionReader.indexOf("sessionDoc("),
     );
     // The authorized read path still costs exactly one get() — only the
     // sessionDoc helper calls get(), and there is no getAfter() anywhere
@@ -314,9 +314,10 @@ describe("production security configuration", () => {
     expect(rules).not.toContain("getAfter(");
   });
 
-  it("enforces App Check on Realtime Database client reads (issue #39)", () => {
+  it("keeps Realtime Database rules valid while App Check is enforced by Firebase", () => {
     const database = JSON.parse(workspaceFile("database.rules.json"));
-    expect(database.rules.activeBuses[".read"]).toContain("request.app != null");
+    expect(database.rules.activeBuses[".read"]).toBe("auth != null");
+    expect(JSON.stringify(database)).not.toContain("request.app");
     expect(database.rules.activeBuses[".write"]).toBe(false);
     expect(database.rules[".read"]).toBe(false);
   });
