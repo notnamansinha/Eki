@@ -48,6 +48,13 @@ const configuredCorsOrigins = (process.env.CORS_ORIGIN || "")
 const app = express();
 if (process.env.NODE_ENV === "production") {
   app.set("trust proxy", 1);
+  // Fail closed (issue #39 D6): a production API with no configured browser
+  // origin is misconfigured. Refuse to start rather than serve with an empty
+  // allowlist. CORS is not an auth boundary, but the missing env var almost
+  // always means the deploy forgot the frontend origin.
+  if (configuredCorsOrigins.length === 0) {
+    throw new Error("CORS_ORIGIN must be set (comma-separated) in production.");
+  }
 }
 const httpServer = http.createServer(app);
 httpServer.requestTimeout = 15_000;
@@ -98,10 +105,10 @@ const writeLimiter = rateLimit({
 });
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
+// Browser origins come exclusively from the CORS_ORIGIN env var (issue #39
+// D6): no hardcoded project-specific defaults. Production fails closed above.
 const CORS_ORIGINS = [...new Set([
   ...configuredCorsOrigins,
-  "https://bustrack-be165.web.app",
-  "https://bustrack-be165.firebaseapp.com",
   ...(process.env.NODE_ENV === "production" ? [] : ["http://localhost:3000"]),
 ])];
 app.use(cors({ origin: CORS_ORIGINS, credentials: false }));

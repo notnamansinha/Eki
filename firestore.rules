@@ -16,10 +16,27 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == uid;
     }
 
+    // App Check (issue #39): every client-facing allow requires a valid App
+    // Check token and evaluates it FIRST — before authentication or any
+    // billable session lookup — so an unverified request short-circuits
+    // without costing a get(). The Admin SDK bypasses rules (server writes
+    // are unaffected); only browser clients present request.app. Debug tokens
+    // registered in the Firebase Console satisfy this like any other provider
+    // token. The emulator integration suite runs against App-Check-free
+    // copies written to a temp dir (scripts/rules-for-emulator.mjs), never
+    // over the committed rules.
+    function isAppChecked() {
+      return request.app != null;
+    }
+
     function sessionDoc(sessionId) {
       return get(/databases/$(database)/documents/ride_sessions/$(sessionId));
     }
 
+    // Authentication short-circuits BEFORE the session fetch: a denied
+    // unauthenticated read must never evaluate the billable get() (rule
+    // ordering, audit #113). The driver branch gates sessionDoc() behind
+    // isAuthenticated() && role checks via &&, which short-circuits.
     function isSessionOperator(sessionId) {
       return isAdmin() ||
         (isAuthenticated() && request.auth.token.role == 'driver' &&
@@ -49,7 +66,7 @@ service cloud.firestore {
     // ── User Profiles — Store User Data & Roles ──
     match /users/{uid} {
       // Users can read their own profile
-      allow read: if isOwner(uid);
+      allow read: if isAppChecked() && isOwner(uid);
       // Profile creation is backend-authoritative (POST /api/users/bootstrap).
       // The backend always creates profiles as role 'passenger' and never
       // overwrites an existing role, so clients cannot self-escalate.
@@ -59,32 +76,32 @@ service cloud.firestore {
 
     // ── Routes collection — authenticated read, write by admins only ──
     match /routes/{routeId} {
-      allow read: if isAuthenticated();
+      allow read: if isAppChecked() && isAuthenticated();
       // Route geometry and stop validation are enforced by the admin API.
       allow create, update, delete: if false;
     }
 
     // ── Bus locations — authenticated-admin read/write (fleet projection) ──
     match /bus_locations/{busId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isAppChecked() && isAdmin();
     }
 
     // passenger_requests is backend-authoritative: no client rule block. The
     // admin /api/requests route manages lifecycle via the Admin SDK (issues
     // #72 + #73 removed the dead client create/transition surface).
-    
+
     // ── Buses collection ──
     match /buses/{busId} {
-      allow read: if isAuthenticated();
+      allow read: if isAppChecked() && isAuthenticated();
       // Fleet writes also update Auth claims and RTDB authorization mirrors.
       allow create, update, delete: if false;
     }
-    
+
     // ── Ride Sessions ──
     match /ride_sessions/{sessionId} {
       // Passenger manifests contain personal travel information. Only trusted
       // operator roles may read them.
-      allow read: if isSessionOperator(sessionId);
+      allow read: if isAppChecked() && isSessionOperator(sessionId);
       // Session lifecycle, stop history AND passenger manifests are all
       // backend-authoritative. Clients cannot write here at all: boarding is
       // issued by the backend only after a driver-visible session code and
@@ -95,7 +112,7 @@ service cloud.firestore {
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if canReadSession(sessionId);
+        allow read: if isAppChecked() && canReadSession(sessionId);
         // Message writes are backend-authoritative (POST /api/sessions/:id/messages).
         // The server enforces membership, the 60/hr rolling rate limit, the 3s
         // gap, and the profanity filter — none of which a crafted client could
@@ -106,29 +123,30 @@ service cloud.firestore {
       match /messageRateLimits/{uid} {
         // Read is permitted for the owner so the UI can reflect limits, but
         // writes are backend-only: the server maintains the rolling window.
-        allow read: if isOwner(uid) && canReadSession(sessionId);
+        // The cheap ownership check runs before the session fetch.
+        allow read: if isAppChecked() && isOwner(uid) && canReadSession(sessionId);
         allow create, update, delete: if false;
       }
     }
-    
+
     // ── Drivers collection ──
     match /drivers/{driverId} {
-      allow read: if isAdmin() ||
+      allow read: if isAppChecked() && (isAdmin() ||
         (isAuthenticated() &&
          request.auth.token.role == 'driver' &&
-         resource.data.authUid == request.auth.uid);
+         resource.data.authUid == request.auth.uid));
       allow create, update, delete: if false;
     }
 
     // ── Completed trips collection ──
     match /completed_trips/{tripId} {
-      allow read: if isAdmin();
+      allow read: if isAppChecked() && isAdmin();
       allow write: if false; // Only backend writes to this via Admin SDK
     }
-    
+
     // ── Feedback collection ──
     match /feedbacks/{feedbackId} {
-      allow read: if isAdmin();
+      allow read: if isAppChecked() && isAdmin();
       // Feedback writes are backend-authoritative (POST /api/feedback). The
       // server enforces the 24h cooldown, the ride/general shape, and ride
       // eligibility (manifest membership, completed session, matching
@@ -140,7 +158,7 @@ service cloud.firestore {
 
     // Feedback cooldowns
     match /feedbackCooldowns/{uid} {
-      allow read: if isOwner(uid);
+      allow read: if isAppChecked() && isOwner(uid);
       // Cooldown writes are backend-only: the server stamps lastSubmittedAt
       // atomically with the feedback it approves.
       allow create, update, delete: if false;
@@ -183,7 +201,7 @@ service cloud.firestore {
 
     // ── Settings collection ──
     match /settings/{document} {
-      allow read: if isAuthenticated();
+      allow read: if isAppChecked() && isAuthenticated();
       // Settings writes are backend-authoritative (PUT /api/settings, admin
       // claim enforced server-side). Clients only read.
       allow create, update, delete: if false;
