@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
 import express from "express";
+import { FieldValue } from "firebase-admin/firestore";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => ({
@@ -130,6 +131,16 @@ async function join(body: Record<string, unknown>) {
 }
 
 describe("session passenger join route", () => {
+  it("records membership in an indexable passengerIds array for privacy deletion", async () => {
+    const response = await join({ lat: 23, lng: 72.5, accuracy: 20 });
+
+    expect(response.status).toBe(200);
+    const args = harness.updates[0];
+    const keyIndex = args.indexOf("passengerIds");
+    expect(keyIndex).toBeGreaterThan(0);
+    expect(args[keyIndex + 1]).toBeInstanceOf(FieldValue);
+  });
+
   it("rejects a first-time passenger without coordinates before live lookup", async () => {
     const response = await join({});
 

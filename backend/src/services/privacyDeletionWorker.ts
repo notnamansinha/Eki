@@ -17,21 +17,35 @@ async function deleteQuery(
   }
 }
 
-async function removePassengerManifest(uid: string): Promise<number> {
-  let count = 0;
-  while (true) {
-    const sessions = await db.collection("ride_sessions")
-      .where(new FieldPath("passengers", uid, "userId"), "==", uid)
-      .limit(BATCH_SIZE)
-      .get();
-    if (sessions.empty) return count;
-    const batch = db.batch();
-    sessions.docs.forEach((session) => {
-      batch.update(session.ref, new FieldPath("passengers", uid), FieldValue.delete());
-    });
-    await batch.commit();
-    count += sessions.size;
-  }
+/** Removes one passenger from every ride manifest, including legacy documents. */
+export async function removePassengerManifest(uid: string): Promise<number> {
+  const removeFrom = async (query: Query): Promise<number> => {
+    let removed = 0;
+    while (true) {
+      const sessions = await query.limit(BATCH_SIZE).get();
+      if (sessions.empty) return removed;
+      const batch = db.batch();
+      sessions.docs.forEach((session) => {
+        batch.update(session.ref, {
+          passengerIds: FieldValue.arrayRemove(uid),
+        });
+        batch.update(session.ref, new FieldPath("passengers", uid), FieldValue.delete());
+      });
+      await batch.commit();
+      removed += sessions.size;
+    }
+  };
+
+  // passengerIds is the efficient path for newly-written sessions. Keep the
+  // old, dynamic membership query during the migration window: historic
+  // sessions do not yet have passengerIds, and privacy deletion must never
+  // silently leave their manifest data behind.
+  const indexed = db.collection("ride_sessions")
+    .where("passengerIds", "array-contains", uid);
+  const legacy = db.collection("ride_sessions")
+    .where(new FieldPath("passengers", uid, "userId"), "==", uid);
+
+  return (await removeFrom(indexed)) + (await removeFrom(legacy));
 }
 
 async function processDeletion(uid: string): Promise<void> {

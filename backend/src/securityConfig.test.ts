@@ -33,7 +33,7 @@ describe("production security configuration", () => {
     }
   });
 
-  it("keeps realtime telemetry server-only and denies every RTDB client mutation", () => {
+  it("keeps realtime telemetry server-only and removes dead RTDB rule blocks", () => {
     const database = JSON.parse(workspaceFile("database.rules.json"));
     const activeBus = database.rules.activeBuses.$busKey;
 
@@ -41,13 +41,16 @@ describe("production security configuration", () => {
     expect(database.rules[".write"]).toBe(false);
     expect(database.rules.activeBuses[".write"]).toBe(false);
     expect(activeBus[".write"]).toBe(false);
-    expect(database.rules.driverRouteAssignments[".read"]).toBe(false);
-    expect(database.rules.driverRouteAssignments[".write"]).toBe(false);
-    expect(database.rules.messages[".write"]).toBe(false);
+    expect(database.rules.activeBuses[".indexOn"]).toContain("busId");
+    // Dead rule blocks are gone: nothing reads RTDB messages/users, and the
+    // driverRouteAssignments mirror is Admin-SDK-only (default-deny for
+    // clients is identical to the removed explicit denies) (issue #49 L2).
+    expect(database.rules.driverRouteAssignments).toBeUndefined();
+    expect(database.rules.messages).toBeUndefined();
+    expect(database.rules.users).toBeUndefined();
     const syncRoles = workspaceFile("backend/src/syncRoleClaims.ts");
     expect(syncRoles).toContain("driverRouteAssignments/");
     expect(syncRoles).toContain("previousDriverId");
-    expect(database.rules.activeBuses[".indexOn"]).toContain("busId");
   });
 
   it("keeps signal loss separate from lifecycle and persistence ordered", () => {
@@ -82,6 +85,89 @@ describe("production security configuration", () => {
     expect(workers).toContain("await stopWork()");
   });
 
+  it("denies every unlisted path with an explicit catch-all and keeps comments accurate", () => {
+    const rules = workspaceFile("firestore.rules");
+
+    // Explicit catch-all deny: overlapping rules use OR semantics, so this
+    // never overrides a narrower allow, and unlisted collections fail closed
+    // with documented intent (issue #49 L6).
+    expect(rules).toContain("match /{document=**}");
+    expect(rules).toContain("allow read, write: if false;");
+    // Routes/bus_locations comments no longer claim PUBLIC when the rules
+    // require authentication or admin (issue #49 L5).
+    expect(rules).not.toContain("PUBLIC read");
+  });
+
+  it("reads the session document once for chat access checks", () => {
+    const rules = workspaceFile("firestore.rules");
+    const messages = ruleBlock(rules, "match /messages/{messageId}");
+    const rateLimits = ruleBlock(rules, "match /messageRateLimits/{uid}");
+    const helper = ruleBlock(rules, "function canReadSession");
+
+    // Chat reads check operator OR passenger membership in one get() instead of
+    // two (issue #40): a passenger reading chat must not pay for two billable
+    // session fetches per request.
+    expect(messages).toContain("canReadSession(sessionId)");
+    expect(rateLimits).toContain("canReadSession(sessionId)");
+    expect(helper).not.toContain("isSessionOperator");
+    // Firestore caches repeated access calls for the same document within a
+    // rule evaluation. The helper deliberately repeats the same sessionDoc
+    // path only behind authenticated branches, keeping one billed get().
+    expect(helper.split("sessionDoc(").length - 1).toBe(4);
+    expect(rules).not.toContain("function isSessionPassenger");
+  });
+
+  it("evaluates authentication before the session fetch (audit #112)", () => {
+    const rules = workspaceFile("firestore.rules");
+    const helper = ruleBlock(rules, "function canReadSession");
+    const operator = ruleBlock(rules, "function isSessionOperator");
+
+    // A denied unauthenticated read must never evaluate the billable get(): the
+    // auth short-circuit must appear before any sessionDoc() call in both read
+    // helpers, and the helper must not bind the session eagerly.
+    for (const block of [helper, operator]) {
+      const authIdx = block.indexOf("isAuthenticated()");
+      const sessionIdx = block.indexOf("sessionDoc(");
+      expect(authIdx).toBeGreaterThan(-1);
+      expect(authIdx).toBeLessThan(sessionIdx);
+    }
+    expect(helper).toContain("isAuthenticated() &&");
+  });
+
+  it("keeps rules get() cost bounded: one session fetch, no write-path gets (issue #40)", () => {
+    const rules = workspaceFile("firestore.rules");
+    const feedback = ruleBlock(rules, "match /feedbacks/{feedbackId}");
+    const messages = ruleBlock(rules, "match /messages/{messageId}");
+    const rateLimits = ruleBlock(rules, "match /messageRateLimits/{uid}");
+    const cooldowns = ruleBlock(rules, "match /feedbackCooldowns/{uid}");
+    const operator = ruleBlock(rules, "function isSessionOperator");
+    const sessionHelper = ruleBlock(rules, "function canReadSession");
+
+    // Chat create used to cost 2 session get()s + 2 rate-limit get()/getAfter();
+    // feedback create cost 3 session get()s (issue #40). Those writes are now
+    // backend-authoritative, so the ONLY get() left in the whole rules file is
+    // the single session fetch shared by read checks. This guard fails if a
+    // future rule reintroduces a second fetch or a write-path get().
+    // (Comments are stripped so "single get()" prose doesn't count.)
+    const code = rules.replace(/\/\/.*$/gm, "");
+    expect(code.match(/get\(/g) ?? []).toHaveLength(1);
+    expect(code).not.toContain("getAfter(");
+
+    // The one allowed get() lives in the sessionDoc helper and is shared by
+    // exactly the two read helpers; client write rules must never call it.
+    expect(sessionHelper).toContain("sessionDoc(sessionId)");
+    expect(rules.match(/sessionDoc\(/g) ?? []).toHaveLength(6);
+    expect(operator.split("sessionDoc(").length - 1).toBe(1);
+    expect(feedback).not.toContain("sessionDoc(");
+    expect(messages).not.toContain("sessionDoc(");
+    expect(rateLimits).not.toContain("sessionDoc(");
+    expect(cooldowns).not.toContain("sessionDoc(");
+
+    // Rate-limit reads short-circuit the cheap ownership check before paying
+    // for the session fetch, so a non-owner read costs zero get()s.
+    expect(rateLimits.indexOf("isOwner(uid)")).toBeLessThan(rateLimits.indexOf("canReadSession(sessionId)"));
+  });
+
   it("keeps sensitive Firestore collections and chat identity protected", () => {
     const rules = workspaceFile("firestore.rules");
     const devices = ruleBlock(rules, "match /devices/{deviceId}");
@@ -97,11 +183,10 @@ describe("production security configuration", () => {
     expect(activeBusLocks).toContain("allow read, write: if false;");
     // Message and rate-limit writes are backend-authoritative; clients read only.
     expect(messages).toContain("allow create, update, delete: if false;");
-    expect(messages).toContain("isSessionPassenger(sessionId)");
+    expect(messages).toContain("canReadSession(sessionId)");
     expect(messages).not.toContain("messageRateAdvanced(sessionId)");
     expect(messageRateLimits).toContain("allow create, update, delete: if false;");
-    expect(messageRateLimits).toContain("isSessionPassenger(sessionId)");
-    expect(messageRateLimits).toContain("isSessionOperator(sessionId)");
+    expect(messageRateLimits).toContain("canReadSession(sessionId)");
     expect(sessions).toContain("allow read: if isSessionOperator(sessionId)");
     expect(sessions).toContain("allow update: if false;");
     expect(sessions).not.toContain("boardingStopId.size() <= 128");

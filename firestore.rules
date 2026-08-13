@@ -26,11 +26,18 @@ service cloud.firestore {
          request.auth.token.driverId == sessionDoc(sessionId).data.driverId);
     }
 
-    function isSessionPassenger(sessionId) {
-      let session = sessionDoc(sessionId);
-      return isAuthenticated() && session.data.passengers is map &&
-        request.auth.uid in session.data.passengers &&
-        session.data.passengers[request.auth.uid].userId == request.auth.uid;
+    // Operator OR passenger membership with a single get(): chat reads check
+    // both roles in one billable session fetch instead of two (issue #40).
+    // Authentication is evaluated BEFORE the session fetch (audit #112): a
+    // denied unauthenticated read must never evaluate the billable get().
+    function canReadSession(sessionId) {
+      return isAdmin() ||
+        (isAuthenticated() &&
+         ((request.auth.token.role == 'driver' &&
+           request.auth.token.driverId == sessionDoc(sessionId).data.driverId) ||
+          (sessionDoc(sessionId).data.passengers is map &&
+           request.auth.uid in sessionDoc(sessionId).data.passengers &&
+           sessionDoc(sessionId).data.passengers[request.auth.uid].userId == request.auth.uid)));
     }
 
     // SEC: Boarding is server-issued (POST /api/sessions/:sessionId/join).
@@ -50,14 +57,14 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // ── Routes collection — PUBLIC read, write by admins only ──
+    // ── Routes collection — authenticated read, write by admins only ──
     match /routes/{routeId} {
       allow read: if isAuthenticated();
       // Route geometry and stop validation are enforced by the admin API.
       allow create, update, delete: if false;
     }
 
-    // ── Bus locations — PUBLIC read, write by drivers/admins ──
+    // ── Bus locations — authenticated-admin read/write (fleet projection) ──
     match /bus_locations/{busId} {
       allow read, write: if isAdmin();
     }
@@ -88,7 +95,7 @@ service cloud.firestore {
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if isSessionOperator(sessionId) || isSessionPassenger(sessionId);
+        allow read: if canReadSession(sessionId);
         // Message writes are backend-authoritative (POST /api/sessions/:id/messages).
         // The server enforces membership, the 60/hr rolling rate limit, the 3s
         // gap, and the profanity filter — none of which a crafted client could
@@ -99,8 +106,7 @@ service cloud.firestore {
       match /messageRateLimits/{uid} {
         // Read is permitted for the owner so the UI can reflect limits, but
         // writes are backend-only: the server maintains the rolling window.
-        allow read: if isOwner(uid) &&
-          (isSessionOperator(sessionId) || isSessionPassenger(sessionId));
+        allow read: if isOwner(uid) && canReadSession(sessionId);
         allow create, update, delete: if false;
       }
     }
@@ -183,7 +189,11 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    // ── Default deny — no catch-all, everything not listed above is denied ──
-    // (Firestore denies by default, but this comment makes the intent explicit)
+    // ── Default deny — explicit catch-all (issue #49 L6) ──
+    // Overlapping rules use OR semantics, so this never overrides a narrower
+    // allow above; every collection not explicitly matched fails closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }
