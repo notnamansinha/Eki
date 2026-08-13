@@ -12,7 +12,7 @@ import { writeEmulatorRuleset } from "./rules-for-emulator.mjs";
  * entry (avoiding .cmd shims and cmd.exe quote mangling entirely). The
  * deployable repository rule files are never modified.
  */
-const { configPath } = await writeEmulatorRuleset();
+const { configPath, firestorePath, databasePath } = await writeEmulatorRuleset();
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -30,7 +30,12 @@ const emulatorArgs = [
 ];
 
 function spawnNpx() {
-  const env = { ...process.env, FIREBASE_RULES_TEST: "1" };
+  const env = {
+    ...process.env,
+    FIREBASE_RULES_TEST: "1",
+    FIRESTORE_RULES_PATH: firestorePath,
+    DATABASE_RULES_PATH: databasePath,
+  };
   const opts = { stdio: "inherit", cwd: ROOT, env };
 
   if (process.platform !== "win32") {

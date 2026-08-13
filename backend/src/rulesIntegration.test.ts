@@ -23,6 +23,10 @@ let environment: RulesTestEnvironment;
 let assertFails: any;
 let assertSucceeds: any;
 
+function rulesPath(variable: "FIRESTORE_RULES_PATH" | "DATABASE_RULES_PATH", fallback: string) {
+  return process.env[variable] || resolve(__dirname, fallback);
+}
+
 function emulator(name: "FIRESTORE_EMULATOR_HOST" | "FIREBASE_DATABASE_EMULATOR_HOST") {
   const [host, port] = (process.env[name] || "").split(":");
   if (!host || !port) throw new Error(`${name} is not configured.`);
@@ -38,11 +42,11 @@ rulesDescribe("Firebase security rules integration", () => {
       projectId: "eki-rules-test",
       firestore: {
         ...emulator("FIRESTORE_EMULATOR_HOST"),
-        rules: readFileSync(resolve(__dirname, "../../firestore.rules"), "utf8"),
+        rules: readFileSync(rulesPath("FIRESTORE_RULES_PATH", "../../firestore.rules"), "utf8"),
       },
       database: {
         ...emulator("FIREBASE_DATABASE_EMULATOR_HOST"),
-        rules: readFileSync(resolve(__dirname, "../../database.rules.json"), "utf8"),
+        rules: readFileSync(rulesPath("DATABASE_RULES_PATH", "../../database.rules.json"), "utf8"),
       },
     });
     await environment.withSecurityRulesDisabled(async (context) => {
