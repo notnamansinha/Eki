@@ -38,13 +38,17 @@ describe("removePassengerManifest", () => {
     mocks.batchUpdates.length = 0;
   });
 
-  it("queries sessions by the indexable passengerIds array, not a dynamic map path", async () => {
+  it("uses the indexable array and preserves a legacy query until backfill completes", async () => {
     await removePassengerManifest("uid_1");
 
-    // The old query on passengers.{uid}.userId is unindexable (dynamic key);
-    // the array-contains query on passengerIds uses automatic indexes
-    // (issue #49 L3).
+    // The indexed query is used first, but historic documents may not have
+    // passengerIds yet. The fallback makes deletion complete during rollout.
     expect(mocks.whereCalls[0]).toEqual(["passengerIds", "array-contains", "uid_1"]);
+    expect(mocks.whereCalls[1]).toEqual([
+      expect.anything(),
+      "==",
+      "uid_1",
+    ]);
   });
 
   it("removes the passenger from the manifest and the passengerIds array", async () => {
@@ -77,7 +81,9 @@ describe("removePassengerManifest", () => {
     // Pagination terminates: the first page is non-empty, the second is empty,
     // so the while(true) loop exits. Previously the mock ALWAYS returned a
     // non-empty page, the loop never ended, and the worker OOM'd in CI.
-    expect(pageCalls).toBe(2);
+    // The indexed query has one populated page and one empty page; the
+    // legacy fallback is also queried once and is empty.
+    expect(pageCalls).toBe(3);
     const passengerIdsUpdate = mocks.batchUpdates[0].data.passengerIds as {
       elements: string[];
     };

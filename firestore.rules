@@ -31,18 +31,13 @@ service cloud.firestore {
     // Authentication is evaluated BEFORE the session fetch (audit #112): a
     // denied unauthenticated read must never evaluate the billable get().
     function canReadSession(sessionId) {
-      if (isAdmin()) {
-        return true;
-      }
-      if (!isAuthenticated()) {
-        return false;
-      }
-      let session = sessionDoc(sessionId);
-      return (request.auth.token.role == 'driver' &&
-              request.auth.token.driverId == session.data.driverId) ||
-             (session.data.passengers is map &&
-              request.auth.uid in session.data.passengers &&
-              session.data.passengers[request.auth.uid].userId == request.auth.uid);
+      return isAdmin() ||
+        (isAuthenticated() &&
+         ((request.auth.token.role == 'driver' &&
+           request.auth.token.driverId == sessionDoc(sessionId).data.driverId) ||
+          (sessionDoc(sessionId).data.passengers is map &&
+           request.auth.uid in sessionDoc(sessionId).data.passengers &&
+           sessionDoc(sessionId).data.passengers[request.auth.uid].userId == request.auth.uid)));
     }
 
     // SEC: Boarding is server-issued (POST /api/sessions/:sessionId/join).
