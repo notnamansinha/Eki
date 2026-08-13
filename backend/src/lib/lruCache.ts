@@ -14,6 +14,14 @@ export class LruCache<K, V> {
   private readonly entries = new Map<K, V>();
   private readonly onEvict?: (key: K, value: V) => void;
 
+  /**
+   * Creates a cache that evicts the least-recently-used entry once `maxSize`
+   * entries are stored.
+   *
+   * @param maxSize Positive integer cap on stored entries.
+   * @param onEvict Optional hook called with each evicted key/value so callers
+   *   can release held resources (e.g. clear a timer and start deferred work).
+   */
   constructor(
     readonly maxSize: number,
     onEvict?: (key: K, value: V) => void,
@@ -26,14 +34,22 @@ export class LruCache<K, V> {
     this.onEvict = onEvict;
   }
 
+  /** Number of entries currently stored. */
   get size(): number {
     return this.entries.size;
   }
 
+  /** Whether `key` is present, without counting the check as a use. */
   has(key: K): boolean {
     return this.entries.has(key);
   }
 
+  /**
+   * Returns the value for `key`, or `undefined` when absent.
+   *
+   * A hit counts as a use: the entry is re-inserted so iteration order stays
+   * least- to most-recently used.
+   */
   get(key: K): V | undefined {
     const value = this.entries.get(key);
     if (value === undefined) return undefined;
@@ -43,6 +59,12 @@ export class LruCache<K, V> {
     return value;
   }
 
+  /**
+   * Stores `value` under `key`, treating an overwrite as a use.
+   *
+   * When the cache is full, the least-recently-used entry is evicted (and
+   * `onEvict` is invoked) until the size is back within `maxSize`.
+   */
   set(key: K, value: V): this {
     if (this.entries.has(key)) {
       // An overwrite is a use too; a new key is inserted as most-recent.
@@ -59,18 +81,22 @@ export class LruCache<K, V> {
     return this;
   }
 
+  /** Removes `key`, returning whether it was present. */
   delete(key: K): boolean {
     return this.entries.delete(key);
   }
 
+  /** Removes all entries. */
   clear(): void {
     this.entries.clear();
   }
 
+  /** Values in least- to most-recently used order. */
   values(): IterableIterator<V> {
     return this.entries.values();
   }
 
+  /** [key, value] pairs in least- to most-recently used order. */
   [Symbol.iterator](): IterableIterator<[K, V]> {
     return this.entries[Symbol.iterator]();
   }

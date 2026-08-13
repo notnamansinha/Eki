@@ -46,6 +46,12 @@ interface TelemetrySample {
 }
 const processedTelemetry = new LruCache<string, TelemetrySample>(MAX_CACHE_ENTRIES);
 
+/**
+ * Parses an environment-derived interval with a fallback and a lower bound.
+ *
+ * Returns `fallback` when `value` is not a finite number or is below
+ * `minimum`; otherwise the floored parsed value.
+ */
 function readIntervalMs(value: string | undefined, fallback: number, minimum: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= minimum ? Math.floor(parsed) : fallback;
@@ -58,6 +64,7 @@ const ROUTE_RECONNECT_MAX_MS = 30_000;
 const ENGINE_SHUTDOWN_TIMEOUT_MS = 8_000;
 const ENGINE_COMPLETION_FLUSH_MS = 2_000;
 
+/** Normalizes a raw RTDB fleet event into the durable lifecycle state shape. */
 function fleetLifecycleState(data: Record<string, unknown>) {
   return {
     routeId: normalizeIdentifier(data.routeId),
@@ -71,6 +78,10 @@ function fleetLifecycleState(data: Record<string, unknown>) {
   };
 }
 
+/**
+ * Fingerprints the lifecycle-relevant fields of a fleet event so unchanged
+ * state can be skipped by the serialized writer's dedup.
+ */
 function lifecycleFingerprint(
   data: Record<string, unknown>,
   state: ReturnType<typeof fleetLifecycleState>,
@@ -81,12 +92,14 @@ function lifecycleFingerprint(
   });
 }
 
+/** Clamps a delay value to a non-negative safe integer, defaulting to 0. */
 function delayRevision(value: unknown): number {
   return Number.isSafeInteger(value) && Number(value) >= 0
     ? Number(value)
     : 0;
 }
 
+/** Clamps a delay in minutes to 0..1440 (one day), defaulting to 0. */
 function normalizedDelayMinutes(value: unknown): number {
   return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 1440
     ? Number(value)
