@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import { LocateFixed as GPS, ArrowLeft, Navigation } from "lucide-react";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
@@ -12,6 +12,7 @@ import { decodePolyline } from "@/lib/polyline";
 import { snapToPolyline } from "@/lib/snapToPolyline";
 import { distanceAlongPolyline } from "@/lib/polylineDistance";
 import { useSmoothPosition } from "@/hooks/useSmoothPosition";
+import { OptimisticDelay } from "@/lib/delaySync";
 import {
   ETA_SPEED_FLOOR_KMH,
   ETA_SPEED_FLOOR_METERS_PER_MINUTE,
@@ -46,6 +47,20 @@ function DriverMapInner({ route, driverLocation, busId, isTracking, selectedRout
   const stops = useMemo(() => route.stops || [], [route.stops]);
   const nextStop = stops[currentStopIndex] ?? stops[stops.length - 1];
   const [delayMinutes, setDelayMinutes] = useState(0);
+  // Single source of truth for the delay value: optimistic taps are confirmed
+  // or reverted against the backend (issue #38 F6). delayMinutes is just the
+  // render mirror of OptimisticDelay.value.
+  const delaySync = useRef(new OptimisticDelay(0)).current;
+  const [delaySyncError, setDelaySyncError] = useState<string | null>(null);
+  const delaySyncErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showDelaySyncError = useCallback((message: string) => {
+    setDelaySyncError(message);
+    if (delaySyncErrorTimer.current) clearTimeout(delaySyncErrorTimer.current);
+    delaySyncErrorTimer.current = setTimeout(() => setDelaySyncError(null), 5_000);
+  }, []);
+  useEffect(() => () => {
+    if (delaySyncErrorTimer.current) clearTimeout(delaySyncErrorTimer.current);
+  }, []);
 
   const routeStops = useMemo(() => {
     return stops.map(s => ({ lat: s.lat, lng: s.lng }));
@@ -64,16 +79,18 @@ function DriverMapInner({ route, driverLocation, busId, isTracking, selectedRout
   }, [route.polyline, routeStops]);
 
   const pushDelay = useCallback((addMin: number) => {
-    const next = Math.max(0, delayMinutes + addMin);
-    setDelayMinutes(next);
+    const next = Math.max(0, delaySync.value + addMin);
+    setDelayMinutes(delaySync.apply(next));
     if (!busId) {
       console.warn("[DriverMap] Delay was not synced because no bus is assigned.");
+      showDelaySyncError("No bus assigned — delay not saved.");
       return;
     }
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
     const currentUser = auth.currentUser;
     if (!backendUrl || !currentUser) {
       console.warn("[DriverMap] Delay was not synced because the shift service is unavailable.");
+      showDelaySyncError("Shift service unavailable — delay not saved.");
       return;
     }
     const routesToUpdate = selectedRouteIds?.length ? selectedRouteIds : [route.id];
@@ -89,8 +106,21 @@ function DriverMapInner({ route, driverLocation, busId, isTracking, selectedRout
         });
         if (!response.ok) throw new Error(`Delay update failed with HTTP ${response.status}`);
       })),
-    ).catch((error) => console.error("[DriverMap] Delay sync failed:", error));
-  }, [busId, delayMinutes, route.id, selectedRouteIds]);
+    )
+      .then(() => {
+        // Backend confirmed the write; drop the optimistic value (unless a
+        // newer tap already superseded it) and mirror the reconciled value.
+        setDelayMinutes(delaySync.confirm(next));
+      })
+      .catch((error) => {
+        // Revert the optimistic value: the backend kept the last confirmed
+        // one, so the driver's map must not keep showing an unsynced delay
+        // while passengers see the old value (issue #38 F6).
+        setDelayMinutes(delaySync.revert(next));
+        showDelaySyncError("Couldn't save delay — reverted to last synced value.");
+        console.error("[DriverMap] Delay sync failed:", error);
+      });
+  }, [busId, delaySync, route.id, selectedRouteIds, showDelaySyncError]);
 
   const [navPhase, setNavPhase] = useState<NavPhase>(isTracking ? "navigating" : "preview");
   const [isCentered, setIsCentered] = useState(true);
@@ -311,7 +341,14 @@ function DriverMapInner({ route, driverLocation, busId, isTracking, selectedRout
               </div>
             }
             bottomControls={
-              <div className="flex items-center gap-2 justify-between w-full">
+              <div className="flex flex-col items-center gap-1.5 w-full">
+                {delaySyncError && (
+                  <p role="alert" className="text-[9px] font-semibold px-2 py-0.5 rounded"
+                    style={{ background: "var(--status-danger-bg)", color: "var(--status-danger)" }}>
+                    {delaySyncError}
+                  </p>
+                )}
+                <div className="flex items-center gap-2 justify-between w-full">
                 <div className="flex items-center gap-1.5">
                   <span className="text-[9px] font-semibold mr-1" style={{ color: "var(--text-ghost)" }}>Delay</span>
                   <button onClick={() => pushDelay(-2)} aria-label="Decrease delay by 2 minutes" className="h-11 w-11 rounded-lg text-[10px] font-semibold active:scale-90 transition-all"
@@ -332,6 +369,7 @@ function DriverMapInner({ route, driverLocation, busId, isTracking, selectedRout
                 <span className="text-[9px] font-semibold" style={{ color: "var(--text-ghost)" }}>
                   Stop progress updates automatically
                 </span>
+                </div>
               </div>
             }
           />

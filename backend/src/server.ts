@@ -21,6 +21,7 @@ import rateLimit from "express-rate-limit";
 import { deleteApp } from "firebase-admin/app";
 import { db, firebaseAdminApp, rtdb } from "./lib/firebaseAdmin";
 import { getHttpsTelemetryStatus } from "./services/deviceTelemetryService";
+import { backgroundFailures } from "./lib/backgroundFailureTracker";
 import { createHealthState } from "./lib/healthState";
 import { createIdentityAwareLimiter } from "./lib/rateLimitIdentity";
 import { startWorkerCoordinator } from "./services/workerCoordinator";
@@ -189,6 +190,7 @@ healthProbeTimer.unref();
 // billable Firestore/RTDB reads on every request.
 app.get("/health", (_req, res) => {
   const telemetry = getHttpsTelemetryStatus();
+  const backgroundTasks = backgroundFailures.snapshot();
   const state = health.snapshot();
   res.status(state.ready ? 200 : 503).json({
     status: state.ready ? "ok" : "degraded",
@@ -204,6 +206,15 @@ app.get("/health", (_req, res) => {
       processingLatencyMs: telemetry.processingLatencyMs,
       deviceToServerLatencyMs: telemetry.deviceToServerLatencyMs,
       rtdbWriteLatencyMs: telemetry.rtdbWriteLatencyMs,
+    },
+    // Fire-and-forget write health (issue #38): counts plus a sustained-failure
+    // flag so an external monitor can alert without scraping logs. Kept out of
+    // the readiness bit on purpose — one flapping background write must not
+    // take the whole probe down (see healthState.ts).
+    backgroundTasks: {
+      totalFailures: backgroundTasks.totalFailures,
+      sustainedSources: backgroundTasks.sustainedSources,
+      sources: backgroundTasks.sources,
     },
     checkedAt: state.checkedAt,
   });

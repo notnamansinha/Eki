@@ -1,6 +1,7 @@
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 import { LruCache } from "../lib/lruCache";
+import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
 import { SerializedChangeWriter } from "./serializedChangeWriter";
 import { reduceTripState } from "./tripStateReducer";
 import {
@@ -114,7 +115,14 @@ function trackBackgroundTask(
   const tracked = task
     .then(() => undefined)
     .catch((error) => {
-      console.warn(failureMessage, error);
+      // Surface through the failure tracker too (issue #38): sustained
+      // failures escalate to an error-level alert and show up on /health.
+      recordBackgroundFailure(
+        "tripState.backgroundTask",
+        "Trip-state background task",
+        failureMessage,
+        error,
+      );
     })
     .finally(() => {
       backgroundTasks.delete(tracked);
