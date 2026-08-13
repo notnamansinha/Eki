@@ -118,7 +118,8 @@ not a substitute for the physical and institutional acceptance work in the
 ### OPS-01: runtime availability and perimeter controls are not evidenced here
 
 - **Severity/status:** High / External gate (repo-side enablers merged for
-  issue #28; live deployment evidence still required).
+  issue #28 via [PR #125](https://github.com/notnamansinha/Eki/pull/125); live
+  deployment evidence still required).
 - **Evidence:** the Firestore lease makes the background state worker safe for
   any number of API replicas. Issue #28 added the horizontal-scale enablers:
   every in-memory rate limiter divides its budget by `RATE_LIMIT_SHARD_FACTOR`
