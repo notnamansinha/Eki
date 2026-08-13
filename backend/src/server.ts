@@ -24,6 +24,7 @@ import { getHttpsTelemetryStatus } from "./services/deviceTelemetryService";
 import { backgroundFailures } from "./lib/backgroundFailureTracker";
 import { createHealthState } from "./lib/healthState";
 import { createIdentityAwareLimiter } from "./lib/rateLimitIdentity";
+import { readRateLimitShardFactor, shardedLimit } from "./lib/rateLimitShard";
 import { startWorkerCoordinator } from "./services/workerCoordinator";
 import busRoutes from "./routes/buses";
 import analyticsRoutes from "./routes/analytics";
@@ -42,6 +43,11 @@ import fleetRoutes from "./routes/fleet";
 import privacyRoutes from "./routes/privacy";
 
 const PORT = process.env.PORT || 4000;
+// Expected replica count behind the load balancer. Every in-memory limiter
+// divides its budget by this factor so N replicas enforce the same aggregate
+// budget as one instance (issue #28); the edge LB/WAF stays the authoritative
+// global cap. Default 1 keeps single-instance behavior unchanged.
+const RATE_LIMIT_SHARD_FACTOR = readRateLimitShardFactor();
 const configuredCorsOrigins = (process.env.CORS_ORIGIN || "")
   .split(",")
   .map(origin => origin.trim())
@@ -92,7 +98,7 @@ function isDeviceIngressRequest(req: express.Request): boolean {
 // an IP-only budget would 429 an entire lecture demo (issue #74).
 const globalLimiter = createIdentityAwareLimiter({
   windowMs: 60 * 1000,  // 1 minute window
-  limit: 200,            // Max 200 requests per identity per minute
+  limit: shardedLimit(200, RATE_LIMIT_SHARD_FACTOR), // 200/identity/minute ÷ replicas
   message: { error: "Too many requests, please slow down." },
   skip: isDeviceIngressRequest,
 });
@@ -101,7 +107,7 @@ app.use(globalLimiter);
 // Tighter limit for write-heavy mutation endpoints, keyed the same way.
 const writeLimiter = createIdentityAwareLimiter({
   windowMs: 60 * 1000,
-  limit: 30,
+  limit: shardedLimit(30, RATE_LIMIT_SHARD_FACTOR),
   message: { error: "Write rate limit exceeded." },
 });
 
@@ -126,14 +132,14 @@ app.use((req, res, next) => {
 // headroom while limiting accidental loops and compromised admin sessions.
 const routeComputeLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: shardedLimit(10, RATE_LIMIT_SHARD_FACTOR),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Route computation rate limit exceeded." },
 });
 const routePlanLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
+  max: shardedLimit(30, RATE_LIMIT_SHARD_FACTOR),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Route planning rate limit exceeded." },

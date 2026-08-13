@@ -405,6 +405,31 @@ describe("production security configuration", () => {
     expect(telemetry).toContain("timingSafeEqual");
   });
 
+  it("shards in-memory rate limits across replicas and gates the backend image in CI (issue #28)", () => {
+    const server = workspaceFile("backend/src/server.ts");
+    const devices = workspaceFile("backend/src/routes/devices.ts");
+    const shard = workspaceFile("backend/src/lib/rateLimitShard.ts");
+    const envExample = workspaceFile("backend/.env.example");
+    const workflow = workspaceFile(".github/workflows/ci.yml");
+
+    // Every in-memory limiter divides its budget by the expected replica
+    // count, so N replicas enforce the same aggregate budget as one instance;
+    // the durable Firestore per-device budget needs no sharding.
+    expect(shard).toContain("RATE_LIMIT_SHARD_FACTOR");
+    expect(shard).toContain("Math.floor");
+    expect(server).toContain("readRateLimitShardFactor()");
+    expect(server).toContain("shardedLimit(200");
+    expect(server).toContain("shardedLimit(30");
+    expect(server).toContain("shardedLimit(10");
+    expect(devices).toContain("shardedLimit(120");
+    // Operators must set the factor to the deployed replica count.
+    expect(envExample).toContain("RATE_LIMIT_SHARD_FACTOR");
+    // The exact image that would be replicated builds and smoke-boots in CI.
+    expect(workflow).toContain("backend-image");
+    expect(workflow).toContain("docker build -f backend/Dockerfile");
+    expect(workflow).toContain("eki-backend:ci");
+  });
+
   it("keeps admin place searches authenticated and server-side", () => {
     const places = workspaceFile("backend/src/routes/places.ts");
     const editor = workspaceFile("frontend/src/components/admin/RouteManagementPanel.tsx");

@@ -117,17 +117,26 @@ not a substitute for the physical and institutional acceptance work in the
 
 ### OPS-01: runtime availability and perimeter controls are not evidenced here
 
-- **Severity/status:** High / External gate.
+- **Severity/status:** High / External gate (repo-side enablers merged for
+  issue #28; live deployment evidence still required).
 - **Evidence:** the Firestore lease makes the background state worker safe for
-  multiple API replicas, but the repository cannot prove the deployed replica
-  count, load-balancer health behavior, WAF/global limits, alerting, backups, or
-  restore procedure.
+  any number of API replicas. Issue #28 added the horizontal-scale enablers:
+  every in-memory rate limiter divides its budget by `RATE_LIMIT_SHARD_FACTOR`
+  (default 1) so N replicas enforce the same aggregate budget as one instance
+  instead of multiplying it by N; `GET /health` returns 200 only while both
+  Firestore and RTDB probes pass, and the process drains cleanly within the
+  platform grace period. CI now builds and smoke-boots the exact
+  `backend/Dockerfile` image on every push, asserting the degraded health body
+  a load balancer consumes. What the repository cannot prove: the deployed
+  replica count, load-balancer health behavior, WAF/global limits, alerting,
+  backups, or restore procedure.
 - **Impact:** a single deployed instance or missing perimeter controls can stop
   ingestion or permit abuse even when application code is correct.
 - **Closure evidence:** run at least two API replicas; demonstrate health-based
   failover without duplicate lifecycle transitions; configure edge/global rate
-  limits; alert on health, rejection rate, latency, stale telemetry and lease
-  ownership; archive backup-and-restore and incident-drill evidence.
+  limits (and set `RATE_LIMIT_SHARD_FACTOR` to the replica count on every
+  instance); alert on health, rejection rate, latency, stale telemetry and
+  lease ownership; archive backup-and-restore and incident-drill evidence.
 
 ## Maintenance rule
 
