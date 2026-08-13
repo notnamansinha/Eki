@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { FieldValue } from "firebase-admin/firestore";
 import rateLimit from "express-rate-limit";
 import { requireAdmin } from "../middleware/requireAdmin";
+import { ipKeyGenerator } from "../lib/rateLimitIdentity";
 import { db } from "../lib/firebaseAdmin";
 import {
   ingestDeviceTelemetry,
@@ -17,11 +18,15 @@ import {
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+// This is the pre-auth DoS limit, so it must not trust a deviceId or Device
+// header supplied by the caller. ingestDeviceTelemetry keeps the authoritative
+// per-device budget after credential verification.
 const telemetryLimiter = rateLimit({
   windowMs: 60_000,
   limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: ipKeyGenerator,
   handler: (_req, res, _next, options) => {
     const retryAfterMs = options.windowMs;
     res.set("Retry-After", String(Math.ceil(retryAfterMs / 1000)));
