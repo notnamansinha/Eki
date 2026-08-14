@@ -140,7 +140,7 @@ Do not expose production secrets in packet captures or serial logs. Use a dedica
 
 ## End-to-end role acceptance
 
-With passenger, assigned driver and admin sessions:
+With passenger and admin sessions, plus an admin-managed assigned operator record:
 
 1. Verify role denial and correct fleet catalogs.
 2. Arm with fresh fix away from origin; observe pre-departure.

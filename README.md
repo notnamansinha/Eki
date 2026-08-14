@@ -1,6 +1,6 @@
 # Eki campus bus tracking
 
-Eki is a single-university bus-tracking system. An ESP32 reads a NEO-M8N GNSS receiver and pushes validated fixes over HTTPS to an Express backend. The backend owns identity and trip progression, projects current state to Firebase Realtime Database (RTDB), and persists configuration/recovery/history in Firestore. A static Next.js PWA provides passenger, driver, and administrator workspaces.
+Eki is a single-university bus-tracking system. An ESP32 reads a NEO-M8N GNSS receiver and pushes validated fixes over HTTPS to an Express backend. The backend owns identity and trip progression, projects current state to Firebase Realtime Database (RTDB), and persists configuration/recovery/history in Firestore. A static Next.js PWA provides passenger and administrator workspaces; administrators perform ride operations for assigned fleet operators.
 
 ## How it works
 
@@ -46,7 +46,7 @@ stateDiagram-v2
 | `backend/src/services/` | Telemetry, lifecycle, worker lease, recovery, privacy, retention |
 | `backend/src/lib/` | Firebase Admin, geography, Maps, polyline/segment math |
 | `frontend/src/app/` | Landing and role-protected App Router workspaces |
-| `frontend/src/components/` | Admin, driver, passenger, maps, shared dialogs/messaging |
+| `frontend/src/components/` | Admin operations, passenger tracking, maps, shared dialogs/messaging |
 | `frontend/src/hooks/` | Auth, shared Firestore/RTDB subscriptions, motion/focus behavior |
 | `frontend/src/lib/` | Firebase clients and pure live-data/map/history helpers |
 | `frontend/src/sw.js` | Static/public caching; authenticated and unknown requests are network-only |

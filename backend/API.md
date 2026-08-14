@@ -4,7 +4,7 @@ Base path is the deployed backend origin. JSON request bodies are strict and lim
 
 ## Authentication
 
-- Browser: `Authorization: Bearer <Firebase ID token>`. `requireAuth` verifies revocation and trusted custom claims. Admin endpoints additionally require role/admin claim; driver endpoints recheck `drivers` and `buses` records.
+- Browser: `Authorization: Bearer <Firebase ID token>`. `requireAuth` verifies revocation and trusted custom claims. Admin endpoints additionally require role/admin claim; operational endpoints recheck assigned `drivers` and `buses` records even when invoked from the admin workspace.
 - Hardware: `Authorization: Device <per-device secret>`. It is not a Firebase token and must never use `Bearer`.
 - Public: only `GET /health`.
 
@@ -107,19 +107,19 @@ Searches live entries for the stored `busId` and returns the snapshot or 404. In
 
 ## Shift endpoints
 
-### `POST /api/shifts/start` — assigned driver
+### `POST /api/shifts/start` — assigned operator or admin
 
-Body: `{ "busId":"bus_01", "routeId":"route_01" }`.
+Body: `{ "busId":"bus_01", "routeId":"route_01", "driverId":"driver_01" }`. `driverId` is required for admin requests and comes from trusted claims for legacy assigned-operator requests.
 
 Requires agreement among Auth claim, `drivers`, `buses`, route assignment and a fresh ≤60-second nonfuture hardware fix. A Firestore bus lock prevents another route session. If already owned by the same driver/session, repairs durable records and returns 200 `{sessionId,resumed:true}`. New ride returns 201 `{sessionId,resumed:false}`. Returns 403 assignment mismatch, 409 active/lock/fix conflict, 422 invalid route origin or 500.
 
 If the bus is already at origin, the session starts `active/in_service` and records stop 0; otherwise it is `armed/pre_departure` until GNSS reaches origin.
 
-### `PATCH /api/shifts/delay` — assigned driver
+### `PATCH /api/shifts/delay` — assigned operator or admin
 
-Body: `{ "busId":"…", "routeId":"…", "delayMinutes":0 }`, allowed 0–1440. Session ownership/status is checked in RTDB. Writes RTDB and durable active ride. Returns `{saved:true,delayMinutes}`, 400/409/500.
+Body: `{ "busId":"…", "routeId":"…", "driverId":"…", "delayMinutes":0 }`, allowed 0–1440. `driverId` is required for admin requests. Session ownership/status is checked in RTDB. Writes RTDB and durable active ride. Returns `{saved:true,delayMinutes}`, 400/409/500.
 
-### `POST /api/shifts/stop` — assigned driver
+### `POST /api/shifts/stop` — assigned operator or admin
 
 Body: `{ "busId":"…", "routeId":"…", "sessionId":"…" }`. Active rides cannot be manually stopped: 409 explains final-stop automatic completion. An already completed session returns `{stopped:true,alreadyCompleted:true}`. Invalid ownership/resource returns 403/404.
 
@@ -133,9 +133,9 @@ Only `completed|interrupted|failed` sessions. Recursively deletes session/subcol
 
 ## Session boarding endpoints
 
-### `POST /api/sessions/:sessionId/boarding-code` — assigned driver
+### `POST /api/sessions/:sessionId/boarding-code` — assigned operator or admin
 
-Requires the active session's driver claim, driver ID and assigned bus to match the durable session. Idempotently creates or returns an eight-character, 40-bit boarding code stored only in the operator-readable session record; the code is never projected into passenger-readable RTDB. Responses use `Cache-Control: no-store`.
+An admin may request the code for any active session; a legacy assigned-operator token must match the session driver ID and assigned bus. Idempotently creates or returns an eight-character, 40-bit boarding code stored only in the operator-readable session record; the code is never projected into passenger-readable RTDB. Responses use `Cache-Control: no-store`.
 
 ### `POST /api/sessions/:sessionId/join` — passenger
 

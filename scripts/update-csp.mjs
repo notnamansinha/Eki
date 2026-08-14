@@ -44,16 +44,17 @@ const sources = [
   "https://maps.googleapis.com",
 ].join(" ");
 csp.value = csp.value.replace(/script-src [^;]+;/, `script-src ${sources};`);
-if (backendOrigin) {
-  csp.value = csp.value.replace(
-    /connect-src ([^;]+);/,
-    (_directive, currentSources) => {
-      const uniqueSources = new Set(currentSources.split(/\s+/).filter(Boolean));
-      uniqueSources.add(backendOrigin);
-      return `connect-src ${[...uniqueSources].join(" ")};`;
-    },
-  );
-}
+const connectSources = [
+  "'self'",
+  "https://*.googleapis.com",
+  "https://*.firebaseio.com",
+  "https://*.firebasedatabase.app",
+  "https://*.firebaseapp.com",
+  "wss://*.firebaseio.com",
+  "wss://*.firebasedatabase.app",
+  ...(backendOrigin ? [backendOrigin] : []),
+].join(" ");
+csp.value = csp.value.replace(/connect-src [^;]+;/, `connect-src ${connectSources};`);
 await writeFile(firebasePath, `${JSON.stringify(firebase, null, 2)}\n`);
 console.log(`Updated CSP with ${hashes.size} inline-script hashes.`);
 

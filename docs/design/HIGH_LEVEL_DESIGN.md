@@ -2,7 +2,7 @@
 
 ## Scope and goals
 
-Eki tracks a bounded university bus fleet in near real time, enforces ordered route progress, survives common connectivity/process failures, and exposes distinct passenger, driver, and administrator experiences. It is a modular monolith, not a multi-tenant platform: one deployment is attached to one Firebase project and one operational authority.
+Eki tracks a bounded university bus fleet in near real time, enforces ordered route progress, survives common connectivity/process failures, and exposes distinct passenger and administrator experiences. Administrators perform ride operations for assigned fleet operators. It is a modular monolith, not a multi-tenant platform: one deployment is attached to one Firebase project and one operational authority.
 
 Primary goals are trustworthy hardware-derived location, simple operations, low Firebase cost, privacy-aware durable history, and recovery without asking a driver to reconstruct an interrupted ride. Non-goals are public transport ticketing, safety-critical vehicle control, offline authoritative dead reckoning, arbitrary multi-campus tenancy, and a high-volume event warehouse.
 

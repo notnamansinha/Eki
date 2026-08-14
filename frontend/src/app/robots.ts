@@ -7,7 +7,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/admin', '/driver', '/passenger', '/feedback', '/api/'],
+      disallow: ['/admin', '/passenger', '/feedback', '/api/'],
     },
     sitemap: 'https://bustrack-be165.web.app/sitemap.xml',
   };

@@ -1,6 +1,6 @@
 # Eki frontend
 
-Next.js 16 App Router static-export PWA with public landing and authenticated passenger, driver, admin and feedback workspaces. Firebase Auth supplies identity; RTDB `onValue` pushes live buses; Firestore `onSnapshot`/queries provide configuration, sessions, messages, settings and feedback. REST mutations use native `fetch` with Firebase bearer tokens.
+Next.js 16 App Router static-export PWA with public landing and authenticated passenger, admin and feedback workspaces. Firebase Auth supplies identity; RTDB `onValue` pushes live buses; Firestore `onSnapshot`/queries provide configuration, sessions, messages, settings and feedback. Administrators arm assigned rides, adjust delays, issue boarding codes and message passengers. REST mutations use native `fetch` with Firebase bearer tokens.
 
 ## Run
 

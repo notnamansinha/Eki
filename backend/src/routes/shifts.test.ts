@@ -12,6 +12,12 @@ const harness = vi.hoisted(() => ({
   eventLog: [] as string[],
   afterRtdbTransaction: null as (() => void) | null,
   failActiveRidesWrite: false,
+  user: {
+    uid: "driver_uid",
+    role: "driver",
+    driverId: "driver_1",
+    assignedBusId: "bus_1",
+  } as Record<string, unknown>,
 }));
 
 vi.mock("../middleware/requireAuth", () => ({
@@ -20,12 +26,7 @@ vi.mock("../middleware/requireAuth", () => ({
     _res: unknown,
     next: () => void,
   ) => {
-    req.user = {
-      uid: "driver_uid",
-      role: "driver",
-      driverId: "driver_1",
-      assignedBusId: "bus_1",
-    };
+    req.user = harness.user;
     next();
   },
 }));
@@ -193,13 +194,19 @@ beforeEach(() => {
   harness.afterRtdbTransaction = null;
   harness.lock = null;
   harness.failActiveRidesWrite = false;
+  harness.user = {
+    uid: "driver_uid",
+    role: "driver",
+    driverId: "driver_1",
+    assignedBusId: "bus_1",
+  };
 });
 
-async function startShift() {
+async function startShift(driverId?: string) {
   return fetch(`${baseUrl}/api/shifts/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ busId: "bus_1", routeId: "route_1" }),
+    body: JSON.stringify({ busId: "bus_1", routeId: "route_1", driverId }),
   });
 }
 
@@ -227,11 +234,11 @@ describe("shift delay updates", () => {
     };
   });
 
-  async function setDelay(delayMinutes: number) {
+  async function setDelay(delayMinutes: number, driverId?: string) {
     return fetch(`${baseUrl}/api/shifts/delay`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ busId: "bus_1", routeId: "route_1", delayMinutes }),
+      body: JSON.stringify({ busId: "bus_1", routeId: "route_1", delayMinutes, driverId }),
     });
   }
 
@@ -250,6 +257,13 @@ describe("shift delay updates", () => {
     const durable = harness.docSets.find((entry) => entry.id === "bus_1_route_1");
     expect(durable?.data.delayMinutes).toBe(15);
     expect(typeof durable?.data.delayUpdatedAt).toBe("number");
+  });
+
+  it("lets an administrator update the assigned operator's ride", async () => {
+    harness.user = { uid: "admin_uid", role: "admin", admin: true };
+    const response = await setDelay(8, "driver_1");
+    expect(response.status).toBe(200);
+    expect(harness.liveNode.delayMinutes).toBe(8);
   });
 
   it("keeps the live delay when the durable write fails", async () => {
@@ -314,6 +328,21 @@ describe("shift delay updates", () => {
 });
 
 describe("shift start after automatic completion", () => {
+  it("lets an administrator arm a ride for an assigned operator", async () => {
+    harness.user = { uid: "admin_uid", role: "admin", admin: true };
+    harness.liveNode = {
+      busId: "bus_1",
+      lat: 23.0,
+      lng: 72.5,
+      timestamp: Date.now(),
+      motionState: "stopped",
+    };
+
+    const response = await startShift("driver_1");
+    expect(response.status).toBe(201);
+    expect(harness.liveNode.driverId).toBe("driver_1");
+  });
+
   it("starts a fresh session instead of resurrecting the completed ride", async () => {
     // Live node left by the engine right after completion: status is still
     // "active" with the old sessionId and terminal tripState "completed",

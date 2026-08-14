@@ -102,7 +102,8 @@ function stableHash(value: string): string {
 /**
  * POST /api/sessions/:sessionId/boarding-code
  *
- * Returns the session-scoped code only to the assigned driver. The code is
+ * Returns the session-scoped code to the assigned driver or an administrator.
+ * The code is
  * deliberately absent from RTDB and passenger-readable data. It supplies the
  * server-verifiable proof that browser geolocation alone cannot provide.
  */
@@ -112,16 +113,19 @@ router.post("/:sessionId/boarding-code", requireAuth, async (
 ) => {
   const sessionId = req.params.sessionId;
   const user = req.user;
+  const isAdmin = user?.role === "admin" || user?.admin === true;
   if (!SAFE_ID.test(sessionId)) {
     res.status(400).json({ error: "Invalid session ID." });
     return;
   }
   if (
-    user?.role !== "driver" ||
-    typeof user.driverId !== "string" ||
-    typeof user.assignedBusId !== "string"
+    !isAdmin && (
+      user?.role !== "driver" ||
+      typeof user.driverId !== "string" ||
+      typeof user.assignedBusId !== "string"
+    )
   ) {
-    res.status(403).json({ error: "Only the assigned driver can view the boarding code." });
+    res.status(403).json({ error: "Only the assigned operator or an administrator can view the boarding code." });
     return;
   }
 
@@ -136,10 +140,12 @@ router.post("/:sessionId/boarding-code", requireAuth, async (
       }
       if (
         !BOARDING_STATUSES.has(String(data.status)) ||
-        data.driverId !== user.driverId ||
-        data.busId !== user.assignedBusId
+        (!isAdmin && (
+          data.driverId !== user?.driverId ||
+          data.busId !== user?.assignedBusId
+        ))
       ) {
-        throw new BoardingPolicyError(403, "Driver is not assigned to this active session.");
+        throw new BoardingPolicyError(403, "Operator is not assigned to this active session.");
       }
       const existing = normalizeBoardingCode(data.boardingCode);
       if (existing) return existing;

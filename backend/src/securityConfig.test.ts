@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -366,17 +366,28 @@ describe("production security configuration", () => {
   });
 
   it("does not let the browser seed or take down hardware GNSS coordinates", () => {
-    const driverPage = workspaceFile("frontend/src/app/driver/page.tsx");
+    const operations = workspaceFile("frontend/src/components/admin/OperationsPanel.tsx");
     const passengerPage = workspaceFile("frontend/src/app/passenger/page.tsx");
 
-    expect(driverPage).not.toContain("onDisconnect(");
-    expect(driverPage).not.toContain("lat: activeRoute?.stops");
-    expect(driverPage).toContain("/api/shifts/start");
-    expect(driverPage).not.toContain("updateDoc(");
+    expect(operations).not.toContain("onDisconnect(");
+    expect(operations).not.toContain("lat:");
+    expect(operations).toContain("/api/shifts/start");
+    expect(operations).not.toContain("updateDoc(");
     expect(passengerPage).toContain(
       "hasValidBusCoordinates(normalizedBus.lat, normalizedBus.lng)",
     );
-    expect(driverPage).toContain("!assignedRouteIds.includes(selectedRouteIds[0])");
+    expect(operations).toContain("assignedRouteIds(selectedBus)");
+  });
+
+  it("removes the driver workspace and keeps operations in the admin surface", () => {
+    const root = resolve(__dirname, "../..");
+    const adminPage = workspaceFile("frontend/src/app/admin/page.tsx");
+    const homePage = workspaceFile("frontend/src/app/page.tsx");
+
+    expect(existsSync(resolve(root, "frontend/src/app/driver"))).toBe(false);
+    expect(existsSync(resolve(root, "frontend/src/components/driver"))).toBe(false);
+    expect(adminPage).toContain('id: "operations"');
+    expect(homePage).not.toContain('"/driver"');
   });
 
   it("renders stored route geometry without browser Directions API calls", () => {
@@ -611,7 +622,7 @@ describe("production security configuration", () => {
     const routes = ruleBlock(rules, "match /routes/{routeId}");
     const sessions = ruleBlock(rules, "match /ride_sessions/{sessionId}");
     const routeEditor = workspaceFile("frontend/src/components/admin/RouteManagementPanel.tsx");
-    const driverMap = workspaceFile("frontend/src/components/maps/DriverMap.tsx");
+    const operations = workspaceFile("frontend/src/components/admin/OperationsPanel.tsx");
     const dashboard = workspaceFile("frontend/src/components/admin/DashboardPanel.tsx");
 
     expect(routes).toContain("allow create, update, delete: if false;");
@@ -621,8 +632,8 @@ describe("production security configuration", () => {
     expect(routeEditor).toContain('method: "PUT"');
     expect(routeEditor).not.toContain("setDoc(");
     expect(routeEditor).not.toContain("updateDoc(");
-    expect(driverMap).toContain("/api/shifts/delay");
-    expect(driverMap).not.toContain("update(busRef");
+    expect(operations).toContain("/api/shifts/delay");
+    expect(operations).not.toContain("update(busRef");
     expect(dashboard).not.toContain('method: "PATCH"');
     expect(dashboard).not.toContain("Force Offline");
     expect(dashboard).not.toContain("Position Override");
@@ -648,7 +659,7 @@ describe("production security configuration", () => {
     );
     const sessionsRoute = workspaceFile("backend/src/routes/sessions.ts");
     const boardingPolicy = workspaceFile("backend/src/services/boardingPolicy.ts");
-    const driverPage = workspaceFile("frontend/src/app/driver/page.tsx");
+    const operations = workspaceFile("frontend/src/components/admin/OperationsPanel.tsx");
     const cspBuild = workspaceFile("scripts/update-csp.mjs");
     const cspBackendOrigin = workspaceFile("scripts/csp-backend-origin.mjs");
     const server = workspaceFile("backend/src/server.ts");
@@ -661,7 +672,7 @@ describe("production security configuration", () => {
     expect(server).toContain('app.use("/api/sessions"');
     expect(sessionsRoute).toContain('router.post("/:sessionId/join", requireAuth');
     expect(sessionsRoute).toContain('router.post("/:sessionId/boarding-code", requireAuth');
-    expect(sessionsRoute).toContain("user?.role !== \"driver\"");
+    expect(sessionsRoute).toContain('user?.role === "admin"');
     expect(sessionsRoute).toContain("boardingCodesMatch");
     expect(sessionsRoute).toContain("validateLiveBoardingProjection");
     expect(sessionsRoute).toContain("db.runTransaction");
@@ -676,8 +687,10 @@ describe("production security configuration", () => {
     expect(boarding).toContain('Authorization: `Bearer ${token}`');
     expect(boarding).toContain("position.coords.accuracy");
     expect(boarding).toContain("updatingExistingPassenger ? Promise.resolve(null)");
-    expect(driverPage).toContain("/boarding-code");
+    expect(operations).toContain("/boarding-code");
     expect(cspBuild).toContain("backendOrigin");
+    expect(cspBuild).toContain("const connectSources");
+    expect(cspBuild).not.toContain("currentSources");
     expect(cspBackendOrigin).toContain('new Set(["http:", "https:"])');
     expect(cspBackendOrigin).toContain("!HTTP_PROTOCOLS.has(backendUrl.protocol)");
     expect(boarding).not.toContain('updateDoc');
@@ -686,23 +699,22 @@ describe("production security configuration", () => {
 
   it("uses backend-authoritative shift lifecycle endpoints", () => {
     const server = workspaceFile("backend/src/server.ts");
-    const driverPage = workspaceFile("frontend/src/app/driver/page.tsx");
-    const driverMap = workspaceFile("frontend/src/components/maps/DriverMap.tsx");
+    const operations = workspaceFile("frontend/src/components/admin/OperationsPanel.tsx");
     const passengerBoarding = workspaceFile(
       "frontend/src/components/passenger/PassengerBoardingView.tsx",
     );
     const shifts = workspaceFile("backend/src/routes/shifts.ts");
 
     expect(server).toContain('app.use("/api/shifts"');
-    expect(driverPage).toContain("/api/shifts/start");
-    expect(driverPage).not.toContain("/api/shifts/stop");
-    expect(driverPage).not.toContain("arrayUnion(");
-    expect(driverPage).not.toContain("test_bus_1");
+    expect(operations).toContain("/api/shifts/start");
+    expect(operations).not.toContain("/api/shifts/stop");
+    expect(operations).not.toContain("arrayUnion(");
+    expect(operations).not.toContain("test_bus_1");
     expect(shifts).toContain("nodeRef.transaction");
     expect(shifts).toContain("final ordered stop");
     expect(shifts).toContain("STOP_GEOFENCE_M");
     expect(shifts).toContain("arrivedAtOrigin");
-    expect(driverMap).toContain("Armed · awaiting stop 1");
+    expect(operations).toContain("It starts automatically at stop 1");
     expect(passengerBoarding).toContain("Ride in service");
   });
 
