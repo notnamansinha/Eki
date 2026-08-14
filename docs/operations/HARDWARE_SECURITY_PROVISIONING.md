@@ -76,6 +76,15 @@ There is no local configuration or recovery service. Each device's Wi-Fi,
 device ID/secret, HTTPS backend origin, and issuing root CA are compiled into
 its signed, flash-encrypted application image.
 
+The only firmware configuration file is the ignored
+`hardware/include/secrets.h`, copied from `secrets.example.h`. It must contain
+all six definitions: `WIFI_SSID`, `WIFI_PASS`, `DEVICE_ID`, `DEVICE_SECRET`,
+`BACKEND_URL`, and `BACKEND_ROOT_CA`. The backend `.env` and frontend
+`env.production.example` are separate application configuration; neither is
+copied into firmware. Route geometry, ordered stops, bus/route assignment,
+driver identity, delay and passenger data remain backend records and do not
+belong in `secrets.h`.
+
 1. Provision the backend registry with `npm run provision-device --workspace=backend -- --device-id ... --bus-id ... --route-id ...`. Capture the one-time device secret without putting it in shell history, tickets, screenshots, or source control.
 2. In the approved signing environment, copy
    `hardware/include/secrets.example.h` to the ignored
@@ -97,6 +106,12 @@ its signed, flash-encrypted application image.
    repair the backend record and restart the device without reflashing. A
    401/403 latches publishing off and disables the station radio until the
    applicable repair is followed by that restart.
+
+Changing only route geometry or assigning the unchanged device credential to a
+different approved bus/route does not require a reflash. Changing Wi-Fi,
+`DEVICE_ID`, `DEVICE_SECRET`, `BACKEND_URL`, or `BACKEND_ROOT_CA` does require a
+new device-specific build and flash. Never change backend assignment while an
+active ride or bus lock exists.
 
 ## Acceptance evidence
 

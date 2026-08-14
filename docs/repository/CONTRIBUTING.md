@@ -39,7 +39,14 @@ new features.
 
 - Never commit `.env` or `.env.local` files.
 - If your PR introduces a new environment variable, you must update
-  `.env.example` and the respective `README.md` file immediately.
+  `.env.example`, [CONFIGURATION.md](../CONFIGURATION.md), and the
+  respective `README.md` file immediately.
+- If your PR changes a user-visible workflow, update
+  [GETTING_STARTED.md](../GETTING_STARTED.md) and the relevant operational
+  or frontend document.
+- Keep documentation public-safe: use placeholders and redacted examples;
+  never include service-account JSON, device/Wi-Fi credentials, signing keys,
+  App Check debug tokens, bearer tokens, personal records, or unredacted logs.
 
 ## Hardware Contributions
 
@@ -53,3 +60,16 @@ If you are contributing to the `hardware/` (ESP32) firmware:
   watchdog changes. A successful compile is not a physical acceptance test.
 - Never enable insecure TLS, commit credential/signing material, or upload the
   irreversible fleet environment outside the approved witnessed procedure.
+
+## Documentation map
+
+Use [the documentation index](../index/README.md) to find the authoritative
+reference for a change. API contract changes belong in `backend/API.md` and
+its mirrored copy; data/rules changes belong in
+`docs/data/FIREBASE_DATA_MODEL.md`; lifecycle changes belong in the HLD/LLD;
+firmware changes belong in `docs/hardware/HARDWARE_TELEMETRY.md`; and test or
+acceptance changes belong in `docs/testing/TEST_STRATEGY.md`.
+
+Run `npm run verify` before requesting review. The documentation mirror test
+fails when a tracked root/package Markdown document and its copy under `docs/`
+diverge.

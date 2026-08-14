@@ -2,13 +2,62 @@
 
 Base path is the deployed backend origin. JSON request bodies are strict and limited to 16 KiB except device telemetry (512 bytes) and diagnostics (1 KiB). `TRACE` and `CONNECT` return 405. Responses are JSON; errors use `{ "error": "…" }` and do not expose stacks/secrets.
 
+## Quick start
+
+Use the backend origin without an `/api` suffix. The only public endpoint is
+the cached health probe:
+
+```bash
+curl -i https://api.example.edu/health
+```
+
+Browser endpoints use a Firebase ID token. The frontend obtains that token
+after sign-in and sends it as a bearer token:
+
+```bash
+curl -H "Authorization: Bearer <firebase-id-token>" \
+  https://api.example.edu/api/buses
+```
+
+Hardware uses its per-device credential and the exact six-field telemetry
+contract:
+
+```bash
+curl -i -X POST \
+  -H "Authorization: Device <device-secret>" \
+  -H "Content-Type: application/json" \
+  --data '{"lat":23.034,"lng":72.55,"speed":18.2,"heading":94,"motionState":"moving","timestamp":<unix-ms>}' \
+  https://api.example.edu/api/devices/device_01/telemetry
+```
+
+Replace every placeholder before use. Never put a real bearer token or device
+secret in shell history, documentation, tickets or logs. A successful new
+telemetry sample returns `202`; an equal or older duplicate returns `200`.
+
+## Endpoint map
+
+| Area | Endpoints | Authentication |
+|---|---|---|
+| Health | `GET /health` | Public |
+| Live buses | `GET /api/buses`, `GET /api/buses/:busId` | Authenticated |
+| Device ingestion | `POST /api/devices/:deviceId/telemetry`, `POST /api/devices/:deviceId/diagnostics` | Device credential |
+| Device administration | `GET/PUT /api/devices/:deviceId/diagnostics`, `PUT /api/devices/:deviceId`, `POST /api/devices/:deviceId/disable` | Admin |
+| Ride operations | `POST /api/shifts/start`, `PATCH /api/shifts/delay`, `POST /api/shifts/stop` | Assigned operator or admin |
+| Boarding and chat | Session boarding-code, join and messages endpoints | Session member/operator/admin as applicable |
+| Passenger/account | Feedback, bootstrap, privacy deletion, requests | Authenticated/admin as noted below |
+| Fleet and settings | Fleet, analytics, route, settings and places endpoints | Admin unless noted below |
+| Route planning | `POST /api/plan`, `GET /api/routes-list` | Authenticated |
+
+The sections below are the contract source of truth for each request body,
+response, status code and side effect.
+
 ## Authentication
 
 - Browser: `Authorization: Bearer <Firebase ID token>`. `requireAuth` verifies revocation and trusted custom claims. Admin endpoints additionally require role/admin claim; operational endpoints recheck assigned `drivers` and `buses` records even when invoked from the admin workspace.
 - Hardware: `Authorization: Device <per-device secret>`. It is not a Firebase token and must never use `Bearer`.
 - Public: only `GET /health`.
 
-IDs accept 1–128 ASCII letters, digits, `_`, or `-`. Browser writes are broadly limited to 30/minute/IP, normal traffic 200/minute/IP; route compute/plan/place/device ingestion also have dedicated limits. These counters are process-local: every instance divides its budgets by `RATE_LIMIT_SHARD_FACTOR` (set it to the deployed replica count) so the fleet enforces the same aggregate budget as one instance. The replica count must not exceed the smallest in-process budget (currently 10/minute), or startup fails instead of weakening that aggregate limit; use a shared distributed limiter beyond that scale. The edge load balancer/WAF still provides the authoritative global cap (issue #28).
+IDs accept 1–128 ASCII letters, digits, `_`, or `-`. Browser writes are broadly limited to 30 requests/minute and normal traffic to 200 requests/minute, keyed by verified Firebase UID when a bearer token is present and by IP otherwise; route compute/plan/place/device ingestion also have dedicated limits. These counters are process-local: every instance divides its budgets by `RATE_LIMIT_SHARD_FACTOR` (set it to the deployed replica count) so the fleet enforces the same aggregate budget as one instance. The replica count must not exceed the smallest in-process budget (currently 10/minute), or startup fails instead of weakening that aggregate limit; use a shared distributed limiter beyond that scale. The edge load balancer/WAF still provides the authoritative global cap.
 
 ## Health
 
@@ -19,7 +68,8 @@ Returns 200 when the cached 30-second Firestore/RTDB probe is ready, otherwise 5
 ```json
 {
   "status": "ok",
-  "firebase": "connected",
+  "firestore": "connected",
+  "rtdb": "connected",
   "telemetry": {
     "transport": "https",
     "accepted": 10,
@@ -52,7 +102,7 @@ Returns 200 when the cached 30-second Firestore/RTDB probe is ready, otherwise 5
 Metrics are a 512-sample in-memory rolling window and reset on restart.
 
 `backgroundTasks` counts failures from fire-and-forget background writes
-(`trackBackgroundTask` and `scheduleDurableRideRestore`, issue #38). A source
+(`trackBackgroundTask` and `scheduleDurableRideRestore`). A source
 whose failures inside the 5-minute sliding window reach the threshold (5) is
 flagged `sustained: true` and listed in `sustainedSources`; the backend also
 emits an error-level `[BackgroundFailures] SUSTAINED failure alert` log once
@@ -99,7 +149,7 @@ Device creation/secret rotation is deliberately local: `npm run provision-device
 
 ### `GET /api/buses` — authenticated
 
-Returns current RTDB `activeBuses` value or `{}`. Prefer the client RTDB `onValue` listener for continuous live UI; this endpoint is a snapshot, not a polling recommendation.
+Returns `{ "buses": [...] }` from the current RTDB `activeBuses` projection. Prefer the client RTDB `onValue` listener for continuous live UI; this endpoint is a snapshot, not a polling recommendation.
 
 ### `GET /api/buses/:busId` — authenticated
 

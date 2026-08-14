@@ -10,9 +10,23 @@ npm run verify
 & "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run -d hardware
 ```
 
-`verify` executes frontend/backend ESLint, Vitest, backend TypeScript, Next static production build, Workbox injection, CSP hash regeneration and `npm audit --omit=dev --omit=optional`. The firmware command compiles the real ESP32 target. A production release additionally runs `npm run build:production` with actual deployment variables; it intentionally fails closed when required public configuration is missing.
+`verify` executes frontend/backend ESLint, the repository script tests, backend
+and frontend Vitest suites, backend TypeScript, the Next static production
+build, Workbox injection, CSP hash regeneration and
+`npm audit --omit=dev --omit=optional`. It does not run the Firebase rules
+emulator or PlatformIO; run those commands separately. A production release
+additionally runs `npm run build:production` with actual deployment variables;
+it intentionally fails closed when required public configuration is missing.
 
-Last verified 2026-08-09 on the GNSS-clock/Wi-Fi-recovery candidate: four repository script tests, 150 normal backend tests (six emulator-only cases skipped), and 43 frontend tests passed. Backend TypeScript, the frontend production build/CSP generation and the production dependency audit passed with zero vulnerabilities. All 12 native firmware-policy tests passed; the ESP32 image compiled with 27,080 bytes regular RAM (8.3%), a 5,808-byte RTC queue, and 585,665 bytes flash (18.6%). Emulator and real-device matrices remain separate gates. Re-run rather than trusting these historical numbers.
+Last verified 2026-08-14 against the current default branch: 10 repository
+script tests, 248 backend tests with 7 environment-dependent cases skipped, and
+93 frontend tests passed. Backend TypeScript, the frontend production
+build/CSP generation and the production dependency audit passed with zero
+vulnerabilities. PlatformIO native tests passed all 26 cases, and the
+development ESP32 build used 48,356 bytes RAM (14.8%) and 949,481 bytes flash
+(30.2%). The secure fleet build, Firebase rules emulator, and physical device
+matrix remain separate gates. Re-run rather than trusting these historical
+numbers.
 
 ## Test layers
 
@@ -131,7 +145,7 @@ Key expected HTTP families:
 | Retry | Drop backend for 2 minutes | 1–30 s jittered attempts, bounded newest-first RTC queue, recovery |
 | Watchdog | Controlled >25 s task block | Panic/reset and reset reason; no permanent hang |
 | Power brownout | Controlled supply interruption | Restart/reconnect; durable ride resumes |
-| Wi-Fi loss | Disable hotspot for >2 minutes, open protected recovery AP, replace network, then restore | Two-pulse LED, bounded retries, credential form works without logs/echo, AP stops and same session recovers |
+| Wi-Fi loss | Disable the configured hotspot for >2 minutes, then restore it | No recovery AP or configuration portal is created; bounded retries continue and the same session recovers when the configured network returns |
 | Credential rejection | Return 401/403 repeatedly | One rejected attempt latches publishing off, retains the sample until normal freshness eviction, emits three-pulse LED and resumes only after device-credential repair/restart |
 | GNSS loss | Shield/disconnect antenna safely | One uncertain fix at last point; no invented movement |
 | Backend/Firebase outage | Stop service/emulator | Timeouts/backoff/503 metrics; recovery without duplicate progress |

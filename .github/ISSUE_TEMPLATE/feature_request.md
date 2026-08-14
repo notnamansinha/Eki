@@ -19,3 +19,12 @@ you've considered.
 
 **Additional context**
 Add any other context or screenshots about the feature request here.
+
+**Impact checklist**
+
+- Does this change an API, Firebase collection/rule/index, environment variable,
+  firmware secret, route/lifecycle rule, privacy behavior, or deployment step?
+- If yes, describe the required documentation, migration, rollback, testing,
+  and acceptance evidence.
+- Use placeholders only; do not attach production data, credentials, or private
+  infrastructure details.

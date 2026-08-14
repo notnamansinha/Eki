@@ -135,7 +135,7 @@ passenger and admin.
 - [ ] At an intermediate stop, unplug ESP power for over five minutes. Confirm
   the ride remains active and panels show signal interruption.
 - [ ] During a controlled bench rehearsal (not while driving), simulate a loop
-  stall and verify the 15-second watchdog reset/recovery and logged reset reason.
+  stall and verify the 25-second watchdog reset/recovery and logged reset reason.
 - [ ] Restore power. Confirm the same session and stop progress return without
   arming a new ride.
 - [ ] Refresh each web app and restart the local backend once during a second

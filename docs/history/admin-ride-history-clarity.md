@@ -65,3 +65,10 @@ Present every ride as an operational record: resolve fleet IDs to their display 
 ## Design documentation
 
 - After acceptance and validation: none; this corrects a local contradiction in the admin history task without introducing a new design-system rule.
+
+## Current reference
+
+This file remains a historical decision record rather than the current source
+of truth. For current behavior and acceptance status, use the [getting started
+guide](../GETTING_STARTED.md), [data model](../data/FIREBASE_DATA_MODEL.md),
+[API reference](../../backend/API.md), and [test strategy](../testing/TEST_STRATEGY.md).

@@ -2,8 +2,8 @@
 # green main build, and to production only via an explicit, approval-gated
 # workflow_dispatch (issue #39 M4).
 #
-# Project targeting is explicit everywhere: staging currently uses the single
-# Eki project, bustrack-be165. The production job remains an explicit,
+# Project targeting is explicit everywhere: staging uses the approved staging
+# project configured in this workflow. The production job remains an explicit,
 # approval-gated target until a separate production project is provisioned.
 #
 # Required GitHub secrets (environment-scoped):

@@ -1,6 +1,11 @@
 # Production readiness audit
 
-Audit completed: 2026-08-08. Scope: every tracked project source/configuration/documentation file across firmware, backend, Firebase, frontend, build/deploy and CI. Generated dependencies/build output were validated through their manifests/builds rather than treated as maintained source. The pre-existing untracked `eki_production_codex_prompt.md` was not modified.
+Audit refreshed: 2026-08-14. Scope: every tracked project source,
+configuration, documentation, build/deploy and CI surface across firmware,
+backend, Firebase and frontend. Generated dependencies/build output were
+validated through their manifests/builds rather than treated as maintained
+source. Private prompts, credentials, deployment tokens and untracked local
+files are intentionally outside the public documentation scope.
 
 ## Outcome
 
@@ -21,7 +26,11 @@ No known production npm vulnerability remains in required dependencies. All curr
 | Device provisioning | CLI did not enforce API-equivalent uniqueness/active conflict | Transactional bus/route/device/ride/lock checks; one-time scrypt secret |
 | Seed integrity | Maps failure could persist empty route geometry; service-account JSON was unnecessarily mandatory | Fail seed without geometry; support ADC or JSON through shared Admin setup |
 | Telemetry observability | Only counts/timestamps; no transmission/write latency evidence | Rolling average/p50/p95/p99 processing, device-to-server and RTDB write metrics plus cache rate |
-| Hardware reliability | Unpinned platform/libs, no watchdog, local-only `.clangd`, SSID log | Pinned dependencies, 15 s task watchdog, portable config, no SSID, HTTPS fail-closed |
+| Hardware reliability | Unpinned platform/libs, no watchdog, local-only `.clangd`, SSID log | Pinned dependencies, 25 s task watchdog, portable config, no SSID, HTTPS fail-closed |
+| Horizontal scale and abuse controls | In-process limits could multiply across replicas and identity traffic could be bucketed only by shared IP | Replica-sharded budgets, identity-aware limiting, startup guardrails and edge/WAF ownership documented |
+| Background operations | Fire-and-forget failures were invisible to readiness/monitoring | Bounded background-failure counters, sustained-source health output and episode logging |
+| Memory growth | Credential/rate/retry/recovery caches could grow without a hard bound | Capacity-bounded caches and explicit eviction behavior |
+| Operations workspace | A separate driver-facing workspace duplicated admin operations | Ride operations are admin-managed and assigned-operator authorization is enforced server-side |
 | Hardware latency | Default Wi-Fi power behavior added burst latency | Vehicle-powered modem sleep disabled, fast strongest-AP selection; retry/timeout/buffer retained |
 | UI performance | Every visited admin tab stayed mounted with listeners/maps/timers | Mount only active tab; chunks remain browser-cached |
 | ETA correctness/performance | Timer recomputed arrival timestamps from unchanged positions and hid countdown | Recompute only on pushed route/bus change; local 15-second countdown remains |
@@ -35,18 +44,19 @@ No known production npm vulnerability remains in required dependencies. All curr
 ## Verification record
 
 - `npm run lint`: passed frontend and backend.
-- Backend Vitest: 91 passed, four Firebase emulator cases skipped locally because Java/the Firebase emulators were unavailable.
-- Frontend Vitest: 43 passed.
-- Native firmware policy: four passed.
+- Backend Vitest: 248 passed, with 7 environment-dependent cases skipped in the local run.
+- Frontend Vitest: 93 passed.
+- PlatformIO native tests: 26 cases passed.
 - Backend TypeScript build: passed.
-- Next.js 16.2.12 static production build: passed during final verification. The stricter deployment build correctly failed closed because the local environment does not define `NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY`; provision every value in `frontend/env.production.example` before release.
+- Next.js 16.2.12 static production build: passed during final verification. `npm run build:production` remains a separate deployment gate and must be run with every value in `frontend/env.production.example`.
 - Workbox/CSP generation: passed; authenticated/default network cache removed.
 - `npm audit --omit=dev --omit=optional`: zero vulnerabilities.
-- PlatformIO 6.1.19, Espressif32 7.0.1 firmware build: passed; 47,292/327,680 bytes RAM (14.4%), 934,665/3,145,728 bytes flash (29.7%).
+- PlatformIO 6.1.19, Espressif32 7.0.1 development firmware build: passed; 48,356/327,680 bytes RAM (14.8%), 949,481/3,145,728 bytes flash (30.2%). The secure fleet build was not uploaded or physically exercised in this refresh.
 - Secret-pattern review: no committed device/service secrets; templates/placeholders only.
 - Dead-code/dependency scan: no actionable orphan application module; build-entry/optional-runtime tooling explains reported false positives. Admin dormant mounting and custom select code were removed.
 
-The four skipped rule integration cases require Java/Firebase emulators and are run in configured CI/should be run before release. No physical bus test was claimed.
+The skipped rule-integration cases require the Firebase emulators and should be
+run before release. No physical bus test was claimed.
 
 ## Architecture conclusions
 
