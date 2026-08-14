@@ -7,12 +7,12 @@
  * driver's map shows +X min while the backend and passenger apps keep the old
  * value during a live shift.
  *
- * Requests can overlap (rapid taps), so confirm/revert are reconciled against
+ * The caller serializes writes (rapid taps are still applied immediately), so
  * the value each request actually wrote:
  *  - confirm(expected) records the server-acknowledged value and only clears
  *    the pending optimistic value when it matches (a newer tap stays).
  *  - revert(expected) only drops the pending optimistic value when it matches
- *    (a failed older write must not yank a newer pending tap).
+ *    (a failed write must not yank a newer pending tap).
  */
 export class OptimisticDelay {
   /** Last value the backend acknowledged (or the initial value). */

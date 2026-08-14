@@ -51,6 +51,10 @@ function DriverMapInner({ route, driverLocation, busId, isTracking, selectedRout
   // or reverted against the backend (issue #38 F6). delayMinutes is just the
   // render mirror of OptimisticDelay.value.
   const delaySync = useRef(new OptimisticDelay(0)).current;
+  // The API accepts absolute delay values, so sending rapid taps concurrently
+  // allows an older request to arrive after a newer one and overwrite it.
+  // Keep the UI optimistic but serialize writes in tap order.
+  const delayRequestQueue = useRef<Promise<void>>(Promise.resolve());
   const [delaySyncError, setDelaySyncError] = useState<string | null>(null);
   const delaySyncErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showDelaySyncError = useCallback((message: string) => {
@@ -80,7 +84,6 @@ function DriverMapInner({ route, driverLocation, busId, isTracking, selectedRout
 
   const pushDelay = useCallback((addMin: number) => {
     const next = Math.max(0, delaySync.value + addMin);
-    setDelayMinutes(delaySync.apply(next));
     if (!busId) {
       console.warn("[DriverMap] Delay was not synced because no bus is assigned.");
       showDelaySyncError("No bus assigned — delay not saved.");
@@ -93,33 +96,38 @@ function DriverMapInner({ route, driverLocation, busId, isTracking, selectedRout
       showDelaySyncError("Shift service unavailable — delay not saved.");
       return;
     }
+    setDelayMinutes(delaySync.apply(next));
     const routesToUpdate = selectedRouteIds?.length ? selectedRouteIds : [route.id];
-    void currentUser.getIdToken().then((token) =>
-      Promise.all(routesToUpdate.map(async (routeId) => {
-        const response = await fetch(`${backendUrl}/api/shifts/delay`, {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ busId, routeId, delayMinutes: next }),
-        });
-        if (!response.ok) throw new Error(`Delay update failed with HTTP ${response.status}`);
-      })),
-    )
-      .then(() => {
+    const sync = async () => {
+      try {
+        const token = await currentUser.getIdToken();
+        await Promise.all(routesToUpdate.map(async (routeId) => {
+          const response = await fetch(`${backendUrl}/api/shifts/delay`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ busId, routeId, delayMinutes: next }),
+          });
+          if (!response.ok) throw new Error(`Delay update failed with HTTP ${response.status}`);
+        }));
         // Backend confirmed the write; drop the optimistic value (unless a
         // newer tap already superseded it) and mirror the reconciled value.
         setDelayMinutes(delaySync.confirm(next));
-      })
-      .catch((error) => {
+      } catch (error) {
         // Revert the optimistic value: the backend kept the last confirmed
         // one, so the driver's map must not keep showing an unsynced delay
         // while passengers see the old value (issue #38 F6).
         setDelayMinutes(delaySync.revert(next));
         showDelaySyncError("Couldn't save delay — reverted to last synced value.");
         console.error("[DriverMap] Delay sync failed:", error);
-      });
+      }
+    };
+    const queued = delayRequestQueue.current.then(sync, sync);
+    // Always keep the queue live after a failed request so a later tap still
+    // gets a chance to reconcile with the backend.
+    delayRequestQueue.current = queued.catch(() => undefined);
   }, [busId, delaySync, route.id, selectedRouteIds, showDelaySyncError]);
 
   const [navPhase, setNavPhase] = useState<NavPhase>(isTracking ? "navigating" : "preview");
