@@ -28,7 +28,7 @@ interface Message {
 
 interface BaseProps {
   sessionId: string;
-  currentUserRole: "driver" | "passenger" | "admin";
+  currentUserRole: "passenger" | "admin";
   currentUserId: string;
   onUnreadCountChange?: (count: number) => void;
 }
@@ -285,7 +285,7 @@ export default function MessagingPanel({
                 No messages yet
               </p>
               <p className="text-[11px] mt-1" style={{ color: "var(--text-ghost)" }}>
-                Send a message to the {currentUserRole === "driver" ? "riders" : "driver"}
+                Send a message to the {currentUserRole === "admin" ? "passengers" : "administrator"}
               </p>
             </div>
         ) : (

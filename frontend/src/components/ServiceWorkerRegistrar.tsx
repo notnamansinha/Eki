@@ -1,11 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import {
-  canActivateServiceWorker,
-  DRIVER_SHIFT_UPDATE_EVENT,
-  DRIVER_SHIFT_UPDATE_STATE_KEY_PREFIX,
-} from "@/lib/serviceWorkerUpdate";
 
 /**
  * Registers the Workbox service worker after hydration.
@@ -41,20 +36,10 @@ export default function ServiceWorkerRegistrar() {
     const scheduleWaitingWorkerActivation = () => {
       if (activationTimer) clearTimeout(activationTimer);
       activationTimer = undefined;
-      if (!canActivateServiceWorker()) return;
-      // Re-check after a short grace period so a concurrent shift start can
-      // publish its lease before activation becomes origin-wide.
       activationTimer = setTimeout(() => {
         activationTimer = undefined;
-        if (!canActivateServiceWorker()) return;
         (pendingWorker ?? activeRegistration?.waiting)?.postMessage({ type: "SKIP_WAITING" });
       }, 500);
-    };
-
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key?.startsWith(DRIVER_SHIFT_UPDATE_STATE_KEY_PREFIX)) {
-        scheduleWaitingWorkerActivation();
-      }
     };
 
     const handleControllerChange = () => {
@@ -76,8 +61,6 @@ export default function ServiceWorkerRegistrar() {
 
     navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener(DRIVER_SHIFT_UPDATE_EVENT, scheduleWaitingWorkerActivation);
-    window.addEventListener("storage", handleStorage);
 
     // Defer registration until after initial paint + load to avoid contention
     // between SW precaching and the page's own critical resource fetches.
@@ -98,7 +81,6 @@ export default function ServiceWorkerRegistrar() {
             });
           }, 15 * 60 * 1000);
 
-          // A live or not-yet-restored driver shift keeps this worker waiting.
           scheduleWaitingWorkerActivation();
 
           // Listen for new SWs that finish installing while the page is open.
@@ -135,8 +117,6 @@ export default function ServiceWorkerRegistrar() {
       if (activationTimer) clearTimeout(activationTimer);
       window.removeEventListener("load", register);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener(DRIVER_SHIFT_UPDATE_EVENT, scheduleWaitingWorkerActivation);
-      window.removeEventListener("storage", handleStorage);
       navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
     };
   }, []);

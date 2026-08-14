@@ -11,7 +11,7 @@ export const metadata: Metadata = {
     template: "%s | Eki",
   },
   description:
-    "Real-time bus tracking for Ahmedabad. Live GPS, speed-aware ETAs, and driver-rider communication.",
+    "Real-time bus tracking for Ahmedabad. Live GPS, speed-aware ETAs, and passenger-admin communication.",
   keywords: ["Ahmedabad", "bus tracking", "live GPS", "BRTS", "transit", "Eki"],
   metadataBase: new URL("https://bustrack-be165.web.app"),
   alternates: { canonical: "/" },

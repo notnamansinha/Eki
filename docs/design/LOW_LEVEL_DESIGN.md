@@ -65,7 +65,7 @@ The coordinator stores `_worker_leases/trip-state` with owner and expiry. Only t
 
 ## Frontend composition
 
-The Next.js App Router produces a static export. `layout.tsx` installs global metadata, service-worker registration and `Providers`; protected layouts wrap client `RoleGuard` and map context. The landing route is public; passenger, driver, admin and feedback routes are authenticated/no-index.
+The Next.js App Router produces a static export. `layout.tsx` installs global metadata, service-worker registration and `Providers`; protected layouts wrap client `RoleGuard` and map context. The landing route is public; passenger, admin and feedback routes are authenticated/no-index.
 
 ### Frontend module catalog
 
@@ -73,8 +73,7 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 |---|---|
 | `app/page.tsx` | Public landing/sign-in and workspace routing |
 | `app/passenger/*` | Passenger map, boarding, messages, account/feedback workflow |
-| `app/driver/*` | Assigned ride arming, map, delay, messages and profile |
-| `app/admin/*` | Accessible active-tab shell; only active panel is mounted |
+| `app/admin/*` | Accessible active-tab shell; operations include ride arming, delay, boarding codes and messaging |
 | `app/feedback/*` | Admin feedback review/status workflow |
 | `app/manifest.ts`, `robots.ts`, `sitemap.ts` | PWA and public-index metadata |
 | `app/globals.css` | Tokens, responsive layout, focus/motion rules; reduced motion disables decoration |
@@ -82,11 +81,9 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 | `components/MapProviders.tsx` | Single Maps API provider/load per workspace |
 | `components/ServiceWorkerRegistrar.tsx` | SW registration/update check and controlled one-time reload |
 | `components/maps/DirectionsRoute.tsx` | Draw stored decoded polyline |
-| `components/maps/DriverMap.tsx` | Driver live location/route/ride controls |
 | `components/maps/PassengerMap.tsx` | RTDB route filtering, snapping, heuristic ETA and marker UI |
 | `components/maps/PassengerTrackingMap.tsx` | Passenger tracking composition |
-| `components/admin/*Panel.tsx` | Dashboard, routes, fleet/personnel, history and settings |
-| `components/driver/*` | Trip setup and driver profile |
+| `components/admin/*Panel.tsx` | Operations, dashboard, routes, fleet/personnel, history and settings |
 | `components/passenger/*` | Boarding, route timeline/carousel/sheet and account |
 | `components/shared/RoleGuard.tsx` | Presentation guard and auth/access states; not the security boundary |
 | `components/shared/MessagingPanel.tsx` | Session-scoped Firestore messaging/rate-record transaction |

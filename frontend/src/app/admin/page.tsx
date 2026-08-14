@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Settings as SettingsIcon,
   Activity,
+  RadioTower,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -22,11 +23,13 @@ const FleetManagementPanel = dynamic(() => import("@/components/admin/FleetManag
 const DashboardPanel = dynamic(() => import("@/components/admin/DashboardPanel"), { ssr: false, loading: loadingPanel });
 const SettingsPanel = dynamic(() => import("@/components/admin/SettingsPanel"), { ssr: false, loading: loadingPanel });
 const RideHistoryPanel = dynamic(() => import("@/components/admin/RideHistoryPanel"), { ssr: false, loading: loadingPanel });
+const OperationsPanel = dynamic(() => import("@/components/admin/OperationsPanel"), { ssr: false, loading: loadingPanel });
 
-type AdminTab = "dashboard" | "routes" | "fleet" | "personnel" | "history" | "settings";
+type AdminTab = "dashboard" | "operations" | "routes" | "fleet" | "personnel" | "history" | "settings";
 
 const TABS: { id: AdminTab; label: string; Icon: React.FC<{ className?: string }> }[] = [
   { id: "dashboard",  label: "Dashboard",  Icon: LayoutDashboard },
+  { id: "operations", label: "Operations", Icon: RadioTower },
   { id: "routes",     label: "Routes",     Icon: MapIcon },
   { id: "fleet",      label: "Fleet",      Icon: BusIcon },
   { id: "personnel",  label: "Personnel",  Icon: UsersIcon },
@@ -44,6 +47,7 @@ export default function AdminPage() {
   const renderPanel = (tab: AdminTab) => {
     switch (tab) {
       case "dashboard": return <DashboardPanel />;
+      case "operations": return <OperationsPanel />;
       case "routes": return <RouteManagementPanel />;
       case "fleet": return <FleetManagementPanel mode="fleet" />;
       case "personnel": return <FleetManagementPanel mode="personnel" />;

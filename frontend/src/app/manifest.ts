@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Eki – Live Transit Tracking',
     short_name: 'Eki',
-    description: 'Real-time bus tracking for Ahmedabad. Live GPS, speed-aware ETAs, and driver-rider communication.',
+    description: 'Real-time bus tracking for Ahmedabad. Live GPS, speed-aware ETAs, and passenger-admin communication.',
     start_url: '/',
     display: 'standalone',
     background_color: '#09090b',

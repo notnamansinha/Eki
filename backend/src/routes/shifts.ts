@@ -45,32 +45,39 @@ type AuthenticatedRequest = Request & {
   user?: {
     uid: string;
     role?: string;
+    admin?: boolean;
     driverId?: string;
     assignedBusId?: string;
   };
 };
 
-async function authorizeDriver(
+async function authorizeOperator(
   req: AuthenticatedRequest,
   busId: unknown,
   routeId: unknown,
+  requestedDriverId: unknown,
 ) {
   const user = req.user;
+  const isAdmin = user?.role === "admin" || user?.admin === true;
+  const driverId = isAdmin ? requestedDriverId : user?.driverId;
   if (
-    user?.role !== "driver" ||
-    typeof user.driverId !== "string" ||
-    typeof user.assignedBusId !== "string" ||
+    (!isAdmin && user?.role !== "driver") ||
+    typeof driverId !== "string" ||
+    !SAFE_ID.test(driverId) ||
     typeof busId !== "string" ||
     typeof routeId !== "string" ||
     !SAFE_ID.test(busId) ||
     !SAFE_ID.test(routeId) ||
-    busId !== user.assignedBusId
+    (!isAdmin && (
+      typeof user?.assignedBusId !== "string" ||
+      busId !== user.assignedBusId
+    ))
   ) {
     return null;
   }
 
   const [driverDoc, busDoc] = await Promise.all([
-    db.collection("drivers").doc(user.driverId).get(),
+    db.collection("drivers").doc(driverId).get(),
     db.collection("buses").doc(busId).get(),
   ]);
   const driver = driverDoc.data();
@@ -83,19 +90,24 @@ async function authorizeDriver(
 
   if (
     !driverDoc.exists ||
-    driver?.authUid !== user.uid ||
+    (!isAdmin && driver?.authUid !== user?.uid) ||
     driver?.assignedBusId !== busId ||
     !busDoc.exists ||
     !assignedRoutes.includes(routeId)
   ) {
     return null;
   }
-  return { driverId: user.driverId, busId, routeId };
+  return { driverId, busId, routeId };
 }
 
 router.patch("/delay", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const assignment = await authorizeDriver(req, req.body?.busId, req.body?.routeId);
+    const assignment = await authorizeOperator(
+      req,
+      req.body?.busId,
+      req.body?.routeId,
+      req.body?.driverId,
+    );
     const delayMinutes = req.body?.delayMinutes;
     if (
       !assignment ||
@@ -199,9 +211,14 @@ router.patch("/delay", requireAuth, async (req: AuthenticatedRequest, res: Respo
 
 router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const assignment = await authorizeDriver(req, req.body?.busId, req.body?.routeId);
+    const assignment = await authorizeOperator(
+      req,
+      req.body?.busId,
+      req.body?.routeId,
+      req.body?.driverId,
+    );
     if (!assignment) {
-      res.status(403).json({ error: "Driver is not assigned to this bus and route." });
+      res.status(403).json({ error: "Operator is not assigned to this bus and route." });
       return;
     }
 
@@ -512,10 +529,15 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
 
 router.post("/stop", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const assignment = await authorizeDriver(req, req.body?.busId, req.body?.routeId);
+    const assignment = await authorizeOperator(
+      req,
+      req.body?.busId,
+      req.body?.routeId,
+      req.body?.driverId,
+    );
     const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
     if (!assignment || !SAFE_ID.test(sessionId)) {
-      res.status(403).json({ error: "Driver is not authorized to stop this shift." });
+      res.status(403).json({ error: "Operator is not authorized to stop this shift." });
       return;
     }
 

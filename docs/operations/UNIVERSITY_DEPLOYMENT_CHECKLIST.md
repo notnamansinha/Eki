@@ -58,8 +58,9 @@ local professor demonstration.
 
 ## Identity and device provisioning
 
-- [ ] Maintain approved passenger/admin/driver accounts and immutable role
-  claims; immediately revoke departed or reassigned staff.
+- [ ] Maintain approved passenger/admin accounts and immutable role claims;
+  immediately revoke departed or reassigned staff. Keep operator assignments as
+  admin-managed fleet records rather than a separate web workspace.
 - [ ] Create one random device secret per ESP32 and store only its salted
   verifier in Firestore.
 - [ ] Bind every device to one approved bus and route; document rotation,
@@ -105,7 +106,7 @@ local professor demonstration.
 University acceptance is complete only after an authorized team observes:
 
 - [ ] Successful execution of `npm run verify` to confirm linting, unit tests, and production bundle generation.
-- [ ] Correct passenger, driver, and admin authorization and assignment.
+- [ ] Correct passenger/admin authorization and admin-managed operator assignment.
 - [ ] Fresh GNSS positions appear on all panels at measured acceptable latency.
 - [ ] Stop 1 alone activates a pre-armed ride.
 - [ ] Stops advance strictly in configured order; downstream visits cannot
@@ -116,7 +117,7 @@ University acceptance is complete only after an authorized team observes:
 - [ ] ESP power loss, network loss, GNSS loss, browser refresh, and backend
   restart preserve the active session and recover its stop index.
 - [ ] With browser throttling set to Slow 3G (about 400 ms RTT) and then
-  Offline, passenger, driver, and admin views show reconnecting status, clear
+  Offline, passenger and admin views show reconnecting status, clear
   stale live positions, and recover after connectivity returns.
 - [ ] While a production tab stays open, returning to it triggers a service
   worker update check; an activated update reloads once onto matching assets.

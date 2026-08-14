@@ -10,7 +10,7 @@ flowchart LR
   RTDB --> WORKER["Firestore-lease worker"]
   WORKER -->|"ordered lifecycle"| RTDB
   API & WORKER --> FS["Firestore durable state"]
-  RTDB -->|"onValue push"| WEB["Passenger / driver / admin"]
+  RTDB -->|"onValue push"| WEB["Passenger / admin"]
   FS -->|"onSnapshot / queries"| WEB
 ```
 

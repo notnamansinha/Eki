@@ -121,16 +121,16 @@ into this document, chat, screenshots, shell history, or Git.
 
 ## 5. Full rehearsal
 
-Open three signed-in browser sessions through the frontend HTTPS URL:
-passenger, assigned driver, and admin.
+Open two signed-in browser sessions through the frontend HTTPS URL:
+passenger and admin.
 
 - [ ] Before arming, all panels show the correct bus/route assignment.
-- [ ] Arm the ride in the driver panel while a fresh GNSS fix is available.
+- [ ] Arm the assigned ride in the admin Operations panel while a fresh GNSS fix is available.
 - [ ] Attempt to arm another route for the same bus in a second request/session;
   confirm the durable bus lock returns a conflict and no second ride appears.
 - [ ] Confirm the ride is `pre_departure`; it must not start merely because it
   was armed.
-- [ ] Enter stop 1 and confirm all three panels change to `in_service`.
+- [ ] Enter stop 1 and confirm both panels change to `in_service`.
 - [ ] Visit every stop in order and confirm progress advances one at a time.
 - [ ] At an intermediate stop, unplug ESP power for over five minutes. Confirm
   the ride remains active and panels show signal interruption.
@@ -150,11 +150,11 @@ passenger, assigned driver, and admin.
 1. Start hotspot/network, backend and frontend HTTPS tunnels, backend, and
    frontend.
 2. Check `/health`; check ESP serial response 200/202.
-3. Sign in to passenger, driver, and admin panels.
+3. Sign in to passenger and admin panels.
 4. Select the assigned bus and route; arm once.
 5. Tell professors: the first ordered stop starts the ride, signal loss does
    not end it, and only the final ordered stop completes it.
-6. Drive all stops in order while a second person watches all panels.
+6. Drive all stops in order while a second person watches both panels.
 7. Save screenshots, serial log, `/health` output, and final completed trip.
 8. Confirm the final ride has no matching `active_rides` or
    `_active_bus_locks` record before another arm test.
@@ -162,7 +162,7 @@ passenger, assigned driver, and admin.
 ## 7. Go/no-go rule and fallback
 
 Do not run the live demonstration if HTTPS, GNSS fix, correct assignments,
-three signed-in panels, or a full ordered rehearsal is missing.
+two signed-in panels, or a full ordered rehearsal is missing.
 
 Carry a spare ESP32/USB cable/power lead, hotspot, charger, printed stop list,
 and a screen recording of a successful rehearsal. The recording is evidence
