@@ -155,8 +155,7 @@ describe("device telemetry HTTP responses", () => {
   });
 
   it("keeps the pre-auth telemetry limiter shared by campus NAT", async () => {
-    const statuses: number[] = [];
-    for (let attempt = 0; attempt < 130; attempt += 1) {
+    const statuses = await Promise.all(Array.from({ length: 130 }, async (_, attempt) => {
       const deviceId = attempt % 2 === 0 ? "device_1" : "device_2";
       const response = await fetch(`${baseUrl}/api/devices/${deviceId}/telemetry`, {
         method: "POST",
@@ -166,8 +165,8 @@ describe("device telemetry HTTP responses", () => {
         },
         body: JSON.stringify({ sample: true }),
       });
-      statuses.push(response.status);
-    }
+      return response.status;
+    }));
 
     expect(statuses.filter((status) => status === 429).length).toBeGreaterThan(0);
   });
