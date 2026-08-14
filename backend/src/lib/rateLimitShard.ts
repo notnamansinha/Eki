@@ -8,8 +8,11 @@
  *
  * `RATE_LIMIT_SHARD_FACTOR` lets operators divide every per-instance budget by
  * the expected replica count: each instance enforces floor(budget / N), so
- * the combined budget across the fleet never exceeds the configured limit no
- * matter how many replicas run. The edge load balancer/WAF remains the
+ * the combined budget across the fleet never exceeds the configured limit.
+ * A deployment cannot use more replicas than a limiter's budget: allowing at
+ * least one request on every replica in that case would silently exceed the
+ * configured aggregate limit, so startup fails with a clear configuration
+ * error instead. The edge load balancer/WAF remains the
  * authoritative global cap (see
  * docs/operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md).
  */
@@ -38,9 +41,22 @@ export function readRateLimitShardFactor(
 /**
  * Per-instance budget for a configured limit across `replicas` instances.
  *
- * Floors so the aggregate budget can never exceed the configured limit;
- * never returns 0 so a single instance always retains at least one request.
+ * Floors so the aggregate budget can never exceed the configured limit.
+ * Throws when the replica count exceeds the budget: returning one request per
+ * replica would otherwise violate the configured fleet-wide limit.
  */
 export function shardedLimit(limit: number, replicas: number): number {
-  return Math.max(1, Math.floor(limit / replicas));
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new RangeError(`Rate limit must be a positive integer, got ${limit}.`);
+  }
+  if (!Number.isSafeInteger(replicas) || replicas < 1) {
+    throw new RangeError(`Replica count must be a positive integer, got ${replicas}.`);
+  }
+  if (replicas > limit) {
+    throw new RangeError(
+      `RATE_LIMIT_SHARD_FACTOR=${replicas} exceeds the ${limit}/minute limiter budget. ` +
+        "Use a shared distributed rate limiter before scaling beyond that budget.",
+    );
+  }
+  return Math.floor(limit / replicas);
 }

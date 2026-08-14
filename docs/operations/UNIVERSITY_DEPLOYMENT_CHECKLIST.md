@@ -13,8 +13,10 @@ local professor demonstration.
   load balancer/WAF, edge rate limits, health checks, and restricted
   administration. Set `RATE_LIMIT_SHARD_FACTOR` on every instance to the
   deployed replica count so the in-memory rate limiters enforce the same
-  aggregate budget as one instance; the WAF provides the authoritative global
-  cap (issue #28). Configure the load balancer to fail over on non-200
+  aggregate budget as one instance. The count must not exceed the smallest
+  in-process budget (currently 10/minute); use a shared distributed limiter
+  beyond that scale. The WAF provides the authoritative global cap (issue #28).
+  Configure the load balancer to fail over on non-200
   `/health` (`/health` returns 200 only while both Firestore and RTDB probes
   pass); the Firestore worker lease keeps lifecycle work single-leader across
   replicas, so failover must not duplicate lifecycle transitions.

@@ -8,7 +8,7 @@ Base path is the deployed backend origin. JSON request bodies are strict and lim
 - Hardware: `Authorization: Device <per-device secret>`. It is not a Firebase token and must never use `Bearer`.
 - Public: only `GET /health`.
 
-IDs accept 1–128 ASCII letters, digits, `_`, or `-`. Browser writes are broadly limited to 30/minute/IP, normal traffic 200/minute/IP; route compute/plan/place/device ingestion also have dedicated limits. These counters are process-local: every instance divides its budgets by `RATE_LIMIT_SHARD_FACTOR` (set it to the deployed replica count) so the fleet enforces the same aggregate budget as one instance, and the edge load balancer/WAF still provides the authoritative global cap (issue #28).
+IDs accept 1–128 ASCII letters, digits, `_`, or `-`. Browser writes are broadly limited to 30/minute/IP, normal traffic 200/minute/IP; route compute/plan/place/device ingestion also have dedicated limits. These counters are process-local: every instance divides its budgets by `RATE_LIMIT_SHARD_FACTOR` (set it to the deployed replica count) so the fleet enforces the same aggregate budget as one instance. The replica count must not exceed the smallest in-process budget (currently 10/minute), or startup fails instead of weakening that aggregate limit; use a shared distributed limiter beyond that scale. The edge load balancer/WAF still provides the authoritative global cap (issue #28).
 
 ## Health
 

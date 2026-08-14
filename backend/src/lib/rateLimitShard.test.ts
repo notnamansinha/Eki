@@ -42,8 +42,14 @@ describe("shardedLimit", () => {
     expect(shardedLimit(30, 4)).toBe(7);
   });
 
-  it("never drops below one request per instance", () => {
-    expect(shardedLimit(1, 4)).toBe(1);
-    expect(shardedLimit(3, 10)).toBe(1);
+  it("fails closed when replicas would exceed the aggregate budget", () => {
+    expect(() => shardedLimit(1, 4)).toThrow(RangeError);
+    expect(() => shardedLimit(3, 10)).toThrow(RangeError);
+  });
+
+  it("rejects invalid limits and replica counts", () => {
+    expect(() => shardedLimit(0, 1)).toThrow(RangeError);
+    expect(() => shardedLimit(10, 0)).toThrow(RangeError);
+    expect(() => shardedLimit(10.5, 1)).toThrow(RangeError);
   });
 });
