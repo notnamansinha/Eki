@@ -7,6 +7,7 @@ import {
 import { promisify } from "node:util";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { createConcurrencyLimiter } from "../lib/concurrency";
+import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
 import type { TelemetryPayload } from "./telemetryPayload";
 
 const scryptAsync = promisify(scrypt);
@@ -442,7 +443,11 @@ function scheduleDurableRideRestore(
 
   const restore = restoreDurableRide(assignment, sample)
     .catch((error) => {
-      console.warn(
+      // Surface through the failure tracker too (issue #38): sustained
+      // failures escalate to an error-level alert and show up on /health.
+      recordBackgroundFailure(
+        "devices.durableRideRestore",
+        "Durable ride recovery",
         `[Devices] Durable ride recovery failed for ${nodeKey}:`,
         error,
       );

@@ -31,11 +31,34 @@ Returns 200 when the cached 30-second Firestore/RTDB probe is ready, otherwise 5
     "deviceToServerLatencyMs": { "samples": 10, "average": 900, "p50": 850, "p95": 1300, "p99": 1300 },
     "rtdbWriteLatencyMs": { "samples": 10, "average": 30, "p50": 28, "p95": 55, "p99": 55 }
   },
+  "backgroundTasks": {
+    "totalFailures": 0,
+    "sustainedSources": [],
+    "sources": {
+      "tripState.backgroundTask": {
+        "label": "Trip-state background task",
+        "totalFailures": 3,
+        "windowFailures": 3,
+        "sustained": false,
+        "lastFailureAt": "2026-08-08T00:00:00.000Z",
+        "lastMessage": "[TripState] Failed to activate session abc:"
+      }
+    }
+  },
   "checkedAt": "2026-08-08T00:00:00.000Z"
 }
 ```
 
 Metrics are a 512-sample in-memory rolling window and reset on restart.
+
+`backgroundTasks` counts failures from fire-and-forget background writes
+(`trackBackgroundTask` and `scheduleDurableRideRestore`, issue #38). A source
+whose failures inside the 5-minute sliding window reach the threshold (5) is
+flagged `sustained: true` and listed in `sustainedSources`; the backend also
+emits an error-level `[BackgroundFailures] SUSTAINED failure alert` log once
+per episode so log-based alerting can page. The readiness bit deliberately
+ignores these counters — one flapping background write must not take the whole
+probe down.
 
 ## Device endpoints
 
