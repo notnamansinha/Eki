@@ -62,8 +62,12 @@ describe("production security configuration", () => {
     expect(analytics).not.toContain('data.tripState === "maintenance"');
     expect(tripStateEngine).toContain("function readIntervalMs");
     // Per-key serialized writers keep fleet, active-ride and telemetry
-    // persistence ordered (one generic writer used for all three streams).
-    expect(tripStateEngine).toContain("new SerializedChangeWriter()");
+    // persistence ordered (one generic writer used for all three streams),
+    // and every long-lived in-memory map is LRU-bounded (issue #37).
+    expect(tripStateEngine).toContain("new SerializedChangeWriter(MAX_CACHE_ENTRIES)");
+    expect(tripStateEngine).toContain("new LruCache<string, RouteStop[]>(MAX_CACHE_ENTRIES)");
+    expect(tripStateEngine).toContain("new LruCache<string, TelemetrySample>(MAX_CACHE_ENTRIES)");
+    expect(tripStateEngine).toContain("new LruCache<string, PendingCompletion>(");
     expect(tripStateEngine).toContain("fleetWrites.enqueue");
     expect(tripStateEngine).toContain("activeRideWrites.enqueue");
     expect(tripStateEngine).toContain("telemetryWrites.enqueue");

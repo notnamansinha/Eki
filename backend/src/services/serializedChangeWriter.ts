@@ -1,3 +1,5 @@
+import { LruCache } from "../lib/lruCache";
+
 /**
  * Serializes change-only writes per key.
  *
@@ -11,7 +13,18 @@
  */
 export class SerializedChangeWriter {
   private readonly queues = new Map<string, Promise<unknown>>();
-  private readonly fingerprints = new Map<string, string>();
+  private readonly fingerprints: LruCache<string, string>;
+
+  /**
+   * @param maxFingerprints Bounds the dedup fingerprint map (issue #37) so
+   *   fingerprints of retired keys cannot accumulate forever. Eviction only
+   *   drops a dedup entry: the next identical event performs one redundant
+   *   write, then re-caches. Queues are never evicted — dropping a pending
+   *   write would break the per-key ordering guarantee.
+   */
+  constructor(maxFingerprints = 1_000) {
+    this.fingerprints = new LruCache<string, string>(maxFingerprints);
+  }
 
   /**
    * Queues `write` behind the previous write for `key` and returns its promise.

@@ -1,5 +1,6 @@
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
+import { LruCache } from "../lib/lruCache";
 import { SerializedChangeWriter } from "./serializedChangeWriter";
 import { reduceTripState } from "./tripStateReducer";
 import {
@@ -13,23 +14,44 @@ interface PendingCompletion {
   timeoutId: NodeJS.Timeout;
   run: () => Promise<void>;
 }
-const routeStopsCache = new Map<string, RouteStop[]>();
+// Bounded in-memory state (issue #37): every long-lived map is LRU-capped so
+// a long-running engine cannot leak memory as bus/route keys churn. The two
+// remaining plain collections self-clean — routeLoadPromises holds only
+// in-flight loads (each deletes itself on settle) and backgroundTasks holds
+// only tracked tasks (each removes itself in finally) — so they are bounded
+// by concurrency, not by history.
+const MAX_CACHE_ENTRIES = 1_000;
+const routeStopsCache = new LruCache<string, RouteStop[]>(MAX_CACHE_ENTRIES);
 const routeLoadPromises = new Map<string, Promise<RouteStop[]>>();
-const missingRouteUntil = new Map<string, number>();
-const completedTimeouts = new Map<string, PendingCompletion>();
+const missingRouteUntil = new LruCache<string, number>(MAX_CACHE_ENTRIES);
+const completedTimeouts = new LruCache<string, PendingCompletion>(
+  MAX_CACHE_ENTRIES,
+  (key, completion) => {
+    // Evicting a completion must not drop terminal state: retire the session
+    // immediately instead of waiting for its 30s timer.
+    clearTimeout(completion.timeoutId);
+    void completion.run();
+  },
+);
 // Serialized change-only writers: per-key FIFO queues plus fingerprint dedup
 // for the durable fleet projection, the active-ride projection and telemetry.
-const fleetWrites = new SerializedChangeWriter();
-const activeRideWrites = new SerializedChangeWriter();
-const telemetryWrites = new SerializedChangeWriter();
+const fleetWrites = new SerializedChangeWriter(MAX_CACHE_ENTRIES);
+const activeRideWrites = new SerializedChangeWriter(MAX_CACHE_ENTRIES);
+const telemetryWrites = new SerializedChangeWriter(MAX_CACHE_ENTRIES);
 const backgroundTasks = new Set<Promise<void>>();
 interface TelemetrySample {
   timestamp: number;
   lat: number;
   lng: number;
 }
-const processedTelemetry = new Map<string, TelemetrySample>();
+const processedTelemetry = new LruCache<string, TelemetrySample>(MAX_CACHE_ENTRIES);
 
+/**
+ * Parses an environment-derived interval with a fallback and a lower bound.
+ *
+ * Returns `fallback` when `value` is not a finite number or is below
+ * `minimum`; otherwise the floored parsed value.
+ */
 function readIntervalMs(value: string | undefined, fallback: number, minimum: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= minimum ? Math.floor(parsed) : fallback;
@@ -42,6 +64,7 @@ const ROUTE_RECONNECT_MAX_MS = 30_000;
 const ENGINE_SHUTDOWN_TIMEOUT_MS = 8_000;
 const ENGINE_COMPLETION_FLUSH_MS = 2_000;
 
+/** Normalizes a raw RTDB fleet event into the durable lifecycle state shape. */
 function fleetLifecycleState(data: Record<string, unknown>) {
   return {
     routeId: normalizeIdentifier(data.routeId),
@@ -55,6 +78,10 @@ function fleetLifecycleState(data: Record<string, unknown>) {
   };
 }
 
+/**
+ * Fingerprints the lifecycle-relevant fields of a fleet event so unchanged
+ * state can be skipped by the serialized writer's dedup.
+ */
 function lifecycleFingerprint(
   data: Record<string, unknown>,
   state: ReturnType<typeof fleetLifecycleState>,
@@ -65,12 +92,14 @@ function lifecycleFingerprint(
   });
 }
 
+/** Clamps a delay value to a non-negative safe integer, defaulting to 0. */
 function delayRevision(value: unknown): number {
   return Number.isSafeInteger(value) && Number(value) >= 0
     ? Number(value)
     : 0;
 }
 
+/** Clamps a delay in minutes to 0..1440 (one day), defaulting to 0. */
 function normalizedDelayMinutes(value: unknown): number {
   return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 1440
     ? Number(value)
@@ -184,7 +213,8 @@ async function persistOfflineFleetState(
 
 /** Loads one route with request coalescing and a short cache for missing IDs. */
 async function ensureRouteLoaded(routeId: string): Promise<RouteStop[]> {
-  if (routeStopsCache.has(routeId)) return routeStopsCache.get(routeId)!;
+  const cached = routeStopsCache.get(routeId);
+  if (cached) return cached;
   const suppressUntil = missingRouteUntil.get(routeId);
   if (suppressUntil && Date.now() < suppressUntil) return [];
   if (suppressUntil) missingRouteUntil.delete(routeId);

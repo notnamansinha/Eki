@@ -196,4 +196,28 @@ describe("SerializedChangeWriter", () => {
     await afterClear;
     expect(calls).toEqual(["pending", "done", "after-clear"]);
   });
+
+  it("bounds the dedup fingerprint map, falling back to a redundant write", async () => {
+    const writer = new SerializedChangeWriter(4);
+    let writes = 0;
+    const write = () => async () => {
+      writes += 1;
+      await tick();
+    };
+
+    await writer.enqueue("a", "fa", write());
+    await writer.enqueue("b", "fb", write());
+    await writer.enqueue("c", "fc", write());
+    await writer.enqueue("d", "fd", write());
+    // Inserting "e" evicts the oldest fingerprint ("a"), then re-inserting
+    // "a" evicts the next-oldest ("b").
+    await writer.enqueue("e", "fe", write());
+
+    // "a" was evicted, so the identical state must be written again.
+    await writer.enqueue("a", "fa", write());
+    // "c" is still cached, so this identical write is deduped.
+    await writer.enqueue("c", "fc", write());
+
+    expect(writes).toBe(6);
+  });
 });
