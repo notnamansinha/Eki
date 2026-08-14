@@ -35,15 +35,16 @@ local professor demonstration.
 
 ## Staging and deployment pipeline
 
-- [ ] Create the `eki-staging` and `eki-production` Firebase projects and
-  configure each with App Check (ReCaptcha Enterprise) and its own data.
+- [ ] Confirm the current Eki Firebase project is `bustrack-be165` and configure
+  it with App Check (ReCaptcha Enterprise). Provision a separate production
+  project before enabling the manual production deploy job.
 - [ ] Configure the `staging` and `production` GitHub environments with
   `FIREBASE_TOKEN` plus all `NEXT_PUBLIC_*` build variables listed in
   `.github/workflows/deploy.yml`.
-- [ ] `.firebaserc` defaults to `eki-staging`, so an unqualified
-  `firebase deploy` can never reach production. Production deploys run only
-  through the explicit `--project eki-production` job behind the protected
-  `production` environment (manual `workflow_dispatch` + approval).
+- [ ] `.firebaserc` defaults to `bustrack-be165`, and the staging job targets
+  that same explicit project. Production deploys remain disabled until a
+  separate project replaces the placeholder `eki-production` target behind
+  the protected `production` environment.
 - [ ] Verify the `Deploy` workflow promotes main to staging automatically after
   a green `Production verification` run, and that staging smoke checks (rules,
   hosting headers, App Check) pass before any production dispatch.

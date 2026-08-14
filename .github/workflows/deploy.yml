@@ -1,10 +1,10 @@
-# Deploys the web app + security rules to a staging Firebase project on every
+# Deploys the web app + security rules to the Eki Firebase project on every
 # green main build, and to production only via an explicit, approval-gated
 # workflow_dispatch (issue #39 M4).
 #
-# Project targeting is explicit everywhere: the .firebaserc default is the
-# staging project, so a forgotten --project can never hit production. The
-# production job uses an explicit --project and a protected environment.
+# Project targeting is explicit everywhere: staging currently uses the single
+# Eki project, bustrack-be165. The production job remains an explicit,
+# approval-gated target until a separate production project is provisioned.
 #
 # Required GitHub secrets (environment-scoped):
 #   staging / production environments each need:
@@ -87,7 +87,7 @@ jobs:
       - name: Deploy to staging (hosting + rules)
         run: >-
           $FIREBASE_CLI deploy
-          --project eki-staging
+          --project bustrack-be165
           --only hosting,firestore:rules,database:rules
           --token "$FIREBASE_TOKEN"
         env:
