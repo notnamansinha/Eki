@@ -6,6 +6,12 @@ backend origin, and root CA supplied by the ignored `secrets.h` file.
 new firmware build and reflash; the application has no persistent credential
 store or local recovery service.
 
+Before a device build, define all six macros in the ignored `secrets.h`:
+`WIFI_SSID`, `WIFI_PASS`, `DEVICE_ID`, `DEVICE_SECRET`, `BACKEND_URL`, and
+`BACKEND_ROOT_CA`. The complete value rules and route-versus-firmware change
+matrix are in the hardware setup guide. Never replace this template with real
+credentials in source control.
+
 Fleet confidentiality depends on the `esp32dev-secure` Secure Boot V2 and
 release-mode flash-encryption gate. See `../README.md`,
 `../../docs/hardware/HARDWARE_TELEMETRY.md`, and

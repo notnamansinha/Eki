@@ -26,3 +26,8 @@ npm run provision-device --workspace=backend -- `
 This transaction rejects duplicate assignment/active ride/active bus lock, generates a random secret, stores only its salted scrypt verifier, and prints the plaintext once.
 
 See [API reference](API.md), [LLD](../design/LOW_LEVEL_DESIGN.md), [Firebase model](../data/FIREBASE_DATA_MODEL.md), and [test strategy](../testing/TEST_STRATEGY.md).
+
+For a first-time setup, role/workflow explanation, environment-variable
+reference, troubleshooting, and the boundary between Hosting deployment and
+backend/runtime deployment, read [Getting started](../GETTING_STARTED.md)
+and [configuration](../CONFIGURATION.md).

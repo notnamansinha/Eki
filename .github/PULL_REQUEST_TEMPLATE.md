@@ -25,3 +25,8 @@ Please delete options that are not relevant.
 - [ ] I have made corresponding changes to the documentation
 - [ ] My changes generate no new warnings
 - [ ] I have tested this on the physical ESP32 hardware (if needed)
+- [ ] I updated `.env.example`, `secrets.example.h`, rules/indexes, or release
+      documentation when the corresponding contract changed
+- [ ] I checked that examples contain placeholders only and no secrets,
+      personal data, private addresses, tokens, or unredacted logs
+- [ ] I ran `npm run verify` and the relevant rules/PlatformIO checks

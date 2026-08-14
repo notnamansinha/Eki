@@ -1,6 +1,6 @@
 # Architecture risk register
 
-Last source verification: 2026-08-09.
+Last source verification: 2026-08-14.
 
 This register tracks material risks that remain after the verified fixes in the
 [production readiness audit](PRODUCTION_READINESS_AUDIT.md). It is intentionally
@@ -144,3 +144,8 @@ not a substitute for the physical and institutional acceptance work in the
 Every pull request that changes an item above must update its status and attach
 fresh evidence. Do not mark a risk closed merely because code exists on a branch;
 closure requires the acceptance condition on the default branch.
+
+The current source/docs verification confirms the software-side mitigations and
+does not close the external firmware, deployment, privacy, backup, monitoring,
+or institutional acceptance gates. Keep those gates open until evidence is
+recorded in the deployment checklist and release evidence package.

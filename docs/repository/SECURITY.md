@@ -1,7 +1,9 @@
 # Security Policy
 
 This document outlines the security models, vulnerability reporting procedures,
-and database rules governing the Eki ecosystem.
+and database rules governing the Eki ecosystem. For the public-safe
+configuration and documentation boundary, also see
+[Environment and configuration](../CONFIGURATION.md) and [Getting started](../GETTING_STARTED.md).
 
 ## Reporting a Vulnerability
 
@@ -88,3 +90,12 @@ stale authenticated responses crossing accounts on shared browsers.
   rate limits, monitored rotation, signed OTA, controlled signing-key custody,
   and the witnessed Secure Boot V2/release-mode flash-encryption procedure. See
   the deployment checklist for ownership requirements.
+
+### Public documentation boundary
+
+Architecture and API documentation may describe identifiers, routes, limits,
+security controls, failure behavior and placeholder commands. It must not
+contain service-account JSON, private keys, device or Wi-Fi secrets, App Check
+debug tokens, bearer tokens, internal addresses, tunnel credentials, personal
+records, or unredacted logs. Browser configuration identifiers are public but
+must remain restricted by hostname and enabled API.

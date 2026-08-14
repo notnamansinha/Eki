@@ -116,15 +116,19 @@ npm run verify
 ## Documentation
 
 - [Documentation index](../index/README.md)
+- [Getting started and operating guide](../GETTING_STARTED.md)
+- [Environment and configuration reference](../CONFIGURATION.md)
 - [High-level design](../design/HIGH_LEVEL_DESIGN.md)
 - [Low-level design and module catalog](../design/LOW_LEVEL_DESIGN.md)
 - [Firestore and RTDB data dictionary](../data/FIREBASE_DATA_MODEL.md)
+- [Hardware setup and route-specific flashing](../hardware/README.md)
 - [Hardware telemetry and latency/failure analysis](../hardware/HARDWARE_TELEMETRY.md)
 - [Backend API](../backend/API.md)
 - [Test strategy and failure matrix](../testing/TEST_STRATEGY.md)
 - [Production readiness audit](../operations/PRODUCTION_READINESS_AUDIT.md)
 - [Live demo runbook](../operations/LIVE_DEMO_RUNBOOK.md)
 - [University deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md)
+- [CI, deployment, and release guide](../operations/CI_CD_AND_RELEASES.md)
 - [ESP32 fleet security and provisioning](../operations/HARDWARE_SECURITY_PROVISIONING.md)
 - [Security policy](SECURITY.md)
 

@@ -55,3 +55,10 @@ Use a two-step, in-app destructive action. The existing â€œDelete ride historyâ€
 ## Design documentation
 
 - After acceptance and validation: none; this is a local interaction refinement.
+
+## Current reference
+
+This file remains a historical decision record rather than the current source
+of truth. For current behavior and acceptance status, use the [getting started
+guide](../GETTING_STARTED.md), [data model](../data/FIREBASE_DATA_MODEL.md),
+[API reference](../../backend/API.md), and [test strategy](../testing/TEST_STRATEGY.md).

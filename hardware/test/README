@@ -12,3 +12,7 @@ Run `platformio test --project-dir hardware -e native`. GNSS/UART/Wi-Fi/TLS,
 watchdog and power behavior still require the bench and vehicle matrix in
 `../../docs/testing/TEST_STRATEGY.md`; never describe host tests or a compile as a
 physical hardware pass.
+
+The native target currently contains two suites and 26 test cases. Treat that
+count as a verification snapshot, not a fixed contract: update the test
+strategy when suites or physical acceptance coverage change.

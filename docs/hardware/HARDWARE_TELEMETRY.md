@@ -1,5 +1,12 @@
 # Hardware telemetry, latency and failure design
 
+Setup boundary: use [the hardware setup guide](README.md) before reading this
+design. It is the source for required `backend/.env`, frontend environment
+templates, `hardware/include/secrets.h`, signing-key custody, provisioning
+order, route-specific changes, wiring, build selection, and post-flash checks.
+This document is the source for runtime telemetry behavior, timing, failure
+handling, latency and physical acceptance.
+
 ## Electrical and physical setup
 
 | ESP32 | NEO-M8N | Purpose |

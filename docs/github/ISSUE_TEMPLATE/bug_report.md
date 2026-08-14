@@ -32,3 +32,12 @@ If applicable, add screenshots to help explain your problem.
 
 **Additional context**
 Add any other context about the problem here.
+
+**Safety and privacy check**
+
+- Do not paste credentials, tokens, private keys, Wi-Fi passwords, personal
+  records, exact private addresses, or unredacted logs.
+- Include a redacted request/response, correlation time, route/device ID
+  placeholder, and relevant `/health` or serial symptom when useful.
+- For hardware issues, state whether this was a native test, bench test, or
+  vehicle test; a compile alone is not physical acceptance evidence.

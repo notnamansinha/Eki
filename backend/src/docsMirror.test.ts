@@ -35,11 +35,17 @@ function expectedMirror(source: string) {
   if (source === "README.md") {
     content = content
       .replaceAll("](docs/", "](../")
-      .replaceAll("](backend/", "](../backend/");
+      .replaceAll("](backend/", "](../backend/")
+      .replaceAll("](hardware/", "](../hardware/");
+  } else if (!source.includes("/")) {
+    content = content.replaceAll("](docs/", "](../");
   } else if (source === "hardware/README.md") {
     content = content
       .replaceAll("](../docs/hardware/", "](")
-      .replaceAll("](../docs/operations/", "](../operations/");
+      .replaceAll("](../docs/operations/", "](../operations/")
+      .replaceAll("](../docs/", "](../")
+      .replaceAll("](../backend/", "](../../backend/")
+      .replaceAll("](../frontend/", "](../../frontend/");
   } else if (/^(backend|frontend|hardware)\//.test(source)) {
     content = content.replaceAll("../docs/", "../");
   }
