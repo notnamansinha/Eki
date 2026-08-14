@@ -9,8 +9,17 @@ local professor demonstration.
   quotas, incident response, privacy, hardware, and driver onboarding.
 - [ ] Provide production Firebase projects, approved regions, budgets, quota
   alerts, backup/export schedules, and separate staging/production data.
-- [ ] Deploy the backend behind university-managed HTTPS, a load
-  balancer/WAF, edge rate limits, health checks, and restricted administration.
+- [ ] Run at least two backend replicas behind university-managed HTTPS, a
+  load balancer/WAF, edge rate limits, health checks, and restricted
+  administration. Set `RATE_LIMIT_SHARD_FACTOR` on every instance to the
+  deployed replica count so the in-memory rate limiters enforce the same
+  aggregate budget as one instance. The count must not exceed the smallest
+  in-process budget (currently 10/minute); use a shared distributed limiter
+  beyond that scale. The WAF provides the authoritative global cap (issue #28).
+  Configure the load balancer to fail over on non-200
+  `/health` (`/health` returns 200 only while both Firestore and RTDB probes
+  pass); the Firestore worker lease keeps lifecycle work single-leader across
+  replicas, so failover must not duplicate lifecycle transitions.
 - [ ] Use Workload Identity or Secret Manager for server credentials; never
   store service-account JSON or secrets in the repository or firmware build
   logs.
@@ -41,7 +50,8 @@ local professor demonstration.
 - [ ] Deploy and monitor the committed `firestore.indexes.json`; retention and
   privacy deletion depend on those indexes.
 - [ ] Ensure exactly one healthy worker lease owner processes lifecycle,
-  stale-state, and retention jobs.
+  stale-state, and retention jobs. The Firestore lease is safe at any replica
+  count, so this is about observing the lease, not limiting replicas.
 - [ ] Alert on `/health` readiness, rejected telemetry, credential-cache rate,
   device-to-server/processing/RTDB-write p95/p99, watchdog reset reports and
   worker lease churn. Define targets from a real route load test.

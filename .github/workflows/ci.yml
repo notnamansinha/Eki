@@ -57,6 +57,39 @@ jobs:
       # see docs/operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md.
       - run: npm audit --omit=dev --omit=optional
 
+  backend-image:
+    # Issue #28: the backend runs as replicated containers, so the exact image
+    # that would be scaled must build and boot on every push. The smoke step
+    # boots it with placeholder env (no real Firebase) and asserts the health
+    # endpoint answers: the process is live, production config fails closed
+    # correctly, and /health serves the degraded body the load balancer relies
+    # on when a dependency is unreachable.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build backend container image
+        run: docker build -f backend/Dockerfile -t eki-backend:ci .
+      - name: Smoke-boot the container and probe /health
+        run: |
+          docker run -d --name eki-backend-smoke \
+            -e NODE_ENV=production \
+            -e CORS_ORIGIN=https://ci-only.example.invalid \
+            -e FIREBASE_DATABASE_URL=https://eki-unit-test-default-rtdb.firebaseio.com \
+            -p 8080:8080 eki-backend:ci
+          # Wait until the HTTP server answers (a 503 still counts: it proves
+          # the process is live; only connection failures keep looping).
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://127.0.0.1:8080/health; then break; fi
+            sleep 1
+          done
+          # Placeholder Firebase can never be reached, so readiness is 503 with
+          # a degraded body — the exact contract an LB health check consumes.
+          http_code="$(curl -s -o /tmp/health.json -w '%{http_code}' http://127.0.0.1:8080/health)"
+          test "$http_code" = "503"
+          grep -q '"status":"degraded"' /tmp/health.json
+          docker logs eki-backend-smoke
+
   firmware:
     runs-on: ubuntu-latest
     timeout-minutes: 15
