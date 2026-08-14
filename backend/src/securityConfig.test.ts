@@ -341,14 +341,14 @@ describe("production security configuration", () => {
     expect(server).not.toContain('"https://bustrack-be165.web.app"');
   });
 
-  it("targets staging by default and deploys to production explicitly (issue #39 M4)", () => {
+  it("targets the Eki Firebase project for staging and deploys production explicitly (issue #39 M4)", () => {
     const firebaserc = JSON.parse(workspaceFile(".firebaserc"));
     const deploy = workspaceFile(".github/workflows/deploy.yml");
 
-    // A forgotten --project deploys to staging, never production.
-    expect(firebaserc.projects.default).toBe("eki-staging");
+    // The single current Eki project is the safe default for staging.
+    expect(firebaserc.projects.default).toBe("bustrack-be165");
     // Both environments deploy with an explicit --project.
-    expect(deploy).toContain("--project eki-staging");
+    expect(deploy).toContain("--project bustrack-be165");
     expect(deploy).toContain("--project eki-production");
     // Production is approval-gated via a protected environment, not automated.
     expect(deploy).toContain("environment: production");
