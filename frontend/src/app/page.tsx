@@ -59,13 +59,13 @@ export default function HomePage() {
       <div className="absolute inset-0 bg-black/40 z-0 pointer-events-none" />
 
       <header className="absolute top-6 left-6 md:top-8 md:left-8 z-20 flex items-center justify-start pointer-events-none">
-        <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-none p-1 shadow-md shadow-black/50 flex items-center justify-center overflow-hidden">
+        <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-2 shadow-md shadow-black/50 flex items-center justify-center overflow-hidden">
           <Image
-            src="/uni-logo.webp"
-            alt="University Logo"
-            width={280}
-            height={100}
-            className="h-16 md:h-24 w-auto object-contain block"
+            src="/logo.png"
+            alt="Eki Logo"
+            width={96}
+            height={96}
+            className="h-14 w-14 md:h-20 md:w-20 object-contain block"
             priority
           />
         </div>
