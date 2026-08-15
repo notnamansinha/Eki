@@ -196,13 +196,18 @@ export default function PassengerWorkspace() {
     );
 
     switch (action.type) {
-      case "complete":
+      case "complete": {
         trackedRideRef.current = null;
-        const completionTimer = setTimeout(() => {
+        // queueMicrotask defers the state update out of the effect body
+        // (satisfying react-hooks/set-state-in-effect) while ensuring it
+        // cannot be cancelled by effect cleanup the way a setTimeout can.
+        const completedRide = action.ride;
+        queueMicrotask(() => {
           setTrackedSessionId("");
-          setCompletedRide(action.ride);
-        }, 0);
-        return () => clearTimeout(completionTimer);
+          setCompletedRide(completedRide);
+        });
+        break;
+      }
       case "observe":
         trackedRideRef.current = action.ride;
         break;

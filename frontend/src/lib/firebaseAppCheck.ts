@@ -2,6 +2,7 @@ import {
   initializeAppCheck,
   ReCaptchaEnterpriseProvider,
   CustomProvider,
+  getToken,
   type AppCheck,
 } from "firebase/app-check";
 import { firebaseApp } from "./firebaseCore";
@@ -44,7 +45,14 @@ function initializeFirebaseAppCheck(): AppCheck | null {
  * Call this once from inside a useEffect (post-paint) rather than at module
  * evaluation time. Calling it multiple times is safe — the inner guard ensures
  * AppCheck is only initialized once.
+ *
+ * Returns a Promise<void> that resolves only after the first App Check token
+ * has been obtained (or immediately when no provider is configured). This
+ * lets callers await the promise before accessing protected Firebase resources.
  */
-export function ensureAppCheck(): void {
-  initializeFirebaseAppCheck();
+export async function ensureAppCheck(): Promise<void> {
+  const instance = initializeFirebaseAppCheck();
+  if (instance) {
+    await getToken(instance);
+  }
 }
