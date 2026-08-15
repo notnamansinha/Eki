@@ -5,6 +5,11 @@ import { describe, expect, it } from "vitest";
 const workspaceFile = (path: string) =>
   readFileSync(resolve(__dirname, "../..", path), "utf8");
 
+const passengerSource = () =>
+  `${workspaceFile("frontend/src/app/passenger/page.tsx")}\n${workspaceFile(
+    "frontend/src/components/passenger/PassengerWorkspace.tsx",
+  )}`;
+
 const ruleBlock = (rules: string, matchPath: string) => {
   const start = rules.indexOf(matchPath);
   if (start < 0) return "";
@@ -228,7 +233,7 @@ describe("production security configuration", () => {
   });
 
   it("gates post-ride feedback on a successful join scoped to the current session", () => {
-    const passengerPage = workspaceFile("frontend/src/app/passenger/page.tsx");
+    const passengerPage = passengerSource();
     const boardingView = workspaceFile(
       "frontend/src/components/passenger/PassengerBoardingView.tsx",
     );
@@ -311,7 +316,7 @@ describe("production security configuration", () => {
 
   it("does not let the browser seed or take down hardware GNSS coordinates", () => {
     const operations = workspaceFile("frontend/src/components/admin/OperationsPanel.tsx");
-    const passengerPage = workspaceFile("frontend/src/app/passenger/page.tsx");
+    const passengerPage = passengerSource();
 
     expect(operations).not.toContain("onDisconnect(");
     expect(operations).not.toContain("lat:");
