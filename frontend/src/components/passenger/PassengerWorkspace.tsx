@@ -201,10 +201,10 @@ export default function PassengerWorkspace() {
         // queueMicrotask defers the state update out of the effect body
         // (satisfying react-hooks/set-state-in-effect) while ensuring it
         // cannot be cancelled by effect cleanup the way a setTimeout can.
-        const completedRide = action.ride;
+        const rideToComplete = action.ride;
         queueMicrotask(() => {
           setTrackedSessionId("");
-          setCompletedRide(completedRide);
+          setCompletedRide(rideToComplete);
         });
         break;
       }
