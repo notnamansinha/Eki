@@ -10,7 +10,6 @@ import {
   useState,
 } from "react";
 import { notifyAuthReady } from "@/lib/authState";
-import { ensureAppCheck } from "@/lib/firebaseAppCheck";
 import { withTimeout } from "@/lib/promiseTimeout";
 
 const ROLE_VERIFICATION_TIMEOUT_MS = 10_000;
@@ -59,12 +58,6 @@ function useAuthState(): AuthContextValue {
       .then(async ([{ browserLocalPersistence, onAuthStateChanged, setPersistence }, { auth }]) => {
         if (disposed) return;
 
-        // Initialise AppCheck here (post first-paint) rather than as a bare
-        // side-effect import in Providers. This keeps the reCAPTCHA iframe
-        // injection off the LCP critical path while still running before any
-        // Firestore / RTDB calls that AppCheck needs to gate.
-        ensureAppCheck();
-
         // Keep an explicitly signed-in account across navigation, PWA restarts
         // and normal reloads. Only an explicit sign-out should end the session.
         await setPersistence(auth, browserLocalPersistence);
@@ -76,6 +69,14 @@ function useAuthState(): AuthContextValue {
           notifyAuthReady();
 
           if (firebaseUser) {
+            // Signed-out visitors never need App Check. For returning users,
+            // load it in parallel with token restoration and await it only at
+            // the point where protected data can begin loading.
+            const appCheckReady = import("@/lib/firebaseAppCheck")
+              .then(({ ensureAppCheck }) => ensureAppCheck())
+              .catch((error) => {
+                console.error("Firebase App Check initialization failed:", error);
+              });
             setRoleError(null);
             const storedRole = window.localStorage.getItem(`eki:role:${firebaseUser.uid}`);
             const cachedRole: UserRole =
@@ -113,6 +114,7 @@ function useAuthState(): AuthContextValue {
                 claimedRole === "admin"
               ) {
                 if (currentGen !== generation) return;
+                await appCheckReady;
                 window.localStorage.setItem(`eki:role:${firebaseUser.uid}`, claimedRole);
                 setUser({
                   uid: firebaseUser.uid,
@@ -130,9 +132,10 @@ function useAuthState(): AuthContextValue {
               // is server-authoritative (POST /api/users/bootstrap).
               const [{ getFirestore, doc, getDoc }, { firebaseApp }] =
                 await Promise.all([
+                  appCheckReady,
                   import("firebase/firestore"),
                   import("@/lib/firebaseCore"),
-                ]);
+                ]).then(([, firestore, core]) => [firestore, core] as const);
               const db = getFirestore(firebaseApp);
               const userDocRef = doc(db, "users", firebaseUser.uid);
               const userSnap = await withTimeout(

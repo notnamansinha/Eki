@@ -37,7 +37,10 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  productionBrowserSourceMaps: false,
+  // This project is open source, so publishing production maps does not expose
+  // private implementation details and gives monitoring/Lighthouse actionable
+  // stack traces for the large client bundles.
+  productionBrowserSourceMaps: true,
   experimental: {
     // Only add barrel-heavy UI libraries here. Firebase already has proper
     // ESM subpath exports and does NOT benefit from this — adding it causes

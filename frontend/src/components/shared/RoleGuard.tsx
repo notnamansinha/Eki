@@ -10,9 +10,10 @@ import ConfirmModal from "@/components/ui/ConfirmModal";
 interface RoleGuardProps {
   children: React.ReactNode;
   allowedRoles: UserRole[];
+  loadingFallback?: React.ReactNode;
 }
 
-export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
+export default function RoleGuard({ children, allowedRoles, loadingFallback }: RoleGuardProps) {
   const { user, loading, roleError, loginLoading, loginWithGoogle, logout } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const pathname = usePathname();
@@ -24,6 +25,8 @@ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
   }, [allowedRoles, pathname, user]);
 
   if (loading) {
+    if (loadingFallback) return <>{loadingFallback}</>;
+
     return (
       <div
         className="w-full flex flex-col items-center justify-center"
