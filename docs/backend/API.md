@@ -15,7 +15,8 @@ Browser endpoints use a Firebase ID token. The frontend obtains that token
 after sign-in and sends it as a bearer token:
 
 ```bash
-curl -H "Authorization: Bearer <firebase-id-token>" \
+TOKEN="<firebase-id-token>"
+curl -H "Authorization: Bearer $TOKEN" \
   https://api.example.edu/api/buses
 ```
 
@@ -23,16 +24,19 @@ Hardware uses its per-device credential and the exact six-field telemetry
 contract:
 
 ```bash
+DEVICE_KEY="<device-secret>"
+TIMESTAMP=$(date +%s%3N)
 curl -i -X POST \
-  -H "Authorization: Device <device-secret>" \
+  -H "Authorization: Device $DEVICE_KEY" \
   -H "Content-Type: application/json" \
-  --data '{"lat":23.034,"lng":72.55,"speed":18.2,"heading":94,"motionState":"moving","timestamp":<unix-ms>}' \
+  --data "{\"lat\":23.034,\"lng\":72.55,\"speed\":18.2,\"heading\":94,\"motionState\":\"moving\",\"timestamp\":$TIMESTAMP}" \
   https://api.example.edu/api/devices/device_01/telemetry
 ```
 
-Replace every placeholder before use. Never put a real bearer token or device
-secret in shell history, documentation, tickets or logs. A successful new
-telemetry sample returns `202`; an equal or older duplicate returns `200`.
+Populate shell variables securely through a secret manager or protected prompt
+before use. Never put a real bearer token or device secret in shell history,
+documentation, tickets or logs. A successful new telemetry sample returns
+`202`; an equal or older duplicate returns `200`.
 
 ## Endpoint map
 
@@ -57,7 +61,7 @@ response, status code and side effect.
 - Hardware: `Authorization: Device <per-device secret>`. It is not a Firebase token and must never use `Bearer`.
 - Public: only `GET /health`.
 
-IDs accept 1–128 ASCII letters, digits, `_`, or `-`. Browser writes are broadly limited to 30 requests/minute and normal traffic to 200 requests/minute, keyed by verified Firebase UID when a bearer token is present and by IP otherwise; route compute/plan/place/device ingestion also have dedicated limits. These counters are process-local: every instance divides its budgets by `RATE_LIMIT_SHARD_FACTOR` (set it to the deployed replica count) so the fleet enforces the same aggregate budget as one instance. The replica count must not exceed the smallest in-process budget (currently 10/minute), or startup fails instead of weakening that aggregate limit; use a shared distributed limiter beyond that scale. The edge load balancer/WAF still provides the authoritative global cap.
+IDs accept 1–128 ASCII letters, digits, `_`, or `-`. Rate-limit counters always use normalized IP addresses (and verified Firebase UID when authenticated). Browser writes are broadly limited to 30 requests/minute and normal traffic to 200 requests/minute; route compute/plan endpoints use dedicated limiters (10/min and 30/min), `placeSearchLimiter` is an unsharded process-local 20/minute limiter, and device telemetry bypasses global and write limiters while enforcing separate pre-auth IP (120/min) and per-device limits. Sharded counters divide their budgets by `RATE_LIMIT_SHARD_FACTOR` (set it to the deployed replica count; invalid values fall back to 1). If the replica count exceeds the smallest in-process budget (currently 10/minute), startup fails; use a shared distributed limiter beyond that scale. An edge load balancer or WAF cap is an external deployment requirement for global rate protection.
 
 ## Health
 

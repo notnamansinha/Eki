@@ -39,8 +39,10 @@ new features.
 
 - Never commit `.env` or `.env.local` files.
 - If your PR introduces a new environment variable, you must update
-  `.env.example`, [CONFIGURATION.md](../CONFIGURATION.md), and the
-  respective `README.md` file immediately.
+  the applicable template (`backend/.env.example` for backend changes or
+  `frontend/env.production.example` for frontend changes),
+  [CONFIGURATION.md](../CONFIGURATION.md), and the respective `README.md` file
+  immediately.
 - If your PR changes a user-visible workflow, update
   [GETTING_STARTED.md](../GETTING_STARTED.md) and the relevant operational
   or frontend document.

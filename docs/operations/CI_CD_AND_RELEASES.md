@@ -41,8 +41,8 @@ operation.
 
 | Path | Trigger | Deploys | Gate |
 |---|---|---|---|
-| Staging | Successful verification from a push to `main`, or manual staging dispatch from `main` | Firebase Hosting, Firestore rules and RTDB rules for the approved staging project | Exact verified commit SHA; staging environment secrets |
-| Production | Manual dispatch from `main` with `production` selected | Firebase Hosting, Firestore rules and RTDB rules for the separately approved production project | Protected GitHub environment/reviewer approval and production secrets |
+| Staging | Successful verification from a push to `main`, or manual staging dispatch from `main` | Firebase Hosting, Firestore rules and RTDB rules for the approved staging project | Exact verified commit SHA for `workflow_run` (manual dispatch deploys the selected `main` ref directly); staging environment secrets |
+| Production | Manual dispatch from `main` with `production` selected | Firebase Hosting, Firestore rules and RTDB rules for the separately approved production project | Protected GitHub environment/reviewer approval, current `main` ref at dispatch time, and production secrets |
 
 The workflow does not deploy the Express backend container, configure DNS/TLS,
 create a WAF, provision Firebase data, flash devices, or change fleet
