@@ -4,7 +4,7 @@
 
 Firestore is durable/queryable; RTDB is the low-latency latest-state projection. `server` means Firebase Admin SDK and therefore not governed by client rules. Timestamps are called out because this repository contains both Firestore `Timestamp`, ISO strings, RTDB server milliseconds and epoch-millisecond numbers.
 
-Access model: every client-facing Firestore allow requires authentication **and** a valid App Check token (`request.app != null`). RTDB rules require authentication; RTDB App Check is enforced through the Firebase console because RTDB rules do not expose `request.app`. Server/Admin SDK writes bypass rules. The emulator integration suite strips the Firestore App Check gates for simulation (`scripts/rules-for-emulator.mjs`).
+Access model: client-facing Firestore and RTDB rules require authentication and enforce least-privilege roles. App Check is enforced for both products through Firebase Console; it is not available as a Firestore Security Rules request field. Server/Admin SDK writes bypass rules. The emulator integration suite uses isolated copies of the deployed rules (`scripts/rules-for-emulator.mjs`).
 
 ```mermaid
 erDiagram

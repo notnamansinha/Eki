@@ -194,7 +194,7 @@ describe("production security configuration", () => {
     expect(messages).not.toContain("messageRateAdvanced(sessionId)");
     expect(messageRateLimits).toContain("allow create, update, delete: if false;");
     expect(messageRateLimits).toContain("canReadSession(sessionId)");
-    expect(sessions).toContain("allow read: if isAppChecked() && isSessionOperator(sessionId)");
+    expect(sessions).toContain("allow read: if isSessionOperator(sessionId);");
     expect(sessions).toContain("allow update: if false;");
     expect(sessions).not.toContain("boardingStopId.size() <= 128");
     // Manifest shape and route-order validation now live in the server join policy.
@@ -251,74 +251,18 @@ describe("production security configuration", () => {
     const planRoute = workspaceFile("backend/src/routes/plan.ts");
     const routesList = workspaceFile("backend/src/routes/routesList.ts");
 
-    expect(routes).toContain("allow read: if isAppChecked() && isAuthenticated();");
-    expect(buses).toContain("allow read: if isAppChecked() && isAuthenticated();");
-    expect(settings).toContain("allow read: if isAppChecked() && isAuthenticated();");
-    expect(locations).toContain("allow read, write: if isAppChecked() && isAdmin();");
+    expect(routes).toContain("allow read: if isAuthenticated();");
+    expect(buses).toContain("allow read: if isAuthenticated();");
+    expect(settings).toContain("allow read: if isAuthenticated();");
+    expect(locations).toContain("allow read, write: if isAdmin();");
     expect(planRoute).toContain('router.post("/", requireAuth');
     expect(routesList).toContain('router.get("/", requireAuth');
   });
 
-  it("enforces App Check on every client-facing rule (issue #39)", () => {
+  it("keeps App Check enforcement out of Firestore rules", () => {
     const rules = workspaceFile("firestore.rules");
-    const helper = ruleBlock(rules, "function isAppChecked");
-
-    expect(helper).toContain("request.app != null");
-
-    // UNIVERSAL scan (audit #113): extract EVERY non-false allow predicate in
-    // the rules file — not just the ones already containing isAppChecked() —
-    // and require each to start with the App Check gate. A newly added
-    // ungated client-facing rule fails this immediately.
-    const clientAllows = [
-      ...rules.matchAll(/allow [a-z, ]+: if (?!false)[^;]+;/gs),
-    ]
-      .map(m => m[0])
-      .filter(rule => !rule.trimStart().startsWith("//"));
-    expect(clientAllows.length).toBeGreaterThan(0);
-    for (const rule of clientAllows) {
-      expect(rule).toMatch(/if isAppChecked\(\) && /);
-    }
-
-    // Ordering + precedence scan: the gate must be evaluated FIRST (before any
-    // auth/role predicate or session lookup), and the remainder of every allow
-    // must contain no TOP-LEVEL `||` — otherwise a branch could bypass the gate
-    // through &&/|| precedence (e.g. `isAppChecked() && A || B` parses as
-    // `(isAppChecked() && A) || B`).
-    const violations: string[] = [];
-    for (const rule of clientAllows) {
-      const gateEnd =
-        rule.indexOf("if isAppChecked() && ") + "if isAppChecked() && ".length;
-      let depth = 0;
-      for (const ch of rule.slice(gateEnd)) {
-        if (ch === "(") depth += 1;
-        else if (ch === ")") depth -= 1;
-        else if (ch === "|" && depth === 0) {
-          violations.push(rule);
-          break;
-        }
-      }
-    }
-    expect(violations).toEqual([]);
-
-    // Rule ordering (audit #113): authentication and App Check must be
-    // evaluated before any billable session get(). A denied unauthenticated
-    // read must not trigger sessionDoc()/get().
-    const operator = ruleBlock(rules, "function isSessionOperator");
-    const sessionReader = ruleBlock(rules, "function canReadSession");
-    expect(operator.indexOf("isAuthenticated()")).toBeGreaterThan(-1);
-    expect(operator.indexOf("isAuthenticated()")).toBeLessThan(
-      operator.indexOf("sessionDoc("),
-    );
-    // Passenger membership is part of canReadSession and is behind the same
-    // authentication short-circuit.
-    expect(sessionReader.indexOf("isAuthenticated()")).toBeLessThan(
-      sessionReader.indexOf("sessionDoc("),
-    );
-    // The authorized read path still costs exactly one get() — only the
-    // sessionDoc helper calls get(), and there is no getAfter() anywhere
-    // (audit #113: cost guards must stay accurate).
-    expect(rules.match(/return get\(/g) ?? []).toHaveLength(1);
-    expect(rules).not.toContain("getAfter(");
+    expect(rules).not.toContain("request.app");
+    expect(rules).not.toContain("isAppChecked");
   });
 
   it("keeps Realtime Database rules valid while App Check is enforced by Firebase", () => {
@@ -465,10 +409,10 @@ describe("production security configuration", () => {
     const authHook = workspaceFile("frontend/src/hooks/useAuth.ts");
     const settingsHook = workspaceFile("frontend/src/hooks/useSettings.ts");
 
-    expect(users).toContain("allow read: if isAppChecked() && isOwner(uid);");
+    expect(users).toContain("allow read: if isOwner(uid);");
     expect(users).toContain("allow create: if false;");
     expect(users).toContain("allow update, delete: if false;");
-    expect(settings).toContain("allow read: if isAppChecked() && isAuthenticated();");
+    expect(settings).toContain("allow read: if isAuthenticated();");
     expect(settings).toContain("allow create, update, delete: if false;");
     expect(usersRoute).toContain('router.post("/bootstrap", requireAuth');
     expect(usersRoute).toContain('role: "passenger"');

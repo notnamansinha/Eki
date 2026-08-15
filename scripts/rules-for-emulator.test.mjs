@@ -1,57 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
-import { stripRulesText, writeEmulatorRuleset } from "./rules-for-emulator.mjs";
+import { copyRulesText, writeEmulatorRuleset } from "./rules-for-emulator.mjs";
 
-describe("stripRulesText (App Check removal for emulator tests)", () => {
-  it("removes every isAppChecked() gate from Firestore rules", () => {
-    const input = [
-      "function isOwner(uid) {",
-      "  return isAuthenticated() && request.auth.uid == uid;",
-      "}",
-      "",
-      "    // App Check (issue #39): enforcement note",
-      "    function isAppChecked() {",
-      "      return request.app != null;",
-      "    }",
-      "",
-      "match /users/{uid} {",
-      "  allow read: if isAppChecked() && isOwner(uid);",
-      "  allow create: if false;",
-      "}",
-      "match /routes/{routeId} {",
-      "  allow read: if isAppChecked() && isAuthenticated();",
-      "}",
-    ].join("\n");
-
-    const { firestore } = stripRulesText(input, "{}");
-
-    assert.ok(!firestore.includes("isAppChecked"));
-    assert.ok(!firestore.includes("request.app"));
-    assert.ok(!firestore.includes("App Check (issue #39)"));
-    assert.ok(firestore.includes("allow read: if isOwner(uid);"));
-    assert.ok(firestore.includes("allow read: if isAuthenticated();"));
-    assert.ok(firestore.includes("allow create: if false;"));
-  });
-
-  it("handles CRLF line endings (the committed rules use \\r\\n)", () => {
-    const input =
-      "function isOwner(uid) {\r\n" +
-      "  return isAuthenticated() && request.auth.uid == uid;\r\n" +
-      "}\r\n" +
-      "\r\n" +
-      "    // App Check (issue #39): enforcement note\r\n" +
-      "    function isAppChecked() {\r\n" +
-      "      return request.app != null;\r\n" +
-      "    }\r\n" +
-      "\r\n" +
-      "match /users/{uid} {\r\n" +
-      "  allow read: if isAppChecked() && isOwner(uid);\r\n" +
-      "}\r\n";
-
-    const { firestore } = stripRulesText(input, "{}");
-    assert.ok(!firestore.includes("isAppChecked"));
-    assert.ok(firestore.includes("allow read: if isOwner(uid);"));
+describe("copyRulesText (isolated emulator rules)", () => {
+  it("keeps valid Firestore rules byte-identical", () => {
+    const firestore = "match /routes/{routeId} {\n  allow read: if request.auth != null;\n}";
+    const { firestore: copied } = copyRulesText(firestore, "{}");
+    assert.equal(copied, firestore);
   });
 
   it("leaves valid Realtime Database rules unchanged", () => {
@@ -70,22 +26,18 @@ describe("stripRulesText (App Check removal for emulator tests)", () => {
       2,
     );
 
-    const { database: stripped } = stripRulesText("{}", database);
-    assert.ok(stripped.includes('".read": "auth != null"'));
+    const { database: copied } = copyRulesText("{}", database);
+    assert.ok(copied.includes('".read": "auth != null"'));
   });
 
-  it("fails loudly when an isAppChecked() call survives stripping", () => {
-    // A gate written differently (no 'isAppChecked() && ' prefix) must not slip
-    // through — e.g. an OR-bypass that the fragment replacement cannot reach.
-    const input = [
-      "match /users/{uid} {",
-      "  allow read: if isAppChecked() || isOwner(uid);",
-      "}",
-    ].join("\n");
-    assert.throws(() => stripRulesText(input, "{}"), /still contains isAppChecked/);
+  it("fails loudly when Firestore rules use the unsupported request.app field", () => {
+    assert.throws(
+      () => copyRulesText("allow read: if request.app != null;", "{}"),
+      /must not use request.app/,
+    );
   });
 
-  it("keeps the real committed Firestore rules balanced after stripping", async () => {
+  it("keeps the real committed Firestore rules balanced", async () => {
     const firestore = await readFile(
       new URL("../firestore.rules", import.meta.url),
       "utf8",
@@ -94,10 +46,10 @@ describe("stripRulesText (App Check removal for emulator tests)", () => {
       new URL("../database.rules.json", import.meta.url),
       "utf8",
     );
-    const { firestore: strippedFirestore } = stripRulesText(firestore, database);
+    const { firestore: copiedFirestore } = copyRulesText(firestore, database);
 
     let depth = 0;
-    for (const char of strippedFirestore) {
+    for (const char of copiedFirestore) {
       if (char === "{") depth += 1;
       else if (char === "}") depth -= 1;
     }
@@ -105,8 +57,8 @@ describe("stripRulesText (App Check removal for emulator tests)", () => {
   });
 });
 
-describe("writeEmulatorRuleset (temp-dir output, audit #113)", () => {
-  it("writes stripped rules into a temp dir and never touches repo files", async () => {
+describe("writeEmulatorRuleset (temp-dir output)", () => {
+  it("writes copied rules into a temp dir and never touches repo files", async () => {
     const before = await readFile(
       new URL("../firestore.rules", import.meta.url),
       "utf8",
@@ -120,10 +72,10 @@ describe("writeEmulatorRuleset (temp-dir output, audit #113)", () => {
       assert.ok(!firestorePath.includes("\\Eki\\Eki\\firestore.rules"));
       assert.ok(!databasePath.includes("\\Eki\\Eki\\database.rules.json"));
 
-      const stripped = await readFile(firestorePath, "utf8");
-      assert.ok(!stripped.includes("isAppChecked"));
-      const strippedDb = await readFile(databasePath, "utf8");
-      assert.ok(!strippedDb.includes("request.app"));
+      const copied = await readFile(firestorePath, "utf8");
+      assert.equal(copied, before);
+      const copiedDb = await readFile(databasePath, "utf8");
+      assert.ok(copiedDb.includes('".read": "auth != null"'));
 
       // The temp firebase.json references the temp rules by absolute path.
       const config = JSON.parse(await readFile(configPath, "utf8"));

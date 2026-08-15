@@ -1,6 +1,7 @@
 import {
   initializeAppCheck,
   ReCaptchaEnterpriseProvider,
+  CustomProvider,
   type AppCheck,
 } from "firebase/app-check";
 import { firebaseApp } from "./firebaseCore";
@@ -10,7 +11,8 @@ let appCheck: AppCheck | null = null;
 function initializeFirebaseAppCheck(): AppCheck | null {
   if (typeof window === "undefined" || appCheck) return appCheck;
   const debugToken = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_DEBUG_TOKEN;
-  if (process.env.NODE_ENV !== "production" && debugToken) {
+  const isDebug = process.env.NODE_ENV !== "production" && Boolean(debugToken);
+  if (isDebug && debugToken) {
     (
       self as typeof self & {
         FIREBASE_APPCHECK_DEBUG_TOKEN?: boolean | string;
@@ -19,14 +21,20 @@ function initializeFirebaseAppCheck(): AppCheck | null {
       debugToken === "true" ? true : debugToken;
   }
   const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY;
-  if (!siteKey) {
+  if (!siteKey && !isDebug) {
     if (process.env.NODE_ENV === "production") {
       console.error("[AppCheck] Production site key is not configured.");
     }
     return null;
   }
+  const provider = siteKey
+    ? new ReCaptchaEnterpriseProvider(siteKey)
+    : new CustomProvider({
+        getToken: () =>
+          Promise.reject(new Error("AppCheck debug token active")),
+      });
   appCheck = initializeAppCheck(firebaseApp, {
-    provider: new ReCaptchaEnterpriseProvider(siteKey),
+    provider,
     isTokenAutoRefreshEnabled: true,
   });
   return appCheck;
