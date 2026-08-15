@@ -50,7 +50,7 @@ For the firmware, `hardware/include/secrets.h` must define all six values from
 | `WIFI_PASS` | Wi-Fi password | 8–63 printable ASCII characters; changing it requires a reflash |
 | `DEVICE_ID` | The exact provisioned device ID | 1–128 letters, digits, `_` or `-`; changing it requires backend reprovisioning and a reflash |
 | `DEVICE_SECRET` | The one-time secret printed by the backend provisioner | 20–128 letters, digits, `_` or `-`; changing it requires backend rotation/reprovisioning and a reflash |
-| `BACKEND_URL` | HTTPS backend origin, with no `/api` path, query or credentials | Maximum 256 characters; the secure fleet build requires `https://`; changing host requires a reflash |
+| `BACKEND_URL` | Reachable backend origin (development may use HTTP or HTTPS; `esp32dev-secure` fleet builds require `https://`), with no `/api` path, query or credentials | Maximum 256 characters; changing host requires a reflash |
 | `BACKEND_ROOT_CA` | PEM certificate chain that issues the backend certificate | Required and validated for HTTPS; CA rotation requires a reflash |
 
 Keep the PEM line breaks as `\n` inside the C++ string. Do not put a Firebase
@@ -62,8 +62,9 @@ never commit, print, upload, or retain it in an unencrypted artifact.
 
 Complete these steps before building the device image:
 
-1. Start the backend with its environment file and verify its public HTTPS
-   origin with `GET /health`.
+1. Start the backend with its environment file and verify reachability with
+   `GET /health` (development may use any reachable origin; production/fleet
+   requires HTTPS).
 2. Create the route and its ordered stops. Use `npm run seed --workspace=backend`
    for the predefined development routes or the admin route editor for a
    managed route. Route geometry requires the server Maps key.

@@ -167,7 +167,7 @@ See [the data model](data/FIREBASE_DATA_MODEL.md) for the records and
    reconnecting or stale state when live data is unavailable; it must not invent
    an authoritative position.
 5. Use in-session messaging only for operational communication. Messages are
-   scoped to the session and rate limited.
+   scoped to the session and rate-limited.
 6. Submit ride feedback after an eligible completed ride, or request deletion
    from the account/privacy flow.
 
@@ -223,7 +223,8 @@ complete production rollout.
 | `/health` returns 503 | Firebase Admin credentials, Firestore/RTDB reachability, and the cached probe timestamp | [API health](../backend/API.md#health) |
 | Browser shows no live bus | Auth/App Check, RTDB URL, rules, device health, and whether the fix is fresh | [Hardware telemetry](hardware/HARDWARE_TELEMETRY.md) |
 | Device receives 400 | Exact six-field payload, JSON size, ranges, and current timestamp | [API device endpoints](../backend/API.md#device-endpoints) |
-| Device receives 401/403 | Device ID, registry status, secret, assignment and certificate/clock; correct by re-provisioning and reflashing | [Security provisioning](operations/HARDWARE_SECURITY_PROVISIONING.md) |
+| Device receives 401 | Device ID, registry status, secret, assignment and certificate/clock; correct by re-provisioning and reflashing | [Security provisioning](operations/HARDWARE_SECURITY_PROVISIONING.md) |
+| Device receives 413 | Telemetry body exceeds the 512-byte limit or diagnostics exceed 1 KiB | [API device endpoints](../backend/API.md#device-endpoints) |
 | Device receives 429/503 | Backoff, per-device/IP/WAF limits, backend health and Firebase availability | [API limits](../backend/API.md#authentication) |
 | Ride does not advance | Fix freshness, route/stop order, next-stop geometry, and session ownership | [Lifecycle design](design/HIGH_LEVEL_DESIGN.md) |
 | Rules test fails locally | Java, Firebase emulator CLI, and the generated temporary rules path | [Test strategy](testing/TEST_STRATEGY.md) |
