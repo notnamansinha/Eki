@@ -239,7 +239,7 @@ function FeedbackCard({
 type FilterType = "all" | "ride" | "general";
 type FilterStatus = "all" | "new" | "reviewed" | "resolved";
 
-export default function FeedbackPage() {
+export default function FeedbackPage({ embedded = false }: { embedded?: boolean }) {
   const {
     data: entries,
     loading,
@@ -314,9 +314,9 @@ export default function FeedbackPage() {
       : "—";
 
   return (
-    <main className="min-h-screen bg-brand-dark text-white flex flex-col font-sans">
+    <main className={embedded ? "w-full bg-brand-dark text-white flex flex-col font-sans" : "min-h-screen bg-brand-dark text-white flex flex-col font-sans"}>
       {/* Header */}
-      <header className="sticky top-0 z-[100] w-full border-b border-white/5 bg-brand-dark/80 backdrop-blur-md">
+      {!embedded && <header className="sticky top-0 z-[100] w-full border-b border-white/5 bg-brand-dark/80 backdrop-blur-md">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-3">
           <div className="w-7 h-7 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
             <ShieldCheck className="w-3.5 h-3.5 text-white/50" />
@@ -339,9 +339,9 @@ export default function FeedbackPage() {
             ← Admin Panel
           </a>
         </div>
-      </header>
+      </header>}
 
-      <div className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col gap-6">
+      <div className={embedded ? "w-full px-4 sm:px-6 py-6 flex flex-col gap-6" : "max-w-5xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col gap-6"}>
         {statusError && (
           <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
             {statusError}

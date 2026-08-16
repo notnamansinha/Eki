@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
 import { useRoutes, type RouteData } from "@/hooks/useRoutes";
@@ -10,13 +10,12 @@ import { auth } from "@/lib/firebaseAuth";
 import {
   Bus, User, Trash2, Plus, ArrowRight,
   ChevronDown, ChevronUp, Pencil, Check, X, AlertCircle,
-  Navigation, Gauge, MapPin, Clock, Radio, Activity, BarChart2,
-  TrendingUp, AlertTriangle, CheckCircle2,
+  Navigation, Gauge, MapPin, Clock, Radio, BarChart2,
+  CheckCircle2,
 } from "lucide-react";
 import CustomSelect from "@/components/ui/CustomSelect";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { errorMessage } from "@/lib/errors";
-import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
 import { apiRequest } from "@/lib/apiClient";
 
 async function fleetRequest(path: string, method: "PUT" | "DELETE", body?: object) {
@@ -33,7 +32,6 @@ async function fleetRequest(path: string, method: "PUT" | "DELETE", body?: objec
   });
 }
 
-// â”€â”€ Completed trip analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface CompletedTrip {
   id: string;
   busId: string;
@@ -56,6 +54,7 @@ function useRecentTrips(count = 10) {
   return { trips: data, error, loading, retry };
 }
 
+// â”€â”€ Completed trip analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function timeSince(isoStr?: string | number): string {
   if (!isoStr) return "—";
@@ -97,7 +96,7 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
 }
 
 // â”€â”€ Expanded live bus detail card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function LiveBusCard({ entry, buses, routes, drivers }: {
+export function LiveBusCard({ entry, buses, routes, drivers }: {
   entry: ActiveBusEntry;
   buses: BusData[];
   routes: RouteData[];
@@ -241,7 +240,7 @@ function LiveBusCard({ entry, buses, routes, drivers }: {
 }
 
 // â”€â”€ Recent trips analytics section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function RecentTripsPanel({ routes, buses, drivers }: { routes: RouteData[]; buses: BusData[]; drivers: DriverData[] }) {
+export function RecentTripsPanel({ routes, buses, drivers }: { routes: RouteData[]; buses: BusData[]; drivers: DriverData[] }) {
   const {
     trips,
     error: tripsError,
@@ -316,10 +315,10 @@ function RecentTripsPanel({ routes, buses, drivers }: { routes: RouteData[]; bus
 }
 
 interface Props {
-  mode?: "fleet" | "personnel" | "routes";
+  mode?: "fleet" | "personnel" | "combined";
 }
 
-export default function FleetManagementPanel({ mode = "fleet" }: Props) {
+export default function FleetManagementPanel({ mode = "combined" }: Props) {
   const {
     buses,
     loading: busesLoading,
@@ -329,12 +328,6 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   const { drivers, loading: driversLoading } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const activeEntries = useActiveBuses();
-  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const interval = window.setInterval(() => setFreshnessNow(Date.now()), 15_000);
-    return () => window.clearInterval(interval);
-  }, []);
   // Only show buses that are registered in the Firestore `buses` collection.
   // This acts as a defense-in-depth guard: even if RTDB cleanup is delayed
   // or a stale entry exists, deleted buses will never render in the UI.
@@ -501,15 +494,6 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   const liveDrivers = drivers.filter((d) => liveDriverIds.has(d.id));
 
   // â”€â”€ Fleet summary stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const inServiceCount  = filteredActiveEntries.filter(e => e.tripState === "in_service").length;
-  const awaitingStartCount = filteredActiveEntries.filter(e => e.tripState === "pre_departure").length;
-  const gpsLostCount    = filteredActiveEntries.filter(e =>
-    e.deviceState === "offline" ||
-    e.motionState === "uncertain" ||
-    isLiveBusSignalLost(e.timestamp, freshnessNow)
-  ).length;
-  const movingCount     = filteredActiveEntries.filter(e => e.motionState === "moving").length;
-
   if (busesError || routesError) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col items-center justify-center gap-3 p-12 text-center text-red-300" role="alert">
@@ -540,57 +524,12 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
 
 
       {/* â•â• FLEET COMMAND CENTER — always visible, driven by live Firebase data â•â• */}
-      <div className="flex flex-col gap-3">
-        {/* Fleet summary stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {[
-            { icon: Activity,     label: "In Service",  value: inServiceCount,  color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-            { icon: TrendingUp,   label: "Moving",      value: movingCount,     color: "text-blue-400",    bg: "bg-blue-500/10",    border: "border-blue-500/20"    },
-            { icon: Clock,        label: "Awaiting Start", value: awaitingStartCount, color: "text-white/50", bg: "bg-white/5", border: "border-white/10" },
-            { icon: AlertTriangle,label: "GPS Issues",  value: gpsLostCount,    color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20"   },
-          ].map(({ icon: Icon, label, value, color, bg, border }) => (
-            <div key={label} className={`${bg} border ${border} rounded-2xl p-3 flex flex-col gap-1.5`}>
-              <div className="flex items-center gap-1.5">
-                <Icon className={`w-3.5 h-3.5 ${color}`} />
-                <span className={`text-[9px] font-black uppercase tracking-wider ${color}`}>{label}</span>
-              </div>
-              <span className={`text-2xl font-black ${color}`}>{value}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Live bus cards */}
-        <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl p-3 flex flex-col gap-2">
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`w-2 h-2 rounded-full shrink-0 ${filteredActiveEntries.length > 0 ? "bg-emerald-400 animate-pulse" : "bg-white/20"}`} />
-            <span className={`text-[10px] font-black uppercase tracking-[0.25em] ${filteredActiveEntries.length > 0 ? "text-emerald-400" : "text-white/30"}`}>
-              Live Tracking — {busesLoading ? "…" : `${filteredActiveEntries.length} Bus${filteredActiveEntries.length !== 1 ? "es" : ""} Online`}
-            </span>
-          </div>
-          {filteredActiveEntries.length > 0 ? (
-            filteredActiveEntries.map(entry => (
-              <LiveBusCard
-                key={entry.busId}
-                entry={entry}
-                buses={buses}
-                routes={routes}
-                drivers={drivers}
-              />
-            ))
-          ) : (
-            <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">
-              {busesLoading ? "Loading…" : "No buses currently active"}
-            </p>
-          )}
-        </div>
-      </div>
-
 
       {/* â•â• CONDITIONAL TABS: Vehicles OR Drivers â•â• */}
       <div className="flex flex-col gap-5 w-full max-w-3xl mx-auto">
 
         {/* â”€â”€ FLEET VEHICLES â”€â”€ */}
-        {mode === "fleet" && (
+        {(mode === "fleet" || mode === "combined") && (
           <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
@@ -785,13 +724,11 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             )}
           </div>
 
-          {/* Analytics */}
-          <RecentTripsPanel routes={routes} buses={buses} drivers={drivers} />
         </div>
         )}
 
         {/* â”€â”€ DRIVER PERSONNEL â”€â”€ */}
-        {mode === "personnel" && (
+        {(mode === "personnel" || mode === "combined") && (
           <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
