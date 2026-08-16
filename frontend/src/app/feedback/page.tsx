@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Timestamp } from "firebase/firestore";
 import { auth } from "@/lib/firebaseAuth";
+import { useBuses } from "@/hooks/useBuses";
 import { useCollection } from "@/hooks/useCollection";
+import { useDrivers } from "@/hooks/useDrivers";
 import {
   Star,
   MessageSquare,
@@ -32,6 +34,35 @@ interface FeedbackEntry {
   comment: string;
   timestamp: Timestamp | null;
   status: "new" | "reviewed" | "resolved";
+}
+
+interface FeedbackIdentity {
+  passengerName: string;
+  busName: string | null;
+  driverName: string | null;
+}
+
+function shortId(value: string | null | undefined) {
+  if (!value) return null;
+  return value.length <= 16 ? value : `${value.slice(0, 8)}…${value.slice(-4)}`;
+}
+
+function linkedDetail(
+  id: string | null | undefined,
+  label: string,
+  resolvedName: string | null,
+  type: FeedbackEntry["type"],
+) {
+  if (!id) {
+    return {
+      value: type === "general" ? "Not linked to a ride" : `${label} not recorded`,
+      reference: type === "general" ? "General feedback" : "Incomplete ride context",
+    };
+  }
+  return {
+    value: resolvedName || `Unregistered ${label.toLowerCase()}`,
+    reference: `${label} ID · ${shortId(id)}`,
+  };
 }
 
 function StarDisplay({ rating }: { rating: number | null }) {
@@ -68,10 +99,12 @@ function StatusBadge({ status }: { status: FeedbackEntry["status"] }) {
 
 function FeedbackCard({
   entry,
+  identity,
   onStatusChange,
   updating,
 }: {
   entry: FeedbackEntry;
+  identity: FeedbackIdentity;
   onStatusChange: (id: string, status: FeedbackEntry["status"]) => Promise<void>;
   updating: boolean;
 }) {
@@ -123,7 +156,7 @@ function FeedbackCard({
         {/* Main info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span className="font-semibold text-white text-sm truncate">{entry.userName}</span>
+            <span className="font-semibold text-white text-sm truncate">{identity.passengerName}</span>
             <StatusBadge status={entry.status} />
             <span
               className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${
@@ -132,25 +165,25 @@ function FeedbackCard({
                   : "bg-emerald-500/10 text-emerald-400/70 border-emerald-500/20"
               }`}
             >
-              {entry.type}
+              {entry.type === "ride" ? "Ride feedback" : "General feedback"}
             </span>
           </div>
 
           {/* Meta row */}
           <div className="flex items-center gap-3 flex-wrap text-[10px] text-white/30 font-semibold uppercase tracking-widest">
-            {entry.busId && (
+            {entry.type === "ride" && (
               <span className="flex items-center gap-1">
-                <Bus className="w-3 h-3" /> {entry.busId}
+                <Bus className="w-3 h-3" /> {identity.busName || "Unregistered vehicle"}
               </span>
             )}
-            {entry.driverId && (
+            {entry.type === "ride" && (
               <span className="flex items-center gap-1">
-                <User className="w-3 h-3" /> {entry.driverId.slice(0, 12)}…
+                <User className="w-3 h-3" /> {identity.driverName || "Unregistered driver"}
               </span>
             )}
-            {entry.sessionId && (
+            {entry.type === "ride" && entry.sessionId && (
               <span className="flex items-center gap-1">
-                <Route className="w-3 h-3" /> {entry.sessionId.slice(0, 12)}…
+                <Route className="w-3 h-3" /> Session {shortId(entry.sessionId)}
               </span>
             )}
             <span className="flex items-center gap-1">
@@ -187,12 +220,22 @@ function FeedbackCard({
 
           {/* Full details grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { label: "User ID", value: entry.userId, icon: User },
-              { label: "Bus ID", value: entry.busId || "—", icon: Bus },
-              { label: "Driver ID", value: entry.driverId || "—", icon: User },
-              { label: "Session", value: entry.sessionId || "—", icon: Route },
-            ].map(({ label, value, icon: Icon }) => (
+            {(() => {
+              const bus = linkedDetail(entry.busId, "Bus", identity.busName, entry.type);
+              const driver = linkedDetail(entry.driverId, "Driver", identity.driverName, entry.type);
+              const session = linkedDetail(entry.sessionId, "Session", null, entry.type);
+              return [
+                {
+                  label: "Passenger",
+                  value: identity.passengerName,
+                  reference: entry.userId ? `Account ID · ${shortId(entry.userId)}` : "Account ID unavailable",
+                  icon: User,
+                },
+                { label: "Vehicle", ...bus, icon: Bus },
+                { label: "Driver", ...driver, icon: User },
+                { label: "Ride session", ...session, icon: Route },
+              ];
+            })().map(({ label, value, reference, icon: Icon }) => (
               <div
                 key={label}
                 className="bg-white/3 rounded-xl p-3 border border-white/5"
@@ -201,8 +244,11 @@ function FeedbackCard({
                   <Icon className="w-3 h-3" />
                   <span className="text-[9px] font-black uppercase tracking-widest">{label}</span>
                 </div>
-                <p className="text-xs font-semibold text-white/70 truncate" title={value ?? undefined}>
+                <p className="text-xs font-semibold text-white/80 truncate" title={value}>
                   {value}
+                </p>
+                <p className="mt-1 text-[9px] font-medium text-white/35 truncate" title={reference}>
+                  {reference}
                 </p>
               </div>
             ))}
@@ -250,11 +296,36 @@ export default function FeedbackPage({ embedded = false }: { embedded?: boolean 
     orderByDirection: "desc",
     orderByField: "timestamp",
   });
+  const { buses } = useBuses();
+  const { drivers } = useDrivers();
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [search, setSearch] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [statusError, setStatusError] = useState("");
+
+  const identities = useMemo(() => {
+    const busNames = new Map(
+      buses
+        .filter((bus) => Boolean(bus.name?.trim()))
+        .map((bus) => [bus.id, bus.name.trim()]),
+    );
+    const driverNames = new Map<string, string>();
+    for (const driver of drivers) {
+      if (!driver.name?.trim()) continue;
+      driverNames.set(driver.id, driver.name.trim());
+      if (driver.authUid) driverNames.set(driver.authUid, driver.name.trim());
+    }
+
+    return new Map(entries.map((entry) => [
+      entry.id,
+      {
+        passengerName: entry.userName?.trim() || "Unnamed passenger",
+        busName: entry.busId ? busNames.get(entry.busId) || null : null,
+        driverName: entry.driverId ? driverNames.get(entry.driverId) || null : null,
+      },
+    ]));
+  }, [buses, drivers, entries]);
 
   const handleStatusChange = async (
     id: string,
@@ -295,6 +366,8 @@ export default function FeedbackPage({ embedded = false }: { embedded?: boolean 
         e.userName?.toLowerCase().includes(q) ||
         e.busId?.toLowerCase().includes(q) ||
         e.driverId?.toLowerCase().includes(q) ||
+        identities.get(e.id)?.busName?.toLowerCase().includes(q) ||
+        identities.get(e.id)?.driverName?.toLowerCase().includes(q) ||
         e.comment?.toLowerCase().includes(q) ||
         e.sessionId?.toLowerCase().includes(q)
       );
@@ -474,6 +547,11 @@ export default function FeedbackPage({ embedded = false }: { embedded?: boolean 
               <FeedbackCard
                 key={entry.id}
                 entry={entry}
+                identity={identities.get(entry.id) ?? {
+                  passengerName: entry.userName?.trim() || "Unnamed passenger",
+                  busName: null,
+                  driverName: null,
+                }}
                 onStatusChange={handleStatusChange}
                 updating={updatingId !== null}
               />
