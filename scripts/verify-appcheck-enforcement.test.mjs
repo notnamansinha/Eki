@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  accessTokenFromFirebaseToken,
   assertEnforced,
   projectIdFromArgs,
   projectNumberFromMetadata,
@@ -23,10 +24,33 @@ describe("verify-appcheck-enforcement", () => {
     assert.throws(() => assertEnforced({ enforcementMode: "UNENFORCED" }, "firestore.googleapis.com"), /not enforced/);
   });
 
+  it("exchanges a Firebase CLI refresh token for a short-lived access token", async () => {
+    const accessToken = await accessTokenFromFirebaseToken("refresh-token", async (url, init) => {
+      assert.equal(url, "https://www.googleapis.com/oauth2/v3/token");
+      assert.equal(init.method, "POST");
+      assert.match(init.body.toString(), /refresh_token=refresh-token/);
+      return { ok: true, json: async () => ({ access_token: "access-token" }) };
+    });
+
+    assert.equal(accessToken, "access-token");
+  });
+
+  it("supports an already-issued access token", async () => {
+    const accessToken = await accessTokenFromFirebaseToken("access-token", async () => ({
+      ok: false,
+      status: 400,
+    }));
+
+    assert.equal(accessToken, "access-token");
+  });
+
   it("verifies both required services using the project number", async () => {
     const requestedUrls = [];
     const fetchImpl = async (url) => {
       requestedUrls.push(url);
+      if (url.includes("oauth2/v3/token")) {
+        return { ok: true, json: async () => ({ access_token: "access-token" }) };
+      }
       if (url.includes("firebase.googleapis.com/v1beta1")) {
         return { ok: true, json: async () => ({ projectNumber: "12345" }) };
       }
@@ -40,7 +64,7 @@ describe("verify-appcheck-enforcement", () => {
     });
 
     assert.equal(result.projectNumber, "12345");
-    assert.equal(requestedUrls.length, 3);
+    assert.equal(requestedUrls.length, 4);
     assert.ok(requestedUrls.some((url) => url.endsWith("projects/12345/services/firestore.googleapis.com")));
     assert.ok(requestedUrls.some((url) => url.endsWith("projects/12345/services/firebasedatabase.googleapis.com")));
   });

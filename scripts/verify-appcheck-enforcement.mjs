@@ -2,8 +2,21 @@ import { fileURLToPath } from "node:url";
 
 const APP_CHECK_API = "https://firebaseappcheck.googleapis.com/v1beta";
 const FIREBASE_MANAGEMENT_API = "https://firebase.googleapis.com/v1beta1";
+const GOOGLE_OAUTH_API = "https://www.googleapis.com/oauth2/v3/token";
 const REQUIRED_SERVICES = ["firestore.googleapis.com", "firebasedatabase.googleapis.com"];
 const REQUEST_TIMEOUT_MS = 15_000;
+// These are Firebase CLI's public OAuth client credentials. Installed-app
+// OAuth clients cannot keep a client secret confidential; the refresh token
+// remains the protected credential.
+const FIREBASE_CLI_CLIENT_ID = "563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com";
+const FIREBASE_CLI_CLIENT_SECRET = "j9iVZfS8kkCEFUPaAeJV0sAi";
+const FIREBASE_CLI_SCOPES = [
+  "email",
+  "openid",
+  "https://www.googleapis.com/auth/cloudplatformprojects.readonly",
+  "https://www.googleapis.com/auth/firebase",
+  "https://www.googleapis.com/auth/cloud-platform",
+].join(" ");
 
 function usageError(message) {
   return new Error(`${message} Usage: node scripts/verify-appcheck-enforcement.mjs --project <project-id>`);
@@ -45,13 +58,44 @@ async function getJson(url, token, fetchImpl) {
   return response.json();
 }
 
+export async function accessTokenFromFirebaseToken(firebaseToken, fetchImpl = fetch) {
+  const response = await fetchImpl(GOOGLE_OAUTH_API, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      refresh_token: firebaseToken,
+      client_id: FIREBASE_CLI_CLIENT_ID,
+      client_secret: FIREBASE_CLI_CLIENT_SECRET,
+      grant_type: "refresh_token",
+      scope: FIREBASE_CLI_SCOPES,
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+
+  if (response.ok) {
+    const payload = await response.json();
+    if (typeof payload.access_token !== "string" || !payload.access_token) {
+      throw new Error("Firebase token refresh did not return an access token.");
+    }
+    return payload.access_token;
+  }
+
+  // Firebase CLI also accepts an already-issued access token through --token.
+  // Preserve that compatibility while refresh-token deployments use the
+  // short-lived token returned above.
+  if (response.status === 400 || response.status === 401) return firebaseToken;
+  throw new Error(`Firebase token refresh failed (${response.status}).`);
+}
+
 export async function verifyAppCheckEnforcement({ projectId, token, fetchImpl = fetch }) {
   if (!projectId) throw usageError("Missing Firebase project ID.");
   if (!token) throw new Error("FIREBASE_TOKEN is required to verify App Check enforcement.");
 
+  const accessToken = await accessTokenFromFirebaseToken(token, fetchImpl);
+
   const metadata = await getJson(
     `${FIREBASE_MANAGEMENT_API}/projects/${encodeURIComponent(projectId)}`,
-    token,
+    accessToken,
     fetchImpl,
   );
   const projectNumber = projectNumberFromMetadata(metadata);
@@ -60,7 +104,7 @@ export async function verifyAppCheckEnforcement({ projectId, token, fetchImpl = 
     REQUIRED_SERVICES.map(async (serviceId) => {
       const service = await getJson(
         `${APP_CHECK_API}/projects/${projectNumber}/services/${encodeURIComponent(serviceId)}`,
-        token,
+        accessToken,
         fetchImpl,
       );
       return assertEnforced(service, serviceId);
