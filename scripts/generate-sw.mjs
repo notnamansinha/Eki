@@ -6,20 +6,32 @@
  * into frontend/out/ ready for Firebase Hosting deployment.
  *
  * Run after `next build` and before `update-csp.mjs`.
+ *
+ * Performance: the SW pipeline (workbox injectManifest + Rollup/Babel bundle)
+ * costs several seconds on every build even when the static export is
+ * byte-identical. To keep no-op builds fast, we fingerprint every input that
+ * can affect the final sw.js (the SW source, the workbox config, and the
+ * content of every globbed output file) and replay a cached sw.js when
+ * nothing changed. The cache lives under frontend/.next/cache (gitignored
+ * and preserved by Next.js), so `next build` wiping out/ does not
+ * invalidate it. `frontend/next.config.ts` pins a deterministic build ID so
+ * that unchanged source produces byte-identical out/ — required for the
+ * fingerprint to be stable.
  */
 
-import { injectManifest } from "workbox-build";
-import { bundle } from "workbox-build/build/lib/bundle.js";
-import { readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, writeFile, mkdir, copyFile, readdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { injectManifest } from "workbox-build";
+import { bundle } from "workbox-build/build/lib/bundle.js";
 
 const root = path.resolve(fileURLToPath(import.meta.url), "../..");
 const frontendRoot = path.join(root, "frontend");
 const swDest = path.join(frontendRoot, "out", "sw.js");
 
-const result = await injectManifest({
+const config = {
   swSrc: path.join(frontendRoot, "src", "sw.js"),
   swDest,
   globDirectory: path.join(frontendRoot, "out"),
@@ -46,57 +58,141 @@ const result = await injectManifest({
   // Maximum file size to precache (2 MB). Larger files (e.g. if someone adds
   // a video) should use runtime caching instead.
   maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
-});
+};
 
-// injectManifest replaces the precache placeholder but intentionally leaves
-// module imports untouched. Bundle the injected source so browsers receive a
-// self-contained classic service worker rather than unresolved bare imports.
-const require = createRequire(import.meta.url);
-let unbundledCode = await readFile(swDest, "utf8");
-for (const packageName of [
-  "workbox-core",
-  "workbox-precaching",
-  "workbox-routing",
-  "workbox-strategies",
-  "workbox-expiration",
-  "workbox-cacheable-response",
-]) {
-  // Workbox's bundler stages source in the OS temp directory, outside this
-  // repository's node_modules ancestry. Resolve the entry modules here so
-  // Rollup can follow both these imports and their nested dependencies.
-  const packageDirectory = path.dirname(
-    require.resolve(`${packageName}/package.json`),
-  );
-  const modulePath = path.join(packageDirectory, "index.mjs").replaceAll("\\", "/");
-  unbundledCode = unbundledCode.replaceAll(
-    `"${packageName}"`,
-    JSON.stringify(modulePath),
-  );
-}
-const bundledFiles = await bundle({
-  babelPresetEnvTargets: [
-    "Chrome >= 80",
-    "Firefox >= 78",
-    "Safari >= 14",
-    "Edge >= 80",
-  ],
-  inlineWorkboxRuntime: true,
-  mode: "production",
-  sourcemap: false,
-  swDest,
-  unbundledCode,
-});
-for (const file of bundledFiles) {
-  await writeFile(file.name, file.contents);
+const cacheDir = path.join(frontendRoot, ".next", "cache", "sw");
+const cacheManifestPath = path.join(cacheDir, "manifest.json");
+const cacheSwPath = path.join(cacheDir, "sw.js");
+
+/**
+ * Semantic part of the workbox config — everything except the absolute paths
+ * (swSrc/swDest/globDirectory). Absolute paths are excluded from the
+ * fingerprint because their case differs by invocation context on Windows
+ * (npm may resolve the workspace as "EKI" while a direct run uses "Eki"),
+ * which would invalidate the cache spuriously.
+ */
+const fingerprintConfig = (() => {
+  const { swSrc: _swSrc, swDest: _swDest, globDirectory: _globDirectory, ...semantic } = config;
+  return semantic;
+})();
+
+/** Recursively collect file paths under a directory. */
+async function walk(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const nested = await Promise.all(entries.map(async (entry) => {
+    const target = path.join(directory, entry.name);
+    if (entry.isDirectory()) return walk(target);
+    return entry.isFile() ? [target] : [];
+  }));
+  return nested.flat();
 }
 
-console.log(
-  `✅ SW generated: ${result.count} files precached (${(result.size / 1024).toFixed(0)} KB total)`
-);
+/**
+ * Content fingerprint of every input that can change the precache manifest.
+ * A stable hash over: the semantic workbox config, the SW source, and the
+ * contents of all files under globDirectory (excluding our own sw.js output).
+ * `next build` regenerates out/ with fresh mtimes every run, so mtimes are
+ * deliberately excluded.
+ */
+async function fingerprint() {
+  const hash = createHash("sha256");
+  hash.update(JSON.stringify(fingerprintConfig));
+  hash.update(await readFile(config.swSrc));
+  const files = (await walk(config.globDirectory)).sort();
+  for (const file of files) {
+    if (path.resolve(file) === path.resolve(config.swDest)) continue; // our own output
+    const relative = path.relative(config.globDirectory, file).replaceAll("\\", "/");
+    hash.update(`\n${relative}\n`);
+    hash.update(await readFile(file));
+  }
+  return hash.digest("hex");
+}
 
-if (result.warnings.length > 0) {
-  console.warn("Warnings:");
-  for (const warning of result.warnings) {
-    console.warn(`  ⚠ ${warning}`);
+/** Run the full workbox pipeline: inject precache manifest, then bundle. */
+async function generate() {
+  const result = await injectManifest(config);
+
+  // injectManifest replaces the precache placeholder but intentionally leaves
+  // module imports untouched. Bundle the injected source so browsers receive a
+  // self-contained classic service worker rather than unresolved bare imports.
+  const require = createRequire(import.meta.url);
+  let unbundledCode = await readFile(swDest, "utf8");
+  for (const packageName of [
+    "workbox-core",
+    "workbox-precaching",
+    "workbox-routing",
+    "workbox-strategies",
+    "workbox-expiration",
+    "workbox-cacheable-response",
+  ]) {
+    // Workbox's bundler stages source in the OS temp directory, outside this
+    // repository's node_modules ancestry. Resolve the entry modules here so
+    // Rollup can follow both these imports and their nested dependencies.
+    const packageDirectory = path.dirname(
+      require.resolve(`${packageName}/package.json`),
+    );
+    const modulePath = path.join(packageDirectory, "index.mjs").replaceAll("\\", "/");
+    unbundledCode = unbundledCode.replaceAll(
+      `"${packageName}"`,
+      JSON.stringify(modulePath),
+    );
+  }
+  const bundledFiles = await bundle({
+    babelPresetEnvTargets: [
+      "Chrome >= 80",
+      "Firefox >= 78",
+      "Safari >= 14",
+      "Edge >= 80",
+    ],
+    inlineWorkboxRuntime: true,
+    mode: "production",
+    sourcemap: false,
+    swDest,
+    unbundledCode,
+  });
+  for (const file of bundledFiles) {
+    await writeFile(file.name, file.contents);
+  }
+
+  return result;
+}
+
+async function main() {
+  const current = await fingerprint();
+
+  // Replay the cached sw.js when every input is unchanged.
+  try {
+    const cachedManifest = JSON.parse(await readFile(cacheManifestPath, "utf8"));
+    if (cachedManifest.fingerprint === current) {
+      await copyFile(cacheSwPath, swDest);
+      console.log(
+        `✅ SW unchanged: ${cachedManifest.count} files precached (${(cachedManifest.size / 1024).toFixed(0)} KB total, cached)`
+      );
+      return;
+    }
+  } catch {
+    // No cache yet (first build or cache cleared) — generate below.
+  }
+
+  const result = await generate();
+
+  await mkdir(cacheDir, { recursive: true });
+  await writeFile(
+    cacheManifestPath,
+    JSON.stringify({ fingerprint: current, count: result.count, size: result.size })
+  );
+  await copyFile(swDest, cacheSwPath);
+
+  console.log(
+    `✅ SW generated: ${result.count} files precached (${(result.size / 1024).toFixed(0)} KB total)`
+  );
+
+  if (result.warnings.length > 0) {
+    console.warn("Warnings:");
+    for (const warning of result.warnings) {
+      console.warn(`  ⚠ ${warning}`);
+    }
   }
 }
+
+await main();

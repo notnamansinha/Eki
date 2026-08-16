@@ -1,4 +1,55 @@
+import { createHash } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
 import type { NextConfig } from "next";
+
+/**
+ * Content hash of the frontend build inputs (source, public assets, configs).
+ * Used by generateBuildId so that `next build` is reproducible: unchanged
+ * source ⇒ same build ID ⇒ byte-identical out/ ⇒ the post-build workbox SW
+ * generation (scripts/generate-sw.mjs) can replay its cached sw.js instead of
+ * re-bundling. Changed source ⇒ new build ID ⇒ new _next/static/<id>/ URLs,
+ * which keeps Firebase's immutable caching safe for the manifest files.
+ */
+async function buildInputsHash(): Promise<string> {
+  const hash = createHash("sha256");
+  // `next build` always runs with cwd = the frontend project root.
+  const dir = process.cwd();
+
+  // Only deterministic build inputs feed the hash — never build artifacts
+  // (.next/, out/, *.tsbuildinfo) which rewrite themselves on every build.
+  const ignored = new Set([
+    "node_modules",
+    ".next",
+    "out",
+    "tsconfig.tsbuildinfo",
+    ".vite",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "next-env.d.ts",
+  ]);
+
+  async function walk(dirname: string): Promise<void> {
+    const entries = await readdir(dirname, { withFileTypes: true }).catch(() => []);
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      if (ignored.has(entry.name)) continue;
+      const full = path.join(dirname, entry.name);
+      if (entry.isDirectory()) {
+        hash.update(`d:${entry.name}\n`);
+        await walk(full);
+      } else if (entry.isFile()) {
+        hash.update(`f:${entry.name}:`);
+        hash.update(await readFile(full));
+        hash.update("\n");
+      }
+    }
+  }
+
+  await walk(dir);
+  return hash.digest("hex").slice(0, 32);
+}
 
 if (process.env.EKI_STRICT_PRODUCTION_BUILD === "true") {
   const requiredPublicVariables = [
@@ -34,6 +85,8 @@ if (process.env.EKI_STRICT_PRODUCTION_BUILD === "true") {
 
 const nextConfig: NextConfig = {
   output: "export",
+  // Deterministic build ID: reproducible builds (see buildInputsHash above).
+  generateBuildId: () => buildInputsHash(),
   images: {
     unoptimized: true,
   },
