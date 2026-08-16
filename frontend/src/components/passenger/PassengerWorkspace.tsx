@@ -13,6 +13,11 @@ import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
 import { isAuthoritativeLiveBusDelivery } from "@/lib/liveBusDelivery";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
 import {
+  passengerPanelClassName,
+  passengerPanelStyle,
+  passengerTopSpacerStyle,
+} from "./passengerFrame";
+import {
   decideRideTracking,
   isPostRideFeedbackEligible,
   recordSuccessfulJoin,
@@ -32,6 +37,8 @@ const PassengerBoardingView = dynamic(() => import("@/components/passenger/Passe
 
 type ViewState = "home" | "tracking" | "profile";
 
+const POST_RIDE_FEEDBACK_DELAY_MS = 10_000;
+
 interface ActiveBusData {
   busId: string;
   routeId: string;
@@ -48,6 +55,12 @@ interface ActiveBusData {
   currentStopIndex?: number;
   delayMinutes?: number;
   sessionId?: string;
+}
+
+type ActiveSessionBusData = ActiveBusData & { sessionId: string };
+
+function hasSessionId(bus: ActiveBusData): bus is ActiveSessionBusData {
+  return typeof bus.sessionId === "string" && bus.sessionId.length > 0;
 }
 
 export default function PassengerWorkspace() {
@@ -118,10 +131,10 @@ export default function PassengerWorkspace() {
           });
         }
 
-        const trackedSessionId = trackedRideRef.current?.sessionId;
-        if (trackedSessionId && !nextTripStates.has(trackedSessionId)) {
-          const previousState = latestTripStatesRef.current.get(trackedSessionId);
-          if (previousState) nextTripStates.set(trackedSessionId, previousState);
+        const trackedRideSessionId = trackedRideRef.current?.sessionId;
+        if (trackedRideSessionId && !nextTripStates.has(trackedRideSessionId)) {
+          const previousState = latestTripStatesRef.current.get(trackedRideSessionId);
+          if (previousState) nextTripStates.set(trackedRideSessionId, previousState);
         }
         latestTripStatesRef.current = nextTripStates;
         setActiveBuses(newBuses);
@@ -162,9 +175,9 @@ export default function PassengerWorkspace() {
         shortName: "TERMINUS"
       } : null));
 
-  const busesOnRoute = activeBuses.filter(
-    (bus) => bus.routeId === effectiveRouteId,
-  );
+  const busesOnRoute = activeBuses
+    .filter((bus) => bus.routeId === effectiveRouteId)
+    .filter(hasSessionId);
   const activeBusOnRoute =
     busesOnRoute.find((bus) => bus.sessionId === trackedSessionId) ??
     busesOnRoute.find((bus) => bus.sessionId === selectedLiveSessionId) ??
@@ -223,9 +236,9 @@ export default function PassengerWorkspace() {
   useEffect(() => {
     if (!completedRide) return;
 
-    const lastTripState = latestTripStatesRef.current.get(completedRide.sessionId);
     const feedbackTimer = setTimeout(() => {
-      if (isPostRideFeedbackEligible(completedRide, lastTripState)) {
+      const currentTripState = latestTripStatesRef.current.get(completedRide.sessionId);
+      if (isPostRideFeedbackEligible(completedRide, currentTripState)) {
         setFeedbackSessionId(completedRide.sessionId);
         setFeedbackBusId(completedRide.busId);
         setFeedbackDriverId(completedRide.driverId);
@@ -233,7 +246,7 @@ export default function PassengerWorkspace() {
       }
       latestTripStatesRef.current.delete(completedRide.sessionId);
       setCompletedRide(null);
-    }, 10000);
+    }, POST_RIDE_FEEDBACK_DELAY_MS);
 
     return () => clearTimeout(feedbackTimer);
   }, [completedRide]);
@@ -304,17 +317,11 @@ export default function PassengerWorkspace() {
         <div className={`absolute inset-0 z-20 flex flex-col pt-safe transition-[opacity,transform] duration-500 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8 pointer-events-none"}`}>
 
           {/* Top spacer to frame the bus illustration near the top of the screen */}
-          <div className="shrink-0" style={{ height: "34vh", minHeight: "250px" }} aria-hidden="true" />
+          <div className="shrink-0" style={passengerTopSpacerStyle} aria-hidden="true" />
 
           {/* Unified Transit Panel that fills the rest of the height, with a gap above bottom nav */}
-          <div className="flex-1 flex flex-col mx-4 mb-[110px] rounded-[32px] overflow-hidden relative shadow-2xl pt-8"
-            style={{
-              background: "linear-gradient(180deg, #1c1c1e 0%, #151517 100%)",
-              borderTop: "1px solid rgba(255, 255, 255, 0.12)",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.04)",
-              borderRight: "1px solid rgba(255, 255, 255, 0.04)",
-              boxShadow: "0 12px 48px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05)"
-            }}
+          <div className={`${passengerPanelClassName} flex-1`}
+            style={passengerPanelStyle}
           >
             {/* Heading Section - Fixed */}
             <div className="text-center pb-6 mb-4 mx-6 shrink-0">
@@ -394,14 +401,14 @@ export default function PassengerWorkspace() {
                   >
                     <ArrowLeft className="w-5 h-5" style={{ color: "var(--text-secondary)" }} />
                   </button>
-                  {activeSessionId ? (
+                  {activeBusOnRoute ? (
                     <div className="flex-1 min-w-0 flex flex-col gap-2">
                       {busesOnRoute.length > 1 &&
                         !busesOnRoute.some(
                           (bus) => bus.sessionId === trackedSessionId,
                         ) && (
                         <select
-                          value={activeSessionId}
+                          value={activeBusOnRoute.sessionId}
                           onChange={(event) => {
                             setSelectedLiveSessionId(event.target.value);
                             setSelectedBoardingStopId("");
@@ -422,8 +429,8 @@ export default function PassengerWorkspace() {
                         </select>
                       )}
                       <PassengerBoardingView 
-                        key={activeSessionId}
-                        sessionId={activeSessionId}
+                        key={activeBusOnRoute.sessionId}
+                        sessionId={activeBusOnRoute.sessionId}
                         route={activeRoute}
                         tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
                         onBoardingStopChange={setSelectedBoardingStopId}
@@ -431,13 +438,13 @@ export default function PassengerWorkspace() {
                           trackedRideRef.current = recordSuccessfulJoin(
                             trackedRideRef.current,
                             {
-                              sessionId: activeSessionId,
+                              sessionId: activeBusOnRoute.sessionId,
                               busId: activeBusOnRoute.busId,
                               routeId: activeBusOnRoute.routeId,
                               driverId: activeBusOnRoute.driverId || "",
                             },
                           );
-                          setTrackedSessionId(activeSessionId);
+                          setTrackedSessionId(activeBusOnRoute.sessionId);
                         }}
                       />
                     </div>
