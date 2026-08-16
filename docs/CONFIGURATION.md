@@ -97,8 +97,9 @@ The application expects these separately managed resources:
 - A managed HTTPS runtime for the Express backend, with monitoring, backups,
   WAF/global rate limits, and a single effective worker lease owner.
 - Google Maps Routes/Places APIs with separate server and browser keys.
-- App Check configured in Firebase; Firestore rules require an App Check token,
-  while RTDB App Check enforcement is configured in the Firebase console.
+- App Check configured and enforced for Firestore and RTDB in Firebase Console.
+  Security Rules handle identity, role and data authorization; they cannot read
+  an App Check token.
 
 The checked-in rules are default-deny for sensitive data. The Admin SDK bypasses
 Firebase client rules, so backend identity, deployment credentials and runtime

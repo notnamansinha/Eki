@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { writeEmulatorRuleset } from "./rules-for-emulator.mjs";
 
 /**
- * Runs the Firebase emulator rules-integration suite against App Check-free
- * copies of the rules (see rules-for-emulator.mjs). The emulators:exec test
+ * Runs the Firebase emulator rules-integration suite against isolated copies
+ * of the rules (see rules-for-emulator.mjs). The emulators:exec test
  * command contains spaces, so it is passed as a single argv element: POSIX
  * spawns the npx shim directly, and Windows spawns node with npm's npx CLI
  * entry (avoiding .cmd shims and cmd.exe quote mangling entirely). The

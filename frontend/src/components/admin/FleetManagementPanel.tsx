@@ -1,22 +1,19 @@
 "use client";
 
-import { useState, useEffect, type ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
-import { useRoutes, type RouteData } from "@/hooks/useRoutes";
-import { useCollection } from "@/hooks/useCollection";
-import { useActiveBuses, type ActiveBusEntry } from "@/hooks/useActiveBuses";
+import { useRoutes } from "@/hooks/useRoutes";
+import { useActiveBuses } from "@/hooks/useActiveBuses";
 import { auth } from "@/lib/firebaseAuth";
 import {
   Bus, User, Trash2, Plus, ArrowRight,
   ChevronDown, ChevronUp, Pencil, Check, X, AlertCircle,
-  Navigation, Gauge, MapPin, Clock, Radio, Activity, BarChart2,
-  TrendingUp, AlertTriangle, CheckCircle2,
+  Navigation, Clock, CheckCircle2,
 } from "lucide-react";
 import CustomSelect from "@/components/ui/CustomSelect";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { errorMessage } from "@/lib/errors";
-import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
 import { apiRequest } from "@/lib/apiClient";
 
 async function fleetRequest(path: string, method: "PUT" | "DELETE", body?: object) {
@@ -33,57 +30,12 @@ async function fleetRequest(path: string, method: "PUT" | "DELETE", body?: objec
   });
 }
 
-// â”€â”€ Completed trip analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-interface CompletedTrip {
-  id: string;
-  busId: string;
-  driverId: string;
-  routeId?: string;
-  completedAt: string;
-  stopCount: number;
-  stopNames: string[];
-}
-
-function useRecentTrips(count = 10) {
-  const { data, error, loading, retry } = useCollection<CompletedTrip>(
-    "completed_trips",
-    {
-      maxResults: count,
-      orderByDirection: "desc",
-      orderByField: "completedAt",
-    },
-  );
-  return { trips: data, error, loading, retry };
-}
-
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function timeSince(isoStr?: string | number): string {
-  if (!isoStr) return "—";
-  const ms = typeof isoStr === "number" ? Date.now() - isoStr : Date.now() - new Date(isoStr).getTime();
-  if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
-  return `${Math.floor(ms / 3_600_000)}h ago`;
-}
-
-function headingLabel(deg?: number): string {
-  if (deg == null) return "—";
-  const dirs = ["N","NE","E","SE","S","SW","W","NW","N"];
-  return dirs[Math.round(deg / 45) % 8] + ` ${Math.round(deg)}°`;
-}
-
 const TRIP_STATE_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: ComponentType<{ className?: string }> }> = {
   pre_departure: { label: "Awaiting Stop 1", color: "text-white/50", bg: "bg-white/5", Icon: Clock },
-  in_service:    { label: "In Service",  color: "text-emerald-400",  bg: "bg-emerald-500/10", Icon: Navigation    },
-  completed:     { label: "Completed",   color: "text-blue-400",     bg: "bg-blue-500/10",    Icon: CheckCircle2  },
+  in_service:    { label: "In Service",  color: "text-emerald-400",  bg: "bg-emerald-500/10", Icon: Navigation },
+  completed:     { label: "Completed",   color: "text-blue-400",     bg: "bg-blue-500/10",    Icon: CheckCircle2 },
 };
 
-const MOTION_STATE_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
-  moving:    { label: "Moving",   color: "text-emerald-400", dot: "bg-emerald-400" },
-  stopped:   { label: "Stopped",  color: "text-amber-400",   dot: "bg-amber-400"   },
-  uncertain: { label: "No GPS",   color: "text-red-400",     dot: "bg-red-400"     },
-};
-
-// â”€â”€ Inline error banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
     <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl px-3 py-2 text-xs font-semibold animate-slide-up">
@@ -95,231 +47,12 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
     </div>
   );
 }
-
 // â”€â”€ Expanded live bus detail card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function LiveBusCard({ entry, buses, routes, drivers }: {
-  entry: ActiveBusEntry;
-  buses: BusData[];
-  routes: RouteData[];
-  drivers: DriverData[];
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const bus = buses.find(b => b.id === entry.busId);
-  const route = routes.find(r => r.id === entry.routeId);
-  const driver = drivers.find(d => d.id === entry.driverId);
-  const ts = TRIP_STATE_CONFIG[entry.tripState ?? "pre_departure"] ?? TRIP_STATE_CONFIG.pre_departure;
-  const ms = MOTION_STATE_CONFIG[entry.motionState ?? "uncertain"] ?? MOTION_STATE_CONFIG.uncertain;
-  const TsIcon = ts.Icon;
-  const stopsTotal = route?.stops?.length ?? 0;
-  const stopIdx = (entry.currentStopIndex ?? 0) + 1;
-  const nextStop = route?.stops?.[entry.currentStopIndex ?? 0];
-  const followingStop = route?.stops?.[(entry.currentStopIndex ?? 0) + 1];
-
-  return (
-    <div className="bg-brand-surface border border-border-thin rounded-md overflow-hidden transition-colors hover:border-white/30">
-      {/* Compact header */}
-      <button
-        type="button"
-        onClick={() => setExpanded(o => !o)}
-        aria-label={`${expanded ? "Collapse" : "Expand"} details for bus ${bus?.name ?? entry.busId}`}
-        aria-expanded={expanded}
-        aria-controls={`live-bus-details-${entry.busId}-${entry.routeId ?? "route"}`}
-        className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-white/3 transition-colors text-left"
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          {/* Trip state icon */}
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${ts.bg}`}>
-            <TsIcon className={`w-4 h-4 ${ts.color}`} />
-          </div>
-          <div className="flex flex-col min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-white text-sm truncate">
-                {bus?.name ?? entry.busId}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-              <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${ts.color}`}>
-                <TsIcon className="w-2.5 h-2.5" />
-                {ts.label}
-              </span>
-              <span className={`text-[9px] font-semibold flex items-center gap-1 ${ms.color}`}>
-                <span className={`w-1.5 h-1.5 rounded-full inline-block ${ms.dot} ${entry.motionState === "moving" ? "animate-pulse" : ""}`} />
-                {ms.label}
-              </span>
-              {entry.speed != null && (
-                <span className="text-[9px] text-white/30 tabular-nums">{Math.round(entry.speed)} km/h</span>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {route && stopsTotal > 0 && (
-            <span className="text-[9px] text-white/30 tabular-nums hidden sm:block">
-              {stopIdx}/{stopsTotal} stops
-            </span>
-          )}
-          {expanded ? <ChevronUp className="w-3.5 h-3.5 text-white/30" /> : <ChevronDown className="w-3.5 h-3.5 text-white/30" />}
-        </div>
-      </button>
-
-      {/* Expanded detail panel */}
-      {expanded && (
-        <div id={`live-bus-details-${entry.busId}-${entry.routeId ?? "route"}`} className="border-t border-white/5 p-4 flex flex-col gap-3">
-
-          {/* Stats row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {[
-              { icon: Gauge,      label: "Speed",    value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "—" },
-              { icon: Navigation, label: "Heading",  value: headingLabel(entry.heading) },
-              { icon: MapPin,     label: "Position", value: entry.lat != null ? `${entry.lat.toFixed(4)}, ${entry.lng?.toFixed(4)}` : "—" },
-              { icon: Clock,      label: "Last Seen",value: timeSince(entry.timestamp) },
-            ].map(({ icon: Icon, label, value }) => (
-              <div key={label} className="bg-white/3 border border-white/5 rounded-xl p-2.5 flex flex-col gap-1">
-                <div className="flex items-center gap-1.5">
-                  <Icon className="w-3 h-3 text-white/25" />
-                  <span className="text-[8px] font-black uppercase tracking-wider text-white/30">{label}</span>
-                </div>
-                <span className="text-xs font-semibold text-white tabular-nums truncate">{value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Route progress bar */}
-          {route && stopsTotal > 0 && entry.tripState === "in_service" && (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[9px] font-black uppercase tracking-wider text-white/30">Route Progress</span>
-                <span className="text-[9px] tabular-nums text-white/50">{stopIdx} of {stopsTotal} stops</span>
-              </div>
-              <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500 rounded-full transition-all duration-700"
-                  style={{ width: `${Math.round((stopIdx / stopsTotal) * 100)}%` }}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-0.5">
-                {nextStop && (
-                  <div className="flex flex-col">
-                    <span className="text-[8px] text-white/25 uppercase font-black tracking-wider">Next Stop</span>
-                    <span className="text-[10px] font-semibold text-white truncate">{nextStop.name}</span>
-                  </div>
-                )}
-                {followingStop && (
-                  <div className="flex flex-col">
-                    <span className="text-[8px] text-white/25 uppercase font-black tracking-wider">Following Stop</span>
-                    <span className="text-[10px] font-semibold text-white/60 truncate">{followingStop.name}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Driver + Route identifiers */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[8px] font-black uppercase tracking-wider text-white/30">Driver</span>
-              <span className="text-[10px] font-semibold text-white truncate">{driver?.name ?? entry.driverId ?? "—"}</span>
-              <span className="text-[9px] tabular-nums text-white/20">{entry.driverId}</span>
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[8px] font-black uppercase tracking-wider text-white/30">Route</span>
-              <span className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</span>
-              <span className="text-[9px] tabular-nums text-white/20">{entry.routeId}</span>
-            </div>
-          </div>
-
-          {/* Bus ID */}
-          <div className="flex items-center gap-2 border-t border-white/5 pt-2.5 mt-0.5">
-            <Radio className="w-3 h-3 text-white/20" />
-            <span className="text-[9px] text-white/25 font-black uppercase tracking-wider">Bus ID</span>
-            <span className="text-[9px] tabular-nums text-white/50 ml-auto">{entry.busId}</span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// â”€â”€ Recent trips analytics section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function RecentTripsPanel({ routes, buses, drivers }: { routes: RouteData[]; buses: BusData[]; drivers: DriverData[] }) {
-  const {
-    trips,
-    error: tripsError,
-    loading: tripsLoading,
-    retry: retryTrips,
-  } = useRecentTrips(10);
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className="bg-brand-surface/40 border border-white/5 rounded-[1.5rem] overflow-hidden">
-      <button
-        onClick={() => setOpen(o => !o)}
-        aria-label={open ? "Collapse recent trips" : "Expand recent trips"}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <BarChart2 className="w-4 h-4 text-blue-400/70" />
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Route Analytics</span>
-          {trips.length > 0 && (
-            <span className="text-[9px] bg-blue-500/20 text-blue-400 font-black px-2 py-0.5 rounded-full">
-              {trips.length} trips
-            </span>
-          )}
-        </div>
-        {open ? <ChevronUp className="w-3.5 h-3.5 text-white/20" /> : <ChevronDown className="w-3.5 h-3.5 text-white/20" />}
-      </button>
-
-      {open && (
-        <div className="border-t border-white/5 px-3 pb-3 flex flex-col gap-2">
-          {tripsError ? (
-            <div className="py-6 text-center">
-              <p className="text-red-400/80 text-xs font-semibold uppercase tracking-widest">{tripsError}</p>
-              <button type="button" onClick={retryTrips} className="mt-3 text-xs font-semibold text-white/60 hover:text-white">Retry</button>
-            </div>
-          ) : tripsLoading ? (
-            <p className="text-white/20 text-xs text-center py-6 font-semibold uppercase tracking-widest">Loading completed trips…</p>
-          ) : trips.length === 0 ? (
-            <p className="text-white/20 text-xs text-center py-6 font-semibold uppercase tracking-widest">No completed trips yet.</p>
-          ) : (
-            trips.map(trip => {
-              const bus = buses.find(b => b.id === trip.busId);
-              const route = routes.find(r => r.id === trip.routeId);
-              const driver = drivers.find(d => d.id === trip.driverId);
-              return (
-                <div key={trip.id} className="bg-brand-dark/40 border border-white/5 rounded-xl p-3 flex flex-col gap-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-white">{route?.name ?? trip.routeId ?? "Unknown Route"}</span>
-                    <span className="text-[9px] text-white/30 tabular-nums">{timeSince(trip.completedAt)}</span>
-                  </div>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="text-[9px] text-white/50 flex items-center gap-1">
-                      <Bus className="w-2.5 h-2.5" />{bus?.name ?? trip.busId}
-                    </span>
-                    <span className="text-[9px] text-white/50 flex items-center gap-1">
-                      <User className="w-2.5 h-2.5" />{driver?.name ?? trip.driverId}
-                    </span>
-                    <span className="text-[9px] text-white/50 flex items-center gap-1">
-                      <MapPin className="w-2.5 h-2.5" />{trip.stopCount} stops
-                    </span>
-                    <span className="text-[9px] bg-blue-500/15 text-blue-400 px-1.5 py-0.5 rounded font-black uppercase tracking-wider flex items-center gap-1">
-                      <CheckCircle2 className="w-2.5 h-2.5" />Completed
-                    </span>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 interface Props {
-  mode?: "fleet" | "personnel" | "routes";
+  mode?: "fleet" | "personnel" | "combined";
 }
 
-export default function FleetManagementPanel({ mode = "fleet" }: Props) {
+export default function FleetManagementPanel({ mode = "combined" }: Props) {
   const {
     buses,
     loading: busesLoading,
@@ -329,12 +62,6 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   const { drivers, loading: driversLoading } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const activeEntries = useActiveBuses();
-  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const interval = window.setInterval(() => setFreshnessNow(Date.now()), 15_000);
-    return () => window.clearInterval(interval);
-  }, []);
   // Only show buses that are registered in the Firestore `buses` collection.
   // This acts as a defense-in-depth guard: even if RTDB cleanup is delayed
   // or a stale entry exists, deleted buses will never render in the UI.
@@ -501,15 +228,6 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
   const liveDrivers = drivers.filter((d) => liveDriverIds.has(d.id));
 
   // â”€â”€ Fleet summary stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const inServiceCount  = filteredActiveEntries.filter(e => e.tripState === "in_service").length;
-  const awaitingStartCount = filteredActiveEntries.filter(e => e.tripState === "pre_departure").length;
-  const gpsLostCount    = filteredActiveEntries.filter(e =>
-    e.deviceState === "offline" ||
-    e.motionState === "uncertain" ||
-    isLiveBusSignalLost(e.timestamp, freshnessNow)
-  ).length;
-  const movingCount     = filteredActiveEntries.filter(e => e.motionState === "moving").length;
-
   if (busesError || routesError) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col items-center justify-center gap-3 p-12 text-center text-red-300" role="alert">
@@ -540,57 +258,12 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
 
 
       {/* â•â• FLEET COMMAND CENTER — always visible, driven by live Firebase data â•â• */}
-      <div className="flex flex-col gap-3">
-        {/* Fleet summary stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {[
-            { icon: Activity,     label: "In Service",  value: inServiceCount,  color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-            { icon: TrendingUp,   label: "Moving",      value: movingCount,     color: "text-blue-400",    bg: "bg-blue-500/10",    border: "border-blue-500/20"    },
-            { icon: Clock,        label: "Awaiting Start", value: awaitingStartCount, color: "text-white/50", bg: "bg-white/5", border: "border-white/10" },
-            { icon: AlertTriangle,label: "GPS Issues",  value: gpsLostCount,    color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20"   },
-          ].map(({ icon: Icon, label, value, color, bg, border }) => (
-            <div key={label} className={`${bg} border ${border} rounded-2xl p-3 flex flex-col gap-1.5`}>
-              <div className="flex items-center gap-1.5">
-                <Icon className={`w-3.5 h-3.5 ${color}`} />
-                <span className={`text-[9px] font-black uppercase tracking-wider ${color}`}>{label}</span>
-              </div>
-              <span className={`text-2xl font-black ${color}`}>{value}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Live bus cards */}
-        <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl p-3 flex flex-col gap-2">
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`w-2 h-2 rounded-full shrink-0 ${filteredActiveEntries.length > 0 ? "bg-emerald-400 animate-pulse" : "bg-white/20"}`} />
-            <span className={`text-[10px] font-black uppercase tracking-[0.25em] ${filteredActiveEntries.length > 0 ? "text-emerald-400" : "text-white/30"}`}>
-              Live Tracking — {busesLoading ? "…" : `${filteredActiveEntries.length} Bus${filteredActiveEntries.length !== 1 ? "es" : ""} Online`}
-            </span>
-          </div>
-          {filteredActiveEntries.length > 0 ? (
-            filteredActiveEntries.map(entry => (
-              <LiveBusCard
-                key={entry.busId}
-                entry={entry}
-                buses={buses}
-                routes={routes}
-                drivers={drivers}
-              />
-            ))
-          ) : (
-            <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">
-              {busesLoading ? "Loading…" : "No buses currently active"}
-            </p>
-          )}
-        </div>
-      </div>
-
 
       {/* â•â• CONDITIONAL TABS: Vehicles OR Drivers â•â• */}
       <div className="flex flex-col gap-5 w-full max-w-3xl mx-auto">
 
         {/* â”€â”€ FLEET VEHICLES â”€â”€ */}
-        {mode === "fleet" && (
+        {(mode === "fleet" || mode === "combined") && (
           <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
@@ -785,13 +458,11 @@ export default function FleetManagementPanel({ mode = "fleet" }: Props) {
             )}
           </div>
 
-          {/* Analytics */}
-          <RecentTripsPanel routes={routes} buses={buses} drivers={drivers} />
         </div>
         )}
 
         {/* â”€â”€ DRIVER PERSONNEL â”€â”€ */}
-        {mode === "personnel" && (
+        {(mode === "personnel" || mode === "combined") && (
           <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">

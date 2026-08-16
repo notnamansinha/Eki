@@ -17,9 +17,8 @@ The workflow performs:
 2. Frontend and backend linting.
 3. Root script tests plus backend and frontend Vitest suites.
 4. Firebase Firestore/RTDB rules integration through the emulator. The test
-   helper writes App-Check-free temporary rules; committed rules are never
-   modified. This is a test limitation, not permission to disable App Check in
-   a deployed project.
+   helper writes isolated temporary copies; committed rules are never modified.
+   App Check is enforced separately in Firebase Console for deployed projects.
 5. Strict frontend production build with CI-only placeholder public values,
    service-worker generation, and deterministic CSP regeneration.
 6. Production dependency audit.

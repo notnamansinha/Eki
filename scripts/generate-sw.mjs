@@ -9,15 +9,19 @@
  */
 
 import { injectManifest } from "workbox-build";
+import { bundle } from "workbox-build/build/lib/bundle.js";
+import { readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(fileURLToPath(import.meta.url), "../..");
 const frontendRoot = path.join(root, "frontend");
+const swDest = path.join(frontendRoot, "out", "sw.js");
 
 const result = await injectManifest({
   swSrc: path.join(frontendRoot, "src", "sw.js"),
-  swDest: path.join(frontendRoot, "out", "sw.js"),
+  swDest,
   globDirectory: path.join(frontendRoot, "out"),
   globPatterns: [
     // HTML pages (the app shell for every route)
@@ -32,8 +36,8 @@ const result = await injectManifest({
     "images/**/*.{webp,jpg,png}",
   ],
   globIgnores: [
-    // Exclude source maps (not generated with productionBrowserSourceMaps:false,
-    // but guard against future changes)
+    // Source maps are published for debugging but should never consume the
+    // offline precache budget.
     "**/*.map",
     // Exclude build metadata
     "_next/static/**/webpack-*",
@@ -43,6 +47,48 @@ const result = await injectManifest({
   // a video) should use runtime caching instead.
   maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
 });
+
+// injectManifest replaces the precache placeholder but intentionally leaves
+// module imports untouched. Bundle the injected source so browsers receive a
+// self-contained classic service worker rather than unresolved bare imports.
+const require = createRequire(import.meta.url);
+let unbundledCode = await readFile(swDest, "utf8");
+for (const packageName of [
+  "workbox-core",
+  "workbox-precaching",
+  "workbox-routing",
+  "workbox-strategies",
+  "workbox-expiration",
+  "workbox-cacheable-response",
+]) {
+  // Workbox's bundler stages source in the OS temp directory, outside this
+  // repository's node_modules ancestry. Resolve the entry modules here so
+  // Rollup can follow both these imports and their nested dependencies.
+  const packageDirectory = path.dirname(
+    require.resolve(`${packageName}/package.json`),
+  );
+  const modulePath = path.join(packageDirectory, "index.mjs").replaceAll("\\", "/");
+  unbundledCode = unbundledCode.replaceAll(
+    `"${packageName}"`,
+    JSON.stringify(modulePath),
+  );
+}
+const bundledFiles = await bundle({
+  babelPresetEnvTargets: [
+    "Chrome >= 80",
+    "Firefox >= 78",
+    "Safari >= 14",
+    "Edge >= 80",
+  ],
+  inlineWorkboxRuntime: true,
+  mode: "production",
+  sourcemap: false,
+  swDest,
+  unbundledCode,
+});
+for (const file of bundledFiles) {
+  await writeFile(file.name, file.contents);
+}
 
 console.log(
   `✅ SW generated: ${result.count} files precached (${(result.size / 1024).toFixed(0)} KB total)`
