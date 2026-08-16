@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const workspaceFile = (path: string) =>
   readFileSync(resolve(__dirname, "../..", path), "utf8");
 
-const passengerSource = () =>
+const loadPassengerSource = () =>
   `${workspaceFile("frontend/src/app/passenger/page.tsx")}\n${workspaceFile(
     "frontend/src/components/passenger/PassengerWorkspace.tsx",
   )}`;
@@ -233,20 +233,20 @@ describe("production security configuration", () => {
   });
 
   it("gates post-ride feedback on a successful join scoped to the current session", () => {
-    const passengerPage = passengerSource();
+    const passengerSource = loadPassengerSource();
     const boardingView = workspaceFile(
       "frontend/src/components/passenger/PassengerBoardingView.tsx",
     );
 
-    expect(passengerPage).toContain("recordSuccessfulJoin(");
-    expect(passengerPage).toContain("isPostRideFeedbackEligible(");
-    expect(passengerPage).toContain(".filter(hasSessionId)");
-    expect(passengerPage).toContain("key={activeBusOnRoute.sessionId}");
-    expect(passengerPage).toContain("sessionId={activeBusOnRoute.sessionId}");
-    expect(passengerPage).toContain("sessionId={feedbackSessionId}");
+    expect(passengerSource).toContain("recordSuccessfulJoin(");
+    expect(passengerSource).toContain("isPostRideFeedbackEligible(");
+    expect(passengerSource).toContain(".filter(hasSessionId)");
+    expect(passengerSource).toContain("key={activeBusOnRoute.sessionId}");
+    expect(passengerSource).toContain("sessionId={activeBusOnRoute.sessionId}");
+    expect(passengerSource).toContain("sessionId={feedbackSessionId}");
     expect(boardingView).toContain("result.joined !== true");
     expect(boardingView).toContain("onJoined?.()");
-    expect(passengerPage).not.toContain("recordStopSelection(");
+    expect(passengerSource).not.toContain("recordStopSelection(");
   });
 
   it("requires sign-in for live application data and route APIs", () => {
@@ -318,11 +318,11 @@ describe("production security configuration", () => {
 
   it("does not let the browser seed or take down hardware GNSS coordinates", () => {
     const operations = workspaceFile("frontend/src/components/admin/DashboardPanel.tsx");
-    const passengerPage = passengerSource();
+    const passengerSource = loadPassengerSource();
 
     expect(operations).toContain("/api/shifts/start");
     expect(operations).not.toContain("updateDoc(");
-    expect(passengerPage).toContain(
+    expect(passengerSource).toContain(
       "hasValidBusCoordinates(normalizedBus.lat, normalizedBus.lng)",
     );
     expect(operations).toContain("assignedRouteIds(selectedBus)");
@@ -580,8 +580,9 @@ describe("production security configuration", () => {
     expect(routeEditor).toContain('method: "PUT"');
     expect(routeEditor).not.toContain("setDoc(");
     expect(routeEditor).not.toContain("updateDoc(");
-    expect(dashboard).toContain("/api/shifts/delay");
-    expect(dashboard).toContain('method: "PATCH"');
+    expect(dashboard).toMatch(
+      /requestAdmin<\{ delayMinutes: number \}>\("\/api\/shifts\/delay",\s*\{\s*method: "PATCH"/,
+    );
     expect(dashboard).not.toContain("Force Offline");
     expect(dashboard).not.toContain("Position Override");
     expect(dashboard).not.toContain("update(ref(rtdb");
