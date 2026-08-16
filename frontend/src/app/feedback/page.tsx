@@ -223,7 +223,12 @@ function FeedbackCard({
             {(() => {
               const bus = linkedDetail(entry.busId, "Bus", identity.busName, entry.type);
               const driver = linkedDetail(entry.driverId, "Driver", identity.driverName, entry.type);
-              const session = linkedDetail(entry.sessionId, "Session", null, entry.type);
+              const session = linkedDetail(
+                entry.sessionId,
+                "Session",
+                shortId(entry.sessionId),
+                entry.type,
+              );
               return [
                 {
                   label: "Passenger",
