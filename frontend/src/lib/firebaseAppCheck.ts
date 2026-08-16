@@ -1,4 +1,5 @@
 import {
+  CustomProvider,
   initializeAppCheck,
   ReCaptchaEnterpriseProvider,
   getToken,
@@ -9,6 +10,17 @@ import { withTimeout } from "./promiseTimeout";
 
 let appCheck: AppCheck | null = null;
 const APP_CHECK_TOKEN_TIMEOUT_MS = 10_000;
+
+function debugOnlyProvider(): CustomProvider {
+  return new CustomProvider({
+    // Firebase uses the debug token exchange before calling the provider. This
+    // guard makes an accidental non-debug use fail closed instead of issuing a
+    // token through an unintended attestation path.
+    getToken: async () => {
+      throw new Error("[AppCheck] Debug provider was used outside debug mode.");
+    },
+  });
+}
 
 function initializeFirebaseAppCheck(): AppCheck | null {
   if (typeof window === "undefined" || appCheck) return appCheck;
@@ -23,12 +35,10 @@ function initializeFirebaseAppCheck(): AppCheck | null {
       debugToken === "true" ? true : debugToken;
   }
   const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY;
-  if (!siteKey) {
-    const message = "[AppCheck] reCAPTCHA Enterprise site key is not configured.";
-    console.error(message);
-    throw new Error(message);
+  if (!siteKey && !isDebug) {
+    throw new Error("[AppCheck] reCAPTCHA Enterprise site key is not configured.");
   }
-  const provider = new ReCaptchaEnterpriseProvider(siteKey);
+  const provider = siteKey ? new ReCaptchaEnterpriseProvider(siteKey) : debugOnlyProvider();
   appCheck = initializeAppCheck(firebaseApp, {
     provider,
     isTokenAutoRefreshEnabled: true,
