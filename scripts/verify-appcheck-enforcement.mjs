@@ -30,6 +30,10 @@ export function projectIdFromArgs(argv) {
   return argv[projectFlagIndex + 1];
 }
 
+export function shouldEnforceFromArgs(argv) {
+  return argv.includes("--enforce");
+}
+
 export function projectNumberFromMetadata(metadata) {
   const projectNumber = metadata?.projectNumber ?? metadata?.name?.split("/").pop();
   if (!projectNumber || !/^\d+$/.test(String(projectNumber))) {
@@ -47,15 +51,20 @@ export function assertEnforced(service, serviceId) {
   return service;
 }
 
-async function getJson(url, token, fetchImpl) {
+async function requestJson(url, token, fetchImpl, init = {}) {
   const response = await fetchImpl(url, {
-    headers: { Authorization: `Bearer ${token}` },
+    ...init,
+    headers: { ...init.headers, Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new Error(`Firebase API request failed (${response.status}) for ${new URL(url).pathname}.`);
   }
   return response.json();
+}
+
+async function getJson(url, token, fetchImpl) {
+  return requestJson(url, token, fetchImpl);
 }
 
 export async function accessTokenFromFirebaseToken(firebaseToken, fetchImpl = fetch) {
@@ -114,16 +123,49 @@ export async function verifyAppCheckEnforcement({ projectId, token, fetchImpl = 
   return { projectId, projectNumber, services };
 }
 
+export async function enforceAppCheckEnforcement({ projectId, token, fetchImpl = fetch }) {
+  if (!projectId) throw usageError("Missing Firebase project ID.");
+  if (!token) throw new Error("FIREBASE_TOKEN is required to enforce App Check.");
+
+  const accessToken = await accessTokenFromFirebaseToken(token, fetchImpl);
+  const metadata = await getJson(
+    `${FIREBASE_MANAGEMENT_API}/projects/${encodeURIComponent(projectId)}`,
+    accessToken,
+    fetchImpl,
+  );
+  const projectNumber = projectNumberFromMetadata(metadata);
+
+  const services = await Promise.all(
+    REQUIRED_SERVICES.map(async (serviceId) => {
+      const name = `projects/${projectNumber}/services/${serviceId}`;
+      const service = await requestJson(
+        `${APP_CHECK_API}/${name}?updateMask=enforcementMode`,
+        accessToken,
+        fetchImpl,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, enforcementMode: "ENFORCED" }),
+        },
+      );
+      return assertEnforced(service, serviceId);
+    }),
+  );
+
+  return { projectId, projectNumber, services };
+}
+
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
   try {
     const projectId = projectIdFromArgs(process.argv.slice(2));
-    const result = await verifyAppCheckEnforcement({
+    const enforce = shouldEnforceFromArgs(process.argv.slice(2));
+    const result = await (enforce ? enforceAppCheckEnforcement : verifyAppCheckEnforcement)({
       projectId,
       token: process.env.FIREBASE_TOKEN,
     });
     console.log(
-      `Firebase App Check enforcement verified for ${result.projectId}: ${REQUIRED_SERVICES.join(", ")}.`,
+      `Firebase App Check enforcement ${enforce ? "enabled" : "verified"} for ${result.projectId}: ${REQUIRED_SERVICES.join(", ")}.`,
     );
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

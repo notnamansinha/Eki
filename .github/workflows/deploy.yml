@@ -84,8 +84,8 @@ jobs:
           NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY }}
           NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL }}
         run: npm run build:production
-      - name: Verify Firebase App Check enforcement
-        run: node scripts/verify-appcheck-enforcement.mjs --project bustrack-be165
+      - name: Enforce Firebase App Check before staging deploy
+        run: node scripts/verify-appcheck-enforcement.mjs --project bustrack-be165 --enforce
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       - name: Deploy to staging (hosting + rules)

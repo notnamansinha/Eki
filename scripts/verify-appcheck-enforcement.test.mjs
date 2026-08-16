@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 import {
   accessTokenFromFirebaseToken,
   assertEnforced,
+  enforceAppCheckEnforcement,
   projectIdFromArgs,
   projectNumberFromMetadata,
+  shouldEnforceFromArgs,
   verifyAppCheckEnforcement,
 } from "./verify-appcheck-enforcement.mjs";
 
@@ -22,6 +24,11 @@ describe("verify-appcheck-enforcement", () => {
 
   it("fails closed when a required service is not enforced", () => {
     assert.throws(() => assertEnforced({ enforcementMode: "UNENFORCED" }, "firestore.googleapis.com"), /not enforced/);
+  });
+
+  it("recognizes the explicit enforcement mode", () => {
+    assert.equal(shouldEnforceFromArgs(["--project", "eki-staging", "--enforce"]), true);
+    assert.equal(shouldEnforceFromArgs(["--project", "eki-staging"]), false);
   });
 
   it("exchanges a Firebase CLI refresh token for a short-lived access token", async () => {
@@ -67,5 +74,35 @@ describe("verify-appcheck-enforcement", () => {
     assert.equal(requestedUrls.length, 4);
     assert.ok(requestedUrls.some((url) => url.endsWith("projects/12345/services/firestore.googleapis.com")));
     assert.ok(requestedUrls.some((url) => url.endsWith("projects/12345/services/firebasedatabase.googleapis.com")));
+  });
+
+  it("enforces both required services", async () => {
+    const requests = [];
+    const fetchImpl = async (url, init = {}) => {
+      requests.push({ url, init });
+      if (url.includes("oauth2/v3/token")) {
+        return { ok: true, json: async () => ({ access_token: "access-token" }) };
+      }
+      if (url.includes("firebase.googleapis.com/v1beta1")) {
+        return { ok: true, json: async () => ({ projectNumber: "12345" }) };
+      }
+      return { ok: true, json: async () => ({ enforcementMode: "ENFORCED" }) };
+    };
+
+    await enforceAppCheckEnforcement({
+      projectId: "eki-staging",
+      token: "refresh-token",
+      fetchImpl,
+    });
+
+    const updates = requests.filter(({ init }) => init.method === "PATCH");
+    assert.equal(updates.length, 2);
+    for (const { url, init } of updates) {
+      assert.match(url, /updateMask=enforcementMode$/);
+      assert.deepEqual(JSON.parse(init.body), {
+        name: url.slice(url.indexOf("projects/"), url.indexOf("?")),
+        enforcementMode: "ENFORCED",
+      });
+    }
   });
 });
