@@ -1,3 +1,9 @@
+import {
+  passengerPanelClassName,
+  passengerPanelStyle,
+  passengerTopSpacerStyle,
+} from "./passengerFrame";
+
 export default function PassengerLoadingShell() {
   return (
     <div
@@ -22,20 +28,13 @@ export default function PassengerLoadingShell() {
       <div className="absolute inset-0 z-10 flex flex-col pt-safe">
         <div
           className="shrink-0"
-          style={{ height: "34vh", minHeight: "250px" }}
+          style={passengerTopSpacerStyle}
           aria-hidden="true"
         />
 
         <div
-          className="relative mx-4 mb-[110px] flex flex-1 flex-col overflow-hidden rounded-[32px] pt-8 shadow-2xl"
-          style={{
-            background: "linear-gradient(180deg, #1c1c1e 0%, #151517 100%)",
-            borderTop: "1px solid rgba(255, 255, 255, 0.12)",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.04)",
-            borderRight: "1px solid rgba(255, 255, 255, 0.04)",
-            boxShadow:
-              "0 12px 48px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05)",
-          }}
+          className={passengerPanelClassName}
+          style={passengerPanelStyle}
         >
           <div className="mx-6 mb-4 shrink-0 pb-6 text-center">
             <h1

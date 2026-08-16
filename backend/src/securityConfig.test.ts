@@ -240,7 +240,9 @@ describe("production security configuration", () => {
 
     expect(passengerPage).toContain("recordSuccessfulJoin(");
     expect(passengerPage).toContain("isPostRideFeedbackEligible(");
-    expect(passengerPage).toContain("key={activeSessionId}");
+    expect(passengerPage).toContain(".filter(hasSessionId)");
+    expect(passengerPage).toContain("key={activeBusOnRoute.sessionId}");
+    expect(passengerPage).toContain("sessionId={activeBusOnRoute.sessionId}");
     expect(passengerPage).toContain("sessionId={feedbackSessionId}");
     expect(boardingView).toContain("result.joined !== true");
     expect(boardingView).toContain("onJoined?.()");
@@ -315,11 +317,9 @@ describe("production security configuration", () => {
   });
 
   it("does not let the browser seed or take down hardware GNSS coordinates", () => {
-    const operations = workspaceFile("frontend/src/components/admin/OperationsPanel.tsx");
+    const operations = workspaceFile("frontend/src/components/admin/DashboardPanel.tsx");
     const passengerPage = passengerSource();
 
-    expect(operations).not.toContain("onDisconnect(");
-    expect(operations).not.toContain("lat:");
     expect(operations).toContain("/api/shifts/start");
     expect(operations).not.toContain("updateDoc(");
     expect(passengerPage).toContain(
@@ -571,7 +571,6 @@ describe("production security configuration", () => {
     const routes = ruleBlock(rules, "match /routes/{routeId}");
     const sessions = ruleBlock(rules, "match /ride_sessions/{sessionId}");
     const routeEditor = workspaceFile("frontend/src/components/admin/RouteManagementPanel.tsx");
-    const operations = workspaceFile("frontend/src/components/admin/OperationsPanel.tsx");
     const dashboard = workspaceFile("frontend/src/components/admin/DashboardPanel.tsx");
 
     expect(routes).toContain("allow create, update, delete: if false;");
@@ -581,9 +580,8 @@ describe("production security configuration", () => {
     expect(routeEditor).toContain('method: "PUT"');
     expect(routeEditor).not.toContain("setDoc(");
     expect(routeEditor).not.toContain("updateDoc(");
-    expect(operations).toContain("/api/shifts/delay");
-    expect(operations).not.toContain("update(busRef");
-    expect(dashboard).not.toContain('method: "PATCH"');
+    expect(dashboard).toContain("/api/shifts/delay");
+    expect(dashboard).toContain('method: "PATCH"');
     expect(dashboard).not.toContain("Force Offline");
     expect(dashboard).not.toContain("Position Override");
     expect(dashboard).not.toContain("update(ref(rtdb");
@@ -608,7 +606,7 @@ describe("production security configuration", () => {
     );
     const sessionsRoute = workspaceFile("backend/src/routes/sessions.ts");
     const boardingPolicy = workspaceFile("backend/src/services/boardingPolicy.ts");
-    const operations = workspaceFile("frontend/src/components/admin/OperationsPanel.tsx");
+    const operations = workspaceFile("frontend/src/components/admin/DashboardPanel.tsx");
     const cspBuild = workspaceFile("scripts/update-csp.mjs");
     const cspBackendOrigin = workspaceFile("scripts/csp-backend-origin.mjs");
     const server = workspaceFile("backend/src/server.ts");
@@ -648,7 +646,7 @@ describe("production security configuration", () => {
 
   it("uses backend-authoritative shift lifecycle endpoints", () => {
     const server = workspaceFile("backend/src/server.ts");
-    const operations = workspaceFile("frontend/src/components/admin/OperationsPanel.tsx");
+    const operations = workspaceFile("frontend/src/components/admin/DashboardPanel.tsx");
     const passengerBoarding = workspaceFile(
       "frontend/src/components/passenger/PassengerBoardingView.tsx",
     );

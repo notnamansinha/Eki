@@ -1,12 +1,14 @@
 import {
   initializeAppCheck,
   ReCaptchaEnterpriseProvider,
-  CustomProvider,
+  getToken,
   type AppCheck,
 } from "firebase/app-check";
 import { firebaseApp } from "./firebaseCore";
+import { withTimeout } from "./promiseTimeout";
 
 let appCheck: AppCheck | null = null;
+const APP_CHECK_TOKEN_TIMEOUT_MS = 10_000;
 
 function initializeFirebaseAppCheck(): AppCheck | null {
   if (typeof window === "undefined" || appCheck) return appCheck;
@@ -21,18 +23,12 @@ function initializeFirebaseAppCheck(): AppCheck | null {
       debugToken === "true" ? true : debugToken;
   }
   const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY;
-  if (!siteKey && !isDebug) {
-    if (process.env.NODE_ENV === "production") {
-      console.error("[AppCheck] Production site key is not configured.");
-    }
-    return null;
+  if (!siteKey) {
+    const message = "[AppCheck] reCAPTCHA Enterprise site key is not configured.";
+    console.error(message);
+    throw new Error(message);
   }
-  const provider = siteKey
-    ? new ReCaptchaEnterpriseProvider(siteKey)
-    : new CustomProvider({
-        getToken: () =>
-          Promise.reject(new Error("AppCheck debug token active")),
-      });
+  const provider = new ReCaptchaEnterpriseProvider(siteKey);
   appCheck = initializeAppCheck(firebaseApp, {
     provider,
     isTokenAutoRefreshEnabled: true,
@@ -44,7 +40,23 @@ function initializeFirebaseAppCheck(): AppCheck | null {
  * Call this once from inside a useEffect (post-paint) rather than at module
  * evaluation time. Calling it multiple times is safe — the inner guard ensures
  * AppCheck is only initialized once.
+ *
+ * Returns a Promise<void> that resolves only after a valid first App Check
+ * token has been obtained. Callers can await it before accessing protected
+ * Firebase resources.
  */
-export function ensureAppCheck(): void {
-  initializeFirebaseAppCheck();
+export async function ensureAppCheck(): Promise<void> {
+  const instance = initializeFirebaseAppCheck();
+  if (!instance) {
+    throw new Error("[AppCheck] Cannot initialize outside the browser.");
+  }
+  const tokenResult = await withTimeout(
+    getToken(instance),
+    APP_CHECK_TOKEN_TIMEOUT_MS,
+    "App Check token acquisition timed out.",
+  );
+  const result = tokenResult as typeof tokenResult & { error?: unknown };
+  if (!result.token || result.error) {
+    throw new Error("[AppCheck] Token acquisition failed.");
+  }
 }

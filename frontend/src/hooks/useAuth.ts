@@ -73,10 +73,11 @@ function useAuthState(): AuthContextValue {
             // load it in parallel with token restoration and await it only at
             // the point where protected data can begin loading.
             const appCheckReady = import("@/lib/firebaseAppCheck")
-              .then(({ ensureAppCheck }) => ensureAppCheck())
-              .catch((error) => {
-                console.error("Firebase App Check initialization failed:", error);
-              });
+              .then(({ ensureAppCheck }) => ensureAppCheck());
+            const isCurrentAuth = () =>
+              !disposed &&
+              currentGen === generation &&
+              auth.currentUser?.uid === firebaseUser.uid;
             setRoleError(null);
             const storedRole = window.localStorage.getItem(`eki:role:${firebaseUser.uid}`);
             const cachedRole: UserRole =
@@ -113,8 +114,9 @@ function useAuthState(): AuthContextValue {
                 claimedRole === "driver" ||
                 claimedRole === "admin"
               ) {
-                if (currentGen !== generation) return;
+                if (!isCurrentAuth()) return;
                 await appCheckReady;
+                if (!isCurrentAuth()) return;
                 window.localStorage.setItem(`eki:role:${firebaseUser.uid}`, claimedRole);
                 setUser({
                   uid: firebaseUser.uid,
@@ -144,7 +146,7 @@ function useAuthState(): AuthContextValue {
                 "Role verification timed out.",
               );
 
-              if (currentGen !== generation) return;
+              if (!isCurrentAuth()) return;
 
               let role: UserRole = "passenger";
 
@@ -184,7 +186,7 @@ function useAuthState(): AuthContextValue {
                 }
               }
 
-              if (currentGen !== generation) return;
+              if (!isCurrentAuth()) return;
               setRoleError(null);
               window.localStorage.setItem(`eki:role:${firebaseUser.uid}`, role || "passenger");
 
@@ -203,7 +205,7 @@ function useAuthState(): AuthContextValue {
               } else {
                 console.error("Firestore role fetch failed:", err);
               }
-              if (currentGen !== generation) return;
+              if (!isCurrentAuth()) return;
               setRoleError(
                 code === "permission-denied"
                   ? "Your account is not permitted to verify this workspace."
@@ -218,7 +220,7 @@ function useAuthState(): AuthContextValue {
                 isAnonymous: firebaseUser.isAnonymous,
               });
             } finally {
-              if (currentGen === generation) setLoading(false);
+              if (isCurrentAuth()) setLoading(false);
             }
           } else {
             if (currentGen !== generation) return;

@@ -10,6 +10,7 @@ import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
 import { useActiveBuses, type ActiveBusEntry } from "@/hooks/useActiveBuses";
+import { useAuth } from "@/hooks/useAuth";
 import {
   hasValidBusCoordinates,
   isLiveBusSignalLost,
@@ -19,11 +20,13 @@ import { errorMessage } from "@/lib/errors";
 import {
   Activity, Navigation, Clock, AlertTriangle,
   TrendingUp, X, ChevronDown, ChevronUp,
-  Eye, Wifi, WifiOff, MessageCircle,
+  Eye, Wifi, WifiOff, MessageCircle, Play, RefreshCw, TicketCheck,
 } from "lucide-react";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { apiRequest } from "@/lib/apiClient";
+import CustomSelect from "@/components/ui/CustomSelect";
+import MessagingPanel from "@/components/shared/MessagingPanel";
 
 /* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const TRIP_STATE: Record<string, { label: string; color: string; bg: string; dot: string }> = {
@@ -48,6 +51,25 @@ function headingLabel(d?: number): string {
   if (d == null) return "—";
   const dirs = ["N","NE","E","SE","S","SW","W","NW","N"];
   return dirs[Math.round(d / 45) % 8] + ` ${Math.round(d)}°`;
+}
+
+function assignedRouteIds(bus: { assignedRoutes?: string[]; assignedRouteId?: string } | undefined) {
+  return bus?.assignedRoutes ?? (bus?.assignedRouteId ? [bus.assignedRouteId] : []);
+}
+
+async function requestAdmin<T>(path: string, init: RequestInit): Promise<T> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error("Administrator session is unavailable.");
+  const token = await currentUser.getIdToken();
+  return apiRequest<T>(path, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...init.headers,
+    },
+    fallbackError: "Ride operation failed.",
+  });
 }
 
 /* â”€â”€ Map centering helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -83,21 +105,6 @@ function LiveDetailsDrawer({
     messageTimerRef.current = setTimeout(() => setMsg(""), 2000);
   };
 
-  const adminRequest = async (path: string, init: RequestInit) => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) throw new Error("Backend service is unavailable.");
-    const token = await currentUser.getIdToken();
-    return apiRequest<{ error?: string }>(path, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
-        ...init.headers,
-      },
-      fallbackError: "Admin request failed.",
-    });
-  };
-
   const [showWipeConfirm, setShowWipeConfirm] = useState(false);
   const [isWiping, setIsWiping] = useState(false);
   const dialogRef = useDialogFocus<HTMLDivElement>(true, () => {
@@ -108,7 +115,7 @@ function LiveDetailsDrawer({
     setIsWiping(true);
     try {
       if (!entry.sessionId) throw new Error("This vehicle has no active message session.");
-      await adminRequest(
+      await requestAdmin(
         `/api/shifts/${encodeURIComponent(entry.sessionId)}/messages`,
         { method: "DELETE" },
       );
@@ -218,7 +225,8 @@ function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => v
 /* â”€â”€ Fleet card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function FleetCard({
   entry, buses, routes, drivers,
-  onSelect, selected,
+  onSelect, selected, onChangeDelay, delayPending, boardingCode,
+  onLoadBoardingCode, onOpenChat, canChat,
 }: {
   entry: ActiveBusEntry;
   buses: ReturnType<typeof useBuses>["buses"];
@@ -226,6 +234,12 @@ function FleetCard({
   drivers: ReturnType<typeof useDrivers>["drivers"];
   onSelect: () => void;
   selected: boolean;
+  onChangeDelay: (entry: ActiveBusEntry, delta: number) => void;
+  delayPending: boolean;
+  boardingCode?: string;
+  onLoadBoardingCode: (entry: ActiveBusEntry) => void;
+  onOpenChat: (entry: ActiveBusEntry) => void;
+  canChat: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -336,6 +350,42 @@ function FleetCard({
                 <p className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</p>
               </div>
             </div>
+            <div className="flex flex-wrap items-center gap-2 border-t border-white/5 pt-3">
+              <span className="mr-1 text-[10px] font-semibold text-white/50">
+                Delay: {Math.max(0, Number(entry.delayMinutes ?? 0))} min
+              </span>
+              {[-2, -1, 1, 2].map((delta) => (
+                <button
+                  key={delta}
+                  type="button"
+                  disabled={delayPending || !entry.routeId || !entry.driverId}
+                  onClick={() => onChangeDelay(entry, delta)}
+                  className="min-h-9 min-w-9 rounded-lg border border-white/10 bg-white/5 px-2 text-xs font-bold text-white disabled:opacity-40"
+                  aria-label={`${delta > 0 ? "Increase" : "Decrease"} delay by ${Math.abs(delta)} minutes for ${entry.busId}`}
+                >
+                  {delta > 0 ? `+${delta}` : delta}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!entry.sessionId}
+                onClick={() => onLoadBoardingCode(entry)}
+                className="flex min-h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white disabled:opacity-40"
+              >
+                <TicketCheck className="size-4" />
+                {boardingCode ? `${boardingCode.slice(0, 4)}-${boardingCode.slice(4)}` : "Boarding code"}
+              </button>
+              <button
+                type="button"
+                disabled={!entry.sessionId || !canChat}
+                onClick={() => onOpenChat(entry)}
+                className="flex min-h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white disabled:opacity-40"
+              >
+                <MessageCircle className="size-4" /> Live chat
+              </button>
+            </div>
             {hasValidBusCoordinates(entry.lat, entry.lng) && (
               <p className="text-[9px] text-white/20 tabular-nums">
                 {entry.lat!.toFixed(5)}, {entry.lng!.toFixed(5)}
@@ -350,6 +400,7 @@ function FleetCard({
 
 /* â”€â”€ Main Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function DashboardPanel() {
+  const { user } = useAuth();
   const {
     isResuming,
     connectionGeneration,
@@ -367,6 +418,14 @@ export default function DashboardPanel() {
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
+  const [driverId, setDriverId] = useState("");
+  const [busId, setBusId] = useState("");
+  const [routeId, setRouteId] = useState("");
+  const [armStatus, setArmStatus] = useState("");
+  const [armPending, setArmPending] = useState(false);
+  const [delayPending, setDelayPending] = useState("");
+  const [boardingCodes, setBoardingCodes] = useState<Record<string, string>>({});
+  const [chatEntry, setChatEntry] = useState<ActiveBusEntry | null>(null);
 
   useEffect(() => {
     const interval = window.setInterval(() => setFreshnessNow(Date.now()), 15_000);
@@ -403,6 +462,83 @@ export default function DashboardPanel() {
       setMapCenter({ lat: entry.lat as number, lng: entry.lng as number });
     }
   }, []);
+
+  const selectedBus = buses.find((bus) => bus.id === busId);
+  const allowedRouteIds = assignedRouteIds(selectedBus);
+  const allowedRoutes = routes.filter((route) => allowedRouteIds.includes(route.id));
+
+  const selectDriver = (nextDriverId: string) => {
+    const driver = drivers.find((candidate) => candidate.id === nextDriverId);
+    const nextBusId = driver?.assignedBusId ?? "";
+    const nextBus = buses.find((bus) => bus.id === nextBusId);
+    const nextRoutes = assignedRouteIds(nextBus);
+    setDriverId(nextDriverId);
+    setBusId(nextBusId);
+    setRouteId(nextRoutes.length === 1 ? nextRoutes[0] : "");
+    setArmStatus("");
+  };
+
+  const armRide = async () => {
+    if (!driverId || !busId || !routeId) return;
+    setArmPending(true);
+    setArmStatus("");
+    try {
+      const result = await requestAdmin<{ sessionId?: string; resumed?: boolean }>(
+        "/api/shifts/start",
+        {
+          method: "POST",
+          body: JSON.stringify({ driverId, busId, routeId }),
+        },
+      );
+      setArmStatus(
+        result.resumed
+          ? `Active ride restored (${result.sessionId}).`
+          : `Ride armed (${result.sessionId}). It starts automatically at stop 1.`,
+      );
+    } catch (error) {
+      setArmStatus(errorMessage(error));
+    } finally {
+      setArmPending(false);
+    }
+  };
+
+  const changeDelay = async (entry: ActiveBusEntry, delta: number) => {
+    if (!entry.routeId || !entry.driverId) return;
+    const operationId = `${entry.busId}_${entry.routeId}`;
+    const delayMinutes = Math.max(0, Number(entry.delayMinutes ?? 0) + delta);
+    setDelayPending(operationId);
+    setArmStatus("");
+    try {
+      await requestAdmin<{ delayMinutes: number }>("/api/shifts/delay", {
+        method: "PATCH",
+        body: JSON.stringify({
+          busId: entry.busId,
+          routeId: entry.routeId,
+          driverId: entry.driverId,
+          delayMinutes,
+        }),
+      });
+      setArmStatus(`Delay updated to ${delayMinutes} minutes for ${entry.busId}.`);
+    } catch (error) {
+      setArmStatus(errorMessage(error));
+    } finally {
+      setDelayPending("");
+    }
+  };
+
+  const loadBoardingCode = async (entry: ActiveBusEntry) => {
+    if (!entry.sessionId) return;
+    try {
+      const result = await requestAdmin<{ boardingCode?: string }>(
+        `/api/sessions/${encodeURIComponent(entry.sessionId)}/boarding-code`,
+        { method: "POST" },
+      );
+      if (!result.boardingCode) throw new Error("Boarding code was not returned.");
+      setBoardingCodes((current) => ({ ...current, [entry.sessionId as string]: result.boardingCode as string }));
+    } catch (error) {
+      setArmStatus(errorMessage(error));
+    }
+  };
 
   return (
     <div className="relative h-full flex flex-col lg:flex-row w-full overflow-y-auto lg:overflow-hidden">
@@ -468,6 +604,59 @@ export default function DashboardPanel() {
 
       {/* â”€â”€ Sidebar â”€â”€ */}
       <div className="w-full lg:w-[360px] shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-white/5 overflow-hidden">
+        <section className="shrink-0 border-b border-white/5 p-3">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-white">Arm a ride</h2>
+              <p className="mt-0.5 text-[10px] text-white/35">GNSS starts and completes the ride automatically.</p>
+            </div>
+            <Play className="size-4 text-white/30" aria-hidden="true" />
+          </div>
+          <div className="grid gap-2">
+            <CustomSelect
+              ariaLabel="Operator"
+              value={driverId}
+              onChange={selectDriver}
+              options={[
+                { value: "", label: "Select operator…" },
+                ...drivers.map((driver) => ({ value: driver.id, label: `${driver.name} (${driver.id})` })),
+              ]}
+              placeholder="Select operator…"
+            />
+            <CustomSelect
+              ariaLabel="Assigned vehicle"
+              value={busId}
+              onChange={() => undefined}
+              disabled
+              options={[
+                { value: "", label: "No assigned vehicle" },
+                ...buses.map((bus) => ({ value: bus.id, label: `${bus.name} (${bus.id})` })),
+              ]}
+              placeholder="Assigned vehicle"
+            />
+            <CustomSelect
+              ariaLabel="Route"
+              value={routeId}
+              onChange={setRouteId}
+              disabled={!busId}
+              options={[
+                { value: "", label: "Select route…" },
+                ...allowedRoutes.map((route) => ({ value: route.id, label: route.name })),
+              ]}
+              placeholder="Select route…"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => void armRide()}
+            disabled={armPending || !driverId || !busId || !routeId}
+            className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-white px-4 text-xs font-bold text-black disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {armPending ? <RefreshCw className="size-4 animate-spin" /> : <Play className="size-4" />}
+            Arm ride
+          </button>
+          {armStatus && <p className="mt-2 text-xs text-white/65" role="status">{armStatus}</p>}
+        </section>
         {/* Stats row */}
         <div className="grid grid-cols-4 border-b border-white/5 shrink-0">
           {[
@@ -504,11 +693,30 @@ export default function DashboardPanel() {
                 drivers={drivers}
                 selected={selectedBusId === entry.busId}
                 onSelect={() => handleSelectBus(entry)}
+                onChangeDelay={(ride, delta) => void changeDelay(ride, delta)}
+                delayPending={delayPending === `${entry.busId}_${entry.routeId}`}
+                boardingCode={entry.sessionId ? boardingCodes[entry.sessionId] : undefined}
+                onLoadBoardingCode={(ride) => void loadBoardingCode(ride)}
+                onOpenChat={setChatEntry}
+                canChat={Boolean(user?.uid)}
               />
             ))
           )}
         </div>
       </div>
+      {chatEntry?.sessionId && user?.uid && (
+        <div className="fixed inset-0 z-[250] bg-black/70 pt-10 sm:p-10">
+          <div className="mx-auto h-full max-w-2xl">
+            <MessagingPanel
+              sessionId={chatEntry.sessionId}
+              currentUserRole="admin"
+              currentUserId={user.uid}
+              isOverlay
+              onClose={() => setChatEntry(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
