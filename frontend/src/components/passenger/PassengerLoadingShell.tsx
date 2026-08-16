@@ -38,7 +38,6 @@ export default function PassengerLoadingShell() {
         >
           <div className="mx-6 mb-4 shrink-0 pb-6 text-center">
             <h1
-              id="passenger-loading-title"
               className="mb-2 text-[32px] font-black leading-none tracking-tight"
               style={{ color: "var(--text-primary)" }}
             >
