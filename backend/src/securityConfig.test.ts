@@ -240,7 +240,9 @@ describe("production security configuration", () => {
 
     expect(passengerPage).toContain("recordSuccessfulJoin(");
     expect(passengerPage).toContain("isPostRideFeedbackEligible(");
-    expect(passengerPage).toContain("key={activeSessionId}");
+    expect(passengerPage).toContain(".filter(hasSessionId)");
+    expect(passengerPage).toContain("key={activeBusOnRoute.sessionId}");
+    expect(passengerPage).toContain("sessionId={activeBusOnRoute.sessionId}");
     expect(passengerPage).toContain("sessionId={feedbackSessionId}");
     expect(boardingView).toContain("result.joined !== true");
     expect(boardingView).toContain("onJoined?.()");
