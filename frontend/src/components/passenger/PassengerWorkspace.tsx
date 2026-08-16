@@ -87,6 +87,7 @@ export default function PassengerWorkspace() {
   const [completedRide, setCompletedRide] = useState<TrackedRide | null>(null);
   const [trackedSessionId, setTrackedSessionId] = useState("");
   const trackedRideRef = useRef<TrackedRide | null>(null);
+  const pendingCompletionSessionIdRef = useRef<string | null>(null);
   const latestTripStatesRef = useRef<Map<string, ActiveBusData["tripState"]>>(new Map());
 
   // Listen to Firebase Realtime Database for active buses using the existing
@@ -131,7 +132,8 @@ export default function PassengerWorkspace() {
           });
         }
 
-        const trackedRideSessionId = trackedRideRef.current?.sessionId;
+        const trackedRideSessionId =
+          trackedRideRef.current?.sessionId ?? pendingCompletionSessionIdRef.current;
         if (trackedRideSessionId && !nextTripStates.has(trackedRideSessionId)) {
           const previousState = latestTripStatesRef.current.get(trackedRideSessionId);
           if (previousState) nextTripStates.set(trackedRideSessionId, previousState);
@@ -150,7 +152,8 @@ export default function PassengerWorkspace() {
     };
   }, [connectionGeneration, markSnapshotReceived, resumeGeneration]);
 
-  const activeRouteIds = Array.from(new Set(activeBuses.map(b => b.routeId)));
+  const sessionBuses = activeBuses.filter(hasSessionId);
+  const activeRouteIds = Array.from(new Set(sessionBuses.map(b => b.routeId)));
   const availableRoutes = routes.filter(r => activeRouteIds.includes(r.id));
   const displayRoutes = availableRoutes.filter(
     (route) => (route.stops?.length ?? 0) > 0 || (route.waypoints?.length ?? 0) > 0,
@@ -175,9 +178,9 @@ export default function PassengerWorkspace() {
         shortName: "TERMINUS"
       } : null));
 
-  const busesOnRoute = activeBuses
-    .filter((bus) => bus.routeId === effectiveRouteId)
-    .filter(hasSessionId);
+  const busesOnRoute = sessionBuses.filter(
+    (bus) => bus.routeId === effectiveRouteId,
+  );
   const activeBusOnRoute =
     busesOnRoute.find((bus) => bus.sessionId === trackedSessionId) ??
     busesOnRoute.find((bus) => bus.sessionId === selectedLiveSessionId) ??
@@ -194,7 +197,7 @@ export default function PassengerWorkspace() {
 
     const activeRides = new Map<string, RideIdentity>();
     for (const bus of activeBuses) {
-      if (!bus.sessionId) continue;
+      if (!hasSessionId(bus)) continue;
       activeRides.set(bus.sessionId, {
         sessionId: bus.sessionId,
         busId: bus.busId,
@@ -210,11 +213,12 @@ export default function PassengerWorkspace() {
 
     switch (action.type) {
       case "complete": {
-        trackedRideRef.current = null;
         // queueMicrotask defers the state update out of the effect body
         // (satisfying react-hooks/set-state-in-effect) while ensuring it
         // cannot be cancelled by effect cleanup the way a setTimeout can.
         const rideToComplete = action.ride;
+        pendingCompletionSessionIdRef.current = rideToComplete.sessionId;
+        trackedRideRef.current = null;
         queueMicrotask(() => {
           setTrackedSessionId("");
           setCompletedRide(rideToComplete);
@@ -245,6 +249,7 @@ export default function PassengerWorkspace() {
         setShowFeedbackModal(true);
       }
       latestTripStatesRef.current.delete(completedRide.sessionId);
+      pendingCompletionSessionIdRef.current = null;
       setCompletedRide(null);
     }, POST_RIDE_FEEDBACK_DELAY_MS);
 
@@ -354,7 +359,7 @@ export default function PassengerWorkspace() {
                     routes={displayRoutes}
                     selectedRouteId={effectiveRouteId}
                     onClick={handleRouteSelect}
-                    getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
+                    getActiveBusesCount={(routeId) => sessionBuses.filter(b => b.routeId === routeId).length}
                   />
                 </>
               ) : (
