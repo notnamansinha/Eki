@@ -18,7 +18,7 @@ import AlertModal from "@/components/ui/AlertModal";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
 import { apiRequest } from "@/lib/apiClient";
-import { normalizeRouteStopPayload, routeIdFromName, stopShortName } from "@/lib/routeStopPayload";
+import { prepareRouteSavePayload, routeIdFromName, stopShortName } from "@/lib/routeStopPayload";
 
 
 /* ────────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -32,10 +32,6 @@ const ROUTE_COLORS = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444",
   "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
 ];
-const SAFE_ROUTE_ID = /^[A-Za-z0-9_-]{1,128}$/;
-const SAFE_ROUTE_COLOR = /^#[0-9a-fA-F]{6}$/;
-const ROUTE_TYPES = new Set<EditorState["type"]>(["up", "down", "circular"]);
-
 interface PlacePrediction {
   name: string;
   address?: string;
@@ -50,7 +46,11 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
   const [searchError, setSearchError] = useState("");
 
   useEffect(() => {
-    if (value.length < 3) return;
+    if (value.trim().length < 3) {
+      setSearching(false);
+      setPredictions([]);
+      return;
+    }
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       const currentUser = auth.currentUser;
@@ -90,6 +90,7 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
   const handleSelect = (prediction: PlacePrediction) => {
     setValue("");
     setPredictions([]);
+    setSearching(false);
     setSearchError("");
     onPlaceSelect(prediction);
   };
@@ -304,6 +305,14 @@ function RouteEditor({
     setState(s => ({ ...s, [k]: v }));
 
   const handlePlaceSelect = (place: { name: string; lat: number; lng: number }) => {
+    if (state.stops.length >= 27) {
+      setEditorAlertMsg("A route can have at most 27 stops.");
+      return;
+    }
+    if (!place.name.trim() || !Number.isFinite(place.lat) || place.lat < -90 || place.lat > 90 || !Number.isFinite(place.lng) || place.lng < -180 || place.lng > 180) {
+      setEditorAlertMsg("That search result does not include valid map coordinates. Pick another result or use Pick on Map.");
+      return;
+    }
     const name = place.name.trim();
     const stop: RouteStop = {
       id: `stop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -383,50 +392,12 @@ function RouteEditor({
   };
 
   const handleSave = async () => {
-    const routeName = state.name.trim();
-    if (!routeName) {
-      setEditorAlertMsg("Enter a display name for the route.");
+    const prepared = prepareRouteSavePayload(state);
+    if (!prepared.ok) {
+      setEditorAlertMsg(prepared.error);
       return;
     }
-    if (state.stops.length < 2) {
-      setEditorAlertMsg("Add at least 2 stops before saving the route.");
-      return;
-    }
-    const routeId = state.routeId.trim() || routeIdFromName(routeName);
-    if (!SAFE_ROUTE_ID.test(routeId)) {
-      setEditorAlertMsg("Route ID may contain only letters, numbers, hyphens, and underscores (max 128 characters).");
-      return;
-    }
-    if (routeName.length > 100) {
-      setEditorAlertMsg("Route name must be 100 characters or fewer.");
-      return;
-    }
-    if (!SAFE_ROUTE_COLOR.test(state.color) || !ROUTE_TYPES.has(state.type)) {
-      setEditorAlertMsg("Choose a valid route colour and type.");
-      return;
-    }
-    if (state.stops.length > 27) {
-      setEditorAlertMsg("A route can have at most 27 stops.");
-      return;
-    }
-    const stops = state.stops.map(normalizeRouteStopPayload);
-    const stopIds = new Set(stops.map(stop => stop.id));
-    const invalidStop = stops.find(stop =>
-      !SAFE_ROUTE_ID.test(stop.id) ||
-      !stop.name ||
-      stop.name.length > 100 ||
-      !stop.shortName ||
-      !Number.isFinite(stop.lat) || stop.lat < -90 || stop.lat > 90 ||
-      !Number.isFinite(stop.lng) || stop.lng < -180 || stop.lng > 180
-    );
-    if (stopIds.size !== stops.length) {
-      setEditorAlertMsg("Each stop must be added only once.");
-      return;
-    }
-    if (invalidStop) {
-      setEditorAlertMsg("Each stop needs a name and valid map coordinates.");
-      return;
-    }
+    const { routeId, body } = prepared.value;
     setSaving(true);
 
     try {
@@ -446,13 +417,7 @@ function RouteEditor({
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          name: routeName,
-          color: state.color,
-          type: state.type,
-          mode: state.mode,
-          stops,
-        }),
+        body: JSON.stringify(body),
         fallbackError: "Unable to compute route geometry. The route was not saved.",
       });
       if (!geometry.polyline || typeof geometry.distanceMeters !== "number" || typeof geometry.duration !== "string") {

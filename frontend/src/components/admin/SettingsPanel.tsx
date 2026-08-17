@@ -5,6 +5,7 @@ import { useSettings, GlobalSettings } from "@/hooks/useSettings";
 import { Save, Loader2, Eye, EyeOff, Megaphone, Clock, MessageSquare, Info } from "lucide-react";
 import AlertModal from "@/components/ui/AlertModal";
 import { errorMessage } from "@/lib/errors";
+import { validateSettingsInput } from "@/lib/adminValidation";
 
 function Field({
   label,
@@ -59,6 +60,11 @@ export default function SettingsPanel() {
     setOverrides(current => ({ ...current, [k]: v }));
 
   const handleSave = async () => {
+    const validationError = validateSettingsInput(draft);
+    if (validationError) {
+      setAlertMessage(validationError);
+      return;
+    }
     setSaving(true);
     try {
       await saveSettings(draft);

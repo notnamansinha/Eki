@@ -15,6 +15,7 @@ import CustomSelect from "@/components/ui/CustomSelect";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { errorMessage } from "@/lib/errors";
 import { apiRequest } from "@/lib/apiClient";
+import { validateOperatorInput, validateVehicleInput } from "@/lib/adminValidation";
 
 async function fleetRequest(path: string, method: "PUT" | "DELETE", body?: object) {
   if (!auth.currentUser) throw new Error("Fleet service is not configured.");
@@ -120,10 +121,14 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
 
   // â”€â”€ Bus CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleAddBus = async () => {
-    if (!newBusId || !newBusName) return;
+    const validationError = validateVehicleInput(newBusId, newBusName, newBusRoutes);
+    if (validationError) {
+      setErrorMsg(validationError);
+      return;
+    }
     try {
-      await fleetRequest(`/buses/${encodeURIComponent(newBusId)}`, "PUT", {
-        name: newBusName,
+      await fleetRequest(`/buses/${encodeURIComponent(newBusId.trim())}`, "PUT", {
+        name: newBusName.trim(),
         assignedRoutes: newBusRoutes,
       });
       setNewBusId(""); setNewBusName(""); setNewBusRoutes([]);
@@ -156,9 +161,14 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   };
 
   const handleSaveBus = async (id: string) => {
+    const validationError = validateVehicleInput(id, editBusName, editBusRoutes);
+    if (validationError) {
+      setErrorMsg(validationError);
+      return;
+    }
     try {
       await fleetRequest(`/buses/${encodeURIComponent(id)}`, "PUT", {
-        name: editBusName,
+        name: editBusName.trim(),
         assignedRoutes: editBusRoutes,
       });
       setEditingBusId(null);
@@ -167,14 +177,15 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
 
   // â”€â”€ Driver CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleAddDriver = async () => {
-    const authUid = newDriverAuthUid.trim();
-    if (!newDriverId || !newDriverName || !authUid) {
-      setErrorMsg("Operator ID, name, and Firebase Auth UID are required.");
+    const validationError = validateOperatorInput(newDriverId, newDriverName, newDriverAuthUid);
+    if (validationError) {
+      setErrorMsg(validationError);
       return;
     }
+    const authUid = newDriverAuthUid.trim();
     try {
-      await fleetRequest(`/drivers/${encodeURIComponent(newDriverId)}`, "PUT", {
-        name: newDriverName,
+      await fleetRequest(`/drivers/${encodeURIComponent(newDriverId.trim())}`, "PUT", {
+        name: newDriverName.trim(),
         authUid,
         assignedBusId: newDriverBusId || null,
       });
@@ -209,14 +220,15 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   };
 
   const handleSaveDriver = async (id: string) => {
-    const authUid = editDriverAuthUid.trim();
-    if (!authUid) {
-      setErrorMsg("Firebase Auth UID is required for every operator.");
+    const validationError = validateOperatorInput(id, editDriverName, editDriverAuthUid);
+    if (validationError) {
+      setErrorMsg(validationError);
       return;
     }
+    const authUid = editDriverAuthUid.trim();
     try {
       await fleetRequest(`/drivers/${encodeURIComponent(id)}`, "PUT", {
-        name: editDriverName,
+        name: editDriverName.trim(),
         authUid,
         assignedBusId: editDriverBusId || null,
       });
