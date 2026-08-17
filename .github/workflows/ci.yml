@@ -22,6 +22,22 @@ jobs:
           distribution: temurin
           java-version: "21"
       - run: npm ci
+      - name: Cache Next.js + backend TypeScript build caches
+        # Persistent Turbopack cache (.next/cache — includes the workbox SW
+        # replay cache), the backend emitted output, and incremental build info.
+        # The key hashes every build input so dependency or code changes get a fresh cache;
+        # restore-keys falls back to the most recent compatible cache on
+        # partial changes (Turbopack and tsc validate entries internally, so
+        # a stale cache is safe — worst case it's simply not reused).
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            frontend/.next/cache
+            backend/dist
+            backend/tsconfig.tsbuildinfo
+          key: build-cache-${{ runner.os }}-${{ hashFiles('package-lock.json', 'package.json', 'frontend/package.json', 'frontend/tsconfig.json', 'frontend/next.config.ts', 'frontend/src/**', 'frontend/public/**', 'backend/package.json', 'backend/tsconfig.json', 'backend/src/**', 'scripts/generate-sw.mjs') }}
+          restore-keys: |
+            build-cache-${{ runner.os }}-
       - run: npm run lint
       - run: npm test
         env:

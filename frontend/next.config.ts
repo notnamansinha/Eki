@@ -1,4 +1,61 @@
+import { createHash } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
 import type { NextConfig } from "next";
+
+/**
+ * Content hash of the frontend build inputs (source, public assets, configs).
+ * Used by generateBuildId so that `next build` is reproducible: unchanged
+ * source ⇒ same build ID ⇒ byte-identical out/ ⇒ the post-build workbox SW
+ * generation (scripts/generate-sw.mjs) can replay its cached sw.js instead of
+ * re-bundling. Changed source ⇒ new build ID ⇒ new _next/static/<id>/ URLs,
+ * which keeps Firebase's immutable caching safe for the manifest files.
+ */
+async function buildInputsHash(): Promise<string> {
+  const hash = createHash("sha256");
+  // `next build` always runs with cwd = the frontend project root.
+  const dir = process.cwd();
+  const lockfile = path.resolve(dir, "../package-lock.json");
+
+  // Only deterministic build inputs feed the hash — never build artifacts
+  // (.next/, out/, *.tsbuildinfo) which rewrite themselves on every build.
+  const ignored = new Set([
+    "node_modules",
+    ".next",
+    "out",
+    "tsconfig.tsbuildinfo",
+    ".vite",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "next-env.d.ts",
+  ]);
+
+  async function hashFile(relativePath: string, file: string): Promise<void> {
+    const contents = await readFile(file);
+    hash.update(`f\0${relativePath}\0${contents.length}\0`);
+    hash.update(contents);
+  }
+
+  async function walk(dirname: string): Promise<void> {
+    const entries = await readdir(dirname, { withFileTypes: true });
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      if (ignored.has(entry.name)) continue;
+      const full = path.join(dirname, entry.name);
+      if (entry.isDirectory()) {
+        await walk(full);
+      } else if (entry.isFile()) {
+        const relativePath = path.relative(dir, full).replaceAll("\\", "/");
+        await hashFile(relativePath, full);
+      }
+    }
+  }
+
+  await walk(dir);
+  await hashFile("../package-lock.json", lockfile);
+  return hash.digest("hex").slice(0, 32);
+}
 
 if (process.env.EKI_STRICT_PRODUCTION_BUILD === "true") {
   const requiredPublicVariables = [
@@ -34,6 +91,8 @@ if (process.env.EKI_STRICT_PRODUCTION_BUILD === "true") {
 
 const nextConfig: NextConfig = {
   output: "export",
+  // Deterministic build ID: reproducible builds (see buildInputsHash above).
+  generateBuildId: () => buildInputsHash(),
   images: {
     unoptimized: true,
   },

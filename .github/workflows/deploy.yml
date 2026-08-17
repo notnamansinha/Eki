@@ -70,6 +70,17 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Cache Next.js + backend TypeScript build caches
+        # Same cache namespace as ci.yml so deploys reuse what verification built.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            frontend/.next/cache
+            backend/dist
+            backend/tsconfig.tsbuildinfo
+          key: build-cache-${{ runner.os }}-${{ hashFiles('package-lock.json', 'package.json', 'frontend/package.json', 'frontend/tsconfig.json', 'frontend/next.config.ts', 'frontend/src/**', 'frontend/public/**', 'backend/package.json', 'backend/tsconfig.json', 'backend/src/**', 'scripts/generate-sw.mjs') }}
+          restore-keys: |
+            build-cache-${{ runner.os }}-
       - name: Strict production build (fail-closed env gate + CSP)
         env:
           NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
@@ -110,6 +121,17 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Cache Next.js + backend TypeScript build caches
+        # Same cache namespace as ci.yml so deploys reuse what verification built.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            frontend/.next/cache
+            backend/dist
+            backend/tsconfig.tsbuildinfo
+          key: build-cache-${{ runner.os }}-${{ hashFiles('package-lock.json', 'package.json', 'frontend/package.json', 'frontend/tsconfig.json', 'frontend/next.config.ts', 'frontend/src/**', 'frontend/public/**', 'backend/package.json', 'backend/tsconfig.json', 'backend/src/**', 'scripts/generate-sw.mjs') }}
+          restore-keys: |
+            build-cache-${{ runner.os }}-
       - name: Strict production build (fail-closed env gate + CSP)
         env:
           NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
