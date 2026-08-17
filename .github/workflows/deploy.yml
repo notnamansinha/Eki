@@ -76,8 +76,9 @@ jobs:
         with:
           path: |
             frontend/.next/cache
+            backend/dist
             backend/tsconfig.tsbuildinfo
-          key: build-cache-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('frontend/src/**', 'frontend/public/**', 'frontend/next.config.ts', 'backend/src/**', 'backend/tsconfig.json') }}
+          key: build-cache-${{ runner.os }}-${{ hashFiles('package-lock.json', 'package.json', 'frontend/package.json', 'frontend/tsconfig.json', 'frontend/next.config.ts', 'frontend/src/**', 'frontend/public/**', 'backend/package.json', 'backend/tsconfig.json', 'backend/src/**', 'scripts/generate-sw.mjs') }}
           restore-keys: |
             build-cache-${{ runner.os }}-
       - name: Strict production build (fail-closed env gate + CSP)
@@ -126,8 +127,9 @@ jobs:
         with:
           path: |
             frontend/.next/cache
+            backend/dist
             backend/tsconfig.tsbuildinfo
-          key: build-cache-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('frontend/src/**', 'frontend/public/**', 'frontend/next.config.ts', 'backend/src/**', 'backend/tsconfig.json') }}
+          key: build-cache-${{ runner.os }}-${{ hashFiles('package-lock.json', 'package.json', 'frontend/package.json', 'frontend/tsconfig.json', 'frontend/next.config.ts', 'frontend/src/**', 'frontend/public/**', 'backend/package.json', 'backend/tsconfig.json', 'backend/src/**', 'scripts/generate-sw.mjs') }}
           restore-keys: |
             build-cache-${{ runner.os }}-
       - name: Strict production build (fail-closed env gate + CSP)

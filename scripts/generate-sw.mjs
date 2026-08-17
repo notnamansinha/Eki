@@ -63,6 +63,17 @@ const config = {
 const cacheDir = path.join(frontendRoot, ".next", "cache", "sw");
 const cacheManifestPath = path.join(cacheDir, "manifest.json");
 const cacheSwPath = path.join(cacheDir, "sw.js");
+const generatorPath = fileURLToPath(import.meta.url);
+const require = createRequire(import.meta.url);
+const workboxPackages = [
+  "workbox-build",
+  "workbox-core",
+  "workbox-precaching",
+  "workbox-routing",
+  "workbox-strategies",
+  "workbox-expiration",
+  "workbox-cacheable-response",
+];
 
 /**
  * Semantic part of the workbox config — everything except the absolute paths
@@ -89,14 +100,20 @@ async function walk(directory) {
 
 /**
  * Content fingerprint of every input that can change the precache manifest.
- * A stable hash over: the semantic workbox config, the SW source, and the
- * contents of all files under globDirectory (excluding our own sw.js output).
+ * A stable hash over: the generator, resolved Workbox versions, semantic
+ * workbox config, SW source, and all files under globDirectory (excluding our
+ * own sw.js output).
  * `next build` regenerates out/ with fresh mtimes every run, so mtimes are
  * deliberately excluded.
  */
 async function fingerprint() {
   const hash = createHash("sha256");
   hash.update(JSON.stringify(fingerprintConfig));
+  hash.update(await readFile(generatorPath));
+  for (const packageName of workboxPackages) {
+    const { version } = require(`${packageName}/package.json`);
+    hash.update(`\n${packageName}@${version}\n`);
+  }
   hash.update(await readFile(config.swSrc));
   const files = (await walk(config.globDirectory)).sort();
   for (const file of files) {
@@ -115,16 +132,8 @@ async function generate() {
   // injectManifest replaces the precache placeholder but intentionally leaves
   // module imports untouched. Bundle the injected source so browsers receive a
   // self-contained classic service worker rather than unresolved bare imports.
-  const require = createRequire(import.meta.url);
   let unbundledCode = await readFile(swDest, "utf8");
-  for (const packageName of [
-    "workbox-core",
-    "workbox-precaching",
-    "workbox-routing",
-    "workbox-strategies",
-    "workbox-expiration",
-    "workbox-cacheable-response",
-  ]) {
+  for (const packageName of workboxPackages.slice(1)) {
     // Workbox's bundler stages source in the OS temp directory, outside this
     // repository's node_modules ancestry. Resolve the entry modules here so
     // Rollup can follow both these imports and their nested dependencies.
@@ -177,11 +186,13 @@ async function main() {
   const result = await generate();
 
   await mkdir(cacheDir, { recursive: true });
+  // The manifest is the commit marker: only publish it after its worker is
+  // safely in place, so interrupted writes cannot replay a stale worker.
+  await copyFile(swDest, cacheSwPath);
   await writeFile(
     cacheManifestPath,
     JSON.stringify({ fingerprint: current, count: result.count, size: result.size })
   );
-  await copyFile(swDest, cacheSwPath);
 
   console.log(
     `✅ SW generated: ${result.count} files precached (${(result.size / 1024).toFixed(0)} KB total)`

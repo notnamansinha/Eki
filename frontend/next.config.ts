@@ -15,6 +15,7 @@ async function buildInputsHash(): Promise<string> {
   const hash = createHash("sha256");
   // `next build` always runs with cwd = the frontend project root.
   const dir = process.cwd();
+  const lockfile = path.resolve(dir, "../package-lock.json");
 
   // Only deterministic build inputs feed the hash — never build artifacts
   // (.next/, out/, *.tsbuildinfo) which rewrite themselves on every build.
@@ -30,24 +31,29 @@ async function buildInputsHash(): Promise<string> {
     "next-env.d.ts",
   ]);
 
+  async function hashFile(relativePath: string, file: string): Promise<void> {
+    const contents = await readFile(file);
+    hash.update(`f\0${relativePath}\0${contents.length}\0`);
+    hash.update(contents);
+  }
+
   async function walk(dirname: string): Promise<void> {
-    const entries = await readdir(dirname, { withFileTypes: true }).catch(() => []);
-    entries.sort((a, b) => a.name.localeCompare(b.name));
+    const entries = await readdir(dirname, { withFileTypes: true });
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
       if (ignored.has(entry.name)) continue;
       const full = path.join(dirname, entry.name);
       if (entry.isDirectory()) {
-        hash.update(`d:${entry.name}\n`);
         await walk(full);
       } else if (entry.isFile()) {
-        hash.update(`f:${entry.name}:`);
-        hash.update(await readFile(full));
-        hash.update("\n");
+        const relativePath = path.relative(dir, full).replaceAll("\\", "/");
+        await hashFile(relativePath, full);
       }
     }
   }
 
   await walk(dir);
+  await hashFile("../package-lock.json", lockfile);
   return hash.digest("hex").slice(0, 32);
 }
 
