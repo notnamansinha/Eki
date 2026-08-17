@@ -10,6 +10,7 @@ import {
   canDeleteRideHistory,
   dedupeStopRecords,
   destinationReachedAt,
+  mergeRideHistorySessions,
   resolveArrivalStopName,
   rideHistoryDeletionTransition,
   timestampDate,
@@ -113,10 +114,23 @@ async function deleteRideHistoryRequest(sessionId: string): Promise<void> {
 
 export default function RideHistoryPanel() {
   const {
-    data: sessions,
-    loading: sessionsLoading,
-    error: sessionsError,
-    retry: retrySessions,
+    data: armedSessions,
+    loading: armedSessionsLoading,
+    error: armedSessionsError,
+    retry: retryArmedSessions,
+  } = useCollection<RideSession>(
+    "ride_sessions",
+    {
+      maxResults: 100,
+      orderByDirection: "desc",
+      orderByField: "armedAt",
+    },
+  );
+  const {
+    data: startedSessions,
+    loading: startedSessionsLoading,
+    error: startedSessionsError,
+    retry: retryStartedSessions,
   } = useCollection<RideSession>(
     "ride_sessions",
     {
@@ -125,6 +139,16 @@ export default function RideHistoryPanel() {
       orderByField: "startTime",
     },
   );
+  const sessions = useMemo(
+    () => mergeRideHistorySessions(armedSessions, startedSessions),
+    [armedSessions, startedSessions],
+  );
+  const sessionsLoading = armedSessionsLoading || startedSessionsLoading;
+  const sessionsError = armedSessionsError ?? startedSessionsError;
+  const retrySessions = () => {
+    retryArmedSessions();
+    retryStartedSessions();
+  };
   const { buses, loading: busesLoading, error: busesError, retry: retryBuses } = useBuses();
   const { routes, loading: routesLoading, error: routesError, retry: retryRoutes } = useRoutes();
   const { drivers, loading: driversLoading } = useDrivers();

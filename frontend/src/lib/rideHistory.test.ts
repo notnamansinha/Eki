@@ -5,6 +5,7 @@ import {
   canDeleteRideHistory,
   dedupeStopRecords,
   destinationReachedAt,
+  mergeRideHistorySessions,
   resolveArrivalStopName,
   rideHistoryDeletionTransition,
   timestampMillis,
@@ -26,6 +27,37 @@ describe("ride history timestamp normalization", () => {
     expect(timestampMillis(undefined)).toBeNull();
     expect(timestampMillis(Number.NaN)).toBeNull();
     expect(timestampMillis(new Date("invalid"))).toBeNull();
+  });
+});
+
+describe("ride history query merge", () => {
+  it("includes armed rides without startTime and legacy rides without armedAt", () => {
+    const sessions = mergeRideHistorySessions(
+      [
+        { id: "armed-only", armedAt: 1_754_000_300_000 },
+        { id: "both", armedAt: 1_754_000_200_000, startTime: 1_754_000_210_000 },
+      ],
+      [
+        { id: "both", armedAt: 1_754_000_200_000, startTime: 1_754_000_210_000 },
+        { id: "legacy-started", startTime: 1_754_000_100_000 },
+      ],
+    );
+
+    expect(sessions.map((session) => session.id)).toEqual([
+      "armed-only",
+      "both",
+      "legacy-started",
+    ]);
+  });
+
+  it("deduplicates sessions and applies the display limit", () => {
+    const sessions = mergeRideHistorySessions(
+      [{ id: "new", armedAt: 2_000 }, { id: "same", armedAt: 1_000 }],
+      [{ id: "same", startTime: 1_100 }, { id: "old", startTime: 500 }],
+      2,
+    );
+
+    expect(sessions.map((session) => session.id)).toEqual(["new", "same"]);
   });
 });
 

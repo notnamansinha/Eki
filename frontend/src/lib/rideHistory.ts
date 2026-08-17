@@ -26,6 +26,12 @@ export interface StopNameRecord {
   name?: unknown;
 }
 
+export interface RideHistorySortable {
+  id: string;
+  armedAt?: TimestampValue;
+  startTime?: TimestampValue;
+}
+
 export const ARRIVAL_STOP_UNAVAILABLE = "Arrival stop unavailable";
 export const RIDE_HISTORY_DELETE_WARNING =
   "The passenger manifest, route log, and messages will be permanently deleted. This cannot be undone.";
@@ -87,6 +93,29 @@ export function timestampMillis(value: TimestampValue): number | null {
 export function timestampDate(value: TimestampValue): Date | null {
   const millis = timestampMillis(value);
   return millis === null ? null : new Date(millis);
+}
+
+/**
+ * Combines the armedAt and startTime queries used by Admin History. Firestore
+ * orderBy omits documents without that field, so either query alone loses
+ * valid sessions: armed-but-not-started rides or older started records.
+ */
+export function mergeRideHistorySessions<T extends RideHistorySortable>(
+  armedSessions: T[],
+  startedSessions: T[],
+  limit = 100,
+): T[] {
+  const byId = new Map<string, T>();
+  for (const session of [...startedSessions, ...armedSessions]) {
+    byId.set(session.id, session);
+  }
+  return [...byId.values()]
+    .sort((left, right) => {
+      const leftTime = timestampMillis(left.armedAt ?? left.startTime) ?? 0;
+      const rightTime = timestampMillis(right.armedAt ?? right.startTime) ?? 0;
+      return rightTime - leftTime;
+    })
+    .slice(0, limit);
 }
 
 /**
