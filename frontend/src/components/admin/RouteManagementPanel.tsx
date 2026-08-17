@@ -277,6 +277,7 @@ function RouteEditor({
   const [saving, setSaving] = useState(false);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [editorAlertMsg, setEditorAlertMsg] = useState<string | null>(null);
+  const [positionMessage, setPositionMessage] = useState("Drag any map pin to fine-tune a stop's location.");
 
   // ── Traffic layer rendered imperatively ──────────────────────────────────
   const TrafficLayer = () => {
@@ -330,12 +331,14 @@ function RouteEditor({
     });
   };
 
-  const updateStopPosition = (i: number, lat: number, lng: number) =>
+  const updateStopPosition = (i: number, lat: number, lng: number) => {
     setState(s => {
       const stops = [...s.stops];
       stops[i] = { ...stops[i], lat, lng };
       return { ...s, stops, polyline: undefined };
     });
+    setPositionMessage(`Stop ${stopLabel(i)} moved. Save the route to publish the new location.`);
+  };
 
   const handleSave = async () => {
     const routeId = state.routeId.trim();
@@ -506,12 +509,13 @@ function RouteEditor({
                 key={`s-${i}`}
                 position={{ lat: stop.lat, lng: stop.lng }}
                 draggable
+                onDragStart={() => setPositionMessage(`Moving stop ${stopLabel(i)}…`)}
                 onDragEnd={(e: google.maps.MapMouseEvent) => {
                   if (e.latLng) updateStopPosition(i, e.latLng.lat(), e.latLng.lng());
                 }}
                 title={`Drag to move stop ${stopLabel(i)}`}
               >
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "grab" }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "grab", userSelect: "none", touchAction: "none" }}>
                   <div style={{
                     width: 32, height: 32, borderRadius: 12,
                     background: state.color, border: "3px solid #09090b",
@@ -529,6 +533,13 @@ function RouteEditor({
               </AdvancedMarker>
             ))}
           </GoogleMap>
+          <p
+            className="absolute bottom-3 left-3 right-3 rounded-lg border border-white/10 bg-[#09090b]/90 px-3 py-2 text-xs font-medium text-white/70 shadow-lg pointer-events-none"
+            role="status"
+            aria-live="polite"
+          >
+            {positionMessage}
+          </p>
         </div>
 
         {/* Stop list sidebar */}
