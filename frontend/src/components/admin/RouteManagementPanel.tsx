@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
-  Map as GoogleMap, AdvancedMarker, useMap,
+  Map as GoogleMap, AdvancedMarker, useMap, type MapMouseEvent as VisMapMouseEvent,
 } from "@vis.gl/react-google-maps";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { useRoutes, RouteData, RouteStop } from "@/hooks/useRoutes";
@@ -10,7 +10,7 @@ import { auth } from "@/lib/firebaseAuth";
 import {
   Trash2, Plus, X, CheckCircle, MapPin, Loader2, Search,
   Pencil, GripVertical, Save,
-  ChevronDown, ChevronUp, ArrowLeft,
+  ChevronDown, ChevronUp, ArrowLeft, Crosshair,
 } from "lucide-react";
 import CustomSelect from "@/components/ui/CustomSelect";
 import ConfirmModal from "@/components/ui/ConfirmModal";
@@ -18,7 +18,7 @@ import AlertModal from "@/components/ui/AlertModal";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
 import { apiRequest } from "@/lib/apiClient";
-import { normalizeRouteStopPayload, stopShortName } from "@/lib/routeStopPayload";
+import { normalizeRouteStopPayload, routeIdFromName, stopShortName } from "@/lib/routeStopPayload";
 
 
 /* ────────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -229,11 +229,14 @@ function StopItem({ stop, index, onRemove, onNameChange }: {
       ) : (
         <button
           type="button"
-          className="flex-1 min-h-11 text-left text-sm text-white/80 font-medium truncate cursor-text min-w-0"
+          className="flex-1 min-h-11 text-left cursor-text min-w-0"
           onClick={() => setEditing(true)}
           title="Click to rename"
         >
-          {stop.name}
+          <span className="block truncate text-sm text-white/80 font-medium">{stop.name}</span>
+          <span className="block text-[10px] tabular-nums text-white/35">
+            {Number(stop.lat).toFixed(6)}, {Number(stop.lng).toFixed(6)}
+          </span>
         </button>
       )}
       <button onClick={() => onRemove(index)} aria-label={`Remove stop ${stop.name}`} className="w-11 h-11 rounded-lg text-white/15 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all shrink-0">
@@ -279,6 +282,8 @@ function RouteEditor({
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [editorAlertMsg, setEditorAlertMsg] = useState<string | null>(null);
   const [positionMessage, setPositionMessage] = useState("Drag any map pin to fine-tune a stop's location.");
+  const [placingManualStop, setPlacingManualStop] = useState(false);
+  const [routeIdEdited, setRouteIdEdited] = useState(Boolean(initial.routeId));
 
   // ── Traffic layer rendered imperatively ──────────────────────────────────
   const TrafficLayer = () => {
@@ -309,6 +314,42 @@ function RouteEditor({
     };
     setState(s => ({ ...s, stops: [...s.stops, stop], polyline: undefined }));
     setMapCenter({ lat: place.lat, lng: place.lng });
+  };
+
+  const handleMapClick = (event: VisMapMouseEvent) => {
+    if (!placingManualStop || !event.detail.latLng) return;
+    event.stop();
+    if (state.stops.length >= 27) {
+      setEditorAlertMsg("A route can have at most 27 stops.");
+      setPlacingManualStop(false);
+      return;
+    }
+    const { lat, lng } = event.detail.latLng;
+    setState(current => {
+      const label = stopLabel(current.stops.length);
+      const name = `Map stop ${label}`;
+      const stop: RouteStop = {
+        id: `stop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name,
+        shortName: name,
+        lat,
+        lng,
+      };
+      setPositionMessage(`Stop ${label} added at ${lat.toFixed(6)}, ${lng.toFixed(6)}. Click its name to rename it.`);
+      return { ...current, stops: [...current.stops, stop], polyline: undefined };
+    });
+    setPlacingManualStop(false);
+    setMapCenter({ lat, lng });
+  };
+
+  const updateRouteName = (name: string) => {
+    setState(current => ({
+      ...current,
+      name,
+      routeId: current.mode === "create" && !routeIdEdited
+        ? routeIdFromName(name)
+        : current.routeId,
+    }));
   };
 
   const removeStop = (i: number) =>
@@ -342,12 +383,16 @@ function RouteEditor({
   };
 
   const handleSave = async () => {
-    const routeId = state.routeId.trim();
     const routeName = state.name.trim();
-    if (!routeId || !routeName || state.stops.length < 2) {
-      setEditorAlertMsg("Route ID, name, and at least 2 stops are required.");
+    if (!routeName) {
+      setEditorAlertMsg("Enter a display name for the route.");
       return;
     }
+    if (state.stops.length < 2) {
+      setEditorAlertMsg("Add at least 2 stops before saving the route.");
+      return;
+    }
+    const routeId = state.routeId.trim() || routeIdFromName(routeName);
     if (!SAFE_ROUTE_ID.test(routeId)) {
       setEditorAlertMsg("Route ID may contain only letters, numbers, hyphens, and underscores (max 128 characters).");
       return;
@@ -438,9 +483,12 @@ function RouteEditor({
           <label className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Route ID</label>
           <input
             value={state.routeId}
-            onChange={e => setField("routeId", e.target.value)}
+            onChange={e => {
+              setRouteIdEdited(true);
+              setField("routeId", e.target.value);
+            }}
             disabled={state.mode === "edit"}
-            placeholder="route_101"
+            placeholder="Generated from name"
             className="h-11 bg-[#09090b] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/15 font-medium disabled:opacity-40"
           />
         </div>
@@ -480,6 +528,21 @@ function RouteEditor({
 
         <div className="flex gap-2 shrink-0 self-end">
           <button
+            type="button"
+            onClick={() => {
+              setPlacingManualStop(active => {
+                const next = !active;
+                setPositionMessage(next
+                  ? "Click any point or visible place on the map to add a stop."
+                  : "Drag any map pin to fine-tune a stop's location.");
+                return next;
+              });
+            }}
+            className={`h-11 px-4 rounded-xl border font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 ${placingManualStop ? "border-emerald-400 bg-emerald-500/15 text-emerald-300" : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10"}`}
+          >
+            <Crosshair className="w-3.5 h-3.5" /> {placingManualStop ? "Click Map" : "Pick on Map"}
+          </button>
+          <button
             onClick={handleSave}
             disabled={saving || state.stops.length < 2}
             className="h-11 px-5 rounded-xl bg-white text-[#09090b] font-black text-xs uppercase tracking-widest transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-white/90 shadow-lg"
@@ -495,7 +558,7 @@ function RouteEditor({
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
         {/* Map */}
         <div className="flex-1 relative min-h-[260px]">
-          <GoogleMap mapId={MAPS_MAP_ID} defaultCenter={DEFAULT_CENTER} defaultZoom={13} style={{ width: "100%", height: "100%" }} {...MAP_OPTIONS}>
+          <GoogleMap mapId={MAPS_MAP_ID} defaultCenter={DEFAULT_CENTER} defaultZoom={13} style={{ width: "100%", height: "100%" }} onClick={handleMapClick} {...MAP_OPTIONS}>
             <TrafficLayer />
             <MapCenter center={mapCenter} />
             <DirectionsRoute
@@ -549,7 +612,7 @@ function RouteEditor({
             <label className="text-[9px] text-white/30 font-black uppercase tracking-widest block mb-1.5">Display Name</label>
             <input
               value={state.name}
-              onChange={e => setField("name", e.target.value)}
+              onChange={e => updateRouteName(e.target.value)}
               placeholder="e.g. Shela to LD"
               className="w-full h-11 bg-[#0f0f12] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/15 font-medium"
             />
