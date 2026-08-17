@@ -18,6 +18,7 @@ import AlertModal from "@/components/ui/AlertModal";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
 import { apiRequest } from "@/lib/apiClient";
+import { normalizeRouteStopPayload, stopShortName } from "@/lib/routeStopPayload";
 
 
 /* ────────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -34,10 +35,6 @@ const ROUTE_COLORS = [
 const SAFE_ROUTE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const SAFE_ROUTE_COLOR = /^#[0-9a-fA-F]{6}$/;
 const ROUTE_TYPES = new Set<EditorState["type"]>(["up", "down", "circular"]);
-
-function stopShortName(name: string): string {
-  return name.split(",", 1)[0].trim().slice(0, 32);
-}
 
 interface PlacePrediction {
   name: string;
@@ -367,12 +364,7 @@ function RouteEditor({
       setEditorAlertMsg("A route can have at most 27 stops.");
       return;
     }
-    const stops = state.stops.map(stop => ({
-      ...stop,
-      id: stop.id.trim(),
-      name: stop.name.trim(),
-      shortName: stopShortName(stop.name),
-    }));
+    const stops = state.stops.map(normalizeRouteStopPayload);
     const stopIds = new Set(stops.map(stop => stop.id));
     const invalidStop = stops.find(stop =>
       !SAFE_ROUTE_ID.test(stop.id) ||
