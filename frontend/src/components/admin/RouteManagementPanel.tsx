@@ -31,6 +31,13 @@ const ROUTE_COLORS = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444",
   "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
 ];
+const SAFE_ROUTE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const SAFE_ROUTE_COLOR = /^#[0-9a-fA-F]{6}$/;
+const ROUTE_TYPES = new Set<EditorState["type"]>(["up", "down", "circular"]);
+
+function stopShortName(name: string): string {
+  return name.split(",", 1)[0].trim().slice(0, 32);
+}
 
 interface PlacePrediction {
   name: string;
@@ -290,10 +297,11 @@ function RouteEditor({
     setState(s => ({ ...s, [k]: v }));
 
   const handlePlaceSelect = (place: { name: string; lat: number; lng: number }) => {
+    const name = place.name.trim();
     const stop: RouteStop = {
-      id: `stop-${Date.now()}`,
-      name: place.name,
-      shortName: place.name.split(",")[0],
+      id: `stop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      shortName: stopShortName(name),
       lat: place.lat,
       lng: place.lng,
     };
@@ -307,7 +315,8 @@ function RouteEditor({
   const renameStop = (i: number, name: string) =>
     setState(s => {
       const stops = [...s.stops];
-      stops[i] = { ...stops[i], name, shortName: name.split(",")[0] };
+      const trimmedName = name.trim();
+      stops[i] = { ...stops[i], name: trimmedName, shortName: stopShortName(trimmedName) };
       return { ...s, stops, polyline: undefined };
     });
 
@@ -329,12 +338,45 @@ function RouteEditor({
     });
 
   const handleSave = async () => {
-    if (!state.routeId || !state.name || state.stops.length < 2) {
+    const routeId = state.routeId.trim();
+    const routeName = state.name.trim();
+    if (!routeId || !routeName || state.stops.length < 2) {
       setEditorAlertMsg("Route ID, name, and at least 2 stops are required.");
+      return;
+    }
+    if (!SAFE_ROUTE_ID.test(routeId)) {
+      setEditorAlertMsg("Route ID may contain only letters, numbers, hyphens, and underscores (max 128 characters).");
+      return;
+    }
+    if (routeName.length > 100) {
+      setEditorAlertMsg("Route name must be 100 characters or fewer.");
+      return;
+    }
+    if (!SAFE_ROUTE_COLOR.test(state.color) || !ROUTE_TYPES.has(state.type)) {
+      setEditorAlertMsg("Choose a valid route colour and type.");
       return;
     }
     if (state.stops.length > 27) {
       setEditorAlertMsg("A route can have at most 27 stops.");
+      return;
+    }
+    const stops = state.stops.map(stop => ({
+      ...stop,
+      id: stop.id.trim(),
+      name: stop.name.trim(),
+      shortName: stopShortName(stop.name),
+    }));
+    const stopIds = new Set(stops.map(stop => stop.id));
+    if (stops.some(stop =>
+      !SAFE_ROUTE_ID.test(stop.id) ||
+      stopIds.size !== stops.length ||
+      !stop.name ||
+      stop.name.length > 100 ||
+      !stop.shortName ||
+      !Number.isFinite(stop.lat) || stop.lat < -90 || stop.lat > 90 ||
+      !Number.isFinite(stop.lng) || stop.lng < -180 || stop.lng > 180
+    )) {
+      setEditorAlertMsg("Each stop needs a unique name and valid map coordinates.");
       return;
     }
     setSaving(true);
@@ -350,18 +392,18 @@ function RouteEditor({
         polyline?: string;
         distanceMeters?: number;
         duration?: string;
-      }>(`/api/routes/${encodeURIComponent(state.routeId)}`, {
+      }>(`/api/routes/${encodeURIComponent(routeId)}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          name: state.name,
+          name: routeName,
           color: state.color,
           type: state.type,
           mode: state.mode,
-          stops: state.stops,
+          stops,
         }),
         fallbackError: "Unable to compute route geometry. The route was not saved.",
       });
