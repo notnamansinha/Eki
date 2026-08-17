@@ -36,7 +36,14 @@ cloudflared tunnel --url http://localhost:4000
 Confirm `https://<generated-host>.trycloudflare.com/health` returns HTTP 200,
 then put that origin (without `/health` or another path) in `BACKEND_URL` inside
 the ignored `hardware/include/secrets.h`; verify `BACKEND_ROOT_CA`, rebuild, and
-flash the ESP32. Keep `cloudflared` running throughout the test. Quick Tunnel
+flash the ESP32. With the board on COM3, use:
+
+```powershell
+py -m platformio run --project-dir hardware -e esp32dev -t upload --upload-port COM3
+py -m platformio device monitor --port COM3 --baud 115200
+```
+
+Replace `COM3` if Windows assigns a different port. Keep `cloudflared` running throughout the test. Quick Tunnel
 hostnames are temporary and usually change when the process restarts, requiring
 `BACKEND_URL` to be updated and the device reflashed. Use a named tunnel or
 permanent HTTPS API domain for hosted/stable operation.
