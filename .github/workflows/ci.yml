@@ -17,10 +17,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
-        with:
-          distribution: temurin
-          java-version: "21"
+      - name: Use runner-provided Java 21
+        # ubuntu-latest already includes Java 21. Using the image-provided JDK
+        # avoids a separate codeload.github.com action download, which can be
+        # rate-limited before any repository tests get a chance to run.
+        run: |
+          test -x "$JAVA_HOME_21_X64/bin/java"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+          "$JAVA_HOME_21_X64/bin/java" -version
       - run: npm ci
       - name: Cache Next.js + backend TypeScript build caches
         # Persistent Turbopack cache (.next/cache — includes the workbox SW
