@@ -41,6 +41,7 @@ function stopShortName(name: string): string {
 
 interface PlacePrediction {
   name: string;
+  address?: string;
   lat: number;
   lng: number;
 }
@@ -130,6 +131,9 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
               onClick={() => handleSelect(prediction)}
             >
               <span className="font-semibold text-pretty">{prediction.name}</span>
+              {prediction.address && (
+                <span className="mt-0.5 block text-white/40 text-pretty">{prediction.address}</span>
+              )}
             </button>
           ))}
         </div>
@@ -370,16 +374,20 @@ function RouteEditor({
       shortName: stopShortName(stop.name),
     }));
     const stopIds = new Set(stops.map(stop => stop.id));
-    if (stops.some(stop =>
+    const invalidStop = stops.find(stop =>
       !SAFE_ROUTE_ID.test(stop.id) ||
-      stopIds.size !== stops.length ||
       !stop.name ||
       stop.name.length > 100 ||
       !stop.shortName ||
       !Number.isFinite(stop.lat) || stop.lat < -90 || stop.lat > 90 ||
       !Number.isFinite(stop.lng) || stop.lng < -180 || stop.lng > 180
-    )) {
-      setEditorAlertMsg("Each stop needs a unique name and valid map coordinates.");
+    );
+    if (stopIds.size !== stops.length) {
+      setEditorAlertMsg("Each stop must be added only once.");
+      return;
+    }
+    if (invalidStop) {
+      setEditorAlertMsg("Each stop needs a name and valid map coordinates.");
       return;
     }
     setSaving(true);

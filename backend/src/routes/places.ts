@@ -8,6 +8,7 @@ const searchCache = new Map<string, { expiresAt: number; results: PlaceResult[] 
 
 interface PlaceResult {
   name: string;
+  address?: string;
   lat: number;
   lng: number;
 }
@@ -76,11 +77,15 @@ router.get("/search", placeSearchLimiter, requireAdmin, async (req: Request, res
           const location = value.location as { latitude?: unknown; longitude?: unknown } | undefined;
           const title = typeof displayName?.text === "string" ? displayName.text : "";
           const address = typeof value.formattedAddress === "string" ? value.formattedAddress : "";
-          const name = address && address !== title ? `${title} — ${address}` : title;
+          // A stop name is persisted with a strict 100-character limit. Keep
+          // the concise Google display name as the value saved to the route;
+          // return the address separately so admins can still distinguish
+          // similarly named search results without creating invalid stops.
+          const name = title.trim().slice(0, 100);
           const lat = Number(location?.latitude);
           const lng = Number(location?.longitude);
           return name && Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180
-            ? [{ name, lat, lng }]
+            ? [{ name, ...(address ? { address } : {}), lat, lng }]
             : [];
         })
       : [];
