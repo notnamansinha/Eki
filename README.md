@@ -2,6 +2,45 @@
 
 Eki is a single-university bus-tracking system. An ESP32 reads a NEO-M8N GNSS receiver and pushes validated fixes over HTTPS to an Express backend. The backend owns identity and trip progression, projects current state to Firebase Realtime Database (RTDB), and persists configuration/recovery/history in Firestore. A static Next.js PWA provides passenger and administrator workspaces; administrators perform ride operations for assigned fleet operators.
 
+## Testing phase: start locally before hosting
+
+Run the complete application locally and verify it before configuring permanent hosting:
+
+```powershell
+npm install
+Copy-Item backend/.env.example backend/.env
+Copy-Item frontend/env.production.example frontend/.env.local
+```
+
+Fill the copied Firebase/Maps values and use these local origins: set
+`PORT=4000` and `CORS_ORIGIN=http://localhost:3000` in
+`backend/.env`, and set `NEXT_PUBLIC_BACKEND_URL=http://localhost:4000` in
+`frontend/.env.local`. Then start both services:
+
+```powershell
+npm run dev
+```
+
+The frontend is then available at
+`http://localhost:3000`, the backend at `http://localhost:4000`, and backend
+health at `http://localhost:4000/health`.
+
+If the ESP32 or a phone must reach the laptop, `localhost` will not work from
+those devices. For short testing only, keep the backend running and open a
+second terminal:
+
+```powershell
+cloudflared tunnel --url http://localhost:4000
+```
+
+Confirm `https://<generated-host>.trycloudflare.com/health` returns HTTP 200,
+then put that origin (without `/health` or another path) in `BACKEND_URL` inside
+the ignored `hardware/include/secrets.h`; verify `BACKEND_ROOT_CA`, rebuild, and
+flash the ESP32. Keep `cloudflared` running throughout the test. Quick Tunnel
+hostnames are temporary and usually change when the process restarts, requiring
+`BACKEND_URL` to be updated and the device reflashed. Use a named tunnel or
+permanent HTTPS API domain for hosted/stable operation.
+
 ## How it works
 
 ```mermaid
