@@ -426,13 +426,27 @@ describe("production security configuration", () => {
     expect(usersRoute).toContain("transaction.create(userRef");
     expect(usersRoute).toContain("req.user?.email");
     expect(usersRoute).not.toContain("req.body");
+    expect(usersRoute).toContain("ensurePassengerRoleClaim");
+    expect(usersRoute).toContain('passengerClaims.role = "passenger"');
+    expect(usersRoute).not.toContain('passengerClaims.role = "admin"');
     expect(settingsRoute).toContain('router.put("/", requireAdmin');
     expect(settingsRoute).toContain('"announcementActive"');
     // The frontend asks the backend instead of writing directly.
     expect(authHook).toContain("/api/users/bootstrap");
+    expect(authHook).toContain("claimsUpdated === true");
+    expect(authHook).toContain("firebaseUser.getIdToken(true)");
     expect(authHook).not.toContain("setDoc(userDocRef");
     expect(settingsHook).toContain("/api/settings");
     expect(settingsHook).not.toContain('setDoc(doc(db, "settings"');
+  });
+
+  it("allows the minimal reCAPTCHA Enterprise CSP surface required by App Check", () => {
+    const cspBuild = workspaceFile("scripts/update-csp.mjs");
+
+    expect(cspBuild).toContain('"https://www.google.com/recaptcha/"');
+    expect(cspBuild).toContain('"https://recaptcha.google.com/recaptcha/"');
+    expect(cspBuild).toContain("const frameSources");
+    expect(cspBuild).toContain("/frame-src [^;]+;/");
   });
 
   it("clears in-memory data caches on logout", () => {
@@ -775,7 +789,19 @@ describe("production security configuration", () => {
     ).headers as Array<{ key: string; value: string }>;
     const headers = new Map(defaultHeaders.map(({ key, value }) => [key, value]));
 
-    expect(headers.get("Content-Security-Policy")).toContain("default-src 'self'");
+    const csp = headers.get("Content-Security-Policy") ?? "";
+    expect(csp).toContain("default-src 'self'");
+    const directives = new Map(csp.split(";").map((directive: string) => {
+      const sources = directive.trim().split(/\s+/);
+      return [sources[0], sources.slice(1)] as const;
+    }));
+    expect(directives.get("frame-src")).toEqual([
+      "https://accounts.google.com",
+      "https://*.firebaseapp.com",
+      "https://www.google.com/recaptcha/",
+      "https://recaptcha.google.com/recaptcha/",
+    ]);
+    expect(directives.get("connect-src")).toContain("https://www.google.com/recaptcha/");
     expect(headers.get("Strict-Transport-Security")).toMatch(/^max-age=\d+/);
     expect(headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(headers.get("X-Frame-Options")).toBe("DENY");

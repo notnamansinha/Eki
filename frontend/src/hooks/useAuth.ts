@@ -148,42 +148,46 @@ function useAuthState(): AuthContextValue {
 
               if (!isCurrentAuth()) return;
 
-              let role: UserRole = "passenger";
+              let role: UserRole = userSnap.exists()
+                ? (userSnap.data()?.role as UserRole) ?? "passenger"
+                : "passenger";
 
-              if (userSnap.exists()) {
-                role = (userSnap.data()?.role as UserRole) ?? "passenger";
-              } else {
-                // Ask the backend to create the profile (always as 'passenger';
-                // it never overwrites an existing role).
-                try {
-                  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
-                  const idToken = await firebaseUser.getIdToken();
-                  if (backendUrl) {
-                    const response = await fetch(`${backendUrl}/api/users/bootstrap`, {
-                      method: "POST",
-                      headers: {
-                        Authorization: `Bearer ${idToken}`,
-                      },
-                      signal: AbortSignal.timeout(10_000),
-                    });
-                    const result = await response.json().catch(() => ({})) as {
-                      role?: string;
-                      error?: string;
-                    };
-                    if (!response.ok) {
-                      throw new Error(result.error || "Unable to bootstrap user profile.");
-                    }
-                    if (
-                      result.role === "passenger" ||
-                      result.role === "driver" ||
-                      result.role === "admin"
-                    ) {
-                      role = result.role;
-                    }
+              // A missing token claim is repaired through the authenticated
+              // backend even when the Firestore profile already exists. The
+              // backend may issue only the least-privileged passenger claim;
+              // driver/admin authorization remains assignment-controlled.
+              try {
+                const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+                const idToken = await firebaseUser.getIdToken();
+                if (backendUrl) {
+                  const response = await fetch(`${backendUrl}/api/users/bootstrap`, {
+                    method: "POST",
+                    headers: {
+                      Authorization: `Bearer ${idToken}`,
+                    },
+                    signal: AbortSignal.timeout(10_000),
+                  });
+                  const result = await response.json().catch(() => ({})) as {
+                    role?: string;
+                    claimsUpdated?: boolean;
+                    error?: string;
+                  };
+                  if (!response.ok) {
+                    throw new Error(result.error || "Unable to bootstrap user profile.");
                   }
-                } catch (dbErr) {
-                  console.error("Failed to bootstrap user profile:", dbErr);
+                  if (
+                    result.role === "passenger" ||
+                    result.role === "driver" ||
+                    result.role === "admin"
+                  ) {
+                    role = result.role;
+                  }
+                  if (result.claimsUpdated === true) {
+                    await firebaseUser.getIdToken(true);
+                  }
                 }
+              } catch (dbErr) {
+                console.error("Failed to synchronize user profile role:", dbErr);
               }
 
               if (!isCurrentAuth()) return;
@@ -203,7 +207,7 @@ function useAuthState(): AuthContextValue {
               if (code === "permission-denied") {
                 console.warn("[Auth] Firestore role document read permission denied");
               } else {
-                console.error("Firestore role fetch failed:", err);
+                console.error("Firebase role verification failed:", err);
               }
               if (!isCurrentAuth()) return;
               setRoleError(

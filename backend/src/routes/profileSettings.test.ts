@@ -11,6 +11,9 @@ const harness = vi.hoisted(() => ({
     email: "verified@example.test",
     picture: "https://images.example.test/avatar.png",
   } as Record<string, unknown>,
+  authClaims: {} as Record<string, unknown>,
+  setCustomClaimsCalls: [] as Array<{ uid: string; claims: Record<string, unknown> }>,
+  revokeCalls: [] as string[],
 }));
 
 vi.mock("../middleware/requireAuth", () => ({
@@ -56,6 +59,16 @@ vi.mock("../lib/firebaseAdmin", () => {
   });
 
   return {
+    auth: {
+      getUser: async () => ({ customClaims: harness.authClaims }),
+      setCustomUserClaims: async (uid: string, claims: Record<string, unknown>) => {
+        harness.authClaims = { ...claims };
+        harness.setCustomClaimsCalls.push({ uid, claims: { ...claims } });
+      },
+      revokeRefreshTokens: async (uid: string) => {
+        harness.revokeCalls.push(uid);
+      },
+    },
     db: {
       collection: (collection: string) => ({
         doc: (id: string) => makeRef(collection, id),
@@ -104,6 +117,9 @@ afterAll(async () => {
 beforeEach(() => {
   harness.profile = undefined;
   harness.settings = {};
+  harness.authClaims = {};
+  harness.setCustomClaimsCalls = [];
+  harness.revokeCalls = [];
   harness.user = {
     uid: "user_1",
     name: "Verified Name",
@@ -132,6 +148,15 @@ describe("profile bootstrap route", () => {
       email: "verified@example.test",
       role: "passenger",
     });
+    await expect(response.json()).resolves.toEqual({
+      role: "passenger",
+      claimsUpdated: true,
+    });
+    expect(harness.setCustomClaimsCalls).toEqual([{
+      uid: "user_1",
+      claims: { role: "passenger" },
+    }]);
+    expect(harness.revokeCalls).toEqual([]);
   });
 
   it("preserves an existing privileged profile", async () => {
@@ -142,6 +167,56 @@ describe("profile bootstrap route", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ role: "admin" });
     expect(harness.profile.displayName).toBe("Existing");
+    expect(harness.setCustomClaimsCalls).toEqual([]);
+  });
+
+  it("repairs a missing passenger claim on an existing profile", async () => {
+    harness.profile = { uid: "user_1", role: "passenger" };
+    harness.authClaims = { featureFlag: true };
+
+    const response = await fetch(`${baseUrl}/api/users/bootstrap`, { method: "POST" });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      role: "passenger",
+      claimsUpdated: true,
+    });
+    expect(harness.setCustomClaimsCalls[0]?.claims).toEqual({
+      featureFlag: true,
+      role: "passenger",
+    });
+    expect(harness.revokeCalls).toEqual([]);
+  });
+
+  it("does not rewrite an already synchronized passenger claim", async () => {
+    harness.profile = { uid: "user_1", role: "passenger" };
+    harness.authClaims = { role: "passenger", featureFlag: true };
+
+    const response = await fetch(`${baseUrl}/api/users/bootstrap`, { method: "POST" });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ role: "passenger" });
+    expect(harness.setCustomClaimsCalls).toEqual([]);
+    expect(harness.revokeCalls).toEqual([]);
+  });
+
+  it("removes stale privileged claims and revokes refresh tokens", async () => {
+    harness.profile = { uid: "user_1", role: "passenger" };
+    harness.authClaims = {
+      role: "driver",
+      driverId: "driver_1",
+      assignedBusId: "bus_1",
+      featureFlag: true,
+    };
+
+    const response = await fetch(`${baseUrl}/api/users/bootstrap`, { method: "POST" });
+
+    expect(response.status).toBe(200);
+    expect(harness.setCustomClaimsCalls[0]?.claims).toEqual({
+      featureFlag: true,
+      role: "passenger",
+    });
+    expect(harness.revokeCalls).toEqual(["user_1"]);
   });
 });
 
