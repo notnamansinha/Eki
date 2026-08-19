@@ -191,7 +191,10 @@ bool pendingNtpCrossCheckHasGnss = false;
 bool credentialFaultActive = false;
 bool gpsFixWasLost = false;
 bool trustworthyGpsFixObserved = false;
-bool gpsWiringWarningLogged = false;
+bool wifiStatusKnown = false;
+bool lastWifiConnected = false;
+bool gnssStatusKnown = false;
+bool lastGnssConnected = false;
 bool lossMessageQueued = false;
 bool wifiConfigured = false;
 
@@ -578,7 +581,6 @@ void attemptWifiConnection() {
     configureStationRadio();
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     wifiConfigured = true;
-    Serial.println("[WiFi] Connecting to configured network.");
   } else {
     WiFi.reconnect();
   }
@@ -622,6 +624,14 @@ void latchCredentialFault() {
 void serviceConnectivity() {
   const uint32_t now = millis();
   const bool connected = WiFi.status() == WL_CONNECTED;
+  if (!wifiStatusKnown || connected != lastWifiConnected) {
+    wifiStatusKnown = true;
+    lastWifiConnected = connected;
+    Serial.printf(
+      "[WiFi] %s.\n",
+      connected ? "Connected" : "Not connected; waiting"
+    );
+  }
   wifiRetrySupervisor.observe(connected, now);
   if (!connected && !credentialFaultActive && wifiRetrySupervisor.attemptDue(now)) {
     attemptWifiConnection();
@@ -834,6 +844,11 @@ PublishResult publishFix(const TelemetryFix &fix) {
   }
 
   resetHttpsRetry();
+  Serial.printf(
+    "[RTDB] lat: %.6f | lng: %.6f\n",
+    fix.lat,
+    fix.lng
+  );
   return PublishResult::Accepted;
 }
 
@@ -1002,11 +1017,21 @@ void rememberCapturedFix(const TelemetryFix &fix) {
 
 void evaluateTelemetry() {
   const TelemetryFix fix = currentFix();
+  if (
+    WiFi.status() == WL_CONNECTED &&
+    (!gnssStatusKnown || fix.valid != lastGnssConnected)
+  ) {
+    gnssStatusKnown = true;
+    lastGnssConnected = fix.valid;
+    Serial.printf(
+      "[GNSS] %s.\n",
+      fix.valid ? "Connected" : "Not connected; waiting for valid fix"
+    );
+  }
   if (!fix.valid) {
     if (trustworthyGpsFixObserved && !gpsFixWasLost) {
       gpsFixWasLost = true;
       lossMessageQueued = false;
-      Serial.println("[GPS] Trustworthy fix lost.");
     }
     if (hasCapturedLocation && !lossMessageQueued && clockIsSynchronized()) {
       TelemetryFix uncertain{};
@@ -1026,7 +1051,6 @@ void evaluateTelemetry() {
   if (gpsFixWasLost) {
     gpsFixWasLost = false;
     lossMessageQueued = false;
-    Serial.println("[GPS] Trustworthy fix restored.");
   }
   trustworthyGpsFixObserved = true;
 
@@ -1213,14 +1237,6 @@ void loop() {
     evaluateTelemetry();
   }
 
-  if (
-    !gpsWiringWarningLogged &&
-    millis() > 5000 &&
-    gps.charsProcessed() < 10
-  ) {
-    gpsWiringWarningLogged = true;
-    Serial.println("[GPS] No NMEA data received; check RX/TX wiring.");
-  }
   updateStatusLed();
   delay(5);
 }
