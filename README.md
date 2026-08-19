@@ -4,15 +4,8 @@ Eki is a single-university bus-tracking system. An ESP32 reads a NEO-M8N GNSS re
 
 ## Testing phase: start locally before hosting
 
-Run the complete application locally and verify it before configuring permanent hosting:
-
-```powershell
-npm install
-Copy-Item backend/.env.example backend/.env
-Copy-Item frontend/env.production.example frontend/.env.local
-```
-
-Fill the copied Firebase/Maps values and use these local origins: set
+Run the complete application locally and verify it before configuring permanent hosting.
+With the environment files already configured, use these local origins: set
 `PORT=4000` and `CORS_ORIGIN=http://localhost:3000` in
 `backend/.env`, and set `NEXT_PUBLIC_BACKEND_URL=http://localhost:4000` in
 `frontend/.env.local`. Then start both services:
@@ -21,32 +14,111 @@ Fill the copied Firebase/Maps values and use these local origins: set
 npm run dev
 ```
 
-The frontend is then available at
-`http://localhost:3000`, the backend at `http://localhost:4000`, and backend
-health at `http://localhost:4000/health`.
-
-If the ESP32 or a phone must reach the laptop, `localhost` will not work from
-those devices. For short testing only, keep the backend running and open a
-second terminal:
+For ESP32 or remote-phone testing, keep the backend tunnel running in a second
+terminal:
 
 ```powershell
 cloudflared tunnel --url http://localhost:4000
 ```
 
-Confirm `https://<generated-host>.trycloudflare.com/health` returns HTTP 200,
-then put that origin (without `/health` or another path) in `BACKEND_URL` inside
-the ignored `hardware/include/secrets.h`; verify `BACKEND_ROOT_CA`, rebuild, and
-flash the ESP32. With the board on COM3, use:
+For remote web-app access from a phone, open a third terminal:
 
 ```powershell
-py -m platformio run --project-dir hardware -e esp32dev -t upload --upload-port COM3
-py -m platformio device monitor --port COM3 --baud 115200
+cloudflared tunnel --url http://localhost:3000
 ```
 
-Replace `COM3` if Windows assigns a different port. Keep `cloudflared` running throughout the test. Quick Tunnel
-hostnames are temporary and usually change when the process restarts, requiring
-`BACKEND_URL` to be updated and the device reflashed. Use a named tunnel or
-permanent HTTPS API domain for hosted/stable operation.
+The frontend is then available at
+`http://localhost:3000`, the backend at `http://localhost:4000`, and backend
+health at `http://localhost:4000/health`.
+
+## Testing handoff: web app and ESP32
+
+Run these steps from the repository root after the local environment files are
+already configured. Never commit `backend/.env`, `frontend/.env.local`, or
+`hardware/include/secrets.h`.
+
+### 1. Web-app test
+
+After the local services are running, check the backend:
+
+```powershell
+Invoke-RestMethod http://localhost:4000/health
+```
+
+Open `http://localhost:3000`. Sign in as admin, verify the route/stops and
+bus/driver assignment, arm a ride, then use a passenger session to verify live
+location, boarding-code join, stop progress, messaging, feedback, and completion.
+Seed routes or refresh role claims only when needed:
+
+```powershell
+npm run seed --workspace=backend
+npm run sync-role-claims --workspace=backend
+```
+
+### 2. Prepare the device and connect it to the laptop backend
+
+Create/edit the ignored firmware configuration when testing a different device,
+Wi-Fi, backend, or certificate:
+
+```powershell
+Copy-Item hardware/include/secrets.example.h hardware/include/secrets.h
+notepad hardware/include/secrets.h
+```
+
+Provision the device only after its bus and route exist:
+
+```powershell
+npm run provision-device --workspace=backend -- `
+  --device-id device_01 --bus-id bus_01 --route-id route_01
+```
+
+Use the backend tunnel URL printed above and verify
+`https://<backend-tunnel-host>/health` returns HTTP 200.
+
+Set the tunnel origin in `BACKEND_URL` and its matching CA in
+`BACKEND_ROOT_CA`, then build, flash, and monitor:
+
+```powershell
+py -m platformio test --project-dir hardware -e native
+py -m platformio run --project-dir hardware -e esp32dev
+py -m platformio run --project-dir hardware -e esp32dev --target upload --upload-port COM3
+py -m platformio device monitor --project-dir hardware --port COM3 --baud 115200
+```
+
+Replace `COM3` with the port from `py -m platformio device list`. The monitor
+shows Wi-Fi, then GNSS, then only coordinates accepted by RTDB. Keep the
+backend tunnel running.
+
+### 3. Testing from a phone or another computer
+
+For remote web-app testing, set `NEXT_PUBLIC_BACKEND_URL` to the backend tunnel
+origin and add the frontend tunnel origin to `CORS_ORIGIN`; restart the affected
+service. Add the frontend tunnel hostname to Firebase Authentication authorized
+domains. If App Check is enabled, use a temporary local debug token only in the
+ignored frontend env.
+
+### 4. Files to change when the test environment changes
+
+| Situation | Change | Restart/reflash |
+|---|---|---|
+| Firebase project, RTDB, server Maps key, port, or CORS | `backend/.env` | Restart backend |
+| Browser Firebase/Maps/App Check values or backend URL | `frontend/.env.local` | Restart frontend |
+| Wi-Fi SSID or password | `hardware/include/secrets.h` (`WIFI_SSID`, `WIFI_PASS`) | Rebuild and reflash |
+| Device identity/credential | `hardware/include/secrets.h` (`DEVICE_ID`, `DEVICE_SECRET`) and backend registry | Re-provision as needed, rebuild, reflash |
+| Backend hostname, port, or certificate CA | `hardware/include/secrets.h` (`BACKEND_URL`, `BACKEND_ROOT_CA`) | Rebuild and reflash |
+| GNSS wiring or UART pins/baud | `hardware/src/main.cpp` and physical wiring | Rebuild and reflash |
+
+Normally do not edit `hardware/platformio.ini`, the policy headers in
+`hardware/include/`, `hardware/partitions_secure.csv`, or
+`hardware/sdkconfig.defaults`. They define the board, dependencies, security,
+and tested firmware policy. The secure fleet path also requires the controlled
+`hardware/keys/secure_boot_signing_key.pem`; use `esp32dev` for bench testing
+and `esp32dev-secure` only through the security provisioning procedure.
+
+Keep the laptop awake, keep both tunnels open, use a stable power source and
+clear-sky GNSS view, and record only non-secret test evidence. Never share
+service-account JSON, Wi-Fi passwords, device secrets, App Check debug tokens,
+signing keys, or unredacted serial logs.
 
 ## How it works
 
