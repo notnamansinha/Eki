@@ -2,34 +2,73 @@
 
 Eki is a single-university bus-tracking system. An ESP32 reads a NEO-M8N GNSS receiver and pushes validated fixes over HTTPS to an Express backend. The backend owns identity and trip progression, projects current state to Firebase Realtime Database (RTDB), and persists configuration/recovery/history in Firestore. A static Next.js PWA provides passenger and administrator workspaces; administrators perform ride operations for assigned fleet operators.
 
-## Testing phase: start locally before hosting
+## Before testing: keep the app and tunnel running
 
-Run the complete application locally and verify it before configuring permanent hosting.
-With the environment files already configured, use these local origins: set
-`PORT=4000` and `CORS_ORIGIN=http://localhost:3000` in
-`backend/.env`, and set `NEXT_PUBLIC_BACKEND_URL=http://localhost:4000` in
-`frontend/.env.local`. Then start both services:
+`npm run dev` starts both the frontend and backend, but only while that terminal
+remains open and the laptop stays awake:
 
 ```powershell
 npm run dev
 ```
 
-For ESP32 or remote-phone testing, keep the backend tunnel running in a second
-terminal:
+This serves the frontend at `http://localhost:3000`, the backend at
+`http://localhost:4000`, and backend health at `http://localhost:4000/health`.
+For ordinary testing on the same laptop, keep
+`NEXT_PUBLIC_BACKEND_URL=http://localhost:4000` in `frontend/.env.local`.
+
+An ESP32 or remote phone cannot use the laptop's `localhost`. Keep `npm run dev`
+running and open a second terminal for a temporary backend Quick Tunnel:
 
 ```powershell
-cloudflared tunnel --url http://localhost:4000
+cloudflared tunnel --protocol http2 --url http://localhost:4000
 ```
 
-For remote web-app access from a phone, open a third terminal:
+Use `--protocol http2` on this Windows test setup because QUIC can repeatedly
+fail on some networks. Verify the generated HTTPS origin before flashing or
+deploying anything:
 
 ```powershell
-cloudflared tunnel --url http://localhost:3000
+Invoke-RestMethod https://<generated-host>.trycloudflare.com/health
 ```
 
-The frontend is then available at
-`http://localhost:3000`, the backend at `http://localhost:4000`, and backend
-health at `http://localhost:4000/health`.
+> **Important: a Quick Tunnel normally gets a new `trycloudflare.com` URL every
+> time it is restarted.** The old URL then stops working. Restarting only
+> `npm run dev` does not create a new URL, but stopping/restarting `cloudflared`
+> does. Keep both terminals open for the entire test.
+
+Whenever the Quick Tunnel URL changes, update every consumer that is part of
+the current test:
+
+| Consumer | Where to put the new HTTPS origin | Required action |
+|---|---|---|
+| ESP32 | `BACKEND_URL` in ignored `hardware/include/secrets.h` | Rebuild and reflash firmware |
+| Locally served frontend used from another device | `NEXT_PUBLIC_BACKEND_URL` in ignored `frontend/.env.local` | Restart `npm run dev` |
+| Firebase-hosted frontend | `NEXT_PUBLIC_BACKEND_URL` in ignored `frontend/.env.production` or the deployment environment | Run the strict build and redeploy |
+| GitHub deployment | Environment secret `NEXT_PUBLIC_BACKEND_URL` | Update before the next workflow deploy |
+
+Do **not** put the tunnel URL in `backend/.env`; the backend itself continues to
+listen locally on port `4000`. `CORS_ORIGIN` in `backend/.env` contains frontend
+origins such as `http://localhost:3000` or `https://<project>.web.app`, not the
+backend tunnel origin.
+
+For repeated or long-running tests, replace the Quick Tunnel with a named
+Cloudflare Tunnel and stable hostname:
+
+```powershell
+cloudflared tunnel run <tunnel-name>
+```
+
+Once that stable hostname is configured in the frontend, firmware, CORS/deploy
+environment, and GitHub secret, tunnel restarts no longer require changing the
+URL or reflashing solely because the hostname changed.
+
+If the remote phone also needs the locally served frontend instead of Firebase
+Hosting, open a separate frontend tunnel in a third terminal and add its
+hostname to Firebase Authentication authorized domains:
+
+```powershell
+cloudflared tunnel --protocol http2 --url http://localhost:3000
+```
 
 ## Testing handoff: web app and ESP32
 
