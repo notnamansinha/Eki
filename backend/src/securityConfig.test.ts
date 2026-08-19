@@ -240,7 +240,7 @@ describe("production security configuration", () => {
 
     expect(passengerSource).toContain("recordSuccessfulJoin(");
     expect(passengerSource).toContain("isPostRideFeedbackEligible(");
-    expect(passengerSource).toContain(".filter(hasSessionId)");
+    expect(passengerSource).toContain("if (!hasSessionId(bus)) continue;");
     expect(passengerSource).toContain("key={activeBusOnRoute.sessionId}");
     expect(passengerSource).toContain("sessionId={activeBusOnRoute.sessionId}");
     expect(passengerSource).toContain("sessionId={feedbackSessionId}");
@@ -319,11 +319,13 @@ describe("production security configuration", () => {
   it("does not let the browser seed or take down hardware GNSS coordinates", () => {
     const operations = workspaceFile("frontend/src/components/admin/DashboardPanel.tsx");
     const passengerSource = loadPassengerSource();
+    const passengerNormalizer = workspaceFile("frontend/src/lib/passengerLiveBus.ts");
 
     expect(operations).toContain("/api/shifts/start");
     expect(operations).not.toContain("updateDoc(");
-    expect(passengerSource).toContain(
-      "hasValidBusCoordinates(normalizedBus.lat, normalizedBus.lng)",
+    expect(passengerSource).toContain("passengerLiveBuses(");
+    expect(passengerNormalizer).toContain(
+      "hasValidBusCoordinates(candidate.lat, candidate.lng)",
     );
     expect(operations).toContain("assignedRouteIds(selectedBus)");
   });
@@ -556,7 +558,8 @@ describe("production security configuration", () => {
     expect(firmware).toContain("WiFi.disconnect(true, false)");
     expect(firmware).toContain("WiFi.mode(WIFI_OFF)");
     expect(firmware).toContain("if (!credentialFaultActive)");
-    expect(firmware).toContain("result != PublishResult::CredentialFault");
+    expect(firmware).toContain("acknowledgeQueuedFix(fix.sequence)");
+    expect(firmware).toContain("removeQueuedFix(fix.sequence)");
     expect(firmware).not.toContain("Preferences");
     expect(firmware).not.toContain("[Health]");
     expect(firmware).not.toContain("[Publisher] Started");

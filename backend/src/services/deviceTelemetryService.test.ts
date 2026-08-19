@@ -6,6 +6,7 @@ import {
   freshestDelayMinutes,
   hashDeviceSecret,
   parseDeviceAuthorization,
+  shouldApplyRestoreTelemetry,
   summarizeLatencySamples,
   verifyDeviceSecretHash,
 } from "./deviceTelemetryService";
@@ -144,5 +145,36 @@ describe("freshestDelayMinutes", () => {
       { delayMinutes: 1.5, delayUpdatedAt: 20 },
       { delayMinutes: 12, delayUpdatedAt: 10 },
     )).toEqual({ delayMinutes: 12, delayUpdatedAt: 10 });
+  });
+});
+
+describe("durable ride telemetry restore ordering", () => {
+  it("does not overwrite a filtered RTDB sample on an equal timestamp", () => {
+    expect(shouldApplyRestoreTelemetry(4_000, 4_000)).toBe(false);
+  });
+
+  it("only fills missing or genuinely older live telemetry", () => {
+    expect(shouldApplyRestoreTelemetry(undefined, 4_000)).toBe(true);
+    expect(shouldApplyRestoreTelemetry(3_999, 4_000)).toBe(true);
+    expect(shouldApplyRestoreTelemetry(4_001, 4_000)).toBe(false);
+  });
+
+  it("allows exactly 90 one-second updates and rejects the 91st", () => {
+    const startedAt = 1_000_000;
+    const ninetieth = evaluateDeviceRateLimit(
+      { startedAt, count: 89 },
+      startedAt + 59_000,
+      90,
+    );
+    expect(ninetieth.allowed).toBe(true);
+    expect(ninetieth.next.count).toBe(90);
+
+    const ninetyFirst = evaluateDeviceRateLimit(
+      ninetieth.next,
+      startedAt + 59_001,
+      90,
+    );
+    expect(ninetyFirst.allowed).toBe(false);
+    expect(ninetyFirst.retryAfterMs).toBe(999);
   });
 });

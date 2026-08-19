@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Map as GoogleMap, AdvancedMarker, useMap,
 } from "@vis.gl/react-google-maps";
 import { auth } from "@/lib/firebaseAuth";
 import { useBuses } from "@/hooks/useBuses";
 import { useDrivers } from "@/hooks/useDrivers";
-import { useRoutes } from "@/hooks/useRoutes";
+import { useRoutes, type RouteData } from "@/hooks/useRoutes";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
 import { useActiveBuses, type ActiveBusEntry } from "@/hooks/useActiveBuses";
 import { useAuth } from "@/hooks/useAuth";
@@ -18,7 +18,7 @@ import {
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
 import {
-  Activity, Navigation, Clock, AlertTriangle,
+  Activity, Navigation2, Clock, AlertTriangle,
   TrendingUp, X, ChevronDown, ChevronUp,
   Eye, Wifi, WifiOff, MessageCircle, Play, RefreshCw, TicketCheck,
 } from "lucide-react";
@@ -27,6 +27,11 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { apiRequest } from "@/lib/apiClient";
 import CustomSelect from "@/components/ui/CustomSelect";
 import MessagingPanel from "@/components/shared/MessagingPanel";
+import { decodePolyline, type LatLng } from "@/lib/polyline";
+import { snapToPolyline } from "@/lib/snapToPolyline";
+import { useSmoothPosition } from "@/hooks/useSmoothPosition";
+import { useStableMarkerPosition } from "@/hooks/useStableMarkerPosition";
+import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 
 /* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const TRIP_STATE: Record<string, { label: string; color: string; bg: string; dot: string }> = {
@@ -39,6 +44,8 @@ const MOTION_STATE: Record<string, { label: string; color: string }> = {
   stopped:   { label: "Stopped", color: "text-amber-400" },
   uncertain: { label: "No GPS",  color: "text-red-400" },
 };
+const ROUTE_SNAP_MAX_DISTANCE_M = 250;
+const ROUTE_SNAP_FALLBACK_DISTANCE_M = 1_000;
 
 function timeSince(t?: string | number): string {
   if (!t) return "—";
@@ -190,7 +197,28 @@ function LiveDetailsDrawer({
 }
 
 /* â”€â”€ Live bus map marker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => void }) {
+function routePath(route: RouteData): readonly LatLng[] {
+  if (route.polyline) {
+    try {
+      const decoded = decodePolyline(route.polyline);
+      if (decoded.length >= 2) return decoded;
+    } catch {
+      // Legacy routes fall through to their saved geometry.
+    }
+  }
+  if (route.waypoints?.length >= 2) return route.waypoints;
+  return route.stops?.map(({ lat, lng }) => ({ lat, lng })) ?? [];
+}
+
+function BusMarker({
+  entry,
+  path,
+  onClick,
+}: {
+  entry: ActiveBusEntry;
+  path: readonly LatLng[];
+  onClick: () => void;
+}) {
   const ts = TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure;
   const markerColor =
     entry.tripState === "in_service"
@@ -199,9 +227,73 @@ function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => v
 
   const lat = entry.lat;
   const lng = entry.lng;
-  if (!hasValidBusCoordinates(lat, lng)) return null;
+  const coordinatesValid = hasValidBusCoordinates(lat, lng);
+  const rawPoint = useMemo(
+    () => coordinatesValid
+      ? { lat: lat as number, lng: lng as number }
+      : DEFAULT_CENTER,
+    [coordinatesValid, lat, lng],
+  );
+
+  const [preferredSegmentIndex, setPreferredSegmentIndex] = useState(-1);
+  const primaryResult = useMemo(
+    () =>
+      snapToPolyline(
+        rawPoint,
+        path,
+        {
+          headingDegrees: entry.heading,
+          preferredSegmentIndex,
+          maxSegmentJump: 25,
+          maxDistanceM: ROUTE_SNAP_MAX_DISTANCE_M,
+        },
+      ),
+    [entry.heading, path, preferredSegmentIndex, rawPoint],
+  );
+  const snapResult = useMemo(() => {
+    if (primaryResult.snapped) return primaryResult;
+    return snapToPolyline(
+      rawPoint,
+      path,
+      {
+        headingDegrees: entry.heading,
+        preferredSegmentIndex,
+        maxSegmentJump: 25,
+        maxDistanceM: ROUTE_SNAP_FALLBACK_DISTANCE_M,
+      },
+    );
+  }, [entry.heading, path, preferredSegmentIndex, primaryResult, rawPoint]);
+
+  useEffect(() => {
+    if (!snapResult.snapped) return;
+    const frame = requestAnimationFrame(() =>
+      setPreferredSegmentIndex(snapResult.segmentIndex),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [snapResult]);
+
+  const stablePoint = useStableMarkerPosition({
+    point: snapResult.point,
+    timestamp: Number.isFinite(entry.timestamp) ? entry.timestamp as number : 0,
+    speedKmh: entry.speed ?? 0,
+    sessionId: entry.sessionId,
+    trustworthy: snapResult.snapped || path.length < 2,
+  });
+  const smoothPosition = useSmoothPosition(stablePoint);
+
+  const [displayHeading, setDisplayHeading] = useState(() =>
+    normalizeHeading(entry.heading),
+  );
+  const displayHeadingRef = useRef(displayHeading);
+  useEffect(() => {
+    const nextHeading = unwrapHeading(entry.heading, displayHeadingRef.current);
+    displayHeadingRef.current = nextHeading;
+    setDisplayHeading(nextHeading);
+  }, [entry.heading]);
+
+  if (!coordinatesValid) return null;
   return (
-    <AdvancedMarker position={{ lat: lat as number, lng: lng as number }} onClick={onClick}>
+    <AdvancedMarker position={smoothPosition ?? stablePoint} onClick={onClick}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }} title={`${entry.busId} — ${ts.label}`}>
         <div style={{
           width: 36, height: 36, borderRadius: 18,
@@ -209,7 +301,17 @@ function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => v
           display: "flex", alignItems: "center", justifyContent: "center",
           boxShadow: `0 0 0 2px ${markerColor}40, 0 4px 12px rgba(0,0,0,0.5)`,
         }}>
-          <Navigation style={{ width: 16, height: 16, color: "#09090b", transform: `rotate(${entry.heading ?? 0}deg)` }} />
+          <Navigation2
+            style={{
+              width: 16,
+              height: 16,
+              color: "#09090b",
+              transform: `rotate(${displayHeading}deg)`,
+              transformOrigin: "center",
+              transition: "transform 250ms ease-out",
+              willChange: "transform",
+            }}
+          />
         </div>
         <div style={{
           marginTop: 4, padding: "2px 6px", borderRadius: 5,
@@ -415,6 +517,10 @@ export default function DashboardPanel() {
   const { buses, error: busesError, retry: retryBuses } = useBuses();
   const { drivers } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
+  const routePaths = useMemo(
+    () => new Map(routes.map((route) => [route.id, routePath(route)])),
+    [routes],
+  );
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
@@ -557,6 +663,7 @@ export default function DashboardPanel() {
             <BusMarker
               key={`${entry.busId}_${entry.routeId}`}
               entry={entry}
+              path={entry.routeId ? routePaths.get(entry.routeId) ?? [] : []}
               onClick={() => handleSelectBus(entry)}
             />
           ))}

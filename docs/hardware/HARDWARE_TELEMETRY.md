@@ -69,7 +69,7 @@ The two tasks share only short critical sections around the fixed-capacity ring 
 
 Fresh TinyGPSPlus date/time (maximum two-second age, strict calendar/range validation) is converted without timezone-sensitive `mktime` and applied using `settimeofday`. This establishes TLS-valid time before Wi-Fi/NTP is available and corrects drift of at least 1.5 seconds no more than once per minute. Once Wi-Fi connects, SNTP is scheduled as a six-hour cross-check/fallback. GNSS remains the primary discipline source; invalid/stale GNSS time is never applied.
 
-The 120-sample queue occupies 5,808 bytes of RTC no-init memory. At the maximum one capture per three seconds it covers six minutes; heartbeats consume less. It survives software/watchdog resets, rejects recovery when the device/backend identity or queue layout changes, and drops the oldest entry on overflow. The backend accepts timestamps only within 60 seconds, so recovery sends newest-first and purges entries outside a 55-second safety margin rather than replaying invalid data.
+The 120-sample queue occupies 5,808 bytes of RTC no-init memory. At the maximum one capture per second it covers two minutes; heartbeats consume less. It survives software/watchdog resets, rejects recovery when the device/backend identity or queue layout changes, and drops the oldest entry on overflow. The backend accepts timestamps only within 60 seconds, so recovery sends newest-first and purges entries outside a 55-second safety margin rather than replaying invalid data. A successful newest-fix acknowledgement also compacts every older superseded sample, preventing stale duplicate traffic from consuming the one-second delivery budget.
 
 ## Fix quality and transmission parameters
 
@@ -77,14 +77,16 @@ The 120-sample queue occupies 5,808 bytes of RTC no-init memory. At the maximum 
 |---|---:|---|
 | Evaluation period | 1 s | Consume current GNSS state |
 | GNSS age maximum | 5 s | Reject stale parser fixes |
+| Short-gap jump margin | 250 m plus reported-speed reach | Reject fragmented/cached fixes after brief signal loss |
+| Position reacquisition | after 5 min without an accepted anchor | Permit legitimate relocation after a prolonged outage |
 | HDOP maximum | 4.0 | Reject poor horizontal geometry |
 | Moving enter / stopped enter | 2.5 / 1.5 km/h | Hysteresis against jitter |
 | Confirmation readings | 3 | Stable motion classification |
-| Minimum changed capture | 3 s | Upper bound queue/write frequency |
+| Minimum changed capture | 1 s | Low-latency upper bound on queue/write frequency |
 | Distance change | 5 m | Position materiality |
 | Heading change | 15° | Direction materiality |
 | Speed change | 5 km/h | Velocity materiality |
-| Moving/stopped heartbeat | 30 / 60 s | Liveness without excess writes |
+| Moving/stopped heartbeat | 1 / 60 s | Live movement with bounded stationary writes |
 | HTTP connect/request timeout | 7 s | Bound blocked network work |
 | GNSS UTC maximum age | 2 s | Reject stale date/time sentences |
 | GNSS correction | >=1.5 s, at most once/minute | Primary clock discipline without rapid jumps |
@@ -103,7 +105,7 @@ Deterministic UTC conversion/discipline lives in `hardware/include/clock_policy.
 
 ## Payload and HTTP outcomes
 
-The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). The device treats only 200/202 as telemetry success. Transport errors, 408/425/429 and 5xx retain the attempted sample for retry; other permanent HTTP statuses remove that sample. HTTP 401/403 retains the rejected sample, latches a credential fault, disables the station radio, and requires a corrected firmware reflash so a doomed secret cannot create an infinite loop. Normal freshness eviction still prevents an old retained sample from violating the backend's timestamp contract. HTTP 429 honors the bounded delta-seconds `Retry-After` value. If a newer fix arrives during a retryable request, it becomes the next recovery candidate. Remote diagnostics is a separate best-effort 1 KiB POST containing only bounded counters/state; its failure never evicts or delays a queued fix.
+The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). The device treats only 200/202 as telemetry success. A success removes the acknowledged fix plus older superseded fixes, while preserving any newer fix captured during the request. Transport errors, 408/425/429 and 5xx retain the attempted sample for retry; other permanent HTTP statuses remove only that sample. HTTP 401/403 retains the rejected sample, latches a credential fault, disables the station radio, and requires a corrected firmware reflash so a doomed secret cannot create an infinite loop. Normal freshness eviction still prevents an old retained sample from violating the backend's timestamp contract. HTTP 429 honors the bounded delta-seconds `Retry-After` value. If a newer fix arrives during a retryable request, it becomes the next recovery candidate. Remote diagnostics is a separate best-effort 1 KiB POST containing only bounded counters/state; its failure never evicts or delays a queued fix.
 
 | Symptom | Likely cause | Action |
 |---|---|---|
@@ -123,7 +125,7 @@ The body fields and limits are defined in [Firebase data model](../data/FIREBASE
 
 ## Latency analysis
 
-The device serial line is not the normal bottleneck: NMEA parsing continues while HTTPS blocks the publisher task. For a materially changed fix, designed latency is up to one-second evaluation plus network/TLS/API/RTDB time; a change arriving just after capture can also wait for the three-second floor. On recovery the newest eligible state is restored first. If no material change occurs, heartbeat visibility is intentionally 30/60 seconds.
+The device serial line is not the normal bottleneck: NMEA parsing continues while HTTPS blocks the publisher task. While moving, designed latency is up to one-second evaluation plus network/TLS/API/RTDB time; the one-second publish floor prevents duplicate bursts without deliberately adding multi-second lag. On recovery the newest eligible state is restored first. Stationary heartbeat visibility remains intentionally 60 seconds.
 
 Backend `/health.telemetry` provides:
 

@@ -78,6 +78,23 @@ constexpr uint32_t WATCHDOG_TIMEOUT_MS = 25000;
 constexpr size_t TELEMETRY_QUEUE_CAPACITY = 120;
 constexpr uint32_t FIRST_REMOTE_DIAGNOSTIC_DELAY_MS = 30000;
 constexpr uint32_t REMOTE_DIAGNOSTIC_INTERVAL_MS = 5UL * 60 * 1000;
+
+const char *httpTransportFailureName(int code) {
+  switch (code) {
+    case HTTPC_ERROR_CONNECTION_REFUSED: return "connection refused";
+    case HTTPC_ERROR_SEND_HEADER_FAILED: return "header send failed";
+    case HTTPC_ERROR_SEND_PAYLOAD_FAILED: return "payload send failed";
+    case HTTPC_ERROR_NOT_CONNECTED: return "not connected";
+    case HTTPC_ERROR_CONNECTION_LOST: return "connection lost";
+    case HTTPC_ERROR_NO_STREAM: return "no stream";
+    case HTTPC_ERROR_NO_HTTP_SERVER: return "invalid HTTP server";
+    case HTTPC_ERROR_TOO_LESS_RAM: return "insufficient RAM";
+    case HTTPC_ERROR_ENCODING: return "unsupported encoding";
+    case HTTPC_ERROR_STREAM_WRITE: return "stream write failed";
+    case HTTPC_ERROR_READ_TIMEOUT: return "read timeout";
+    default: return "unknown transport error";
+  }
+}
 constexpr uint32_t PUBLISHER_IDLE_MS = 100;
 constexpr uint32_t PUBLISHER_TASK_STACK_BYTES = 12288;
 constexpr UBaseType_t PUBLISHER_TASK_PRIORITY = 1;
@@ -335,6 +352,13 @@ bool newestFreshFix(int64_t minimumTimestamp, TelemetryFix &fix, size_t &staleDr
 bool removeQueuedFix(uint32_t sequence) {
   portENTER_CRITICAL(&telemetryQueueMux);
   const bool removed = telemetryQueue.remove(sequence);
+  portEXIT_CRITICAL(&telemetryQueueMux);
+  return removed;
+}
+
+size_t acknowledgeQueuedFix(uint32_t sequence) {
+  portENTER_CRITICAL(&telemetryQueueMux);
+  const size_t removed = telemetryQueue.acknowledgeThrough(sequence);
   portEXIT_CRITICAL(&telemetryQueueMux);
   return removed;
 }
@@ -785,8 +809,9 @@ PublishResult publishFix(const TelemetryFix &fix) {
     : 0;
   if (responseCode < 0) {
     Serial.printf(
-      "[HTTPS] Transport failure %d in %lums (RSSI %d dBm). Check DNS, hostname, CA, clock, and backend reachability.\n",
+      "[HTTPS] Transport failure %d (%s) in %lums (RSSI %d dBm). Check DNS, hostname, CA, clock, and backend reachability.\n",
       responseCode,
+      httpTransportFailureName(responseCode),
       static_cast<unsigned long>(elapsed(startedAt)),
       WiFi.RSSI()
     );
@@ -987,6 +1012,27 @@ TelemetryFix currentFix() {
 }
 
 bool shouldCapture(const TelemetryFix &fix) {
+  if (!eki::telemetry::locationTransitionIsPlausible(
+    hasCapturedLocation,
+    elapsed(lastCaptureAt),
+    fix.lat,
+    fix.lng,
+    lastCapturedLat,
+    lastCapturedLng,
+    fix.speed,
+    lastCapturedSpeed
+  )) {
+    Serial.printf(
+      "[GNSS] Ignoring implausible position jump (%.2fm from last fix).\n",
+      eki::telemetry::haversineMeters(
+        lastCapturedLat,
+        lastCapturedLng,
+        fix.lat,
+        fix.lng
+      )
+    );
+    return false;
+  }
   return eki::telemetry::shouldPublishFix(
     fix.valid,
     hasCapturedLocation,
@@ -1091,12 +1137,12 @@ void publisherTask(void *) {
           }
           if (!credentialFaultActive) {
             const PublishResult result = publishFix(fix);
-            if (
-              result != PublishResult::RetryLatest &&
-              result != PublishResult::CredentialFault
-            ) {
+            if (result == PublishResult::Accepted) {
+              acknowledgeQueuedFix(fix.sequence);
+              recordPublishResult(true);
+            } else if (result == PublishResult::Dropped) {
               removeQueuedFix(fix.sequence);
-              recordPublishResult(result == PublishResult::Accepted);
+              recordPublishResult(false);
             } else if (result == PublishResult::CredentialFault) {
               recordPublishResult(false);
             }

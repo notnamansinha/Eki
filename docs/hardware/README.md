@@ -194,10 +194,10 @@ done safely while retaining the current Wi-Fi stack.
   pressure observable without noisy periodic serial output.
 - A fix requires location age at most five seconds and HDOP at most 4. Motion
   uses three-reading 2.5/1.5 km/h hysteresis.
-- Changed fixes are captured after a three-second floor; moving/stopped
-  heartbeats are 30/60 seconds. A 120-sample RTC ring survives resets, evicts
-  oldest on overflow, sends newest first after outages, and discards samples
-  outside the backend's 55-second safety margin.
+- Moving fixes are captured on a one-second cadence; the stopped heartbeat is
+  60 seconds. A 120-sample RTC ring survives resets, evicts oldest on overflow,
+  sends newest first after outages, compacts acknowledged older fixes, and
+  discards samples outside the backend's 55-second safety margin.
 - Wi-Fi retries indefinitely with bounded 5-60 second exponential backoff,
   strongest-AP fast scan, auto-reconnect, and modem sleep disabled.
 - HTTP 200/202 succeeds. Transport errors, 408/425/429, and 5xx retain the

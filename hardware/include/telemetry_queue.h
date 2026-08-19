@@ -13,8 +13,9 @@ namespace telemetry {
  *
  * Samples remain ordered by capture time, but delivery peeks at the newest
  * sample first so live state recovers before the backend freshness window
- * closes. A failed delivery stays queued. Acknowledgement can remove a sample
- * that stopped being newest while the network request was in flight.
+ * closes. A failed delivery stays queued. Acknowledgement compacts that sample
+ * and every superseded predecessor while retaining anything captured during
+ * the network request.
  *
  * The type deliberately has trivial construction so an instance can live in
  * ESP32 RTC no-init memory and be validated explicitly during setup().
@@ -100,6 +101,26 @@ class NewestFirstTelemetryQueue {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Acknowledging a live-state sample makes every older queued position
+   * obsolete. Remove that sample and all predecessors while preserving fixes
+   * captured during the in-flight request.
+   */
+  size_t acknowledgeThrough(uint32_t sequence) {
+    for (uint16_t logicalIndex = 0; logicalIndex < count_; ++logicalIndex) {
+      if (samples_[physicalIndex(logicalIndex)].sequence != sequence) continue;
+      beginMutation();
+      const uint16_t removed = logicalIndex + 1;
+      const uint16_t retained = count_ - removed;
+      const size_t nextHead = retained > 0 ? physicalIndex(removed) : 0;
+      head_ = static_cast<uint16_t>(nextHead);
+      count_ = retained;
+      finishMutation();
+      return removed;
+    }
+    return 0;
   }
 
   /** Remove every sample outside the backend's safe freshness horizon. */

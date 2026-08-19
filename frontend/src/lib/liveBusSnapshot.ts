@@ -19,6 +19,10 @@ export function pruneExpiredLiveBuses(
 ): LiveBusSnapshot {
   let changed = false;
   const freshEntries = Object.entries(snapshot).filter(([, bus]) => {
+    if (bus.tripState === "completed") {
+      changed = true;
+      return false;
+    }
     const fresh = isLiveBusTimestamp(
       typeof bus.timestamp === "number" ? bus.timestamp : undefined,
       now,
@@ -36,6 +40,7 @@ export function millisecondsUntilNextPrune(
 ): number | null {
   let nextDelay = Number.POSITIVE_INFINITY;
   for (const bus of Object.values(snapshot)) {
+    if (bus.tripState === "completed") return 0;
     if (isActiveRideSnapshot(bus)) continue;
     const timestamp = bus.timestamp;
     if (

@@ -220,7 +220,7 @@ Content-Type: application/json
 
 Generate the timestamp immediately before sending (for example, `Date.now()`); it must be a current Unix epoch value in milliseconds. The JSON is limited to 512 bytes and exactly six fields. Coordinates, speed (0–200 km/h), heading (0–360), motion state, and timestamp freshness are checked. `202` accepts a new fix; `200` acknowledges a duplicate; `400`, `401`, `413`, `429`, and `503` indicate payload, credential, body-size, rate, and service failures.
 
-Firmware uses NTP/GNSS time for TLS/time stamps, an 8 KiB UART RX buffer, HDOP ≤ 4, motion hysteresis, a 3-second change floor, 30-second moving heartbeat, 60-second stopped heartbeat, 7-second HTTP timeout, capped jittered retry, and a 25-second watchdog. An authenticated 1 KiB diagnostics channel reports bounded device health and hardware-security state every five minutes without credentials. See [Hardware telemetry](docs/hardware/HARDWARE_TELEMETRY.md).
+Firmware uses NTP/GNSS time for TLS/time stamps, an 8 KiB UART RX buffer, HDOP ≤ 4, motion hysteresis, a one-second moving publish cadence, 60-second stopped heartbeat, 7-second HTTP timeout, capped jittered retry, and a 25-second watchdog. An authenticated 1 KiB diagnostics channel reports bounded device health and hardware-security state every five minutes without credentials. See [Hardware telemetry](docs/hardware/HARDWARE_TELEMETRY.md).
 
 ## Verification
 

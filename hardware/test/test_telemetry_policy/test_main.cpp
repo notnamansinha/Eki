@@ -398,15 +398,32 @@ void test_publish_policy_handles_floor_changes_and_heartbeats() {
 
   TEST_ASSERT_FALSE(decide(false, false, 0, false, "stopped", nullptr, 23.0, 0, 0));
   TEST_ASSERT_TRUE(decide(true, false, 0, false, "stopped", nullptr, 23.0, 0, 0));
-  TEST_ASSERT_FALSE(decide(true, true, 2999, true, "moving", "stopped", 23.1, 50, 200));
-  TEST_ASSERT_TRUE(decide(true, true, 3000, true, "moving", "stopped", 23.0, 10, 100));
-  TEST_ASSERT_TRUE(decide(true, true, 3000, true, "moving", "moving", 23.0001, 10, 100));
-  TEST_ASSERT_TRUE(decide(true, true, 3000, true, "moving", "moving", 23.0, 15, 100));
-  TEST_ASSERT_TRUE(decide(true, true, 3000, true, "moving", "moving", 23.0, 10, 115));
-  TEST_ASSERT_FALSE(decide(true, true, 29999, true, "moving", "moving", 23.0, 10, 100));
-  TEST_ASSERT_TRUE(decide(true, true, 30000, true, "moving", "moving", 23.0, 10, 100));
+  TEST_ASSERT_FALSE(decide(true, true, 999, true, "moving", "stopped", 23.1, 50, 200));
+  TEST_ASSERT_TRUE(decide(true, true, 1000, true, "moving", "stopped", 23.0, 10, 100));
+  TEST_ASSERT_TRUE(decide(true, true, 1000, true, "moving", "moving", 23.0001, 10, 100));
+  TEST_ASSERT_TRUE(decide(true, true, 1000, true, "moving", "moving", 23.0, 15, 100));
+  TEST_ASSERT_TRUE(decide(true, true, 1000, true, "moving", "moving", 23.0, 10, 115));
+  TEST_ASSERT_TRUE(decide(true, true, 1000, true, "moving", "moving", 23.0, 10, 100));
   TEST_ASSERT_FALSE(decide(true, true, 59999, false, "stopped", "stopped", 23.0, 10, 100));
   TEST_ASSERT_TRUE(decide(true, true, 60000, false, "stopped", "stopped", 23.0, 10, 100));
+}
+
+void test_location_transition_rejects_teleportation() {
+  TEST_ASSERT_TRUE(locationTransitionIsPlausible(
+    false, 0, 23.0, 72.5, 0, 0, 0, 0
+  ));
+  TEST_ASSERT_TRUE(locationTransitionIsPlausible(
+    true, 3000, 23.001, 72.5, 23.0, 72.5, 30, 30
+  ));
+  TEST_ASSERT_FALSE(locationTransitionIsPlausible(
+    true, 3000, 23.05, 72.54, 23.0, 72.46, 0, 0
+  ));
+  TEST_ASSERT_FALSE(locationTransitionIsPlausible(
+    true, GNSS_REACQUIRE_AFTER_MS, 23.05, 72.54, 23.0, 72.46, 0, 0
+  ));
+  TEST_ASSERT_TRUE(locationTransitionIsPlausible(
+    true, GNSS_REACQUIRE_AFTER_MS + 1, 23.05, 72.54, 23.0, 72.46, 0, 0
+  ));
 }
 
 void test_queue_delivers_newest_first_and_retains_failed_samples() {
@@ -437,6 +454,24 @@ void test_queue_delivers_newest_first_and_retains_failed_samples() {
   TEST_ASSERT_EQUAL_UINT32(second, sample.sequence);
   TEST_ASSERT_TRUE(queue.remove(first));
   TEST_ASSERT_EQUAL_UINT32(1, queue.size());
+}
+
+void test_queue_acknowledgement_discards_superseded_samples() {
+  NewestFirstTelemetryQueue<QueuedSample, 5> queue;
+  queue.reset(42);
+  queue.push({1000, 0, 1});
+  queue.push({2000, 0, 2});
+  const uint32_t acknowledged = queue.push({3000, 0, 3});
+  const uint32_t newer = queue.push({4000, 0, 4});
+
+  TEST_ASSERT_EQUAL_UINT32(3, queue.acknowledgeThrough(acknowledged));
+  TEST_ASSERT_EQUAL_UINT32(1, queue.size());
+  QueuedSample sample{};
+  TEST_ASSERT_TRUE(queue.newest(sample));
+  TEST_ASSERT_EQUAL_UINT32(newer, sample.sequence);
+  TEST_ASSERT_EQUAL_INT(4, sample.value);
+  TEST_ASSERT_TRUE(queue.integrityIsValid());
+  TEST_ASSERT_EQUAL_UINT32(0, queue.acknowledgeThrough(acknowledged));
 }
 
 void test_queue_rejects_corrupted_rtc_state() {
@@ -516,7 +551,9 @@ int main(int, char **) {
   RUN_TEST(test_gnss_utc_conversion_and_clock_discipline_are_strict);
   RUN_TEST(test_wifi_retry_and_led_code_are_deterministic);
   RUN_TEST(test_publish_policy_handles_floor_changes_and_heartbeats);
+  RUN_TEST(test_location_transition_rejects_teleportation);
   RUN_TEST(test_queue_delivers_newest_first_and_retains_failed_samples);
+  RUN_TEST(test_queue_acknowledgement_discards_superseded_samples);
   RUN_TEST(test_queue_rejects_corrupted_rtc_state);
   RUN_TEST(test_queue_wraparound_drops_oldest_and_counts_overflow);
   RUN_TEST(test_queue_purges_stale_samples_and_validates_rtc_identity);

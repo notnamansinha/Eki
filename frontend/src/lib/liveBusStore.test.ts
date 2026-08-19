@@ -52,6 +52,20 @@ describe("live bus snapshot expiry", () => {
     });
   });
 
+  it("removes a completed ride immediately even if its final fix is fresh", () => {
+    const snapshot: LiveBusSnapshot = {
+      completed: {
+        timestamp: now - recentAgeMs,
+        status: "active",
+        sessionId: "session_1",
+        tripState: "completed",
+      },
+    };
+
+    expect(pruneExpiredLiveBuses(snapshot, now)).toEqual({});
+    expect(millisecondsUntilNextPrune(snapshot, now)).toBe(0);
+  });
+
   it("schedules one expiry at the earliest inactive deadline", () => {
     const snapshot: LiveBusSnapshot = {
       later: { timestamp: now - recentAgeMs },

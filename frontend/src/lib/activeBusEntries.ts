@@ -14,6 +14,7 @@ export interface ActiveBusEntry {
   speed?: number;
   heading?: number;
   timestamp?: number;
+  status?: "active" | "offline";
   deviceState?: "online" | "offline";
   motionState?: "moving" | "stopped" | "uncertain";
   tripState?: "pre_departure" | "in_service" | "completed";
@@ -50,6 +51,13 @@ function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
   if (
     typeof bus.currentStopIndex === "number" &&
     (!Number.isInteger(bus.currentStopIndex) || bus.currentStopIndex < 0)
+  ) {
+    return false;
+  }
+  if (
+    bus.status !== undefined &&
+    bus.status !== "active" &&
+    bus.status !== "offline"
   ) {
     return false;
   }

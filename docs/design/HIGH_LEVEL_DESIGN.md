@@ -108,7 +108,7 @@ The software does not promise an absolute end-to-end SLA without real deployment
 |---|---|
 | GNSS evaluation | 1 second |
 | Changed-fix floor | 3 seconds |
-| Moving/stopped heartbeat | 30 / 60 seconds |
+| Moving/stopped heartbeat | 1 / 60 seconds |
 | HTTPS request timeout | 7 seconds |
 | Retry | 1–30 seconds exponential with per-device jitter |
 | RTDB write | One transaction per accepted new sample |

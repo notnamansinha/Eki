@@ -75,7 +75,7 @@ not a substitute for the physical and institutional acceptance work in the
   overflow/stale drops, TinyGPSPlus checksum failures and HardwareSerial
   buffer/FIFO overflow events.
 - **Impact:** bounded store-and-forward now covers at least six minutes at the
-  maximum three-second capture rate and survives software/watchdog resets. The
+  maximum one-second moving capture rate and survives software/watchdog resets. The
   backend's 60-second timestamp contract intentionally prevents stale replay;
   older entries are counted and removed rather than submitted as current data.
 - **Repository evidence:** the native suite covers newest-first ordering,

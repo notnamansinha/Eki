@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { createConcurrencyLimiter } from "../lib/concurrency";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
+import { isPlausibleTelemetryTransition } from "../lib/telemetryMotion";
 import type { TelemetryPayload } from "./telemetryPayload";
 
 const scryptAsync = promisify(scrypt);
@@ -22,7 +23,7 @@ const DURABLE_RIDE_MISS_CACHE_MS = 30_000;
 const MAX_CREDENTIAL_CACHE_ENTRIES = 1_000;
 const MAX_DURABLE_RIDE_MISSES = 1_000;
 const MAX_RATE_BUCKETS = 2_000;
-const DEFAULT_DEVICE_RATE_PER_MINUTE = 30;
+const DEFAULT_DEVICE_RATE_PER_MINUTE = 90;
 
 export interface DeviceAssignment {
   busId: string;
@@ -108,6 +109,14 @@ export function freshestDelayMinutes(
     delayMinutes: liveMinutes ?? durableMinutes ?? 0,
     delayUpdatedAt: liveAt,
   };
+}
+
+export function shouldApplyRestoreTelemetry(
+  existingTimestamp: unknown,
+  candidateTimestamp: number,
+): boolean {
+  const existing = Number(existingTimestamp);
+  return !Number.isFinite(existing) || existing < candidateTimestamp;
 }
 
 export type TelemetryIngestResult =
@@ -411,12 +420,10 @@ async function restoreDurableRide(
     ) {
       return;
     }
-    const existingTimestamp = Number(live?.timestamp);
-    const telemetry =
-      Number.isFinite(existingTimestamp) &&
-      existingTimestamp > sample.timestamp
-        ? {}
-        : sample;
+    const telemetry = shouldApplyRestoreTelemetry(
+      live?.timestamp,
+      sample.timestamp,
+    ) ? sample : {};
     // The durable lifecycle can hold a delay older than the live node if a
     // delay update only partially landed; never regress the announced value.
     const delay = freshestDelayMinutes(live, lifecycle);
@@ -477,6 +484,37 @@ async function persistTelemetry(
       return;
     }
 
+    const previousLat = Number(live?.lat);
+    const previousLng = Number(live?.lng);
+    const previousSpeed = Number(live?.speed);
+    const previousTimestamp = Number(live?.timestamp);
+    const previous =
+      Number.isFinite(previousLat) &&
+      Number.isFinite(previousLng) &&
+      Number.isFinite(previousSpeed) &&
+      Number.isFinite(previousTimestamp)
+        ? {
+            lat: previousLat,
+            lng: previousLng,
+            speed: previousSpeed,
+            timestamp: previousTimestamp,
+          }
+        : null;
+    const transitionIsPlausible = isPlausibleTelemetryTransition(previous, sample);
+    const acceptedSample = transitionIsPlausible || !previous
+      ? sample
+      : {
+          ...sample,
+          lat: previous.lat,
+          lng: previous.lng,
+          speed: 0,
+          heading:
+            Number.isFinite(Number(live?.heading))
+              ? Number(live?.heading)
+              : sample.heading,
+          motionState: "uncertain" as const,
+        };
+
     return {
       ...(live ?? {
         status: "offline",
@@ -485,12 +523,14 @@ async function persistTelemetry(
         hasDepartedOrigin: false,
         delayMinutes: 0,
       }),
-      ...sample,
+      ...acceptedSample,
       busId: assignment.busId,
       routeId: assignment.routeId,
       deviceState: "online",
       signalState:
-        sample.motionState === "uncertain" ? "gnss_lost" : "connected",
+        acceptedSample.motionState === "uncertain"
+          ? "gnss_lost"
+          : "connected",
       receivedAt: { ".sv": "timestamp" },
     };
   });

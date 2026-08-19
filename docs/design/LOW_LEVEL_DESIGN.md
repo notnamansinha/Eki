@@ -49,7 +49,7 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 
 ## Telemetry service detail
 
-Credential cache entries hold `{assignment, secretDigest, expiresAt}`; positive TTL is 60 seconds, negative TTL 5 seconds, and capacity 1,000. A SHA-256 digest makes cached comparisons constant-size; the durable store remains scrypt. Rate buckets are per device, one minute, default 30 accepted attempts, capacity 2,000.
+Credential cache entries hold `{assignment, secretDigest, expiresAt}`; positive TTL is 60 seconds, negative TTL 5 seconds, and capacity 1,000. A SHA-256 digest makes cached comparisons constant-size; the durable store remains scrypt. Rate buckets are per device, one minute, default 90 accepted attempts, capacity 2,000.
 
 The RTDB transaction compares `sample.timestamp` to the existing timestamp. Older/equal samples abort and return duplicate success. New data merges the sample without overwriting an existing active lifecycle, adds server `receivedAt`, and derives `deviceState`/`signalState`. A missing active session schedules one coalesced Firestore recovery read per node with a 30-second negative cache.
 
@@ -82,6 +82,7 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 | `components/ServiceWorkerRegistrar.tsx` | SW registration/update check and controlled one-time reload |
 | `components/maps/DirectionsRoute.tsx` | Draw stored decoded polyline |
 | `components/maps/PassengerMap.tsx` | RTDB route filtering, snapping, heuristic ETA and marker UI |
+| `components/admin/DashboardPanel.tsx` | Live Ops fleet state, route-snapped markers and shortest-path heading rotation |
 | `components/maps/PassengerTrackingMap.tsx` | Passenger tracking composition |
 | `components/admin/*Panel.tsx` | Operations, dashboard, routes, fleet/personnel, history and settings |
 | `components/passenger/*` | Boarding, route timeline/carousel/sheet and account |
@@ -100,6 +101,7 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 | `lib/liveBusStore.ts` | One RTDB `onValue` listener and freshness pruning for all consumers |
 | `lib/liveBusFreshness.ts`, `liveBusSnapshot.ts` | Coordinate/timestamp/signal validity and expiry |
 | `lib/polyline.ts`, `polylineDistance.ts`, `snapToPolyline.ts`, `mapUtils.ts` | Pure map math, distance index, snapping/interpolation |
+| `lib/stableMarkerPosition.ts`, `markerHeading.ts` | Client-side jump hold/reacquisition and wrap-safe marker heading presentation |
 | `lib/rideHistory.ts`, `rideFeedbackEligibility.ts` | Pure historical normalization/eligibility |
 | `lib/predefinedRoutes.ts` | Seed source geometry/stops |
 | `config/maps.ts`, `config/passenger.ts`, `etaConstants.ts` | Central public/runtime tuning |

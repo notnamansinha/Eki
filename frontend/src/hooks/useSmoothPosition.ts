@@ -9,7 +9,7 @@ const MIN_TARGET_CHANGE_METERS = 1;
 const MIN_RENDER_CHANGE_METERS = 0.5;
 const MAX_RENDER_INTERVAL_MS = 50;
 
-export function useSmoothPosition(target: LatLng | null, durationMs = 800) {
+export function useSmoothPosition(target: LatLng | null, durationMs = 250) {
   const [position, setPosition] = useState<LatLng | null>(target);
   const currentRef = useRef<LatLng | null>(target);
   const renderedRef = useRef<LatLng | null>(target);

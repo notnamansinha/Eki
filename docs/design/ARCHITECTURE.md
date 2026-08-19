@@ -22,4 +22,4 @@ RTDB `activeBuses/{busId}_{routeId}` is the current projection. Firestore `activ
 
 Security boundaries: device assignment comes from protected Firestore; device secrets are independent salted scrypt verifiers; browser API calls use Firebase bearer tokens and server role/assignment checks; Firebase is default deny and live writes/internal collections are server-only. Authenticated/unknown network responses are not service-worker cached.
 
-Performance: one shared RTDB listener per browser, a three-second changed-fix floor, 30/60-second heartbeats, seven-second HTTPS timeout, jittered backoff, Firestore only on lifecycle changes, and local polyline ETA math. `/health` reports rolling latency percentiles. Physical-route latency and GNSS reliability still require the acceptance runbook.
+Performance: one shared RTDB listener per browser, a one-second moving publish cadence, a 60-second stationary heartbeat, seven-second HTTPS timeout, jittered backoff, Firestore only on lifecycle changes, and local polyline ETA math. `/health` reports rolling latency percentiles. Physical-route latency and GNSS reliability still require the acceptance runbook.

@@ -6,11 +6,14 @@ import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
-import { hasValidBusCoordinates, isLiveBusSignalLost } from "@/lib/liveBusFreshness";
+import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
 import { subscribeLiveBuses } from "@/lib/liveBusStore";
-import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
+import {
+  normalizePassengerLiveBus,
+  type PassengerLiveBus,
+} from "@/lib/passengerLiveBus";
 
-import { WifiOff, Navigation } from "lucide-react";
+import { WifiOff, Navigation, Navigation2 } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 import { decodePolyline, type LatLng } from "@/lib/polyline";
 import { snapToPolyline } from "@/lib/snapToPolyline";
@@ -21,6 +24,8 @@ import {
 } from "@/lib/polylineDistance";
 import { ETA_SPEED_FLOOR_KMH } from "@/lib/etaConstants";
 import { useSmoothPosition } from "@/hooks/useSmoothPosition";
+import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
+import { useStableMarkerPosition } from "@/hooks/useStableMarkerPosition";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
@@ -28,21 +33,7 @@ export interface PassengerMapProps {
   resumeGeneration?: number;
 }
 
-interface IncomingBusData {
-  busId: string;
-  routeId: string; // 
-  lat: number;
-  lng: number;
-  heading: number;
-  speed: number;
-  timestamp: number;
-  status?: string; // "active" | "offline"
-  deviceState: "online" | "offline";
-  motionState: "moving" | "stopped" | "uncertain"; // Physical movement state from hardware
-  tripState: "pre_departure" | "in_service" | "completed"; // Service visibility
-  currentStopIndex?: number;
-  delayMinutes?: number;
-}
+type IncomingBusData = PassengerLiveBus;
 
 const WALKING_KMH = 5;
 const WALKING_M_PER_MIN = (WALKING_KMH * 1000) / 60;
@@ -52,6 +43,9 @@ const BUS_MOTION_COLORS: Record<string, string> = {
   uncertain: "#F87171", // red     — GPS fix lost
 };
 
+const ROUTE_SNAP_MAX_DISTANCE_M = 250;
+const ROUTE_SNAP_FALLBACK_DISTANCE_M = 1_000;
+
 function BusMarker({
   bus,
   path,
@@ -60,7 +54,7 @@ function BusMarker({
   path: readonly LatLng[];
 }) {
   const [preferredSegmentIndex, setPreferredSegmentIndex] = useState(-1);
-  const result = useMemo(
+  const primaryResult = useMemo(
     () =>
       snapToPolyline(
         { lat: bus.lat, lng: bus.lng },
@@ -69,10 +63,27 @@ function BusMarker({
           headingDegrees: bus.heading,
           preferredSegmentIndex,
           maxSegmentJump: 25,
+          maxDistanceM: ROUTE_SNAP_MAX_DISTANCE_M,
         },
       ),
     [bus.lat, bus.lng, bus.heading, path, preferredSegmentIndex],
   );
+  const result = useMemo(() => {
+    if (primaryResult.snapped) return primaryResult;
+    // A noisy receiver can put a fix well outside the carriageway. The route
+    // is authoritative for this view, so use a wider corridor before ever
+    // falling back to an untrusted point in a building or plot.
+    return snapToPolyline(
+      { lat: bus.lat, lng: bus.lng },
+      path,
+      {
+        headingDegrees: bus.heading,
+        preferredSegmentIndex,
+        maxSegmentJump: 25,
+        maxDistanceM: ROUTE_SNAP_FALLBACK_DISTANCE_M,
+      },
+    );
+  }, [bus.lat, bus.lng, bus.heading, path, preferredSegmentIndex, primaryResult]);
   useEffect(() => {
     if (!result.snapped) return;
     const frame = requestAnimationFrame(() =>
@@ -80,11 +91,28 @@ function BusMarker({
     );
     return () => cancelAnimationFrame(frame);
   }, [result]);
-  const smoothPosition = useSmoothPosition(result.point);
+
+  const stablePoint = useStableMarkerPosition({
+    point: result.point,
+    timestamp: bus.timestamp,
+    speedKmh: bus.speed,
+    sessionId: bus.sessionId,
+    trustworthy: result.snapped || path.length < 2,
+  });
+  const smoothPosition = useSmoothPosition(stablePoint);
+
+  const [displayHeading, setDisplayHeading] = useState(() =>
+    normalizeHeading(bus.heading),
+  );
+  const displayHeadingRef = useRef(displayHeading);
+  useEffect(() => {
+    const nextDisplayHeading = unwrapHeading(bus.heading, displayHeadingRef.current);
+    displayHeadingRef.current = nextDisplayHeading;
+    setDisplayHeading(nextDisplayHeading);
+  }, [bus.heading]);
 
   const color =
     BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
-  const snappedHeading = Math.round(bus.heading / 5) * 5;
 
   return (
     <AdvancedMarker position={smoothPosition ?? result.point}>
@@ -100,11 +128,13 @@ function BusMarker({
       >
         <div
           style={{
-            transform: `rotate(${snappedHeading}deg)`,
-            transition: "transform 200ms ease-out",
+            transform: `rotate(${displayHeading}deg)`,
+            transformOrigin: "center",
+            transition: "transform 250ms ease-out",
+            willChange: "transform",
           }}
         >
-          <Navigation size={30} fill={color} color="white" strokeWidth={1} />
+          <Navigation2 size={30} fill={color} color="white" strokeWidth={1} />
         </div>
         <div
           style={{
@@ -229,17 +259,12 @@ function PassengerMapInner({
   // ── RTDB subscription: filtered by routeId ───────────────────────────────
   useEffect(() => {
     const unsubscribe = subscribeLiveBuses((snapshot) => {
-        const allData = snapshot as Record<string, IncomingBusData> | null;
-        const data = allData
-          ? Object.fromEntries(
-              Object.entries(allData).filter(([, bus]) => bus.routeId === route.id),
-            )
-          : null;
+        const allData = snapshot as Record<string, unknown> | null;
         const now = Date.now();
         const currentRoute = routeRef.current;
         const currentTargetStop = targetStopRef.current;
 
-        if (!data) {
+        if (!allData) {
           setBuses(new Map());
           setSignalLostBuses(new Set());
           return;
@@ -249,18 +274,13 @@ function PassengerMapInner({
         const newSignalLost = new Set<string>();
         let oldestTimestamp: number | null = null;
 
-        Object.entries(data).forEach(([key, incoming]) => {
-          const bus: IncomingBusData = incoming.busId
-            ? incoming
-            : { ...incoming, busId: key.split("_")[0] };
-          if (
-            !bus.routeId ||
-            !bus.busId ||
-            !hasValidBusCoordinates(bus.lat, bus.lng) ||
-            !isActiveRideSnapshot(bus as unknown as Record<string, unknown>)
-          ) {
-            return;
-          }
+        Object.entries(allData).forEach(([key, incoming]) => {
+          const normalized = normalizePassengerLiveBus(key, incoming, now);
+          if (!normalized || normalized.routeId !== currentRoute.id) return;
+          const bus: IncomingBusData = {
+            ...normalized,
+            heading: normalizeHeading(normalized.heading),
+          };
 
           activeBuses.set(bus.busId, bus);
 

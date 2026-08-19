@@ -36,10 +36,10 @@ numbers.
 | Backend lifecycle mocks | worker listener recovery, missing-route cache, completion/shutdown | Async orchestration without cloud dependency |
 | Static security/deployment checks | rules/headers/routes/cache/cleanup patterns | Critical configuration does not silently regress |
 | Firebase emulator integration | Firestore/RTDB allow/deny matrix | Actual rule evaluation when Java/emulators are available |
-| Pure frontend units | freshness/expiry, singleton RTDB store, resume state, snapping/distance, history, feedback eligibility | Map/live-data behavior independent of React/browser network |
+| Pure frontend units | freshness/expiry, singleton RTDB store, resume state, snapping/distance, jump hold/reacquisition, heading wrap, history, feedback eligibility | Map/live-data behavior independent of React/browser network |
 | Builds/type/lint | TS, React hooks/a11y-relevant lint, static export, SW/CSP | Integration and packaging consistency |
 | Dependency audit | production npm graph | Known registry advisories in shipped required packages |
-| Firmware native units | shared clock/connectivity/telemetry/queue policies | Strict UTC conversion/discipline, Wi-Fi escalation, LED codes, distance/heading math, hysteresis, credential latching, HTTP classification, bounded `Retry-After`, retry cap, change floor/thresholds, heartbeats and queue recovery |
+| Firmware native units | shared clock/connectivity/telemetry/queue policies | Strict UTC conversion/discipline, Wi-Fi escalation, LED codes, distance/heading math, jump rejection/reacquisition, hysteresis, credential latching, HTTP classification, bounded `Retry-After`, retry cap, one-second moving cadence, stationary heartbeat and queue recovery |
 | Firmware compile | pinned PlatformIO ESP32 target | API/library compatibility, binary size |
 | Physical acceptance | runbooks below | Radio, GNSS, power, TLS, public path and human workflows |
 
@@ -173,7 +173,7 @@ Keyboard-only test every route: visible focus, native selects, tab order, admin 
 
 ## Performance/load test
 
-Use a staging project/runtime near production topology. Ramp realistic devices at 3-second worst-case cadence and browsers with RTDB subscriptions. Record API p50/p95/p99, device-to-server and RTDB-write health metrics, errors/429s, CPU/memory, scrypt cache rate, Firebase connections/operations and UI update time. Include a reconnect storm with jitter. Define acceptance targets with university owners; do not invent a universal latency target from local tests.
+Use a staging project/runtime near production topology. Ramp realistic devices at one-second moving cadence and browsers with RTDB subscriptions. Record API p50/p95/p99, device-to-server and RTDB-write health metrics, errors/429s, CPU/memory, scrypt cache rate, Firebase connections/operations and UI update time. Include a reconnect storm with jitter. Define acceptance targets with university owners; do not invent a universal latency target from local tests.
 
 ## Release evidence
 

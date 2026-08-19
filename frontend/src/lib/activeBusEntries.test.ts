@@ -23,6 +23,22 @@ describe("isActiveBusEntry", () => {
     ).toBe(true);
   });
 
+  it("accepts a powered online bus before a ride session is armed", () => {
+    expect(
+      isActiveBusEntry(
+        {
+          busId: "Bus01",
+          routeId: "route_1",
+          timestamp: now - 1_000,
+          deviceState: "online",
+          tripState: "pre_departure",
+          motionState: "moving",
+        },
+        now,
+      ),
+    ).toBe(true);
+  });
+
   it("rejects stale telemetry outside a ride", () => {
     expect(isActiveBusEntry({ busId: "bus_1", timestamp: now - BUS_EXPIRY_MS }, now)).toBe(false);
   });
@@ -36,6 +52,7 @@ describe("isActiveBusEntry", () => {
       { busId: "bus_1", timestamp: now - 1_000, deviceState: "unknown" },
       { busId: "bus_1", timestamp: now - 1_000, motionState: "flying" },
       { busId: "bus_1", timestamp: now - 1_000, tripState: "paused" },
+      { busId: "bus_1", timestamp: now - 1_000, status: "unknown" },
       { busId: "bus_1", timestamp: now - 1_000, routeId: 42 },
     ];
 
