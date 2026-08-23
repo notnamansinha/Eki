@@ -2,12 +2,27 @@ import { Router, type Request, type Response } from "express";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { auth, db, rtdb } from "../lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
+import { FleetReconciliationCache } from "../services/fleetReconciliationCache";
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 function validId(value: unknown): value is string {
   return typeof value === "string" && SAFE_ID.test(value);
+}
+
+async function loadBusRouteIds(busId: string): Promise<string[]> {
+  const busDoc = await db.collection("buses").doc(busId).get();
+  const bus = busDoc.data();
+  const routeIds = (Array.isArray(bus?.assignedRoutes)
+    ? bus.assignedRoutes
+    : typeof bus?.assignedRouteId === "string"
+      ? [bus.assignedRouteId]
+      : []).filter(validId);
+  if (!busDoc.exists || routeIds.length === 0) {
+    throw new Error("Assigned bus must have at least one valid route.");
+  }
+  return routeIds;
 }
 
 function stableJson(value: unknown): string {
@@ -40,6 +55,7 @@ async function applyDriverAuthorization(
   driverId: string,
   authUid: string,
   assignedBusId: string | null,
+  reconciliationCache?: FleetReconciliationCache,
 ): Promise<boolean> {
   const user = await auth.getUser(authUid);
   const existing = user.customClaims ?? {};
@@ -50,7 +66,9 @@ async function applyDriverAuthorization(
 
   if (!assignedBusId) {
     const mirrorRef = rtdb.ref(`driverRouteAssignments/${driverId}`);
-    const mirror = (await mirrorRef.once("value")).val();
+    const mirror = reconciliationCache
+      ? reconciliationCache.mirrorFor(driverId)
+      : (await mirrorRef.once("value")).val();
     const claimsChanged =
       existing.role !== "driver" ||
       existing.admin !== undefined ||
@@ -65,25 +83,23 @@ async function applyDriverAuthorization(
         auth.revokeRefreshTokens(authUid),
       );
     }
-    if (mirror !== null) updates.push(mirrorRef.remove());
+    if (mirror !== null) {
+      updates.push(mirrorRef.remove());
+      reconciliationCache?.setMirror(driverId, null);
+    }
     await Promise.all(updates);
     return true;
   }
 
   const mirrorRef = rtdb.ref(`driverRouteAssignments/${driverId}`);
-  const [busDoc, mirrorSnapshot] = await Promise.all([
-    db.collection("buses").doc(assignedBusId).get(),
-    mirrorRef.once("value"),
+  const [routeIds, mirror] = await Promise.all([
+    reconciliationCache
+      ? reconciliationCache.routesForBus(assignedBusId)
+      : loadBusRouteIds(assignedBusId),
+    reconciliationCache
+      ? Promise.resolve(reconciliationCache.mirrorFor(driverId))
+      : mirrorRef.once("value").then((snapshot) => snapshot.val()),
   ]);
-  const bus = busDoc.data();
-  const routeIds = (Array.isArray(bus?.assignedRoutes)
-    ? bus.assignedRoutes
-    : typeof bus?.assignedRouteId === "string"
-      ? [bus.assignedRouteId]
-      : []).filter(validId);
-  if (!busDoc.exists || routeIds.length === 0) {
-    throw new Error("Assigned bus must have at least one valid route.");
-  }
 
   const expectedMirror = {
     [assignedBusId]: Object.fromEntries(
@@ -96,7 +112,7 @@ async function applyDriverAuthorization(
     existing.driverId !== driverId ||
     existing.assignedBusId !== assignedBusId;
   const mirrorChanged =
-    stableJson(mirrorSnapshot.val()) !== stableJson(expectedMirror);
+    stableJson(mirror) !== stableJson(expectedMirror);
   if (!claimsChanged && !mirrorChanged) return false;
 
   const updates: Promise<unknown>[] = [];
@@ -108,7 +124,10 @@ async function applyDriverAuthorization(
       assignedBusId,
     }), auth.revokeRefreshTokens(authUid));
   }
-  if (mirrorChanged) updates.push(mirrorRef.set(expectedMirror));
+  if (mirrorChanged) {
+    updates.push(mirrorRef.set(expectedMirror));
+    reconciliationCache?.setMirror(driverId, expectedMirror);
+  }
   await Promise.all(updates);
   return true;
 }
@@ -119,6 +138,21 @@ export async function reconcileFleetAuthorization(): Promise<{
   failed: number;
 }> {
   const drivers = await db.collection("drivers").limit(500).get();
+  let reconciliationCache: FleetReconciliationCache | undefined;
+  try {
+    const mirrorSnapshot = await rtdb.ref("driverRouteAssignments").once("value");
+    const rawMirrors = mirrorSnapshot.val();
+    reconciliationCache = new FleetReconciliationCache(
+      rawMirrors && typeof rawMirrors === "object" && !Array.isArray(rawMirrors)
+        ? rawMirrors as Record<string, unknown>
+        : {},
+      loadBusRouteIds,
+    );
+  } catch (error) {
+    // Preserve the original per-driver lookup path if the bulk optimization is
+    // temporarily unavailable; reconciliation remains a safety mechanism.
+    console.warn("[Fleet] Bulk assignment mirror read failed; using per-driver reads:", error);
+  }
   let repaired = 0;
   let failed = 0;
   for (let index = 0; index < drivers.docs.length; index += 10) {
@@ -134,6 +168,7 @@ export async function reconcileFleetAuthorization(): Promise<{
           driver.id,
           data.authUid,
           validId(data.assignedBusId) ? data.assignedBusId : null,
+          reconciliationCache,
         )) {
           repaired += 1;
         }

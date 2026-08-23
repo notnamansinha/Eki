@@ -127,3 +127,5 @@ Tests beside pure frontend libraries exercise freshness, RTDB sharing, route dis
 ## Consistency model
 
 RTDB is the immediate latest-value projection; Firestore is durable truth for configuration and recovery/history. A small window can exist between RTDB claim and Firestore active projection. Session IDs and conditional transactions make retries/reconciliation idempotent. Clients must display interruption/staleness rather than infer lifecycle from coordinates alone.
+
+The fleet authorization safety sweep reads the RTDB assignment mirror once and coalesces Firestore bus-route lookups by bus ID while retaining per-driver Auth checks. If the bulk mirror read fails, it falls back to the original per-driver lookup path so an optimization outage cannot disable repair.
