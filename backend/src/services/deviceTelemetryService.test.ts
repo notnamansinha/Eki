@@ -86,6 +86,20 @@ describe("telemetry latency summaries", () => {
       p99: 100,
     });
   });
+
+  it("handles extreme latency outliers without breaking percentile calculations", () => {
+    // Simulates a device that was offline for hours (e.g., bus in a tunnel)
+    // and suddenly reconnects. The system must not let this single outlier
+    // skew the p50/p95 of normal operations, which are used for health monitoring.
+    const samples = [10, 15, 12, 14, 13, 3600000]; // 1 hour latency outlier
+
+    const summary = summarizeLatencySamples(samples);
+    expect(summary.samples).toBe(6);
+    // Median (p50) should remain unaffected by the single outlier
+    expect(summary.p50).toBe(13);
+    // Average will be skewed, which is mathematically expected and correct
+    expect(summary.average).toBeGreaterThan(100000);
+  });
 });
 
 describe("freshestDelayMinutes", () => {
@@ -160,6 +174,7 @@ describe("freshestDelayMinutes", () => {
     ).toEqual({ delayMinutes: 12, delayUpdatedAt: 10 });
   });
 });
+
 describe("telemetry ingestion resilience and edge cases", () => {
   it("calculates retryAfterMs correctly when rate limit is exactly exceeded", () => {
     // Simulates a device spamming requests. We test the exact boundary condition.
@@ -186,39 +201,18 @@ describe("telemetry ingestion resilience and edge cases", () => {
     expect(request31.retryAfterMs).toBe(10_000);
   });
 
-  it("handles extreme latency outliers without breaking percentile calculations", () => {
-    // Simulates a device that was offline for hours (e.g., bus in a tunnel)
-    // and suddenly reconnects. The system must not let this single outlier
-    // skew the p50/p95 of normal operations, which are used for health monitoring.
-    const samples = [10, 15, 12, 14, 13, 3600000]; // 1 hour latency outlier
-
-    const summary = summarizeLatencySamples(samples);
-    expect(summary.samples).toBe(6);
-    // Median (p50) should remain unaffected by the single outlier
-    expect(summary.p50).toBe(13);
-    // Average will be skewed, which is mathematically expected and correct
-    expect(summary.average).toBeGreaterThan(100000);
-  });
-
-  it("gracefully handles empty latency sample arrays", () => {
-    // Ensures the monitoring dashboard doesn't crash if no data has been collected yet
-    expect(summarizeLatencySamples([])).toEqual({
-      samples: 0,
-      average: null,
-      p50: null,
-      p95: null,
-      p99: null,
-    });
-  });
-
-  it("validates that scrypt hashing prevents timing attacks via length variation", () => {
+  it("validates that scrypt hashing handles variable-length secrets securely", async () => {
     // Security test: Ensures that secrets of different lengths don't leak
-    // information through early rejection or timing differences.
+    // information through early rejection or timing differences, and always
+    // produce a valid, constant-time hash format.
     const shortSecret = "a";
     const longSecret = "a".repeat(128);
 
-    // Both should successfully generate a valid hash format without throwing
-    expect(async () => await hashDeviceSecret(shortSecret)).not.toThrow();
-    expect(async () => await hashDeviceSecret(longSecret)).not.toThrow();
+    await expect(hashDeviceSecret(shortSecret)).resolves.toMatch(
+      /^[a-f0-9]{32}:[a-f0-9]{128}$/,
+    );
+    await expect(hashDeviceSecret(longSecret)).resolves.toMatch(
+      /^[a-f0-9]{32}:[a-f0-9]{128}$/,
+    );
   });
 });
