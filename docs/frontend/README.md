@@ -26,7 +26,7 @@ The root `npm run build` follows Next export with Workbox manifest injection and
 - `liveBusStore` maintains one shared RTDB subscription and prunes stale non-active entries. Firestore collection/settings hooks also share/auth-gate listeners.
 - Google Maps provider loads once per protected workspace. Stored polylines and local distance/speed math avoid passenger runtime Routes calls.
 - Only the active admin tab is mounted, preventing hidden maps/listeners/timers.
-- Service worker precaches the revisioned static app, may cache explicit public maps/fonts/images, and never caches authenticated Firebase/API or unknown requests.
+- Service worker precaches a budgeted HTML/icon shell, caches immutable role-specific Next.js chunks only when used, and never caches authenticated Firebase/API or unknown requests. Updates wait for existing tabs to close and never force-reload an active ride.
 - Dialogs trap/restore focus and support Escape; selects are native; map smoothing respects reduced motion; private routes are no-index.
 
 See [LLD](../design/LOW_LEVEL_DESIGN.md), [Firebase model](../data/FIREBASE_DATA_MODEL.md), and [test strategy](../testing/TEST_STRATEGY.md).

@@ -1,7 +1,7 @@
 /**
  * generate-sw.mjs — Post-build step: Inject precache manifest into SW.
  *
- * Scans frontend/out/ for all static assets produced by `next build`,
+ * Scans frontend/out/ for the bounded install shell produced by `next build`,
  * bundles the Workbox runtime + src/sw.js, and writes the final sw.js
  * into frontend/out/ ready for Firebase Hosting deployment.
  *
@@ -30,6 +30,7 @@ import { bundle } from "workbox-build/build/lib/bundle.js";
 const root = path.resolve(fileURLToPath(import.meta.url), "../..");
 const frontendRoot = path.join(root, "frontend");
 const swDest = path.join(frontendRoot, "out", "sw.js");
+const PRECACHE_BUDGET_BYTES = 1536 * 1024;
 
 const config = {
   swSrc: path.join(frontendRoot, "src", "sw.js"),
@@ -38,8 +39,6 @@ const config = {
   globPatterns: [
     // HTML pages (the app shell for every route)
     "**/*.html",
-    // Next.js static chunks — JS and CSS
-    "_next/static/**/*.{js,css}",
     // PWA manifest
     "manifest.webmanifest",
     // Icons and hero images
@@ -55,10 +54,20 @@ const config = {
     "_next/static/**/webpack-*",
     "_next/static/**/buildManifest.js",
   ],
-  // Maximum file size to precache (2 MB). Larger files (e.g. if someone adds
+  // Maximum individual file size (1 MB); the aggregate budget below also
+  // prevents many smaller assets from silently bloating install traffic.
   // a video) should use runtime caching instead.
-  maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
+  maximumFileSizeToCacheInBytes: 1024 * 1024,
 };
+
+function assertPrecacheBudget(size) {
+  if (size > PRECACHE_BUDGET_BYTES) {
+    throw new Error(
+      `Precache is ${(size / 1024).toFixed(0)} KB; budget is ${PRECACHE_BUDGET_BYTES / 1024} KB. ` +
+      "Move role-specific or large assets to runtime caching.",
+    );
+  }
+}
 
 const cacheDir = path.join(frontendRoot, ".next", "cache", "sw");
 const cacheManifestPath = path.join(cacheDir, "manifest.json");
@@ -173,6 +182,7 @@ async function main() {
   try {
     const cachedManifest = JSON.parse(await readFile(cacheManifestPath, "utf8"));
     if (cachedManifest.fingerprint === current) {
+      assertPrecacheBudget(cachedManifest.size);
       await copyFile(cacheSwPath, swDest);
       console.log(
         `✅ SW unchanged: ${cachedManifest.count} files precached (${(cachedManifest.size / 1024).toFixed(0)} KB total, cached)`
@@ -184,6 +194,7 @@ async function main() {
   }
 
   const result = await generate();
+  assertPrecacheBudget(result.size);
 
   await mkdir(cacheDir, { recursive: true });
   // The manifest is the commit marker: only publish it after its worker is
