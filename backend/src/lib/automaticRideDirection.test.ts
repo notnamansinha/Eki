@@ -42,6 +42,7 @@ describe("automatic ride direction", () => {
     expect(automaticTurnaroundIsReady(ready)).toBe(true);
     expect(automaticTurnaroundIsReady({ ...ready, motionState: "moving" })).toBe(false);
     expect(automaticTurnaroundIsReady({ ...ready, telemetryTimestamp: 100_000 })).toBe(false);
+    expect(automaticTurnaroundIsReady({ ...ready, telemetryTimestamp: 179_999 })).toBe(false);
     expect(automaticTurnaroundIsReady({ ...ready, now: 170_000 })).toBe(false);
     expect(automaticTurnaroundIsReady({
       ...ready,

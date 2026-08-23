@@ -334,10 +334,11 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
     const requestedDirection = inferRideDirectionAtEndpoint(
       naturalStops,
       { lat: currentLat, lng: currentLng },
+      STOP_GEOFENCE_M,
     );
     if (!requestedDirection) {
       res.status(409).json({
-        error: "The bus must be stopped near exactly one route endpoint before its direction can be inferred.",
+        error: `The bus must be stopped within ${STOP_GEOFENCE_M} metres of exactly one route endpoint before its direction can be inferred.`,
       });
       return;
     }

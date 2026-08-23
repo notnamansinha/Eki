@@ -83,6 +83,7 @@ vi.mock("../lib/firebaseAdmin", () => ({
 
 vi.mock("./tripStateReducer", () => ({
   reduceTripState: mocks.reduceTripState,
+  STOP_GEOFENCE_M: 20,
 }));
 
 import { startTripStateEngine } from "./tripStateEngine";
@@ -625,6 +626,70 @@ describe("trip-state engine lifecycle", () => {
     expect(store.nodeValue()).toMatchObject({
       sessionId: "session-1",
       turnaroundClaimId: "another-replica-session",
+    });
+    await stop();
+  });
+
+  it("clears its RTDB claim when durable turnaround creation loses the bus lock", async () => {
+    vi.setSystemTime(200_000);
+    mocks.transactionGet.mockImplementation(async (ref: {
+      collectionName?: string;
+      id?: string;
+    }) => {
+      if (ref.collectionName === "_active_bus_locks") {
+        return {
+          exists: true,
+          data: () => ({ sessionId: "another-session" }),
+        };
+      }
+      if (ref.collectionName === "ride_sessions") {
+        return {
+          exists: true,
+          data: () => ({
+            status: "completed",
+            busId: "bus_1",
+            routeId: "route_2",
+            driverId: "driver-1",
+          }),
+        };
+      }
+      if (ref.collectionName === "drivers") {
+        return { exists: true, data: () => ({ assignedBusId: "bus_1" }) };
+      }
+      if (ref.collectionName === "buses") {
+        return { exists: true, data: () => ({ assignedRoutes: ["route_2"] }) };
+      }
+      return { exists: false, data: () => undefined };
+    });
+    const stop = startTripStateEngine();
+    armRoute();
+    const store = makeNodeRef({
+      busId: "bus_1",
+      routeId: "route_2",
+      driverId: "driver-1",
+      sessionId: "session-1",
+      status: "offline",
+      tripState: "completed",
+      direction: "forward",
+      motionState: "stopped",
+      lat: 23.1,
+      lng: 72.1,
+      timestamp: 199_000,
+      turnaroundEligibleAt: 180_000,
+    });
+
+    mocks.rtdbHandlers.get("child_changed")!({
+      key: "bus_1_route_2_lock_conflict",
+      val: store.nodeValue,
+      ref: store.ref,
+    });
+    await flushMicrotasks(40);
+
+    expect(mocks.transactionCreate).not.toHaveBeenCalled();
+    expect(store.nodeValue()).toMatchObject({
+      sessionId: "session-1",
+      turnaroundClaimId: null,
+      turnaroundClaimedAt: null,
     });
     await stop();
   });

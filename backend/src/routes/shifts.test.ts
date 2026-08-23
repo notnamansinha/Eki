@@ -452,6 +452,17 @@ describe("shift start after automatic completion", () => {
     };
     expect((await startShift()).status).toBe(409);
 
+    // About 30 m from stop_1: close enough for a broad endpoint hint but
+    // outside the 20 m authoritative stop geofence.
+    harness.liveNode = {
+      busId: "bus_1",
+      lat: 23.00027,
+      lng: 72.5,
+      timestamp: Date.now(),
+      motionState: "stopped",
+    };
+    expect((await startShift()).status).toBe(409);
+
     harness.liveNode = {
       busId: "bus_1",
       lat: 23.0,

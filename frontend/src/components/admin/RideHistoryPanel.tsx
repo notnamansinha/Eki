@@ -24,7 +24,10 @@ import { apiRequest } from "@/lib/apiClient";
 import { errorMessage } from "@/lib/errors";
 import { Bus, Loader2, MapPin, Trash2, User, Users, AlertCircle } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { directionLabel, normalizeRideDirection } from "@/lib/rideDirection";
+import {
+  normalizeRideDirection,
+  persistedDirectionLabel,
+} from "@/lib/rideDirection";
 
 interface PassengerRecord {
   userId: string;
@@ -312,9 +315,11 @@ export default function RideHistoryPanel() {
                     </span>
                     <span className="flex items-center gap-1">
                       <MapPin className="size-3" />
-                      Direction: {directionLabel(
+                      Direction: {persistedDirectionLabel(
                         normalizeRideDirection(session.direction),
                         routeStops.get(session.routeId) ?? [],
+                        session.originStopId,
+                        session.destinationStopId,
                       )}
                     </span>
                     <span className="flex items-center gap-1">

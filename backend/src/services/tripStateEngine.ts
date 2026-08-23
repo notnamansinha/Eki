@@ -8,7 +8,7 @@ import {
   oppositeRideDirection,
 } from "../lib/automaticRideDirection";
 import { SerializedChangeWriter } from "./serializedChangeWriter";
-import { reduceTripState } from "./tripStateReducer";
+import { reduceTripState, STOP_GEOFENCE_M } from "./tripStateReducer";
 import { normalizeRideDirection, stopsInRideDirection } from "../lib/rideDirection";
 import {
   drainDynamicPromises,
@@ -152,7 +152,7 @@ async function maybeArmAutomaticTurnaround(
       motionState: data.motionState,
       position: { lat: Number(data.lat), lng: Number(data.lng) },
       destination: completedDestination,
-    })
+    }, STOP_GEOFENCE_M)
   ) {
     return false;
   }
@@ -181,7 +181,7 @@ async function maybeArmAutomaticTurnaround(
         motionState: live.motionState,
         position: { lat: Number(live.lat), lng: Number(live.lng) },
         destination: completedDestination,
-      })
+      }, STOP_GEOFENCE_M)
     ) {
       return;
     }
@@ -670,17 +670,18 @@ export function startTripStateEngine(): () => Promise<void> {
       await persistOfflineFleetState(data, new Date().toISOString());
       return;
     }
-    if (!Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
-
     const naturalStops = await ensureRouteLoaded(data.routeId);
     if (data.tripState === "completed") {
       try {
-        const armed = await maybeArmAutomaticTurnaround(
-          data,
-          naturalStops,
-          snapshot.ref,
-        );
-        if (!armed && data.status === "offline") {
+        const armed =
+          Number.isFinite(data.lat) && Number.isFinite(data.lng)
+            ? await maybeArmAutomaticTurnaround(
+                data,
+                naturalStops,
+                snapshot.ref,
+              )
+            : false;
+        if (!armed) {
           await persistOfflineFleetState(data, new Date().toISOString());
         }
       } catch (error) {
@@ -691,6 +692,7 @@ export function startTripStateEngine(): () => Promise<void> {
       }
       return;
     }
+    if (!Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
     const direction = normalizeRideDirection(data.direction);
     const stops = stopsInRideDirection(naturalStops, direction);
 

@@ -16,6 +16,23 @@ export function directionLabel(
   return `${origin} → ${destination}`;
 }
 
+/** Uses immutable session endpoints before falling back to the current route. */
+export function persistedDirectionLabel(
+  direction: RideDirection,
+  stops: RouteData["stops"],
+  originStopId: string | null | undefined,
+  destinationStopId: string | null | undefined,
+): string {
+  if (originStopId && destinationStopId) {
+    const stopLabel = (stopId: string) => {
+      const stop = stops.find((candidate) => candidate.id === stopId);
+      return stop?.shortName || stop?.name || stopId;
+    };
+    return `${stopLabel(originStopId)} → ${stopLabel(destinationStopId)}`;
+  }
+  return directionLabel(direction, stops);
+}
+
 /** Produces a view-only route whose stops and fallback geometry follow travel order. */
 export function routeInRideDirection(
   route: RouteData,

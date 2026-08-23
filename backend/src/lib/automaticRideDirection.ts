@@ -60,6 +60,7 @@ interface TurnaroundReadinessInput {
 /** Requires a fresh stopped fix at the completed destination after the dwell. */
 export function automaticTurnaroundIsReady(
   input: TurnaroundReadinessInput,
+  radiusMeters = DIRECTION_INFERENCE_RADIUS_M,
 ): boolean {
   return (
     Number.isFinite(input.now) &&
@@ -67,12 +68,14 @@ export function automaticTurnaroundIsReady(
     Number.isFinite(input.eligibleAt) &&
     input.eligibleAt > 0 &&
     input.now >= input.eligibleAt &&
+    input.telemetryTimestamp >= input.eligibleAt &&
     input.telemetryTimestamp <= input.now + 10_000 &&
     input.now - input.telemetryTimestamp <= TURNAROUND_TELEMETRY_MAX_AGE_MS &&
     input.motionState === "stopped" &&
     validCoordinate(input.position) &&
     validCoordinate(input.destination) &&
-    haversineMeters(input.position, input.destination) <=
-      DIRECTION_INFERENCE_RADIUS_M
+    Number.isFinite(radiusMeters) &&
+    radiusMeters > 0 &&
+    haversineMeters(input.position, input.destination) <= radiusMeters
   );
 }
