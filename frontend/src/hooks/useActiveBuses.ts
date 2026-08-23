@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { subscribeLiveBuses } from "@/lib/liveBusStore";
+import { useEffect, useRef, useState } from "react";
+import { subscribeLiveBusChanges } from "@/lib/liveBusStore";
 import {
-  filterActiveBusEntries,
+  isActiveBusEntry,
   type ActiveBusEntry,
 } from "@/lib/activeBusEntries";
 import { isAuthoritativeLiveBusDelivery } from "@/lib/liveBusDelivery";
@@ -29,22 +29,37 @@ export interface UseActiveBusesOptions {
 export function useActiveBuses(options: UseActiveBusesOptions = {}): ActiveBusEntry[] {
   const { connectionGeneration, resumeGeneration, markSnapshotReceived } = options;
   const [active, setActive] = useState<ActiveBusEntry[]>([]);
+  const activeByKeyRef = useRef(new Map<string, ActiveBusEntry>());
 
   useEffect(() => {
-    const unsubscribe = subscribeLiveBuses(
-      (snapshot, source) => {
-        if (isAuthoritativeLiveBusDelivery(source)) {
+    const unsubscribe = subscribeLiveBusChanges(
+      (change) => {
+        if (isAuthoritativeLiveBusDelivery(change.source)) {
           markSnapshotReceived?.();
         }
-        setActive(
-          filterActiveBusEntries(snapshot as Record<string, unknown> | null),
-        );
+        if (change.type === "reset") {
+          activeByKeyRef.current = new Map(
+            Object.entries(change.snapshot ?? {}).flatMap(([key, value]) =>
+              isActiveBusEntry(value) ? [[key, value] as const] : []
+            ),
+          );
+        } else if (change.type === "remove") {
+          activeByKeyRef.current.delete(change.key);
+        } else if (isActiveBusEntry(change.value)) {
+          activeByKeyRef.current.set(change.key, change.value);
+        } else {
+          activeByKeyRef.current.delete(change.key);
+        }
+        setActive([...activeByKeyRef.current.values()]);
       },
       (error) => {
         console.warn("[RTDB] activeBuses read failed:", error.message);
       },
     );
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      activeByKeyRef.current.clear();
+    };
   }, [connectionGeneration, resumeGeneration, markSnapshotReceived]);
 
   return active;

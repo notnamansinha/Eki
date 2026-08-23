@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
-import { subscribeLiveBuses } from "@/lib/liveBusStore";
+import { subscribeLiveBusChanges } from "@/lib/liveBusStore";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import { useSettings } from "@/hooks/useSettings";
 import { isAuthoritativeLiveBusDelivery } from "@/lib/liveBusDelivery";
@@ -77,26 +77,63 @@ export default function PassengerWorkspace() {
   const trackedRideRef = useRef<TrackedRide | null>(null);
   const pendingCompletionSessionIdRef = useRef<string | null>(null);
   const latestTripStatesRef = useRef<Map<string, ActiveBusData["tripState"]>>(new Map());
+  const rawLiveBusesRef = useRef(new Map<string, unknown>());
+  const activeLiveBusesRef = useRef(new Map<string, ActiveBusData>());
 
   // Listen to Firebase Realtime Database for active buses using the existing
   // Firebase session established by the root auth provider.
   // Fresh device telemetry is visible immediately; tripState/session data adds
   // ride-only actions such as boarding, messaging, and feedback.
   useEffect(() => {
-    const unsubscribe = subscribeLiveBuses((snapshot, source) => {
-        const rawSnapshot = snapshot as Record<string, unknown> | null;
-        const newBuses = passengerLiveBuses(rawSnapshot, Date.now());
-        const nextTripStates = passengerTripStates(rawSnapshot);
-
+    const unsubscribe = subscribeLiveBusChanges((change) => {
         const trackedRideSessionId =
           trackedRideRef.current?.sessionId ?? pendingCompletionSessionIdRef.current;
-        if (trackedRideSessionId && !nextTripStates.has(trackedRideSessionId)) {
-          const previousState = latestTripStatesRef.current.get(trackedRideSessionId);
-          if (previousState) nextTripStates.set(trackedRideSessionId, previousState);
+        const previousTrackedState = trackedRideSessionId
+          ? latestTripStatesRef.current.get(trackedRideSessionId)
+          : undefined;
+        if (change.type === "reset") {
+          const rawSnapshot = change.snapshot as Record<string, unknown> | null;
+          rawLiveBusesRef.current = new Map(Object.entries(rawSnapshot ?? {}));
+          activeLiveBusesRef.current = new Map(
+            passengerLiveBuses(rawSnapshot, Date.now()).map((bus) => [
+              passengerLiveBusSelectionKey(bus),
+              bus,
+            ]),
+          );
+          latestTripStatesRef.current = passengerTripStates(rawSnapshot);
+        } else {
+          const previous = rawLiveBusesRef.current.get(change.key);
+          if (previous && typeof previous === "object") {
+            const oldBus = previous as Record<string, unknown>;
+            if (typeof oldBus.sessionId === "string") {
+              latestTripStatesRef.current.delete(oldBus.sessionId);
+            }
+            const oldNormalized = passengerLiveBuses({ [change.key]: previous }, Date.now())[0];
+            if (oldNormalized) {
+              activeLiveBusesRef.current.delete(passengerLiveBusSelectionKey(oldNormalized));
+            }
+          }
+          if (change.type === "remove") {
+            rawLiveBusesRef.current.delete(change.key);
+          } else {
+            rawLiveBusesRef.current.set(change.key, change.value);
+            const nextBus = passengerLiveBuses({ [change.key]: change.value }, Date.now())[0];
+            if (nextBus) {
+              activeLiveBusesRef.current.set(passengerLiveBusSelectionKey(nextBus), nextBus);
+            }
+            passengerTripStates({ [change.key]: change.value }).forEach((state, sessionId) => {
+              latestTripStatesRef.current.set(sessionId, state);
+            });
+          }
         }
-        latestTripStatesRef.current = nextTripStates;
-        setActiveBuses(newBuses);
-        if (isAuthoritativeLiveBusDelivery(source)) {
+
+        if (trackedRideSessionId && !latestTripStatesRef.current.has(trackedRideSessionId)) {
+          if (previousTrackedState) {
+            latestTripStatesRef.current.set(trackedRideSessionId, previousTrackedState);
+          }
+        }
+        setActiveBuses([...activeLiveBusesRef.current.values()]);
+        if (isAuthoritativeLiveBusDelivery(change.source)) {
           markSnapshotReceived();
         }
       }, (error) => {
@@ -105,6 +142,8 @@ export default function PassengerWorkspace() {
 
     return () => {
       unsubscribe();
+      rawLiveBusesRef.current.clear();
+      activeLiveBusesRef.current.clear();
     };
   }, [connectionGeneration, markSnapshotReceived, resumeGeneration]);
 
