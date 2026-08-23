@@ -48,7 +48,10 @@ vi.mock("../lib/firebaseAdmin", () => {
       }
       if (collectionName === "routes") {
         return snapshot(true, {
-          stops: [{ id: "stop_1", name: "Stop 1", lat: 23.0, lng: 72.5 }],
+          stops: [
+            { id: "stop_1", name: "Stop 1", lat: 23.0, lng: 72.5 },
+            { id: "stop_2", name: "Stop 2", lat: 23.2, lng: 72.7 },
+          ],
         });
       }
       if (collectionName === "_active_bus_locks") {
@@ -202,11 +205,14 @@ beforeEach(() => {
   };
 });
 
-async function startShift(driverId?: string) {
+async function startShift(
+  driverId?: string,
+  direction: "forward" | "reverse" = "forward",
+) {
   return fetch(`${baseUrl}/api/shifts/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ busId: "bus_1", routeId: "route_1", driverId }),
+    body: JSON.stringify({ busId: "bus_1", routeId: "route_1", driverId, direction }),
   });
 }
 
@@ -387,6 +393,33 @@ describe("shift start after automatic completion", () => {
     expect(activeRideSet?.data.delayUpdatedAt).toBe(0);
     expect(harness.docSets.map((entry) => entry.id)).not.toContain("session_completed");
     expect(harness.batchSets.map((entry) => entry.id)).not.toContain("session_completed");
+  });
+
+  it("arms a reverse ride from the route terminus with immutable direction metadata", async () => {
+    harness.liveNode = {
+      busId: "bus_1",
+      lat: 23.2,
+      lng: 72.7,
+      timestamp: Date.now(),
+      motionState: "stopped",
+    };
+
+    const response = await startShift(undefined, "reverse");
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ direction: "reverse", resumed: false });
+    expect(harness.liveNode).toMatchObject({
+      direction: "reverse",
+      originStopId: "stop_2",
+      destinationStopId: "stop_1",
+      tripState: "in_service",
+      currentStopIndex: 0,
+    });
+    const sessionSet = harness.batchSets.find((entry) => entry.id === "new_session_1");
+    expect(sessionSet?.data).toMatchObject({
+      direction: "reverse",
+      originStopId: "stop_2",
+      destinationStopId: "stop_1",
+    });
   });
 
   it("still resumes an in-service shift (regression guard)", async () => {

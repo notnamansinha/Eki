@@ -53,6 +53,7 @@ export function validateStopSelection(
   stops: unknown,
   boardingStopId: unknown,
   alightingStopId: unknown,
+  direction: "forward" | "reverse" = "forward",
 ): { boardingStopId: string; alightingStopId: string | null } | null {
   if (!Array.isArray(stops) || stops.length < 2) return null;
   if (
@@ -72,6 +73,7 @@ export function validateStopSelection(
   const stopIds = stops.map((stop: RouteStop) =>
     typeof stop?.id === "string" && SAFE_ID.test(stop.id) ? stop.id : null
   );
+  if (direction === "reverse") stopIds.reverse();
   const boardingIndex = stopIds.indexOf(boardingStopId);
   const normalizedAlighting = typeof alightingStopId === "string"
     ? alightingStopId

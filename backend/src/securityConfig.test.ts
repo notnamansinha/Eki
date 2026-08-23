@@ -730,7 +730,8 @@ describe("production security configuration", () => {
     expect(shifts).toContain("final ordered stop");
     expect(shifts).toContain("STOP_GEOFENCE_M");
     expect(shifts).toContain("arrivedAtOrigin");
-    expect(operations).toContain("It starts automatically at stop 1");
+    expect(operations).toContain('ariaLabel="Travel direction"');
+    expect(operations).toContain("directionLabel(direction");
     expect(passengerBoarding).toContain("Ride in service");
   });
 

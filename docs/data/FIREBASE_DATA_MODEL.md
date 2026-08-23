@@ -43,6 +43,8 @@ One latest projection per assigned bus/route. The key is an internal composite l
 | `sessionId` | string | Firestore ride-session link when armed/active |
 | `driverId` | string | Authorized driver link |
 | `tripState` | `pre_departure` / `in_service` / `completed` | Server worker lifecycle |
+| `direction` | `forward` / `reverse` | Immutable session travel order; legacy nodes default forward |
+| `originStopId`, `destinationStopId` | string | Endpoints for this direction |
 | `currentStopIndex` | integer | Zero-based next/current ordered stop progress |
 | `hasDepartedOrigin` | boolean | Prevents repeated origin activation |
 | `delayMinutes` | number | Driver API value, 0–1440 |
@@ -123,6 +125,8 @@ Durable ride record and parent of messages.
 |---|---|---|
 | `id` | string | Same as document ID |
 | `busId`, `routeId`, `driverId` | string | Configuration links |
+| `direction` | `forward` / `reverse` | Immutable travel order selected when armed |
+| `originStopId`, `destinationStopId` | string | Direction-specific route endpoints |
 | `status` | `pending` / `armed` / `active` / `completed` / `failed` / `interrupted` | Durable session status |
 | `armedAt`, `startTime`, `endTime` | epoch ms | Driver arm, service activation, terminal time |
 | `activatedAt`, `updatedAt`, `reconciledAt` | Firestore Timestamp | Server audit markers |
@@ -135,7 +139,7 @@ Durable ride record and parent of messages.
 | `stopsReached.{i}` | `{stopIndex,stopId,stopName,timestamp}` | Stop evidence |
 | `path` | legacy map/array | Older history tolerated/read/deleted; no current per-fix writes |
 
-Admin and the assigned session driver can read. All client writes are denied. The assigned driver obtains the session code from the authenticated API; a passenger presents that code plus a fresh near-bus position to the join endpoint, which validates route stops and writes the manifest transactionally.
+Admin and the assigned session driver can read. All client writes are denied. The assigned driver obtains the session code from the authenticated API; a passenger presents that code plus a fresh near-bus position to the join endpoint, which validates boarding and alighting stops in the session's travel order and writes the manifest transactionally.
 
 #### `ride_sessions/{sessionId}/messages/{messageId}`
 
@@ -147,7 +151,7 @@ Fields: `userId`, `sentAt: Timestamp[]` (bounded rolling history), `lastSentAt`.
 
 ### `completed_trips/{sessionId}`
 
-Fields: `busId`, `driverId`, `routeId`, `completedAt` (ISO string), `stopCount`, `stopNames[]`, `sessionId`. The worker writes/merges at final stop. Admin reads; client writes denied. This is a compact analytics projection; `ride_sessions` remains the detailed record.
+Fields: `busId`, `driverId`, `routeId`, `direction`, `originStopId`, `destinationStopId`, `completedAt` (ISO string), `stopCount`, direction-ordered `stopNames[]`, `sessionId`. The worker writes/merges at the session destination. Admin reads; client writes denied. This is a compact analytics projection used for forward/reverse completion counts; `ride_sessions` remains the detailed record.
 
 ### `feedbacks/{feedbackId}`
 
@@ -171,11 +175,11 @@ Fields: `deviceId`, `busId`, `routeId`, `enabled`, `secretHash` (`32-hex-salt:12
 
 ### `active_rides/{busId}_{routeId}`
 
-Minimal recovery state: `sessionId`, `busId`, `routeId`, `driverId`, `status: active`, `tripState`, `currentStopIndex`, `hasDepartedOrigin`, `delayMinutes`, `updatedAt`. No coordinate history. Telemetry restores this into RTDB if a live node loses lifecycle fields. Completion/reconciliation deletes only a matching session.
+Minimal recovery state: `sessionId`, `busId`, `routeId`, `driverId`, `direction`, `originStopId`, `destinationStopId`, `status: active`, `tripState`, direction-ordered `currentStopIndex`, `hasDepartedOrigin`, `delayMinutes`, `updatedAt`. No coordinate history. Telemetry restores this into RTDB if a live node loses lifecycle fields. Completion/reconciliation deletes only a matching session.
 
 ### `_active_bus_locks/{busId}`
 
-Unique active-session constraint: `busId`, `routeId`, `driverId`, `sessionId`, `createdAt`, `updatedAt`. Created in the same Firestore transaction as the pending session; repaired on idempotent resume; conditionally released on conflict, completion or abandonment. It closes the otherwise possible same-bus/different-route race.
+Unique active-session constraint: `busId`, `routeId`, `driverId`, `sessionId`, `direction`, `createdAt`, `updatedAt`. Created in the same Firestore transaction as the pending session; repaired on idempotent resume; conditionally released on conflict, completion or abandonment. It closes the otherwise possible same-bus/different-route race and prevents a live session from being resumed in the opposite direction.
 
 ### `_worker_leases/{leaseName}`
 

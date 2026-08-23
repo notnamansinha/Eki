@@ -403,6 +403,10 @@ function durableLifecycle(
     sessionId: value.sessionId,
     driverId: value.driverId,
     status: "active",
+    direction: value.direction === "reverse" ? "reverse" : "forward",
+    originStopId: typeof value.originStopId === "string" ? value.originStopId : null,
+    destinationStopId:
+      typeof value.destinationStopId === "string" ? value.destinationStopId : null,
     tripState: value.tripState,
     currentStopIndex: Number.isInteger(value.currentStopIndex)
       ? value.currentStopIndex

@@ -24,6 +24,7 @@ import { apiRequest } from "@/lib/apiClient";
 import { errorMessage } from "@/lib/errors";
 import { Bus, Loader2, MapPin, Trash2, User, Users, AlertCircle } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { directionLabel, normalizeRideDirection } from "@/lib/rideDirection";
 
 interface PassengerRecord {
   userId: string;
@@ -45,6 +46,9 @@ interface RideSession {
   passengers?: PassengerRecord[] | Record<string, PassengerRecord>;
   path?: { lat: number; lng: number; timestamp: TimestampValue }[];
   stopsReached?: RideStopRecord[] | Record<string, RideStopRecord>;
+  direction?: "forward" | "reverse";
+  originStopId?: string | null;
+  destinationStopId?: string | null;
 }
 
 const SERVICE_TIME_ZONE =
@@ -305,6 +309,13 @@ export default function RideHistoryPanel() {
                     <span className="flex items-center gap-1">
                       <MapPin className="size-3" />
                       Route: {routeNames.get(session.routeId) || "Unavailable route"}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <MapPin className="size-3" />
+                      Direction: {directionLabel(
+                        normalizeRideDirection(session.direction),
+                        routeStops.get(session.routeId) ?? [],
+                      )}
                     </span>
                     <span className="flex items-center gap-1">
                       <Bus className="size-3" />

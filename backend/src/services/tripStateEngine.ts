@@ -4,6 +4,7 @@ import { LruCache } from "../lib/lruCache";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
 import { SerializedChangeWriter } from "./serializedChangeWriter";
 import { reduceTripState } from "./tripStateReducer";
+import { normalizeRideDirection, stopsInRideDirection } from "../lib/rideDirection";
 import {
   drainDynamicPromises,
   normalizeIdentifier,
@@ -73,6 +74,7 @@ function fleetLifecycleState(data: Record<string, unknown>) {
     status: typeof data.status === "string" ? data.status : "active",
     deviceState: typeof data.deviceState === "string" ? data.deviceState : "online",
     tripState: typeof data.tripState === "string" ? data.tripState : "pre_departure",
+    direction: normalizeRideDirection(data.direction),
     // Persist the live GNSS state so analytics can count signal loss; without
     // it the admin panel's signalLost count under-reported (issue #48 L2).
     motionState: typeof data.motionState === "string" ? data.motionState : null,
@@ -314,6 +316,9 @@ function persistActiveRideLifecycle(
     busId: data.busId,
     driverId: data.driverId,
     routeId: data.routeId,
+    direction: normalizeRideDirection(data.direction),
+    originStopId: normalizeIdentifier(data.originStopId),
+    destinationStopId: normalizeIdentifier(data.destinationStopId),
     status: "active",
     tripState,
     currentStopIndex,
@@ -448,7 +453,9 @@ export function startTripStateEngine(): () => Promise<void> {
     }
     if (!Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
 
-    const stops = await ensureRouteLoaded(data.routeId);
+    const naturalStops = await ensureRouteLoaded(data.routeId);
+    const direction = normalizeRideDirection(data.direction);
+    const stops = stopsInRideDirection(naturalStops, direction);
 
     const telemetryTimestamp = Number(data.timestamp);
     const previousTelemetry = processedTelemetry.get(nodeKey);
@@ -587,6 +594,10 @@ export function startTripStateEngine(): () => Promise<void> {
             busId: data.busId,
             driverId: data.driverId || "unknown",
             routeId: data.routeId,
+            direction,
+            originStopId: normalizeIdentifier(data.originStopId) ?? stops[0]?.id ?? null,
+            destinationStopId:
+              normalizeIdentifier(data.destinationStopId) ?? stops.at(-1)?.id ?? null,
             completedAt: completionTimestamp,
             stopCount: stops.length,
             stopNames: stops.map(s => s.name),

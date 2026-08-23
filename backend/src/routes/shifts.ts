@@ -4,6 +4,11 @@ import { requireAuth } from "../middleware/requireAuth";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { haversineMeters } from "../lib/geo";
+import {
+  isRideDirection,
+  normalizeRideDirection,
+  stopsInRideDirection,
+} from "../lib/rideDirection";
 import { STOP_GEOFENCE_M } from "../services/tripStateReducer";
 import {
   deleteTerminalRideHistory,
@@ -211,6 +216,11 @@ router.patch("/delay", requireAuth, async (req: AuthenticatedRequest, res: Respo
 
 router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    if (req.body?.direction !== undefined && !isRideDirection(req.body.direction)) {
+      res.status(400).json({ error: "Direction must be forward or reverse." });
+      return;
+    }
+    const requestedDirection = normalizeRideDirection(req.body?.direction);
     const assignment = await authorizeOperator(
       req,
       req.body?.busId,
@@ -231,6 +241,11 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
       typeof current.sessionId === "string" &&
       SAFE_ID.test(current.sessionId)
     ) {
+      const direction = normalizeRideDirection(current.direction);
+      if (direction !== requestedDirection) {
+        res.status(409).json({ error: "This bus already has an active ride in the other direction." });
+        return;
+      }
       const sessionStatus =
         current.tripState === "pre_departure" ? "armed" : "active";
       const lockRef = activeBusLockRef(assignment.busId);
@@ -242,6 +257,7 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           routeId: assignment.routeId,
           driverId: assignment.driverId,
           sessionId: current.sessionId,
+          direction,
           updatedAt: FieldValue.serverTimestamp(),
         });
         return true;
@@ -257,6 +273,9 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           driverId: assignment.driverId,
           routeId: assignment.routeId,
           status: sessionStatus,
+          direction,
+          originStopId: typeof current.originStopId === "string" ? current.originStopId : null,
+          destinationStopId: typeof current.destinationStopId === "string" ? current.destinationStopId : null,
         }, { merge: true }),
         db.collection("active_rides")
           .doc(activeRideId(assignment.busId, assignment.routeId))
@@ -266,6 +285,9 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
             driverId: assignment.driverId,
             routeId: assignment.routeId,
             status: "active",
+            direction,
+            originStopId: typeof current.originStopId === "string" ? current.originStopId : null,
+            destinationStopId: typeof current.destinationStopId === "string" ? current.destinationStopId : null,
             tripState:
               current.tripState === "in_service"
                 ? "in_service"
@@ -279,7 +301,7 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
             updatedAt: FieldValue.serverTimestamp(),
           }, { merge: true }),
       ]);
-      res.json({ sessionId: current.sessionId, resumed: true });
+      res.json({ sessionId: current.sessionId, resumed: true, direction });
       return;
     }
     // A completed ride is terminal: the live node still reports
@@ -296,8 +318,16 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
     }
 
     const routeDoc = await db.collection("routes").doc(assignment.routeId).get();
-    const stops = routeDoc.data()?.stops;
-    const origin = Array.isArray(stops) ? stops[0] : null;
+    const routeStops = routeDoc.data()?.stops;
+    const stops = Array.isArray(routeStops)
+      ? stopsInRideDirection(routeStops, requestedDirection)
+      : [];
+    const origin = stops[0] ?? null;
+    const destination = stops.at(-1) ?? null;
+    if (stops.length < 2) {
+      res.status(422).json({ error: "This route requires at least two valid ordered stops." });
+      return;
+    }
     const telemetryTimestamp = Number(current?.timestamp);
     const currentLat = Number(current?.lat);
     const currentLng = Number(current?.lng);
@@ -353,11 +383,14 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         ) {
           return null;
         }
+        const existingDirection = normalizeRideDirection(session?.direction);
+        if (existingDirection !== requestedDirection) return null;
         return {
           sessionId: lockData.sessionId,
           armedAt: typeof session?.armedAt === "number" ? session.armedAt : proposedArmedAt,
           status: sessionStatus,
           created: false,
+          direction: existingDirection,
         };
       }
       transaction.create(proposedSessionRef, {
@@ -365,6 +398,9 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         busId: assignment.busId,
         driverId: assignment.driverId,
         routeId: assignment.routeId,
+        direction: requestedDirection,
+        originStopId: typeof origin.id === "string" ? origin.id : null,
+        destinationStopId: typeof destination.id === "string" ? destination.id : null,
         armedAt: proposedArmedAt,
         status: "pending",
         passengers: {},
@@ -375,6 +411,7 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         routeId: assignment.routeId,
         driverId: assignment.driverId,
         sessionId: proposedSessionRef.id,
+        direction: requestedDirection,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -383,6 +420,7 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         armedAt: proposedArmedAt,
         status: "pending" as const,
         created: true,
+        direction: requestedDirection,
       };
     });
     if (!lockClaim) {
@@ -391,6 +429,7 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
     }
     const sessionRef = db.collection("ride_sessions").doc(lockClaim.sessionId);
     const armedAt = lockClaim.armedAt;
+    const direction = lockClaim.direction;
     let claimedTripState = initialTripState;
     let claimedStopIndex = 0;
     let claimedHasDepartedOrigin = false;
@@ -439,6 +478,9 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           busId: assignment.busId,
           driverId: assignment.driverId,
           routeId: assignment.routeId,
+          direction,
+          originStopId: typeof origin.id === "string" ? origin.id : null,
+          destinationStopId: typeof destination.id === "string" ? destination.id : null,
           sessionId: sessionRef.id,
           status: "active",
           deviceState: "online",
@@ -479,6 +521,9 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
       batch.set(sessionRef, {
         status: claimedTripState === "in_service" ? "active" : "armed",
         armedAt,
+        direction,
+        originStopId: typeof origin.id === "string" ? origin.id : null,
+        destinationStopId: typeof destination.id === "string" ? destination.id : null,
         ...(claimedTripState === "in_service" && lockClaim.created
           ? {
               startTime: armedAt,
@@ -501,6 +546,9 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         driverId: assignment.driverId,
         routeId: assignment.routeId,
         status: "active",
+        direction,
+        originStopId: typeof origin.id === "string" ? origin.id : null,
+        destinationStopId: typeof destination.id === "string" ? destination.id : null,
         tripState: claimedTripState,
         currentStopIndex: claimedStopIndex,
         hasDepartedOrigin: claimedHasDepartedOrigin,
@@ -520,6 +568,7 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
     res.status(lockClaim.created ? 201 : 200).json({
       sessionId: sessionRef.id,
       resumed: !lockClaim.created,
+      direction,
     });
   } catch (error) {
     console.error("[Shifts] Failed to start shift:", error);
