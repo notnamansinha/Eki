@@ -20,6 +20,11 @@ runtime secret/configuration system.
 | `BUS_STALE_MS` | No | Live bus staleness threshold; minimum `90000`, default `300000` | Align the alert/runbook threshold with the deployed value |
 | `AUTOMATIC_TURNAROUND_DWELL_MS` | No | Stopped endpoint dwell before the backend arms the opposite direction; minimum `30000`, default `120000` | Keep long enough to reject drive-through GPS samples; validate with the real terminal schedule |
 | `HTTPS_DEVICE_RATE_PER_MINUTE` | No | Shared accepted device requests per device per minute; default `90` | Supports 1 Hz moving telemetry with retry headroom across replicas; add an edge/WAF limit |
+| `FIRMWARE_RELEASE_VERSION` | OTA set | Signed image version in `s<sequence>-<name>` form | Must exactly match the image descriptor; configure all five fields together or leave all unset |
+| `FIRMWARE_RELEASE_SEQUENCE` | OTA set | Strictly increasing positive release number | Must exceed the sequence compiled into the installed image |
+| `FIRMWARE_RELEASE_URL` | OTA set | Exact HTTPS URL of the signed application binary | Publish immutable content; never put credentials in the URL |
+| `FIRMWARE_RELEASE_SHA256` | OTA set | SHA-256 digest of the exact signed binary | Record and verify this from the controlled signing environment |
+| `FIRMWARE_RELEASE_SIZE` | OTA set | Exact binary size in bytes (maximum 1,966,080) | Must match both the hosted object and signed release evidence |
 | `RATE_LIMIT_SHARD_FACTOR` | No | Expected backend replica count used to divide in-process budgets; default `1` | Set to the deployed replica count; values above the smallest in-process budget are rejected |
 | `AUTH_REVOCATION_CACHE_MS` | No | Short cache for ordinary passenger Firebase Auth revocation checks; `0` disables it, maximum `60000` | Privileged admin/driver claims always receive a fresh revocation check |
 | `AUTH_MAX_PENDING_VERIFICATIONS` | No | Maximum distinct Firebase Auth verifications in flight per backend process; default `256`, maximum `2000` | Size for expected concurrency; overflow fails with retryable HTTP 503 instead of growing memory without bound |

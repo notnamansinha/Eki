@@ -122,13 +122,13 @@ Admin-only `GET /api/health` returns rolling p50/p95/p99 processing, device-to-s
 
 The static frontend is deployed to Firebase Hosting. The Express container/runtime must expose managed HTTPS near the Firebase region and use Application Default Credentials/Workload Identity or a secret-managed service-account JSON. It should sit behind university WAF/global rate limits. The worker lease supports multiple API replicas while keeping one background owner.
 
-The vehicle needs a fused 12 V-to-5 V converter, stable ground, secure enclosure/cabling, a clear-sky antenna, and cellular/Wi-Fi access. The fleet build embeds device-specific configuration, enables Secure Boot V2 and release-mode flash encryption, and refuses operation if either protection is inactive; its irreversible first boot still requires the witnessed spare-board procedure. Signed OTA/rollback remains a deployment prerequisite.
+The vehicle needs a fused 12 V-to-5 V converter, stable ground, secure enclosure/cabling, a clear-sky antenna, and cellular/Wi-Fi access. The fleet build embeds device-specific configuration, enables Secure Boot V2 and release-mode flash encryption, and refuses operation if either protection is inactive; its irreversible first boot still requires the witnessed spare-board procedure. Fleet application updates use two signed slots, an authenticated backend gate that withholds releases during active rides, exact size/SHA-256 verification, and rollback unless authenticated backend health succeeds. Controlled key custody, immutable hosting and spare-board update/rollback proof remain deployment prerequisites.
 
 ## Residual risks
 
 - Physical GNSS multipath, antenna/power faults and cellular dead zones require route testing.
 - In-memory API/device rate limits are per process; university edge limits are required for multi-instance production.
 - Firebase and Google Maps quotas/regions are external operational dependencies.
-- A pinned CA must be updated before issuer expiry/rotation; OTA is not enabled by this repository.
+- A pinned CA must be physically updated before issuer expiry/rotation; application OTA deliberately cannot replace trust roots or credentials.
 - Retention/privacy periods need university legal approval and backups need an owned restore drill.
 - The PWA is static/client-heavy; first map load depends on Maps/Firebase network availability.
