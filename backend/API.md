@@ -42,7 +42,7 @@ documentation, tickets or logs. A successful new telemetry sample returns
 
 | Area | Endpoints | Authentication |
 |---|---|---|
-| Health | `GET /health` | Public |
+| Health | `GET /health`; `GET /api/health` | Public readiness; admin diagnostics |
 | Live buses | `GET /api/buses`, `GET /api/buses/:busId` | Authenticated |
 | Device ingestion | `POST /api/devices/:deviceId/telemetry`, `POST /api/devices/:deviceId/diagnostics` | Device credential |
 | Device administration | `GET/PUT /api/devices/:deviceId/diagnostics`, `PUT /api/devices/:deviceId`, `POST /api/devices/:deviceId/disable` | Admin |
@@ -67,7 +67,11 @@ IDs accept 1–128 ASCII letters, digits, `_`, or `-`. Rate-limit counters alway
 
 ### `GET /health` — public
 
-Returns 200 when the cached 30-second Firestore/RTDB probe is ready, otherwise 503. It does not read Firebase for every request.
+Returns only `{ "status": "ok" }` when the cached 30-second Firestore/RTDB probe is ready, otherwise 503 with `{ "status": "degraded" }`. It does not read Firebase for every request or expose dependency and telemetry details.
+
+### `GET /api/health` — admin
+
+Returns the cached Firestore/RTDB status, telemetry counters and latency summaries, background-failure state, and probe timestamp. This is the detailed operational response formerly exposed by `/health`; it requires an admin Firebase ID token.
 
 ```json
 {

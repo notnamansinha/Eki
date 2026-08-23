@@ -97,6 +97,38 @@ describe("production security configuration", () => {
     expect(workers).toContain("await stopWork()");
   });
 
+  it("keeps public readiness minimal and protects detailed operational health", () => {
+    const server = workspaceFile("backend/src/server.ts");
+    const publicHealth = server.slice(
+      server.indexOf('app.get("/health"'),
+      server.indexOf('app.get("/api/health"'),
+    );
+    const detailedStart = server.indexOf('app.get("/api/health"');
+    const detailedHealth = server.slice(
+      detailedStart,
+      server.indexOf("app.use((", detailedStart),
+    );
+
+    expect(publicHealth).toContain('status: state.ready ? "ok" : "degraded"');
+    expect(publicHealth).not.toContain("telemetry");
+    expect(publicHealth).not.toContain("backgroundTasks");
+    expect(publicHealth).not.toContain("firestore:");
+    expect(server).toContain('app.get("/api/health", requireAdmin');
+    expect(detailedHealth).toContain("getHttpsTelemetryStatus()");
+    expect(detailedHealth).toContain("backgroundFailures.snapshot()");
+  });
+
+  it("requires retention enforcement before production starts", () => {
+    const server = workspaceFile("backend/src/server.ts");
+    const retention = workspaceFile("backend/src/services/retentionSweeper.ts");
+    const envExample = workspaceFile("backend/.env.example");
+
+    expect(server).toContain("assertRetentionConfiguration(");
+    expect(retention).toContain('nodeEnv === "production" && normalized !== "true"');
+    expect(envExample).toContain("RETENTION_SWEEPER_ENABLED=true");
+    expect(envExample).not.toContain("RETENTION_SWEEPER_ENABLED=false");
+  });
+
   it("denies every unlisted path with an explicit catch-all and keeps comments accurate", () => {
     const rules = workspaceFile("firestore.rules");
 

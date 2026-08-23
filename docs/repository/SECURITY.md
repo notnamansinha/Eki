@@ -67,8 +67,9 @@ stale authenticated responses crossing accounts on shared browsers.
 - Completion, recovery cleanup, and abandonment compare `sessionId` inside
   transactions before changing RTDB or deleting `active_rides`/locks. Delayed
   work from an old session cannot overwrite a newer ride.
-- Retention is fail-safe and starts only when
-  `RETENTION_SWEEPER_ENABLED=true` exactly.
+- Retention is fail-safe: production refuses to start unless
+  `RETENTION_SWEEPER_ENABLED=true` exactly; development and tests remain
+  non-destructive when it is omitted.
 
 ## In-Transit Encryption
 

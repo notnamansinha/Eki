@@ -24,7 +24,7 @@ runtime secret/configuration system.
 | `WORKER_ENABLED` | No | Enables the Firestore-lease background worker; default `true` | Keep enabled for lifecycle recovery, abandonment and retention jobs |
 | `WORKER_INSTANCE_ID` | No | Stable diagnostic identity for a runtime instance | Do not use credentials or personal data |
 | `ABANDONED_RIDE_THRESHOLD_HOURS` | No | Age before conservative abandoned-ride reconciliation; minimum `1`, default `12` | Obtain privacy/operations approval before changing it |
-| `RETENTION_SWEEPER_ENABLED` | No | Exact opt-in switch for destructive retention cleanup; default `false` | Enable only after documented privacy/legal approval |
+| `RETENTION_SWEEPER_ENABLED` | Required in production | Must be exactly `true`; development/test remain disabled when omitted | Production refuses to start until the retention schedule is explicitly enforced |
 | `RIDE_SESSION_RETENTION_DAYS` | No | Terminal ride-session retention period | Must match the approved retention schedule |
 | `FEEDBACK_RETENTION_DAYS` | No | Feedback retention period | Must match privacy approval |
 | `COMPLETED_TRIP_RETENTION_DAYS` | No | Completed-trip projection retention period | Must match reporting requirements and approval |

@@ -204,7 +204,7 @@ Server-only latest health report received through device-authenticated HTTPS. It
 - Driver API authority requires agreement among Auth claims, `drivers`, `buses`, and the requested bus/route.
 - Terminal history deletion recursively removes the ride session/subcollections and all matching `completed_trips`; active states return 409.
 - Privacy deletion removes one user's profile, feedback/cooldown/request, session passenger entries/messages, and Auth account while leaving non-personal operational ride facts according to policy.
-- Retention defaults: terminal sessions 90 days, feedback 180, completed projections 180, fleet operation logs 90. It performs no deletion until explicitly enabled.
+- Retention defaults: terminal sessions 90 days, feedback 180, completed projections 180, fleet operation logs 90. Production startup requires `RETENTION_SWEEPER_ENABLED=true`; development and tests remain non-destructive when omitted.
 
 ## Indexes
 

@@ -55,7 +55,7 @@ an HTTPS address:
   ignored firmware `secrets.h`.
 - [ ] Test the public URL from a phone on mobile data:
   `https://<backend-host>/health`.
-- [ ] Record `/health.telemetry` processing, device-to-server and RTDB-write
+- [ ] Record admin-authenticated `/api/health.telemetry` processing, device-to-server and RTDB-write
   p50/p95/p99 during rehearsal; empty values before telemetry are expected.
 - [ ] Keep the tunnel process running for the entire ride.
 

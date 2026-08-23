@@ -13,4 +13,4 @@ ESP32 devices have no Firebase credentials. The backend is the only writer to RT
 
 `active_rides` restores an interrupted live projection. `_active_bus_locks` enforces one active session per physical bus. `ride_sessions` is detailed history; `completed_trips` is a compact analytics projection; `bus_locations` is compact fleet lifecycle state.
 
-Retention removes terminal sessions/feedback/completion/operation logs in pages only when explicitly enabled. Active rides/locks are released by completion or conservative abandonment reconciliation, not age-only retention. Privacy deletion is separately queued and worker-owned.
+Retention removes terminal sessions/feedback/completion/operation logs in pages. Production startup requires it to be explicitly enabled; development and tests remain disabled by default. Active rides/locks are released by completion or conservative abandonment reconciliation, not age-only retention. Privacy deletion is separately queued and worker-owned.
