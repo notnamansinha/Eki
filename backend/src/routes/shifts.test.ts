@@ -207,12 +207,12 @@ beforeEach(() => {
 
 async function startShift(
   driverId?: string,
-  direction: "forward" | "reverse" = "forward",
+  extra: Record<string, unknown> = {},
 ) {
   return fetch(`${baseUrl}/api/shifts/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ busId: "bus_1", routeId: "route_1", driverId, direction }),
+    body: JSON.stringify({ busId: "bus_1", routeId: "route_1", driverId, ...extra }),
   });
 }
 
@@ -377,8 +377,8 @@ describe("shift start after automatic completion", () => {
     expect(body.resumed).toBe(false);
     expect(body.sessionId).toBe("new_session_1");
 
-    // The live node was re-claimed for a fresh pre-departure ride.
-    expect(harness.liveNode.tripState).toBe("pre_departure");
+    // Z is the inferred origin for the reverse return ride.
+    expect(harness.liveNode.tripState).toBe("in_service");
     expect(harness.liveNode.sessionId).toBe("new_session_1");
     expect(harness.liveNode.currentStopIndex).toBe(0);
     expect(harness.liveNode.hasDepartedOrigin).toBe(false);
@@ -387,7 +387,8 @@ describe("shift start after automatic completion", () => {
 
     // The new ride session is armed; the completed session was NOT revived.
     const sessionSet = harness.batchSets.find((entry) => entry.id === "new_session_1");
-    expect(sessionSet?.data.status).toBe("armed");
+    expect(sessionSet?.data.status).toBe("active");
+    expect(sessionSet?.data.direction).toBe("reverse");
     const activeRideSet = harness.batchSets.find((entry) => entry.id === "bus_1_route_1");
     expect(activeRideSet?.data.delayMinutes).toBe(0);
     expect(activeRideSet?.data.delayUpdatedAt).toBe(0);
@@ -395,7 +396,7 @@ describe("shift start after automatic completion", () => {
     expect(harness.batchSets.map((entry) => entry.id)).not.toContain("session_completed");
   });
 
-  it("arms a reverse ride from the route terminus with immutable direction metadata", async () => {
+  it("infers a reverse ride from the route terminus with immutable direction metadata", async () => {
     harness.liveNode = {
       busId: "bus_1",
       lat: 23.2,
@@ -404,7 +405,7 @@ describe("shift start after automatic completion", () => {
       motionState: "stopped",
     };
 
-    const response = await startShift(undefined, "reverse");
+    const response = await startShift();
     expect(response.status).toBe(201);
     expect(await response.json()).toMatchObject({ direction: "reverse", resumed: false });
     expect(harness.liveNode).toMatchObject({
@@ -420,6 +421,47 @@ describe("shift start after automatic completion", () => {
       originStopId: "stop_2",
       destinationStopId: "stop_1",
     });
+  });
+
+  it("infers a forward ride from the first endpoint", async () => {
+    harness.liveNode = {
+      busId: "bus_1",
+      lat: 23.0,
+      lng: 72.5,
+      timestamp: Date.now(),
+      motionState: "stopped",
+    };
+
+    const response = await startShift(undefined, { direction: "reverse" });
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ direction: "forward" });
+    expect(harness.liveNode).toMatchObject({
+      direction: "forward",
+      originStopId: "stop_1",
+      destinationStopId: "stop_2",
+    });
+  });
+
+  it("does not guess direction between endpoints or while the bus is moving", async () => {
+    harness.liveNode = {
+      busId: "bus_1",
+      lat: 23.1,
+      lng: 72.6,
+      timestamp: Date.now(),
+      motionState: "stopped",
+    };
+    expect((await startShift()).status).toBe(409);
+
+    harness.liveNode = {
+      busId: "bus_1",
+      lat: 23.0,
+      lng: 72.5,
+      timestamp: Date.now(),
+      motionState: "moving",
+    };
+    expect((await startShift()).status).toBe(409);
+    expect(harness.docSets).toEqual([]);
+    expect(harness.batchSets).toEqual([]);
   });
 
   it("still resumes an in-service shift (regression guard)", async () => {

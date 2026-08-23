@@ -169,9 +169,9 @@ Searches live entries for the stored `busId` and returns the snapshot or 404. In
 
 Body: `{ "busId":"bus_01", "routeId":"route_01", "driverId":"driver_01" }`. `driverId` is required for admin requests and comes from trusted claims for legacy assigned-operator requests.
 
-Requires agreement among Auth claim, `drivers`, `buses`, route assignment and a fresh ≤60-second nonfuture hardware fix. A Firestore bus lock prevents another route session. If already owned by the same driver/session, repairs durable records and returns 200 `{sessionId,resumed:true}`. New ride returns 201 `{sessionId,resumed:false}`. Returns 403 assignment mismatch, 409 active/lock/fix conflict, 422 invalid route origin or 500.
+Requires agreement among Auth claim, `drivers`, `buses`, route assignment and a fresh ≤60-second stopped hardware fix near exactly one route endpoint. The backend infers `forward` at endpoint A or `reverse` at endpoint Z; the client cannot choose or override direction. A Firestore bus lock prevents another route session. If already owned by the same driver/session, repairs durable records and returns 200 `{sessionId,resumed:true,direction}`. New ride returns 201 `{sessionId,resumed:false,direction}`. Returns 403 assignment mismatch, 409 active/lock/stale/moving/ambiguous-position conflict, 422 invalid route endpoints or 500.
 
-If the bus is already at origin, the session starts `active/in_service` and records stop 0; otherwise it is `armed/pre_departure` until GNSS reaches origin.
+At the inferred origin, the session starts `active/in_service` and records stop 0. An active session always restores its immutable stored direction after hardware/backend interruption. After final-stop completion, a fresh stopped fix at that destination for `AUTOMATIC_TURNAROUND_DWELL_MS` causes the backend to atomically arm a new session in the opposite direction; stale, moving, mid-route or contested state never auto-arms.
 
 ### `PATCH /api/shifts/delay` — assigned operator or admin
 

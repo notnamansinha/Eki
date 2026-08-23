@@ -32,7 +32,7 @@ numbers.
 
 | Layer | Existing coverage | What it proves |
 |---|---|---|
-| Pure backend units | telemetry schema, scrypt/auth header, latency summaries, route direction/via, reducer/geofence, lifecycle normalization/draining, abandoned decision, deletion | Deterministic correctness and boundaries |
+| Pure backend units | telemetry schema, scrypt/auth header, latency summaries, endpoint direction inference/turnaround readiness, route direction/via, reducer/geofence, lifecycle normalization/draining, abandoned decision, deletion | Deterministic correctness and boundaries |
 | Backend lifecycle mocks | worker listener recovery, missing-route cache, completion/shutdown | Async orchestration without cloud dependency |
 | Static security/deployment checks | rules/headers/routes/cache/cleanup patterns | Critical configuration does not silently regress |
 | Firebase emulator integration | Firestore/RTDB allow/deny matrix | Actual rule evaluation when Java/emulators are available |
@@ -157,15 +157,17 @@ Do not expose production secrets in packet captures or serial logs. Use a dedica
 With passenger and admin sessions, plus an admin-managed assigned operator record:
 
 1. Verify role denial and correct fleet catalogs.
-2. Arm with fresh fix away from origin; observe pre-departure.
-3. Reach origin; observe in-service everywhere and passenger boarding eligibility.
+2. Attempt to arm while moving or between endpoints; assert the backend refuses to guess.
+3. Stop near A, arm without a direction field, and observe inferred A→Z in-service state and passenger boarding eligibility.
 4. Exercise message sender identity/rate behavior and delay update.
 5. Visit out-of-order later stop; assert no advance.
 6. Visit every expected stop and assert one-step progress/history.
 7. Interrupt GNSS, Wi-Fi, ESP power, browser and backend separately; assert honest status and same-session recovery.
 8. Attempt concurrent second route on same bus; assert conflict.
-9. Reach final stop; assert one completed session/projection, no recovery/lock, and terminal feedback eligibility.
-10. Verify admin history delete confirmation cancels without a request and terminal-only confirm deletes the complete history scope.
+9. Reach Z; assert one completed A→Z session/projection and terminal feedback eligibility.
+10. Remain stopped through the configured dwell; assert exactly one fresh Z→A session/lock is automatically armed, including across two backend replicas and a backend restart. Confirm stale, moving and displaced telemetry do not arm it.
+11. Complete Z→A and verify directional counts, reversed stop evidence, passenger map/ETA ordering, and return to A.
+12. Verify admin history delete confirmation cancels without a request and terminal-only confirm deletes the complete history scope.
 
 ## Accessibility and UX acceptance
 

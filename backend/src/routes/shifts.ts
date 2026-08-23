@@ -4,8 +4,8 @@ import { requireAuth } from "../middleware/requireAuth";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { haversineMeters } from "../lib/geo";
+import { inferRideDirectionAtEndpoint } from "../lib/automaticRideDirection";
 import {
-  isRideDirection,
   normalizeRideDirection,
   stopsInRideDirection,
 } from "../lib/rideDirection";
@@ -216,11 +216,6 @@ router.patch("/delay", requireAuth, async (req: AuthenticatedRequest, res: Respo
 
 router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (req.body?.direction !== undefined && !isRideDirection(req.body.direction)) {
-      res.status(400).json({ error: "Direction must be forward or reverse." });
-      return;
-    }
-    const requestedDirection = normalizeRideDirection(req.body?.direction);
     const assignment = await authorizeOperator(
       req,
       req.body?.busId,
@@ -242,10 +237,6 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
       SAFE_ID.test(current.sessionId)
     ) {
       const direction = normalizeRideDirection(current.direction);
-      if (direction !== requestedDirection) {
-        res.status(409).json({ error: "This bus already has an active ride in the other direction." });
-        return;
-      }
       const sessionStatus =
         current.tripState === "pre_departure" ? "armed" : "active";
       const lockRef = activeBusLockRef(assignment.busId);
@@ -319,12 +310,8 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
 
     const routeDoc = await db.collection("routes").doc(assignment.routeId).get();
     const routeStops = routeDoc.data()?.stops;
-    const stops = Array.isArray(routeStops)
-      ? stopsInRideDirection(routeStops, requestedDirection)
-      : [];
-    const origin = stops[0] ?? null;
-    const destination = stops.at(-1) ?? null;
-    if (stops.length < 2) {
+    const naturalStops = Array.isArray(routeStops) ? routeStops : [];
+    if (naturalStops.length < 2) {
       res.status(422).json({ error: "This route requires at least two valid ordered stops." });
       return;
     }
@@ -336,23 +323,35 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
       !Number.isFinite(currentLng) ||
       !Number.isFinite(telemetryTimestamp) ||
       Date.now() - telemetryTimestamp > 60_000 ||
-      telemetryTimestamp > Date.now() + 10_000
+      telemetryTimestamp > Date.now() + 10_000 ||
+      current?.motionState !== "stopped"
     ) {
       res.status(409).json({
-        error: "A fresh hardware GNSS fix is required before starting a shift.",
+        error: "A fresh stopped hardware GNSS fix is required before starting a shift.",
       });
       return;
     }
+    const requestedDirection = inferRideDirectionAtEndpoint(
+      naturalStops,
+      { lat: currentLat, lng: currentLng },
+    );
+    if (!requestedDirection) {
+      res.status(409).json({
+        error: "The bus must be stopped near exactly one route endpoint before its direction can be inferred.",
+      });
+      return;
+    }
+    const stops = stopsInRideDirection(naturalStops, requestedDirection);
+    const origin = stops[0] ?? null;
+    const destination = stops.at(-1) ?? null;
     if (!Number.isFinite(origin?.lat) || !Number.isFinite(origin?.lng)) {
       res.status(422).json({ error: "This route has no valid origin coordinate." });
       return;
     }
-    const arrivedAtOrigin =
-      current?.motionState !== "uncertain" &&
-      haversineMeters(
-        { lat: currentLat, lng: currentLng },
-        { lat: origin.lat, lng: origin.lng },
-      ) <= STOP_GEOFENCE_M;
+    const arrivedAtOrigin = haversineMeters(
+      { lat: currentLat, lng: currentLng },
+      { lat: origin.lat, lng: origin.lng },
+    ) <= STOP_GEOFENCE_M;
     const initialTripState =
       arrivedAtOrigin ? "in_service" : "pre_departure";
     const proposedSessionRef = db.collection("ride_sessions").doc();
@@ -489,6 +488,12 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           currentStopIndex: claimedStopIndex,
           delayMinutes: claimedDelayMinutes,
           delayUpdatedAt: claimedDelayUpdatedAt,
+          automaticTurnaround: false,
+          previousSessionId: null,
+          completedAt: null,
+          turnaroundEligibleAt: null,
+          turnaroundClaimId: null,
+          turnaroundClaimedAt: null,
           lifecycleUpdatedAt: { ".sv": "timestamp" },
         };
       });
@@ -498,7 +503,11 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           winner?.driverId === assignment.driverId &&
           winner.sessionId === sessionRef.id
         ) {
-          res.json({ sessionId: winner.sessionId, resumed: true });
+          res.json({
+            sessionId: winner.sessionId,
+            resumed: true,
+            direction: normalizeRideDirection(winner.direction),
+          });
           return;
         }
         // A reused claim belongs to an existing session. This request did not

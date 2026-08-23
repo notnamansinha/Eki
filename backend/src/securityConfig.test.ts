@@ -720,6 +720,7 @@ describe("production security configuration", () => {
       "frontend/src/components/passenger/PassengerBoardingView.tsx",
     );
     const shifts = workspaceFile("backend/src/routes/shifts.ts");
+    const engine = workspaceFile("backend/src/services/tripStateEngine.ts");
 
     expect(server).toContain('app.use("/api/shifts"');
     expect(operations).toContain("/api/shifts/start");
@@ -730,8 +731,11 @@ describe("production security configuration", () => {
     expect(shifts).toContain("final ordered stop");
     expect(shifts).toContain("STOP_GEOFENCE_M");
     expect(shifts).toContain("arrivedAtOrigin");
-    expect(operations).toContain('ariaLabel="Travel direction"');
-    expect(operations).toContain("directionLabel(direction");
+    expect(operations).not.toContain('ariaLabel="Travel direction"');
+    expect(operations).toContain("Travel direction is inferred from fresh stopped GPS");
+    expect(operations).toContain("directionLabel(inferredDirection");
+    expect(shifts).toContain("inferRideDirectionAtEndpoint");
+    expect(engine).toContain("maybeArmAutomaticTurnaround");
     expect(passengerBoarding).toContain("Ride in service");
   });
 

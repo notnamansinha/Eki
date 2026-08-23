@@ -36,7 +36,6 @@ import {
   directionLabel,
   normalizeRideDirection,
   routeInRideDirection,
-  type RideDirection,
 } from "@/lib/rideDirection";
 
 /* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -541,7 +540,6 @@ export default function DashboardPanel() {
   const [driverId, setDriverId] = useState("");
   const [busId, setBusId] = useState("");
   const [routeId, setRouteId] = useState("");
-  const [direction, setDirection] = useState<RideDirection>("forward");
   const [armStatus, setArmStatus] = useState("");
   const [armPending, setArmPending] = useState(false);
   const [delayPending, setDelayPending] = useState("");
@@ -596,7 +594,6 @@ export default function DashboardPanel() {
     setDriverId(nextDriverId);
     setBusId(nextBusId);
     setRouteId(nextRoutes.length === 1 ? nextRoutes[0] : "");
-    setDirection("forward");
     setArmStatus("");
   };
 
@@ -605,17 +602,22 @@ export default function DashboardPanel() {
     setArmPending(true);
     setArmStatus("");
     try {
-      const result = await requestAdmin<{ sessionId?: string; resumed?: boolean }>(
+      const result = await requestAdmin<{
+        sessionId?: string;
+        resumed?: boolean;
+        direction?: "forward" | "reverse";
+      }>(
         "/api/shifts/start",
         {
           method: "POST",
-          body: JSON.stringify({ driverId, busId, routeId, direction }),
+          body: JSON.stringify({ driverId, busId, routeId }),
         },
       );
+      const inferredDirection = normalizeRideDirection(result.direction);
       setArmStatus(
         result.resumed
           ? `Active ride restored (${result.sessionId}).`
-          : `Ride armed (${result.sessionId}) for ${directionLabel(direction, routes.find((route) => route.id === routeId)?.stops ?? [])}.`,
+          : `Ride armed (${result.sessionId}) for ${directionLabel(inferredDirection, routes.find((route) => route.id === routeId)?.stops ?? [])}.`,
       );
     } catch (error) {
       setArmStatus(errorMessage(error));
@@ -768,22 +770,11 @@ export default function DashboardPanel() {
               ]}
               placeholder="Select route…"
             />
-            <CustomSelect
-              ariaLabel="Travel direction"
-              value={direction}
-              onChange={(value) => setDirection(value === "reverse" ? "reverse" : "forward")}
-              disabled={!routeId}
-              options={(() => {
-                const selected = routes.find((route) => route.id === routeId);
-                const stops = selected?.stops ?? [];
-                return [
-                  { value: "forward", label: directionLabel("forward", stops) },
-                  { value: "reverse", label: directionLabel("reverse", stops) },
-                ];
-              })()}
-              placeholder="Travel direction"
-            />
           </div>
+          <p className="text-xs text-white/45">
+            Travel direction is inferred from fresh stopped GPS at route endpoint A or Z.
+            After completion, the opposite trip is armed automatically following the turnaround dwell.
+          </p>
           <button
             type="button"
             onClick={() => void armRide()}
