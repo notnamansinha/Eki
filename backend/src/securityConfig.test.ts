@@ -364,6 +364,11 @@ describe("production security configuration", () => {
     expect(devices).toContain('"/:deviceId/telemetry"');
     expect(telemetry).toContain("HTTPS_DEVICE_RATE_PER_MINUTE");
     expect(telemetry).toContain("deviceRateLimitRetryAfterMs");
+    expect(telemetry).toContain("DEVICE_RATE_LIMIT_PATH");
+    expect(telemetry).toContain(".transaction((value)");
+    expect(telemetry).toContain("credentialCacheKey(deviceId, suppliedDigest)");
+    expect(telemetry).toContain("DEVICE_CREDENTIAL_VERSION_PATH");
+    expect(devices).toContain("publishDeviceCredentialInvalidation(deviceId)");
     expect(telemetry).toContain("timingSafeEqual");
   });
 

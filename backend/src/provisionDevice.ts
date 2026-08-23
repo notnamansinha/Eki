@@ -2,7 +2,10 @@ import "dotenv/config";
 import { randomBytes } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { db } from "./lib/firebaseAdmin";
-import { hashDeviceSecret } from "./services/deviceTelemetryService";
+import {
+  hashDeviceSecret,
+  publishDeviceCredentialInvalidation,
+} from "./services/deviceTelemetryService";
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
@@ -94,6 +97,7 @@ async function provision(): Promise<void> {
   if (result === "active_previous_ride") {
     throw new Error("Do not rotate or reassign a device during an active ride.");
   }
+  await publishDeviceCredentialInvalidation(deviceId);
 
   console.log("Device provisioned. Copy this secret now; it is not stored in plaintext:");
   console.log(plainSecret);

@@ -1,15 +1,43 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../lib/firebaseAdmin", () => ({ db: {}, rtdb: {} }));
+const harness = vi.hoisted(() => ({
+  collections: new Map<string, Map<string, Record<string, unknown>>>(),
+}));
+
+vi.mock("../lib/firebaseAdmin", () => ({
+  db: {
+    collection: (name: string) => ({
+      doc: (id: string) => ({
+        get: async () => {
+          const value = harness.collections.get(name)?.get(id);
+          return { exists: value !== undefined, data: () => value };
+        },
+      }),
+    }),
+  },
+  rtdb: {
+    ref: () => ({
+      on: () => undefined,
+      set: async () => undefined,
+    }),
+  },
+}));
 import {
+  authenticateDeviceCredentials,
   evaluateDeviceRateLimit,
   freshestDelayMinutes,
   hashDeviceSecret,
+  invalidateDeviceCredentialCache,
   parseDeviceAuthorization,
   shouldApplyRestoreTelemetry,
   summarizeLatencySamples,
   verifyDeviceSecretHash,
 } from "./deviceTelemetryService";
+
+beforeEach(() => {
+  harness.collections.clear();
+  invalidateDeviceCredentialCache("device_1");
+});
 
 describe("HTTPS device rate-limit timing", () => {
   it("reports the remaining fixed-window delay and resets exactly at one minute", () => {
@@ -34,6 +62,32 @@ describe("HTTPS device rate-limit timing", () => {
 });
 
 describe("HTTPS device credentials", () => {
+  it("does not let a wrong secret poison the legitimate device cache entry", async () => {
+    const validSecret = "valid-device-secret-with-enough-entropy";
+    const secretHash = await hashDeviceSecret(validSecret);
+    harness.collections.set("devices", new Map([["device_1", {
+      busId: "bus_1",
+      routeId: "route_1",
+      enabled: true,
+      secretHash,
+    }]]));
+    harness.collections.set("buses", new Map([["bus_1", {
+      assignedRoutes: ["route_1"],
+    }]]));
+    harness.collections.set("routes", new Map([["route_1", { id: "route_1" }]]));
+
+    await expect(authenticateDeviceCredentials(
+      "device_1",
+      "wrong-device-secret-with-enough-entropy",
+      1_000,
+    )).resolves.toBeNull();
+    await expect(authenticateDeviceCredentials(
+      "device_1",
+      validSecret,
+      1_001,
+    )).resolves.toEqual({ busId: "bus_1", routeId: "route_1" });
+  });
+
   it("accepts only a bounded Device authorization secret", () => {
     expect(parseDeviceAuthorization(undefined)).toBeNull();
     expect(parseDeviceAuthorization("Bearer something")).toBeNull();

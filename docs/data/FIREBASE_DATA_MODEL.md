@@ -197,6 +197,10 @@ Read-only probe target. The server issues a bounded `limit(1)` every 30 seconds 
 
 Server-only latest health report received through device-authenticated HTTPS. It contains the registry `deviceId`/`busId`/`routeId`, firmware version, uptime, free heap, RSSI, bounded telemetry/queue/UART/reset counters, current fault, reported flash-encryption/Secure-Boot state, device timestamp, and server `receivedAt`. Each accepted report replaces the prior one; this is operational state, not an unbounded event history. Browser Firebase rules deny all access. Admins read it through `GET /api/devices/:deviceId/diagnostics`; credentials, SSIDs, and CA content are never accepted.
 
+### `_deviceRateLimits/{deviceId}` and `_deviceCredentialVersions/{deviceId}`
+
+Server-only ingress controls. `_deviceRateLimits` stores the shared fixed-window count, making the accepted device budget authoritative across backend replicas. `_deviceCredentialVersions` changes whenever a device is disabled, reassigned, or re-provisioned; every backend replica listens for those changes and immediately evicts matching credential-cache entries. Browser rules deny all reads and writes.
+
 ## Relationships and deletion
 
 - Changing/deleting a route or bus is blocked while `active_rides` (and for buses, `_active_bus_locks`) references it. Bound devices must be reassigned first.
