@@ -20,7 +20,8 @@ runtime secret/configuration system.
 | `BUS_STALE_MS` | No | Live bus staleness threshold; minimum `90000`, default `300000` | Align the alert/runbook threshold with the deployed value |
 | `HTTPS_DEVICE_RATE_PER_MINUTE` | No | Durable accepted device requests per device per minute; default `90` | Supports 1 Hz moving telemetry with retry headroom; add an edge/WAF limit |
 | `RATE_LIMIT_SHARD_FACTOR` | No | Expected backend replica count used to divide in-process budgets; default `1` | Set to the deployed replica count; values above the smallest in-process budget are rejected |
-| `AUTH_REVOCATION_CACHE_MS` | No | Short cache for Firebase Auth revocation checks; `0` disables it, maximum `60000` | Keep short; use `0` only for troubleshooting |
+| `AUTH_REVOCATION_CACHE_MS` | No | Short cache for ordinary passenger Firebase Auth revocation checks; `0` disables it, maximum `60000` | Privileged admin/driver claims always receive a fresh revocation check |
+| `AUTH_MAX_PENDING_VERIFICATIONS` | No | Maximum distinct Firebase Auth verifications in flight per backend process; default `256`, maximum `2000` | Size for expected concurrency; overflow fails with retryable HTTP 503 instead of growing memory without bound |
 | `WORKER_ENABLED` | No | Enables the Firestore-lease background worker; default `true` | Keep enabled for lifecycle recovery, abandonment and retention jobs |
 | `WORKER_INSTANCE_ID` | No | Stable diagnostic identity for a runtime instance | Do not use credentials or personal data |
 | `ABANDONED_RIDE_THRESHOLD_HOURS` | No | Age before conservative abandoned-ride reconciliation; minimum `1`, default `12` | Obtain privacy/operations approval before changing it |

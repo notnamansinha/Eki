@@ -5,6 +5,17 @@ import { auth } from "../lib/firebaseAdmin";
 const DEFAULT_CACHE_MS = 15_000;
 const MAX_CACHE_MS = 60_000;
 const MAX_CACHE_ENTRIES = 1_000;
+const DEFAULT_MAX_PENDING_VERIFICATIONS = 256;
+const MAX_PENDING_VERIFICATIONS = 2_000;
+
+export class AuthVerificationCapacityError extends Error {
+  readonly code = "auth/verification-capacity";
+
+  constructor() {
+    super("Authentication verification capacity is temporarily exhausted.");
+    this.name = "AuthVerificationCapacityError";
+  }
+}
 
 interface CachedToken {
   decoded: DecodedIdToken;
@@ -20,6 +31,22 @@ function cacheDurationMs(): number {
     return DEFAULT_CACHE_MS;
   }
   return Math.min(configured, MAX_CACHE_MS);
+}
+
+function pendingVerificationLimit(): number {
+  const configured = Number(process.env.AUTH_MAX_PENDING_VERIFICATIONS);
+  if (!Number.isSafeInteger(configured) || configured <= 0) {
+    return DEFAULT_MAX_PENDING_VERIFICATIONS;
+  }
+  return Math.min(configured, MAX_PENDING_VERIFICATIONS);
+}
+
+function requiresFreshRevocationCheck(decoded: DecodedIdToken): boolean {
+  return decoded.admin === true ||
+    decoded.role === "admin" ||
+    decoded.role === "driver" ||
+    typeof decoded.driverId === "string" ||
+    typeof decoded.assignedBusId === "string";
 }
 
 function tokenKey(idToken: string): string {
@@ -65,13 +92,20 @@ export function verifyRevocationAwareIdToken(
 ): Promise<DecodedIdToken> {
   const key = tokenKey(idToken);
   const cached = verifiedTokens.get(key);
-  if (cached && cached.expiresAt > Date.now()) {
+  if (
+    cached &&
+    cached.expiresAt > Date.now() &&
+    !requiresFreshRevocationCheck(cached.decoded)
+  ) {
     return Promise.resolve(cached.decoded);
   }
-  if (cached) verifiedTokens.delete(key);
+  if (cached && cached.expiresAt <= Date.now()) verifiedTokens.delete(key);
 
   const pending = pendingVerifications.get(key);
   if (pending) return pending;
+  if (pendingVerifications.size >= pendingVerificationLimit()) {
+    return Promise.reject(new AuthVerificationCapacityError());
+  }
 
   const verification = auth.verifyIdToken(idToken, true)
     .then((decoded) => {
