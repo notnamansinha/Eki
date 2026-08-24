@@ -93,9 +93,9 @@ export default function PassengerBoardingView({
       setJoinError("Sign in is required to board.");
       return;
     }
-    if (!boardingStopId || boardingCode.length !== 8) {
+    if (!boardingStopId || !alightingStopId || boardingCode.length !== 8) {
       setJoinState("error");
-      setJoinError("Choose a boarding stop and enter the 8-character code from the driver.");
+      setJoinError("Choose boarding and destination stations, then enter the 8-character code from the driver.");
       return;
     }
 
@@ -180,8 +180,8 @@ export default function PassengerBoardingView({
         style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
       />
       <CustomSelect
-        ariaLabel="Destination stop"
-        placeholder="Destination (Optional)..."
+        ariaLabel="Destination station"
+        placeholder="Choose destination station..."
         value={alightingStopId}
         disabled={joinState === "joining"}
         onChange={(value) => {
@@ -189,7 +189,7 @@ export default function PassengerBoardingView({
           onDestinationStopChange?.(value);
           selectionChanged();
         }}
-        options={[{ value: "", label: "Destination (Optional)..." }, ...stopOptions]}
+        options={[{ value: "", label: "Choose destination station..." }, ...stopOptions]}
         style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
       />
       <div className="flex gap-2">
@@ -211,7 +211,7 @@ export default function PassengerBoardingView({
         <button
           type="button"
           onClick={() => void joinRide()}
-          disabled={joinState === "joining" || !boardingStopId || boardingCode.length !== 8}
+          disabled={joinState === "joining" || !boardingStopId || !alightingStopId || boardingCode.length !== 8}
           className="rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-50"
           style={{ background: "var(--status-live)", color: "var(--surface-0)" }}
         >

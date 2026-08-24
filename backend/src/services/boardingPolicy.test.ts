@@ -27,10 +27,8 @@ describe("boarding policy", () => {
       boardingStopId: "s1",
       alightingStopId: "s3",
     });
-    expect(validateStopSelection(stops, "s2", null)).toEqual({
-      boardingStopId: "s2",
-      alightingStopId: null,
-    });
+    expect(validateStopSelection(stops, "s2", null)).toBeNull();
+    expect(validateStopSelection(stops, "s2", undefined)).toBeNull();
     expect(validateStopSelection(stops, "missing", null)).toBeNull();
     expect(validateStopSelection(stops, "s2", "s2")).toBeNull();
     expect(validateStopSelection(stops, "s3", "s1")).toBeNull();

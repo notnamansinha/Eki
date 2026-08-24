@@ -461,11 +461,11 @@ export default function PassengerWorkspace() {
                       ) : (
                         <CustomSelect
                           ariaLabel="Destination station"
-                          placeholder="Choose destination…"
+                          placeholder="Choose destination station…"
                           value={effectiveDestinationStopId}
                           onChange={setSelectedDestinationStopId}
                           options={[
-                            { value: "", label: "Choose destination…" },
+                            { value: "", label: "Choose destination station…" },
                             ...(directedRoute.stops ?? []).map((stop) => ({
                               value: stop.id,
                               label: stop.name,
