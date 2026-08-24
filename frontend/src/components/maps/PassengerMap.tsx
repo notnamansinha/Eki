@@ -15,18 +15,16 @@ import {
 
 import { WifiOff, Navigation, Navigation2 } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
-import { decodePolyline, type LatLng } from "@/lib/polyline";
-import { snapToPolyline } from "@/lib/snapToPolyline";
+import { decodePolyline } from "@/lib/polyline";
 import {
   distanceAlongPolyline,
   positionAlongPolyline,
   preparePolylineDistanceIndex,
 } from "@/lib/polylineDistance";
 import { ETA_SPEED_FLOOR_KMH } from "@/lib/etaConstants";
-import { useSmoothPosition } from "@/hooks/useSmoothPosition";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
-import { useStableMarkerPosition } from "@/hooks/useStableMarkerPosition";
 import { normalizeRideDirection } from "@/lib/rideDirection";
+import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
@@ -44,63 +42,15 @@ const BUS_MOTION_COLORS: Record<string, string> = {
   uncertain: "#F87171", // red     — GPS fix lost
 };
 
-const ROUTE_SNAP_MAX_DISTANCE_M = 250;
-const ROUTE_SNAP_FALLBACK_DISTANCE_M = 1_000;
-
 function BusMarker({
   bus,
-  path,
 }: {
   bus: IncomingBusData;
-  path: readonly LatLng[];
 }) {
-  const [preferredSegmentIndex, setPreferredSegmentIndex] = useState(-1);
-  const primaryResult = useMemo(
-    () =>
-      snapToPolyline(
-        { lat: bus.lat, lng: bus.lng },
-        path,
-        {
-          headingDegrees: bus.heading,
-          preferredSegmentIndex,
-          maxSegmentJump: 25,
-          maxDistanceM: ROUTE_SNAP_MAX_DISTANCE_M,
-        },
-      ),
-    [bus.lat, bus.lng, bus.heading, path, preferredSegmentIndex],
+  const rawPoint = useMemo(
+    () => liveBusMarkerPosition(bus.lat, bus.lng),
+    [bus.lat, bus.lng],
   );
-  const result = useMemo(() => {
-    if (primaryResult.snapped) return primaryResult;
-    // A noisy receiver can put a fix well outside the carriageway. The route
-    // is authoritative for this view, so use a wider corridor before ever
-    // falling back to an untrusted point in a building or plot.
-    return snapToPolyline(
-      { lat: bus.lat, lng: bus.lng },
-      path,
-      {
-        headingDegrees: bus.heading,
-        preferredSegmentIndex,
-        maxSegmentJump: 25,
-        maxDistanceM: ROUTE_SNAP_FALLBACK_DISTANCE_M,
-      },
-    );
-  }, [bus.lat, bus.lng, bus.heading, path, preferredSegmentIndex, primaryResult]);
-  useEffect(() => {
-    if (!result.snapped) return;
-    const frame = requestAnimationFrame(() =>
-      setPreferredSegmentIndex(result.segmentIndex),
-    );
-    return () => cancelAnimationFrame(frame);
-  }, [result]);
-
-  const stablePoint = useStableMarkerPosition({
-    point: result.point,
-    timestamp: bus.timestamp,
-    speedKmh: bus.speed,
-    sessionId: bus.sessionId,
-    trustworthy: result.snapped || path.length < 2,
-  });
-  const smoothPosition = useSmoothPosition(stablePoint);
 
   const [displayHeading, setDisplayHeading] = useState(() =>
     normalizeHeading(bus.heading),
@@ -115,8 +65,9 @@ function BusMarker({
   const color =
     BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
 
+  if (!rawPoint) return null;
   return (
-    <AdvancedMarker position={smoothPosition ?? result.point}>
+    <AdvancedMarker position={rawPoint}>
       <div
         style={{
           width: 44,
@@ -498,12 +449,8 @@ function PassengerMapInner({
   const centerTarget = useMemo(() => {
     const firstBus = Array.from(buses.values())[0];
     if (!firstBus) return mapCenter;
-    return snapToPolyline(
-      { lat: firstBus.lat, lng: firstBus.lng },
-      routePath,
-      { headingDegrees: firstBus.heading },
-    ).point;
-  }, [buses, mapCenter, routePath]);
+    return liveBusMarkerPosition(firstBus.lat, firstBus.lng) ?? mapCenter;
+  }, [buses, mapCenter]);
 
   return (
     <>
@@ -574,7 +521,7 @@ function PassengerMapInner({
 
           {/* Bus markers */}
           {Array.from(buses.values()).map(bus => (
-            <BusMarker key={bus.busId} bus={bus} path={routePath} />
+            <BusMarker key={bus.busId} bus={bus} />
           ))}
 
           {/* Stop markers */}
