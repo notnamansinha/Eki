@@ -7,7 +7,7 @@ import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
 import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
-import { subscribeLiveBuses } from "@/lib/liveBusStore";
+import { subscribeLiveBusesByRoute } from "@/lib/liveBusStore";
 import {
   normalizePassengerLiveBus,
   type PassengerLiveBus,
@@ -261,7 +261,7 @@ function PassengerMapInner({
 
   // ── RTDB subscription: filtered by routeId ───────────────────────────────
   useEffect(() => {
-    const unsubscribe = subscribeLiveBuses((snapshot) => {
+    const unsubscribe = subscribeLiveBusesByRoute(route.id, (snapshot) => {
         const allData = snapshot as Record<string, unknown> | null;
         const now = Date.now();
         const currentRoute = routeRef.current;
