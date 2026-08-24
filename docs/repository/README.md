@@ -1,5 +1,73 @@
 # Eki campus bus tracking
 
+## Fast recovery: backend, tunnel, panel, and ESP32
+
+Use these commands when the ESP reports `DNS Failed` or the tunnel hostname has
+expired. Run each block in a separate terminal and keep Terminals 1 and 2 open.
+
+**1. Start the backend (Terminal 1):**
+
+```powershell
+cd C:\Users\Naman Sinha\Desktop\Eki
+npm run dev --workspace=backend
+```
+
+**2. Create and verify a fresh HTTPS tunnel (Terminal 2):**
+
+```powershell
+cloudflared tunnel --protocol http2 --url http://localhost:4000
+# Copy the generated URL, for example:
+$BackendOrigin = "https://<generated-host>.trycloudflare.com"
+Invoke-RestMethod "$BackendOrigin/health"
+```
+
+The health response must be `{"status":"ok"}`. A Quick Tunnel URL expires when
+`cloudflared` stops, so repeat every consumer update below whenever it changes.
+
+**3. Update the local configuration:**
+
+```powershell
+notepad hardware/include/secrets.h       # set BACKEND_URL to $BackendOrigin
+notepad frontend/.env.local               # set NEXT_PUBLIC_BACKEND_URL
+notepad frontend/.env.production          # set NEXT_PUBLIC_BACKEND_URL
+```
+
+Never put the tunnel URL in `backend/.env`. The ESP URL is compiled into the
+firmware, so it requires a rebuild and reflash.
+
+**4. Deploy the hosted panel (Terminal 3):**
+
+```powershell
+$env:NEXT_PUBLIC_BACKEND_URL = $BackendOrigin
+npm run deploy
+```
+
+Setting the environment variable explicitly makes the generated Firebase CSP
+allow the same backend origin used by the hosted panel.
+
+**5. Rebuild and flash the ESP32 (Terminal 4):**
+
+```powershell
+py -m platformio run --project-dir hardware -e esp32dev
+py -m platformio run --project-dir hardware -e esp32dev --target upload --upload-port COM3
+py -m platformio device monitor --project-dir hardware --port COM3 --baud 115200
+```
+
+Replace `COM3` with the port shown by `py -m platformio device list`. The serial
+monitor should show Wi-Fi connected, GNSS connected, and no DNS/transport errors.
+
+**6. Verify the correct route assignment:**
+
+In the admin panel, ensure `device_01` is assigned to `Bus01` and `route_01`,
+and `Bus01` has only `route_01` assigned. Then verify RTDB from a terminal:
+
+```powershell
+npx firebase database:get /activeBuses --project bustrack-be165 --json
+```
+
+The live key must be `Bus01_route_01` with fresh coordinates. `Bus01_Route-1`
+indicates a stale assignment or stale live record.
+
 Eki is a single-university bus-tracking system. An ESP32 reads a NEO-M8N GNSS receiver and pushes validated fixes over HTTPS to an Express backend. The backend owns identity and trip progression, projects current state to Firebase Realtime Database (RTDB), and persists configuration/recovery/history in Firestore. A static Next.js PWA provides passenger and administrator workspaces; administrators perform ride operations for assigned fleet operators.
 
 ## Before testing: keep the app and tunnel running
