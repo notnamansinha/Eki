@@ -97,10 +97,25 @@ async function provision(): Promise<void> {
   if (result === "active_previous_ride") {
     throw new Error("Do not rotate or reassign a device during an active ride.");
   }
-  await publishDeviceCredentialInvalidation(deviceId);
-
   console.log("Device provisioned. Copy this secret now; it is not stored in plaintext:");
   console.log(plainSecret);
+
+  let invalidationError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await publishDeviceCredentialInvalidation(deviceId);
+      return;
+    } catch (error) {
+      invalidationError = error;
+    }
+  }
+  const reason = invalidationError instanceof Error
+    ? invalidationError.message
+    : "unknown invalidation error";
+  throw new Error(
+    `Device credential was updated, but cache invalidation failed twice (${reason}). ` +
+    "The secret above is valid; restore RTDB connectivity and publish an invalidation before relying on the device.",
+  );
 }
 
 void provision().then(
