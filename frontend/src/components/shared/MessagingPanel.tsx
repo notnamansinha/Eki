@@ -16,6 +16,7 @@ import { waitForAuth } from "@/lib/authState";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 const MAX_MESSAGE_LENGTH = 500;
+const MAX_MESSAGES_PER_MINUTE = 10;
 
 interface Message {
   id: string;
@@ -145,9 +146,15 @@ export default function MessagingPanel({
     const now = Date.now();
     const oneHourAgo = now - 3600000;
     const recentMessages = messagesSentCounts.filter(m => m.timestamp > oneHourAgo);
+    const recentMinuteMessages = recentMessages.filter(m => m.timestamp > now - 60_000);
 
     if (recentMessages.length >= 60) {
       showTransientMessage("Limit reached — 60 messages/hour");
+      return;
+    }
+
+    if (recentMinuteMessages.length >= MAX_MESSAGES_PER_MINUTE) {
+      showTransientMessage("Please pause — 10 messages/minute maximum");
       return;
     }
 
@@ -186,6 +193,7 @@ export default function MessagingPanel({
       const result = await response.json().catch(() => ({})) as {
         error?: string;
         retryAfterMs?: number;
+        moderated?: boolean;
       };
       if (!response.ok) {
         const error = new Error(result.error || "Unable to send message.") as Error & { status?: number };
@@ -195,6 +203,9 @@ export default function MessagingPanel({
       pendingMessageRef.current = null;
       setMessagesSentCounts([...recentMessages, { timestamp: now }]);
       setNewMessage("");
+      if (result.moderated) {
+        showTransientMessage("Unsafe language was filtered before sending.");
+      }
     } catch (error: unknown) {
       const code = typeof error === "object" && error !== null && "status" in error
         ? Number((error as { status?: number }).status)
@@ -239,7 +250,7 @@ export default function MessagingPanel({
             Live Chat
           </h3>
           <p className="text-[10px] font-semibold mt-0.5" style={{ color: "var(--text-ghost)" }}>
-            Session {sessionId.substring(0, 8)}
+            Session {sessionId.substring(0, 8)} · filtered and rate-limited
           </p>
         </div>
         {isOverlay && onClose && (

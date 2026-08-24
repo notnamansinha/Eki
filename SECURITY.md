@@ -48,6 +48,20 @@ ESP32 GNSS units post a closed six-field payload to
   denied; chat is stored under Firestore ride sessions with scoped rules.
 - **`/users`**: Read-restricted to owner (`auth.uid == $uid`). Writes disabled (`.write: false`).
 
+### Ride Chat Safety
+
+- Message creation is backend-only. The server rechecks the live ride state and
+  verifies that the sender is a manifest passenger, assigned operator, or admin.
+- Per-user limits enforce a three-second cooldown, 10 messages per minute, and
+  60 messages per rolling hour; the global authenticated write limiter remains
+  an additional layer.
+- Text and display names are normalized to remove unsafe formatting controls and
+  common English and Hindi/Hinglish profanity evasions are censored before the
+  message is stored. The original uncensored text is not retained.
+- The UI renders message content as text, not HTML. Deterministic moderation
+  reduces common abuse but cannot guarantee detection of every harmful phrase;
+  administrators can clear a ride's message history when needed.
+
 ### HTTP Security Headers & Infrastructure
 
 Firebase Hosting (`firebase.json`) enforces strict production security headers:

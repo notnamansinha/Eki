@@ -240,7 +240,7 @@ describe("production security configuration", () => {
     expect(sessionsRoute).not.toContain("req.body?.userName");
     expect(sessionsRoute).toContain('router.post("/:sessionId/messages", requireAuth');
     expect(sessionsRoute).toContain("evaluateChatRate");
-    expect(sessionsRoute).toContain("censorText");
+    expect(sessionsRoute).toContain("moderateChatText");
     expect(feedback).toContain("allow create: if false;");
     expect(feedback).toContain("allow update: if false;");
     // Ride-eligibility and cooldown enforcement now live in the feedback

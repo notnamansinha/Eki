@@ -207,13 +207,13 @@ An admin may request the code for any active session; a legacy assigned-operator
 
 ### `POST /api/sessions/:sessionId/join` — passenger
 
-Body: `{ "boardingCode":"ABCD2345", "lat":23.0, "lng":72.5, "accuracy":25, "boardingStopId":"stop_1", "alightingStopId":"stop_3" }`; `alightingStopId` may be `null`. Coordinates are required on first boarding and may be omitted only when the same authenticated UID updates an existing manifest entry.
+Body: `{ "boardingCode":"ABCD2345", "lat":23.0, "lng":72.5, "accuracy":25, "boardingStopId":"stop_1", "alightingStopId":"stop_3" }`. Both stop IDs are required. Coordinates are required on first boarding and may be omitted only when the same authenticated UID updates an existing manifest entry.
 
 Requires a valid Firebase bearer token, the driver-issued session code, route-owned stops in forward order, browser accuracy no worse than 100 m, and—on first boarding—a passenger coordinate within 150 m of a fresh nonfuture hardware GNSS projection bound to the exact session/bus/route. Browser location is defense in depth rather than trusted proof; possession of the non-public session code is the server-verifiable authorization. An existing passenger may correct stops without a second location prompt. A Firestore transaction rechecks session state, code, and existing membership when proximity is omitted before adding or updating only the authenticated UID's manifest entry. Display name and timestamps are server-derived. Returns `{joined:true,sessionId}` or 400/403/404/409/422/500.
 
 ### `POST /api/sessions/:sessionId/messages` — session member/operator
 
-Body: `{ "text":"Bus arriving", "requestId":"browser-generated-uuid" }`. The authenticated UID must be a manifest passenger, the assigned driver on the assigned bus, or an admin, and the session must still be `armed|active`. Sender role/name are server-derived. One transaction rechecks membership/state, applies the three-second and 60-per-hour limits, and writes both message and rate state. `requestId` makes retries idempotent: first success is 201, an identical retry is 200, and reuse with changed content is 409. Throttling is 429 with `Retry-After` and `retryAfterMs`.
+Body: `{ "text":"Bus arriving", "requestId":"browser-generated-uuid" }`. The authenticated UID must be a manifest passenger, the assigned driver on the assigned bus, or an admin, and the session must still be `armed|active`. Sender role/name are server-derived. One transaction rechecks membership/state; applies the three-second, 10-per-minute, and 60-per-hour limits; normalizes unsafe Unicode formatting; censors common English, Hindi/Hinglish, leetspeak, separator, and repeated-letter profanity evasions; and writes both message and rate state. The uncensored text is not stored. `requestId` makes retries idempotent: first success is 201, an identical retry is 200, and reuse with changed content is 409. Throttling is 429 with `Retry-After` and `retryAfterMs`.
 
 ## Feedback, profile, and settings endpoints
 

@@ -161,6 +161,27 @@ describe("session message route", () => {
     expect((await send("Hello", "request_12345678", { senderName: "Impostor" })).status).toBe(400);
   });
 
+  it("normalizes and censors obfuscated profanity before it is persisted", async () => {
+    const response = await send("  f.u.c.k\u200B   this  ");
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({ moderated: true, sent: true });
+    expect([...harness.messages.values()][0]).toMatchObject({
+      text: "*** this",
+      moderated: true,
+      moderationVersion: 2,
+    });
+  });
+
+  it("filters an unsafe server-derived display name", async () => {
+    harness.session.passengers = {
+      passenger_1: { userId: "passenger_1", userName: "sh1t" },
+    };
+
+    expect((await send()).status).toBe(201);
+    expect([...harness.messages.values()][0]).toMatchObject({ senderName: "***" });
+  });
+
   it("enforces the exact full hourly window", async () => {
     const now = Date.now();
     harness.rate = {
@@ -202,6 +223,20 @@ describe("session message route", () => {
     expect([...harness.messages.values()][0]).toMatchObject({
       from: "driver",
       senderName: "Verified Driver",
+    });
+  });
+
+  it("allows an authenticated administrator without trusting client identity fields", async () => {
+    harness.user = { uid: "admin_auth", role: "admin", name: "Campus Admin" };
+    harness.session.passengers = {};
+
+    const response = await send("Service update", "request_admin_12345");
+
+    expect(response.status).toBe(201);
+    expect([...harness.messages.values()][0]).toMatchObject({
+      from: "driver",
+      senderId: "admin_auth",
+      senderName: "Campus Admin",
     });
   });
 });

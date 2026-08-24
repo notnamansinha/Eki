@@ -103,7 +103,8 @@ service cloud.firestore {
         // Message writes are backend-authoritative (POST /api/sessions/:id/messages).
         // The server enforces membership, the 60/hr rolling rate limit, the 3s
         // gap, and the profanity filter — none of which a crafted client could
-        // bypass. Clients only read.
+        // bypass. The server also normalizes Unicode, catches common
+        // obfuscation, and enforces short-burst limits. Clients only read.
         allow create, update, delete: if false;
       }
 
