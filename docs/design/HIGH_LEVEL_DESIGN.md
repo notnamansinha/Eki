@@ -97,7 +97,7 @@ flowchart TB
 - Device secrets are random per device, scrypt-hashed with salt, timing-safe compared, negatively cached briefly, and absent from logs/responses.
 - Firestore/RTDB are default deny. `devices`, `active_rides`, `_active_bus_locks`, worker/privacy/operation internals, and live writes have no client permission.
 - Passenger manifests are readable only to the session operator/admin. Messages are session-scoped, sender-bound, length-limited, and transactionally rate-limited. Feedback has a 24-hour cooldown.
-- Account deletion is queued server-side. Retention is destructive and therefore disabled unless `RETENTION_SWEEPER_ENABLED=true` exactly.
+- Account deletion is queued server-side. Production refuses to start unless `RETENTION_SWEEPER_ENABLED=true`; development and tests remain non-destructive when the setting is omitted.
 - Hosting applies CSP, HSTS, anti-framing and content headers; CSP script hashes are regenerated after the static build.
 
 ## Performance and availability budgets
@@ -116,7 +116,7 @@ The software does not promise an absolute end-to-end SLA without real deployment
 | Browser live stream | One shared RTDB listener per browser runtime |
 | UI freshness clocks | 15–60 second local-only timers; no API polling |
 
-`GET /health` returns rolling p50/p95/p99 processing, device-to-server, and RTDB-write latency plus credential cache efficiency. A device clock anomaly over 24 hours is excluded from the device-to-server window.
+Admin-only `GET /api/health` returns rolling p50/p95/p99 processing, device-to-server, and RTDB-write latency plus credential cache efficiency. Public `GET /health` exposes readiness only. A device clock anomaly over 24 hours is excluded from the device-to-server window.
 
 ## Deployment view
 

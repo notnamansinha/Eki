@@ -38,7 +38,7 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 | `services/abandonedRideReconciler.ts` | Rechecks and interrupts stale non-terminal sessions |
 | `services/abandonedRideReconciliationLogic.ts` | Pure timestamp/session decision logic |
 | `services/privacyDeletionWorker.ts` | Paged deletion of a queued passenger's personal documents/auth account |
-| `services/retentionSweeper.ts` | Explicit opt-in, paged time-based terminal-data removal |
+| `services/retentionSweeper.ts` | Production-required, paged time-based terminal-data removal |
 | `services/rideHistoryDeletion.ts` | Terminal-only recursive session/completed-trip deletion |
 | `seed.ts` | Writes predefined routes only after Maps geometry succeeds |
 | `provisionDevice.ts` | Transactional registry/assignment conflict checks and one-time secret generation |

@@ -126,7 +126,7 @@ credential values:
    `202` responses.
 4. The backend's authenticated diagnostics endpoint receives a report. An
    admin can inspect it at `GET /api/devices/:deviceId/diagnostics`.
-5. `/health` shows accepted telemetry and no sustained background failures.
+5. Admin-authenticated `/api/health` shows accepted telemetry and no sustained background failures; public `/health` reports readiness only.
 6. A controlled Wi-Fi/backend outage recovers without a recovery portal, stale
    replay, or a second ride session.
 

@@ -127,7 +127,7 @@ The body fields and limits are defined in [Firebase data model](../data/FIREBASE
 
 The device serial line is not the normal bottleneck: NMEA parsing continues while HTTPS blocks the publisher task. While moving, designed latency is up to one-second evaluation plus network/TLS/API/RTDB time; the one-second publish floor prevents duplicate bursts without deliberately adding multi-second lag. On recovery the newest eligible state is restored first. Stationary heartbeat visibility remains intentionally 60 seconds.
 
-Backend `/health.telemetry` provides:
+Admin-authenticated backend `/api/health.telemetry` provides:
 
 - `processingLatencyMs`: API service processing, including credential/RTDB work.
 - `deviceToServerLatencyMs`: server receipt minus device GNSS/NTP-disciplined timestamp; includes sampling gate and network but is trustworthy only with a correct clock.

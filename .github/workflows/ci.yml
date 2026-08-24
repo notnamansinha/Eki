@@ -96,6 +96,7 @@ jobs:
           docker run -d --name eki-backend-smoke \
             -e NODE_ENV=production \
             -e CORS_ORIGIN=https://ci-only.example.invalid \
+            -e RETENTION_SWEEPER_ENABLED=true \
             -e FIREBASE_DATABASE_URL=https://eki-unit-test-default-rtdb.firebaseio.com \
             -p 8080:8080 eki-backend:ci
           # Wait until the HTTP server answers (a 503 still counts: it proves
