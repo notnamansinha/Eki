@@ -1,7 +1,7 @@
 /**
  * generate-sw.mjs — Post-build step: Inject precache manifest into SW.
  *
- * Scans frontend/out/ for all static assets produced by `next build`,
+ * Scans frontend/out/ for the bounded install shell produced by `next build`,
  * bundles the Workbox runtime + src/sw.js, and writes the final sw.js
  * into frontend/out/ ready for Firebase Hosting deployment.
  *
@@ -30,6 +30,7 @@ import { bundle } from "workbox-build/build/lib/bundle.js";
 const root = path.resolve(fileURLToPath(import.meta.url), "../..");
 const frontendRoot = path.join(root, "frontend");
 const swDest = path.join(frontendRoot, "out", "sw.js");
+const PRECACHE_BUDGET_BYTES = 2 * 1024 * 1024;
 
 const config = {
   swSrc: path.join(frontendRoot, "src", "sw.js"),
@@ -38,14 +39,12 @@ const config = {
   globPatterns: [
     // HTML pages (the app shell for every route)
     "**/*.html",
-    // Next.js static chunks — JS and CSS
-    "_next/static/**/*.{js,css}",
     // PWA manifest
     "manifest.webmanifest",
-    // Icons and hero images
-    "*.png",
-    "*.webp",
-    "images/**/*.{webp,jpg,png}",
+    // The manifest icons remain available before the app starts. Large imagery
+    // is runtime-cached and must not compete with the JavaScript bootstrap.
+    "icon*.png",
+    "apple-icon.png",
   ],
   globIgnores: [
     // Source maps are published for debugging but should never consume the
@@ -55,10 +54,20 @@ const config = {
     "_next/static/**/webpack-*",
     "_next/static/**/buildManifest.js",
   ],
-  // Maximum file size to precache (2 MB). Larger files (e.g. if someone adds
+  // Maximum individual file size (1 MB); the aggregate budget below also
+  // prevents many smaller assets from silently bloating install traffic.
   // a video) should use runtime caching instead.
-  maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
+  maximumFileSizeToCacheInBytes: 1024 * 1024,
 };
+
+function assertPrecacheBudget(size) {
+  if (size > PRECACHE_BUDGET_BYTES) {
+    throw new Error(
+      `Precache is ${(size / 1024).toFixed(0)} KB; budget is ${PRECACHE_BUDGET_BYTES / 1024} KB. ` +
+      "Move role-specific or large assets to runtime caching.",
+    );
+  }
+}
 
 const cacheDir = path.join(frontendRoot, ".next", "cache", "sw");
 const cacheManifestPath = path.join(cacheDir, "manifest.json");
@@ -99,6 +108,38 @@ async function walk(directory) {
 }
 
 /**
+ * Return the exact immutable JS and CSS files each exported HTML shell needs
+ * to hydrate while offline. Precaching these references prevents a newly
+ * activated worker from serving HTML whose bootstrap has never been cached.
+ */
+async function bootstrapShellEntries() {
+  const entries = new Map();
+  let size = 0;
+  const files = await walk(config.globDirectory);
+  const htmlFiles = files.filter((file) => path.extname(file) === ".html");
+  for (const file of htmlFiles) {
+    const html = await readFile(file, "utf8");
+    for (const match of html.matchAll(/(?:src|href)="(\/_next\/static\/[^\"]+\.(?:js|css))"/g)) {
+      const url = match[1];
+      if (entries.has(url)) continue;
+      const contents = await readFile(path.join(config.globDirectory, url.slice(1)));
+      if (contents.length > config.maximumFileSizeToCacheInBytes) {
+        throw new Error(`Bootstrap asset ${url} exceeds the 1 MB precache-file limit.`);
+      }
+      entries.set(url, {
+        url,
+        revision: createHash("sha256").update(contents).digest("hex"),
+      });
+      size += contents.length;
+    }
+  }
+  return {
+    entries: [...entries.values()].sort((left, right) => left.url.localeCompare(right.url)),
+    size,
+  };
+}
+
+/**
  * Content fingerprint of every input that can change the precache manifest.
  * A stable hash over: the generator, resolved Workbox versions, semantic
  * workbox config, SW source, and all files under globDirectory (excluding our
@@ -127,7 +168,11 @@ async function fingerprint() {
 
 /** Run the full workbox pipeline: inject precache manifest, then bundle. */
 async function generate() {
-  const result = await injectManifest(config);
+  const bootstrap = await bootstrapShellEntries();
+  const result = await injectManifest({
+    ...config,
+    additionalManifestEntries: bootstrap.entries,
+  });
 
   // injectManifest replaces the precache placeholder but intentionally leaves
   // module imports untouched. Bundle the injected source so browsers receive a
@@ -163,7 +208,7 @@ async function generate() {
     await writeFile(file.name, file.contents);
   }
 
-  return result;
+  return { ...result, size: result.size + bootstrap.size };
 }
 
 async function main() {
@@ -173,6 +218,7 @@ async function main() {
   try {
     const cachedManifest = JSON.parse(await readFile(cacheManifestPath, "utf8"));
     if (cachedManifest.fingerprint === current) {
+      assertPrecacheBudget(cachedManifest.size);
       await copyFile(cacheSwPath, swDest);
       console.log(
         `✅ SW unchanged: ${cachedManifest.count} files precached (${(cachedManifest.size / 1024).toFixed(0)} KB total, cached)`
@@ -184,6 +230,7 @@ async function main() {
   }
 
   const result = await generate();
+  assertPrecacheBudget(result.size);
 
   await mkdir(cacheDir, { recursive: true });
   // The manifest is the commit marker: only publish it after its worker is
