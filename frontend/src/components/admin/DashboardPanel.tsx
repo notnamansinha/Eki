@@ -27,7 +27,6 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { apiRequest } from "@/lib/apiClient";
 import CustomSelect from "@/components/ui/CustomSelect";
 import MessagingPanel from "@/components/shared/MessagingPanel";
-import { useSmoothPosition } from "@/hooks/useSmoothPosition";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
 import {
@@ -216,7 +215,6 @@ function BusMarker({
     () => liveBusMarkerPosition(lat, lng),
     [lat, lng],
   );
-  const smoothPosition = useSmoothPosition(rawPoint);
 
   const [displayHeading, setDisplayHeading] = useState(() =>
     normalizeHeading(entry.heading),
@@ -230,7 +228,7 @@ function BusMarker({
 
   if (!rawPoint) return null;
   return (
-    <AdvancedMarker position={smoothPosition ?? rawPoint} onClick={onClick}>
+    <AdvancedMarker position={rawPoint} onClick={onClick}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }} title={`${entry.busId} — ${ts.label}`}>
         <div style={{
           width: 36, height: 36, borderRadius: 18,

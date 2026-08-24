@@ -3,8 +3,8 @@ import type { LatLng } from "./polyline";
 
 /**
  * Keep the map marker tied to the authenticated telemetry accepted into RTDB.
- * Route geometry may be used for ETAs, but it must not rewrite the reported
- * physical location shown to administrators or passengers.
+ * Route geometry and animation may be used elsewhere, but neither may rewrite
+ * or delay the physical location shown to administrators or passengers.
  */
 export function liveBusMarkerPosition(
   lat: number | undefined,

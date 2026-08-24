@@ -22,7 +22,6 @@ import {
   preparePolylineDistanceIndex,
 } from "@/lib/polylineDistance";
 import { ETA_SPEED_FLOOR_KMH } from "@/lib/etaConstants";
-import { useSmoothPosition } from "@/hooks/useSmoothPosition";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { normalizeRideDirection } from "@/lib/rideDirection";
 import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
@@ -52,7 +51,6 @@ function BusMarker({
     () => liveBusMarkerPosition(bus.lat, bus.lng),
     [bus.lat, bus.lng],
   );
-  const smoothPosition = useSmoothPosition(rawPoint);
 
   const [displayHeading, setDisplayHeading] = useState(() =>
     normalizeHeading(bus.heading),
@@ -69,7 +67,7 @@ function BusMarker({
 
   if (!rawPoint) return null;
   return (
-    <AdvancedMarker position={smoothPosition ?? rawPoint}>
+    <AdvancedMarker position={rawPoint}>
       <div
         style={{
           width: 44,
