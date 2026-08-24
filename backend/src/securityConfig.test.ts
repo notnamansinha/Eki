@@ -125,8 +125,8 @@ describe("production security configuration", () => {
 
     expect(server).toContain("assertRetentionConfiguration(");
     expect(retention).toContain('nodeEnv === "production" && normalized !== "true"');
-    expect(envExample).toContain("RETENTION_SWEEPER_ENABLED=true");
-    expect(envExample).not.toContain("RETENTION_SWEEPER_ENABLED=false");
+    expect(envExample).toContain("RETENTION_SWEEPER_ENABLED=false");
+    expect(envExample).toContain("explicitly overrides this");
   });
 
   it("denies every unlisted path with an explicit catch-all and keeps comments accurate", () => {
