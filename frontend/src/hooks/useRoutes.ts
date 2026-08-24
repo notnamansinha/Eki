@@ -26,6 +26,8 @@ export interface RouteData {
   distanceMeters?: number;
   /** Pre-computed route duration string e.g. "600s" */
   duration?: string;
+  /** View-only travel order for an active ride; never persisted on route documents. */
+  rideDirection?: "forward" | "reverse";
 }
 
 /**

@@ -32,6 +32,11 @@ import { snapToPolyline } from "@/lib/snapToPolyline";
 import { useSmoothPosition } from "@/hooks/useSmoothPosition";
 import { useStableMarkerPosition } from "@/hooks/useStableMarkerPosition";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
+import {
+  directionLabel,
+  normalizeRideDirection,
+  routeInRideDirection,
+} from "@/lib/rideDirection";
 
 /* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const TRIP_STATE: Record<string, { label: string; color: string; bg: string; dot: string }> = {
@@ -173,7 +178,7 @@ function LiveDetailsDrawer({
           {msg && <p className="text-xs text-emerald-400 font-semibold">{msg}</p>}
 
           <p className="text-xs leading-relaxed text-white/45">
-            Position and stop progress come only from authenticated GNSS telemetry. The ride starts at the first ordered stop and completes at the final ordered stop.
+            Position and stop progress come only from authenticated GNSS telemetry. The ride follows its armed travel direction and completes at that direction&apos;s destination.
           </p>
           <button onClick={() => setShowWipeConfirm(true)} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors">
             <MessageCircle className="w-3.5 h-3.5" /> Clear Messages
@@ -347,11 +352,14 @@ function FleetCard({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const bus = buses.find(b => b.id === entry.busId);
   const route = routes.find(r => r.id === entry.routeId);
+  const directedRoute = route
+    ? routeInRideDirection(route, normalizeRideDirection(entry.direction))
+    : undefined;
   const driver = drivers.find(d => d.id === entry.driverId);
   const ts = TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure;
   const ms = MOTION_STATE[entry.motionState ?? "uncertain"] ?? MOTION_STATE.uncertain;
   const stopIdx = (entry.currentStopIndex ?? 0) + 1;
-  const stopCount = route?.stops?.length ?? 0;
+  const stopCount = directedRoute?.stops?.length ?? 0;
 
   return (
     <>
@@ -427,16 +435,16 @@ function FleetCard({
                   <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.round((stopIdx / stopCount) * 100)}%` }} />
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-2">
-                  {route?.stops?.[entry.currentStopIndex ?? 0] && (
+                  {directedRoute?.stops?.[entry.currentStopIndex ?? 0] && (
                     <div>
                       <span className="text-[8px] text-white/25 uppercase font-black">Next Stop</span>
-                      <p className="text-[10px] font-semibold text-white truncate">{route.stops[entry.currentStopIndex ?? 0].name}</p>
+                      <p className="text-[10px] font-semibold text-white truncate">{directedRoute.stops[entry.currentStopIndex ?? 0].name}</p>
                     </div>
                   )}
-                  {route?.stops?.[(entry.currentStopIndex ?? 0) + 1] && (
+                  {directedRoute?.stops?.[(entry.currentStopIndex ?? 0) + 1] && (
                     <div>
                       <span className="text-[8px] text-white/25 uppercase font-black">Following Stop</span>
-                      <p className="text-[10px] font-semibold text-white/60 truncate">{route.stops[(entry.currentStopIndex ?? 0) + 1].name}</p>
+                      <p className="text-[10px] font-semibold text-white/60 truncate">{directedRoute.stops[(entry.currentStopIndex ?? 0) + 1].name}</p>
                     </div>
                   )}
                 </div>
@@ -450,6 +458,11 @@ function FleetCard({
               <div>
                 <span className="text-[8px] font-black uppercase tracking-wider text-white/25">Route</span>
                 <p className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</p>
+                {route && (
+                  <p className="text-[9px] text-white/40">
+                    {directionLabel(normalizeRideDirection(entry.direction), route.stops)}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 border-t border-white/5 pt-3">
@@ -589,17 +602,22 @@ export default function DashboardPanel() {
     setArmPending(true);
     setArmStatus("");
     try {
-      const result = await requestAdmin<{ sessionId?: string; resumed?: boolean }>(
+      const result = await requestAdmin<{
+        sessionId?: string;
+        resumed?: boolean;
+        direction?: "forward" | "reverse";
+      }>(
         "/api/shifts/start",
         {
           method: "POST",
           body: JSON.stringify({ driverId, busId, routeId }),
         },
       );
+      const inferredDirection = normalizeRideDirection(result.direction);
       setArmStatus(
         result.resumed
           ? `Active ride restored (${result.sessionId}).`
-          : `Ride armed (${result.sessionId}). It starts automatically at stop 1.`,
+          : `Ride armed (${result.sessionId}) for ${directionLabel(inferredDirection, routes.find((route) => route.id === routeId)?.stops ?? [])}.`,
       );
     } catch (error) {
       setArmStatus(errorMessage(error));
@@ -753,6 +771,10 @@ export default function DashboardPanel() {
               placeholder="Select route…"
             />
           </div>
+          <p className="text-xs text-white/45">
+            Travel direction is inferred from fresh stopped GPS at route endpoint A or Z.
+            After completion, the opposite trip is armed automatically following the turnaround dwell.
+          </p>
           <button
             type="button"
             onClick={() => void armRide()}

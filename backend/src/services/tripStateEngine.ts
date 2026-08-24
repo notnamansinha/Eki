@@ -1,9 +1,15 @@
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
+import type { Reference } from "firebase-admin/database";
 import { LruCache } from "../lib/lruCache";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
+import {
+  automaticTurnaroundIsReady,
+  oppositeRideDirection,
+} from "../lib/automaticRideDirection";
 import { SerializedChangeWriter } from "./serializedChangeWriter";
-import { reduceTripState } from "./tripStateReducer";
+import { reduceTripState, STOP_GEOFENCE_M } from "./tripStateReducer";
+import { normalizeRideDirection, stopsInRideDirection } from "../lib/rideDirection";
 import {
   drainDynamicPromises,
   normalizeIdentifier,
@@ -59,6 +65,12 @@ function readIntervalMs(value: string | undefined, fallback: number, minimum: nu
 }
 
 const STALE_BUS_MS = readIntervalMs(process.env.BUS_STALE_MS, 300_000, 90_000);
+const AUTOMATIC_TURNAROUND_DWELL_MS = readIntervalMs(
+  process.env.AUTOMATIC_TURNAROUND_DWELL_MS,
+  120_000,
+  30_000,
+);
+const TURNAROUND_CLAIM_STALE_MS = 60_000;
 const MISSING_ROUTE_TTL_MS = 60_000;
 const ROUTE_RECONNECT_INITIAL_MS = 1_000;
 const ROUTE_RECONNECT_MAX_MS = 30_000;
@@ -73,6 +85,7 @@ function fleetLifecycleState(data: Record<string, unknown>) {
     status: typeof data.status === "string" ? data.status : "active",
     deviceState: typeof data.deviceState === "string" ? data.deviceState : "online",
     tripState: typeof data.tripState === "string" ? data.tripState : "pre_departure",
+    direction: normalizeRideDirection(data.direction),
     // Persist the live GNSS state so analytics can count signal loss; without
     // it the admin panel's signalLost count under-reported (issue #48 L2).
     motionState: typeof data.motionState === "string" ? data.motionState : null,
@@ -105,6 +118,213 @@ function normalizedDelayMinutes(value: unknown): number {
   return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 1440
     ? Number(value)
     : 0;
+}
+
+/**
+ * Claims and arms the opposite ride after a completed bus has dwelled stopped
+ * at the endpoint. RTDB supplies the cross-replica claim; Firestore supplies
+ * the durable unique-bus lock. A crash after the durable commit is recovered
+ * by the normal active_rides telemetry restoration path.
+ */
+async function maybeArmAutomaticTurnaround(
+  data: Record<string, unknown>,
+  naturalStops: RouteStop[],
+  nodeRef: Reference,
+): Promise<boolean> {
+  const previousDirection = normalizeRideDirection(data.direction);
+  const completedStops = stopsInRideDirection(naturalStops, previousDirection);
+  const completedDestination = completedStops.at(-1);
+  const previousSessionId = normalizeIdentifier(data.sessionId);
+  const busId = normalizeIdentifier(data.busId);
+  const routeId = normalizeIdentifier(data.routeId);
+  const driverId = normalizeIdentifier(data.driverId);
+  const now = Date.now();
+  if (
+    !completedDestination ||
+    !previousSessionId ||
+    !busId ||
+    !routeId ||
+    !driverId ||
+    !automaticTurnaroundIsReady({
+      now,
+      telemetryTimestamp: Number(data.timestamp),
+      eligibleAt: Number(data.turnaroundEligibleAt),
+      motionState: data.motionState,
+      position: { lat: Number(data.lat), lng: Number(data.lng) },
+      destination: completedDestination,
+    }, STOP_GEOFENCE_M)
+  ) {
+    return false;
+  }
+
+  const direction = oppositeRideDirection(previousDirection);
+  const stops = stopsInRideDirection(naturalStops, direction);
+  const origin = stops[0];
+  const destination = stops.at(-1)!;
+  const sessionRef = db.collection("ride_sessions").doc();
+  const claim = await nodeRef.transaction((current) => {
+    const live = current as Record<string, unknown> | null;
+    const claimedAt = Number(live?.turnaroundClaimedAt);
+    const claimIsFresh =
+      typeof live?.turnaroundClaimId === "string" &&
+      Number.isFinite(claimedAt) &&
+      now - claimedAt < TURNAROUND_CLAIM_STALE_MS;
+    if (
+      !live ||
+      live.sessionId !== previousSessionId ||
+      live.tripState !== "completed" ||
+      claimIsFresh ||
+      !automaticTurnaroundIsReady({
+        now,
+        telemetryTimestamp: Number(live.timestamp),
+        eligibleAt: Number(live.turnaroundEligibleAt),
+        motionState: live.motionState,
+        position: { lat: Number(live.lat), lng: Number(live.lng) },
+        destination: completedDestination,
+      }, STOP_GEOFENCE_M)
+    ) {
+      return;
+    }
+    return {
+      ...live,
+      turnaroundClaimId: sessionRef.id,
+      turnaroundClaimedAt: now,
+    };
+  });
+  if (!claim.committed) return false;
+
+  const lockRef = db.collection("_active_bus_locks").doc(busId);
+  const completedSessionRef = db.collection("ride_sessions").doc(previousSessionId);
+  const activeRideRef = db.collection("active_rides").doc(`${busId}_${routeId}`);
+  const driverRef = db.collection("drivers").doc(driverId);
+  const busRef = db.collection("buses").doc(busId);
+  let durableCreated = false;
+  try {
+    durableCreated = await db.runTransaction(async (transaction) => {
+      const [lock, completedSession, driver, bus] = await Promise.all([
+        transaction.get(lockRef),
+        transaction.get(completedSessionRef),
+        transaction.get(driverRef),
+        transaction.get(busRef),
+      ]);
+      const completed = completedSession.data();
+      const assignedRoutes = Array.isArray(bus.data()?.assignedRoutes)
+        ? bus.data()?.assignedRoutes
+        : typeof bus.data()?.assignedRouteId === "string"
+          ? [bus.data()?.assignedRouteId]
+          : [];
+      if (
+        lock.exists ||
+        !completedSession.exists ||
+        completed?.status !== "completed" ||
+        completed?.busId !== busId ||
+        completed?.routeId !== routeId ||
+        completed?.driverId !== driverId ||
+        !driver.exists ||
+        driver.data()?.assignedBusId !== busId ||
+        !bus.exists ||
+        !assignedRoutes.includes(routeId)
+      ) {
+        return false;
+      }
+      transaction.create(sessionRef, {
+        id: sessionRef.id,
+        busId,
+        driverId,
+        routeId,
+        direction,
+        originStopId: origin.id,
+        destinationStopId: destination.id,
+        armedAt: now,
+        status: "armed",
+        automaticTurnaround: true,
+        previousSessionId,
+        passengers: {},
+        stopsReached: {},
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      transaction.create(lockRef, {
+        busId,
+        routeId,
+        driverId,
+        sessionId: sessionRef.id,
+        direction,
+        automaticTurnaround: true,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      transaction.set(activeRideRef, {
+        sessionId: sessionRef.id,
+        busId,
+        driverId,
+        routeId,
+        direction,
+        originStopId: origin.id,
+        destinationStopId: destination.id,
+        status: "active",
+        tripState: "pre_departure",
+        currentStopIndex: 0,
+        hasDepartedOrigin: false,
+        delayMinutes: 0,
+        delayUpdatedAt: 0,
+        automaticTurnaround: true,
+        previousSessionId,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return true;
+    });
+    if (!durableCreated) return false;
+
+    const activated = await nodeRef.transaction((current) => {
+      const live = current as Record<string, unknown> | null;
+      if (
+        !live ||
+        live.sessionId !== previousSessionId ||
+        live.tripState !== "completed" ||
+        live.turnaroundClaimId !== sessionRef.id
+      ) {
+        return;
+      }
+      return {
+        ...live,
+        sessionId: sessionRef.id,
+        driverId,
+        direction,
+        originStopId: origin.id,
+        destinationStopId: destination.id,
+        status: "active",
+        deviceState: "online",
+        tripState: "pre_departure",
+        currentStopIndex: 0,
+        hasDepartedOrigin: false,
+        delayMinutes: 0,
+        delayUpdatedAt: 0,
+        automaticTurnaround: true,
+        previousSessionId,
+        completedAt: null,
+        turnaroundEligibleAt: null,
+        turnaroundClaimId: null,
+        turnaroundClaimedAt: null,
+        lifecycleUpdatedAt: { ".sv": "timestamp" },
+      };
+    });
+    if (activated.committed) {
+      activeRideWrites.invalidate(`${busId}_${routeId}`);
+    }
+    return activated.committed;
+  } finally {
+    if (!durableCreated) {
+      await nodeRef.transaction((current) => {
+        const live = current as Record<string, unknown> | null;
+        if (!live || live.turnaroundClaimId !== sessionRef.id) return;
+        return {
+          ...live,
+          turnaroundClaimId: null,
+          turnaroundClaimedAt: null,
+        };
+      });
+    }
+  }
 }
 
 /** Tracks non-blocking lifecycle work so shutdown can still flush it. */
@@ -314,6 +534,9 @@ function persistActiveRideLifecycle(
     busId: data.busId,
     driverId: data.driverId,
     routeId: data.routeId,
+    direction: normalizeRideDirection(data.direction),
+    originStopId: normalizeIdentifier(data.originStopId),
+    destinationStopId: normalizeIdentifier(data.destinationStopId),
     status: "active",
     tripState,
     currentStopIndex,
@@ -437,8 +660,9 @@ export function startTripStateEngine(): () => Promise<void> {
     if (!data) return;
     const nodeKey = snapshot.key || `${data.busId}_${data.routeId}`;
 
-    // If driver marked offline via frontend, handle cleanup
-    if (data.status === "offline") {
+    // Ordinary offline nodes have no ride lifecycle to advance. Completed
+    // nodes remain eligible for a guarded automatic turnaround below.
+    if (data.status === "offline" && data.tripState !== "completed") {
       if (completedTimeouts.has(nodeKey)) {
         clearTimeout(completedTimeouts.get(nodeKey)!.timeoutId);
         completedTimeouts.delete(nodeKey);
@@ -446,9 +670,31 @@ export function startTripStateEngine(): () => Promise<void> {
       await persistOfflineFleetState(data, new Date().toISOString());
       return;
     }
+    const naturalStops = await ensureRouteLoaded(data.routeId);
+    if (data.tripState === "completed") {
+      try {
+        const armed =
+          Number.isFinite(data.lat) && Number.isFinite(data.lng)
+            ? await maybeArmAutomaticTurnaround(
+                data,
+                naturalStops,
+                snapshot.ref,
+              )
+            : false;
+        if (!armed) {
+          await persistOfflineFleetState(data, new Date().toISOString());
+        }
+      } catch (error) {
+        console.warn(
+          `[TripState] Failed to arm automatic turnaround for ${nodeKey}:`,
+          error,
+        );
+      }
+      return;
+    }
     if (!Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
-
-    const stops = await ensureRouteLoaded(data.routeId);
+    const direction = normalizeRideDirection(data.direction);
+    const stops = stopsInRideDirection(naturalStops, direction);
 
     const telemetryTimestamp = Number(data.timestamp);
     const previousTelemetry = processedTelemetry.get(nodeKey);
@@ -566,7 +812,8 @@ export function startTripStateEngine(): () => Promise<void> {
     }
 
     if (tripState === "completed" && data.tripState !== "completed") {
-      const completionTimestamp = new Date().toISOString();
+      const completionTimeMs = Date.now();
+      const completionTimestamp = new Date(completionTimeMs).toISOString();
       const completionId =
         typeof data.sessionId === "string" && data.sessionId
           ? data.sessionId
@@ -587,7 +834,13 @@ export function startTripStateEngine(): () => Promise<void> {
             busId: data.busId,
             driverId: data.driverId || "unknown",
             routeId: data.routeId,
+            direction,
+            originStopId: normalizeIdentifier(data.originStopId) ?? stops[0]?.id ?? null,
+            destinationStopId:
+              normalizeIdentifier(data.destinationStopId) ?? stops.at(-1)?.id ?? null,
             completedAt: completionTimestamp,
+            automaticTurnaroundEligibleAt:
+              completionTimeMs + AUTOMATIC_TURNAROUND_DWELL_MS,
             stopCount: stops.length,
             stopNames: stops.map(s => s.name),
             sessionId: typeof data.sessionId === "string" ? data.sessionId : null,
@@ -629,7 +882,17 @@ export function startTripStateEngine(): () => Promise<void> {
         await snapshot.ref.transaction((current) => {
           const live = current as Record<string, unknown> | null;
           if (!live || live.sessionId !== data.sessionId) return;
-          return { ...live, tripState, currentStopIndex, hasDepartedOrigin };
+          return {
+            ...live,
+            tripState,
+            currentStopIndex,
+            hasDepartedOrigin,
+            completedAt: completionTimeMs,
+            turnaroundEligibleAt:
+              completionTimeMs + AUTOMATIC_TURNAROUND_DWELL_MS,
+            turnaroundClaimId: null,
+            turnaroundClaimedAt: null,
+          };
         });
       } catch (error) {
         console.warn(

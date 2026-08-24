@@ -28,6 +28,11 @@ import {
   type RideIdentity,
   type TrackedRide,
 } from "@/lib/rideFeedbackEligibility";
+import {
+  directionLabel,
+  normalizeRideDirection,
+  routeInRideDirection,
+} from "@/lib/rideDirection";
 
 const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTrackingMap"), {
   ssr: false,
@@ -117,22 +122,6 @@ export default function PassengerWorkspace() {
     ? selectedRouteId
     : displayRoutes[0]?.id ?? "";
   const activeRoute = displayRoutes.find(route => route.id === effectiveRouteId);
-  const effectiveStopId =
-    activeRoute?.stops?.some((stop) => stop.id === selectedBoardingStopId)
-      ? selectedBoardingStopId
-      : activeRoute?.stops?.[0]?.id ?? "";
-
-  const targetStop = activeRoute?.stops?.find(s => s.id === effectiveStopId) ||
-    (activeRoute?.stops && activeRoute.stops.length > 0
-      ? activeRoute.stops[activeRoute.stops.length - 1]
-      : (activeRoute?.waypoints && activeRoute.waypoints.length > 0 ? {
-        id: "terminus",
-        lat: activeRoute.waypoints[activeRoute.waypoints.length - 1].lat,
-        lng: activeRoute.waypoints[activeRoute.waypoints.length - 1].lng,
-        name: "Final Destination",
-        shortName: "TERMINUS"
-      } : null));
-
   const busesOnRoute = activeBuses.filter(
     (bus) => bus.routeId === effectiveRouteId,
   );
@@ -142,6 +131,24 @@ export default function PassengerWorkspace() {
     busesOnRoute[0];
   const activeBusOnRouteId = activeBusOnRoute?.busId;
   const activeSessionId = activeBusOnRoute?.sessionId;
+  const rideDirection = normalizeRideDirection(activeBusOnRoute?.direction);
+  const directedRoute = activeRoute
+    ? routeInRideDirection(activeRoute, rideDirection)
+    : undefined;
+  const effectiveStopId =
+    directedRoute?.stops?.some((stop) => stop.id === selectedBoardingStopId)
+      ? selectedBoardingStopId
+      : directedRoute?.stops?.[0]?.id ?? "";
+  const targetStop = directedRoute?.stops?.find(s => s.id === effectiveStopId) ||
+    (directedRoute?.stops && directedRoute.stops.length > 0
+      ? directedRoute.stops[directedRoute.stops.length - 1]
+      : (directedRoute?.waypoints && directedRoute.waypoints.length > 0 ? {
+        id: "terminus",
+        lat: directedRoute.waypoints[directedRoute.waypoints.length - 1].lat,
+        lng: directedRoute.waypoints[directedRoute.waypoints.length - 1].lng,
+        name: "Final Destination",
+        shortName: "TERMINUS"
+      } : null));
   const endedMessage = completedRide !== null;
 
   const visibleView: ViewState =
@@ -262,10 +269,10 @@ export default function PassengerWorkspace() {
 
         {/* Map layer — only present on tracking */}
         <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-          {visibleView === "tracking" && activeRoute && targetStop && (
+          {visibleView === "tracking" && directedRoute && targetStop && (
             <PassengerTrackingMap
               targetStop={targetStop}
-              route={activeRoute}
+              route={directedRoute}
               resumeGeneration={resumeGeneration}
             />
           )}
@@ -344,7 +351,7 @@ export default function PassengerWorkspace() {
 
         {/* ── TRACKING VIEW ── */}
         <div className={`absolute inset-0 z-20 pointer-events-none transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0"}`}>
-          {!endedMessage && activeRoute && targetStop ? (
+          {!endedMessage && directedRoute && targetStop ? (
             <>
               {/* Top bar: back + route info */}
               <div className="absolute top-0 w-full z-40 pt-safe px-4 pb-6 pointer-events-auto"
@@ -384,7 +391,7 @@ export default function PassengerWorkspace() {
                         >
                           {busesOnRoute.map((bus) => (
                             <option key={passengerLiveBusSelectionKey(bus)} value={passengerLiveBusSelectionKey(bus)}>
-                              Bus {bus.busId}
+                              Bus {bus.busId} · {directionLabel(normalizeRideDirection(bus.direction), activeRoute?.stops ?? [])}
                             </option>
                           ))}
                         </select>
@@ -393,7 +400,7 @@ export default function PassengerWorkspace() {
                         <PassengerBoardingView
                           key={activeBusOnRoute.sessionId}
                           sessionId={activeBusOnRoute.sessionId}
-                          route={activeRoute}
+                          route={directedRoute}
                           tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
                           onBoardingStopChange={setSelectedBoardingStopId}
                           onJoined={() => {
@@ -433,7 +440,7 @@ export default function PassengerWorkspace() {
                         Live
                       </p>
                       <p className="text-[17px] font-semibold truncate leading-tight" style={{ color: "var(--text-primary)" }}>
-                        {activeRoute.name}
+                        {directedRoute.name} · {directionLabel(rideDirection, activeRoute?.stops ?? [])}
                       </p>
                     </div>
                   )}

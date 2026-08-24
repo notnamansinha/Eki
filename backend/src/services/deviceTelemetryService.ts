@@ -403,6 +403,17 @@ function durableLifecycle(
     sessionId: value.sessionId,
     driverId: value.driverId,
     status: "active",
+    direction: value.direction === "reverse" ? "reverse" : "forward",
+    originStopId: typeof value.originStopId === "string" ? value.originStopId : null,
+    destinationStopId:
+      typeof value.destinationStopId === "string" ? value.destinationStopId : null,
+    automaticTurnaround: value.automaticTurnaround === true,
+    previousSessionId:
+      typeof value.previousSessionId === "string" ? value.previousSessionId : null,
+    completedAt: null,
+    turnaroundEligibleAt: null,
+    turnaroundClaimId: null,
+    turnaroundClaimedAt: null,
     tripState: value.tripState,
     currentStopIndex: Number.isInteger(value.currentStopIndex)
       ? value.currentStopIndex

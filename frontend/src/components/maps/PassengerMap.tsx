@@ -26,6 +26,7 @@ import { ETA_SPEED_FLOOR_KMH } from "@/lib/etaConstants";
 import { useSmoothPosition } from "@/hooks/useSmoothPosition";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { useStableMarkerPosition } from "@/hooks/useStableMarkerPosition";
+import { normalizeRideDirection } from "@/lib/rideDirection";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
@@ -205,13 +206,15 @@ function PassengerMapInner({
     if (route.polyline) {
       try {
         const decoded = decodePolyline(route.polyline);
-        if (decoded.length >= 2) return decoded;
+        if (decoded.length >= 2) {
+          return route.rideDirection === "reverse" ? decoded.reverse() : decoded;
+        }
       } catch {
         // Legacy routes fall back to their saved stop coordinates.
       }
     }
     return routeStops;
-  }, [route.polyline, routeStops]);
+  }, [route.polyline, route.rideDirection, routeStops]);
   const routeDistanceIndex = useMemo(
     () => preparePolylineDistanceIndex(routePath),
     [routePath],
@@ -276,7 +279,12 @@ function PassengerMapInner({
 
         Object.entries(allData).forEach(([key, incoming]) => {
           const normalized = normalizePassengerLiveBus(key, incoming, now);
-          if (!normalized || normalized.routeId !== currentRoute.id) return;
+          if (
+            !normalized ||
+            normalized.routeId !== currentRoute.id ||
+            normalizeRideDirection(normalized.direction) !==
+              normalizeRideDirection(currentRoute.rideDirection)
+          ) return;
           const bus: IncomingBusData = {
             ...normalized,
             heading: normalizeHeading(normalized.heading),

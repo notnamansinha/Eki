@@ -36,6 +36,19 @@ describe("boarding policy", () => {
     expect(validateStopSelection(stops, "s3", "s1")).toBeNull();
   });
 
+  it("requires route-owned stops in reverse travel order", () => {
+    const stops = [{ id: "a" }, { id: "middle" }, { id: "z" }];
+    expect(validateStopSelection(stops, "z", "a", "reverse")).toEqual({
+      boardingStopId: "z",
+      alightingStopId: "a",
+    });
+    expect(validateStopSelection(stops, "middle", "a", "reverse")).toEqual({
+      boardingStopId: "middle",
+      alightingStopId: "a",
+    });
+    expect(validateStopSelection(stops, "a", "z", "reverse")).toBeNull();
+  });
+
   it("binds a fresh trusted projection to the exact live session", () => {
     const now = 1_800_000_000_000;
     const expected = { sessionId: "session_1", busId: "bus_1", routeId: "route_1" };

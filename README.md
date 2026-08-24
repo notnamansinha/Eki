@@ -181,18 +181,19 @@ Live web data is not API-polled. Firebase `onValue` (RTDB) and `onSnapshot` (Fir
 
 ```mermaid
 stateDiagram-v2
-  [*] --> PreDeparture: assigned driver arms ride
+  [*] --> PreDeparture: assigned driver arms service
   PreDeparture --> InService: verified GNSS reaches stop 1
   InService --> InService: next ordered stop reached
   InService --> Completed: final ordered stop reached
-  Completed --> [*]
+  Completed --> PreDeparture: stopped endpoint dwell arms opposite direction
 ```
 
-- Arming requires a fresh hardware fix and a valid driver/bus/route assignment.
+- Initial arming requires a fresh stopped hardware fix near exactly one route endpoint and a valid driver/bus/route assignment. The backend infers A→Z or Z→A; the browser and ESP32 cannot override it.
 - A durable `_active_bus_locks/{busId}` record prevents one bus from running two route sessions at once.
 - Only the next configured stop advances progress. Segment crossing handles movement between samples.
 - GNSS, Wi-Fi, hardware, browser, or backend interruption does not discard the durable `active_rides` state.
 - Final-stop completion atomically writes history and conditionally releases the active ride and bus lock.
+- After the configured endpoint dwell, fresh stopped GNSS automatically creates a separately counted opposite-direction session. Moving, stale, mid-route or ambiguous fixes fail closed.
 
 ## Repository map
 

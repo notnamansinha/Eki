@@ -240,6 +240,7 @@ router.post("/:sessionId/join", requireAuth, async (
       route.data()?.stops,
       req.body?.boardingStopId,
       req.body?.alightingStopId,
+      data.direction === "reverse" ? "reverse" : "forward",
     );
     if (!route.exists || !stopSelection) {
       throw new BoardingPolicyError(400, "Select valid stops in route order.");
@@ -281,6 +282,8 @@ router.post("/:sessionId/join", requireAuth, async (
         !BOARDING_STATUSES.has(String(currentData.status)) ||
         currentData.busId !== busId ||
         currentData.routeId !== routeId ||
+        (currentData.direction === "reverse" ? "reverse" : "forward") !==
+          (data.direction === "reverse" ? "reverse" : "forward") ||
         !boardingCodesMatch(currentData.boardingCode, submittedCode)
       ) {
         throw new BoardingPolicyError(409, "Boarding authorization expired; ask the driver for the current code.");
