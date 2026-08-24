@@ -68,6 +68,13 @@ describe("computeRouteGeometry", () => {
       encodedPolyline: "abc123",
       distanceMeters: 1234,
       duration: "123s",
+      polylineQuality: "HIGH_QUALITY",
+    });
+    const [, request] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(request?.body as string)).toMatchObject({
+      routingPreference: "TRAFFIC_AWARE_OPTIMAL",
+      polylineQuality: "HIGH_QUALITY",
+      polylineEncoding: "ENCODED_POLYLINE",
     });
   });
 

@@ -43,6 +43,7 @@ async function seedFirebase() {
         polyline: geometry.encodedPolyline,
         distanceMeters: geometry.distanceMeters,
         duration: geometry.duration,
+        polylineQuality: geometry.polylineQuality,
         updatedAt: new Date().toISOString(),
       }, { merge: true });
 

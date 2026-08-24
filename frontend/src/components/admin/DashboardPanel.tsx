@@ -27,6 +27,7 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { apiRequest } from "@/lib/apiClient";
 import CustomSelect from "@/components/ui/CustomSelect";
 import MessagingPanel from "@/components/shared/MessagingPanel";
+import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
 import {
@@ -460,6 +461,32 @@ export default function DashboardPanel() {
   const { buses, error: busesError, retry: retryBuses } = useBuses();
   const { drivers } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
+  const activeRouteIdsKey = Array.from(
+    new Set(
+      activeEntries.flatMap((entry) =>
+        typeof entry.routeId === "string" && entry.routeId.length > 0
+          ? [entry.routeId]
+          : [],
+      ),
+    ),
+  ).sort().join(",");
+  const activeRouteOverlays = useMemo(() => {
+    const activeRouteIds = new Set(
+      activeRouteIdsKey ? activeRouteIdsKey.split(",") : [],
+    );
+    return routes
+      .filter((route) => activeRouteIds.has(route.id))
+      .map((route) => ({
+        id: route.id,
+        color: route.color,
+        polyline: route.polyline,
+        polylineQuality: route.polylineQuality,
+        stops: (route.stops ?? route.waypoints ?? []).map(({ lat, lng }) => ({
+          lat,
+          lng,
+        })),
+      }));
+  }, [activeRouteIdsKey, routes]);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
@@ -603,6 +630,17 @@ export default function DashboardPanel() {
         >
           <TrafficLayer />
           <MapCenter center={mapCenter} />
+          {activeRouteOverlays.map((route) => (
+            <DirectionsRoute
+              key={route.id}
+              routeId={route.id}
+              stops={route.stops}
+              polyline={route.polyline}
+              polylineQuality={route.polylineQuality}
+              color={route.color || "#3b82f6"}
+              hasBuses
+            />
+          ))}
           {activeEntries.map(entry => (
             <BusMarker
               key={`${entry.busId}_${entry.routeId}`}

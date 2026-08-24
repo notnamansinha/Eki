@@ -22,6 +22,8 @@ export interface RouteData {
   stops: RouteStop[];
   /** Pre-computed encoded polyline from Google Maps (stored in Firestore during seed) */
   polyline?: string;
+  /** Cache version: live maps require the detailed Routes API geometry. */
+  polylineQuality?: "HIGH_QUALITY";
   /** Pre-computed route distance in meters */
   distanceMeters?: number;
   /** Pre-computed route duration string e.g. "600s" */

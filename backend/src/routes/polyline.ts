@@ -1,12 +1,24 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "../lib/firebaseAdmin";
 import { requireAdmin } from "../middleware/requireAdmin";
+import { requireAuth } from "../middleware/requireAuth";
+import { decodePolyline } from "../lib/polylineUtils";
 import { invalidatePlanRoute } from "./plan";
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
 const ROUTE_TYPES = new Set(["up", "down", "circular"]);
+const STORED_POLYLINE_QUALITY = "HIGH_QUALITY";
+const geometryComputations = new Map<
+  string,
+  Promise<{
+    polyline: string;
+    distanceMeters: number;
+    duration: string;
+    polylineQuality: typeof STORED_POLYLINE_QUALITY;
+  }>
+>();
 
 interface LatLng {
   lat: number;
@@ -61,6 +73,38 @@ function validateStops(value: unknown): ValidatedStop[] | null {
   return stops;
 }
 
+function validateWaypoints(value: unknown): LatLng[] | null {
+  if (
+    !Array.isArray(value) ||
+    value.length < 2 ||
+    value.length > 27 ||
+    value.some((waypoint) => !isValidLatLng(waypoint))
+  ) {
+    return null;
+  }
+  return value.map((waypoint) => ({
+    lat: (waypoint as LatLng).lat,
+    lng: (waypoint as LatLng).lng,
+  }));
+}
+
+function routeWaypoints(route: Record<string, unknown>): LatLng[] | null {
+  const stops = validateStops(route.stops);
+  if (stops) return stops.map(({ lat, lng }) => ({ lat, lng }));
+  return validateWaypoints(route.waypoints);
+}
+
+function validEncodedPolyline(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 500_000) {
+    return false;
+  }
+  try {
+    return decodePolyline(value).length >= 2;
+  } catch {
+    return false;
+  }
+}
+
 async function computePolyline(waypoints: LatLng[]) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("MAPS_NOT_CONFIGURED");
@@ -71,7 +115,12 @@ async function computePolyline(waypoints: LatLng[]) {
     origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
     destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
     travelMode: "DRIVE",
-    routingPreference: "TRAFFIC_UNAWARE",
+    // This geometry is computed only when a route is created or edited, then
+    // cached in Firestore for every live render. Prefer Google's highest
+    // quality traffic-aware road choice without adding per-view API calls.
+    routingPreference: "TRAFFIC_AWARE_OPTIMAL",
+    polylineQuality: STORED_POLYLINE_QUALITY,
+    polylineEncoding: "ENCODED_POLYLINE",
     computeAlternativeRoutes: false,
     languageCode: "en-US",
     units: "METRIC",
@@ -125,10 +174,24 @@ async function computePolyline(waypoints: LatLng[]) {
       polyline,
       distanceMeters: route.distanceMeters as number,
       duration: route.duration,
-    };
+      polylineQuality: STORED_POLYLINE_QUALITY,
+    } as const;
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+function computePolylineOnce(routeId: string, waypoints: LatLng[]) {
+  const key = `${routeId}:${JSON.stringify(waypoints)}`;
+  const existing = geometryComputations.get(key);
+  if (existing) return existing;
+  const computation = computePolyline(waypoints).finally(() => {
+    if (geometryComputations.get(key) === computation) {
+      geometryComputations.delete(key);
+    }
+  });
+  geometryComputations.set(key, computation);
+  return computation;
 }
 
 function geometryError(res: Response): void {
@@ -152,6 +215,56 @@ router.post("/compute-polyline", requireAdmin, async (req: Request, res: Respons
     res.json(await computePolyline(waypoints));
   } catch (error) {
     console.error("[Routes] Geometry computation failed:", error);
+    geometryError(res);
+  }
+});
+
+/**
+ * Returns cached road geometry for a saved route, repairing legacy route
+ * documents through Routes API when their encoded polyline is absent/invalid.
+ * Any signed-in map viewer may read it; callers cannot supply arbitrary
+ * billable waypoints because coordinates are loaded from Firestore by ID.
+ */
+router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response) => {
+  const routeId = req.params.routeId;
+  if (!SAFE_ID.test(routeId)) {
+    res.status(400).json({ error: "Invalid route ID." });
+    return;
+  }
+
+  try {
+    const routeRef = db.collection("routes").doc(routeId);
+    const snapshot = await routeRef.get();
+    if (!snapshot.exists) {
+      res.status(404).json({ error: "Route not found." });
+      return;
+    }
+    const route = snapshot.data() as Record<string, unknown>;
+    if (
+      route.polylineQuality === STORED_POLYLINE_QUALITY &&
+      validEncodedPolyline(route.polyline)
+    ) {
+      res.json({
+        polyline: route.polyline,
+        distanceMeters: route.distanceMeters,
+        duration: route.duration,
+        polylineQuality: route.polylineQuality,
+        cached: true,
+      });
+      return;
+    }
+
+    const waypoints = routeWaypoints(route);
+    if (!waypoints) {
+      res.status(422).json({ error: "Route has no valid coordinates." });
+      return;
+    }
+    const geometry = await computePolylineOnce(routeId, waypoints);
+    await routeRef.set(geometry, { merge: true });
+    invalidatePlanRoute(routeId);
+    res.json({ ...geometry, cached: false });
+  } catch (error) {
+    console.error("[Routes] Failed to load route geometry:", error);
     geometryError(res);
   }
 });

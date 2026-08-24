@@ -375,10 +375,20 @@ describe("production security configuration", () => {
 
   it("renders stored route geometry without browser Directions API calls", () => {
     const directionsRoute = workspaceFile("frontend/src/components/maps/DirectionsRoute.tsx");
+    const operations = workspaceFile("frontend/src/components/admin/DashboardPanel.tsx");
+    const passengerMap = workspaceFile("frontend/src/components/maps/PassengerMap.tsx");
     const polyline = workspaceFile("frontend/src/lib/polyline.ts");
+    const routeApi = workspaceFile("backend/src/routes/polyline.ts");
 
     expect(directionsRoute).toContain('from "@/lib/polyline"');
     expect(polyline).toContain("export function decodePolyline");
+    expect(operations).toContain("<DirectionsRoute");
+    expect(operations).toContain("routeId={route.id}");
+    expect(passengerMap).toContain("routeId={route.id}");
+    expect(directionsRoute).toContain("/geometry");
+    expect(routeApi).toContain('router.get("/:routeId/geometry", requireAuth');
+    expect(routeApi).toContain('routingPreference: "TRAFFIC_AWARE_OPTIMAL"');
+    expect(routeApi).toContain('const STORED_POLYLINE_QUALITY = "HIGH_QUALITY"');
     expect(directionsRoute).not.toContain("DirectionsService");
     expect(directionsRoute).not.toContain("DirectionsRenderer");
   });
