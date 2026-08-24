@@ -17,7 +17,7 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 | `lib/routeSegment.ts` | Direction-safe stored-polyline slicing, via constraint and travel-order stops |
 | `middleware/requireAuth.ts` | Bearer extraction, revocation-aware token verification, request claims |
 | `middleware/requireAdmin.ts` | Admin custom-claim enforcement |
-| `routes/devices.ts` | Device telemetry endpoint and admin registry update/disable |
+| `routes/devices.ts` | Device telemetry/diagnostics, ride-gated signed-release metadata, and admin registry update/disable |
 | `routes/shifts.ts` | Driver authorization, delay, start/resume, completion acknowledgement, message/history deletion |
 | `routes/fleet.ts` | Admin buses/drivers, Auth claims, RTDB assignment mirrors, reconciliation |
 | `routes/polyline.ts` | Admin route geometry create/update/delete with active-use guards |
@@ -29,6 +29,7 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 | `routes/requests.ts` | Admin mutation of passenger request status/removal |
 | `routes/privacy.ts` | Passenger deletion-request queue |
 | `services/telemetryPayload.ts` | Closed schema, ranges and timestamp freshness |
+| `services/firmwareRelease.ts` | Fail-closed signed release descriptor parsing and sequence validation |
 | `services/deviceTelemetryService.ts` | scrypt credentials/cache, device limit, RTDB transaction, recovery and rolling metrics |
 | `services/authTokenVerifier.ts` | SHA-256 keyed bounded token verification coalescing/cache |
 | `services/tripStateReducer.ts` | Pure ordered geofence state transition and segment crossing |

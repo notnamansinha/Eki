@@ -149,6 +149,10 @@ Key expected HTTP families:
 | Credential rejection | Return 401/403 repeatedly | One rejected attempt latches publishing off, retains the sample until normal freshness eviction, emits three-pulse LED and resumes only after device-credential repair/restart |
 | GNSS loss | Shield/disconnect antenna safely | One uncertain fix at last point; no invented movement |
 | Backend/Firebase outage | Stop service/emulator | Timeouts/backoff/503 metrics; recovery without duplicate progress |
+| Active-ride OTA gate | Offer a newer release before, during and after a ride | Descriptor is available only outside the active ride; no reboot interrupts service |
+| OTA integrity | Offer wrong size, digest, TLS chain and signing key | Every altered/untrusted candidate is rejected and the current slot remains selected |
+| OTA confirmation/rollback | Install healthy candidate, then a candidate unable to reach authenticated backend | Healthy image confirms after telemetry/diagnostics; unhealthy image restores the prior slot within five minutes |
+| OTA credential isolation | Capture controlled backend and artifact-host requests | Device header reaches only the backend manifest endpoint, never the artifact host or logs |
 
 Do not expose production secrets in packet captures or serial logs. Use a dedicated test device/project.
 

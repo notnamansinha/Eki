@@ -292,7 +292,7 @@ npm run verify
 
 ## Production boundary
 
-The repository is production-oriented but cannot configure university-owned infrastructure or prove physical behavior. Production owners must provide managed TLS/DNS, WAF/global rate limits, monitoring/alerts, backups, key restrictions, App Check enforcement, separate staging/production projects, privacy approval, signed OTA/rollback, controlled signing-key custody, physical Secure Boot V2/flash-encryption acceptance on spare boards, automotive power protection, and an observed route acceptance test.
+The repository is production-oriented but cannot configure university-owned infrastructure or prove physical behavior. Production owners must provide managed TLS/DNS and immutable firmware hosting, WAF/global rate limits, monitoring/alerts, backups, key restrictions, App Check enforcement, separate staging/production projects, privacy approval, controlled signing-key custody and OTA release metadata, physical Secure Boot V2/flash-encryption/update/rollback acceptance on spare boards, automotive power protection, and an observed route acceptance test.
 
 ## License
 

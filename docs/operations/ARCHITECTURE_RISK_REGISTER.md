@@ -99,21 +99,26 @@ not a substitute for the physical and institutional acceptance work in the
   the credential-fault LED/radio shutdown and device-specific signed reflash on
   a real device. Confirm authenticated diagnostics and full credential rotation.
 
-### FW-02: field updates and physical key protection are not production-proven
+### FW-02: field updates and physical key protection need physical proof
 
 - **Severity/status:** High / Partially mitigated; physical/update gate remains.
 - **Evidence:** `esp32dev-secure` requires an ignored RSA-3072 key, builds signed
   Secure Boot V2 firmware with release-mode flash encryption and a
   bootloader-safe partition table, and halts at runtime unless both protections
   are active. The repository includes a two-operator spare-board procedure and
-  remote security-state evidence. OTA remains disabled; irreversible first boot,
-  key custody, rollback, and fleet rotation are not repository-testable.
-- **Impact:** deployed devices require physical reflashing, and a captured unit
-  may expose Wi-Fi/device credentials unless hardware security is provisioned.
+  remote security-state evidence. The secure profile now adds dual signed OTA
+  slots, authenticated active-ride gating, exact size/SHA-256 verification,
+  strictly increasing release sequences and backend-health rollback. Irreversible
+  first boot, key custody, hostile-image rejection and fleet rotation remain
+  physical/deployment evidence rather than repository-testable claims.
+- **Impact:** configuration/credential/CA changes still require controlled
+  reflashing, and a captured unit may expose credentials unless hardware
+  security is physically provisioned.
 - **Closure evidence:** execute the committed procedure on spare ECO3-or-newer
   boards and retain first-boot/tampered-image/rotation evidence; establish real
-  signing-key custody. Then adopt signed OTA-capable partitions and prove staged
-  update/rollback before routine fleet deployment.
+  signing-key custody, immutable artifact hosting and backend release metadata.
+  Prove active-ride withholding, staged update and automatic rollback before
+  routine fleet deployment.
 
 ### OPS-01: runtime availability and perimeter controls are not evidenced here
 

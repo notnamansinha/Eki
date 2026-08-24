@@ -107,6 +107,30 @@ belong in `secrets.h`.
    401/403 latches publishing off and disables the station radio until the
    applicable repair is followed by that restart.
 
+## Signed OTA release and rollback
+
+OTA changes only the signed application slot; it never changes Wi-Fi, device
+credentials, backend origin, root CA, bootloader, partition table, secure-boot
+key or eFuses. Those changes retain the witnessed physical procedure above.
+
+1. Increment `EKI_FIRMWARE_SEQUENCE` and set `PROJECT_VER` to the matching
+   `s<sequence>-<name>` value. The build gate requires them to agree. Never
+   reuse a sequence, signed version or release URL.
+2. Build with the university-controlled RSA-3072 key. Verify that the signed
+   application is no larger than 1,966,080 bytes, then calculate its exact byte
+   size and SHA-256 digest in the controlled signing environment.
+3. Publish the exact signed binary at an immutable HTTPS URL whose certificate
+   chains to `BACKEND_ROOT_CA`. Do not put credentials in that URL.
+4. Configure all five backend `FIRMWARE_RELEASE_*` values together. A partial or
+   malformed descriptor fails closed; leaving all five unset disables OTA.
+5. Prove on a spare board that an active ride receives no update, a modified or
+   wrong-key image is rejected, a healthy candidate confirms after backend
+   telemetry/diagnostics, and a candidate unable to reach the backend rolls
+   back within five minutes.
+6. Roll out in controlled cohorts and retain old signed artifacts and metadata.
+   To stop distribution, unset all five backend values; do not delete rollback
+   evidence or reuse the sequence.
+
 Changing only route geometry or assigning the unchanged device credential to a
 different approved bus/route does not require a reflash. Changing Wi-Fi,
 `DEVICE_ID`, `DEVICE_SECRET`, `BACKEND_URL`, or `BACKEND_ROOT_CA` does require a

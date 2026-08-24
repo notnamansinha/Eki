@@ -44,7 +44,7 @@ documentation, tickets or logs. A successful new telemetry sample returns
 |---|---|---|
 | Health | `GET /health`; `GET /api/health` | Public readiness; admin diagnostics |
 | Live buses | `GET /api/buses`, `GET /api/buses/:busId` | Authenticated |
-| Device ingestion | `POST /api/devices/:deviceId/telemetry`, `POST /api/devices/:deviceId/diagnostics` | Device credential |
+| Device ingestion/update | `POST /api/devices/:deviceId/telemetry`, `POST /api/devices/:deviceId/diagnostics`, `GET /api/devices/:deviceId/firmware` | Device credential |
 | Device administration | `GET/PUT /api/devices/:deviceId/diagnostics`, `PUT /api/devices/:deviceId`, `POST /api/devices/:deviceId/disable` | Admin |
 | Ride operations | `POST /api/shifts/start`, `PATCH /api/shifts/delay`, `POST /api/shifts/stop` | Assigned operator or admin |
 | Boarding and chat | Session boarding-code, join and messages endpoints | Session member/operator/admin as applicable |
@@ -138,6 +138,16 @@ Generate `timestamp` immediately before sending (for example, with `Date.now()`)
 ### `POST /api/devices/:deviceId/diagnostics` — device
 
 Accepts the closed 1 KiB firmware-health object: firmware version, uptime, free heap, RSSI, queue depth/high-water/drop counters, accepted/rejected fixes, NMEA/UART errors, reset total, fault code, flash-encryption and Secure-Boot booleans, and device timestamp. Device ID, bus, and route come from the authenticated server registry; credentials and network names are never accepted in the body. The latest report overwrites `_device_diagnostics/{deviceId}` through the Admin SDK. Returns 202, 400, 401, 429, or 503 with `Cache-Control: no-store`.
+
+### `GET /api/devices/:deviceId/firmware?sequence=N` — device
+
+Authenticates the existing device credential and returns the complete configured
+signed-release descriptor only when its sequence is newer and neither the
+assigned bus lock nor active-ride document exists. Returns 204 when disabled,
+current, or ride-gated; 200 contains `version`, `sequence`, immutable HTTPS
+`url`, exact `sha256`, and exact `size`. Partial/unsafe deployment configuration
+fails closed with 503. The backend never proxies the binary and the device never
+sends its credential to the artifact host.
 
 ### `GET /api/devices/:deviceId/diagnostics` — admin
 

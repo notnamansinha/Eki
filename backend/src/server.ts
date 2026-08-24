@@ -93,8 +93,9 @@ app.use(helmet({
 
 function isDeviceIngressRequest(req: express.Request): boolean {
   return (
-    req.method === "POST" &&
-    /^\/api\/devices\/[A-Za-z0-9_-]{1,128}\/(telemetry|diagnostics)$/.test(req.path)
+    ((req.method === "POST" && /\/(telemetry|diagnostics)$/.test(req.path)) ||
+      (req.method === "GET" && /\/firmware$/.test(req.path))) &&
+    /^\/api\/devices\/[A-Za-z0-9_-]{1,128}\/(telemetry|diagnostics|firmware)$/.test(req.path)
   );
 }
 
@@ -174,7 +175,8 @@ app.use("/api/routes-list", routesListRoutes);
 app.use(
   "/api/devices",
   (req, res, next) =>
-    req.method === "POST" && /\/(telemetry|diagnostics)$/.test(req.path)
+    (req.method === "POST" && /\/(telemetry|diagnostics)$/.test(req.path)) ||
+      (req.method === "GET" && /\/firmware$/.test(req.path))
       ? next()
       : writeLimiter(req, res, next),
   devicesRoutes,

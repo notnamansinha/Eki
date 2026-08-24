@@ -88,8 +88,9 @@ stale authenticated responses crossing accounts on shared browsers.
   environment into the ignored `hardware/include/secrets.h`; it is embedded in
   a device-specific flash-encrypted image and replaced only by reflashing.
 - Production should use Workload Identity/Secret Manager, university WAF/global
-  rate limits, monitored rotation, signed OTA, controlled signing-key custody,
-  and the witnessed Secure Boot V2/release-mode flash-encryption procedure. See
+  rate limits, monitored rotation, immutable signed-OTA hosting and metadata,
+  controlled signing-key custody, and the witnessed Secure Boot V2/release-mode
+  flash-encryption/update/rollback procedure. See
   the deployment checklist for ownership requirements.
 
 ### Public documentation boundary

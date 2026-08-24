@@ -144,7 +144,8 @@ Each latency is a rolling in-process 512-sample window with average/p50/p95/p99.
 | GNSS receiver/antenna/UART | No NMEA, quality rejection, checksum or UART overflow count | Warning; one uncertain sample; 30 s counters | Physical inspection/route survey |
 | Wi-Fi/hotspot | Disconnect/RSSI/timeouts | Exponential retry and RTC queue | Coverage/SIM/hotspot redundancy; reflash if credentials change |
 | Clock | No TLS/invalid timestamp | Fresh GNSS UTC primary; NTP cross-check/fallback; no invalid publish | Validate receiver UTC and NTP paths on target hardware |
-| TLS CA rotation | TLS failure | Fail closed | Signed OTA before issuer expiry |
+| TLS CA rotation | TLS failure | Fail closed | Controlled physical trust-root reflash before issuer expiry |
+| Signed OTA | Manifest withheld during active ride; candidate pending validation | Idle/stopped local gate, exact size/SHA-256, Secure Boot signature and dual-slot rollback | Prove wrong-key/digest rejection and five-minute rollback on spare boards |
 | Device credential | 401/403, rejected metric, three-pulse LED | Publishing latches off and station radio stops | Rotate registry secret, reflash complete config, verify diagnostics |
 | Hardware security | Boot gate and remote diagnostic booleans | Fleet firmware halts unless both protections are active | Witness first boot and retain spare-board evidence |
 | Backend/Firebase | 503/latency metrics | Bounded queue retained; jitter retry | Regional managed runtime/alerts |
@@ -153,7 +154,7 @@ Each latency is a rolling in-process 512-sample window with average/p50/p95/p99.
 
 ## Security deployment
 
-The `esp32dev-secure` environment builds a signed Secure Boot V2 image with release-mode flash encryption and ROM-download lockdown. Its first boot irreversibly provisions security eFuses, so repository automation never uploads it. Because credentials are embedded in the application image, configuration must happen only in the approved encrypted signing environment and plaintext/unprotected artifacts must never be archived. Follow the witnessed [fleet security and provisioning procedure](../operations/HARDWARE_SECURITY_PROVISIONING.md) on spare ECO3-or-newer boards, retain evidence, and only then approve production units. Signed OTA/rollback remains required before routine fleet updates.
+The `esp32dev-secure` environment builds a signed Secure Boot V2 image with release-mode flash encryption, ROM-download lockdown, two OTA slots and bootloader rollback. Its first boot irreversibly provisions security eFuses, so repository automation never uploads it. Because credentials are embedded in the application image, configuration must happen only in the approved encrypted signing environment and plaintext/unprotected artifacts must never be archived. Follow the witnessed [fleet security and provisioning procedure](../operations/HARDWARE_SECURITY_PROVISIONING.md) on spare ECO3-or-newer boards, retain first-boot plus signed update/rollback evidence, and only then approve production units.
 
 ## Physical acceptance
 

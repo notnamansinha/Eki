@@ -1,6 +1,7 @@
 #include "clock_policy.h"
 #include "connectivity_policy.h"
 #include "firmware_config.h"
+#include "firmware_update_policy.h"
 #include "secrets.h"
 #include "telemetry_policy.h"
 #include "telemetry_queue.h"
@@ -8,6 +9,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
+#include <Update.h>
 #include <TinyGPSPlus.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
@@ -17,9 +19,11 @@
 #include <esp_secure_boot.h>
 #include <esp_system.h>
 #include <esp_idf_version.h>
+#include <esp_ota_ops.h>
 #include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <mbedtls/sha256.h>
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -28,11 +32,17 @@
 #ifndef EKI_FLEET_BUILD
 #define EKI_FLEET_BUILD 0
 #endif
-#ifndef EKI_FIRMWARE_VERSION
+#if EKI_FLEET_BUILD
+#define EKI_FIRMWARE_VERSION esp_ota_get_app_description()->version
+#elif !defined(EKI_FIRMWARE_VERSION)
 #define EKI_FIRMWARE_VERSION "development"
+#endif
+#ifndef EKI_FIRMWARE_SEQUENCE
+#define EKI_FIRMWARE_SEQUENCE 0
 #endif
 
 #if EKI_FLEET_BUILD
+static_assert(EKI_FIRMWARE_SEQUENCE > 0, "Fleet firmware requires a positive release sequence.");
 static_assert(
   eki::config::literalStartsWith(
     BACKEND_URL,
@@ -59,6 +69,9 @@ static_assert(
 #endif
 #if !defined(CONFIG_SECURE_FLASH_ENC_ENABLED) || !CONFIG_SECURE_FLASH_ENC_ENABLED
 #error "Fleet builds require flash encryption."
+#endif
+#if !defined(CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE) || !CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+#error "Fleet builds require bootloader application rollback."
 #endif
 #if !defined(CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE) || !CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE
 #error "Fleet builds require release-mode flash encryption."
@@ -96,7 +109,7 @@ const char *httpTransportFailureName(int code) {
   }
 }
 constexpr uint32_t PUBLISHER_IDLE_MS = 100;
-constexpr uint32_t PUBLISHER_TASK_STACK_BYTES = 12288;
+constexpr uint32_t PUBLISHER_TASK_STACK_BYTES = 20480;
 constexpr UBaseType_t PUBLISHER_TASK_PRIORITY = 1;
 // Network work runs on another core, but this buffer still absorbs scheduler
 // jitter and diagnostic output without risking NMEA loss.
@@ -107,15 +120,35 @@ TinyGPSPlus gps;
 HardwareSerial &gpsSerial = Serial2;
 WiFiClientSecure tlsClient;
 WiFiClient plainClient;
+#if EKI_FLEET_BUILD
+WiFiClientSecure firmwareTlsClient;
+#endif
 
 constexpr size_t ENDPOINT_MAX_LENGTH =
   eki::config::BACKEND_URL_MAX_LENGTH +
-  eki::config::DEVICE_ID_MAX_LENGTH + 32;
+  eki::config::DEVICE_ID_MAX_LENGTH + 64;
 char telemetryEndpoint[ENDPOINT_MAX_LENGTH]{};
 char diagnosticsEndpoint[ENDPOINT_MAX_LENGTH]{};
+char firmwareEndpoint[ENDPOINT_MAX_LENGTH]{};
 char authorizationHeader[eki::config::DEVICE_SECRET_MAX_LENGTH + 8]{};
 bool flashEncryptionActive = false;
 bool secureBootActive = false;
+
+#if EKI_FLEET_BUILD
+struct FirmwareManifest {
+  char version[eki::update::VERSION_MAX_LENGTH + 1];
+  char url[eki::update::URL_MAX_LENGTH + 1];
+  char sha256[eki::update::SHA256_HEX_LENGTH + 1];
+  uint32_t sequence;
+  size_t size;
+};
+
+bool otaValidationPending = false;
+uint32_t otaValidationStartedAt = 0;
+bool firmwareCheckedBefore = false;
+bool previousFirmwareCheckFailed = false;
+uint32_t lastFirmwareCheckAt = 0;
+#endif
 
 enum class MotionState : uint8_t {
   Moving,
@@ -423,6 +456,15 @@ bool initializeRequestStrings() {
     base,
     DEVICE_ID
   );
+  const int firmwareLength = std::snprintf(
+    firmwareEndpoint,
+    sizeof(firmwareEndpoint),
+    "%.*s/api/devices/%s/firmware?sequence=%u",
+    static_cast<int>(baseLength),
+    base,
+    DEVICE_ID,
+    static_cast<unsigned>(EKI_FIRMWARE_SEQUENCE)
+  );
   const int authorizationLength = std::snprintf(
     authorizationHeader,
     sizeof(authorizationHeader),
@@ -433,6 +475,8 @@ bool initializeRequestStrings() {
          static_cast<size_t>(telemetryLength) < sizeof(telemetryEndpoint) &&
          diagnosticsLength > 0 &&
          static_cast<size_t>(diagnosticsLength) < sizeof(diagnosticsEndpoint) &&
+         firmwareLength > 0 &&
+         static_cast<size_t>(firmwareLength) < sizeof(firmwareEndpoint) &&
          authorizationLength > 0 &&
          static_cast<size_t>(authorizationLength) < sizeof(authorizationHeader);
 }
@@ -751,6 +795,287 @@ void reportNtpCrossCheck() {
   }
 }
 
+#if EKI_FLEET_BUILD
+bool decodeSha256(const char *hex, uint8_t output[32]) {
+  if (!eki::update::sha256IsValid(hex)) return false;
+  const auto nibble = [](char value) -> uint8_t {
+    if (value >= '0' && value <= '9') return static_cast<uint8_t>(value - '0');
+    if (value >= 'a' && value <= 'f') return static_cast<uint8_t>(value - 'a' + 10);
+    return static_cast<uint8_t>(value - 'A' + 10);
+  };
+  for (size_t index = 0; index < 32; ++index) {
+    output[index] = static_cast<uint8_t>(
+      (nibble(hex[index * 2]) << 4) | nibble(hex[index * 2 + 1])
+    );
+  }
+  return true;
+}
+
+void initializeOtaRollbackState() {
+  const esp_partition_t *running = esp_ota_get_running_partition();
+  esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+  if (
+    running != nullptr &&
+    esp_ota_get_state_partition(running, &state) == ESP_OK &&
+    state == ESP_OTA_IMG_PENDING_VERIFY
+  ) {
+    otaValidationPending = true;
+    otaValidationStartedAt = millis();
+    Serial.println(
+      "[OTA] Candidate image pending backend health validation before it becomes permanent."
+    );
+  }
+}
+
+void markOtaValidAfterBackendAcceptance() {
+  if (!otaValidationPending) return;
+  if (esp_ota_mark_app_valid_cancel_rollback() != ESP_OK) {
+    Serial.println("[OTA] Unable to confirm candidate image; preserving rollback state.");
+    return;
+  }
+  otaValidationPending = false;
+  Serial.println("[OTA] Candidate image validated by authenticated backend acceptance.");
+}
+
+void enforceOtaValidationDeadline() {
+  if (
+    !otaValidationPending ||
+    elapsed(otaValidationStartedAt) < eki::update::ROLLBACK_VALIDATION_TIMEOUT_MS
+  ) return;
+  Serial.println("[OTA] Candidate failed backend validation; rolling back.");
+  delay(50);
+  esp_ota_mark_app_invalid_rollback_and_reboot();
+  ESP.restart();
+}
+
+bool parseFirmwareManifest(HTTPClient &http, FirmwareManifest &manifest) {
+  const int contentLength = http.getSize();
+  if (contentLength <= 0 || contentLength > 1024) return false;
+  JsonDocument document;
+  const DeserializationError error = deserializeJson(document, http.getStream());
+  if (error) return false;
+
+  const char *version = document["version"] | "";
+  const char *url = document["url"] | "";
+  const char *sha256 = document["sha256"] | "";
+  if (
+    !document["sequence"].is<uint32_t>() ||
+    !document["size"].is<size_t>()
+  ) return false;
+  const uint32_t sequence = document["sequence"].as<uint32_t>();
+  const size_t size = document["size"].as<size_t>();
+  if (!eki::update::manifestIsValid(
+    version,
+    sequence,
+    url,
+    sha256,
+    size,
+    EKI_FIRMWARE_SEQUENCE
+  )) return false;
+
+  std::strncpy(manifest.version, version, sizeof(manifest.version) - 1);
+  std::strncpy(manifest.url, url, sizeof(manifest.url) - 1);
+  std::strncpy(manifest.sha256, sha256, sizeof(manifest.sha256) - 1);
+  manifest.version[sizeof(manifest.version) - 1] = '\0';
+  manifest.url[sizeof(manifest.url) - 1] = '\0';
+  manifest.sha256[sizeof(manifest.sha256) - 1] = '\0';
+  manifest.sequence = sequence;
+  manifest.size = size;
+  return true;
+}
+
+bool installSignedFirmware(const FirmwareManifest &manifest) {
+  const esp_partition_t *candidatePartition = esp_ota_get_next_update_partition(nullptr);
+  if (candidatePartition == nullptr || manifest.size > candidatePartition->size) {
+    Serial.println("[OTA] No inactive application slot can accept this release.");
+    return false;
+  }
+  HTTPClient http;
+  http.setConnectTimeout(HTTP_TIMEOUT_MS);
+  http.setTimeout(15000);
+  // The device credential is deliberately not attached to the artifact-host
+  // request. Secure Boot authenticates the image; this digest binds the exact
+  // immutable object selected by the authenticated backend manifest.
+  if (!http.begin(firmwareTlsClient, manifest.url)) {
+    Serial.println("[OTA] Unable to initialize signed-image download.");
+    return false;
+  }
+  const int responseCode = http.GET();
+  const int contentLength = http.getSize();
+  if (
+    responseCode != 200 ||
+    contentLength <= 0 ||
+    static_cast<size_t>(contentLength) != manifest.size
+  ) {
+    Serial.printf("[OTA] Signed-image response rejected (HTTP %d, size %d).\n", responseCode, contentLength);
+    http.end();
+    firmwareTlsClient.stop();
+    return false;
+  }
+  if (!Update.begin(manifest.size, U_FLASH)) {
+    Serial.printf("[OTA] Inactive slot cannot accept image (error %u).\n", Update.getError());
+    http.end();
+    return false;
+  }
+
+  mbedtls_sha256_context hashContext;
+  mbedtls_sha256_init(&hashContext);
+  if (mbedtls_sha256_starts_ret(&hashContext, 0) != 0) {
+    mbedtls_sha256_free(&hashContext);
+    Update.abort();
+    http.end();
+    return false;
+  }
+
+  WiFiClient *stream = http.getStreamPtr();
+  uint8_t buffer[2048];
+  size_t received = 0;
+  uint32_t lastProgressAt = millis();
+  bool streamOk = true;
+  while (received < manifest.size) {
+    esp_task_wdt_reset();
+    const size_t available = stream->available();
+    if (available == 0) {
+      if (!http.connected() || elapsed(lastProgressAt) >= 15000) {
+        streamOk = false;
+        break;
+      }
+      delay(1);
+      continue;
+    }
+    const size_t requested = min(
+      sizeof(buffer),
+      min(available, manifest.size - received)
+    );
+    const int count = stream->readBytes(buffer, requested);
+    if (count <= 0) {
+      streamOk = false;
+      break;
+    }
+    if (
+      mbedtls_sha256_update_ret(&hashContext, buffer, count) != 0 ||
+      Update.write(buffer, count) != static_cast<size_t>(count)
+    ) {
+      streamOk = false;
+      break;
+    }
+    received += static_cast<size_t>(count);
+    lastProgressAt = millis();
+  }
+
+  uint8_t actualDigest[32]{};
+  const bool digestFinished =
+    mbedtls_sha256_finish_ret(&hashContext, actualDigest) == 0;
+  mbedtls_sha256_free(&hashContext);
+  uint8_t expectedDigest[32]{};
+  const bool digestMatches =
+    digestFinished &&
+    decodeSha256(manifest.sha256, expectedDigest) &&
+    std::memcmp(actualDigest, expectedDigest, sizeof(actualDigest)) == 0;
+
+  esp_app_desc_t candidateDescription{};
+  uint32_t signedSequence = 0;
+  const bool descriptorMatches =
+    streamOk &&
+    received == manifest.size &&
+    esp_ota_get_partition_description(
+      candidatePartition,
+      &candidateDescription
+    ) == ESP_OK &&
+    std::strncmp(
+      candidateDescription.version,
+      manifest.version,
+      sizeof(candidateDescription.version)
+    ) == 0 &&
+    eki::update::signedVersionSequence(
+      candidateDescription.version,
+      signedSequence
+    ) &&
+    signedSequence == manifest.sequence;
+
+  if (!streamOk || received != manifest.size || !digestMatches || !descriptorMatches) {
+    Serial.println(
+      "[OTA] Image stream, digest, or signed version/sequence verification failed; inactive slot discarded."
+    );
+    Update.abort();
+    http.end();
+    firmwareTlsClient.stop();
+    return false;
+  }
+  if (!Update.end(false) || !Update.isFinished()) {
+    Serial.printf("[OTA] Signed image was rejected (error %u).\n", Update.getError());
+    http.end();
+    return false;
+  }
+  http.end();
+  Serial.printf(
+    "[OTA] Installed signed candidate %s (sequence %u); rebooting into rollback validation.\n",
+    manifest.version,
+    static_cast<unsigned>(manifest.sequence)
+  );
+  delay(100);
+  ESP.restart();
+  return true;
+}
+
+void checkForSignedFirmware() {
+  const TelemetryQueue::Stats queue = telemetryQueueStats();
+  if (
+    WiFi.status() != WL_CONNECTED ||
+    !eki::update::locallySafeToUpdate(
+      credentialFaultActive,
+      clockIsSynchronized(),
+      queue.depth,
+      hasCapturedLocation,
+      lastCapturedMotionState == MotionState::Stopped,
+      otaValidationPending
+    ) ||
+    !eki::update::checkIsDue(
+      millis(),
+      firmwareCheckedBefore,
+      lastFirmwareCheckAt,
+      previousFirmwareCheckFailed
+    )
+  ) return;
+
+  firmwareCheckedBefore = true;
+  lastFirmwareCheckAt = millis();
+  previousFirmwareCheckFailed = true;
+
+  HTTPClient http;
+  http.setConnectTimeout(HTTP_TIMEOUT_MS);
+  http.setTimeout(HTTP_TIMEOUT_MS);
+  if (!http.begin(tlsClient, firmwareEndpoint)) {
+    Serial.println("[OTA] Unable to initialize authenticated release check.");
+    return;
+  }
+  http.addHeader("Authorization", authorizationHeader);
+  http.addHeader("Cache-Control", "no-store");
+  const int responseCode = http.GET();
+  if (responseCode == 401 || responseCode == 403) {
+    http.end();
+    latchCredentialFault();
+    Serial.println("[OTA] Credential fault latched during release check.");
+    return;
+  }
+  if (responseCode == 204) {
+    previousFirmwareCheckFailed = false;
+    http.end();
+    return;
+  }
+  FirmwareManifest manifest{};
+  if (responseCode != 200 || !parseFirmwareManifest(http, manifest)) {
+    Serial.printf("[OTA] Release manifest rejected (HTTP %d).\n", responseCode);
+    http.end();
+    tlsClient.stop();
+    return;
+  }
+  http.end();
+  tlsClient.stop();
+  previousFirmwareCheckFailed = !installSignedFirmware(manifest);
+}
+#endif
+
 PublishResult publishFix(const TelemetryFix &fix) {
   if (
     !fix.valid ||
@@ -869,6 +1194,9 @@ PublishResult publishFix(const TelemetryFix &fix) {
   }
 
   resetHttpsRetry();
+#if EKI_FLEET_BUILD
+  markOtaValidAfterBackendAcceptance();
+#endif
   Serial.printf(
     "[RTDB] lat: %.6f | lng: %.6f\n",
     fix.lat,
@@ -960,6 +1288,9 @@ void publishRemoteDiagnostic() {
     return;
   }
   if (responseCode >= 200 && responseCode < 300) {
+#if EKI_FLEET_BUILD
+    markOtaValidAfterBackendAcceptance();
+#endif
     remoteDiagnosticPublished = true;
     lastRemoteDiagnosticAt = millis();
     consecutiveRemoteDiagnosticFailures = 0;
@@ -1119,6 +1450,9 @@ void publisherTask(void *) {
     esp_task_wdt_reset();
     serviceConnectivity();
     reportNtpCrossCheck();
+#if EKI_FLEET_BUILD
+    enforceOtaValidationDeadline();
+#endif
 
     bool drainedSample = false;
     if (WiFi.status() == WL_CONNECTED) {
@@ -1155,7 +1489,12 @@ void publisherTask(void *) {
           );
         }
       }
-      if (!drainedSample) publishRemoteDiagnostic();
+      if (!drainedSample) {
+        publishRemoteDiagnostic();
+#if EKI_FLEET_BUILD
+        checkForSignedFirmware();
+#endif
+      }
     }
 
     esp_task_wdt_reset();
@@ -1205,6 +1544,9 @@ void setup() {
     );
     haltWithStatusLed(4);
   }
+#if EKI_FLEET_BUILD
+  initializeOtaRollbackState();
+#endif
   const uint32_t configurationTag = telemetryConfigurationTag();
   const esp_reset_reason_t espBootReason = esp_reset_reason();
   const eki::reset::ResetReason bootReason = resetReasonFromEsp(espBootReason);
@@ -1243,6 +1585,9 @@ void setup() {
 
   if (eki::config::backendUrlUsesHttps(BACKEND_URL)) {
     tlsClient.setCACert(BACKEND_ROOT_CA);
+#if EKI_FLEET_BUILD
+    firmwareTlsClient.setCACert(BACKEND_ROOT_CA);
+#endif
   }
   if (!initializeRequestStrings()) {
     Serial.println("[Boot] Compile-time request configuration is too long; halted.");

@@ -165,8 +165,9 @@ platformio device monitor --project-dir hardware --baud 115200
 `secrets.h` is the firmware's only configuration source. Wi-Fi, device ID,
 device secret, backend origin, and root CA are validated at boot. The firmware
 does not contain a recovery portal, recovery password, application key-value
-store, or field-update path. Every configuration change requires rebuilding
-and reflashing the device. Never commit, log, or archive `secrets.h` or an
+store, or remotely editable configuration. Configuration and credential changes
+still require a controlled reflash. Signed application-only releases can use
+the secure fleet OTA path described below. Never commit, log, or archive `secrets.h` or an
 unencrypted development firmware image because credentials are embedded in the
 binary.
 
@@ -176,6 +177,22 @@ Boot V2, release-mode flash encryption, and ROM-download lockdown. Fleet builds
 also require HTTPS and disable Wi-Fi driver persistence. Follow the witnessed
 [fleet security procedure](../docs/operations/HARDWARE_SECURITY_PROVISIONING.md)
 on spare ECO3-or-newer boards before irreversible first boot.
+
+The secure profile has two 1,966,080-byte application slots and bootloader
+rollback enabled. After two minutes of idle, stopped operation with an empty
+telemetry queue, the device asks its configured backend for a newer release by
+using the existing device authorization header. The backend returns no release
+while that device's bus has an active ride. Release metadata must name an exact
+HTTPS object, size, SHA-256 digest, version and strictly increasing sequence.
+The signed application descriptor uses `s<sequence>-<name>` and must exactly
+match both manifest fields, so an older signed image cannot be relabelled as a
+new sequence.
+The artifact request never receives the device credential. The device verifies
+the stream digest before activating the slot, and Secure Boot V2 rejects an
+image not signed by the fleet key. A candidate becomes permanent only after an
+authenticated telemetry or diagnostics response; otherwise the bootloader
+rolls it back after five minutes. The artifact host certificate must chain to
+`BACKEND_ROOT_CA`.
 
 Arduino-ESP32 2.x unconditionally initializes a small framework system
 partition during startup. Eki never opens it or stores configuration there;
@@ -207,7 +224,11 @@ done safely while retaining the current Wi-Fi stack.
   `secrets.h` and reflashing.
 - A 25-second watchdog covers both tasks. Authenticated remote diagnostics send
   bounded health state every five minutes while idle and never send credentials.
+- Fleet OTA checks are locally idle/stopped and server-gated against active
+  rides. Downloaded candidates are size/digest checked, secure-boot verified,
+  installed into the inactive slot and health-confirmed with automatic rollback.
 
 Read [Hardware telemetry](../docs/hardware/HARDWARE_TELEMETRY.md) for parameters,
-failure points, and physical acceptance cases. Signed OTA/rollback remains a
-separate deployment prerequisite.
+failure points, and physical acceptance cases. A production release still
+requires controlled signing, immutable HTTPS hosting, backend release metadata,
+and spare-board rollout/rollback evidence.
