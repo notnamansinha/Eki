@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from "express";
-import { verifyRevocationAwareIdToken } from "../services/authTokenVerifier";
+import {
+  AuthVerificationCapacityError,
+  verifyRevocationAwareIdToken,
+} from "../services/authTokenVerifier";
 
 /**
  * Express middleware that verifies a Firebase ID token from the Authorization header.
@@ -27,7 +30,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // Attach user info to request for downstream handlers
     req.user = decoded;
     next();
-  } catch {
+  } catch (error) {
+    if (error instanceof AuthVerificationCapacityError) {
+      res.set("Retry-After", "1");
+      res.status(503).json({ error: "Authentication service is busy. Retry shortly." });
+      return;
+    }
     res.status(401).json({ error: "Invalid or expired token." });
   }
 }

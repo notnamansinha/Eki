@@ -372,6 +372,20 @@ describe("production security configuration", () => {
     expect(telemetry).toContain("timingSafeEqual");
   });
 
+  it("bounds authentication work and bypasses revocation cache for privileged claims", () => {
+    const verifier = workspaceFile("backend/src/services/authTokenVerifier.ts");
+    const requireAuth = workspaceFile("backend/src/middleware/requireAuth.ts");
+    const requireAdmin = workspaceFile("backend/src/middleware/requireAdmin.ts");
+
+    expect(verifier).toContain("AUTH_MAX_PENDING_VERIFICATIONS");
+    expect(verifier).toContain("pendingVerifications.size >= pendingVerificationLimit()");
+    expect(verifier).toContain("requiresFreshRevocationCheck(cached.decoded)");
+    expect(requireAuth).toContain("AuthVerificationCapacityError");
+    expect(requireAdmin).toContain("AuthVerificationCapacityError");
+    expect(requireAuth).toContain('res.status(503)');
+    expect(requireAdmin).toContain('res.status(503)');
+  });
+
   it("shards in-memory rate limits across replicas and gates the backend image in CI (issue #28)", () => {
     const server = workspaceFile("backend/src/server.ts");
     const devices = workspaceFile("backend/src/routes/devices.ts");
