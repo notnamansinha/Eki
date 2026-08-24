@@ -30,7 +30,7 @@ import { bundle } from "workbox-build/build/lib/bundle.js";
 const root = path.resolve(fileURLToPath(import.meta.url), "../..");
 const frontendRoot = path.join(root, "frontend");
 const swDest = path.join(frontendRoot, "out", "sw.js");
-const PRECACHE_BUDGET_BYTES = 1536 * 1024;
+const PRECACHE_BUDGET_BYTES = 2 * 1024 * 1024;
 
 const config = {
   swSrc: path.join(frontendRoot, "src", "sw.js"),
@@ -41,10 +41,10 @@ const config = {
     "**/*.html",
     // PWA manifest
     "manifest.webmanifest",
-    // Icons and hero images
-    "*.png",
-    "*.webp",
-    "images/**/*.{webp,jpg,png}",
+    // The manifest icons remain available before the app starts. Large imagery
+    // is runtime-cached and must not compete with the JavaScript bootstrap.
+    "icon*.png",
+    "apple-icon.png",
   ],
   globIgnores: [
     // Source maps are published for debugging but should never consume the
@@ -108,6 +108,38 @@ async function walk(directory) {
 }
 
 /**
+ * Return the exact immutable JS and CSS files each exported HTML shell needs
+ * to hydrate while offline. Precaching these references prevents a newly
+ * activated worker from serving HTML whose bootstrap has never been cached.
+ */
+async function bootstrapShellEntries() {
+  const entries = new Map();
+  let size = 0;
+  const files = await walk(config.globDirectory);
+  const htmlFiles = files.filter((file) => path.extname(file) === ".html");
+  for (const file of htmlFiles) {
+    const html = await readFile(file, "utf8");
+    for (const match of html.matchAll(/(?:src|href)="(\/_next\/static\/[^\"]+\.(?:js|css))"/g)) {
+      const url = match[1];
+      if (entries.has(url)) continue;
+      const contents = await readFile(path.join(config.globDirectory, url.slice(1)));
+      if (contents.length > config.maximumFileSizeToCacheInBytes) {
+        throw new Error(`Bootstrap asset ${url} exceeds the 1 MB precache-file limit.`);
+      }
+      entries.set(url, {
+        url,
+        revision: createHash("sha256").update(contents).digest("hex"),
+      });
+      size += contents.length;
+    }
+  }
+  return {
+    entries: [...entries.values()].sort((left, right) => left.url.localeCompare(right.url)),
+    size,
+  };
+}
+
+/**
  * Content fingerprint of every input that can change the precache manifest.
  * A stable hash over: the generator, resolved Workbox versions, semantic
  * workbox config, SW source, and all files under globDirectory (excluding our
@@ -136,7 +168,11 @@ async function fingerprint() {
 
 /** Run the full workbox pipeline: inject precache manifest, then bundle. */
 async function generate() {
-  const result = await injectManifest(config);
+  const bootstrap = await bootstrapShellEntries();
+  const result = await injectManifest({
+    ...config,
+    additionalManifestEntries: bootstrap.entries,
+  });
 
   // injectManifest replaces the precache placeholder but intentionally leaves
   // module imports untouched. Bundle the injected source so browsers receive a
@@ -172,7 +208,7 @@ async function generate() {
     await writeFile(file.name, file.contents);
   }
 
-  return result;
+  return { ...result, size: result.size + bootstrap.size };
 }
 
 async function main() {
