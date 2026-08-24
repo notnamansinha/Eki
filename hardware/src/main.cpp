@@ -1072,8 +1072,7 @@ void checkForSignedFirmware() {
   }
   http.end();
   tlsClient.stop();
-  previousFirmwareCheckFailed = false;
-  installSignedFirmware(manifest);
+  previousFirmwareCheckFailed = !installSignedFirmware(manifest);
 }
 #endif
 
