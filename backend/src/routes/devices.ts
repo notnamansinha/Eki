@@ -7,8 +7,8 @@ import { readRateLimitShardFactor, shardedLimit } from "../lib/rateLimitShard";
 import { db } from "../lib/firebaseAdmin";
 import {
   ingestDeviceTelemetry,
-  invalidateDeviceCredentialCache,
   parseDeviceAuthorization,
+  publishDeviceCredentialInvalidation,
   recordTelemetryRejection,
 } from "../services/deviceTelemetryService";
 import { parseTelemetryValue } from "../services/telemetryPayload";
@@ -24,7 +24,7 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 // per-device budget after credential verification.
 // Expected replica count for the in-memory pre-auth limiter below; the
 // authoritative per-device budget after credential verification is the
-// durable Firestore-based HTTPS_DEVICE_RATE_PER_MINUTE, which needs no
+// shared RTDB-based HTTPS_DEVICE_RATE_PER_MINUTE, which needs no
 // sharding (issue #28).
 const RATE_LIMIT_SHARD_FACTOR = readRateLimitShardFactor();
 const telemetryLimiter = rateLimit({
@@ -270,7 +270,7 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
       });
       return;
     }
-    invalidateDeviceCredentialCache(deviceId);
+    await publishDeviceCredentialInvalidation(deviceId);
     res.json({ saved: true });
   } catch (error) {
     console.error("[Devices] Registry update failed:", error);
@@ -289,7 +289,7 @@ router.post("/:deviceId/disable", requireAdmin, async (req: Request, res: Respon
       { enabled: false, disabledAt: FieldValue.serverTimestamp() },
       { merge: true },
     );
-    invalidateDeviceCredentialCache(deviceId);
+    await publishDeviceCredentialInvalidation(deviceId);
     res.json({ disabled: true });
   } catch (error) {
     console.error("[Devices] Disable failed:", error);

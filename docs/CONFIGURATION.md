@@ -18,7 +18,7 @@ runtime secret/configuration system.
 | `FIREBASE_DATABASE_URL` | Yes for RTDB | Firebase RTDB URL | Use the environment’s URL; no code fallback exists |
 | `GOOGLE_MAPS_API_KEY` | Route/places features | Server-side Routes/Places key | Restrict by runtime identity/IP and enabled APIs; keep it different from the browser key |
 | `BUS_STALE_MS` | No | Live bus staleness threshold; minimum `90000`, default `300000` | Align the alert/runbook threshold with the deployed value |
-| `HTTPS_DEVICE_RATE_PER_MINUTE` | No | Durable accepted device requests per device per minute; default `90` | Supports 1 Hz moving telemetry with retry headroom; add an edge/WAF limit |
+| `HTTPS_DEVICE_RATE_PER_MINUTE` | No | Shared accepted device requests per device per minute; default `90` | Supports 1 Hz moving telemetry with retry headroom across replicas; add an edge/WAF limit |
 | `RATE_LIMIT_SHARD_FACTOR` | No | Expected backend replica count used to divide in-process budgets; default `1` | Set to the deployed replica count; values above the smallest in-process budget are rejected |
 | `AUTH_REVOCATION_CACHE_MS` | No | Short cache for Firebase Auth revocation checks; `0` disables it, maximum `60000` | Keep short; use `0` only for troubleshooting |
 | `WORKER_ENABLED` | No | Enables the Firestore-lease background worker; default `true` | Keep enabled for lifecycle recovery, abandonment and retention jobs |

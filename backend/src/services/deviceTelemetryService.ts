@@ -22,8 +22,9 @@ const NEGATIVE_CACHE_MS = 5_000;
 const DURABLE_RIDE_MISS_CACHE_MS = 30_000;
 const MAX_CREDENTIAL_CACHE_ENTRIES = 1_000;
 const MAX_DURABLE_RIDE_MISSES = 1_000;
-const MAX_RATE_BUCKETS = 2_000;
 const DEFAULT_DEVICE_RATE_PER_MINUTE = 90;
+const DEVICE_RATE_LIMIT_PATH = "_deviceRateLimits";
+const DEVICE_CREDENTIAL_VERSION_PATH = "_deviceCredentialVersions";
 
 export interface DeviceAssignment {
   busId: string;
@@ -134,7 +135,7 @@ export type TelemetryIngestResult =
 const credentialCache = new Map<string, CredentialCacheEntry>();
 const durableRideMisses = new Map<string, number>();
 const durableRideRestores = new Map<string, Promise<void>>();
-const rateBuckets = new Map<string, RateBucket>();
+let credentialInvalidationListenerStarted = false;
 const status: Pick<
   HttpsTelemetryStatus,
   "accepted" | "rejected" | "lastAcceptedAt" | "lastRejectedAt"
@@ -206,22 +207,43 @@ function digestSecret(secret: string): Buffer {
   return createHash("sha256").update(secret, "utf8").digest();
 }
 
+function credentialCacheKey(deviceId: string, secretDigest: Buffer): string {
+  return `${deviceId}:${secretDigest.toString("hex")}`;
+}
+
 function safeBufferEqual(left: Buffer, right: Buffer): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
 function cacheCredential(
-  deviceId: string,
+  cacheKey: string,
   value: CredentialCacheEntry,
 ): void {
   if (
-    !credentialCache.has(deviceId) &&
+    !credentialCache.has(cacheKey) &&
     credentialCache.size >= MAX_CREDENTIAL_CACHE_ENTRIES
   ) {
     const oldest = credentialCache.keys().next().value;
     if (oldest) credentialCache.delete(oldest);
   }
-  credentialCache.set(deviceId, value);
+  credentialCache.set(cacheKey, value);
+}
+
+function ensureDeviceCredentialInvalidationListener(): void {
+  if (credentialInvalidationListenerStarted) return;
+  credentialInvalidationListenerStarted = true;
+  const versions = rtdb.ref(DEVICE_CREDENTIAL_VERSION_PATH);
+  const invalidate = (snapshot: { key: string | null }) => {
+    if (snapshot.key && SAFE_ID.test(snapshot.key)) {
+      invalidateDeviceCredentialCache(snapshot.key);
+    }
+  };
+  const handleError = (error: Error) => {
+    credentialInvalidationListenerStarted = false;
+    console.error("[Devices] Credential invalidation listener failed:", error);
+  };
+  versions.on("child_added", invalidate, handleError);
+  versions.on("child_changed", invalidate, handleError);
 }
 
 function assignmentFromDevice(
@@ -269,8 +291,10 @@ export async function authenticateDeviceCredentials(
   secret: string,
   now: number,
 ): Promise<DeviceAssignment | null> {
+  ensureDeviceCredentialInvalidationListener();
   const suppliedDigest = digestSecret(secret);
-  const cached = credentialCache.get(deviceId);
+  const cacheKey = credentialCacheKey(deviceId, suppliedDigest);
+  const cached = credentialCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
     credentialCacheHits += 1;
     if (
@@ -290,9 +314,9 @@ export async function authenticateDeviceCredentials(
   const assignment = deviceDoc.exists ? assignmentFromDevice(device) : null;
   const secretMatches = await verifyDeviceSecretHash(secret, device?.secretHash);
   if (!assignment || !secretMatches) {
-    cacheCredential(deviceId, {
+    cacheCredential(cacheKey, {
       assignment: null,
-      secretDigest: null,
+      secretDigest: suppliedDigest,
       expiresAt: now + NEGATIVE_CACHE_MS,
     });
     return null;
@@ -313,15 +337,15 @@ export async function authenticateDeviceCredentials(
     !routeDoc.exists ||
     !assignedRoutes.includes(assignment.routeId)
   ) {
-    cacheCredential(deviceId, {
+    cacheCredential(cacheKey, {
       assignment: null,
-      secretDigest: null,
+      secretDigest: suppliedDigest,
       expiresAt: now + NEGATIVE_CACHE_MS,
     });
     return null;
   }
 
-  cacheCredential(deviceId, {
+  cacheCredential(cacheKey, {
     assignment,
     secretDigest: suppliedDigest,
     expiresAt: now + CREDENTIAL_CACHE_MS,
@@ -329,26 +353,38 @@ export async function authenticateDeviceCredentials(
   return assignment;
 }
 
-function deviceRateLimitRetryAfterMs(
+async function deviceRateLimitRetryAfterMs(
   deviceId: string,
   now: number,
-): number | null {
+): Promise<number | null> {
   const limit = readPositiveInt(
     process.env.HTTPS_DEVICE_RATE_PER_MINUTE,
     DEFAULT_DEVICE_RATE_PER_MINUTE,
   );
-  const current = rateBuckets.get(deviceId);
-  if (!current) {
-    if (rateBuckets.size >= MAX_RATE_BUCKETS) {
-      for (const [key, bucket] of rateBuckets) {
-        if (now - bucket.startedAt >= 60_000) rateBuckets.delete(key);
-      }
-      if (rateBuckets.size >= MAX_RATE_BUCKETS) return 60_000;
-    }
+  const transaction = await rtdb.ref(`${DEVICE_RATE_LIMIT_PATH}/${deviceId}`).transaction((value) => {
+    const record = value as Partial<RateBucket> | null;
+    const current =
+      Number.isFinite(record?.startedAt) &&
+      Number.isSafeInteger(record?.count) &&
+      Number(record?.count) >= 0
+        ? { startedAt: Number(record?.startedAt), count: Number(record?.count) }
+        : undefined;
+    const decision = evaluateDeviceRateLimit(current, now, limit);
+    return decision.next;
+  });
+  const bucket = transaction.snapshot.val() as Partial<RateBucket> | null;
+  const startedAt = Number(bucket?.startedAt);
+  const count = Number(bucket?.count);
+  if (
+    !transaction.committed ||
+    !Number.isFinite(startedAt) ||
+    !Number.isSafeInteger(count)
+  ) {
+    throw new Error("Device rate-limit transaction did not commit valid state.");
   }
-  const decision = evaluateDeviceRateLimit(current, now, limit);
-  rateBuckets.set(deviceId, decision.next);
-  return decision.allowed ? null : decision.retryAfterMs;
+  return count <= limit
+    ? null
+    : Math.max(1, 60_000 - (now - startedAt));
 }
 
 function durableLifecycle(
@@ -570,7 +606,7 @@ export async function ingestDeviceTelemetry(
     status.lastRejectedAt = new Date(now).toISOString();
     return { ok: false, reason: "credentials" };
   }
-  const retryAfterMs = deviceRateLimitRetryAfterMs(deviceId, now);
+  const retryAfterMs = await deviceRateLimitRetryAfterMs(deviceId, now);
   if (retryAfterMs !== null) {
     status.rejected += 1;
     status.lastRejectedAt = new Date(now).toISOString();
@@ -604,8 +640,19 @@ export function recordTelemetryRejection(now = Date.now()): void {
 }
 
 export function invalidateDeviceCredentialCache(deviceId: string): void {
-  credentialCache.delete(deviceId);
-  rateBuckets.delete(deviceId);
+  const prefix = `${deviceId}:`;
+  for (const key of credentialCache.keys()) {
+    if (key.startsWith(prefix)) credentialCache.delete(key);
+  }
+}
+
+export async function publishDeviceCredentialInvalidation(deviceId: string): Promise<void> {
+  if (!SAFE_ID.test(deviceId)) throw new Error("Invalid device ID.");
+  invalidateDeviceCredentialCache(deviceId);
+  await rtdb.ref(`${DEVICE_CREDENTIAL_VERSION_PATH}/${deviceId}`).set({
+    nonce: randomBytes(12).toString("hex"),
+    updatedAt: { ".sv": "timestamp" },
+  });
 }
 
 export function getHttpsTelemetryStatus(): HttpsTelemetryStatus {
