@@ -10,7 +10,8 @@ interface Props {
   sessionId: string;
   route: RouteData;
   tripState: "pre_departure" | "in_service";
-  onBoardingStopChange?: (stopId: string) => void;
+  destinationStopId?: string;
+  onDestinationStopChange?: (stopId: string) => void;
   onJoined?: () => void;
 }
 
@@ -48,7 +49,8 @@ export default function PassengerBoardingView({
   sessionId,
   route,
   tripState,
-  onBoardingStopChange,
+  destinationStopId,
+  onDestinationStopChange,
   onJoined,
 }: Props) {
   const [boardingStopId, setBoardingStopId] = useState("");
@@ -68,6 +70,10 @@ export default function PassengerBoardingView({
       joinAbortRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (destinationStopId !== undefined) setAlightingStopId(destinationStopId);
+  }, [destinationStopId]);
 
   const stopOptions = (route.stops ?? []).map((stop) => ({
     value: stop.id,
@@ -168,7 +174,6 @@ export default function PassengerBoardingView({
         disabled={joinState === "joining"}
         onChange={(value) => {
           setBoardingStopId(value);
-          onBoardingStopChange?.(value);
           selectionChanged();
         }}
         options={[{ value: "", label: "Boarding..." }, ...stopOptions]}
@@ -181,6 +186,7 @@ export default function PassengerBoardingView({
         disabled={joinState === "joining"}
         onChange={(value) => {
           setAlightingStopId(value);
+          onDestinationStopChange?.(value);
           selectionChanged();
         }}
         options={[{ value: "", label: "Destination (Optional)..." }, ...stopOptions]}

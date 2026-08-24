@@ -33,6 +33,7 @@ import {
   normalizeRideDirection,
   routeInRideDirection,
 } from "@/lib/rideDirection";
+import CustomSelect from "@/components/ui/CustomSelect";
 
 const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTrackingMap"), {
   ssr: false,
@@ -68,7 +69,7 @@ export default function PassengerWorkspace() {
   const [currentView, setCurrentView] = useState<ViewState>("home");
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const [selectedRouteId, setSelectedRouteId] = useState("");
-  const [selectedBoardingStopId, setSelectedBoardingStopId] = useState("");
+  const [selectedDestinationStopId, setSelectedDestinationStopId] = useState("");
   const [selectedLiveBusKey, setSelectedLiveBusKey] = useState("");
   const [activeBuses, setActiveBuses] = useState<ActiveBusData[]>([]);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
@@ -174,11 +175,13 @@ export default function PassengerWorkspace() {
   const directedRoute = activeRoute
     ? routeInRideDirection(activeRoute, rideDirection)
     : undefined;
-  const effectiveStopId =
-    directedRoute?.stops?.some((stop) => stop.id === selectedBoardingStopId)
-      ? selectedBoardingStopId
-      : directedRoute?.stops?.[0]?.id ?? "";
-  const targetStop = directedRoute?.stops?.find(s => s.id === effectiveStopId) ||
+  const effectiveDestinationStopId =
+    directedRoute?.stops?.some((stop) => stop.id === selectedDestinationStopId)
+      ? selectedDestinationStopId
+      : "";
+  const targetStop = directedRoute?.stops?.find(
+    (stop) => stop.id === effectiveDestinationStopId,
+  ) ||
     (directedRoute?.stops && directedRoute.stops.length > 0
       ? directedRoute.stops[directedRoute.stops.length - 1]
       : (directedRoute?.waypoints && directedRoute.waypoints.length > 0 ? {
@@ -264,7 +267,7 @@ export default function PassengerWorkspace() {
 
   const handleRouteSelect = (routeId: string) => {
     setSelectedRouteId(routeId);
-    setSelectedBoardingStopId("");
+    setSelectedDestinationStopId("");
     setSelectedLiveBusKey("");
     setIsMessagingOpen(false);
     setUnreadCount(0);
@@ -417,7 +420,6 @@ export default function PassengerWorkspace() {
                           value={passengerLiveBusSelectionKey(activeBusOnRoute)}
                           onChange={(event) => {
                             setSelectedLiveBusKey(event.target.value);
-                            setSelectedBoardingStopId("");
                             setIsMessagingOpen(false);
                           }}
                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold outline-none"
@@ -441,7 +443,8 @@ export default function PassengerWorkspace() {
                           sessionId={activeBusOnRoute.sessionId}
                           route={directedRoute}
                           tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
-                          onBoardingStopChange={setSelectedBoardingStopId}
+                          destinationStopId={effectiveDestinationStopId}
+                          onDestinationStopChange={setSelectedDestinationStopId}
                           onJoined={() => {
                             trackedRideRef.current = recordSuccessfulJoin(
                               trackedRideRef.current,
@@ -456,21 +459,23 @@ export default function PassengerWorkspace() {
                           }}
                         />
                       ) : (
-                        <div
-                          className="rounded-xl px-3 py-2"
+                        <CustomSelect
+                          ariaLabel="Destination station"
+                          placeholder="Choose destination…"
+                          value={effectiveDestinationStopId}
+                          onChange={setSelectedDestinationStopId}
+                          options={[
+                            { value: "", label: "Choose destination…" },
+                            ...(directedRoute.stops ?? []).map((stop) => ({
+                              value: stop.id,
+                              label: stop.name,
+                            })),
+                          ]}
                           style={{
                             background: "var(--surface-2)",
                             border: "1px solid var(--border-subtle)",
                           }}
-                          role="status"
-                        >
-                          <p className="text-xs font-semibold" style={{ color: "var(--status-live)" }}>
-                            Bus {activeBusOnRoute.busId} is online
-                          </p>
-                          <p className="mt-0.5 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                            Live location is available. Boarding opens when the driver starts the trip.
-                          </p>
-                        </div>
+                        />
                       )}
                     </div>
                   ) : (
