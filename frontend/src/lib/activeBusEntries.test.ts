@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { BUS_EXPIRY_MS } from "./liveBusFreshness";
-import { filterActiveBusEntries, isActiveBusEntry } from "./activeBusEntries";
+import {
+  filterActiveBusEntries,
+  isActiveBusEntry,
+  isLiveChatDeviceOnline,
+} from "./activeBusEntries";
+
+describe("isLiveChatDeviceOnline", () => {
+  it("depends only on device presence, not ride status or motion", () => {
+    expect(isLiveChatDeviceOnline({ deviceState: "online", status: "offline", motionState: "stopped" })).toBe(true);
+    expect(isLiveChatDeviceOnline({ deviceState: "online", status: "active", motionState: "moving" })).toBe(true);
+    expect(isLiveChatDeviceOnline({ deviceState: "offline", status: "active", motionState: "moving" })).toBe(false);
+    expect(isLiveChatDeviceOnline(undefined)).toBe(false);
+  });
+});
 
 describe("isActiveBusEntry", () => {
   const now = 2_000_000_000_000;

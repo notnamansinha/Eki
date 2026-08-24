@@ -26,6 +26,13 @@ export interface ActiveBusEntry {
   destinationStopId?: string;
 }
 
+/** Chat discoverability follows trusted device presence, never trip motion/status. */
+export function isLiveChatDeviceOnline(
+  entry: Pick<ActiveBusEntry, "deviceState" | "status" | "motionState"> | null | undefined,
+): boolean {
+  return entry?.deviceState === "online";
+}
+
 const OPTIONAL_STRING_FIELDS = [
   "driverId",
   "routeId",

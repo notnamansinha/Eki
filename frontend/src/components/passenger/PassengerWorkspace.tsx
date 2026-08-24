@@ -34,6 +34,7 @@ import {
   routeInRideDirection,
 } from "@/lib/rideDirection";
 import CustomSelect from "@/components/ui/CustomSelect";
+import { isLiveChatDeviceOnline } from "@/lib/activeBusEntries";
 
 const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTrackingMap"), {
   ssr: false,
@@ -492,7 +493,7 @@ export default function PassengerWorkspace() {
               </div>
 
               {/* Messaging FAB */}
-              {activeSessionId && !isMessagingOpen && (
+              {isLiveChatDeviceOnline(activeBusOnRoute) && !isMessagingOpen && (
                 <div className="absolute top-[160px] right-4 z-50 animate-scale-in pointer-events-auto">
                   <button
                     onClick={handleOpenMessaging}
@@ -502,7 +503,8 @@ export default function PassengerWorkspace() {
                       border: "1px solid var(--border-default)",
                       boxShadow: "0 4px 16px rgba(0,0,0,0.3)"
                     }}
-                    aria-label="Open live chat"
+                    aria-label={activeSessionId ? "Open live chat" : "Open live chat status"}
+                    title={activeSessionId ? "Open live chat" : "Device online; chat will unlock when the ride is armed"}
                   >
                     <MessageCircle className="w-5 h-5" style={{ color: "var(--status-live)" }} />
                     {unreadCount > 0 && (
@@ -518,16 +520,17 @@ export default function PassengerWorkspace() {
               {/* Passenger Boarding View was moved to the header above */}
 
               {/* Messaging Overlay */}
-              {isMessagingOpen && activeSessionId && (
+              {isMessagingOpen && isLiveChatDeviceOnline(activeBusOnRoute) && (
                 <div className="absolute inset-x-0 top-16 bottom-[80px] z-50 animate-slide-up flex flex-col pointer-events-auto">
                    <MessagingPanel
-                     key={activeSessionId || "no-session"}
+                    key={activeSessionId || "online-no-session"}
                      sessionId={activeSessionId || ""}
                     currentUserRole="passenger"
                     currentUserId={user?.uid || "anonymous"}
                     isOverlay={true}
                     onClose={() => setIsMessagingOpen(false)}
                     onUnreadCountChange={setUnreadCount}
+                    unavailableMessage={activeSessionId ? undefined : "The bus device is online. Chat will unlock when the administrator arms the ride."}
                   />
                 </div>
               )}

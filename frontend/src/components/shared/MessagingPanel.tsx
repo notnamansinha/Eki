@@ -32,6 +32,7 @@ interface BaseProps {
   currentUserRole: "passenger" | "admin";
   currentUserId: string;
   onUnreadCountChange?: (count: number) => void;
+  unavailableMessage?: string;
 }
 
 type Props = BaseProps & (
@@ -46,6 +47,7 @@ export default function MessagingPanel({
   onClose,
   isOverlay = false,
   onUnreadCountChange,
+  unavailableMessage,
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [messagesSource, setMessagesSource] = useState<string | null>(null);
@@ -250,7 +252,9 @@ export default function MessagingPanel({
             Live Chat
           </h3>
           <p className="text-[10px] font-semibold mt-0.5" style={{ color: "var(--text-ghost)" }}>
-            Session {sessionId.substring(0, 8)} · filtered and rate-limited
+            {sessionId
+              ? `Session ${sessionId.substring(0, 8)} · filtered and rate-limited`
+              : "Device online · waiting for ride session"}
           </p>
         </div>
         {isOverlay && onClose && (
@@ -267,7 +271,17 @@ export default function MessagingPanel({
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 gap-4 flex flex-col relative z-10 text-sm">
-        {chatError && chatError.sessionId === sessionId ? (
+        {unavailableMessage ? (
+            <div className="flex-1 flex flex-col items-center justify-center animate-fade-in px-5 text-center">
+              <MessageCircle className="w-8 h-8 mb-3" style={{ color: "var(--status-warning)" }} />
+              <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>
+                Live chat is visible
+              </p>
+              <p className="text-[11px] mt-1" style={{ color: "var(--text-ghost)" }}>
+                {unavailableMessage}
+              </p>
+            </div>
+        ) : chatError && chatError.sessionId === sessionId ? (
             <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
               <AlertCircle className="w-8 h-8 mb-3" style={{ color: "var(--danger, #f87171)" }} />
               <p className="text-[12px] font-semibold text-center" style={{ color: "var(--danger, #f87171)" }}>
@@ -356,8 +370,9 @@ export default function MessagingPanel({
             aria-label="Chat message"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
+            disabled={Boolean(unavailableMessage)}
             maxLength={MAX_MESSAGE_LENGTH}
-            placeholder="Message…"
+            placeholder={unavailableMessage ? "Waiting for ride session…" : "Message…"}
             className="flex-1 h-11 rounded-xl px-4 text-[14px] font-medium focus:outline-none transition-all"
             style={{
               background: "var(--surface-3)",
@@ -367,7 +382,7 @@ export default function MessagingPanel({
           />
           <button
             type="submit"
-            disabled={sending || !newMessage.trim()}
+            disabled={sending || Boolean(unavailableMessage) || !newMessage.trim()}
             className="w-11 h-11 rounded-xl flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 transition-all"
             style={{ background: "var(--accent)", color: "var(--surface-0)" }}
             aria-label="Send message"

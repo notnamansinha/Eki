@@ -30,6 +30,7 @@ import MessagingPanel from "@/components/shared/MessagingPanel";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
+import { isLiveChatDeviceOnline } from "@/lib/activeBusEntries";
 import {
   directionLabel,
   normalizeRideDirection,
@@ -339,6 +340,19 @@ function FleetCard({
           >
             <Eye className="w-3.5 h-3.5 text-white/50" />
           </button>
+          {isLiveChatDeviceOnline(entry) && (
+            <button
+              type="button"
+              disabled={!canChat}
+              onClick={() => onOpenChat(entry)}
+              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-white/5 px-2.5 text-[10px] font-bold text-white transition-colors hover:bg-brand-accent/20 hover:text-brand-accent disabled:opacity-40"
+              title={entry.sessionId ? "Open live chat" : "Device online; chat will unlock when a ride is armed"}
+              aria-label={`Open live chat for ${entry.busId}`}
+            >
+              <MessageCircle className="size-3.5" />
+              Chat
+            </button>
+          )}
         </div>
 
         {expanded && (
@@ -422,14 +436,6 @@ function FleetCard({
               >
                 <TicketCheck className="size-4" />
                 {boardingCode ? `${boardingCode.slice(0, 4)}-${boardingCode.slice(4)}` : "Boarding code"}
-              </button>
-              <button
-                type="button"
-                disabled={!entry.sessionId || !canChat}
-                onClick={() => onOpenChat(entry)}
-                className="flex min-h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white disabled:opacity-40"
-              >
-                <MessageCircle className="size-4" /> Live chat
               </button>
             </div>
             {hasValidBusCoordinates(entry.lat, entry.lng) && (
@@ -796,15 +802,16 @@ export default function DashboardPanel() {
           )}
         </div>
       </div>
-      {chatEntry?.sessionId && user?.uid && (
+      {chatEntry && isLiveChatDeviceOnline(chatEntry) && user?.uid && (
         <div className="fixed inset-0 z-[250] bg-black/70 pt-10 sm:p-10">
           <div className="mx-auto h-full max-w-2xl">
             <MessagingPanel
-              sessionId={chatEntry.sessionId}
+              sessionId={chatEntry.sessionId ?? ""}
               currentUserRole="admin"
               currentUserId={user.uid}
               isOverlay
               onClose={() => setChatEntry(null)}
+              unavailableMessage={chatEntry.sessionId ? undefined : "Arm this online bus to create the protected ride chat session."}
             />
           </div>
         </div>
