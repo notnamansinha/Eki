@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
   const batchCommit = vi.fn(async () => undefined);
   const transactionDelete = vi.fn();
   const transactionSet = vi.fn();
+  const transactionCreate = vi.fn();
   const transactionGet = vi.fn(async () => ({ exists: false, data: () => undefined }));
   const reduceTripState = vi.fn();
 
@@ -35,9 +36,9 @@ const mocks = vi.hoisted(() => {
             return unsubscribe;
           })
         : undefined,
-      doc: (id: string) => ({
+      doc: (id?: string) => ({
         collectionName: name,
-        id,
+        id: id ?? "generated-session",
         get: name === "routes" ? routeDocumentGet : undefined,
         set: (data: unknown, options: unknown) => documentSet(name, id, data, options),
       }),
@@ -50,6 +51,7 @@ const mocks = vi.hoisted(() => {
     runTransaction: vi.fn(async (operation: (transaction: any) => unknown) =>
       operation({
         delete: transactionDelete,
+        create: transactionCreate,
         get: transactionGet,
         set: transactionSet,
       }),
@@ -68,6 +70,7 @@ const mocks = vi.hoisted(() => {
     routeListeners,
     rtdbHandlers,
     transactionDelete,
+    transactionCreate,
     transactionGet,
     transactionSet,
   };
@@ -80,6 +83,7 @@ vi.mock("../lib/firebaseAdmin", () => ({
 
 vi.mock("./tripStateReducer", () => ({
   reduceTripState: mocks.reduceTripState,
+  STOP_GEOFENCE_M: 20,
 }));
 
 import { startTripStateEngine } from "./tripStateEngine";
@@ -496,6 +500,199 @@ describe("trip-state engine lifecycle", () => {
       }],
     });
   };
+
+  it("arms the opposite ride after a fresh stopped turnaround dwell", async () => {
+    vi.setSystemTime(200_000);
+    mocks.transactionGet.mockImplementation(async (ref: {
+      collectionName?: string;
+      id?: string;
+    }) => {
+      if (ref.collectionName === "_active_bus_locks") {
+        return { exists: false, data: () => undefined };
+      }
+      if (ref.collectionName === "ride_sessions" && ref.id === "session-1") {
+        return {
+          exists: true,
+          data: () => ({
+            status: "completed",
+            busId: "bus_1",
+            routeId: "route_2",
+            driverId: "driver-1",
+          }),
+        };
+      }
+      if (ref.collectionName === "drivers" && ref.id === "driver-1") {
+        return {
+          exists: true,
+          data: () => ({ assignedBusId: "bus_1" }),
+        };
+      }
+      if (ref.collectionName === "buses" && ref.id === "bus_1") {
+        return {
+          exists: true,
+          data: () => ({ assignedRoutes: ["route_2"] }),
+        };
+      }
+      return { exists: false, data: () => undefined };
+    });
+    const stop = startTripStateEngine();
+    armRoute();
+    const store = makeNodeRef({
+      busId: "bus_1",
+      routeId: "route_2",
+      driverId: "driver-1",
+      sessionId: "session-1",
+      status: "offline",
+      deviceState: "online",
+      tripState: "completed",
+      direction: "forward",
+      originStopId: "origin",
+      destinationStopId: "destination",
+      currentStopIndex: 1,
+      hasDepartedOrigin: true,
+      motionState: "stopped",
+      lat: 23.1,
+      lng: 72.1,
+      timestamp: 199_000,
+      turnaroundEligibleAt: 180_000,
+    });
+
+    mocks.rtdbHandlers.get("child_changed")!({
+      key: "bus_1_route_2",
+      val: store.nodeValue,
+      ref: store.ref,
+    });
+    await flushMicrotasks(40);
+
+    expect(mocks.transactionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ collectionName: "ride_sessions", id: "generated-session" }),
+      expect.objectContaining({
+        direction: "reverse",
+        originStopId: "destination",
+        destinationStopId: "origin",
+        automaticTurnaround: true,
+        previousSessionId: "session-1",
+      }),
+    );
+    expect(mocks.transactionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ collectionName: "_active_bus_locks", id: "bus_1" }),
+      expect.objectContaining({ sessionId: "generated-session", direction: "reverse" }),
+    );
+    expect(mocks.transactionSet).toHaveBeenCalledWith(
+      expect.objectContaining({ collectionName: "active_rides", id: "bus_1_route_2" }),
+      expect.objectContaining({ sessionId: "generated-session", direction: "reverse" }),
+    );
+    expect(store.nodeValue()).toMatchObject({
+      sessionId: "generated-session",
+      status: "active",
+      tripState: "pre_departure",
+      direction: "reverse",
+      originStopId: "destination",
+      destinationStopId: "origin",
+      automaticTurnaround: true,
+    });
+    await stop();
+  });
+
+  it("does not duplicate a turnaround already claimed by another replica", async () => {
+    vi.setSystemTime(200_000);
+    const stop = startTripStateEngine();
+    armRoute();
+    const store = makeNodeRef({
+      busId: "bus_1",
+      routeId: "route_2",
+      driverId: "driver-1",
+      sessionId: "session-1",
+      status: "offline",
+      tripState: "completed",
+      direction: "forward",
+      motionState: "stopped",
+      lat: 23.1,
+      lng: 72.1,
+      timestamp: 199_000,
+      turnaroundEligibleAt: 180_000,
+      turnaroundClaimId: "another-replica-session",
+      turnaroundClaimedAt: 199_500,
+    });
+
+    mocks.rtdbHandlers.get("child_changed")!({
+      key: "bus_1_route_2_claimed",
+      val: store.nodeValue,
+      ref: store.ref,
+    });
+    await flushMicrotasks(40);
+
+    expect(mocks.transactionCreate).not.toHaveBeenCalled();
+    expect(store.nodeValue()).toMatchObject({
+      sessionId: "session-1",
+      turnaroundClaimId: "another-replica-session",
+    });
+    await stop();
+  });
+
+  it("clears its RTDB claim when durable turnaround creation loses the bus lock", async () => {
+    vi.setSystemTime(200_000);
+    mocks.transactionGet.mockImplementation(async (ref: {
+      collectionName?: string;
+      id?: string;
+    }) => {
+      if (ref.collectionName === "_active_bus_locks") {
+        return {
+          exists: true,
+          data: () => ({ sessionId: "another-session" }),
+        };
+      }
+      if (ref.collectionName === "ride_sessions") {
+        return {
+          exists: true,
+          data: () => ({
+            status: "completed",
+            busId: "bus_1",
+            routeId: "route_2",
+            driverId: "driver-1",
+          }),
+        };
+      }
+      if (ref.collectionName === "drivers") {
+        return { exists: true, data: () => ({ assignedBusId: "bus_1" }) };
+      }
+      if (ref.collectionName === "buses") {
+        return { exists: true, data: () => ({ assignedRoutes: ["route_2"] }) };
+      }
+      return { exists: false, data: () => undefined };
+    });
+    const stop = startTripStateEngine();
+    armRoute();
+    const store = makeNodeRef({
+      busId: "bus_1",
+      routeId: "route_2",
+      driverId: "driver-1",
+      sessionId: "session-1",
+      status: "offline",
+      tripState: "completed",
+      direction: "forward",
+      motionState: "stopped",
+      lat: 23.1,
+      lng: 72.1,
+      timestamp: 199_000,
+      turnaroundEligibleAt: 180_000,
+    });
+
+    mocks.rtdbHandlers.get("child_changed")!({
+      key: "bus_1_route_2_lock_conflict",
+      val: store.nodeValue,
+      ref: store.ref,
+    });
+    await flushMicrotasks(40);
+
+    expect(mocks.transactionCreate).not.toHaveBeenCalled();
+    expect(store.nodeValue()).toMatchObject({
+      sessionId: "session-1",
+      turnaroundClaimId: null,
+      turnaroundClaimedAt: null,
+    });
+    await stop();
+  });
 
   it("persists motionState so analytics can count signal loss", async () => {
     mocks.reduceTripState.mockReturnValue({

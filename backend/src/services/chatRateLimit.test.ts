@@ -3,8 +3,12 @@ import {
   evaluateChatRate,
   censorText,
   MAX_MESSAGES_PER_HOUR,
+  MAX_MESSAGES_PER_MINUTE,
   MIN_GAP_MS,
   HOUR_MS,
+  MINUTE_MS,
+  moderateChatText,
+  normalizeChatText,
 } from "./chatRateLimit";
 
 describe("evaluateChatRate", () => {
@@ -81,8 +85,24 @@ describe("evaluateChatRate", () => {
     const result = evaluateChatRate(existing, now);
     expect(result.allowed).toBe(true);
     if (result.allowed) {
-      expect(result.nextSentAt).toHaveLength(MAX_MESSAGES_PER_HOUR - 1);
+      expect(result.nextSentAt).toEqual([now - 5_000]);
     }
+  });
+
+  it("enforces a short rolling burst cap in addition to the hourly limit", () => {
+    const existing = {
+      sentAt: Array.from(
+        { length: MAX_MESSAGES_PER_MINUTE - 1 },
+        (_, index) => now - MINUTE_MS + 5_000 + index * 4_000,
+      ),
+      lastSentAt: now - 4_000,
+    };
+
+    expect(evaluateChatRate(existing, now)).toEqual({
+      allowed: false,
+      reason: "burst",
+      retryAfterMs: expect.any(Number),
+    });
   });
 
   it("migrates a legacy windowStartedAt/count doc inline", () => {
@@ -108,5 +128,26 @@ describe("censorText", () => {
 
   it("leaves clean text untouched", () => {
     expect(censorText("Great ride, driver was kind")).toBe("Great ride, driver was kind");
+  });
+
+  it("censors separator, repeated-letter, leetspeak, and Unicode evasions", () => {
+    expect(censorText("f.u.c.k sh1t fuuuck चूतिया")).toBe("*** *** *** ***");
+    expect(censorText("Class assignment")).toBe("Class assignment");
+  });
+});
+
+describe("moderateChatText", () => {
+  it("normalizes formatting controls and reports server-side censorship", () => {
+    expect(normalizeChatText("  hello\u202E\u200B   rider  ")).toBe("hello rider");
+    expect(moderateChatText("  sh1t\u200B message ")).toEqual({
+      text: "*** message",
+      normalized: "sh1t message",
+      censored: true,
+    });
+  });
+
+  it("rejects empty and over-limit normalized content", () => {
+    expect(moderateChatText("\u200B\u202E")).toBeNull();
+    expect(moderateChatText("a".repeat(501))).toBeNull();
   });
 });

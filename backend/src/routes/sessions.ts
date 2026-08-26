@@ -6,7 +6,7 @@ import { db, rtdb } from "../lib/firebaseAdmin";
 import { haversineMeters } from "../lib/geo";
 import {
   evaluateChatRate,
-  censorText,
+  moderateChatText,
 } from "../services/chatRateLimit";
 import {
   JOIN_RADIUS_M,
@@ -240,6 +240,7 @@ router.post("/:sessionId/join", requireAuth, async (
       route.data()?.stops,
       req.body?.boardingStopId,
       req.body?.alightingStopId,
+      data.direction === "reverse" ? "reverse" : "forward",
     );
     if (!route.exists || !stopSelection) {
       throw new BoardingPolicyError(400, "Select valid stops in route order.");
@@ -281,6 +282,8 @@ router.post("/:sessionId/join", requireAuth, async (
         !BOARDING_STATUSES.has(String(currentData.status)) ||
         currentData.busId !== busId ||
         currentData.routeId !== routeId ||
+        (currentData.direction === "reverse" ? "reverse" : "forward") !==
+          (data.direction === "reverse" ? "reverse" : "forward") ||
         !boardingCodesMatch(currentData.boardingCode, submittedCode)
       ) {
         throw new BoardingPolicyError(409, "Boarding authorization expired; ask the driver for the current code.");
@@ -332,8 +335,8 @@ router.post("/:sessionId/join", requireAuth, async (
  * POST /api/sessions/:sessionId/messages
  *
  * Server-authoritative chat send. The client no longer writes messages or
- * rate-limit docs; the backend enforces membership, the 60/hr rolling rate
- * limit, the 3s gap, and the profanity filter before persisting.
+ * rate-limit docs; the backend enforces membership, the 60/hr and 10/minute
+ * rolling limits, the 3s gap, and Unicode-aware moderation before persisting.
  */
 router.post("/:sessionId/messages", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -355,10 +358,9 @@ router.post("/:sessionId/messages", requireAuth, async (req: AuthenticatedReques
       return;
     }
     const { text, requestId } = body;
-    const normalizedText = typeof text === "string" ? text.trim() : "";
+    const moderatedText = moderateChatText(text);
     if (
-      !normalizedText ||
-      normalizedText.length > 500 ||
+      !moderatedText ||
       typeof requestId !== "string" ||
       !SAFE_REQUEST_ID.test(requestId)
     ) {
@@ -372,7 +374,7 @@ router.post("/:sessionId/messages", requireAuth, async (req: AuthenticatedReques
     const messageRef = sessionRef
       .collection("messages")
       .doc(stableHash(`${uid}\0${requestId}`));
-    const requestHash = stableHash(normalizedText);
+    const requestHash = stableHash(`${uid}\0${requestId}\0${moderatedText.normalized}`);
 
     const result = await db.runTransaction(async (transaction) => {
       const [session, rateSnap, existingMessage] = await transaction.getAll(
@@ -413,7 +415,7 @@ router.post("/:sessionId/messages", requireAuth, async (req: AuthenticatedReques
       const from = isDriver || isAdmin ? "driver" : "passenger";
       const passengerName = passengerEntry?.userName;
       const tokenName = req.user?.name;
-      const senderName = (
+      const rawSenderName = (
         from === "passenger" && typeof passengerName === "string" && passengerName.trim()
           ? passengerName.trim()
           : typeof tokenName === "string" && tokenName.trim()
@@ -421,8 +423,12 @@ router.post("/:sessionId/messages", requireAuth, async (req: AuthenticatedReques
             : isAdmin
               ? "Administrator"
               : from === "driver"
-                ? "Operator"
-                : "Passenger"
+                 ? "Operator"
+                 : "Passenger"
+      );
+      const senderName = (
+        moderateChatText(rawSenderName)?.text ??
+        (isAdmin ? "Administrator" : from === "driver" ? "Operator" : "Passenger")
       ).slice(0, 100);
 
       const existing = rateSnap.data();
@@ -444,7 +450,9 @@ router.post("/:sessionId/messages", requireAuth, async (req: AuthenticatedReques
           429,
           check.reason === "hourly"
             ? "Rolling message limit reached."
-            : "Please wait before sending another message.",
+            : check.reason === "burst"
+              ? "Short-term message limit reached."
+              : "Please wait before sending another message.",
           check.retryAfterMs,
         );
       }
@@ -455,17 +463,23 @@ router.post("/:sessionId/messages", requireAuth, async (req: AuthenticatedReques
         lastSentAt: FieldValue.serverTimestamp(),
       });
       transaction.set(messageRef, {
-        text: censorText(normalizedText),
+        text: moderatedText.text,
         from,
         senderName,
         senderId: uid,
         requestHash,
+        moderated: moderatedText.censored,
+        moderationVersion: 2,
         timestamp: FieldValue.serverTimestamp(),
       });
       return { id: messageRef.id, duplicate: false };
     });
 
-    res.status(result.duplicate ? 200 : 201).json({ id: result.id, sent: true });
+    res.status(result.duplicate ? 200 : 201).json({
+      id: result.id,
+      sent: true,
+      moderated: moderatedText.censored,
+    });
   } catch (error) {
     if (error instanceof ChatPolicyError) {
       if (error.status === 429 && error.retryAfterMs !== undefined) {

@@ -16,6 +16,7 @@ CONFIG_ESP32_REV_MIN_3=y
 CONFIG_SECURE_BOOT=y
 CONFIG_SECURE_BOOT_V2_ENABLED=y
 CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 CONFIG_SECURE_BOOT_SIGNING_KEY="keys/secure_boot_signing_key.pem"
 
 # Fleet flash confidentiality. Release mode permanently constrains ROM download

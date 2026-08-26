@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Map as GoogleMap, AdvancedMarker, useMap,
 } from "@vis.gl/react-google-maps";
@@ -18,7 +18,7 @@ import {
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
 import {
-  Activity, Navigation, Clock, AlertTriangle,
+  Activity, Navigation2, Clock, AlertTriangle,
   TrendingUp, X, ChevronDown, ChevronUp,
   Eye, Wifi, WifiOff, MessageCircle, Play, RefreshCw, TicketCheck,
 } from "lucide-react";
@@ -27,6 +27,15 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { apiRequest } from "@/lib/apiClient";
 import CustomSelect from "@/components/ui/CustomSelect";
 import MessagingPanel from "@/components/shared/MessagingPanel";
+import DirectionsRoute from "@/components/maps/DirectionsRoute";
+import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
+import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
+import { isLiveChatDeviceOnline } from "@/lib/activeBusEntries";
+import {
+  directionLabel,
+  normalizeRideDirection,
+  routeInRideDirection,
+} from "@/lib/rideDirection";
 
 /* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const TRIP_STATE: Record<string, { label: string; color: string; bg: string; dot: string }> = {
@@ -39,7 +48,6 @@ const MOTION_STATE: Record<string, { label: string; color: string }> = {
   stopped:   { label: "Stopped", color: "text-amber-400" },
   uncertain: { label: "No GPS",  color: "text-red-400" },
 };
-
 function timeSince(t?: string | number): string {
   if (!t) return "—";
   const ms = typeof t === "number" ? Date.now() - t : Date.now() - new Date(t).getTime();
@@ -166,7 +174,7 @@ function LiveDetailsDrawer({
           {msg && <p className="text-xs text-emerald-400 font-semibold">{msg}</p>}
 
           <p className="text-xs leading-relaxed text-white/45">
-            Position and stop progress come only from authenticated GNSS telemetry. The ride starts at the first ordered stop and completes at the final ordered stop.
+            Position and stop progress come only from authenticated GNSS telemetry. The ride follows its armed travel direction and completes at that direction&apos;s destination.
           </p>
           <button onClick={() => setShowWipeConfirm(true)} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors">
             <MessageCircle className="w-3.5 h-3.5" /> Clear Messages
@@ -190,7 +198,13 @@ function LiveDetailsDrawer({
 }
 
 /* â”€â”€ Live bus map marker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => void }) {
+function BusMarker({
+  entry,
+  onClick,
+}: {
+  entry: ActiveBusEntry;
+  onClick: () => void;
+}) {
   const ts = TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure;
   const markerColor =
     entry.tripState === "in_service"
@@ -199,9 +213,24 @@ function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => v
 
   const lat = entry.lat;
   const lng = entry.lng;
-  if (!hasValidBusCoordinates(lat, lng)) return null;
+  const rawPoint = useMemo(
+    () => liveBusMarkerPosition(lat, lng),
+    [lat, lng],
+  );
+
+  const [displayHeading, setDisplayHeading] = useState(() =>
+    normalizeHeading(entry.heading),
+  );
+  const displayHeadingRef = useRef(displayHeading);
+  useEffect(() => {
+    const nextHeading = unwrapHeading(entry.heading, displayHeadingRef.current);
+    displayHeadingRef.current = nextHeading;
+    setDisplayHeading(nextHeading);
+  }, [entry.heading]);
+
+  if (!rawPoint) return null;
   return (
-    <AdvancedMarker position={{ lat: lat as number, lng: lng as number }} onClick={onClick}>
+    <AdvancedMarker position={rawPoint} onClick={onClick}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }} title={`${entry.busId} — ${ts.label}`}>
         <div style={{
           width: 36, height: 36, borderRadius: 18,
@@ -209,7 +238,17 @@ function BusMarker({ entry, onClick }: { entry: ActiveBusEntry; onClick: () => v
           display: "flex", alignItems: "center", justifyContent: "center",
           boxShadow: `0 0 0 2px ${markerColor}40, 0 4px 12px rgba(0,0,0,0.5)`,
         }}>
-          <Navigation style={{ width: 16, height: 16, color: "#09090b", transform: `rotate(${entry.heading ?? 0}deg)` }} />
+          <Navigation2
+            style={{
+              width: 16,
+              height: 16,
+              color: "#09090b",
+              transform: `rotate(${displayHeading}deg)`,
+              transformOrigin: "center",
+              transition: "transform 250ms ease-out",
+              willChange: "transform",
+            }}
+          />
         </div>
         <div style={{
           marginTop: 4, padding: "2px 6px", borderRadius: 5,
@@ -245,11 +284,14 @@ function FleetCard({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const bus = buses.find(b => b.id === entry.busId);
   const route = routes.find(r => r.id === entry.routeId);
+  const directedRoute = route
+    ? routeInRideDirection(route, normalizeRideDirection(entry.direction))
+    : undefined;
   const driver = drivers.find(d => d.id === entry.driverId);
   const ts = TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure;
   const ms = MOTION_STATE[entry.motionState ?? "uncertain"] ?? MOTION_STATE.uncertain;
   const stopIdx = (entry.currentStopIndex ?? 0) + 1;
-  const stopCount = route?.stops?.length ?? 0;
+  const stopCount = directedRoute?.stops?.length ?? 0;
 
   return (
     <>
@@ -298,6 +340,19 @@ function FleetCard({
           >
             <Eye className="w-3.5 h-3.5 text-white/50" />
           </button>
+          {isLiveChatDeviceOnline(entry) && (
+            <button
+              type="button"
+              disabled={!canChat}
+              onClick={() => onOpenChat(entry)}
+              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-white/5 px-2.5 text-[10px] font-bold text-white transition-colors hover:bg-brand-accent/20 hover:text-brand-accent disabled:opacity-40"
+              title={entry.sessionId ? "Open live chat" : "Device online; chat will unlock when a ride is armed"}
+              aria-label={`Open live chat for ${entry.busId}`}
+            >
+              <MessageCircle className="size-3.5" />
+              Chat
+            </button>
+          )}
         </div>
 
         {expanded && (
@@ -325,16 +380,16 @@ function FleetCard({
                   <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.round((stopIdx / stopCount) * 100)}%` }} />
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-2">
-                  {route?.stops?.[entry.currentStopIndex ?? 0] && (
+                  {directedRoute?.stops?.[entry.currentStopIndex ?? 0] && (
                     <div>
                       <span className="text-[8px] text-white/25 uppercase font-black">Next Stop</span>
-                      <p className="text-[10px] font-semibold text-white truncate">{route.stops[entry.currentStopIndex ?? 0].name}</p>
+                      <p className="text-[10px] font-semibold text-white truncate">{directedRoute.stops[entry.currentStopIndex ?? 0].name}</p>
                     </div>
                   )}
-                  {route?.stops?.[(entry.currentStopIndex ?? 0) + 1] && (
+                  {directedRoute?.stops?.[(entry.currentStopIndex ?? 0) + 1] && (
                     <div>
                       <span className="text-[8px] text-white/25 uppercase font-black">Following Stop</span>
-                      <p className="text-[10px] font-semibold text-white/60 truncate">{route.stops[(entry.currentStopIndex ?? 0) + 1].name}</p>
+                      <p className="text-[10px] font-semibold text-white/60 truncate">{directedRoute.stops[(entry.currentStopIndex ?? 0) + 1].name}</p>
                     </div>
                   )}
                 </div>
@@ -348,6 +403,11 @@ function FleetCard({
               <div>
                 <span className="text-[8px] font-black uppercase tracking-wider text-white/25">Route</span>
                 <p className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</p>
+                {route && (
+                  <p className="text-[9px] text-white/40">
+                    {directionLabel(normalizeRideDirection(entry.direction), route.stops)}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 border-t border-white/5 pt-3">
@@ -376,14 +436,6 @@ function FleetCard({
               >
                 <TicketCheck className="size-4" />
                 {boardingCode ? `${boardingCode.slice(0, 4)}-${boardingCode.slice(4)}` : "Boarding code"}
-              </button>
-              <button
-                type="button"
-                disabled={!entry.sessionId || !canChat}
-                onClick={() => onOpenChat(entry)}
-                className="flex min-h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white disabled:opacity-40"
-              >
-                <MessageCircle className="size-4" /> Live chat
               </button>
             </div>
             {hasValidBusCoordinates(entry.lat, entry.lng) && (
@@ -415,6 +467,32 @@ export default function DashboardPanel() {
   const { buses, error: busesError, retry: retryBuses } = useBuses();
   const { drivers } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
+  const activeRouteIdsKey = Array.from(
+    new Set(
+      activeEntries.flatMap((entry) =>
+        typeof entry.routeId === "string" && entry.routeId.length > 0
+          ? [entry.routeId]
+          : [],
+      ),
+    ),
+  ).sort().join(",");
+  const activeRouteOverlays = useMemo(() => {
+    const activeRouteIds = new Set(
+      activeRouteIdsKey ? activeRouteIdsKey.split(",") : [],
+    );
+    return routes
+      .filter((route) => activeRouteIds.has(route.id))
+      .map((route) => ({
+        id: route.id,
+        color: route.color,
+        polyline: route.polyline,
+        polylineQuality: route.polylineQuality,
+        stops: (route.stops ?? route.waypoints ?? []).map(({ lat, lng }) => ({
+          lat,
+          lng,
+        })),
+      }));
+  }, [activeRouteIdsKey, routes]);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
@@ -483,17 +561,22 @@ export default function DashboardPanel() {
     setArmPending(true);
     setArmStatus("");
     try {
-      const result = await requestAdmin<{ sessionId?: string; resumed?: boolean }>(
+      const result = await requestAdmin<{
+        sessionId?: string;
+        resumed?: boolean;
+        direction?: "forward" | "reverse";
+      }>(
         "/api/shifts/start",
         {
           method: "POST",
           body: JSON.stringify({ driverId, busId, routeId }),
         },
       );
+      const inferredDirection = normalizeRideDirection(result.direction);
       setArmStatus(
         result.resumed
           ? `Active ride restored (${result.sessionId}).`
-          : `Ride armed (${result.sessionId}). It starts automatically at stop 1.`,
+          : `Ride armed (${result.sessionId}) for ${directionLabel(inferredDirection, routes.find((route) => route.id === routeId)?.stops ?? [])}.`,
       );
     } catch (error) {
       setArmStatus(errorMessage(error));
@@ -553,6 +636,17 @@ export default function DashboardPanel() {
         >
           <TrafficLayer />
           <MapCenter center={mapCenter} />
+          {activeRouteOverlays.map((route) => (
+            <DirectionsRoute
+              key={route.id}
+              routeId={route.id}
+              stops={route.stops}
+              polyline={route.polyline}
+              polylineQuality={route.polylineQuality}
+              color={route.color || "#3b82f6"}
+              hasBuses
+            />
+          ))}
           {activeEntries.map(entry => (
             <BusMarker
               key={`${entry.busId}_${entry.routeId}`}
@@ -646,6 +740,10 @@ export default function DashboardPanel() {
               placeholder="Select route…"
             />
           </div>
+          <p className="text-xs text-white/45">
+            Travel direction is inferred from fresh stopped GPS at route endpoint A or Z.
+            After completion, the opposite trip is armed automatically following the turnaround dwell.
+          </p>
           <button
             type="button"
             onClick={() => void armRide()}
@@ -704,15 +802,16 @@ export default function DashboardPanel() {
           )}
         </div>
       </div>
-      {chatEntry?.sessionId && user?.uid && (
+      {chatEntry && isLiveChatDeviceOnline(chatEntry) && user?.uid && (
         <div className="fixed inset-0 z-[250] bg-black/70 pt-10 sm:p-10">
           <div className="mx-auto h-full max-w-2xl">
             <MessagingPanel
-              sessionId={chatEntry.sessionId}
+              sessionId={chatEntry.sessionId ?? ""}
               currentUserRole="admin"
               currentUserId={user.uid}
               isOverlay
               onClose={() => setChatEntry(null)}
+              unavailableMessage={chatEntry.sessionId ? undefined : "Arm this online bus to create the protected ride chat session."}
             />
           </div>
         </div>

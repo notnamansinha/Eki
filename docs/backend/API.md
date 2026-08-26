@@ -42,9 +42,9 @@ documentation, tickets or logs. A successful new telemetry sample returns
 
 | Area | Endpoints | Authentication |
 |---|---|---|
-| Health | `GET /health` | Public |
+| Health | `GET /health`; `GET /api/health` | Public readiness; admin diagnostics |
 | Live buses | `GET /api/buses`, `GET /api/buses/:busId` | Authenticated |
-| Device ingestion | `POST /api/devices/:deviceId/telemetry`, `POST /api/devices/:deviceId/diagnostics` | Device credential |
+| Device ingestion/update | `POST /api/devices/:deviceId/telemetry`, `POST /api/devices/:deviceId/diagnostics`, `GET /api/devices/:deviceId/firmware` | Device credential |
 | Device administration | `GET/PUT /api/devices/:deviceId/diagnostics`, `PUT /api/devices/:deviceId`, `POST /api/devices/:deviceId/disable` | Admin |
 | Ride operations | `POST /api/shifts/start`, `PATCH /api/shifts/delay`, `POST /api/shifts/stop` | Assigned operator or admin |
 | Boarding and chat | Session boarding-code, join and messages endpoints | Session member/operator/admin as applicable |
@@ -67,7 +67,11 @@ IDs accept 1–128 ASCII letters, digits, `_`, or `-`. Rate-limit counters alway
 
 ### `GET /health` — public
 
-Returns 200 when the cached 30-second Firestore/RTDB probe is ready, otherwise 503. It does not read Firebase for every request.
+Returns only `{ "status": "ok" }` when the cached 30-second Firestore/RTDB probe is ready, otherwise 503 with `{ "status": "degraded" }`. It does not read Firebase for every request or expose dependency and telemetry details.
+
+### `GET /api/health` — admin
+
+Returns the cached Firestore/RTDB status, telemetry counters and latency summaries, background-failure state, and probe timestamp. This is the detailed operational response formerly exposed by `/health`; it requires an admin Firebase ID token.
 
 ```json
 {
@@ -135,6 +139,16 @@ Generate `timestamp` immediately before sending (for example, with `Date.now()`)
 
 Accepts the closed 1 KiB firmware-health object: firmware version, uptime, free heap, RSSI, queue depth/high-water/drop counters, accepted/rejected fixes, NMEA/UART errors, reset total, fault code, flash-encryption and Secure-Boot booleans, and device timestamp. Device ID, bus, and route come from the authenticated server registry; credentials and network names are never accepted in the body. The latest report overwrites `_device_diagnostics/{deviceId}` through the Admin SDK. Returns 202, 400, 401, 429, or 503 with `Cache-Control: no-store`.
 
+### `GET /api/devices/:deviceId/firmware?sequence=N` — device
+
+Authenticates the existing device credential and returns the complete configured
+signed-release descriptor only when its sequence is newer and neither the
+assigned bus lock nor active-ride document exists. Returns 204 when disabled,
+current, or ride-gated; 200 contains `version`, `sequence`, immutable HTTPS
+`url`, exact `sha256`, and exact `size`. Partial/unsafe deployment configuration
+fails closed with 503. The backend never proxies the binary and the device never
+sends its credential to the artifact host.
+
 ### `GET /api/devices/:deviceId/diagnostics` — admin
 
 Returns the latest authenticated device report plus registry assignment and server `receivedAt`, or 404 when no report exists. Firebase clients cannot read `_device_diagnostics` directly.
@@ -165,9 +179,9 @@ Searches live entries for the stored `busId` and returns the snapshot or 404. In
 
 Body: `{ "busId":"bus_01", "routeId":"route_01", "driverId":"driver_01" }`. `driverId` is required for admin requests and comes from trusted claims for legacy assigned-operator requests.
 
-Requires agreement among Auth claim, `drivers`, `buses`, route assignment and a fresh ≤60-second nonfuture hardware fix. A Firestore bus lock prevents another route session. If already owned by the same driver/session, repairs durable records and returns 200 `{sessionId,resumed:true}`. New ride returns 201 `{sessionId,resumed:false}`. Returns 403 assignment mismatch, 409 active/lock/fix conflict, 422 invalid route origin or 500.
+Requires agreement among Auth claim, `drivers`, `buses`, route assignment and a fresh ≤60-second stopped hardware fix near exactly one route endpoint. The backend infers `forward` at endpoint A or `reverse` at endpoint Z; the client cannot choose or override direction. A Firestore bus lock prevents another route session. If already owned by the same driver/session, repairs durable records and returns 200 `{sessionId,resumed:true,direction}`. New ride returns 201 `{sessionId,resumed:false,direction}`. Returns 403 assignment mismatch, 409 active/lock/stale/moving/ambiguous-position conflict, 422 invalid route endpoints or 500.
 
-If the bus is already at origin, the session starts `active/in_service` and records stop 0; otherwise it is `armed/pre_departure` until GNSS reaches origin.
+At the inferred origin, the session starts `active/in_service` and records stop 0. An active session always restores its immutable stored direction after hardware/backend interruption. After final-stop completion, a fresh stopped fix at that destination for `AUTOMATIC_TURNAROUND_DWELL_MS` causes the backend to atomically arm a new session in the opposite direction; stale, moving, mid-route or contested state never auto-arms.
 
 ### `PATCH /api/shifts/delay` — assigned operator or admin
 
@@ -193,13 +207,13 @@ An admin may request the code for any active session; a legacy assigned-operator
 
 ### `POST /api/sessions/:sessionId/join` — passenger
 
-Body: `{ "boardingCode":"ABCD2345", "lat":23.0, "lng":72.5, "accuracy":25, "boardingStopId":"stop_1", "alightingStopId":"stop_3" }`; `alightingStopId` may be `null`. Coordinates are required on first boarding and may be omitted only when the same authenticated UID updates an existing manifest entry.
+Body: `{ "boardingCode":"ABCD2345", "lat":23.0, "lng":72.5, "accuracy":25, "boardingStopId":"stop_1", "alightingStopId":"stop_3" }`. Both stop IDs are required. Coordinates are required on first boarding and may be omitted only when the same authenticated UID updates an existing manifest entry.
 
 Requires a valid Firebase bearer token, the driver-issued session code, route-owned stops in forward order, browser accuracy no worse than 100 m, and—on first boarding—a passenger coordinate within 150 m of a fresh nonfuture hardware GNSS projection bound to the exact session/bus/route. Browser location is defense in depth rather than trusted proof; possession of the non-public session code is the server-verifiable authorization. An existing passenger may correct stops without a second location prompt. A Firestore transaction rechecks session state, code, and existing membership when proximity is omitted before adding or updating only the authenticated UID's manifest entry. Display name and timestamps are server-derived. Returns `{joined:true,sessionId}` or 400/403/404/409/422/500.
 
 ### `POST /api/sessions/:sessionId/messages` — session member/operator
 
-Body: `{ "text":"Bus arriving", "requestId":"browser-generated-uuid" }`. The authenticated UID must be a manifest passenger, the assigned driver on the assigned bus, or an admin, and the session must still be `armed|active`. Sender role/name are server-derived. One transaction rechecks membership/state, applies the three-second and 60-per-hour limits, and writes both message and rate state. `requestId` makes retries idempotent: first success is 201, an identical retry is 200, and reuse with changed content is 409. Throttling is 429 with `Retry-After` and `retryAfterMs`.
+Body: `{ "text":"Bus arriving", "requestId":"browser-generated-uuid" }`. The authenticated UID must be a manifest passenger, the assigned driver on the assigned bus, or an admin, and the session must still be `armed|active`. Sender role/name are server-derived. One transaction rechecks membership/state; applies the three-second, 10-per-minute, and 60-per-hour limits; normalizes unsafe Unicode formatting; censors common English, Hindi/Hinglish, leetspeak, separator, and repeated-letter profanity evasions; and writes both message and rate state. The uncensored text is not stored. `requestId` makes retries idempotent: first success is 201, an identical retry is 200, and reuse with changed content is 409. Throttling is 429 with `Retry-After` and `retryAfterMs`.
 
 ## Feedback, profile, and settings endpoints
 

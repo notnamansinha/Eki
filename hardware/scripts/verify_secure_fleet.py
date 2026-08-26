@@ -6,12 +6,29 @@ import re
 
 project_dir = Path(env.subst("$PROJECT_DIR"))
 sdkconfig = (project_dir / "sdkconfig.defaults").read_text(encoding="utf-8")
+platform_build_flags = str(env.GetProjectOption("build_flags"))
+sequence_match = re.search(r"\bEKI_FIRMWARE_SEQUENCE=(\d+)\b", platform_build_flags)
+if not sequence_match or int(sequence_match.group(1)) <= 0:
+    raise RuntimeError("Fleet builds require a positive EKI_FIRMWARE_SEQUENCE.")
+if "DISABLE_OTA" in platform_build_flags:
+    raise RuntimeError("Fleet builds must not disable the signed OTA path.")
+release_sequence = int(sequence_match.group(1))
+cmake_source = (project_dir / "CMakeLists.txt").read_text(encoding="utf-8")
+version_match = re.search(r'set\s*\(\s*PROJECT_VER\s+"([^"]+)"\s*\)', cmake_source)
+if not version_match:
+    raise RuntimeError("Fleet builds require an explicit signed PROJECT_VER.")
+signed_version = version_match.group(1)
+if not signed_version.startswith(f"s{release_sequence}-") or len(signed_version) > 31:
+    raise RuntimeError(
+        "PROJECT_VER must use s<sequence>-<name> and match EKI_FIRMWARE_SEQUENCE."
+    )
 
 required_security_options = {
     "CONFIG_ESP32_REV_MIN_3=y",
     "CONFIG_SECURE_BOOT=y",
     "CONFIG_SECURE_BOOT_V2_ENABLED=y",
     "CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y",
+    "CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y",
     "CONFIG_SECURE_FLASH_ENC_ENABLED=y",
     "CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE=y",
     "CONFIG_SECURE_DISABLE_ROM_DL_MODE=y",
@@ -148,3 +165,36 @@ if not any(
     for row in partition_rows
 ):
     raise RuntimeError("The minimal Arduino framework system partition is missing or oversized.")
+
+ota_apps = {
+    row[2]: row
+    for row in partition_rows
+    if len(row) >= 5 and row[1] == "app" and row[2] in {"ota_0", "ota_1"}
+}
+if set(ota_apps) != {"ota_0", "ota_1"}:
+    raise RuntimeError("Fleet builds require exactly two OTA application slots.")
+if any(int(row[4], 0) < 0x1E0000 for row in ota_apps.values()):
+    raise RuntimeError("Fleet OTA application slots are smaller than the release limit.")
+if not any(
+    len(row) >= 3 and row[0] == "otadata" and row[1] == "data" and row[2] == "ota"
+    for row in partition_rows
+):
+    raise RuntimeError("Fleet builds require an OTA selection-data partition.")
+if any(len(row) >= 3 and row[1] == "app" and row[2] == "factory" for row in partition_rows):
+    raise RuntimeError("Fleet builds must boot from rollback-capable OTA slots, not a factory-only app.")
+
+partition_regions = []
+for row in partition_rows:
+    if len(row) < 5:
+        raise RuntimeError(f"Malformed fleet partition row: {row}")
+    offset = int(row[3], 0)
+    size = int(row[4], 0)
+    if size <= 0 or offset < 0x11000 or offset + size > 0x400000:
+        raise RuntimeError(f"Fleet partition is outside the 4 MiB flash layout: {row[0]}")
+    partition_regions.append((offset, offset + size, row[0]))
+partition_regions.sort()
+for previous, current in zip(partition_regions, partition_regions[1:]):
+    if previous[1] > current[0]:
+        raise RuntimeError(
+            f"Fleet partitions overlap: {previous[2]} and {current[2]}"
+        )

@@ -9,6 +9,14 @@
       "$busKey": {
         ".write": false
       }
+    },
+    "_deviceRateLimits": {
+      ".read": false,
+      ".write": false
+    },
+    "_deviceCredentialVersions": {
+      ".read": false,
+      ".write": false
     }
   }
 }

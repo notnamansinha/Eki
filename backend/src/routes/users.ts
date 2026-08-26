@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireAuth } from "../middleware/requireAuth";
-import { db } from "../lib/firebaseAdmin";
+import { auth, db } from "../lib/firebaseAdmin";
 
 const router = Router();
 
@@ -19,6 +19,33 @@ function cleanClaim(value: unknown, maximumLength: number, fallback = ""): strin
   return typeof value === "string" && value.trim()
     ? value.trim().slice(0, maximumLength)
     : fallback;
+}
+
+async function ensurePassengerRoleClaim(uid: string): Promise<boolean> {
+  const user = await auth.getUser(uid);
+  const existingClaims = user.customClaims ?? {};
+  const alreadySynchronized =
+    existingClaims.role === "passenger" &&
+    existingClaims.admin === undefined &&
+    existingClaims.driverId === undefined &&
+    existingClaims.assignedBusId === undefined;
+  if (alreadySynchronized) return false;
+
+  const passengerClaims = { ...existingClaims };
+  delete passengerClaims.admin;
+  delete passengerClaims.driverId;
+  delete passengerClaims.assignedBusId;
+  passengerClaims.role = "passenger";
+
+  const hadPrivilegedClaims =
+    existingClaims.admin === true ||
+    existingClaims.role === "admin" ||
+    existingClaims.role === "driver";
+  await auth.setCustomUserClaims(uid, passengerClaims);
+  if (hadPrivilegedClaims) {
+    await auth.revokeRefreshTokens(uid);
+  }
+  return true;
 }
 
 /**
@@ -57,8 +84,18 @@ router.post("/bootstrap", requireAuth, async (req: AuthenticatedRequest, res: Re
       return { role: "passenger", created: true };
     });
 
+    // Only the least-privileged role is repaired here. Driver/admin claims
+    // require the dedicated fleet authorization workflow and its assignment
+    // validation; a profile bootstrap must never manufacture those claims.
+    const claimsUpdated = result.role === "passenger"
+      ? await ensurePassengerRoleClaim(uid)
+      : false;
+
     res.setHeader("Cache-Control", "no-store");
-    res.status(result.created ? 201 : 200).json({ role: result.role });
+    res.status(result.created ? 201 : 200).json({
+      role: result.role,
+      ...(claimsUpdated ? { claimsUpdated: true } : {}),
+    });
   } catch (error) {
     console.error("[Users] Failed to bootstrap profile:", error);
     res.status(500).json({ error: "Unable to bootstrap profile." });

@@ -27,13 +27,24 @@ describe("boarding policy", () => {
       boardingStopId: "s1",
       alightingStopId: "s3",
     });
-    expect(validateStopSelection(stops, "s2", null)).toEqual({
-      boardingStopId: "s2",
-      alightingStopId: null,
-    });
+    expect(validateStopSelection(stops, "s2", null)).toBeNull();
+    expect(validateStopSelection(stops, "s2", undefined)).toBeNull();
     expect(validateStopSelection(stops, "missing", null)).toBeNull();
     expect(validateStopSelection(stops, "s2", "s2")).toBeNull();
     expect(validateStopSelection(stops, "s3", "s1")).toBeNull();
+  });
+
+  it("requires route-owned stops in reverse travel order", () => {
+    const stops = [{ id: "a" }, { id: "middle" }, { id: "z" }];
+    expect(validateStopSelection(stops, "z", "a", "reverse")).toEqual({
+      boardingStopId: "z",
+      alightingStopId: "a",
+    });
+    expect(validateStopSelection(stops, "middle", "a", "reverse")).toEqual({
+      boardingStopId: "middle",
+      alightingStopId: "a",
+    });
+    expect(validateStopSelection(stops, "a", "z", "reverse")).toBeNull();
   });
 
   it("binds a fresh trusted projection to the exact live session", () => {

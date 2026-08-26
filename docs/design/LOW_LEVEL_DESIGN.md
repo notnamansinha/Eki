@@ -17,7 +17,7 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 | `lib/routeSegment.ts` | Direction-safe stored-polyline slicing, via constraint and travel-order stops |
 | `middleware/requireAuth.ts` | Bearer extraction, revocation-aware token verification, request claims |
 | `middleware/requireAdmin.ts` | Admin custom-claim enforcement |
-| `routes/devices.ts` | Device telemetry endpoint and admin registry update/disable |
+| `routes/devices.ts` | Device telemetry/diagnostics, ride-gated signed-release metadata, and admin registry update/disable |
 | `routes/shifts.ts` | Driver authorization, delay, start/resume, completion acknowledgement, message/history deletion |
 | `routes/fleet.ts` | Admin buses/drivers, Auth claims, RTDB assignment mirrors, reconciliation |
 | `routes/polyline.ts` | Admin route geometry create/update/delete with active-use guards |
@@ -29,6 +29,7 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 | `routes/requests.ts` | Admin mutation of passenger request status/removal |
 | `routes/privacy.ts` | Passenger deletion-request queue |
 | `services/telemetryPayload.ts` | Closed schema, ranges and timestamp freshness |
+| `services/firmwareRelease.ts` | Fail-closed signed release descriptor parsing and sequence validation |
 | `services/deviceTelemetryService.ts` | scrypt credentials/cache, device limit, RTDB transaction, recovery and rolling metrics |
 | `services/authTokenVerifier.ts` | SHA-256 keyed bounded token verification coalescing/cache |
 | `services/tripStateReducer.ts` | Pure ordered geofence state transition and segment crossing |
@@ -38,7 +39,7 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 | `services/abandonedRideReconciler.ts` | Rechecks and interrupts stale non-terminal sessions |
 | `services/abandonedRideReconciliationLogic.ts` | Pure timestamp/session decision logic |
 | `services/privacyDeletionWorker.ts` | Paged deletion of a queued passenger's personal documents/auth account |
-| `services/retentionSweeper.ts` | Explicit opt-in, paged time-based terminal-data removal |
+| `services/retentionSweeper.ts` | Production-required, paged time-based terminal-data removal |
 | `services/rideHistoryDeletion.ts` | Terminal-only recursive session/completed-trip deletion |
 | `seed.ts` | Writes predefined routes only after Maps geometry succeeds |
 | `provisionDevice.ts` | Transactional registry/assignment conflict checks and one-time secret generation |
@@ -49,7 +50,7 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 
 ## Telemetry service detail
 
-Credential cache entries hold `{assignment, secretDigest, expiresAt}`; positive TTL is 60 seconds, negative TTL 5 seconds, and capacity 1,000. A SHA-256 digest makes cached comparisons constant-size; the durable store remains scrypt. Rate buckets are per device, one minute, default 30 accepted attempts, capacity 2,000.
+Credential cache entries hold `{assignment, secretDigest, expiresAt}`; positive TTL is 60 seconds, negative TTL 5 seconds, and capacity 1,000. A SHA-256 digest makes cached comparisons constant-size; the durable store remains scrypt. Rate buckets are per device, one minute, default 90 accepted attempts, capacity 2,000.
 
 The RTDB transaction compares `sample.timestamp` to the existing timestamp. Older/equal samples abort and return duplicate success. New data merges the sample without overwriting an existing active lifecycle, adds server `receivedAt`, and derives `deviceState`/`signalState`. A missing active session schedules one coalesced Firestore recovery read per node with a 30-second negative cache.
 
@@ -82,6 +83,7 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 | `components/ServiceWorkerRegistrar.tsx` | SW registration/update check and controlled one-time reload |
 | `components/maps/DirectionsRoute.tsx` | Draw stored decoded polyline |
 | `components/maps/PassengerMap.tsx` | RTDB route filtering, snapping, heuristic ETA and marker UI |
+| `components/admin/DashboardPanel.tsx` | Live Ops fleet state, route-snapped markers and shortest-path heading rotation |
 | `components/maps/PassengerTrackingMap.tsx` | Passenger tracking composition |
 | `components/admin/*Panel.tsx` | Operations, dashboard, routes, fleet/personnel, history and settings |
 | `components/passenger/*` | Boarding, route timeline/carousel/sheet and account |
@@ -100,6 +102,7 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 | `lib/liveBusStore.ts` | One RTDB `onValue` listener and freshness pruning for all consumers |
 | `lib/liveBusFreshness.ts`, `liveBusSnapshot.ts` | Coordinate/timestamp/signal validity and expiry |
 | `lib/polyline.ts`, `polylineDistance.ts`, `snapToPolyline.ts`, `mapUtils.ts` | Pure map math, distance index, snapping/interpolation |
+| `lib/stableMarkerPosition.ts`, `markerHeading.ts` | Client-side jump hold/reacquisition and wrap-safe marker heading presentation |
 | `lib/rideHistory.ts`, `rideFeedbackEligibility.ts` | Pure historical normalization/eligibility |
 | `lib/predefinedRoutes.ts` | Seed source geometry/stops |
 | `config/maps.ts`, `config/passenger.ts`, `etaConstants.ts` | Central public/runtime tuning |
@@ -125,3 +128,5 @@ Tests beside pure frontend libraries exercise freshness, RTDB sharing, route dis
 ## Consistency model
 
 RTDB is the immediate latest-value projection; Firestore is durable truth for configuration and recovery/history. A small window can exist between RTDB claim and Firestore active projection. Session IDs and conditional transactions make retries/reconciliation idempotent. Clients must display interruption/staleness rather than infer lifecycle from coordinates alone.
+
+The fleet authorization safety sweep reads the RTDB assignment mirror once and coalesces Firestore bus-route lookups by bus ID while retaining per-driver Auth checks. If the bulk mirror read fails, it falls back to the original per-driver lookup path so an optimization outage cannot disable repair.

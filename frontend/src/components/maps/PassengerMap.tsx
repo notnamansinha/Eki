@@ -6,21 +6,25 @@ import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { RouteStop, RouteData } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
-import { hasValidBusCoordinates, isLiveBusSignalLost } from "@/lib/liveBusFreshness";
-import { subscribeLiveBuses } from "@/lib/liveBusStore";
-import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
+import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
+import { subscribeLiveBusesByRoute } from "@/lib/liveBusStore";
+import {
+  normalizePassengerLiveBus,
+  type PassengerLiveBus,
+} from "@/lib/passengerLiveBus";
 
-import { WifiOff, Navigation } from "lucide-react";
+import { WifiOff, Navigation, Navigation2 } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
-import { decodePolyline, type LatLng } from "@/lib/polyline";
-import { snapToPolyline } from "@/lib/snapToPolyline";
+import { decodePolyline } from "@/lib/polyline";
 import {
   distanceAlongPolyline,
   positionAlongPolyline,
   preparePolylineDistanceIndex,
 } from "@/lib/polylineDistance";
 import { ETA_SPEED_FLOOR_KMH } from "@/lib/etaConstants";
-import { useSmoothPosition } from "@/hooks/useSmoothPosition";
+import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
+import { normalizeRideDirection } from "@/lib/rideDirection";
+import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
@@ -28,21 +32,7 @@ export interface PassengerMapProps {
   resumeGeneration?: number;
 }
 
-interface IncomingBusData {
-  busId: string;
-  routeId: string; // 
-  lat: number;
-  lng: number;
-  heading: number;
-  speed: number;
-  timestamp: number;
-  status?: string; // "active" | "offline"
-  deviceState: "online" | "offline";
-  motionState: "moving" | "stopped" | "uncertain"; // Physical movement state from hardware
-  tripState: "pre_departure" | "in_service" | "completed"; // Service visibility
-  currentStopIndex?: number;
-  delayMinutes?: number;
-}
+type IncomingBusData = PassengerLiveBus;
 
 const WALKING_KMH = 5;
 const WALKING_M_PER_MIN = (WALKING_KMH * 1000) / 60;
@@ -54,40 +44,30 @@ const BUS_MOTION_COLORS: Record<string, string> = {
 
 function BusMarker({
   bus,
-  path,
 }: {
   bus: IncomingBusData;
-  path: readonly LatLng[];
 }) {
-  const [preferredSegmentIndex, setPreferredSegmentIndex] = useState(-1);
-  const result = useMemo(
-    () =>
-      snapToPolyline(
-        { lat: bus.lat, lng: bus.lng },
-        path,
-        {
-          headingDegrees: bus.heading,
-          preferredSegmentIndex,
-          maxSegmentJump: 25,
-        },
-      ),
-    [bus.lat, bus.lng, bus.heading, path, preferredSegmentIndex],
+  const rawPoint = useMemo(
+    () => liveBusMarkerPosition(bus.lat, bus.lng),
+    [bus.lat, bus.lng],
   );
+
+  const [displayHeading, setDisplayHeading] = useState(() =>
+    normalizeHeading(bus.heading),
+  );
+  const displayHeadingRef = useRef(displayHeading);
   useEffect(() => {
-    if (!result.snapped) return;
-    const frame = requestAnimationFrame(() =>
-      setPreferredSegmentIndex(result.segmentIndex),
-    );
-    return () => cancelAnimationFrame(frame);
-  }, [result]);
-  const smoothPosition = useSmoothPosition(result.point);
+    const nextDisplayHeading = unwrapHeading(bus.heading, displayHeadingRef.current);
+    displayHeadingRef.current = nextDisplayHeading;
+    setDisplayHeading(nextDisplayHeading);
+  }, [bus.heading]);
 
   const color =
     BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
-  const snappedHeading = Math.round(bus.heading / 5) * 5;
 
+  if (!rawPoint) return null;
   return (
-    <AdvancedMarker position={smoothPosition ?? result.point}>
+    <AdvancedMarker position={rawPoint}>
       <div
         style={{
           width: 44,
@@ -100,11 +80,13 @@ function BusMarker({
       >
         <div
           style={{
-            transform: `rotate(${snappedHeading}deg)`,
-            transition: "transform 200ms ease-out",
+            transform: `rotate(${displayHeading}deg)`,
+            transformOrigin: "center",
+            transition: "transform 250ms ease-out",
+            willChange: "transform",
           }}
         >
-          <Navigation size={30} fill={color} color="white" strokeWidth={1} />
+          <Navigation2 size={30} fill={color} color="white" strokeWidth={1} />
         </div>
         <div
           style={{
@@ -175,13 +157,15 @@ function PassengerMapInner({
     if (route.polyline) {
       try {
         const decoded = decodePolyline(route.polyline);
-        if (decoded.length >= 2) return decoded;
+        if (decoded.length >= 2) {
+          return route.rideDirection === "reverse" ? decoded.reverse() : decoded;
+        }
       } catch {
         // Legacy routes fall back to their saved stop coordinates.
       }
     }
     return routeStops;
-  }, [route.polyline, routeStops]);
+  }, [route.polyline, route.rideDirection, routeStops]);
   const routeDistanceIndex = useMemo(
     () => preparePolylineDistanceIndex(routePath),
     [routePath],
@@ -228,18 +212,13 @@ function PassengerMapInner({
 
   // ── RTDB subscription: filtered by routeId ───────────────────────────────
   useEffect(() => {
-    const unsubscribe = subscribeLiveBuses((snapshot) => {
-        const allData = snapshot as Record<string, IncomingBusData> | null;
-        const data = allData
-          ? Object.fromEntries(
-              Object.entries(allData).filter(([, bus]) => bus.routeId === route.id),
-            )
-          : null;
+    const unsubscribe = subscribeLiveBusesByRoute(route.id, (snapshot) => {
+        const allData = snapshot as Record<string, unknown> | null;
         const now = Date.now();
         const currentRoute = routeRef.current;
         const currentTargetStop = targetStopRef.current;
 
-        if (!data) {
+        if (!allData) {
           setBuses(new Map());
           setSignalLostBuses(new Set());
           return;
@@ -249,18 +228,18 @@ function PassengerMapInner({
         const newSignalLost = new Set<string>();
         let oldestTimestamp: number | null = null;
 
-        Object.entries(data).forEach(([key, incoming]) => {
-          const bus: IncomingBusData = incoming.busId
-            ? incoming
-            : { ...incoming, busId: key.split("_")[0] };
+        Object.entries(allData).forEach(([key, incoming]) => {
+          const normalized = normalizePassengerLiveBus(key, incoming, now);
           if (
-            !bus.routeId ||
-            !bus.busId ||
-            !hasValidBusCoordinates(bus.lat, bus.lng) ||
-            !isActiveRideSnapshot(bus as unknown as Record<string, unknown>)
-          ) {
-            return;
-          }
+            !normalized ||
+            normalized.routeId !== currentRoute.id ||
+            normalizeRideDirection(normalized.direction) !==
+              normalizeRideDirection(currentRoute.rideDirection)
+          ) return;
+          const bus: IncomingBusData = {
+            ...normalized,
+            heading: normalizeHeading(normalized.heading),
+          };
 
           activeBuses.set(bus.busId, bus);
 
@@ -470,12 +449,8 @@ function PassengerMapInner({
   const centerTarget = useMemo(() => {
     const firstBus = Array.from(buses.values())[0];
     if (!firstBus) return mapCenter;
-    return snapToPolyline(
-      { lat: firstBus.lat, lng: firstBus.lng },
-      routePath,
-      { headingDegrees: firstBus.heading },
-    ).point;
-  }, [buses, mapCenter, routePath]);
+    return liveBusMarkerPosition(firstBus.lat, firstBus.lng) ?? mapCenter;
+  }, [buses, mapCenter]);
 
   return (
     <>
@@ -524,8 +499,10 @@ function PassengerMapInner({
         >
           <MapCenterer target={centerTarget} isCentered={isCentered} />
           <DirectionsRoute
+            routeId={route.id}
             stops={routeStops}
             polyline={route.polyline}
+            polylineQuality={route.polylineQuality}
             color={route.color || "#3b82f6"}
             hasBuses={buses.size > 0}
           />
@@ -546,7 +523,7 @@ function PassengerMapInner({
 
           {/* Bus markers */}
           {Array.from(buses.values()).map(bus => (
-            <BusMarker key={bus.busId} bus={bus} path={routePath} />
+            <BusMarker key={bus.busId} bus={bus} />
           ))}
 
           {/* Stop markers */}

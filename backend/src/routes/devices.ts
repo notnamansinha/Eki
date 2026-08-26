@@ -6,11 +6,16 @@ import { ipKeyGenerator } from "../lib/rateLimitIdentity";
 import { readRateLimitShardFactor, shardedLimit } from "../lib/rateLimitShard";
 import { db } from "../lib/firebaseAdmin";
 import {
+  authenticateDeviceCredentials,
   ingestDeviceTelemetry,
-  invalidateDeviceCredentialCache,
   parseDeviceAuthorization,
+  publishDeviceCredentialInvalidation,
   recordTelemetryRejection,
 } from "../services/deviceTelemetryService";
+import {
+  parseFirmwareSequence,
+  readFirmwareRelease,
+} from "../services/firmwareRelease";
 import { parseTelemetryValue } from "../services/telemetryPayload";
 import {
   ingestDeviceDiagnostics,
@@ -24,7 +29,7 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 // per-device budget after credential verification.
 // Expected replica count for the in-memory pre-auth limiter below; the
 // authoritative per-device budget after credential verification is the
-// durable Firestore-based HTTPS_DEVICE_RATE_PER_MINUTE, which needs no
+// shared RTDB-based HTTPS_DEVICE_RATE_PER_MINUTE, which needs no
 // sharding (issue #28).
 const RATE_LIMIT_SHARD_FACTOR = readRateLimitShardFactor();
 const telemetryLimiter = rateLimit({
@@ -108,6 +113,67 @@ router.post(
       recordTelemetryRejection();
       console.error("[Devices] HTTPS telemetry ingestion failed:", error);
       res.status(503).json({ error: "Telemetry service unavailable." });
+    }
+  },
+);
+
+router.get(
+  "/:deviceId/firmware",
+  telemetryLimiter,
+  async (req: Request, res: Response) => {
+    res.set("Cache-Control", "no-store");
+    const deviceId = req.params.deviceId;
+    const secret = parseDeviceAuthorization(req.get("authorization"));
+    const currentSequence = parseFirmwareSequence(req.query.sequence);
+    if (!SAFE_ID.test(deviceId) || !secret || currentSequence === null) {
+      res.status(!secret ? 401 : 400).json({
+        error: !secret
+          ? "Invalid device credentials."
+          : "Invalid firmware update request.",
+      });
+      return;
+    }
+
+    try {
+      const assignment = await authenticateDeviceCredentials(
+        deviceId,
+        secret,
+        Date.now(),
+      );
+      if (!assignment) {
+        res.status(401).json({ error: "Invalid device credentials." });
+        return;
+      }
+
+      const configuration = readFirmwareRelease();
+      if (configuration.state === "invalid") {
+        console.error("[Firmware] Release configuration is incomplete or invalid.");
+        res.status(503).json({ error: "Firmware service unavailable." });
+        return;
+      }
+      if (
+        configuration.state === "disabled" ||
+        configuration.release.sequence <= currentSequence
+      ) {
+        res.status(204).end();
+        return;
+      }
+
+      const [activeRide, activeBusLock] = await Promise.all([
+        db.collection("active_rides")
+          .doc(`${assignment.busId}_${assignment.routeId}`)
+          .get(),
+        db.collection("_active_bus_locks").doc(assignment.busId).get(),
+      ]);
+      if (activeRide.exists || activeBusLock.exists) {
+        res.status(204).end();
+        return;
+      }
+
+      res.json(configuration.release);
+    } catch (error) {
+      console.error("[Firmware] Release lookup failed:", error);
+      res.status(503).json({ error: "Firmware service unavailable." });
     }
   },
 );
@@ -270,7 +336,7 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
       });
       return;
     }
-    invalidateDeviceCredentialCache(deviceId);
+    await publishDeviceCredentialInvalidation(deviceId);
     res.json({ saved: true });
   } catch (error) {
     console.error("[Devices] Registry update failed:", error);
@@ -289,7 +355,7 @@ router.post("/:deviceId/disable", requireAdmin, async (req: Request, res: Respon
       { enabled: false, disabledAt: FieldValue.serverTimestamp() },
       { merge: true },
     );
-    invalidateDeviceCredentialCache(deviceId);
+    await publishDeviceCredentialInvalidation(deviceId);
     res.json({ disabled: true });
   } catch (error) {
     console.error("[Devices] Disable failed:", error);

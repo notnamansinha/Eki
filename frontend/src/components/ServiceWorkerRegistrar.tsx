@@ -28,29 +28,6 @@ export default function ServiceWorkerRegistrar() {
     let cancelled = false;
     let updateInterval: ReturnType<typeof setInterval> | undefined;
     let activeRegistration: ServiceWorkerRegistration | undefined;
-    let reloading = false;
-    let hadController = Boolean(navigator.serviceWorker.controller);
-    let activationTimer: ReturnType<typeof setTimeout> | undefined;
-    let pendingWorker: ServiceWorker | undefined;
-
-    const scheduleWaitingWorkerActivation = () => {
-      if (activationTimer) clearTimeout(activationTimer);
-      activationTimer = undefined;
-      activationTimer = setTimeout(() => {
-        activationTimer = undefined;
-        (pendingWorker ?? activeRegistration?.waiting)?.postMessage({ type: "SKIP_WAITING" });
-      }, 500);
-    };
-
-    const handleControllerChange = () => {
-      if (!hadController) {
-        hadController = true;
-        return;
-      }
-      if (reloading) return;
-      reloading = true;
-      window.location.reload();
-    };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
@@ -59,7 +36,6 @@ export default function ServiceWorkerRegistrar() {
       });
     };
 
-    navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     // Defer registration until after initial paint + load to avoid contention
@@ -70,8 +46,6 @@ export default function ServiceWorkerRegistrar() {
         .then((registration) => {
           if (cancelled) return;
           activeRegistration = registration;
-          pendingWorker = registration.waiting ?? undefined;
-
           // Check for updates periodically (every 15 minutes).
           // This is important for a campus transit app where the tab may be
           // open for hours — students keep the PWA open all day.
@@ -81,24 +55,9 @@ export default function ServiceWorkerRegistrar() {
             });
           }, 15 * 60 * 1000);
 
-          scheduleWaitingWorkerActivation();
-
-          // Listen for new SWs that finish installing while the page is open.
-          registration.addEventListener("updatefound", () => {
-            const newWorker = registration.installing;
-            if (!newWorker) return;
-
-            newWorker.addEventListener("statechange", () => {
-              if (
-                newWorker.state === "installed" &&
-                navigator.serviceWorker.controller
-              ) {
-                pendingWorker = newWorker;
-                scheduleWaitingWorkerActivation();
-              }
-            });
-          });
-
+          // An installed update remains waiting until every tab using the old
+          // worker closes. This prevents a deployment from reloading an active
+          // admin ride or passenger session mid-operation.
         })
         .catch((error) => {
           console.error("[SW] Registration failed:", error);
@@ -114,10 +73,8 @@ export default function ServiceWorkerRegistrar() {
     return () => {
       cancelled = true;
       if (updateInterval) clearInterval(updateInterval);
-      if (activationTimer) clearTimeout(activationTimer);
       window.removeEventListener("load", register);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
     };
   }, []);
 

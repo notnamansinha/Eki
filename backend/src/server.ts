@@ -25,6 +25,8 @@ import { backgroundFailures } from "./lib/backgroundFailureTracker";
 import { createHealthState } from "./lib/healthState";
 import { createIdentityAwareLimiter } from "./lib/rateLimitIdentity";
 import { readRateLimitShardFactor, shardedLimit } from "./lib/rateLimitShard";
+import { requireAdmin } from "./middleware/requireAdmin";
+import { assertRetentionConfiguration } from "./services/retentionSweeper";
 import { startWorkerCoordinator } from "./services/workerCoordinator";
 import busRoutes from "./routes/buses";
 import analyticsRoutes from "./routes/analytics";
@@ -64,6 +66,10 @@ if (process.env.NODE_ENV === "production") {
     throw new Error("CORS_ORIGIN must be set (comma-separated) in production.");
   }
 }
+assertRetentionConfiguration(
+  process.env.RETENTION_SWEEPER_ENABLED,
+  process.env.NODE_ENV,
+);
 const httpServer = http.createServer(app);
 httpServer.requestTimeout = 15_000;
 httpServer.headersTimeout = 70_000;
@@ -87,8 +93,9 @@ app.use(helmet({
 
 function isDeviceIngressRequest(req: express.Request): boolean {
   return (
-    req.method === "POST" &&
-    /^\/api\/devices\/[A-Za-z0-9_-]{1,128}\/(telemetry|diagnostics)$/.test(req.path)
+    ((req.method === "POST" && /\/(telemetry|diagnostics)$/.test(req.path)) ||
+      (req.method === "GET" && /\/firmware$/.test(req.path))) &&
+    /^\/api\/devices\/[A-Za-z0-9_-]{1,128}\/(telemetry|diagnostics|firmware)$/.test(req.path)
   );
 }
 
@@ -168,7 +175,8 @@ app.use("/api/routes-list", routesListRoutes);
 app.use(
   "/api/devices",
   (req, res, next) =>
-    req.method === "POST" && /\/(telemetry|diagnostics)$/.test(req.path)
+    (req.method === "POST" && /\/(telemetry|diagnostics)$/.test(req.path)) ||
+      (req.method === "GET" && /\/firmware$/.test(req.path))
       ? next()
       : writeLimiter(req, res, next),
   devicesRoutes,
@@ -192,9 +200,19 @@ const healthProbeTimer = setInterval(() => {
 }, 30_000);
 healthProbeTimer.unref();
 
-// Return cached readiness so a public health-check flood cannot amplify into
-// billable Firestore/RTDB reads on every request.
+// Return only cached readiness publicly, so load balancers can probe the
+// service without learning internal dependency, telemetry, or failure data.
 app.get("/health", (_req, res) => {
+  const state = health.snapshot();
+  res.status(state.ready ? 200 : 503).json({
+    status: state.ready ? "ok" : "degraded",
+  });
+});
+
+// Detailed diagnostics are operationally sensitive and admin-only. This uses
+// the same cached probes as /health, so monitoring cannot amplify billable
+// Firebase reads.
+app.get("/api/health", requireAdmin, (_req, res) => {
   const telemetry = getHttpsTelemetryStatus();
   const backgroundTasks = backgroundFailures.snapshot();
   const state = health.snapshot();

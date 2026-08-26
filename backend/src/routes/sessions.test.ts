@@ -152,6 +152,16 @@ describe("session passenger join route", () => {
     expect(harness.updates).toHaveLength(0);
   });
 
+  it("requires a destination station so every new manifest entry is useful to administrators", async () => {
+    const response = await join({ lat: 23, lng: 72.5, accuracy: 20, alightingStopId: null });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Select valid stops in route order.",
+    });
+    expect(harness.updates).toHaveLength(0);
+  });
+
   it("performs live proximity validation for first boarding", async () => {
     const response = await join({ lat: 23, lng: 72.5, accuracy: 20 });
 

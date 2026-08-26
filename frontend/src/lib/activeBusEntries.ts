@@ -14,15 +14,32 @@ export interface ActiveBusEntry {
   speed?: number;
   heading?: number;
   timestamp?: number;
+  status?: "active" | "offline";
   deviceState?: "online" | "offline";
   motionState?: "moving" | "stopped" | "uncertain";
   tripState?: "pre_departure" | "in_service" | "completed";
   currentStopIndex?: number;
   delayMinutes?: number;
   sessionId?: string;
+  direction?: "forward" | "reverse";
+  originStopId?: string;
+  destinationStopId?: string;
 }
 
-const OPTIONAL_STRING_FIELDS = ["driverId", "routeId", "sessionId"] as const;
+/** Chat discoverability follows trusted device presence, never trip motion/status. */
+export function isLiveChatDeviceOnline(
+  entry: Pick<ActiveBusEntry, "deviceState" | "status" | "motionState"> | null | undefined,
+): boolean {
+  return entry?.deviceState === "online";
+}
+
+const OPTIONAL_STRING_FIELDS = [
+  "driverId",
+  "routeId",
+  "sessionId",
+  "originStopId",
+  "destinationStopId",
+] as const;
 const OPTIONAL_NUMBER_FIELDS = [
   "lat",
   "lng",
@@ -48,8 +65,22 @@ function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
   if (typeof bus.lat === "number" && (bus.lat < -90 || bus.lat > 90)) return false;
   if (typeof bus.lng === "number" && (bus.lng < -180 || bus.lng > 180)) return false;
   if (
+    bus.direction !== undefined &&
+    bus.direction !== "forward" &&
+    bus.direction !== "reverse"
+  ) {
+    return false;
+  }
+  if (
     typeof bus.currentStopIndex === "number" &&
     (!Number.isInteger(bus.currentStopIndex) || bus.currentStopIndex < 0)
+  ) {
+    return false;
+  }
+  if (
+    bus.status !== undefined &&
+    bus.status !== "active" &&
+    bus.status !== "offline"
   ) {
     return false;
   }

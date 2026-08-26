@@ -33,8 +33,10 @@ vi.mock("../services/telemetryPayload", () => ({
 }));
 
 vi.mock("../services/deviceTelemetryService", () => ({
+  authenticateDeviceCredentials: async () => null,
   ingestDeviceTelemetry: async () => harness.result,
   invalidateDeviceCredentialCache: () => undefined,
+  publishDeviceCredentialInvalidation: async () => undefined,
   parseDeviceAuthorization: (header: string | undefined) =>
     header?.startsWith("Device ") ? header.slice("Device ".length) : null,
   recordTelemetryRejection: () => undefined,

@@ -75,7 +75,7 @@ These require external authority or physical evidence and were not fabricated as
 3. Deploy managed backend TLS/DNS near Firebase, WAF/global rate limits, structured logs/alerts, uptime checks and dashboards for `/health` percentiles/rejections/worker lease.
 4. Restrict Firebase/Maps keys, enforce App Check after staged validation, use Workload Identity/Secret Manager and rehearse secret/CA rotation.
 5. Approve retention/privacy policy, configure backups/export and prove restore.
-6. Execute the committed signing-key/secure-first-boot procedure on spare boards and retain Secure Boot V2/flash-encryption evidence; then design and prove signed OTA/rollback before routine fleet updates.
+6. Execute the committed signing-key/secure-first-boot procedure on spare boards and retain Secure Boot V2/flash-encryption evidence; configure immutable signed-release hosting and prove the implemented active-ride gate, wrong-image rejection, healthy confirmation and automatic rollback before routine fleet updates.
 7. Validate automotive enclosure, power/EMI/antenna installation and assign maintenance/incident owners.
 8. Establish quantified p95/p99 acceptance targets from the real route rather than a laptop/emulator.
 

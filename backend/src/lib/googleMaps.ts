@@ -13,6 +13,7 @@ export interface RouteGeometry {
   encodedPolyline: string;
   distanceMeters: number;
   duration: string;
+  polylineQuality: "HIGH_QUALITY";
 }
 
 // Matches the runtime callers (polyline.ts 10s, places.ts 5s) so a hung
@@ -61,6 +62,8 @@ export async function computeRouteGeometry(
     })),
     travelMode: "DRIVE",
     routingPreference: "TRAFFIC_AWARE_OPTIMAL",
+    polylineQuality: "HIGH_QUALITY",
+    polylineEncoding: "ENCODED_POLYLINE",
     computeAlternativeRoutes: false,
     languageCode: "en-US",
     units: "METRIC",
@@ -95,6 +98,7 @@ export async function computeRouteGeometry(
       encodedPolyline: route.polyline.encodedPolyline,
       distanceMeters: route.distanceMeters,
       duration: route.duration,
+      polylineQuality: "HIGH_QUALITY",
     };
   } finally {
     clearTimeout(timeoutId);

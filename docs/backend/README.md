@@ -8,7 +8,7 @@ Copy-Item backend/.env.example backend/.env
 npm run dev --workspace=backend
 ```
 
-Important configuration is fully described in `.env.example`: exact CORS origins, `FIREBASE_DATABASE_URL`, server-restricted Maps key, device/auth limits, stale/reconciliation periods, worker identity and explicit retention opt-in. Production should prefer Workload Identity/ADC; if `FIREBASE_SERVICE_ACCOUNT` is used, provide the complete JSON through a secret manager.
+Important configuration is fully described in `.env.example`: exact CORS origins, `FIREBASE_DATABASE_URL`, server-restricted Maps key, device/auth limits, stale/reconciliation periods, worker identity and mandatory production retention enforcement. Production should prefer Workload Identity/ADC; if `FIREBASE_SERVICE_ACCOUNT` is used, provide the complete JSON through a secret manager.
 
 ```powershell
 npm run lint --workspace=backend

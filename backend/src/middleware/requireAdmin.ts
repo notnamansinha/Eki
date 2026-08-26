@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from "express";
-import { verifyRevocationAwareIdToken } from "../services/authTokenVerifier";
+import {
+  AuthVerificationCapacityError,
+  verifyRevocationAwareIdToken,
+} from "../services/authTokenVerifier";
 
 const EXPECTED_AUTH_ERROR_CODES = new Set([
   "auth/argument-error",
@@ -51,6 +54,11 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
     req.user = decoded;
     next();
   } catch (error: unknown) {
+    if (error instanceof AuthVerificationCapacityError) {
+      res.set("Retry-After", "1");
+      res.status(503).json({ error: "Authentication service is busy. Retry shortly." });
+      return;
+    }
     const code = authErrorCode(error);
     if (!code || !EXPECTED_AUTH_ERROR_CODES.has(code)) {
       console.error("[Auth] Admin token verification failed unexpectedly.", {

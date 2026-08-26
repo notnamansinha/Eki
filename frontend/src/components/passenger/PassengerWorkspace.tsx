@@ -5,12 +5,16 @@ import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
-import { subscribeLiveBuses } from "@/lib/liveBusStore";
+import { subscribeLiveBusChanges } from "@/lib/liveBusStore";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import { useSettings } from "@/hooks/useSettings";
-import { hasValidBusCoordinates } from "@/lib/liveBusFreshness";
-import { isActiveRideSnapshot } from "@/lib/liveBusSnapshot";
 import { isAuthoritativeLiveBusDelivery } from "@/lib/liveBusDelivery";
+import {
+  passengerLiveBuses,
+  passengerLiveBusSelectionKey,
+  passengerTripStates,
+  type PassengerLiveBus,
+} from "@/lib/passengerLiveBus";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
 import {
   passengerPanelClassName,
@@ -24,6 +28,13 @@ import {
   type RideIdentity,
   type TrackedRide,
 } from "@/lib/rideFeedbackEligibility";
+import {
+  directionLabel,
+  normalizeRideDirection,
+  routeInRideDirection,
+} from "@/lib/rideDirection";
+import CustomSelect from "@/components/ui/CustomSelect";
+import { isLiveChatDeviceOnline } from "@/lib/activeBusEntries";
 
 const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTrackingMap"), {
   ssr: false,
@@ -39,23 +50,7 @@ type ViewState = "home" | "tracking" | "profile";
 
 const POST_RIDE_FEEDBACK_DELAY_MS = 10_000;
 
-interface ActiveBusData {
-  busId: string;
-  routeId: string;
-  lat: number;
-  lng: number;
-  heading: number;
-  speed: number;
-  status?: "active" | "offline";
-  deviceState: "online" | "offline";
-  tripState: "pre_departure" | "in_service" | "completed";
-  motionState: "moving" | "stopped" | "uncertain";
-  timestamp: number;
-  driverId?: string;
-  currentStopIndex?: number;
-  delayMinutes?: number;
-  sessionId?: string;
-}
+type ActiveBusData = PassengerLiveBus;
 
 type ActiveSessionBusData = ActiveBusData & { sessionId: string };
 
@@ -75,8 +70,8 @@ export default function PassengerWorkspace() {
   const [currentView, setCurrentView] = useState<ViewState>("home");
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const [selectedRouteId, setSelectedRouteId] = useState("");
-  const [selectedBoardingStopId, setSelectedBoardingStopId] = useState("");
-  const [selectedLiveSessionId, setSelectedLiveSessionId] = useState("");
+  const [selectedDestinationStopId, setSelectedDestinationStopId] = useState("");
+  const [selectedLiveBusKey, setSelectedLiveBusKey] = useState("");
   const [activeBuses, setActiveBuses] = useState<ActiveBusData[]>([]);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -89,58 +84,63 @@ export default function PassengerWorkspace() {
   const trackedRideRef = useRef<TrackedRide | null>(null);
   const pendingCompletionSessionIdRef = useRef<string | null>(null);
   const latestTripStatesRef = useRef<Map<string, ActiveBusData["tripState"]>>(new Map());
+  const rawLiveBusesRef = useRef(new Map<string, unknown>());
+  const activeLiveBusesRef = useRef(new Map<string, ActiveBusData>());
 
   // Listen to Firebase Realtime Database for active buses using the existing
   // Firebase session established by the root auth provider.
-  // Visibility is now driven purely by tripState (computed by the backend trip
-  // state machine). The old frontend departure-detection hack is gone.
+  // Fresh device telemetry is visible immediately; tripState/session data adds
+  // ride-only actions such as boarding, messaging, and feedback.
   useEffect(() => {
-    const unsubscribe = subscribeLiveBuses((snapshot, source) => {
-        const data = snapshot as Record<string, ActiveBusData> | null;
-        const newBuses: ActiveBusData[] = [];
-        const nextTripStates = new Map<string, ActiveBusData["tripState"]>();
-
-        if (data) {
-          Object.entries(data as Record<string, ActiveBusData>).forEach(([key, bus]) => {
-            const normalizedBus = bus.busId
-              ? bus
-              : { ...bus, busId: key.split("_")[0] };
-            if (normalizedBus.sessionId) {
-              nextTripStates.set(
-                normalizedBus.sessionId,
-                normalizedBus.tripState,
-              );
-            }
-            // Safety net: discard stale entries while RTDB cleanup catches up.
-            if (
-              !normalizedBus.routeId ||
-              !normalizedBus.busId ||
-              !hasValidBusCoordinates(normalizedBus.lat, normalizedBus.lng)
-            ) {
-              return;
-            }
-
-            // Show bus if it's actively tracking — allow pre_departure so the
-            // backend tripState geofence doesn't hide a freshly started driver.
-            if (
-              !isActiveRideSnapshot(
-                normalizedBus as unknown as Record<string, unknown>,
-              )
-            ) return;
-
-            newBuses.push(normalizedBus);
-          });
-        }
-
+    const unsubscribe = subscribeLiveBusChanges((change) => {
         const trackedRideSessionId =
           trackedRideRef.current?.sessionId ?? pendingCompletionSessionIdRef.current;
-        if (trackedRideSessionId && !nextTripStates.has(trackedRideSessionId)) {
-          const previousState = latestTripStatesRef.current.get(trackedRideSessionId);
-          if (previousState) nextTripStates.set(trackedRideSessionId, previousState);
+        const previousTrackedState = trackedRideSessionId
+          ? latestTripStatesRef.current.get(trackedRideSessionId)
+          : undefined;
+        if (change.type === "reset") {
+          const rawSnapshot = change.snapshot as Record<string, unknown> | null;
+          rawLiveBusesRef.current = new Map(Object.entries(rawSnapshot ?? {}));
+          activeLiveBusesRef.current = new Map(
+            passengerLiveBuses(rawSnapshot, Date.now()).map((bus) => [
+              passengerLiveBusSelectionKey(bus),
+              bus,
+            ]),
+          );
+          latestTripStatesRef.current = passengerTripStates(rawSnapshot);
+        } else {
+          const previous = rawLiveBusesRef.current.get(change.key);
+          if (previous && typeof previous === "object") {
+            const oldBus = previous as Record<string, unknown>;
+            if (typeof oldBus.sessionId === "string") {
+              latestTripStatesRef.current.delete(oldBus.sessionId);
+            }
+            const oldNormalized = passengerLiveBuses({ [change.key]: previous }, Date.now())[0];
+            if (oldNormalized) {
+              activeLiveBusesRef.current.delete(passengerLiveBusSelectionKey(oldNormalized));
+            }
+          }
+          if (change.type === "remove") {
+            rawLiveBusesRef.current.delete(change.key);
+          } else {
+            rawLiveBusesRef.current.set(change.key, change.value);
+            const nextBus = passengerLiveBuses({ [change.key]: change.value }, Date.now())[0];
+            if (nextBus) {
+              activeLiveBusesRef.current.set(passengerLiveBusSelectionKey(nextBus), nextBus);
+            }
+            passengerTripStates({ [change.key]: change.value }).forEach((state, sessionId) => {
+              latestTripStatesRef.current.set(sessionId, state);
+            });
+          }
         }
-        latestTripStatesRef.current = nextTripStates;
-        setActiveBuses(newBuses);
-        if (isAuthoritativeLiveBusDelivery(source)) {
+
+        if (trackedRideSessionId && !latestTripStatesRef.current.has(trackedRideSessionId)) {
+          if (previousTrackedState) {
+            latestTripStatesRef.current.set(trackedRideSessionId, previousTrackedState);
+          }
+        }
+        setActiveBuses([...activeLiveBusesRef.current.values()]);
+        if (isAuthoritativeLiveBusDelivery(change.source)) {
           markSnapshotReceived();
         }
       }, (error) => {
@@ -149,11 +149,12 @@ export default function PassengerWorkspace() {
 
     return () => {
       unsubscribe();
+      rawLiveBusesRef.current.clear();
+      activeLiveBusesRef.current.clear();
     };
   }, [connectionGeneration, markSnapshotReceived, resumeGeneration]);
 
-  const sessionBuses = activeBuses.filter(hasSessionId);
-  const activeRouteIds = Array.from(new Set(sessionBuses.map(b => b.routeId)));
+  const activeRouteIds = Array.from(new Set(activeBuses.map(b => b.routeId)));
   const availableRoutes = routes.filter(r => activeRouteIds.includes(r.id));
   const displayRoutes = availableRoutes.filter(
     (route) => (route.stops?.length ?? 0) > 0 || (route.waypoints?.length ?? 0) > 0,
@@ -162,31 +163,35 @@ export default function PassengerWorkspace() {
     ? selectedRouteId
     : displayRoutes[0]?.id ?? "";
   const activeRoute = displayRoutes.find(route => route.id === effectiveRouteId);
-  const effectiveStopId =
-    activeRoute?.stops?.some((stop) => stop.id === selectedBoardingStopId)
-      ? selectedBoardingStopId
-      : activeRoute?.stops?.[0]?.id ?? "";
-
-  const targetStop = activeRoute?.stops?.find(s => s.id === effectiveStopId) ||
-    (activeRoute?.stops && activeRoute.stops.length > 0
-      ? activeRoute.stops[activeRoute.stops.length - 1]
-      : (activeRoute?.waypoints && activeRoute.waypoints.length > 0 ? {
-        id: "terminus",
-        lat: activeRoute.waypoints[activeRoute.waypoints.length - 1].lat,
-        lng: activeRoute.waypoints[activeRoute.waypoints.length - 1].lng,
-        name: "Final Destination",
-        shortName: "TERMINUS"
-      } : null));
-
-  const busesOnRoute = sessionBuses.filter(
+  const busesOnRoute = activeBuses.filter(
     (bus) => bus.routeId === effectiveRouteId,
   );
   const activeBusOnRoute =
     busesOnRoute.find((bus) => bus.sessionId === trackedSessionId) ??
-    busesOnRoute.find((bus) => bus.sessionId === selectedLiveSessionId) ??
+    busesOnRoute.find((bus) => passengerLiveBusSelectionKey(bus) === selectedLiveBusKey) ??
     busesOnRoute[0];
   const activeBusOnRouteId = activeBusOnRoute?.busId;
   const activeSessionId = activeBusOnRoute?.sessionId;
+  const rideDirection = normalizeRideDirection(activeBusOnRoute?.direction);
+  const directedRoute = activeRoute
+    ? routeInRideDirection(activeRoute, rideDirection)
+    : undefined;
+  const effectiveDestinationStopId =
+    directedRoute?.stops?.some((stop) => stop.id === selectedDestinationStopId)
+      ? selectedDestinationStopId
+      : "";
+  const targetStop = directedRoute?.stops?.find(
+    (stop) => stop.id === effectiveDestinationStopId,
+  ) ||
+    (directedRoute?.stops && directedRoute.stops.length > 0
+      ? directedRoute.stops[directedRoute.stops.length - 1]
+      : (directedRoute?.waypoints && directedRoute.waypoints.length > 0 ? {
+        id: "terminus",
+        lat: directedRoute.waypoints[directedRoute.waypoints.length - 1].lat,
+        lng: directedRoute.waypoints[directedRoute.waypoints.length - 1].lng,
+        name: "Final Destination",
+        shortName: "TERMINUS"
+      } : null));
   const endedMessage = completedRide !== null;
 
   const visibleView: ViewState =
@@ -263,8 +268,8 @@ export default function PassengerWorkspace() {
 
   const handleRouteSelect = (routeId: string) => {
     setSelectedRouteId(routeId);
-    setSelectedBoardingStopId("");
-    setSelectedLiveSessionId("");
+    setSelectedDestinationStopId("");
+    setSelectedLiveBusKey("");
     setIsMessagingOpen(false);
     setUnreadCount(0);
     setCurrentView("tracking");
@@ -307,10 +312,10 @@ export default function PassengerWorkspace() {
 
         {/* Map layer — only present on tracking */}
         <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-          {visibleView === "tracking" && activeRoute && targetStop && (
+          {visibleView === "tracking" && directedRoute && targetStop && (
             <PassengerTrackingMap
               targetStop={targetStop}
-              route={activeRoute}
+              route={directedRoute}
               resumeGeneration={resumeGeneration}
             />
           )}
@@ -359,7 +364,7 @@ export default function PassengerWorkspace() {
                     routes={displayRoutes}
                     selectedRouteId={effectiveRouteId}
                     onClick={handleRouteSelect}
-                    getActiveBusesCount={(routeId) => sessionBuses.filter(b => b.routeId === routeId).length}
+                    getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
                   />
                 </>
               ) : (
@@ -389,7 +394,7 @@ export default function PassengerWorkspace() {
 
         {/* ── TRACKING VIEW ── */}
         <div className={`absolute inset-0 z-20 pointer-events-none transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0"}`}>
-          {!endedMessage && activeRoute && targetStop ? (
+          {!endedMessage && directedRoute && targetStop ? (
             <>
               {/* Top bar: back + route info */}
               <div className="absolute top-0 w-full z-40 pt-safe px-4 pb-6 pointer-events-auto"
@@ -413,10 +418,10 @@ export default function PassengerWorkspace() {
                           (bus) => bus.sessionId === trackedSessionId,
                         ) && (
                         <select
-                          value={activeBusOnRoute.sessionId}
+                          value={passengerLiveBusSelectionKey(activeBusOnRoute)}
                           onChange={(event) => {
-                            setSelectedLiveSessionId(event.target.value);
-                            setSelectedBoardingStopId("");
+                            setSelectedLiveBusKey(event.target.value);
+                            setIsMessagingOpen(false);
                           }}
                           className="w-full rounded-lg px-3 py-2 text-xs font-semibold outline-none"
                           style={{
@@ -427,31 +432,52 @@ export default function PassengerWorkspace() {
                           aria-label="Live bus"
                         >
                           {busesOnRoute.map((bus) => (
-                            <option key={bus.sessionId} value={bus.sessionId}>
-                              Bus {bus.busId}
+                            <option key={passengerLiveBusSelectionKey(bus)} value={passengerLiveBusSelectionKey(bus)}>
+                              Bus {bus.busId} · {directionLabel(normalizeRideDirection(bus.direction), activeRoute?.stops ?? [])}
                             </option>
                           ))}
                         </select>
                       )}
-                      <PassengerBoardingView 
-                        key={activeBusOnRoute.sessionId}
-                        sessionId={activeBusOnRoute.sessionId}
-                        route={activeRoute}
-                        tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
-                        onBoardingStopChange={setSelectedBoardingStopId}
-                        onJoined={() => {
-                          trackedRideRef.current = recordSuccessfulJoin(
-                            trackedRideRef.current,
-                            {
-                              sessionId: activeBusOnRoute.sessionId,
-                              busId: activeBusOnRoute.busId,
-                              routeId: activeBusOnRoute.routeId,
-                              driverId: activeBusOnRoute.driverId || "",
-                            },
-                          );
-                          setTrackedSessionId(activeBusOnRoute.sessionId);
-                        }}
-                      />
+                      {hasSessionId(activeBusOnRoute) ? (
+                        <PassengerBoardingView
+                          key={activeBusOnRoute.sessionId}
+                          sessionId={activeBusOnRoute.sessionId}
+                          route={directedRoute}
+                          tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
+                          destinationStopId={effectiveDestinationStopId}
+                          onDestinationStopChange={setSelectedDestinationStopId}
+                          onJoined={() => {
+                            trackedRideRef.current = recordSuccessfulJoin(
+                              trackedRideRef.current,
+                              {
+                                sessionId: activeBusOnRoute.sessionId,
+                                busId: activeBusOnRoute.busId,
+                                routeId: activeBusOnRoute.routeId,
+                                driverId: activeBusOnRoute.driverId || "",
+                              },
+                            );
+                            setTrackedSessionId(activeBusOnRoute.sessionId);
+                          }}
+                        />
+                      ) : (
+                        <CustomSelect
+                          ariaLabel="Destination station"
+                          placeholder="Choose destination station…"
+                          value={effectiveDestinationStopId}
+                          onChange={setSelectedDestinationStopId}
+                          options={[
+                            { value: "", label: "Choose destination station…" },
+                            ...(directedRoute.stops ?? []).map((stop) => ({
+                              value: stop.id,
+                              label: stop.name,
+                            })),
+                          ]}
+                          style={{
+                            background: "var(--surface-2)",
+                            border: "1px solid var(--border-subtle)",
+                          }}
+                        />
+                      )}
                     </div>
                   ) : (
                     <div className="min-w-0 flex-1 flex flex-col justify-center gap-0.5">
@@ -459,7 +485,7 @@ export default function PassengerWorkspace() {
                         Live
                       </p>
                       <p className="text-[17px] font-semibold truncate leading-tight" style={{ color: "var(--text-primary)" }}>
-                        {activeRoute.name}
+                        {directedRoute.name} · {directionLabel(rideDirection, activeRoute?.stops ?? [])}
                       </p>
                     </div>
                   )}
@@ -467,7 +493,7 @@ export default function PassengerWorkspace() {
               </div>
 
               {/* Messaging FAB */}
-              {activeRouteIds.includes(activeRoute.id) && !isMessagingOpen && (
+              {isLiveChatDeviceOnline(activeBusOnRoute) && !isMessagingOpen && (
                 <div className="absolute top-[160px] right-4 z-50 animate-scale-in pointer-events-auto">
                   <button
                     onClick={handleOpenMessaging}
@@ -477,7 +503,8 @@ export default function PassengerWorkspace() {
                       border: "1px solid var(--border-default)",
                       boxShadow: "0 4px 16px rgba(0,0,0,0.3)"
                     }}
-                    aria-label="Open live chat"
+                    aria-label={activeSessionId ? "Open live chat" : "Open live chat status"}
+                    title={activeSessionId ? "Open live chat" : "Device online; chat will unlock when the ride is armed"}
                   >
                     <MessageCircle className="w-5 h-5" style={{ color: "var(--status-live)" }} />
                     {unreadCount > 0 && (
@@ -493,16 +520,17 @@ export default function PassengerWorkspace() {
               {/* Passenger Boarding View was moved to the header above */}
 
               {/* Messaging Overlay */}
-              {isMessagingOpen && (
+              {isMessagingOpen && isLiveChatDeviceOnline(activeBusOnRoute) && (
                 <div className="absolute inset-x-0 top-16 bottom-[80px] z-50 animate-slide-up flex flex-col pointer-events-auto">
                    <MessagingPanel
-                     key={activeSessionId || "no-session"}
+                    key={activeSessionId || "online-no-session"}
                      sessionId={activeSessionId || ""}
                     currentUserRole="passenger"
                     currentUserId={user?.uid || "anonymous"}
                     isOverlay={true}
                     onClose={() => setIsMessagingOpen(false)}
                     onUnreadCountChange={setUnreadCount}
+                    unavailableMessage={activeSessionId ? undefined : "The bus device is online. Chat will unlock when the administrator arms the ride."}
                   />
                 </div>
               )}

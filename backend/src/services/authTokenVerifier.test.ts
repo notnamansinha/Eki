@@ -8,6 +8,7 @@ vi.mock("../lib/firebaseAdmin", () => ({
 }));
 
 import {
+  AuthVerificationCapacityError,
   clearAuthTokenVerificationCache,
   verifyRevocationAwareIdToken,
 } from "./authTokenVerifier";
@@ -23,6 +24,7 @@ describe("revocation-aware token verification", () => {
     verifyIdToken.mockReset();
     verifyIdToken.mockResolvedValue(decoded);
     delete process.env.AUTH_REVOCATION_CACHE_MS;
+    delete process.env.AUTH_MAX_PENDING_VERIFICATIONS;
   });
 
   afterEach(() => {
@@ -62,6 +64,40 @@ describe("revocation-aware token verification", () => {
 
     expect(verifyIdToken).toHaveBeenCalledTimes(2);
     expect(verifyIdToken).toHaveBeenLastCalledWith("uncached-token", true);
+  });
+
+  it("always performs a fresh revocation check for privileged claims", async () => {
+    verifyIdToken.mockResolvedValue({
+      ...decoded,
+      role: "driver",
+      driverId: "driver_1",
+      assignedBusId: "bus_1",
+    } as DecodedIdToken);
+
+    await verifyRevocationAwareIdToken("driver-token");
+    await verifyRevocationAwareIdToken("driver-token");
+
+    expect(verifyIdToken).toHaveBeenCalledTimes(2);
+    expect(verifyIdToken).toHaveBeenNthCalledWith(1, "driver-token", true);
+    expect(verifyIdToken).toHaveBeenNthCalledWith(2, "driver-token", true);
+  });
+
+  it("rejects new unique tokens when the in-flight verification bound is full", async () => {
+    process.env.AUTH_MAX_PENDING_VERIFICATIONS = "2";
+    const releases: Array<() => void> = [];
+    verifyIdToken.mockImplementation(() => new Promise<DecodedIdToken>((resolve) => {
+      releases.push(() => resolve(decoded));
+    }));
+
+    const first = verifyRevocationAwareIdToken("token-1");
+    const second = verifyRevocationAwareIdToken("token-2");
+    await expect(verifyRevocationAwareIdToken("token-3")).rejects.toBeInstanceOf(
+      AuthVerificationCapacityError,
+    );
+    expect(verifyIdToken).toHaveBeenCalledTimes(2);
+
+    releases.forEach((release) => release());
+    await expect(Promise.all([first, second])).resolves.toEqual([decoded, decoded]);
   });
 
   it("does not serve a cached token past its JWT expiry", async () => {

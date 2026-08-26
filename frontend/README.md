@@ -1,6 +1,6 @@
 # Eki frontend
 
-Next.js 16 App Router static-export PWA with public landing and authenticated passenger, admin and feedback workspaces. Firebase Auth supplies identity; RTDB `onValue` pushes live buses; Firestore `onSnapshot`/queries provide configuration, sessions, messages, settings and feedback. Administrators arm assigned rides, adjust delays, issue boarding codes and message passengers. REST mutations use native `fetch` with Firebase bearer tokens.
+Next.js 16 App Router static-export PWA with public landing and authenticated passenger, admin and feedback workspaces. Firebase Auth supplies identity; RTDB performs one initial live-fleet sync and then applies `child_added`/`child_changed`/`child_removed` deltas, with route-scoped delivery for maps. Firestore `onSnapshot`/queries provide configuration, sessions, messages, settings and feedback. Administrators arm assigned rides, adjust delays, issue boarding codes and message passengers. REST mutations use native `fetch` with Firebase bearer tokens.
 
 ## Run
 
@@ -26,7 +26,7 @@ The root `npm run build` follows Next export with Workbox manifest injection and
 - `liveBusStore` maintains one shared RTDB subscription and prunes stale non-active entries. Firestore collection/settings hooks also share/auth-gate listeners.
 - Google Maps provider loads once per protected workspace. Stored polylines and local distance/speed math avoid passenger runtime Routes calls.
 - Only the active admin tab is mounted, preventing hidden maps/listeners/timers.
-- Service worker precaches the revisioned static app, may cache explicit public maps/fonts/images, and never caches authenticated Firebase/API or unknown requests.
+- Service worker precaches a budgeted HTML/icon shell together with each shell's immutable bootstrap JS/CSS, caches non-bootstrap Next.js chunks only when used, and never caches authenticated Firebase/API or unknown requests. Updates wait for existing tabs to close and never force-reload an active ride.
 - Dialogs trap/restore focus and support Escape; selects are native; map smoothing respects reduced motion; private routes are no-index.
 
 See [LLD](../docs/design/LOW_LEVEL_DESIGN.md), [Firebase model](../docs/data/FIREBASE_DATA_MODEL.md), and [test strategy](../docs/testing/TEST_STRATEGY.md).

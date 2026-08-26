@@ -43,6 +43,11 @@ One latest projection per assigned bus/route. The key is an internal composite l
 | `sessionId` | string | Firestore ride-session link when armed/active |
 | `driverId` | string | Authorized driver link |
 | `tripState` | `pre_departure` / `in_service` / `completed` | Server worker lifecycle |
+| `direction` | `forward` / `reverse` | Immutable session travel order; legacy nodes default forward |
+| `originStopId`, `destinationStopId` | string | Endpoints for this direction |
+| `completedAt`, `turnaroundEligibleAt` | epoch ms | Completion and earliest automatic opposite-direction arm time; removed when the next session activates |
+| `turnaroundClaimId`, `turnaroundClaimedAt` | string / epoch ms | Short-lived cross-replica automatic-turnaround claim; removed after activation or failed durable claim |
+| `automaticTurnaround`, `previousSessionId` | boolean / string | Identifies a backend-armed return session and its completed predecessor |
 | `currentStopIndex` | integer | Zero-based next/current ordered stop progress |
 | `hasDepartedOrigin` | boolean | Prevents repeated origin activation |
 | `delayMinutes` | number | Driver API value, 0–1440 |
@@ -123,6 +128,8 @@ Durable ride record and parent of messages.
 |---|---|---|
 | `id` | string | Same as document ID |
 | `busId`, `routeId`, `driverId` | string | Configuration links |
+| `direction` | `forward` / `reverse` | Immutable travel order inferred from the endpoint for initial arm or inverted by automatic turnaround |
+| `originStopId`, `destinationStopId` | string | Direction-specific route endpoints |
 | `status` | `pending` / `armed` / `active` / `completed` / `failed` / `interrupted` | Durable session status |
 | `armedAt`, `startTime`, `endTime` | epoch ms | Driver arm, service activation, terminal time |
 | `activatedAt`, `updatedAt`, `reconciledAt` | Firestore Timestamp | Server audit markers |
@@ -133,9 +140,10 @@ Durable ride record and parent of messages.
 | `boardingCodeIssuedAt` | Firestore Timestamp | Server issuance time |
 | `stopsReached` | map keyed zero-based index | Ordered server evidence |
 | `stopsReached.{i}` | `{stopIndex,stopId,stopName,timestamp}` | Stop evidence |
+| `automaticTurnaround`, `previousSessionId` | boolean / string | Present on an automatically armed opposite-direction session |
 | `path` | legacy map/array | Older history tolerated/read/deleted; no current per-fix writes |
 
-Admin and the assigned session driver can read. All client writes are denied. The assigned driver obtains the session code from the authenticated API; a passenger presents that code plus a fresh near-bus position to the join endpoint, which validates route stops and writes the manifest transactionally.
+Admin and the assigned session driver can read. All client writes are denied. The assigned driver obtains the session code from the authenticated API; a passenger presents that code plus a fresh near-bus position to the join endpoint, which validates boarding and alighting stops in the session's travel order and writes the manifest transactionally.
 
 #### `ride_sessions/{sessionId}/messages/{messageId}`
 
@@ -147,7 +155,7 @@ Fields: `userId`, `sentAt: Timestamp[]` (bounded rolling history), `lastSentAt`.
 
 ### `completed_trips/{sessionId}`
 
-Fields: `busId`, `driverId`, `routeId`, `completedAt` (ISO string), `stopCount`, `stopNames[]`, `sessionId`. The worker writes/merges at final stop. Admin reads; client writes denied. This is a compact analytics projection; `ride_sessions` remains the detailed record.
+Fields: `busId`, `driverId`, `routeId`, `direction`, `originStopId`, `destinationStopId`, `completedAt` (ISO string), `automaticTurnaroundEligibleAt` (epoch ms), `stopCount`, direction-ordered `stopNames[]`, `sessionId`. The worker writes/merges at the session destination. Admin reads; client writes denied. This is a compact analytics projection used for forward/reverse completion counts; `ride_sessions` remains the detailed record.
 
 ### `feedbacks/{feedbackId}`
 
@@ -171,11 +179,11 @@ Fields: `deviceId`, `busId`, `routeId`, `enabled`, `secretHash` (`32-hex-salt:12
 
 ### `active_rides/{busId}_{routeId}`
 
-Minimal recovery state: `sessionId`, `busId`, `routeId`, `driverId`, `status: active`, `tripState`, `currentStopIndex`, `hasDepartedOrigin`, `delayMinutes`, `updatedAt`. No coordinate history. Telemetry restores this into RTDB if a live node loses lifecycle fields. Completion/reconciliation deletes only a matching session.
+Minimal recovery state: `sessionId`, `busId`, `routeId`, `driverId`, `direction`, `originStopId`, `destinationStopId`, `status: active`, `tripState`, direction-ordered `currentStopIndex`, `hasDepartedOrigin`, `delayMinutes`, optional `automaticTurnaround`/`previousSessionId`, and `updatedAt`. No coordinate history. Telemetry restores this into RTDB if a live node loses lifecycle fields and clears stale completion/claim fields. Completion/reconciliation deletes only a matching session.
 
 ### `_active_bus_locks/{busId}`
 
-Unique active-session constraint: `busId`, `routeId`, `driverId`, `sessionId`, `createdAt`, `updatedAt`. Created in the same Firestore transaction as the pending session; repaired on idempotent resume; conditionally released on conflict, completion or abandonment. It closes the otherwise possible same-bus/different-route race.
+Unique active-session constraint: `busId`, `routeId`, `driverId`, `sessionId`, `direction`, optional `automaticTurnaround`, `createdAt`, `updatedAt`. Created in the same Firestore transaction as the pending/automatically armed session; repaired on idempotent resume; conditionally released on conflict, completion or abandonment. Together with the short RTDB turnaround claim it closes same-bus and cross-replica races.
 
 ### `_worker_leases/{leaseName}`
 
@@ -197,6 +205,10 @@ Read-only probe target. The server issues a bounded `limit(1)` every 30 seconds 
 
 Server-only latest health report received through device-authenticated HTTPS. It contains the registry `deviceId`/`busId`/`routeId`, firmware version, uptime, free heap, RSSI, bounded telemetry/queue/UART/reset counters, current fault, reported flash-encryption/Secure-Boot state, device timestamp, and server `receivedAt`. Each accepted report replaces the prior one; this is operational state, not an unbounded event history. Browser Firebase rules deny all access. Admins read it through `GET /api/devices/:deviceId/diagnostics`; credentials, SSIDs, and CA content are never accepted.
 
+### `_deviceRateLimits/{deviceId}` and `_deviceCredentialVersions/{deviceId}`
+
+Server-only ingress controls. `_deviceRateLimits` stores the shared fixed-window count, making the accepted device budget authoritative across backend replicas. `_deviceCredentialVersions` changes whenever a device is disabled, reassigned, or re-provisioned; every backend replica listens for those changes and immediately evicts matching credential-cache entries. Browser rules deny all reads and writes.
+
 ## Relationships and deletion
 
 - Changing/deleting a route or bus is blocked while `active_rides` (and for buses, `_active_bus_locks`) references it. Bound devices must be reassigned first.
@@ -204,7 +216,7 @@ Server-only latest health report received through device-authenticated HTTPS. It
 - Driver API authority requires agreement among Auth claims, `drivers`, `buses`, and the requested bus/route.
 - Terminal history deletion recursively removes the ride session/subcollections and all matching `completed_trips`; active states return 409.
 - Privacy deletion removes one user's profile, feedback/cooldown/request, session passenger entries/messages, and Auth account while leaving non-personal operational ride facts according to policy.
-- Retention defaults: terminal sessions 90 days, feedback 180, completed projections 180, fleet operation logs 90. It performs no deletion until explicitly enabled.
+- Retention defaults: terminal sessions 90 days, feedback 180, completed projections 180, fleet operation logs 90. Production startup requires `RETENTION_SWEEPER_ENABLED=true`; development and tests remain non-destructive when omitted.
 
 ## Indexes
 

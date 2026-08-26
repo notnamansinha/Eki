@@ -162,7 +162,8 @@ See [the data model](data/FIREBASE_DATA_MODEL.md) for the records and
 1. Sign in through the frontend.
 2. Select a route and plan a trip between stops.
 3. When a driver provides a boarding code for an active session, join with the
-   boarding stop and optional alighting stop.
+   boarding and destination stations. The destination is stored in the ride
+   manifest for administrators.
 4. Follow the live bus position and session status. The browser may show a
    reconnecting or stale state when live data is unavailable; it must not invent
    an authoritative position.

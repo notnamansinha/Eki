@@ -50,11 +50,19 @@ const connectSources = [
   "https://*.firebaseio.com",
   "https://*.firebasedatabase.app",
   "https://*.firebaseapp.com",
+  "https://www.google.com/recaptcha/",
   "wss://*.firebaseio.com",
   "wss://*.firebasedatabase.app",
   ...(backendOrigin ? [backendOrigin] : []),
 ].join(" ");
 csp.value = csp.value.replace(/connect-src [^;]+;/, `connect-src ${connectSources};`);
+const frameSources = [
+  "https://accounts.google.com",
+  "https://*.firebaseapp.com",
+  "https://www.google.com/recaptcha/",
+  "https://recaptcha.google.com/recaptcha/",
+].join(" ");
+csp.value = csp.value.replace(/frame-src [^;]+;/, `frame-src ${frameSources};`);
 await writeFile(firebasePath, `${JSON.stringify(firebase, null, 2)}\n`);
 console.log(`Updated CSP with ${hashes.size} inline-script hashes.`);
 

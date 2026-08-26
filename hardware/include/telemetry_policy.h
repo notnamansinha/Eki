@@ -18,8 +18,11 @@ constexpr double SPEED_THRESHOLD_KMH = 5.0;
 constexpr double MOVING_SPEED_KMH = 2.5;
 constexpr double STOP_SPEED_KMH = 1.5;
 constexpr uint32_t GNSS_FIX_MAX_AGE_MS = 5000;
-constexpr uint32_t MIN_PUBLISH_INTERVAL_MS = 3000;
-constexpr uint32_t MOVING_HEARTBEAT_MS = 30000;
+constexpr double GNSS_JUMP_MARGIN_M = 250.0;
+constexpr uint32_t GNSS_MAX_TRANSITION_GAP_MS = 60UL * 1000;
+constexpr uint32_t GNSS_REACQUIRE_AFTER_MS = 5UL * 60 * 1000;
+constexpr uint32_t MIN_PUBLISH_INTERVAL_MS = 1000;
+constexpr uint32_t MOVING_HEARTBEAT_MS = 1000;
 constexpr uint32_t STOPPED_HEARTBEAT_MS = 60000;
 constexpr uint32_t HTTPS_RETRY_BASE_MS = 1000;
 constexpr uint32_t HTTPS_RETRY_MAX_MS = 30000;
@@ -110,6 +113,29 @@ inline double haversineMeters(
 inline double headingDelta(double current, double previous) {
   const double delta = std::fabs(current - previous);
   return delta > 180 ? 360 - delta : delta;
+}
+
+inline bool locationTransitionIsPlausible(
+  bool hasPrevious,
+  uint32_t elapsedMs,
+  double lat,
+  double lng,
+  double previousLat,
+  double previousLng,
+  double speedKmh,
+  double previousSpeedKmh
+) {
+  if (!hasPrevious) return true;
+  if (elapsedMs > GNSS_REACQUIRE_AFTER_MS) return true;
+  const uint32_t boundedElapsedMs = std::min(
+    elapsedMs,
+    GNSS_MAX_TRANSITION_GAP_MS
+  );
+  const double reachableMeters =
+    GNSS_JUMP_MARGIN_M +
+    (std::max(speedKmh, previousSpeedKmh) / 3.6) *
+      (static_cast<double>(boundedElapsedMs) / 1000.0);
+  return haversineMeters(previousLat, previousLng, lat, lng) <= reachableMeters;
 }
 
 inline uint32_t retryDelayMs(uint8_t consecutiveFailures, uint32_t jitter) {

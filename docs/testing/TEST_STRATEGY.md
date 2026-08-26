@@ -32,14 +32,14 @@ numbers.
 
 | Layer | Existing coverage | What it proves |
 |---|---|---|
-| Pure backend units | telemetry schema, scrypt/auth header, latency summaries, route direction/via, reducer/geofence, lifecycle normalization/draining, abandoned decision, deletion | Deterministic correctness and boundaries |
+| Pure backend units | telemetry schema, scrypt/auth header, latency summaries, endpoint direction inference/turnaround readiness, route direction/via, reducer/geofence, lifecycle normalization/draining, abandoned decision, deletion | Deterministic correctness and boundaries |
 | Backend lifecycle mocks | worker listener recovery, missing-route cache, completion/shutdown | Async orchestration without cloud dependency |
 | Static security/deployment checks | rules/headers/routes/cache/cleanup patterns | Critical configuration does not silently regress |
 | Firebase emulator integration | Firestore/RTDB allow/deny matrix | Actual rule evaluation when Java/emulators are available |
-| Pure frontend units | freshness/expiry, singleton RTDB store, resume state, snapping/distance, history, feedback eligibility | Map/live-data behavior independent of React/browser network |
+| Pure frontend units | freshness/expiry, singleton RTDB store, resume state, snapping/distance, jump hold/reacquisition, heading wrap, history, feedback eligibility | Map/live-data behavior independent of React/browser network |
 | Builds/type/lint | TS, React hooks/a11y-relevant lint, static export, SW/CSP | Integration and packaging consistency |
 | Dependency audit | production npm graph | Known registry advisories in shipped required packages |
-| Firmware native units | shared clock/connectivity/telemetry/queue policies | Strict UTC conversion/discipline, Wi-Fi escalation, LED codes, distance/heading math, hysteresis, credential latching, HTTP classification, bounded `Retry-After`, retry cap, change floor/thresholds, heartbeats and queue recovery |
+| Firmware native units | shared clock/connectivity/telemetry/queue policies | Strict UTC conversion/discipline, Wi-Fi escalation, LED codes, distance/heading math, jump rejection/reacquisition, hysteresis, credential latching, HTTP classification, bounded `Retry-After`, retry cap, one-second moving cadence, stationary heartbeat and queue recovery |
 | Firmware compile | pinned PlatformIO ESP32 target | API/library compatibility, binary size |
 | Physical acceptance | runbooks below | Radio, GNSS, power, TLS, public path and human workflows |
 
@@ -149,6 +149,10 @@ Key expected HTTP families:
 | Credential rejection | Return 401/403 repeatedly | One rejected attempt latches publishing off, retains the sample until normal freshness eviction, emits three-pulse LED and resumes only after device-credential repair/restart |
 | GNSS loss | Shield/disconnect antenna safely | One uncertain fix at last point; no invented movement |
 | Backend/Firebase outage | Stop service/emulator | Timeouts/backoff/503 metrics; recovery without duplicate progress |
+| Active-ride OTA gate | Offer a newer release before, during and after a ride | Descriptor is available only outside the active ride; no reboot interrupts service |
+| OTA integrity | Offer wrong size, digest, TLS chain and signing key | Every altered/untrusted candidate is rejected and the current slot remains selected |
+| OTA confirmation/rollback | Install healthy candidate, then a candidate unable to reach authenticated backend | Healthy image confirms after telemetry/diagnostics; unhealthy image restores the prior slot within five minutes |
+| OTA credential isolation | Capture controlled backend and artifact-host requests | Device header reaches only the backend manifest endpoint, never the artifact host or logs |
 
 Do not expose production secrets in packet captures or serial logs. Use a dedicated test device/project.
 
@@ -157,15 +161,17 @@ Do not expose production secrets in packet captures or serial logs. Use a dedica
 With passenger and admin sessions, plus an admin-managed assigned operator record:
 
 1. Verify role denial and correct fleet catalogs.
-2. Arm with fresh fix away from origin; observe pre-departure.
-3. Reach origin; observe in-service everywhere and passenger boarding eligibility.
+2. Attempt to arm while moving or between endpoints; assert the backend refuses to guess.
+3. Stop near A, arm without a direction field, and observe inferred A→Z in-service state and passenger boarding eligibility.
 4. Exercise message sender identity/rate behavior and delay update.
 5. Visit out-of-order later stop; assert no advance.
 6. Visit every expected stop and assert one-step progress/history.
 7. Interrupt GNSS, Wi-Fi, ESP power, browser and backend separately; assert honest status and same-session recovery.
 8. Attempt concurrent second route on same bus; assert conflict.
-9. Reach final stop; assert one completed session/projection, no recovery/lock, and terminal feedback eligibility.
-10. Verify admin history delete confirmation cancels without a request and terminal-only confirm deletes the complete history scope.
+9. Reach Z; assert one completed A→Z session/projection and terminal feedback eligibility.
+10. Remain stopped through the configured dwell; assert exactly one fresh Z→A session/lock is automatically armed, including across two backend replicas and a backend restart. Confirm stale, moving and displaced telemetry do not arm it.
+11. Complete Z→A and verify directional counts, reversed stop evidence, passenger map/ETA ordering, and return to A.
+12. Verify admin history delete confirmation cancels without a request and terminal-only confirm deletes the complete history scope.
 
 ## Accessibility and UX acceptance
 
@@ -173,7 +179,7 @@ Keyboard-only test every route: visible focus, native selects, tab order, admin 
 
 ## Performance/load test
 
-Use a staging project/runtime near production topology. Ramp realistic devices at 3-second worst-case cadence and browsers with RTDB subscriptions. Record API p50/p95/p99, device-to-server and RTDB-write health metrics, errors/429s, CPU/memory, scrypt cache rate, Firebase connections/operations and UI update time. Include a reconnect storm with jitter. Define acceptance targets with university owners; do not invent a universal latency target from local tests.
+Use a staging project/runtime near production topology. Ramp realistic devices at one-second moving cadence and browsers with RTDB subscriptions. Record API p50/p95/p99, device-to-server and RTDB-write health metrics, errors/429s, CPU/memory, scrypt cache rate, Firebase connections/operations and UI update time. Include a reconnect storm with jitter. Define acceptance targets with university owners; do not invent a universal latency target from local tests.
 
 ## Release evidence
 

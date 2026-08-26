@@ -2,16 +2,15 @@
  * Eki Transit – Service Worker (source)
  *
  * Workbox injectManifest replaces the precache manifest placeholder below
- * with the real precache manifest at build time. Everything in the static
- * export (`out/`) is precached for instant offline-capable PWA launches.
+ * with the real precache manifest at build time. HTML, identity assets and
+ * icons form the install shell; hashed role-specific chunks cache on use.
  *
  * Caching strategies (ordered by priority):
- *   1. Precache  – app shell: HTML pages, JS chunks, CSS, manifest, icons,
- *                  hero images. Served cache-first with revision hashing.
- *   2. StaleWhileRevalidate – Google Fonts CSS/woff2 (if ever added).
- *   3. CacheFirst – Google Maps tiles, Firebase SDK CDN scripts.
- *   4. NetworkOnly – authenticated Firebase/API responses.
- *   5. NetworkOnly – reCAPTCHA, analytics, non-cacheable third-party.
+ *   1. Precache  – HTML shell, manifest, icons and hero images.
+ *   2. CacheFirst – same-origin hashed Next.js JS/CSS chunks, cached on use.
+ *   3. StaleWhileRevalidate – Google Fonts CSS/woff2 (if ever added).
+ *   4. CacheFirst – Google Maps tiles, Firebase SDK CDN scripts.
+ *   5. NetworkOnly – authenticated Firebase/API responses.
  *
  * Navigation requests are served from the precache (offline-capable) with
  * a Network-First fallback for any route not in the manifest.
@@ -34,8 +33,8 @@ import { ExpirationPlugin } from "workbox-expiration";
 import { CacheableResponsePlugin } from "workbox-cacheable-response";
 
 // ─── Lifecycle ──────────────────────────────────────────────────────────────
-// The application asks an installed worker to activate only when no driver
-// shift is active. This prevents controllerchange from reloading a live shift.
+// Updates use the browser's normal waiting lifecycle and activate after tabs
+// using the previous worker close. No deployment can force-reload a live ride.
 clientsClaim();
 
 // Remove entries from previous precache versions that are no longer in the
@@ -46,6 +45,22 @@ cleanupOutdatedCaches();
 // The placeholder below is replaced by workbox-build's injectManifest with
 // the list of URLs and revision hashes from the static export.
 precacheAndRoute(self.__WB_MANIFEST || []);
+
+// Hashed Next.js assets are immutable. Cache only the chunks a user's role
+// actually loads instead of downloading admin and passenger bundles together
+// during every service-worker install.
+registerRoute(
+  ({ url }) =>
+    url.origin === self.location.origin &&
+    url.pathname.startsWith("/_next/static/"),
+  new CacheFirst({
+    cacheName: "eki-next-static",
+    plugins: [
+      new CacheableResponsePlugin({ statuses: [0, 200] }),
+      new ExpirationPlugin({ maxEntries: 120, maxAgeSeconds: 30 * 24 * 60 * 60 }),
+    ],
+  })
+);
 
 // ─── Navigation requests ────────────────────────────────────────────────────
 // All navigation requests (HTML page loads) are served from the precache.
@@ -157,11 +172,3 @@ registerRoute(
 // ─── Default handler ────────────────────────────────────────────────────────
 // Unknown requests, including backend APIs, always use the network.
 setDefaultHandler(new NetworkOnly());
-
-// ─── Message handling ───────────────────────────────────────────────────────
-// Allow the app to tell the SW to skip waiting (for update prompts).
-self.addEventListener("message", (event) => {
-  if (event.data?.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
-});

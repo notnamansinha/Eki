@@ -2,7 +2,10 @@ import "dotenv/config";
 import { randomBytes } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { db } from "./lib/firebaseAdmin";
-import { hashDeviceSecret } from "./services/deviceTelemetryService";
+import {
+  hashDeviceSecret,
+  publishDeviceCredentialInvalidation,
+} from "./services/deviceTelemetryService";
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
@@ -94,9 +97,25 @@ async function provision(): Promise<void> {
   if (result === "active_previous_ride") {
     throw new Error("Do not rotate or reassign a device during an active ride.");
   }
-
   console.log("Device provisioned. Copy this secret now; it is not stored in plaintext:");
   console.log(plainSecret);
+
+  let invalidationError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await publishDeviceCredentialInvalidation(deviceId);
+      return;
+    } catch (error) {
+      invalidationError = error;
+    }
+  }
+  const reason = invalidationError instanceof Error
+    ? invalidationError.message
+    : "unknown invalidation error";
+  throw new Error(
+    `Device credential was updated, but cache invalidation failed twice (${reason}). ` +
+    "The secret above is valid; restore RTDB connectivity and publish an invalidation before relying on the device.",
+  );
 }
 
 void provision().then(

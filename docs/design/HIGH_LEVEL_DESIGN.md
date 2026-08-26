@@ -97,7 +97,7 @@ flowchart TB
 - Device secrets are random per device, scrypt-hashed with salt, timing-safe compared, negatively cached briefly, and absent from logs/responses.
 - Firestore/RTDB are default deny. `devices`, `active_rides`, `_active_bus_locks`, worker/privacy/operation internals, and live writes have no client permission.
 - Passenger manifests are readable only to the session operator/admin. Messages are session-scoped, sender-bound, length-limited, and transactionally rate-limited. Feedback has a 24-hour cooldown.
-- Account deletion is queued server-side. Retention is destructive and therefore disabled unless `RETENTION_SWEEPER_ENABLED=true` exactly.
+- Account deletion is queued server-side. Production refuses to start unless `RETENTION_SWEEPER_ENABLED=true`; development and tests remain non-destructive when the setting is omitted.
 - Hosting applies CSP, HSTS, anti-framing and content headers; CSP script hashes are regenerated after the static build.
 
 ## Performance and availability budgets
@@ -108,7 +108,7 @@ The software does not promise an absolute end-to-end SLA without real deployment
 |---|---|
 | GNSS evaluation | 1 second |
 | Changed-fix floor | 3 seconds |
-| Moving/stopped heartbeat | 30 / 60 seconds |
+| Moving/stopped heartbeat | 1 / 60 seconds |
 | HTTPS request timeout | 7 seconds |
 | Retry | 1–30 seconds exponential with per-device jitter |
 | RTDB write | One transaction per accepted new sample |
@@ -116,19 +116,19 @@ The software does not promise an absolute end-to-end SLA without real deployment
 | Browser live stream | One shared RTDB listener per browser runtime |
 | UI freshness clocks | 15–60 second local-only timers; no API polling |
 
-`GET /health` returns rolling p50/p95/p99 processing, device-to-server, and RTDB-write latency plus credential cache efficiency. A device clock anomaly over 24 hours is excluded from the device-to-server window.
+Admin-only `GET /api/health` returns rolling p50/p95/p99 processing, device-to-server, and RTDB-write latency plus credential cache efficiency. Public `GET /health` exposes readiness only. A device clock anomaly over 24 hours is excluded from the device-to-server window.
 
 ## Deployment view
 
 The static frontend is deployed to Firebase Hosting. The Express container/runtime must expose managed HTTPS near the Firebase region and use Application Default Credentials/Workload Identity or a secret-managed service-account JSON. It should sit behind university WAF/global rate limits. The worker lease supports multiple API replicas while keeping one background owner.
 
-The vehicle needs a fused 12 V-to-5 V converter, stable ground, secure enclosure/cabling, a clear-sky antenna, and cellular/Wi-Fi access. The fleet build embeds device-specific configuration, enables Secure Boot V2 and release-mode flash encryption, and refuses operation if either protection is inactive; its irreversible first boot still requires the witnessed spare-board procedure. Signed OTA/rollback remains a deployment prerequisite.
+The vehicle needs a fused 12 V-to-5 V converter, stable ground, secure enclosure/cabling, a clear-sky antenna, and cellular/Wi-Fi access. The fleet build embeds device-specific configuration, enables Secure Boot V2 and release-mode flash encryption, and refuses operation if either protection is inactive; its irreversible first boot still requires the witnessed spare-board procedure. Fleet application updates use two signed slots, an authenticated backend gate that withholds releases during active rides, exact size/SHA-256 verification, and rollback unless authenticated backend health succeeds. Controlled key custody, immutable hosting and spare-board update/rollback proof remain deployment prerequisites.
 
 ## Residual risks
 
 - Physical GNSS multipath, antenna/power faults and cellular dead zones require route testing.
 - In-memory API/device rate limits are per process; university edge limits are required for multi-instance production.
 - Firebase and Google Maps quotas/regions are external operational dependencies.
-- A pinned CA must be updated before issuer expiry/rotation; OTA is not enabled by this repository.
+- A pinned CA must be physically updated before issuer expiry/rotation; application OTA deliberately cannot replace trust roots or credentials.
 - Retention/privacy periods need university legal approval and backups need an owned restore drill.
 - The PWA is static/client-heavy; first map load depends on Maps/Firebase network availability.

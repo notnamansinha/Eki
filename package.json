@@ -11,6 +11,7 @@
     "dev": "concurrently \"npm run dev --workspace=frontend\" \"npm run dev --workspace=backend\"",
     "build": "npm run build --workspace=backend && npm run build --workspace=frontend && node scripts/generate-sw.mjs && node scripts/update-csp.mjs",
     "build:production": "node scripts/build-production.mjs",
+    "docs:sync": "node scripts/sync-documentation-mirrors.mjs",
     "deploy": "npm run build:production && npx firebase deploy",
     "lint": "npm run lint --workspace=frontend && npm run lint --workspace=backend",
     "test": "node --test scripts/*.test.mjs && npm run test --workspace=backend && npm run test --workspace=frontend",

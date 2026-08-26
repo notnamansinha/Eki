@@ -97,6 +97,38 @@ describe("production security configuration", () => {
     expect(workers).toContain("await stopWork()");
   });
 
+  it("keeps public readiness minimal and protects detailed operational health", () => {
+    const server = workspaceFile("backend/src/server.ts");
+    const publicHealth = server.slice(
+      server.indexOf('app.get("/health"'),
+      server.indexOf('app.get("/api/health"'),
+    );
+    const detailedStart = server.indexOf('app.get("/api/health"');
+    const detailedHealth = server.slice(
+      detailedStart,
+      server.indexOf("app.use((", detailedStart),
+    );
+
+    expect(publicHealth).toContain('status: state.ready ? "ok" : "degraded"');
+    expect(publicHealth).not.toContain("telemetry");
+    expect(publicHealth).not.toContain("backgroundTasks");
+    expect(publicHealth).not.toContain("firestore:");
+    expect(server).toContain('app.get("/api/health", requireAdmin');
+    expect(detailedHealth).toContain("getHttpsTelemetryStatus()");
+    expect(detailedHealth).toContain("backgroundFailures.snapshot()");
+  });
+
+  it("requires retention enforcement before production starts", () => {
+    const server = workspaceFile("backend/src/server.ts");
+    const retention = workspaceFile("backend/src/services/retentionSweeper.ts");
+    const envExample = workspaceFile("backend/.env.example");
+
+    expect(server).toContain("assertRetentionConfiguration(");
+    expect(retention).toContain('nodeEnv === "production" && normalized !== "true"');
+    expect(envExample).toContain("RETENTION_SWEEPER_ENABLED=false");
+    expect(envExample).toContain("explicitly overrides this");
+  });
+
   it("denies every unlisted path with an explicit catch-all and keeps comments accurate", () => {
     const rules = workspaceFile("firestore.rules");
 
@@ -208,7 +240,7 @@ describe("production security configuration", () => {
     expect(sessionsRoute).not.toContain("req.body?.userName");
     expect(sessionsRoute).toContain('router.post("/:sessionId/messages", requireAuth');
     expect(sessionsRoute).toContain("evaluateChatRate");
-    expect(sessionsRoute).toContain("censorText");
+    expect(sessionsRoute).toContain("moderateChatText");
     expect(feedback).toContain("allow create: if false;");
     expect(feedback).toContain("allow update: if false;");
     // Ride-eligibility and cooldown enforcement now live in the feedback
@@ -240,7 +272,7 @@ describe("production security configuration", () => {
 
     expect(passengerSource).toContain("recordSuccessfulJoin(");
     expect(passengerSource).toContain("isPostRideFeedbackEligible(");
-    expect(passengerSource).toContain(".filter(hasSessionId)");
+    expect(passengerSource).toContain("if (!hasSessionId(bus)) continue;");
     expect(passengerSource).toContain("key={activeBusOnRoute.sessionId}");
     expect(passengerSource).toContain("sessionId={activeBusOnRoute.sessionId}");
     expect(passengerSource).toContain("sessionId={feedbackSessionId}");
@@ -319,11 +351,13 @@ describe("production security configuration", () => {
   it("does not let the browser seed or take down hardware GNSS coordinates", () => {
     const operations = workspaceFile("frontend/src/components/admin/DashboardPanel.tsx");
     const passengerSource = loadPassengerSource();
+    const passengerNormalizer = workspaceFile("frontend/src/lib/passengerLiveBus.ts");
 
     expect(operations).toContain("/api/shifts/start");
     expect(operations).not.toContain("updateDoc(");
-    expect(passengerSource).toContain(
-      "hasValidBusCoordinates(normalizedBus.lat, normalizedBus.lng)",
+    expect(passengerSource).toContain("passengerLiveBuses(");
+    expect(passengerNormalizer).toContain(
+      "hasValidBusCoordinates(candidate.lat, candidate.lng)",
     );
     expect(operations).toContain("assignedRouteIds(selectedBus)");
   });
@@ -341,10 +375,20 @@ describe("production security configuration", () => {
 
   it("renders stored route geometry without browser Directions API calls", () => {
     const directionsRoute = workspaceFile("frontend/src/components/maps/DirectionsRoute.tsx");
+    const operations = workspaceFile("frontend/src/components/admin/DashboardPanel.tsx");
+    const passengerMap = workspaceFile("frontend/src/components/maps/PassengerMap.tsx");
     const polyline = workspaceFile("frontend/src/lib/polyline.ts");
+    const routeApi = workspaceFile("backend/src/routes/polyline.ts");
 
     expect(directionsRoute).toContain('from "@/lib/polyline"');
     expect(polyline).toContain("export function decodePolyline");
+    expect(operations).toContain("<DirectionsRoute");
+    expect(operations).toContain("routeId={route.id}");
+    expect(passengerMap).toContain("routeId={route.id}");
+    expect(directionsRoute).toContain("/geometry");
+    expect(routeApi).toContain('router.get("/:routeId/geometry", requireAuth');
+    expect(routeApi).toContain('routingPreference: "TRAFFIC_AWARE_OPTIMAL"');
+    expect(routeApi).toContain('const STORED_POLYLINE_QUALITY = "HIGH_QUALITY"');
     expect(directionsRoute).not.toContain("DirectionsService");
     expect(directionsRoute).not.toContain("DirectionsRenderer");
   });
@@ -362,7 +406,26 @@ describe("production security configuration", () => {
     expect(devices).toContain('"/:deviceId/telemetry"');
     expect(telemetry).toContain("HTTPS_DEVICE_RATE_PER_MINUTE");
     expect(telemetry).toContain("deviceRateLimitRetryAfterMs");
+    expect(telemetry).toContain("DEVICE_RATE_LIMIT_PATH");
+    expect(telemetry).toContain(".transaction((value)");
+    expect(telemetry).toContain("credentialCacheKey(deviceId, suppliedDigest)");
+    expect(telemetry).toContain("DEVICE_CREDENTIAL_VERSION_PATH");
+    expect(devices).toContain("publishDeviceCredentialInvalidation(deviceId)");
     expect(telemetry).toContain("timingSafeEqual");
+  });
+
+  it("bounds authentication work and bypasses revocation cache for privileged claims", () => {
+    const verifier = workspaceFile("backend/src/services/authTokenVerifier.ts");
+    const requireAuth = workspaceFile("backend/src/middleware/requireAuth.ts");
+    const requireAdmin = workspaceFile("backend/src/middleware/requireAdmin.ts");
+
+    expect(verifier).toContain("AUTH_MAX_PENDING_VERIFICATIONS");
+    expect(verifier).toContain("pendingVerifications.size >= pendingVerificationLimit()");
+    expect(verifier).toContain("requiresFreshRevocationCheck(cached.decoded)");
+    expect(requireAuth).toContain("AuthVerificationCapacityError");
+    expect(requireAdmin).toContain("AuthVerificationCapacityError");
+    expect(requireAuth).toContain('res.status(503)');
+    expect(requireAdmin).toContain('res.status(503)');
   });
 
   it("shards in-memory rate limits across replicas and gates the backend image in CI (issue #28)", () => {
@@ -424,13 +487,27 @@ describe("production security configuration", () => {
     expect(usersRoute).toContain("transaction.create(userRef");
     expect(usersRoute).toContain("req.user?.email");
     expect(usersRoute).not.toContain("req.body");
+    expect(usersRoute).toContain("ensurePassengerRoleClaim");
+    expect(usersRoute).toContain('passengerClaims.role = "passenger"');
+    expect(usersRoute).not.toContain('passengerClaims.role = "admin"');
     expect(settingsRoute).toContain('router.put("/", requireAdmin');
     expect(settingsRoute).toContain('"announcementActive"');
     // The frontend asks the backend instead of writing directly.
     expect(authHook).toContain("/api/users/bootstrap");
+    expect(authHook).toContain("claimsUpdated === true");
+    expect(authHook).toContain("firebaseUser.getIdToken(true)");
     expect(authHook).not.toContain("setDoc(userDocRef");
     expect(settingsHook).toContain("/api/settings");
     expect(settingsHook).not.toContain('setDoc(doc(db, "settings"');
+  });
+
+  it("allows the minimal reCAPTCHA Enterprise CSP surface required by App Check", () => {
+    const cspBuild = workspaceFile("scripts/update-csp.mjs");
+
+    expect(cspBuild).toContain('"https://www.google.com/recaptcha/"');
+    expect(cspBuild).toContain('"https://recaptcha.google.com/recaptcha/"');
+    expect(cspBuild).toContain("const frameSources");
+    expect(cspBuild).toContain("/frame-src [^;]+;/");
   });
 
   it("clears in-memory data caches on logout", () => {
@@ -556,7 +633,8 @@ describe("production security configuration", () => {
     expect(firmware).toContain("WiFi.disconnect(true, false)");
     expect(firmware).toContain("WiFi.mode(WIFI_OFF)");
     expect(firmware).toContain("if (!credentialFaultActive)");
-    expect(firmware).toContain("result != PublishResult::CredentialFault");
+    expect(firmware).toContain("acknowledgeQueuedFix(fix.sequence)");
+    expect(firmware).toContain("removeQueuedFix(fix.sequence)");
     expect(firmware).not.toContain("Preferences");
     expect(firmware).not.toContain("[Health]");
     expect(firmware).not.toContain("[Publisher] Started");
@@ -652,6 +730,7 @@ describe("production security configuration", () => {
       "frontend/src/components/passenger/PassengerBoardingView.tsx",
     );
     const shifts = workspaceFile("backend/src/routes/shifts.ts");
+    const engine = workspaceFile("backend/src/services/tripStateEngine.ts");
 
     expect(server).toContain('app.use("/api/shifts"');
     expect(operations).toContain("/api/shifts/start");
@@ -662,7 +741,11 @@ describe("production security configuration", () => {
     expect(shifts).toContain("final ordered stop");
     expect(shifts).toContain("STOP_GEOFENCE_M");
     expect(shifts).toContain("arrivedAtOrigin");
-    expect(operations).toContain("It starts automatically at stop 1");
+    expect(operations).not.toContain('ariaLabel="Travel direction"');
+    expect(operations).toContain("Travel direction is inferred from fresh stopped GPS");
+    expect(operations).toContain("directionLabel(inferredDirection");
+    expect(shifts).toContain("inferRideDirectionAtEndpoint");
+    expect(engine).toContain("maybeArmAutomaticTurnaround");
     expect(passengerBoarding).toContain("Ride in service");
   });
 
@@ -772,7 +855,19 @@ describe("production security configuration", () => {
     ).headers as Array<{ key: string; value: string }>;
     const headers = new Map(defaultHeaders.map(({ key, value }) => [key, value]));
 
-    expect(headers.get("Content-Security-Policy")).toContain("default-src 'self'");
+    const csp = headers.get("Content-Security-Policy") ?? "";
+    expect(csp).toContain("default-src 'self'");
+    const directives = new Map(csp.split(";").map((directive: string) => {
+      const sources = directive.trim().split(/\s+/);
+      return [sources[0], sources.slice(1)] as const;
+    }));
+    expect(directives.get("frame-src")).toEqual([
+      "https://accounts.google.com",
+      "https://*.firebaseapp.com",
+      "https://www.google.com/recaptcha/",
+      "https://recaptcha.google.com/recaptcha/",
+    ]);
+    expect(directives.get("connect-src")).toContain("https://www.google.com/recaptcha/");
     expect(headers.get("Strict-Transport-Security")).toMatch(/^max-age=\d+/);
     expect(headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(headers.get("X-Frame-Options")).toBe("DENY");

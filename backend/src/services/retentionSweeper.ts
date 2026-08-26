@@ -26,8 +26,24 @@ async function deleteDocuments(query: Query, recursive = false): Promise<number>
   return deleted;
 }
 
-export function isRetentionSweeperEnabled(value: string | undefined): boolean {
-  return value?.trim().toLowerCase() === "true";
+export function isRetentionSweeperEnabled(
+  value: string | undefined,
+  nodeEnv = process.env.NODE_ENV,
+): boolean {
+  const normalized = value?.trim().toLowerCase();
+  if (nodeEnv === "production" && normalized !== "true") {
+    throw new Error(
+      "RETENTION_SWEEPER_ENABLED=true is required in production to enforce the approved data-retention schedule.",
+    );
+  }
+  return normalized === "true";
+}
+
+export function assertRetentionConfiguration(
+  value: string | undefined,
+  nodeEnv = process.env.NODE_ENV,
+): void {
+  void isRetentionSweeperEnabled(value, nodeEnv);
 }
 
 async function runRetentionSweep(now = Date.now()): Promise<void> {
@@ -68,8 +84,9 @@ async function runRetentionSweep(now = Date.now()): Promise<void> {
 }
 
 export function startRetentionSweeper(): () => void {
-  // Retention deletes durable data, so an absent/misspelled setting must be
-  // safe. Operators have to opt in explicitly after reviewing the periods.
+  // Development/test remain non-destructive by default. Production is
+  // validated before the HTTP listener starts and cannot run with retention
+  // omitted or disabled.
   if (!isRetentionSweeperEnabled(process.env.RETENTION_SWEEPER_ENABLED)) {
     console.log("[Retention] Sweeper disabled (set RETENTION_SWEEPER_ENABLED=true to enable)." );
     return () => undefined;

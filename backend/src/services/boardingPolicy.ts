@@ -53,7 +53,8 @@ export function validateStopSelection(
   stops: unknown,
   boardingStopId: unknown,
   alightingStopId: unknown,
-): { boardingStopId: string; alightingStopId: string | null } | null {
+  direction: "forward" | "reverse" = "forward",
+): { boardingStopId: string; alightingStopId: string } | null {
   if (!Array.isArray(stops) || stops.length < 2) return null;
   if (
     typeof boardingStopId !== "string" ||
@@ -61,27 +62,20 @@ export function validateStopSelection(
   ) {
     return null;
   }
-  if (
-    alightingStopId !== null &&
-    alightingStopId !== undefined &&
-    (typeof alightingStopId !== "string" || !SAFE_ID.test(alightingStopId))
-  ) {
+  if (typeof alightingStopId !== "string" || !SAFE_ID.test(alightingStopId)) {
     return null;
   }
 
   const stopIds = stops.map((stop: RouteStop) =>
     typeof stop?.id === "string" && SAFE_ID.test(stop.id) ? stop.id : null
   );
+  if (direction === "reverse") stopIds.reverse();
   const boardingIndex = stopIds.indexOf(boardingStopId);
-  const normalizedAlighting = typeof alightingStopId === "string"
-    ? alightingStopId
-    : null;
-  const alightingIndex = normalizedAlighting === null
-    ? -1
-    : stopIds.indexOf(normalizedAlighting);
+  const normalizedAlighting = alightingStopId;
+  const alightingIndex = stopIds.indexOf(normalizedAlighting);
   if (
     boardingIndex < 0 ||
-    (normalizedAlighting !== null && alightingIndex <= boardingIndex)
+    alightingIndex <= boardingIndex
   ) {
     return null;
   }

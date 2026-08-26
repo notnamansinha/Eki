@@ -1,14 +1,43 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../lib/firebaseAdmin", () => ({ db: {}, rtdb: {} }));
+const harness = vi.hoisted(() => ({
+  collections: new Map<string, Map<string, Record<string, unknown>>>(),
+}));
+
+vi.mock("../lib/firebaseAdmin", () => ({
+  db: {
+    collection: (name: string) => ({
+      doc: (id: string) => ({
+        get: async () => {
+          const value = harness.collections.get(name)?.get(id);
+          return { exists: value !== undefined, data: () => value };
+        },
+      }),
+    }),
+  },
+  rtdb: {
+    ref: () => ({
+      on: () => undefined,
+      set: async () => undefined,
+    }),
+  },
+}));
 import {
+  authenticateDeviceCredentials,
   evaluateDeviceRateLimit,
   freshestDelayMinutes,
   hashDeviceSecret,
+  invalidateDeviceCredentialCache,
   parseDeviceAuthorization,
+  shouldApplyRestoreTelemetry,
   summarizeLatencySamples,
   verifyDeviceSecretHash,
 } from "./deviceTelemetryService";
+
+beforeEach(() => {
+  harness.collections.clear();
+  invalidateDeviceCredentialCache("device_1");
+});
 
 describe("HTTPS device rate-limit timing", () => {
   it("reports the remaining fixed-window delay and resets exactly at one minute", () => {
@@ -33,6 +62,32 @@ describe("HTTPS device rate-limit timing", () => {
 });
 
 describe("HTTPS device credentials", () => {
+  it("does not let a wrong secret poison the legitimate device cache entry", async () => {
+    const validSecret = "valid-device-secret-with-enough-entropy";
+    const secretHash = await hashDeviceSecret(validSecret);
+    harness.collections.set("devices", new Map([["device_1", {
+      busId: "bus_1",
+      routeId: "route_1",
+      enabled: true,
+      secretHash,
+    }]]));
+    harness.collections.set("buses", new Map([["bus_1", {
+      assignedRoutes: ["route_1"],
+    }]]));
+    harness.collections.set("routes", new Map([["route_1", { id: "route_1" }]]));
+
+    await expect(authenticateDeviceCredentials(
+      "device_1",
+      "wrong-device-secret-with-enough-entropy",
+      1_000,
+    )).resolves.toBeNull();
+    await expect(authenticateDeviceCredentials(
+      "device_1",
+      validSecret,
+      1_001,
+    )).resolves.toEqual({ busId: "bus_1", routeId: "route_1" });
+  });
+
   it("accepts only a bounded Device authorization secret", () => {
     expect(parseDeviceAuthorization(undefined)).toBeNull();
     expect(parseDeviceAuthorization("Bearer something")).toBeNull();
@@ -144,5 +199,36 @@ describe("freshestDelayMinutes", () => {
       { delayMinutes: 1.5, delayUpdatedAt: 20 },
       { delayMinutes: 12, delayUpdatedAt: 10 },
     )).toEqual({ delayMinutes: 12, delayUpdatedAt: 10 });
+  });
+});
+
+describe("durable ride telemetry restore ordering", () => {
+  it("does not overwrite a filtered RTDB sample on an equal timestamp", () => {
+    expect(shouldApplyRestoreTelemetry(4_000, 4_000)).toBe(false);
+  });
+
+  it("only fills missing or genuinely older live telemetry", () => {
+    expect(shouldApplyRestoreTelemetry(undefined, 4_000)).toBe(true);
+    expect(shouldApplyRestoreTelemetry(3_999, 4_000)).toBe(true);
+    expect(shouldApplyRestoreTelemetry(4_001, 4_000)).toBe(false);
+  });
+
+  it("allows exactly 90 one-second updates and rejects the 91st", () => {
+    const startedAt = 1_000_000;
+    const ninetieth = evaluateDeviceRateLimit(
+      { startedAt, count: 89 },
+      startedAt + 59_000,
+      90,
+    );
+    expect(ninetieth.allowed).toBe(true);
+    expect(ninetieth.next.count).toBe(90);
+
+    const ninetyFirst = evaluateDeviceRateLimit(
+      ninetieth.next,
+      startedAt + 59_001,
+      90,
+    );
+    expect(ninetyFirst.allowed).toBe(false);
+    expect(ninetyFirst.retryAfterMs).toBe(999);
   });
 });
