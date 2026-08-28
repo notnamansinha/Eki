@@ -213,7 +213,7 @@ done safely while retaining the current Wi-Fi stack.
   uses three-reading 2.5/1.5 km/h hysteresis.
 - Moving fixes are captured on a one-second cadence; the stopped heartbeat is
   five seconds so endpoint and turnaround logic always has margin inside the
-  backend's 60-second freshness gate. A 120-sample RTC ring survives resets, evicts oldest on overflow,
+  backend's 60-second freshness gate. A 100-sample RTC ring survives resets, evicts oldest on overflow,
   sends newest first after outages, compacts acknowledged older fixes, and
   discards samples outside the backend's 55-second safety margin.
 - Wi-Fi retries indefinitely with bounded 5-60 second exponential backoff,

@@ -88,7 +88,9 @@ constexpr uint32_t GNSS_EPOCH_REFERENCE_MAX_AGE_MS = 24UL * 60 * 60 * 1000;
 constexpr uint32_t NTP_CROSS_CHECK_INTERVAL_MS = 6UL * 60 * 60 * 1000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
 constexpr uint32_t WATCHDOG_TIMEOUT_MS = 25000;
-constexpr size_t TELEMETRY_QUEUE_CAPACITY = 120;
+// TelemetryFix grew when receiver HDOP and monotonic sequencing were added.
+// Keep the retained ring below the 6 KiB RTC-state budget with reset stats.
+constexpr size_t TELEMETRY_QUEUE_CAPACITY = 100;
 constexpr uint32_t FIRST_REMOTE_DIAGNOSTIC_DELAY_MS = 30000;
 constexpr uint32_t REMOTE_DIAGNOSTIC_INTERVAL_MS = 5UL * 60 * 1000;
 

@@ -69,7 +69,7 @@ not a substitute for the physical and institutional acceptance work in the
 - **Severity/status:** High / External gate (code mitigation complete; field validation pending).
 - **Evidence:** `hardware/src/main.cpp::publisherTask` owns Wi-Fi, NTP, TLS and
   `HTTPClient::POST` on core 0 while the Arduino loop on core 1 continuously
-  drains GNSS UART. A 120-sample, 5,808-byte RTC no-init ring uses newest-first
+  drains GNSS UART. A 100-sample, 5,648-byte RTC no-init ring uses newest-first
   recovery, oldest-drop overflow, a device/backend identity tag and a 55-second
   freshness safety margin. Thirty-second health output exposes ring high-water,
   overflow/stale drops, TinyGPSPlus checksum failures and HardwareSerial
