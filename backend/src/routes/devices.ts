@@ -49,10 +49,12 @@ const telemetryLimiter = rateLimit({
 });
 
 /**
- * ESP32 devices send a closed six-field payload over certificate-verified
+ * ESP32 devices send a closed eight-field payload over certificate-verified
  * HTTPS. The device secret is transmitted only in the Authorization header,
  * compared against a scrypt verifier, and never returned or logged. Routing
  * identity comes exclusively from the server-side device registry.
+ * The immediately previous closed six-field schema remains accepted only for
+ * a backend-first staged firmware rollout.
  */
 router.post(
   "/:deviceId/telemetry",

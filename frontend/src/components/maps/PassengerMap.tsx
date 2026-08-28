@@ -48,8 +48,8 @@ function BusMarker({
   bus: IncomingBusData;
 }) {
   const rawPoint = useMemo(
-    () => liveBusMarkerPosition(bus.lat, bus.lng),
-    [bus.lat, bus.lng],
+    () => liveBusMarkerPosition(bus),
+    [bus],
   );
 
   const [displayHeading, setDisplayHeading] = useState(() =>
@@ -153,19 +153,34 @@ function PassengerMapInner({
   const routeStops = useMemo(() => {
     return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) ?? [];
   }, [route.stops]);
+  const activeRoute = useMemo(() => {
+    const firstBus = buses.values().next().value as IncomingBusData | undefined;
+    return firstBus?.activeRoutePolyline
+      ? {
+          polyline: firstBus.activeRoutePolyline,
+          version: firstBus.routeVersion ?? 0,
+        }
+      : null;
+  }, [buses]);
   const routePath = useMemo(() => {
-    if (route.polyline) {
+    const encoded = activeRoute?.polyline ?? route.polyline;
+    if (encoded) {
       try {
-        const decoded = decodePolyline(route.polyline);
+        const decoded = decodePolyline(encoded);
         if (decoded.length >= 2) {
-          return route.rideDirection === "reverse" ? decoded.reverse() : decoded;
+          // Backend active geometry is already ordered in travel direction.
+          return activeRoute
+            ? decoded
+            : route.rideDirection === "reverse"
+              ? decoded.reverse()
+              : decoded;
         }
       } catch {
         // Legacy routes fall back to their saved stop coordinates.
       }
     }
     return routeStops;
-  }, [route.polyline, route.rideDirection, routeStops]);
+  }, [activeRoute, route.polyline, route.rideDirection, routeStops]);
   const routeDistanceIndex = useMemo(
     () => preparePolylineDistanceIndex(routePath),
     [routePath],
@@ -449,7 +464,7 @@ function PassengerMapInner({
   const centerTarget = useMemo(() => {
     const firstBus = Array.from(buses.values())[0];
     if (!firstBus) return mapCenter;
-    return liveBusMarkerPosition(firstBus.lat, firstBus.lng) ?? mapCenter;
+    return liveBusMarkerPosition(firstBus) ?? mapCenter;
   }, [buses, mapCenter]);
 
   return (
@@ -499,12 +514,14 @@ function PassengerMapInner({
         >
           <MapCenterer target={centerTarget} isCentered={isCentered} />
           <DirectionsRoute
+            key={`${route.id}:${route.rideDirection ?? "forward"}:${activeRoute?.version ?? "configured"}`}
             routeId={route.id}
             stops={routeStops}
-            polyline={route.polyline}
-            polylineQuality={route.polylineQuality}
+            polyline={activeRoute?.polyline ?? route.polyline}
+            polylineQuality={activeRoute ? "HIGH_QUALITY" : route.polylineQuality}
             color={route.color || "#3b82f6"}
             hasBuses={buses.size > 0}
+            direction={route.rideDirection ?? "forward"}
           />
 
           {/* Passenger location dot */}

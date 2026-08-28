@@ -169,12 +169,55 @@ function LiveDetailsDrawer({
               <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Delay</p>
               <p className="mt-1 text-sm font-semibold text-white">{Math.max(0, Number(entry.delayMinutes ?? 0))} min</p>
             </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Route matching</p>
+              <p className="mt-1 text-sm font-semibold text-white">{entry.routeState ?? "Pending"}</p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Match confidence</p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {entry.matchConfidence == null
+                  ? "—"
+                  : `${Math.round(entry.matchConfidence * 100)}%`}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Route context</p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                v{entry.routeVersion ?? "—"} · {entry.routeSource ?? "configured"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Distance to route</p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {entry.distanceToActiveRoute == null
+                  ? "—"
+                  : `${Math.round(entry.distanceToActiveRoute)} m`}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3 text-[10px] text-white/50">
+            <p className="font-black uppercase tracking-widest text-white/30">Location diagnostics</p>
+            <p className="mt-2 font-mono">
+              Raw: {entry.rawLocation
+                ? `${entry.rawLocation.lat.toFixed(6)}, ${entry.rawLocation.lng.toFixed(6)} · seq ${entry.rawLocation.seq} · HDOP ${entry.rawLocation.gpsHdop?.toFixed(1) ?? "legacy"}`
+                : "—"}
+            </p>
+            <p className="mt-1 font-mono">
+              Matched: {entry.matchedLocation
+                ? `${entry.matchedLocation.lat.toFixed(6)}, ${entry.matchedLocation.lng.toFixed(6)} · segment ${entry.matchedLocation.segmentIndex}`
+                : "raw fallback"}
+            </p>
           </div>
 
           {msg && <p className="text-xs text-emerald-400 font-semibold">{msg}</p>}
 
           <p className="text-xs leading-relaxed text-white/45">
-            Position and stop progress come only from authenticated GNSS telemetry. The ride follows its armed travel direction and completes at that direction&apos;s destination.
+            Raw position comes from authenticated GNSS telemetry. A confident,
+            current-version route match controls the displayed marker; uncertain
+            or rerouting states fall back to the raw fix. Stop progress remains
+            independent of route geometry changes.
           </p>
           <button onClick={() => setShowWipeConfirm(true)} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors">
             <MessageCircle className="w-3.5 h-3.5" /> Clear Messages
@@ -211,11 +254,9 @@ function BusMarker({
       ? entry.motionState === "moving" ? "#34D399" : "#FBBF24"
       : entry.deviceState === "offline" || entry.motionState === "uncertain" ? "#FB923C" : "#94949C";
 
-  const lat = entry.lat;
-  const lng = entry.lng;
-  const rawPoint = useMemo(
-    () => liveBusMarkerPosition(lat, lng),
-    [lat, lng],
+  const markerPoint = useMemo(
+    () => liveBusMarkerPosition(entry),
+    [entry],
   );
 
   const [displayHeading, setDisplayHeading] = useState(() =>
@@ -228,9 +269,9 @@ function BusMarker({
     setDisplayHeading(nextHeading);
   }, [entry.heading]);
 
-  if (!rawPoint) return null;
+  if (!markerPoint) return null;
   return (
-    <AdvancedMarker position={rawPoint} onClick={onClick}>
+    <AdvancedMarker position={markerPoint} onClick={onClick}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }} title={`${entry.busId} — ${ts.label}`}>
         <div style={{
           width: 36, height: 36, borderRadius: 18,
@@ -467,32 +508,50 @@ export default function DashboardPanel() {
   const { buses, error: busesError, retry: retryBuses } = useBuses();
   const { drivers } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
-  const activeRouteIdsKey = Array.from(
-    new Set(
-      activeEntries.flatMap((entry) =>
-        typeof entry.routeId === "string" && entry.routeId.length > 0
-          ? [entry.routeId]
-          : [],
-      ),
-    ),
-  ).sort().join(",");
   const activeRouteOverlays = useMemo(() => {
-    const activeRouteIds = new Set(
-      activeRouteIdsKey ? activeRouteIdsKey.split(",") : [],
-    );
-    return routes
-      .filter((route) => activeRouteIds.has(route.id))
-      .map((route) => ({
-        id: route.id,
+    const overlays = new Map<string, {
+      key: string;
+      routeId: string;
+      color: string;
+      polyline?: string;
+      polylineQuality?: "HIGH_QUALITY";
+      direction: "forward" | "reverse";
+      stops: Array<{ lat: number; lng: number }>;
+    }>();
+    for (const entry of activeEntries) {
+      if (!entry.routeId) continue;
+      const route = routes.find((candidate) => candidate.id === entry.routeId);
+      if (!route) continue;
+      const direction = normalizeRideDirection(entry.direction);
+      const hasDirectionalGeometry = Boolean(
+        route.forwardPolyline && route.reversePolyline,
+      );
+      const overlayKey = entry.activeRoutePolyline
+        ? entry.activeRouteId ?? `${route.id}:${entry.routeVersion ?? 0}:${entry.busId}`
+        : `${route.id}:${direction}`;
+      if (overlays.has(overlayKey)) continue;
+      overlays.set(overlayKey, {
+        key: overlayKey,
+        routeId: route.id,
         color: route.color,
-        polyline: route.polyline,
-        polylineQuality: route.polylineQuality,
+        polyline: entry.activeRoutePolyline ??
+          (direction === "reverse"
+            ? route.reversePolyline
+            : route.forwardPolyline ?? route.polyline),
+        polylineQuality: entry.activeRoutePolyline
+          ? "HIGH_QUALITY"
+          : hasDirectionalGeometry
+            ? route.polylineQuality
+            : undefined,
+        direction,
         stops: (route.stops ?? route.waypoints ?? []).map(({ lat, lng }) => ({
           lat,
           lng,
         })),
-      }));
-  }, [activeRouteIdsKey, routes]);
+      });
+    }
+    return [...overlays.values()];
+  }, [activeEntries, routes]);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
@@ -536,9 +595,8 @@ export default function DashboardPanel() {
 
   const handleSelectBus = useCallback((entry: ActiveBusEntry) => {
     setSelectedBusId(prev => prev === entry.busId ? null : entry.busId);
-    if (hasValidBusCoordinates(entry.lat, entry.lng)) {
-      setMapCenter({ lat: entry.lat as number, lng: entry.lng as number });
-    }
+    const markerPoint = liveBusMarkerPosition(entry);
+    if (markerPoint) setMapCenter(markerPoint);
   }, []);
 
   const selectedBus = buses.find((bus) => bus.id === busId);
@@ -638,13 +696,14 @@ export default function DashboardPanel() {
           <MapCenter center={mapCenter} />
           {activeRouteOverlays.map((route) => (
             <DirectionsRoute
-              key={route.id}
-              routeId={route.id}
+              key={route.key}
+              routeId={route.routeId}
               stops={route.stops}
               polyline={route.polyline}
               polylineQuality={route.polylineQuality}
               color={route.color || "#3b82f6"}
               hasBuses
+              direction={route.direction}
             />
           ))}
           {activeEntries.map(entry => (

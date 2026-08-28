@@ -9,6 +9,10 @@ const route = {
   id: "route_1",
   name: "A-Z",
   color: "#fff",
+  polyline: "legacy-forward",
+  forwardPolyline: "legal-forward",
+  reversePolyline: "legal-reverse",
+  polylineQuality: "HIGH_QUALITY" as const,
   waypoints: [{ lat: 1, lng: 1 }, { lat: 2, lng: 2 }],
   stops: [
     { id: "a", name: "Alpha", shortName: "A", lat: 1, lng: 1 },
@@ -22,8 +26,13 @@ describe("directional route views", () => {
     expect(reverse.stops.map((stop) => stop.id)).toEqual(["z", "a"]);
     expect(reverse.waypoints.map((point) => point.lat)).toEqual([2, 1]);
     expect(reverse.rideDirection).toBe("reverse");
+    expect(reverse.polyline).toBe("legal-reverse");
     expect(route.stops.map((stop) => stop.id)).toEqual(["a", "z"]);
     expect(directionLabel("reverse", route.stops)).toBe("Z → A");
+  });
+
+  it("selects independently routed forward geometry", () => {
+    expect(routeInRideDirection(route, "forward").polyline).toBe("legal-forward");
   });
 
   it("keeps persisted session endpoints stable after the route is edited", () => {

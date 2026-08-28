@@ -383,12 +383,14 @@ describe("production security configuration", () => {
     expect(directionsRoute).toContain('from "@/lib/polyline"');
     expect(polyline).toContain("export function decodePolyline");
     expect(operations).toContain("<DirectionsRoute");
-    expect(operations).toContain("routeId={route.id}");
+    expect(operations).toContain("routeId={route.routeId}");
     expect(passengerMap).toContain("routeId={route.id}");
     expect(directionsRoute).toContain("/geometry");
     expect(routeApi).toContain('router.get("/:routeId/geometry", requireAuth');
     expect(routeApi).toContain('routingPreference: "TRAFFIC_AWARE_OPTIMAL"');
     expect(routeApi).toContain('const STORED_POLYLINE_QUALITY = "HIGH_QUALITY"');
+    expect(routeApi).toContain("computePolyline([...waypoints].reverse())");
+    expect(routeApi).toContain("reversePolyline");
     expect(directionsRoute).not.toContain("DirectionsService");
     expect(directionsRoute).not.toContain("DirectionsRenderer");
   });
@@ -569,7 +571,7 @@ describe("production security configuration", () => {
     const telemetryQueue = workspaceFile("hardware/include/telemetry_queue.h");
     const tripStateEngine = workspaceFile("backend/src/services/tripStateEngine.ts");
 
-    expect(telemetryPolicy).toContain("STOPPED_HEARTBEAT_MS = 60000");
+    expect(telemetryPolicy).toContain("STOPPED_HEARTBEAT_MS = 5000");
     expect(telemetryPolicy).toContain("motionStateChanged");
     expect(tripStateEngine).toContain("const STALE_BUS_MS = readIntervalMs");
     expect(telemetryPolicy).toContain("TELEMETRY_FRESHNESS_MARGIN_MS = 55000");

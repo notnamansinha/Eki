@@ -23,7 +23,11 @@ constexpr uint32_t GNSS_MAX_TRANSITION_GAP_MS = 60UL * 1000;
 constexpr uint32_t GNSS_REACQUIRE_AFTER_MS = 5UL * 60 * 1000;
 constexpr uint32_t MIN_PUBLISH_INTERVAL_MS = 1000;
 constexpr uint32_t MOVING_HEARTBEAT_MS = 1000;
-constexpr uint32_t STOPPED_HEARTBEAT_MS = 60000;
+// Endpoint arrival and automatic turnaround require fresh stopped telemetry.
+// Keep this comfortably below the backend's 60-second freshness window so a
+// stationary, connected bus cannot become stale at the exact moment its
+// direction needs to change.
+constexpr uint32_t STOPPED_HEARTBEAT_MS = 5000;
 constexpr uint32_t HTTPS_RETRY_BASE_MS = 1000;
 constexpr uint32_t HTTPS_RETRY_MAX_MS = 30000;
 constexpr uint32_t HTTPS_RATE_LIMIT_RETRY_MS = 60000;

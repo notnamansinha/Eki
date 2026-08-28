@@ -24,7 +24,49 @@ export interface ActiveBusEntry {
   direction?: "forward" | "reverse";
   originStopId?: string;
   destinationStopId?: string;
+  rawLocation?: RawLiveLocation;
+  matchedLocation?: MatchedLiveLocation;
+  matchConfidence?: number;
+  distanceToActiveRoute?: number;
+  activeRouteId?: string;
+  activeRoutePolyline?: string;
+  routeVersion?: number;
+  routeSource?: "configured" | "dynamic-reroute";
+  routeState?: LiveRouteState;
+  routeDirection?: "forward" | "reverse";
 }
+
+export interface RawLiveLocation {
+  lat: number;
+  lng: number;
+  speed: number;
+  heading: number;
+  gpsHdop?: number | null;
+  motionState: "moving" | "stopped" | "uncertain";
+  seq: number;
+  sampledAt: number;
+}
+
+export interface MatchedLiveLocation {
+  lat: number;
+  lng: number;
+  segmentIndex: number;
+  segmentFraction: number;
+  alongRouteDistanceM: number;
+  distanceToRouteM: number;
+  headingDifference?: number | null;
+  matchConfidence: number;
+  seq: number;
+  sampledAt: number;
+  routeVersion: number;
+}
+
+export type LiveRouteState =
+  | "ON_ROUTE"
+  | "POSSIBLE_OFF_ROUTE"
+  | "OFF_ROUTE"
+  | "REROUTING"
+  | "ON_NEW_ROUTE";
 
 /** Chat discoverability follows trusted device presence, never trip motion/status. */
 export function isLiveChatDeviceOnline(
@@ -39,6 +81,8 @@ const OPTIONAL_STRING_FIELDS = [
   "sessionId",
   "originStopId",
   "destinationStopId",
+  "activeRouteId",
+  "activeRoutePolyline",
 ] as const;
 const OPTIONAL_NUMBER_FIELDS = [
   "lat",
@@ -48,9 +92,63 @@ const OPTIONAL_NUMBER_FIELDS = [
   "timestamp",
   "currentStopIndex",
   "delayMinutes",
+  "matchConfidence",
+  "distanceToActiveRoute",
+  "routeVersion",
 ] as const;
 
+function validLatLngRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const location = value as Record<string, unknown>;
+  return (
+    typeof location.lat === "number" &&
+    Number.isFinite(location.lat) &&
+    location.lat >= -90 &&
+    location.lat <= 90 &&
+    typeof location.lng === "number" &&
+    Number.isFinite(location.lng) &&
+    location.lng >= -180 &&
+    location.lng <= 180
+  );
+}
+
+function validRawLocation(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!validLatLngRecord(value)) return false;
+  return (
+    typeof value.speed === "number" && Number.isFinite(value.speed) &&
+    typeof value.heading === "number" && Number.isFinite(value.heading) &&
+    (value.gpsHdop === undefined || value.gpsHdop === null ||
+      (typeof value.gpsHdop === "number" && value.gpsHdop >= 0 && value.gpsHdop <= 99)) &&
+    (value.motionState === "moving" ||
+      value.motionState === "stopped" ||
+      value.motionState === "uncertain") &&
+    Number.isSafeInteger(value.seq) &&
+    typeof value.sampledAt === "number" && Number.isFinite(value.sampledAt)
+  );
+}
+
+function validMatchedLocation(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!validLatLngRecord(value)) return false;
+  return (
+    Number.isInteger(value.segmentIndex) && Number(value.segmentIndex) >= 0 &&
+    typeof value.segmentFraction === "number" && value.segmentFraction >= 0 && value.segmentFraction <= 1 &&
+    typeof value.alongRouteDistanceM === "number" && value.alongRouteDistanceM >= 0 &&
+    typeof value.distanceToRouteM === "number" && value.distanceToRouteM >= 0 &&
+    (value.headingDifference === undefined || value.headingDifference === null ||
+      (typeof value.headingDifference === "number" && value.headingDifference >= 0 && value.headingDifference <= 180)) &&
+    typeof value.matchConfidence === "number" && value.matchConfidence >= 0 && value.matchConfidence <= 1 &&
+    Number.isSafeInteger(value.seq) &&
+    typeof value.sampledAt === "number" && Number.isFinite(value.sampledAt) &&
+    Number.isSafeInteger(value.routeVersion) && Number(value.routeVersion) > 0
+  );
+}
+
 function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
+  if (!validRawLocation(bus.rawLocation) || !validMatchedLocation(bus.matchedLocation)) {
+    return false;
+  }
   for (const field of OPTIONAL_STRING_FIELDS) {
     if (bus[field] !== undefined && typeof bus[field] !== "string") return false;
   }
@@ -68,6 +166,42 @@ function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
     bus.direction !== undefined &&
     bus.direction !== "forward" &&
     bus.direction !== "reverse"
+  ) {
+    return false;
+  }
+  if (
+    bus.routeDirection !== undefined &&
+    bus.routeDirection !== "forward" &&
+    bus.routeDirection !== "reverse"
+  ) {
+    return false;
+  }
+  if (
+    bus.routeSource !== undefined &&
+    bus.routeSource !== "configured" &&
+    bus.routeSource !== "dynamic-reroute"
+  ) {
+    return false;
+  }
+  if (
+    bus.routeState !== undefined &&
+    bus.routeState !== "ON_ROUTE" &&
+    bus.routeState !== "POSSIBLE_OFF_ROUTE" &&
+    bus.routeState !== "OFF_ROUTE" &&
+    bus.routeState !== "REROUTING" &&
+    bus.routeState !== "ON_NEW_ROUTE"
+  ) {
+    return false;
+  }
+  if (
+    typeof bus.matchConfidence === "number" &&
+    (bus.matchConfidence < 0 || bus.matchConfidence > 1)
+  ) {
+    return false;
+  }
+  if (
+    typeof bus.routeVersion === "number" &&
+    (!Number.isSafeInteger(bus.routeVersion) || bus.routeVersion <= 0)
   ) {
     return false;
   }

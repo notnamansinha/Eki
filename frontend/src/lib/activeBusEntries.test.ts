@@ -52,6 +52,40 @@ describe("isActiveBusEntry", () => {
     ).toBe(true);
   });
 
+  it("accepts independently observable raw and matched route positions", () => {
+    expect(isActiveBusEntry({
+      busId: "Bus01",
+      timestamp: now - 1_000,
+      lat: 23,
+      lng: 72,
+      routeVersion: 2,
+      routeState: "ON_NEW_ROUTE",
+      routeSource: "dynamic-reroute",
+      rawLocation: {
+        lat: 23.0001,
+        lng: 72.0001,
+        speed: 20,
+        heading: 90,
+        motionState: "moving",
+        seq: 10,
+        sampledAt: now - 1_000,
+      },
+      matchedLocation: {
+        lat: 23,
+        lng: 72,
+        segmentIndex: 4,
+        segmentFraction: 0.5,
+        alongRouteDistanceM: 500,
+        distanceToRouteM: 8,
+        headingDifference: 3,
+        matchConfidence: 0.9,
+        seq: 10,
+        sampledAt: now - 1_000,
+        routeVersion: 2,
+      },
+    }, now)).toBe(true);
+  });
+
   it("rejects stale telemetry outside a ride", () => {
     expect(isActiveBusEntry({ busId: "bus_1", timestamp: now - BUS_EXPIRY_MS }, now)).toBe(false);
   });
@@ -67,6 +101,9 @@ describe("isActiveBusEntry", () => {
       { busId: "bus_1", timestamp: now - 1_000, tripState: "paused" },
       { busId: "bus_1", timestamp: now - 1_000, status: "unknown" },
       { busId: "bus_1", timestamp: now - 1_000, routeId: 42 },
+      { busId: "bus_1", timestamp: now - 1_000, routeState: "TELEPORTING" },
+      { busId: "bus_1", timestamp: now - 1_000, matchConfidence: 2 },
+      { busId: "bus_1", timestamp: now - 1_000, matchedLocation: { lat: 23, lng: 72 } },
     ];
 
     for (const entry of malformed) {
