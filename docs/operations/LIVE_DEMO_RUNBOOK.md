@@ -47,20 +47,31 @@ an HTTPS address:
 
 - **Preferred campus option:** university DNS and a valid certificate pointing
   to the laptop/backend.
-- **Demo option:** an approved HTTPS tunnel to `http://localhost:4000`.
+- **Demo option:** the approved ngrok development domain assigned to the demo
+  account, forwarding to `http://localhost:4000`.
 
-- [ ] Record only the tunnel/public HTTPS backend origin for the device-specific
-  firmware configuration; do not add a path or query.
-- [ ] Export the issuing root/intermediate CA used by that hostname for the
-  ignored firmware `secrets.h`.
+Configure the ngrok account once, then start the backend endpoint with the same
+explicit URL before every rehearsal:
+
+```powershell
+ngrok config add-authtoken <YOUR_NGROK_AUTHTOKEN> # one-time, outside the repo
+ngrok http 4000 --url https://<assigned-name>.ngrok-free.app
+```
+
+- [ ] Record only the stable ngrok/public HTTPS backend origin for the
+  device-specific firmware configuration; do not add a path or query.
+- [ ] Verify and export the issuing root CA used by that hostname for the
+  ignored firmware `secrets.h`; never pin the renewable leaf certificate.
 - [ ] Test the public URL from a phone on mobile data:
   `https://<backend-host>/health`.
 - [ ] Record admin-authenticated `/api/health.telemetry` processing, device-to-server and RTDB-write
   p50/p95/p99 during rehearsal; empty values before telemetry are expected.
 - [ ] Keep the tunnel process running for the entire ride.
 
-For professor phones, expose the laptop frontend through a **second HTTPS
-tunnel** to `http://localhost:3000`:
+Prefer the deployed Firebase Hosting frontend for professor phones. If the
+laptop frontend must be exposed, provision a **second eligible stable HTTPS
+domain** to `http://localhost:3000`; the free ngrok account's single assigned
+development domain should remain dedicated to the backend:
 
 - [ ] Put the backend HTTPS URL in `NEXT_PUBLIC_BACKEND_URL` before starting
   the frontend.
@@ -72,9 +83,10 @@ tunnel** to `http://localhost:3000`:
 - [ ] Restart both dev servers after environment changes, then open the frontend
   HTTPS URL on the laptop and each professor phone.
 
-A stable university/paid tunnel hostname is strongly preferred. If a free
-tunnel changes either URL, update the environment, firmware URL/CA if needed,
-and repeat the complete rehearsal.
+The assigned backend domain must remain unchanged across rehearsals. Restarting
+ngrok with the same `--url` does not require reflashing. A domain, issuing-root,
+Wi-Fi/device-credential, or firmware change does; repeat the complete rehearsal
+after any such change. Follow the [ngrok tunnel runbook](NGROK_TUNNEL.md).
 
 ## 3. Register and flash the ESP32
 
@@ -147,8 +159,8 @@ passenger and admin.
 
 ## 6. Professor-day sequence
 
-1. Start hotspot/network, backend and frontend HTTPS tunnels, backend, and
-   frontend.
+1. Start hotspot/network, backend, the stable ngrok backend endpoint, and the
+   Firebase-hosted (or separately tunneled) frontend.
 2. Check `/health`; check ESP serial response 200/202.
 3. Sign in to passenger and admin panels.
 4. Select the assigned bus and route; arm once.
