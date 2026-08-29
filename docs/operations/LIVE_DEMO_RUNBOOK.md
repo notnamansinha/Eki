@@ -55,7 +55,7 @@ explicit URL before every rehearsal:
 
 ```powershell
 ngrok config add-authtoken <YOUR_NGROK_AUTHTOKEN> # one-time, outside the repo
-ngrok http 4000 --url https://<assigned-name>.ngrok-free.app
+ngrok http 4000 --url https://<assigned-domain>
 ```
 
 - [ ] Record only the stable ngrok/public HTTPS backend origin for the

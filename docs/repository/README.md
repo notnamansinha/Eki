@@ -18,14 +18,14 @@ npm run dev --workspace=backend
 
 ```powershell
 ngrok config add-authtoken <YOUR_NGROK_AUTHTOKEN> # one-time setup
-$NgrokDomain = "<assigned-name>.ngrok-free.app"
+$NgrokDomain = "<assigned-domain>" # for example: name.ngrok-free.dev
 ngrok http 4000 --url "https://$NgrokDomain"
 ```
 
 Keep ngrok running. In Terminal 3, verify the fixed origin:
 
 ```powershell
-$BackendOrigin = "https://<assigned-name>.ngrok-free.app"
+$BackendOrigin = "https://<assigned-domain>"
 Invoke-RestMethod "$BackendOrigin/health"
 ```
 
@@ -103,13 +103,13 @@ domain. Add the account authtoken once, outside the repository:
 
 ```powershell
 ngrok config add-authtoken <YOUR_NGROK_AUTHTOKEN>
-ngrok http 4000 --url https://<assigned-name>.ngrok-free.app
+ngrok http 4000 --url https://<assigned-domain>
 ```
 
 Verify the fixed HTTPS origin before flashing or deploying anything:
 
 ```powershell
-Invoke-RestMethod https://<assigned-name>.ngrok-free.app/health
+Invoke-RestMethod https://<assigned-domain>/health
 ```
 
 > **Important:** always pass the assigned development domain with `--url`.
@@ -143,7 +143,7 @@ domains. The free account's single assigned domain should remain dedicated to
 the backend, so Firebase Hosting is the preferred phone frontend:
 
 ```powershell
-ngrok http 3000 --url https://<frontend-domain>.ngrok-free.app
+ngrok http 3000 --url https://<frontend-domain>
 ```
 
 ## Testing handoff: web app and ESP32
@@ -188,7 +188,7 @@ npm run provision-device --workspace=backend -- `
 ```
 
 Use the stable ngrok backend origin configured above and verify
-`https://<assigned-name>.ngrok-free.app/health` returns HTTP 200.
+`https://<assigned-domain>/health` returns HTTP 200.
 
 Set the stable origin in `BACKEND_URL` and its verified issuing root CA in
 `BACKEND_ROOT_CA`, then build, flash, and monitor. Do this once unless a

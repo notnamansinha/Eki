@@ -12,6 +12,8 @@ issue #122. The laptop, backend, and ngrok agent must remain online.
 Create an ngrok account and copy its assigned development domain from the ngrok
 dashboard. The free plan currently supplies one assigned development domain;
 it is stable across agent restarts when explicitly passed to `--url`.
+Use the exact hostname shown by the dashboard or agent; ngrok may use suffixes
+such as `ngrok-free.dev`, and the suffix should not be assumed in advance.
 
 Install the ngrok agent, then save the account authtoken in ngrok's user-level
 configuration:
@@ -36,7 +38,7 @@ Invoke-RestMethod http://localhost:4000/health
 Start ngrok in Terminal 2 using the exact assigned domain:
 
 ```powershell
-$NgrokDomain = "<assigned-name>.ngrok-free.app"
+$NgrokDomain = "<assigned-domain>" # for example: name.ngrok-free.dev
 ngrok http 4000 --url "https://$NgrokDomain"
 ```
 
@@ -44,7 +46,7 @@ Keep both processes running. From Terminal 3 and from a phone on a different
 network, verify:
 
 ```powershell
-$BackendOrigin = "https://<assigned-name>.ngrok-free.app"
+$BackendOrigin = "https://<assigned-domain>"
 Invoke-RestMethod "$BackendOrigin/health"
 ```
 
@@ -61,7 +63,7 @@ public server certificate, but the ESP32 still needs a trusted issuing root CA.
 Inspect the certificate chain for the assigned hostname during provisioning:
 
 ```powershell
-$NgrokDomain = "<assigned-name>.ngrok-free.app"
+$NgrokDomain = "<assigned-domain>"
 openssl s_client -showcerts -verify_return_error `
   -connect "${NgrokDomain}:443" -servername $NgrokDomain
 ```
@@ -74,7 +76,7 @@ and do not pin the renewable leaf certificate shown first in the server chain.
 Configure the ignored `hardware/include/secrets.h` once:
 
 ```cpp
-#define BACKEND_URL "https://<assigned-name>.ngrok-free.app"
+#define BACKEND_URL "https://<assigned-domain>"
 #define BACKEND_ROOT_CA \
   "-----BEGIN CERTIFICATE-----\n" \
   "<verified issuing root CA PEM>\n" \
