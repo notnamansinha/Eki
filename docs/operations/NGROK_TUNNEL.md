@@ -7,6 +7,30 @@ the tunnel does not force an ESP32 rebuild and reflash.
 This is a bench/demo workflow, not the production-hosting design tracked by
 issue #122. The laptop, backend, and ngrok agent must remain online.
 
+## Setup handoff checklist
+
+Before handing the bench setup to device testing, confirm the workstation side
+is complete:
+
+- ngrok is installed, authenticated, and able to pass `ngrok diagnose`.
+- The assigned development domain is started explicitly with `--url`; do not
+  rely on a randomly generated tunnel URL.
+- Google Cloud Application Default Credentials use the Firebase project needed
+  by the backend, including its ADC quota project.
+- Local and public `/health` requests both return HTTP 200 with `status: ok`.
+- A browser-origin CORS preflight reaches the backend through ngrok.
+- The backend keeps the frontend origin in `CORS_ORIGIN`; the ngrok backend URL
+  belongs in frontend and firmware configuration instead.
+- Authtokens, Firebase credentials, local environment files, and firmware
+  secrets remain ignored and uncommitted.
+
+The workstation checks do not complete the ESP32 handoff. Device testing still
+requires the ignored `hardware/include/secrets.h` to contain the assigned ngrok
+origin, the verified issuing root CA, Wi-Fi credentials, and device credentials.
+Build and flash that configuration once, then confirm authenticated telemetry in
+the serial monitor and backend. Ordinary backend or ngrok restarts using the same
+domain do not require another flash.
+
 ## 1. One-time ngrok setup
 
 Create an ngrok account and copy its assigned development domain from the ngrok
