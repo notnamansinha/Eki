@@ -108,7 +108,12 @@ describe("POST /api/plan directional geometry", () => {
   });
 
   it("prefers an independently routed reversePolyline when present", async () => {
-    const reversePolyline = encodePolyline([Z, A]);
+    // The stored reverse geometry differs from the plain reversed-forward
+    // fallback (it detours through M), so the test fails if the planner ever
+    // derives a reverse result by reversing forwardCoords instead of using
+    // the independently routed reversePolyline.
+    const M = { lat: 23.005, lng: 72.02 };
+    const reversePolyline = encodePolyline([Z, M, A]);
     harness.routes.set("directional_route", {
       id: "directional_route",
       name: "Directional A-Z",
