@@ -33,6 +33,7 @@ const validPolyline = encodePolyline([
 const harness = vi.hoisted(() => ({
   data: new Map<string, unknown>(),
   paths: [] as string[],
+  rejectPaths: new Set<string>(),
 }));
 
 vi.mock("firebase/database", () => ({
@@ -40,9 +41,14 @@ vi.mock("firebase/database", () => ({
     harness.paths.push(path);
     return { path };
   }),
-  get: vi.fn(async (refObj: { path: string }) => ({
-    val: () => harness.data.get(refObj.path) ?? null,
-  })),
+  get: vi.fn(async (refObj: { path: string }) => {
+    if (harness.rejectPaths.has(refObj.path)) {
+      // Reject once so a recovered read can succeed on a later call.
+      harness.rejectPaths.delete(refObj.path);
+      throw new Error("network down");
+    }
+    return { val: () => harness.data.get(refObj.path) ?? null };
+  }),
 }));
 
 vi.mock("./firebaseDatabase", () => ({
@@ -60,6 +66,7 @@ beforeEach(() => {
   __resetActiveRouteGeometryForTests();
   harness.data.clear();
   harness.paths = [];
+  harness.rejectPaths.clear();
 });
 
 afterEach(() => {
@@ -88,5 +95,21 @@ describe("activeRouteGeometry", () => {
   it("returns null (and caches it) when a version's sibling node is missing", async () => {
     expect(await fetchActiveRouteGeometry("bus_01_route_1", 9)).toBeNull();
     expect(cachedActiveRouteGeometry("bus_01_route_1", 9)).toBeNull();
+  });
+
+  it("does not cache a rejected read, so the version can recover after reconnection", async () => {
+    const path = `activeRouteGeometry/bus_01_route_1/4`;
+    harness.data.set(path, { polyline: validPolyline });
+    harness.rejectPaths.add(path);
+
+    // First attempt fails at the network layer: nothing is cached.
+    expect(await fetchActiveRouteGeometry("bus_01_route_1", 4)).toBeNull();
+    expect(cachedActiveRouteGeometry("bus_01_route_1", 4)).toBeUndefined();
+
+    // Connectivity recovers (the one-shot rejection is consumed) → the same
+    // version can be fetched and is now cached.
+    const geometry = await fetchActiveRouteGeometry("bus_01_route_1", 4);
+    expect(geometry?.polyline).toBe(validPolyline);
+    expect(cachedActiveRouteGeometry("bus_01_route_1", 4)).toEqual(geometry);
   });
 });

@@ -50,20 +50,22 @@ describe("busStopArrivalTimestamps", () => {
     expect(onDetour.z).toBeGreaterThan(onDirect.z);
   });
 
-  it("applies dwell time for intermediate stops and delay minutes", () => {
-    const arrivals = busStopArrivalTimestamps({
+  it("shifts every matching arrival by exactly the configured delay", () => {
+    const delayed = busStopArrivalTimestamps({
       ...base,
       delayMinutes: 2,
       path: directPath,
       remainingStops: [B, Z],
     });
-    // 2 minutes of configured delay shifts both arrivals by exactly 120s.
-    const noDelay = busStopArrivalTimestamps({
+    const undelayed = busStopArrivalTimestamps({
       ...base,
       delayMinutes: 0,
       path: directPath,
-      remainingStops: [B],
+      remainingStops: [B, Z],
     });
-    expect(arrivals.z - 120_000).toBeGreaterThan(noDelay.b);
+    // Identical stops and path: delayMinutes must shift each matching stop by
+    // exactly 120_000 ms, independent of distance or intermediate dwell time.
+    expect(delayed.b).toBe(undelayed.b + 120_000);
+    expect(delayed.z).toBe(undelayed.z + 120_000);
   });
 });

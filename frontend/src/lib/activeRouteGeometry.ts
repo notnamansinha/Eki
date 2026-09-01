@@ -62,16 +62,20 @@ async function loadGeometry(
   nodeKey: string,
   version: number,
 ): Promise<ActiveRouteGeometry | null> {
-  let geometry: ActiveRouteGeometry | null = null;
+  let snapshot;
   try {
-    const snapshot = await get(ref(rtdb, `activeRouteGeometry/${nodeKey}/${version}`));
-    const value = snapshot.val() as { polyline?: unknown } | null;
-    if (typeof value?.polyline === "string" && value.polyline.length > 0) {
-      const path = decodePolyline(value.polyline);
-      if (path.length >= 2) geometry = { polyline: value.polyline, path };
-    }
+    snapshot = await get(ref(rtdb, `activeRouteGeometry/${nodeKey}/${version}`));
   } catch {
-    geometry = null;
+    // Transient read failure: do NOT cache, so callers can retry once
+    // connectivity recovers. Only successfully resolved missing/invalid
+    // geometry is cached as null below.
+    return null;
+  }
+  let geometry: ActiveRouteGeometry | null = null;
+  const value = snapshot?.val() as { polyline?: unknown } | null;
+  if (typeof value?.polyline === "string" && value.polyline.length > 0) {
+    const path = decodePolyline(value.polyline);
+    if (path.length >= 2) geometry = { polyline: value.polyline, path };
   }
   if (cache.size >= CACHE_MAX) {
     const oldest = cache.keys().next().value;

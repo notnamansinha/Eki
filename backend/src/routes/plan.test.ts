@@ -96,14 +96,15 @@ describe("POST /api/plan directional geometry", () => {
     const forward = await plan("legacy_route", "a", "z");
     expect(forward.status).toBe(200);
     expect(forward.direction).toBe("forward");
-    expect(forward.polyline).toBeTruthy();
+    expect(forward.polyline).toBe(forwardPolyline);
 
     // No reversePolyline stored → reverse planning must fall back to the
-    // reversed forward geometry instead of returning 422.
+    // reversed forward geometry (Z→A travel order) instead of returning 422
+    // or silently returning the unreversed forward geometry.
     const reverse = await plan("legacy_route", "z", "a");
     expect(reverse.status).toBe(200);
     expect(reverse.direction).toBe("reverse");
-    expect(reverse.polyline).toBeTruthy();
+    expect(reverse.polyline).toBe(encodePolyline([Z, A]));
   });
 
   it("prefers an independently routed reversePolyline when present", async () => {
@@ -122,6 +123,7 @@ describe("POST /api/plan directional geometry", () => {
     const reverse = await plan("directional_route", "z", "a");
     expect(reverse.status).toBe(200);
     expect(reverse.direction).toBe("reverse");
+    expect(reverse.polyline).toBe(reversePolyline);
   });
 
   it("still rejects a route with no decodable geometry", async () => {
