@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  isReliableMovingSample,
   remainingRerouteStops,
   rerouteContextIsCurrent,
+  routeRepairSnapshotWrite,
 } from "./telemetryRouteService";
 
 const stops = [
@@ -48,5 +50,72 @@ describe("reroute result guards", () => {
     expect(rerouteContextIsCurrent({ ...live, sessionId: "session-old" }, expected)).toBe(false);
     expect(rerouteContextIsCurrent({ ...live, rerouteRequestId: "request-4" }, expected)).toBe(false);
     expect(rerouteContextIsCurrent({ ...live, direction: "reverse" }, expected)).toBe(false);
+  });
+});
+
+describe("reliable moving sample HDOP gate", () => {
+  const base = {
+    lat: 23,
+    lng: 72,
+    speed: 18,
+    heading: 90,
+    motionState: "moving" as const,
+    seq: 5,
+    deviceSentAt: 1_500,
+    timestamp: 1_000,
+    gpsHdop: 4,
+  };
+
+  it("requires a non-null gpsHdop for a moving fast sample", () => {
+    // Legacy compatibility samples carry gpsHdop null and must never be
+    // treated as reliable enough to confirm an off-route deviation.
+    expect(isReliableMovingSample({ ...base, gpsHdop: null })).toBe(false);
+  });
+
+  it("accepts a moving fast sample with a valid HDOP at or below the threshold", () => {
+    expect(isReliableMovingSample({ ...base, gpsHdop: 4 })).toBe(true);
+    expect(isReliableMovingSample({ ...base, gpsHdop: 3.2 })).toBe(true);
+  });
+
+  it("rejects slow, stopped, or high-HDOP samples", () => {
+    expect(isReliableMovingSample({ ...base, gpsHdop: 2, speed: 2 })).toBe(false);
+    expect(
+      isReliableMovingSample({ ...base, gpsHdop: 2, motionState: "stopped" }),
+    ).toBe(false);
+    expect(isReliableMovingSample({ ...base, gpsHdop: 99 })).toBe(false);
+  });
+});
+
+describe("route repair snapshot writes", () => {
+  const forward = { encoded: "fwd" };
+  const reverse = { encoded: "rev" };
+  const fresh = { distanceMeters: 5000, duration: "600s" };
+
+  it("stamps HIGH_QUALITY plus metrics only when both directions were freshly computed", () => {
+    const write = routeRepairSnapshotWrite({
+      forward,
+      reverse,
+      forwardRepair: fresh,
+      reverseRepair: fresh,
+    });
+    expect(write.polylineQuality).toBe("HIGH_QUALITY");
+    expect(write.distanceMeters).toBe(5000);
+    expect(write.reverseDistanceMeters).toBe(5000);
+    expect(write.duration).toBe("600s");
+  });
+
+  it("preserves legacy forward geometry but never claims quality or metrics", () => {
+    const write = routeRepairSnapshotWrite({
+      forward,
+      reverse,
+      forwardRepair: null,
+      reverseRepair: fresh,
+    });
+    expect(write.polyline).toBe("fwd");
+    expect(write.forwardPolyline).toBe("fwd");
+    expect(write.polylineQuality).toBeUndefined();
+    expect(write.distanceMeters).toBeUndefined();
+    expect(write.duration).toBeUndefined();
+    expect(write.reverseDistanceMeters).toBe(5000);
   });
 });

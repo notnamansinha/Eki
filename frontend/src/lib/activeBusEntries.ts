@@ -29,7 +29,6 @@ export interface ActiveBusEntry {
   matchConfidence?: number;
   distanceToActiveRoute?: number;
   activeRouteId?: string;
-  activeRoutePolyline?: string;
   routeVersion?: number;
   routeSource?: "configured" | "dynamic-reroute";
   routeState?: LiveRouteState;
@@ -82,7 +81,6 @@ const OPTIONAL_STRING_FIELDS = [
   "originStopId",
   "destinationStopId",
   "activeRouteId",
-  "activeRoutePolyline",
 ] as const;
 const OPTIONAL_NUMBER_FIELDS = [
   "lat",
@@ -119,7 +117,8 @@ function validRawLocation(value: unknown): boolean {
     typeof value.speed === "number" && Number.isFinite(value.speed) &&
     typeof value.heading === "number" && Number.isFinite(value.heading) &&
     (value.gpsHdop === undefined || value.gpsHdop === null ||
-      (typeof value.gpsHdop === "number" && value.gpsHdop >= 0 && value.gpsHdop <= 99)) &&
+      (typeof value.gpsHdop === "number" && Number.isFinite(value.gpsHdop) &&
+        value.gpsHdop >= 0 && value.gpsHdop <= 99)) &&
     (value.motionState === "moving" ||
       value.motionState === "stopped" ||
       value.motionState === "uncertain") &&
@@ -133,12 +132,12 @@ function validMatchedLocation(value: unknown): boolean {
   if (!validLatLngRecord(value)) return false;
   return (
     Number.isInteger(value.segmentIndex) && Number(value.segmentIndex) >= 0 &&
-    typeof value.segmentFraction === "number" && value.segmentFraction >= 0 && value.segmentFraction <= 1 &&
-    typeof value.alongRouteDistanceM === "number" && value.alongRouteDistanceM >= 0 &&
-    typeof value.distanceToRouteM === "number" && value.distanceToRouteM >= 0 &&
+    typeof value.segmentFraction === "number" && Number.isFinite(value.segmentFraction) && value.segmentFraction >= 0 && value.segmentFraction <= 1 &&
+    typeof value.alongRouteDistanceM === "number" && Number.isFinite(value.alongRouteDistanceM) && value.alongRouteDistanceM >= 0 &&
+    typeof value.distanceToRouteM === "number" && Number.isFinite(value.distanceToRouteM) && value.distanceToRouteM >= 0 &&
     (value.headingDifference === undefined || value.headingDifference === null ||
-      (typeof value.headingDifference === "number" && value.headingDifference >= 0 && value.headingDifference <= 180)) &&
-    typeof value.matchConfidence === "number" && value.matchConfidence >= 0 && value.matchConfidence <= 1 &&
+      (typeof value.headingDifference === "number" && Number.isFinite(value.headingDifference) && value.headingDifference >= 0 && value.headingDifference <= 180)) &&
+    typeof value.matchConfidence === "number" && Number.isFinite(value.matchConfidence) && value.matchConfidence >= 0 && value.matchConfidence <= 1 &&
     Number.isSafeInteger(value.seq) &&
     typeof value.sampledAt === "number" && Number.isFinite(value.sampledAt) &&
     Number.isSafeInteger(value.routeVersion) && Number(value.routeVersion) > 0

@@ -124,15 +124,15 @@ probe down.
 
 ### `POST /api/devices/:deviceId/telemetry` — device
 
-Body must contain exactly:
+Body must contain exactly nine fields:
 
 ```jsonc
-{"deviceSentAt":<send epoch ms>,"lat":23.034,"lng":72.55,"speed":18.2,"heading":94,"motionState":"moving","seq":1,"timestamp":<GNSS sample epoch ms>}
+{"deviceSentAt":<send epoch ms>,"gpsHdop":4.1,"lat":23.034,"lng":72.55,"speed":18.2,"heading":94,"motionState":"moving","seq":1,"timestamp":<GNSS sample epoch ms>}
 ```
 
-`timestamp` is the GNSS capture time, `deviceSentAt` is refreshed immediately before each HTTP attempt, and `seq` is a positive 32-bit queue sequence. Ranges: latitude -90..90, longitude -180..180, speed 0..200 km/h, heading 0..<360, `motionState` is `moving|stopped|uncertain`; both times must satisfy server bounds and `deviceSentAt >= timestamp`. Bus/route comes from `devices`, never the body.
+`timestamp` is the GNSS capture time, `deviceSentAt` is refreshed immediately before each HTTP attempt, and `seq` is a positive 32-bit queue sequence. `gpsHdop` is the fix-quality gate (0..99) required before an off-route deviation can be confirmed. Ranges: latitude -90..90, longitude -180..180, speed 0..200 km/h, heading 0..<360, `motionState` is `moving|stopped|uncertain`, `gpsHdop` 0..99; both times must satisfy server bounds and `deviceSentAt >= timestamp`. Bus/route comes from `devices`, never the body.
 
-Deploy the backend before flashing this firmware. During the staged rollout it also accepts only the immediately previous closed six-field schema, interpreting its send time as its sample time. Remove that compatibility path after fleet diagnostics confirm every device sends `seq` and `deviceSentAt`.
+Deploy the backend before flashing this firmware. The parser accepts the current closed nine-field schema, plus two compatibility contracts during the staged rollout: the immediately previous bounded eight-field sequenced schema (no `gpsHdop`) and the legacy six-field schema (no `seq`/`deviceSentAt`, its send time interpreted as its sample time). Validate the schema your deployed firmware actually sends instead of requiring an exact field count. Remove the compatibility paths after fleet diagnostics confirm every device sends the sequenced fields.
 
 - 202 `{accepted:true,duplicate:false}`: new RTDB fix.
 - 200 `{accepted:true,duplicate:true}`: older timestamp or duplicate timestamp/sequence safely ignored.

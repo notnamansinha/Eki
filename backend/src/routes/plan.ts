@@ -52,10 +52,16 @@ async function getCachedRoute(routeId: string) {
   if (!document.exists) return null;
   const route = document.data() as RouteDoc;
   const forwardPolyline = route.forwardPolyline ?? route.polyline;
+  const forwardCoords = forwardPolyline ? decodePolyline(forwardPolyline) : [];
   const value = {
     route,
-    forwardCoords: forwardPolyline ? decodePolyline(forwardPolyline) : [],
-    reverseCoords: route.reversePolyline ? decodePolyline(route.reversePolyline) : [],
+    forwardCoords,
+    // Legacy route documents predate directional reverse geometry. Fall back to
+    // the reversed forward (A→Z handled as Z→A) polyline so a reverse trip on a
+    // historical route never 422s purely because reversePolyline is absent.
+    reverseCoords: route.reversePolyline
+      ? decodePolyline(route.reversePolyline)
+      : [...forwardCoords].reverse(),
     expiresAt: Date.now() + ROUTE_CACHE_MS,
   };
   if (routeCache.size >= 250) {
@@ -135,7 +141,12 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
     const startNaturalIndex = stops.indexOf(startStop);
     const endNaturalIndex = stops.indexOf(endStop);
     const direction = startNaturalIndex < endNaturalIndex ? "forward" : "reverse";
-    const fullCoords = direction === "forward" ? forwardCoords : reverseCoords;
+    const fullCoords =
+      direction === "forward"
+        ? forwardCoords
+        : reverseCoords.length >= 2
+          ? reverseCoords
+          : [...forwardCoords].reverse();
     if (fullCoords.length < 2) {
       res.status(422).json({
         error: `Route has no stored ${direction} geometry. Load or re-save the route to repair it.`,

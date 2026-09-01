@@ -540,6 +540,7 @@ function scheduleDurableRideRestore(
 async function persistTelemetry(
   assignment: DeviceAssignment,
   sample: TelemetryPayload,
+  backendReceivedAt: number,
 ): Promise<{ committed: boolean; hasSession: boolean }> {
   const writeStartedAt = Date.now();
   const nodeKey = `${assignment.busId}_${assignment.routeId}`;
@@ -615,7 +616,7 @@ async function persistTelemetry(
         acceptedSample.motionState === "uncertain"
           ? "gnss_lost"
           : "connected",
-      backendReceivedAt: writeStartedAt,
+      backendReceivedAt,
       receivedAt: { ".sv": "timestamp" },
       rtdbCommittedAt: { ".sv": "timestamp" },
     };
@@ -643,7 +644,12 @@ export async function ingestDeviceTelemetry(
   sample: TelemetryPayload,
   now = Date.now(),
 ): Promise<TelemetryIngestResult> {
-  const processingStartedAt = Date.now();
+  // One server ingress timestamp for the whole request boundary. `now` is
+  // captured when the handler enters, so `backendReceivedAt` and the network
+  // latency reflect receipt at the request boundary rather than after
+  // authenticate/rate-limit and RTDB transaction work.
+  const serverReceivedAt = now;
+  const processingStartedAt = now;
   if (!SAFE_ID.test(deviceId)) {
     status.rejected += 1;
     status.lastRejectedAt = new Date(now).toISOString();
@@ -663,7 +669,7 @@ export async function ingestDeviceTelemetry(
     return { ok: false, reason: "rate_limit", retryAfterMs };
   }
 
-  const persisted = await persistTelemetry(assignment, sample);
+  const persisted = await persistTelemetry(assignment, sample, serverReceivedAt);
   if (!persisted.hasSession) {
     // RTDB already contains the accepted fix at this point. Recover the
     // durable lifecycle immediately in the background so the hardware response
@@ -677,7 +683,7 @@ export async function ingestDeviceTelemetry(
   }
   recordSample(processingLatencySamples, Date.now() - processingStartedAt);
   recordSample(deviceQueueLatencySamples, sample.deviceSentAt - sample.timestamp);
-  recordSample(networkLatencySamples, Date.now() - sample.deviceSentAt);
+  recordSample(networkLatencySamples, serverReceivedAt - sample.deviceSentAt);
   // Device timestamps come from NTP-synchronised wall time. Ignore implausible
   // values instead of letting a bad device clock corrupt the rolling window.
   const deviceToServerLatency = Date.now() - sample.timestamp;

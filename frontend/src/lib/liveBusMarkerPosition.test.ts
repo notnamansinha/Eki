@@ -33,6 +33,16 @@ describe("live bus marker position", () => {
       timestamp: 1_000,
       routeState: "ON_ROUTE",
       routeVersion: 4,
+      rawLocation: {
+        lat: 23.012441,
+        lng: 72.458011,
+        speed: 18,
+        heading: 94,
+        gpsHdop: 4,
+        motionState: "moving",
+        seq: 10,
+        sampledAt: 1_000,
+      },
       matchedLocation: {
         lat: 23.0124,
         lng: 72.458,
@@ -47,6 +57,42 @@ describe("live bus marker position", () => {
         routeVersion: 4,
       },
     })).toEqual({ lat: 23.0124, lng: 72.458 });
+  });
+
+  it("falls back to raw coordinates when the match seq is stale", () => {
+    // A stale asynchronous match can share sampledAt and routeVersion with the
+    // newest fix. Only a matched sequence equal to the raw fix sequence is
+    // accepted — a mismatch must render authenticated raw telemetry instead.
+    expect(liveBusMarkerPosition({
+      lat: 23.012441,
+      lng: 72.458011,
+      timestamp: 1_000,
+      routeState: "ON_ROUTE",
+      routeVersion: 4,
+      rawLocation: {
+        lat: 23.012441,
+        lng: 72.458011,
+        speed: 18,
+        heading: 94,
+        gpsHdop: 4,
+        motionState: "moving",
+        seq: 11,
+        sampledAt: 1_000,
+      },
+      matchedLocation: {
+        lat: 23.0124,
+        lng: 72.458,
+        segmentIndex: 8,
+        segmentFraction: 0.5,
+        alongRouteDistanceM: 800,
+        distanceToRouteM: 5,
+        headingDifference: 2,
+        matchConfidence: 0.92,
+        seq: 10,
+        sampledAt: 1_000,
+        routeVersion: 4,
+      },
+    })).toEqual({ lat: 23.012441, lng: 72.458011 });
   });
 
   it.each(["POSSIBLE_OFF_ROUTE", "OFF_ROUTE", "REROUTING"] as const)(

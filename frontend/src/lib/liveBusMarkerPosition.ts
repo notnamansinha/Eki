@@ -6,6 +6,7 @@ const MIN_DISPLAY_MATCH_CONFIDENCE = 0.45;
 
 type LiveBusPositionInput = Pick<
   ActiveBusEntry,
+  | "rawLocation"
   | "lat"
   | "lng"
   | "timestamp"
@@ -16,8 +17,10 @@ type LiveBusPositionInput = Pick<
 
 /**
  * Prefer a backend-accepted route match only when it belongs to the current
- * telemetry sample and active route version. During ambiguity/off-route/
- * rerouting, immediately fall back to authenticated raw telemetry.
+ * telemetry sample and active route version. The matched sequence must also
+ * equal the raw fix sequence so a stale asynchronous match that shares a
+ * sampledAt/version cannot overwrite a newer sample. During ambiguity/
+ * off-route/rerouting, immediately fall back to authenticated raw telemetry.
  */
 export function liveBusMarkerPosition(
   input: LiveBusPositionInput,
@@ -27,6 +30,7 @@ export function liveBusMarkerPosition(
     matched &&
     (input.routeState === "ON_ROUTE" || input.routeState === "ON_NEW_ROUTE") &&
     matched.matchConfidence >= MIN_DISPLAY_MATCH_CONFIDENCE &&
+    matched.seq === input.rawLocation?.seq &&
     matched.sampledAt === input.timestamp &&
     matched.routeVersion === input.routeVersion &&
     hasValidBusCoordinates(matched.lat, matched.lng)

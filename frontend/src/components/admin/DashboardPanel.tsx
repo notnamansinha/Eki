@@ -6,6 +6,7 @@ import {
 } from "@vis.gl/react-google-maps";
 import { auth } from "@/lib/firebaseAuth";
 import { useBuses } from "@/hooks/useBuses";
+import { useDynamicRouteGeometries } from "@/hooks/useDynamicRouteGeometries";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
@@ -506,6 +507,11 @@ export default function DashboardPanel() {
     markSnapshotReceived,
   });
   const { buses, error: busesError, retry: retryBuses } = useBuses();
+  const activeEntriesMap = useMemo(
+    () => new Map(activeEntries.map((entry) => [entry.busId, entry])),
+    [activeEntries],
+  );
+  const dynamicGeometries = useDynamicRouteGeometries(activeEntriesMap);
   const { drivers } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const activeRouteOverlays = useMemo(() => {
@@ -526,7 +532,12 @@ export default function DashboardPanel() {
       const hasDirectionalGeometry = Boolean(
         route.forwardPolyline && route.reversePolyline,
       );
-      const overlayKey = entry.activeRoutePolyline
+      const geometry =
+        entry.routeSource === "dynamic-reroute"
+          ? dynamicGeometries.get(entry.busId)
+          : undefined;
+      const hasDynamic = Boolean(geometry);
+      const overlayKey = hasDynamic
         ? entry.activeRouteId ?? `${route.id}:${entry.routeVersion ?? 0}:${entry.busId}`
         : `${route.id}:${direction}`;
       if (overlays.has(overlayKey)) continue;
@@ -534,11 +545,12 @@ export default function DashboardPanel() {
         key: overlayKey,
         routeId: route.id,
         color: route.color,
-        polyline: entry.activeRoutePolyline ??
-          (direction === "reverse"
-            ? route.reversePolyline
-            : route.forwardPolyline ?? route.polyline),
-        polylineQuality: entry.activeRoutePolyline
+        polyline: hasDynamic && geometry
+          ? geometry.polyline
+          : (direction === "reverse"
+              ? route.reversePolyline
+              : route.forwardPolyline ?? route.polyline),
+        polylineQuality: hasDynamic && geometry
           ? "HIGH_QUALITY"
           : hasDirectionalGeometry
             ? route.polylineQuality
@@ -551,7 +563,7 @@ export default function DashboardPanel() {
       });
     }
     return [...overlays.values()];
-  }, [activeEntries, routes]);
+  }, [activeEntries, routes, dynamicGeometries]);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [freshnessNow, setFreshnessNow] = useState(() => Date.now());

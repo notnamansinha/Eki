@@ -329,7 +329,7 @@ Content-Type: application/json
 }
 ```
 
-The JSON is limited to 512 bytes and exactly nine fields. It includes the GNSS capture `timestamp`, per-attempt `deviceSentAt`, positive queue `seq`, and receiver `gpsHdop` in addition to coordinates, speed (0–200 km/h), heading (0–<360), and motion state. The immediately previous eight-field sequenced schema remains accepted during staged firmware rollout. `202` accepts a new fix; `200` acknowledges an older/duplicate sample; `400`, `401`, `413`, `429`, and `503` indicate payload, credential, body-size, rate, and service failures.
+The JSON is limited to 512 bytes and exactly nine fields. It includes the GNSS capture `timestamp`, per-attempt `deviceSentAt`, positive queue `seq`, and receiver `gpsHdop` in addition to coordinates, speed (0–200 km/h), heading (0–<360), and motion state. During staged firmware rollout the parser also accepts the immediately previous eight-field sequenced schema and the legacy six-field schema. `202` accepts a new fix; `200` acknowledges an older/duplicate sample; `400`, `401`, `413`, `429`, and `503` indicate payload, credential, body-size, rate, and service failures.
 
 Firmware uses NTP/GNSS time for TLS/time stamps, an 8 KiB UART RX buffer, HDOP ≤ 4, motion hysteresis, a one-second moving publish cadence, five-second stopped heartbeat, 7-second HTTP timeout, capped jittered retry, and a 25-second watchdog. An authenticated 1 KiB diagnostics channel reports bounded device health and hardware-security state every five minutes without credentials. See [Hardware telemetry](docs/hardware/HARDWARE_TELEMETRY.md).
 

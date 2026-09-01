@@ -115,7 +115,7 @@ The body fields and limits are defined in [Firebase data model](../data/FIREBASE
 | Boot halts on compile-time configuration | Missing/invalid value in `secrets.h` | Correct the named field, rebuild, and reflash |
 | Fleet firmware halts at security gate | Flash encryption or Secure Boot inactive | Quarantine the unit; repeat only the witnessed spare-board procedure, never bypass the gate |
 | Negative HTTPClient/transport failure | DNS/backend unreachable, wrong hostname/CA, expired issuer, bad clock | Use the printed transport string; verify URL chain and NTP; never use insecure mode |
-| HTTP 400 | Firmware/backend contract mismatch or timestamp/range | Compare the exact eight fields, sequence, and clock |
+| HTTP 400 | Firmware/backend contract mismatch or timestamp/range | Compare the deployed schema (nine-field current; eight-field sequenced and six-field legacy compatibility), sequence, and clock |
 | HTTP 401/403 + three LED pulses | ID/secret disabled/mismatched or assignment invalid | Rotate/inspect registry, update `secrets.h`, build a protected artifact, and reflash |
 | HTTP 429 | IP/device limiter | Check publish loop/config and WAF limits |
 | HTTP 503/timeouts | Backend/Firebase/network outage | Inspect `/health`; backoff retains the bounded queue |

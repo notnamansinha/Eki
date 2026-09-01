@@ -123,26 +123,15 @@ async function loadStoredRouteUncached(routeId: string): Promise<StoredRoute | n
         reverse = decodeStoredPolyline(reverseRepair.encodedPolyline);
       }
       if (forward && reverse) {
-        await snapshot.ref.set({
-          polyline: forward.encoded,
-          forwardPolyline: forward.encoded,
-          reversePolyline: reverse.encoded,
-          polylineQuality: "HIGH_QUALITY",
-          ...(forwardRepair
-            ? {
-                distanceMeters: forwardRepair.distanceMeters,
-                forwardDistanceMeters: forwardRepair.distanceMeters,
-                duration: forwardRepair.duration,
-                forwardDuration: forwardRepair.duration,
-              }
-            : {}),
-          ...(reverseRepair
-            ? {
-                reverseDistanceMeters: reverseRepair.distanceMeters,
-                reverseDuration: reverseRepair.duration,
-              }
-            : {}),
-        }, { merge: true });
+        await snapshot.ref.set(
+          routeRepairSnapshotWrite({
+            forward,
+            reverse,
+            forwardRepair,
+            reverseRepair,
+          }),
+          { merge: true },
+        );
       }
     }
     if (forward && reverse && stops.length >= 2) {
@@ -241,28 +230,52 @@ function encodedGeometry(
   };
 }
 
-function activeGeometry(
+const geometryCache = new Map<string, { path: LatLng[]; polyline: string }>();
+const GEOMETRY_CACHE_MAX = 50;
+
+/**
+ * Resolve the active geometry for the current route version. Reroute geometry
+ * lives in a version-keyed sibling node (`activeRouteGeometry`) rather than the
+ * high-frequency `activeBuses` child, so clients never receive the full polyline
+ * on every accepted fix. It is cached here to avoid re-reading it each second;
+ * configured geometry is always derived from the cached route document.
+ */
+async function loadActiveGeometry(
+  nodeKey: string,
   live: Record<string, unknown>,
   route: StoredRoute,
   direction: "forward" | "reverse",
-): { path: LatLng[]; polyline: string; source: "configured" | "dynamic-reroute" } {
+): Promise<{ path: LatLng[]; polyline: string; source: "configured" | "dynamic-reroute" }> {
   if (
     live.routeSource === "dynamic-reroute" &&
     live.routeDirection === direction &&
-    typeof live.activeRoutePolyline === "string" &&
-    live.activeRoutePolyline.length <= MAX_ENCODED_POLYLINE_LENGTH
+    Number.isSafeInteger(live.routeVersion) &&
+    Number(live.routeVersion) > 0
   ) {
-    try {
-      const path = decodePolyline(live.activeRoutePolyline);
-      if (path.length >= 2) {
-        return {
-          path,
-          polyline: live.activeRoutePolyline,
-          source: "dynamic-reroute",
-        };
+    const version = Number(live.routeVersion);
+    const cacheKey = `${nodeKey}:${version}`;
+    const cached = geometryCache.get(cacheKey);
+    if (cached) return { ...cached, source: "dynamic-reroute" };
+    const snapshot = await rtdb.ref(`activeRouteGeometry/${nodeKey}/${version}`).once("value");
+    const value = snapshot.val() as { polyline?: unknown } | null;
+    if (
+      value &&
+      typeof value.polyline === "string" &&
+      value.polyline.length <= MAX_ENCODED_POLYLINE_LENGTH
+    ) {
+      try {
+        const path = decodePolyline(value.polyline);
+        if (path.length >= 2) {
+          if (geometryCache.size >= GEOMETRY_CACHE_MAX) {
+            const oldestKey = geometryCache.keys().next().value;
+            if (oldestKey) geometryCache.delete(oldestKey);
+          }
+          geometryCache.set(cacheKey, { path, polyline: value.polyline });
+          return { path, polyline: value.polyline, source: "dynamic-reroute" };
+        }
+      } catch {
+        // Fall back to the configured route geometry below.
       }
-    } catch {
-      // Reacquire the configured geometry below.
     }
   }
   return { ...encodedGeometry(route, direction), source: "configured" };
@@ -339,6 +352,16 @@ async function activateReroute(
     path,
     sample.speed >= 3 ? sample.heading : undefined,
   );
+  // Store the full reroute geometry once in a version-keyed sibling node so
+  // the live activeBuses child carries only pointer fields and is not
+  // rewritten with the encoded polyline on every accepted fix.
+  await rtdb.ref(`activeRouteGeometry/${nodeKey}/${expectedVersion + 1}`).set({
+    polyline: geometry.encodedPolyline,
+    routeId,
+    direction,
+    source: "dynamic-reroute",
+    routeVersion: expectedVersion + 1,
+  });
   await rtdb.ref(`activeBuses/${nodeKey}`).transaction((current) => {
     const live = current as Record<string, unknown> | null;
     if (!rerouteContextIsCurrent(live, {
@@ -353,9 +376,6 @@ async function activateReroute(
     return {
       ...live,
       activeRouteId: `${routeId}:reroute:${routeVersion}`,
-      activeRoutePolyline: geometry.encodedPolyline,
-      activeRouteDistanceMeters: geometry.distanceMeters,
-      activeRouteDuration: geometry.duration,
       routeVersion,
       routeSource: "dynamic-reroute",
       routeDirection: direction,
@@ -484,7 +504,7 @@ async function processTelemetryRoute(
     : 1;
   const geometry = contextChanged
     ? { ...encodedGeometry(route, direction), source: "configured" as const }
-    : activeGeometry(live as Record<string, unknown>, route, direction);
+    : await loadActiveGeometry(nodeKey, live as Record<string, unknown>, route, direction);
   const prior = contextChanged
     ? null
     : previousMatch(live?.matchedLocation, routeVersion);
@@ -526,9 +546,7 @@ async function processTelemetryRoute(
       ? 0
       : Number(live?.offRouteSampleCount),
     match,
-    acceptedSample.motionState === "moving" &&
-      acceptedSample.speed >= 3 &&
-      (acceptedSample.gpsHdop === null || acceptedSample.gpsHdop <= 4),
+    isReliableMovingSample(acceptedSample),
   );
 
   const transaction = await rtdb.ref(`activeBuses/${nodeKey}`).transaction((current) => {
@@ -542,7 +560,6 @@ async function processTelemetryRoute(
           : typeof currentLive?.activeRouteId === "string"
             ? currentLive.activeRouteId
             : `${assignment.routeId}:reroute:${routeVersion}`,
-      activeRoutePolyline: geometry.polyline,
       routeVersion,
       routeSource: geometry.source,
       routeDirection: direction,
@@ -579,6 +596,62 @@ async function processTelemetryRoute(
       routeVersion,
     );
   }
+}
+
+interface RouteRepairGeometry {
+  distanceMeters: number;
+  duration: string;
+}
+
+/**
+ * Write payload for a stored-route geometry snapshot. Legacy geometry is
+ * preserved as-is, but the HIGH_QUALITY marker and required distance/duration
+ * fields are only stamped when BOTH directions were freshly computed. A
+ * forward value that merely decodes legacy data keeps its geometry but never
+ * claims cache quality or fabricates metrics.
+ */
+export function routeRepairSnapshotWrite(params: {
+  forward: { encoded: string };
+  reverse: { encoded: string };
+  forwardRepair: RouteRepairGeometry | null;
+  reverseRepair: RouteRepairGeometry | null;
+}): Record<string, unknown> {
+  return {
+    polyline: params.forward.encoded,
+    forwardPolyline: params.forward.encoded,
+    reversePolyline: params.reverse.encoded,
+    ...(params.forwardRepair && params.reverseRepair
+      ? { polylineQuality: "HIGH_QUALITY" }
+      : {}),
+    ...(params.forwardRepair
+      ? {
+          distanceMeters: params.forwardRepair.distanceMeters,
+          forwardDistanceMeters: params.forwardRepair.distanceMeters,
+          duration: params.forwardRepair.duration,
+          forwardDuration: params.forwardRepair.duration,
+        }
+      : {}),
+    ...(params.reverseRepair
+      ? {
+          reverseDistanceMeters: params.reverseRepair.distanceMeters,
+          reverseDuration: params.reverseRepair.duration,
+        }
+      : {}),
+  };
+}
+
+/**
+ * A fix may confirm deviation only when it carries a valid HDOP. Compatibility
+ * schemas that map to gpsHdop null must never count a moving sample as
+ * reliable — a verifiable fix quality gate is required before rerouting.
+ */
+export function isReliableMovingSample(acceptedSample: TelemetryPayload): boolean {
+  return (
+    acceptedSample.motionState === "moving" &&
+    acceptedSample.speed >= 3 &&
+    typeof acceptedSample.gpsHdop === "number" &&
+    acceptedSample.gpsHdop <= 4
+  );
 }
 
 /**

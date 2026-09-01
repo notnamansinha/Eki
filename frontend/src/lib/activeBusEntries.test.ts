@@ -111,6 +111,25 @@ describe("isActiveBusEntry", () => {
       expect(filterActiveBusEntries({ malformed: entry }, now)).toEqual([]);
     }
   });
+
+  it("rejects NaN and Infinity in nested telemetry metrics", () => {
+    const base = {
+      busId: "bus_1",
+      timestamp: now - 1_000,
+      motionState: "moving",
+    };
+    const nonFinite = [
+      { ...base, rawLocation: { lat: 23, lng: 72, speed: 5, heading: 90, gpsHdop: Number.NaN, motionState: "moving", seq: 1, sampledAt: now - 1_000 } },
+      { ...base, rawLocation: { lat: 23, lng: 72, speed: Number.POSITIVE_INFINITY, heading: 90, gpsHdop: 4, motionState: "moving", seq: 1, sampledAt: now - 1_000 } },
+      { ...base, matchedLocation: { lat: 23, lng: 72, segmentIndex: 0, segmentFraction: Number.NaN, alongRouteDistanceM: 100, distanceToRouteM: 5, matchConfidence: 0.9, seq: 1, sampledAt: now - 1_000, routeVersion: 2 } },
+      { ...base, matchedLocation: { lat: 23, lng: 72, segmentIndex: 0, segmentFraction: 0.5, alongRouteDistanceM: Number.POSITIVE_INFINITY, distanceToRouteM: 5, matchConfidence: 0.9, seq: 1, sampledAt: now - 1_000, routeVersion: 2 } },
+      { ...base, matchedLocation: { lat: 23, lng: 72, segmentIndex: 0, segmentFraction: 0.5, alongRouteDistanceM: 100, distanceToRouteM: Number.NEGATIVE_INFINITY, matchConfidence: 0.9, seq: 1, sampledAt: now - 1_000, routeVersion: 2 } },
+    ];
+    for (const entry of nonFinite) {
+      expect(isActiveBusEntry(entry, now)).toBe(false);
+      expect(filterActiveBusEntries({ malformed: entry }, now)).toEqual([]);
+    }
+  });
 });
 
 describe("filterActiveBusEntries", () => {
