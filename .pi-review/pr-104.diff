@@ -1,0 +1,59 @@
+diff --git a/frontend/package.json b/frontend/package.json
+index 2bbf23b..71f0035 100644
+--- a/frontend/package.json
++++ b/frontend/package.json
+@@ -3,7 +3,7 @@
+   "version": "0.1.0",
+   "private": true,
+   "scripts": {
+-    "dev": "set NODE_OPTIONS=\"--max-old-space-size=4096\" && next dev --hostname 0.0.0.0",
++    "dev": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev --hostname 0.0.0.0",
+     "build": "next build",
+     "start": "next start",
+     "lint": "eslint",
+@@ -23,6 +23,7 @@
+     "@types/node": "^20",
+     "@types/react": "^19",
+     "@types/react-dom": "^19",
++    "cross-env": "^7.0.3",
+     "eslint": "^9",
+     "eslint-config-next": "^16.2.12",
+     "tailwindcss": "^4",
+diff --git a/package-lock.json b/package-lock.json
+index 376071f..b373ebe 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -558,6 +558,7 @@
+         "@types/node": "^20",
+         "@types/react": "^19",
+         "@types/react-dom": "^19",
++        "cross-env": "^7.0.3",
+         "eslint": "^9",
+         "eslint-config-next": "^16.2.12",
+         "tailwindcss": "^4",
+@@ -7064,6 +7065,25 @@
+         "url": "https://opencollective.com/express"
+       }
+     },
++    "node_modules/cross-env": {
++      "version": "7.0.3",
++      "resolved": "https://registry.npmjs.org/cross-env/-/cross-env-7.0.3.tgz",
++      "integrity": "sha512-+/HKd6EgcQCJGh2PSjZuUitQBQynKor4wrFbRg4DtAgS1aWO+gU52xpH7M9ScGgXSYmAVS9bIJ8EzuaGw0oNAw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "cross-spawn": "^7.0.1"
++      },
++      "bin": {
++        "cross-env": "src/bin/cross-env.js",
++        "cross-env-shell": "src/bin/cross-env-shell.js"
++      },
++      "engines": {
++        "node": ">=10.14",
++        "npm": ">=6",
++        "yarn": ">=1"
++      }
++    },
+     "node_modules/cross-spawn": {
+       "version": "7.0.6",
+       "resolved": "https://registry.npmjs.org/cross-spawn/-/cross-spawn-7.0.6.tgz",

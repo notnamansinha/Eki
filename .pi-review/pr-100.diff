@@ -1,0 +1,112 @@
+diff --git a/frontend/src/lib/liveBusRetry.test.ts b/frontend/src/lib/liveBusRetry.test.ts
+new file mode 100644
+index 0000000..0609dfe
+--- /dev/null
++++ b/frontend/src/lib/liveBusRetry.test.ts
+@@ -0,0 +1,10 @@
++import { describe, expect, it } from "vitest";
++import { liveBusRetryDelayMs } from "./liveBusRetry";
++
++describe("liveBusRetryDelayMs", () => {
++  it("backs off from one second and caps at thirty seconds", () => {
++    expect([0, 1, 2, 3, 4, 5, 20].map(liveBusRetryDelayMs)).toEqual([
++      1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000,
++    ]);
++  });
++});
+diff --git a/frontend/src/lib/liveBusRetry.ts b/frontend/src/lib/liveBusRetry.ts
+new file mode 100644
+index 0000000..cdc27eb
+--- /dev/null
++++ b/frontend/src/lib/liveBusRetry.ts
+@@ -0,0 +1,7 @@
++const INITIAL_RETRY_MS = 1_000;
++const MAX_RETRY_MS = 30_000;
++
++export function liveBusRetryDelayMs(attempt: number): number {
++  const exponent = Math.max(0, Math.min(attempt, 5));
++  return Math.min(MAX_RETRY_MS, INITIAL_RETRY_MS * (2 ** exponent));
++}
+diff --git a/frontend/src/lib/liveBusStore.ts b/frontend/src/lib/liveBusStore.ts
+index 69a45a5..a3db14e 100644
+--- a/frontend/src/lib/liveBusStore.ts
++++ b/frontend/src/lib/liveBusStore.ts
+@@ -9,6 +9,7 @@ import {
+   type LiveBusSnapshot,
+ } from "@/lib/liveBusSnapshot";
+ import type { LiveBusDeliverySource } from "@/lib/liveBusDelivery";
++import { liveBusRetryDelayMs } from "@/lib/liveBusRetry";
+ 
+ type Subscriber = {
+   next: (
+@@ -23,6 +24,8 @@ let cached: LiveBusSnapshot | null = null;
+ let unsubscribe: (() => void) | null = null;
+ let starting = false;
+ let expiryTimer: ReturnType<typeof setTimeout> | null = null;
++let retryTimer: ReturnType<typeof setTimeout> | null = null;
++let retryAttempt = 0;
+ 
+ function notifySubscribers(
+   value: LiveBusSnapshot | null,
+@@ -59,7 +62,7 @@ export function invalidateLiveBusCache(): void {
+ }
+ 
+ async function ensureListener() {
+-  if (unsubscribe || starting || subscribers.size === 0) return;
++  if (unsubscribe || starting || retryTimer || subscribers.size === 0) return;
+   starting = true;
+   try {
+     await waitForAuth();
+@@ -67,13 +70,39 @@ async function ensureListener() {
+     unsubscribe = onValue(
+       ref(rtdb, "activeBuses"),
+       (snapshot) => {
++        retryAttempt = 0;
+         const value = snapshot.val() as LiveBusSnapshot | null;
+         cached = value ? pruneExpiredLiveBuses(value) : null;
+         notifySubscribers(cached, "listener");
+         scheduleExpiry();
+       },
+-      (error) => subscribers.forEach((subscriber) => subscriber.error?.(error)),
++      (error) => {
++        unsubscribe?.();
++        unsubscribe = null;
++        cached = null;
++        if (expiryTimer) clearTimeout(expiryTimer);
++        expiryTimer = null;
++        notifySubscribers(null, "invalidation");
++        subscribers.forEach((subscriber) => subscriber.error?.(error));
++        if (subscribers.size > 0 && !retryTimer) {
++          const delay = liveBusRetryDelayMs(retryAttempt++);
++          retryTimer = setTimeout(() => {
++            retryTimer = null;
++            void ensureListener();
++          }, delay);
++        }
++      },
+     );
++  } catch (error) {
++    const listenerError = error instanceof Error ? error : new Error("Live bus listener failed.");
++    subscribers.forEach((subscriber) => subscriber.error?.(listenerError));
++    if (subscribers.size > 0 && !retryTimer) {
++      const delay = liveBusRetryDelayMs(retryAttempt++);
++      retryTimer = setTimeout(() => {
++        retryTimer = null;
++        void ensureListener();
++      }, delay);
++    }
+   } finally {
+     starting = false;
+   }
+@@ -95,6 +124,11 @@ export function subscribeLiveBuses(
+       unsubscribe?.();
+       unsubscribe = null;
+       cached = null;
++      retryAttempt = 0;
++      if (retryTimer) {
++        clearTimeout(retryTimer);
++        retryTimer = null;
++      }
+       if (expiryTimer) {
+         clearTimeout(expiryTimer);
+         expiryTimer = null;

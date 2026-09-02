@@ -1,0 +1,130 @@
+diff --git a/frontend/src/components/shared/RoleGuard.tsx b/frontend/src/components/shared/RoleGuard.tsx
+index 73236d9..405f9d9 100644
+--- a/frontend/src/components/shared/RoleGuard.tsx
++++ b/frontend/src/components/shared/RoleGuard.tsx
+@@ -13,7 +13,7 @@ interface RoleGuardProps {
+ }
+ 
+ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
+-  const { user, loading, loginLoading, loginWithGoogle, logout } = useAuth();
++  const { user, loading, roleError, loginLoading, loginWithGoogle, logout } = useAuth();
+   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+   const pathname = usePathname();
+ 
+@@ -84,6 +84,27 @@ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
+     );
+   }
+ 
++  if (roleError) {
++    return (
++      <div
++        className="w-full flex flex-col items-center justify-center px-6 text-center"
++        style={{ height: "100dvh", background: "var(--surface-0)" }}
++        role="alert"
++      >
++        <ShieldAlert className="mb-5 h-8 w-8" style={{ color: "var(--status-danger)" }} />
++        <h1 className="mb-2 text-2xl font-extrabold" style={{ color: "var(--text-primary)" }}>
++          Access could not be verified
++        </h1>
++        <p className="mb-6 max-w-sm text-sm" style={{ color: "var(--text-secondary)" }}>
++          {roleError}
++        </p>
++        <button type="button" className="btn-primary px-5 py-2.5 text-sm" onClick={() => window.location.reload()}>
++          Try again
++        </button>
++      </div>
++    );
++  }
++
+   if (!allowedRoles.includes(user.role)) {
+     return (
+       <div
+diff --git a/frontend/src/hooks/useAuth.ts b/frontend/src/hooks/useAuth.ts
+index b615b69..85c412e 100644
+--- a/frontend/src/hooks/useAuth.ts
++++ b/frontend/src/hooks/useAuth.ts
+@@ -26,6 +26,7 @@ interface AppUser {
+ interface AuthContextValue {
+   user: AppUser | null;
+   loading: boolean;
++  roleError: string | null;
+   loginLoading: boolean;
+   loginWithGoogle: () => Promise<void>;
+   logout: () => Promise<void>;
+@@ -36,6 +37,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+ function useAuthState(): AuthContextValue {
+   const [user, setUser] = useState<AppUser | null>(null);
+   const [loading, setLoading] = useState<boolean>(true);
++  const [roleError, setRoleError] = useState<string | null>(null);
+   const [loginLoading, setLoginLoading] = useState(false);
+ 
+   useEffect(() => {
+@@ -71,24 +73,24 @@ function useAuthState(): AuthContextValue {
+           notifyAuthReady();
+ 
+           if (firebaseUser) {
++            setRoleError(null);
+             const storedRole = window.localStorage.getItem(`eki:role:${firebaseUser.uid}`);
+             const cachedRole: UserRole =
+               storedRole === "passenger" || storedRole === "driver" || storedRole === "admin"
+                 ? storedRole
+                 : null;
+ 
+-            // Restore the last verified role immediately. Firebase claims remain
+-            // the authorization boundary and refresh this value in the background.
++            // Restore identity for display only. A cached role must never unlock a
++            // workspace while authoritative claims/profile verification is pending.
+             if (cachedRole) {
+               setUser({
+                 uid: firebaseUser.uid,
+                 email: firebaseUser.email,
+                 displayName: firebaseUser.displayName,
+                 photoURL: firebaseUser.photoURL,
+-                role: cachedRole,
++                role: null,
+                 isAnonymous: firebaseUser.isAnonymous,
+               });
+-              setLoading(false);
+             }
+ 
+             try {
+@@ -169,6 +171,7 @@ function useAuthState(): AuthContextValue {
+               }
+ 
+               if (currentGen !== generation) return;
++              setRoleError(null);
+               window.localStorage.setItem(`eki:role:${firebaseUser.uid}`, role || "passenger");
+ 
+               setUser({
+@@ -187,12 +190,13 @@ function useAuthState(): AuthContextValue {
+                 console.error("Firestore role fetch failed:", err);
+               }
+               if (currentGen !== generation) return;
++              setRoleError("We could not verify your access. Check your connection and try again.");
+               setUser({
+                 uid: firebaseUser.uid,
+                 email: firebaseUser.email,
+                 displayName: firebaseUser.displayName,
+                 photoURL: firebaseUser.photoURL,
+-                role: cachedRole || "passenger",
++                role: null,
+                 isAnonymous: firebaseUser.isAnonymous,
+               });
+             } finally {
+@@ -201,6 +205,7 @@ function useAuthState(): AuthContextValue {
+           } else {
+             if (currentGen !== generation) return;
+             setUser(null);
++            setRoleError(null);
+             setLoading(false);
+           }
+         });
+@@ -270,7 +275,7 @@ function useAuthState(): AuthContextValue {
+     }
+   }, []);
+ 
+-  return { user, loading, loginLoading, loginWithGoogle, logout };
++  return { user, loading, roleError, loginLoading, loginWithGoogle, logout };
+ }
+ 
+ /**

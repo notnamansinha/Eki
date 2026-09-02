@@ -1,0 +1,124 @@
+diff --git a/hardware/include/telemetry_policy.h b/hardware/include/telemetry_policy.h
+index 47e9299..197f9a4 100644
+--- a/hardware/include/telemetry_policy.h
++++ b/hardware/include/telemetry_policy.h
+@@ -22,6 +22,13 @@ constexpr uint32_t HTTPS_RATE_LIMIT_RETRY_MS = 60000;
+ constexpr uint32_t HTTPS_CONFIGURATION_RETRY_MS = 60000;
+ constexpr uint32_t HTTPS_REJECTED_SAMPLE_RETRY_MS = 30000;
+ constexpr uint32_t HTTPS_RETRY_AFTER_MAX_MS = 5 * 60 * 1000;
++constexpr uint32_t DIAGNOSTIC_RETRY_MAX_MS = 60UL * 1000;
++
++inline uint32_t diagnosticRetryDelayMs(uint8_t consecutiveFailures) {
++  if (consecutiveFailures == 0) return 0;
++  const uint8_t exponent = std::min<uint8_t>(consecutiveFailures - 1, 4);
++  return std::min<uint32_t>(5000UL << exponent, DIAGNOSTIC_RETRY_MAX_MS);
++}
+ 
+ enum class HttpResponseAction : uint8_t {
+   Accept,
+diff --git a/hardware/src/main.cpp b/hardware/src/main.cpp
+index 0482ed5..28976ee 100644
+--- a/hardware/src/main.cpp
++++ b/hardware/src/main.cpp
+@@ -132,7 +132,10 @@ uint32_t httpsRetryDelayMs = 0;
+ uint32_t lastGpsWarningAt = 0;
+ uint32_t lastHealthReportAt = 0;
+ uint32_t lastRemoteDiagnosticAt = 0;
+-bool remoteDiagnosticAttempted = false;
++bool remoteDiagnosticPublished = false;
++uint32_t remoteDiagnosticRetryStartedAt = 0;
++uint32_t remoteDiagnosticRetryDelayMs = 0;
++uint8_t consecutiveRemoteDiagnosticFailures = 0;
+ uint8_t consecutiveHttpsFailures = 0;
+ bool ntpCrossCheckStarted = false;
+ bool gnssClockApplied = false;
+@@ -778,11 +781,24 @@ PublishResult publishFix(const TelemetryFix &fix) {
+ }
+ 
+ bool remoteDiagnosticIsDue() {
+-  return remoteDiagnosticAttempted
++  if (remoteDiagnosticRetryDelayMs > 0) {
++    return elapsed(remoteDiagnosticRetryStartedAt) >= remoteDiagnosticRetryDelayMs;
++  }
++  return remoteDiagnosticPublished
+     ? elapsed(lastRemoteDiagnosticAt) >= REMOTE_DIAGNOSTIC_INTERVAL_MS
+     : millis() >= FIRST_REMOTE_DIAGNOSTIC_DELAY_MS;
+ }
+ 
++void scheduleRemoteDiagnosticRetry() {
++  if (consecutiveRemoteDiagnosticFailures < UINT8_MAX) {
++    ++consecutiveRemoteDiagnosticFailures;
++  }
++  remoteDiagnosticRetryStartedAt = millis();
++  remoteDiagnosticRetryDelayMs = eki::telemetry::diagnosticRetryDelayMs(
++    consecutiveRemoteDiagnosticFailures
++  );
++}
++
+ void publishRemoteDiagnostic() {
+   if (
+     !deviceConfiguration.provisioned() ||
+@@ -819,10 +835,9 @@ void publishRemoteDiagnostic() {
+   String payload;
+   payload.reserve(512);
+   serializeJson(document, payload);
+-  remoteDiagnosticAttempted = true;
+-  lastRemoteDiagnosticAt = millis();
+   if (payload.length() > 1024) {
+     Serial.println("[Diagnostics] Refusing oversized health payload.");
++    scheduleRemoteDiagnosticRetry();
+     return;
+   }
+ 
+@@ -831,6 +846,7 @@ void publishRemoteDiagnostic() {
+   http.setTimeout(HTTP_TIMEOUT_MS);
+   if (!http.begin(tlsClient, diagnosticsEndpoint)) {
+     Serial.println("[Diagnostics] Unable to initialize remote health request.");
++    scheduleRemoteDiagnosticRetry();
+     return;
+   }
+   http.addHeader("Authorization", authorizationHeader);
+@@ -847,6 +863,15 @@ void publishRemoteDiagnostic() {
+   if (responseCode == 401 || responseCode == 403) {
+     latchCredentialFault();
+     Serial.println("[Diagnostics] Credential fault latched; local reprovisioning enabled.");
++    return;
++  }
++  if (responseCode >= 200 && responseCode < 300) {
++    remoteDiagnosticPublished = true;
++    lastRemoteDiagnosticAt = millis();
++    consecutiveRemoteDiagnosticFailures = 0;
++    remoteDiagnosticRetryDelayMs = 0;
++  } else {
++    scheduleRemoteDiagnosticRetry();
+   }
+ }
+ 
+diff --git a/hardware/test/test_telemetry_policy/test_main.cpp b/hardware/test/test_telemetry_policy/test_main.cpp
+index ae5c6fb..93ade16 100644
+--- a/hardware/test/test_telemetry_policy/test_main.cpp
++++ b/hardware/test/test_telemetry_policy/test_main.cpp
+@@ -42,6 +42,15 @@ void test_retry_backoff_is_jittered_and_bounded() {
+   TEST_ASSERT_EQUAL_UINT32(30000, retryDelayMs(99, 999));
+ }
+ 
++void test_diagnostic_retry_backoff_is_bounded() {
++  TEST_ASSERT_EQUAL_UINT32(0, diagnosticRetryDelayMs(0));
++  TEST_ASSERT_EQUAL_UINT32(5000, diagnosticRetryDelayMs(1));
++  TEST_ASSERT_EQUAL_UINT32(10000, diagnosticRetryDelayMs(2));
++  TEST_ASSERT_EQUAL_UINT32(40000, diagnosticRetryDelayMs(4));
++  TEST_ASSERT_EQUAL_UINT32(60000, diagnosticRetryDelayMs(5));
++  TEST_ASSERT_EQUAL_UINT32(60000, diagnosticRetryDelayMs(100));
++}
++
+ void test_http_response_actions_cover_transport_and_status_families() {
+   TEST_ASSERT_EQUAL_INT(
+     static_cast<int>(HttpResponseAction::Accept),
+@@ -386,6 +395,7 @@ int main(int, char **) {
+   RUN_TEST(test_haversine_and_heading_wrap);
+   RUN_TEST(test_motion_hysteresis_filters_single_noisy_readings);
+   RUN_TEST(test_retry_backoff_is_jittered_and_bounded);
++  RUN_TEST(test_diagnostic_retry_backoff_is_bounded);
+   RUN_TEST(test_http_response_actions_cover_transport_and_status_families);
+   RUN_TEST(test_retry_after_is_strict_bounded_and_status_aware);
+   RUN_TEST(test_device_configuration_record_is_closed_and_tamper_evident);

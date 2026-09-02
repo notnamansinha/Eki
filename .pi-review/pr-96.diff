@@ -1,0 +1,308 @@
+diff --git a/backend/src/securityConfig.test.ts b/backend/src/securityConfig.test.ts
+index 737c355..f9a976e 100644
+--- a/backend/src/securityConfig.test.ts
++++ b/backend/src/securityConfig.test.ts
+@@ -269,8 +269,10 @@ describe("production security configuration", () => {
+       "tlsClient.setCACert(deviceConfiguration.backendRootCa())",
+     );
+     expect(firmware).toContain("HTTPClient");
+-    expect(firmware).toContain(
+-      'authorizationHeader = String("Device ") + deviceConfiguration.deviceSecret()',
++    expect(firmware).toContain("char authorizationHeader[");
++    expect(firmware).toContain('"Device %s"');
++    expect(firmware).not.toContain(
++      'authorizationHeader = String("Device ")',
+     );
+     expect(firmware).toContain(
+       'http.addHeader("Authorization", authorizationHeader)',
+diff --git a/frontend/src/app/passenger/page.tsx b/frontend/src/app/passenger/page.tsx
+index f668432..7a29358 100644
+--- a/frontend/src/app/passenger/page.tsx
++++ b/frontend/src/app/passenger/page.tsx
+@@ -158,13 +158,7 @@ export default function PassengerPage() {
+         lng: activeRoute.waypoints[activeRoute.waypoints.length - 1].lng,
+         name: "Final Destination",
+         shortName: "TERMINUS"
+-      } : {
+-        id: "live-endpoint",
+-        lat: 23.0347,
+-        lng: 72.5483,
+-        name: "Tracking Area",
+-        shortName: "LIVE"
+-      }));
++      } : null));
+ 
+   const busesOnRoute = activeBuses.filter(
+     (bus) => bus.routeId === effectiveRouteId,
+diff --git a/frontend/src/components/maps/DriverMap.tsx b/frontend/src/components/maps/DriverMap.tsx
+index 1d19834..0e04ec3 100644
+--- a/frontend/src/components/maps/DriverMap.tsx
++++ b/frontend/src/components/maps/DriverMap.tsx
+@@ -7,7 +7,7 @@ import DirectionsRoute from "@/components/maps/DirectionsRoute";
+ import { RouteData } from "@/hooks/useRoutes";
+ import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
+ import { auth } from "@/lib/firebaseAuth";
+-import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
++import { DEFAULT_CENTER, MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
+ import { decodePolyline } from "@/lib/polyline";
+ import { snapToPolyline } from "@/lib/snapToPolyline";
+ import { distanceAlongPolyline } from "@/lib/polylineDistance";
+@@ -159,7 +159,7 @@ function DriverMapInner({ route, driverLocation, busId, isTracking, selectedRout
+ 
+   const defaultCenter = smoothDriverPosition
+     ? smoothDriverPosition
+-    : (stops.length ? { lat: stops[0].lat, lng: stops[0].lng } : { lat: 23.03, lng: 72.55 });
++    : (stops.length ? { lat: stops[0].lat, lng: stops[0].lng } : DEFAULT_CENTER);
+ 
+   return (
+     <>
+diff --git a/frontend/src/config/maps.ts b/frontend/src/config/maps.ts
+index 0e47732..173a9f1 100644
+--- a/frontend/src/config/maps.ts
++++ b/frontend/src/config/maps.ts
+@@ -1,29 +1,18 @@
+ /**
+- * Google Maps configuration — Zero-Budget Strategy
++ * Google Maps configuration - zero-budget strategy.
+  *
+- * We ONLY use the Maps JavaScript API (tile rendering).
+- * Free tier: 10,000 map loads / month (as of March 2025 pricing).
+- *
+- * APIProvider is mounted once at the root (Providers.tsx), so the entire
+- * user session counts as a SINGLE map load, regardless of how many
+- * map views are opened.
+- *
+- * ─── API USAGE ──────────────────────────────────────────────────────────
+- * ✅ Maps JavaScript API — tile rendering (free tier: 10k loads/month)
+- * ✅ Places API          — admin route editor autocomplete only (not passenger-facing)
+- * ❌ Directions API      — all routing uses stored polylines + Haversine math
+- * ❌ Geocoding API       — no lat/lng ↔ address conversion
+- * ❌ Distance Matrix     — ETAs computed client-side from GPS + speed
+- * ──────────────────────────────────────────────────────────────────────────
++ * APIProvider is mounted once at the root, so a user session counts as one
++ * map load. Routes and ETAs use stored geometry and local calculations;
++ * Places is used only by the admin route editor.
+  */
+ 
+ export const MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+-export const MAPS_MAP_ID  = process.env.NEXT_PUBLIC_GOOGLE_MAP_ID ?? "";
++export const MAPS_MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAP_ID ?? "";
+ 
+-/** Ahmedabad city center — default map center */
++/** Ahmedabad city center - the single fallback map center. */
+ export const DEFAULT_CENTER = { lat: 23.0347, lng: 72.5483 } as const;
+ 
+-/** Map styling: dark basemap matching the app's dark theme */
++/** Map styling: dark basemap matching the app's dark theme. */
+ export const MAP_OPTIONS = {
+   disableDefaultUI: true,
+   gestureHandling: "greedy" as const,
+diff --git a/hardware/include/telemetry_policy.h b/hardware/include/telemetry_policy.h
+index 47e9299..dd1e22d 100644
+--- a/hardware/include/telemetry_policy.h
++++ b/hardware/include/telemetry_policy.h
+@@ -8,6 +8,10 @@
+ namespace eki {
+ namespace telemetry {
+ 
++inline bool speedIsPlausible(double speedKmh) {
++  return std::isfinite(speedKmh) && speedKmh >= 0.0 && speedKmh <= 200.0;
++}
++
+ constexpr double DISTANCE_THRESHOLD_M = 5.0;
+ constexpr double HEADING_THRESHOLD_DEG = 15.0;
+ constexpr double SPEED_THRESHOLD_KMH = 5.0;
+diff --git a/hardware/src/main.cpp b/hardware/src/main.cpp
+index 0482ed5..c12318a 100644
+--- a/hardware/src/main.cpp
++++ b/hardware/src/main.cpp
+@@ -19,6 +19,8 @@
+ #include <esp_task_wdt.h>
+ #include <freertos/FreeRTOS.h>
+ #include <freertos/task.h>
++#include <cstdio>
++#include <cstring>
+ #include <limits>
+ #include <sys/time.h>
+ 
+@@ -51,9 +53,12 @@ constexpr uint8_t STATUS_LED_PIN = 2;
+ TinyGPSPlus gps;
+ HardwareSerial &gpsSerial = Serial2;
+ WiFiClientSecure tlsClient;
+-String telemetryEndpoint;
+-String diagnosticsEndpoint;
+-String authorizationHeader;
++constexpr size_t ENDPOINT_MAX_LENGTH =
++  eki::connectivity::BACKEND_URL_MAX_LENGTH +
++  eki::connectivity::DEVICE_ID_MAX_LENGTH + 32;
++char telemetryEndpoint[ENDPOINT_MAX_LENGTH]{};
++char diagnosticsEndpoint[ENDPOINT_MAX_LENGTH]{};
++char authorizationHeader[eki::connectivity::DEVICE_SECRET_MAX_LENGTH + 8]{};
+ bool flashEncryptionActive = false;
+ bool secureBootActive = false;
+ char hardwareDeviceLabel[13]{};
+@@ -325,16 +330,38 @@ HealthCounters healthCounters() {
+   return counters;
+ }
+ 
+-String buildTelemetryUrl() {
+-  String base = deviceConfiguration.backendUrl();
+-  while (base.endsWith("/")) base.remove(base.length() - 1);
+-  return base + "/api/devices/" + deviceConfiguration.deviceId() + "/telemetry";
+-}
+-
+-String buildDiagnosticsUrl() {
+-  String base = deviceConfiguration.backendUrl();
+-  while (base.endsWith("/")) base.remove(base.length() - 1);
+-  return base + "/api/devices/" + deviceConfiguration.deviceId() + "/diagnostics";
++bool initializeRequestStrings() {
++  const char *base = deviceConfiguration.backendUrl();
++  size_t baseLength = std::strlen(base);
++  while (baseLength > 0 && base[baseLength - 1] == '/') --baseLength;
++  const int telemetryLength = std::snprintf(
++    telemetryEndpoint,
++    sizeof(telemetryEndpoint),
++    "%.*s/api/devices/%s/telemetry",
++    static_cast<int>(baseLength),
++    base,
++    deviceConfiguration.deviceId()
++  );
++  const int diagnosticsLength = std::snprintf(
++    diagnosticsEndpoint,
++    sizeof(diagnosticsEndpoint),
++    "%.*s/api/devices/%s/diagnostics",
++    static_cast<int>(baseLength),
++    base,
++    deviceConfiguration.deviceId()
++  );
++  const int authorizationLength = std::snprintf(
++    authorizationHeader,
++    sizeof(authorizationHeader),
++    "Device %s",
++    deviceConfiguration.deviceSecret()
++  );
++  return telemetryLength > 0 &&
++         static_cast<size_t>(telemetryLength) < sizeof(telemetryEndpoint) &&
++         diagnosticsLength > 0 &&
++         static_cast<size_t>(diagnosticsLength) < sizeof(diagnosticsEndpoint) &&
++         authorizationLength > 0 &&
++         static_cast<size_t>(authorizationLength) < sizeof(authorizationHeader);
+ }
+ 
+ uint32_t telemetryConfigurationTag() {
+@@ -686,10 +713,9 @@ PublishResult publishFix(const TelemetryFix &fix) {
+   document["motionState"] = motionStateName(fix.motionState);
+   document["timestamp"] = fix.timestamp;
+ 
+-  String payload;
+-  payload.reserve(192);
+-  serializeJson(document, payload);
+-  if (payload.length() > 512) {
++  char payload[512]{};
++  const size_t payloadLength = serializeJson(document, payload, sizeof(payload));
++  if (payloadLength == 0 || payloadLength >= sizeof(payload)) {
+     Serial.println("[HTTPS] Refusing oversized telemetry payload.");
+     scheduleHttpsRetry(eki::telemetry::HTTPS_REJECTED_SAMPLE_RETRY_MS);
+     return PublishResult::Dropped;
+@@ -711,7 +737,10 @@ PublishResult publishFix(const TelemetryFix &fix) {
+   http.addHeader("Cache-Control", "no-store");
+ 
+   const uint32_t startedAt = millis();
+-  const int responseCode = http.POST(payload);
++  const int responseCode = http.POST(
++    reinterpret_cast<uint8_t *>(payload),
++    payloadLength
++  );
+   const eki::telemetry::HttpResponseAction action =
+     eki::telemetry::httpResponseAction(responseCode);
+   const uint32_t retryAfterMs = responseCode == 429
+@@ -738,7 +767,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
+             : "rejected",
+       responseCode,
+       static_cast<unsigned long>(elapsed(startedAt)),
+-      payload.length(),
++      payloadLength,
+       WiFi.RSSI()
+     );
+     if (responseCode == 400 || responseCode == 413 || responseCode == 422) {
+@@ -816,12 +845,11 @@ void publishRemoteDiagnostic() {
+   document["secureBoot"] = secureBootActive;
+   document["timestamp"] = epochMilliseconds();
+ 
+-  String payload;
+-  payload.reserve(512);
+-  serializeJson(document, payload);
++  char payload[1024]{};
++  const size_t payloadLength = serializeJson(document, payload, sizeof(payload));
+   remoteDiagnosticAttempted = true;
+   lastRemoteDiagnosticAt = millis();
+-  if (payload.length() > 1024) {
++  if (payloadLength == 0 || payloadLength >= sizeof(payload)) {
+     Serial.println("[Diagnostics] Refusing oversized health payload.");
+     return;
+   }
+@@ -837,7 +865,10 @@ void publishRemoteDiagnostic() {
+   http.addHeader("Content-Type", "application/json");
+   http.addHeader("Cache-Control", "no-store");
+   const uint32_t startedAt = millis();
+-  const int responseCode = http.POST(payload);
++  const int responseCode = http.POST(
++    reinterpret_cast<uint8_t *>(payload),
++    payloadLength
++  );
+   http.end();
+   Serial.printf(
+     "[Diagnostics] Remote health HTTP %d in %lums.\n",
+@@ -863,9 +894,8 @@ TelemetryFix currentFix() {
+ 
+   fix.lat = gps.location.lat();
+   fix.lng = gps.location.lng();
+-  const double rawSpeed = gps.speed.isValid()
+-    ? min(max(gps.speed.kmph(), 0.0), 200.0)
+-    : 0.0;
++  const double rawSpeed = gps.speed.isValid() ? gps.speed.kmph() : 0.0;
++  if (!eki::telemetry::speedIsPlausible(rawSpeed)) return fix;
+   fix.speed = rawSpeed;
+   fix.heading = gps.course.isValid()
+     ? fmod(max(gps.course.deg(), 0.0), 360.0)
+@@ -1116,9 +1146,10 @@ void setup() {
+ 
+   if (provisioned) {
+     tlsClient.setCACert(deviceConfiguration.backendRootCa());
+-    telemetryEndpoint = buildTelemetryUrl();
+-    diagnosticsEndpoint = buildDiagnosticsUrl();
+-    authorizationHeader = String("Device ") + deviceConfiguration.deviceSecret();
++    if (!initializeRequestStrings()) {
++      Serial.println("[Boot] Provisioned request configuration is too long; halted.");
++      while (true) delay(1000);
++    }
+   }
+   sntp_set_time_sync_notification_cb(onNtpTimeSynchronized);
+   configureWatchdog();
+diff --git a/hardware/test/test_telemetry_policy/test_main.cpp b/hardware/test/test_telemetry_policy/test_main.cpp
+index ae5c6fb..7d29025 100644
+--- a/hardware/test/test_telemetry_policy/test_main.cpp
++++ b/hardware/test/test_telemetry_policy/test_main.cpp
+@@ -23,6 +23,14 @@ void test_haversine_and_heading_wrap() {
+   TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, static_cast<float>(headingDelta(1.0, 359.0)));
+ }
+ 
++void test_implausible_speed_is_rejected_instead_of_clamped() {
++  TEST_ASSERT_TRUE(speedIsPlausible(0.0));
++  TEST_ASSERT_TRUE(speedIsPlausible(200.0));
++  TEST_ASSERT_FALSE(speedIsPlausible(-0.1));
++  TEST_ASSERT_FALSE(speedIsPlausible(200.1));
++  TEST_ASSERT_FALSE(speedIsPlausible(NAN));
++}
++
+ void test_motion_hysteresis_filters_single_noisy_readings() {
+   MotionTracker tracker;
+   TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(3.0));
+@@ -384,6 +392,7 @@ void test_queue_purges_stale_samples_and_validates_rtc_identity() {
+ int main(int, char **) {
+   UNITY_BEGIN();
+   RUN_TEST(test_haversine_and_heading_wrap);
++  RUN_TEST(test_implausible_speed_is_rejected_instead_of_clamped);
+   RUN_TEST(test_motion_hysteresis_filters_single_noisy_readings);
+   RUN_TEST(test_retry_backoff_is_jittered_and_bounded);
+   RUN_TEST(test_http_response_actions_cover_transport_and_status_families);
