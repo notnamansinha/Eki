@@ -24,8 +24,16 @@ async function seedFirebase() {
       const intermediates = formattedWaypoints.slice(1, -1);
 
       console.log(`- Fetching road-snapped path from Google Maps...`);
-      const geometry = await computeRouteGeometry(origin, destination, intermediates);
-      console.log(`- Success: ${geometry.distanceMeters}m, ${geometry.duration}`);
+      const reverseWaypoints = [...formattedWaypoints].reverse();
+      const [geometry, reverseGeometry] = await Promise.all([
+        computeRouteGeometry(origin, destination, intermediates),
+        computeRouteGeometry(
+          reverseWaypoints[0],
+          reverseWaypoints[reverseWaypoints.length - 1],
+          reverseWaypoints.slice(1, -1),
+        ),
+      ]);
+      console.log(`- Success: ${geometry.distanceMeters}m forward, ${reverseGeometry.distanceMeters}m reverse`);
 
       const routeDoc = routesCollection.doc(route.id);
       
@@ -41,8 +49,14 @@ async function seedFirebase() {
         color: route.color,
         stops: formattedStops,         // Named stops for route planner
         polyline: geometry.encodedPolyline,
+        forwardPolyline: geometry.encodedPolyline,
+        reversePolyline: reverseGeometry.encodedPolyline,
         distanceMeters: geometry.distanceMeters,
+        forwardDistanceMeters: geometry.distanceMeters,
+        reverseDistanceMeters: reverseGeometry.distanceMeters,
         duration: geometry.duration,
+        forwardDuration: geometry.duration,
+        reverseDuration: reverseGeometry.duration,
         polylineQuality: geometry.polylineQuality,
         updatedAt: new Date().toISOString(),
       }, { merge: true });

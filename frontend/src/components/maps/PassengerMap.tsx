@@ -15,16 +15,16 @@ import {
 
 import { WifiOff, Navigation, Navigation2 } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
-import { decodePolyline } from "@/lib/polyline";
-import {
-  distanceAlongPolyline,
-  positionAlongPolyline,
-  preparePolylineDistanceIndex,
-} from "@/lib/polylineDistance";
-import { ETA_SPEED_FLOOR_KMH } from "@/lib/etaConstants";
-import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { normalizeRideDirection } from "@/lib/rideDirection";
+import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
+import {
+  decodeRoutePathForDisplay,
+  type ActiveRouteDisplay,
+} from "@/lib/mapRouteGeometry";
+import { busStopArrivalTimestamps } from "@/lib/busEta";
+import { useDynamicRouteGeometries } from "@/hooks/useDynamicRouteGeometries";
+import type { ActiveRouteGeometry } from "@/lib/activeRouteGeometry";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
@@ -48,8 +48,8 @@ function BusMarker({
   bus: IncomingBusData;
 }) {
   const rawPoint = useMemo(
-    () => liveBusMarkerPosition(bus.lat, bus.lng),
-    [bus.lat, bus.lng],
+    () => liveBusMarkerPosition(bus),
+    [bus],
   );
 
   const [displayHeading, setDisplayHeading] = useState(() =>
@@ -153,32 +153,48 @@ function PassengerMapInner({
   const routeStops = useMemo(() => {
     return route.stops?.map(s => ({ lat: s.lat, lng: s.lng })) ?? [];
   }, [route.stops]);
-  const routePath = useMemo(() => {
-    if (route.polyline) {
-      try {
-        const decoded = decodePolyline(route.polyline);
-        if (decoded.length >= 2) {
-          return route.rideDirection === "reverse" ? decoded.reverse() : decoded;
+  // Dynamic reroute geometry is fetched once per route version from a
+  // version-keyed sibling node (`activeRouteGeometry`), so the high-frequency
+  // activeBuses child never carries the full polyline.
+  const dynamicGeometries = useDynamicRouteGeometries(buses);
+  // Surface a shared route overlay only when the fleet agrees on one reroute
+  // geometry. If buses carry different reroutes (or none is rerouted), fall
+  // back to the configured route so no bus's route and ETA leak to another.
+  const activeRoute = useMemo(() => {
+    const dynamic: {
+      bus: IncomingBusData;
+      geometry: ActiveRouteGeometry;
+      version: number;
+    }[] = [];
+    for (const bus of buses.values()) {
+      if (
+        bus.routeSource === "dynamic-reroute" &&
+        normalizeRideDirection(bus.routeDirection) ===
+          normalizeRideDirection(route.rideDirection)
+      ) {
+        const geometry = dynamicGeometries.get(bus.busId);
+        if (geometry) {
+          dynamic.push({ bus, geometry, version: bus.routeVersion ?? 0 });
         }
-      } catch {
-        // Legacy routes fall back to their saved stop coordinates.
       }
     }
-    return routeStops;
-  }, [route.polyline, route.rideDirection, routeStops]);
-  const routeDistanceIndex = useMemo(
-    () => preparePolylineDistanceIndex(routePath),
-    [routePath],
-  );
-  const stopPathPositions = useMemo(
-    () =>
-      new Map(
-        (route.stops ?? []).map((stop) => [
-          stop.id,
-          positionAlongPolyline(stop, routeDistanceIndex),
-        ]),
-      ),
-    [route.stops, routeDistanceIndex],
+    if (dynamic.length === 0) return null;
+    const first = dynamic[0];
+    const allSame = dynamic.every(
+      (entry) => entry.geometry.polyline === first.geometry.polyline,
+    );
+    if (!allSame) return null;
+    return {
+      polyline: first.geometry.polyline,
+      version: first.version,
+    } satisfies ActiveRouteDisplay;
+  }, [buses, dynamicGeometries, route.rideDirection]);
+  // Backend active geometry is already ordered in travel direction; direction-
+  // specific reversePolyline stays in Z→A order. Only legacy forward-only
+  // geometry is reversed for a reverse ride (handled in mapRouteGeometry).
+  const routePath = useMemo(
+    () => decodeRoutePathForDisplay(route, activeRoute),
+    [route, activeRoute],
   );
 
   // ── Passenger geolocation (read-only — ESP32 is sole source for bus GPS) ──
@@ -383,38 +399,27 @@ function PassengerMapInner({
         const closestStopIdx = lastStopIndexRef.current[bus.busId] ?? 0;
         const remainingStops = route.stops.slice(closestStopIdx);
         if (remainingStops.length === 0) continue;
-        const busPoint = { lat: bus.lat, lng: bus.lng };
-        const busPathPosition = positionAlongPolyline(
-          busPoint,
-          routeDistanceIndex,
-          { headingDegrees: bus.heading },
-        );
-
-        const speedKmh = Math.max(
-          bus.speed || ETA_SPEED_FLOOR_KMH,
-          ETA_SPEED_FLOOR_KMH,
-        );
-        const speedMs = speedKmh / 3.6;
-        const busDelaySec = (bus.delayMinutes || 0) * 60;
-
-        for (let i = 0; i < remainingStops.length; i++) {
-          const stop = remainingStops[i];
-          const stopPathPosition = stopPathPositions.get(stop.id);
-          const accumDistMeters =
-            busPathPosition !== null &&
-            stopPathPosition !== null &&
-            stopPathPosition !== undefined
-              ? Math.abs(stopPathPosition - busPathPosition)
-              : distanceAlongPolyline(busPoint, stop, routePath);
-          
-          // Add 45 seconds of dwell time per intermediate stop.
-          let totalSeconds = accumDistMeters / speedMs;
-          if (i > 0) totalSeconds += (i * 45); 
-
-          const arrivalTimestamp = now + (totalSeconds * 1000) + (busDelaySec * 1000);
-          
-          if (!newArrivals[stop.id] || arrivalTimestamp < newArrivals[stop.id]) {
-            newArrivals[stop.id] = arrivalTimestamp;
+        // Each bus projects its position and stops along ITS OWN path so a
+        // dynamic reroute on one bus never shifts another bus's ETA. Dynamic
+        // geometry is fetched once per route version; until it resolves the
+        // bus falls back to the shared configured path.
+        const busPath =
+          dynamicGeometries.get(bus.busId)?.path ?? routePath;
+        const arrivals = busStopArrivalTimestamps({
+          busPoint: { lat: bus.lat, lng: bus.lng },
+          heading: bus.heading,
+          speedKmh: bus.speed,
+          delayMinutes: bus.delayMinutes ?? 0,
+          path: busPath,
+          remainingStops,
+          now,
+        });
+        for (const [stopId, arrivalTimestamp] of Object.entries(arrivals)) {
+          if (
+            !newArrivals[stopId] ||
+            arrivalTimestamp < newArrivals[stopId]
+          ) {
+            newArrivals[stopId] = arrivalTimestamp;
           }
         }
       }
@@ -430,8 +435,7 @@ function PassengerMapInner({
     route.id,
     route.stops,
     routePath,
-    routeDistanceIndex,
-    stopPathPositions,
+    dynamicGeometries,
     updateUI,
   ]);
 
@@ -449,7 +453,7 @@ function PassengerMapInner({
   const centerTarget = useMemo(() => {
     const firstBus = Array.from(buses.values())[0];
     if (!firstBus) return mapCenter;
-    return liveBusMarkerPosition(firstBus.lat, firstBus.lng) ?? mapCenter;
+    return liveBusMarkerPosition(firstBus) ?? mapCenter;
   }, [buses, mapCenter]);
 
   return (
@@ -499,12 +503,14 @@ function PassengerMapInner({
         >
           <MapCenterer target={centerTarget} isCentered={isCentered} />
           <DirectionsRoute
+            key={`${route.id}:${route.rideDirection ?? "forward"}:${activeRoute?.version ?? "configured"}`}
             routeId={route.id}
             stops={routeStops}
-            polyline={route.polyline}
-            polylineQuality={route.polylineQuality}
+            polyline={activeRoute?.polyline ?? route.polyline}
+            polylineQuality={activeRoute ? "HIGH_QUALITY" : route.polylineQuality}
             color={route.color || "#3b82f6"}
             hasBuses={buses.size > 0}
+            direction={route.rideDirection ?? "forward"}
           />
 
           {/* Passenger location dot */}

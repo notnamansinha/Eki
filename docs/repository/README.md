@@ -317,18 +317,23 @@ Content-Type: application/json
 
 ```json
 {
+  "deviceSentAt": <current Unix epoch in milliseconds>,
+  "gpsHdop": 1.2,
   "lat": 23.034,
   "lng": 72.55,
   "speed": 18.2,
   "heading": 94,
   "motionState": "moving",
+  "seq": 1,
   "timestamp": <current Unix epoch in milliseconds>
 }
 ```
 
-Generate the timestamp immediately before sending (for example, `Date.now()`); it must be a current Unix epoch value in milliseconds. The JSON is limited to 512 bytes and exactly six fields. Coordinates, speed (0–200 km/h), heading (0–360), motion state, and timestamp freshness are checked. `202` accepts a new fix; `200` acknowledges a duplicate; `400`, `401`, `413`, `429`, and `503` indicate payload, credential, body-size, rate, and service failures.
+The JSON is limited to 512 bytes and exactly nine fields. It includes the GNSS capture `timestamp`, per-attempt `deviceSentAt`, positive queue `seq`, and receiver `gpsHdop` in addition to coordinates, speed (0–200 km/h), heading (0–<360), and motion state. During staged firmware rollout the parser also accepts the immediately previous eight-field sequenced schema and the legacy six-field schema. `202` accepts a new fix; `200` acknowledges an older/duplicate sample; `400`, `401`, `413`, `429`, and `503` indicate payload, credential, body-size, rate, and service failures.
 
-Firmware uses NTP/GNSS time for TLS/time stamps, an 8 KiB UART RX buffer, HDOP ≤ 4, motion hysteresis, a one-second moving publish cadence, 60-second stopped heartbeat, 7-second HTTP timeout, capped jittered retry, and a 25-second watchdog. An authenticated 1 KiB diagnostics channel reports bounded device health and hardware-security state every five minutes without credentials. See [Hardware telemetry](../hardware/HARDWARE_TELEMETRY.md).
+Firmware uses NTP/GNSS time for TLS/time stamps, an 8 KiB UART RX buffer, HDOP ≤ 4, motion hysteresis, a one-second moving publish cadence, five-second stopped heartbeat, 7-second HTTP timeout, capped jittered retry, and a 25-second watchdog. An authenticated 1 KiB diagnostics channel reports bounded device health and hardware-security state every five minutes without credentials. See [Hardware telemetry](../hardware/HARDWARE_TELEMETRY.md).
+
+After accepting a fix, the backend preserves it as `rawLocation` and asynchronously derives a separate `matchedLocation` against direction-specific road geometry. Distance, heading, previous segment and forward progress contribute to confidence. Three reliable moving off-route samples confirm a deviation; rerouting then targets the next required stops without blocking telemetry or resetting trip progress. Route versions and request IDs reject stale asynchronous results, while clients fall back to raw GNSS whenever matching confidence is insufficient.
 
 ## Verification
 

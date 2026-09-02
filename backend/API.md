@@ -20,7 +20,7 @@ curl -H "Authorization: Bearer $TOKEN" \
   https://api.example.edu/api/buses
 ```
 
-Hardware uses its per-device credential and the exact six-field telemetry
+Hardware uses its per-device credential and the exact nine-field telemetry
 contract:
 
 ```bash
@@ -29,7 +29,7 @@ TIMESTAMP=$(date +%s%3N)
 curl -i -X POST \
   -H "Authorization: Device $DEVICE_KEY" \
   -H "Content-Type: application/json" \
-  --data "{\"lat\":23.034,\"lng\":72.55,\"speed\":18.2,\"heading\":94,\"motionState\":\"moving\",\"timestamp\":$TIMESTAMP}" \
+  --data "{\"deviceSentAt\":$TIMESTAMP,\"gpsHdop\":1.2,\"lat\":23.034,\"lng\":72.55,\"speed\":18.2,\"heading\":94,\"motionState\":\"moving\",\"seq\":1,\"timestamp\":$TIMESTAMP}" \
   https://api.example.edu/api/devices/device_01/telemetry
 ```
 
@@ -86,6 +86,8 @@ Returns the cached Firestore/RTDB status, telemetry counters and latency summari
     "lastRejectedAt": null,
     "credentialCacheHitRate": 0.8,
     "processingLatencyMs": { "samples": 10, "average": 42.1, "p50": 35, "p95": 80, "p99": 80 },
+    "deviceQueueLatencyMs": { "samples": 10, "average": 120, "p50": 80, "p95": 300, "p99": 300 },
+    "networkLatencyMs": { "samples": 10, "average": 780, "p50": 700, "p95": 1100, "p99": 1100 },
     "deviceToServerLatencyMs": { "samples": 10, "average": 900, "p50": 850, "p95": 1300, "p99": 1300 },
     "rtdbWriteLatencyMs": { "samples": 10, "average": 30, "p50": 28, "p95": 55, "p99": 55 }
   },
@@ -122,16 +124,18 @@ probe down.
 
 ### `POST /api/devices/:deviceId/telemetry` — device
 
-Body must contain exactly:
+The body schema is nine fields today; during the staged rollout the parser also accepts the immediate previous bounded eight-field sequenced schema (no `gpsHdop`) and the legacy six-field schema (no `seq`/`deviceSentAt`):
 
 ```jsonc
-{"lat":23.034,"lng":72.55,"speed":18.2,"heading":94,"motionState":"moving","timestamp":<current Unix epoch in milliseconds>}
+{"deviceSentAt":<send epoch ms>,"gpsHdop":4.1,"lat":23.034,"lng":72.55,"speed":18.2,"heading":94,"motionState":"moving","seq":1,"timestamp":<GNSS sample epoch ms>}
 ```
 
-Generate `timestamp` immediately before sending (for example, with `Date.now()`). Ranges: latitude -90..90, longitude -180..180, speed 0..200 km/h, heading 0..360, `motionState` is `moving|stopped|uncertain`; timestamp must satisfy server freshness/future bounds. Bus/route comes from `devices`, never the body.
+`timestamp` is the GNSS capture time, `deviceSentAt` is refreshed immediately before each HTTP attempt, and `seq` is a positive 32-bit queue sequence. `gpsHdop` is the fix-quality gate (0..99) required before an off-route deviation can be confirmed. Ranges: latitude -90..90, longitude -180..180, speed 0..200 km/h, heading 0..<360, `motionState` is `moving|stopped|uncertain`, `gpsHdop` 0..99; both times must satisfy server bounds and `deviceSentAt >= timestamp`. Bus/route comes from `devices`, never the body.
+
+Deploy the backend before flashing this firmware. Validate the schema your deployed firmware actually sends instead of requiring an exact field count, keeping the compatibility paths only as long as staged rollout needs them.
 
 - 202 `{accepted:true,duplicate:false}`: new RTDB fix.
-- 200 `{accepted:true,duplicate:true}`: equal/older timestamp safely ignored.
+- 200 `{accepted:true,duplicate:true}`: older timestamp or duplicate timestamp/sequence safely ignored.
 - 400 invalid ID/payload; 401 bad/missing/disabled credential or registry; 413 raw body too large; 429 limiter with `Retry-After` and `retryAfterMs`; 503 Firebase/ingestion failure.
 - Response has `Cache-Control: no-store`.
 
@@ -266,9 +270,13 @@ Returns `{totalBuses,activeBuses,idleBuses,signalLostBuses,ongoingTrips,passenge
 
 Validates route control points, calls server-key Google Routes API and returns road-snapped encoded geometry/distance/duration. Dedicated 10/minute limit. Upstream timeout/config/errors map to safe error responses.
 
+### `GET /api/routes/:routeId/geometry` — authenticated
+
+Returns cached independently routed `forwardPolyline` and `reversePolyline` geometry (plus forward-compatible `polyline`, distance and duration fields). Legacy route documents are repaired once through the server-key Routes API; browsers cannot submit arbitrary billable coordinates.
+
 ### `PUT /api/routes/:routeId` — admin
 
-Validates and saves route name/color/type, ordered waypoints/stops and computed geometry. Existing active route use restricts unsafe changes. Returns saved route/result or 400/409/500.
+Validates and saves route name/color/type, ordered waypoints/stops and independently computed forward/reverse legal-road geometry. Existing active route use restricts unsafe changes. Returns saved route/result or 400/409/500.
 
 ### `DELETE /api/routes/:routeId` — admin
 

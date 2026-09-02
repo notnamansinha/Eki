@@ -404,8 +404,8 @@ void test_publish_policy_handles_floor_changes_and_heartbeats() {
   TEST_ASSERT_TRUE(decide(true, true, 1000, true, "moving", "moving", 23.0, 15, 100));
   TEST_ASSERT_TRUE(decide(true, true, 1000, true, "moving", "moving", 23.0, 10, 115));
   TEST_ASSERT_TRUE(decide(true, true, 1000, true, "moving", "moving", 23.0, 10, 100));
-  TEST_ASSERT_FALSE(decide(true, true, 59999, false, "stopped", "stopped", 23.0, 10, 100));
-  TEST_ASSERT_TRUE(decide(true, true, 60000, false, "stopped", "stopped", 23.0, 10, 100));
+  TEST_ASSERT_FALSE(decide(true, true, 4999, false, "stopped", "stopped", 23.0, 10, 100));
+  TEST_ASSERT_TRUE(decide(true, true, 5000, false, "stopped", "stopped", 23.0, 10, 100));
 }
 
 void test_location_transition_rejects_teleportation() {
