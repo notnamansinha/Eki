@@ -9,6 +9,7 @@ import { db, rtdb } from "../lib/firebaseAdmin";
 import { createConcurrencyLimiter } from "../lib/concurrency";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
 import { isPlausibleTelemetryTransition } from "../lib/telemetryMotion";
+import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import type { TelemetryPayload } from "./telemetryPayload";
 import { scheduleTelemetryRouteProcessing } from "./telemetryRouteService";
 
@@ -497,8 +498,11 @@ async function restoreDurableRide(
     // The durable lifecycle can hold a delay older than the live node if a
     // delay update only partially landed; never regress the announced value.
     const delay = freshestDelayMinutes(live, lifecycle);
+    const liveBase = live?.sessionId === lifecycle.sessionId
+      ? live
+      : withoutLiveRouteContext(live);
     return {
-      ...(live ?? {}),
+      ...(liveBase ?? {}),
       ...telemetry,
       ...lifecycle,
       ...delay,

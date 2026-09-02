@@ -307,6 +307,8 @@ describe("production security configuration", () => {
   it("keeps Realtime Database rules valid while App Check is enforced by Firebase", () => {
     const database = JSON.parse(workspaceFile("database.rules.json"));
     expect(database.rules.activeBuses[".read"]).toBe("auth != null");
+    expect(database.rules.activeRouteGeometry[".read"]).toBe("auth != null");
+    expect(database.rules.activeRouteGeometry[".write"]).toBe(false);
     expect(JSON.stringify(database)).not.toContain("request.app");
     expect(database.rules.activeBuses[".write"]).toBe(false);
     expect(database.rules[".read"]).toBe(false);

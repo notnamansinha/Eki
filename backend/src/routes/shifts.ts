@@ -5,6 +5,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { haversineMeters } from "../lib/geo";
 import { inferRideDirectionAtEndpoint } from "../lib/automaticRideDirection";
+import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import {
   normalizeRideDirection,
   stopsInRideDirection,
@@ -474,7 +475,7 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           return;
         }
         return {
-          ...(live ?? {}),
+          ...withoutLiveRouteContext(live),
           busId: assignment.busId,
           driverId: assignment.driverId,
           routeId: assignment.routeId,
