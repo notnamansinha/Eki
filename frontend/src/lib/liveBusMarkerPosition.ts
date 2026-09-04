@@ -29,8 +29,7 @@ export function liveBusMarkerPosition(
   const rawPoint = { lat: lat as number, lng: lng as number };
   const canSnap =
     (options.path?.length ?? 0) >= 2 &&
-    (options.hdop === undefined || options.hdop <= 5);
-  if (!canSnap) return { point: rawPoint, segmentIndex: null, snapped: false };
+    (options.hdop === undefined || (options.hdop >= 0 && options.hdop <= 5));
   const result = snapToPolyline(rawPoint, options.path!, {
     headingDegrees: options.heading,
     preferredSegmentIndex: options.preferredSegmentIndex,
