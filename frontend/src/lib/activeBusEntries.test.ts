@@ -90,6 +90,14 @@ describe("isActiveBusEntry", () => {
     expect(isActiveBusEntry({ busId: "bus_1", timestamp: now - BUS_EXPIRY_MS }, now)).toBe(false);
   });
 
+  it("uses trusted server receive time for freshness when the device clock is skewed", () => {
+    expect(isActiveBusEntry({
+      busId: "bus_1",
+      timestamp: now - BUS_EXPIRY_MS,
+      receivedAt: now - 1_000,
+    }, now)).toBe(true);
+  });
+
   it("rejects malformed optional fields before they reach renderers", () => {
     const malformed = [
       { busId: "bus_1", timestamp: now - 1_000, lat: "23.0" },

@@ -5,6 +5,7 @@ import {
   passengerLiveBuses,
   passengerLiveBusSelectionKey,
   passengerTripStates,
+  shouldLockBusSelector,
 } from "./passengerLiveBus";
 
 const now = 2_000_000_000_000;
@@ -156,5 +157,51 @@ describe("passenger live-bus normalization", () => {
         valid: { sessionId: "session_2", tripState: "in_service" },
       }),
     ).toEqual(new Map([["session_2", "in_service"]]));
+  });
+});
+
+describe("bus switcher lock (finding #5)", () => {
+  it("never locks when there is only one bus on the route", () => {
+    expect(
+      shouldLockBusSelector({
+        busCount: 1,
+        selectedSessionId: "s1",
+        trackedSessionId: "s1",
+        selectedTripState: "in_service",
+      }),
+    ).toBe(false);
+  });
+
+  it("locks in only a tracked, direction-confirmed (in_service) bus", () => {
+    expect(
+      shouldLockBusSelector({
+        busCount: 2,
+        selectedSessionId: "s1",
+        trackedSessionId: "s1",
+        selectedTripState: "in_service",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps the switcher open while the selected bus has a pending direction", () => {
+    expect(
+      shouldLockBusSelector({
+        busCount: 2,
+        selectedSessionId: "s1",
+        trackedSessionId: "s1",
+        selectedTripState: "pre_departure",
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps the switcher open until the passenger joins a session", () => {
+    expect(
+      shouldLockBusSelector({
+        busCount: 2,
+        selectedSessionId: "s1",
+        trackedSessionId: "",
+        selectedTripState: "in_service",
+      }),
+    ).toBe(false);
   });
 });

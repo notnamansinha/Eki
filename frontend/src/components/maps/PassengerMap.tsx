@@ -112,8 +112,14 @@ function MapCenterer({ target, isCentered }: { target: { lat: number; lng: numbe
   const map = useMap();
   useEffect(() => {
     if (isCentered && target && map) {
-      map.panTo(target);
-      map.setZoom(16);
+      const center = map.getCenter();
+      const current = center ? { lat: center.lat(), lng: center.lng() } : null;
+      if (!current || getDistanceMeters(current, target) > 20) {
+        map.panTo(target);
+      }
+      if ((map.getZoom() ?? 0) < 15) {
+        map.setZoom(15);
+      }
     }
   }, [isCentered, target, map]);
   return null;
@@ -260,12 +266,13 @@ function PassengerMapInner({
           activeBuses.set(bus.busId, bus);
 
           if (
-            isLiveBusSignalLost(bus.timestamp, now) ||
+            isLiveBusSignalLost(bus.receivedAt ?? bus.timestamp, now) ||
             bus.deviceState === "offline"
           ) {
             newSignalLost.add(bus.busId);
-            if (oldestTimestamp === null || bus.timestamp < oldestTimestamp) {
-              oldestTimestamp = bus.timestamp;
+            const freshnessTimestamp = bus.receivedAt ?? bus.timestamp;
+            if (oldestTimestamp === null || freshnessTimestamp < oldestTimestamp) {
+              oldestTimestamp = freshnessTimestamp;
             }
           }
 

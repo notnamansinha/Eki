@@ -121,3 +121,27 @@ export function passengerLiveBusSelectionKey(bus: PassengerLiveBus): string {
     ? `session:${bus.sessionId}`
     : `bus:${bus.routeId}:${bus.busId}`;
 }
+
+/**
+ * Decide whether the bus-switching control should be locked.
+ *
+ * A traveler may always switch between the buses on a route EXCEPT when the
+ * bus they joined is already direction-confirmed (in_service). While a joined
+ * bus still has a pending direction (armed / pre_departure, awaiting its first
+ * stop) the switcher stays open, so a direction-confirmed bus on the same
+ * route remains reachable (finding #5). Returns false when there is nothing to
+ * switch to (≤1 bus).
+ */
+export function shouldLockBusSelector(params: {
+  busCount: number;
+  selectedSessionId?: string;
+  trackedSessionId?: string;
+  selectedTripState?: PassengerTripState;
+}): boolean {
+  if (params.busCount <= 1) return false;
+  return (
+    Boolean(params.selectedSessionId) &&
+    params.selectedSessionId === params.trackedSessionId &&
+    params.selectedTripState === "in_service"
+  );
+}

@@ -391,10 +391,24 @@ describe("production security configuration", () => {
     expect(routeApi).toContain('router.get("/:routeId/geometry", requireAuth');
     expect(routeApi).toContain('routingPreference: "TRAFFIC_AWARE_OPTIMAL"');
     expect(routeApi).toContain('const STORED_POLYLINE_QUALITY = "HIGH_QUALITY"');
-    expect(routeApi).toContain("computePolyline([...waypoints].reverse())");
+    expect(routeApi).toContain("computePolyline([...waypoints].reverse(), signal)");
     expect(routeApi).toContain("reversePolyline");
     expect(directionsRoute).not.toContain("DirectionsService");
     expect(directionsRoute).not.toContain("DirectionsRenderer");
+  });
+
+  it("keeps route save and legacy repair writes concurrency-safe", () => {
+    const routeApi = workspaceFile("backend/src/routes/polyline.ts");
+
+    expect(routeApi).toContain("raceAgainstDeadline(");
+    // Finding #4: a commit that is already queued must not surface a spurious
+    // 504/"outcome unknown" failure after the route actually saved. The save
+    // waits for the definitive Firestore commit outcome before responding.
+    expect(routeApi).toContain("committedGeometry = await commitPromise;");
+    expect(routeApi).not.toContain("Outcome unknown; reload the route before retrying.");
+    expect(routeApi).toContain("const repairResult = await db.runTransaction");
+    expect(routeApi).toContain("if (!sameCoordinates(currentRoute, waypoints))");
+    expect(routeApi).not.toContain("await routeRef.set(geometry, { merge: true })");
   });
 
   it("rate-limits billable routes and authenticated HTTPS device telemetry", () => {
@@ -564,7 +578,7 @@ describe("production security configuration", () => {
     expect(publisher).toContain('document["timestamp"]');
     expect(publisher).not.toContain('document["busId"]');
     expect(publisher).not.toContain('document["routeId"]');
-    expect(publisher).not.toContain('document["hdop"]');
+    expect(publisher).toContain('document["gpsHdop"]');
   });
 
   it("keeps the parked GNSS heartbeat safely inside stale-record expiry", () => {

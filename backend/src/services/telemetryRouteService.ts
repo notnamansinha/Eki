@@ -38,6 +38,8 @@ interface StoredRoute {
 interface RouteCacheEntry {
   expiresAt: number;
   value: StoredRoute | null;
+  /** Route `revision` the cached geometry was derived from (0 for legacy). */
+  revision: number;
 }
 
 interface LiveMatchedLocation extends LatLng {
@@ -92,11 +94,55 @@ function decodeStoredPolyline(value: unknown): { encoded: string; path: LatLng[]
   }
 }
 
+/** Monotonic route revision; 0 for legacy documents that never recorded one. */
+function routeRevision(data: Record<string, unknown> | undefined): number {
+  const revision = data?.revision;
+  return typeof revision === "number" && Number.isSafeInteger(revision) && revision > 0
+    ? revision
+    : 0;
+}
+
+/**
+ * Invalidate cached route geometry so the next telemetry sample observes an
+ * admin route edit (or delete) instead of continuing with stale geometry.
+ * Call this from every route-mutation path after it commits.
+ */
+export function invalidateCachedRouteGeometry(routeId: string): void {
+  routeCache.delete(routeId);
+  routeLoads.delete(routeId);
+}
+
+/**
+ * Write a telemetry legacy-geometry repair only when the route is unchanged
+ * since we read it AND still missing that geometry. A concurrent admin edit
+ * must never be clobbered by a stale repair "restoring" old geometry (#2).
+ */
+async function persistRepairedGeometryIfCurrent(
+  routeId: string,
+  expectedRevision: number,
+  params: Parameters<typeof routeRepairSnapshotWrite>[0],
+): Promise<void> {
+  const routeRef = db.collection("routes").doc(routeId);
+  await db.runTransaction(async (transaction) => {
+    const current = await transaction.get(routeRef);
+    if (!current.exists) return;
+    const live = current.data() as Record<string, unknown> | undefined;
+    if (routeRevision(live) !== expectedRevision) return;
+    // The route no longer needs this repair (e.g. an edit already supplied
+    // directional geometry), so do not write over it.
+    if (live?.forwardPolyline && live?.reversePolyline) return;
+    transaction.set(routeRef, routeRepairSnapshotWrite(params), { merge: true });
+  });
+}
+
 async function loadStoredRouteUncached(routeId: string): Promise<StoredRoute | null> {
   const cached = routeCache.get(routeId);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
   const snapshot = await db.collection("routes").doc(routeId).get();
   const data = snapshot.data() as Record<string, unknown> | undefined;
+  // Snapshot the route revision so a concurrent admin edit is never clobbered
+  // by a stale telemetry legacy-repair write.
+  const revision = routeRevision(data);
   let value: StoredRoute | null = null;
   if (snapshot.exists && data) {
     const stops = parseStops(data.stops);
@@ -123,15 +169,12 @@ async function loadStoredRouteUncached(routeId: string): Promise<StoredRoute | n
         reverse = decodeStoredPolyline(reverseRepair.encodedPolyline);
       }
       if (forward && reverse) {
-        await snapshot.ref.set(
-          routeRepairSnapshotWrite({
-            forward,
-            reverse,
-            forwardRepair,
-            reverseRepair,
-          }),
-          { merge: true },
-        );
+        await persistRepairedGeometryIfCurrent(routeId, revision, {
+          forward,
+          reverse,
+          forwardRepair,
+          reverseRepair,
+        });
       }
     }
     if (forward && reverse && stops.length >= 2) {
@@ -144,7 +187,7 @@ async function loadStoredRouteUncached(routeId: string): Promise<StoredRoute | n
       };
     }
   }
-  routeCache.set(routeId, { value, expiresAt: Date.now() + ROUTE_CACHE_MS });
+  routeCache.set(routeId, { value, revision, expiresAt: Date.now() + ROUTE_CACHE_MS });
   return value;
 }
 

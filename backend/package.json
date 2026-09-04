@@ -19,7 +19,7 @@
     "@google-cloud/firestore": "8.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "express": "^4.22.2",
+    "express": "^5.2.1",
     "express-rate-limit": "^8.6.0",
     "firebase-admin": "^14.2.0",
     "helmet": "^8.1.0"
@@ -27,7 +27,7 @@
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.1",
     "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21",
+    "@types/express": "^5.0.5",
     "@types/node": "^20.14.0",
     "eslint": "^9.39.4",
     "tsx": "^4.23.1",

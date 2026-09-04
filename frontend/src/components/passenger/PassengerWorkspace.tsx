@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
-import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
+import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle, Navigation } from "lucide-react";
 import { subscribeLiveBusChanges } from "@/lib/liveBusStore";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import { useSettings } from "@/hooks/useSettings";
@@ -13,6 +13,7 @@ import {
   passengerLiveBuses,
   passengerLiveBusSelectionKey,
   passengerTripStates,
+  shouldLockBusSelector,
   type PassengerLiveBus,
 } from "@/lib/passengerLiveBus";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
@@ -173,7 +174,17 @@ export default function PassengerWorkspace() {
   const activeBusOnRouteId = activeBusOnRoute?.busId;
   const activeSessionId = activeBusOnRoute?.sessionId;
   const rideDirection = normalizeRideDirection(activeBusOnRoute?.direction);
-  const directedRoute = activeRoute
+  // A bus that has been joined but whose direction is still pending (armed,
+  // awaiting stop 1) must not hide the bus-switcher: the traveler may yet move
+  // to a direction-confirmed (in_service) bus on the same route (#5). Only a
+  // tracked in-service bus is locked in.
+  const lockedToConfirmedBus = shouldLockBusSelector({
+    busCount: busesOnRoute.length,
+    selectedSessionId: activeBusOnRoute?.sessionId,
+    trackedSessionId,
+    selectedTripState: activeBusOnRoute?.tripState,
+  });
+  const directedRoute = activeRoute && rideDirection
     ? routeInRideDirection(activeRoute, rideDirection)
     : undefined;
   const effectiveDestinationStopId =
@@ -414,9 +425,7 @@ export default function PassengerWorkspace() {
                   {activeBusOnRoute ? (
                     <div className="flex-1 min-w-0 flex flex-col gap-2">
                       {busesOnRoute.length > 1 &&
-                        !busesOnRoute.some(
-                          (bus) => bus.sessionId === trackedSessionId,
-                        ) && (
+                        !lockedToConfirmedBus && (
                         <select
                           value={passengerLiveBusSelectionKey(activeBusOnRoute)}
                           onChange={(event) => {
@@ -563,6 +572,27 @@ export default function PassengerWorkspace() {
                 style={{ background: "rgba(255,255,255,0.1)", color: "white", border: "1px solid rgba(255,255,255,0.05)" }}
               >
                 Return to Routes
+              </button>
+            </div>
+          ) : activeBusOnRoute && !rideDirection ? (
+            <div
+              className="absolute inset-0 z-30 flex flex-col items-center justify-center px-10 text-center pointer-events-auto"
+              style={{ background: "rgba(9, 9, 11, 0.94)" }}
+              role="status"
+            >
+              <Navigation className="mb-4 size-10 text-amber-300" aria-hidden="true" />
+              <p className="text-xl font-extrabold" style={{ color: "var(--text-primary)" }}>
+                Direction pending
+              </p>
+              <p className="mt-2 max-w-sm text-sm" style={{ color: "var(--text-tertiary)" }}>
+                The bus device is online, but the ride has not been armed at a route endpoint yet. Stops, ETA, and the road path will appear after its direction is confirmed.
+              </p>
+              <button
+                type="button"
+                onClick={() => setCurrentView("home")}
+                className="mt-6 h-11 rounded-xl border border-white/10 bg-white/10 px-5 text-sm font-semibold text-white"
+              >
+                Back to routes
               </button>
             </div>
           ) : null}

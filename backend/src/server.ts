@@ -71,6 +71,8 @@ assertRetentionConfiguration(
   process.env.NODE_ENV,
 );
 const httpServer = http.createServer(app);
+// Limit slow request-body uploads. Route-save response deadlines are enforced
+// in the handler because Node's requestTimeout does not bound handler work.
 httpServer.requestTimeout = 15_000;
 httpServer.headersTimeout = 70_000;
 httpServer.keepAliveTimeout = 65_000;

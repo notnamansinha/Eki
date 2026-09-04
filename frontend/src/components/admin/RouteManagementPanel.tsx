@@ -10,7 +10,7 @@ import { auth } from "@/lib/firebaseAuth";
 import {
   Trash2, Plus, X, CheckCircle, MapPin, Loader2, Search,
   Pencil, GripVertical, Save,
-  ChevronDown, ChevronUp, ArrowLeft, Crosshair,
+  ChevronDown, ChevronUp, ArrowLeft, Crosshair, ArrowUpDown,
 } from "lucide-react";
 import CustomSelect from "@/components/ui/CustomSelect";
 import ConfirmModal from "@/components/ui/ConfirmModal";
@@ -44,11 +44,13 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [hasSearched, setHasSearched] = useState(false);
 
   useEffect(() => {
     if (value.trim().length < 3) {
       setSearching(false);
       setPredictions([]);
+      setHasSearched(false);
       return;
     }
     const controller = new AbortController();
@@ -71,6 +73,7 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
           },
         );
         setPredictions(Array.isArray(payload.results) ? payload.results : []);
+        setHasSearched(true);
       } catch (error) {
         if (!controller.signal.aborted) {
           setPredictions([]);
@@ -92,6 +95,7 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
     setPredictions([]);
     setSearching(false);
     setSearchError("");
+    setHasSearched(false);
     onPlaceSelect(prediction);
   };
 
@@ -107,6 +111,7 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
           const nextValue = event.target.value;
           setValue(nextValue);
           setSearchError("");
+          setHasSearched(false);
           if (nextValue.length < 3) setPredictions([]);
         }}
         placeholder="Search for a stop"
@@ -117,6 +122,11 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
       {searchError && (
         <p id="place-search-error" className="mt-1 text-xs text-red-400" role="alert">
           {searchError}
+        </p>
+      )}
+      {!searching && !searchError && hasSearched && predictions.length === 0 && (
+        <p className="mt-1 text-xs text-white/50" role="status">
+          No matching places found. Try a more specific name or use Pick on Map.
         </p>
       )}
       {value.length >= 3 && predictions.length > 0 && (
@@ -369,7 +379,7 @@ function RouteEditor({
       const stops = [...s.stops];
       const trimmedName = name.trim();
       stops[i] = { ...stops[i], name: trimmedName, shortName: stopShortName(trimmedName) };
-      return { ...s, stops, polyline: undefined };
+      return { ...s, stops };
     });
 
   const moveStop = (from: number, to: number) => {
@@ -389,6 +399,15 @@ function RouteEditor({
       return { ...s, stops, polyline: undefined };
     });
     setPositionMessage(`Stop ${stopLabel(i)} moved. Save the route to publish the new location.`);
+  };
+
+  const reverseStops = () => {
+    setState(current => ({
+      ...current,
+      stops: [...current.stops].reverse(),
+      polyline: undefined,
+    }));
+    setPositionMessage("Stop order reversed. Save the route to publish both travel directions.");
   };
 
   const handleSave = async () => {
@@ -419,6 +438,7 @@ function RouteEditor({
         },
         body: JSON.stringify(body),
         fallbackError: "Unable to compute route geometry. The route was not saved.",
+        timeoutMs: 35_000,
       });
       if (!geometry.polyline || typeof geometry.distanceMeters !== "number" || typeof geometry.duration !== "string") {
         throw new Error("Route geometry service returned an invalid result.");
@@ -426,7 +446,7 @@ function RouteEditor({
 
       onSaved();
     } catch (error: unknown) {
-      alert("Failed to save: " + errorMessage(error));
+      setEditorAlertMsg("Failed to save: " + errorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -587,7 +607,20 @@ function RouteEditor({
               <MapPin className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Stops</span>
             </div>
-            <span className="text-[9px] font-black text-emerald-400/50 bg-emerald-500/10 px-2 py-0.5 rounded-full">{state.stops.length}</span>
+            <div className="flex items-center gap-2">
+              {state.stops.length >= 2 && (
+                <button
+                  type="button"
+                  onClick={reverseStops}
+                  className="flex min-h-11 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[9px] font-black uppercase tracking-wider text-white/60 hover:bg-white/10"
+                  title="Reverse the complete stop order"
+                >
+                  <ArrowUpDown className="size-3.5" aria-hidden="true" />
+                  Reverse
+                </button>
+              )}
+              <span className="text-[9px] font-black text-emerald-400/50 bg-emerald-500/10 px-2 py-0.5 rounded-full">{state.stops.length}</span>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5">
             {state.stops.length === 0 ? (
@@ -605,7 +638,7 @@ function RouteEditor({
                       <button
                         onClick={() => moveStop(i, i - 1)}
                         disabled={i === 0}
-                        className="w-5 h-5 rounded hover:bg-white/5 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="w-11 h-11 rounded-lg hover:bg-white/5 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
                         title="Move up"
                       >
                         <ChevronUp className="w-3 h-3 text-white/20" />
@@ -613,7 +646,7 @@ function RouteEditor({
                       <button
                         onClick={() => moveStop(i, i + 1)}
                         disabled={i === state.stops.length - 1}
-                        className="w-5 h-5 rounded hover:bg-white/5 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="w-11 h-11 rounded-lg hover:bg-white/5 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
                         title="Move down"
                       >
                         <ChevronDown className="w-3 h-3 text-white/20" />

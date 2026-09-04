@@ -4,12 +4,19 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { requireAuth } from "../middleware/requireAuth";
 import { decodePolyline } from "../lib/polylineUtils";
 import { invalidatePlanRoute } from "./plan";
+import { singlePathParam } from "../lib/httpParams";
+import { invalidateCachedRouteGeometry } from "../services/telemetryRouteService";
+import {
+  routeGenerationValue,
+  sameFirestoreTimestamp,
+} from "../lib/routeSaveConcurrency";
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
 const ROUTE_TYPES = new Set(["up", "down", "circular"]);
 const STORED_POLYLINE_QUALITY = "HIGH_QUALITY";
+const ROUTE_SAVE_DEADLINE_MS = 30_000;
 interface DirectionalRouteGeometry {
   polyline: string;
   forwardPolyline: string;
@@ -36,6 +43,33 @@ interface ValidatedStop extends LatLng {
   id: string;
   name: string;
   shortName: string;
+}
+
+class RouteWriteError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+class RouteDeadlineError extends Error {
+  constructor() {
+    super("ROUTE_SAVE_DEADLINE");
+  }
+}
+
+/** Bounds non-cancellable Firestore waits without pretending to cancel them. */
+function raceAgainstDeadline<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(new RouteDeadlineError());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new RouteDeadlineError());
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(resolve, reject).finally(() => {
+      signal.removeEventListener("abort", onAbort);
+    });
+  });
 }
 
 function isValidLatLng(value: unknown): value is LatLng {
@@ -112,7 +146,64 @@ function validEncodedPolyline(value: unknown): value is string {
   }
 }
 
-async function computePolyline(waypoints: LatLng[]) {
+function storedDirectionalGeometry(
+  route: Record<string, unknown>,
+): DirectionalRouteGeometry | null {
+  if (
+    route.polylineQuality !== STORED_POLYLINE_QUALITY ||
+    !validEncodedPolyline(route.forwardPolyline) ||
+    !validEncodedPolyline(route.reversePolyline) ||
+    typeof route.forwardDistanceMeters !== "number" ||
+    !Number.isFinite(route.forwardDistanceMeters) ||
+    typeof route.reverseDistanceMeters !== "number" ||
+    !Number.isFinite(route.reverseDistanceMeters) ||
+    typeof route.forwardDuration !== "string" ||
+    typeof route.reverseDuration !== "string"
+  ) {
+    return null;
+  }
+  return {
+    polyline: route.forwardPolyline,
+    forwardPolyline: route.forwardPolyline,
+    reversePolyline: route.reversePolyline,
+    distanceMeters: route.forwardDistanceMeters,
+    forwardDistanceMeters: route.forwardDistanceMeters,
+    reverseDistanceMeters: route.reverseDistanceMeters,
+    duration: route.forwardDuration,
+    forwardDuration: route.forwardDuration,
+    reverseDuration: route.reverseDuration,
+    polylineQuality: STORED_POLYLINE_QUALITY,
+  };
+}
+
+function routeDefinitionMatches(
+  route: Record<string, unknown>,
+  definition: { name: string; color: string; type: string; stops: ValidatedStop[] },
+): boolean {
+  const existingStops = validateStops(route.stops);
+  return (
+    route.name === definition.name &&
+    route.color === definition.color &&
+    route.type === definition.type &&
+    existingStops !== null &&
+    JSON.stringify(existingStops) === JSON.stringify(definition.stops)
+  );
+}
+
+function sameCoordinates(route: Record<string, unknown>, waypoints: LatLng[]): boolean {
+  const existing = routeWaypoints(route);
+  return existing !== null && JSON.stringify(existing) === JSON.stringify(waypoints);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+function isGeometryServiceError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("MAPS_");
+}
+
+async function computePolyline(waypoints: LatLng[], outerSignal?: AbortSignal) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("MAPS_NOT_CONFIGURED");
 
@@ -140,6 +231,9 @@ async function computePolyline(waypoints: LatLng[]) {
   }
 
   const controller = new AbortController();
+  const abortFromOuter = () => controller.abort(outerSignal?.reason);
+  if (outerSignal?.aborted) abortFromOuter();
+  outerSignal?.addEventListener("abort", abortFromOuter, { once: true });
   const timeoutId = setTimeout(() => controller.abort(), 10_000);
   try {
     const response = await fetch(
@@ -185,16 +279,18 @@ async function computePolyline(waypoints: LatLng[]) {
     } as const;
   } finally {
     clearTimeout(timeoutId);
+    outerSignal?.removeEventListener("abort", abortFromOuter);
   }
 }
 
 /** Compute legal road geometry independently for each travel direction. */
 async function computeDirectionalPolylines(
   waypoints: LatLng[],
+  signal?: AbortSignal,
 ): Promise<DirectionalRouteGeometry> {
   const [forward, reverse] = await Promise.all([
-    computePolyline(waypoints),
-    computePolyline([...waypoints].reverse()),
+    computePolyline(waypoints, signal),
+    computePolyline([...waypoints].reverse(), signal),
   ]);
   return {
     polyline: forward.polyline,
@@ -255,7 +351,7 @@ router.post("/compute-polyline", requireAdmin, async (req: Request, res: Respons
  * billable waypoints because coordinates are loaded from Firestore by ID.
  */
 router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response) => {
-  const routeId = req.params.routeId;
+  const routeId = singlePathParam(req.params.routeId);
   if (!SAFE_ID.test(routeId)) {
     res.status(400).json({ error: "Invalid route ID." });
     return;
@@ -269,22 +365,12 @@ router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response
       return;
     }
     const route = snapshot.data() as Record<string, unknown>;
-    if (
-      route.polylineQuality === STORED_POLYLINE_QUALITY &&
-      validEncodedPolyline(route.forwardPolyline) &&
-      validEncodedPolyline(route.reversePolyline)
-    ) {
+    // Only serve a cached route when its directional geometry AND full
+    // distance/duration metadata are present and well-formed (#7).
+    const cachedGeometry = storedDirectionalGeometry(route);
+    if (cachedGeometry) {
       res.json({
-        polyline: route.forwardPolyline,
-        forwardPolyline: route.forwardPolyline,
-        reversePolyline: route.reversePolyline,
-        distanceMeters: route.distanceMeters,
-        forwardDistanceMeters: route.forwardDistanceMeters,
-        reverseDistanceMeters: route.reverseDistanceMeters,
-        duration: route.duration,
-        forwardDuration: route.forwardDuration,
-        reverseDuration: route.reverseDuration,
-        polylineQuality: route.polylineQuality,
+        ...cachedGeometry,
         cached: true,
       });
       return;
@@ -296,17 +382,42 @@ router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response
       return;
     }
     const geometry = await computePolylineOnce(routeId, waypoints);
-    await routeRef.set(geometry, { merge: true });
-    invalidatePlanRoute(routeId);
-    res.json({ ...geometry, cached: false });
+    const repairResult = await db.runTransaction(async (transaction) => {
+      const current = await transaction.get(routeRef);
+      if (!current.exists) {
+        throw new RouteWriteError(404, "Route not found.");
+      }
+      const currentRoute = current.data() as Record<string, unknown>;
+      const currentGeometry = storedDirectionalGeometry(currentRoute);
+      if (currentGeometry) {
+        return { geometry: currentGeometry, cached: true, repaired: false };
+      }
+      if (!sameCoordinates(currentRoute, waypoints)) {
+        throw new RouteWriteError(
+          409,
+          "Route changed while geometry was computed. Retry with the current route.",
+        );
+      }
+      transaction.set(routeRef, geometry, { merge: true });
+      return { geometry, cached: false, repaired: true };
+    });
+    if (repairResult.repaired) {
+      invalidatePlanRoute(routeId);
+      invalidateCachedRouteGeometry(routeId);
+    }
+    res.json({ ...repairResult.geometry, cached: repairResult.cached });
   } catch (error) {
+    if (error instanceof RouteWriteError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
     console.error("[Routes] Failed to load route geometry:", error);
     geometryError(res);
   }
 });
 
 router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
-  const routeId = req.params.routeId;
+  const routeId = singlePathParam(req.params.routeId);
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
   const color = typeof req.body?.color === "string" ? req.body.color : "";
   const type = req.body?.type;
@@ -325,22 +436,46 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
     return;
   }
 
+  const deadlineController = new AbortController();
+  const deadlineId = setTimeout(
+    () => deadlineController.abort(new Error("ROUTE_SAVE_DEADLINE")),
+    ROUTE_SAVE_DEADLINE_MS,
+  );
   try {
     const routeRef = db.collection("routes").doc(routeId);
-    const existing = await routeRef.get();
+    const existing = await raceAgainstDeadline(
+      routeRef.get(),
+      deadlineController.signal,
+    );
     if (mode === "create" && existing.exists) {
-      res.status(409).json({ error: "A route with this ID already exists." });
-      return;
+      const existingData = existing.data() as Record<string, unknown>;
+      const existingGeometry = storedDirectionalGeometry(existingData);
+      if (
+        routeDefinitionMatches(existingData, { name, color, type, stops }) &&
+        existingGeometry
+      ) {
+        res.json({
+          saved: true,
+          routeId,
+          ...existingGeometry,
+          idempotent: true,
+          geometryReused: true,
+        });
+        return;
+      }
+      throw new RouteWriteError(409, "A route with this ID already exists.");
     }
     if (mode === "edit" && !existing.exists) {
-      res.status(404).json({ error: "The route no longer exists." });
-      return;
+      throw new RouteWriteError(404, "The route no longer exists.");
     }
     if (mode === "edit") {
-      const activeRide = await db.collection("active_rides")
-        .where("routeId", "==", routeId)
-        .limit(1)
-        .get();
+      const activeRide = await raceAgainstDeadline(
+        db.collection("active_rides")
+          .where("routeId", "==", routeId)
+          .limit(1)
+          .get(),
+        deadlineController.signal,
+      );
       if (!activeRide.empty) {
         res.status(409).json({
           error: "An active ride route cannot be edited before its final stop.",
@@ -349,7 +484,19 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
       }
     }
     const waypoints = stops.map(({ lat, lng }) => ({ lat, lng }));
-    const geometry = await computeDirectionalPolylines(waypoints);
+    const existingData = existing.exists
+      ? existing.data() as Record<string, unknown>
+      : null;
+    const reusableGeometry = existingData && sameCoordinates(existingData, waypoints)
+      ? storedDirectionalGeometry(existingData)
+      : null;
+    const geometry = reusableGeometry ?? await computeDirectionalPolylines(
+      waypoints,
+      deadlineController.signal,
+    );
+    if (deadlineController.signal.aborted) {
+      throw new RouteWriteError(504, "Route save timed out before any change was committed.");
+    }
     const routeData = {
       id: routeId,
       name,
@@ -359,21 +506,110 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
       waypoints,
       ...geometry,
     };
-    if (mode === "create") {
-      await routeRef.create(routeData);
-    } else {
-      await routeRef.set(routeData);
+    // Preserve the full Firestore Timestamp (not toMillis, which drops
+    // sub-millisecond precision, #3) plus the ride-start generation so the
+    // commit below can detect a concurrent edit AND a ride starting between
+    // the active-rides check and the route write (#1).
+    const initialUpdateTime = existing.updateTime ?? null;
+    const initialGeneration = routeGenerationValue(existingData ?? undefined);
+    if (deadlineController.signal.aborted) {
+      throw new RouteWriteError(504, "Route save timed out before any change was committed.");
+    }
+    let commitWriteQueued = false;
+    const commitPromise = db.runTransaction(async (transaction) => {
+      const current = await transaction.get(routeRef);
+      if (deadlineController.signal.aborted) {
+        throw new RouteWriteError(504, "Route save timed out before any change was committed.");
+      }
+      if (mode === "create") {
+        if (current.exists) {
+          const currentData = current.data() as Record<string, unknown>;
+          const currentGeometry = storedDirectionalGeometry(currentData);
+          if (
+            routeDefinitionMatches(currentData, { name, color, type, stops }) &&
+            currentGeometry
+          ) {
+            return currentGeometry;
+          }
+          throw new RouteWriteError(409, "A route with this ID already exists.");
+        }
+        commitWriteQueued = true;
+        transaction.create(routeRef, routeData);
+        return geometry;
+      }
+      if (!current.exists) {
+        throw new RouteWriteError(404, "The route no longer exists.");
+      }
+      if (!sameFirestoreTimestamp(current.updateTime, initialUpdateTime)) {
+        throw new RouteWriteError(409, "This route changed while it was saving. Reload and retry.");
+      }
+      if (routeGenerationValue(current.data()) !== initialGeneration) {
+        throw new RouteWriteError(
+          409,
+          "A ride started while this route was being saved; it cannot be edited while in service. Reload and retry.",
+        );
+      }
+      commitWriteQueued = true;
+      transaction.set(routeRef, {
+        ...routeData,
+        // Preserve the monotonic ride-start generation; an unconditional set
+        // would reset it and break the race guard on the next edit.
+        rideStartGeneration: (current.data() as Record<string, unknown>)?.rideStartGeneration,
+      });
+      return geometry;
+    });
+    let committedGeometry: DirectionalRouteGeometry;
+    try {
+      committedGeometry = await raceAgainstDeadline(
+        commitPromise,
+        deadlineController.signal,
+      );
+    } catch (error) {
+      if (!(error instanceof RouteDeadlineError)) throw error;
+      if (commitWriteQueued) {
+        // The commit was already queued. Wait for its definitive outcome so
+        // the UI never reports a failure after the route actually saved (#4);
+        // a retry would otherwise reconcile to the already-saved route anyway.
+        committedGeometry = await commitPromise;
+        invalidatePlanRoute(routeId);
+        invalidateCachedRouteGeometry(routeId);
+        res.json({
+          saved: true,
+          routeId,
+          ...committedGeometry,
+          geometryReused: reusableGeometry !== null,
+        });
+        return;
+      }
+      throw new RouteWriteError(504, "Route save timed out before any change was committed.");
     }
     invalidatePlanRoute(routeId);
-    res.json({ saved: true, routeId, ...geometry });
+    invalidateCachedRouteGeometry(routeId);
+    res.json({
+      saved: true,
+      routeId,
+      ...committedGeometry,
+      geometryReused: reusableGeometry !== null,
+    });
   } catch (error) {
-    console.error("[Routes] Failed to save validated route:", error);
-    geometryError(res);
+    if (error instanceof RouteWriteError) {
+      res.status(error.status).json({ error: error.message });
+    } else if (deadlineController.signal.aborted || error instanceof RouteDeadlineError) {
+      res.status(504).json({ error: "Route save timed out before any change was committed." });
+    } else if (isAbortError(error) || isGeometryServiceError(error)) {
+      console.error("[Routes] Failed to compute saved-route geometry:", error);
+      geometryError(res);
+    } else {
+      console.error("[Routes] Failed to commit validated route:", error);
+      res.status(500).json({ error: "Unable to save route." });
+    }
+  } finally {
+    clearTimeout(deadlineId);
   }
 });
 
 router.delete("/:routeId", requireAdmin, async (req: Request, res: Response) => {
-  const routeId = req.params.routeId;
+  const routeId = singlePathParam(req.params.routeId);
   if (!SAFE_ID.test(routeId)) {
     res.status(400).json({ error: "Invalid route ID." });
     return;
@@ -398,6 +634,7 @@ router.delete("/:routeId", requireAdmin, async (req: Request, res: Response) => 
     }
     await db.collection("routes").doc(routeId).delete();
     invalidatePlanRoute(routeId);
+    invalidateCachedRouteGeometry(routeId);
     res.json({ deleted: true });
   } catch (error) {
     console.error("[Routes] Failed to delete route:", error);

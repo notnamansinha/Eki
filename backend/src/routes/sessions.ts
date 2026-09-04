@@ -4,6 +4,7 @@ import { FieldPath, FieldValue } from "firebase-admin/firestore";
 import { requireAuth } from "../middleware/requireAuth";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { haversineMeters } from "../lib/geo";
+import { singlePathParam } from "../lib/httpParams";
 import {
   evaluateChatRate,
   moderateChatText,
@@ -111,7 +112,7 @@ router.post("/:sessionId/boarding-code", requireAuth, async (
   req: AuthenticatedRequest,
   res: Response,
 ) => {
-  const sessionId = req.params.sessionId;
+  const sessionId = singlePathParam(req.params.sessionId);
   const user = req.user;
   const isAdmin = user?.role === "admin" || user?.admin === true;
   if (!SAFE_ID.test(sessionId)) {
@@ -175,7 +176,7 @@ router.post("/:sessionId/join", requireAuth, async (
   req: AuthenticatedRequest,
   res: Response,
 ) => {
-  const sessionId = req.params.sessionId;
+  const sessionId = singlePathParam(req.params.sessionId);
   const user = req.user;
   if (!SAFE_ID.test(sessionId)) {
     res.status(400).json({ error: "Invalid session ID." });
@@ -340,7 +341,7 @@ router.post("/:sessionId/join", requireAuth, async (
  */
 router.post("/:sessionId/messages", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const sessionId = req.params.sessionId;
+    const sessionId = singlePathParam(req.params.sessionId);
     const uid = req.user?.uid;
     if (!SAFE_ID.test(sessionId) || typeof uid !== "string") {
       res.status(400).json({ error: "Invalid session ID." });
