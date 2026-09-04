@@ -24,8 +24,28 @@ async function seedFirebase() {
       const intermediates = formattedWaypoints.slice(1, -1);
 
       console.log(`- Fetching road-snapped path from Google Maps...`);
-      const geometry = await computeRouteGeometry(origin, destination, intermediates);
-      console.log(`- Success: ${geometry.distanceMeters}m, ${geometry.duration}`);
+      const reverseWaypoints = [...formattedWaypoints].reverse();
+      const [forward, reverse] = await Promise.all([
+        computeRouteGeometry(origin, destination, intermediates),
+        computeRouteGeometry(
+          reverseWaypoints[0],
+          reverseWaypoints[reverseWaypoints.length - 1],
+          reverseWaypoints.slice(1, -1),
+        ),
+      ]);
+      const forwardGeometry = {
+        polyline: forward.encodedPolyline,
+        distanceMeters: forward.distanceMeters,
+        duration: forward.duration,
+        polylineQuality: forward.polylineQuality,
+      };
+      const reverseGeometry = {
+        polyline: reverse.encodedPolyline,
+        distanceMeters: reverse.distanceMeters,
+        duration: reverse.duration,
+        polylineQuality: reverse.polylineQuality,
+      };
+      console.log(`- Success: forward ${forward.distanceMeters}m, reverse ${reverse.distanceMeters}m`);
 
       const routeDoc = routesCollection.doc(route.id);
       
@@ -40,10 +60,12 @@ async function seedFirebase() {
         waypoints: formattedWaypoints, // Stored as array of objects
         color: route.color,
         stops: formattedStops,         // Named stops for route planner
-        polyline: geometry.encodedPolyline,
-        distanceMeters: geometry.distanceMeters,
-        duration: geometry.duration,
-        polylineQuality: geometry.polylineQuality,
+        polyline: forwardGeometry.polyline,
+        distanceMeters: forwardGeometry.distanceMeters,
+        duration: forwardGeometry.duration,
+        polylineQuality: forwardGeometry.polylineQuality,
+        forwardGeometry,
+        reverseGeometry,
         updatedAt: new Date().toISOString(),
       }, { merge: true });
 

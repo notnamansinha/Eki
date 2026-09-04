@@ -6,18 +6,20 @@ import type { LatLng } from "@/lib/polyline";
 import { auth } from "@/lib/firebaseAuth";
 import { apiRequest } from "@/lib/apiClient";
 import { routeDisplayPath } from "@/lib/routeDisplayPath";
+import type { RideDirectionState } from "@/lib/rideDirection";
 
 const geometryRequests = new Map<string, Promise<string>>();
 
-function requestRoadGeometry(routeId: string): Promise<string> {
-  const existing = geometryRequests.get(routeId);
+function requestRoadGeometry(routeId: string, direction: Exclude<RideDirectionState, null>): Promise<string> {
+  const requestKey = `${routeId}:${direction}`;
+  const existing = geometryRequests.get(requestKey);
   if (existing) return existing;
   const request = (async () => {
     const currentUser = auth.currentUser;
     if (!currentUser) throw new Error("Route geometry requires authentication.");
     const token = await currentUser.getIdToken();
     const payload = await apiRequest<{ polyline?: unknown }>(
-      `/api/routes/${encodeURIComponent(routeId)}/geometry`,
+      `/api/routes/${encodeURIComponent(routeId)}/geometry?direction=${direction}`,
       {
         headers: { Authorization: `Bearer ${token}` },
         fallbackError: "Unable to load road geometry.",
@@ -31,11 +33,11 @@ function requestRoadGeometry(routeId: string): Promise<string> {
     }
     return payload.polyline;
   })().finally(() => {
-    if (geometryRequests.get(routeId) === request) {
-      geometryRequests.delete(routeId);
+    if (geometryRequests.get(requestKey) === request) {
+      geometryRequests.delete(requestKey);
     }
   });
-  geometryRequests.set(routeId, request);
+  geometryRequests.set(requestKey, request);
   return request;
 }
 
@@ -47,6 +49,7 @@ interface DirectionsRouteProps {
   polylineQuality?: "HIGH_QUALITY";
   color?: string;
   hasBuses?: boolean;
+  direction?: RideDirectionState;
 }
 
 /**
@@ -54,14 +57,15 @@ interface DirectionsRouteProps {
  * does not call the browser Directions service: rendering a map must not add
  * routing cost, quota pressure, or delay to the live GNSS stream.
  */
-export default function DirectionsRoute({ routeId, stops, polyline, polylineQuality, color = "#3b82f6", hasBuses = false }: DirectionsRouteProps) {
+export default function DirectionsRoute({ routeId, stops, polyline, polylineQuality, color = "#3b82f6", hasBuses = false, direction = null }: DirectionsRouteProps) {
   const map = useMap();
   const outlineRef = useRef<google.maps.Polyline | null>(null);
   const lineRef = useRef<google.maps.Polyline | null>(null);
   const [repairedGeometry, setRepairedGeometry] = useState<{
-    routeId: string;
+    requestKey: string;
     polyline: string;
   } | null>(null);
+  const requestKey = routeId && direction ? `${routeId}:${direction}` : null;
   const trustedStoredPolyline =
     !routeId || polylineQuality === "HIGH_QUALITY" ? polyline : undefined;
   const storedPath = useMemo(
@@ -69,7 +73,7 @@ export default function DirectionsRoute({ routeId, stops, polyline, polylineQual
     [routeId, stops, trustedStoredPolyline],
   );
   const repairedPolyline =
-    repairedGeometry && repairedGeometry.routeId === routeId
+    repairedGeometry && repairedGeometry.requestKey === requestKey
       ? repairedGeometry.polyline
       : undefined;
   const path = useMemo(() => {
@@ -79,11 +83,11 @@ export default function DirectionsRoute({ routeId, stops, polyline, polylineQual
   }, [repairedPolyline, routeId, stops, storedPath]);
 
   useEffect(() => {
-    if (!routeId || storedPath.length >= 2) return;
+    if (!routeId || !direction || !requestKey || storedPath.length >= 2) return;
     let active = true;
-    void requestRoadGeometry(routeId)
+    void requestRoadGeometry(routeId, direction)
       .then((nextPolyline) => {
-        if (active) setRepairedGeometry({ routeId, polyline: nextPolyline });
+        if (active) setRepairedGeometry({ requestKey, polyline: nextPolyline });
       })
       .catch((error: unknown) => {
         console.warn(
@@ -94,7 +98,7 @@ export default function DirectionsRoute({ routeId, stops, polyline, polylineQual
     return () => {
       active = false;
     };
-  }, [routeId, storedPath]);
+  }, [direction, requestKey, routeId, storedPath]);
 
   useEffect(() => {
     outlineRef.current?.setMap(null);

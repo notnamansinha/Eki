@@ -3,6 +3,7 @@ import {
   parseTelemetryPayload,
   parseTelemetryValue,
   TELEMETRY_FIELDS,
+  OPTIONAL_TELEMETRY_FIELDS,
 } from "./telemetryPayload";
 
 const now = 1_800_000_000_000;
@@ -20,10 +21,15 @@ function encode(value: unknown): Buffer {
 }
 
 describe("parseTelemetryPayload", () => {
-  it("accepts exactly the six approved telemetry fields", () => {
+  it("accepts the six legacy fields and optional GNSS accuracy", () => {
     const parsed = parseTelemetryPayload(encode(valid), now);
     expect(parsed).toEqual({ ok: true, value: valid });
     expect(TELEMETRY_FIELDS).toHaveLength(6);
+    expect(OPTIONAL_TELEMETRY_FIELDS).toEqual(["hdop"]);
+    expect(parseTelemetryPayload(encode({ ...valid, hdop: 1.4 }), now)).toEqual({
+      ok: true,
+      value: { ...valid, hdop: 1.4 },
+    });
   });
 
   it("validates an already parsed HTTPS JSON body with the same contract", () => {
@@ -34,7 +40,7 @@ describe("parseTelemetryPayload", () => {
     });
   });
 
-  it.each(["busId", "routeId", "driverId", "hdop", "satellites", "lowAccuracy"])(
+  it.each(["busId", "routeId", "driverId", "satellites", "lowAccuracy"])(
     "rejects removed or routing field %s",
     (field) => {
       expect(parseTelemetryPayload(encode({ ...valid, [field]: "bad" }), now)).toEqual({
@@ -50,6 +56,17 @@ describe("parseTelemetryPayload", () => {
     expect(parseTelemetryPayload(encode(missing), now)).toEqual({
       ok: false,
       reason: "unexpected_fields",
+    });
+  });
+
+  it("rejects invalid HDOP values", () => {
+    expect(parseTelemetryPayload(encode({ ...valid, hdop: -1 }), now)).toEqual({
+      ok: false,
+      reason: "invalid_hdop",
+    });
+    expect(parseTelemetryPayload(encode({ ...valid, hdop: 51 }), now)).toEqual({
+      ok: false,
+      reason: "invalid_hdop",
     });
   });
 

@@ -6,6 +6,7 @@ export const TELEMETRY_FIELDS = [
   "speed",
   "timestamp",
 ] as const;
+export const OPTIONAL_TELEMETRY_FIELDS = ["hdop"] as const;
 
 export interface TelemetryPayload {
   lat: number;
@@ -14,6 +15,7 @@ export interface TelemetryPayload {
   heading: number;
   motionState: "moving" | "stopped" | "uncertain";
   timestamp: number;
+  hdop?: number;
 }
 
 export type TelemetryParseResult =
@@ -32,14 +34,19 @@ export function parseTelemetryValue(
 
   const record = value as Record<string, unknown>;
   const keys = Object.keys(record).sort();
+  const allowedFields = new Set<string>([
+    ...TELEMETRY_FIELDS,
+    ...OPTIONAL_TELEMETRY_FIELDS,
+  ]);
   if (
-    keys.length !== TELEMETRY_FIELDS.length ||
-    keys.some((key, index) => key !== TELEMETRY_FIELDS[index])
+    TELEMETRY_FIELDS.some((field) =>
+      !Object.prototype.hasOwnProperty.call(record, field)) ||
+    keys.some((key) => !allowedFields.has(key))
   ) {
     return { ok: false, reason: "unexpected_fields" };
   }
 
-  const { lat, lng, speed, heading, motionState, timestamp } = record;
+  const { lat, lng, speed, heading, motionState, timestamp, hdop } = record;
   if (typeof lat !== "number" || !Number.isFinite(lat) || lat < -90 || lat > 90) {
     return { ok: false, reason: "invalid_lat" };
   }
@@ -59,6 +66,12 @@ export function parseTelemetryValue(
   }
   if (typeof motionState !== "string" || !MOTION_STATES.has(motionState)) {
     return { ok: false, reason: "invalid_motion_state" };
+  }
+  if (
+    hdop !== undefined &&
+    (typeof hdop !== "number" || !Number.isFinite(hdop) || hdop < 0 || hdop > 50)
+  ) {
+    return { ok: false, reason: "invalid_hdop" };
   }
   if (
     typeof timestamp !== "number" ||
@@ -82,6 +95,7 @@ export function parseTelemetryValue(
       // timestamp poisons the engine's newness comparison and the stale sweep
       // (issue #48 L3).
       timestamp: Math.min(timestamp, now),
+      ...(typeof hdop === "number" ? { hdop } : {}),
     },
   };
 }

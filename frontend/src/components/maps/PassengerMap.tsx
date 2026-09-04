@@ -44,12 +44,18 @@ const BUS_MOTION_COLORS: Record<string, string> = {
 
 function BusMarker({
   bus,
+  path,
 }: {
   bus: IncomingBusData;
+  path: readonly { lat: number; lng: number }[];
 }) {
-  const rawPoint = useMemo(
-    () => liveBusMarkerPosition(bus.lat, bus.lng),
-    [bus.lat, bus.lng],
+  const markerResult = useMemo(
+    () => liveBusMarkerPosition(bus.lat, bus.lng, {
+      path,
+      heading: bus.heading,
+      hdop: bus.hdop,
+    }),
+    [bus.hdop, bus.heading, bus.lat, bus.lng, path],
   );
 
   const [displayHeading, setDisplayHeading] = useState(() =>
@@ -65,9 +71,9 @@ function BusMarker({
   const color =
     BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
 
-  if (!rawPoint) return null;
+  if (!markerResult) return null;
   return (
-    <AdvancedMarker position={rawPoint}>
+    <AdvancedMarker position={markerResult.point}>
       <div
         style={{
           width: 44,
@@ -112,8 +118,11 @@ function MapCenterer({ target, isCentered }: { target: { lat: number; lng: numbe
   const map = useMap();
   useEffect(() => {
     if (isCentered && target && map) {
-      map.panTo(target);
-      map.setZoom(16);
+      const center = map.getCenter()?.toJSON();
+      if (!center || getDistanceMeters(center, target) > 20) {
+        map.panTo(target);
+      }
+      if ((map.getZoom() ?? 0) < 15) map.setZoom(16);
     }
   }, [isCentered, target, map]);
   return null;
@@ -158,14 +167,14 @@ function PassengerMapInner({
       try {
         const decoded = decodePolyline(route.polyline);
         if (decoded.length >= 2) {
-          return route.rideDirection === "reverse" ? decoded.reverse() : decoded;
+          return decoded;
         }
       } catch {
         // Legacy routes fall back to their saved stop coordinates.
       }
     }
     return routeStops;
-  }, [route.polyline, route.rideDirection, routeStops]);
+  }, [route.polyline, routeStops]);
   const routeDistanceIndex = useMemo(
     () => preparePolylineDistanceIndex(routePath),
     [routePath],
@@ -244,12 +253,13 @@ function PassengerMapInner({
           activeBuses.set(bus.busId, bus);
 
           if (
-            isLiveBusSignalLost(bus.timestamp, now) ||
+            isLiveBusSignalLost(bus.receivedAt ?? bus.timestamp, now) ||
             bus.deviceState === "offline"
           ) {
             newSignalLost.add(bus.busId);
-            if (oldestTimestamp === null || bus.timestamp < oldestTimestamp) {
-              oldestTimestamp = bus.timestamp;
+            const freshnessTimestamp = bus.receivedAt ?? bus.timestamp;
+            if (oldestTimestamp === null || freshnessTimestamp < oldestTimestamp) {
+              oldestTimestamp = freshnessTimestamp;
             }
           }
 
@@ -404,7 +414,7 @@ function PassengerMapInner({
             busPathPosition !== null &&
             stopPathPosition !== null &&
             stopPathPosition !== undefined
-              ? Math.abs(stopPathPosition - busPathPosition)
+              ? Math.max(0, stopPathPosition - busPathPosition)
               : distanceAlongPolyline(busPoint, stop, routePath);
           
           // Add 45 seconds of dwell time per intermediate stop.
@@ -449,8 +459,12 @@ function PassengerMapInner({
   const centerTarget = useMemo(() => {
     const firstBus = Array.from(buses.values())[0];
     if (!firstBus) return mapCenter;
-    return liveBusMarkerPosition(firstBus.lat, firstBus.lng) ?? mapCenter;
-  }, [buses, mapCenter]);
+    return liveBusMarkerPosition(firstBus.lat, firstBus.lng, {
+      path: routePath,
+      heading: firstBus.heading,
+      hdop: firstBus.hdop,
+    })?.point ?? mapCenter;
+  }, [buses, mapCenter, routePath]);
 
   return (
     <>
@@ -505,6 +519,7 @@ function PassengerMapInner({
             polylineQuality={route.polylineQuality}
             color={route.color || "#3b82f6"}
             hasBuses={buses.size > 0}
+            direction={route.rideDirection ?? null}
           />
 
           {/* Passenger location dot */}
@@ -523,7 +538,7 @@ function PassengerMapInner({
 
           {/* Bus markers */}
           {Array.from(buses.values()).map(bus => (
-            <BusMarker key={bus.busId} bus={bus} />
+            <BusMarker key={bus.busId} bus={bus} path={routePath} />
           ))}
 
           {/* Stop markers */}

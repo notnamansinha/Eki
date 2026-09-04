@@ -82,11 +82,13 @@ describe("apiRequest", () => {
     await expect(request).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("propagates a network failure and an already-aborted caller signal", async () => {
+  it("explains a network failure and propagates an already-aborted caller signal", async () => {
     vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
     const networkError = new TypeError("Network request failed");
     vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(networkError));
-    await expect(apiRequest("/api/test")).rejects.toBe(networkError);
+    await expect(apiRequest("/api/test")).rejects.toThrow(
+      "The backend is unreachable. Check the configured server URL and try again.",
+    );
 
     const controller = new AbortController();
     controller.abort();

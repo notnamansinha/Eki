@@ -71,7 +71,9 @@ assertRetentionConfiguration(
   process.env.NODE_ENV,
 );
 const httpServer = http.createServer(app);
-httpServer.requestTimeout = 15_000;
+// A route save can compute forward and reverse Google road geometry in
+// parallel. Keep the server budget above the upstream 10s deadline plus DB IO.
+httpServer.requestTimeout = 35_000;
 httpServer.headersTimeout = 70_000;
 httpServer.keepAliveTimeout = 65_000;
 httpServer.maxRequestsPerSocket = 100;

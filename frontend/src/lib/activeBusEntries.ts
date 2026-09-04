@@ -14,6 +14,8 @@ export interface ActiveBusEntry {
   speed?: number;
   heading?: number;
   timestamp?: number;
+  receivedAt?: number;
+  hdop?: number;
   status?: "active" | "offline";
   deviceState?: "online" | "offline";
   motionState?: "moving" | "stopped" | "uncertain";
@@ -46,6 +48,8 @@ const OPTIONAL_NUMBER_FIELDS = [
   "speed",
   "heading",
   "timestamp",
+  "receivedAt",
+  "hdop",
   "currentStopIndex",
   "delayMinutes",
 ] as const;
@@ -128,7 +132,9 @@ export function isActiveBusEntry(
   // generic telemetry freshness so fleet views do not show ended service.
   if (bus.tripState === "completed") return false;
   const fresh = isLiveBusTimestamp(
-    typeof bus.timestamp === "number" ? bus.timestamp : undefined,
+    typeof bus.receivedAt === "number"
+      ? bus.receivedAt
+      : typeof bus.timestamp === "number" ? bus.timestamp : undefined,
     now,
   );
   return fresh || isActiveRideSnapshot(bus);

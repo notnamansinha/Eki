@@ -560,7 +560,7 @@ describe("production security configuration", () => {
     expect(publisher).toContain('document["timestamp"]');
     expect(publisher).not.toContain('document["busId"]');
     expect(publisher).not.toContain('document["routeId"]');
-    expect(publisher).not.toContain('document["hdop"]');
+    expect(publisher).toContain('document["hdop"]');
   });
 
   it("keeps the parked GNSS heartbeat safely inside stale-record expiry", () => {
