@@ -90,7 +90,14 @@ function MapCenter({ center }: { center: { lat: number; lng: number } | null }) 
   return null;
 }
 
-/* Live ride details */
+/**
+ * Displays live diagnostics and message controls for an active bus.
+ *
+ * @param entry - The active bus whose live status and location diagnostics are displayed
+ * @param routeName - The route name shown for the bus
+ * @param onClose - Callback invoked when the drawer is closed
+ * @returns The live details drawer
+ */
 function LiveDetailsDrawer({
   entry,
   routeName,
@@ -307,7 +314,15 @@ function BusMarker({
   );
 }
 
-/* â”€â”€ Fleet card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/**
+ * Renders an expandable fleet card with live bus status, route progress, diagnostics, delay controls, boarding code access, and chat actions.
+ *
+ * @param entry - The active bus entry represented by the card
+ * @param selected - Whether the bus is currently selected
+ * @param delayPending - Whether a delay update is in progress
+ * @param boardingCode - The boarding code currently loaded for the bus
+ * @param canChat - Whether chat is available for the bus
+ */
 function FleetCard({
   entry, buses, routes, drivers,
   onSelect, selected, onChangeDelay, delayPending, boardingCode,
@@ -499,7 +514,11 @@ function FleetCard({
   );
 }
 
-/* â”€â”€ Main Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/**
+ * Renders the administrator dashboard for monitoring and managing the live fleet.
+ *
+ * @returns The dashboard interface with a live map, fleet statistics, ride controls, and messaging access.
+ */
 export default function DashboardPanel() {
   const { user } = useAuth();
   const {

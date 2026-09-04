@@ -3,10 +3,23 @@ import type { RouteData } from "@/hooks/useRoutes";
 export type RideDirection = "forward" | "reverse";
 export type RideDirectionState = RideDirection | null;
 
+/**
+ * Normalizes an unknown value to a supported ride direction.
+ *
+ * @param value - The value to normalize
+ * @returns `"forward"` or `"reverse"` when valid, or `null` otherwise
+ */
 export function normalizeRideDirection(value: unknown): RideDirectionState {
   return value === "forward" || value === "reverse" ? value : null;
 }
 
+/**
+ * Builds a directional label from the route stops.
+ *
+ * @param direction - The travel direction, or `null` when it is not set
+ * @param stops - The route stops used to determine the origin and destination
+ * @returns A direction label, or `"Direction pending"` when no direction is set
+ */
 export function directionLabel(
   direction: RideDirectionState,
   stops: RouteData["stops"],
@@ -18,7 +31,15 @@ export function directionLabel(
   return `${origin} → ${destination}`;
 }
 
-/** Uses immutable session endpoints before falling back to the current route. */
+/**
+ * Builds a directional label using persisted endpoint identifiers when available.
+ *
+ * @param direction - The current ride direction, or `null` when it is pending
+ * @param stops - The route stops used to resolve endpoint labels
+ * @param originStopId - The persisted origin stop identifier
+ * @param destinationStopId - The persisted destination stop identifier
+ * @returns A label containing the persisted endpoints, or a label derived from the current direction and stops
+ */
 export function persistedDirectionLabel(
   direction: RideDirectionState,
   stops: RouteData["stops"],
@@ -35,7 +56,13 @@ export function persistedDirectionLabel(
   return directionLabel(direction, stops);
 }
 
-/** Produces a view-only route whose stops and fallback geometry follow travel order. */
+/**
+ * Creates a view-only route aligned with the specified travel direction.
+ *
+ * @param route - The route to orient for travel.
+ * @param direction - The direction of travel.
+ * @returns A route with direction-specific geometry, metrics, and reversed stops and waypoints when traveling in reverse.
+ */
 export function routeInRideDirection(
   route: RouteData,
   direction: RideDirection,

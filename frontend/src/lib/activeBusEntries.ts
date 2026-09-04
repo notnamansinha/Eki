@@ -246,9 +246,11 @@ function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
 }
 
 /**
- * Sound type guard for raw RTDB snapshot values. Every ActiveBusEntry field
- * is optional except `busId`, so a valid string busId (plus fresh telemetry
- * or an active ride) fully characterizes an entry.
+ * Determines whether a value represents a live active bus entry.
+ *
+ * @param value - The value to validate.
+ * @param now - The reference time used to determine telemetry freshness.
+ * @returns `true` if the value has a valid bus identifier and represents fresh telemetry or an active ride, `false` otherwise.
  */
 export function isActiveBusEntry(
   value: unknown,

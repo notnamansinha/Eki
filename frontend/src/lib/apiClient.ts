@@ -5,6 +5,12 @@ type ApiRequestOptions = RequestInit & {
   timeoutMs?: number;
 };
 
+/**
+ * Resolves the configured backend URL for API requests.
+ *
+ * @returns The normalized HTTP or HTTPS backend URL without trailing slashes.
+ * @throws An error if the backend URL is missing or invalid.
+ */
 function configuredBackendUrl(): string {
   const configured = process.env.NEXT_PUBLIC_BACKEND_URL;
   if (!configured) throw new Error("Backend URL is invalid or not configured.");
@@ -25,6 +31,13 @@ function configuredBackendUrl(): string {
   }
 }
 
+/**
+ * Sends a request to the configured backend and parses its response.
+ *
+ * @param path - The path to append to the configured backend URL
+ * @param options - Request options, including fallback error text, timeout, cancellation signal, and fetch settings
+ * @returns The parsed response body, or `undefined` for a 204 response
+ */
 export async function apiRequest<T>(
   path: string,
   {

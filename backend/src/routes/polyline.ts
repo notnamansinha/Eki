@@ -48,6 +48,12 @@ class RouteWriteError extends Error {
   }
 }
 
+/**
+ * Determines whether a value contains valid latitude and longitude coordinates.
+ *
+ * @param value - The value to validate
+ * @returns `true` if the value contains finite latitude and longitude values within valid geographic bounds, `false` otherwise.
+ */
 function isValidLatLng(value: unknown): value is LatLng {
   if (!value || typeof value !== "object") return false;
   const { lat, lng } = value as Record<string, unknown>;
@@ -111,6 +117,12 @@ function routeWaypoints(route: Record<string, unknown>): LatLng[] | null {
   return validateWaypoints(route.waypoints);
 }
 
+/**
+ * Determines whether a value is a valid encoded polyline containing at least two coordinates.
+ *
+ * @param value - The value to validate
+ * @returns `true` if the value is a valid encoded polyline, `false` otherwise.
+ */
 function validEncodedPolyline(value: unknown): value is string {
   if (typeof value !== "string" || value.length === 0 || value.length > 500_000) {
     return false;
@@ -122,6 +134,12 @@ function validEncodedPolyline(value: unknown): value is string {
   }
 }
 
+/**
+ * Extracts validated directional geometry from a stored route record.
+ *
+ * @param route - The stored route data to inspect
+ * @returns The directional geometry when all required fields are valid, or `null` otherwise
+ */
 function storedDirectionalGeometry(
   route: Record<string, unknown>,
 ): DirectionalRouteGeometry | null {
@@ -152,6 +170,13 @@ function storedDirectionalGeometry(
   };
 }
 
+/**
+ * Determines whether a stored route matches the submitted route definition.
+ *
+ * @param route - The stored route to compare
+ * @param definition - The route name, color, type, and stops to match
+ * @returns `true` if all route fields and stops match, `false` otherwise
+ */
 function routeDefinitionMatches(
   route: Record<string, unknown>,
   definition: { name: string; color: string; type: string; stops: ValidatedStop[] },
@@ -166,19 +191,46 @@ function routeDefinitionMatches(
   );
 }
 
+/**
+ * Determines whether a route contains the specified waypoints in the same order.
+ *
+ * @param route - The route whose stored waypoints are compared.
+ * @param waypoints - The waypoints to compare with the route.
+ * @returns `true` if the route has matching waypoints, `false` otherwise.
+ */
 function sameCoordinates(route: Record<string, unknown>, waypoints: LatLng[]): boolean {
   const existing = routeWaypoints(route);
   return existing !== null && JSON.stringify(existing) === JSON.stringify(waypoints);
 }
 
+/**
+ * Determines whether an error represents an aborted operation.
+ *
+ * @param error - The value to inspect
+ * @returns `true` if the value is an `Error` named `"AbortError"`, `false` otherwise.
+ */
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
+/**
+ * Determines whether an error originates from the geometry service.
+ *
+ * @param error - The value to inspect
+ * @returns `true` if `error` is an `Error` whose message starts with `MAPS_`, `false` otherwise.
+ */
 function isGeometryServiceError(error: unknown): boolean {
   return error instanceof Error && error.message.startsWith("MAPS_");
 }
 
+/**
+ * Computes traffic-aware driving geometry for an ordered set of waypoints.
+ *
+ * @param waypoints - Ordered coordinates containing the route origin, destination, and optional intermediate stops
+ * @param outerSignal - Optional signal used to cancel the request
+ * @returns The encoded polyline, distance in meters, duration, and stored polyline quality
+ * @throws Error if Maps API configuration is missing, the upstream request fails, or the response is invalid
+ */
 async function computePolyline(waypoints: LatLng[], outerSignal?: AbortSignal) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("MAPS_NOT_CONFIGURED");
@@ -259,7 +311,12 @@ async function computePolyline(waypoints: LatLng[], outerSignal?: AbortSignal) {
   }
 }
 
-/** Compute legal road geometry independently for each travel direction. */
+/**
+ * Computes route geometry independently for forward and reverse travel directions.
+ *
+ * @param waypoints - Ordered coordinates defining the route
+ * @returns Directional geometry containing polylines, distances, and durations for both directions
+ */
 async function computeDirectionalPolylines(
   waypoints: LatLng[],
   signal?: AbortSignal,

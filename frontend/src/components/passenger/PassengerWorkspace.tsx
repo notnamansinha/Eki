@@ -58,6 +58,9 @@ function hasSessionId(bus: ActiveBusData): bus is ActiveSessionBusData {
   return typeof bus.sessionId === "string" && bus.sessionId.length > 0;
 }
 
+/**
+ * Renders the passenger workspace for route selection, live bus tracking, boarding, messaging, profile management, and post-ride feedback.
+ */
 export default function PassengerWorkspace() {
   const {
     isResuming,

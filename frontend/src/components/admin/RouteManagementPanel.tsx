@@ -39,6 +39,11 @@ interface PlacePrediction {
   lng: number;
 }
 
+/**
+ * Provides a debounced place search field and reports selected places.
+ *
+ * @param onPlaceSelect - Callback invoked with the selected place's name and coordinates.
+ */
 function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: number; lng: number }) => void }) {
   const [value, setValue] = useState("");
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
@@ -279,6 +284,13 @@ const EMPTY_EDITOR: EditorState = {
   stops: [],
 };
 
+/**
+ * Provides an interface for creating or editing a bus route, including its metadata, stops, map positions, and route geometry.
+ *
+ * @param initial - The initial route data and editor mode.
+ * @param onSaved - Called after the route is saved successfully.
+ * @param onCancel - Called when route editing is canceled.
+ */
 function RouteEditor({
   initial,
   onSaved,

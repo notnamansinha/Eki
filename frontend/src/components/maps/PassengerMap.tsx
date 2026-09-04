@@ -107,7 +107,12 @@ function BusMarker({
 
 
 // ── Traffic layer rendered imperatively ──────────────────────────────────────
-// ── Pan/zoom controller ──────────────────────────────────────────────────────
+/**
+ * Centers the map on the target location when automatic centering is enabled.
+ *
+ * @param target - The location to center on.
+ * @param isCentered - Whether automatic centering is enabled.
+ */
 function MapCenterer({ target, isCentered }: { target: { lat: number; lng: number } | null, isCentered: boolean }) {
   const map = useMap();
   useEffect(() => {
@@ -125,6 +130,13 @@ function MapCenterer({ target, isCentered }: { target: { lat: number; lng: numbe
   return null;
 }
 
+/**
+ * Displays a live passenger map for a route and target stop, including bus positions, stop progress, arrival estimates, route geometry, and passenger location.
+ *
+ * @param targetStop - The stop the passenger is traveling to
+ * @param route - The route and stops displayed on the map
+ * @param resumeGeneration - Value used to restart the live bus subscription
+ */
 function PassengerMapInner({
   targetStop,
   route,
