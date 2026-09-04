@@ -2,6 +2,8 @@ name: Production verification
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 permissions:
@@ -76,7 +78,41 @@ jobs:
         run: npm run build:production
       # Slow-3G/Offline browser acceptance remains a manual deployment gate;
       # see docs/operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md.
-      - run: npm audit --omit=dev --omit=optional
+      - name: Audit production dependencies
+        shell: bash
+        run: |
+          set -o pipefail
+
+          for attempt in 1 2 3; do
+            audit_log="$(mktemp)"
+            set +e
+            npm audit --omit=dev --omit=optional \
+              --fetch-timeout=60000 \
+              --fetch-retries=0 2>&1 | tee "$audit_log"
+            audit_status="${PIPESTATUS[0]}"
+            set -e
+
+            if [ "$audit_status" -eq 0 ]; then
+              rm -f "$audit_log"
+              exit 0
+            fi
+
+            if ! grep -Eqi \
+              'audit endpoint returned an error|network timeout|503 Service Unavailable|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ENETUNREACH|ENOTFOUND|ETIMEDOUT' \
+              "$audit_log"; then
+              rm -f "$audit_log"
+              exit "$audit_status"
+            fi
+
+            rm -f "$audit_log"
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::npm audit failed after 3 attempts because the registry advisory service was unavailable."
+              exit "$audit_status"
+            fi
+
+            echo "::warning::npm audit registry failure on attempt $attempt/3; retrying in 20 seconds."
+            sleep 20
+          done
 
   backend-image:
     # Issue #28: the backend runs as replicated containers, so the exact image
