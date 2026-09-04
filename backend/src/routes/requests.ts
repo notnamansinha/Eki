@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "../lib/firebaseAdmin";
 import { requireAdmin } from "../middleware/requireAdmin";
+import { singlePathParam } from "../lib/httpParams";
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -14,7 +15,7 @@ const ALLOWED_REQUEST_STATUSES = new Set<string>(["pending", "accepted", "comple
 
 // Admin patch completion override — SEC-10 fix: requires Firebase admin token
 router.patch("/:id", requireAdmin, async (req, res) => {
-  const id = req.params.id;
+  const id = singlePathParam(req.params.id);
   if (!SAFE_ID.test(id)) {
     res.status(400).json({ error: "Invalid request id" });
     return;
@@ -44,7 +45,7 @@ router.patch("/:id", requireAdmin, async (req, res) => {
 
 // Cancel a request by ID — SEC-10 fix: requires Firebase admin token
 router.delete("/:id", requireAdmin, async (req, res) => {
-  const id = req.params.id;
+  const id = singlePathParam(req.params.id);
   if (!SAFE_ID.test(id)) {
     res.status(400).json({ error: "Invalid request id" });
     return;

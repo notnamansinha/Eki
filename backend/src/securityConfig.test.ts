@@ -397,6 +397,16 @@ describe("production security configuration", () => {
     expect(directionsRoute).not.toContain("DirectionsRenderer");
   });
 
+  it("keeps route save and legacy repair writes concurrency-safe", () => {
+    const routeApi = workspaceFile("backend/src/routes/polyline.ts");
+
+    expect(routeApi).toContain("raceAgainstDeadline(");
+    expect(routeApi).toContain("Outcome unknown; reload the route before retrying.");
+    expect(routeApi).toContain("const repairResult = await db.runTransaction");
+    expect(routeApi).toContain("if (!sameCoordinates(currentRoute, waypoints))");
+    expect(routeApi).not.toContain("await routeRef.set(geometry, { merge: true })");
+  });
+
   it("rate-limits billable routes and authenticated HTTPS device telemetry", () => {
     const server = workspaceFile("backend/src/server.ts");
     const devices = workspaceFile("backend/src/routes/devices.ts");

@@ -4,6 +4,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { requireAuth } from "../middleware/requireAuth";
 import { decodePolyline } from "../lib/polylineUtils";
 import { invalidatePlanRoute } from "./plan";
+import { singlePathParam } from "../lib/httpParams";
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -46,6 +47,24 @@ class RouteWriteError extends Error {
   ) {
     super(message);
   }
+}
+
+class RouteDeadlineError extends Error {
+  constructor() {
+    super("ROUTE_SAVE_DEADLINE");
+  }
+}
+
+/** Bounds non-cancellable Firestore waits without pretending to cancel them. */
+function raceAgainstDeadline<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(new RouteDeadlineError());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new RouteDeadlineError());
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(resolve, reject).finally(() => {
+      signal.removeEventListener("abort", onAbort);
+    });
+  });
 }
 
 function isValidLatLng(value: unknown): value is LatLng {
@@ -327,7 +346,7 @@ router.post("/compute-polyline", requireAdmin, async (req: Request, res: Respons
  * billable waypoints because coordinates are loaded from Firestore by ID.
  */
 router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response) => {
-  const routeId = req.params.routeId;
+  const routeId = singlePathParam(req.params.routeId);
   if (!SAFE_ID.test(routeId)) {
     res.status(400).json({ error: "Invalid route ID." });
     return;
@@ -368,17 +387,39 @@ router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response
       return;
     }
     const geometry = await computePolylineOnce(routeId, waypoints);
-    await routeRef.set(geometry, { merge: true });
-    invalidatePlanRoute(routeId);
-    res.json({ ...geometry, cached: false });
+    const repairResult = await db.runTransaction(async (transaction) => {
+      const current = await transaction.get(routeRef);
+      if (!current.exists) {
+        throw new RouteWriteError(404, "Route not found.");
+      }
+      const currentRoute = current.data() as Record<string, unknown>;
+      const currentGeometry = storedDirectionalGeometry(currentRoute);
+      if (currentGeometry) {
+        return { geometry: currentGeometry, cached: true, repaired: false };
+      }
+      if (!sameCoordinates(currentRoute, waypoints)) {
+        throw new RouteWriteError(
+          409,
+          "Route changed while geometry was computed. Retry with the current route.",
+        );
+      }
+      transaction.set(routeRef, geometry, { merge: true });
+      return { geometry, cached: false, repaired: true };
+    });
+    if (repairResult.repaired) invalidatePlanRoute(routeId);
+    res.json({ ...repairResult.geometry, cached: repairResult.cached });
   } catch (error) {
+    if (error instanceof RouteWriteError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
     console.error("[Routes] Failed to load route geometry:", error);
     geometryError(res);
   }
 });
 
 router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
-  const routeId = req.params.routeId;
+  const routeId = singlePathParam(req.params.routeId);
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
   const color = typeof req.body?.color === "string" ? req.body.color : "";
   const type = req.body?.type;
@@ -404,7 +445,10 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
   );
   try {
     const routeRef = db.collection("routes").doc(routeId);
-    const existing = await routeRef.get();
+    const existing = await raceAgainstDeadline(
+      routeRef.get(),
+      deadlineController.signal,
+    );
     if (mode === "create" && existing.exists) {
       const existingData = existing.data() as Record<string, unknown>;
       const existingGeometry = storedDirectionalGeometry(existingData);
@@ -427,10 +471,13 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
       throw new RouteWriteError(404, "The route no longer exists.");
     }
     if (mode === "edit") {
-      const activeRide = await db.collection("active_rides")
-        .where("routeId", "==", routeId)
-        .limit(1)
-        .get();
+      const activeRide = await raceAgainstDeadline(
+        db.collection("active_rides")
+          .where("routeId", "==", routeId)
+          .limit(1)
+          .get(),
+        deadlineController.signal,
+      );
       if (!activeRide.empty) {
         res.status(409).json({
           error: "An active ride route cannot be edited before its final stop.",
@@ -462,7 +509,11 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
       ...geometry,
     };
     const initialVersion = existing.updateTime?.toMillis() ?? null;
-    const committedGeometry = await db.runTransaction(async (transaction) => {
+    if (deadlineController.signal.aborted) {
+      throw new RouteWriteError(504, "Route save timed out before any change was committed.");
+    }
+    let commitWriteQueued = false;
+    const commitPromise = db.runTransaction(async (transaction) => {
       const current = await transaction.get(routeRef);
       if (deadlineController.signal.aborted) {
         throw new RouteWriteError(504, "Route save timed out before any change was committed.");
@@ -479,6 +530,7 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
           }
           throw new RouteWriteError(409, "A route with this ID already exists.");
         }
+        commitWriteQueued = true;
         transaction.create(routeRef, routeData);
         return geometry;
       }
@@ -488,9 +540,30 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
       if ((current.updateTime?.toMillis() ?? null) !== initialVersion) {
         throw new RouteWriteError(409, "This route changed while it was saving. Reload and retry.");
       }
+      commitWriteQueued = true;
       transaction.set(routeRef, routeData);
       return geometry;
     });
+    let committedGeometry: DirectionalRouteGeometry;
+    try {
+      committedGeometry = await raceAgainstDeadline(
+        commitPromise,
+        deadlineController.signal,
+      );
+    } catch (error) {
+      if (!(error instanceof RouteDeadlineError)) throw error;
+      if (commitWriteQueued) {
+        void commitPromise.then(
+          () => invalidatePlanRoute(routeId),
+          (lateError) => console.error("[Routes] Timed-out route commit failed:", lateError),
+        );
+        throw new RouteWriteError(
+          504,
+          "Route save deadline expired during commit. Outcome unknown; reload the route before retrying.",
+        );
+      }
+      throw new RouteWriteError(504, "Route save timed out before any change was committed.");
+    }
     invalidatePlanRoute(routeId);
     res.json({
       saved: true,
@@ -501,9 +574,9 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
   } catch (error) {
     if (error instanceof RouteWriteError) {
       res.status(error.status).json({ error: error.message });
-    } else if (deadlineController.signal.aborted || isAbortError(error)) {
+    } else if (deadlineController.signal.aborted || error instanceof RouteDeadlineError) {
       res.status(504).json({ error: "Route save timed out before any change was committed." });
-    } else if (isGeometryServiceError(error)) {
+    } else if (isAbortError(error) || isGeometryServiceError(error)) {
       console.error("[Routes] Failed to compute saved-route geometry:", error);
       geometryError(res);
     } else {
@@ -516,7 +589,7 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
 });
 
 router.delete("/:routeId", requireAdmin, async (req: Request, res: Response) => {
-  const routeId = req.params.routeId;
+  const routeId = singlePathParam(req.params.routeId);
   if (!SAFE_ID.test(routeId)) {
     res.status(400).json({ error: "Invalid route ID." });
     return;

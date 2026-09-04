@@ -615,7 +615,9 @@ export default function DashboardPanel() {
     e.motionState === "uncertain" ||
     isLiveBusSignalLost(e.receivedAt ?? e.timestamp, freshnessNow)
   ).length;
-  const awaitingStart = activeEntries.filter(e => e.tripState === "pre_departure").length;
+  const awaitingStart = activeEntries.filter(
+    e => e.tripState === "pre_departure" && !e.sessionId,
+  ).length;
 
   const handleSelectBus = useCallback((entry: ActiveBusEntry) => {
     setSelectedBusId(prev => prev === entry.busId ? null : entry.busId);
