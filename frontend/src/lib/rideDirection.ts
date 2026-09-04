@@ -1,15 +1,17 @@
 import type { RouteData } from "@/hooks/useRoutes";
 
 export type RideDirection = "forward" | "reverse";
+export type RideDirectionState = RideDirection | null;
 
-export function normalizeRideDirection(value: unknown): RideDirection {
-  return value === "reverse" ? "reverse" : "forward";
+export function normalizeRideDirection(value: unknown): RideDirectionState {
+  return value === "forward" || value === "reverse" ? value : null;
 }
 
 export function directionLabel(
-  direction: RideDirection,
+  direction: RideDirectionState,
   stops: RouteData["stops"],
 ): string {
+  if (!direction) return "Direction pending";
   const ordered = direction === "reverse" ? [...stops].reverse() : stops;
   const origin = ordered[0]?.shortName || ordered[0]?.name || "Origin";
   const destination = ordered.at(-1)?.shortName || ordered.at(-1)?.name || "Destination";
@@ -18,7 +20,7 @@ export function directionLabel(
 
 /** Uses immutable session endpoints before falling back to the current route. */
 export function persistedDirectionLabel(
-  direction: RideDirection,
+  direction: RideDirectionState,
   stops: RouteData["stops"],
   originStopId: string | null | undefined,
   destinationStopId: string | null | undefined,
@@ -44,6 +46,7 @@ export function routeInRideDirection(
   if (direction === "forward") {
     return {
       ...route,
+      rideDirection: "forward",
       polyline: route.forwardPolyline ?? route.polyline,
       // Force the authenticated geometry repair endpoint for legacy route
       // records rather than pretending one reversible path is directional.

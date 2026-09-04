@@ -2,6 +2,7 @@ const API_TIMEOUT_MS = 10_000;
 
 type ApiRequestOptions = RequestInit & {
   fallbackError?: string;
+  timeoutMs?: number;
 };
 
 function configuredBackendUrl(): string {
@@ -26,7 +27,12 @@ function configuredBackendUrl(): string {
 
 export async function apiRequest<T>(
   path: string,
-  { fallbackError = "Request failed.", signal, ...init }: ApiRequestOptions = {},
+  {
+    fallbackError = "Request failed.",
+    timeoutMs = API_TIMEOUT_MS,
+    signal,
+    ...init
+  }: ApiRequestOptions = {},
 ): Promise<T> {
   const backendUrl = configuredBackendUrl();
 
@@ -43,13 +49,15 @@ export async function apiRequest<T>(
     if (requestController.signal.aborted) return;
     abortSource = "timeout";
     requestController.abort(new DOMException("Request timed out.", "TimeoutError"));
-  }, API_TIMEOUT_MS);
+  }, timeoutMs);
+  let responseReceived = false;
 
   try {
     const response = await fetch(`${backendUrl}${path}`, {
       ...init,
       signal: requestController.signal,
     });
+    responseReceived = true;
     if (response.status === 204) return undefined as T;
     let result: T & { error?: unknown };
     try {
@@ -68,6 +76,9 @@ export async function apiRequest<T>(
   } catch (error) {
     if (abortSource === "timeout") {
       throw new Error("The request timed out. Please try again.");
+    }
+    if (!responseReceived && error instanceof TypeError) {
+      throw new Error("The backend is unreachable. Check the configured server URL and try again.");
     }
     throw error;
   } finally {

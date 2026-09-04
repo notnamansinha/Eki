@@ -5,6 +5,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { ipKeyGenerator } from "../lib/rateLimitIdentity";
 import { readRateLimitShardFactor, shardedLimit } from "../lib/rateLimitShard";
 import { db } from "../lib/firebaseAdmin";
+import { singlePathParam } from "../lib/httpParams";
 import {
   authenticateDeviceCredentials,
   ingestDeviceTelemetry,
@@ -63,7 +64,7 @@ router.post(
   telemetryLimiter,
   async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
-    const deviceId = req.params.deviceId;
+    const deviceId = singlePathParam(req.params.deviceId);
     const secret = parseDeviceAuthorization(req.get("authorization"));
     let encodedLength = Number.POSITIVE_INFINITY;
     try {
@@ -126,7 +127,7 @@ router.get(
   telemetryLimiter,
   async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
-    const deviceId = req.params.deviceId;
+    const deviceId = singlePathParam(req.params.deviceId);
     const secret = parseDeviceAuthorization(req.get("authorization"));
     const currentSequence = parseFirmwareSequence(req.query.sequence);
     if (!SAFE_ID.test(deviceId) || !secret || currentSequence === null) {
@@ -187,7 +188,7 @@ router.post(
   telemetryLimiter,
   async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
-    const deviceId = req.params.deviceId;
+    const deviceId = singlePathParam(req.params.deviceId);
     const secret = parseDeviceAuthorization(req.get("authorization"));
     const parsed = parseDeviceDiagnosticsValue(req.body);
     if (!SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
@@ -220,7 +221,7 @@ router.get(
   "/:deviceId/diagnostics",
   requireAdmin,
   async (req: Request, res: Response) => {
-    const deviceId = req.params.deviceId;
+    const deviceId = singlePathParam(req.params.deviceId);
     if (!SAFE_ID.test(deviceId)) {
       res.status(400).json({ error: "Invalid device ID." });
       return;
@@ -241,7 +242,7 @@ router.get(
 );
 
 router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
-  const deviceId = req.params.deviceId;
+  const deviceId = singlePathParam(req.params.deviceId);
   const busId = req.body?.busId;
   const routeId = req.body?.routeId;
   const enabled = req.body?.enabled !== false;
@@ -349,7 +350,7 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
 });
 
 router.post("/:deviceId/disable", requireAdmin, async (req: Request, res: Response) => {
-  const deviceId = req.params.deviceId;
+  const deviceId = singlePathParam(req.params.deviceId);
   if (!SAFE_ID.test(deviceId)) {
     res.status(400).json({ error: "Invalid device ID." });
     return;

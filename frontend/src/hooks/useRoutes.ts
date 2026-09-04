@@ -37,7 +37,7 @@ export interface RouteData {
   forwardDuration?: string;
   reverseDuration?: string;
   /** View-only travel order for an active ride; never persisted on route documents. */
-  rideDirection?: "forward" | "reverse";
+  rideDirection?: "forward" | "reverse" | null;
 }
 
 /**

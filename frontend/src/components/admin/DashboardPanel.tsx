@@ -40,7 +40,7 @@ import {
 
 /* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const TRIP_STATE: Record<string, { label: string; color: string; bg: string; dot: string }> = {
-  pre_departure: { label: "Awaiting Stop 1", color: "text-white/50", bg: "bg-white/5", dot: "bg-white/30" },
+  pre_departure: { label: "Pre-departure", color: "text-white/50", bg: "bg-white/5", dot: "bg-white/30" },
   in_service:    { label: "In Service", color: "text-emerald-400", bg: "bg-emerald-500/10", dot: "bg-emerald-400" },
   completed:     { label: "Completed",  color: "text-blue-400",    bg: "bg-blue-500/10",    dot: "bg-blue-400" },
 };
@@ -156,7 +156,11 @@ function LiveDetailsDrawer({
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
               <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Trip state</p>
-              <p className="mt-1 text-sm font-semibold text-white">{TRIP_STATE[entry.tripState ?? "pre_departure"]?.label ?? "Pre-Departure"}</p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {!entry.sessionId
+                  ? "Ride not armed"
+                  : TRIP_STATE[entry.tripState ?? "pre_departure"]?.label ?? "Pre-departure"}
+              </p>
             </div>
             <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
               <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Signal</p>
@@ -326,8 +330,9 @@ function FleetCard({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const bus = buses.find(b => b.id === entry.busId);
   const route = routes.find(r => r.id === entry.routeId);
-  const directedRoute = route
-    ? routeInRideDirection(route, normalizeRideDirection(entry.direction))
+  const direction = normalizeRideDirection(entry.direction);
+  const directedRoute = route && direction
+    ? routeInRideDirection(route, direction)
     : undefined;
   const driver = drivers.find(d => d.id === entry.driverId);
   const ts = TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure;
@@ -363,7 +368,9 @@ function FleetCard({
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-white text-sm truncate">{bus?.name ?? entry.busId}</p>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <span className={`text-[9px] font-black uppercase tracking-wider ${ts.color}`}>{ts.label}</span>
+                <span className={`text-[9px] font-black uppercase tracking-wider ${ts.color}`}>
+                  {entry.sessionId ? ts.label : "Ride not armed"}
+                </span>
                 <span className={`text-[9px] font-semibold ${ms.color}`}>{ms.label}</span>
                 {entry.speed != null && <span className="text-[9px] text-white/30 tabular-nums">{Math.round(entry.speed)} km/h</span>}
                 {(entry.delayMinutes ?? 0) > 0 && (
@@ -403,7 +410,7 @@ function FleetCard({
               {[
                 { label: "Speed", value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "—" },
                 { label: "Heading", value: headingLabel(entry.heading) },
-                { label: "Last Update", value: timeSince(entry.timestamp) },
+                { label: "Last Update", value: timeSince(entry.receivedAt ?? entry.timestamp) },
                 { label: "Stop", value: stopCount > 0 ? `${stopIdx}/${stopCount}` : "—" },
               ].map(({ label, value }) => (
                 <div key={label} className="bg-white/3 border border-white/5 rounded-lg p-2 flex flex-col gap-0.5">
@@ -514,6 +521,10 @@ export default function DashboardPanel() {
   const dynamicGeometries = useDynamicRouteGeometries(activeEntriesMap);
   const { drivers } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
+  const routesById = useMemo(
+    () => new Map(routes.map((route) => [route.id, route])),
+    [routes],
+  );
   const activeRouteOverlays = useMemo(() => {
     const overlays = new Map<string, {
       key: string;
@@ -526,9 +537,10 @@ export default function DashboardPanel() {
     }>();
     for (const entry of activeEntries) {
       if (!entry.routeId) continue;
-      const route = routes.find((candidate) => candidate.id === entry.routeId);
+      const route = routesById.get(entry.routeId);
       if (!route) continue;
       const direction = normalizeRideDirection(entry.direction);
+      if (!direction) continue;
       const hasDirectionalGeometry = Boolean(
         route.forwardPolyline && route.reversePolyline,
       );
@@ -563,7 +575,7 @@ export default function DashboardPanel() {
       });
     }
     return [...overlays.values()];
-  }, [activeEntries, routes, dynamicGeometries]);
+  }, [activeEntries, routesById, dynamicGeometries]);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
@@ -601,9 +613,11 @@ export default function DashboardPanel() {
   const gpsLost    = activeEntries.filter(e =>
     e.deviceState === "offline" ||
     e.motionState === "uncertain" ||
-    isLiveBusSignalLost(e.timestamp, freshnessNow)
+    isLiveBusSignalLost(e.receivedAt ?? e.timestamp, freshnessNow)
   ).length;
-  const awaitingStart = activeEntries.filter(e => e.tripState === "pre_departure").length;
+  const awaitingStart = activeEntries.filter(
+    e => e.tripState === "pre_departure" && !e.sessionId,
+  ).length;
 
   const handleSelectBus = useCallback((entry: ActiveBusEntry) => {
     setSelectedBusId(prev => prev === entry.busId ? null : entry.busId);
@@ -831,7 +845,7 @@ export default function DashboardPanel() {
           {[
             { label: "In Service", value: inService,  color: "text-emerald-400", Icon: Activity },
             { label: "Moving",     value: moving,     color: "text-blue-400",    Icon: TrendingUp },
-            { label: "Awaiting Start", value: awaitingStart, color: "text-white/50", Icon: Clock },
+            { label: "Not Armed", value: awaitingStart, color: "text-white/50", Icon: Clock },
             { label: "GPS Lost",   value: gpsLost,    color: "text-amber-400",   Icon: AlertTriangle },
           ].map(({ label, value, color, Icon }) => (
             <div key={label} className="flex flex-col items-center justify-center gap-0.5 py-3 border-r border-white/5 last:border-0">

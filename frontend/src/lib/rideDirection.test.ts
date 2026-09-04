@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   directionLabel,
+  normalizeRideDirection,
   persistedDirectionLabel,
   routeInRideDirection,
 } from "./rideDirection";
@@ -33,6 +34,13 @@ describe("directional route views", () => {
 
   it("selects independently routed forward geometry", () => {
     expect(routeInRideDirection(route, "forward").polyline).toBe("legal-forward");
+    expect(routeInRideDirection(route, "forward").rideDirection).toBe("forward");
+  });
+
+  it("keeps missing or invalid direction pending", () => {
+    expect(normalizeRideDirection(undefined)).toBeNull();
+    expect(normalizeRideDirection("invalid")).toBeNull();
+    expect(directionLabel(null, route.stops)).toBe("Direction pending");
   });
 
   it("keeps persisted session endpoints stable after the route is edited", () => {
