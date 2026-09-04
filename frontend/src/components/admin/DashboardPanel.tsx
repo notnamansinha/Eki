@@ -52,9 +52,12 @@ const MOTION_STATE: Record<string, { label: string; color: string }> = {
 function timeSince(t?: string | number): string {
   if (!t) return "—";
   const ms = typeof t === "number" ? Date.now() - t : Date.now() - new Date(t).getTime();
-  if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
-  return `${Math.floor(ms / 3_600_000)}h ago`;
+  // Future server timestamps (clock skew) can make ms negative; clamp to zero
+  // so the dashboard never renders "-5s ago".
+  const elapsed = Math.max(0, ms);
+  if (elapsed < 60_000) return `${Math.floor(elapsed / 1000)}s ago`;
+  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m ago`;
+  return `${Math.floor(elapsed / 3_600_000)}h ago`;
 }
 function headingLabel(d?: number): string {
   if (d == null) return "—";

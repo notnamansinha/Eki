@@ -5,6 +5,11 @@ import { requireAuth } from "../middleware/requireAuth";
 import { decodePolyline } from "../lib/polylineUtils";
 import { invalidatePlanRoute } from "./plan";
 import { singlePathParam } from "../lib/httpParams";
+import { invalidateCachedRouteGeometry } from "../services/telemetryRouteService";
+import {
+  routeGenerationValue,
+  sameFirestoreTimestamp,
+} from "../lib/routeSaveConcurrency";
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -360,22 +365,12 @@ router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response
       return;
     }
     const route = snapshot.data() as Record<string, unknown>;
-    if (
-      route.polylineQuality === STORED_POLYLINE_QUALITY &&
-      validEncodedPolyline(route.forwardPolyline) &&
-      validEncodedPolyline(route.reversePolyline)
-    ) {
+    // Only serve a cached route when its directional geometry AND full
+    // distance/duration metadata are present and well-formed (#7).
+    const cachedGeometry = storedDirectionalGeometry(route);
+    if (cachedGeometry) {
       res.json({
-        polyline: route.forwardPolyline,
-        forwardPolyline: route.forwardPolyline,
-        reversePolyline: route.reversePolyline,
-        distanceMeters: route.distanceMeters,
-        forwardDistanceMeters: route.forwardDistanceMeters,
-        reverseDistanceMeters: route.reverseDistanceMeters,
-        duration: route.duration,
-        forwardDuration: route.forwardDuration,
-        reverseDuration: route.reverseDuration,
-        polylineQuality: route.polylineQuality,
+        ...cachedGeometry,
         cached: true,
       });
       return;
@@ -406,7 +401,10 @@ router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response
       transaction.set(routeRef, geometry, { merge: true });
       return { geometry, cached: false, repaired: true };
     });
-    if (repairResult.repaired) invalidatePlanRoute(routeId);
+    if (repairResult.repaired) {
+      invalidatePlanRoute(routeId);
+      invalidateCachedRouteGeometry(routeId);
+    }
     res.json({ ...repairResult.geometry, cached: repairResult.cached });
   } catch (error) {
     if (error instanceof RouteWriteError) {
@@ -508,7 +506,12 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
       waypoints,
       ...geometry,
     };
-    const initialVersion = existing.updateTime?.toMillis() ?? null;
+    // Preserve the full Firestore Timestamp (not toMillis, which drops
+    // sub-millisecond precision, #3) plus the ride-start generation so the
+    // commit below can detect a concurrent edit AND a ride starting between
+    // the active-rides check and the route write (#1).
+    const initialUpdateTime = existing.updateTime ?? null;
+    const initialGeneration = routeGenerationValue(existingData ?? undefined);
     if (deadlineController.signal.aborted) {
       throw new RouteWriteError(504, "Route save timed out before any change was committed.");
     }
@@ -537,11 +540,22 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
       if (!current.exists) {
         throw new RouteWriteError(404, "The route no longer exists.");
       }
-      if ((current.updateTime?.toMillis() ?? null) !== initialVersion) {
+      if (!sameFirestoreTimestamp(current.updateTime, initialUpdateTime)) {
         throw new RouteWriteError(409, "This route changed while it was saving. Reload and retry.");
       }
+      if (routeGenerationValue(current.data()) !== initialGeneration) {
+        throw new RouteWriteError(
+          409,
+          "A ride started while this route was being saved; it cannot be edited while in service. Reload and retry.",
+        );
+      }
       commitWriteQueued = true;
-      transaction.set(routeRef, routeData);
+      transaction.set(routeRef, {
+        ...routeData,
+        // Preserve the monotonic ride-start generation; an unconditional set
+        // would reset it and break the race guard on the next edit.
+        rideStartGeneration: (current.data() as Record<string, unknown>)?.rideStartGeneration,
+      });
       return geometry;
     });
     let committedGeometry: DirectionalRouteGeometry;
@@ -553,18 +567,24 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
     } catch (error) {
       if (!(error instanceof RouteDeadlineError)) throw error;
       if (commitWriteQueued) {
-        void commitPromise.then(
-          () => invalidatePlanRoute(routeId),
-          (lateError) => console.error("[Routes] Timed-out route commit failed:", lateError),
-        );
-        throw new RouteWriteError(
-          504,
-          "Route save deadline expired during commit. Outcome unknown; reload the route before retrying.",
-        );
+        // The commit was already queued. Wait for its definitive outcome so
+        // the UI never reports a failure after the route actually saved (#4);
+        // a retry would otherwise reconcile to the already-saved route anyway.
+        committedGeometry = await commitPromise;
+        invalidatePlanRoute(routeId);
+        invalidateCachedRouteGeometry(routeId);
+        res.json({
+          saved: true,
+          routeId,
+          ...committedGeometry,
+          geometryReused: reusableGeometry !== null,
+        });
+        return;
       }
       throw new RouteWriteError(504, "Route save timed out before any change was committed.");
     }
     invalidatePlanRoute(routeId);
+    invalidateCachedRouteGeometry(routeId);
     res.json({
       saved: true,
       routeId,
@@ -614,6 +634,7 @@ router.delete("/:routeId", requireAdmin, async (req: Request, res: Response) => 
     }
     await db.collection("routes").doc(routeId).delete();
     invalidatePlanRoute(routeId);
+    invalidateCachedRouteGeometry(routeId);
     res.json({ deleted: true });
   } catch (error) {
     console.error("[Routes] Failed to delete route:", error);

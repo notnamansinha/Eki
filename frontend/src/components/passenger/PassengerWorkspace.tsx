@@ -13,6 +13,7 @@ import {
   passengerLiveBuses,
   passengerLiveBusSelectionKey,
   passengerTripStates,
+  shouldLockBusSelector,
   type PassengerLiveBus,
 } from "@/lib/passengerLiveBus";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
@@ -173,6 +174,16 @@ export default function PassengerWorkspace() {
   const activeBusOnRouteId = activeBusOnRoute?.busId;
   const activeSessionId = activeBusOnRoute?.sessionId;
   const rideDirection = normalizeRideDirection(activeBusOnRoute?.direction);
+  // A bus that has been joined but whose direction is still pending (armed,
+  // awaiting stop 1) must not hide the bus-switcher: the traveler may yet move
+  // to a direction-confirmed (in_service) bus on the same route (#5). Only a
+  // tracked in-service bus is locked in.
+  const lockedToConfirmedBus = shouldLockBusSelector({
+    busCount: busesOnRoute.length,
+    selectedSessionId: activeBusOnRoute?.sessionId,
+    trackedSessionId,
+    selectedTripState: activeBusOnRoute?.tripState,
+  });
   const directedRoute = activeRoute && rideDirection
     ? routeInRideDirection(activeRoute, rideDirection)
     : undefined;
@@ -414,9 +425,7 @@ export default function PassengerWorkspace() {
                   {activeBusOnRoute ? (
                     <div className="flex-1 min-w-0 flex flex-col gap-2">
                       {busesOnRoute.length > 1 &&
-                        !busesOnRoute.some(
-                          (bus) => bus.sessionId === trackedSessionId,
-                        ) && (
+                        !lockedToConfirmedBus && (
                         <select
                           value={passengerLiveBusSelectionKey(activeBusOnRoute)}
                           onChange={(event) => {

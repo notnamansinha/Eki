@@ -56,7 +56,12 @@ export function routeInRideDirection(
   return {
     ...route,
     rideDirection: "reverse",
-    polyline: route.reversePolyline,
+    // Legacy routes without an independently-routed reverse polyline keep the
+    // existing (forward-only) fallback instead of dropping the map to
+    // stop-to-stop geometry while the directional repair completes.
+    // polylineQuality stays undefined so clients still trigger the repair
+    // endpoint rather than treating the reversible path as directional.
+    polyline: route.reversePolyline ?? route.polyline,
     polylineQuality: hasDirectionalGeometry ? route.polylineQuality : undefined,
     distanceMeters: route.reverseDistanceMeters ?? route.distanceMeters,
     duration: route.reverseDuration ?? route.duration,

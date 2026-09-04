@@ -37,6 +37,16 @@ describe("directional route views", () => {
     expect(routeInRideDirection(route, "forward").rideDirection).toBe("forward");
   });
 
+  it("keeps the forward-only fallback for a legacy reverse route until repair (#6)", () => {
+    const legacy = { ...route, reversePolyline: undefined };
+    const reverse = routeInRideDirection(legacy, "reverse");
+    // The map must keep road geometry rather than collapsing to stop-to-stop
+    // while the directional repair endpoint is still pending.
+    expect(reverse.polyline).toBe("legacy-forward");
+    // The quality marker is dropped so clients still trigger the repair.
+    expect(reverse.polylineQuality).toBeUndefined();
+  });
+
   it("keeps missing or invalid direction pending", () => {
     expect(normalizeRideDirection(undefined)).toBeNull();
     expect(normalizeRideDirection("invalid")).toBeNull();

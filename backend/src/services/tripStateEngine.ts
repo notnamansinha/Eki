@@ -272,6 +272,14 @@ async function maybeArmAutomaticTurnaround(
         previousSessionId,
         updatedAt: FieldValue.serverTimestamp(),
       });
+      // A new ride (automatic turnaround) also bumps the route's ride-start
+      // generation so a concurrent route edit cannot slip through after a
+      // stale active-rides check (finding #1).
+      transaction.set(
+        db.collection("routes").doc(routeId),
+        { rideStartGeneration: FieldValue.increment(1) },
+        { merge: true },
+      );
       return true;
     });
     if (!durableCreated) return false;

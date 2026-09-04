@@ -401,7 +401,11 @@ describe("production security configuration", () => {
     const routeApi = workspaceFile("backend/src/routes/polyline.ts");
 
     expect(routeApi).toContain("raceAgainstDeadline(");
-    expect(routeApi).toContain("Outcome unknown; reload the route before retrying.");
+    // Finding #4: a commit that is already queued must not surface a spurious
+    // 504/"outcome unknown" failure after the route actually saved. The save
+    // waits for the definitive Firestore commit outcome before responding.
+    expect(routeApi).toContain("committedGeometry = await commitPromise;");
+    expect(routeApi).not.toContain("Outcome unknown; reload the route before retrying.");
     expect(routeApi).toContain("const repairResult = await db.runTransaction");
     expect(routeApi).toContain("if (!sameCoordinates(currentRoute, waypoints))");
     expect(routeApi).not.toContain("await routeRef.set(geometry, { merge: true })");

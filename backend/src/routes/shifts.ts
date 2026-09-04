@@ -568,6 +568,15 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         delayUpdatedAt: claimedDelayUpdatedAt,
         updatedAt: FieldValue.serverTimestamp(),
       });
+      // Atomically bump the route's ride-start generation so a concurrent
+      // route edit that already passed its (empty) active-rides check cannot
+      // edit this now-active route. The route-edit transaction compares this
+      // generation and aborts on a change (finding #1).
+      batch.set(
+        db.collection("routes").doc(assignment.routeId),
+        { rideStartGeneration: FieldValue.increment(1) },
+        { merge: true },
+      );
       await batch.commit();
     } catch (error) {
       // Preserve the RTDB claim, pending session and bus lock on an ambiguous
