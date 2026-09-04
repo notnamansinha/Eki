@@ -137,4 +137,16 @@ describe("apiRequest", () => {
     ));
     await expect(apiRequest("/api/test")).rejects.toBeInstanceOf(SyntaxError);
   });
+
+  it("does not mislabel response parsing failures as network failures", async () => {
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
+    const parsingError = new TypeError("Response body stream failed");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(parsingError),
+    } as Response));
+
+    await expect(apiRequest("/api/test")).rejects.toBe(parsingError);
+  });
 });

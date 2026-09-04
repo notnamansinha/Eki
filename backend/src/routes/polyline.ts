@@ -10,20 +10,23 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
 const ROUTE_TYPES = new Set(["up", "down", "circular"]);
 const STORED_POLYLINE_QUALITY = "HIGH_QUALITY";
-
-interface RouteGeometry {
+const ROUTE_SAVE_DEADLINE_MS = 30_000;
+interface DirectionalRouteGeometry {
   polyline: string;
+  forwardPolyline: string;
+  reversePolyline: string;
   distanceMeters: number;
+  forwardDistanceMeters: number;
+  reverseDistanceMeters: number;
   duration: string;
+  forwardDuration: string;
+  reverseDuration: string;
   polylineQuality: typeof STORED_POLYLINE_QUALITY;
 }
-
-interface DirectionalGeometry {
-  forwardGeometry: RouteGeometry;
-  reverseGeometry: RouteGeometry;
-}
-
-const geometryComputations = new Map<string, Promise<DirectionalGeometry>>();
+const geometryComputations = new Map<
+  string,
+  Promise<DirectionalRouteGeometry>
+>();
 
 interface LatLng {
   lat: number;
@@ -34,6 +37,15 @@ interface ValidatedStop extends LatLng {
   id: string;
   name: string;
   shortName: string;
+}
+
+class RouteWriteError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
 function isValidLatLng(value: unknown): value is LatLng {
@@ -110,56 +122,64 @@ function validEncodedPolyline(value: unknown): value is string {
   }
 }
 
-function storedGeometry(value: unknown): RouteGeometry | null {
-  if (!value || typeof value !== "object") return null;
-  const geometry = value as Record<string, unknown>;
+function storedDirectionalGeometry(
+  route: Record<string, unknown>,
+): DirectionalRouteGeometry | null {
   if (
-    geometry.polylineQuality !== STORED_POLYLINE_QUALITY ||
-    !validEncodedPolyline(geometry.polyline) ||
-    typeof geometry.distanceMeters !== "number" ||
-    !Number.isFinite(geometry.distanceMeters) ||
-    typeof geometry.duration !== "string"
+    route.polylineQuality !== STORED_POLYLINE_QUALITY ||
+    !validEncodedPolyline(route.forwardPolyline) ||
+    !validEncodedPolyline(route.reversePolyline) ||
+    typeof route.forwardDistanceMeters !== "number" ||
+    !Number.isFinite(route.forwardDistanceMeters) ||
+    typeof route.reverseDistanceMeters !== "number" ||
+    !Number.isFinite(route.reverseDistanceMeters) ||
+    typeof route.forwardDuration !== "string" ||
+    typeof route.reverseDuration !== "string"
   ) {
     return null;
   }
-  return geometry as unknown as RouteGeometry;
+  return {
+    polyline: route.forwardPolyline,
+    forwardPolyline: route.forwardPolyline,
+    reversePolyline: route.reversePolyline,
+    distanceMeters: route.forwardDistanceMeters,
+    forwardDistanceMeters: route.forwardDistanceMeters,
+    reverseDistanceMeters: route.reverseDistanceMeters,
+    duration: route.forwardDuration,
+    forwardDuration: route.forwardDuration,
+    reverseDuration: route.reverseDuration,
+    polylineQuality: STORED_POLYLINE_QUALITY,
+  };
 }
 
-function storedDirectionalGeometry(route: Record<string, unknown>): DirectionalGeometry | null {
-  const forwardGeometry = storedGeometry(route.forwardGeometry);
-  const reverseGeometry = storedGeometry(route.reverseGeometry);
-  return forwardGeometry && reverseGeometry
-    ? { forwardGeometry, reverseGeometry }
-    : null;
+function routeDefinitionMatches(
+  route: Record<string, unknown>,
+  definition: { name: string; color: string; type: string; stops: ValidatedStop[] },
+): boolean {
+  const existingStops = validateStops(route.stops);
+  return (
+    route.name === definition.name &&
+    route.color === definition.color &&
+    route.type === definition.type &&
+    existingStops !== null &&
+    JSON.stringify(existingStops) === JSON.stringify(definition.stops)
+  );
 }
 
-function coordinatesMatch(route: Record<string, unknown>, waypoints: LatLng[]): boolean {
+function sameCoordinates(route: Record<string, unknown>, waypoints: LatLng[]): boolean {
   const existing = routeWaypoints(route);
-  return Boolean(
-    existing &&
-    existing.length === waypoints.length &&
-    existing.every((point, index) =>
-      point.lat === waypoints[index].lat && point.lng === waypoints[index].lng),
-  );
+  return existing !== null && JSON.stringify(existing) === JSON.stringify(waypoints);
 }
 
-function stopsMatch(value: unknown, expected: ValidatedStop[]): boolean {
-  const actual = validateStops(value);
-  return Boolean(
-    actual &&
-    actual.length === expected.length &&
-    actual.every((stop, index) => {
-      const other = expected[index];
-      return stop.id === other.id &&
-        stop.name === other.name &&
-        stop.shortName === other.shortName &&
-        stop.lat === other.lat &&
-        stop.lng === other.lng;
-    }),
-  );
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }
 
-async function computePolyline(waypoints: LatLng[]) {
+function isGeometryServiceError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("MAPS_");
+}
+
+async function computePolyline(waypoints: LatLng[], outerSignal?: AbortSignal) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("MAPS_NOT_CONFIGURED");
 
@@ -187,6 +207,9 @@ async function computePolyline(waypoints: LatLng[]) {
   }
 
   const controller = new AbortController();
+  const abortFromOuter = () => controller.abort(outerSignal?.reason);
+  if (outerSignal?.aborted) abortFromOuter();
+  outerSignal?.addEventListener("abort", abortFromOuter, { once: true });
   const timeoutId = setTimeout(() => controller.abort(), 10_000);
   try {
     const response = await fetch(
@@ -232,35 +255,44 @@ async function computePolyline(waypoints: LatLng[]) {
     } as const;
   } finally {
     clearTimeout(timeoutId);
+    outerSignal?.removeEventListener("abort", abortFromOuter);
   }
+}
+
+/** Compute legal road geometry independently for each travel direction. */
+async function computeDirectionalPolylines(
+  waypoints: LatLng[],
+  signal?: AbortSignal,
+): Promise<DirectionalRouteGeometry> {
+  const [forward, reverse] = await Promise.all([
+    computePolyline(waypoints, signal),
+    computePolyline([...waypoints].reverse(), signal),
+  ]);
+  return {
+    polyline: forward.polyline,
+    forwardPolyline: forward.polyline,
+    reversePolyline: reverse.polyline,
+    distanceMeters: forward.distanceMeters,
+    forwardDistanceMeters: forward.distanceMeters,
+    reverseDistanceMeters: reverse.distanceMeters,
+    duration: forward.duration,
+    forwardDuration: forward.duration,
+    reverseDuration: reverse.duration,
+    polylineQuality: STORED_POLYLINE_QUALITY,
+  };
 }
 
 function computePolylineOnce(routeId: string, waypoints: LatLng[]) {
   const key = `${routeId}:${JSON.stringify(waypoints)}`;
   const existing = geometryComputations.get(key);
   if (existing) return existing;
-  const computation = Promise.all([
-    computePolyline(waypoints),
-    computePolyline([...waypoints].reverse()),
-  ]).then(([forwardGeometry, reverseGeometry]) => ({
-    forwardGeometry,
-    reverseGeometry,
-  })).finally(() => {
+  const computation = computeDirectionalPolylines(waypoints).finally(() => {
     if (geometryComputations.get(key) === computation) {
       geometryComputations.delete(key);
     }
   });
   geometryComputations.set(key, computation);
   return computation;
-}
-
-function legacyForwardFields(geometry: DirectionalGeometry) {
-  return {
-    polyline: geometry.forwardGeometry.polyline,
-    distanceMeters: geometry.forwardGeometry.distanceMeters,
-    duration: geometry.forwardGeometry.duration,
-    polylineQuality: geometry.forwardGeometry.polylineQuality,
-  };
 }
 
 function geometryError(res: Response): void {
@@ -296,13 +328,8 @@ router.post("/compute-polyline", requireAdmin, async (req: Request, res: Respons
  */
 router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response) => {
   const routeId = req.params.routeId;
-  const direction = req.query.direction;
   if (!SAFE_ID.test(routeId)) {
     res.status(400).json({ error: "Invalid route ID." });
-    return;
-  }
-  if (direction !== "forward" && direction !== "reverse") {
-    res.status(400).json({ error: "direction must be forward or reverse." });
     return;
   }
 
@@ -314,9 +341,24 @@ router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response
       return;
     }
     const route = snapshot.data() as Record<string, unknown>;
-    const cachedGeometry = storedDirectionalGeometry(route);
-    if (cachedGeometry) {
-      res.json({ ...cachedGeometry[`${direction}Geometry`], cached: true });
+    if (
+      route.polylineQuality === STORED_POLYLINE_QUALITY &&
+      validEncodedPolyline(route.forwardPolyline) &&
+      validEncodedPolyline(route.reversePolyline)
+    ) {
+      res.json({
+        polyline: route.forwardPolyline,
+        forwardPolyline: route.forwardPolyline,
+        reversePolyline: route.reversePolyline,
+        distanceMeters: route.distanceMeters,
+        forwardDistanceMeters: route.forwardDistanceMeters,
+        reverseDistanceMeters: route.reverseDistanceMeters,
+        duration: route.duration,
+        forwardDuration: route.forwardDuration,
+        reverseDuration: route.reverseDuration,
+        polylineQuality: route.polylineQuality,
+        cached: true,
+      });
       return;
     }
 
@@ -326,12 +368,9 @@ router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response
       return;
     }
     const geometry = await computePolylineOnce(routeId, waypoints);
-    await routeRef.set({
-      ...geometry,
-      ...legacyForwardFields(geometry),
-    }, { merge: true });
+    await routeRef.set(geometry, { merge: true });
     invalidatePlanRoute(routeId);
-    res.json({ ...geometry[`${direction}Geometry`], cached: false });
+    res.json({ ...geometry, cached: false });
   } catch (error) {
     console.error("[Routes] Failed to load route geometry:", error);
     geometryError(res);
@@ -358,15 +397,34 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
     return;
   }
 
+  const deadlineController = new AbortController();
+  const deadlineId = setTimeout(
+    () => deadlineController.abort(new Error("ROUTE_SAVE_DEADLINE")),
+    ROUTE_SAVE_DEADLINE_MS,
+  );
   try {
     const routeRef = db.collection("routes").doc(routeId);
     const existing = await routeRef.get();
-    const existingRoute = existing.exists
-      ? existing.data() as Record<string, unknown>
-      : null;
+    if (mode === "create" && existing.exists) {
+      const existingData = existing.data() as Record<string, unknown>;
+      const existingGeometry = storedDirectionalGeometry(existingData);
+      if (
+        routeDefinitionMatches(existingData, { name, color, type, stops }) &&
+        existingGeometry
+      ) {
+        res.json({
+          saved: true,
+          routeId,
+          ...existingGeometry,
+          idempotent: true,
+          geometryReused: true,
+        });
+        return;
+      }
+      throw new RouteWriteError(409, "A route with this ID already exists.");
+    }
     if (mode === "edit" && !existing.exists) {
-      res.status(404).json({ error: "The route no longer exists." });
-      return;
+      throw new RouteWriteError(404, "The route no longer exists.");
     }
     if (mode === "edit") {
       const activeRide = await db.collection("active_rides")
@@ -381,32 +439,19 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
       }
     }
     const waypoints = stops.map(({ lat, lng }) => ({ lat, lng }));
-    if (mode === "create" && existingRoute) {
-      const sameCreate =
-        existingRoute.name === name &&
-        existingRoute.color === color &&
-        existingRoute.type === type &&
-        stopsMatch(existingRoute.stops, stops);
-      if (!sameCreate) {
-        res.status(409).json({ error: "A route with this ID already exists." });
-        return;
-      }
-      const priorGeometry = storedDirectionalGeometry(existingRoute);
-      if (priorGeometry) {
-        res.json({
-          saved: true,
-          routeId,
-          ...priorGeometry,
-          ...legacyForwardFields(priorGeometry),
-          idempotent: true,
-        });
-        return;
-      }
-    }
-    const reusableGeometry = existingRoute && coordinatesMatch(existingRoute, waypoints)
-      ? storedDirectionalGeometry(existingRoute)
+    const existingData = existing.exists
+      ? existing.data() as Record<string, unknown>
       : null;
-    const geometry = reusableGeometry ?? await computePolylineOnce(routeId, waypoints);
+    const reusableGeometry = existingData && sameCoordinates(existingData, waypoints)
+      ? storedDirectionalGeometry(existingData)
+      : null;
+    const geometry = reusableGeometry ?? await computeDirectionalPolylines(
+      waypoints,
+      deadlineController.signal,
+    );
+    if (deadlineController.signal.aborted) {
+      throw new RouteWriteError(504, "Route save timed out before any change was committed.");
+    }
     const routeData = {
       id: routeId,
       name,
@@ -415,24 +460,58 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
       stops,
       waypoints,
       ...geometry,
-      ...legacyForwardFields(geometry),
     };
-    if (mode === "create" && !existingRoute) {
-      await routeRef.create(routeData);
-    } else {
-      await routeRef.set(routeData);
-    }
+    const initialVersion = existing.updateTime?.toMillis() ?? null;
+    const committedGeometry = await db.runTransaction(async (transaction) => {
+      const current = await transaction.get(routeRef);
+      if (deadlineController.signal.aborted) {
+        throw new RouteWriteError(504, "Route save timed out before any change was committed.");
+      }
+      if (mode === "create") {
+        if (current.exists) {
+          const currentData = current.data() as Record<string, unknown>;
+          const currentGeometry = storedDirectionalGeometry(currentData);
+          if (
+            routeDefinitionMatches(currentData, { name, color, type, stops }) &&
+            currentGeometry
+          ) {
+            return currentGeometry;
+          }
+          throw new RouteWriteError(409, "A route with this ID already exists.");
+        }
+        transaction.create(routeRef, routeData);
+        return geometry;
+      }
+      if (!current.exists) {
+        throw new RouteWriteError(404, "The route no longer exists.");
+      }
+      if ((current.updateTime?.toMillis() ?? null) !== initialVersion) {
+        throw new RouteWriteError(409, "This route changed while it was saving. Reload and retry.");
+      }
+      transaction.set(routeRef, routeData);
+      return geometry;
+    });
     invalidatePlanRoute(routeId);
     res.json({
       saved: true,
       routeId,
-      ...geometry,
-      ...legacyForwardFields(geometry),
-      geometryReused: Boolean(reusableGeometry),
+      ...committedGeometry,
+      geometryReused: reusableGeometry !== null,
     });
   } catch (error) {
-    console.error("[Routes] Failed to save validated route:", error);
-    geometryError(res);
+    if (error instanceof RouteWriteError) {
+      res.status(error.status).json({ error: error.message });
+    } else if (deadlineController.signal.aborted || isAbortError(error)) {
+      res.status(504).json({ error: "Route save timed out before any change was committed." });
+    } else if (isGeometryServiceError(error)) {
+      console.error("[Routes] Failed to compute saved-route geometry:", error);
+      geometryError(res);
+    } else {
+      console.error("[Routes] Failed to commit validated route:", error);
+      res.status(500).json({ error: "Unable to save route." });
+    }
+  } finally {
+    clearTimeout(deadlineId);
   }
 });
 

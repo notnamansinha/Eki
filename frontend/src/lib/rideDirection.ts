@@ -1,4 +1,4 @@
-import type { RouteData, RouteGeometry } from "@/hooks/useRoutes";
+import type { RouteData } from "@/hooks/useRoutes";
 
 export type RideDirection = "forward" | "reverse";
 export type RideDirectionState = RideDirection | null;
@@ -16,26 +16,6 @@ export function directionLabel(
   const origin = ordered[0]?.shortName || ordered[0]?.name || "Origin";
   const destination = ordered.at(-1)?.shortName || ordered.at(-1)?.name || "Destination";
   return `${origin} → ${destination}`;
-}
-
-export function geometryForDirection(
-  route: RouteData,
-  direction: RideDirection,
-): RouteGeometry | undefined {
-  if (direction === "reverse") return route.reverseGeometry;
-  return route.forwardGeometry ?? (
-    route.polyline &&
-    route.polylineQuality === "HIGH_QUALITY" &&
-    typeof route.distanceMeters === "number" &&
-    typeof route.duration === "string"
-      ? {
-          polyline: route.polyline,
-          polylineQuality: route.polylineQuality,
-          distanceMeters: route.distanceMeters,
-          duration: route.duration,
-        }
-      : undefined
-  );
 }
 
 /** Uses immutable session endpoints before falling back to the current route. */
@@ -60,18 +40,26 @@ export function routeInRideDirection(
   route: RouteData,
   direction: RideDirection,
 ): RouteData {
-  const geometry = geometryForDirection(route, direction);
-  const withGeometry = {
-    ...route,
-    rideDirection: direction,
-    polyline: geometry?.polyline,
-    polylineQuality: geometry?.polylineQuality,
-    distanceMeters: geometry?.distanceMeters,
-    duration: geometry?.duration,
-  };
-  if (direction === "forward") return withGeometry;
+  const hasDirectionalGeometry = Boolean(
+    route.forwardPolyline && route.reversePolyline,
+  );
+  if (direction === "forward") {
+    return {
+      ...route,
+      rideDirection: "forward",
+      polyline: route.forwardPolyline ?? route.polyline,
+      // Force the authenticated geometry repair endpoint for legacy route
+      // records rather than pretending one reversible path is directional.
+      polylineQuality: hasDirectionalGeometry ? route.polylineQuality : undefined,
+    };
+  }
   return {
-    ...withGeometry,
+    ...route,
+    rideDirection: "reverse",
+    polyline: route.reversePolyline,
+    polylineQuality: hasDirectionalGeometry ? route.polylineQuality : undefined,
+    distanceMeters: route.reverseDistanceMeters ?? route.distanceMeters,
+    duration: route.reverseDuration ?? route.duration,
     stops: [...route.stops].reverse(),
     waypoints: [...route.waypoints].reverse(),
   };

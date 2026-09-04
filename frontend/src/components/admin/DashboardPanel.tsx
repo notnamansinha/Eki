@@ -6,6 +6,7 @@ import {
 } from "@vis.gl/react-google-maps";
 import { auth } from "@/lib/firebaseAuth";
 import { useBuses } from "@/hooks/useBuses";
+import { useDynamicRouteGeometries } from "@/hooks/useDynamicRouteGeometries";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
@@ -30,7 +31,6 @@ import MessagingPanel from "@/components/shared/MessagingPanel";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
-import { decodePolyline, type LatLng } from "@/lib/polyline";
 import { isLiveChatDeviceOnline } from "@/lib/activeBusEntries";
 import {
   directionLabel,
@@ -157,9 +157,9 @@ function LiveDetailsDrawer({
             <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
               <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Trip state</p>
               <p className="mt-1 text-sm font-semibold text-white">
-                {entry.sessionId
-                  ? TRIP_STATE[entry.tripState ?? "pre_departure"]?.label ?? "Pre-departure"
-                  : "Ride not armed"}
+                {!entry.sessionId
+                  ? "Ride not armed"
+                  : TRIP_STATE[entry.tripState ?? "pre_departure"]?.label ?? "Pre-departure"}
               </p>
             </div>
             <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
@@ -174,12 +174,55 @@ function LiveDetailsDrawer({
               <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Delay</p>
               <p className="mt-1 text-sm font-semibold text-white">{Math.max(0, Number(entry.delayMinutes ?? 0))} min</p>
             </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Route matching</p>
+              <p className="mt-1 text-sm font-semibold text-white">{entry.routeState ?? "Pending"}</p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Match confidence</p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {entry.matchConfidence == null
+                  ? "—"
+                  : `${Math.round(entry.matchConfidence * 100)}%`}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Route context</p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                v{entry.routeVersion ?? "—"} · {entry.routeSource ?? "configured"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Distance to route</p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {entry.distanceToActiveRoute == null
+                  ? "—"
+                  : `${Math.round(entry.distanceToActiveRoute)} m`}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3 text-[10px] text-white/50">
+            <p className="font-black uppercase tracking-widest text-white/30">Location diagnostics</p>
+            <p className="mt-2 font-mono">
+              Raw: {entry.rawLocation
+                ? `${entry.rawLocation.lat.toFixed(6)}, ${entry.rawLocation.lng.toFixed(6)} · seq ${entry.rawLocation.seq} · HDOP ${entry.rawLocation.gpsHdop?.toFixed(1) ?? "legacy"}`
+                : "—"}
+            </p>
+            <p className="mt-1 font-mono">
+              Matched: {entry.matchedLocation
+                ? `${entry.matchedLocation.lat.toFixed(6)}, ${entry.matchedLocation.lng.toFixed(6)} · segment ${entry.matchedLocation.segmentIndex}`
+                : "raw fallback"}
+            </p>
           </div>
 
           {msg && <p className="text-xs text-emerald-400 font-semibold">{msg}</p>}
 
           <p className="text-xs leading-relaxed text-white/45">
-            Position and stop progress come only from authenticated GNSS telemetry. The ride follows its armed travel direction and completes at that direction&apos;s destination.
+            Raw position comes from authenticated GNSS telemetry. A confident,
+            current-version route match controls the displayed marker; uncertain
+            or rerouting states fall back to the raw fix. Stop progress remains
+            independent of route geometry changes.
           </p>
           <button onClick={() => setShowWipeConfirm(true)} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors">
             <MessageCircle className="w-3.5 h-3.5" /> Clear Messages
@@ -206,29 +249,19 @@ function LiveDetailsDrawer({
 function BusMarker({
   entry,
   onClick,
-  path,
 }: {
   entry: ActiveBusEntry;
   onClick: () => void;
-  path?: readonly LatLng[];
 }) {
-  const ts = entry.sessionId
-    ? TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure
-    : { ...TRIP_STATE.pre_departure, label: "Ride not armed" };
+  const ts = TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure;
   const markerColor =
     entry.tripState === "in_service"
       ? entry.motionState === "moving" ? "#34D399" : "#FBBF24"
       : entry.deviceState === "offline" || entry.motionState === "uncertain" ? "#FB923C" : "#94949C";
 
-  const lat = entry.lat;
-  const lng = entry.lng;
-  const markerResult = useMemo(
-    () => liveBusMarkerPosition(lat, lng, {
-      path,
-      heading: entry.heading,
-      hdop: entry.hdop,
-    }),
-    [entry.hdop, entry.heading, lat, lng, path],
+  const markerPoint = useMemo(
+    () => liveBusMarkerPosition(entry),
+    [entry],
   );
 
   const [displayHeading, setDisplayHeading] = useState(() =>
@@ -241,9 +274,9 @@ function BusMarker({
     setDisplayHeading(nextHeading);
   }, [entry.heading]);
 
-  if (!markerResult) return null;
+  if (!markerPoint) return null;
   return (
-    <AdvancedMarker position={markerResult.point} onClick={onClick}>
+    <AdvancedMarker position={markerPoint} onClick={onClick}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }} title={`${entry.busId} — ${ts.label}`}>
         <div style={{
           width: 36, height: 36, borderRadius: 18,
@@ -302,9 +335,7 @@ function FleetCard({
     ? routeInRideDirection(route, direction)
     : undefined;
   const driver = drivers.find(d => d.id === entry.driverId);
-  const ts = entry.sessionId
-    ? TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure
-    : { ...TRIP_STATE.pre_departure, label: "Ride not armed" };
+  const ts = TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure;
   const ms = MOTION_STATE[entry.motionState ?? "uncertain"] ?? MOTION_STATE.uncertain;
   const stopIdx = (entry.currentStopIndex ?? 0) + 1;
   const stopCount = directedRoute?.stops?.length ?? 0;
@@ -337,7 +368,9 @@ function FleetCard({
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-white text-sm truncate">{bus?.name ?? entry.busId}</p>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <span className={`text-[9px] font-black uppercase tracking-wider ${ts.color}`}>{ts.label}</span>
+                <span className={`text-[9px] font-black uppercase tracking-wider ${ts.color}`}>
+                  {entry.sessionId ? ts.label : "Ride not armed"}
+                </span>
                 <span className={`text-[9px] font-semibold ${ms.color}`}>{ms.label}</span>
                 {entry.speed != null && <span className="text-[9px] text-white/30 tabular-nums">{Math.round(entry.speed)} km/h</span>}
                 {(entry.delayMinutes ?? 0) > 0 && (
@@ -481,40 +514,68 @@ export default function DashboardPanel() {
     markSnapshotReceived,
   });
   const { buses, error: busesError, retry: retryBuses } = useBuses();
+  const activeEntriesMap = useMemo(
+    () => new Map(activeEntries.map((entry) => [entry.busId, entry])),
+    [activeEntries],
+  );
+  const dynamicGeometries = useDynamicRouteGeometries(activeEntriesMap);
   const { drivers } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
+  const routesById = useMemo(
+    () => new Map(routes.map((route) => [route.id, route])),
+    [routes],
+  );
   const activeRouteOverlays = useMemo(() => {
-    const overlays = new Map<string, ReturnType<typeof routeInRideDirection>>();
+    const overlays = new Map<string, {
+      key: string;
+      routeId: string;
+      color: string;
+      polyline?: string;
+      polylineQuality?: "HIGH_QUALITY";
+      direction: "forward" | "reverse";
+      stops: Array<{ lat: number; lng: number }>;
+    }>();
     for (const entry of activeEntries) {
+      if (!entry.routeId) continue;
+      const route = routesById.get(entry.routeId);
+      if (!route) continue;
       const direction = normalizeRideDirection(entry.direction);
-      const route = routes.find((candidate) => candidate.id === entry.routeId);
-      if (!direction || !route) continue;
-      overlays.set(`${route.id}:${direction}`, routeInRideDirection(route, direction));
-    }
-    return Array.from(overlays.entries()).map(([key, route]) => ({
-        key,
-        id: route.id,
-        direction: route.rideDirection,
+      if (!direction) continue;
+      const hasDirectionalGeometry = Boolean(
+        route.forwardPolyline && route.reversePolyline,
+      );
+      const geometry =
+        entry.routeSource === "dynamic-reroute"
+          ? dynamicGeometries.get(entry.busId)
+          : undefined;
+      const hasDynamic = Boolean(geometry);
+      const overlayKey = hasDynamic
+        ? entry.activeRouteId ?? `${route.id}:${entry.routeVersion ?? 0}:${entry.busId}`
+        : `${route.id}:${direction}`;
+      if (overlays.has(overlayKey)) continue;
+      overlays.set(overlayKey, {
+        key: overlayKey,
+        routeId: route.id,
         color: route.color,
-        polyline: route.polyline,
-        polylineQuality: route.polylineQuality,
+        polyline: hasDynamic && geometry
+          ? geometry.polyline
+          : (direction === "reverse"
+              ? route.reversePolyline
+              : route.forwardPolyline ?? route.polyline),
+        polylineQuality: hasDynamic && geometry
+          ? "HIGH_QUALITY"
+          : hasDirectionalGeometry
+            ? route.polylineQuality
+            : undefined,
+        direction,
         stops: (route.stops ?? route.waypoints ?? []).map(({ lat, lng }) => ({
           lat,
           lng,
         })),
-      }));
-  }, [activeEntries, routes]);
-  const overlayPathByKey = useMemo(() => new Map(
-    activeRouteOverlays.map((overlay) => {
-      if (!overlay.polyline) return [overlay.key, overlay.stops] as const;
-      try {
-        const path = decodePolyline(overlay.polyline);
-        return [overlay.key, path.length >= 2 ? path : overlay.stops] as const;
-      } catch {
-        return [overlay.key, overlay.stops] as const;
-      }
-    }),
-  ), [activeRouteOverlays]);
+      });
+    }
+    return [...overlays.values()];
+  }, [activeEntries, routesById, dynamicGeometries]);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
@@ -558,9 +619,8 @@ export default function DashboardPanel() {
 
   const handleSelectBus = useCallback((entry: ActiveBusEntry) => {
     setSelectedBusId(prev => prev === entry.busId ? null : entry.busId);
-    if (hasValidBusCoordinates(entry.lat, entry.lng)) {
-      setMapCenter({ lat: entry.lat as number, lng: entry.lng as number });
-    }
+    const markerPoint = liveBusMarkerPosition(entry);
+    if (markerPoint) setMapCenter(markerPoint);
   }, []);
 
   const selectedBus = buses.find((bus) => bus.id === busId);
@@ -661,7 +721,7 @@ export default function DashboardPanel() {
           {activeRouteOverlays.map((route) => (
             <DirectionsRoute
               key={route.key}
-              routeId={route.id}
+              routeId={route.routeId}
               stops={route.stops}
               polyline={route.polyline}
               polylineQuality={route.polylineQuality}
@@ -675,12 +735,6 @@ export default function DashboardPanel() {
               key={`${entry.busId}_${entry.routeId}`}
               entry={entry}
               onClick={() => handleSelectBus(entry)}
-              path={(() => {
-                const direction = normalizeRideDirection(entry.direction);
-                return direction && entry.routeId
-                  ? overlayPathByKey.get(`${entry.routeId}:${direction}`)
-                  : undefined;
-              })()}
             />
           ))}
         </GoogleMap>
@@ -789,7 +843,7 @@ export default function DashboardPanel() {
           {[
             { label: "In Service", value: inService,  color: "text-emerald-400", Icon: Activity },
             { label: "Moving",     value: moving,     color: "text-blue-400",    Icon: TrendingUp },
-            { label: "Not Armed / Waiting", value: awaitingStart, color: "text-white/50", Icon: Clock },
+            { label: "Not Armed", value: awaitingStart, color: "text-white/50", Icon: Clock },
             { label: "GPS Lost",   value: gpsLost,    color: "text-amber-400",   Icon: AlertTriangle },
           ].map(({ label, value, color, Icon }) => (
             <div key={label} className="flex flex-col items-center justify-center gap-0.5 py-3 border-r border-white/5 last:border-0">

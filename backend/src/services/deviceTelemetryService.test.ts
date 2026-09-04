@@ -31,6 +31,7 @@ import {
   parseDeviceAuthorization,
   shouldApplyRestoreTelemetry,
   summarizeLatencySamples,
+  telemetrySampleIsNewer,
   verifyDeviceSecretHash,
 } from "./deviceTelemetryService";
 
@@ -230,5 +231,19 @@ describe("durable ride telemetry restore ordering", () => {
     );
     expect(ninetyFirst.allowed).toBe(false);
     expect(ninetyFirst.retryAfterMs).toBe(999);
+  });
+});
+
+describe("live telemetry ordering", () => {
+  it("uses capture time first and sequence only for equal timestamps", () => {
+    expect(telemetrySampleIsNewer(undefined, undefined, { timestamp: 4_000, seq: 1 })).toBe(true);
+    expect(telemetrySampleIsNewer(4_000, 8, { timestamp: 4_001, seq: 1 })).toBe(true);
+    expect(telemetrySampleIsNewer(4_000, 8, { timestamp: 3_999, seq: 99 })).toBe(false);
+    expect(telemetrySampleIsNewer(4_000, 8, { timestamp: 4_000, seq: 9 })).toBe(true);
+    expect(telemetrySampleIsNewer(4_000, 8, { timestamp: 4_000, seq: 8 })).toBe(false);
+  });
+
+  it("does not let an equal-time candidate overwrite a legacy sample without a sequence", () => {
+    expect(telemetrySampleIsNewer(4_000, undefined, { timestamp: 4_000, seq: 1 })).toBe(false);
   });
 });

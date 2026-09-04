@@ -13,13 +13,6 @@ export interface RouteStop {
   lng: number;
 }
 
-export interface RouteGeometry {
-  polyline: string;
-  polylineQuality: "HIGH_QUALITY";
-  distanceMeters: number;
-  duration: string;
-}
-
 export interface RouteData {
   id: string;
   name: string; // e.g. "1A"
@@ -29,15 +22,20 @@ export interface RouteData {
   stops: RouteStop[];
   /** Pre-computed encoded polyline from Google Maps (stored in Firestore during seed) */
   polyline?: string;
+  /** Independently routed legal road geometry for A → Z travel. */
+  forwardPolyline?: string;
+  /** Independently routed legal road geometry for Z → A travel. */
+  reversePolyline?: string;
   /** Cache version: live maps require the detailed Routes API geometry. */
   polylineQuality?: "HIGH_QUALITY";
   /** Pre-computed route distance in meters */
   distanceMeters?: number;
+  forwardDistanceMeters?: number;
+  reverseDistanceMeters?: number;
   /** Pre-computed route duration string e.g. "600s" */
   duration?: string;
-  /** Google road geometry computed independently for each travel direction. */
-  forwardGeometry?: RouteGeometry;
-  reverseGeometry?: RouteGeometry;
+  forwardDuration?: string;
+  reverseDuration?: string;
   /** View-only travel order for an active ride; never persisted on route documents. */
   rideDirection?: "forward" | "reverse" | null;
 }

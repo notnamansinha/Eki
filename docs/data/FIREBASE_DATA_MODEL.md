@@ -32,8 +32,16 @@ One latest projection per assigned bus/route. The key is an internal composite l
 | `busId` | string | Server registry assignment |
 | `routeId` | string | Server registry/shift assignment |
 | `lat`, `lng` | number | Latest accepted GNSS coordinate |
+| `rawLocation` | object | Original authenticated `{lat,lng,speed,heading,gpsHdop,motionState,seq,sampledAt}`; never overwritten by snapping |
+| `matchedLocation` | object | Current confident `{lat,lng,segmentIndex,segmentFraction,alongRouteDistanceM,distanceToRouteM,headingDifference,matchConfidence,seq,sampledAt,routeVersion}` |
+| `matchConfidence`, `distanceToActiveRoute` | number | Latest matcher confidence (0–1) and raw distance in metres |
+| `routeState` | enum | `ON_ROUTE`, `POSSIBLE_OFF_ROUTE`, `OFF_ROUTE`, `REROUTING`, or `ON_NEW_ROUTE` |
+| `activeRouteId` | string | Authoritative configured/dynamic matching-context label; route geometry is NOT on this hot node (see sibling store below) |
+| `routeVersion`, `routeSource`, `routeDirection`, `routeSessionId` | number/string | Atomic route identity; version increments on session/direction/reroute changes |
+| `routeMatchHistory` | array | Bounded last four accepted points used to derive recent trajectory heading |
 | `speed` | number | km/h, 0–200 |
 | `heading` | number | degrees, 0–360 |
+| `gpsHdop` | number/null | Receiver horizontal dilution of precision; null for staged legacy firmware |
 | `motionState` | `moving` / `stopped` / `uncertain` | Firmware; uncertain means trustworthy GNSS lost |
 | `timestamp` | epoch ms | NTP-synchronised device measurement time |
 | `receivedAt` | RTDB server epoch ms | Backend commit time |
@@ -54,6 +62,18 @@ One latest projection per assigned bus/route. The key is an internal composite l
 | `lifecycleUpdatedAt` | RTDB server epoch ms | Server lifecycle/status mutation time |
 
 Read: any authenticated Firebase user (`.read: auth != null`); App Check is enforced through the Firebase console. Write: denied to all clients; server only. Indexed by `routeId`, `busId`. Active rides survive stale hardware and are marked offline; stale non-active nodes can be removed.
+
+### `activeRouteGeometry/{busId}_{routeId}/{routeVersion}`
+
+Version-keyed sibling node holding the full dynamic-reroute polyline. The geometry is written once when a reroute activates (version bump) and is immutable per version, so the high-frequency `activeBuses` child above never carries the encoded polyline on every accepted fix. Clients read it once when `routeSource === "dynamic-reroute"` and the `routeVersion` changes, then cache it locally. Configured (non-reroute) geometry is not stored here — clients derive it from the Firestore route document (`forwardPolyline`/`reversePolyline`/`polyline`).
+
+| Field | Type | Meaning |
+|---|---|---|
+| `polyline` | string | Encoded reroute geometry, ordered in travel direction |
+| `routeId` | string | Route the reroute belongs to |
+| `direction` | `forward` / `reverse` | Travel direction of the reroute |
+| `source` | `dynamic-reroute` | Marker for the sibling store |
+| `routeVersion` | integer | Version this geometry is bound to (> 0) |
 
 ### `driverRouteAssignments/{driverId}`
 
@@ -86,9 +106,9 @@ Owner can read. All client writes are denied. `POST /api/users/bootstrap` transa
 | `type` | `circular` / `up` / `down` when supplied | Route direction/category |
 | `waypoints[]` | `{lat,lng}` | Admin-entered control points |
 | `stops[]` | `{id,name,shortName,lat,lng,waypointIndex}` | Authoritative ordered stops |
-| `polyline` | string | Google encoded road-snapped geometry |
-| `distanceMeters` | number | Routes response distance |
-| `duration` | string | Routes response duration such as `1200s` |
+| `polyline`, `forwardPolyline`, `reversePolyline` | string | Legacy/forward geometry plus independently routed legal road geometry for each direction |
+| `distanceMeters`, `forwardDistanceMeters`, `reverseDistanceMeters` | number | Forward-compatible and direction-specific Routes distances |
+| `duration`, `forwardDuration`, `reverseDuration` | string | Forward-compatible and direction-specific durations such as `1200s` |
 | `updatedAt` | ISO string or server timestamp | Seed/admin update marker |
 
 Any authenticated user reads. All client writes are denied; admin backend validates geometry, IDs, active usage and Maps output. `routes-list`, plan, maps and trip worker consume this collection.

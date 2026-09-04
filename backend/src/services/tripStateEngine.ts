@@ -7,6 +7,7 @@ import {
   automaticTurnaroundIsReady,
   oppositeRideDirection,
 } from "../lib/automaticRideDirection";
+import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import { SerializedChangeWriter } from "./serializedChangeWriter";
 import { reduceTripState, STOP_GEOFENCE_M } from "./tripStateReducer";
 import { normalizeRideDirection, stopsInRideDirection } from "../lib/rideDirection";
@@ -286,7 +287,7 @@ async function maybeArmAutomaticTurnaround(
         return;
       }
       return {
-        ...live,
+        ...withoutLiveRouteContext(live),
         sessionId: sessionRef.id,
         driverId,
         direction,

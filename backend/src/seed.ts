@@ -25,7 +25,7 @@ async function seedFirebase() {
 
       console.log(`- Fetching road-snapped path from Google Maps...`);
       const reverseWaypoints = [...formattedWaypoints].reverse();
-      const [forward, reverse] = await Promise.all([
+      const [geometry, reverseGeometry] = await Promise.all([
         computeRouteGeometry(origin, destination, intermediates),
         computeRouteGeometry(
           reverseWaypoints[0],
@@ -33,19 +33,7 @@ async function seedFirebase() {
           reverseWaypoints.slice(1, -1),
         ),
       ]);
-      const forwardGeometry = {
-        polyline: forward.encodedPolyline,
-        distanceMeters: forward.distanceMeters,
-        duration: forward.duration,
-        polylineQuality: forward.polylineQuality,
-      };
-      const reverseGeometry = {
-        polyline: reverse.encodedPolyline,
-        distanceMeters: reverse.distanceMeters,
-        duration: reverse.duration,
-        polylineQuality: reverse.polylineQuality,
-      };
-      console.log(`- Success: forward ${forward.distanceMeters}m, reverse ${reverse.distanceMeters}m`);
+      console.log(`- Success: ${geometry.distanceMeters}m forward, ${reverseGeometry.distanceMeters}m reverse`);
 
       const routeDoc = routesCollection.doc(route.id);
       
@@ -60,12 +48,16 @@ async function seedFirebase() {
         waypoints: formattedWaypoints, // Stored as array of objects
         color: route.color,
         stops: formattedStops,         // Named stops for route planner
-        polyline: forwardGeometry.polyline,
-        distanceMeters: forwardGeometry.distanceMeters,
-        duration: forwardGeometry.duration,
-        polylineQuality: forwardGeometry.polylineQuality,
-        forwardGeometry,
-        reverseGeometry,
+        polyline: geometry.encodedPolyline,
+        forwardPolyline: geometry.encodedPolyline,
+        reversePolyline: reverseGeometry.encodedPolyline,
+        distanceMeters: geometry.distanceMeters,
+        forwardDistanceMeters: geometry.distanceMeters,
+        reverseDistanceMeters: reverseGeometry.distanceMeters,
+        duration: geometry.duration,
+        forwardDuration: geometry.duration,
+        reverseDuration: reverseGeometry.duration,
+        polylineQuality: geometry.polylineQuality,
         updatedAt: new Date().toISOString(),
       }, { merge: true });
 

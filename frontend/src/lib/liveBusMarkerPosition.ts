@@ -1,44 +1,42 @@
 import { hasValidBusCoordinates } from "./liveBusFreshness";
 import type { LatLng } from "./polyline";
-import { snapToPolyline } from "./snapToPolyline";
+import type { ActiveBusEntry } from "./activeBusEntries";
 
-export interface LiveBusMarkerOptions {
-  path?: readonly LatLng[];
-  heading?: number;
-  hdop?: number;
-  preferredSegmentIndex?: number;
-}
+const MIN_DISPLAY_MATCH_CONFIDENCE = 0.45;
 
-export interface LiveBusMarkerResult {
-  point: LatLng;
-  segmentIndex: number | null;
-  snapped: boolean;
-}
+type LiveBusPositionInput = Pick<
+  ActiveBusEntry,
+  | "rawLocation"
+  | "lat"
+  | "lng"
+  | "timestamp"
+  | "matchedLocation"
+  | "routeState"
+  | "routeVersion"
+>;
 
 /**
- * Keep the map marker tied to the authenticated telemetry accepted into RTDB.
- * Route geometry and animation may be used elsewhere, but neither may rewrite
- * or delay the physical location shown to administrators or passengers.
+ * Prefer a backend-accepted route match only when it belongs to the current
+ * telemetry sample and active route version. The matched sequence must also
+ * equal the raw fix sequence so a stale asynchronous match that shares a
+ * sampledAt/version cannot overwrite a newer sample. During ambiguity/
+ * off-route/rerouting, immediately fall back to authenticated raw telemetry.
  */
 export function liveBusMarkerPosition(
-  lat: number | undefined,
-  lng: number | undefined,
-  options: LiveBusMarkerOptions = {},
-): LiveBusMarkerResult | null {
-  if (!hasValidBusCoordinates(lat, lng)) return null;
-  const rawPoint = { lat: lat as number, lng: lng as number };
-  const canSnap =
-    (options.path?.length ?? 0) >= 2 &&
-    (options.hdop === undefined || (options.hdop >= 0 && options.hdop <= 5));
-  const result = snapToPolyline(rawPoint, options.path!, {
-    headingDegrees: options.heading,
-    preferredSegmentIndex: options.preferredSegmentIndex,
-    maxSegmentJump: 30,
-    maxDistanceM: 60,
-  });
-  return {
-    point: result.point,
-    segmentIndex: result.snapped ? result.segmentIndex : null,
-    snapped: result.snapped,
-  };
+  input: LiveBusPositionInput,
+): LatLng | null {
+  const matched = input.matchedLocation;
+  if (
+    matched &&
+    (input.routeState === "ON_ROUTE" || input.routeState === "ON_NEW_ROUTE") &&
+    matched.matchConfidence >= MIN_DISPLAY_MATCH_CONFIDENCE &&
+    matched.seq === input.rawLocation?.seq &&
+    matched.sampledAt === input.timestamp &&
+    matched.routeVersion === input.routeVersion &&
+    hasValidBusCoordinates(matched.lat, matched.lng)
+  ) {
+    return { lat: matched.lat, lng: matched.lng };
+  }
+  if (!hasValidBusCoordinates(input.lat, input.lng)) return null;
+  return { lat: input.lat as number, lng: input.lng as number };
 }

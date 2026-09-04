@@ -71,9 +71,9 @@ assertRetentionConfiguration(
   process.env.NODE_ENV,
 );
 const httpServer = http.createServer(app);
-// A route save can compute forward and reverse Google road geometry in
-// parallel. Keep the server budget above the upstream 10s deadline plus DB IO.
-httpServer.requestTimeout = 35_000;
+// Limit slow request-body uploads. Route-save response deadlines are enforced
+// in the handler because Node's requestTimeout does not bound handler work.
+httpServer.requestTimeout = 15_000;
 httpServer.headersTimeout = 70_000;
 httpServer.keepAliveTimeout = 65_000;
 httpServer.maxRequestsPerSocket = 100;
@@ -230,6 +230,8 @@ app.get("/api/health", requireAdmin, (_req, res) => {
       lastRejectedAt: telemetry.lastRejectedAt,
       credentialCacheHitRate: telemetry.credentialCacheHitRate,
       processingLatencyMs: telemetry.processingLatencyMs,
+      deviceQueueLatencyMs: telemetry.deviceQueueLatencyMs,
+      networkLatencyMs: telemetry.networkLatencyMs,
       deviceToServerLatencyMs: telemetry.deviceToServerLatencyMs,
       rtdbWriteLatencyMs: telemetry.rtdbWriteLatencyMs,
     },

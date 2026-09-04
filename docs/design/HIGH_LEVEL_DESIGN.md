@@ -55,11 +55,13 @@ flowchart TB
 
 1. GNSS emits NMEA at 9,600 baud; the ESP32 parses it continuously.
 2. Firmware rejects stale/poor-HDOP fixes, applies motion hysteresis, and publishes only on material change or heartbeat.
-3. The device posts a six-field body and `Authorization: Device …` over CA-verified HTTPS.
-4. Express enforces request size, exact schema, timestamp, device/IP rate limits, scrypt credential verification, and protected registry assignment.
-5. An RTDB transaction rejects older/duplicate timestamps and writes `activeBuses/{busId}_{routeId}` with a server `receivedAt`.
-6. If live lifecycle fields are missing, the backend asynchronously restores them from `active_rides` without delaying the response.
-7. Browser singleton listeners receive the RTDB change; the service worker never caches that authenticated response.
+3. The device posts an eight-field body and `Authorization: Device …` over CA-verified HTTPS, including capture/send times and a queue sequence.
+4. Express enforces request size, exact schema, timestamps, sequence, device/IP rate limits, scrypt credential verification, and protected registry assignment.
+5. An RTDB transaction rejects older/duplicate timestamp-sequence pairs and writes `activeBuses/{busId}_{routeId}` with server receive/commit times.
+6. A per-node asynchronous matcher preserves `rawLocation`, scores candidates on the direction-specific route using distance, heading and continuity, and publishes a version-bound `matchedLocation` without delaying the device response.
+7. Three reliable moving deviations trigger one asynchronous reroute through the remaining required stops. The active route switches atomically; stale request/version/session results are discarded and trip progress is retained.
+8. If live lifecycle fields are missing, the backend asynchronously restores them from `active_rides` without delaying the response.
+9. Browser singleton listeners receive the RTDB change; confident current-version matches drive markers, otherwise clients show raw GNSS. The service worker never caches authenticated responses.
 
 ### Ride start and progression
 
@@ -88,6 +90,8 @@ flowchart TB
 | Server registry supplies bus/route | A stolen device secret cannot choose another vehicle | Provisioning becomes an operational dependency |
 | Ordered server geofences | Prevent browser/driver manipulation and stop skipping | Accuracy depends on route/stop quality and GNSS |
 | Stored polylines/client ETA math | Avoid runtime Directions/Routes billing and latency | ETA is heuristic, not traffic-routing output |
+| Independent forward/reverse geometry | Respect one-way roads and divided carriageways | Two Routes calls when route geometry is created/repaired |
+| Backend matching plus multi-sample rerouting | One authoritative context for every client without reacting to one noisy fix | Genuine deviations require a short confirmation window |
 | No dead reckoning as truth | Prevent fabricated locations during GNSS loss | UI shows interruption rather than a guessed moving bus |
 
 ## Security and privacy model
@@ -108,7 +112,7 @@ The software does not promise an absolute end-to-end SLA without real deployment
 |---|---|
 | GNSS evaluation | 1 second |
 | Changed-fix floor | 3 seconds |
-| Moving/stopped heartbeat | 1 / 60 seconds |
+| Moving/stopped heartbeat | 1 / 5 seconds |
 | HTTPS request timeout | 7 seconds |
 | Retry | 1–30 seconds exponential with per-device jitter |
 | RTDB write | One transaction per accepted new sample |

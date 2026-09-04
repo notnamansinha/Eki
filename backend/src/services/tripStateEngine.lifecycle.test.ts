@@ -555,6 +555,15 @@ describe("trip-state engine lifecycle", () => {
       lng: 72.1,
       timestamp: 199_000,
       turnaroundEligibleAt: 180_000,
+      activeRouteId: "route_2:reroute:3",
+      activeRoutePolyline: "old-polyline",
+      routeVersion: 3,
+      routeSource: "dynamic-reroute",
+      routeDirection: "forward",
+      routeSessionId: "session-1",
+      routeState: "ON_NEW_ROUTE",
+      matchedLocation: { lat: 23.09, lng: 72.09 },
+      rerouteRequestId: "old-request",
     });
 
     mocks.rtdbHandlers.get("child_changed")!({
@@ -591,6 +600,15 @@ describe("trip-state engine lifecycle", () => {
       destinationStopId: "origin",
       automaticTurnaround: true,
     });
+    expect(store.nodeValue()).not.toHaveProperty("activeRouteId");
+    expect(store.nodeValue()).not.toHaveProperty("activeRoutePolyline");
+    expect(store.nodeValue()).not.toHaveProperty("routeVersion");
+    expect(store.nodeValue()).not.toHaveProperty("routeSource");
+    expect(store.nodeValue()).not.toHaveProperty("routeDirection");
+    expect(store.nodeValue()).not.toHaveProperty("routeSessionId");
+    expect(store.nodeValue()).not.toHaveProperty("routeState");
+    expect(store.nodeValue()).not.toHaveProperty("matchedLocation");
+    expect(store.nodeValue()).not.toHaveProperty("rerouteRequestId");
     await stop();
   });
 

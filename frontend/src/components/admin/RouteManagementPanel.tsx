@@ -111,6 +111,7 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
           const nextValue = event.target.value;
           setValue(nextValue);
           setSearchError("");
+          setHasSearched(false);
           if (nextValue.length < 3) setPredictions([]);
         }}
         placeholder="Search for a stop"
@@ -437,7 +438,7 @@ function RouteEditor({
         },
         body: JSON.stringify(body),
         fallbackError: "Unable to compute route geometry. The route was not saved.",
-        timeoutMs: 30_000,
+        timeoutMs: 35_000,
       });
       if (!geometry.polyline || typeof geometry.distanceMeters !== "number" || typeof geometry.duration !== "string") {
         throw new Error("Route geometry service returned an invalid result.");
