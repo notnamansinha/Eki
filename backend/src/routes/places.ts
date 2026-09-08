@@ -18,32 +18,42 @@ const placeSearchLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Place search rate limit exceeded." },
+  message: { error: "Place search rate limit exceeded.", code: "rate_limited" },
 });
 
 router.get("/search", placeSearchLimiter, requireAdmin, async (req: Request, res: Response) => {
   const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
   if (query.length < 3 || query.length > 200) {
-    res.status(400).json({ error: "Search text must be between 3 and 200 characters." });
+    res.status(400).json({
+      error: "Search text must be between 3 and 200 characters.",
+      code: "invalid_query",
+    });
     return;
   }
 
   const cacheKey = query.toLowerCase();
   const cached = searchCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
-    res.json({ results: cached.results });
+    res.json({ results: cached.results, count: cached.results.length });
     return;
   }
 
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
-    res.status(503).json({ error: "Place search is not configured on the server." });
+    res.status(503).json({
+      error: "Place search is not configured on the server.",
+      code: "not_configured",
+    });
     return;
   }
 
+  const timeoutController = new AbortController();
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    timeoutController.abort();
+  }, 5_000);
   try {
-    const timeoutController = new AbortController();
-    const timeoutId = setTimeout(() => timeoutController.abort(), 5_000);
     let response: globalThis.Response;
     try {
       response = await fetch("https://places.googleapis.com/v1/places:searchText", {
@@ -59,12 +69,22 @@ router.get("/search", placeSearchLimiter, requireAdmin, async (req: Request, res
     } finally {
       clearTimeout(timeoutId);
     }
+    if (timedOut) {
+      res.status(504).json({
+        error: "Place search timed out before the server responded.",
+        code: "upstream_timeout",
+      });
+      return;
+    }
     if (!response.ok) {
       const upstreamBody = (await response.text()).slice(0, 1_000);
       console.warn(
         `[Places] Upstream request failed with HTTP ${response.status}: ${upstreamBody}`,
       );
-      res.status(502).json({ error: "Place search service is unavailable." });
+      res.status(502).json({
+        error: "Place search service is unavailable.",
+        code: "upstream_error",
+      });
       return;
     }
 
@@ -77,10 +97,8 @@ router.get("/search", placeSearchLimiter, requireAdmin, async (req: Request, res
           const location = value.location as { latitude?: unknown; longitude?: unknown } | undefined;
           const title = typeof displayName?.text === "string" ? displayName.text : "";
           const address = typeof value.formattedAddress === "string" ? value.formattedAddress : "";
-          // A stop name is persisted with a strict 100-character limit. Keep
-          // the concise Google display name as the value saved to the route;
-          // return the address separately so admins can still distinguish
-          // similarly named search results without creating invalid stops.
+          // Keep the concise Google display name as the saved stop value; return
+          // the address separately so admins can distinguish similarly named hits.
           const name = title.trim().slice(0, 100);
           const lat = Number(location?.latitude);
           const lng = Number(location?.longitude);
@@ -95,10 +113,20 @@ router.get("/search", placeSearchLimiter, requireAdmin, async (req: Request, res
       const oldestKey = searchCache.keys().next().value;
       if (oldestKey) searchCache.delete(oldestKey);
     }
-    res.json({ results });
+    res.json({ results, count: results.length });
   } catch (error) {
+    if (timedOut) {
+      res.status(504).json({
+        error: "Place search timed out before the server responded.",
+        code: "upstream_timeout",
+      });
+      return;
+    }
     console.warn("Place search failed:", error);
-    res.status(502).json({ error: "Place search service is unavailable." });
+    res.status(502).json({
+      error: "Place search service is unavailable.",
+      code: "upstream_error",
+    });
   }
 });
 
