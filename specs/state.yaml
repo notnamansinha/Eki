@@ -1,0 +1,10 @@
+# Session state — Eki
+
+workflow_mode: solo-git
+
+active_flow: null
+active_epic_id: null
+handoff:
+  next_skill: null
+session:
+  started_at: "2026-09-08T07:49:14Z"
