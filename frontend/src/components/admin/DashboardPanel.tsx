@@ -33,8 +33,9 @@ import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
 import { isLiveChatDeviceOnline, countActiveServices, rideServiceState, RIDE_SERVICE_LABEL } from "@/lib/activeBusEntries";
 import {
-  directionLabel,
+  directionLabelState,
   normalizeRideDirection,
+  isPendingDirection,
   routeInRideDirection,
 } from "@/lib/rideDirection";
 
@@ -326,8 +327,9 @@ function FleetCard({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const bus = buses.find(b => b.id === entry.busId);
   const route = routes.find(r => r.id === entry.routeId);
-  const directedRoute = route
-    ? routeInRideDirection(route, normalizeRideDirection(entry.direction))
+  const entryDirection = normalizeRideDirection(entry.direction);
+  const directedRoute = route && !isPendingDirection(entryDirection)
+    ? routeInRideDirection(route, entryDirection)
     : undefined;
   const driver = drivers.find(d => d.id === entry.driverId);
   const ts = TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure;
@@ -448,7 +450,7 @@ function FleetCard({
                 <p className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</p>
                 {route && (
                   <p className="text-[9px] text-white/40">
-                    {directionLabel(normalizeRideDirection(entry.direction), route.stops)}
+                    {directionLabelState(normalizeRideDirection(entry.direction), route.stops)}
                   </p>
                 )}
               </div>
@@ -530,6 +532,7 @@ export default function DashboardPanel() {
       const route = routes.find((candidate) => candidate.id === entry.routeId);
       if (!route) continue;
       const direction = normalizeRideDirection(entry.direction);
+      if (direction === "pending") continue; // no route overlay while direction is unresolved (#149 p1)
       const hasDirectionalGeometry = Boolean(
         route.forwardPolyline && route.reversePolyline,
       );
@@ -650,7 +653,7 @@ export default function DashboardPanel() {
       setArmStatus(
         result.resumed
           ? `Active ride restored (${result.sessionId}).`
-          : `Ride armed (${result.sessionId}) for ${directionLabel(inferredDirection, routes.find((route) => route.id === routeId)?.stops ?? [])}.`,
+          : `Ride armed (${result.sessionId}) for ${directionLabelState(inferredDirection, routes.find((route) => route.id === routeId)?.stops ?? [])}.`,
       );
     } catch (error) {
       setArmStatus(errorMessage(error));

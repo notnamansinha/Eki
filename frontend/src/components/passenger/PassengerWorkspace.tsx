@@ -29,8 +29,9 @@ import {
   type TrackedRide,
 } from "@/lib/rideFeedbackEligibility";
 import {
-  directionLabel,
+  directionLabelState,
   normalizeRideDirection,
+  isPendingDirection,
   routeInRideDirection,
 } from "@/lib/rideDirection";
 import CustomSelect from "@/components/ui/CustomSelect";
@@ -172,10 +173,11 @@ export default function PassengerWorkspace() {
     busesOnRoute[0];
   const activeBusOnRouteId = activeBusOnRoute?.busId;
   const activeSessionId = activeBusOnRoute?.sessionId;
-  const rideDirection = normalizeRideDirection(activeBusOnRoute?.direction);
-  const directedRoute = activeRoute
-    ? routeInRideDirection(activeRoute, rideDirection)
-    : undefined;
+  const rideDirectionState = normalizeRideDirection(activeBusOnRoute?.direction);
+  const directedRoute =
+    activeRoute && !isPendingDirection(rideDirectionState)
+      ? routeInRideDirection(activeRoute, rideDirectionState)
+      : undefined;
   const effectiveDestinationStopId =
     directedRoute?.stops?.some((stop) => stop.id === selectedDestinationStopId)
       ? selectedDestinationStopId
@@ -433,7 +435,7 @@ export default function PassengerWorkspace() {
                         >
                           {busesOnRoute.map((bus) => (
                             <option key={passengerLiveBusSelectionKey(bus)} value={passengerLiveBusSelectionKey(bus)}>
-                              Bus {bus.busId} · {directionLabel(normalizeRideDirection(bus.direction), activeRoute?.stops ?? [])}
+                              Bus {bus.busId} · {directionLabelState(normalizeRideDirection(bus.direction), activeRoute?.stops ?? [])}
                             </option>
                           ))}
                         </select>
@@ -467,7 +469,7 @@ export default function PassengerWorkspace() {
                           onChange={setSelectedDestinationStopId}
                           options={[
                             { value: "", label: "Choose destination station…" },
-                            ...(directedRoute.stops ?? []).map((stop) => ({
+                            ...(directedRoute?.stops ?? []).map((stop) => ({
                               value: stop.id,
                               label: stop.name,
                             })),
@@ -485,7 +487,7 @@ export default function PassengerWorkspace() {
                         Live
                       </p>
                       <p className="text-[17px] font-semibold truncate leading-tight" style={{ color: "var(--text-primary)" }}>
-                        {directedRoute.name} · {directionLabel(rideDirection, activeRoute?.stops ?? [])}
+                        {directedRoute ? `${directedRoute.name} · ${directionLabelState(rideDirectionState, activeRoute?.stops ?? [])}` : "Direction pending"}
                       </p>
                     </div>
                   )}

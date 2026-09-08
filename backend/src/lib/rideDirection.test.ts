@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   countRidesByDirection,
+  rideDirectionState,
   normalizeRideDirection,
   stopsInRideDirection,
 } from "./rideDirection";
 import { reduceTripState } from "../services/tripStateReducer";
+
+describe("rideDirectionState (read boundary, #149 p1)", () => {
+  it("keeps missing direction pending at read boundaries", () => {
+    expect(rideDirectionState(undefined)).toBe("pending");
+    expect(rideDirectionState("")).toBe("pending");
+    expect(rideDirectionState("unknown")).toBe("pending");
+    expect(rideDirectionState("forward")).toBe("forward");
+    expect(rideDirectionState("reverse")).toBe("reverse");
+  });
+});
 
 describe("ride direction", () => {
   it("defaults legacy rides to forward and reverses without mutating the route", () => {

@@ -15,7 +15,7 @@ import {
 
 import { WifiOff, Navigation, Navigation2 } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
-import { normalizeRideDirection } from "@/lib/rideDirection";
+import { directionsMatch } from "@/lib/rideDirection";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
 import {
@@ -169,8 +169,7 @@ function PassengerMapInner({
     for (const bus of buses.values()) {
       if (
         bus.routeSource === "dynamic-reroute" &&
-        normalizeRideDirection(bus.routeDirection) ===
-          normalizeRideDirection(route.rideDirection)
+        directionsMatch(bus.routeDirection, route.rideDirection)
       ) {
         const geometry = dynamicGeometries.get(bus.busId);
         if (geometry) {
@@ -249,8 +248,7 @@ function PassengerMapInner({
           if (
             !normalized ||
             normalized.routeId !== currentRoute.id ||
-            normalizeRideDirection(normalized.direction) !==
-              normalizeRideDirection(currentRoute.rideDirection)
+            !directionsMatch(normalized.direction, currentRoute.rideDirection)
           ) return;
           const bus: IncomingBusData = {
             ...normalized,
