@@ -48,6 +48,24 @@ interface PlacePrediction {
   lng: number;
 }
 
+/** Map each place-search failure to a distinct, truthful message (#149 p6). */
+function placeSearchMessage(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    switch (error.code) {
+      case "not_configured": return "Place search is not configured on the server.";
+      case "upstream_timeout": return "Place search timed out. Try again.";
+      case "rate_limited": return "Place search rate limit reached. Try again in a minute.";
+      case "invalid_query": return "Type at least 3 characters to search.";
+      case "upstream_error": return "Place search is unavailable right now.";
+      default: break;
+    }
+    if (error.status === 401 || error.status === 403) {
+      return "Your session expired or you don't have access to place search.";
+    }
+  }
+  return errorMessage(error);
+}
+
 function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: number; lng: number }) => void }) {
   const [value, setValue] = useState("");
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
@@ -79,11 +97,14 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
             fallbackError: "Place search is temporarily unavailable.",
           },
         );
-        setPredictions(Array.isArray(payload.results) ? payload.results : []);
+        if (controller.signal.aborted) return;
+        const results = Array.isArray(payload.results) ? payload.results : [];
+        setPredictions(results);
+        setSearchError(results.length === 0 ? "No matching places found." : "");
       } catch (error) {
         if (!controller.signal.aborted) {
           setPredictions([]);
-          setSearchError(errorMessage(error));
+          setSearchError(placeSearchMessage(error));
         }
       } finally {
         if (!controller.signal.aborted) setSearching(false);

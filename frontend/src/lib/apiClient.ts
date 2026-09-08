@@ -16,12 +16,14 @@ export type ApiRequestPhase =
 export class ApiRequestError extends Error {
   readonly phase?: ApiRequestPhase;
   readonly status?: number;
+  readonly code?: string;
 
-  constructor(message: string, options: { phase?: ApiRequestPhase; status?: number } = {}) {
+  constructor(message: string, options: { phase?: ApiRequestPhase; status?: number; code?: string } = {}) {
     super(message);
     this.name = "ApiRequestError";
     this.phase = options.phase;
     this.status = options.status;
+    this.code = options.code;
   }
 }
 
@@ -77,12 +79,12 @@ export async function apiRequest<T>(
       signal: requestController.signal,
     });
     if (response.status === 204) return undefined as T;
-    let result: T & { error?: unknown; phase?: unknown };
+    let result: T & { error?: unknown; phase?: unknown; code?: unknown };
     try {
-      result = await response.json() as T & { error?: unknown; phase?: unknown };
+      result = await response.json() as T & { error?: unknown; phase?: unknown; code?: unknown };
     } catch (error) {
       if (response.ok) throw error;
-      result = {} as T & { error?: string; phase?: unknown };
+      result = {} as T & { error?: string; phase?: unknown; code?: unknown };
     }
     if (!response.ok) {
       const message = typeof result.error === "string" && result.error.trim()
@@ -92,7 +94,8 @@ export async function apiRequest<T>(
         result.phase === "validation" || result.phase === "routing" || result.phase === "persistence"
           ? result.phase
           : undefined;
-      throw new ApiRequestError(message, { phase, status: response.status });
+      const code = typeof result.code === "string" && result.code ? result.code : undefined;
+      throw new ApiRequestError(message, { phase, status: response.status, code });
     }
     return result;
   } catch (error) {
