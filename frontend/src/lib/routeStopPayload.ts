@@ -56,6 +56,18 @@ export function routeIdFromName(name: string): string {
   return slug ? `route-${slug}` : `route-${Date.now()}`;
 }
 
+/**
+ * Swap the two endpoints of a two-stop route, preserving stop IDs.
+ * Returns null for any route that is not exactly two stops — the swap action
+ * only applies to A↔B two-endpoint routes (issue #149 problem 7).
+ */
+export function swapEndpoints<T extends { id: string }>(
+  stops: readonly T[] | null | undefined,
+): T[] | null {
+  if (!stops || stops.length !== 2) return null;
+  return [stops[1], stops[0]];
+}
+
 function coordinate(value: unknown): number {
   if (typeof value === "number") return value;
   if (typeof value === "string" && value.trim()) return Number(value);
