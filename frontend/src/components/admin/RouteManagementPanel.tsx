@@ -378,7 +378,9 @@ function RouteEditor({
       const stops = [...s.stops];
       const trimmedName = name.trim();
       stops[i] = { ...stops[i], name: trimmedName, shortName: stopShortName(trimmedName) };
-      return { ...s, stops, polyline: undefined };
+      // Renaming is metadata-only: coordinates/order/IDs are unchanged, so the
+      // displayed geometry stays and the backend skips Google recomputation.
+      return { ...s, stops };
     });
 
   const moveStop = (from: number, to: number) => {

@@ -4,6 +4,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { requireAuth } from "../middleware/requireAuth";
 import { decodePolyline } from "../lib/polylineUtils";
 import { invalidatePlanRoute } from "./plan";
+import { geometryIsUnchanged, type RouteGeometryStop } from "../lib/routeGeometry";
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -389,16 +390,42 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
   }
 
   const waypoints = stops.map(({ lat, lng }) => ({ lat, lng }));
+
+  const existingData = existing.exists
+    ? (existing.data() as Record<string, unknown> | undefined)
+    : undefined;
+  const storedStops = (
+    Array.isArray(existingData?.stops) ? existingData.stops : null
+  ) as RouteGeometryStop[] | null;
+  const storedHasDirectionalGeometry = Boolean(
+    existingData &&
+      typeof existingData.forwardPolyline === "string" &&
+      typeof existingData.reversePolyline === "string"
+  );
+  // Metadata-only edit (name/color): stop coordinates, order, and IDs are
+  // unchanged, so reuse the cached directional geometry instead of calling
+  // Google Routes again (issue #149 problem 8).
+  const metadataOnly =
+    mode === "edit" &&
+    storedHasDirectionalGeometry &&
+    geometryIsUnchanged(stops, storedStops);
+
   let geometry;
-  try {
-    geometry = await computeDirectionalPolylines(waypoints);
-  } catch (error) {
-    console.error("[Routes] Geometry computation failed:", error);
-    res.status(process.env.GOOGLE_MAPS_API_KEY ? 502 : 503).json({
-      error: "Unable to compute route geometry.",
-      phase: "routing",
-    });
-    return;
+  let recomputed = false;
+  if (metadataOnly) {
+    geometry = replayGeometry(existingData);
+  } else {
+    try {
+      geometry = await computeDirectionalPolylines(waypoints);
+      recomputed = true;
+    } catch (error) {
+      console.error("[Routes] Geometry computation failed:", error);
+      res.status(process.env.GOOGLE_MAPS_API_KEY ? 502 : 503).json({
+        error: "Unable to compute route geometry.",
+        phase: "routing",
+      });
+      return;
+    }
   }
 
   const routeData = {
@@ -424,7 +451,7 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
     return;
   }
   invalidatePlanRoute(routeId);
-  res.json({ saved: true, duplicate: false, routeId, ...geometry });
+  res.json({ saved: true, duplicate: false, recomputed, routeId, ...geometry });
 });
 
 router.delete("/:routeId", requireAdmin, async (req: Request, res: Response) => {
