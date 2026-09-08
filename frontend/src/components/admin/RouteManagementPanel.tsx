@@ -9,7 +9,7 @@ import { useRoutes, RouteData, RouteStop } from "@/hooks/useRoutes";
 import { auth } from "@/lib/firebaseAuth";
 import {
   Trash2, Plus, X, CheckCircle, MapPin, Loader2, Search,
-  Pencil, GripVertical, Save,
+  Pencil, GripVertical, Save, RefreshCw,
   ChevronDown, ChevronUp, ArrowLeft, Crosshair,
 } from "lucide-react";
 import CustomSelect from "@/components/ui/CustomSelect";
@@ -17,8 +17,8 @@ import ConfirmModal from "@/components/ui/ConfirmModal";
 import AlertModal from "@/components/ui/AlertModal";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
-import { apiRequest } from "@/lib/apiClient";
-import { prepareRouteSavePayload, routeIdFromName, stopShortName } from "@/lib/routeStopPayload";
+import { apiRequest, ApiRequestError, ROUTE_SAVE_TIMEOUT_MS, type ApiRequestPhase } from "@/lib/apiClient";
+import { prepareRouteSavePayload, routeIdFromName, stopShortName, swapEndpoints } from "@/lib/routeStopPayload";
 
 
 /* ────────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -32,11 +32,38 @@ const ROUTE_COLORS = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444",
   "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
 ];
+/** Stable content hash used as the route-save idempotency key (#149 p9). */
+function stableSaveId(input: string): string {
+  let hash = 5381;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) + hash) ^ input.charCodeAt(i);
+  }
+  return `v1_${(hash >>> 0).toString(36)}`;
+}
+
 interface PlacePrediction {
   name: string;
   address?: string;
   lat: number;
   lng: number;
+}
+
+/** Map each place-search failure to a distinct, truthful message (#149 p6). */
+function placeSearchMessage(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    switch (error.code) {
+      case "not_configured": return "Place search is not configured on the server.";
+      case "upstream_timeout": return "Place search timed out. Try again.";
+      case "rate_limited": return "Place search rate limit reached. Try again in a minute.";
+      case "invalid_query": return "Type at least 3 characters to search.";
+      case "upstream_error": return "Place search is unavailable right now.";
+      default: break;
+    }
+    if (error.status === 401 || error.status === 403) {
+      return "Your session expired or you don't have access to place search.";
+    }
+  }
+  return errorMessage(error);
 }
 
 function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string; lat: number; lng: number }) => void }) {
@@ -70,11 +97,14 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
             fallbackError: "Place search is temporarily unavailable.",
           },
         );
-        setPredictions(Array.isArray(payload.results) ? payload.results : []);
+        if (controller.signal.aborted) return;
+        const results = Array.isArray(payload.results) ? payload.results : [];
+        setPredictions(results);
+        setSearchError(results.length === 0 ? "No matching places found." : "");
       } catch (error) {
         if (!controller.signal.aborted) {
           setPredictions([]);
-          setSearchError(errorMessage(error));
+          setSearchError(placeSearchMessage(error));
         }
       } finally {
         if (!controller.signal.aborted) setSearching(false);
@@ -369,7 +399,9 @@ function RouteEditor({
       const stops = [...s.stops];
       const trimmedName = name.trim();
       stops[i] = { ...stops[i], name: trimmedName, shortName: stopShortName(trimmedName) };
-      return { ...s, stops, polyline: undefined };
+      // Renaming is metadata-only: coordinates/order/IDs are unchanged, so the
+      // displayed geometry stays and the backend skips Google recomputation.
+      return { ...s, stops };
     });
 
   const moveStop = (from: number, to: number) => {
@@ -380,6 +412,13 @@ function RouteEditor({
       stops.splice(to, 0, item);
       return { ...s, stops, polyline: undefined };
     });
+  };
+
+  const swapEndpointsAction = () => {
+    const swapped = swapEndpoints(state.stops);
+    if (!swapped) return;
+    setState(s => ({ ...s, stops: swapped, polyline: undefined }));
+    setPositionMessage("Swapped endpoints A and B. Save to recompute both directions.");
   };
 
   const updateStopPosition = (i: number, lat: number, lng: number) => {
@@ -407,6 +446,10 @@ function RouteEditor({
       }
 
       const token = await currentUser.getIdToken(true);
+      // Stable content key => repeated saves of identical data converge (a
+      // retry after a timeout cannot double-apply or leave an uncertain result).
+      const saveId = stableSaveId(routeId + JSON.stringify(body));
+      const saveBody = { ...body, saveId };
       const geometry = await apiRequest<{
         polyline?: string;
         distanceMeters?: number;
@@ -417,8 +460,9 @@ function RouteEditor({
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(saveBody),
         fallbackError: "Unable to compute route geometry. The route was not saved.",
+        timeoutMs: ROUTE_SAVE_TIMEOUT_MS,
       });
       if (!geometry.polyline || typeof geometry.distanceMeters !== "number" || typeof geometry.duration !== "string") {
         throw new Error("Route geometry service returned an invalid result.");
@@ -426,7 +470,18 @@ function RouteEditor({
 
       onSaved();
     } catch (error: unknown) {
-      alert("Failed to save: " + errorMessage(error));
+      if (error instanceof ApiRequestError) {
+        const phaseMessages: Partial<Record<ApiRequestPhase, string>> = {
+          validation: "The route data was rejected before saving.",
+          routing: "Google could not compute route geometry. No changes were saved.",
+          persistence: "Geometry was computed but could not be written. Please retry.",
+          timeout: "The save timed out. Retry — repeating identical data is safe.",
+        };
+        const phase = error.phase;
+        setEditorAlertMsg(`Failed to save: ${phase ? (phaseMessages[phase] ?? error.message) : error.message}`);
+      } else {
+        setEditorAlertMsg("Failed to save: " + errorMessage(error));
+      }
     } finally {
       setSaving(false);
     }
@@ -587,7 +642,21 @@ function RouteEditor({
               <MapPin className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Stops</span>
             </div>
-            <span className="text-[9px] font-black text-emerald-400/50 bg-emerald-500/10 px-2 py-0.5 rounded-full">{state.stops.length}</span>
+            <div className="flex items-center gap-2">
+              {state.stops.length === 2 && (
+                <button
+                  type="button"
+                  onClick={swapEndpointsAction}
+                  className="flex h-7 items-center gap-1.5 rounded-lg bg-emerald-500/10 px-2.5 text-[9px] font-black uppercase tracking-widest text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                  title="Swap A and B for a two-endpoint route; save to recompute both directions"
+                  aria-label="Swap A and B stops"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Swap A &amp; B
+                </button>
+              )}
+              <span className="text-[9px] font-black text-emerald-400/50 bg-emerald-500/10 px-2 py-0.5 rounded-full">{state.stops.length}</span>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5">
             {state.stops.length === 0 ? (

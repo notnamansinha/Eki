@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { normalizeRouteStopPayload, prepareRouteSavePayload, routeIdFromName } from "./routeStopPayload";
+import { normalizeRouteStopPayload, prepareRouteSavePayload, routeIdFromName, swapEndpoints } from "./routeStopPayload";
+
+describe("swapEndpoints (#149 p7)", () => {
+  it("swaps a two-stop route and preserves stop IDs", () => {
+    const a = { id: "a", name: "Alpha" };
+    const z = { id: "z", name: "Zulu" };
+    expect(swapEndpoints([a, z])).toEqual([z, a]);
+  });
+
+  it("returns null unless there are exactly two stops", () => {
+    const a = { id: "a" };
+    expect(swapEndpoints([])).toBeNull();
+    expect(swapEndpoints([a])).toBeNull();
+    expect(swapEndpoints([a, { id: "b" }, { id: "c" }])).toBeNull();
+    expect(swapEndpoints(undefined)).toBeNull();
+    expect(swapEndpoints(null)).toBeNull();
+  });
+});
 
 describe("route stop save payload", () => {
   it("normalizes an old verbose search result and serialized dragged coordinates", () => {
