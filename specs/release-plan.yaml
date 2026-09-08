@@ -1,0 +1,26 @@
+# Release plan — Eki
+
+release:
+  version: null            # mirror only; semantic-release decides at merge — gh release view wins
+  codename: "Issue #149 — Directional integrity"
+  status: planning         # planning | in_progress | released
+  semantic_release: true
+  bump_hint: minor         # patch | minor | major — CI decides at merge
+
+epics:
+  - id: e01
+    title: Fix ride direction, directional route geometry, live GPS accuracy, and admin route management
+    wsjf: 5.0
+    capsule_dir: epics/e01-issue-149-directional-integrity
+    note: >
+      Closes GitHub issue #149. 10 stories mirroring the issue's 10 problems, ordered by WSJF with
+      dependency edges (s02 before s04; s01/s03 before s10 semantics). All work ships on branch
+      Issue#149 without reusing PR #153.
+
+bugs:
+  total: 1
+  fixed: 0
+  deferred: 0
+  wontfix: 0
+  open: 1
+  registry: specs/bugs/registry.yaml

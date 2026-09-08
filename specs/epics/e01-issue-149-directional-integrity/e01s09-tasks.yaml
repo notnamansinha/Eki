@@ -1,0 +1,35 @@
+story_id: e01s09
+title: Make route saves idempotent with endpoint-specific timeouts and structured errors
+status: failing
+bcps: 4
+tasks:
+  - id: 1
+    description: "RED: extend apiClient tests — a route-geometry save uses its endpoint-specific (longer) timeout; other calls keep the 10 s default; each failure phase (validation / google routing / persistence) surfaces as a distinct typed error."
+    verify: "npm test --workspace=frontend -- src/lib/apiClient.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Route save", "unit"] }
+  - id: 2
+    description: "Implement per-endpoint timeout override + typed phase errors in apiClient.ts; wire the save call to it. RouteManagementPanel renders each phase error distinctly (no generic 'request timed out')."
+    verify: "npm test --workspace=frontend -- src/lib/apiClient.test.ts src/components/admin/RouteManagementPanel.test.tsx"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Route save", "UI"] }
+  - id: 3
+    description: "RED: backend polyline tests — save is idempotent under retry (same route version → single apply; stale version rejected or reconciled), and error responses are phase-tagged (validation vs google-routing vs persistence)."
+    verify: "npm test --workspace=backend -- src/routes/polyline.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Route save", "backend"] }
+  - id: 4
+    description: "Implement backend idempotency/version guard + phase-tagged error responses in polyline.ts; ensure server.ts passes the phase through; verify retry-after-timeout converges with one outcome."
+    verify: "npm test --workspace=backend -- src/routes/polyline.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Route save", "backend"] }
+  - id: 5
+    description: "Cross-check with e01s08: metadata-only saves never enter the geometry timeout path. Run full Preflight."
+    verify: "npm run verify"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Route save", "gate"] }

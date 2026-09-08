@@ -1,0 +1,36 @@
+story_id: e01s10
+title: Separate device presence from ride-service state in the UI
+status: failing
+bcps: 3
+tasks:
+  - id: 1
+    description: "Consumer sweep: list every consumer of bus.status and bus.deviceState across frontend/src so the derivation refactor has a complete blast radius."
+    verify: |-
+      rg -n -e "\.status" -e "deviceState" -e "tripState" -e "BUS LIVE" frontend/src/lib frontend/src/components | head -60
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Status semantics", "Discovery"] }
+  - id: 2
+    description: "RED: extend activeBusEntries tests — a device-only bus (deviceState online, tripState pre_departure, no session, status offline) derives device=online + ride=not-armed/pending and is excluded from the live-service count."
+    verify: "npm test --workspace=frontend -- src/lib/activeBusEntries.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Status semantics", "unit"] }
+  - id: 3
+    description: "Implement a shared derivation helper in activeBusEntries.ts (device state and ride-service state as separate fields/labels); update the live-count predicate to count active services only."
+    verify: "npm test --workspace=frontend -- src/lib/activeBusEntries.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Status semantics", "unit"] }
+  - id: 4
+    description: "Update PassengerWorkspace and DashboardPanel to render separate labels (device online / direction pending / not armed / in service / completed) using the helper; add component tests for the pre_departure case."
+    verify: "npm test --workspace=frontend -- src/components/passenger src/components/admin"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Status semantics", "UI"] }
+  - id: 5
+    description: "Integration with e01s01/e01s03: assert the direction-pending label path renders identically here and stays consistent when direction resolves. Run full Preflight."
+    verify: "npm run verify"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Status semantics", "gate"] }

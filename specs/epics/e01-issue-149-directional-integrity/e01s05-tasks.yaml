@@ -1,0 +1,29 @@
+story_id: e01s05
+title: Measure device clock offset separately from transport latency
+status: failing
+bcps: 3
+tasks:
+  - id: 1
+    description: "RED: add a backend test with a synthetic ~9 s device-clock skew — updates 1 s apart must be treated as fresh (server receipt time drives freshness), the recorded offset must be ~9 s, and the device timestamp must remain in the record unchanged."
+    verify: "npm test --workspace=backend -- src/routes/devicesTelemetry.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Clock skew", "unit"] }
+  - id: 2
+    description: "Implement per-device clock-offset tracking distinct from transport latency in the telemetry ingestion path; expose both in metrics and in structured logs (bounded per-device window)."
+    verify: "npm test --workspace=backend -- src/routes/devicesTelemetry.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Clock skew", "backend"] }
+  - id: 3
+    description: "Assert freshness consumers (liveBusFreshness/liveBusDelivery) already rely on server receipt time; if any path uses raw device timestamp for freshness, switch it to receipt time and add a regression test."
+    verify: "npm test --workspace=frontend -- src/lib/liveBusFreshness.test.ts src/lib/liveBusDelivery.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Clock skew", "freshness"] }
+  - id: 4
+    description: "Document the measurement contract in the telemetry/ops docs (docs/operations) so the deferred firmware NTP audit has a target; run full Preflight."
+    verify: "npm run verify"
+    risk: P2
+    status: failing
+    allure: { severity: normal, categories: ["Clock skew", "docs"] }

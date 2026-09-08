@@ -1,0 +1,29 @@
+story_id: e01s08
+title: Skip Google Routes for metadata-only route saves
+status: failing
+bcps: 3
+tasks:
+  - id: 1
+    description: "RED: add tests for a shared geometry-fingerprint helper (coordinates + order) — a rename changes the fingerprint? No; a coordinate or order change does? Yes. Assert deterministic behavior for reorder, swap, add, remove."
+    verify: "npm test --workspace=frontend -- src/lib/adminValidation.test.ts"
+    risk: P2
+    status: failing
+    allure: { severity: normal, categories: ["Route editor", "unit"] }
+  - id: 2
+    description: "Implement the fingerprint helper and use it in RouteManagementPanel to choose metadata-only save (no Google call) vs geometry save (dual recompute via e01s02). Component test: rename triggers zero geometry calls and persists."
+    verify: "npm test --workspace=frontend -- src/components/admin/RouteManagementPanel.test.tsx src/lib/adminValidation.test.ts"
+    risk: P2
+    status: failing
+    allure: { severity: normal, categories: ["Route editor", "UI"] }
+  - id: 3
+    description: "Backend: add a metadata-only write path on the route record that preserves stored geometry; reject a geometry write whose payload has no geometry. Add polyline route tests for both branches."
+    verify: "npm test --workspace=backend -- src/routes/polyline.test.ts"
+    risk: P2
+    status: failing
+    allure: { severity: normal, categories: ["Route editor", "backend"] }
+  - id: 4
+    description: "Regression: coordinate/add/remove/order edits still recompute both directional geometries; run full Preflight."
+    verify: "npm run verify"
+    risk: P2
+    status: failing
+    allure: { severity: normal, categories: ["Route editor", "gate"] }

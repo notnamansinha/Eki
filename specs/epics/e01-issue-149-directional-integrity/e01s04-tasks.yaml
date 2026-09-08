@@ -1,0 +1,47 @@
+story_id: e01s04
+title: Add accuracy-aware directional GNSS map matching
+status: failing
+bcps: 7
+tasks:
+  - id: 1
+    description: "Payload gap check: trace fix.gpsHdop from hardware/src/main.cpp through the telemetry payload into backend validation; record whether the quality field survives to the API contract."
+    verify: "rg -n 'gpsHdop|hdop|accuracy' hardware/src/main.cpp hardware/include/telemetry_policy.h backend/src/services/telemetryRouteService.ts backend/src | head -30"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["GNSS", "Discovery"] }
+  - id: 2
+    description: "RED/implement firmware: emit accuracy/HDOP in the telemetry payload when the fix is valid (reuse gpsHdop/hdopValid/hdopAgeMs). Add native tests asserting payload content for valid vs invalid HDOP."
+    verify: "platformio test --project-dir hardware -e native"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["GNSS", "firmware"] }
+  - id: 3
+    description: "Backend: validate and forward the quality field in the telemetry contract; add contract tests for missing/invalid quality values (fail-soft, do not reject good fixes)."
+    verify: "npm test --workspace=backend -- src/services/telemetryRouteService.test.ts src/routes/devicesTelemetry.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["GNSS", "backend"] }
+  - id: 4
+    description: "RED: add frontend matcher tests — divided-road and parallel-road fixtures where matching must use resolved-direction geometry, heading, continuity, max segment jump, distance-from-route, and monotonic progress; ambiguous inputs return low confidence."
+    verify: "npm test --workspace=frontend -- src/lib/snapToPolyline.test.ts src/lib/liveBusMarkerPosition.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["GNSS", "map matching"] }
+  - id: 5
+    description: "Implement directional confidence matcher in snapToPolyline/liveBusMarkerPosition (direction + heading + continuity + jump + distance + monotonic); never accept opposite-direction geometry; low-confidence path returns the raw fix plus accuracy indicator."
+    verify: "npm test --workspace=frontend -- src/lib/snapToPolyline.test.ts src/lib/liveBusMarkerPosition.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["GNSS", "map matching"] }
+  - id: 6
+    description: "Wire marker + indicator through PassengerMap and DashboardPanel with component tests; add regression for the raw-fix indicator state."
+    verify: "npm test --workspace=frontend -- src/components/maps src/components/admin"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["GNSS", "UI"] }
+  - id: 7
+    description: "Run firmware build check + full Preflight."
+    verify: "platformio run --project-dir hardware -e esp32dev && npm run verify"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["GNSS", "gate"] }

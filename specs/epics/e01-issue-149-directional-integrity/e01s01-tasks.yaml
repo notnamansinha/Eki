@@ -1,0 +1,47 @@
+story_id: e01s01
+title: Represent missing ride direction as pending, never forward
+status: failing
+bcps: 4
+tasks:
+  - id: 1
+    description: "Blast-radius pass: list every caller of RideDirection, normalizeRideDirection, directionLabel, routeInRideDirection in frontend/src and backend/src. Record consumers to update."
+    verify: "rg -l 'RideDirection|normalizeRideDirection|directionLabel|routeInRideDirection' frontend/src backend/src"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction", "Passenger correctness"] }
+  - id: 2
+    description: "RED: extend frontend/src/lib/rideDirection.test.ts with cases asserting normalizeRideDirection(undefined/null/'') is pending/unknown and never forward; assert no forward ordering helper runs while pending."
+    verify: "npm test --workspace=frontend -- src/lib/rideDirection.test.ts"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction", "unit"] }
+  - id: 3
+    description: "Implement tri-state normalization in frontend/src/lib/rideDirection.ts (pending when direction is not exactly 'forward' or 'reverse'); keep resolved-ride behavior byte-identical."
+    verify: "npm test --workspace=frontend -- src/lib/rideDirection.test.ts"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction", "unit"] }
+  - id: 4
+    description: "Gate PassengerWorkspace, PassengerMap, and DashboardPanel so pending direction renders 'Direction pending' and skips stop ordering, destination choices, route progress, timeline, and ETA computation. Add component-level tests."
+    verify: "npm test --workspace=frontend -- src/components/passenger src/components/admin src/components/maps"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction", "UI"] }
+  - id: 5
+    description: "Backend parity: make backend/src/lib/rideDirection.ts normalization treat missing/malformed as pending at the read boundary; assert no active-ride mutation from a pending value. Add backend tests."
+    verify: "npm test --workspace=backend -- src/lib/rideDirection.test.ts"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction", "unit"] }
+  - id: 6
+    description: "Guard against passenger-location influence: add a test proving no passenger-location input reaches direction derivation; document invariant in rideDirection.ts."
+    verify: "npm test --workspace=frontend -- src/lib/rideDirection.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Direction", "Privacy"] }
+  - id: 7
+    description: "Run full Preflight and confirm lint + typecheck + all workspace suites are green."
+    verify: "npm run verify"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction", "gate"] }

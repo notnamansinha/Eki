@@ -1,0 +1,35 @@
+story_id: e01s07
+title: Make stop reordering usable and persistent via a Swap A/B action
+status: failing
+bcps: 4
+tasks:
+  - id: 1
+    description: "RED: add RouteManagementPanel component tests — a two-stop route shows 'Swap A and B'; clicking swaps the endpoint order while stop IDs stay identical; the save flow runs exactly once; routes with 3+ stops do not show the button."
+    verify: "npm test --workspace=frontend -- src/components/admin/RouteManagementPanel.test.tsx"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Route editor", "UI"] }
+  - id: 2
+    description: "Implement the Swap A and B control in RouteManagementPanel (order-only payload change, stop IDs untouched) with the length===2 gate."
+    verify: "npm test --workspace=frontend -- src/components/admin/RouteManagementPanel.test.tsx"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Route editor", "UI"] }
+  - id: 3
+    description: "Assert the save path treats a swap as geometry-affecting (dual recompute via e01s02) and persists; add payload/validation tests for stable IDs and reversed order."
+    verify: "npm test --workspace=frontend -- src/lib/adminValidation.test.ts src/lib/routeStopPayload.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Route editor", "unit"] }
+  - id: 4
+    description: "Failure-path test: with the backend rejecting, the editor shows the structured error and keeps the swapped state (no silent drop, no torn UI); implement recovery UI as needed."
+    verify: "npm test --workspace=frontend -- src/components/admin/RouteManagementPanel.test.tsx"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Route editor", "resilience"] }
+  - id: 5
+    description: "Run full Preflight."
+    verify: "npm run verify"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Route editor", "gate"] }

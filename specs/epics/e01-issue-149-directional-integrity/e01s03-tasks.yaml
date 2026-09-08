@@ -1,0 +1,47 @@
+story_id: e01s03
+title: Infer direction only from fresh GPS inside exactly one endpoint geofence
+status: failing
+bcps: 5
+tasks:
+  - id: 1
+    description: "RED: extend automaticRideDirection tests — fresh stopped GPS inside exactly one endpoint geofence (A or B) resolves the direction; 257 m from B resolves nothing; stale or moving fixes resolve nothing; radius outside geofence never infers."
+    verify: "npm test --workspace=backend -- src/lib/automaticRideDirection.test.ts"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction inference", "unit"] }
+  - id: 2
+    description: "Reconcile DIRECTION_INFERENCE_RADIUS_M with STOP_GEOFENCE_M so exactly one endpoint-geofence rule applies everywhere (shifts/start + engine); delete or alias the wider default so it cannot silently re-enter."
+    verify: "rg -n 'DIRECTION_INFERENCE_RADIUS_M|STOP_GEOFENCE_M' backend/src && npm test --workspace=backend -- src/lib/automaticRideDirection.test.ts"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction inference", "unit"] }
+  - id: 3
+    description: "RED: add trip-state engine tests for a direction_pending lifecycle — an unarmed device-only bus may stay pending; fresh stopped in-geofence telemetry resolves it; an active ride direction never changes from telemetry."
+    verify: "npm test --workspace=backend -- src/services/tripStateEngine.lifecycle.test.ts"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction inference", "state machine"] }
+  - id: 4
+    description: "Implement the continuous resolver hook in tripStateEngine/Reducer consulted only while tripState is pre_departure with no active session; keep the safe completion/dwell turnaround lifecycle untouched. Wire /api/shifts/start to the same resolver."
+    verify: "npm test --workspace=backend -- src/services/tripStateEngine.lifecycle.test.ts src/routes/shifts.test.ts"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction inference", "state machine"] }
+  - id: 5
+    description: "Closest-endpoint guard: assert no inference path uses distance-to-nearest-endpoint outside the geofence; delete such logic if present (grep for closest/min distance heuristics)."
+    verify: "rg -n 'closest|nearest|min.*distance|shortest' backend/src/lib/automaticRideDirection.ts backend/src/services backend/src/routes/shifts.ts"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction inference", "unit"] }
+  - id: 6
+    description: "Integration with e01s01: backend exposes pending (no direction) cleanly and frontend test confirms 'Direction pending' renders for a pending-resolution bus; add cross-suite regression."
+    verify: "npm test --workspace=backend -- src/lib/rideDirection.test.ts && npm test --workspace=frontend -- src/lib/rideDirection.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Direction inference", "integration"] }
+  - id: 7
+    description: "Run full Preflight."
+    verify: "npm run verify"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction inference", "gate"] }

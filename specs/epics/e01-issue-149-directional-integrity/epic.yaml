@@ -1,0 +1,93 @@
+id: e01
+title: Fix ride direction, directional route geometry, live GPS accuracy, and admin route management
+slug: issue-149-directional-integrity
+source_issue: https://github.com/notnamansinha/Eki/issues/149
+wsjf: 5.0
+total_bcps: 46
+status: in_progress
+stories:
+  # WSJF order (highest first). List order respects dependency edges.
+  - id: e01s10
+    title: Separate device presence from ride-service state in the UI
+    bcps: 3
+    status: todo
+    wsjf: 6.7
+    delta: MODIFIED
+    spec: e01s10-device-vs-ride-status.md
+    tasks: e01s10-tasks.yaml
+  - id: e01s01
+    title: Represent missing ride direction as pending, never forward
+    bcps: 4
+    status: todo
+    wsjf: 6.0
+    delta: MODIFIED
+    spec: e01s01-direction-pending.md
+    tasks: e01s01-tasks.yaml
+  - id: e01s03
+    title: Infer direction only from fresh GPS inside exactly one endpoint geofence
+    bcps: 5
+    status: todo
+    wsjf: 4.8
+    delta: MODIFIED
+    spec: e01s03-geofenced-direction-inference.md
+    tasks: e01s03-tasks.yaml
+    depends_on: [e01s01]
+  - id: e01s05
+    title: Measure device clock offset separately from transport latency
+    bcps: 3
+    status: todo
+    wsjf: 4.3
+    delta: ADDED
+    spec: e01s05-clock-offset-measurement.md
+    tasks: e01s05-tasks.yaml
+  - id: e01s09
+    title: Make route saves idempotent with endpoint-specific timeouts and structured errors
+    bcps: 4
+    status: todo
+    wsjf: 4.3
+    delta: MODIFIED
+    spec: e01s09-route-save-reliability.md
+    tasks: e01s09-tasks.yaml
+  - id: e01s07
+    title: Make stop reordering usable and persistent via a Swap A/B action
+    bcps: 4
+    status: todo
+    wsjf: 3.5
+    delta: MODIFIED
+    spec: e01s07-stop-reordering.md
+    tasks: e01s07-tasks.yaml
+    depends_on: [e01s02]
+  - id: e01s02
+    title: Compute and store forward and reverse driving geometries independently
+    bcps: 8
+    status: todo
+    wsjf: 3.4
+    delta: MODIFIED
+    spec: e01s02-directional-geometry.md
+    tasks: e01s02-tasks.yaml
+  - id: e01s08
+    title: Skip Google Routes for metadata-only route saves
+    bcps: 3
+    status: todo
+    wsjf: 3.0
+    delta: MODIFIED
+    spec: e01s08-metadata-only-saves.md
+    tasks: e01s08-tasks.yaml
+    depends_on: [e01s02]
+  - id: e01s04
+    title: Add accuracy-aware directional GNSS map matching
+    bcps: 7
+    status: todo
+    wsjf: 3.0
+    delta: MODIFIED
+    spec: e01s04-gnss-accuracy-matching.md
+    tasks: e01s04-tasks.yaml
+    depends_on: [e01s02]
+  - id: e01s06
+    title: Make admin place search work with distinct per-failure messages
+    bcps: 5
+    status: todo
+    wsjf: 2.8
+    delta: MODIFIED
+    spec: e01s06-place-search.md
+    tasks: e01s06-tasks.yaml

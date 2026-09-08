@@ -1,0 +1,79 @@
+# Scope — Issue #149: Ride direction, directional geometry, live GPS accuracy, and admin route management
+
+core_value: >
+  Show passengers the correct bus direction, carriageway, route geometry, progress, and ETA —
+  and make the admin route editor reliable enough to maintain those routes.
+
+summary: >
+  Post-merge field testing of the live map found P0/P1 correctness gaps. A bus whose direction is
+  unknown is displayed as an active A-to-B service. A single stored Google route geometry is reused
+  for reverse travel, which is not a valid B-to-A driving route on divided roads. GNSS markers are
+  drawn from raw fixes with no accuracy gating or directional map matching. Device presence and
+  ride-service state are conflated in the UI. The admin route editor has unusable place search, no
+  stop reordering, unnecessary geometry recomputation on rename, a fragile save timeout, and
+  possible saved/not-saved uncertainty.
+
+  This initiative restores directional integrity end to end. Unknown direction becomes a first-class
+  "pending" state. Both driving directions get independently computed geometry. Direction is
+  inferred only from fresh in-geofence bus GPS. The marker uses accuracy-aware directional matching.
+  Clock offset is measured separately from transport latency. Admin tooling (place search, stop
+  reorder, metadata-only saves, idempotent saves) becomes dependable.
+
+in_scope:
+  - "e01s01 — Missing direction stays pending; never normalized to forward (problem 1)"
+  - "e01s02 — Forward and reverse Google driving geometries computed and stored independently; all
+    ride surfaces (map, destination choices, timeline, progress, ETA) use the resolved direction
+    (problem 2)"
+  - "e01s03 — Direction inference only from fresh, stopped bus GPS inside exactly one endpoint
+    geofence; resolve continuously; never from closest-endpoint outside radius; active rides never
+    silently change direction; turnaround stays on the safe lifecycle (problem 3)"
+  - "e01s04 — GNSS accuracy/HDOP surfaced in telemetry; map matching uses direction, heading,
+    continuity, distance-from-route, and confidence; low-confidence fixes render raw with an
+    accuracy indicator; never match the opposite-direction geometry (problem 4)"
+  - "e01s05 — Device clock offset and transport latency measured separately; server receipt time
+    drives freshness when skew is known; device timestamp preserved for diagnostics and ordering
+    (problem 5)"
+  - "e01s06 — Authenticated place search returns results; distinct user-facing messages per failure
+    mode (backend down, auth, not configured, rate limit, timeout, no results); authenticated
+    integration test for /api/places/search (problem 6)"
+  - "e01s07 — Stop reordering usable and persistent; stop IDs preserved; both directional geometries
+    recomputed only when geometry changes; map and ride surfaces refreshed (problem 7)"
+  - "e01s08 — Stop/route metadata saves never call Google Routes; geometry recompute only on
+    coordinate, add/remove, or order changes (problem 8)"
+  - "e01s09 — Route-save timeouts endpoint-specific and idempotent; no uncertain saved/not-saved
+    outcome; structured errors distinguish validation, Google routing, and persistence (problem 9)"
+  - "e01s10 — Device presence and ride-service state shown as separate concepts with distinct labels
+    (device online, direction pending, not armed, in service, completed) (problem 10)"
+
+out_of_scope:
+  - "Rewriting PR #153 or reusing its branch — excluded by decision; this effort builds the fix fresh."
+  - "New bus hardware or new GNSS modules — only telemetry quality fields (accuracy/HDOP) on the
+    existing firmware are in scope, pending the problem-4 decision."
+  - "Passenger-facing redesign beyond the direction/status labels the issue names."
+  - "Route planning algorithms, schedules, or fleet-optimization features — unrelated to this issue."
+  - "chat functionality — must not regress."
+
+constraints:
+  - "Preserve the existing safe completion/dwell turnaround lifecycle."
+  - "Preserve ordered trip state and the serialized change-writer discipline on the backend."
+  - "Passenger location must never influence bus direction."
+  - "No new heavyweight frontend dependencies without documented reason and approval."
+  - "Every change keeps Preflight (npm run verify) and rules tests green."
+  - "Reversing an encoded A-to-B polyline must never be treated as a B-to-A driving route."
+
+success_criteria:
+  - "A directionless bus shows 'Direction pending' and never appears as an active A-to-B service."
+  - "Direction is inferred only inside an endpoint geofence from fresh stopped GPS."
+  - "B-to-A buses travel on the correct carriageway with a real B-to-A route and consistent
+    ETA/progress."
+  - "Marker rarely leaves the road; ambiguous fixes show an accuracy indicator."
+  - "Device clock offset and transport latency are measured and reported separately."
+  - "Admin place search works and reports each failure mode distinctly."
+  - "Stop reorder persists; renaming a stop makes no Google Routes call."
+  - "A route save cannot end in an uncertain saved/not-saved state."
+  - "The UI labels device presence separately from ride-service state."
+
+references:
+  - "https://github.com/notnamansinha/Eki/issues/149 (source issue, 16 acceptance criteria)"
+  - "specs/release-plan.yaml"
+  - "specs/epics/e01-issue-149-directional-integrity/"

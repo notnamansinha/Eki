@@ -1,0 +1,47 @@
+story_id: e01s02
+title: Compute and store forward and reverse driving geometries independently
+status: failing
+bcps: 8
+tasks:
+  - id: 1
+    description: "Gap survey (RED groundwork): enumerate every route read/repair path in backend/src/routes/polyline.ts and frontend direction selection. Confirm which Firestore route records carry directional fields vs legacy single geometry; record findings in the story."
+    verify: "rg -n 'forwardPolyline|reversePolyline|geometryComputations|repair' backend/src/routes/polyline.ts frontend/src/lib frontend/src/hooks"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction", "Discovery"] }
+  - id: 2
+    description: "RED: add backend test proving geometry save requests both directions independently — mock googleMaps and assert two calls with reversed origins/destinations; assert stored forward and reverse fields are distinct (decode(reverse) is not the reversed decode(forward))."
+    verify: "npm test --workspace=backend -- src/routes/polyline.test.ts"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction", "unit"] }
+  - id: 3
+    description: "Implement any missing dual-direction computation/storage in polyline.ts so every geometry-affecting save persists forwardPolyline, reversePolyline, per-direction distance and duration. Keep the in-flight geometryComputations de-dupe intact. Circular routes stay single-geometry."
+    verify: "npm test --workspace=backend -- src/routes/polyline.test.ts"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction", "unit"] }
+  - id: 4
+    description: "RED/implement frontend: assert mapRouteGeometry/routeDisplayPath/routeInRideDirection serve only stored directional geometry for the resolved direction and refuse reversed-array fallback; add component tests for DirectionsRoute/PassengerMap on a divided-road fixture."
+    verify: "npm test --workspace=frontend -- src/lib/mapRouteGeometry.test.ts src/lib/routeDisplayPath.test.ts"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction", "UI"] }
+  - id: 5
+    description: "Legacy-record path: verify single-geometry records trigger the authenticated repair flow and never show reversed-array geometry as B → A. Add regression test."
+    verify: "npm test --workspace=backend -- src/routes/polyline.test.ts && npm test --workspace=frontend -- src/lib/rideDirection.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Direction", "migration"] }
+  - id: 6
+    description: "Consistency sweep: confirm stops, destination choices, timeline, progress, and ETA helpers all branch on the same resolved-direction value (grep every consumer). Fix any that branch independently."
+    verify: "rg -n 'rideDirection|direction ===|direction !=' frontend/src/lib frontend/src/components | head -60"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction", "consistency"] }
+  - id: 7
+    description: "Run full Preflight (lint + typecheck + tests + build + audit)."
+    verify: "npm run verify"
+    risk: P0
+    status: failing
+    allure: { severity: critical, categories: ["Direction", "gate"] }

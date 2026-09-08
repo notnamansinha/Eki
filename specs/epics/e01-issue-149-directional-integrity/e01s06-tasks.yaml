@@ -1,0 +1,35 @@
+story_id: e01s06
+title: Make admin place search work with distinct per-failure messages
+status: failing
+bcps: 5
+tasks:
+  - id: 1
+    description: "RED: add authenticated integration tests for /api/places/search — success, upstream timeout, rate limit, and Places-not-configured map to distinct typed outcomes; no silent no-results on failure."
+    verify: "npm test --workspace=backend -- src/routes/places.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Place search", "integration"] }
+  - id: 2
+    description: "Implement error taxonomy in backend/src/routes/places.ts (backend/config/auth/rate-limit/upstream-timeout distinctions), reusing the existing 5 s upstream abort and 20/min limiter; return structured errors."
+    verify: "npm test --workspace=backend -- src/routes/places.test.ts"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Place search", "backend"] }
+  - id: 3
+    description: "Frontend: RouteManagementPanel renders a distinct message per failure taxonomy and apiClient surfaces typed place-search errors; add component + client tests."
+    verify: "npm test --workspace=frontend -- src/lib/apiClient.test.ts src/components/admin/RouteManagementPanel.test.tsx"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Place search", "UI"] }
+  - id: 4
+    description: "Origin-consistency check: assert firebase.json CSP, backend CORS allow-list, and the deployed NEXT_PUBLIC_BACKEND_URL resolve to one origin; fix any mismatch found; document the check in docs/operations so tunnel/env changes re-verify it."
+    verify: "node scripts/update-csp.mjs && node scripts/generate-sw.mjs && npm run build"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Place search", "ops"] }
+  - id: 5
+    description: "Run full Preflight and rules tests."
+    verify: "npm run verify && npm run test:rules"
+    risk: P1
+    status: failing
+    allure: { severity: high, categories: ["Place search", "gate"] }
