@@ -6,7 +6,8 @@ interface Coordinate {
   lng: number;
 }
 
-export const DIRECTION_INFERENCE_RADIUS_M = 75;
+export const ENDPOINT_GEOFENCE_M = 20;
+export const ARRIVAL_RADIUS_M = 75;
 export const TURNAROUND_TELEMETRY_MAX_AGE_MS = 60_000;
 
 function validCoordinate(value: Coordinate | null | undefined): value is Coordinate {
@@ -21,11 +22,15 @@ function validCoordinate(value: Coordinate | null | undefined): value is Coordin
  * Infers a fresh ride only when the bus is unambiguously near one endpoint.
  * Mid-route, stale and overlapping-endpoint cases deliberately return null so
  * the backend never invents a direction from a noisy heading sample.
+ *
+ * The radius defaults to ENDPOINT_GEOFENCE_M (the same 20 m rule the trip-state
+ * engine uses), never a wider value — a bus outside the single geofence stays
+ * direction_pending (issue #149 problem 3).
  */
 export function inferRideDirectionAtEndpoint(
   stops: readonly Coordinate[],
   position: Coordinate,
-  radiusMeters = DIRECTION_INFERENCE_RADIUS_M,
+  radiusMeters = ENDPOINT_GEOFENCE_M,
 ): RideDirection | null {
   if (
     stops.length < 2 ||
@@ -57,10 +62,14 @@ interface TurnaroundReadinessInput {
   destination: Coordinate;
 }
 
-/** Requires a fresh stopped fix at the completed destination after the dwell. */
+/**
+ * Requires a fresh stopped fix at the completed destination after the dwell.
+ * Arrival recognition uses the intentionally wider ARRIVAL_RADIUS_M (75 m),
+ * distinct from the 20 m endpoint geofence used to START/infer a direction.
+ */
 export function automaticTurnaroundIsReady(
   input: TurnaroundReadinessInput,
-  radiusMeters = DIRECTION_INFERENCE_RADIUS_M,
+  radiusMeters = ARRIVAL_RADIUS_M,
 ): boolean {
   return (
     Number.isFinite(input.now) &&
