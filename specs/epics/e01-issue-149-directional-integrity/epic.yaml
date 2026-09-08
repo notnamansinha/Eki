@@ -4,7 +4,7 @@ slug: issue-149-directional-integrity
 source_issue: https://github.com/notnamansinha/Eki/issues/149
 wsjf: 5.0
 total_bcps: 46
-status: in_progress
+status: complete
 stories:
   # WSJF order (highest first). List order respects dependency edges.
   - id: e01s10

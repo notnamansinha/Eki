@@ -1,6 +1,6 @@
 # Execution status — flat status keys, sole source of truth for story state
 
-e01: in_progress
+e01: complete
 e01s10: done
 e01s01: done
 e01s03: done
@@ -9,5 +9,5 @@ e01s09: done
 e01s07: done
 e01s02: done
 e01s08: done
-e01s04: todo
+e01s04: done
 e01s06: done
