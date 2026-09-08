@@ -747,7 +747,7 @@ describe("production security configuration", () => {
     expect(shifts).toContain("arrivedAtOrigin");
     expect(operations).not.toContain('ariaLabel="Travel direction"');
     expect(operations).toContain("Travel direction is inferred from fresh stopped GPS");
-    expect(operations).toContain("directionLabel(inferredDirection");
+    expect(operations).toContain("directionLabelState(inferredDirection");
     expect(shifts).toContain("inferRideDirectionAtEndpoint");
     expect(engine).toContain("maybeArmAutomaticTurnaround");
     expect(passengerBoarding).toContain("Ride in service");

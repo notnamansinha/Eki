@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { BUS_EXPIRY_MS } from "./liveBusFreshness";
 import {
+  countActiveServices,
+  devicePresence,
   filterActiveBusEntries,
   isActiveBusEntry,
+  isActiveService,
   isLiveChatDeviceOnline,
+  rideServiceState,
+  type ActiveBusEntry,
 } from "./activeBusEntries";
 
 describe("isLiveChatDeviceOnline", () => {
@@ -12,6 +17,87 @@ describe("isLiveChatDeviceOnline", () => {
     expect(isLiveChatDeviceOnline({ deviceState: "online", status: "active", motionState: "moving" })).toBe(true);
     expect(isLiveChatDeviceOnline({ deviceState: "offline", status: "active", motionState: "moving" })).toBe(false);
     expect(isLiveChatDeviceOnline(undefined)).toBe(false);
+  });
+});
+
+describe("devicePresence", () => {
+  it("reports offline only on an explicit offline deviceState", () => {
+    expect(devicePresence({ deviceState: "offline" })).toBe("offline");
+    expect(devicePresence({ deviceState: "online" })).toBe("online");
+    expect(devicePresence({})).toBe("online");
+    expect(devicePresence(undefined)).toBe("online");
+  });
+});
+
+describe("rideServiceState", () => {
+  it("keeps a directionless, device-only bus as direction_pending", () => {
+    // Device-only: no session, no direction, pre_departure.
+    expect(
+      rideServiceState({ tripState: "pre_departure", sessionId: undefined, direction: undefined }),
+    ).toBe("direction_pending");
+  });
+
+  it("marks a pre-departure bus with known direction as not_armed", () => {
+    expect(
+      rideServiceState({ tripState: "pre_departure", sessionId: undefined, direction: "forward" }),
+    ).toBe("not_armed");
+  });
+
+  it("marks an armed pre-departure ride (has session) as armed_pending_departure", () => {
+    expect(
+      rideServiceState({ tripState: "pre_departure", sessionId: "s1", direction: "forward" }),
+    ).toBe("armed_pending_departure");
+  });
+
+  it("reports in_service and completed from tripState", () => {
+    expect(rideServiceState({ tripState: "in_service", sessionId: "s1" })).toBe("in_service");
+    expect(rideServiceState({ tripState: "completed", sessionId: "s1" })).toBe("completed");
+  });
+
+  it("treats null/undefined as not_armed", () => {
+    expect(rideServiceState(undefined)).toBe("not_armed");
+    expect(rideServiceState(null)).toBe("not_armed");
+  });
+});
+
+describe("isActiveService / countActiveServices", () => {
+  const now = 2_000_000_000_000;
+  const deviceOnly: ActiveBusEntry = {
+    busId: "Bus01",
+    timestamp: now - 1_000,
+    deviceState: "online",
+    tripState: "pre_departure",
+    motionState: "stopped",
+  };
+  const inService: ActiveBusEntry = {
+    busId: "Bus02",
+    timestamp: now - 1_000,
+    deviceState: "online",
+    tripState: "in_service",
+    motionState: "moving",
+    sessionId: "s2",
+    direction: "forward",
+  };
+  const awaiting: ActiveBusEntry = {
+    busId: "Bus03",
+    timestamp: now - 1_000,
+    deviceState: "online",
+    tripState: "pre_departure",
+    motionState: "stopped",
+    sessionId: "s3",
+    direction: "forward",
+  };
+
+  it("only in-service entries are active services", () => {
+    expect(isActiveService(deviceOnly)).toBe(false);
+    expect(isActiveService(awaiting)).toBe(false);
+    expect(isActiveService(inService)).toBe(true);
+  });
+
+  it("the live count excludes device-only and awaiting buses", () => {
+    expect(countActiveServices([deviceOnly, awaiting, inService])).toBe(1);
+    expect(countActiveServices([deviceOnly])).toBe(0);
+    expect(countActiveServices([])).toBe(0);
   });
 });
 

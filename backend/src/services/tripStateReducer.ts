@@ -1,5 +1,6 @@
 import type { LegacyTripState, MotionState, TripState } from "../types";
 import { haversineMeters } from "../lib/geo";
+import { ENDPOINT_GEOFENCE_M } from "../lib/automaticRideDirection";
 
 interface TripRouteStop {
   lat: number;
@@ -23,7 +24,8 @@ export interface TripStateResult {
   hasDepartedOrigin: boolean;
 }
 
-export const STOP_GEOFENCE_M = 20;
+// One geofence source of truth for direction inference and the trip engine.
+export const STOP_GEOFENCE_M = ENDPOINT_GEOFENCE_M;
 export const ORIGIN_DEPARTURE_M = 150;
 const MAX_TELEMETRY_SEGMENT_M = 250;
 

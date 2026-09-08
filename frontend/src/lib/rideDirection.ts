@@ -2,8 +2,54 @@ import type { RouteData } from "@/hooks/useRoutes";
 
 export type RideDirection = "forward" | "reverse";
 
-export function normalizeRideDirection(value: unknown): RideDirection {
-  return value === "reverse" ? "reverse" : "forward";
+/**
+ * A ride direction may be unresolved. "pending" is a first-class state so a
+ * device-only or pre-departure bus is never silently presented as A → B.
+ */
+export type RideDirectionState = RideDirection | "pending";
+
+/**
+ * Normalize a raw direction value into a tri-state.
+ *
+ * Only the literal "forward"/"reverse" resolve; everything else (missing,
+ * empty, malformed) is "pending". This fixes the previous behavior where
+ * normalizeRideDirection(undefined) returned "forward" and a directionless
+ * bus appeared as an active A → B service (issue #149 problem 1).
+ */
+export function normalizeRideDirection(value: unknown): RideDirectionState {
+  if (value === "forward") return "forward";
+  if (value === "reverse") return "reverse";
+  return "pending";
+}
+
+/** Type guard for the unresolved direction state. */
+export function isPendingDirection(
+  state: RideDirectionState,
+): state is "pending" {
+  return state === "pending";
+}
+
+/**
+ * True only when both raw directions resolve to the same non-pending value.
+ * Two pending values do NOT match (no geometry selection while unresolved).
+ */
+export function directionsMatch(a: unknown, b: unknown): boolean {
+  const na = normalizeRideDirection(a);
+  const nb = normalizeRideDirection(b);
+  if (na === "pending" || nb === "pending") return false;
+  return na === nb;
+}
+
+/**
+ * Label a direction state. Unresolved renders "Direction pending" instead of
+ * fabricating A → B, so ordering/ETA surfaces never invent a route.
+ */
+export function directionLabelState(
+  state: RideDirectionState,
+  stops: RouteData["stops"],
+): string {
+  if (state === "pending") return "Direction pending";
+  return directionLabel(state, stops);
 }
 
 export function directionLabel(

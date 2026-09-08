@@ -74,6 +74,89 @@ export function isLiveChatDeviceOnline(
   return entry?.deviceState === "online";
 }
 
+/**
+ * Device presence is a wire-level fact: is this unit talking to the fleet?
+ * It is orthogonal to ride-service state (armed, in service, completed).
+ */
+export type DevicePresence = "online" | "offline";
+
+/**
+ * Ride-service state answers "is this unit an active service right now?".
+ * It is derived only from trip session facts, never from raw device presence,
+ * so a device-only bus can never present as an active A → B service.
+ */
+export type RideServiceState =
+  | "direction_pending"
+  | "not_armed"
+  | "armed_pending_departure"
+  | "in_service"
+  | "completed";
+
+/** Human labels for each ride-service state. */
+export const RIDE_SERVICE_LABEL: Record<RideServiceState, string> = {
+  direction_pending: "Direction pending",
+  not_armed: "Ride not armed",
+  armed_pending_departure: "Armed · awaiting departure",
+  in_service: "In service",
+  completed: "Completed",
+};
+
+/**
+ * Derive device presence. Only an explicit offline signal reports offline;
+ * an absent flag on a fresh entry is treated as online (no false negatives).
+ */
+export function devicePresence(
+  entry: Pick<ActiveBusEntry, "deviceState"> | null | undefined,
+): DevicePresence {
+  return entry?.deviceState === "offline" ? "offline" : "online";
+}
+
+/**
+ * Derive the ride-service state from trip-session facts only.
+ *
+ * Ordered by precedence so terminal/active states win:
+ * completed → in_service → armed pending departure (has session) →
+ * direction pending (pre-departure, no session, no resolved direction) →
+ * not_armed (pre-departure, no session, direction known).
+ */
+export function rideServiceState(
+  entry: Pick<ActiveBusEntry, "tripState" | "sessionId" | "direction"> | null | undefined,
+): RideServiceState {
+  if (!entry) return "not_armed";
+  switch (entry.tripState) {
+    case "completed":
+      return "completed";
+    case "in_service":
+      return "in_service";
+    case "pre_departure":
+    default: {
+      if (entry.sessionId) return "armed_pending_departure";
+      const hasDirection =
+        entry.direction === "forward" || entry.direction === "reverse";
+      return hasDirection ? "not_armed" : "direction_pending";
+    }
+  }
+}
+
+/** True only when the unit is an active in-service ride (not merely online). */
+export function isActiveService(
+  entry: Pick<ActiveBusEntry, "tripState" | "sessionId" | "direction"> | null | undefined,
+): boolean {
+  return rideServiceState(entry) === "in_service";
+}
+
+/**
+ * Count active services, never device presence. A device-only or pre-departure
+ * bus must not inflate a "N buses live" figure.
+ */
+export function countActiveServices(entries: readonly ActiveBusEntry[]): number {
+  let count = 0;
+  for (const entry of entries) {
+    if (isActiveService(entry)) count += 1;
+  }
+  return count;
+}
+
 const OPTIONAL_STRING_FIELDS = [
   "driverId",
   "routeId",

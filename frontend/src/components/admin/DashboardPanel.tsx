@@ -31,10 +31,11 @@ import MessagingPanel from "@/components/shared/MessagingPanel";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
-import { isLiveChatDeviceOnline } from "@/lib/activeBusEntries";
+import { isLiveChatDeviceOnline, countActiveServices, rideServiceState, RIDE_SERVICE_LABEL } from "@/lib/activeBusEntries";
 import {
-  directionLabel,
+  directionLabelState,
   normalizeRideDirection,
+  isPendingDirection,
   routeInRideDirection,
 } from "@/lib/rideDirection";
 
@@ -326,12 +327,14 @@ function FleetCard({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const bus = buses.find(b => b.id === entry.busId);
   const route = routes.find(r => r.id === entry.routeId);
-  const directedRoute = route
-    ? routeInRideDirection(route, normalizeRideDirection(entry.direction))
+  const entryDirection = normalizeRideDirection(entry.direction);
+  const directedRoute = route && !isPendingDirection(entryDirection)
+    ? routeInRideDirection(route, entryDirection)
     : undefined;
   const driver = drivers.find(d => d.id === entry.driverId);
   const ts = TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure;
   const ms = MOTION_STATE[entry.motionState ?? "uncertain"] ?? MOTION_STATE.uncertain;
+  const rideLabel = RIDE_SERVICE_LABEL[rideServiceState(entry)];
   const stopIdx = (entry.currentStopIndex ?? 0) + 1;
   const stopCount = directedRoute?.stops?.length ?? 0;
 
@@ -363,7 +366,7 @@ function FleetCard({
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-white text-sm truncate">{bus?.name ?? entry.busId}</p>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <span className={`text-[9px] font-black uppercase tracking-wider ${ts.color}`}>{ts.label}</span>
+                <span className={`text-[9px] font-black uppercase tracking-wider ${ts.color}`}>{rideLabel}</span>
                 <span className={`text-[9px] font-semibold ${ms.color}`}>{ms.label}</span>
                 {entry.speed != null && <span className="text-[9px] text-white/30 tabular-nums">{Math.round(entry.speed)} km/h</span>}
                 {(entry.delayMinutes ?? 0) > 0 && (
@@ -447,7 +450,7 @@ function FleetCard({
                 <p className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</p>
                 {route && (
                   <p className="text-[9px] text-white/40">
-                    {directionLabel(normalizeRideDirection(entry.direction), route.stops)}
+                    {directionLabelState(normalizeRideDirection(entry.direction), route.stops)}
                   </p>
                 )}
               </div>
@@ -529,6 +532,7 @@ export default function DashboardPanel() {
       const route = routes.find((candidate) => candidate.id === entry.routeId);
       if (!route) continue;
       const direction = normalizeRideDirection(entry.direction);
+      if (direction === "pending") continue; // no route overlay while direction is unresolved (#149 p1)
       const hasDirectionalGeometry = Boolean(
         route.forwardPolyline && route.reversePolyline,
       );
@@ -604,6 +608,9 @@ export default function DashboardPanel() {
     isLiveBusSignalLost(e.timestamp, freshnessNow)
   ).length;
   const awaitingStart = activeEntries.filter(e => e.tripState === "pre_departure").length;
+  // "N buses live" counts active services only; a device-only or pre-departure
+  // bus must not inflate the live-service figure (issue #149 problem 10).
+  const liveServiceCount = countActiveServices(activeEntries);
 
   const handleSelectBus = useCallback((entry: ActiveBusEntry) => {
     setSelectedBusId(prev => prev === entry.busId ? null : entry.busId);
@@ -646,7 +653,7 @@ export default function DashboardPanel() {
       setArmStatus(
         result.resumed
           ? `Active ride restored (${result.sessionId}).`
-          : `Ride armed (${result.sessionId}) for ${directionLabel(inferredDirection, routes.find((route) => route.id === routeId)?.stops ?? [])}.`,
+          : `Ride armed (${result.sessionId}) for ${directionLabelState(inferredDirection, routes.find((route) => route.id === routeId)?.stops ?? [])}.`,
       );
     } catch (error) {
       setArmStatus(errorMessage(error));
@@ -761,7 +768,7 @@ export default function DashboardPanel() {
           <div className="flex items-center gap-2 bg-[#09090b]/90 backdrop-blur-sm border border-white/10 rounded-xl px-3 py-2">
             <span className={`w-2 h-2 rounded-full ${!isResuming && activeEntries.length > 0 ? "bg-emerald-400 animate-pulse" : "bg-white/20"}`} />
             <span className="text-[10px] font-black uppercase tracking-widest text-white/70">
-              {isResuming ? "Live data unavailable" : `${activeEntries.length} Bus${activeEntries.length !== 1 ? "es" : ""} Live`}
+              {isResuming ? "Live data unavailable" : `${liveServiceCount} Bus${liveServiceCount !== 1 ? "es" : ""} Live`}
             </span>
           </div>
         </div>

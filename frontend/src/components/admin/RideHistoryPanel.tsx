@@ -25,6 +25,7 @@ import { errorMessage } from "@/lib/errors";
 import { Bus, Loader2, MapPin, Trash2, User, Users, AlertCircle } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import {
+  isPendingDirection,
   normalizeRideDirection,
   persistedDirectionLabel,
 } from "@/lib/rideDirection";
@@ -275,6 +276,17 @@ export default function RideHistoryPanel() {
           const status = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.failed;
           const startValue = session.startTime ?? session.armedAt;
           const deleteState = deleteStates[session.id] ?? "idle";
+          // Historical rides keep their immutable session endpoints; only a
+          // genuinely unresolved direction falls back to "Direction pending".
+          const directionState = normalizeRideDirection(session.direction);
+          const directionDisplay = isPendingDirection(directionState)
+            ? "Direction pending"
+            : persistedDirectionLabel(
+                directionState,
+                routeStops.get(session.routeId) ?? [],
+                session.originStopId,
+                session.destinationStopId,
+              );
 
           return (
             <div
@@ -315,12 +327,7 @@ export default function RideHistoryPanel() {
                     </span>
                     <span className="flex items-center gap-1">
                       <MapPin className="size-3" />
-                      Direction: {persistedDirectionLabel(
-                        normalizeRideDirection(session.direction),
-                        routeStops.get(session.routeId) ?? [],
-                        session.originStopId,
-                        session.destinationStopId,
-                      )}
+                      Direction: {directionDisplay}
                     </span>
                     <span className="flex items-center gap-1">
                       <Bus className="size-3" />

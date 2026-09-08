@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   directionLabel,
+  directionLabelState,
+  directionsMatch,
+  isPendingDirection,
+  normalizeRideDirection,
   persistedDirectionLabel,
   routeInRideDirection,
 } from "./rideDirection";
@@ -19,6 +23,41 @@ const route = {
     { id: "z", name: "Zulu", shortName: "Z", lat: 2, lng: 2 },
   ],
 };
+
+describe("normalizeRideDirection (issue #149 problem 1)", () => {
+  it("keeps missing direction pending instead of silently forward", () => {
+    expect(normalizeRideDirection(undefined)).toBe("pending");
+    expect(normalizeRideDirection(null)).toBe("pending");
+    expect(normalizeRideDirection("")).toBe("pending");
+    expect(normalizeRideDirection("sideways")).toBe("pending");
+    expect(normalizeRideDirection(123)).toBe("pending");
+  });
+
+  it("resolves only explicit forward/reverse", () => {
+    expect(normalizeRideDirection("forward")).toBe("forward");
+    expect(normalizeRideDirection("reverse")).toBe("reverse");
+  });
+
+  it("isPendingDirection separates the unresolved state", () => {
+    expect(isPendingDirection("pending")).toBe(true);
+    expect(isPendingDirection("forward")).toBe(false);
+    expect(isPendingDirection("reverse")).toBe(false);
+  });
+
+  it("directionLabelState renders 'Direction pending' when unresolved", () => {
+    expect(directionLabelState("pending", route.stops)).toBe("Direction pending");
+    expect(directionLabelState("forward", route.stops)).toBe("A → Z");
+  });
+
+  it("directionsMatch never matches a pending direction", () => {
+    expect(directionsMatch("forward", "forward")).toBe(true);
+    expect(directionsMatch("reverse", "reverse")).toBe(true);
+    expect(directionsMatch("forward", "reverse")).toBe(false);
+    expect(directionsMatch(undefined, "forward")).toBe(false);
+    expect(directionsMatch("reverse", undefined)).toBe(false);
+    expect(directionsMatch(undefined, undefined)).toBe(false);
+  });
+});
 
 describe("directional route views", () => {
   it("orders reverse stops and geometry without mutating Firestore route data", () => {

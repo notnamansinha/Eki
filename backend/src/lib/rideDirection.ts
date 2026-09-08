@@ -1,5 +1,18 @@
 export type RideDirection = "forward" | "reverse";
 
+/** Read-boundary view of a raw direction: missing/unknown stays "pending". */
+export type RideDirectionState = RideDirection | "pending";
+
+/**
+ * Read-boundary tri-state. Internal trip-engine math still uses
+ * normalizeRideDirection (binary); this surfaces an unresolved direction as
+ * "pending" so it is never silently treated as forward at a read boundary.
+ */
+export function rideDirectionState(value: unknown): RideDirectionState {
+  if (value === "forward" || value === "reverse") return value;
+  return "pending";
+}
+
 export function normalizeRideDirection(value: unknown): RideDirection {
   return value === "reverse" ? "reverse" : "forward";
 }
