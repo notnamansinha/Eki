@@ -226,7 +226,29 @@ function computePolylineOnce(routeId: string, waypoints: LatLng[]) {
 function geometryError(res: Response): void {
   res.status(process.env.GOOGLE_MAPS_API_KEY ? 502 : 503).json({
     error: "Unable to compute route geometry.",
+    phase: "routing",
   });
+}
+
+/** Replay stored directional geometry for a duplicate (idempotent) save. */
+function replayGeometry(
+  route: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!route || typeof route.forwardPolyline !== "string" || typeof route.reversePolyline !== "string") {
+    return { error: "No stored geometry to replay." };
+  }
+  return {
+    polyline: route.forwardPolyline,
+    forwardPolyline: route.forwardPolyline,
+    reversePolyline: route.reversePolyline,
+    distanceMeters: route.distanceMeters,
+    forwardDistanceMeters: route.forwardDistanceMeters,
+    reverseDistanceMeters: route.reverseDistanceMeters,
+    duration: route.duration,
+    forwardDuration: route.forwardDuration,
+    reverseDuration: route.reverseDuration,
+    polylineQuality: route.polylineQuality,
+  };
 }
 
 router.post("/compute-polyline", requireAdmin, async (req: Request, res: Response) => {
@@ -312,6 +334,10 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
   const type = req.body?.type;
   const mode = req.body?.mode;
   const stops = validateStops(req.body?.stops);
+  const saveId =
+    typeof req.body?.saveId === "string" && req.body.saveId.trim()
+      ? req.body.saveId.trim()
+      : undefined;
   if (
     !SAFE_ID.test(routeId) ||
     !name ||
@@ -321,55 +347,84 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
     (mode !== "create" && mode !== "edit") ||
     !stops
   ) {
-    res.status(400).json({ error: "Invalid route data." });
+    res.status(400).json({ error: "Invalid route data.", phase: "validation" });
     return;
   }
 
+  const routeRef = db.collection("routes").doc(routeId);
+  const existing = await routeRef.get();
+
+  // Idempotent replay: a retry of an already-applied save (same content key)
+  // returns the stored geometry without recomputing Google or rewriting. This
+  // prevents the uncertain saved/not-saved outcome in issue #149 problem 9.
+  const isSameSave = saveId && existing.exists && existing.data()?.saveId === saveId;
+  if (mode === "create" && existing.exists) {
+    if (isSameSave) {
+      res.json({ saved: true, duplicate: true, routeId, ...replayGeometry(existing.data()) });
+      return;
+    }
+    res.status(409).json({ error: "A route with this ID already exists.", phase: "validation" });
+    return;
+  }
+  if (mode === "edit" && !existing.exists) {
+    res.status(404).json({ error: "The route no longer exists.", phase: "validation" });
+    return;
+  }
+  if (mode === "edit" && isSameSave) {
+    res.json({ saved: true, duplicate: true, routeId, ...replayGeometry(existing.data()) });
+    return;
+  }
+  if (mode === "edit") {
+    const activeRide = await db.collection("active_rides")
+      .where("routeId", "==", routeId)
+      .limit(1)
+      .get();
+    if (!activeRide.empty) {
+      res.status(409).json({
+        error: "An active ride route cannot be edited before its final stop.",
+        phase: "validation",
+      });
+      return;
+    }
+  }
+
+  const waypoints = stops.map(({ lat, lng }) => ({ lat, lng }));
+  let geometry;
   try {
-    const routeRef = db.collection("routes").doc(routeId);
-    const existing = await routeRef.get();
-    if (mode === "create" && existing.exists) {
-      res.status(409).json({ error: "A route with this ID already exists." });
-      return;
-    }
-    if (mode === "edit" && !existing.exists) {
-      res.status(404).json({ error: "The route no longer exists." });
-      return;
-    }
-    if (mode === "edit") {
-      const activeRide = await db.collection("active_rides")
-        .where("routeId", "==", routeId)
-        .limit(1)
-        .get();
-      if (!activeRide.empty) {
-        res.status(409).json({
-          error: "An active ride route cannot be edited before its final stop.",
-        });
-        return;
-      }
-    }
-    const waypoints = stops.map(({ lat, lng }) => ({ lat, lng }));
-    const geometry = await computeDirectionalPolylines(waypoints);
-    const routeData = {
-      id: routeId,
-      name,
-      color,
-      type,
-      stops,
-      waypoints,
-      ...geometry,
-    };
+    geometry = await computeDirectionalPolylines(waypoints);
+  } catch (error) {
+    console.error("[Routes] Geometry computation failed:", error);
+    res.status(process.env.GOOGLE_MAPS_API_KEY ? 502 : 503).json({
+      error: "Unable to compute route geometry.",
+      phase: "routing",
+    });
+    return;
+  }
+
+  const routeData = {
+    id: routeId,
+    name,
+    color,
+    type,
+    stops,
+    waypoints,
+    ...geometry,
+    saveId: saveId ?? null,
+    routeVersion: (Number(existing.data()?.routeVersion) || 0) + 1,
+  };
+  try {
     if (mode === "create") {
       await routeRef.create(routeData);
     } else {
       await routeRef.set(routeData);
     }
-    invalidatePlanRoute(routeId);
-    res.json({ saved: true, routeId, ...geometry });
   } catch (error) {
-    console.error("[Routes] Failed to save validated route:", error);
-    geometryError(res);
+    console.error("[Routes] Failed to persist route:", error);
+    res.status(500).json({ error: "Unable to save the route.", phase: "persistence" });
+    return;
   }
+  invalidatePlanRoute(routeId);
+  res.json({ saved: true, duplicate: false, routeId, ...geometry });
 });
 
 router.delete("/:routeId", requireAdmin, async (req: Request, res: Response) => {

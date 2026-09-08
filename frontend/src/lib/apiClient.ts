@@ -1,7 +1,33 @@
 const API_TIMEOUT_MS = 10_000;
 
+/** Route-geometry saves issue two Google routing calls plus a Firestore write. */
+export const ROUTE_SAVE_TIMEOUT_MS = 30_000;
+
+export type ApiRequestPhase =
+  | "validation"
+  | "routing"
+  | "persistence"
+  | "timeout";
+
+/**
+ * Typed API error carrying the failure phase so callers (especially the route
+ * editor) can render a distinct, truthful message per cause (#149 p9).
+ */
+export class ApiRequestError extends Error {
+  readonly phase?: ApiRequestPhase;
+  readonly status?: number;
+
+  constructor(message: string, options: { phase?: ApiRequestPhase; status?: number } = {}) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.phase = options.phase;
+    this.status = options.status;
+  }
+}
+
 type ApiRequestOptions = RequestInit & {
   fallbackError?: string;
+  timeoutMs?: number;
 };
 
 function configuredBackendUrl(): string {
@@ -26,7 +52,7 @@ function configuredBackendUrl(): string {
 
 export async function apiRequest<T>(
   path: string,
-  { fallbackError = "Request failed.", signal, ...init }: ApiRequestOptions = {},
+  { fallbackError = "Request failed.", timeoutMs = API_TIMEOUT_MS, signal, ...init }: ApiRequestOptions = {},
 ): Promise<T> {
   const backendUrl = configuredBackendUrl();
 
@@ -43,7 +69,7 @@ export async function apiRequest<T>(
     if (requestController.signal.aborted) return;
     abortSource = "timeout";
     requestController.abort(new DOMException("Request timed out.", "TimeoutError"));
-  }, API_TIMEOUT_MS);
+  }, timeoutMs);
 
   try {
     const response = await fetch(`${backendUrl}${path}`, {
@@ -51,23 +77,27 @@ export async function apiRequest<T>(
       signal: requestController.signal,
     });
     if (response.status === 204) return undefined as T;
-    let result: T & { error?: unknown };
+    let result: T & { error?: unknown; phase?: unknown };
     try {
-      result = await response.json() as T & { error?: unknown };
+      result = await response.json() as T & { error?: unknown; phase?: unknown };
     } catch (error) {
       if (response.ok) throw error;
-      result = {} as T & { error?: string };
+      result = {} as T & { error?: string; phase?: unknown };
     }
     if (!response.ok) {
       const message = typeof result.error === "string" && result.error.trim()
         ? result.error
         : `${fallbackError} (HTTP ${response.status})`;
-      throw new Error(message);
+      const phase =
+        result.phase === "validation" || result.phase === "routing" || result.phase === "persistence"
+          ? result.phase
+          : undefined;
+      throw new ApiRequestError(message, { phase, status: response.status });
     }
     return result;
   } catch (error) {
     if (abortSource === "timeout") {
-      throw new Error("The request timed out. Please try again.");
+      throw new ApiRequestError("The request timed out. Please try again.", { phase: "timeout" });
     }
     throw error;
   } finally {

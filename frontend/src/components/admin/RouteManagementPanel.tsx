@@ -17,7 +17,7 @@ import ConfirmModal from "@/components/ui/ConfirmModal";
 import AlertModal from "@/components/ui/AlertModal";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
-import { apiRequest } from "@/lib/apiClient";
+import { apiRequest, ApiRequestError, ROUTE_SAVE_TIMEOUT_MS, type ApiRequestPhase } from "@/lib/apiClient";
 import { prepareRouteSavePayload, routeIdFromName, stopShortName } from "@/lib/routeStopPayload";
 
 
@@ -32,6 +32,15 @@ const ROUTE_COLORS = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444",
   "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
 ];
+/** Stable content hash used as the route-save idempotency key (#149 p9). */
+function stableSaveId(input: string): string {
+  let hash = 5381;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) + hash) ^ input.charCodeAt(i);
+  }
+  return `v1_${(hash >>> 0).toString(36)}`;
+}
+
 interface PlacePrediction {
   name: string;
   address?: string;
@@ -407,6 +416,10 @@ function RouteEditor({
       }
 
       const token = await currentUser.getIdToken(true);
+      // Stable content key => repeated saves of identical data converge (a
+      // retry after a timeout cannot double-apply or leave an uncertain result).
+      const saveId = stableSaveId(routeId + JSON.stringify(body));
+      const saveBody = { ...body, saveId };
       const geometry = await apiRequest<{
         polyline?: string;
         distanceMeters?: number;
@@ -417,8 +430,9 @@ function RouteEditor({
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(saveBody),
         fallbackError: "Unable to compute route geometry. The route was not saved.",
+        timeoutMs: ROUTE_SAVE_TIMEOUT_MS,
       });
       if (!geometry.polyline || typeof geometry.distanceMeters !== "number" || typeof geometry.duration !== "string") {
         throw new Error("Route geometry service returned an invalid result.");
@@ -426,7 +440,18 @@ function RouteEditor({
 
       onSaved();
     } catch (error: unknown) {
-      alert("Failed to save: " + errorMessage(error));
+      if (error instanceof ApiRequestError) {
+        const phaseMessages: Partial<Record<ApiRequestPhase, string>> = {
+          validation: "The route data was rejected before saving.",
+          routing: "Google could not compute route geometry. No changes were saved.",
+          persistence: "Geometry was computed but could not be written. Please retry.",
+          timeout: "The save timed out. Retry — repeating identical data is safe.",
+        };
+        const phase = error.phase;
+        setEditorAlertMsg(`Failed to save: ${phase ? (phaseMessages[phase] ?? error.message) : error.message}`);
+      } else {
+        setEditorAlertMsg("Failed to save: " + errorMessage(error));
+      }
     } finally {
       setSaving(false);
     }

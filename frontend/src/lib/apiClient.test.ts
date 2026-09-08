@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiRequest } from "./apiClient";
+import { apiRequest, ApiRequestError } from "./apiClient";
 
 describe("apiRequest", () => {
   afterEach(() => {
@@ -30,6 +30,37 @@ describe("apiRequest", () => {
     ));
 
     await expect(apiRequest("/api/test")).rejects.toThrow("Denied");
+  });
+
+  it("attaches the backend failure phase to the thrown error", async () => {
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "Google routing failed.", phase: "routing" }), { status: 502 }),
+    ));
+
+    const error = await apiRequest("/api/routes/x", { fallbackError: "Save failed." })
+      .then(() => { throw new Error("expected rejection"); })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiRequestError);
+    expect((error as ApiRequestError).phase).toBe("routing");
+    expect((error as ApiRequestError).message).toBe("Google routing failed.");
+  });
+
+  it("uses the per-request timeout override and reports the timeout phase", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason ?? new Error("aborted")));
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = apiRequest("/api/routes/x", { timeoutMs: 5_000 })
+      .then(() => { throw new Error("expected timeout"); })
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(5_000);
+    const error = await pending;
+    expect(error).toBeInstanceOf(ApiRequestError);
+    expect((error as ApiRequestError).phase).toBe("timeout");
   });
 
   it("uses the HTTP fallback for empty or non-string server errors", async () => {
