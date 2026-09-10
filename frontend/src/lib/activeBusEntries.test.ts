@@ -59,6 +59,8 @@ describe("isActiveBusEntry", () => {
       lat: 23,
       lng: 72,
       routeVersion: 2,
+      mapMatchSeq: 10,
+      mapMatchSampledAt: now - 1_000,
       routeState: "ON_NEW_ROUTE",
       routeSource: "dynamic-reroute",
       rawLocation: {
@@ -103,6 +105,8 @@ describe("isActiveBusEntry", () => {
       { busId: "bus_1", timestamp: now - 1_000, routeId: 42 },
       { busId: "bus_1", timestamp: now - 1_000, routeState: "TELEPORTING" },
       { busId: "bus_1", timestamp: now - 1_000, matchConfidence: 2 },
+      { busId: "bus_1", timestamp: now - 1_000, mapMatchSeq: 1.5 },
+      { busId: "bus_1", timestamp: now - 1_000, mapMatchSampledAt: Number.NaN },
       { busId: "bus_1", timestamp: now - 1_000, matchedLocation: { lat: 23, lng: 72 } },
     ];
 

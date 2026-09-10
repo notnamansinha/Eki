@@ -30,8 +30,9 @@ import CustomSelect from "@/components/ui/CustomSelect";
 import MessagingPanel from "@/components/shared/MessagingPanel";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
-import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
 import { useTelemetryRenderTrace } from "@/hooks/useTelemetryRenderTrace";
+import { useLiveBusMarkerPosition } from "@/hooks/useLiveBusMarkerPosition";
+import { useSmoothPosition } from "@/hooks/useSmoothPosition";
 import { isLiveChatDeviceOnline } from "@/lib/activeBusEntries";
 import {
   directionLabel,
@@ -248,7 +249,7 @@ function BusMarker({
   onClick,
 }: {
   entry: ActiveBusEntry;
-  onClick: () => void;
+  onClick: (position: { lat: number; lng: number }) => void;
 }) {
   const ts = TRIP_STATE[entry.tripState ?? "pre_departure"] ?? TRIP_STATE.pre_departure;
   const markerColor =
@@ -256,10 +257,8 @@ function BusMarker({
       ? entry.motionState === "moving" ? "#34D399" : "#FBBF24"
       : entry.deviceState === "offline" || entry.motionState === "uncertain" ? "#FB923C" : "#94949C";
 
-  const markerPoint = useMemo(
-    () => liveBusMarkerPosition(entry),
-    [entry],
-  );
+  const markerSelection = useLiveBusMarkerPosition(entry);
+  const markerPoint = useSmoothPosition(markerSelection.position);
   useTelemetryRenderTrace(entry, "admin", markerPoint !== null);
 
   const [displayHeading, setDisplayHeading] = useState(() =>
@@ -274,11 +273,16 @@ function BusMarker({
 
   if (!markerPoint) return null;
   return (
-    <AdvancedMarker position={markerPoint} onClick={onClick}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }} title={`${entry.busId} — ${ts.label}`}>
+    <AdvancedMarker position={markerPoint} onClick={() => onClick(markerPoint)}>
+      <div
+        style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }}
+        title={`${entry.busId} — ${ts.label}${markerSelection.decision === "match_pending" ? " — updating route position" : markerSelection.uncertain ? " — approximate GNSS position" : ""}`}
+      >
         <div style={{
           width: 36, height: 36, borderRadius: 18,
-          background: markerColor, border: "3px solid #09090b",
+          background: markerColor,
+          border: "3px solid #09090b",
+          borderStyle: markerSelection.uncertain ? "dashed" : "solid",
           display: "flex", alignItems: "center", justifyContent: "center",
           boxShadow: `0 0 0 2px ${markerColor}40, 0 4px 12px rgba(0,0,0,0.5)`,
         }}>
@@ -607,9 +611,16 @@ export default function DashboardPanel() {
   ).length;
   const awaitingStart = activeEntries.filter(e => e.tripState === "pre_departure").length;
 
-  const handleSelectBus = useCallback((entry: ActiveBusEntry) => {
+  const handleSelectBus = useCallback((
+    entry: ActiveBusEntry,
+    displayedPosition?: { lat: number; lng: number },
+  ) => {
     setSelectedBusId(prev => prev === entry.busId ? null : entry.busId);
-    const markerPoint = liveBusMarkerPosition(entry);
+    const markerPoint = displayedPosition ?? (
+      hasValidBusCoordinates(entry.lat, entry.lng)
+        ? { lat: entry.lat as number, lng: entry.lng as number }
+        : null
+    );
     if (markerPoint) setMapCenter(markerPoint);
   }, []);
 
@@ -724,7 +735,7 @@ export default function DashboardPanel() {
             <BusMarker
               key={`${entry.busId}_${entry.routeId}`}
               entry={entry}
-              onClick={() => handleSelectBus(entry)}
+              onClick={(position) => handleSelectBus(entry, position)}
             />
           ))}
         </GoogleMap>

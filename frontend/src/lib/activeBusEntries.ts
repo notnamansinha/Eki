@@ -31,6 +31,8 @@ export interface ActiveBusEntry {
   destinationStopId?: string;
   rawLocation?: RawLiveLocation;
   matchedLocation?: MatchedLiveLocation;
+  mapMatchSeq?: number;
+  mapMatchSampledAt?: number;
   matchConfidence?: number;
   distanceToActiveRoute?: number;
   activeRouteId?: string;
@@ -101,6 +103,8 @@ const OPTIONAL_NUMBER_FIELDS = [
   "currentStopIndex",
   "delayMinutes",
   "matchConfidence",
+  "mapMatchSeq",
+  "mapMatchSampledAt",
   "distanceToActiveRoute",
   "routeVersion",
 ] as const;
@@ -211,6 +215,12 @@ function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
   if (
     typeof bus.routeVersion === "number" &&
     (!Number.isSafeInteger(bus.routeVersion) || bus.routeVersion <= 0)
+  ) {
+    return false;
+  }
+  if (
+    typeof bus.mapMatchSeq === "number" &&
+    !Number.isSafeInteger(bus.mapMatchSeq)
   ) {
     return false;
   }

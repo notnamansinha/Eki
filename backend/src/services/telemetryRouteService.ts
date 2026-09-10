@@ -581,6 +581,13 @@ async function activateReroute(
       offRouteSampleCount: 0,
       rerouteRequestId: null,
       rerouteCompletedAt: { ".sv": "timestamp" },
+      ...(telemetryIsCurrent(live, sample)
+        ? {
+            mapMatchUpdatedAt: { ".sv": "timestamp" },
+            mapMatchSeq: sample.seq,
+            mapMatchSampledAt: sample.timestamp,
+          }
+        : {}),
       ...(match && telemetryIsCurrent(live, sample)
         ? {
             matchedLocation: matchedLocation(match, sample, routeVersion),
@@ -786,6 +793,8 @@ async function processTelemetryRoute(
       routeMatchHistory: trajectory,
       offRouteSampleCount: adherence.offRouteSampleCount,
       mapMatchUpdatedAt: { ".sv": "timestamp" },
+      mapMatchSeq: acceptedSample.seq,
+      mapMatchSampledAt: acceptedSample.timestamp,
       matchConfidence: match?.matchConfidence ?? 0,
       distanceToActiveRoute:
         match ? Number(match.distanceToRouteM.toFixed(1)) : null,
