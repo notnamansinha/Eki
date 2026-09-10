@@ -11,7 +11,6 @@ import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import { SerializedChangeWriter } from "./serializedChangeWriter";
 import { reduceTripState } from "./tripStateReducer";
 import {
-  isRideDirection,
   normalizeRideDirection,
   stopsInRideDirection,
 } from "../lib/rideDirection";
@@ -58,18 +57,7 @@ interface TelemetrySample {
 }
 const processedTelemetry = new LruCache<string, TelemetrySample>(MAX_CACHE_ENTRIES);
 
-function lifecycleDirection(data: Record<string, unknown>) {
-  if (isRideDirection(data.direction)) return data.direction;
-  // Existing durable sessions from before direction-pending existed retain the
-  // historical forward default. New unresolved nodes are explicit (`null` or
-  // directionState=pending), and device-only nodes never acquire that default.
-  if (
-    data.direction === null ||
-    data.directionState === "pending" ||
-    typeof data.sessionId !== "string"
-  ) {
-    return null;
-  }
+export function lifecycleDirection(data: Record<string, unknown>) {
   return normalizeRideDirection(data.direction);
 }
 
@@ -780,6 +768,7 @@ export function startTripStateEngine(): () => Promise<void> {
           ) {
             return;
           }
+          if (lifecycleDirection(live) !== direction) return;
           if (
             live.tripState === "completed" ||
             live.deviceState === "offline"

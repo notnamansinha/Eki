@@ -531,6 +531,7 @@ function RouteEditor({
               polyline={state.mode === "edit" ? state.polyline : undefined}
               color={state.color}
               hasBuses={false}
+              direction="forward"
             />
             {state.stops.map((stop, i) => (
               <AdvancedMarker

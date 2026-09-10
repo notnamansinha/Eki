@@ -1,7 +1,8 @@
 export type RideDirection = "forward" | "reverse";
 
-export function normalizeRideDirection(value: unknown): RideDirection {
-  return value === "reverse" ? "reverse" : "forward";
+/** Resolve only an explicit wire value; unresolved input must stay pending. */
+export function normalizeRideDirection(value: unknown): RideDirection | null {
+  return isRideDirection(value) ? value : null;
 }
 
 export function isRideDirection(value: unknown): value is RideDirection {

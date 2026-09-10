@@ -7,9 +7,18 @@ import {
 import { reduceTripState } from "../services/tripStateReducer";
 
 describe("ride direction", () => {
-  it("defaults legacy rides to forward and reverses without mutating the route", () => {
+  it("keeps missing, null, and invalid values unresolved", () => {
+    expect(normalizeRideDirection(undefined)).toBeNull();
+    expect(normalizeRideDirection(null)).toBeNull();
+    expect(normalizeRideDirection("")).toBeNull();
+    expect(normalizeRideDirection("sideways")).toBeNull();
+    expect(normalizeRideDirection(123)).toBeNull();
+    expect(normalizeRideDirection("forward")).toBe("forward");
+    expect(normalizeRideDirection("reverse")).toBe("reverse");
+  });
+
+  it("orders resolved rides without mutating the route", () => {
     const source = ["A", "M", "Z"];
-    expect(normalizeRideDirection(undefined)).toBe("forward");
     expect(stopsInRideDirection(source, "forward")).toEqual(["A", "M", "Z"]);
     expect(stopsInRideDirection(source, "reverse")).toEqual(["Z", "M", "A"]);
     expect(source).toEqual(["A", "M", "Z"]);

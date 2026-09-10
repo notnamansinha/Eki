@@ -19,6 +19,17 @@ const LIVE_ROUTE_CONTEXT_FIELDS = [
   "rerouteFailedAt",
 ] as const;
 
+/** True when any direction-derived matching or rerouting state is present. */
+export function hasLiveRouteContext(
+  live: Record<string, unknown> | null,
+): boolean {
+  return Boolean(
+    live && LIVE_ROUTE_CONTEXT_FIELDS.some((field) =>
+      Object.prototype.hasOwnProperty.call(live, field)
+    ),
+  );
+}
+
 /**
  * Preserve physical telemetry and lifecycle data while removing every route
  * match/reroute field owned by the previous ride session.

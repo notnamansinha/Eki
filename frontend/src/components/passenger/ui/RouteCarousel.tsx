@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { RouteData } from '@/hooks/useRoutes';
+import {
+  routeInRideDirectionState,
+  type RideDirectionState,
+} from '@/lib/rideDirection';
 
 interface RouteCarouselProps {
   routes: RouteData[];
@@ -7,9 +11,10 @@ interface RouteCarouselProps {
   onSwipe?: (id: string) => void;
   onClick: (id: string) => void;
   getActiveBusesCount: (routeId: string) => number;
+  getDirectionState: (routeId: string) => RideDirectionState;
 }
 
-export default function RouteCarousel({ routes, selectedRouteId, onClick, getActiveBusesCount }: RouteCarouselProps) {
+export default function RouteCarousel({ routes, selectedRouteId, onClick, getActiveBusesCount, getDirectionState }: RouteCarouselProps) {
   const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
@@ -33,9 +38,15 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
   return (
     <div className="w-full flex flex-col gap-4 pb-4">
       {liveRoutes.map((route) => {
-        const stops = route.stops ?? [];
-        const durationMins = route.duration ? Math.round(parseInt(route.duration) / 60) : (stops.length * 2); // Fallback estimation
-        const scheduleTime = now ? new Date(now + durationMins * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
+        const directionState = getDirectionState(route.id);
+        const directedRoute = routeInRideDirectionState(route, directionState);
+        const stops = directedRoute?.stops ?? [];
+        const durationMins = directedRoute?.duration
+          ? Math.round(parseInt(directedRoute.duration) / 60)
+          : (stops.length * 2);
+        const scheduleTime = directedRoute && now
+          ? new Date(now + durationMins * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : '--:--';
 
         return (
           <div
@@ -59,9 +70,13 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
                   >
                     {route.name}
                   </h3>
-                  {stops.length > 0 && (
+                  {directedRoute && stops.length > 0 ? (
                     <p className="text-[14.5px] font-bold mt-2 line-clamp-1" style={{ color: "var(--text-secondary)" }}>
                       {stops[0].name.split(',')[0]} <span className="mx-1 opacity-60">&rarr;</span> {stops[stops.length - 1].name.split(',')[0]}
+                    </p>
+                  ) : (
+                    <p className="text-[14.5px] font-bold mt-2" style={{ color: "var(--text-secondary)" }}>
+                      Direction pending
                     </p>
                   )}
                 </div>
@@ -70,14 +85,14 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
                   <div className="flex items-center gap-2">
 
                     <div className="flex items-baseline gap-1.5 text-[11.5px] font-black whitespace-nowrap" style={{ color: "var(--text-tertiary)" }}>
-                      <span>{stops.length} stops</span>
+                      <span>{directedRoute ? `${stops.length} stops` : "Stops pending"}</span>
                       <span className="text-[10px] opacity-30 self-center">&bull;</span>
                       <span className="text-white">Scheduled: {scheduleTime}</span>
                     </div>
                   </div>
                   
                   <div className="flex items-baseline gap-1.5 text-[13px] font-black tracking-wider uppercase transition-opacity shrink-0" style={{ color: "var(--accent)" }}>
-                    TRACK ROUTE <span className="text-[15px]">&rarr;</span>
+                    {directedRoute ? "TRACK ROUTE" : "VIEW STATUS"} <span className="text-[15px]">&rarr;</span>
                   </div>
                 </div>
               </div>

@@ -24,6 +24,7 @@ vi.mock("../lib/firebaseAdmin", () => ({
 }));
 import {
   authenticateDeviceCredentials,
+  durableLifecycle,
   evaluateDeviceRateLimit,
   freshestDelayMinutes,
   hashDeviceSecret,
@@ -36,6 +37,29 @@ import {
   telemetryUpdateGapMs,
   verifyDeviceSecretHash,
 } from "./deviceTelemetryService";
+
+describe("durable ride restoration direction", () => {
+  const activeRide = {
+    status: "active",
+    sessionId: "session_1",
+    driverId: "driver_1",
+    tripState: "in_service",
+  };
+
+  it.each([undefined, null, "", "sideways", 123])(
+    "does not restore unresolved direction %p as forward",
+    (direction) => {
+      expect(durableLifecycle({ ...activeRide, direction })).toBeNull();
+    },
+  );
+
+  it("restores only explicit directions", () => {
+    expect(durableLifecycle({ ...activeRide, direction: "forward" }))
+      .toMatchObject({ direction: "forward" });
+    expect(durableLifecycle({ ...activeRide, direction: "reverse" }))
+      .toMatchObject({ direction: "reverse" });
+  });
+});
 
 beforeEach(() => {
   harness.collections.clear();

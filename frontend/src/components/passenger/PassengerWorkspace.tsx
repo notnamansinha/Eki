@@ -29,9 +29,9 @@ import {
   type TrackedRide,
 } from "@/lib/rideFeedbackEligibility";
 import {
-  directionLabel,
+  directionLabelState,
   normalizeRideDirection,
-  routeInRideDirection,
+  routeInRideDirectionState,
 } from "@/lib/rideDirection";
 import CustomSelect from "@/components/ui/CustomSelect";
 import { isLiveChatDeviceOnline } from "@/lib/activeBusEntries";
@@ -172,10 +172,8 @@ export default function PassengerWorkspace() {
     busesOnRoute[0];
   const activeBusOnRouteId = activeBusOnRoute?.busId;
   const activeSessionId = activeBusOnRoute?.sessionId;
-  const rideDirection = normalizeRideDirection(activeBusOnRoute?.direction);
-  const directedRoute = activeRoute
-    ? routeInRideDirection(activeRoute, rideDirection)
-    : undefined;
+  const rideDirectionState = normalizeRideDirection(activeBusOnRoute?.direction);
+  const directedRoute = routeInRideDirectionState(activeRoute, rideDirectionState);
   const effectiveDestinationStopId =
     directedRoute?.stops?.some((stop) => stop.id === selectedDestinationStopId)
       ? selectedDestinationStopId
@@ -363,9 +361,12 @@ export default function PassengerWorkspace() {
                   <RouteCarousel
                     routes={displayRoutes}
                     selectedRouteId={effectiveRouteId}
-                    onClick={handleRouteSelect}
-                    getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
-                  />
+                     onClick={handleRouteSelect}
+                     getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
+                     getDirectionState={(routeId) => normalizeRideDirection(
+                       activeBuses.find((bus) => bus.routeId === routeId)?.direction,
+                     )}
+                   />
                 </>
               ) : (
                 <div className="rounded-xl p-8 text-center mx-1 flex flex-col items-center justify-center gap-2"
@@ -394,7 +395,49 @@ export default function PassengerWorkspace() {
 
         {/* ── TRACKING VIEW ── */}
         <div className={`absolute inset-0 z-20 pointer-events-none transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0"}`}>
-          {!endedMessage && directedRoute && targetStop ? (
+          {!endedMessage && activeBusOnRoute && rideDirectionState === "pending" ? (
+            <div
+              className="absolute inset-0 z-30 flex flex-col px-4 pt-safe pointer-events-auto"
+              style={{ background: "var(--surface-0)" }}
+            >
+              <div className="mx-auto flex w-full max-w-lg items-start gap-4 pt-12">
+                <button
+                  onClick={() => setCurrentView("home")}
+                  className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90"
+                  style={{ backgroundColor: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}
+                  aria-label="Back to home"
+                >
+                  <ArrowLeft className="w-5 h-5" style={{ color: "var(--text-secondary)" }} />
+                </button>
+                <div className="min-w-0 flex-1 rounded-2xl p-4" style={{ background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
+                  {busesOnRoute.length > 1 && (
+                    <select
+                      value={passengerLiveBusSelectionKey(activeBusOnRoute)}
+                      onChange={(event) => setSelectedLiveBusKey(event.target.value)}
+                      className="mb-3 w-full rounded-lg px-3 py-2 text-xs font-semibold outline-none"
+                      style={{ background: "var(--surface-3)", color: "var(--text-primary)" }}
+                      aria-label="Live bus"
+                    >
+                      {busesOnRoute.map((bus) => (
+                        <option key={passengerLiveBusSelectionKey(bus)} value={passengerLiveBusSelectionKey(bus)}>
+                          Bus {bus.busId} · {directionLabelState(normalizeRideDirection(bus.direction), activeRoute?.stops ?? [])}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--accent)" }}>
+                    Direction pending
+                  </p>
+                  <p className="mt-1 text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>
+                    Waiting for the bus to reach a route endpoint.
+                  </p>
+                  <p className="mt-2 text-xs" style={{ color: "var(--text-tertiary)" }}>
+                    Stops, destinations, route progress, timeline and ETAs will appear once travel direction is resolved.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : !endedMessage && directedRoute && targetStop ? (
             <>
               {/* Top bar: back + route info */}
               <div className="absolute top-0 w-full z-40 pt-safe px-4 pb-6 pointer-events-auto"
@@ -433,7 +476,7 @@ export default function PassengerWorkspace() {
                         >
                           {busesOnRoute.map((bus) => (
                             <option key={passengerLiveBusSelectionKey(bus)} value={passengerLiveBusSelectionKey(bus)}>
-                              Bus {bus.busId} · {directionLabel(normalizeRideDirection(bus.direction), activeRoute?.stops ?? [])}
+                              Bus {bus.busId} · {directionLabelState(normalizeRideDirection(bus.direction), activeRoute?.stops ?? [])}
                             </option>
                           ))}
                         </select>
@@ -485,7 +528,7 @@ export default function PassengerWorkspace() {
                         Live
                       </p>
                       <p className="text-[17px] font-semibold truncate leading-tight" style={{ color: "var(--text-primary)" }}>
-                        {directedRoute.name} · {directionLabel(rideDirection, activeRoute?.stops ?? [])}
+                        {directedRoute.name} · {directionLabelState(rideDirectionState, activeRoute?.stops ?? [])}
                       </p>
                     </div>
                   )}

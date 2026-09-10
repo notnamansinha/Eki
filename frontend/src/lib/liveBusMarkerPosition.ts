@@ -1,6 +1,7 @@
 import { hasValidBusCoordinates } from "./liveBusFreshness";
 import type { LatLng } from "./polyline";
 import type { ActiveBusEntry } from "./activeBusEntries";
+import { directionsMatch } from "./rideDirection";
 
 const MIN_DISPLAY_MATCH_CONFIDENCE = 0.45;
 
@@ -13,6 +14,8 @@ type LiveBusPositionInput = Pick<
   | "matchedLocation"
   | "routeState"
   | "routeVersion"
+  | "direction"
+  | "routeDirection"
 >;
 
 /**
@@ -28,6 +31,7 @@ export function liveBusMarkerPosition(
   const matched = input.matchedLocation;
   if (
     matched &&
+    directionsMatch(input.direction, input.routeDirection) &&
     (input.routeState === "ON_ROUTE" || input.routeState === "ON_NEW_ROUTE") &&
     matched.matchConfidence >= MIN_DISPLAY_MATCH_CONFIDENCE &&
     matched.seq === input.rawLocation?.seq &&

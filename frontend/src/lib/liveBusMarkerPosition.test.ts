@@ -31,6 +31,8 @@ describe("live bus marker position", () => {
       lat: 23.012441,
       lng: 72.458011,
       timestamp: 1_000,
+      direction: "forward",
+      routeDirection: "forward",
       routeState: "ON_ROUTE",
       routeVersion: 4,
       rawLocation: {
@@ -67,6 +69,8 @@ describe("live bus marker position", () => {
       lat: 23.012441,
       lng: 72.458011,
       timestamp: 1_000,
+      direction: "forward",
+      routeDirection: "forward",
       routeState: "ON_ROUTE",
       routeVersion: 4,
       rawLocation: {
@@ -102,6 +106,8 @@ describe("live bus marker position", () => {
         lat: 23.01,
         lng: 72.45,
         timestamp: 2_000,
+        direction: "forward",
+        routeDirection: "forward",
         routeState,
         routeVersion: 2,
         matchedLocation: {
@@ -126,6 +132,8 @@ describe("live bus marker position", () => {
       lat: 23.01,
       lng: 72.45,
       timestamp: 2_000,
+      direction: "forward",
+      routeDirection: "forward",
       routeState: "ON_NEW_ROUTE",
       routeVersion: 3,
       matchedLocation: {
@@ -143,4 +151,40 @@ describe("live bus marker position", () => {
       },
     })).toEqual({ lat: 23.01, lng: 72.45 });
   });
+
+  it.each([undefined, null, "", "sideways", 123])(
+    "uses raw telemetry while direction %p is pending",
+    (direction) => {
+      expect(liveBusMarkerPosition({
+        lat: 23.01,
+        lng: 72.45,
+        timestamp: 2_000,
+        direction,
+        routeDirection: "forward",
+        routeState: "ON_ROUTE",
+        routeVersion: 2,
+        rawLocation: {
+          lat: 23.01,
+          lng: 72.45,
+          speed: 10,
+          heading: 90,
+          motionState: "moving",
+          seq: 2,
+          sampledAt: 2_000,
+        },
+        matchedLocation: {
+          lat: 23,
+          lng: 72,
+          segmentIndex: 2,
+          segmentFraction: 0.2,
+          alongRouteDistanceM: 200,
+          distanceToRouteM: 2,
+          matchConfidence: 0.9,
+          seq: 2,
+          sampledAt: 2_000,
+          routeVersion: 2,
+        },
+      })).toEqual({ lat: 23.01, lng: 72.45 });
+    },
+  );
 });

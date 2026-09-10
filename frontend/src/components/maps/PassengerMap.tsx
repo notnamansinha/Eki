@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
-import { RouteStop, RouteData } from "@/hooks/useRoutes";
+import { RouteStop } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
 import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
 import { subscribeLiveBusesByRoute } from "@/lib/liveBusStore";
@@ -15,7 +15,10 @@ import {
 
 import { WifiOff, Navigation, Navigation2 } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
-import { normalizeRideDirection } from "@/lib/rideDirection";
+import {
+  directionsMatch,
+  type DirectedRouteData,
+} from "@/lib/rideDirection";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
 import {
@@ -29,7 +32,7 @@ import { useTelemetryRenderTrace } from "@/hooks/useTelemetryRenderTrace";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
-  route: RouteData | null;
+  route: DirectedRouteData | null;
   resumeGeneration?: number;
 }
 
@@ -127,7 +130,7 @@ function PassengerMapInner({
   resumeGeneration = 0,
 }: {
   targetStop: RouteStop;
-  route: RouteData;
+  route: DirectedRouteData;
   resumeGeneration?: number;
 }) {
   const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map<string, IncomingBusData>());
@@ -171,8 +174,7 @@ function PassengerMapInner({
     for (const bus of buses.values()) {
       if (
         bus.routeSource === "dynamic-reroute" &&
-        normalizeRideDirection(bus.routeDirection) ===
-          normalizeRideDirection(route.rideDirection)
+        directionsMatch(bus.routeDirection, route.rideDirection)
       ) {
         const geometry = dynamicGeometries.get(bus.busId);
         if (geometry) {
@@ -251,8 +253,7 @@ function PassengerMapInner({
           if (
             !normalized ||
             normalized.routeId !== currentRoute.id ||
-            normalizeRideDirection(normalized.direction) !==
-              normalizeRideDirection(currentRoute.rideDirection)
+            !directionsMatch(normalized.direction, currentRoute.rideDirection)
           ) return;
           const bus: IncomingBusData = {
             ...normalized,
@@ -505,14 +506,14 @@ function PassengerMapInner({
         >
           <MapCenterer target={centerTarget} isCentered={isCentered} />
           <DirectionsRoute
-            key={`${route.id}:${route.rideDirection ?? "forward"}:${activeRoute?.version ?? "configured"}`}
+            key={`${route.id}:${route.rideDirection}:${activeRoute?.version ?? "configured"}`}
             routeId={route.id}
             stops={routeStops}
             polyline={activeRoute?.polyline ?? route.polyline}
             polylineQuality={activeRoute ? "HIGH_QUALITY" : route.polylineQuality}
             color={route.color || "#3b82f6"}
             hasBuses={buses.size > 0}
-            direction={route.rideDirection ?? "forward"}
+            direction={route.rideDirection}
           />
 
           {/* Passenger location dot */}

@@ -86,7 +86,7 @@ vi.mock("./tripStateReducer", () => ({
   STOP_GEOFENCE_M: 20,
 }));
 
-import { startTripStateEngine } from "./tripStateEngine";
+import { lifecycleDirection, startTripStateEngine } from "./tripStateEngine";
 
 async function flushMicrotasks(turns = 20): Promise<void> {
   for (let index = 0; index < turns; index += 1) await Promise.resolve();
@@ -156,6 +156,7 @@ describe("trip-state engine lifecycle", () => {
         routeId: " route_2 ",
         driverId: "driver-1",
         sessionId: "session-1",
+        direction: "forward",
         status: "active",
         tripState: "in_service",
         currentStopIndex: 0,
@@ -271,6 +272,7 @@ describe("trip-state engine lifecycle", () => {
         routeId: "route_2",
         driverId: "driver-1",
         sessionId: "session-1",
+        direction: "forward",
         status: "active",
         tripState: "in_service",
         currentStopIndex: 0,
@@ -343,6 +345,7 @@ describe("trip-state engine lifecycle", () => {
         routeId: "route_2",
         driverId: "driver-1",
         sessionId: "session-1",
+        direction: "forward",
         status: "active",
         tripState: "in_service",
         currentStopIndex: 0,
@@ -398,6 +401,7 @@ describe("trip-state engine lifecycle", () => {
         routeId,
         driverId: "driver-1",
         sessionId,
+        direction: "forward",
         status: "active",
         tripState: routeId === "route_old" ? "in_service" : "pre_departure",
         currentStopIndex: 0,
@@ -755,6 +759,7 @@ describe("trip-state engine lifecycle", () => {
       routeId: "route_2",
       driverId: "driver-1",
       sessionId: "session-1",
+      direction: "forward",
       status: "active",
       tripState: "pre_departure",
       currentStopIndex: 0,
@@ -825,6 +830,7 @@ describe("trip-state engine lifecycle", () => {
       busId: "bus_1",
       routeId: "route_2",
       sessionId: "session-1",
+      direction: "forward",
       status: "active",
       deviceState: "online",
       tripState: "pre_departure",
@@ -839,5 +845,20 @@ describe("trip-state engine lifecycle", () => {
     expect(store.nodeValue().tripState).toBe("in_service");
     expect(store.nodeValue().currentStopIndex).toBe(1);
     await stop();
+  });
+});
+
+describe("trip-state direction boundary", () => {
+  it.each([undefined, null, "", "sideways", 123])(
+    "keeps unresolved direction %p pending",
+    (direction) => {
+      expect(lifecycleDirection({ sessionId: "legacy-session", direction }))
+        .toBeNull();
+    },
+  );
+
+  it("accepts only explicit travel directions", () => {
+    expect(lifecycleDirection({ direction: "forward" })).toBe("forward");
+    expect(lifecycleDirection({ direction: "reverse" })).toBe("reverse");
   });
 });
