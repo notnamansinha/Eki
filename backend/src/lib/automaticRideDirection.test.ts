@@ -49,6 +49,10 @@ describe("automatic ride direction", () => {
     })).toBeNull();
     expect(inferRideDirectionFromTelemetry(stops, {
       ...telemetry,
+      gpsHdop: -1,
+    })).toBeNull();
+    expect(inferRideDirectionFromTelemetry(stops, {
+      ...telemetry,
       timestamp: 39_999,
     })).toBeNull();
     expect(inferRideDirectionFromTelemetry(stops, {

@@ -251,8 +251,9 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
       SAFE_ID.test(current.sessionId)
     ) {
       const direction = isRideDirection(current.direction) ? current.direction : null;
-      const sessionStatus =
-        current.tripState === "pre_departure" ? "armed" : "active";
+      const sessionStatus = direction
+        ? current.tripState === "pre_departure" ? "armed" : "active"
+        : "pending";
       const lockRef = activeBusLockRef(assignment.busId);
       const lockClaimed = await db.runTransaction(async (transaction) => {
         const lock = await transaction.get(lockRef);
@@ -351,6 +352,12 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
       return;
     }
     const routeEndpointVersion = endpointSnapshotVersion(naturalStops);
+    if (routeEndpointVersion === null) {
+      res.status(422).json({
+        error: "This route requires at least two valid ordered stops.",
+      });
+      return;
+    }
     const inferredDirection = inferRideDirectionFromTelemetry(
       naturalStops,
       {
@@ -373,7 +380,6 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
       : [];
     const origin = stops[0] ?? null;
     const destination = stops.at(-1) ?? null;
-    const initialTripState = requestedDirection ? "in_service" : "pre_departure";
     const proposedSessionRef = db.collection("ride_sessions").doc();
     const lockRef = activeBusLockRef(assignment.busId);
     const proposedArmedAt = Date.now();
@@ -409,13 +415,19 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           return null;
         }
         const direction = existingDirection ?? requestedDirection;
+        const resolvedStops = direction
+          ? stopsInRideDirection(naturalStops, direction)
+          : [];
+        const resolvedOrigin = resolvedStops[0] ?? null;
+        const resolvedDestination = resolvedStops.at(-1) ?? null;
         if (direction && !existingDirection) {
           transaction.set(db.collection("ride_sessions").doc(lockData.sessionId), {
             direction,
             directionState: "resolved",
             directionEndpointVersion: routeEndpointVersion,
-            originStopId: typeof origin?.id === "string" ? origin.id : null,
-            destinationStopId: typeof destination?.id === "string" ? destination.id : null,
+            originStopId: typeof resolvedOrigin?.id === "string" ? resolvedOrigin.id : null,
+            destinationStopId:
+              typeof resolvedDestination?.id === "string" ? resolvedDestination.id : null,
             directionResolvedAt: FieldValue.serverTimestamp(),
           }, { merge: true });
           transaction.set(lockRef, {
@@ -470,7 +482,12 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
     const sessionRef = db.collection("ride_sessions").doc(lockClaim.sessionId);
     const armedAt = lockClaim.armedAt;
     const direction = lockClaim.direction;
-    let claimedTripState = initialTripState;
+    const claimedStops = direction
+      ? stopsInRideDirection(naturalStops, direction)
+      : [];
+    const claimedOrigin = claimedStops[0] ?? null;
+    const claimedDestination = claimedStops.at(-1) ?? null;
+    let claimedTripState = direction ? "in_service" : "pre_departure";
     let claimedStopIndex = 0;
     let claimedHasDepartedOrigin = false;
     let claimedDelayMinutes = 0;
@@ -521,8 +538,9 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           direction,
           directionState: direction ? "resolved" : "pending",
           directionEndpointVersion: direction ? routeEndpointVersion : null,
-          originStopId: typeof origin?.id === "string" ? origin.id : null,
-          destinationStopId: typeof destination?.id === "string" ? destination.id : null,
+          originStopId: typeof claimedOrigin?.id === "string" ? claimedOrigin.id : null,
+          destinationStopId:
+            typeof claimedDestination?.id === "string" ? claimedDestination.id : null,
           sessionId: sessionRef.id,
           status: "active",
           deviceState: "online",
@@ -579,8 +597,9 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         direction,
         directionState: direction ? "resolved" : "pending",
         directionEndpointVersion: direction ? routeEndpointVersion : null,
-        originStopId: typeof origin?.id === "string" ? origin.id : null,
-        destinationStopId: typeof destination?.id === "string" ? destination.id : null,
+        originStopId: typeof claimedOrigin?.id === "string" ? claimedOrigin.id : null,
+        destinationStopId:
+          typeof claimedDestination?.id === "string" ? claimedDestination.id : null,
         ...(direction && claimedTripState === "in_service" && lockClaim.created
           ? {
               startTime: armedAt,
@@ -588,8 +607,8 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
               stopsReached: {
                 0: {
                   stopIndex: 0,
-                  stopId: typeof origin?.id === "string" ? origin.id : "",
-                  stopName: typeof origin?.name === "string" ? origin.name : "",
+                  stopId: typeof claimedOrigin?.id === "string" ? claimedOrigin.id : "",
+                  stopName: typeof claimedOrigin?.name === "string" ? claimedOrigin.name : "",
                   timestamp: FieldValue.serverTimestamp(),
                 },
               },
@@ -605,8 +624,9 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           routeId: assignment.routeId,
           status: "active",
           direction,
-          originStopId: typeof origin?.id === "string" ? origin.id : null,
-          destinationStopId: typeof destination?.id === "string" ? destination.id : null,
+          originStopId: typeof claimedOrigin?.id === "string" ? claimedOrigin.id : null,
+          destinationStopId:
+            typeof claimedDestination?.id === "string" ? claimedDestination.id : null,
           tripState: claimedTripState,
           currentStopIndex: claimedStopIndex,
           hasDepartedOrigin: claimedHasDepartedOrigin,
@@ -626,9 +646,9 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
 
     res.status(lockClaim.created ? 201 : 200).json({
       sessionId: sessionRef.id,
-        resumed: !lockClaim.created,
-        direction,
-        pending: !direction,
+      resumed: !lockClaim.created,
+      direction,
+      pending: !direction,
     });
   } catch (error) {
     console.error("[Shifts] Failed to start shift:", error);

@@ -77,6 +77,7 @@ export function inferRideDirectionFromTelemetry(
     telemetry.motionState !== "stopped" ||
     typeof telemetry.gpsHdop !== "number" ||
     !Number.isFinite(telemetry.gpsHdop) ||
+    telemetry.gpsHdop < 0 ||
     telemetry.gpsHdop > DIRECTION_INFERENCE_MAX_HDOP
   ) {
     return null;

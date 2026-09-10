@@ -218,6 +218,19 @@ function resolvedDirection(value: unknown): RideDirection | null {
   return isRideDirection(value) ? value : null;
 }
 
+/**
+ * Only telemetry-resolved, session-bound directions need the one-time
+ * Firestore projection repair. Directions created by the shift endpoint are
+ * already persisted atomically and therefore have no explicit false marker.
+ */
+export function directionProjectionNeedsSync(
+  live: Record<string, unknown>,
+): boolean {
+  return live.directionFirestoreSynced === false &&
+    typeof live.sessionId === "string" &&
+    typeof live.driverId === "string";
+}
+
 function directionResolutionIsEligible(
   live: Record<string, unknown>,
   assignment: DeviceAssignment,
@@ -242,14 +255,14 @@ async function persistResolvedSessionDirection(
   live: Record<string, unknown>,
   route: StoredRoute,
   direction: RideDirection,
-): Promise<void> {
-  if (typeof live.sessionId !== "string" || typeof live.driverId !== "string") return;
+): Promise<boolean> {
+  if (typeof live.sessionId !== "string" || typeof live.driverId !== "string") return false;
   const sessionRef = db.collection("ride_sessions").doc(live.sessionId);
   const lockRef = db.collection("_active_bus_locks").doc(assignment.busId);
   const stops = stopsInRideDirection(route.stops, direction);
   const origin = stops[0];
   const destination = stops.at(-1);
-  if (!origin || !destination) return;
+  if (!origin || !destination) return false;
 
   const persisted = await db.runTransaction(async (transaction) => {
     const [session, lock] = await Promise.all([
@@ -271,13 +284,24 @@ async function persistResolvedSessionDirection(
     ) {
       return false;
     }
+    const lockData = lock.data();
+    const alreadySynchronized =
+      sessionDirection === direction &&
+      sessionData?.directionState === "resolved" &&
+      sessionData?.directionEndpointVersion === route.endpointVersion &&
+      sessionData?.originStopId === origin.id &&
+      sessionData?.destinationStopId === destination.id &&
+      lockData?.direction === direction;
+    if (alreadySynchronized) return true;
     transaction.set(sessionRef, {
       direction,
       directionState: "resolved",
       directionEndpointVersion: route.endpointVersion,
       originStopId: origin.id,
       destinationStopId: destination.id,
-      directionResolvedAt: FieldValue.serverTimestamp(),
+      ...(sessionData?.directionResolvedAt == null
+        ? { directionResolvedAt: FieldValue.serverTimestamp() }
+        : {}),
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
     transaction.set(lockRef, {
@@ -286,9 +310,29 @@ async function persistResolvedSessionDirection(
     }, { merge: true });
     return true;
   });
-  if (!persisted) {
-    throw new Error("Pending direction no longer belongs to the current session.");
-  }
+  return persisted;
+}
+
+async function markDirectionProjectionSynchronized(
+  assignment: DeviceAssignment,
+  live: Record<string, unknown>,
+  route: StoredRoute,
+  direction: RideDirection,
+): Promise<void> {
+  const nodeKey = `${assignment.busId}_${assignment.routeId}`;
+  await rtdb.ref(`activeBuses/${nodeKey}`).transaction((current) => {
+    const currentLive = current as Record<string, unknown> | null;
+    if (
+      !currentLive ||
+      currentLive.sessionId !== live.sessionId ||
+      resolvedDirection(currentLive.direction) !== direction ||
+      currentLive.directionEndpointVersion !== route.endpointVersion ||
+      currentLive.directionFirestoreSynced !== false
+    ) {
+      return;
+    }
+    return { ...currentLive, directionFirestoreSynced: true };
+  });
 }
 
 async function resolvePendingDirection(
@@ -328,6 +372,8 @@ async function resolvePendingDirection(
       originStopId: origin.id,
       destinationStopId: destination.id,
       directionResolvedAt: { ".sv": "timestamp" },
+      directionFirestoreSynced:
+        typeof live.sessionId !== "string" || typeof live.driverId !== "string",
     };
   });
   const live = transaction.snapshot.val() as Record<string, unknown> | null;
@@ -632,6 +678,7 @@ async function processTelemetryRoute(
   const snapshot = await rtdb.ref(`activeBuses/${nodeKey}`).once("value");
   const initialLive = snapshot.val() as Record<string, unknown> | null;
   if (!telemetryIsCurrent(initialLive, sample)) return;
+  if (initialLive?.tripState === "completed") return;
   // Direction is bound to admin-managed endpoints, so a pending node must not
   // use a cached route snapshot while an administrator can still edit it.
   const route = await loadStoredRoute(
@@ -643,7 +690,16 @@ async function processTelemetryRoute(
   const resolution = await resolvePendingDirection(assignment, sample, route);
   if (!resolution?.direction) return;
   const { direction, live } = resolution;
-  await persistResolvedSessionDirection(assignment, live, route, direction);
+  if (directionProjectionNeedsSync(live)) {
+    const synchronized = await persistResolvedSessionDirection(
+      assignment,
+      live,
+      route,
+      direction,
+    );
+    if (!synchronized) return;
+    await markDirectionProjectionSynchronized(assignment, live, route, direction);
+  }
 
   const routeSessionId =
     typeof live?.sessionId === "string" ? live.sessionId : "device-only";

@@ -636,7 +636,9 @@ describe("production security configuration", () => {
     expect(firmware).toContain("credentialFaultActive = true");
     expect(firmware).toContain("WiFi.disconnect(true, false)");
     expect(firmware).toContain("WiFi.mode(WIFI_OFF)");
-    expect(firmware).toContain("if (!credentialFaultActive)");
+    expect(firmware).toContain(
+      "if (!credentialFaultActive && !httpsRetryIsPending())",
+    );
     expect(firmware).toContain("acknowledgeQueuedFix(fix.sequence)");
     expect(firmware).toContain("removeQueuedFix(fix.sequence)");
     expect(firmware).not.toContain("Preferences");
