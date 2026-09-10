@@ -72,6 +72,13 @@ The complete tracked template is [`frontend/env.production.example`](../frontend
 The strict production build fails when mandatory values are missing or when the
 backend URL is local/non-HTTPS.
 
+Before an RTDB migration or release, expose the backend and frontend database
+URLs only as environment variables and run `npm run verify:rtdb-instance`.
+Optionally set `RTDB_EXPECTED_REGION` to the approved region. The preflight
+prints only the verified region and fails if the two instance hosts differ;
+it never prints configuration URLs or credentials. See the
+[RTDB region decision](design/RTDB_REGION_LATENCY_DECISION.md).
+
 ## Firmware configuration
 
 Firmware has a separate ignored file, [`hardware/include/secrets.h`](../hardware/include/secrets.example.h)
