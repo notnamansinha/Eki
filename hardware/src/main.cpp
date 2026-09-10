@@ -86,8 +86,12 @@ constexpr double HDOP_REJECT_THRESHOLD = 4.0;
 constexpr uint32_t GNSS_UTC_MAX_AGE_MS = 2000;
 constexpr uint32_t GNSS_EPOCH_REFERENCE_MAX_AGE_MS = 24UL * 60 * 60 * 1000;
 constexpr uint32_t NTP_CROSS_CHECK_INTERVAL_MS = 6UL * 60 * 60 * 1000;
-constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
+constexpr uint32_t HTTP_TIMEOUT_MS = eki::telemetry::HTTP_REQUEST_TIMEOUT_MS;
 constexpr uint32_t WATCHDOG_TIMEOUT_MS = 25000;
+static_assert(
+  HTTP_TIMEOUT_MS < WATCHDOG_TIMEOUT_MS,
+  "A bounded HTTP request must leave time for the publisher watchdog."
+);
 // TelemetryFix grew when receiver HDOP and monotonic sequencing were added.
 // Keep the retained ring below the 6 KiB RTC-state budget with reset stats.
 constexpr size_t TELEMETRY_QUEUE_CAPACITY = 100;
@@ -265,6 +269,13 @@ uint32_t uartFifoOverflowCount = 0;
 uint32_t acceptedFixCount = 0;
 uint32_t rejectedFixCount = 0;
 uint32_t nmeaChecksumFailureCount = 0;
+uint32_t capturedFixCount = 0;
+uint32_t publishAttemptCount = 0;
+uint32_t scheduledHttpsRetryCount = 0;
+uint32_t lastCapturedEvidenceAt = 0;
+uint32_t lastAcceptedEvidenceAt = 0;
+bool captureEvidenceSeen = false;
+bool acceptedEvidenceSeen = false;
 
 struct HealthCounters {
   uint32_t uartBufferOverflows;
@@ -272,6 +283,13 @@ struct HealthCounters {
   uint32_t acceptedFixes;
   uint32_t rejectedFixes;
   uint32_t nmeaChecksumFailures;
+  uint32_t capturedFixes;
+  uint32_t publishAttempts;
+  uint32_t scheduledHttpsRetries;
+  uint32_t lastCapturedAt;
+  uint32_t lastAcceptedAt;
+  bool captureSeen;
+  bool acceptedSeen;
 };
 
 uint32_t elapsed(uint32_t since) {
@@ -420,9 +438,31 @@ void recordPublishResult(bool accepted) {
   portENTER_CRITICAL(&healthMetricsMux);
   if (accepted) {
     ++acceptedFixCount;
+    lastAcceptedEvidenceAt = millis();
+    acceptedEvidenceSeen = true;
   } else {
     ++rejectedFixCount;
   }
+  portEXIT_CRITICAL(&healthMetricsMux);
+}
+
+void recordCapturedFix() {
+  portENTER_CRITICAL(&healthMetricsMux);
+  ++capturedFixCount;
+  lastCapturedEvidenceAt = millis();
+  captureEvidenceSeen = true;
+  portEXIT_CRITICAL(&healthMetricsMux);
+}
+
+void recordPublishAttempt() {
+  portENTER_CRITICAL(&healthMetricsMux);
+  ++publishAttemptCount;
+  portEXIT_CRITICAL(&healthMetricsMux);
+}
+
+void recordHttpsRetry() {
+  portENTER_CRITICAL(&healthMetricsMux);
+  ++scheduledHttpsRetryCount;
   portEXIT_CRITICAL(&healthMetricsMux);
 }
 
@@ -434,6 +474,13 @@ HealthCounters healthCounters() {
     acceptedFixCount,
     rejectedFixCount,
     nmeaChecksumFailureCount,
+    capturedFixCount,
+    publishAttemptCount,
+    scheduledHttpsRetryCount,
+    lastCapturedEvidenceAt,
+    lastAcceptedEvidenceAt,
+    captureEvidenceSeen,
+    acceptedEvidenceSeen,
   };
   portEXIT_CRITICAL(&healthMetricsMux);
   return counters;
@@ -555,6 +602,13 @@ void scheduleHttpsRetry(uint32_t minimumDelayMs = 0) {
   lastHttpsFailureAt = millis();
   consecutiveHttpsFailures =
     min<uint8_t>(consecutiveHttpsFailures + 1, 6);
+  recordHttpsRetry();
+  Serial.printf(
+    "[HTTPS] Retry %u scheduled in %lums (minimum %lums).\n",
+    static_cast<unsigned>(consecutiveHttpsFailures),
+    static_cast<unsigned long>(httpsRetryDelayMs),
+    static_cast<unsigned long>(minimumDelayMs)
+  );
 }
 
 void resetHttpsRetry() {
@@ -1108,6 +1162,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
     return PublishResult::Dropped;
   }
 
+  recordPublishAttempt();
   HTTPClient http;
   http.setConnectTimeout(HTTP_TIMEOUT_MS);
   http.setTimeout(HTTP_TIMEOUT_MS);
@@ -1204,6 +1259,12 @@ PublishResult publishFix(const TelemetryFix &fix) {
   markOtaValidAfterBackendAcceptance();
 #endif
   Serial.printf(
+    "[HTTPS] Telemetry accepted in %lums (%u bytes, seq %u).\n",
+    static_cast<unsigned long>(elapsed(startedAt)),
+    static_cast<unsigned>(payloadLength),
+    static_cast<unsigned>(fix.sequence)
+  );
+  Serial.printf(
     "[RTDB] lat: %.6f | lng: %.6f\n",
     fix.lat,
     fix.lng
@@ -1243,6 +1304,32 @@ void publishRemoteDiagnostic() {
   const HealthCounters counters = healthCounters();
   const eki::reset::ResetStats resets = resetStats;
   const eki::connectivity::FaultCode fault = currentDeviceFault();
+  const uint32_t captureAgeMs = counters.captureSeen
+    ? elapsed(counters.lastCapturedAt)
+    : 0;
+  const uint32_t acceptedAgeMs = counters.acceptedSeen
+    ? elapsed(counters.lastAcceptedAt)
+    : 0;
+  const uint32_t retryAgeMs = elapsed(lastHttpsFailureAt);
+  const uint32_t retryRemainingMs = httpsRetryDelayMs > retryAgeMs
+    ? httpsRetryDelayMs - retryAgeMs
+    : 0;
+  // This serial evidence is intentionally kept out of the closed diagnostics
+  // schema until the backend capacity work defines which fields to retain.
+  // captureAgeMs describes an intentional heartbeat/GNSS gap; acceptedAgeMs,
+  // queue depth and retryRemainingMs describe delivery state.
+  Serial.printf(
+    "[Telemetry] Evidence captures=%u attempts=%u retries=%u captureSeen=%d captureAgeMs=%lu acceptedSeen=%d acceptedAgeMs=%lu queue=%u retryRemainingMs=%lu.\n",
+    static_cast<unsigned>(counters.capturedFixes),
+    static_cast<unsigned>(counters.publishAttempts),
+    static_cast<unsigned>(counters.scheduledHttpsRetries),
+    counters.captureSeen ? 1 : 0,
+    static_cast<unsigned long>(captureAgeMs),
+    counters.acceptedSeen ? 1 : 0,
+    static_cast<unsigned long>(acceptedAgeMs),
+    static_cast<unsigned>(queue.depth),
+    static_cast<unsigned long>(retryRemainingMs)
+  );
   JsonDocument document;
   document["firmwareVersion"] = EKI_FIRMWARE_VERSION;
   document["uptimeMs"] = millis();
@@ -1397,6 +1484,7 @@ void rememberCapturedFix(const TelemetryFix &fix) {
   lastCapturedMotionState = fix.motionState;
   lastCaptureAt = millis();
   hasCapturedLocation = true;
+  recordCapturedFix();
 }
 
 void evaluateTelemetry() {
@@ -1463,21 +1551,28 @@ void publisherTask(void *) {
 #endif
 
     bool drainedSample = false;
+    bool freshTelemetryQueued = false;
     if (WiFi.status() == WL_CONNECTED) {
       synchronizeClock();
-      if (clockIsSynchronized() && !httpsRetryIsPending()) {
+      if (clockIsSynchronized()) {
         TelemetryFix fix{};
         size_t staleDrops = 0;
         const int64_t minimumTimestamp =
           epochMilliseconds() - eki::telemetry::TELEMETRY_FRESHNESS_MARGIN_MS;
-        if (newestFreshFix(minimumTimestamp, fix, staleDrops)) {
-          if (staleDrops > 0) {
-            Serial.printf(
-              "[Telemetry] Dropped %u stale queued sample(s) before publish.\n",
-              static_cast<unsigned>(staleDrops)
-            );
-          }
-          if (!credentialFaultActive) {
+        const bool hasFreshFix = newestFreshFix(
+          minimumTimestamp,
+          fix,
+          staleDrops
+        );
+        if (staleDrops > 0) {
+          Serial.printf(
+            "[Telemetry] Dropped %u stale queued sample(s).\n",
+            static_cast<unsigned>(staleDrops)
+          );
+        }
+        if (hasFreshFix) {
+          freshTelemetryQueued = true;
+          if (!credentialFaultActive && !httpsRetryIsPending()) {
             const PublishResult result = publishFix(fix);
             if (result == PublishResult::Accepted) {
               acknowledgeQueuedFix(fix.sequence);
@@ -1490,14 +1585,12 @@ void publisherTask(void *) {
             }
             drainedSample = true;
           }
-        } else if (staleDrops > 0) {
-          Serial.printf(
-            "[Telemetry] Dropped %u stale queued sample(s); queue is empty.\n",
-            static_cast<unsigned>(staleDrops)
-          );
         }
       }
-      if (!drainedSample) {
+      // A diagnostics or OTA request can consume the same seven-second HTTP
+      // budget as telemetry. Defer it whenever a fresh fix is queued, even
+      // during retry backoff, so recovery always favors current telemetry.
+      if (!drainedSample && !freshTelemetryQueued) {
         publishRemoteDiagnostic();
 #if EKI_FLEET_BUILD
         checkForSignedFirmware();
@@ -1623,7 +1716,7 @@ void loop() {
   while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
   disciplineClockFromGnss();
 
-  if (elapsed(lastEvaluationAt) >= 1000) {
+  if (elapsed(lastEvaluationAt) >= eki::telemetry::TELEMETRY_EVALUATION_INTERVAL_MS) {
     lastEvaluationAt = millis();
     // Expire stale monotonic references while the 32-bit counter is still in
     // its current cycle, so rollover cannot make an old reference look fresh.

@@ -52,6 +52,8 @@ One latest projection per assigned bus/route. The key is an internal composite l
 | `driverId` | string | Authorized driver link |
 | `tripState` | `pre_departure` / `in_service` / `completed` | Server worker lifecycle |
 | `direction` | `forward` / `reverse` | Immutable session travel order; legacy nodes default forward |
+| `directionState`, `directionEndpointVersion` | string | Pending/resolved state and the endpoint snapshot that was used for inference |
+| `directionFirestoreSynced` | boolean | `false` only while a telemetry-resolved session direction still needs its one-time Firestore projection; `true` after synchronization |
 | `originStopId`, `destinationStopId` | string | Endpoints for this direction |
 | `completedAt`, `turnaroundEligibleAt` | epoch ms | Completion and earliest automatic opposite-direction arm time; removed when the next session activates |
 | `turnaroundClaimId`, `turnaroundClaimedAt` | string / epoch ms | Short-lived cross-replica automatic-turnaround claim; removed after activation or failed durable claim |
