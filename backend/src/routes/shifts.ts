@@ -5,6 +5,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { inferRideDirectionFromTelemetry } from "../lib/automaticRideDirection";
 import { withoutLiveRouteContext } from "../lib/liveRouteContext";
+import { singleRouteParam } from "../lib/requestParams";
 import {
   isRideDirection,
   stopsInRideDirection,
@@ -676,8 +677,8 @@ router.post("/stop", requireAuth, async (req: AuthenticatedRequest, res: Respons
 });
 
 router.delete("/:sessionId/messages", requireAdmin, async (req, res) => {
-  const sessionId = req.params.sessionId;
-  if (!SAFE_ID.test(sessionId)) {
+  const sessionId = singleRouteParam(req.params.sessionId);
+  if (sessionId === null || !SAFE_ID.test(sessionId)) {
     res.status(400).json({ error: "Invalid session ID." });
     return;
   }
@@ -700,8 +701,8 @@ router.delete("/:sessionId/messages", requireAdmin, async (req, res) => {
 });
 
 router.delete("/:sessionId/history", requireAdmin, async (req, res) => {
-  const sessionId = req.params.sessionId;
-  if (!SAFE_ID.test(sessionId)) {
+  const sessionId = singleRouteParam(req.params.sessionId);
+  if (sessionId === null || !SAFE_ID.test(sessionId)) {
     res.status(400).json({ error: "Invalid session ID." });
     return;
   }
