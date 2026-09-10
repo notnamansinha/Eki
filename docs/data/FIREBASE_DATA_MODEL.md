@@ -37,7 +37,8 @@ One latest projection per assigned bus/route. The key is an internal composite l
 | `matchConfidence`, `distanceToActiveRoute` | number | Latest matcher confidence (0–1) and raw distance in metres |
 | `routeState` | enum | `ON_ROUTE`, `POSSIBLE_OFF_ROUTE`, `OFF_ROUTE`, `REROUTING`, or `ON_NEW_ROUTE` |
 | `activeRouteId` | string | Authoritative configured/dynamic matching-context label; route geometry is NOT on this hot node (see sibling store below) |
-| `routeVersion`, `routeSource`, `routeDirection`, `routeSessionId` | number/string | Atomic route identity; version increments on session/direction/reroute changes |
+| `routeVersion`, `routeSource`, `routeDirection`, `routeSessionId` | number/string | Atomic live-route identity; version increments on session/direction/reroute changes |
+| `routeGeometryVersion` | non-negative integer | Firestore configured-geometry revision used by this live context |
 | `routeMatchHistory` | array | Bounded last four accepted points used to derive recent trajectory heading |
 | `speed` | number | km/h, 0–200 |
 | `heading` | number | degrees, 0–360 |
@@ -111,6 +112,9 @@ Owner can read. All client writes are denied. `POST /api/users/bootstrap` transa
 | `polyline`, `forwardPolyline`, `reversePolyline` | string | Legacy/forward geometry plus independently routed legal road geometry for each direction |
 | `distanceMeters`, `forwardDistanceMeters`, `reverseDistanceMeters` | number | Forward-compatible and direction-specific Routes distances |
 | `duration`, `forwardDuration`, `reverseDuration` | string | Forward-compatible and direction-specific durations such as `1200s` |
+| `configVersion` | non-negative integer | Optimistic-concurrency revision; increments for metadata and geometry edits |
+| `geometryVersion` | non-negative integer | Revision of route-shaping inputs/geometry; metadata-only edits preserve it |
+| `geometrySignature` | SHA-256 string | Exact ordered coordinates plus server routing contract; no coordinate rounding |
 | `updatedAt` | ISO string or server timestamp | Seed/admin update marker |
 
 Any authenticated user reads. All client writes are denied; admin backend validates geometry, IDs, active usage and Maps output. `routes-list`, plan, maps and trip worker consume this collection.
@@ -219,6 +223,10 @@ Fields: `status` (`pending` plus worker terminal/retry states), `attempts`, `req
 
 Idempotency/reconciliation operation metadata such as stable request fingerprint, result/status and `createdAt`. Admin fleet guard prevents conflicting request reuse; opt-in retention deletes old entries.
 
+### `_route_save_operations/{saveId}`
+
+Server-only route-save coordination record. It binds a stable `saveId` to `routeId` and an exact payload hash, with `processing|succeeded|failed` status, a bounded cross-replica lease/owner, attempt count, timestamps, and a replayable result or structured failure. A different payload cannot reuse the ID. The final transaction writes the versioned route and successful operation together, allowing timeout-after-commit reconciliation without a duplicate Google request or stale overwrite.
+
 ### `_health/*`
 
 Read-only probe target. The server issues a bounded `limit(1)` every 30 seconds and caches readiness; `/health` does not issue a Firebase read per request. No application data is required here.
@@ -233,7 +241,7 @@ Server-only ingress controls. `_deviceRateLimits` stores the shared fixed-window
 
 ## Relationships and deletion
 
-- Changing/deleting a route or bus is blocked while `active_rides` (and for buses, `_active_bus_locks`) references it. Bound devices must be reassigned first.
+- Changing/deleting a route or bus is blocked while `active_rides` (and for buses, `_active_bus_locks`) references it. Route edit/delete checks and the route write/delete share a transaction so a concurrent ride start cannot slip between the guard and mutation. Bound devices must be reassigned first.
 - A device assignment must match `buses.assignedRoutes` and an existing route.
 - Driver API authority requires agreement among Auth claims, `drivers`, `buses`, and the requested bus/route.
 - Terminal history deletion recursively removes the ride session/subcollections and all matching `completed_trips`; active states return 409.

@@ -147,6 +147,10 @@ const routeComputeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Route computation rate limit exceeded." },
+  // Reconciliation is a cheap Firestore read and may poll while a save lease
+  // is active. It remains under the global limiter but must not consume the
+  // scarce billable-routing budget.
+  skip: (req) => req.method === "GET" && /\/save-operations\//.test(req.originalUrl),
 });
 const routePlanLimiter = rateLimit({
   windowMs: 60 * 1000,

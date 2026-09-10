@@ -655,13 +655,15 @@ describe("production security configuration", () => {
     const routes = ruleBlock(rules, "match /routes/{routeId}");
     const sessions = ruleBlock(rules, "match /ride_sessions/{sessionId}");
     const routeEditor = workspaceFile("frontend/src/components/admin/RouteManagementPanel.tsx");
+    const routeSaveClient = workspaceFile("frontend/src/lib/routeSaveClient.ts");
     const dashboard = workspaceFile("frontend/src/components/admin/DashboardPanel.tsx");
 
     expect(routes).toContain("allow create, update, delete: if false;");
     expect(sessions).toContain("allow create: if false;");
     expect(sessions).toContain("allow update: if false;");
     expect(sessions).not.toContain("resource.data.status in ['armed', 'active']");
-    expect(routeEditor).toContain('method: "PUT"');
+    expect(routeEditor).toContain("saveRoute(");
+    expect(routeSaveClient).toContain('method: "PUT"');
     expect(routeEditor).not.toContain("setDoc(");
     expect(routeEditor).not.toContain("updateDoc(");
     expect(dashboard).toMatch(
@@ -670,6 +672,8 @@ describe("production security configuration", () => {
     expect(dashboard).not.toContain("Force Offline");
     expect(dashboard).not.toContain("Position Override");
     expect(dashboard).not.toContain("update(ref(rtdb");
+    expect(ruleBlock(rules, "match /_route_save_operations/{operationId}"))
+      .toContain("allow read, write: if false;");
   });
 
   it("removes the dead passenger-request client surface entirely", () => {

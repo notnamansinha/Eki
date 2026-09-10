@@ -18,6 +18,8 @@ import {
 import { inferRideDirectionFromTelemetry } from "../lib/automaticRideDirection";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
 import { createLatestPendingScheduler } from "../lib/latestPendingScheduler";
+import { routeGeometrySignature } from "../lib/routeGeometrySignature";
+import { routeDocumentVersion, routeGeometryVersion } from "../lib/routeSaveContract";
 import type { DeviceAssignment } from "./deviceTelemetryService";
 import type { TelemetryPayload } from "./telemetryPayload";
 import {
@@ -45,6 +47,7 @@ interface StoredRoute {
   reverseCoordinates: LatLng[];
   stops: RouteStop[];
   endpointVersion: string;
+  geometryVersion: number;
   cacheGeneration: number;
 }
 
@@ -148,15 +151,34 @@ async function loadStoredRouteUncached(
         reverse &&
         telemetryRouteSnapshotIsCurrent(routeId, cacheGeneration)
       ) {
-        await snapshot.ref.set(
-          routeRepairSnapshotWrite({
-            forward,
-            reverse,
-            forwardRepair,
-            reverseRepair,
-          }),
-          { merge: true },
-        );
+        const repairedForward = forward;
+        const repairedReverse = reverse;
+        const expectedConfigVersion = routeDocumentVersion(data);
+        const expectedSignature = routeGeometrySignature(stops);
+        const repaired = await db.runTransaction(async (transaction) => {
+          const current = await transaction.get(snapshot.ref);
+          const currentData = current.data() as Record<string, unknown> | undefined;
+          const currentStops = parseStops(currentData?.stops);
+          if (
+            !current.exists ||
+            routeDocumentVersion(currentData) !== expectedConfigVersion ||
+            currentStops.length < 2 ||
+            routeGeometrySignature(currentStops) !== expectedSignature
+          ) return false;
+          transaction.set(snapshot.ref, {
+            ...routeRepairSnapshotWrite({
+              forward: repairedForward,
+              reverse: repairedReverse,
+              forwardRepair,
+              reverseRepair,
+            }),
+            geometrySignature: expectedSignature,
+            geometryVersion: routeGeometryVersion(currentData) + 1,
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+          return true;
+        });
+        if (!repaired) return null;
       }
     }
     if (forward && reverse && stops.length >= 2) {
@@ -166,12 +188,10 @@ async function loadStoredRouteUncached(
         forwardCoordinates: forward.path,
         reverseCoordinates: reverse.path,
         stops,
-        // #165 may replace this deterministic endpoint snapshot with a
-        // persisted admin revision. It already prevents a stale resolver from
-        // treating a different endpoint pair as the same configuration.
-        endpointVersion: stops
-          .map((stop) => `${stop.id}:${stop.lat.toFixed(6)}:${stop.lng.toFixed(6)}`)
-          .join("|"),
+        // Bind pending direction to both the persisted geometry revision and
+        // an exact route-shaping signature (legacy documents are revision 0).
+        endpointVersion: `${routeGeometryVersion(data)}:${routeGeometrySignature(stops)}`,
+        geometryVersion: routeGeometryVersion(data),
         cacheGeneration,
       };
     }
@@ -791,7 +811,9 @@ async function processTelemetryRoute(
   const routeSessionId =
     typeof live?.sessionId === "string" ? live.sessionId : "device-only";
   const contextChanged =
-    live?.routeDirection !== direction || live?.routeSessionId !== routeSessionId;
+    live?.routeDirection !== direction ||
+    live?.routeSessionId !== routeSessionId ||
+    live?.routeGeometryVersion !== route.geometryVersion;
   const previousVersion = Number(live?.routeVersion);
   const routeVersion = Number.isSafeInteger(previousVersion) && previousVersion > 0
     ? previousVersion + (contextChanged ? 1 : 0)
@@ -861,6 +883,7 @@ async function processTelemetryRoute(
       routeSource: geometry.source,
       routeDirection: direction,
       routeSessionId,
+      routeGeometryVersion: route.geometryVersion,
       routeState: adherence.routeState,
       ...(contextChanged
         ? { rerouteRequestId: null, rerouteError: null }

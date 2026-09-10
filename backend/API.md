@@ -287,7 +287,11 @@ Returns cached independently routed `forwardPolyline` and `reversePolyline` geom
 
 ### `PUT /api/routes/:routeId` — admin
 
-Validates and saves route name/color/type, ordered waypoints/stops and independently computed forward/reverse legal-road geometry. Existing active route use restricts unsafe changes. Returns saved route/result or 400/409/500.
+Body includes validated route metadata/stops plus `mode`, a stable `saveId`, and `expectedVersion` (`0` for a legacy route/create). A Firestore operation lease deduplicates concurrent/restarted requests; the final transaction rechecks route version and active rides before atomically storing the route and replayable result. `configVersion` advances on every edit; `geometryVersion` advances only when exact ordered coordinates/routing inputs change. Valid directional geometry is reused for metadata-only edits. The browser allows 30 seconds for the routing/persistence budget and reconciles unknown outcomes with the same operation ID. Returns 200 saved/replayed, 202 processing, or structured 400/404/409/502/503/504 errors with `code` and `phase`.
+
+### `GET /api/routes/:routeId/save-operations/:saveId` — admin
+
+Reconciles a timed-out save. Returns its replayable saved result, 202 while the durable lease is processing, the recorded structured failure, or 404 when the original request never reached the backend.
 
 ### `DELETE /api/routes/:routeId` — admin
 
@@ -303,7 +307,7 @@ Returns bounded cached route metadata/configuration used by clients. Firestore e
 
 ### `GET /api/places/search?q=…` — admin
 
-Bounded query string search proxied to Google Places with server key, timeout and dedicated limit. Returns normalized candidates or 400/429/502/503 depending on input/upstream/configuration.
+Bounded query string search proxied to Google Places with server key, five-second whole-response timeout and dedicated limit. Returns normalized candidates (an empty array is a genuine no-result response) or structured codes for invalid query, authentication/role, missing configuration, local/upstream rate limit, upstream failure, and timeout. Credentials and upstream response bodies are never returned.
 
 ## Passenger/privacy endpoints
 
@@ -325,6 +329,7 @@ Queues `_privacy_deletion_requests/{uid}` and returns 202 `{accepted:true}`. Dri
 ## Consistency/retry guidance
 
 - Telemetry and start/resume are idempotent by timestamps/session ownership.
+- Route-save retries must retain `saveId` only for the exact same payload and `expectedVersion`; changed editor content starts a new operation. A 202 or unknown network outcome is reconciled, not treated as a confirmed failure.
 - Do not blindly retry a 400/401/403/409. Fix configuration/user action first.
 - 429 respects limiter headers/backoff. 500/503 may be retried with bounded exponential jitter.
 - Clients should wait for RTDB/Firestore push confirmation where UI truth depends on database state.
