@@ -342,6 +342,7 @@ describe("shift start after automatic completion", () => {
       lng: 72.5,
       timestamp: Date.now(),
       motionState: "stopped",
+      gpsHdop: 2,
     };
 
     const response = await startShift("driver_1");
@@ -377,6 +378,7 @@ describe("shift start after automatic completion", () => {
       lng: 72.7,
       timestamp: Date.now(),
       motionState: "stopped",
+      gpsHdop: 2,
     };
     harness.lock = null;
 
@@ -423,6 +425,7 @@ describe("shift start after automatic completion", () => {
       lng: 72.7,
       timestamp: Date.now(),
       motionState: "stopped",
+      gpsHdop: 2,
     };
 
     const response = await startShift();
@@ -450,6 +453,7 @@ describe("shift start after automatic completion", () => {
       lng: 72.5,
       timestamp: Date.now(),
       motionState: "stopped",
+      gpsHdop: 2,
     };
 
     const response = await startShift(undefined, { direction: "reverse" });
@@ -462,37 +466,24 @@ describe("shift start after automatic completion", () => {
     });
   });
 
-  it("does not guess direction between endpoints or while the bus is moving", async () => {
+  it("keeps an ambiguous start pending until later eligible telemetry resolves it", async () => {
     harness.liveNode = {
       busId: "bus_1",
       lat: 23.1,
       lng: 72.6,
       timestamp: Date.now(),
       motionState: "stopped",
+      gpsHdop: 2,
     };
-    expect((await startShift()).status).toBe(409);
-
-    // About 30 m from stop_1: close enough for a broad endpoint hint but
-    // outside the 20 m authoritative stop geofence.
-    harness.liveNode = {
-      busId: "bus_1",
-      lat: 23.00027,
-      lng: 72.5,
-      timestamp: Date.now(),
-      motionState: "stopped",
-    };
-    expect((await startShift()).status).toBe(409);
-
-    harness.liveNode = {
-      busId: "bus_1",
-      lat: 23.0,
-      lng: 72.5,
-      timestamp: Date.now(),
-      motionState: "moving",
-    };
-    expect((await startShift()).status).toBe(409);
-    expect(harness.docSets).toEqual([]);
-    expect(harness.batchSets).toEqual([]);
+    const response = await startShift();
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ direction: null, pending: true });
+    expect(harness.liveNode).toMatchObject({
+      direction: null,
+      directionState: "pending",
+      tripState: "pre_departure",
+    });
+    expect(harness.batchSets.find((entry) => entry.id === "bus_1_route_1")).toBeUndefined();
   });
 
   it("still resumes an in-service shift (regression guard)", async () => {

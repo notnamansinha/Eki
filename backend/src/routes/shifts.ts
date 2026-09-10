@@ -3,14 +3,12 @@ import { FieldValue } from "firebase-admin/firestore";
 import { requireAuth } from "../middleware/requireAuth";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { db, rtdb } from "../lib/firebaseAdmin";
-import { haversineMeters } from "../lib/geo";
-import { inferRideDirectionAtEndpoint } from "../lib/automaticRideDirection";
+import { inferRideDirectionFromTelemetry } from "../lib/automaticRideDirection";
 import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import {
-  normalizeRideDirection,
+  isRideDirection,
   stopsInRideDirection,
 } from "../lib/rideDirection";
-import { STOP_GEOFENCE_M } from "../services/tripStateReducer";
 import {
   deleteTerminalRideHistory,
   RideHistoryConflictError,
@@ -21,6 +19,20 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 function activeRideId(busId: string, routeId: string): string {
   return `${busId}_${routeId}`;
+}
+
+function endpointSnapshotVersion(stops: readonly Record<string, unknown>[]): string | null {
+  const parts = stops.map((stop) => {
+    if (
+      typeof stop.id !== "string" ||
+      !Number.isFinite(stop.lat) ||
+      !Number.isFinite(stop.lng)
+    ) {
+      return null;
+    }
+    return `${stop.id}:${Number(stop.lat).toFixed(6)}:${Number(stop.lng).toFixed(6)}`;
+  });
+  return parts.every((part): part is string => part !== null) ? parts.join("|") : null;
 }
 
 function normalizedDelayRevision(value: unknown): number {
@@ -237,7 +249,7 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
       typeof current.sessionId === "string" &&
       SAFE_ID.test(current.sessionId)
     ) {
-      const direction = normalizeRideDirection(current.direction);
+      const direction = isRideDirection(current.direction) ? current.direction : null;
       const sessionStatus =
         current.tripState === "pre_departure" ? "armed" : "active";
       const lockRef = activeBusLockRef(assignment.busId);
@@ -266,10 +278,11 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           routeId: assignment.routeId,
           status: sessionStatus,
           direction,
+          directionState: direction ? "resolved" : "pending",
           originStopId: typeof current.originStopId === "string" ? current.originStopId : null,
           destinationStopId: typeof current.destinationStopId === "string" ? current.destinationStopId : null,
         }, { merge: true }),
-        db.collection("active_rides")
+        ...(direction ? [db.collection("active_rides")
           .doc(activeRideId(assignment.busId, assignment.routeId))
           .set({
             sessionId: current.sessionId,
@@ -291,9 +304,14 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
             delayMinutes: normalizedDelayMinutes(current.delayMinutes),
             delayUpdatedAt: normalizedDelayRevision(current.delayUpdatedAt),
             updatedAt: FieldValue.serverTimestamp(),
-          }, { merge: true }),
+          }, { merge: true })] : []),
       ]);
-      res.json({ sessionId: current.sessionId, resumed: true, direction });
+      res.json({
+        sessionId: current.sessionId,
+        resumed: true,
+        direction,
+        pending: !direction,
+      });
       return;
     }
     // A completed ride is terminal: the live node still reports
@@ -324,38 +342,37 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
       !Number.isFinite(currentLng) ||
       !Number.isFinite(telemetryTimestamp) ||
       Date.now() - telemetryTimestamp > 60_000 ||
-      telemetryTimestamp > Date.now() + 10_000 ||
-      current?.motionState !== "stopped"
+      telemetryTimestamp > Date.now() + 10_000
     ) {
       res.status(409).json({
-        error: "A fresh stopped hardware GNSS fix is required before starting a shift.",
+        error: "A fresh hardware GNSS fix is required before starting a shift.",
       });
       return;
     }
-    const requestedDirection = inferRideDirectionAtEndpoint(
+    const routeEndpointVersion = endpointSnapshotVersion(naturalStops);
+    const inferredDirection = inferRideDirectionFromTelemetry(
       naturalStops,
-      { lat: currentLat, lng: currentLng },
-      STOP_GEOFENCE_M,
+      {
+        now: Date.now(),
+        timestamp: telemetryTimestamp,
+        motionState: current?.motionState,
+        gpsHdop: current?.gpsHdop,
+        position: { lat: currentLat, lng: currentLng },
+      },
     );
-    if (!requestedDirection) {
-      res.status(409).json({
-        error: `The bus must be stopped within ${STOP_GEOFENCE_M} metres of exactly one route endpoint before its direction can be inferred.`,
-      });
-      return;
-    }
-    const stops = stopsInRideDirection(naturalStops, requestedDirection);
+    const previouslyResolvedDirection =
+      isRideDirection(current?.direction) &&
+      current?.directionState === "resolved" &&
+      current?.directionEndpointVersion === routeEndpointVersion
+        ? current.direction
+        : null;
+    const requestedDirection = previouslyResolvedDirection ?? inferredDirection;
+    const stops = requestedDirection
+      ? stopsInRideDirection(naturalStops, requestedDirection)
+      : [];
     const origin = stops[0] ?? null;
     const destination = stops.at(-1) ?? null;
-    if (!Number.isFinite(origin?.lat) || !Number.isFinite(origin?.lng)) {
-      res.status(422).json({ error: "This route has no valid origin coordinate." });
-      return;
-    }
-    const arrivedAtOrigin = haversineMeters(
-      { lat: currentLat, lng: currentLng },
-      { lat: origin.lat, lng: origin.lng },
-    ) <= STOP_GEOFENCE_M;
-    const initialTripState =
-      arrivedAtOrigin ? "in_service" : "pre_departure";
+    const initialTripState = requestedDirection ? "in_service" : "pre_departure";
     const proposedSessionRef = db.collection("ride_sessions").doc();
     const lockRef = activeBusLockRef(assignment.busId);
     const proposedArmedAt = Date.now();
@@ -384,14 +401,33 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         ) {
           return null;
         }
-        const existingDirection = normalizeRideDirection(session?.direction);
-        if (existingDirection !== requestedDirection) return null;
+        const existingDirection = isRideDirection(session?.direction)
+          ? session.direction
+          : null;
+        if (existingDirection && requestedDirection && existingDirection !== requestedDirection) {
+          return null;
+        }
+        const direction = existingDirection ?? requestedDirection;
+        if (direction && !existingDirection) {
+          transaction.set(db.collection("ride_sessions").doc(lockData.sessionId), {
+            direction,
+            directionState: "resolved",
+            directionEndpointVersion: routeEndpointVersion,
+            originStopId: typeof origin?.id === "string" ? origin.id : null,
+            destinationStopId: typeof destination?.id === "string" ? destination.id : null,
+            directionResolvedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+          transaction.set(lockRef, {
+            direction,
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+        }
         return {
           sessionId: lockData.sessionId,
           armedAt: typeof session?.armedAt === "number" ? session.armedAt : proposedArmedAt,
           status: sessionStatus,
           created: false,
-          direction: existingDirection,
+          direction,
         };
       }
       transaction.create(proposedSessionRef, {
@@ -400,8 +436,10 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         driverId: assignment.driverId,
         routeId: assignment.routeId,
         direction: requestedDirection,
-        originStopId: typeof origin.id === "string" ? origin.id : null,
-        destinationStopId: typeof destination.id === "string" ? destination.id : null,
+        directionState: requestedDirection ? "resolved" : "pending",
+        directionEndpointVersion: requestedDirection ? routeEndpointVersion : null,
+        originStopId: typeof origin?.id === "string" ? origin.id : null,
+        destinationStopId: typeof destination?.id === "string" ? destination.id : null,
         armedAt: proposedArmedAt,
         status: "pending",
         passengers: {},
@@ -480,8 +518,10 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           driverId: assignment.driverId,
           routeId: assignment.routeId,
           direction,
-          originStopId: typeof origin.id === "string" ? origin.id : null,
-          destinationStopId: typeof destination.id === "string" ? destination.id : null,
+          directionState: direction ? "resolved" : "pending",
+          directionEndpointVersion: direction ? routeEndpointVersion : null,
+          originStopId: typeof origin?.id === "string" ? origin.id : null,
+          destinationStopId: typeof destination?.id === "string" ? destination.id : null,
           sessionId: sessionRef.id,
           status: "active",
           deviceState: "online",
@@ -508,7 +548,8 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           res.json({
             sessionId: winner.sessionId,
             resumed: true,
-            direction: normalizeRideDirection(winner.direction),
+            direction: isRideDirection(winner.direction) ? winner.direction : null,
+            pending: !isRideDirection(winner.direction),
           });
           return;
         }
@@ -530,20 +571,24 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         .doc(activeRideId(assignment.busId, assignment.routeId));
       const batch = db.batch();
       batch.set(sessionRef, {
-        status: claimedTripState === "in_service" ? "active" : "armed",
+        status: direction
+          ? (claimedTripState === "in_service" ? "active" : "armed")
+          : "pending",
         armedAt,
         direction,
-        originStopId: typeof origin.id === "string" ? origin.id : null,
-        destinationStopId: typeof destination.id === "string" ? destination.id : null,
-        ...(claimedTripState === "in_service" && lockClaim.created
+        directionState: direction ? "resolved" : "pending",
+        directionEndpointVersion: direction ? routeEndpointVersion : null,
+        originStopId: typeof origin?.id === "string" ? origin.id : null,
+        destinationStopId: typeof destination?.id === "string" ? destination.id : null,
+        ...(direction && claimedTripState === "in_service" && lockClaim.created
           ? {
               startTime: armedAt,
               activatedAt: FieldValue.serverTimestamp(),
               stopsReached: {
                 0: {
                   stopIndex: 0,
-                  stopId: typeof origin.id === "string" ? origin.id : "",
-                  stopName: typeof origin.name === "string" ? origin.name : "",
+                  stopId: typeof origin?.id === "string" ? origin.id : "",
+                  stopName: typeof origin?.name === "string" ? origin.name : "",
                   timestamp: FieldValue.serverTimestamp(),
                 },
               },
@@ -551,22 +596,24 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
           : {}),
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
-      batch.set(activeRideRef, {
-        sessionId: sessionRef.id,
-        busId: assignment.busId,
-        driverId: assignment.driverId,
-        routeId: assignment.routeId,
-        status: "active",
-        direction,
-        originStopId: typeof origin.id === "string" ? origin.id : null,
-        destinationStopId: typeof destination.id === "string" ? destination.id : null,
-        tripState: claimedTripState,
-        currentStopIndex: claimedStopIndex,
-        hasDepartedOrigin: claimedHasDepartedOrigin,
-        delayMinutes: claimedDelayMinutes,
-        delayUpdatedAt: claimedDelayUpdatedAt,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+      if (direction) {
+        batch.set(activeRideRef, {
+          sessionId: sessionRef.id,
+          busId: assignment.busId,
+          driverId: assignment.driverId,
+          routeId: assignment.routeId,
+          status: "active",
+          direction,
+          originStopId: typeof origin?.id === "string" ? origin.id : null,
+          destinationStopId: typeof destination?.id === "string" ? destination.id : null,
+          tripState: claimedTripState,
+          currentStopIndex: claimedStopIndex,
+          hasDepartedOrigin: claimedHasDepartedOrigin,
+          delayMinutes: claimedDelayMinutes,
+          delayUpdatedAt: claimedDelayUpdatedAt,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
       await batch.commit();
     } catch (error) {
       // Preserve the RTDB claim, pending session and bus lock on an ambiguous
@@ -578,8 +625,9 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
 
     res.status(lockClaim.created ? 201 : 200).json({
       sessionId: sessionRef.id,
-      resumed: !lockClaim.created,
-      direction,
+        resumed: !lockClaim.created,
+        direction,
+        pending: !direction,
     });
   } catch (error) {
     console.error("[Shifts] Failed to start shift:", error);

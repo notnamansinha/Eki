@@ -6,8 +6,23 @@ interface Coordinate {
   lng: number;
 }
 
-export const DIRECTION_INFERENCE_RADIUS_M = 75;
+/** Authoritative radius for selecting a new ride direction at an endpoint. */
+export const ENDPOINT_GEOFENCE_M = 20;
+/** @deprecated Use ENDPOINT_GEOFENCE_M for new direction inference. */
+export const DIRECTION_INFERENCE_RADIUS_M = ENDPOINT_GEOFENCE_M;
+/** Turnaround arrival may use a broader, independently tuned arrival radius. */
+export const TURNAROUND_ARRIVAL_RADIUS_M = 75;
 export const TURNAROUND_TELEMETRY_MAX_AGE_MS = 60_000;
+export const DIRECTION_INFERENCE_MAX_HDOP = 4;
+export const DIRECTION_INFERENCE_MAX_FUTURE_MS = 10_000;
+
+export interface DirectionInferenceTelemetry {
+  now: number;
+  timestamp: number;
+  motionState: unknown;
+  gpsHdop: unknown;
+  position: Coordinate;
+}
 
 function validCoordinate(value: Coordinate | null | undefined): value is Coordinate {
   return Boolean(
@@ -25,7 +40,7 @@ function validCoordinate(value: Coordinate | null | undefined): value is Coordin
 export function inferRideDirectionAtEndpoint(
   stops: readonly Coordinate[],
   position: Coordinate,
-  radiusMeters = DIRECTION_INFERENCE_RADIUS_M,
+  radiusMeters = ENDPOINT_GEOFENCE_M,
 ): RideDirection | null {
   if (
     stops.length < 2 ||
@@ -44,6 +59,31 @@ export function inferRideDirectionAtEndpoint(
   return nearReverseOrigin ? "reverse" : "forward";
 }
 
+/**
+ * Resolves a direction only from a fresh, reliable, stopped hardware fix at
+ * exactly one endpoint. Callers deliberately receive null for every ambiguous
+ * case so they can retain an explicit pending state instead of guessing.
+ */
+export function inferRideDirectionFromTelemetry(
+  stops: readonly Coordinate[],
+  telemetry: DirectionInferenceTelemetry,
+  radiusMeters = ENDPOINT_GEOFENCE_M,
+): RideDirection | null {
+  if (
+    !Number.isFinite(telemetry.now) ||
+    !Number.isFinite(telemetry.timestamp) ||
+    telemetry.timestamp > telemetry.now + DIRECTION_INFERENCE_MAX_FUTURE_MS ||
+    telemetry.now - telemetry.timestamp > TURNAROUND_TELEMETRY_MAX_AGE_MS ||
+    telemetry.motionState !== "stopped" ||
+    typeof telemetry.gpsHdop !== "number" ||
+    !Number.isFinite(telemetry.gpsHdop) ||
+    telemetry.gpsHdop > DIRECTION_INFERENCE_MAX_HDOP
+  ) {
+    return null;
+  }
+  return inferRideDirectionAtEndpoint(stops, telemetry.position, radiusMeters);
+}
+
 export function oppositeRideDirection(direction: RideDirection): RideDirection {
   return direction === "forward" ? "reverse" : "forward";
 }
@@ -60,7 +100,7 @@ interface TurnaroundReadinessInput {
 /** Requires a fresh stopped fix at the completed destination after the dwell. */
 export function automaticTurnaroundIsReady(
   input: TurnaroundReadinessInput,
-  radiusMeters = DIRECTION_INFERENCE_RADIUS_M,
+  radiusMeters = TURNAROUND_ARRIVAL_RADIUS_M,
 ): boolean {
   return (
     Number.isFinite(input.now) &&

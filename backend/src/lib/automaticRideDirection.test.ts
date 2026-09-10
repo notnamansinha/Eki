@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   automaticTurnaroundIsReady,
   inferRideDirectionAtEndpoint,
+  inferRideDirectionFromTelemetry,
   oppositeRideDirection,
 } from "./automaticRideDirection";
 
@@ -23,6 +24,37 @@ describe("automatic ride direction", () => {
       [{ lat: 23, lng: 72 }, { lat: 23, lng: 72 }],
       { lat: 23, lng: 72 },
     )).toBeNull();
+  });
+
+  it("resolves only a fresh, stopped, high-quality fix inside one endpoint geofence", () => {
+    const telemetry = {
+      now: 100_000,
+      timestamp: 99_000,
+      motionState: "stopped",
+      gpsHdop: 2,
+      position: { lat: 23, lng: 72 },
+    };
+    expect(inferRideDirectionFromTelemetry(stops, telemetry)).toBe("forward");
+    expect(inferRideDirectionFromTelemetry(stops, {
+      ...telemetry,
+      position: { lat: 23.1, lng: 72.1 },
+    })).toBe("reverse");
+    expect(inferRideDirectionFromTelemetry(stops, {
+      ...telemetry,
+      motionState: "moving",
+    })).toBeNull();
+    expect(inferRideDirectionFromTelemetry(stops, {
+      ...telemetry,
+      gpsHdop: 4.1,
+    })).toBeNull();
+    expect(inferRideDirectionFromTelemetry(stops, {
+      ...telemetry,
+      timestamp: 39_999,
+    })).toBeNull();
+    expect(inferRideDirectionFromTelemetry(stops, {
+      ...telemetry,
+      position: { lat: 23.00025, lng: 72 },
+    })).toBeNull();
   });
 
   it("always selects the opposite return direction", () => {

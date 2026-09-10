@@ -743,12 +743,12 @@ describe("production security configuration", () => {
     expect(operations).not.toContain("test_bus_1");
     expect(shifts).toContain("nodeRef.transaction");
     expect(shifts).toContain("final ordered stop");
-    expect(shifts).toContain("STOP_GEOFENCE_M");
-    expect(shifts).toContain("arrivedAtOrigin");
+    expect(shifts).toContain("inferRideDirectionFromTelemetry");
+    expect(shifts).toContain("directionState");
     expect(operations).not.toContain('ariaLabel="Travel direction"');
     expect(operations).toContain("Travel direction is inferred from fresh stopped GPS");
     expect(operations).toContain("directionLabel(inferredDirection");
-    expect(shifts).toContain("inferRideDirectionAtEndpoint");
+    expect(shifts).toContain("inferRideDirectionFromTelemetry");
     expect(engine).toContain("maybeArmAutomaticTurnaround");
     expect(passengerBoarding).toContain("Ride in service");
   });
