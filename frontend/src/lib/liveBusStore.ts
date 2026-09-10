@@ -6,6 +6,11 @@ import { rtdb } from "./firebaseDatabase";
 import { millisecondsUntilNextPrune, pruneExpiredLiveBuses, type LiveBusSnapshot } from "./liveBusSnapshot";
 import type { LiveBusDeliverySource } from "./liveBusDelivery";
 import { liveBusRetryDelayMs } from "./liveBusRetry";
+import {
+  recordTelemetryListenerDelivery,
+  setTelemetryServerTimeOffset,
+  telemetryTraceEnabled,
+} from "./telemetryTrace";
 
 type Subscriber = {
   next: (value: LiveBusSnapshot | null, source: LiveBusDeliverySource) => void;
@@ -206,6 +211,9 @@ async function ensureListener(): Promise<void> {
           buffered.push({ type: "remove", key: snapshot.key });
         }
       } else {
+        if (normalizedType === "upsert" && value) {
+          recordTelemetryListenerDelivery(snapshot.key, value);
+        }
         applyDelta(normalizedType, snapshot.key, value);
       }
     };
@@ -215,6 +223,12 @@ async function ensureListener(): Promise<void> {
       onChildChanged(busesRef, (snapshot) => receive("upsert", snapshot), failure),
       onChildRemoved(busesRef, (snapshot) => receive("remove", snapshot), failure),
     ];
+    if (telemetryTraceEnabled()) {
+      unsubscribes.push(onValue(
+        ref(rtdb, ".info/serverTimeOffset"),
+        (snapshot) => setTelemetryServerTimeOffset(snapshot.val()),
+      ));
+    }
     unsubscribes.push(onValue(busesRef, (snapshot) => {
       retryAttempt = 0;
       const value = snapshot.val() as LiveBusSnapshot | null;

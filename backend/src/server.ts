@@ -20,7 +20,10 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { deleteApp } from "firebase-admin/app";
 import { db, firebaseAdminApp, rtdb } from "./lib/firebaseAdmin";
-import { getHttpsTelemetryStatus } from "./services/deviceTelemetryService";
+import {
+  getHttpsTelemetryStatus,
+  TELEMETRY_METRIC_SAMPLE_CAPACITY,
+} from "./services/deviceTelemetryService";
 import { backgroundFailures } from "./lib/backgroundFailureTracker";
 import { createHealthState } from "./lib/healthState";
 import { createIdentityAwareLimiter } from "./lib/rateLimitIdentity";
@@ -156,6 +159,13 @@ const routePlanLimiter = rateLimit({
 // from bypassing the 512-byte telemetry limit after JSON normalization.
 app.use(
   "/api/devices/:deviceId/telemetry",
+  (_req, res, next) => {
+    res.locals.telemetryServerReceivedAt = Date.now();
+    next();
+  },
+);
+app.use(
+  "/api/devices/:deviceId/telemetry",
   express.json({ limit: "512b", strict: true }),
 );
 app.use(
@@ -232,6 +242,13 @@ app.get("/api/health", requireAdmin, (_req, res) => {
       networkLatencyMs: telemetry.networkLatencyMs,
       deviceToServerLatencyMs: telemetry.deviceToServerLatencyMs,
       rtdbWriteLatencyMs: telemetry.rtdbWriteLatencyMs,
+      serverIngressGapMs: telemetry.serverIngressGapMs,
+      metricWindow: {
+        scope: "process",
+        maximumSamplesPerMetric: TELEMETRY_METRIC_SAMPLE_CAPACITY,
+        resetsOnRestart: true,
+        crossClockValuesAreEstimates: true,
+      },
     },
     // Fire-and-forget write health (issue #38): counts plus a sustained-failure
     // flag so an external monitor can alert without scraping logs. Kept out of

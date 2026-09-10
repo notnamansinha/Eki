@@ -89,7 +89,14 @@ Returns the cached Firestore/RTDB status, telemetry counters and latency summari
     "deviceQueueLatencyMs": { "samples": 10, "average": 120, "p50": 80, "p95": 300, "p99": 300 },
     "networkLatencyMs": { "samples": 10, "average": 780, "p50": 700, "p95": 1100, "p99": 1100 },
     "deviceToServerLatencyMs": { "samples": 10, "average": 900, "p50": 850, "p95": 1300, "p99": 1300 },
-    "rtdbWriteLatencyMs": { "samples": 10, "average": 30, "p50": 28, "p95": 55, "p99": 55 }
+    "rtdbWriteLatencyMs": { "samples": 10, "average": 30, "p50": 28, "p95": 55, "p99": 55 },
+    "serverIngressGapMs": { "samples": 9, "average": 1010, "p50": 1000, "p95": 1100, "p99": 1100 },
+    "metricWindow": {
+      "scope": "process",
+      "maximumSamplesPerMetric": 512,
+      "resetsOnRestart": true,
+      "crossClockValuesAreEstimates": true
+    }
   },
   "backgroundTasks": {
     "totalFailures": 0,
@@ -109,7 +116,10 @@ Returns the cached Firestore/RTDB status, telemetry counters and latency summari
 }
 ```
 
-Metrics are a 512-sample in-memory rolling window and reset on restart.
+Metrics are a 512-sample in-memory rolling window on one backend process and
+reset on restart. `serverIngressGapMs` uses only that process's clock.
+`networkLatencyMs` and `deviceToServerLatencyMs` compare device and backend wall
+clocks, so use the correlated telemetry baseline trace when clock skew matters.
 
 `backgroundTasks` counts failures from fire-and-forget background writes
 (`trackBackgroundTask` and `scheduleDurableRideRestore`). A source
@@ -137,7 +147,10 @@ Deploy the backend before flashing this firmware. Validate the schema your deplo
 - 202 `{accepted:true,duplicate:false}`: new RTDB fix.
 - 200 `{accepted:true,duplicate:true}`: older timestamp or duplicate timestamp/sequence safely ignored.
 - 400 invalid ID/payload; 401 bad/missing/disabled credential or registry; 413 raw body too large; 429 limiter with `Retry-After` and `retryAfterMs`; 503 Firebase/ingestion failure.
-- Response has `Cache-Control: no-store`.
+- Successful 200/202 responses have `Cache-Control: no-store` plus
+  `X-Eki-Server-Received-At` and `X-Eki-Server-Responded-At` epoch-millisecond
+  timing headers. Firmware combines them with its send/receive timestamps to
+  estimate clock offset and transport delay without logging coordinates.
 
 ### `POST /api/devices/:deviceId/diagnostics` — device
 

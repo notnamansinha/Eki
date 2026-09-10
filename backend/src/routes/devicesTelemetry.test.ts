@@ -123,7 +123,16 @@ function sendDiagnostics() {
 
 describe("device telemetry HTTP responses", () => {
   it("returns the accepted and duplicate statuses in the firmware contract", async () => {
-    expect((await sendTelemetry()).status).toBe(202);
+    const accepted = await sendTelemetry();
+    expect(accepted.status).toBe(202);
+    const serverReceivedAt = Number(
+      accepted.headers.get("x-eki-server-received-at"),
+    );
+    const serverRespondedAt = Number(
+      accepted.headers.get("x-eki-server-responded-at"),
+    );
+    expect(Number.isSafeInteger(serverReceivedAt)).toBe(true);
+    expect(serverRespondedAt).toBeGreaterThanOrEqual(serverReceivedAt);
 
     harness.result = { ok: true, duplicate: true };
     expect((await sendTelemetry()).status).toBe(200);

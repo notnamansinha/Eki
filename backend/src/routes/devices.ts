@@ -63,6 +63,11 @@ router.post(
   "/:deviceId/telemetry",
   telemetryLimiter,
   async (req: Request, res: Response) => {
+    const requestBoundary = res.locals.telemetryServerReceivedAt;
+    const serverReceivedAt =
+      typeof requestBoundary === "number" && Number.isSafeInteger(requestBoundary)
+        ? requestBoundary
+        : Date.now();
     res.set("Cache-Control", "no-store");
     const deviceId = singleRouteParam(req.params.deviceId);
     const secret = parseDeviceAuthorization(req.get("authorization"));
@@ -74,7 +79,7 @@ router.post(
     }
     const parsed =
       encodedLength <= 512
-        ? parseTelemetryValue(req.body)
+        ? parseTelemetryValue(req.body, serverReceivedAt)
         : { ok: false as const, reason: "payload_size" };
     if (deviceId === null || !SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
       recordTelemetryRejection();
@@ -94,6 +99,7 @@ router.post(
         deviceId,
         secret,
         parsed.value,
+        serverReceivedAt,
       );
       if (!result.ok) {
         if (result.reason === "rate_limit") {
@@ -110,6 +116,9 @@ router.post(
         }
         return;
       }
+      const serverRespondedAt = Date.now();
+      res.set("X-Eki-Server-Received-At", String(serverReceivedAt));
+      res.set("X-Eki-Server-Responded-At", String(serverRespondedAt));
       res.status(result.duplicate ? 200 : 202).json({
         accepted: true,
         duplicate: result.duplicate,
