@@ -6,6 +6,7 @@ import { db, rtdb } from "../lib/firebaseAdmin";
 import { haversineMeters } from "../lib/geo";
 import { inferRideDirectionAtEndpoint } from "../lib/automaticRideDirection";
 import { withoutLiveRouteContext } from "../lib/liveRouteContext";
+import { singleRouteParam } from "../lib/requestParams";
 import {
   normalizeRideDirection,
   stopsInRideDirection,
@@ -628,8 +629,8 @@ router.post("/stop", requireAuth, async (req: AuthenticatedRequest, res: Respons
 });
 
 router.delete("/:sessionId/messages", requireAdmin, async (req, res) => {
-  const sessionId = req.params.sessionId;
-  if (!SAFE_ID.test(sessionId)) {
+  const sessionId = singleRouteParam(req.params.sessionId);
+  if (sessionId === null || !SAFE_ID.test(sessionId)) {
     res.status(400).json({ error: "Invalid session ID." });
     return;
   }
@@ -652,8 +653,8 @@ router.delete("/:sessionId/messages", requireAdmin, async (req, res) => {
 });
 
 router.delete("/:sessionId/history", requireAdmin, async (req, res) => {
-  const sessionId = req.params.sessionId;
-  if (!SAFE_ID.test(sessionId)) {
+  const sessionId = singleRouteParam(req.params.sessionId);
+  if (sessionId === null || !SAFE_ID.test(sessionId)) {
     res.status(400).json({ error: "Invalid session ID." });
     return;
   }
