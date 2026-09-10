@@ -26,6 +26,10 @@ local professor demonstration.
 - [ ] Set exact `CORS_ORIGIN`, `FIREBASE_DATABASE_URL`,
   `GOOGLE_MAPS_API_KEY`, `AUTH_REVOCATION_CACHE_MS`, retention values, and
   worker settings.
+- [ ] For an RTDB migration, set both backend/frontend database URL variables
+  in the controlled shell, set `RTDB_EXPECTED_REGION`, and run
+  `npm run verify:rtdb-instance` before either deployment. Follow the
+  [RTDB region decision and rollback plan](../design/RTDB_REGION_LATENCY_DECISION.md).
 - [ ] Enforce App Check (console toggle) on Firestore and Realtime Database in
   both projects. Security Rules authorize Firebase Authentication identities
   and roles; App Check is enforced by Firebase, not a `request.app` rule

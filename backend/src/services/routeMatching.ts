@@ -7,7 +7,8 @@ const TO_DEGREES = 180 / Math.PI;
 
 export const ROUTE_MATCH_DISTANCE_M = 45;
 export const OFF_ROUTE_DISTANCE_M = 60;
-export const OFF_ROUTE_CONFIRMATION_SAMPLES = 3;
+export const OFF_ROUTE_CONFIRMATION_SAMPLES = 2;
+export const STRONG_OFF_ROUTE_DISTANCE_M = 120;
 
 export type RouteAdherenceState =
   | "ON_ROUTE"
@@ -243,7 +244,11 @@ export function matchRoutePosition(
   return match;
 }
 
-/** A noisy fix is observed immediately but only repeated moving fixes reroute. */
+/**
+ * A high-quality fix far from the route can confirm immediately. Ordinary or
+ * unmatchable fixes require two consecutive reliable moving samples; missing
+ * matches are deliberately never classified as a strong deviation.
+ */
 export function evaluateRouteAdherence(
   previousState: RouteAdherenceState | undefined,
   previousOffRouteSamples: number,
@@ -287,9 +292,14 @@ export function evaluateRouteAdherence(
     };
   }
 
+  const strongDeviation =
+    match !== null && match.distanceToRouteM >= STRONG_OFF_ROUTE_DISTANCE_M;
+
   const offRouteSampleCount = Math.min(
     OFF_ROUTE_CONFIRMATION_SAMPLES,
-    previousOffRouteSamples + 1,
+    strongDeviation
+      ? OFF_ROUTE_CONFIRMATION_SAMPLES
+      : previousOffRouteSamples + 1,
   );
   const confirmed = offRouteSampleCount >= OFF_ROUTE_CONFIRMATION_SAMPLES;
   return {

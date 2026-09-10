@@ -61,7 +61,7 @@ response, status code and side effect.
 - Hardware: `Authorization: Device <per-device secret>`. It is not a Firebase token and must never use `Bearer`.
 - Public: only `GET /health`.
 
-IDs accept 1–128 ASCII letters, digits, `_`, or `-`. Rate-limit counters always use normalized IP addresses (and verified Firebase UID when authenticated). Browser writes are broadly limited to 30 requests/minute and normal traffic to 200 requests/minute; route compute/plan endpoints use dedicated limiters (10/min and 30/min), `placeSearchLimiter` is an unsharded process-local 20/minute limiter, and device telemetry bypasses global and write limiters while enforcing separate pre-auth IP (120/min) and per-device limits. Sharded counters divide their budgets by `RATE_LIMIT_SHARD_FACTOR` (set it to the deployed replica count; invalid values fall back to 1). If the replica count exceeds the smallest in-process budget (currently 10/minute), startup fails; use a shared distributed limiter beyond that scale. An edge load balancer or WAF cap is an external deployment requirement for global rate protection.
+IDs accept 1–128 ASCII letters, digits, `_`, or `-`. Rate-limit counters always use normalized IP addresses (and verified Firebase UID when authenticated). Browser writes are broadly limited to 30 requests/minute and normal traffic to 200 requests/minute; route compute/plan endpoints use dedicated limiters (10/min and 30/min), `placeSearchLimiter` is an unsharded process-local 20/minute limiter, and device telemetry bypasses global and write limiters while enforcing separate pre-auth IP (120/min) and authenticated per-device limits. The safe default device mode reserves bounded token leases from a shared RTDB fixed-window budget, so replicas cannot exceed the fleet-wide limit without paying for one transaction per fix. Local device limiting requires explicit `HTTPS_DEVICE_RATE_LIMIT_MODE=local` and `RATE_LIMIT_SHARD_FACTOR=1`. Other sharded counters divide their budgets by `RATE_LIMIT_SHARD_FACTOR` (set it to the deployed replica count; invalid values fall back to 1). If the replica count exceeds the smallest in-process budget (currently 10/minute), startup fails; use a shared distributed limiter beyond that scale. An edge load balancer or WAF cap is an external deployment requirement for global rate protection.
 
 ## Health
 
@@ -71,7 +71,7 @@ Returns only `{ "status": "ok" }` when the cached 30-second Firestore/RTDB probe
 
 ### `GET /api/health` — admin
 
-Returns the cached Firestore/RTDB status, telemetry counters and latency summaries, background-failure state, and probe timestamp. This is the detailed operational response formerly exposed by `/health`; it requires an admin Firebase ID token.
+Returns the cached Firestore/RTDB status, telemetry counters, latency/transaction summaries, bounded route-processing queue state, background-failure state, and probe timestamp. This is the detailed operational response formerly exposed by `/health`; it requires an admin Firebase ID token.
 
 ```json
 {
@@ -89,7 +89,36 @@ Returns the cached Firestore/RTDB status, telemetry counters and latency summari
     "deviceQueueLatencyMs": { "samples": 10, "average": 120, "p50": 80, "p95": 300, "p99": 300 },
     "networkLatencyMs": { "samples": 10, "average": 780, "p50": 700, "p95": 1100, "p99": 1100 },
     "deviceToServerLatencyMs": { "samples": 10, "average": 900, "p50": 850, "p95": 1300, "p99": 1300 },
-    "rtdbWriteLatencyMs": { "samples": 10, "average": 30, "p50": 28, "p95": 55, "p99": 55 }
+    "rtdbWriteLatencyMs": { "samples": 10, "average": 30, "p50": 28, "p95": 55, "p99": 55 },
+    "rtdbTransactionAttempts": { "samples": 10, "average": 1, "p50": 1, "p95": 1, "p99": 1 },
+    "rateLimit": {
+      "mode": "distributed",
+      "limitPerMinute": 90,
+      "leaseSize": 5,
+      "replicas": 2,
+      "localDecisions": 0,
+      "leaseHits": 80,
+      "storeTransactions": 20,
+      "storeTransactionRetries": 2,
+      "decisionLatencyMs": { "samples": 100, "average": 4.8, "p50": 0, "p95": 24, "p99": 31 }
+    },
+    "serverIngressGapMs": { "samples": 9, "average": 1010, "p50": 1000, "p95": 1100, "p99": 1100 },
+    "routeProcessing": {
+      "scheduled": 10,
+      "processed": 9,
+      "coalesced": 1,
+      "failed": 0,
+      "activeWorkers": 0,
+      "pendingKeys": 0,
+      "lastQueueAgeMs": 4,
+      "maxQueueAgeMs": 20
+    },
+    "metricWindow": {
+      "scope": "process",
+      "maximumSamplesPerMetric": 512,
+      "resetsOnRestart": true,
+      "crossClockValuesAreEstimates": true
+    }
   },
   "backgroundTasks": {
     "totalFailures": 0,
@@ -109,7 +138,17 @@ Returns the cached Firestore/RTDB status, telemetry counters and latency summari
 }
 ```
 
-Metrics are a 512-sample in-memory rolling window and reset on restart.
+Metrics are a 512-sample in-memory rolling window on one backend process and
+reset on restart. The rate-limit counters are also process-local and cumulative
+since restart. A lease hit avoids a shared-store operation;
+`storeTransactionRetries` counts extra Firebase transaction callback attempts
+caused by contention. `serverIngressGapMs` uses only that process's clock.
+`networkLatencyMs` and `deviceToServerLatencyMs` compare device and backend wall
+clocks, so use the correlated telemetry baseline trace when clock skew matters.
+Route-processing counters are also process-local and monotonic until restart. A
+live-node transaction-attempt p95 above 1 or sustained route queue age/coalescing
+indicates contention or matcher saturation and should be investigated before
+partitioning the live schema.
 
 `backgroundTasks` counts failures from fire-and-forget background writes
 (`trackBackgroundTask` and `scheduleDurableRideRestore`). A source
@@ -134,10 +173,19 @@ The body schema is nine fields today; during the staged rollout the parser also 
 
 Deploy the backend before flashing this firmware. Validate the schema your deployed firmware actually sends instead of requiring an exact field count, keeping the compatibility paths only as long as staged rollout needs them.
 
+Authentication and the server registry assignment check run before the
+per-device budget. HTTP 202 is returned only after the ordered live-node RTDB
+transaction commits; HTTP 200 means the authenticated sample was already
+present or older. Route matching and durable-lifecycle repair remain
+background work and cannot change that acknowledgement contract.
+
 - 202 `{accepted:true,duplicate:false}`: new RTDB fix.
 - 200 `{accepted:true,duplicate:true}`: older timestamp or duplicate timestamp/sequence safely ignored.
 - 400 invalid ID/payload; 401 bad/missing/disabled credential or registry; 413 raw body too large; 429 limiter with `Retry-After` and `retryAfterMs`; 503 Firebase/ingestion failure.
-- Response has `Cache-Control: no-store`.
+- Successful 200/202 responses have `Cache-Control: no-store` plus
+  `X-Eki-Server-Received-At` and `X-Eki-Server-Responded-At` epoch-millisecond
+  timing headers. Firmware combines them with its send/receive timestamps to
+  estimate clock offset and transport delay without logging coordinates.
 
 ### `POST /api/devices/:deviceId/diagnostics` — device
 
@@ -276,7 +324,11 @@ Returns cached independently routed `forwardPolyline` and `reversePolyline` geom
 
 ### `PUT /api/routes/:routeId` — admin
 
-Validates and saves route name/color/type, ordered waypoints/stops and independently computed forward/reverse legal-road geometry. Existing active route use restricts unsafe changes. Returns saved route/result or 400/409/500.
+Body includes validated route metadata/stops plus `mode`, a stable `saveId`, and `expectedVersion` (`0` for a legacy route/create). A Firestore operation lease deduplicates concurrent/restarted requests; the final transaction rechecks route version and active rides before atomically storing the route and replayable result. `configVersion` advances on every edit; `geometryVersion` advances only when exact ordered coordinates/routing inputs change. Valid directional geometry is reused for metadata-only edits. The browser allows 30 seconds for the routing/persistence budget and reconciles unknown outcomes with the same operation ID. Returns 200 saved/replayed, 202 processing, or structured 400/404/409/502/503/504 errors with `code` and `phase`.
+
+### `GET /api/routes/:routeId/save-operations/:saveId` — admin
+
+Reconciles a timed-out save. Returns its replayable saved result, 202 while the durable lease is processing, the recorded structured failure, or 404 when the original request never reached the backend.
 
 ### `DELETE /api/routes/:routeId` — admin
 
@@ -292,7 +344,7 @@ Returns bounded cached route metadata/configuration used by clients. Firestore e
 
 ### `GET /api/places/search?q=…` — admin
 
-Bounded query string search proxied to Google Places with server key, timeout and dedicated limit. Returns normalized candidates or 400/429/502/503 depending on input/upstream/configuration.
+Bounded query string search proxied to Google Places with server key, five-second whole-response timeout and dedicated limit. Returns normalized candidates (an empty array is a genuine no-result response) or structured codes for invalid query, authentication/role, missing configuration, local/upstream rate limit, upstream failure, and timeout. Credentials and upstream response bodies are never returned.
 
 ## Passenger/privacy endpoints
 
@@ -314,6 +366,7 @@ Queues `_privacy_deletion_requests/{uid}` and returns 202 `{accepted:true}`. Dri
 ## Consistency/retry guidance
 
 - Telemetry and start/resume are idempotent by timestamps/session ownership.
+- Route-save retries must retain `saveId` only for the exact same payload and `expectedVersion`; changed editor content starts a new operation. A 202 or unknown network outcome is reconciled, not treated as a confirmed failure.
 - Do not blindly retry a 400/401/403/409. Fix configuration/user action first.
 - 429 respects limiter headers/backoff. 500/503 may be retried with bounded exponential jitter.
 - Clients should wait for RTDB/Firestore push confirmation where UI truth depends on database state.

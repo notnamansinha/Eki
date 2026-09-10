@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { normalizeRouteStopPayload, prepareRouteSavePayload, routeIdFromName } from "./routeStopPayload";
+import {
+  normalizeRouteStopPayload,
+  prepareRouteSavePayload,
+  reorderRouteStops,
+  routeIdFromName,
+  swapRouteEndpoints,
+} from "./routeStopPayload";
 
 describe("route stop save payload", () => {
   it("normalizes an old verbose search result and serialized dragged coordinates", () => {
@@ -85,5 +91,20 @@ describe("route stop save payload", () => {
     });
 
     expect(result).toEqual({ ok: false, error: "Each stop must be added only once." });
+  });
+
+  it("swaps endpoints twice without changing stable stop identities", () => {
+    const stops = [{ id: "origin" }, { id: "destination" }];
+    const swapped = swapRouteEndpoints(stops);
+    expect(swapped.map((stop) => stop.id)).toEqual(["destination", "origin"]);
+    expect(swapRouteEndpoints(swapped)).toEqual(stops);
+    expect(swapped[0]).toBe(stops[1]);
+  });
+
+  it("reorders a longer route without cloning or regenerating stops", () => {
+    const stops = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    const reordered = reorderRouteStops(stops, 2, 0);
+    expect(reordered.map((stop) => stop.id)).toEqual(["c", "a", "b"]);
+    expect(reordered[0]).toBe(stops[2]);
   });
 });

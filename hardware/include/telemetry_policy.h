@@ -26,6 +26,9 @@ constexpr double GNSS_STATIONARY_SPEED_KMH = 2.5;
 constexpr double GNSS_HDOP_MAX = 4.0;
 constexpr uint32_t GNSS_MAX_TRANSITION_GAP_MS = 60UL * 1000;
 constexpr uint32_t GNSS_REACQUIRE_AFTER_MS = 5UL * 60 * 1000;
+// Telemetry is evaluated from the GNSS owner task at this cadence. Keep the
+// motion confirmation count explicit so traces map to a real duration.
+constexpr uint32_t TELEMETRY_EVALUATION_INTERVAL_MS = 1000;
 constexpr uint32_t MIN_PUBLISH_INTERVAL_MS = 1000;
 constexpr uint32_t MOVING_HEARTBEAT_MS = 1000;
 // Endpoint arrival and automatic turnaround require fresh stopped telemetry.
@@ -33,6 +36,8 @@ constexpr uint32_t MOVING_HEARTBEAT_MS = 1000;
 // stationary, connected bus cannot become stale at the exact moment its
 // direction needs to change.
 constexpr uint32_t STOPPED_HEARTBEAT_MS = 5000;
+constexpr uint8_t MOTION_CONFIRMATION_READINGS = 3;
+constexpr uint32_t HTTP_REQUEST_TIMEOUT_MS = 7000;
 constexpr uint32_t HTTPS_RETRY_BASE_MS = 1000;
 constexpr uint32_t HTTPS_RETRY_MAX_MS = 30000;
 constexpr uint32_t HTTPS_RATE_LIMIT_RETRY_MS = 60000;
@@ -114,13 +119,24 @@ struct MotionTracker {
 
   const char *update(double speedKmh) {
     if (speedKmh >= MOVING_SPEED_KMH) {
-      movingReadings = std::min<uint8_t>(movingReadings + 1, 3);
+      movingReadings = std::min<uint8_t>(
+        movingReadings + 1,
+        MOTION_CONFIRMATION_READINGS
+      );
       stoppedReadings = 0;
-      if (movingReadings >= 3) moving = true;
+      if (movingReadings >= MOTION_CONFIRMATION_READINGS) moving = true;
     } else if (speedKmh <= STOP_SPEED_KMH) {
-      stoppedReadings = std::min<uint8_t>(stoppedReadings + 1, 3);
+      stoppedReadings = std::min<uint8_t>(
+        stoppedReadings + 1,
+        MOTION_CONFIRMATION_READINGS
+      );
       movingReadings = 0;
-      if (stoppedReadings >= 3) moving = false;
+      if (stoppedReadings >= MOTION_CONFIRMATION_READINGS) moving = false;
+    } else {
+      // Neutral-band samples preserve the confirmed state but break a pending
+      // transition, so separated noisy readings cannot confirm a change.
+      movingReadings = 0;
+      stoppedReadings = 0;
     }
     return moving ? "moving" : "stopped";
   }

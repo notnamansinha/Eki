@@ -81,7 +81,7 @@ The 100-sample queue occupies 5,648 bytes of RTC no-init memory. At the maximum 
 | Position reacquisition | after 5 min without an accepted anchor | Permit legitimate relocation after a prolonged outage |
 | HDOP maximum | 4.0 | Reject poor horizontal geometry |
 | Moving enter / stopped enter | 2.5 / 1.5 km/h | Hysteresis against jitter |
-| Confirmation readings | 3 | Stable motion classification |
+| Confirmation readings | 3 consecutive qualifying 1 s evaluations | Stable motion classification; neutral-band noise cannot complete a pending transition |
 | Minimum changed capture | 1 s | Low-latency upper bound on queue/write frequency |
 | Distance change | 5 m | Position materiality |
 | Heading change | 15° | Direction materiality |
@@ -96,7 +96,7 @@ The 100-sample queue occupies 5,648 bytes of RTC no-init memory. At the maximum 
 | RTC queue | 100 samples / 5,648 bytes | Bounded store-and-forward with oldest-drop overflow |
 | Queued-fix discard | >55 s | Stay within backend freshness window |
 | Task watchdog | 25 s, panic/restart | Cover both tasks and bounded connect-plus-request latency |
-| Remote diagnostics | first at 30 s, then every 5 min while idle | Authenticated bounded health without delaying a queued fix |
+| Remote diagnostics | first at 30 s, then every 5 min while no fresh telemetry is queued | Authenticated bounded health without delaying a queued fix or retry recovery |
 | NMEA no-data warning | after 5 s, every 5 s | Wiring/baud diagnosis |
 
 Wi-Fi persistence is disabled before the driver starts, auto-reconnect is enabled, the strongest known AP is selected with fast scan, and modem sleep is disabled because the tracker is vehicle-powered and latency is preferred over battery life. Outages retry indefinitely with bounded exponential delay; the firmware never starts a soft AP or HTTP server. A credential fault disables the station radio and GPIO2 emits three short pulses every two seconds until corrected firmware is flashed. Fleet builds require release-mode flash encryption and Secure Boot, and explicitly disable ESP32 Wi-Fi key-value persistence.
@@ -106,6 +106,12 @@ Deterministic UTC conversion/discipline lives in `hardware/include/clock_policy.
 ## Payload and HTTP outcomes
 
 The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). Each captured fix includes receiver HDOP so off-route confirmation can reject poor-quality evidence; GNSS fixes above HDOP 4 are already rejected on-device. The device treats only 200/202 as telemetry success. A success removes the acknowledged fix plus older superseded fixes, while preserving any newer fix captured during the request. Transport errors, 408/425/429 and 5xx retain the attempted sample for retry; other permanent HTTP statuses remove only that sample. HTTP 401/403 retains the rejected sample, latches a credential fault, disables the station radio, and requires a corrected firmware reflash so a doomed secret cannot create an infinite loop. Normal freshness eviction still prevents an old retained sample from violating the backend's timestamp contract. HTTP 429 honors the bounded delta-seconds `Retry-After` value. If a newer fix arrives during a retryable request, it becomes the next recovery candidate. Remote diagnostics is a separate best-effort 1 KiB POST containing only bounded counters/state; its failure never evicts or delays a queued fix.
+
+## Trace evidence and gap classification
+
+The configured baseline is a one-second evaluation and moving heartbeat, a five-second stopped heartbeat, three consecutive qualifying motion readings, and a seven-second connect/request timeout. These values remain unchanged until route traces and backend-capacity evidence justify a numeric change. The serial log records each accepted request duration, retry number/delay, stale-queue eviction, and a periodic `Telemetry Evidence` line containing capture, attempt and retry totals, capture/accept ages, queue depth, and remaining retry delay.
+
+Treat a gap as intentional only when `captureSeen=1`, `captureAgeMs` is within the selected heartbeat for the confirmed motion state, and the queue/retry indicators are clear. If `captureAgeMs` exceeds that heartbeat, investigate GNSS capture or fix quality first. If capture remains current, a growing `acceptedAgeMs`, non-zero queue, retry delay, stale drop, transport error, or rejected count is a delivery problem. The extra evidence remains serial-only while backend capacity work decides which additional diagnostic fields can be stored without changing the closed authenticated diagnostics schema.
 
 | Symptom | Likely cause | Action |
 |---|---|---|
