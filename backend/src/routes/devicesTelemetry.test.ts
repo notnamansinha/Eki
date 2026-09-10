@@ -22,11 +22,13 @@ vi.mock("../services/telemetryPayload", () => ({
   parseTelemetryValue: () => ({
     ok: true,
     value: {
+      deviceSentAt: Date.now(),
       lat: 23,
       lng: 72,
       speed: 0,
       heading: 0,
       motionState: "stopped",
+      seq: 1,
       timestamp: Date.now(),
     },
   }),

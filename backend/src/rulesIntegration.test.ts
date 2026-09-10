@@ -60,6 +60,13 @@ rulesDescribe("Firebase security rules integration", () => {
         motionState: "stopped",
         timestamp: Date.now(),
       });
+      await set(ref(context.database(), "activeRouteGeometry/bus_1_route_1/2"), {
+        routeId: "route_1",
+        direction: "forward",
+        source: "dynamic-reroute",
+        routeVersion: 2,
+        polyline: "encoded-polyline",
+      });
       await setDoc(doc(context.firestore(), "routes", "route_1"), {
         id: "route_1",
         name: "Test",
@@ -102,10 +109,15 @@ rulesDescribe("Firebase security rules integration", () => {
     const admin = environment.authenticatedContext("admin_1", { role: "admin", admin: true });
     const device = environment.authenticatedContext("device_1", { role: "device" });
     await assertSucceeds(get(ref(passenger.database(), "activeBuses")));
+    await assertSucceeds(get(ref(passenger.database(), "activeRouteGeometry/bus_1_route_1/2")));
     await assertFails(get(ref(environment.unauthenticatedContext().database(), "activeBuses")));
+    await assertFails(get(ref(environment.unauthenticatedContext().database(), "activeRouteGeometry")));
     await assertFails(set(ref(passenger.database(), "activeBuses/x"), { lat: 1 }));
     await assertFails(set(ref(admin.database(), "activeBuses/x"), { lat: 1 }));
     await assertFails(set(ref(device.database(), "activeBuses/x"), { lat: 1 }));
+    await assertFails(set(ref(passenger.database(), "activeRouteGeometry/x/1"), { polyline: "x" }));
+    await assertFails(set(ref(admin.database(), "activeRouteGeometry/x/1"), { polyline: "x" }));
+    await assertFails(set(ref(device.database(), "activeRouteGeometry/x/1"), { polyline: "x" }));
   });
 
   it("denies browser route/device/session mutations and recovery-state reads", async () => {

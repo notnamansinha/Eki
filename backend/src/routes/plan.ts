@@ -29,12 +29,15 @@ interface RouteDoc {
   stops: Stop[];
   waypoints: { lat: number; lng: number }[];
   polyline: string;
+  forwardPolyline?: string;
+  reversePolyline?: string;
 }
 
 const ROUTE_CACHE_MS = 5 * 60 * 1000;
 const routeCache = new Map<string, {
   route: RouteDoc;
-  fullCoords: { lat: number; lng: number }[];
+  forwardCoords: { lat: number; lng: number }[];
+  reverseCoords: { lat: number; lng: number }[];
   expiresAt: number;
 }>();
 
@@ -48,9 +51,17 @@ async function getCachedRoute(routeId: string) {
   const document = await db.collection("routes").doc(routeId).get();
   if (!document.exists) return null;
   const route = document.data() as RouteDoc;
+  const forwardPolyline = route.forwardPolyline ?? route.polyline;
+  const forwardCoords = forwardPolyline ? decodePolyline(forwardPolyline) : [];
   const value = {
     route,
-    fullCoords: route.polyline ? decodePolyline(route.polyline) : [],
+    forwardCoords,
+    // Legacy route documents predate directional reverse geometry. Fall back to
+    // the reversed forward (A→Z handled as Z→A) polyline so a reverse trip on a
+    // historical route never 422s purely because reversePolyline is absent.
+    reverseCoords: route.reversePolyline
+      ? decodePolyline(route.reversePolyline)
+      : [...forwardCoords].reverse(),
     expiresAt: Date.now() + ROUTE_CACHE_MS,
   };
   if (routeCache.size >= 250) {
@@ -100,15 +111,10 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
       res.status(404).json({ error: `Route '${routeId}' not found in Firestore` });
       return;
     }
-    const { route, fullCoords } = cached;
+    const { route, forwardCoords, reverseCoords } = cached;
 
     if (!route.stops || route.stops.length < 2) {
       res.status(422).json({ error: "Route has no stops data. Please re-seed the database." });
-      return;
-    }
-
-    if (!route.polyline) {
-      res.status(422).json({ error: "Route has no stored polyline. Please re-seed the database." });
       return;
     }
 
@@ -129,6 +135,22 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
     }
     if (viaStopId && !viaStop) {
       res.status(404).json({ error: `Via stop '${viaStopId}' not found on route '${routeId}'` });
+      return;
+    }
+
+    const startNaturalIndex = stops.indexOf(startStop);
+    const endNaturalIndex = stops.indexOf(endStop);
+    const direction = startNaturalIndex < endNaturalIndex ? "forward" : "reverse";
+    const fullCoords =
+      direction === "forward"
+        ? forwardCoords
+        : reverseCoords.length >= 2
+          ? reverseCoords
+          : [...forwardCoords].reverse();
+    if (fullCoords.length < 2) {
+      res.status(422).json({
+        error: `Route has no stored ${direction} geometry. Load or re-save the route to repair it.`,
+      });
       return;
     }
 
@@ -157,6 +179,7 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
       stopsOnSegment,
       polyline: segmentPolyline,
       totalStops: stopsOnSegment.length,
+      direction,
     });
 
   } catch (err) {

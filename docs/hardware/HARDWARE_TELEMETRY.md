@@ -69,7 +69,7 @@ The two tasks share only short critical sections around the fixed-capacity ring 
 
 Fresh TinyGPSPlus date/time (maximum two-second age, strict calendar/range validation) is converted without timezone-sensitive `mktime` and applied using `settimeofday`. This establishes TLS-valid time before Wi-Fi/NTP is available and corrects drift of at least 1.5 seconds no more than once per minute. Once Wi-Fi connects, SNTP is scheduled as a six-hour cross-check/fallback. GNSS remains the primary discipline source; invalid/stale GNSS time is never applied.
 
-The 120-sample queue occupies 5,808 bytes of RTC no-init memory. At the maximum one capture per second it covers two minutes; heartbeats consume less. It survives software/watchdog resets, rejects recovery when the device/backend identity or queue layout changes, and drops the oldest entry on overflow. The backend accepts timestamps only within 60 seconds, so recovery sends newest-first and purges entries outside a 55-second safety margin rather than replaying invalid data. A successful newest-fix acknowledgement also compacts every older superseded sample, preventing stale duplicate traffic from consuming the one-second delivery budget.
+The 100-sample queue occupies 5,648 bytes of RTC no-init memory. At the maximum one capture per second it covers 100 seconds; heartbeats consume less. It survives software/watchdog resets, rejects recovery when the device/backend identity or queue layout changes, and drops the oldest entry on overflow. The backend accepts timestamps only within 60 seconds, so recovery sends newest-first and purges entries outside a 55-second safety margin rather than replaying invalid data. A successful newest-fix acknowledgement also compacts every older superseded sample, preventing stale duplicate traffic from consuming the one-second delivery budget.
 
 ## Fix quality and transmission parameters
 
@@ -86,14 +86,14 @@ The 120-sample queue occupies 5,808 bytes of RTC no-init memory. At the maximum 
 | Distance change | 5 m | Position materiality |
 | Heading change | 15° | Direction materiality |
 | Speed change | 5 km/h | Velocity materiality |
-| Moving/stopped heartbeat | 1 / 60 s | Live movement with bounded stationary writes |
+| Moving/stopped heartbeat | 1 / 5 s | Live movement plus fresh stopped endpoint state |
 | HTTP connect/request timeout | 7 s | Bound blocked network work |
 | GNSS UTC maximum age | 2 s | Reject stale date/time sentences |
 | GNSS correction | >=1.5 s, at most once/minute | Primary clock discipline without rapid jumps |
 | NTP cross-check | startup after Wi-Fi, then six-hour schedule | Independent fallback/check; not a publish dependency |
 | Wi-Fi retry | 5-60 s exponential | Bound radio churn while retrying indefinitely |
 | HTTPS retry | 1–30 s + up to 1 s jitter | Recovery without fleet retry storm |
-| RTC queue | 120 samples / 5,808 bytes | Bounded store-and-forward with oldest-drop overflow |
+| RTC queue | 100 samples / 5,648 bytes | Bounded store-and-forward with oldest-drop overflow |
 | Queued-fix discard | >55 s | Stay within backend freshness window |
 | Task watchdog | 25 s, panic/restart | Cover both tasks and bounded connect-plus-request latency |
 | Remote diagnostics | first at 30 s, then every 5 min while idle | Authenticated bounded health without delaying a queued fix |
@@ -105,7 +105,7 @@ Deterministic UTC conversion/discipline lives in `hardware/include/clock_policy.
 
 ## Payload and HTTP outcomes
 
-The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). The device treats only 200/202 as telemetry success. A success removes the acknowledged fix plus older superseded fixes, while preserving any newer fix captured during the request. Transport errors, 408/425/429 and 5xx retain the attempted sample for retry; other permanent HTTP statuses remove only that sample. HTTP 401/403 retains the rejected sample, latches a credential fault, disables the station radio, and requires a corrected firmware reflash so a doomed secret cannot create an infinite loop. Normal freshness eviction still prevents an old retained sample from violating the backend's timestamp contract. HTTP 429 honors the bounded delta-seconds `Retry-After` value. If a newer fix arrives during a retryable request, it becomes the next recovery candidate. Remote diagnostics is a separate best-effort 1 KiB POST containing only bounded counters/state; its failure never evicts or delays a queued fix.
+The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). Each captured fix includes receiver HDOP so off-route confirmation can reject poor-quality evidence; GNSS fixes above HDOP 4 are already rejected on-device. The device treats only 200/202 as telemetry success. A success removes the acknowledged fix plus older superseded fixes, while preserving any newer fix captured during the request. Transport errors, 408/425/429 and 5xx retain the attempted sample for retry; other permanent HTTP statuses remove only that sample. HTTP 401/403 retains the rejected sample, latches a credential fault, disables the station radio, and requires a corrected firmware reflash so a doomed secret cannot create an infinite loop. Normal freshness eviction still prevents an old retained sample from violating the backend's timestamp contract. HTTP 429 honors the bounded delta-seconds `Retry-After` value. If a newer fix arrives during a retryable request, it becomes the next recovery candidate. Remote diagnostics is a separate best-effort 1 KiB POST containing only bounded counters/state; its failure never evicts or delays a queued fix.
 
 | Symptom | Likely cause | Action |
 |---|---|---|
@@ -115,7 +115,7 @@ The body fields and limits are defined in [Firebase data model](../data/FIREBASE
 | Boot halts on compile-time configuration | Missing/invalid value in `secrets.h` | Correct the named field, rebuild, and reflash |
 | Fleet firmware halts at security gate | Flash encryption or Secure Boot inactive | Quarantine the unit; repeat only the witnessed spare-board procedure, never bypass the gate |
 | Negative HTTPClient/transport failure | DNS/backend unreachable, wrong hostname/CA, expired issuer, bad clock | Use the printed transport string; verify URL chain and NTP; never use insecure mode |
-| HTTP 400 | Firmware/backend contract mismatch or timestamp/range | Compare exact six fields and clock |
+| HTTP 400 | Firmware/backend contract mismatch or timestamp/range | Compare the deployed schema (nine-field current; eight-field sequenced and six-field legacy compatibility), sequence, and clock |
 | HTTP 401/403 + three LED pulses | ID/secret disabled/mismatched or assignment invalid | Rotate/inspect registry, update `secrets.h`, build a protected artifact, and reflash |
 | HTTP 429 | IP/device limiter | Check publish loop/config and WAF limits |
 | HTTP 503/timeouts | Backend/Firebase/network outage | Inspect `/health`; backoff retains the bounded queue |
@@ -125,7 +125,7 @@ The body fields and limits are defined in [Firebase data model](../data/FIREBASE
 
 ## Latency analysis
 
-The device serial line is not the normal bottleneck: NMEA parsing continues while HTTPS blocks the publisher task. While moving, designed latency is up to one-second evaluation plus network/TLS/API/RTDB time; the one-second publish floor prevents duplicate bursts without deliberately adding multi-second lag. On recovery the newest eligible state is restored first. Stationary heartbeat visibility remains intentionally 60 seconds.
+The device serial line is not the normal bottleneck: NMEA parsing continues while HTTPS blocks the publisher task. While moving, designed latency is up to one-second evaluation plus network/TLS/API/RTDB time; the one-second publish floor prevents duplicate bursts without deliberately adding multi-second lag. On recovery the newest eligible state is restored first. Stationary heartbeats arrive every five seconds so endpoint arrival and automatic turnaround do not race the backend's 60-second freshness gate.
 
 Admin-authenticated backend `/api/health.telemetry` provides:
 

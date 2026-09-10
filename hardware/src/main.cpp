@@ -88,7 +88,9 @@ constexpr uint32_t GNSS_EPOCH_REFERENCE_MAX_AGE_MS = 24UL * 60 * 60 * 1000;
 constexpr uint32_t NTP_CROSS_CHECK_INTERVAL_MS = 6UL * 60 * 60 * 1000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 7000;
 constexpr uint32_t WATCHDOG_TIMEOUT_MS = 25000;
-constexpr size_t TELEMETRY_QUEUE_CAPACITY = 120;
+// TelemetryFix grew when receiver HDOP and monotonic sequencing were added.
+// Keep the retained ring below the 6 KiB RTC-state budget with reset stats.
+constexpr size_t TELEMETRY_QUEUE_CAPACITY = 100;
 constexpr uint32_t FIRST_REMOTE_DIAGNOSTIC_DELAY_MS = 30000;
 constexpr uint32_t REMOTE_DIAGNOSTIC_INTERVAL_MS = 5UL * 60 * 1000;
 
@@ -161,6 +163,7 @@ struct TelemetryFix {
   double lng;
   double speed;
   double heading;
+  double gpsHdop;
   int64_t timestamp;
   uint32_t sequence;
   MotionState motionState;
@@ -1087,11 +1090,14 @@ PublishResult publishFix(const TelemetryFix &fix) {
   if (httpsRetryIsPending()) return PublishResult::RetryLatest;
 
   JsonDocument document;
+  document["deviceSentAt"] = epochMilliseconds();
   document["lat"] = fix.lat;
   document["lng"] = fix.lng;
   document["speed"] = fix.speed;
   document["heading"] = fix.heading;
+  document["gpsHdop"] = fix.gpsHdop;
   document["motionState"] = motionStateName(fix.motionState);
+  document["seq"] = fix.sequence;
   document["timestamp"] = fix.timestamp;
 
   char payload[512]{};
@@ -1156,7 +1162,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
       WiFi.RSSI()
     );
     if (responseCode == 400 || responseCode == 413 || responseCode == 422) {
-      Serial.println("[HTTPS] Check the six-field payload and GNSS/NTP-disciplined timestamp.");
+      Serial.println("[HTTPS] Check the telemetry payload and GNSS/NTP-disciplined timestamps.");
     } else if (responseCode == 401 || responseCode == 403) {
       Serial.println("[HTTPS] Credential fault latched; correct secrets.h and reflash the device.");
     } else if (responseCode == 404) {
@@ -1333,6 +1339,7 @@ TelemetryFix currentFix() {
   fix.heading = gps.course.isValid()
     ? fmod(max(gps.course.deg(), 0.0), 360.0)
     : 0.0;
+  fix.gpsHdop = gps.hdop.hdop();
   fix.motionState = motionStateFromTracker(motionTracker.update(rawSpeed));
   fix.timestamp = epochMilliseconds();
   // GNSS quality and wall-clock readiness are separate signals.
@@ -1416,6 +1423,7 @@ void evaluateTelemetry() {
       uncertain.lng = lastCapturedLng;
       uncertain.speed = 0;
       uncertain.heading = lastCapturedHeading;
+      uncertain.gpsHdop = 99.0;
       uncertain.motionState = MotionState::Uncertain;
       uncertain.timestamp = epochMilliseconds();
       uncertain.valid = true;

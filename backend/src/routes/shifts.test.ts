@@ -364,6 +364,15 @@ describe("shift start after automatic completion", () => {
       hasDepartedOrigin: true,
       delayMinutes: 12,
       delayUpdatedAt: 9_000,
+      activeRouteId: "route_1:reroute:7",
+      activeRoutePolyline: "old-polyline",
+      routeVersion: 7,
+      routeSource: "dynamic-reroute",
+      routeDirection: "forward",
+      routeSessionId: "session_completed",
+      routeState: "ON_NEW_ROUTE",
+      matchedLocation: { lat: 23.19, lng: 72.69 },
+      rerouteRequestId: "old-request",
       lat: 23.2,
       lng: 72.7,
       timestamp: Date.now(),
@@ -384,6 +393,17 @@ describe("shift start after automatic completion", () => {
     expect(harness.liveNode.hasDepartedOrigin).toBe(false);
     expect(harness.liveNode.delayMinutes).toBe(0);
     expect(harness.liveNode.delayUpdatedAt).toBe(0);
+    expect(harness.liveNode).not.toHaveProperty("activeRouteId");
+    expect(harness.liveNode).not.toHaveProperty("activeRoutePolyline");
+    expect(harness.liveNode).not.toHaveProperty("routeVersion");
+    expect(harness.liveNode).not.toHaveProperty("routeSource");
+    expect(harness.liveNode).not.toHaveProperty("routeDirection");
+    expect(harness.liveNode).not.toHaveProperty("routeSessionId");
+    expect(harness.liveNode).not.toHaveProperty("routeState");
+    expect(harness.liveNode).not.toHaveProperty("matchedLocation");
+    expect(harness.liveNode).not.toHaveProperty("rerouteRequestId");
+    expect(harness.liveNode.lat).toBe(23.2);
+    expect(harness.liveNode.lng).toBe(72.7);
 
     // The new ride session is armed; the completed session was NOT revived.
     const sessionSet = harness.batchSets.find((entry) => entry.id === "new_session_1");

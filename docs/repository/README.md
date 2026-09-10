@@ -2,8 +2,10 @@
 
 ## Fast recovery: backend, tunnel, panel, and ESP32
 
-Use these commands when the ESP reports `DNS Failed` or the tunnel hostname has
-expired. Run each block in a separate terminal and keep Terminals 1 and 2 open.
+Use these commands when the ESP reports `DNS Failed` or the test tunnel is
+offline. The ngrok development domain is configured once and then reused, so a
+tunnel restart does not by itself require another firmware build or reflash.
+Run each block in a separate terminal and keep Terminals 1 and 2 open.
 
 **1. Start the backend (Terminal 1):**
 
@@ -12,19 +14,27 @@ cd C:\Users\Naman Sinha\Desktop\Eki
 npm run dev --workspace=backend
 ```
 
-**2. Create and verify a fresh HTTPS tunnel (Terminal 2):**
+**2. Start the stable HTTPS tunnel (Terminal 2):**
 
 ```powershell
-cloudflared tunnel --protocol http2 --url http://localhost:4000
-# Copy the generated URL, for example:
-$BackendOrigin = "https://<generated-host>.trycloudflare.com"
+ngrok config add-authtoken <YOUR_NGROK_AUTHTOKEN> # one-time setup
+$NgrokDomain = "<assigned-domain>" # for example: name.ngrok-free.dev
+ngrok http 4000 --url "https://$NgrokDomain"
+```
+
+Keep ngrok running. In Terminal 3, verify the fixed origin:
+
+```powershell
+$BackendOrigin = "https://<assigned-domain>"
 Invoke-RestMethod "$BackendOrigin/health"
 ```
 
-The health response must be `{"status":"ok"}`. A Quick Tunnel URL expires when
-`cloudflared` stops, so repeat every consumer update below whenever it changes.
+The health response must be `{"status":"ok"}`. Use the development domain
+assigned to the ngrok account; do not omit `--url` and accept a different
+ephemeral hostname. Store the authtoken only in ngrok's user-level configuration,
+never in this repository.
 
-**3. Update the local configuration:**
+**3. Configure consumers once (skip when the stable origin is unchanged):**
 
 ```powershell
 notepad hardware/include/secrets.h       # set BACKEND_URL to $BackendOrigin
@@ -32,10 +42,12 @@ notepad frontend/.env.local               # set NEXT_PUBLIC_BACKEND_URL
 notepad frontend/.env.production          # set NEXT_PUBLIC_BACKEND_URL
 ```
 
-Never put the tunnel URL in `backend/.env`. The ESP URL is compiled into the
-firmware, so it requires a rebuild and reflash.
+Never put the tunnel URL in `backend/.env`. The ESP URL and issuing root CA are
+compiled into the firmware. Configure the stable ngrok origin and its issuing
+root CA once; ordinary ngrok restarts and leaf-certificate renewals then do not
+require a rebuild or reflash.
 
-**4. Deploy the hosted panel (Terminal 3):**
+**4. Deploy the hosted panel after initial setup or origin changes (Terminal 3):**
 
 ```powershell
 $env:NEXT_PUBLIC_BACKEND_URL = $BackendOrigin
@@ -45,7 +57,7 @@ npm run deploy
 Setting the environment variable explicitly makes the generated Firebase CSP
 allow the same backend origin used by the hosted panel.
 
-**5. Rebuild and flash the ESP32 (Terminal 4):**
+**5. Build and flash only for initial provisioning or compiled changes (Terminal 4):**
 
 ```powershell
 py -m platformio run --project-dir hardware -e esp32dev
@@ -54,7 +66,8 @@ py -m platformio device monitor --project-dir hardware --port COM3 --baud 115200
 ```
 
 Replace `COM3` with the port shown by `py -m platformio device list`. The serial
-monitor should show Wi-Fi connected, GNSS connected, and no DNS/transport errors.
+monitor should show Wi-Fi connected, GNSS connected, and no DNS/transport
+errors. On later ngrok/backend restarts with the same origin, skip steps 3 and 5.
 
 **6. Verify the correct route assignment:**
 
@@ -85,31 +98,29 @@ For ordinary testing on the same laptop, keep
 `NEXT_PUBLIC_BACKEND_URL=http://localhost:4000` in `frontend/.env.local`.
 
 An ESP32 or remote phone cannot use the laptop's `localhost`. Keep `npm run dev`
-running and open a second terminal for a temporary backend Quick Tunnel:
+running and open a second terminal for the account's stable ngrok development
+domain. Add the account authtoken once, outside the repository:
 
 ```powershell
-cloudflared tunnel --protocol http2 --url http://localhost:4000
+ngrok config add-authtoken <YOUR_NGROK_AUTHTOKEN>
+ngrok http 4000 --url https://<assigned-domain>
 ```
 
-Use `--protocol http2` on this Windows test setup because QUIC can repeatedly
-fail on some networks. Verify the generated HTTPS origin before flashing or
-deploying anything:
+Verify the fixed HTTPS origin before flashing or deploying anything:
 
 ```powershell
-Invoke-RestMethod https://<generated-host>.trycloudflare.com/health
+Invoke-RestMethod https://<assigned-domain>/health
 ```
 
-> **Important: a Quick Tunnel normally gets a new `trycloudflare.com` URL every
-> time it is restarted.** The old URL then stops working. Restarting only
-> `npm run dev` does not create a new URL, but stopping/restarting `cloudflared`
-> does. Keep both terminals open for the entire test.
+> **Important:** always pass the assigned development domain with `--url`.
+> Restarting ngrok with the same domain preserves the public backend origin.
+> Keep both the backend and ngrok processes open for the entire test.
 
-Whenever the Quick Tunnel URL changes, update every consumer that is part of
-the current test:
+Configure each consumer once with the stable backend origin:
 
 | Consumer | Where to put the new HTTPS origin | Required action |
 |---|---|---|
-| ESP32 | `BACKEND_URL` in ignored `hardware/include/secrets.h` | Rebuild and reflash firmware |
+| ESP32 | `BACKEND_URL` and issuing root CA in ignored `hardware/include/secrets.h` | Rebuild and reflash once |
 | Locally served frontend used from another device | `NEXT_PUBLIC_BACKEND_URL` in ignored `frontend/.env.local` | Restart `npm run dev` |
 | Firebase-hosted frontend | `NEXT_PUBLIC_BACKEND_URL` in ignored `frontend/.env.production` or the deployment environment | Run the strict build and redeploy |
 | GitHub deployment | Environment secret `NEXT_PUBLIC_BACKEND_URL` | Update before the next workflow deploy |
@@ -119,23 +130,20 @@ listen locally on port `4000`. `CORS_ORIGIN` in `backend/.env` contains frontend
 origins such as `http://localhost:3000` or `https://<project>.web.app`, not the
 backend tunnel origin.
 
-For repeated or long-running tests, replace the Quick Tunnel with a named
-Cloudflare Tunnel and stable hostname:
-
-```powershell
-cloudflared tunnel run <tunnel-name>
-```
-
-Once that stable hostname is configured in the frontend, firmware, CORS/deploy
-environment, and GitHub secret, tunnel restarts no longer require changing the
-URL or reflashing solely because the hostname changed.
+Do not pin the current ngrok leaf certificate: it is expected to renew. Embed
+the issuing root CA in `BACKEND_ROOT_CA`, keep hostname verification enabled,
+and reflash only if the stable domain, issuing trust root, device/Wi-Fi
+credentials, or firmware changes. See the [ngrok tunnel runbook](../operations/NGROK_TUNNEL.md)
+for one-time provisioning and troubleshooting.
 
 If the remote phone also needs the locally served frontend instead of Firebase
-Hosting, open a separate frontend tunnel in a third terminal and add its
-hostname to Firebase Authentication authorized domains:
+Hosting, provision a second eligible stable ngrok domain, open its tunnel in a
+third terminal, and add its hostname to Firebase Authentication authorized
+domains. The free account's single assigned domain should remain dedicated to
+the backend, so Firebase Hosting is the preferred phone frontend:
 
 ```powershell
-cloudflared tunnel --protocol http2 --url http://localhost:3000
+ngrok http 3000 --url https://<frontend-domain>
 ```
 
 ## Testing handoff: web app and ESP32
@@ -179,11 +187,12 @@ npm run provision-device --workspace=backend -- `
   --device-id device_01 --bus-id bus_01 --route-id route_01
 ```
 
-Use the backend tunnel URL printed above and verify
-`https://<backend-tunnel-host>/health` returns HTTP 200.
+Use the stable ngrok backend origin configured above and verify
+`https://<assigned-domain>/health` returns HTTP 200.
 
-Set the tunnel origin in `BACKEND_URL` and its matching CA in
-`BACKEND_ROOT_CA`, then build, flash, and monitor:
+Set the stable origin in `BACKEND_URL` and its verified issuing root CA in
+`BACKEND_ROOT_CA`, then build, flash, and monitor. Do this once unless a
+compiled configuration value changes:
 
 ```powershell
 py -m platformio test --project-dir hardware -e native
@@ -198,11 +207,11 @@ backend tunnel running.
 
 ### 3. Testing from a phone or another computer
 
-For remote web-app testing, set `NEXT_PUBLIC_BACKEND_URL` to the backend tunnel
-origin and add the frontend tunnel origin to `CORS_ORIGIN`; restart the affected
-service. Add the frontend tunnel hostname to Firebase Authentication authorized
-domains. If App Check is enabled, use a temporary local debug token only in the
-ignored frontend env.
+For remote web-app testing, set `NEXT_PUBLIC_BACKEND_URL` to the stable ngrok
+backend origin. Prefer Firebase Hosting; if a separate local frontend tunnel is
+used, add that frontend origin to `CORS_ORIGIN` and Firebase Authentication
+authorized domains, then restart the affected services. If App Check is enabled,
+use a temporary local debug token only in the ignored frontend env.
 
 ### 4. Files to change when the test environment changes
 
@@ -222,8 +231,9 @@ and tested firmware policy. The secure fleet path also requires the controlled
 `hardware/keys/secure_boot_signing_key.pem`; use `esp32dev` for bench testing
 and `esp32dev-secure` only through the security provisioning procedure.
 
-Keep the laptop awake, keep both tunnels open, use a stable power source and
-clear-sky GNSS view, and record only non-secret test evidence. Never share
+Keep the laptop awake, keep the backend ngrok endpoint and any separate frontend
+tunnel open, use a stable power source and clear-sky GNSS view, and record only
+non-secret test evidence. Never share
 service-account JSON, Wi-Fi passwords, device secrets, App Check debug tokens,
 signing keys, or unredacted serial logs.
 
@@ -317,18 +327,23 @@ Content-Type: application/json
 
 ```json
 {
+  "deviceSentAt": <current Unix epoch in milliseconds>,
+  "gpsHdop": 1.2,
   "lat": 23.034,
   "lng": 72.55,
   "speed": 18.2,
   "heading": 94,
   "motionState": "moving",
+  "seq": 1,
   "timestamp": <current Unix epoch in milliseconds>
 }
 ```
 
-Generate the timestamp immediately before sending (for example, `Date.now()`); it must be a current Unix epoch value in milliseconds. The JSON is limited to 512 bytes and exactly six fields. Coordinates, speed (0–200 km/h), heading (0–360), motion state, and timestamp freshness are checked. `202` accepts a new fix; `200` acknowledges a duplicate; `400`, `401`, `413`, `429`, and `503` indicate payload, credential, body-size, rate, and service failures.
+The JSON is limited to 512 bytes and exactly nine fields. It includes the GNSS capture `timestamp`, per-attempt `deviceSentAt`, positive queue `seq`, and receiver `gpsHdop` in addition to coordinates, speed (0–200 km/h), heading (0–<360), and motion state. During staged firmware rollout the parser also accepts the immediately previous eight-field sequenced schema and the legacy six-field schema. `202` accepts a new fix; `200` acknowledges an older/duplicate sample; `400`, `401`, `413`, `429`, and `503` indicate payload, credential, body-size, rate, and service failures.
 
-Firmware uses NTP/GNSS time for TLS/time stamps, an 8 KiB UART RX buffer, HDOP ≤ 4, motion hysteresis, a one-second moving publish cadence, 60-second stopped heartbeat, 7-second HTTP timeout, capped jittered retry, and a 25-second watchdog. An authenticated 1 KiB diagnostics channel reports bounded device health and hardware-security state every five minutes without credentials. See [Hardware telemetry](../hardware/HARDWARE_TELEMETRY.md).
+Firmware uses NTP/GNSS time for TLS/time stamps, an 8 KiB UART RX buffer, HDOP ≤ 4, motion hysteresis, a one-second moving publish cadence, five-second stopped heartbeat, 7-second HTTP timeout, capped jittered retry, and a 25-second watchdog. An authenticated 1 KiB diagnostics channel reports bounded device health and hardware-security state every five minutes without credentials. See [Hardware telemetry](../hardware/HARDWARE_TELEMETRY.md).
+
+After accepting a fix, the backend preserves it as `rawLocation` and asynchronously derives a separate `matchedLocation` against direction-specific road geometry. Distance, heading, previous segment and forward progress contribute to confidence. Three reliable moving off-route samples confirm a deviation; rerouting then targets the next required stops without blocking telemetry or resetting trip progress. Route versions and request IDs reject stale asynchronous results, while clients fall back to raw GNSS whenever matching confidence is insufficient.
 
 ## Verification
 

@@ -52,6 +52,40 @@ describe("isActiveBusEntry", () => {
     ).toBe(true);
   });
 
+  it("accepts independently observable raw and matched route positions", () => {
+    expect(isActiveBusEntry({
+      busId: "Bus01",
+      timestamp: now - 1_000,
+      lat: 23,
+      lng: 72,
+      routeVersion: 2,
+      routeState: "ON_NEW_ROUTE",
+      routeSource: "dynamic-reroute",
+      rawLocation: {
+        lat: 23.0001,
+        lng: 72.0001,
+        speed: 20,
+        heading: 90,
+        motionState: "moving",
+        seq: 10,
+        sampledAt: now - 1_000,
+      },
+      matchedLocation: {
+        lat: 23,
+        lng: 72,
+        segmentIndex: 4,
+        segmentFraction: 0.5,
+        alongRouteDistanceM: 500,
+        distanceToRouteM: 8,
+        headingDifference: 3,
+        matchConfidence: 0.9,
+        seq: 10,
+        sampledAt: now - 1_000,
+        routeVersion: 2,
+      },
+    }, now)).toBe(true);
+  });
+
   it("rejects stale telemetry outside a ride", () => {
     expect(isActiveBusEntry({ busId: "bus_1", timestamp: now - BUS_EXPIRY_MS }, now)).toBe(false);
   });
@@ -67,9 +101,31 @@ describe("isActiveBusEntry", () => {
       { busId: "bus_1", timestamp: now - 1_000, tripState: "paused" },
       { busId: "bus_1", timestamp: now - 1_000, status: "unknown" },
       { busId: "bus_1", timestamp: now - 1_000, routeId: 42 },
+      { busId: "bus_1", timestamp: now - 1_000, routeState: "TELEPORTING" },
+      { busId: "bus_1", timestamp: now - 1_000, matchConfidence: 2 },
+      { busId: "bus_1", timestamp: now - 1_000, matchedLocation: { lat: 23, lng: 72 } },
     ];
 
     for (const entry of malformed) {
+      expect(isActiveBusEntry(entry, now)).toBe(false);
+      expect(filterActiveBusEntries({ malformed: entry }, now)).toEqual([]);
+    }
+  });
+
+  it("rejects NaN and Infinity in nested telemetry metrics", () => {
+    const base = {
+      busId: "bus_1",
+      timestamp: now - 1_000,
+      motionState: "moving",
+    };
+    const nonFinite = [
+      { ...base, rawLocation: { lat: 23, lng: 72, speed: 5, heading: 90, gpsHdop: Number.NaN, motionState: "moving", seq: 1, sampledAt: now - 1_000 } },
+      { ...base, rawLocation: { lat: 23, lng: 72, speed: Number.POSITIVE_INFINITY, heading: 90, gpsHdop: 4, motionState: "moving", seq: 1, sampledAt: now - 1_000 } },
+      { ...base, matchedLocation: { lat: 23, lng: 72, segmentIndex: 0, segmentFraction: Number.NaN, alongRouteDistanceM: 100, distanceToRouteM: 5, matchConfidence: 0.9, seq: 1, sampledAt: now - 1_000, routeVersion: 2 } },
+      { ...base, matchedLocation: { lat: 23, lng: 72, segmentIndex: 0, segmentFraction: 0.5, alongRouteDistanceM: Number.POSITIVE_INFINITY, distanceToRouteM: 5, matchConfidence: 0.9, seq: 1, sampledAt: now - 1_000, routeVersion: 2 } },
+      { ...base, matchedLocation: { lat: 23, lng: 72, segmentIndex: 0, segmentFraction: 0.5, alongRouteDistanceM: 100, distanceToRouteM: Number.NEGATIVE_INFINITY, matchConfidence: 0.9, seq: 1, sampledAt: now - 1_000, routeVersion: 2 } },
+    ];
+    for (const entry of nonFinite) {
       expect(isActiveBusEntry(entry, now)).toBe(false);
       expect(filterActiveBusEntries({ malformed: entry }, now)).toEqual([]);
     }

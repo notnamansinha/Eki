@@ -38,10 +38,25 @@ export function routeInRideDirection(
   route: RouteData,
   direction: RideDirection,
 ): RouteData {
-  if (direction === "forward") return route;
+  const hasDirectionalGeometry = Boolean(
+    route.forwardPolyline && route.reversePolyline,
+  );
+  if (direction === "forward") {
+    return {
+      ...route,
+      polyline: route.forwardPolyline ?? route.polyline,
+      // Force the authenticated geometry repair endpoint for legacy route
+      // records rather than pretending one reversible path is directional.
+      polylineQuality: hasDirectionalGeometry ? route.polylineQuality : undefined,
+    };
+  }
   return {
     ...route,
     rideDirection: "reverse",
+    polyline: route.reversePolyline,
+    polylineQuality: hasDirectionalGeometry ? route.polylineQuality : undefined,
+    distanceMeters: route.reverseDistanceMeters ?? route.distanceMeters,
+    duration: route.reverseDuration ?? route.duration,
     stops: [...route.stops].reverse(),
     waypoints: [...route.waypoints].reverse(),
   };

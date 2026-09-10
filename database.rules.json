@@ -10,6 +10,10 @@
         ".write": false
       }
     },
+    "activeRouteGeometry": {
+      ".read": "auth != null",
+      ".write": false
+    },
     "_deviceRateLimits": {
       ".read": false,
       ".write": false

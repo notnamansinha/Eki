@@ -10,14 +10,21 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
 const ROUTE_TYPES = new Set(["up", "down", "circular"]);
 const STORED_POLYLINE_QUALITY = "HIGH_QUALITY";
+interface DirectionalRouteGeometry {
+  polyline: string;
+  forwardPolyline: string;
+  reversePolyline: string;
+  distanceMeters: number;
+  forwardDistanceMeters: number;
+  reverseDistanceMeters: number;
+  duration: string;
+  forwardDuration: string;
+  reverseDuration: string;
+  polylineQuality: typeof STORED_POLYLINE_QUALITY;
+}
 const geometryComputations = new Map<
   string,
-  Promise<{
-    polyline: string;
-    distanceMeters: number;
-    duration: string;
-    polylineQuality: typeof STORED_POLYLINE_QUALITY;
-  }>
+  Promise<DirectionalRouteGeometry>
 >();
 
 interface LatLng {
@@ -181,11 +188,33 @@ async function computePolyline(waypoints: LatLng[]) {
   }
 }
 
+/** Compute legal road geometry independently for each travel direction. */
+async function computeDirectionalPolylines(
+  waypoints: LatLng[],
+): Promise<DirectionalRouteGeometry> {
+  const [forward, reverse] = await Promise.all([
+    computePolyline(waypoints),
+    computePolyline([...waypoints].reverse()),
+  ]);
+  return {
+    polyline: forward.polyline,
+    forwardPolyline: forward.polyline,
+    reversePolyline: reverse.polyline,
+    distanceMeters: forward.distanceMeters,
+    forwardDistanceMeters: forward.distanceMeters,
+    reverseDistanceMeters: reverse.distanceMeters,
+    duration: forward.duration,
+    forwardDuration: forward.duration,
+    reverseDuration: reverse.duration,
+    polylineQuality: STORED_POLYLINE_QUALITY,
+  };
+}
+
 function computePolylineOnce(routeId: string, waypoints: LatLng[]) {
   const key = `${routeId}:${JSON.stringify(waypoints)}`;
   const existing = geometryComputations.get(key);
   if (existing) return existing;
-  const computation = computePolyline(waypoints).finally(() => {
+  const computation = computeDirectionalPolylines(waypoints).finally(() => {
     if (geometryComputations.get(key) === computation) {
       geometryComputations.delete(key);
     }
@@ -242,12 +271,19 @@ router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response
     const route = snapshot.data() as Record<string, unknown>;
     if (
       route.polylineQuality === STORED_POLYLINE_QUALITY &&
-      validEncodedPolyline(route.polyline)
+      validEncodedPolyline(route.forwardPolyline) &&
+      validEncodedPolyline(route.reversePolyline)
     ) {
       res.json({
-        polyline: route.polyline,
+        polyline: route.forwardPolyline,
+        forwardPolyline: route.forwardPolyline,
+        reversePolyline: route.reversePolyline,
         distanceMeters: route.distanceMeters,
+        forwardDistanceMeters: route.forwardDistanceMeters,
+        reverseDistanceMeters: route.reverseDistanceMeters,
         duration: route.duration,
+        forwardDuration: route.forwardDuration,
+        reverseDuration: route.reverseDuration,
         polylineQuality: route.polylineQuality,
         cached: true,
       });
@@ -313,7 +349,7 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
       }
     }
     const waypoints = stops.map(({ lat, lng }) => ({ lat, lng }));
-    const geometry = await computePolyline(waypoints);
+    const geometry = await computeDirectionalPolylines(waypoints);
     const routeData = {
       id: routeId,
       name,

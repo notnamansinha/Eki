@@ -9,7 +9,9 @@ import { db, rtdb } from "../lib/firebaseAdmin";
 import { createConcurrencyLimiter } from "../lib/concurrency";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
 import { isPlausibleTelemetryTransition } from "../lib/telemetryMotion";
+import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import type { TelemetryPayload } from "./telemetryPayload";
+import { scheduleTelemetryRouteProcessing } from "./telemetryRouteService";
 
 const scryptAsync = promisify(scrypt);
 // scrypt is memory-hard; cap concurrent verifications so a burst of credential
@@ -55,6 +57,8 @@ export interface HttpsTelemetryStatus {
   lastRejectedAt: string | null;
   credentialCacheHitRate: number | null;
   processingLatencyMs: LatencySummary;
+  deviceQueueLatencyMs: LatencySummary;
+  networkLatencyMs: LatencySummary;
   deviceToServerLatencyMs: LatencySummary;
   rtdbWriteLatencyMs: LatencySummary;
 }
@@ -147,6 +151,8 @@ const status: Pick<
 };
 const MAX_METRIC_SAMPLES = 512;
 const processingLatencySamples: number[] = [];
+const deviceQueueLatencySamples: number[] = [];
+const networkLatencySamples: number[] = [];
 const deviceToServerLatencySamples: number[] = [];
 const rtdbWriteLatencySamples: number[] = [];
 let credentialCacheHits = 0;
@@ -201,6 +207,24 @@ export function summarizeLatencySamples(samples: readonly number[]): LatencySumm
     p95: percentile(0.95),
     p99: percentile(0.99),
   };
+}
+
+/**
+ * Device sequence numbers survive queued retries but may restart after a cold
+ * boot. Device time is therefore the primary ordering key; sequence only
+ * disambiguates samples captured in the same millisecond.
+ */
+export function telemetrySampleIsNewer(
+  existingTimestamp: unknown,
+  existingSequence: unknown,
+  candidate: Pick<TelemetryPayload, "timestamp" | "seq">,
+): boolean {
+  const timestamp = Number(existingTimestamp);
+  if (!Number.isFinite(timestamp)) return true;
+  if (candidate.timestamp !== timestamp) return candidate.timestamp > timestamp;
+
+  const sequence = Number(existingSequence);
+  return Number.isSafeInteger(sequence) && candidate.seq > sequence;
 }
 
 function digestSecret(secret: string): Buffer {
@@ -474,8 +498,11 @@ async function restoreDurableRide(
     // The durable lifecycle can hold a delay older than the live node if a
     // delay update only partially landed; never regress the announced value.
     const delay = freshestDelayMinutes(live, lifecycle);
+    const liveBase = live?.sessionId === lifecycle.sessionId
+      ? live
+      : withoutLiveRouteContext(live);
     return {
-      ...(live ?? {}),
+      ...(liveBase ?? {}),
       ...telemetry,
       ...lifecycle,
       ...delay,
@@ -517,6 +544,7 @@ function scheduleDurableRideRestore(
 async function persistTelemetry(
   assignment: DeviceAssignment,
   sample: TelemetryPayload,
+  backendReceivedAt: number,
 ): Promise<{ committed: boolean; hasSession: boolean }> {
   const writeStartedAt = Date.now();
   const nodeKey = `${assignment.busId}_${assignment.routeId}`;
@@ -524,10 +552,11 @@ async function persistTelemetry(
   const transaction = await ref.transaction((current) => {
     const live = current as Record<string, unknown> | null;
     const existingTimestamp = Number(live?.timestamp);
-    if (
-      Number.isFinite(existingTimestamp) &&
-      existingTimestamp >= sample.timestamp
-    ) {
+    if (!telemetrySampleIsNewer(
+      existingTimestamp,
+      live?.seq,
+      sample,
+    )) {
       return;
     }
 
@@ -571,6 +600,19 @@ async function persistTelemetry(
         delayMinutes: 0,
       }),
       ...acceptedSample,
+      // Keep the authenticated GNSS fix independently observable even when
+      // plausibility filtering retains the previous accepted live position.
+      // Map matching writes a separate matchedLocation and never mutates this.
+      rawLocation: {
+        lat: sample.lat,
+        lng: sample.lng,
+        speed: sample.speed,
+        heading: sample.heading,
+        gpsHdop: sample.gpsHdop,
+        motionState: sample.motionState,
+        seq: sample.seq,
+        sampledAt: sample.timestamp,
+      },
       busId: assignment.busId,
       routeId: assignment.routeId,
       deviceState: "online",
@@ -578,7 +620,9 @@ async function persistTelemetry(
         acceptedSample.motionState === "uncertain"
           ? "gnss_lost"
           : "connected",
+      backendReceivedAt,
       receivedAt: { ".sv": "timestamp" },
+      rtdbCommittedAt: { ".sv": "timestamp" },
     };
   });
   const value = transaction.snapshot.val() as Record<string, unknown> | null;
@@ -604,7 +648,12 @@ export async function ingestDeviceTelemetry(
   sample: TelemetryPayload,
   now = Date.now(),
 ): Promise<TelemetryIngestResult> {
-  const processingStartedAt = Date.now();
+  // One server ingress timestamp for the whole request boundary. `now` is
+  // captured when the handler enters, so `backendReceivedAt` and the network
+  // latency reflect receipt at the request boundary rather than after
+  // authenticate/rate-limit and RTDB transaction work.
+  const serverReceivedAt = now;
+  const processingStartedAt = now;
   if (!SAFE_ID.test(deviceId)) {
     status.rejected += 1;
     status.lastRejectedAt = new Date(now).toISOString();
@@ -624,7 +673,7 @@ export async function ingestDeviceTelemetry(
     return { ok: false, reason: "rate_limit", retryAfterMs };
   }
 
-  const persisted = await persistTelemetry(assignment, sample);
+  const persisted = await persistTelemetry(assignment, sample, serverReceivedAt);
   if (!persisted.hasSession) {
     // RTDB already contains the accepted fix at this point. Recover the
     // durable lifecycle immediately in the background so the hardware response
@@ -634,8 +683,11 @@ export async function ingestDeviceTelemetry(
   if (persisted.committed) {
     status.accepted += 1;
     status.lastAcceptedAt = new Date(now).toISOString();
+    scheduleTelemetryRouteProcessing(assignment, sample);
   }
   recordSample(processingLatencySamples, Date.now() - processingStartedAt);
+  recordSample(deviceQueueLatencySamples, sample.deviceSentAt - sample.timestamp);
+  recordSample(networkLatencySamples, serverReceivedAt - sample.deviceSentAt);
   // Device timestamps come from NTP-synchronised wall time. Ignore implausible
   // values instead of letting a bad device clock corrupt the rolling window.
   const deviceToServerLatency = Date.now() - sample.timestamp;
@@ -675,6 +727,8 @@ export function getHttpsTelemetryStatus(): HttpsTelemetryStatus {
         ? null
         : Number((credentialCacheHits / credentialAttempts).toFixed(3)),
     processingLatencyMs: summarizeLatencySamples(processingLatencySamples),
+    deviceQueueLatencyMs: summarizeLatencySamples(deviceQueueLatencySamples),
+    networkLatencyMs: summarizeLatencySamples(networkLatencySamples),
     deviceToServerLatencyMs: summarizeLatencySamples(deviceToServerLatencySamples),
     rtdbWriteLatencyMs: summarizeLatencySamples(rtdbWriteLatencySamples),
   };

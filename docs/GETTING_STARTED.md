@@ -223,7 +223,7 @@ complete production rollout.
 | Backend will not start in production | `CORS_ORIGIN`, `FIREBASE_DATABASE_URL`, credentials, Maps configuration, and replica shard factor | [Backend README](backend/README.md), [configuration](CONFIGURATION.md) |
 | `/health` returns 503 | Firebase Admin credentials, Firestore/RTDB reachability, and the cached probe timestamp | [API health](../backend/API.md#health) |
 | Browser shows no live bus | Auth/App Check, RTDB URL, rules, device health, and whether the fix is fresh | [Hardware telemetry](hardware/HARDWARE_TELEMETRY.md) |
-| Device receives 400 | Exact six-field payload, JSON size, ranges, and current timestamp | [API device endpoints](../backend/API.md#device-endpoints) |
+| Device receives 400 | Validate the deployed schema (nine-field current; eight-field sequenced and six-field legacy compatibility), JSON size, ranges, sequence, and capture/send timestamps | [API device endpoints](../backend/API.md#device-endpoints) |
 | Device receives 401 | Device ID, registry status, secret, assignment and certificate/clock; correct by re-provisioning and reflashing | [Security provisioning](operations/HARDWARE_SECURITY_PROVISIONING.md) |
 | Device receives 413 | Telemetry body exceeds the 512-byte limit or diagnostics exceed 1 KiB | [API device endpoints](../backend/API.md#device-endpoints) |
 | Device receives 429/503 | Backoff, per-device/IP/WAF limits, backend health and Firebase availability | [API limits](../backend/API.md#authentication) |

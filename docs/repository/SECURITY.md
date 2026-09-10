@@ -26,7 +26,7 @@ Eki enforces strict RBAC across presentation, API, and database perimeters:
 
 ### Hardware Authentication & Isolation
 
-ESP32 GNSS units post a closed six-field payload to
+ESP32 GNSS units post a closed nine-field payload to
 `/api/devices/{deviceId}/telemetry` over certificate-verified HTTPS:
 
 - **Independent device credentials**: Per-device secrets are stored as salted
@@ -35,8 +35,12 @@ ESP32 GNSS units post a closed six-field payload to
 - **Server-side assignment**: Bus and route IDs come from the protected device
   registry, not from device-controlled JSON.
 - **Bounded ingestion**: Telemetry has a 512-byte parser limit, exact field and
-  numeric validation, timestamp deduplication, per-IP and per-device limits,
+  numeric validation, timestamp/sequence deduplication, per-IP and per-device limits,
   and a constant-time credential check.
+- **Bounded migration**: The bounded eight-field sequenced schema (no `gpsHdop`)
+  and the legacy six-field schema (no `seq`/`deviceSentAt`) remain accepted during
+  the backend-first firmware rollout; operators validate the schema their deployed
+  firmware sends. Arbitrary optional fields remain rejected.
 - **No Firebase credential on hardware**: Devices cannot read or write Firebase
   directly. Only the backend Admin SDK writes the live RTDB projection.
 
