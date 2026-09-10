@@ -27,6 +27,7 @@ import {
   evaluateDeviceRateLimit,
   freshestDelayMinutes,
   hashDeviceSecret,
+  initialDevicePresenceState,
   invalidateDeviceCredentialCache,
   parseDeviceAuthorization,
   shouldApplyRestoreTelemetry,
@@ -34,6 +35,14 @@ import {
   telemetrySampleIsNewer,
   verifyDeviceSecretHash,
 } from "./deviceTelemetryService";
+
+describe("initial device presence", () => {
+  it("does not fabricate an armed ride lifecycle", () => {
+    expect(initialDevicePresenceState()).toEqual({ status: "offline" });
+    expect(initialDevicePresenceState()).not.toHaveProperty("tripState");
+    expect(initialDevicePresenceState()).not.toHaveProperty("currentStopIndex");
+  });
+});
 
 beforeEach(() => {
   harness.collections.clear();

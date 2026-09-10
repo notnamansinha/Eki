@@ -89,8 +89,8 @@ export default function PassengerWorkspace() {
 
   // Listen to Firebase Realtime Database for active buses using the existing
   // Firebase session established by the root auth provider.
-  // Fresh device telemetry is visible immediately; tripState/session data adds
-  // ride-only actions such as boarding, messaging, and feedback.
+  // Passenger visibility requires a complete server-owned ride lifecycle.
+  // Device-only and direction-pending nodes remain admin diagnostics.
   useEffect(() => {
     const unsubscribe = subscribeLiveBusChanges((change) => {
         const trackedRideSessionId =

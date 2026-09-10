@@ -54,6 +54,7 @@ numbers.
 - Invalid/disabled/unknown device and invalid bus/route binding fail.
 - Positive/negative credential caches and device/IP limits are bounded.
 - Durable ride restore coalesces work and does not delay accepted HTTP response.
+- A first device-only fix creates presence state without fabricating `tripState`, stop progress, direction, or an active service.
 - Rolling latency summary handles empty/unsorted values and nearest-rank percentiles.
 
 ### Lifecycle and concurrency
@@ -80,6 +81,8 @@ numbers.
 ## Automated frontend cases
 
 - Live timestamps reject missing, too-old and implausibly future samples.
+- Device presence requires an explicit online flag plus a fresh timestamp; missing, stale, and contradictory flags are reported as offline/unknown without changing ride truth.
+- Passenger route visibility and service counts require the complete active-session tuple; device-only, malformed, duplicated-session, completed, and direction-pending nodes cannot inflate service.
 - Active sessions remain visible while stale non-active locations expire.
 - One RTDB listener fans out to subscribers, prunes on the nearest expiry, and tears down at zero subscribers.
 - Visibility/online resume state signals reconnect and clears after a snapshot.

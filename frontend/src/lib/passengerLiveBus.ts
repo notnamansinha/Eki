@@ -1,4 +1,8 @@
-import { isActiveBusEntry, type ActiveBusEntry } from "./activeBusEntries";
+import {
+  isActiveBusEntry,
+  isActiveService,
+  type ActiveBusEntry,
+} from "./activeBusEntries";
 import { hasValidBusCoordinates } from "./liveBusFreshness";
 
 export interface PassengerLiveBus extends ActiveBusEntry {
@@ -24,8 +28,8 @@ function busIdFromNodeKey(key: string, routeId: string): string | null {
 
 /**
  * Convert one untrusted RTDB value into the single shape shared by the
- * passenger route list and map. A fresh device-only node is visible without a
- * session; a stale node is retained only while its ride is active.
+ * passenger route list and map. A complete server-owned service lifecycle is
+ * required; device-only and direction-pending nodes remain admin diagnostics.
  */
 export function normalizePassengerLiveBus(
   key: string,
@@ -44,6 +48,7 @@ export function normalizePassengerLiveBus(
   const candidate: Record<string, unknown> = { ...raw, busId, routeId };
   if (
     !isActiveBusEntry(candidate, now) ||
+    !isActiveService(candidate) ||
     !hasValidBusCoordinates(candidate.lat, candidate.lng)
   ) {
     return null;
