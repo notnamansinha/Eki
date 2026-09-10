@@ -401,6 +401,7 @@ describe("production security configuration", () => {
     const server = workspaceFile("backend/src/server.ts");
     const devices = workspaceFile("backend/src/routes/devices.ts");
     const telemetry = workspaceFile("backend/src/services/deviceTelemetryService.ts");
+    const deviceLimiter = workspaceFile("backend/src/services/deviceRateLimiter.ts");
 
     expect(server).toContain("const routeComputeLimiter");
     expect(server).toContain('app.use("/api/routes", routeComputeLimiter, polylineRoutes)');
@@ -408,10 +409,13 @@ describe("production security configuration", () => {
     expect(server).toContain('express.json({ limit: "512b", strict: true })');
     expect(devices).toContain("telemetryLimiter");
     expect(devices).toContain('"/:deviceId/telemetry"');
-    expect(telemetry).toContain("HTTPS_DEVICE_RATE_PER_MINUTE");
     expect(telemetry).toContain("deviceRateLimitRetryAfterMs");
     expect(telemetry).toContain("DEVICE_RATE_LIMIT_PATH");
     expect(telemetry).toContain(".transaction((value)");
+    expect(deviceLimiter).toContain("HTTPS_DEVICE_RATE_PER_MINUTE");
+    expect(deviceLimiter).toContain("HTTPS_DEVICE_RATE_LIMIT_MODE");
+    expect(deviceLimiter).toContain("AuthenticatedDeviceRateLimiter");
+    expect(deviceLimiter).toContain("reserveRateLimitTokens");
     expect(telemetry).toContain("credentialCacheKey(deviceId, suppliedDigest)");
     expect(telemetry).toContain("DEVICE_CREDENTIAL_VERSION_PATH");
     expect(devices).toContain("publishDeviceCredentialInvalidation(deviceId)");
@@ -451,6 +455,7 @@ describe("production security configuration", () => {
     expect(devices).toContain("shardedLimit(120");
     // Operators must set the factor to the deployed replica count.
     expect(envExample).toContain("RATE_LIMIT_SHARD_FACTOR");
+    expect(envExample).toContain("HTTPS_DEVICE_RATE_LIMIT_MODE=distributed");
     // The exact image that would be replicated builds and smoke-boots in CI.
     expect(workflow).toContain("backend-image");
     expect(workflow).toContain("docker build -f backend/Dockerfile");
@@ -544,7 +549,9 @@ describe("production security configuration", () => {
       'http.addHeader("Authorization", authorizationHeader)',
     );
     expect(firmware).not.toContain("HTTPClient::errorToString(responseCode)");
-    expect(firmware).toContain('http.collectHeaders(responseHeaders, 1)');
+    expect(firmware).toContain('http.collectHeaders(responseHeaders, 3)');
+    expect(firmware).toContain('"X-Eki-Server-Received-At"');
+    expect(firmware).toContain('"X-Eki-Server-Responded-At"');
     expect(firmware).toContain('#include "secrets.h"');
     expect(firmware).toContain("eki::config::validate(");
     expect(firmwareConfig).toContain("backendUrlUsesHttps");
@@ -655,13 +662,15 @@ describe("production security configuration", () => {
     const routes = ruleBlock(rules, "match /routes/{routeId}");
     const sessions = ruleBlock(rules, "match /ride_sessions/{sessionId}");
     const routeEditor = workspaceFile("frontend/src/components/admin/RouteManagementPanel.tsx");
+    const routeSaveClient = workspaceFile("frontend/src/lib/routeSaveClient.ts");
     const dashboard = workspaceFile("frontend/src/components/admin/DashboardPanel.tsx");
 
     expect(routes).toContain("allow create, update, delete: if false;");
     expect(sessions).toContain("allow create: if false;");
     expect(sessions).toContain("allow update: if false;");
     expect(sessions).not.toContain("resource.data.status in ['armed', 'active']");
-    expect(routeEditor).toContain('method: "PUT"');
+    expect(routeEditor).toContain("saveRoute(");
+    expect(routeSaveClient).toContain('method: "PUT"');
     expect(routeEditor).not.toContain("setDoc(");
     expect(routeEditor).not.toContain("updateDoc(");
     expect(dashboard).toMatch(
@@ -670,6 +679,8 @@ describe("production security configuration", () => {
     expect(dashboard).not.toContain("Force Offline");
     expect(dashboard).not.toContain("Position Override");
     expect(dashboard).not.toContain("update(ref(rtdb");
+    expect(ruleBlock(rules, "match /_route_save_operations/{operationId}"))
+      .toContain("allow read, write: if false;");
   });
 
   it("removes the dead passenger-request client surface entirely", () => {

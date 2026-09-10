@@ -36,6 +36,10 @@ export interface RouteData {
   duration?: string;
   forwardDuration?: string;
   reverseDuration?: string;
+  /** Optimistic-concurrency version for all admin edits. Legacy routes are v0. */
+  configVersion?: number;
+  /** Increments only when route-shaping inputs produce new road geometry. */
+  geometryVersion?: number;
   /** View-only travel order for an active ride; never persisted on route documents. */
   rideDirection?: "forward" | "reverse";
 }

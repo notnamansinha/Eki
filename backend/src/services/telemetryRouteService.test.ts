@@ -1,11 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
   directionProjectionNeedsSync,
+  invalidateTelemetryRoute,
   isReliableMovingSample,
+  nextMatchedTelemetryValue,
   remainingRerouteStops,
   rerouteContextIsCurrent,
   routeRepairSnapshotWrite,
+  telemetryRouteSnapshotIsCurrent,
+  telemetryIsCurrent,
 } from "./telemetryRouteService";
+
+describe("matcher route cache versions", () => {
+  it("invalidates in-flight snapshots immediately", () => {
+    const routeId = "route-invalidation-test";
+    expect(telemetryRouteSnapshotIsCurrent(routeId, 0)).toBe(true);
+    invalidateTelemetryRoute(routeId);
+    expect(telemetryRouteSnapshotIsCurrent(routeId, 0)).toBe(false);
+    expect(telemetryRouteSnapshotIsCurrent(routeId, 1)).toBe(true);
+  });
+});
 
 describe("resolved direction projection", () => {
   it("syncs only an explicitly pending session-bound projection", () => {
@@ -77,6 +91,54 @@ describe("reroute result guards", () => {
   });
 });
 
+describe("matched telemetry transaction guard", () => {
+  const sample = {
+    lat: 23,
+    lng: 72,
+    speed: 10,
+    heading: 90,
+    gpsHdop: 1,
+    motionState: "moving" as const,
+    seq: 5,
+    deviceSentAt: 5_100,
+    timestamp: 5_000,
+  };
+
+  it("allows a match only for the raw sample still stored by the transaction", () => {
+    expect(telemetryIsCurrent({ timestamp: 5_000, seq: 5 }, sample)).toBe(true);
+    expect(telemetryIsCurrent({ timestamp: 6_000, seq: 6 }, sample)).toBe(false);
+    expect(telemetryIsCurrent({
+      timestamp: 5_000,
+      seq: 5,
+      sessionId: "new-lifecycle-state",
+    }, sample)).toBe(true);
+  });
+
+  it("preserves concurrent lifecycle fields and aborts after newer raw telemetry", () => {
+    const current = {
+      timestamp: 5_000,
+      seq: 5,
+      sessionId: "session_new",
+      tripState: "in_service",
+      currentStopIndex: 3,
+    };
+    expect(nextMatchedTelemetryValue(current, sample, {
+      matchedLocation: { seq: 5, sampledAt: 5_000 },
+      routeState: "ON_ROUTE",
+    })).toMatchObject({
+      sessionId: "session_new",
+      tripState: "in_service",
+      currentStopIndex: 3,
+      matchedLocation: { seq: 5, sampledAt: 5_000 },
+    });
+    expect(nextMatchedTelemetryValue(
+      { ...current, timestamp: 6_000, seq: 6 },
+      sample,
+      { matchedLocation: { seq: 5, sampledAt: 5_000 } },
+    )).toBeUndefined();
+  });
+});
+
 describe("reliable moving sample HDOP gate", () => {
   const base = {
     lat: 23,
@@ -101,11 +163,12 @@ describe("reliable moving sample HDOP gate", () => {
     expect(isReliableMovingSample({ ...base, gpsHdop: 3.2 })).toBe(true);
   });
 
-  it("rejects slow, stopped, or high-HDOP samples", () => {
+  it("rejects slow, stopped, negative-HDOP, or high-HDOP samples", () => {
     expect(isReliableMovingSample({ ...base, gpsHdop: 2, speed: 2 })).toBe(false);
     expect(
       isReliableMovingSample({ ...base, gpsHdop: 2, motionState: "stopped" }),
     ).toBe(false);
+    expect(isReliableMovingSample({ ...base, gpsHdop: -0.1 })).toBe(false);
     expect(isReliableMovingSample({ ...base, gpsHdop: 99 })).toBe(false);
   });
 });

@@ -14,6 +14,11 @@ export interface ActiveBusEntry {
   speed?: number;
   heading?: number;
   timestamp?: number;
+  seq?: number;
+  deviceSentAt?: number;
+  backendReceivedAt?: number;
+  receivedAt?: number;
+  rtdbCommittedAt?: number;
   status?: "active" | "offline";
   deviceState?: "online" | "offline";
   motionState?: "moving" | "stopped" | "uncertain";
@@ -34,6 +39,7 @@ export interface ActiveBusEntry {
   routeSource?: "configured" | "dynamic-reroute";
   routeState?: LiveRouteState;
   routeDirection?: "forward" | "reverse";
+  routeGeometryVersion?: number;
 }
 
 export interface RawLiveLocation {
@@ -160,11 +166,17 @@ const OPTIONAL_NUMBER_FIELDS = [
   "speed",
   "heading",
   "timestamp",
+  "seq",
+  "deviceSentAt",
+  "backendReceivedAt",
+  "receivedAt",
+  "rtdbCommittedAt",
   "currentStopIndex",
   "delayMinutes",
   "matchConfidence",
   "distanceToActiveRoute",
   "routeVersion",
+  "routeGeometryVersion",
 ] as const;
 
 function validLatLngRecord(value: unknown): value is Record<string, unknown> {
@@ -279,6 +291,12 @@ function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
   if (
     typeof bus.routeVersion === "number" &&
     (!Number.isSafeInteger(bus.routeVersion) || bus.routeVersion <= 0)
+  ) {
+    return false;
+  }
+  if (
+    typeof bus.routeGeometryVersion === "number" &&
+    (!Number.isSafeInteger(bus.routeGeometryVersion) || bus.routeGeometryVersion < 0)
   ) {
     return false;
   }

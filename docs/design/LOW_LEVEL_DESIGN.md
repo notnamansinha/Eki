@@ -30,9 +30,10 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 | `routes/privacy.ts` | Passenger deletion-request queue |
 | `services/telemetryPayload.ts` | Closed schema, ranges and timestamp freshness |
 | `services/firmwareRelease.ts` | Fail-closed signed release descriptor parsing and sequence validation |
-| `services/deviceTelemetryService.ts` | scrypt credentials/cache, device limit, RTDB transaction, recovery and rolling metrics |
+| `services/deviceRateLimiter.ts` | Explicit single-instance local limiting or bounded leases from a shared per-device RTDB budget |
+| `services/deviceTelemetryService.ts` | scrypt credentials/cache, ordered live-node transaction, recovery and rolling metrics |
 | `services/routeMatching.ts` | Pure projection, direction/heading/continuity scoring and off-route hysteresis |
-| `services/telemetryRouteService.ts` | Per-node async matching, directional-geometry repair, reroute orchestration and stale-result guards |
+| `services/telemetryRouteService.ts` | Per-node bounded latest-pending matching, cross-replica route invalidation, directional-geometry repair, reroute orchestration and stale-result guards |
 | `services/authTokenVerifier.ts` | SHA-256 keyed bounded token verification coalescing/cache |
 | `services/tripStateReducer.ts` | Pure ordered geofence state transition and segment crossing |
 | `services/tripStateLifecycle.ts` | Identifier/live-record normalization and dynamic shutdown draining |
@@ -52,7 +53,7 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 
 ## Telemetry service detail
 
-Credential cache entries hold `{assignment, secretDigest, expiresAt}`; positive TTL is 60 seconds, negative TTL 5 seconds, and capacity 1,000. A SHA-256 digest makes cached comparisons constant-size; the durable store remains scrypt. Rate buckets are per device, one minute, default 90 accepted attempts, capacity 2,000.
+Credential cache entries hold `{assignment, secretDigest, expiresAt}`; positive TTL is 60 seconds, negative TTL 5 seconds, and capacity 1,000. A SHA-256 digest makes cached comparisons constant-size; the durable store remains scrypt. Rate buckets are per device and one minute with a default budget of 90. Distributed mode reserves five tokens per shared transaction by default and bounds local leases to 1,000 devices. Local mode also tracks at most 1,000 devices and fails closed when that table is full.
 
 The RTDB transaction compares `sample.timestamp` plus sequence to existing telemetry. Older/equal samples abort and return duplicate success. New data merges the accepted sample without overwriting an existing active lifecycle, preserves the authenticated fix in `rawLocation`, adds server timing, and derives `deviceState`/`signalState`. A missing active session schedules one coalesced Firestore recovery read per node with a 30-second negative cache.
 

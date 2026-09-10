@@ -9,16 +9,24 @@ import { useRoutes, RouteData, RouteStop } from "@/hooks/useRoutes";
 import { auth } from "@/lib/firebaseAuth";
 import {
   Trash2, Plus, X, CheckCircle, MapPin, Loader2, Search,
-  Pencil, GripVertical, Save,
-  ChevronDown, ChevronUp, ArrowLeft, Crosshair,
+  Pencil, Save,
+  ChevronDown, ChevronUp, ArrowLeft, ArrowLeftRight, Crosshair,
 } from "lucide-react";
 import CustomSelect from "@/components/ui/CustomSelect";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import AlertModal from "@/components/ui/AlertModal";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
-import { apiRequest } from "@/lib/apiClient";
-import { prepareRouteSavePayload, routeIdFromName, stopShortName } from "@/lib/routeStopPayload";
+import { ApiError, apiRequest } from "@/lib/apiClient";
+import { placeSearchErrorMessage } from "@/lib/placeSearchErrors";
+import { newRouteSaveId, saveRoute } from "@/lib/routeSaveClient";
+import {
+  prepareRouteSavePayload,
+  reorderRouteStops,
+  routeIdFromName,
+  stopShortName,
+  swapRouteEndpoints,
+} from "@/lib/routeStopPayload";
 
 
 /* ────────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -44,11 +52,13 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [searchNotice, setSearchNotice] = useState("");
 
   useEffect(() => {
     if (value.trim().length < 3) {
       setSearching(false);
       setPredictions([]);
+      setSearchNotice("");
       return;
     }
     const controller = new AbortController();
@@ -60,6 +70,7 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
       }
       setSearching(true);
       setSearchError("");
+      setSearchNotice("");
       try {
         const token = await currentUser.getIdToken();
         const payload = await apiRequest<{ results?: PlacePrediction[] }>(
@@ -70,11 +81,13 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
             fallbackError: "Place search is temporarily unavailable.",
           },
         );
-        setPredictions(Array.isArray(payload.results) ? payload.results : []);
+        const results = Array.isArray(payload.results) ? payload.results : [];
+        setPredictions(results);
+        setSearchNotice(results.length === 0 ? "No matching places found. Try a more specific search." : "");
       } catch (error) {
         if (!controller.signal.aborted) {
           setPredictions([]);
-          setSearchError(errorMessage(error));
+          setSearchError(placeSearchErrorMessage(error));
         }
       } finally {
         if (!controller.signal.aborted) setSearching(false);
@@ -92,6 +105,7 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
     setPredictions([]);
     setSearching(false);
     setSearchError("");
+    setSearchNotice("");
     onPlaceSelect(prediction);
   };
 
@@ -107,16 +121,26 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
           const nextValue = event.target.value;
           setValue(nextValue);
           setSearchError("");
+          setSearchNotice("");
           if (nextValue.length < 3) setPredictions([]);
         }}
         placeholder="Search for a stop"
         aria-label="Search for a stop"
-        aria-describedby={searchError ? "place-search-error" : undefined}
+        aria-describedby={searchError
+          ? "place-search-error"
+          : searchNotice
+            ? "place-search-notice"
+            : undefined}
         className="w-full h-11 bg-[#09090b] border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-medium"
       />
       {searchError && (
         <p id="place-search-error" className="mt-1 text-xs text-red-400" role="alert">
           {searchError}
+        </p>
+      )}
+      {searchNotice && !searchError && (
+        <p id="place-search-notice" className="mt-1 text-xs text-white/45" role="status">
+          {searchNotice}
         </p>
       )}
       {value.length >= 3 && predictions.length > 0 && (
@@ -185,7 +209,7 @@ function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () =
       {stopsOpen && route.stops && route.stops.length > 0 && (
         <div className="border-t border-white/5 px-4 py-3 flex flex-col gap-0">
           {route.stops.map((stop, i) => (
-            <div key={i} className="flex items-stretch gap-3">
+            <div key={stop.id} className="flex items-stretch gap-3">
               <div className="flex flex-col items-center shrink-0">
                 <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-black text-[9px] shrink-0">
                   {stopLabel(i)}
@@ -213,7 +237,6 @@ function StopItem({ stop, index, onRemove, onNameChange }: {
   const [val, setVal] = useState(stop.name);
   return (
     <div className="flex items-center gap-2 group">
-      <GripVertical className="w-4 h-4 text-white/15 shrink-0 cursor-grab" />
       <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 font-black text-[9px] flex items-center justify-center shrink-0">
         {stopLabel(index)}
       </span>
@@ -258,6 +281,7 @@ interface EditorState {
   type: "up" | "down" | "circular";
   stops: RouteStop[];
   polyline?: string;
+  configVersion: number;
 }
 
 const EMPTY_EDITOR: EditorState = {
@@ -267,6 +291,7 @@ const EMPTY_EDITOR: EditorState = {
   color: "#3B82F6",
   type: "circular",
   stops: [],
+  configVersion: 0,
 };
 
 function RouteEditor({
@@ -285,6 +310,7 @@ function RouteEditor({
   const [positionMessage, setPositionMessage] = useState("Drag any map pin to fine-tune a stop's location.");
   const [placingManualStop, setPlacingManualStop] = useState(false);
   const [routeIdEdited, setRouteIdEdited] = useState(Boolean(initial.routeId));
+  const saveOperationRef = useRef<{ payload: string; saveId: string } | null>(null);
 
   // ── Traffic layer rendered imperatively ──────────────────────────────────
   const TrafficLayer = () => {
@@ -374,13 +400,18 @@ function RouteEditor({
 
   const moveStop = (from: number, to: number) => {
     if (to < 0 || to >= state.stops.length) return;
-    setState(s => {
-      const stops = [...s.stops];
-      const [item] = stops.splice(from, 1);
-      stops.splice(to, 0, item);
-      return { ...s, stops, polyline: undefined };
-    });
+    setState(s => ({
+      ...s,
+      stops: reorderRouteStops(s.stops, from, to),
+      polyline: undefined,
+    }));
   };
+
+  const swapEndpoints = () => setState(s => ({
+    ...s,
+    stops: swapRouteEndpoints(s.stops),
+    polyline: undefined,
+  }));
 
   const updateStopPosition = (i: number, lat: number, lng: number) => {
     setState(s => {
@@ -407,26 +438,24 @@ function RouteEditor({
       }
 
       const token = await currentUser.getIdToken(true);
-      const geometry = await apiRequest<{
-        polyline?: string;
-        distanceMeters?: number;
-        duration?: string;
-      }>(`/api/routes/${encodeURIComponent(routeId)}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-        fallbackError: "Unable to compute route geometry. The route was not saved.",
-      });
-      if (!geometry.polyline || typeof geometry.distanceMeters !== "number" || typeof geometry.duration !== "string") {
-        throw new Error("Route geometry service returned an invalid result.");
+      const operationBody = { ...body, expectedVersion: state.configVersion };
+      const payload = JSON.stringify({ routeId, ...operationBody });
+      if (saveOperationRef.current?.payload !== payload) {
+        saveOperationRef.current = { payload, saveId: newRouteSaveId() };
       }
+      await saveRoute(
+        routeId,
+        saveOperationRef.current.saveId,
+        operationBody,
+        token,
+      );
 
       onSaved();
     } catch (error: unknown) {
-      alert("Failed to save: " + errorMessage(error));
+      if (!(error instanceof ApiError) || !error.outcomeUnknown) {
+        saveOperationRef.current = null;
+      }
+      setEditorAlertMsg("Failed to save: " + errorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -534,7 +563,7 @@ function RouteEditor({
             />
             {state.stops.map((stop, i) => (
               <AdvancedMarker
-                key={`s-${i}`}
+                key={stop.id}
                 position={{ lat: stop.lat, lng: stop.lng }}
                 draggable
                 onDragStart={() => setPositionMessage(`Moving stop ${stopLabel(i)}…`)}
@@ -587,7 +616,19 @@ function RouteEditor({
               <MapPin className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Stops</span>
             </div>
-            <span className="text-[9px] font-black text-emerald-400/50 bg-emerald-500/10 px-2 py-0.5 rounded-full">{state.stops.length}</span>
+            <div className="flex items-center gap-2">
+              {state.stops.length === 2 && (
+                <button
+                  type="button"
+                  onClick={swapEndpoints}
+                  className="min-h-9 rounded-lg border border-white/10 bg-white/5 px-2.5 text-[9px] font-black uppercase tracking-wider text-white/60 hover:bg-white/10"
+                  title="Swap route origin and destination"
+                >
+                  <ArrowLeftRight className="mr-1 inline h-3 w-3" /> Swap A &amp; B
+                </button>
+              )}
+              <span className="text-[9px] font-black text-emerald-400/50 bg-emerald-500/10 px-2 py-0.5 rounded-full">{state.stops.length}</span>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5">
             {state.stops.length === 0 ? (
@@ -597,7 +638,7 @@ function RouteEditor({
               </div>
             ) : (
               state.stops.map((stop, i) => (
-                <div key={`${stop.id}-${i}`}>
+                <div key={stop.id}>
                   <StopItem stop={stop} index={i} onRemove={removeStop} onNameChange={renameStop} />
                   <div className="flex items-center gap-1.5 pl-6 my-0.5">
                     <div className="w-px h-4 bg-emerald-500/15 mx-2" />
@@ -668,6 +709,9 @@ export default function RouteManagementPanel() {
       type: (route.type as EditorState["type"]) || "circular",
       stops: route.stops ?? [],
       polyline: route.polyline,
+      configVersion: Number.isSafeInteger(route.configVersion)
+        ? Number(route.configVersion)
+        : 0,
     });
 
   const handleSaved = () => {

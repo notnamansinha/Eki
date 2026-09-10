@@ -30,6 +30,7 @@ import MessagingPanel from "@/components/shared/MessagingPanel";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
+import { useTelemetryRenderTrace } from "@/hooks/useTelemetryRenderTrace";
 import {
   countActiveServices,
   devicePresence,
@@ -279,6 +280,7 @@ function BusMarker({
     () => liveBusMarkerPosition(entry),
     [entry],
   );
+  useTelemetryRenderTrace(entry, "admin", markerPoint !== null);
 
   const [displayHeading, setDisplayHeading] = useState(() =>
     normalizeHeading(entry.heading),

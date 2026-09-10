@@ -180,6 +180,9 @@ service cloud.firestore {
     match /_fleet_operations/{operationId} {
       allow read, write: if false;
     }
+    match /_route_save_operations/{operationId} {
+      allow read, write: if false;
+    }
     match /_health/{documentId} {
       allow read, write: if false;
     }

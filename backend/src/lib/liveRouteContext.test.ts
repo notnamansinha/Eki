@@ -15,6 +15,7 @@ describe("withoutLiveRouteContext", () => {
       routeSource: "dynamic-reroute",
       routeDirection: "forward",
       routeSessionId: "old-session",
+      routeGeometryVersion: 3,
       routeState: "ON_NEW_ROUTE",
       routeMatchHistory: [{ lat: 23.2, lng: 72.7 }],
       offRouteSampleCount: 4,
