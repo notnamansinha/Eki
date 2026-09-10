@@ -39,6 +39,7 @@ declare global {
 }
 
 let state: TraceState | null = null;
+let enabledAtPageLoad: boolean | null = null;
 
 function wallClockNow(): number {
   return Date.now();
@@ -72,7 +73,9 @@ function createState(): TraceState {
 
 export function telemetryTraceEnabled(): boolean {
   if (typeof window === "undefined") return false;
-  return new URLSearchParams(window.location.search).get(TRACE_QUERY_PARAMETER) === "1";
+  enabledAtPageLoad ??=
+    new URLSearchParams(window.location.search).get(TRACE_QUERY_PARAMETER) === "1";
+  return enabledAtPageLoad;
 }
 
 function traceExport(current: TraceState): TelemetryTraceExport {
@@ -94,7 +97,8 @@ function downloadJson(value: unknown, filename: string): void {
   link.href = url;
   link.download = filename;
   link.click();
-  URL.revokeObjectURL(url);
+  // Keep the object URL alive through the browser's click/navigation task.
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function installBrowserApi(): void {

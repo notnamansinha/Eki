@@ -2,13 +2,17 @@
 
 import { useEffect, useRef } from "react";
 import type { ActiveBusEntry } from "@/lib/activeBusEntries";
-import { recordTelemetryRender } from "@/lib/telemetryTrace";
+import {
+  recordTelemetryRender,
+  telemetryTraceEnabled,
+} from "@/lib/telemetryTrace";
 
 export function useTelemetryRenderTrace(
   entry: ActiveBusEntry,
   consumer: "admin" | "passenger",
   markerVisible: boolean,
 ): void {
+  const traceEnabled = telemetryTraceEnabled();
   const rawSequence = entry.rawLocation?.seq;
   const matchedSequence = entry.matchedLocation?.seq;
   const matchedIsCurrent =
@@ -31,6 +35,7 @@ export function useTelemetryRenderTrace(
   const lastTraceKey = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!traceEnabled) return;
     if (lastTraceKey.current === traceKey) return;
     lastTraceKey.current = traceKey;
     const frame = requestAnimationFrame(() => {
@@ -44,5 +49,6 @@ export function useTelemetryRenderTrace(
     matchedSequence,
     rawSequence,
     traceKey,
+    traceEnabled,
   ]);
 }
