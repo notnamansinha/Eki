@@ -100,6 +100,13 @@ Returns the cached Firestore/RTDB status, telemetry counters and latency summari
       "storeTransactions": 20,
       "storeTransactionRetries": 2,
       "decisionLatencyMs": { "samples": 100, "average": 4.8, "p50": 0, "p95": 24, "p99": 31 }
+    },
+    "serverIngressGapMs": { "samples": 9, "average": 1010, "p50": 1000, "p95": 1100, "p99": 1100 },
+    "metricWindow": {
+      "scope": "process",
+      "maximumSamplesPerMetric": 512,
+      "resetsOnRestart": true,
+      "crossClockValuesAreEstimates": true
     }
   },
   "backgroundTasks": {
@@ -120,10 +127,13 @@ Returns the cached Firestore/RTDB status, telemetry counters and latency summari
 }
 ```
 
-Metrics are a 512-sample in-memory rolling window and reset on restart. The
-rate-limit counters are also process-local and cumulative since restart. A
-lease hit avoids a shared-store operation; `storeTransactionRetries` counts
-extra Firebase transaction callback attempts caused by contention.
+Metrics are a 512-sample in-memory rolling window on one backend process and
+reset on restart. The rate-limit counters are also process-local and cumulative
+since restart. A lease hit avoids a shared-store operation;
+`storeTransactionRetries` counts extra Firebase transaction callback attempts
+caused by contention. `serverIngressGapMs` uses only that process's clock.
+`networkLatencyMs` and `deviceToServerLatencyMs` compare device and backend wall
+clocks, so use the correlated telemetry baseline trace when clock skew matters.
 
 `backgroundTasks` counts failures from fire-and-forget background writes
 (`trackBackgroundTask` and `scheduleDurableRideRestore`). A source
@@ -157,7 +167,10 @@ background work and cannot change that acknowledgement contract.
 - 202 `{accepted:true,duplicate:false}`: new RTDB fix.
 - 200 `{accepted:true,duplicate:true}`: older timestamp or duplicate timestamp/sequence safely ignored.
 - 400 invalid ID/payload; 401 bad/missing/disabled credential or registry; 413 raw body too large; 429 limiter with `Retry-After` and `retryAfterMs`; 503 Firebase/ingestion failure.
-- Response has `Cache-Control: no-store`.
+- Successful 200/202 responses have `Cache-Control: no-store` plus
+  `X-Eki-Server-Received-At` and `X-Eki-Server-Responded-At` epoch-millisecond
+  timing headers. Firmware combines them with its send/receive timestamps to
+  estimate clock offset and transport delay without logging coordinates.
 
 ### `POST /api/devices/:deviceId/diagnostics` — device
 

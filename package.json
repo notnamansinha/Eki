@@ -17,6 +17,7 @@
     "test": "node --test scripts/*.test.mjs && npm run test --workspace=backend && npm run test --workspace=frontend",
     "test:rules": "node scripts/run-rules-emulator.mjs",
     "telemetry:load": "node scripts/benchmark-telemetry-ingestion.mjs",
+    "telemetry:analyze": "node scripts/analyze-telemetry-trace.mjs",
     "verify": "npm run lint && npm test && npm run build && npm audit --omit=dev --omit=optional"
   },
   "overrides": {

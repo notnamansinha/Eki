@@ -23,7 +23,10 @@ export interface TripStateResult {
   hasDepartedOrigin: boolean;
 }
 
-export const STOP_GEOFENCE_M = 20;
+// Stop arrival and endpoint direction inference are intentionally distinct
+// policies. Keep this alias while callers migrate from the historical name.
+export const STOP_ARRIVAL_GEOFENCE_M = 20;
+export const STOP_GEOFENCE_M = STOP_ARRIVAL_GEOFENCE_M;
 export const ORIGIN_DEPARTURE_M = 150;
 const MAX_TELEMETRY_SEGMENT_M = 250;
 

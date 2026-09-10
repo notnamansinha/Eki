@@ -58,6 +58,34 @@ void test_motion_hysteresis_filters_single_noisy_readings() {
   TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(1.0));
 }
 
+void test_motion_hysteresis_requires_consecutive_qualifying_readings() {
+  MotionTracker tracker;
+  TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(3.0));
+  TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(3.0));
+  // A neutral-band sample preserves the confirmed state but breaks this
+  // pending transition. Three new high readings are required.
+  TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(2.0));
+  TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(3.0));
+  TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(3.0));
+  TEST_ASSERT_EQUAL_STRING("moving", tracker.update(3.0));
+
+  TEST_ASSERT_EQUAL_STRING("moving", tracker.update(1.0));
+  TEST_ASSERT_EQUAL_STRING("moving", tracker.update(1.0));
+  TEST_ASSERT_EQUAL_STRING("moving", tracker.update(2.0));
+  TEST_ASSERT_EQUAL_STRING("moving", tracker.update(1.0));
+  TEST_ASSERT_EQUAL_STRING("moving", tracker.update(1.0));
+  TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(1.0));
+}
+
+void test_telemetry_timing_policy_is_explicit_and_safe() {
+  TEST_ASSERT_EQUAL_UINT32(1000, TELEMETRY_EVALUATION_INTERVAL_MS);
+  TEST_ASSERT_EQUAL_UINT32(1000, MOVING_HEARTBEAT_MS);
+  TEST_ASSERT_EQUAL_UINT32(5000, STOPPED_HEARTBEAT_MS);
+  TEST_ASSERT_EQUAL_UINT8(3, MOTION_CONFIRMATION_READINGS);
+  TEST_ASSERT_EQUAL_UINT32(7000, HTTP_REQUEST_TIMEOUT_MS);
+  TEST_ASSERT_TRUE(HTTP_REQUEST_TIMEOUT_MS < 25000);
+}
+
 void test_retry_backoff_is_jittered_and_bounded() {
   TEST_ASSERT_EQUAL_UINT32(1000, retryDelayMs(0, 0));
   TEST_ASSERT_EQUAL_UINT32(1999, retryDelayMs(0, 999));
@@ -541,6 +569,8 @@ int main(int, char **) {
   RUN_TEST(test_gnss_fix_requires_fresh_coherent_fields);
   RUN_TEST(test_implausible_speed_is_rejected_instead_of_clamped);
   RUN_TEST(test_motion_hysteresis_filters_single_noisy_readings);
+  RUN_TEST(test_motion_hysteresis_requires_consecutive_qualifying_readings);
+  RUN_TEST(test_telemetry_timing_policy_is_explicit_and_safe);
   RUN_TEST(test_retry_backoff_is_jittered_and_bounded);
   RUN_TEST(test_diagnostic_retry_backoff_is_bounded);
   RUN_TEST(test_http_response_actions_cover_transport_and_status_families);

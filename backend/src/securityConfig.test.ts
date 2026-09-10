@@ -549,7 +549,9 @@ describe("production security configuration", () => {
       'http.addHeader("Authorization", authorizationHeader)',
     );
     expect(firmware).not.toContain("HTTPClient::errorToString(responseCode)");
-    expect(firmware).toContain('http.collectHeaders(responseHeaders, 1)');
+    expect(firmware).toContain('http.collectHeaders(responseHeaders, 3)');
+    expect(firmware).toContain('"X-Eki-Server-Received-At"');
+    expect(firmware).toContain('"X-Eki-Server-Responded-At"');
     expect(firmware).toContain('#include "secrets.h"');
     expect(firmware).toContain("eki::config::validate(");
     expect(firmwareConfig).toContain("backendUrlUsesHttps");
@@ -641,7 +643,9 @@ describe("production security configuration", () => {
     expect(firmware).toContain("credentialFaultActive = true");
     expect(firmware).toContain("WiFi.disconnect(true, false)");
     expect(firmware).toContain("WiFi.mode(WIFI_OFF)");
-    expect(firmware).toContain("if (!credentialFaultActive)");
+    expect(firmware).toContain(
+      "if (!credentialFaultActive && !httpsRetryIsPending())",
+    );
     expect(firmware).toContain("acknowledgeQueuedFix(fix.sequence)");
     expect(firmware).toContain("removeQueuedFix(fix.sequence)");
     expect(firmware).not.toContain("Preferences");
@@ -748,12 +752,12 @@ describe("production security configuration", () => {
     expect(operations).not.toContain("test_bus_1");
     expect(shifts).toContain("nodeRef.transaction");
     expect(shifts).toContain("final ordered stop");
-    expect(shifts).toContain("STOP_GEOFENCE_M");
-    expect(shifts).toContain("arrivedAtOrigin");
+    expect(shifts).toContain("inferRideDirectionFromTelemetry");
+    expect(shifts).toContain("directionState");
     expect(operations).not.toContain('ariaLabel="Travel direction"');
     expect(operations).toContain("Travel direction is inferred from fresh stopped GPS");
     expect(operations).toContain("directionLabel(inferredDirection");
-    expect(shifts).toContain("inferRideDirectionAtEndpoint");
+    expect(shifts).toContain("inferRideDirectionFromTelemetry");
     expect(engine).toContain("maybeArmAutomaticTurnaround");
     expect(passengerBoarding).toContain("Ride in service");
   });
