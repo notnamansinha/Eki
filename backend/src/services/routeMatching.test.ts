@@ -145,4 +145,23 @@ describe("route matching", () => {
     );
     expect(match?.isAmbiguous).toBe(false);
   });
+
+  it("finds a non-adjacent crossing when an adjacent runner-up is equivalent", () => {
+    const match = matchRoutePosition(
+      { lat: 23, lng: 72.001 },
+      [
+        { lat: 23, lng: 72 },
+        { lat: 23, lng: 72.001 },
+        { lat: 23, lng: 72.002 },
+        { lat: 23.001, lng: 72.002 },
+        { lat: 22.999, lng: 72.002 },
+        { lat: 22.999, lng: 72.001 },
+        { lat: 23.001, lng: 72.001 },
+      ],
+    );
+
+    expect(match?.segmentIndex).toBe(0);
+    expect(match?.isAmbiguous).toBe(true);
+    expect(match?.matchConfidence).toBeLessThan(0.6);
+  });
 });

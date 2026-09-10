@@ -138,8 +138,10 @@ export function matchRoutePosition(
   let best:
     | (RouteMatch & { score: number; segmentLengthM: number })
     | null = null;
-  let secondBestScore = Number.POSITIVE_INFINITY;
-  let secondBestSegmentIndex = -1;
+  const candidates: Array<{
+    segmentIndex: number;
+    score: number;
+  }> = [];
 
   for (let segmentIndex = 0; segmentIndex < path.length - 1; segmentIndex += 1) {
     const projection = projectToSegment(
@@ -171,11 +173,9 @@ export function matchRoutePosition(
       backwardsM * 2 +
       segmentJump * 3;
 
+    candidates.push({ segmentIndex, score });
+
     if (!best || score < best.score) {
-      if (best) {
-        secondBestScore = best.score;
-        secondBestSegmentIndex = best.segmentIndex;
-      }
       best = {
         point: projection.point,
         segmentIndex,
@@ -188,9 +188,6 @@ export function matchRoutePosition(
         score,
         segmentLengthM,
       };
-    } else if (score < secondBestScore) {
-      secondBestScore = score;
-      secondBestSegmentIndex = segmentIndex;
     }
   }
 
@@ -199,23 +196,32 @@ export function matchRoutePosition(
     6,
     Math.min(12, Math.max(0, positionUncertaintyM) * 0.25),
   );
-  const competingHeadingDifference = secondBestSegmentIndex < 0
-    ? 0
-    : angularDifference(
-        segmentHeading(path[best.segmentIndex], path[best.segmentIndex + 1]),
-        segmentHeading(
-          path[secondBestSegmentIndex],
-          path[secondBestSegmentIndex + 1],
-        ),
+  const bestHeading = segmentHeading(
+    path[best.segmentIndex],
+    path[best.segmentIndex + 1],
+  );
+  // Do not let an adjacent, collinear segment hide a genuinely competing
+  // crossing farther along a self-intersecting route. Select the best
+  // candidate only after filtering equivalent geometry.
+  const competingCandidate = candidates
+    .filter(({ segmentIndex }) => {
+      if (segmentIndex === best.segmentIndex) return false;
+      const headingDifference = angularDifference(
+        bestHeading,
+        segmentHeading(path[segmentIndex], path[segmentIndex + 1]),
       );
-  const competingGeometry =
-    secondBestSegmentIndex >= 0 &&
-    (Math.abs(best.segmentIndex - secondBestSegmentIndex) > 1 ||
-      competingHeadingDifference > 25);
+      const equivalentGeometry =
+        Math.abs(best.segmentIndex - segmentIndex) <= 1 &&
+        headingDifference <= 25;
+      return !equivalentGeometry;
+    })
+    .sort((left, right) => left.score - right.score)[0];
+  const competingScore = competingCandidate?.score ?? Number.POSITIVE_INFINITY;
+  const competingGeometry = competingCandidate !== undefined;
   const isAmbiguous =
     competingGeometry &&
-    Number.isFinite(secondBestScore) &&
-    secondBestScore - best.score <= ambiguityWindow;
+    Number.isFinite(competingScore) &&
+    competingScore - best.score <= ambiguityWindow;
   const distanceConfidence = clamp01(
     1 - best.distanceToRouteM / OFF_ROUTE_DISTANCE_M,
   );
