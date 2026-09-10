@@ -32,6 +32,7 @@ import {
   shouldApplyRestoreTelemetry,
   summarizeLatencySamples,
   telemetrySampleIsNewer,
+  telemetryUpdateGapMs,
   verifyDeviceSecretHash,
 } from "./deviceTelemetryService";
 
@@ -131,6 +132,12 @@ describe("telemetry latency summaries", () => {
     expect(summarizeLatencySamples([100, 10, 30, 20, 40])).toEqual({
       samples: 5, average: 40, p50: 30, p95: 100, p99: 100,
     });
+  });
+
+  it("measures update gaps only on one monotonic server clock", () => {
+    expect(telemetryUpdateGapMs(1_000, 2_250)).toBe(1_250);
+    expect(telemetryUpdateGapMs(undefined, 2_250)).toBeNull();
+    expect(telemetryUpdateGapMs(3_000, 2_250)).toBeNull();
   });
 });
 

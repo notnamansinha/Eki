@@ -61,6 +61,7 @@ export interface HttpsTelemetryStatus {
   networkLatencyMs: LatencySummary;
   deviceToServerLatencyMs: LatencySummary;
   rtdbWriteLatencyMs: LatencySummary;
+  serverIngressGapMs: LatencySummary;
 }
 
 export interface LatencySummary {
@@ -149,12 +150,14 @@ const status: Pick<
   lastAcceptedAt: null,
   lastRejectedAt: null,
 };
-const MAX_METRIC_SAMPLES = 512;
+export const TELEMETRY_METRIC_SAMPLE_CAPACITY = 512;
 const processingLatencySamples: number[] = [];
 const deviceQueueLatencySamples: number[] = [];
 const networkLatencySamples: number[] = [];
 const deviceToServerLatencySamples: number[] = [];
 const rtdbWriteLatencySamples: number[] = [];
+const serverIngressGapSamples: number[] = [];
+const lastServerIngressByDevice = new Map<string, number>();
 let credentialCacheHits = 0;
 let credentialCacheMisses = 0;
 
@@ -189,8 +192,38 @@ export function evaluateDeviceRateLimit(
 
 function recordSample(samples: number[], value: number): void {
   if (!Number.isFinite(value) || value < 0) return;
-  if (samples.length >= MAX_METRIC_SAMPLES) samples.shift();
+  if (samples.length >= TELEMETRY_METRIC_SAMPLE_CAPACITY) samples.shift();
   samples.push(value);
+}
+
+export function telemetryUpdateGapMs(
+  previousReceivedAt: number | undefined,
+  receivedAt: number,
+): number | null {
+  if (
+    !Number.isFinite(previousReceivedAt) ||
+    !Number.isFinite(receivedAt) ||
+    receivedAt < Number(previousReceivedAt)
+  ) {
+    return null;
+  }
+  return receivedAt - Number(previousReceivedAt);
+}
+
+function recordServerIngressGap(deviceId: string, receivedAt: number): void {
+  const gap = telemetryUpdateGapMs(
+    lastServerIngressByDevice.get(deviceId),
+    receivedAt,
+  );
+  if (gap !== null) recordSample(serverIngressGapSamples, gap);
+  if (
+    !lastServerIngressByDevice.has(deviceId) &&
+    lastServerIngressByDevice.size >= MAX_CREDENTIAL_CACHE_ENTRIES
+  ) {
+    const oldest = lastServerIngressByDevice.keys().next().value;
+    if (oldest) lastServerIngressByDevice.delete(oldest);
+  }
+  lastServerIngressByDevice.set(deviceId, receivedAt);
 }
 
 export function summarizeLatencySamples(samples: readonly number[]): LatencySummary {
@@ -683,14 +716,16 @@ export async function ingestDeviceTelemetry(
   if (persisted.committed) {
     status.accepted += 1;
     status.lastAcceptedAt = new Date(now).toISOString();
+    recordServerIngressGap(deviceId, serverReceivedAt);
     scheduleTelemetryRouteProcessing(assignment, sample);
   }
   recordSample(processingLatencySamples, Date.now() - processingStartedAt);
   recordSample(deviceQueueLatencySamples, sample.deviceSentAt - sample.timestamp);
   recordSample(networkLatencySamples, serverReceivedAt - sample.deviceSentAt);
-  // Device timestamps come from NTP-synchronised wall time. Ignore implausible
-  // values instead of letting a bad device clock corrupt the rolling window.
-  const deviceToServerLatency = Date.now() - sample.timestamp;
+  // Cross-clock values remain estimates until the firmware's request/response
+  // timing establishes an offset bound. Use the ingress boundary here so this
+  // metric does not also include authentication, rate limiting, or RTDB work.
+  const deviceToServerLatency = serverReceivedAt - sample.timestamp;
   if (deviceToServerLatency <= 24 * 60 * 60 * 1000) {
     recordSample(deviceToServerLatencySamples, deviceToServerLatency);
   }
@@ -731,6 +766,7 @@ export function getHttpsTelemetryStatus(): HttpsTelemetryStatus {
     networkLatencyMs: summarizeLatencySamples(networkLatencySamples),
     deviceToServerLatencyMs: summarizeLatencySamples(deviceToServerLatencySamples),
     rtdbWriteLatencyMs: summarizeLatencySamples(rtdbWriteLatencySamples),
+    serverIngressGapMs: summarizeLatencySamples(serverIngressGapSamples),
   };
 }
 

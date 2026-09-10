@@ -545,6 +545,19 @@ bool httpsRetryIsPending() {
          elapsed(lastHttpsFailureAt) < httpsRetryDelayMs;
 }
 
+bool parseEpochMillisecondsHeader(const String &value, int64_t &parsed) {
+  if (value.length() < 13 || value.length() > 14) return false;
+  int64_t result = 0;
+  for (size_t index = 0; index < value.length(); ++index) {
+    const char digit = value[index];
+    if (digit < '0' || digit > '9') return false;
+    result = result * 10 + static_cast<int64_t>(digit - '0');
+  }
+  if (result < eki::clock::TRUSTED_EPOCH_MIN_MS) return false;
+  parsed = result;
+  return true;
+}
+
 void scheduleHttpsRetry(uint32_t minimumDelayMs = 0) {
   // Per-device jitter prevents a recovering hotspot/backend from receiving a
   // synchronized retry wave from the whole fleet.
@@ -1089,8 +1102,9 @@ PublishResult publishFix(const TelemetryFix &fix) {
   }
   if (httpsRetryIsPending()) return PublishResult::RetryLatest;
 
+  const int64_t deviceSentAt = epochMilliseconds();
   JsonDocument document;
-  document["deviceSentAt"] = epochMilliseconds();
+  document["deviceSentAt"] = deviceSentAt;
   document["lat"] = fix.lat;
   document["lng"] = fix.lng;
   document["speed"] = fix.speed;
@@ -1122,8 +1136,12 @@ PublishResult publishFix(const TelemetryFix &fix) {
       eki::telemetry::TELEMETRY_FRESHNESS_MARGIN_MS
     ) ? PublishResult::RetryLatest : PublishResult::Dropped;
   }
-  const char *responseHeaders[] = {"Retry-After"};
-  http.collectHeaders(responseHeaders, 1);
+  const char *responseHeaders[] = {
+    "Retry-After",
+    "X-Eki-Server-Received-At",
+    "X-Eki-Server-Responded-At",
+  };
+  http.collectHeaders(responseHeaders, 3);
   http.addHeader("Authorization", authorizationHeader);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Cache-Control", "no-store");
@@ -1133,6 +1151,51 @@ PublishResult publishFix(const TelemetryFix &fix) {
     reinterpret_cast<uint8_t *>(payload),
     payloadLength
   );
+  const uint32_t httpDurationMs = elapsed(startedAt);
+  const int64_t deviceReceivedAt = epochMilliseconds();
+  int64_t serverReceivedAt = 0;
+  int64_t serverRespondedAt = 0;
+  const bool hasServerTiming =
+    parseEpochMillisecondsHeader(
+      http.header("X-Eki-Server-Received-At"),
+      serverReceivedAt
+    ) &&
+    parseEpochMillisecondsHeader(
+      http.header("X-Eki-Server-Responded-At"),
+      serverRespondedAt
+    ) &&
+    serverRespondedAt >= serverReceivedAt;
+  const unsigned int attempt =
+    static_cast<unsigned int>(consecutiveHttpsFailures) + 1U;
+  if (hasServerTiming) {
+    Serial.printf(
+      "[TelemetryTrace] {\"version\":1,\"event\":\"device_http\",\"deviceId\":\"%s\",\"seq\":%lu,\"motionState\":\"%s\",\"sampledAtDeviceMs\":%lld,\"deviceSentAtDeviceMs\":%lld,\"deviceReceivedAtDeviceMs\":%lld,\"serverReceivedAtMs\":%lld,\"serverRespondedAtMs\":%lld,\"httpDurationMs\":%lu,\"httpStatus\":%d,\"attempt\":%u}\n",
+      DEVICE_ID,
+      static_cast<unsigned long>(fix.sequence),
+      motionStateName(fix.motionState),
+      static_cast<long long>(fix.timestamp),
+      static_cast<long long>(deviceSentAt),
+      static_cast<long long>(deviceReceivedAt),
+      static_cast<long long>(serverReceivedAt),
+      static_cast<long long>(serverRespondedAt),
+      static_cast<unsigned long>(httpDurationMs),
+      responseCode,
+      attempt
+    );
+  } else {
+    Serial.printf(
+      "[TelemetryTrace] {\"version\":1,\"event\":\"device_http\",\"deviceId\":\"%s\",\"seq\":%lu,\"motionState\":\"%s\",\"sampledAtDeviceMs\":%lld,\"deviceSentAtDeviceMs\":%lld,\"deviceReceivedAtDeviceMs\":%lld,\"serverReceivedAtMs\":null,\"serverRespondedAtMs\":null,\"httpDurationMs\":%lu,\"httpStatus\":%d,\"attempt\":%u}\n",
+      DEVICE_ID,
+      static_cast<unsigned long>(fix.sequence),
+      motionStateName(fix.motionState),
+      static_cast<long long>(fix.timestamp),
+      static_cast<long long>(deviceSentAt),
+      static_cast<long long>(deviceReceivedAt),
+      static_cast<unsigned long>(httpDurationMs),
+      responseCode,
+      attempt
+    );
+  }
   const eki::telemetry::HttpResponseAction action =
     eki::telemetry::httpResponseAction(responseCode);
   const uint32_t retryAfterMs = responseCode == 429
@@ -1143,7 +1206,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
       "[HTTPS] Transport failure %d (%s) in %lums (RSSI %d dBm). Check DNS, hostname, CA, clock, and backend reachability.\n",
       responseCode,
       httpTransportFailureName(responseCode),
-      static_cast<unsigned long>(elapsed(startedAt)),
+      static_cast<unsigned long>(httpDurationMs),
       WiFi.RSSI()
     );
   } else if (action != eki::telemetry::HttpResponseAction::Accept) {
@@ -1157,7 +1220,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
             ? "credential-fault"
             : "rejected",
       responseCode,
-      static_cast<unsigned long>(elapsed(startedAt)),
+      static_cast<unsigned long>(httpDurationMs),
       payloadLength,
       WiFi.RSSI()
     );
@@ -1203,11 +1266,6 @@ PublishResult publishFix(const TelemetryFix &fix) {
 #if EKI_FLEET_BUILD
   markOtaValidAfterBackendAcceptance();
 #endif
-  Serial.printf(
-    "[RTDB] lat: %.6f | lng: %.6f\n",
-    fix.lat,
-    fix.lng
-  );
   return PublishResult::Accepted;
 }
 

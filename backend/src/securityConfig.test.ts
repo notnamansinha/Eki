@@ -544,7 +544,9 @@ describe("production security configuration", () => {
       'http.addHeader("Authorization", authorizationHeader)',
     );
     expect(firmware).not.toContain("HTTPClient::errorToString(responseCode)");
-    expect(firmware).toContain('http.collectHeaders(responseHeaders, 1)');
+    expect(firmware).toContain('http.collectHeaders(responseHeaders, 3)');
+    expect(firmware).toContain('"X-Eki-Server-Received-At"');
+    expect(firmware).toContain('"X-Eki-Server-Responded-At"');
     expect(firmware).toContain('#include "secrets.h"');
     expect(firmware).toContain("eki::config::validate(");
     expect(firmwareConfig).toContain("backendUrlUsesHttps");
