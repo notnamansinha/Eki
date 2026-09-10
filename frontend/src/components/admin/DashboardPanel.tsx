@@ -31,6 +31,7 @@ import MessagingPanel from "@/components/shared/MessagingPanel";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
+import { useTelemetryRenderTrace } from "@/hooks/useTelemetryRenderTrace";
 import { isLiveChatDeviceOnline } from "@/lib/activeBusEntries";
 import {
   directionLabel,
@@ -259,6 +260,7 @@ function BusMarker({
     () => liveBusMarkerPosition(entry),
     [entry],
   );
+  useTelemetryRenderTrace(entry, "admin", markerPoint !== null);
 
   const [displayHeading, setDisplayHeading] = useState(() =>
     normalizeHeading(entry.heading),

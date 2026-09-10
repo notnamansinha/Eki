@@ -115,12 +115,12 @@ The software does not promise an absolute end-to-end SLA without real deployment
 | Moving/stopped heartbeat | 1 / 5 seconds |
 | HTTPS request timeout | 7 seconds |
 | Retry | 1–30 seconds exponential with per-device jitter |
-| RTDB write | One transaction per accepted new sample |
+| RTDB write | One ordered live-node transaction per accepted new sample; one shared rate-budget transaction per bounded token lease |
 | Firestore lifecycle | Only state/stop/delay/session changes |
 | Browser live stream | One shared RTDB listener per browser runtime |
 | UI freshness clocks | 15–60 second local-only timers; no API polling |
 
-Admin-only `GET /api/health` returns rolling p50/p95/p99 processing, device-to-server, and RTDB-write latency plus credential cache efficiency. Public `GET /health` exposes readiness only. A device clock anomaly over 24 hours is excluded from the device-to-server window.
+Admin-only `GET /api/health` returns rolling p50/p95/p99 processing, device-to-server, RTDB-write, and authenticated rate-limit decision latency plus credential cache efficiency and shared limiter transaction/retry counters. Public `GET /health` exposes readiness only. A device clock anomaly over 24 hours is excluded from the device-to-server window.
 
 ## Deployment view
 
@@ -131,7 +131,7 @@ The vehicle needs a fused 12 V-to-5 V converter, stable ground, secure enclosure
 ## Residual risks
 
 - Physical GNSS multipath, antenna/power faults and cellular dead zones require route testing.
-- In-memory API/device rate limits are per process; university edge limits are required for multi-instance production.
+- General API rate limits are sharded per process and still require university edge limits. Authenticated device limits use the shared RTDB budget by default; local mode is restricted to an explicitly single-instance deployment.
 - Firebase and Google Maps quotas/regions are external operational dependencies.
 - A pinned CA must be physically updated before issuer expiry/rotation; application OTA deliberately cannot replace trust roots or credentials.
 - Retention/privacy periods need university legal approval and backups need an owned restore drill.

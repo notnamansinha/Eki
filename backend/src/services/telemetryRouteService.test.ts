@@ -3,10 +3,12 @@ import {
   directionProjectionNeedsSync,
   invalidateTelemetryRoute,
   isReliableMovingSample,
+  nextMatchedTelemetryValue,
   remainingRerouteStops,
   rerouteContextIsCurrent,
   routeRepairSnapshotWrite,
   telemetryRouteSnapshotIsCurrent,
+  telemetryIsCurrent,
 } from "./telemetryRouteService";
 
 describe("matcher route cache versions", () => {
@@ -86,6 +88,54 @@ describe("reroute result guards", () => {
     expect(rerouteContextIsCurrent({ ...live, sessionId: "session-old" }, expected)).toBe(false);
     expect(rerouteContextIsCurrent({ ...live, rerouteRequestId: "request-4" }, expected)).toBe(false);
     expect(rerouteContextIsCurrent({ ...live, direction: "reverse" }, expected)).toBe(false);
+  });
+});
+
+describe("matched telemetry transaction guard", () => {
+  const sample = {
+    lat: 23,
+    lng: 72,
+    speed: 10,
+    heading: 90,
+    gpsHdop: 1,
+    motionState: "moving" as const,
+    seq: 5,
+    deviceSentAt: 5_100,
+    timestamp: 5_000,
+  };
+
+  it("allows a match only for the raw sample still stored by the transaction", () => {
+    expect(telemetryIsCurrent({ timestamp: 5_000, seq: 5 }, sample)).toBe(true);
+    expect(telemetryIsCurrent({ timestamp: 6_000, seq: 6 }, sample)).toBe(false);
+    expect(telemetryIsCurrent({
+      timestamp: 5_000,
+      seq: 5,
+      sessionId: "new-lifecycle-state",
+    }, sample)).toBe(true);
+  });
+
+  it("preserves concurrent lifecycle fields and aborts after newer raw telemetry", () => {
+    const current = {
+      timestamp: 5_000,
+      seq: 5,
+      sessionId: "session_new",
+      tripState: "in_service",
+      currentStopIndex: 3,
+    };
+    expect(nextMatchedTelemetryValue(current, sample, {
+      matchedLocation: { seq: 5, sampledAt: 5_000 },
+      routeState: "ON_ROUTE",
+    })).toMatchObject({
+      sessionId: "session_new",
+      tripState: "in_service",
+      currentStopIndex: 3,
+      matchedLocation: { seq: 5, sampledAt: 5_000 },
+    });
+    expect(nextMatchedTelemetryValue(
+      { ...current, timestamp: 6_000, seq: 6 },
+      sample,
+      { matchedLocation: { seq: 5, sampledAt: 5_000 } },
+    )).toBeUndefined();
   });
 });
 

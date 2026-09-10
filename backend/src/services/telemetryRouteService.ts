@@ -304,11 +304,21 @@ function previousMatch(
     : null;
 }
 
-function telemetryIsCurrent(
+export function telemetryIsCurrent(
   live: Record<string, unknown> | null,
   sample: TelemetryPayload,
 ): boolean {
   return live?.timestamp === sample.timestamp && live?.seq === sample.seq;
+}
+
+export function nextMatchedTelemetryValue(
+  current: Record<string, unknown> | null,
+  sample: TelemetryPayload,
+  matchedUpdate: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  return telemetryIsCurrent(current, sample)
+    ? { ...current, ...matchedUpdate }
+    : undefined;
 }
 
 function resolvedDirection(value: unknown): RideDirection | null {
@@ -867,12 +877,10 @@ async function processTelemetryRoute(
 
   const transaction = await rtdb.ref(`activeBuses/${nodeKey}`).transaction((current) => {
     const currentLive = current as Record<string, unknown> | null;
-    if (
-      !telemetryIsCurrent(currentLive, sample) ||
-      !telemetryRouteSnapshotIsCurrent(assignment.routeId, route.cacheGeneration)
-    ) return;
-    return {
-      ...currentLive,
+    if (!telemetryRouteSnapshotIsCurrent(assignment.routeId, route.cacheGeneration)) {
+      return;
+    }
+    return nextMatchedTelemetryValue(currentLive, sample, {
       activeRouteId:
         geometry.source === "configured"
           ? `${assignment.routeId}:configured:${direction}`
@@ -898,7 +906,7 @@ async function processTelemetryRoute(
         match && match.matchConfidence >= MATCHED_POSITION_CONFIDENCE
           ? matchedLocation(match, acceptedSample, routeVersion)
           : null,
-    };
+    });
   });
 
   const committed = transaction.snapshot.val() as Record<string, unknown> | null;

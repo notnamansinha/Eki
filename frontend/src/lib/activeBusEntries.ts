@@ -14,6 +14,11 @@ export interface ActiveBusEntry {
   speed?: number;
   heading?: number;
   timestamp?: number;
+  seq?: number;
+  deviceSentAt?: number;
+  backendReceivedAt?: number;
+  receivedAt?: number;
+  rtdbCommittedAt?: number;
   status?: "active" | "offline";
   deviceState?: "online" | "offline";
   motionState?: "moving" | "stopped" | "uncertain";
@@ -89,6 +94,11 @@ const OPTIONAL_NUMBER_FIELDS = [
   "speed",
   "heading",
   "timestamp",
+  "seq",
+  "deviceSentAt",
+  "backendReceivedAt",
+  "receivedAt",
+  "rtdbCommittedAt",
   "currentStopIndex",
   "delayMinutes",
   "matchConfidence",

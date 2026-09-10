@@ -26,6 +26,7 @@ import {
 import { busStopArrivalTimestamps } from "@/lib/busEta";
 import { useDynamicRouteGeometries } from "@/hooks/useDynamicRouteGeometries";
 import type { ActiveRouteGeometry } from "@/lib/activeRouteGeometry";
+import { useTelemetryRenderTrace } from "@/hooks/useTelemetryRenderTrace";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
@@ -52,6 +53,7 @@ function BusMarker({
     () => liveBusMarkerPosition(bus),
     [bus],
   );
+  useTelemetryRenderTrace(bus, "passenger", rawPoint !== null);
 
   const [displayHeading, setDisplayHeading] = useState(() =>
     normalizeHeading(bus.heading),

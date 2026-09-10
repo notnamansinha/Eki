@@ -401,6 +401,7 @@ describe("production security configuration", () => {
     const server = workspaceFile("backend/src/server.ts");
     const devices = workspaceFile("backend/src/routes/devices.ts");
     const telemetry = workspaceFile("backend/src/services/deviceTelemetryService.ts");
+    const deviceLimiter = workspaceFile("backend/src/services/deviceRateLimiter.ts");
 
     expect(server).toContain("const routeComputeLimiter");
     expect(server).toContain('app.use("/api/routes", routeComputeLimiter, polylineRoutes)');
@@ -408,10 +409,13 @@ describe("production security configuration", () => {
     expect(server).toContain('express.json({ limit: "512b", strict: true })');
     expect(devices).toContain("telemetryLimiter");
     expect(devices).toContain('"/:deviceId/telemetry"');
-    expect(telemetry).toContain("HTTPS_DEVICE_RATE_PER_MINUTE");
     expect(telemetry).toContain("deviceRateLimitRetryAfterMs");
     expect(telemetry).toContain("DEVICE_RATE_LIMIT_PATH");
     expect(telemetry).toContain(".transaction((value)");
+    expect(deviceLimiter).toContain("HTTPS_DEVICE_RATE_PER_MINUTE");
+    expect(deviceLimiter).toContain("HTTPS_DEVICE_RATE_LIMIT_MODE");
+    expect(deviceLimiter).toContain("AuthenticatedDeviceRateLimiter");
+    expect(deviceLimiter).toContain("reserveRateLimitTokens");
     expect(telemetry).toContain("credentialCacheKey(deviceId, suppliedDigest)");
     expect(telemetry).toContain("DEVICE_CREDENTIAL_VERSION_PATH");
     expect(devices).toContain("publishDeviceCredentialInvalidation(deviceId)");
@@ -451,6 +455,7 @@ describe("production security configuration", () => {
     expect(devices).toContain("shardedLimit(120");
     // Operators must set the factor to the deployed replica count.
     expect(envExample).toContain("RATE_LIMIT_SHARD_FACTOR");
+    expect(envExample).toContain("HTTPS_DEVICE_RATE_LIMIT_MODE=distributed");
     // The exact image that would be replicated builds and smoke-boots in CI.
     expect(workflow).toContain("backend-image");
     expect(workflow).toContain("docker build -f backend/Dockerfile");
@@ -544,7 +549,9 @@ describe("production security configuration", () => {
       'http.addHeader("Authorization", authorizationHeader)',
     );
     expect(firmware).not.toContain("HTTPClient::errorToString(responseCode)");
-    expect(firmware).toContain('http.collectHeaders(responseHeaders, 1)');
+    expect(firmware).toContain('http.collectHeaders(responseHeaders, 3)');
+    expect(firmware).toContain('"X-Eki-Server-Received-At"');
+    expect(firmware).toContain('"X-Eki-Server-Responded-At"');
     expect(firmware).toContain('#include "secrets.h"');
     expect(firmware).toContain("eki::config::validate(");
     expect(firmwareConfig).toContain("backendUrlUsesHttps");

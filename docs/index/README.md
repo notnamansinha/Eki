@@ -28,7 +28,9 @@ Read these technical references in order when onboarding:
 Operational documents:
 
 - [Live demo runbook](../operations/LIVE_DEMO_RUNBOOK.md)
+- [Telemetry ingestion load test](../operations/TELEMETRY_INGESTION_LOAD_TEST.md)
 - [University deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md)
+- [Telemetry latency baseline](../operations/TELEMETRY_LATENCY_BASELINE.md)
 - [CI, deployment, and release guide](../operations/CI_CD_AND_RELEASES.md)
 - [Storage architecture summary](../data/STORAGE_ARCHITECTURE.md)
 - [Security policy](../repository/SECURITY.md)
