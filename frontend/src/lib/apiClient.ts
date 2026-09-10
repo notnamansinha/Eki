@@ -2,7 +2,21 @@ const API_TIMEOUT_MS = 10_000;
 
 type ApiRequestOptions = RequestInit & {
   fallbackError?: string;
+  timeoutMs?: number;
 };
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly status: number | null,
+    readonly phase?: string,
+    readonly outcomeUnknown = false,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 function configuredBackendUrl(): string {
   const configured = process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -26,7 +40,12 @@ function configuredBackendUrl(): string {
 
 export async function apiRequest<T>(
   path: string,
-  { fallbackError = "Request failed.", signal, ...init }: ApiRequestOptions = {},
+  {
+    fallbackError = "Request failed.",
+    signal,
+    timeoutMs = API_TIMEOUT_MS,
+    ...init
+  }: ApiRequestOptions = {},
 ): Promise<T> {
   const backendUrl = configuredBackendUrl();
 
@@ -43,7 +62,7 @@ export async function apiRequest<T>(
     if (requestController.signal.aborted) return;
     abortSource = "timeout";
     requestController.abort(new DOMException("Request timed out.", "TimeoutError"));
-  }, API_TIMEOUT_MS);
+  }, timeoutMs);
 
   try {
     const response = await fetch(`${backendUrl}${path}`, {
@@ -51,7 +70,7 @@ export async function apiRequest<T>(
       signal: requestController.signal,
     });
     if (response.status === 204) return undefined as T;
-    let result: T & { error?: unknown };
+    let result: T & { error?: unknown; code?: unknown; phase?: unknown };
     try {
       result = await response.json() as T & { error?: unknown };
     } catch (error) {
@@ -62,12 +81,32 @@ export async function apiRequest<T>(
       const message = typeof result.error === "string" && result.error.trim()
         ? result.error
         : `${fallbackError} (HTTP ${response.status})`;
-      throw new Error(message);
+      throw new ApiError(
+        message,
+        typeof result.code === "string" ? result.code : "HTTP_ERROR",
+        response.status,
+        typeof result.phase === "string" ? result.phase : undefined,
+      );
     }
     return result;
   } catch (error) {
     if (abortSource === "timeout") {
-      throw new Error("The request timed out. Please try again.");
+      throw new ApiError(
+        "The request timed out. The operation may still complete; retry to reconcile it.",
+        "NETWORK_TIMEOUT",
+        null,
+        "network",
+        true,
+      );
+    }
+    if (error instanceof TypeError) {
+      throw new ApiError(
+        "The backend could not be reached. Check the connection and retry.",
+        "BACKEND_UNAVAILABLE",
+        null,
+        "network",
+        true,
+      );
     }
     throw error;
   } finally {

@@ -76,6 +76,29 @@ export function normalizeRouteStopPayload(stop: RouteStopPayloadInput): RouteSto
   };
 }
 
+/** Reorder without recreating stops, so stable IDs survive endpoint changes. */
+export function reorderRouteStops<T>(
+  stops: readonly T[],
+  from: number,
+  to: number,
+): T[] {
+  if (
+    from < 0 ||
+    from >= stops.length ||
+    to < 0 ||
+    to >= stops.length ||
+    from === to
+  ) return [...stops];
+  const reordered = [...stops];
+  const [item] = reordered.splice(from, 1);
+  reordered.splice(to, 0, item);
+  return reordered;
+}
+
+export function swapRouteEndpoints<T>(stops: readonly T[]): T[] {
+  return stops.length === 2 ? [stops[1], stops[0]] : [...stops];
+}
+
 /** Validates and builds the exact request consumed by PUT /api/routes/:routeId. */
 export function prepareRouteSavePayload(input: RouteSavePayloadInput): RouteSavePreparation {
   const name = input.name.trim();

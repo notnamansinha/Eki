@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
@@ -16,6 +16,11 @@ import ConfirmModal from "@/components/ui/ConfirmModal";
 import { errorMessage } from "@/lib/errors";
 import { apiRequest } from "@/lib/apiClient";
 import { validateOperatorInput, validateVehicleInput } from "@/lib/adminValidation";
+import {
+  devicePresence,
+  isActiveService,
+  rideServiceState,
+} from "@/lib/activeBusEntries";
 
 async function fleetRequest(path: string, method: "PUT" | "DELETE", body?: object) {
   if (!auth.currentUser) throw new Error("Fleet service is not configured.");
@@ -32,6 +37,8 @@ async function fleetRequest(path: string, method: "PUT" | "DELETE", body?: objec
 }
 
 const TRIP_STATE_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: ComponentType<{ className?: string }> }> = {
+  not_armed:     { label: "Ride Not Armed", color: "text-white/40", bg: "bg-white/5", Icon: Clock },
+  direction_pending: { label: "Direction Pending", color: "text-amber-300", bg: "bg-amber-500/10", Icon: Clock },
   pre_departure: { label: "Awaiting Stop 1", color: "text-white/50", bg: "bg-white/5", Icon: Clock },
   in_service:    { label: "In Service",  color: "text-emerald-400",  bg: "bg-emerald-500/10", Icon: Navigation },
   completed:     { label: "Completed",   color: "text-blue-400",     bg: "bg-blue-500/10",    Icon: CheckCircle2 },
@@ -63,6 +70,12 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   const { drivers, loading: driversLoading } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const activeEntries = useActiveBuses();
+  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setFreshnessNow(Date.now()), 15_000);
+    return () => window.clearInterval(interval);
+  }, []);
   // Only show buses that are registered in the Firestore `buses` collection.
   // This acts as a defense-in-depth guard: even if RTDB cleanup is delayed
   // or a stale entry exists, deleted buses will never render in the UI.
@@ -74,7 +87,11 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   const filteredActiveEntries = busesLoading
     ? activeEntries                                          // buses not ready yet — show all
     : activeEntries.filter((e) => registeredBusIds.has(e.busId)); // buses loaded — filter to registered only
-  const activeBusIds = new Set(filteredActiveEntries.map((e) => e.busId));
+  const onlineBusIds = new Set(
+    filteredActiveEntries
+      .filter((entry) => devicePresence(entry, freshnessNow) === "online")
+      .map((entry) => entry.busId),
+  );
 
   // ── Error state ──────────────────────────────────────────────────────────
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -236,7 +253,12 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
     } catch (error: unknown) { setErrorMsg("Failed to update Operator: " + errorMessage(error)); }
   };
 
-  const liveDriverIds = new Set(filteredActiveEntries.map((e) => e.driverId).filter(Boolean));
+  const liveDriverIds = new Set(
+    filteredActiveEntries
+      .filter(isActiveService)
+      .map((entry) => entry.driverId)
+      .filter(Boolean),
+  );
   const liveDrivers = drivers.filter((d) => liveDriverIds.has(d.id));
 
   // â”€â”€ Fleet summary stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -363,10 +385,12 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                   : buses.length === 0
                   ? <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">No vehicles registered.</p>
                   : buses.map((bus) => {
-                    const isOnline = activeBusIds.has(bus.id);
+                    const isOnline = onlineBusIds.has(bus.id);
                     const isEditing = editingBusId === bus.id;
                     const liveEntry = activeEntries.find(e => e.busId === bus.id);
-                    const ts = liveEntry ? TRIP_STATE_CONFIG[liveEntry.tripState ?? "pre_departure"] : null;
+                    const ts = liveEntry
+                      ? TRIP_STATE_CONFIG[rideServiceState(liveEntry)]
+                      : null;
 
                     return (
                       <div key={bus.id} className="bg-brand-dark/40 border border-white/5 rounded-2xl overflow-hidden">
@@ -380,14 +404,17 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                               <span className="font-semibold text-white text-sm truncate">{bus.name}</span>
                               <span className="text-[10px] text-white/30 tabular-nums tracking-widest">{bus.id}</span>
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                {isOnline && ts ? (
+                                {liveEntry && ts ? (
                                   <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${ts.color}`}>
                                     <span className={`w-1.5 h-1.5 rounded-full inline-block ${ts.color.replace("text-","bg-")} ${liveEntry?.motionState === "moving" ? "animate-pulse" : ""}`} />
                                     {ts.label}
                                   </span>
                                 ) : (
-                                  <span className="text-[9px] text-white/20 font-black uppercase tracking-widest">Offline</span>
+                                  <span className="text-[9px] text-white/20 font-black uppercase tracking-widest">No live state</span>
                                 )}
+                                <span className={`text-[9px] font-black uppercase tracking-widest ${isOnline ? "text-emerald-400" : "text-white/25"}`}>
+                                  {isOnline ? "Device online" : liveEntry ? "Device offline / stale" : "Device offline"}
+                                </span>
                                 {isOnline && liveEntry?.speed != null && (
                                   <span className="text-[9px] text-white/30 tabular-nums">{Math.round(liveEntry.speed)} km/h</span>
                                 )}
@@ -557,7 +584,9 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                     const isDriving = liveDriverIds.has(driver.id);
                     const isEditing = editingDriverId === driver.id;
                     const liveEntry = activeEntries.find(e => e.driverId === driver.id);
-                    const dTs = liveEntry ? TRIP_STATE_CONFIG[liveEntry.tripState ?? "pre_departure"] : null;
+                    const dTs = liveEntry
+                      ? TRIP_STATE_CONFIG[rideServiceState(liveEntry)]
+                      : null;
 
                     return (
                       <div

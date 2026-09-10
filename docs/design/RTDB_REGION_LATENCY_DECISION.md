@@ -17,6 +17,7 @@ All figures below are warm sequential requests from the same India workstation o
 |---|---:|---:|---:|---:|---|
 | Firebase Admin `limitToFirst(1).get()` against the real Iowa `activeBuses` path, run A | 30 | 280.5 ms | 274.5 ms | 297.8 ms | Authenticated backend-to-RTDB read; values were not logged |
 | Same authenticated probe, run B through the committed command | 30 | 318.0 ms | 284.5 ms | 472.9 ms | p99/max 860.6 ms, showing the need for multi-time sampling |
+| Integrated `testing` candidate, run C through the committed command | 30 | 283.0 ms | 270.1 ms | 272.8 ms | Authenticated Admin read; p99/max 650.0 ms; no database values logged |
 | HTTPS GET to the real Iowa instance | 30 | 314.4 ms | 284.8 ms | 680.1 ms | Returned 401 by design; measures user-vantage transport/front-door latency, not authenticated sync |
 | Like-for-like nonexistent Iowa RTDB front door | 20 | 309.5 ms | 293.0 ms | 348.6 ms | 404 response, interleaved with Singapore probes |
 | Like-for-like nonexistent Singapore RTDB front door | 20 | 142.6 ms | 94.2 ms | 275.5 ms | 404 response, interleaved with Iowa probes; one 781.9 ms outlier |

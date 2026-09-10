@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiRequest } from "./apiClient";
+import { ApiError, apiRequest } from "./apiClient";
 
 describe("apiRequest", () => {
   afterEach(() => {
@@ -29,7 +29,11 @@ describe("apiRequest", () => {
       new Response(JSON.stringify({ error: "Denied" }), { status: 403 }),
     ));
 
-    await expect(apiRequest("/api/test")).rejects.toThrow("Denied");
+    await expect(apiRequest("/api/test")).rejects.toMatchObject({
+      message: "Denied",
+      code: "HTTP_ERROR",
+      status: 403,
+    } satisfies Partial<ApiError>);
   });
 
   it("uses the HTTP fallback for empty or non-string server errors", async () => {
@@ -86,7 +90,10 @@ describe("apiRequest", () => {
     vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
     const networkError = new TypeError("Network request failed");
     vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(networkError));
-    await expect(apiRequest("/api/test")).rejects.toBe(networkError);
+    await expect(apiRequest("/api/test")).rejects.toMatchObject({
+      code: "BACKEND_UNAVAILABLE",
+      outcomeUnknown: true,
+    });
 
     const controller = new AbortController();
     controller.abort();
