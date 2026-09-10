@@ -3,6 +3,7 @@ import { db } from "../lib/firebaseAdmin";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { requireAuth } from "../middleware/requireAuth";
 import { decodePolyline } from "../lib/polylineUtils";
+import { singleRouteParam } from "../lib/requestParams";
 import { invalidatePlanRoute } from "./plan";
 
 const router = Router();
@@ -255,8 +256,8 @@ router.post("/compute-polyline", requireAdmin, async (req: Request, res: Respons
  * billable waypoints because coordinates are loaded from Firestore by ID.
  */
 router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response) => {
-  const routeId = req.params.routeId;
-  if (!SAFE_ID.test(routeId)) {
+  const routeId = singleRouteParam(req.params.routeId);
+  if (routeId === null || !SAFE_ID.test(routeId)) {
     res.status(400).json({ error: "Invalid route ID." });
     return;
   }
@@ -306,13 +307,14 @@ router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response
 });
 
 router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
-  const routeId = req.params.routeId;
+  const routeId = singleRouteParam(req.params.routeId);
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
   const color = typeof req.body?.color === "string" ? req.body.color : "";
   const type = req.body?.type;
   const mode = req.body?.mode;
   const stops = validateStops(req.body?.stops);
   if (
+    routeId === null ||
     !SAFE_ID.test(routeId) ||
     !name ||
     name.length > 100 ||
@@ -373,8 +375,8 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
 });
 
 router.delete("/:routeId", requireAdmin, async (req: Request, res: Response) => {
-  const routeId = req.params.routeId;
-  if (!SAFE_ID.test(routeId)) {
+  const routeId = singleRouteParam(req.params.routeId);
+  if (routeId === null || !SAFE_ID.test(routeId)) {
     res.status(400).json({ error: "Invalid route ID." });
     return;
   }

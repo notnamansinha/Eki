@@ -5,6 +5,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { ipKeyGenerator } from "../lib/rateLimitIdentity";
 import { readRateLimitShardFactor, shardedLimit } from "../lib/rateLimitShard";
 import { db } from "../lib/firebaseAdmin";
+import { singleRouteParam } from "../lib/requestParams";
 import {
   authenticateDeviceCredentials,
   ingestDeviceTelemetry,
@@ -68,7 +69,7 @@ router.post(
         ? requestBoundary
         : Date.now();
     res.set("Cache-Control", "no-store");
-    const deviceId = req.params.deviceId;
+    const deviceId = singleRouteParam(req.params.deviceId);
     const secret = parseDeviceAuthorization(req.get("authorization"));
     let encodedLength = Number.POSITIVE_INFINITY;
     try {
@@ -80,7 +81,7 @@ router.post(
       encodedLength <= 512
         ? parseTelemetryValue(req.body, serverReceivedAt)
         : { ok: false as const, reason: "payload_size" };
-    if (!SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
+    if (deviceId === null || !SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
       recordTelemetryRejection();
       const payloadTooLarge = !parsed.ok && parsed.reason === "payload_size";
       res.status(!secret ? 401 : payloadTooLarge ? 413 : 400).json({
@@ -135,10 +136,10 @@ router.get(
   telemetryLimiter,
   async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
-    const deviceId = req.params.deviceId;
+    const deviceId = singleRouteParam(req.params.deviceId);
     const secret = parseDeviceAuthorization(req.get("authorization"));
     const currentSequence = parseFirmwareSequence(req.query.sequence);
-    if (!SAFE_ID.test(deviceId) || !secret || currentSequence === null) {
+    if (deviceId === null || !SAFE_ID.test(deviceId) || !secret || currentSequence === null) {
       res.status(!secret ? 401 : 400).json({
         error: !secret
           ? "Invalid device credentials."
@@ -196,10 +197,10 @@ router.post(
   telemetryLimiter,
   async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
-    const deviceId = req.params.deviceId;
+    const deviceId = singleRouteParam(req.params.deviceId);
     const secret = parseDeviceAuthorization(req.get("authorization"));
     const parsed = parseDeviceDiagnosticsValue(req.body);
-    if (!SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
+    if (deviceId === null || !SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
       res.status(!secret ? 401 : 400).json({
         error: !secret
           ? "Invalid device credentials."
@@ -229,8 +230,8 @@ router.get(
   "/:deviceId/diagnostics",
   requireAdmin,
   async (req: Request, res: Response) => {
-    const deviceId = req.params.deviceId;
-    if (!SAFE_ID.test(deviceId)) {
+    const deviceId = singleRouteParam(req.params.deviceId);
+    if (deviceId === null || !SAFE_ID.test(deviceId)) {
       res.status(400).json({ error: "Invalid device ID." });
       return;
     }
@@ -250,11 +251,12 @@ router.get(
 );
 
 router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
-  const deviceId = req.params.deviceId;
+  const deviceId = singleRouteParam(req.params.deviceId);
   const busId = req.body?.busId;
   const routeId = req.body?.routeId;
   const enabled = req.body?.enabled !== false;
   if (
+    deviceId === null ||
     !SAFE_ID.test(deviceId) ||
     typeof busId !== "string" ||
     !SAFE_ID.test(busId) ||
@@ -358,8 +360,8 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
 });
 
 router.post("/:deviceId/disable", requireAdmin, async (req: Request, res: Response) => {
-  const deviceId = req.params.deviceId;
-  if (!SAFE_ID.test(deviceId)) {
+  const deviceId = singleRouteParam(req.params.deviceId);
+  if (deviceId === null || !SAFE_ID.test(deviceId)) {
     res.status(400).json({ error: "Invalid device ID." });
     return;
   }

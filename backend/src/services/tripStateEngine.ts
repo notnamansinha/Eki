@@ -9,8 +9,12 @@ import {
 } from "../lib/automaticRideDirection";
 import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import { SerializedChangeWriter } from "./serializedChangeWriter";
-import { reduceTripState, STOP_GEOFENCE_M } from "./tripStateReducer";
-import { normalizeRideDirection, stopsInRideDirection } from "../lib/rideDirection";
+import { reduceTripState } from "./tripStateReducer";
+import {
+  isRideDirection,
+  normalizeRideDirection,
+  stopsInRideDirection,
+} from "../lib/rideDirection";
 import {
   drainDynamicPromises,
   normalizeIdentifier,
@@ -54,6 +58,21 @@ interface TelemetrySample {
 }
 const processedTelemetry = new LruCache<string, TelemetrySample>(MAX_CACHE_ENTRIES);
 
+function lifecycleDirection(data: Record<string, unknown>) {
+  if (isRideDirection(data.direction)) return data.direction;
+  // Existing durable sessions from before direction-pending existed retain the
+  // historical forward default. New unresolved nodes are explicit (`null` or
+  // directionState=pending), and device-only nodes never acquire that default.
+  if (
+    data.direction === null ||
+    data.directionState === "pending" ||
+    typeof data.sessionId !== "string"
+  ) {
+    return null;
+  }
+  return normalizeRideDirection(data.direction);
+}
+
 /**
  * Parses an environment-derived interval with a fallback and a lower bound.
  *
@@ -86,7 +105,9 @@ function fleetLifecycleState(data: Record<string, unknown>) {
     status: typeof data.status === "string" ? data.status : "active",
     deviceState: typeof data.deviceState === "string" ? data.deviceState : "online",
     tripState: typeof data.tripState === "string" ? data.tripState : "pre_departure",
-    direction: normalizeRideDirection(data.direction),
+    // Direction is deliberately nullable for device-only and newly armed
+    // pending nodes. Do not silently classify an unresolved ride as forward.
+    direction: lifecycleDirection(data),
     // Persist the live GNSS state so analytics can count signal loss; without
     // it the admin panel's signalLost count under-reported (issue #48 L2).
     motionState: typeof data.motionState === "string" ? data.motionState : null,
@@ -132,7 +153,8 @@ async function maybeArmAutomaticTurnaround(
   naturalStops: RouteStop[],
   nodeRef: Reference,
 ): Promise<boolean> {
-  const previousDirection = normalizeRideDirection(data.direction);
+  const previousDirection = lifecycleDirection(data);
+  if (!previousDirection) return false;
   const completedStops = stopsInRideDirection(naturalStops, previousDirection);
   const completedDestination = completedStops.at(-1);
   const previousSessionId = normalizeIdentifier(data.sessionId);
@@ -153,7 +175,7 @@ async function maybeArmAutomaticTurnaround(
       motionState: data.motionState,
       position: { lat: Number(data.lat), lng: Number(data.lng) },
       destination: completedDestination,
-    }, STOP_GEOFENCE_M)
+    })
   ) {
     return false;
   }
@@ -182,7 +204,7 @@ async function maybeArmAutomaticTurnaround(
         motionState: live.motionState,
         position: { lat: Number(live.lat), lng: Number(live.lng) },
         destination: completedDestination,
-      }, STOP_GEOFENCE_M)
+        })
     ) {
       return;
     }
@@ -519,12 +541,14 @@ function persistActiveRideLifecycle(
   const documentId = activeRideDocumentId(data);
   const busId = normalizeIdentifier(data.busId);
   const sessionId = normalizeIdentifier(data.sessionId);
+  const direction = lifecycleDirection(data);
   if (
     !documentId ||
     !busId ||
     !sessionId ||
     data.status !== "active" ||
-    typeof data.driverId !== "string"
+    typeof data.driverId !== "string" ||
+    !direction
   ) {
     return Promise.resolve();
   }
@@ -535,7 +559,7 @@ function persistActiveRideLifecycle(
     busId: data.busId,
     driverId: data.driverId,
     routeId: data.routeId,
-    direction: normalizeRideDirection(data.direction),
+    direction,
     originStopId: normalizeIdentifier(data.originStopId),
     destinationStopId: normalizeIdentifier(data.destinationStopId),
     status: "active",
@@ -694,7 +718,14 @@ export function startTripStateEngine(): () => Promise<void> {
       return;
     }
     if (!Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
-    const direction = normalizeRideDirection(data.direction);
+    const direction = lifecycleDirection(data);
+    // Pending direction is operational state, not an implicit forward ride.
+    // Keep fleet visibility, but wait for telemetryRouteService to claim a
+    // direction before deriving stops, completion, or an active-ride mirror.
+    if (!direction) {
+      persistFleetState(data, new Date().toISOString());
+      return;
+    }
     const stops = stopsInRideDirection(naturalStops, direction);
 
     const telemetryTimestamp = Number(data.timestamp);

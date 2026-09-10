@@ -1,10 +1,34 @@
 import { describe, expect, it } from "vitest";
 import {
+  directionProjectionNeedsSync,
   isReliableMovingSample,
   remainingRerouteStops,
   rerouteContextIsCurrent,
   routeRepairSnapshotWrite,
 } from "./telemetryRouteService";
+
+describe("resolved direction projection", () => {
+  it("syncs only an explicitly pending session-bound projection", () => {
+    expect(directionProjectionNeedsSync({
+      directionFirestoreSynced: false,
+      sessionId: "session_1",
+      driverId: "driver_1",
+    })).toBe(true);
+    expect(directionProjectionNeedsSync({
+      directionFirestoreSynced: true,
+      sessionId: "session_1",
+      driverId: "driver_1",
+    })).toBe(false);
+  });
+
+  it("does not create projection work for device-only or legacy resolved nodes", () => {
+    expect(directionProjectionNeedsSync({ directionFirestoreSynced: false })).toBe(false);
+    expect(directionProjectionNeedsSync({
+      sessionId: "session_1",
+      driverId: "driver_1",
+    })).toBe(false);
+  });
+});
 
 const stops = [
   { id: "A", lat: 23, lng: 72 },
