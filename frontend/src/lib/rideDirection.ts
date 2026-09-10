@@ -2,6 +2,10 @@ import type { RouteData } from "@/hooks/useRoutes";
 
 export type RideDirection = "forward" | "reverse";
 
+export function isRideDirection(value: unknown): value is RideDirection {
+  return value === "forward" || value === "reverse";
+}
+
 export function normalizeRideDirection(value: unknown): RideDirection {
   return value === "reverse" ? "reverse" : "forward";
 }
@@ -18,7 +22,7 @@ export function directionLabel(
 
 /** Uses immutable session endpoints before falling back to the current route. */
 export function persistedDirectionLabel(
-  direction: RideDirection,
+  direction: RideDirection | null | undefined,
   stops: RouteData["stops"],
   originStopId: string | null | undefined,
   destinationStopId: string | null | undefined,
@@ -30,6 +34,7 @@ export function persistedDirectionLabel(
     };
     return `${stopLabel(originStopId)} → ${stopLabel(destinationStopId)}`;
   }
+  if (!isRideDirection(direction)) return "Direction pending";
   return directionLabel(direction, stops);
 }
 

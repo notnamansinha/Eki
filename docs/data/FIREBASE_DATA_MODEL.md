@@ -25,7 +25,7 @@ erDiagram
 
 ### `activeBuses/{busId}_{routeId}`
 
-One latest projection per assigned bus/route. The key is an internal composite locator; consumers use stored `busId` and `routeId` and must not split the key because IDs can contain underscores.
+One latest projection per assigned bus/route. The key is an internal composite locator; consumers use stored `busId` and `routeId` and must not split the key because IDs can contain underscores. A telemetry-created node represents device presence only and omits ride lifecycle fields. Passenger service exists only when the server-owned tuple `status: active` + non-empty `sessionId` + resolved `direction` + `tripState: pre_departure|in_service` is complete.
 
 | Field | Type | Meaning/source |
 |---|---|---|
@@ -46,13 +46,13 @@ One latest projection per assigned bus/route. The key is an internal composite l
 | `motionState` | `moving` / `stopped` / `uncertain` | Firmware; uncertain means trustworthy GNSS lost |
 | `timestamp` | epoch ms | NTP-synchronised device measurement time |
 | `receivedAt` | RTDB server epoch ms | Backend commit time |
-| `deviceState` | `online` / `offline` | Ingestion/worker connectivity projection |
+| `deviceState` | `online` / `offline` | Ingestion/worker connectivity projection; `online` is trusted by clients only while `timestamp` is fresh |
 | `signalState` | `connected` / `gnss_lost` / `lost` | Derived signal explanation |
-| `status` | `active` / `offline` | Shift live/terminal presence |
+| `status` | `active` / `offline` | Ride lifecycle ownership, not hardware power; initial device-only nodes are `offline` |
 | `sessionId` | string | Firestore ride-session link when armed/active |
 | `driverId` | string | Authorized driver link |
-| `tripState` | `pre_departure` / `in_service` / `completed` | Server worker lifecycle |
-| `direction` | `forward` / `reverse` | Immutable session travel order; legacy nodes default forward |
+| `tripState` | `pre_departure` / `in_service` / `completed` | Server worker lifecycle; absent until a ride is armed |
+| `direction` | `forward` / `reverse` / `null` | Immutable resolved session travel order; null while inference is pending |
 | `directionState`, `directionEndpointVersion` | string | Pending/resolved state and the endpoint snapshot that was used for inference |
 | `directionFirestoreSynced` | boolean | `false` only while a telemetry-resolved session direction still needs its one-time Firestore projection; `true` after synchronization |
 | `originStopId`, `destinationStopId` | string | Endpoints for this direction |

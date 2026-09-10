@@ -89,6 +89,15 @@ export interface DelayPreference {
   delayUpdatedAt: number;
 }
 
+/**
+ * A powered device proves only device presence. Ride lifecycle fields are
+ * introduced by the transactional arm/direction-resolution flow, never by
+ * telemetry ingestion itself.
+ */
+export function initialDevicePresenceState(): { status: "offline" } {
+  return { status: "offline" };
+}
+
 function validDelayMinutes(value: unknown): number | null {
   return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 1440
     ? Number(value)
@@ -654,13 +663,9 @@ export function nextTelemetryValue(
       };
 
   return {
-    ...(current ?? {
-      status: "offline",
-      tripState: "pre_departure",
-      currentStopIndex: 0,
-      hasDepartedOrigin: false,
-      delayMinutes: 0,
-    }),
+    // Device presence is not a ride. Lifecycle fields are introduced only by
+    // the transactional arm/direction-resolution path.
+    ...(current ?? initialDevicePresenceState()),
     ...acceptedSample,
     // Keep the authenticated GNSS fix independently observable even when
     // plausibility filtering retains the previous accepted live position.

@@ -1,6 +1,6 @@
 # Telemetry state partition decision
 
-Date: 2026-09-10  
+Date: 2026-09-10
 Issues: #165, #166, #174
 
 ## Decision
