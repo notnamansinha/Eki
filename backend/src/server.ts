@@ -232,6 +232,7 @@ app.get("/api/health", requireAdmin, (_req, res) => {
       networkLatencyMs: telemetry.networkLatencyMs,
       deviceToServerLatencyMs: telemetry.deviceToServerLatencyMs,
       rtdbWriteLatencyMs: telemetry.rtdbWriteLatencyMs,
+      rateLimit: telemetry.rateLimit,
     },
     // Fire-and-forget write health (issue #38): counts plus a sustained-failure
     // flag so an external monitor can alert without scraping logs. Kept out of
