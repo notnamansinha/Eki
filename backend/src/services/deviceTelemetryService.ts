@@ -12,6 +12,18 @@ import { isPlausibleTelemetryTransition } from "../lib/telemetryMotion";
 import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import type { TelemetryPayload } from "./telemetryPayload";
 import { scheduleTelemetryRouteProcessing } from "./telemetryRouteService";
+import {
+  AuthenticatedDeviceRateLimiter,
+  readDeviceRateLimitConfiguration,
+  reserveRateLimitTokens,
+  type DistributedTokenReservation,
+  type RateBucket,
+} from "./deviceRateLimiter";
+
+export {
+  evaluateDeviceRateLimit,
+  type DeviceRateLimitDecision,
+} from "./deviceRateLimiter";
 
 const scryptAsync = promisify(scrypt);
 // scrypt is memory-hard; cap concurrent verifications so a burst of credential
@@ -24,7 +36,6 @@ const NEGATIVE_CACHE_MS = 5_000;
 const DURABLE_RIDE_MISS_CACHE_MS = 30_000;
 const MAX_CREDENTIAL_CACHE_ENTRIES = 1_000;
 const MAX_DURABLE_RIDE_MISSES = 1_000;
-const DEFAULT_DEVICE_RATE_PER_MINUTE = 90;
 const DEVICE_RATE_LIMIT_PATH = "_deviceRateLimits";
 const DEVICE_CREDENTIAL_VERSION_PATH = "_deviceCredentialVersions";
 
@@ -39,17 +50,6 @@ interface CredentialCacheEntry {
   expiresAt: number;
 }
 
-interface RateBucket {
-  startedAt: number;
-  count: number;
-}
-
-export interface DeviceRateLimitDecision {
-  allowed: boolean;
-  next: RateBucket;
-  retryAfterMs: number;
-}
-
 export interface HttpsTelemetryStatus {
   accepted: number;
   rejected: number;
@@ -61,6 +61,17 @@ export interface HttpsTelemetryStatus {
   networkLatencyMs: LatencySummary;
   deviceToServerLatencyMs: LatencySummary;
   rtdbWriteLatencyMs: LatencySummary;
+  rateLimit: {
+    mode: "local" | "distributed";
+    limitPerMinute: number;
+    leaseSize: number;
+    replicas: number;
+    localDecisions: number;
+    leaseHits: number;
+    storeTransactions: number;
+    storeTransactionRetries: number;
+    decisionLatencyMs: LatencySummary;
+  };
   serverIngressGapMs: LatencySummary;
 }
 
@@ -156,39 +167,24 @@ const deviceQueueLatencySamples: number[] = [];
 const networkLatencySamples: number[] = [];
 const deviceToServerLatencySamples: number[] = [];
 const rtdbWriteLatencySamples: number[] = [];
+const rateLimitDecisionLatencySamples: number[] = [];
 const serverIngressGapSamples: number[] = [];
 const lastServerIngressByDevice = new Map<string, number>();
 let credentialCacheHits = 0;
 let credentialCacheMisses = 0;
+let deviceRateLimitLocalDecisions = 0;
+let deviceRateLimitLeaseHits = 0;
+let deviceRateLimitStoreTransactions = 0;
+let deviceRateLimitStoreTransactionRetries = 0;
+
+const deviceRateLimitConfiguration = readDeviceRateLimitConfiguration();
+const authenticatedDeviceRateLimiter = new AuthenticatedDeviceRateLimiter(
+  deviceRateLimitConfiguration,
+  reserveDistributedDeviceTokens,
+);
 
 const DUMMY_SALT = "00000000000000000000000000000000";
 const DUMMY_HASH = Buffer.alloc(64);
-
-function readPositiveInt(value: string | undefined, fallback: number): number {
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-export function evaluateDeviceRateLimit(
-  existing: Readonly<RateBucket> | undefined,
-  now: number,
-  limit: number,
-): DeviceRateLimitDecision {
-  if (!existing || now - existing.startedAt >= 60_000) {
-    return {
-      allowed: true,
-      next: { startedAt: now, count: 1 },
-      retryAfterMs: 0,
-    };
-  }
-  const next = { startedAt: existing.startedAt, count: existing.count + 1 };
-  const allowed = next.count <= limit;
-  return {
-    allowed,
-    next,
-    retryAfterMs: allowed ? 0 : Math.max(1, 60_000 - (now - existing.startedAt)),
-  };
-}
 
 function recordSample(samples: number[], value: number): void {
   if (!Number.isFinite(value) || value < 0) return;
@@ -414,34 +410,69 @@ async function deviceRateLimitRetryAfterMs(
   deviceId: string,
   now: number,
 ): Promise<number | null> {
-  const limit = readPositiveInt(
-    process.env.HTTPS_DEVICE_RATE_PER_MINUTE,
-    DEFAULT_DEVICE_RATE_PER_MINUTE,
-  );
-  const transaction = await rtdb.ref(`${DEVICE_RATE_LIMIT_PATH}/${deviceId}`).transaction((value) => {
-    const record = value as Partial<RateBucket> | null;
-    const current =
-      Number.isFinite(record?.startedAt) &&
-      Number.isSafeInteger(record?.count) &&
-      Number(record?.count) >= 0
-        ? { startedAt: Number(record?.startedAt), count: Number(record?.count) }
+  const startedAt = Date.now();
+  try {
+    const result = await authenticatedDeviceRateLimiter.consume(deviceId, now);
+    if (result.source === "local") deviceRateLimitLocalDecisions += 1;
+    if (result.source === "lease") deviceRateLimitLeaseHits += 1;
+    return result.retryAfterMs;
+  } finally {
+    recordSample(rateLimitDecisionLatencySamples, Date.now() - startedAt);
+  }
+}
+
+async function reserveDistributedDeviceTokens(
+  deviceId: string,
+  now: number,
+  limit: number,
+  requested: number,
+): Promise<DistributedTokenReservation> {
+  let callbackAttempts = 0;
+  let finalDecision: ReturnType<typeof reserveRateLimitTokens> | null = null;
+  deviceRateLimitStoreTransactions += 1;
+  const transaction = await rtdb
+    .ref(`${DEVICE_RATE_LIMIT_PATH}/${deviceId}`)
+    .transaction((value) => {
+      callbackAttempts += 1;
+      const record = value as Partial<RateBucket> | null;
+      const existing = record
+        ? {
+            startedAt: Number(record.startedAt),
+            count: Number(record.count),
+          }
         : undefined;
-    const decision = evaluateDeviceRateLimit(current, now, limit);
-    return decision.next;
-  });
+      finalDecision = reserveRateLimitTokens(existing, now, limit, requested);
+      return finalDecision.granted > 0 ? finalDecision.next : undefined;
+    })
+    .finally(() => {
+      deviceRateLimitStoreTransactionRetries += Math.max(0, callbackAttempts - 1);
+    });
+  if (!finalDecision) {
+    throw new Error("Device rate-limit transaction did not evaluate a bucket.");
+  }
+  const decision = finalDecision as ReturnType<typeof reserveRateLimitTokens>;
+  if (decision.granted === 0) {
+    return {
+      granted: 0,
+      expiresAt: decision.next.startedAt + 60_000,
+      retryAfterMs: decision.retryAfterMs,
+      transactionAttempts: callbackAttempts,
+    };
+  }
   const bucket = transaction.snapshot.val() as Partial<RateBucket> | null;
-  const startedAt = Number(bucket?.startedAt);
-  const count = Number(bucket?.count);
   if (
     !transaction.committed ||
-    !Number.isFinite(startedAt) ||
-    !Number.isSafeInteger(count)
+    Number(bucket?.startedAt) !== decision.next.startedAt ||
+    Number(bucket?.count) !== decision.next.count
   ) {
-    throw new Error("Device rate-limit transaction did not commit valid state.");
+    throw new Error("Device rate-limit transaction did not commit its token lease.");
   }
-  return count <= limit
-    ? null
-    : Math.max(1, 60_000 - (now - startedAt));
+  return {
+    granted: decision.granted,
+    expiresAt: decision.next.startedAt + 60_000,
+    retryAfterMs: 0,
+    transactionAttempts: callbackAttempts,
+  };
 }
 
 function durableLifecycle(
@@ -574,6 +605,87 @@ function scheduleDurableRideRestore(
   durableRideRestores.set(nodeKey, restore);
 }
 
+export function nextTelemetryValue(
+  current: Record<string, unknown> | null,
+  assignment: DeviceAssignment,
+  sample: TelemetryPayload,
+  backendReceivedAt: number,
+): Record<string, unknown> | undefined {
+  const existingTimestamp = Number(current?.timestamp);
+  if (!telemetrySampleIsNewer(
+    existingTimestamp,
+    current?.seq,
+    sample,
+  )) {
+    return undefined;
+  }
+
+  const previousLat = Number(current?.lat);
+  const previousLng = Number(current?.lng);
+  const previousSpeed = Number(current?.speed);
+  const previousTimestamp = Number(current?.timestamp);
+  const previous =
+    Number.isFinite(previousLat) &&
+    Number.isFinite(previousLng) &&
+    Number.isFinite(previousSpeed) &&
+    Number.isFinite(previousTimestamp)
+      ? {
+          lat: previousLat,
+          lng: previousLng,
+          speed: previousSpeed,
+          timestamp: previousTimestamp,
+        }
+      : null;
+  const transitionIsPlausible = isPlausibleTelemetryTransition(previous, sample);
+  const acceptedSample = transitionIsPlausible || !previous
+    ? sample
+    : {
+        ...sample,
+        lat: previous.lat,
+        lng: previous.lng,
+        speed: 0,
+        heading:
+          Number.isFinite(Number(current?.heading))
+            ? Number(current?.heading)
+            : sample.heading,
+        motionState: "uncertain" as const,
+      };
+
+  return {
+    ...(current ?? {
+      status: "offline",
+      tripState: "pre_departure",
+      currentStopIndex: 0,
+      hasDepartedOrigin: false,
+      delayMinutes: 0,
+    }),
+    ...acceptedSample,
+    // Keep the authenticated GNSS fix independently observable even when
+    // plausibility filtering retains the previous accepted live position.
+    // Map matching writes a separate matchedLocation and never mutates this.
+    rawLocation: {
+      lat: sample.lat,
+      lng: sample.lng,
+      speed: sample.speed,
+      heading: sample.heading,
+      gpsHdop: sample.gpsHdop,
+      motionState: sample.motionState,
+      seq: sample.seq,
+      sampledAt: sample.timestamp,
+    },
+    busId: assignment.busId,
+    routeId: assignment.routeId,
+    deviceState: "online",
+    signalState:
+      acceptedSample.motionState === "uncertain"
+        ? "gnss_lost"
+        : "connected",
+    backendReceivedAt,
+    receivedAt: { ".sv": "timestamp" },
+    rtdbCommittedAt: { ".sv": "timestamp" },
+  };
+}
+
 async function persistTelemetry(
   assignment: DeviceAssignment,
   sample: TelemetryPayload,
@@ -583,80 +695,12 @@ async function persistTelemetry(
   const nodeKey = `${assignment.busId}_${assignment.routeId}`;
   const ref = rtdb.ref(`activeBuses/${nodeKey}`);
   const transaction = await ref.transaction((current) => {
-    const live = current as Record<string, unknown> | null;
-    const existingTimestamp = Number(live?.timestamp);
-    if (!telemetrySampleIsNewer(
-      existingTimestamp,
-      live?.seq,
+    return nextTelemetryValue(
+      current as Record<string, unknown> | null,
+      assignment,
       sample,
-    )) {
-      return;
-    }
-
-    const previousLat = Number(live?.lat);
-    const previousLng = Number(live?.lng);
-    const previousSpeed = Number(live?.speed);
-    const previousTimestamp = Number(live?.timestamp);
-    const previous =
-      Number.isFinite(previousLat) &&
-      Number.isFinite(previousLng) &&
-      Number.isFinite(previousSpeed) &&
-      Number.isFinite(previousTimestamp)
-        ? {
-            lat: previousLat,
-            lng: previousLng,
-            speed: previousSpeed,
-            timestamp: previousTimestamp,
-          }
-        : null;
-    const transitionIsPlausible = isPlausibleTelemetryTransition(previous, sample);
-    const acceptedSample = transitionIsPlausible || !previous
-      ? sample
-      : {
-          ...sample,
-          lat: previous.lat,
-          lng: previous.lng,
-          speed: 0,
-          heading:
-            Number.isFinite(Number(live?.heading))
-              ? Number(live?.heading)
-              : sample.heading,
-          motionState: "uncertain" as const,
-        };
-
-    return {
-      ...(live ?? {
-        status: "offline",
-        tripState: "pre_departure",
-        currentStopIndex: 0,
-        hasDepartedOrigin: false,
-        delayMinutes: 0,
-      }),
-      ...acceptedSample,
-      // Keep the authenticated GNSS fix independently observable even when
-      // plausibility filtering retains the previous accepted live position.
-      // Map matching writes a separate matchedLocation and never mutates this.
-      rawLocation: {
-        lat: sample.lat,
-        lng: sample.lng,
-        speed: sample.speed,
-        heading: sample.heading,
-        gpsHdop: sample.gpsHdop,
-        motionState: sample.motionState,
-        seq: sample.seq,
-        sampledAt: sample.timestamp,
-      },
-      busId: assignment.busId,
-      routeId: assignment.routeId,
-      deviceState: "online",
-      signalState:
-        acceptedSample.motionState === "uncertain"
-          ? "gnss_lost"
-          : "connected",
       backendReceivedAt,
-      receivedAt: { ".sv": "timestamp" },
-      rtdbCommittedAt: { ".sv": "timestamp" },
-    };
+    );
   });
   const value = transaction.snapshot.val() as Record<string, unknown> | null;
   recordSample(rtdbWriteLatencySamples, Date.now() - writeStartedAt);
@@ -766,6 +810,17 @@ export function getHttpsTelemetryStatus(): HttpsTelemetryStatus {
     networkLatencyMs: summarizeLatencySamples(networkLatencySamples),
     deviceToServerLatencyMs: summarizeLatencySamples(deviceToServerLatencySamples),
     rtdbWriteLatencyMs: summarizeLatencySamples(rtdbWriteLatencySamples),
+    rateLimit: {
+      mode: deviceRateLimitConfiguration.mode,
+      limitPerMinute: deviceRateLimitConfiguration.limit,
+      leaseSize: deviceRateLimitConfiguration.leaseSize,
+      replicas: deviceRateLimitConfiguration.replicas,
+      localDecisions: deviceRateLimitLocalDecisions,
+      leaseHits: deviceRateLimitLeaseHits,
+      storeTransactions: deviceRateLimitStoreTransactions,
+      storeTransactionRetries: deviceRateLimitStoreTransactionRetries,
+      decisionLatencyMs: summarizeLatencySamples(rateLimitDecisionLatencySamples),
+    },
     serverIngressGapMs: summarizeLatencySamples(serverIngressGapSamples),
   };
 }

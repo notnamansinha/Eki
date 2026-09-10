@@ -242,6 +242,7 @@ app.get("/api/health", requireAdmin, (_req, res) => {
       networkLatencyMs: telemetry.networkLatencyMs,
       deviceToServerLatencyMs: telemetry.deviceToServerLatencyMs,
       rtdbWriteLatencyMs: telemetry.rtdbWriteLatencyMs,
+      rateLimit: telemetry.rateLimit,
       serverIngressGapMs: telemetry.serverIngressGapMs,
       metricWindow: {
         scope: "process",

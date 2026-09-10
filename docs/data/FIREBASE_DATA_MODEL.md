@@ -229,7 +229,14 @@ Server-only latest health report received through device-authenticated HTTPS. It
 
 ### `_deviceRateLimits/{deviceId}` and `_deviceCredentialVersions/{deviceId}`
 
-Server-only ingress controls. `_deviceRateLimits` stores the shared fixed-window count, making the accepted device budget authoritative across backend replicas. `_deviceCredentialVersions` changes whenever a device is disabled, reassigned, or re-provisioned; every backend replica listens for those changes and immediately evicts matching credential-cache entries. Browser rules deny all reads and writes.
+Server-only ingress controls. `_deviceRateLimits` stores the number of tokens
+reserved from each shared fixed-window budget. Replicas consume their small
+leases in memory, which amortizes RTDB transactions while ensuring total issued
+tokens never exceed the configured per-device limit. Unused leased tokens may
+reduce capacity only until that minute window expires. `_deviceCredentialVersions`
+changes whenever a device is disabled, reassigned, or re-provisioned; every
+backend replica listens for those changes and immediately evicts matching
+credential-cache entries. Browser rules deny all reads and writes.
 
 ## Relationships and deletion
 

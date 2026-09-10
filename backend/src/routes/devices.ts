@@ -29,9 +29,9 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 // header supplied by the caller. ingestDeviceTelemetry keeps the authoritative
 // per-device budget after credential verification.
 // Expected replica count for the in-memory pre-auth limiter below; the
-// authoritative per-device budget after credential verification is the
-// shared RTDB-based HTTPS_DEVICE_RATE_PER_MINUTE, which needs no
-// sharding (issue #28).
+// authoritative per-device budget after credential verification uses local
+// fixed windows only for explicitly single-instance deployments. Replicated
+// deployments reserve bounded token leases from the shared RTDB budget.
 const RATE_LIMIT_SHARD_FACTOR = readRateLimitShardFactor();
 const telemetryLimiter = rateLimit({
   windowMs: 60_000,
