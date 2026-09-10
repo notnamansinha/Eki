@@ -33,7 +33,7 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 | `services/deviceRateLimiter.ts` | Explicit single-instance local limiting or bounded leases from a shared per-device RTDB budget |
 | `services/deviceTelemetryService.ts` | scrypt credentials/cache, ordered live-node transaction, recovery and rolling metrics |
 | `services/routeMatching.ts` | Pure projection, direction/heading/continuity scoring and off-route hysteresis |
-| `services/telemetryRouteService.ts` | Per-node async matching, directional-geometry repair, reroute orchestration and stale-result guards |
+| `services/telemetryRouteService.ts` | Per-node bounded latest-pending matching, cross-replica route invalidation, directional-geometry repair, reroute orchestration and stale-result guards |
 | `services/authTokenVerifier.ts` | SHA-256 keyed bounded token verification coalescing/cache |
 | `services/tripStateReducer.ts` | Pure ordered geofence state transition and segment crossing |
 | `services/tripStateLifecycle.ts` | Identifier/live-record normalization and dynamic shutdown draining |

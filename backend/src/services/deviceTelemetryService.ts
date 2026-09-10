@@ -61,6 +61,7 @@ export interface HttpsTelemetryStatus {
   networkLatencyMs: LatencySummary;
   deviceToServerLatencyMs: LatencySummary;
   rtdbWriteLatencyMs: LatencySummary;
+  rtdbTransactionAttempts: LatencySummary;
   rateLimit: {
     mode: "local" | "distributed";
     limitPerMinute: number;
@@ -167,6 +168,7 @@ const deviceQueueLatencySamples: number[] = [];
 const networkLatencySamples: number[] = [];
 const deviceToServerLatencySamples: number[] = [];
 const rtdbWriteLatencySamples: number[] = [];
+const rtdbTransactionAttemptSamples: number[] = [];
 const rateLimitDecisionLatencySamples: number[] = [];
 const serverIngressGapSamples: number[] = [];
 const lastServerIngressByDevice = new Map<string, number>();
@@ -694,7 +696,9 @@ async function persistTelemetry(
   const writeStartedAt = Date.now();
   const nodeKey = `${assignment.busId}_${assignment.routeId}`;
   const ref = rtdb.ref(`activeBuses/${nodeKey}`);
+  let transactionAttempts = 0;
   const transaction = await ref.transaction((current) => {
+    transactionAttempts += 1;
     return nextTelemetryValue(
       current as Record<string, unknown> | null,
       assignment,
@@ -704,6 +708,7 @@ async function persistTelemetry(
   });
   const value = transaction.snapshot.val() as Record<string, unknown> | null;
   recordSample(rtdbWriteLatencySamples, Date.now() - writeStartedAt);
+  recordSample(rtdbTransactionAttemptSamples, transactionAttempts);
   return {
     committed: transaction.committed,
     hasSession:
@@ -810,6 +815,7 @@ export function getHttpsTelemetryStatus(): HttpsTelemetryStatus {
     networkLatencyMs: summarizeLatencySamples(networkLatencySamples),
     deviceToServerLatencyMs: summarizeLatencySamples(deviceToServerLatencySamples),
     rtdbWriteLatencyMs: summarizeLatencySamples(rtdbWriteLatencySamples),
+    rtdbTransactionAttempts: summarizeLatencySamples(rtdbTransactionAttemptSamples),
     rateLimit: {
       mode: deviceRateLimitConfiguration.mode,
       limitPerMinute: deviceRateLimitConfiguration.limit,
