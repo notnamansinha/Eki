@@ -71,7 +71,7 @@ Returns only `{ "status": "ok" }` when the cached 30-second Firestore/RTDB probe
 
 ### `GET /api/health` — admin
 
-Returns the cached Firestore/RTDB status, telemetry counters and latency summaries, background-failure state, and probe timestamp. This is the detailed operational response formerly exposed by `/health`; it requires an admin Firebase ID token.
+Returns the cached Firestore/RTDB status, telemetry counters, latency/transaction summaries, bounded route-processing queue state, background-failure state, and probe timestamp. This is the detailed operational response formerly exposed by `/health`; it requires an admin Firebase ID token.
 
 ```json
 {
@@ -89,7 +89,18 @@ Returns the cached Firestore/RTDB status, telemetry counters and latency summari
     "deviceQueueLatencyMs": { "samples": 10, "average": 120, "p50": 80, "p95": 300, "p99": 300 },
     "networkLatencyMs": { "samples": 10, "average": 780, "p50": 700, "p95": 1100, "p99": 1100 },
     "deviceToServerLatencyMs": { "samples": 10, "average": 900, "p50": 850, "p95": 1300, "p99": 1300 },
-    "rtdbWriteLatencyMs": { "samples": 10, "average": 30, "p50": 28, "p95": 55, "p99": 55 }
+    "rtdbWriteLatencyMs": { "samples": 10, "average": 30, "p50": 28, "p95": 55, "p99": 55 },
+    "rtdbTransactionAttempts": { "samples": 10, "average": 1, "p50": 1, "p95": 1, "p99": 1 },
+    "routeProcessing": {
+      "scheduled": 10,
+      "processed": 9,
+      "coalesced": 1,
+      "failed": 0,
+      "activeWorkers": 0,
+      "pendingKeys": 0,
+      "lastQueueAgeMs": 4,
+      "maxQueueAgeMs": 20
+    }
   },
   "backgroundTasks": {
     "totalFailures": 0,
@@ -109,7 +120,7 @@ Returns the cached Firestore/RTDB status, telemetry counters and latency summari
 }
 ```
 
-Metrics are a 512-sample in-memory rolling window and reset on restart.
+Latency and transaction-attempt metrics are a 512-sample in-memory rolling window and reset on restart. Route-processing counters are process-local and monotonic until restart. A transaction-attempt p95 above 1 or sustained route queue age/coalescing indicates contention or matcher saturation and should be measured before partitioning the live schema.
 
 `backgroundTasks` counts failures from fire-and-forget background writes
 (`trackBackgroundTask` and `scheduleDurableRideRestore`). A source

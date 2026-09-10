@@ -4,6 +4,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { requireAuth } from "../middleware/requireAuth";
 import { decodePolyline } from "../lib/polylineUtils";
 import { singleRouteParam } from "../lib/requestParams";
+import { invalidateTelemetryRoute } from "../services/telemetryRouteService";
 import { invalidatePlanRoute } from "./plan";
 
 const router = Router();
@@ -299,6 +300,7 @@ router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response
     const geometry = await computePolylineOnce(routeId, waypoints);
     await routeRef.set(geometry, { merge: true });
     invalidatePlanRoute(routeId);
+    invalidateTelemetryRoute(routeId);
     res.json({ ...geometry, cached: false });
   } catch (error) {
     console.error("[Routes] Failed to load route geometry:", error);
@@ -367,6 +369,7 @@ router.put("/:routeId", requireAdmin, async (req: Request, res: Response) => {
       await routeRef.set(routeData);
     }
     invalidatePlanRoute(routeId);
+    invalidateTelemetryRoute(routeId);
     res.json({ saved: true, routeId, ...geometry });
   } catch (error) {
     console.error("[Routes] Failed to save validated route:", error);
@@ -400,6 +403,7 @@ router.delete("/:routeId", requireAdmin, async (req: Request, res: Response) => 
     }
     await db.collection("routes").doc(routeId).delete();
     invalidatePlanRoute(routeId);
+    invalidateTelemetryRoute(routeId);
     res.json({ deleted: true });
   } catch (error) {
     console.error("[Routes] Failed to delete route:", error);

@@ -21,6 +21,10 @@ import rateLimit from "express-rate-limit";
 import { deleteApp } from "firebase-admin/app";
 import { db, firebaseAdminApp, rtdb } from "./lib/firebaseAdmin";
 import { getHttpsTelemetryStatus } from "./services/deviceTelemetryService";
+import {
+  getRouteProcessingStatus,
+  startTelemetryRouteWatcher,
+} from "./services/telemetryRouteService";
 import { backgroundFailures } from "./lib/backgroundFailureTracker";
 import { createHealthState } from "./lib/healthState";
 import { createIdentityAwareLimiter } from "./lib/rateLimitIdentity";
@@ -214,6 +218,7 @@ app.get("/health", (_req, res) => {
 // Firebase reads.
 app.get("/api/health", requireAdmin, (_req, res) => {
   const telemetry = getHttpsTelemetryStatus();
+  const routeProcessing = getRouteProcessingStatus();
   const backgroundTasks = backgroundFailures.snapshot();
   const state = health.snapshot();
   res.status(state.ready ? 200 : 503).json({
@@ -232,6 +237,7 @@ app.get("/api/health", requireAdmin, (_req, res) => {
       networkLatencyMs: telemetry.networkLatencyMs,
       deviceToServerLatencyMs: telemetry.deviceToServerLatencyMs,
       rtdbWriteLatencyMs: telemetry.rtdbWriteLatencyMs,
+      routeProcessing,
     },
     // Fire-and-forget write health (issue #38): counts plus a sustained-failure
     // flag so an external monitor can alert without scraping logs. Kept out of
@@ -285,8 +291,10 @@ app.use((
 
 // ── Start Server ──────────────────────────────────────────────────────────────
 let stopWorkers: (() => Promise<void>) | null = null;
+let stopTelemetryRouteWatcher: (() => void) | null = null;
 httpServer.listen(Number(PORT), "0.0.0.0", () => {
   console.log(`✅ BusTrack backend running on port ${PORT} (0.0.0.0)`);
+  stopTelemetryRouteWatcher = startTelemetryRouteWatcher();
   stopWorkers = startWorkerCoordinator();
 });
 
@@ -303,6 +311,8 @@ async function shutdown(signal: string) {
   }, 10_000);
 
   clearInterval(healthProbeTimer);
+  stopTelemetryRouteWatcher?.();
+  stopTelemetryRouteWatcher = null;
   const closeServer = new Promise<void>((resolve, reject) => {
     httpServer.close((error) => error ? reject(error) : resolve());
     httpServer.closeIdleConnections();

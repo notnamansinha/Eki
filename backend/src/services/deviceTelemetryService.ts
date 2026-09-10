@@ -61,6 +61,7 @@ export interface HttpsTelemetryStatus {
   networkLatencyMs: LatencySummary;
   deviceToServerLatencyMs: LatencySummary;
   rtdbWriteLatencyMs: LatencySummary;
+  rtdbTransactionAttempts: LatencySummary;
 }
 
 export interface LatencySummary {
@@ -155,6 +156,7 @@ const deviceQueueLatencySamples: number[] = [];
 const networkLatencySamples: number[] = [];
 const deviceToServerLatencySamples: number[] = [];
 const rtdbWriteLatencySamples: number[] = [];
+const rtdbTransactionAttemptSamples: number[] = [];
 let credentialCacheHits = 0;
 let credentialCacheMisses = 0;
 
@@ -549,7 +551,9 @@ async function persistTelemetry(
   const writeStartedAt = Date.now();
   const nodeKey = `${assignment.busId}_${assignment.routeId}`;
   const ref = rtdb.ref(`activeBuses/${nodeKey}`);
+  let transactionAttempts = 0;
   const transaction = await ref.transaction((current) => {
+    transactionAttempts += 1;
     const live = current as Record<string, unknown> | null;
     const existingTimestamp = Number(live?.timestamp);
     if (!telemetrySampleIsNewer(
@@ -627,6 +631,7 @@ async function persistTelemetry(
   });
   const value = transaction.snapshot.val() as Record<string, unknown> | null;
   recordSample(rtdbWriteLatencySamples, Date.now() - writeStartedAt);
+  recordSample(rtdbTransactionAttemptSamples, transactionAttempts);
   return {
     committed: transaction.committed,
     hasSession:
@@ -731,6 +736,7 @@ export function getHttpsTelemetryStatus(): HttpsTelemetryStatus {
     networkLatencyMs: summarizeLatencySamples(networkLatencySamples),
     deviceToServerLatencyMs: summarizeLatencySamples(deviceToServerLatencySamples),
     rtdbWriteLatencyMs: summarizeLatencySamples(rtdbWriteLatencySamples),
+    rtdbTransactionAttempts: summarizeLatencySamples(rtdbTransactionAttemptSamples),
   };
 }
 

@@ -1,7 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { db, rtdb } from "../lib/firebaseAdmin";
-import { computeRouteGeometry } from "../lib/googleMaps";
+import {
+  computeRouteGeometry,
+  LIVE_REROUTE_TIMEOUT_MS,
+} from "../lib/googleMaps";
 import {
   decodePolyline,
   type LatLng,
@@ -14,6 +17,7 @@ import {
 } from "../lib/rideDirection";
 import { inferRideDirectionFromTelemetry } from "../lib/automaticRideDirection";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
+import { createLatestPendingScheduler } from "../lib/latestPendingScheduler";
 import type { DeviceAssignment } from "./deviceTelemetryService";
 import type { TelemetryPayload } from "./telemetryPayload";
 import {
@@ -41,6 +45,7 @@ interface StoredRoute {
   reverseCoordinates: LatLng[];
   stops: RouteStop[];
   endpointVersion: string;
+  cacheGeneration: number;
 }
 
 interface RouteCacheEntry {
@@ -56,7 +61,11 @@ interface LiveMatchedLocation extends LatLng {
 
 const routeCache = new Map<string, RouteCacheEntry>();
 const routeLoads = new Map<string, Promise<StoredRoute | null>>();
-const processingChains = new Map<string, Promise<void>>();
+const routeCacheGenerations = new Map<string, number>();
+interface RouteProcessingTask {
+  assignment: DeviceAssignment;
+  sample: TelemetryPayload;
+}
 
 function validLatLng(value: unknown): value is LatLng {
   if (!value || typeof value !== "object") return false;
@@ -104,6 +113,7 @@ async function loadStoredRouteUncached(
   routeId: string,
   forceFresh = false,
 ): Promise<StoredRoute | null> {
+  const cacheGeneration = routeCacheGenerations.get(routeId) ?? 0;
   const cached = routeCache.get(routeId);
   if (!forceFresh && cached && cached.expiresAt > Date.now()) return cached.value;
   const snapshot = await db.collection("routes").doc(routeId).get();
@@ -133,7 +143,11 @@ async function loadStoredRouteUncached(
       if (reverseRepair) {
         reverse = decodeStoredPolyline(reverseRepair.encodedPolyline);
       }
-      if (forward && reverse) {
+      if (
+        forward &&
+        reverse &&
+        telemetryRouteSnapshotIsCurrent(routeId, cacheGeneration)
+      ) {
         await snapshot.ref.set(
           routeRepairSnapshotWrite({
             forward,
@@ -158,10 +172,13 @@ async function loadStoredRouteUncached(
         endpointVersion: stops
           .map((stop) => `${stop.id}:${stop.lat.toFixed(6)}:${stop.lng.toFixed(6)}`)
           .join("|"),
+        cacheGeneration,
       };
     }
   }
-  routeCache.set(routeId, { value, expiresAt: Date.now() + ROUTE_CACHE_MS });
+  if ((routeCacheGenerations.get(routeId) ?? 0) === cacheGeneration) {
+    routeCache.set(routeId, { value, expiresAt: Date.now() + ROUTE_CACHE_MS });
+  }
   return value;
 }
 
@@ -179,6 +196,66 @@ async function loadStoredRoute(
   });
   routeLoads.set(routeId, load);
   return load;
+}
+
+/** Invalidate matcher data and make already-running work fail its version guard. */
+export function invalidateTelemetryRoute(routeId: string): void {
+  routeCacheGenerations.set(routeId, (routeCacheGenerations.get(routeId) ?? 0) + 1);
+  routeCache.delete(routeId);
+  routeLoads.delete(routeId);
+}
+
+export function telemetryRouteSnapshotIsCurrent(
+  routeId: string,
+  cacheGeneration: number,
+): boolean {
+  return (routeCacheGenerations.get(routeId) ?? 0) === cacheGeneration;
+}
+
+/**
+ * Watch route documents on every API replica so edits invalidate local matcher
+ * caches even when another replica accepted the admin request.
+ */
+export function startTelemetryRouteWatcher(): () => void {
+  const initialDelayMs = 1_000;
+  const maximumDelayMs = 30_000;
+  let stopped = false;
+  let unsubscribe: (() => void) | null = null;
+  let reconnectTimer: NodeJS.Timeout | null = null;
+  let reconnectDelayMs = initialDelayMs;
+
+  const attach = () => {
+    if (stopped) return;
+    unsubscribe = db.collection("routes").onSnapshot(
+      (snapshot) => {
+        reconnectDelayMs = initialDelayMs;
+        for (const change of snapshot.docChanges()) {
+          invalidateTelemetryRoute(change.doc.id);
+        }
+      },
+      (error) => {
+        unsubscribe = null;
+        console.error("[Routes] Matcher cache watcher failed:", error);
+        if (stopped || reconnectTimer) return;
+        const retryInMs = reconnectDelayMs;
+        reconnectDelayMs = Math.min(reconnectDelayMs * 2, maximumDelayMs);
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          attach();
+        }, retryInMs);
+        reconnectTimer.unref();
+      },
+    );
+  };
+  attach();
+
+  return () => {
+    stopped = true;
+    unsubscribe?.();
+    unsubscribe = null;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  };
 }
 
 function validRouteState(value: unknown): RouteAdherenceState | undefined {
@@ -638,7 +715,14 @@ async function requestReroute(
       { lat: sample.lat, lng: sample.lng },
       destination,
       intermediates,
+      {
+        routingPreference: "TRAFFIC_AWARE",
+        timeoutMs: LIVE_REROUTE_TIMEOUT_MS,
+      },
     );
+    if (!telemetryRouteSnapshotIsCurrent(assignment.routeId, route.cacheGeneration)) {
+      throw new Error("Route configuration changed while rerouting.");
+    }
     await activateReroute(
       nodeKey,
       requestId,
@@ -685,7 +769,10 @@ async function processTelemetryRoute(
     assignment.routeId,
     !resolvedDirection(initialLive?.direction),
   );
-  if (!route) return;
+  if (
+    !route ||
+    !telemetryRouteSnapshotIsCurrent(assignment.routeId, route.cacheGeneration)
+  ) return;
 
   const resolution = await resolvePendingDirection(assignment, sample, route);
   if (!resolution?.direction) return;
@@ -758,7 +845,10 @@ async function processTelemetryRoute(
 
   const transaction = await rtdb.ref(`activeBuses/${nodeKey}`).transaction((current) => {
     const currentLive = current as Record<string, unknown> | null;
-    if (!telemetryIsCurrent(currentLive, sample)) return;
+    if (
+      !telemetryIsCurrent(currentLive, sample) ||
+      !telemetryRouteSnapshotIsCurrent(assignment.routeId, route.cacheGeneration)
+    ) return;
     return {
       ...currentLive,
       activeRouteId:
@@ -857,33 +947,44 @@ export function isReliableMovingSample(acceptedSample: TelemetryPayload): boolea
     acceptedSample.motionState === "moving" &&
     acceptedSample.speed >= 3 &&
     typeof acceptedSample.gpsHdop === "number" &&
+    acceptedSample.gpsHdop >= 0 &&
     acceptedSample.gpsHdop <= 4
   );
 }
 
+const routeProcessingScheduler = createLatestPendingScheduler<
+  string,
+  RouteProcessingTask
+>(
+  async (_nodeKey, task) => {
+    await processTelemetryRoute(task.assignment, task.sample);
+  },
+  (nodeKey, error) => {
+    recordBackgroundFailure(
+      "devices.routeMatching",
+      "Telemetry route matching",
+      `[Routes] Matching/rerouting failed for ${nodeKey}:`,
+      error,
+    );
+  },
+);
+
 /**
- * Serialize matching per live node, but never await it from the HTTP telemetry
- * response. Live ingestion remains independent from Firestore/Routes API work.
+ * Keep at most one in-flight and one latest-pending matcher task per live node.
+ * Telemetry ingestion and lifecycle listeners remain outside this coalescing
+ * queue, so departure/completion transitions are not discarded.
  */
 export function scheduleTelemetryRouteProcessing(
   assignment: DeviceAssignment,
   sample: TelemetryPayload,
 ): void {
-  const nodeKey = `${assignment.busId}_${assignment.routeId}`;
-  const previous = processingChains.get(nodeKey) ?? Promise.resolve();
-  const next = previous
-    .catch(() => undefined)
-    .then(() => processTelemetryRoute(assignment, sample))
-    .catch((error) => {
-      recordBackgroundFailure(
-        "devices.routeMatching",
-        "Telemetry route matching",
-        `[Routes] Matching/rerouting failed for ${nodeKey}:`,
-        error,
-      );
-    })
-    .finally(() => {
-      if (processingChains.get(nodeKey) === next) processingChains.delete(nodeKey);
-    });
-  processingChains.set(nodeKey, next);
+  routeProcessingScheduler.schedule(
+    `${assignment.busId}_${assignment.routeId}`,
+    { assignment, sample },
+  );
+}
+
+/** Operational counters exposed through the authenticated health endpoint. */
+export function getRouteProcessingStatus() {
+  return routeProcessingScheduler.snapshot();
 }

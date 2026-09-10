@@ -54,7 +54,7 @@ describe("route matching", () => {
     expect(result?.segmentIndex).toBeGreaterThanOrEqual(3);
   });
 
-  it("requires three reliable off-route samples before rerouting", () => {
+  it("requires two reliable ordinary off-route samples before rerouting", () => {
     const offRoute = matchRoutePosition(
       { lat: 23.001, lng: 72.0005 },
       [{ lat: 23, lng: 72 }, { lat: 23, lng: 72.001 }],
@@ -67,20 +67,26 @@ describe("route matching", () => {
       offRoute,
       true,
     );
-    const third = evaluateRouteAdherence(
-      second.routeState,
-      second.offRouteSampleCount,
-      offRoute,
-      true,
-    );
-
     expect(first.routeState).toBe("POSSIBLE_OFF_ROUTE");
-    expect(second.shouldReroute).toBe(false);
-    expect(third).toMatchObject({
+    expect(first.shouldReroute).toBe(false);
+    expect(second).toMatchObject({
       routeState: "OFF_ROUTE",
-      offRouteSampleCount: 3,
+      offRouteSampleCount: 2,
       shouldReroute: true,
     });
+  });
+
+  it("confirms one strong measured deviation but not a missing match", () => {
+    const strong = matchRoutePosition(
+      { lat: 23.002, lng: 72.0005 },
+      [{ lat: 23, lng: 72 }, { lat: 23, lng: 72.001 }],
+      90,
+    );
+
+    expect(evaluateRouteAdherence("ON_ROUTE", 0, strong, true))
+      .toMatchObject({ routeState: "OFF_ROUTE", shouldReroute: true });
+    expect(evaluateRouteAdherence("ON_ROUTE", 0, null, true))
+      .toMatchObject({ routeState: "POSSIBLE_OFF_ROUTE", shouldReroute: false });
   });
 
   it("does not accumulate stationary GPS noise toward rerouting", () => {
