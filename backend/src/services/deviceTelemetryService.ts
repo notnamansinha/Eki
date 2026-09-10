@@ -560,10 +560,12 @@ async function persistTelemetry(
       return;
     }
 
-    const previousLat = Number(live?.lat);
-    const previousLng = Number(live?.lng);
-    const previousSpeed = Number(live?.speed);
-    const previousTimestamp = Number(live?.timestamp);
+    const anchor = live?.plausibilityAnchor as Record<string, unknown> | undefined;
+    const previousLat = Number(anchor?.lat ?? live?.lat);
+    const previousLng = Number(anchor?.lng ?? live?.lng);
+    const previousSpeed = Number(anchor?.speed ?? live?.speed);
+    const previousGpsHdop = Number(anchor?.gpsHdop ?? live?.gpsHdop);
+    const previousTimestamp = Number(anchor?.timestamp ?? live?.timestamp);
     const previous =
       Number.isFinite(previousLat) &&
       Number.isFinite(previousLng) &&
@@ -573,6 +575,7 @@ async function persistTelemetry(
             lat: previousLat,
             lng: previousLng,
             speed: previousSpeed,
+            gpsHdop: Number.isFinite(previousGpsHdop) ? previousGpsHdop : null,
             timestamp: previousTimestamp,
           }
         : null;
@@ -589,7 +592,11 @@ async function persistTelemetry(
               ? Number(live?.heading)
               : sample.heading,
           motionState: "uncertain" as const,
-        };
+      };
+
+    const plausibilityAnchor = transitionIsPlausible || !previous
+      ? sample
+      : previous;
 
     return {
       ...(live ?? {
@@ -612,6 +619,16 @@ async function persistTelemetry(
         motionState: sample.motionState,
         seq: sample.seq,
         sampledAt: sample.timestamp,
+      },
+      // Keep the last physically accepted fix separate from the monotonic
+      // live-sample timestamp. Otherwise a stream of held outliers would
+      // continually reset the five-minute reacquisition window.
+      plausibilityAnchor: {
+        lat: plausibilityAnchor.lat,
+        lng: plausibilityAnchor.lng,
+        speed: plausibilityAnchor.speed,
+        gpsHdop: plausibilityAnchor.gpsHdop,
+        timestamp: plausibilityAnchor.timestamp,
       },
       busId: assignment.busId,
       routeId: assignment.routeId,

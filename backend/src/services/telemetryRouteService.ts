@@ -6,6 +6,11 @@ import {
   type LatLng,
 } from "../lib/polylineUtils";
 import { normalizeRideDirection, stopsInRideDirection } from "../lib/rideDirection";
+import {
+  adaptiveGnssErrorMeters,
+  GNSS_HDOP_MAX,
+  TELEMETRY_REACQUIRE_AFTER_MS,
+} from "../lib/telemetryMotion";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
 import type { DeviceAssignment } from "./deviceTelemetryService";
 import type { TelemetryPayload } from "./telemetryPayload";
@@ -43,6 +48,7 @@ interface RouteCacheEntry {
 interface LiveMatchedLocation extends LatLng {
   segmentIndex: number;
   alongRouteDistanceM: number;
+  sampledAt: number;
   routeVersion: number;
 }
 
@@ -173,12 +179,15 @@ function validRouteState(value: unknown): RouteAdherenceState | undefined {
 function previousMatch(
   value: unknown,
   routeVersion: number,
+  currentTimestamp: number,
 ): PreviousRouteMatch | null {
   if (!value || typeof value !== "object") return null;
   const match = value as Partial<LiveMatchedLocation>;
   return Number.isInteger(match.segmentIndex) &&
     Number.isFinite(match.alongRouteDistanceM) &&
-    match.routeVersion === routeVersion
+    match.routeVersion === routeVersion &&
+    Number.isFinite(match.sampledAt) &&
+    currentTimestamp - Number(match.sampledAt) <= TELEMETRY_REACQUIRE_AFTER_MS
     ? {
         segmentIndex: Number(match.segmentIndex),
         alongRouteDistanceM: Number(match.alongRouteDistanceM),
@@ -351,6 +360,8 @@ async function activateReroute(
     { lat: sample.lat, lng: sample.lng },
     path,
     sample.speed >= 3 ? sample.heading : undefined,
+    null,
+    adaptiveGnssErrorMeters(sample.gpsHdop, sample.speed),
   );
   // Store the full reroute geometry once in a version-keyed sibling node so
   // the live activeBuses child carries only pointer fields and is not
@@ -383,7 +394,7 @@ async function activateReroute(
       offRouteSampleCount: 0,
       rerouteRequestId: null,
       rerouteCompletedAt: { ".sv": "timestamp" },
-      ...(match && telemetryIsCurrent(live, sample)
+      ...(match && !match.isAmbiguous && telemetryIsCurrent(live, sample)
         ? {
             matchedLocation: matchedLocation(match, sample, routeVersion),
             matchConfidence: match.matchConfidence,
@@ -505,9 +516,13 @@ async function processTelemetryRoute(
   const geometry = contextChanged
     ? { ...encodedGeometry(route, direction), source: "configured" as const }
     : await loadActiveGeometry(nodeKey, live as Record<string, unknown>, route, direction);
-  const prior = contextChanged
+  const anchor = live?.plausibilityAnchor as Record<string, unknown> | undefined;
+  const anchorTimestamp = Number(anchor?.timestamp);
+  const requiresReacquisition = Number.isFinite(anchorTimestamp) &&
+    sample.timestamp - anchorTimestamp > TELEMETRY_REACQUIRE_AFTER_MS;
+  const prior = contextChanged || requiresReacquisition
     ? null
-    : previousMatch(live?.matchedLocation, routeVersion);
+    : previousMatch(live?.matchedLocation, routeVersion, sample.timestamp);
   const acceptedPoint = {
     lat: Number(live?.lat),
     lng: Number(live?.lng),
@@ -532,6 +547,16 @@ async function processTelemetryRoute(
     acceptedSample,
   );
   const effectiveHeading = trajectoryHeading(trajectory) ?? acceptedSample.heading;
+  const previousTimestamp = Number(live?.timestamp);
+  const elapsedMs = Number.isFinite(previousTimestamp)
+    ? Math.max(0, acceptedSample.timestamp - previousTimestamp)
+    : 0;
+  const positionUncertaintyM = adaptiveGnssErrorMeters(
+    acceptedSample.gpsHdop,
+    acceptedSample.speed,
+    Number(live?.speed),
+    elapsedMs,
+  );
   const match = matchRoutePosition(
     acceptedPoint,
     geometry.path,
@@ -539,6 +564,7 @@ async function processTelemetryRoute(
       ? effectiveHeading
       : undefined,
     prior,
+    positionUncertaintyM,
   );
   const adherence = evaluateRouteAdherence(
     contextChanged ? undefined : validRouteState(live?.routeState),
@@ -575,7 +601,9 @@ async function processTelemetryRoute(
       distanceToActiveRoute:
         match ? Number(match.distanceToRouteM.toFixed(1)) : null,
       matchedLocation:
-        match && match.matchConfidence >= MATCHED_POSITION_CONFIDENCE
+        match &&
+        !match.isAmbiguous &&
+        match.matchConfidence >= MATCHED_POSITION_CONFIDENCE
           ? matchedLocation(match, acceptedSample, routeVersion)
           : null,
     };
@@ -650,7 +678,7 @@ export function isReliableMovingSample(acceptedSample: TelemetryPayload): boolea
     acceptedSample.motionState === "moving" &&
     acceptedSample.speed >= 3 &&
     typeof acceptedSample.gpsHdop === "number" &&
-    acceptedSample.gpsHdop <= 4
+    acceptedSample.gpsHdop <= GNSS_HDOP_MAX
   );
 }
 

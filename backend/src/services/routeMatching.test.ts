@@ -109,4 +109,34 @@ describe("route matching", () => {
       shouldReroute: false,
     });
   });
+
+  it("does not snap an intersection fix when two segments are equally plausible", () => {
+    const intersection = matchRoutePosition(
+      { lat: 23, lng: 72.001 },
+      [
+        { lat: 23, lng: 72 },
+        { lat: 23, lng: 72.001 },
+        { lat: 23.001, lng: 72.001 },
+      ],
+    );
+    expect(intersection?.isAmbiguous).toBe(true);
+    expect(intersection?.matchConfidence).toBeLessThan(0.6);
+    expect(evaluateRouteAdherence("ON_ROUTE", 0, intersection, true)).toEqual({
+      routeState: "POSSIBLE_OFF_ROUTE",
+      offRouteSampleCount: 0,
+      shouldReroute: false,
+    });
+  });
+
+  it("does not treat an ordinary straight-line vertex as ambiguous", () => {
+    const match = matchRoutePosition(
+      { lat: 23, lng: 72.001 },
+      [
+        { lat: 23, lng: 72 },
+        { lat: 23, lng: 72.001 },
+        { lat: 23, lng: 72.002 },
+      ],
+    );
+    expect(match?.isAmbiguous).toBe(false);
+  });
 });

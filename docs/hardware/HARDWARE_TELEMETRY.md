@@ -77,7 +77,7 @@ The 100-sample queue occupies 5,648 bytes of RTC no-init memory. At the maximum 
 |---|---:|---|
 | Evaluation period | 1 s | Consume current GNSS state |
 | GNSS age maximum | 5 s | Reject stale parser fixes |
-| Short-gap jump margin | 250 m plus reported-speed reach | Reject fragmented/cached fixes after brief signal loss |
+| Short-gap jump margin | Adaptive 15–50 m receiver error plus reported-speed reach | Reject fragmented/cached fixes after brief signal loss |
 | Position reacquisition | after 5 min without an accepted anchor | Permit legitimate relocation after a prolonged outage |
 | HDOP maximum | 4.0 | Reject poor horizontal geometry |
 | Moving enter / stopped enter | 2.5 / 1.5 km/h | Hysteresis against jitter |

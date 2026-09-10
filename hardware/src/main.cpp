@@ -82,7 +82,7 @@ static_assert(
 #endif
 
 namespace {
-constexpr double HDOP_REJECT_THRESHOLD = 4.0;
+constexpr double HDOP_REJECT_THRESHOLD = eki::telemetry::GNSS_HDOP_MAX;
 constexpr uint32_t GNSS_UTC_MAX_AGE_MS = 2000;
 constexpr uint32_t GNSS_EPOCH_REFERENCE_MAX_AGE_MS = 24UL * 60 * 60 * 1000;
 constexpr uint32_t NTP_CROSS_CHECK_INTERVAL_MS = 6UL * 60 * 60 * 1000;
@@ -215,6 +215,7 @@ enum class PublishResult : uint8_t {
 double lastCapturedLat = 0;
 double lastCapturedLng = 0;
 double lastCapturedSpeed = 0;
+double lastCapturedHdop = 99.0;
 double lastCapturedHeading = 0;
 bool hasCapturedLocation = false;
 MotionState lastCapturedMotionState = MotionState::Uncertain;
@@ -1324,7 +1325,7 @@ TelemetryFix currentFix() {
       gps.course.isValid(),
       gps.course.age()
     ) ||
-    gps.hdop.hdop() > HDOP_REJECT_THRESHOLD
+    (gps.hdop.isValid() && gps.hdop.hdop() > HDOP_REJECT_THRESHOLD)
   ) {
     // Reject mixed-epoch GNSS fields as one sample; publishing only the fresh
     // subset would misrepresent receiver quality and motion at this position.
@@ -1339,7 +1340,7 @@ TelemetryFix currentFix() {
   fix.heading = gps.course.isValid()
     ? fmod(max(gps.course.deg(), 0.0), 360.0)
     : 0.0;
-  fix.gpsHdop = gps.hdop.hdop();
+  fix.gpsHdop = gps.hdop.isValid() ? gps.hdop.hdop() : 99.0;
   fix.motionState = motionStateFromTracker(motionTracker.update(rawSpeed));
   fix.timestamp = epochMilliseconds();
   // GNSS quality and wall-clock readiness are separate signals.
@@ -1358,7 +1359,11 @@ bool shouldCapture(const TelemetryFix &fix) {
     lastCapturedLat,
     lastCapturedLng,
     fix.speed,
-    lastCapturedSpeed
+    lastCapturedSpeed,
+    gps.hdop.isValid(),
+    fix.gpsHdop,
+    lastCapturedHdop <= eki::telemetry::GNSS_HDOP_MAX,
+    lastCapturedHdop
   )) {
     Serial.printf(
       "[GNSS] Ignoring implausible position jump (%.2fm from last fix).\n",
@@ -1393,6 +1398,7 @@ void rememberCapturedFix(const TelemetryFix &fix) {
   lastCapturedLat = fix.lat;
   lastCapturedLng = fix.lng;
   lastCapturedSpeed = fix.speed;
+  lastCapturedHdop = fix.gpsHdop;
   lastCapturedHeading = fix.heading;
   lastCapturedMotionState = fix.motionState;
   lastCaptureAt = millis();
