@@ -541,6 +541,24 @@ function scheduleDurableRideRestore(
   durableRideRestores.set(nodeKey, restore);
 }
 
+/**
+ * Preserve unknown HDOP instead of letting Number(null) turn it into 0.
+ * A valid live value may fill an absent, null, or invalid anchor value.
+ */
+export function previousTelemetryGpsHdop(
+  anchor: Record<string, unknown> | undefined,
+  live: Record<string, unknown> | null | undefined,
+): number | null {
+  const anchorHdop = anchor?.gpsHdop;
+  if (typeof anchorHdop === "number" && Number.isFinite(anchorHdop)) {
+    return anchorHdop;
+  }
+  const liveHdop = live?.gpsHdop;
+  return typeof liveHdop === "number" && Number.isFinite(liveHdop)
+    ? liveHdop
+    : null;
+}
+
 async function persistTelemetry(
   assignment: DeviceAssignment,
   sample: TelemetryPayload,
@@ -564,7 +582,7 @@ async function persistTelemetry(
     const previousLat = Number(anchor?.lat ?? live?.lat);
     const previousLng = Number(anchor?.lng ?? live?.lng);
     const previousSpeed = Number(anchor?.speed ?? live?.speed);
-    const previousGpsHdop = Number(anchor?.gpsHdop ?? live?.gpsHdop);
+    const previousGpsHdop = previousTelemetryGpsHdop(anchor, live);
     const previousTimestamp = Number(anchor?.timestamp ?? live?.timestamp);
     const previous =
       Number.isFinite(previousLat) &&
@@ -575,7 +593,7 @@ async function persistTelemetry(
             lat: previousLat,
             lng: previousLng,
             speed: previousSpeed,
-            gpsHdop: Number.isFinite(previousGpsHdop) ? previousGpsHdop : null,
+            gpsHdop: previousGpsHdop,
             timestamp: previousTimestamp,
           }
         : null;

@@ -74,6 +74,7 @@ describe("telemetry motion plausibility", () => {
 
   it("keeps the quality error budget within the measured 15–50 m range", () => {
     expect(adaptiveGnssErrorMeters(0, 30, 30, 0)).toBe(15);
+    expect(adaptiveGnssErrorMeters(null, 30, 30, 0)).toBe(50);
     expect(adaptiveGnssErrorMeters(4, 30, 30, 0)).toBe(43);
     expect(adaptiveGnssErrorMeters(null, 0, 0, 60_000)).toBe(50);
   });

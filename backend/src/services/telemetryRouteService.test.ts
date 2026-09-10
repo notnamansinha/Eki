@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isReliableMovingSample,
+  previousMatch,
   remainingRerouteStops,
   rerouteContextIsCurrent,
   routeRepairSnapshotWrite,
@@ -77,12 +78,51 @@ describe("reliable moving sample HDOP gate", () => {
     expect(isReliableMovingSample({ ...base, gpsHdop: 3.2 })).toBe(true);
   });
 
+  it("rejects non-finite and negative HDOP instead of treating it as quality data", () => {
+    expect(isReliableMovingSample({ ...base, gpsHdop: Number.NaN })).toBe(false);
+    expect(isReliableMovingSample({ ...base, gpsHdop: Number.POSITIVE_INFINITY })).toBe(false);
+    expect(isReliableMovingSample({ ...base, gpsHdop: -1 })).toBe(false);
+  });
+
   it("rejects slow, stopped, or high-HDOP samples", () => {
     expect(isReliableMovingSample({ ...base, gpsHdop: 2, speed: 2 })).toBe(false);
     expect(
       isReliableMovingSample({ ...base, gpsHdop: 2, motionState: "stopped" }),
     ).toBe(false);
     expect(isReliableMovingSample({ ...base, gpsHdop: 99 })).toBe(false);
+  });
+});
+
+describe("previous route-match continuity window", () => {
+  const match = {
+    segmentIndex: 2,
+    alongRouteDistanceM: 1250,
+    routeVersion: 5,
+    sampledAt: 100_000,
+  };
+
+  it("accepts recent, same-time, and exact-boundary samples", () => {
+    expect(previousMatch(match, 5, 100_001)).toEqual({
+      segmentIndex: 2,
+      alongRouteDistanceM: 1250,
+    });
+    expect(previousMatch(match, 5, 100_000)).toEqual({
+      segmentIndex: 2,
+      alongRouteDistanceM: 1250,
+    });
+    expect(previousMatch(match, 5, 100_000 + 5 * 60_000)).toEqual({
+      segmentIndex: 2,
+      alongRouteDistanceM: 1250,
+    });
+  });
+
+  it("rejects stale and future samples instead of reusing continuity", () => {
+    expect(previousMatch(match, 5, 100_000 + 5 * 60_000 + 1)).toBeNull();
+    expect(previousMatch(match, 5, 99_999)).toBeNull();
+  });
+
+  it("does not reuse a future match after device clock regression", () => {
+    expect(previousMatch({ ...match, sampledAt: 200_000 }, 5, 100_000)).toBeNull();
   });
 });
 

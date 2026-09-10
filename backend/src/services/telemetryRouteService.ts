@@ -176,7 +176,7 @@ function validRouteState(value: unknown): RouteAdherenceState | undefined {
     : undefined;
 }
 
-function previousMatch(
+export function previousMatch(
   value: unknown,
   routeVersion: number,
   currentTimestamp: number,
@@ -187,6 +187,7 @@ function previousMatch(
     Number.isFinite(match.alongRouteDistanceM) &&
     match.routeVersion === routeVersion &&
     Number.isFinite(match.sampledAt) &&
+    Number(match.sampledAt) <= currentTimestamp &&
     currentTimestamp - Number(match.sampledAt) <= TELEMETRY_REACQUIRE_AFTER_MS
     ? {
         segmentIndex: Number(match.segmentIndex),
@@ -678,6 +679,8 @@ export function isReliableMovingSample(acceptedSample: TelemetryPayload): boolea
     acceptedSample.motionState === "moving" &&
     acceptedSample.speed >= 3 &&
     typeof acceptedSample.gpsHdop === "number" &&
+    Number.isFinite(acceptedSample.gpsHdop) &&
+    acceptedSample.gpsHdop >= 0 &&
     acceptedSample.gpsHdop <= GNSS_HDOP_MAX
   );
 }
