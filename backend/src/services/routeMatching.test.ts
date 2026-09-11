@@ -116,12 +116,16 @@ describe("route matching", () => {
     });
   });
 
-  it("does not snap an intersection fix when two segments are equally plausible", () => {
+  it("does not snap a self-intersection when non-adjacent segments are equally plausible", () => {
     const intersection = matchRoutePosition(
       { lat: 23, lng: 72.001 },
       [
         { lat: 23, lng: 72 },
         { lat: 23, lng: 72.001 },
+        { lat: 23, lng: 72.002 },
+        { lat: 23.001, lng: 72.002 },
+        { lat: 22.999, lng: 72.002 },
+        { lat: 22.999, lng: 72.001 },
         { lat: 23.001, lng: 72.001 },
       ],
     );
@@ -143,6 +147,19 @@ describe("route matching", () => {
         { lat: 23, lng: 72.002 },
       ],
     );
+    expect(match?.isAmbiguous).toBe(false);
+  });
+
+  it("does not treat an ordinary sharp turn as competing geometry", () => {
+    const match = matchRoutePosition(
+      { lat: 23, lng: 72.001 },
+      [
+        { lat: 23, lng: 72 },
+        { lat: 23, lng: 72.001 },
+        { lat: 23.001, lng: 72.001 },
+      ],
+    );
+
     expect(match?.isAmbiguous).toBe(false);
   });
 

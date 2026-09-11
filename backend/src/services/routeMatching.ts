@@ -196,24 +196,13 @@ export function matchRoutePosition(
     6,
     Math.min(12, Math.max(0, positionUncertaintyM) * 0.25),
   );
-  const bestHeading = segmentHeading(
-    path[best.segmentIndex],
-    path[best.segmentIndex + 1],
-  );
-  // Do not let an adjacent, collinear segment hide a genuinely competing
-  // crossing farther along a self-intersecting route. Select the best
-  // candidate only after filtering equivalent geometry.
+  // Adjacent segments are one continuous route leg, including at a sharp
+  // turn. Exclude them before looking for a genuinely competing crossing
+  // farther along a self-intersecting route.
   const competingCandidate = candidates
     .filter(({ segmentIndex }) => {
       if (segmentIndex === best.segmentIndex) return false;
-      const headingDifference = angularDifference(
-        bestHeading,
-        segmentHeading(path[segmentIndex], path[segmentIndex + 1]),
-      );
-      const equivalentGeometry =
-        Math.abs(best.segmentIndex - segmentIndex) <= 1 &&
-        headingDifference <= 25;
-      return !equivalentGeometry;
+      return Math.abs(best.segmentIndex - segmentIndex) > 1;
     })
     .sort((left, right) => left.score - right.score)[0];
   const competingScore = competingCandidate?.score ?? Number.POSITIVE_INFINITY;

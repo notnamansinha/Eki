@@ -8,9 +8,23 @@ import {
   remainingRerouteStops,
   rerouteContextIsCurrent,
   routeRepairSnapshotWrite,
+  routeMatchingElapsedMs,
   telemetryRouteSnapshotIsCurrent,
   telemetryIsCurrent,
 } from "./telemetryRouteService";
+
+describe("route-matching sample timing", () => {
+  it("uses the latest prior route sample instead of the current live timestamp", () => {
+    expect(routeMatchingElapsedMs([
+      { sampledAt: 1_000 },
+      { sampledAt: 12_000 },
+      { sampledAt: 8_000 },
+      { sampledAt: 30_000 },
+      { sampledAt: "invalid" },
+    ], 15_000)).toBe(3_000);
+    expect(routeMatchingElapsedMs([], 15_000)).toBe(0);
+  });
+});
 
 describe("matcher route cache versions", () => {
   it("invalidates in-flight snapshots immediately", () => {

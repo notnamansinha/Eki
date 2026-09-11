@@ -18,7 +18,8 @@ import { WifiOff, Navigation, Navigation2 } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 import { normalizeRideDirection } from "@/lib/rideDirection";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
-import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
+import { useLiveBusMarkerPosition } from "@/hooks/useLiveBusMarkerPosition";
+import { useSmoothPosition } from "@/hooks/useSmoothPosition";
 import {
   decodeRoutePathForDisplay,
   type ActiveRouteDisplay,
@@ -49,11 +50,9 @@ function BusMarker({
 }: {
   bus: IncomingBusData;
 }) {
-  const rawPoint = useMemo(
-    () => liveBusMarkerPosition(bus),
-    [bus],
-  );
-  useTelemetryRenderTrace(bus, "passenger", rawPoint !== null);
+  const markerSelection = useLiveBusMarkerPosition(bus);
+  const markerPoint = useSmoothPosition(markerSelection.position);
+  useTelemetryRenderTrace(bus, "passenger", markerPoint !== null);
 
   const [displayHeading, setDisplayHeading] = useState(() =>
     normalizeHeading(bus.heading),
@@ -68,10 +67,17 @@ function BusMarker({
   const color =
     BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
 
-  if (!rawPoint) return null;
+  if (!markerPoint) return null;
   return (
-    <AdvancedMarker position={rawPoint}>
+    <AdvancedMarker position={markerPoint}>
       <div
+        title={
+          markerSelection.decision === "match_pending"
+            ? `${bus.busId} — updating route position`
+            : markerSelection.uncertain
+              ? `${bus.busId} — approximate GNSS position`
+              : bus.busId
+        }
         style={{
           width: 44,
           height: 44,
@@ -99,7 +105,7 @@ function BusMarker({
             width: 8,
             height: 8,
             borderRadius: "50%",
-            background: color,
+            background: markerSelection.uncertain ? "#FBBF24" : color,
             border: "1.5px solid #09090b",
           }}
         />
@@ -456,11 +462,11 @@ function PassengerMapInner({
   }, [buses]);
 
   const mapCenter = useMemo(() => ({ lat: targetStop.lat, lng: targetStop.lng }), [targetStop.lat, targetStop.lng]);
+  const firstBus = useMemo(() => Array.from(buses.values())[0], [buses]);
+  const firstBusMarker = useLiveBusMarkerPosition(firstBus);
   const centerTarget = useMemo(() => {
-    const firstBus = Array.from(buses.values())[0];
-    if (!firstBus) return mapCenter;
-    return liveBusMarkerPosition(firstBus) ?? mapCenter;
-  }, [buses, mapCenter]);
+    return firstBusMarker.position ?? mapCenter;
+  }, [firstBusMarker.position, mapCenter]);
 
   return (
     <>

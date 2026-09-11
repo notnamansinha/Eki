@@ -519,6 +519,23 @@ function recentTrajectory(value: unknown, current: LatLng, sample: TelemetryPayl
   ];
 }
 
+/** Elapsed fix time must come from the prior route sample, not current live telemetry. */
+export function routeMatchingElapsedMs(
+  value: unknown,
+  currentTimestamp: number,
+): number {
+  if (!Array.isArray(value) || !Number.isFinite(currentTimestamp)) return 0;
+  const previousTimestamp = value.reduce<number | null>((latest, candidate) => {
+    if (!candidate || typeof candidate !== "object") return latest;
+    const sampledAt = Number((candidate as Record<string, unknown>).sampledAt);
+    if (!Number.isFinite(sampledAt) || sampledAt > currentTimestamp) return latest;
+    return latest === null || sampledAt > latest ? sampledAt : latest;
+  }, null);
+  return previousTimestamp === null
+    ? 0
+    : Math.max(0, currentTimestamp - previousTimestamp);
+}
+
 function encodedGeometry(
   route: StoredRoute,
   direction: "forward" | "reverse",
@@ -690,6 +707,13 @@ async function activateReroute(
       offRouteSampleCount: 0,
       rerouteRequestId: null,
       rerouteCompletedAt: { ".sv": "timestamp" },
+      ...(telemetryIsCurrent(live, sample)
+        ? {
+            mapMatchUpdatedAt: { ".sv": "timestamp" },
+            mapMatchSeq: sample.seq,
+            mapMatchSampledAt: sample.timestamp,
+          }
+        : {}),
       ...(match && !match.isAmbiguous && telemetryIsCurrent(live, sample)
         ? {
             matchedLocation: matchedLocation(match, sample, routeVersion),
@@ -874,10 +898,10 @@ async function processTelemetryRoute(
     acceptedSample,
   );
   const effectiveHeading = trajectoryHeading(trajectory) ?? acceptedSample.heading;
-  const previousTimestamp = Number(live?.timestamp);
-  const elapsedMs = Number.isFinite(previousTimestamp)
-    ? Math.max(0, acceptedSample.timestamp - previousTimestamp)
-    : 0;
+  const elapsedMs = routeMatchingElapsedMs(
+    live?.routeMatchHistory,
+    acceptedSample.timestamp,
+  );
   const positionUncertaintyM = adaptiveGnssErrorMeters(
     acceptedSample.gpsHdop,
     acceptedSample.speed,
@@ -926,6 +950,8 @@ async function processTelemetryRoute(
       routeMatchHistory: trajectory,
       offRouteSampleCount: adherence.offRouteSampleCount,
       mapMatchUpdatedAt: { ".sv": "timestamp" },
+      mapMatchSeq: acceptedSample.seq,
+      mapMatchSampledAt: acceptedSample.timestamp,
       matchConfidence: match?.matchConfidence ?? 0,
       distanceToActiveRoute:
         match ? Number(match.distanceToRouteM.toFixed(1)) : null,

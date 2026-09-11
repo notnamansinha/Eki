@@ -34,6 +34,7 @@ One latest projection per assigned bus/route. The key is an internal composite l
 | `lat`, `lng` | number | Latest accepted GNSS coordinate |
 | `rawLocation` | object | Original authenticated `{lat,lng,speed,heading,gpsHdop,motionState,seq,sampledAt}`; never overwritten by snapping |
 | `matchedLocation` | object | Current confident `{lat,lng,segmentIndex,segmentFraction,alongRouteDistanceM,distanceToRouteM,headingDifference,matchConfidence,seq,sampledAt,routeVersion}` |
+| `mapMatchSeq`, `mapMatchSampledAt` | number | Sample identity of the latest completed matching pass, including passes that produced no confident match |
 | `matchConfidence`, `distanceToActiveRoute` | number | Latest matcher confidence (0–1) and raw distance in metres |
 | `routeState` | enum | `ON_ROUTE`, `POSSIBLE_OFF_ROUTE`, `OFF_ROUTE`, `REROUTING`, or `ON_NEW_ROUTE` |
 | `activeRouteId` | string | Authoritative configured/dynamic matching-context label; route geometry is NOT on this hot node (see sibling store below) |
