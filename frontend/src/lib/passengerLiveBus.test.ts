@@ -32,6 +32,27 @@ describe("passenger live-bus normalization", () => {
     expect(bus).toBeNull();
   });
 
+  it.each([undefined, null, "sideways"])(
+    "keeps an active ride visible while direction %p remains pending",
+    (direction) => {
+      const pending = telemetry({
+        status: "active",
+        sessionId: "session_pending",
+        direction,
+        directionState: "pending",
+      });
+
+      expect(normalizePassengerLiveBus("Bus01_route_1", pending, now))
+        .toMatchObject({
+          sessionId: "session_pending",
+          direction,
+          directionState: "pending",
+        });
+      expect(passengerLiveBuses({ Bus01_route_1: pending }, now))
+        .toHaveLength(1);
+    },
+  );
+
   it("shows fresh and stale active-session buses", () => {
     const fresh = telemetry({
       status: "active",
