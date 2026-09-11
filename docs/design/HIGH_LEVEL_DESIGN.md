@@ -61,7 +61,7 @@ flowchart TB
 6. A per-node asynchronous matcher preserves `rawLocation`, scores candidates on the direction-specific route using distance, heading and continuity, and publishes a version-bound `matchedLocation` without delaying the device response.
 7. Two ordinary reliable moving deviations, or one measured deviation at least 120 m from the route, trigger one asynchronous live reroute through the remaining required stops. Missing matches are never treated as severe. Live routing uses `TRAFFIC_AWARE` with a 3.5-second budget; the active route switches atomically and stale cache-generation/request/version/session results are discarded.
 8. If live lifecycle fields are missing, the backend asynchronously restores them from `active_rides` without delaying the response.
-9. Browser singleton listeners receive the RTDB change; confident current-version matches drive markers, otherwise clients show raw GNSS. The service worker never caches authenticated responses.
+9. Browser singleton listeners receive the RTDB change. Confident current-version matches drive markers; a new on-route sample briefly retains its previous match while matching is pending, then falls back to visibly uncertain accepted raw GNSS after a fixed bound. Off-route and changed-route contexts use raw coordinates immediately. The service worker never caches authenticated responses.
 
 ### Ride start and progression
 
