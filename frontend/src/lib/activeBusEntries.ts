@@ -28,6 +28,7 @@ export interface ActiveBusEntry {
   sessionId?: string;
   /** Untrusted RTDB value; resolve through normalizeRideDirection before use. */
   direction?: unknown;
+  directionState?: "pending" | "resolved";
   originStopId?: string;
   destinationStopId?: string;
   rawLocation?: RawLiveLocation;
@@ -40,6 +41,7 @@ export interface ActiveBusEntry {
   routeState?: LiveRouteState;
   /** Untrusted route-match value; unresolved values must not select geometry. */
   routeDirection?: unknown;
+  routeGeometryVersion?: number;
 }
 
 export interface RawLiveLocation {
@@ -74,11 +76,82 @@ export type LiveRouteState =
   | "REROUTING"
   | "ON_NEW_ROUTE";
 
+export type DevicePresence = "online" | "offline" | "unknown";
+export type RideServiceState =
+  | "not_armed"
+  | "direction_pending"
+  | "pre_departure"
+  | "in_service"
+  | "completed";
+
+export function devicePresence(
+  entry: Pick<ActiveBusEntry, "deviceState" | "timestamp"> | null | undefined,
+  now = Date.now(),
+): DevicePresence {
+  if (entry?.deviceState === "offline") return "offline";
+  if (
+    entry?.deviceState === "online" &&
+    isLiveBusTimestamp(entry.timestamp, now)
+  ) return "online";
+  return "unknown";
+}
+
+/** Derive passenger service only from a complete, server-owned lifecycle tuple. */
+export function rideServiceState(
+  entry: Pick<
+    ActiveBusEntry,
+    "status" | "sessionId" | "direction" | "directionState" | "tripState"
+  > | null | undefined,
+): RideServiceState {
+  if (entry?.tripState === "completed") return "completed";
+  const hasSession = typeof entry?.sessionId === "string" && entry.sessionId.length > 0;
+  if (entry?.status !== "active" || !hasSession) return "not_armed";
+  if (
+    entry.directionState === "pending" ||
+    (entry.direction !== "forward" && entry.direction !== "reverse")
+  ) return "direction_pending";
+  if (entry.tripState === "pre_departure") return "pre_departure";
+  if (entry.tripState === "in_service") return "in_service";
+  return "not_armed";
+}
+
+export function isActiveService(
+  entry: Parameters<typeof rideServiceState>[0],
+): boolean {
+  const state = rideServiceState(entry);
+  return state === "pre_departure" || state === "in_service";
+}
+
+export function countActiveServices(
+  entries: readonly ActiveBusEntry[],
+  onlyState?: "pre_departure" | "in_service",
+): number {
+  const sessions = new Set<string>();
+  for (const entry of entries) {
+    const state = rideServiceState(entry);
+    if (
+      (state === "pre_departure" || state === "in_service") &&
+      (!onlyState || state === onlyState) &&
+      entry.sessionId
+    ) sessions.add(entry.sessionId);
+  }
+  return sessions.size;
+}
+
+export const RIDE_SERVICE_LABELS: Record<RideServiceState, string> = {
+  not_armed: "Ride not armed",
+  direction_pending: "Direction pending",
+  pre_departure: "Awaiting departure",
+  in_service: "In service",
+  completed: "Completed",
+};
+
 /** Chat discoverability follows trusted device presence, never trip motion/status. */
 export function isLiveChatDeviceOnline(
-  entry: Pick<ActiveBusEntry, "deviceState" | "status" | "motionState"> | null | undefined,
+  entry: Pick<ActiveBusEntry, "deviceState" | "timestamp"> | null | undefined,
+  now = Date.now(),
 ): boolean {
-  return entry?.deviceState === "online";
+  return devicePresence(entry, now) === "online";
 }
 
 const OPTIONAL_STRING_FIELDS = [
@@ -105,6 +178,7 @@ const OPTIONAL_NUMBER_FIELDS = [
   "matchConfidence",
   "distanceToActiveRoute",
   "routeVersion",
+  "routeGeometryVersion",
 ] as const;
 
 function validLatLngRecord(value: unknown): value is Record<string, unknown> {
@@ -174,6 +248,11 @@ function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
   if (typeof bus.lat === "number" && (bus.lat < -90 || bus.lat > 90)) return false;
   if (typeof bus.lng === "number" && (bus.lng < -180 || bus.lng > 180)) return false;
   if (
+    bus.directionState !== undefined &&
+    bus.directionState !== "pending" &&
+    bus.directionState !== "resolved"
+  ) return false;
+  if (
     bus.routeSource !== undefined &&
     bus.routeSource !== "configured" &&
     bus.routeSource !== "dynamic-reroute"
@@ -199,6 +278,12 @@ function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
   if (
     typeof bus.routeVersion === "number" &&
     (!Number.isSafeInteger(bus.routeVersion) || bus.routeVersion <= 0)
+  ) {
+    return false;
+  }
+  if (
+    typeof bus.routeGeometryVersion === "number" &&
+    (!Number.isSafeInteger(bus.routeGeometryVersion) || bus.routeGeometryVersion < 0)
   ) {
     return false;
   }

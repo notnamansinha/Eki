@@ -6,7 +6,11 @@ export type DirectedRouteData = RouteData & { rideDirection: RideDirection };
 
 /** Resolve only explicit directions; missing and malformed values stay pending. */
 export function normalizeRideDirection(value: unknown): RideDirectionState {
-  return value === "forward" || value === "reverse" ? value : "pending";
+  return isRideDirection(value) ? value : "pending";
+}
+
+export function isRideDirection(value: unknown): value is RideDirection {
+  return value === "forward" || value === "reverse";
 }
 
 export function isResolvedRideDirection(
@@ -45,7 +49,7 @@ export function directionLabelState(
 
 /** Uses immutable session endpoints before falling back to the current route. */
 export function persistedDirectionLabel(
-  direction: RideDirection,
+  direction: RideDirection | null | undefined,
   stops: RouteData["stops"],
   originStopId: string | null | undefined,
   destinationStopId: string | null | undefined,
@@ -57,6 +61,7 @@ export function persistedDirectionLabel(
     };
     return `${stopLabel(originStopId)} → ${stopLabel(destinationStopId)}`;
   }
+  if (!isRideDirection(direction)) return "Direction pending";
   return directionLabel(direction, stops);
 }
 

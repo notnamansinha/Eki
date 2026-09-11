@@ -12,6 +12,7 @@
     "seed": "tsx src/seed.ts",
     "sync-role-claims": "tsx src/syncRoleClaims.ts",
     "provision-device": "tsx src/provisionDevice.ts",
+    "measure:rtdb": "tsx src/measureRtdbLatency.ts",
     "test": "vitest run src",
     "test:rules-integration": "vitest run src/rulesIntegration.test.ts"
   },

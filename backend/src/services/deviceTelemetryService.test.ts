@@ -28,6 +28,7 @@ import {
   evaluateDeviceRateLimit,
   freshestDelayMinutes,
   hashDeviceSecret,
+  initialDevicePresenceState,
   invalidateDeviceCredentialCache,
   nextTelemetryValue,
   parseDeviceAuthorization,
@@ -58,6 +59,14 @@ describe("durable ride restoration direction", () => {
       .toMatchObject({ direction: "forward" });
     expect(durableLifecycle({ ...activeRide, direction: "reverse" }))
       .toMatchObject({ direction: "reverse" });
+  });
+});
+
+describe("initial device presence", () => {
+  it("does not fabricate an armed ride lifecycle", () => {
+    expect(initialDevicePresenceState()).toEqual({ status: "offline" });
+    expect(initialDevicePresenceState()).not.toHaveProperty("tripState");
+    expect(initialDevicePresenceState()).not.toHaveProperty("currentStopIndex");
   });
 });
 

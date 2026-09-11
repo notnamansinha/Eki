@@ -24,12 +24,14 @@ describe("ride direction", () => {
     expect(source).toEqual(["A", "M", "Z"]);
   });
 
-  it("counts completed rides by direction and treats legacy rides as forward", () => {
+  it("counts every completed ride while keeping unresolved directions separate", () => {
     expect(countRidesByDirection([
+      { direction: undefined },
+      { direction: null },
+      { direction: "sideways" },
       { direction: "forward" },
       { direction: "reverse" },
-      {},
-    ])).toEqual({ forward: 2, reverse: 1, total: 3 });
+    ])).toEqual({ forward: 1, reverse: 1, unresolved: 3, total: 5 });
   });
 
   it("runs the same reducer from Z back to A in reverse travel order", () => {

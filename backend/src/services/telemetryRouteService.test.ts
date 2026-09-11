@@ -1,14 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
   directionProjectionNeedsSync,
+  invalidateTelemetryRoute,
   isReliableMovingSample,
   nextMatchedTelemetryValue,
   remainingRerouteStops,
   rerouteContextIsCurrent,
   routeRepairSnapshotWrite,
+  telemetryRouteSnapshotIsCurrent,
   telemetryIsCurrent,
   telemetryRouteContextIsCurrent,
 } from "./telemetryRouteService";
+
+describe("matcher route cache versions", () => {
+  it("invalidates in-flight snapshots immediately", () => {
+    const routeId = "route-invalidation-test";
+    expect(telemetryRouteSnapshotIsCurrent(routeId, 0)).toBe(true);
+    invalidateTelemetryRoute(routeId);
+    expect(telemetryRouteSnapshotIsCurrent(routeId, 0)).toBe(false);
+    expect(telemetryRouteSnapshotIsCurrent(routeId, 1)).toBe(true);
+  });
+});
 
 describe("resolved direction projection", () => {
   it("syncs only an explicitly pending session-bound projection", () => {
@@ -175,11 +187,12 @@ describe("reliable moving sample HDOP gate", () => {
     expect(isReliableMovingSample({ ...base, gpsHdop: 3.2 })).toBe(true);
   });
 
-  it("rejects slow, stopped, or high-HDOP samples", () => {
+  it("rejects slow, stopped, negative-HDOP, or high-HDOP samples", () => {
     expect(isReliableMovingSample({ ...base, gpsHdop: 2, speed: 2 })).toBe(false);
     expect(
       isReliableMovingSample({ ...base, gpsHdop: 2, motionState: "stopped" }),
     ).toBe(false);
+    expect(isReliableMovingSample({ ...base, gpsHdop: -0.1 })).toBe(false);
     expect(isReliableMovingSample({ ...base, gpsHdop: 99 })).toBe(false);
   });
 });

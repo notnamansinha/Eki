@@ -71,5 +71,7 @@ describe("directional route views", () => {
     expect(persistedDirectionLabel("forward", editedStops, "a", "z")).toBe("A → Z");
     expect(persistedDirectionLabel("reverse", editedStops, "z", "a")).toBe("Z → A");
     expect(persistedDirectionLabel("reverse", editedStops, null, null)).toBe("NZ → NA");
+    expect(persistedDirectionLabel(null, editedStops, null, null)).toBe("Direction pending");
+    expect(persistedDirectionLabel(null, editedStops, "a", "z")).toBe("A → Z");
   });
 });

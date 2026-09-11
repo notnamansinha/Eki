@@ -49,7 +49,7 @@ interface RideSession {
   passengers?: PassengerRecord[] | Record<string, PassengerRecord>;
   path?: { lat: number; lng: number; timestamp: TimestampValue }[];
   stopsReached?: RideStopRecord[] | Record<string, RideStopRecord>;
-  direction?: "forward" | "reverse";
+  direction?: "forward" | "reverse" | null;
   originStopId?: string | null;
   destinationStopId?: string | null;
 }

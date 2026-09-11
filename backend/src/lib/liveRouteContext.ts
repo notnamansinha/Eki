@@ -5,6 +5,7 @@ const LIVE_ROUTE_CONTEXT_FIELDS = [
   "routeSource",
   "routeDirection",
   "routeSessionId",
+  "routeGeometryVersion",
   "routeState",
   "routeMatchHistory",
   "offRouteSampleCount",

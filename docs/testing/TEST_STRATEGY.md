@@ -54,6 +54,7 @@ numbers.
 - Invalid/disabled/unknown device and invalid bus/route binding fail.
 - Positive/negative credential caches and device/IP limits are bounded.
 - Durable ride restore coalesces work and does not delay accepted HTTP response.
+- A first device-only fix creates presence state without fabricating `tripState`, stop progress, direction, or an active service.
 - Rolling latency summary handles empty/unsorted values and nearest-rank percentiles.
 
 ### Lifecycle and concurrency
@@ -73,6 +74,8 @@ numbers.
 ### Routes, privacy and retention
 
 - Stored route segment works forward/reverse, orders stops, rejects coincident endpoints and rejects an out-of-segment via.
+- Route saves replay identical operation IDs, reject changed-payload reuse/stale versions, coalesce concurrent routing work, reuse valid geometry for metadata-only edits, and abort commit when an active ride appears during calculation.
+- Place search distinguishes validation, authentication, configuration, upstream/rate-limit, body-timeout and genuine empty-result outcomes.
 - Terminal history deletion deduplicates projections and rejects active status.
 - Retention is disabled for missing/false/misspelled values and enabled only by explicit `true`.
 - Privacy collection-group queries/rules/indexes are checked; emulator verifies users cannot reach backend-only collections.
@@ -80,6 +83,8 @@ numbers.
 ## Automated frontend cases
 
 - Live timestamps reject missing, too-old and implausibly future samples.
+- Device presence requires an explicit online flag plus a fresh timestamp; missing, stale, and contradictory flags are reported as offline/unknown without changing ride truth.
+- Passenger route visibility and service counts require the complete active-session tuple; device-only, malformed, duplicated-session, completed, and direction-pending nodes cannot inflate service.
 - Active sessions remain visible while stale non-active locations expire.
 - One RTDB listener fans out to subscribers, prunes on the nearest expiry, and tears down at zero subscribers.
 - Visibility/online resume state signals reconnect and clears after a snapshot.
@@ -111,6 +116,10 @@ Use Firebase emulators for repeatable state injection; never point destructive s
 | SIM-14 | Service worker with account A then account B | No authenticated response exists in runtime caches |
 | SIM-15 | Reverse route plan with via | Ordered reverse stops and continuous reverse polyline |
 | SIM-16 | Browser hidden/offline/online | Reconnecting state, stale pruning, one listener after resume |
+| SIM-17 | Two identical route saves while Routes API is blocked | One durable lease/geometry pair; duplicate gets 202 then identical replay |
+| SIM-18 | Route edit computes while a ride starts | Final route transaction returns 409; route/version remain unchanged |
+| SIM-19 | Browser times out after route commit | Same `saveId` reconciliation returns saved version; no second mutation |
+| SIM-20 | Straight turn/parallel road/U-turn/stationary noise | One ≥120 m measured or two ordinary reliable deviations reroute; heading/progress reject wrong carriageway/back-jump; stationary/missing match does not confirm |
 
 For concurrency runs, send a unique correlation timestamp, assert both HTTP outcomes and then inspect `ride_sessions`, `_active_bus_locks`, `active_rides`, and all matching RTDB nodes. Clean emulator state between runs.
 

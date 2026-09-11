@@ -62,6 +62,7 @@ export interface HttpsTelemetryStatus {
   networkLatencyMs: LatencySummary;
   deviceToServerLatencyMs: LatencySummary;
   rtdbWriteLatencyMs: LatencySummary;
+  rtdbTransactionAttempts: LatencySummary;
   rateLimit: {
     mode: "local" | "distributed";
     limitPerMinute: number;
@@ -87,6 +88,15 @@ export interface LatencySummary {
 export interface DelayPreference {
   delayMinutes: number;
   delayUpdatedAt: number;
+}
+
+/**
+ * A powered device proves only device presence. Ride lifecycle fields are
+ * introduced by the transactional arm/direction-resolution flow, never by
+ * telemetry ingestion itself.
+ */
+export function initialDevicePresenceState(): { status: "offline" } {
+  return { status: "offline" };
 }
 
 function validDelayMinutes(value: unknown): number | null {
@@ -168,6 +178,7 @@ const deviceQueueLatencySamples: number[] = [];
 const networkLatencySamples: number[] = [];
 const deviceToServerLatencySamples: number[] = [];
 const rtdbWriteLatencySamples: number[] = [];
+const rtdbTransactionAttemptSamples: number[] = [];
 const rateLimitDecisionLatencySamples: number[] = [];
 const serverIngressGapSamples: number[] = [];
 const lastServerIngressByDevice = new Map<string, number>();
@@ -655,13 +666,9 @@ export function nextTelemetryValue(
       };
 
   return {
-    ...(current ?? {
-      status: "offline",
-      tripState: "pre_departure",
-      currentStopIndex: 0,
-      hasDepartedOrigin: false,
-      delayMinutes: 0,
-    }),
+    // Device presence is not a ride. Lifecycle fields are introduced only by
+    // the transactional arm/direction-resolution path.
+    ...(current ?? initialDevicePresenceState()),
     ...acceptedSample,
     // Keep the authenticated GNSS fix independently observable even when
     // plausibility filtering retains the previous accepted live position.
@@ -697,7 +704,9 @@ async function persistTelemetry(
   const writeStartedAt = Date.now();
   const nodeKey = `${assignment.busId}_${assignment.routeId}`;
   const ref = rtdb.ref(`activeBuses/${nodeKey}`);
+  let transactionAttempts = 0;
   const transaction = await ref.transaction((current) => {
+    transactionAttempts += 1;
     return nextTelemetryValue(
       current as Record<string, unknown> | null,
       assignment,
@@ -707,6 +716,7 @@ async function persistTelemetry(
   });
   const value = transaction.snapshot.val() as Record<string, unknown> | null;
   recordSample(rtdbWriteLatencySamples, Date.now() - writeStartedAt);
+  recordSample(rtdbTransactionAttemptSamples, transactionAttempts);
   return {
     committed: transaction.committed,
     hasSession:
@@ -813,6 +823,7 @@ export function getHttpsTelemetryStatus(): HttpsTelemetryStatus {
     networkLatencyMs: summarizeLatencySamples(networkLatencySamples),
     deviceToServerLatencyMs: summarizeLatencySamples(deviceToServerLatencySamples),
     rtdbWriteLatencyMs: summarizeLatencySamples(rtdbWriteLatencySamples),
+    rtdbTransactionAttempts: summarizeLatencySamples(rtdbTransactionAttemptSamples),
     rateLimit: {
       mode: deviceRateLimitConfiguration.mode,
       limitPerMinute: deviceRateLimitConfiguration.limit,
