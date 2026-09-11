@@ -31,7 +31,7 @@ void test_gnss_fix_requires_fresh_coherent_fields() {
   TEST_ASSERT_TRUE(gnssFixFieldsAreFresh(true, 0, true, 0, true, fresh, true, fresh));
   TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(false, 0, true, 0, false, 0, false, 0));
   TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, stale, true, 0, false, 0, false, 0));
-  TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, 0, false, 0, false, 0, false, 0));
+  TEST_ASSERT_TRUE(gnssFixFieldsAreFresh(true, 0, false, 0, false, 0, false, 0));
   TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, 0, true, stale, false, 0, false, 0));
   TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, 0, true, 0, true, stale, false, 0));
   TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, 0, true, 0, false, 0, true, stale));
@@ -441,7 +441,7 @@ void test_location_transition_rejects_teleportation() {
     false, 0, 23.0, 72.5, 0, 0, 0, 0
   ));
   TEST_ASSERT_TRUE(locationTransitionIsPlausible(
-    true, 3000, 23.001, 72.5, 23.0, 72.5, 30, 30
+    true, 3000, 23.0002, 72.5, 23.0, 72.5, 30, 30
   ));
   TEST_ASSERT_FALSE(locationTransitionIsPlausible(
     true, 3000, 23.05, 72.54, 23.0, 72.46, 0, 0
@@ -451,6 +451,18 @@ void test_location_transition_rejects_teleportation() {
   ));
   TEST_ASSERT_TRUE(locationTransitionIsPlausible(
     true, GNSS_REACQUIRE_AFTER_MS + 1, 23.05, 72.54, 23.0, 72.46, 0, 0
+  ));
+}
+
+void test_adaptive_gnss_error_budget_is_bounded() {
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 15.0f, static_cast<float>(adaptiveGnssErrorMeters(true, 0, 30, 30, 0)));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 43.0f, static_cast<float>(adaptiveGnssErrorMeters(true, 4, 30, 30, 0)));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 50.0f, static_cast<float>(adaptiveGnssErrorMeters(false, 99, 0, 0, 60000)));
+  TEST_ASSERT_TRUE(locationTransitionIsPlausible(
+    true, 3000, 23.0002, 72.5, 23.0, 72.5, 0, 0, true, 1, true, 1
+  ));
+  TEST_ASSERT_FALSE(locationTransitionIsPlausible(
+    true, 3000, 23.001, 72.5, 23.0, 72.5, 0, 0, true, 1, true, 1
   ));
 }
 
@@ -582,6 +594,7 @@ int main(int, char **) {
   RUN_TEST(test_wifi_retry_and_led_code_are_deterministic);
   RUN_TEST(test_publish_policy_handles_floor_changes_and_heartbeats);
   RUN_TEST(test_location_transition_rejects_teleportation);
+  RUN_TEST(test_adaptive_gnss_error_budget_is_bounded);
   RUN_TEST(test_queue_delivers_newest_first_and_retains_failed_samples);
   RUN_TEST(test_queue_acknowledgement_discards_superseded_samples);
   RUN_TEST(test_queue_rejects_corrupted_rtc_state);

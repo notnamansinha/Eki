@@ -30,6 +30,7 @@ export interface RouteMatch {
   alongRouteDistanceM: number;
   headingDifference: number | null;
   matchConfidence: number;
+  isAmbiguous: boolean;
 }
 
 export interface RouteAdherenceDecision {
@@ -130,12 +131,17 @@ export function matchRoutePosition(
   path: readonly LatLng[],
   headingDegrees?: number,
   previous?: PreviousRouteMatch | null,
+  positionUncertaintyM = 25,
 ): RouteMatch | null {
   if (path.length < 2) return null;
   const cumulative = cumulativeDistances(path);
   let best:
     | (RouteMatch & { score: number; segmentLengthM: number })
     | null = null;
+  const candidates: Array<{
+    segmentIndex: number;
+    score: number;
+  }> = [];
 
   for (let segmentIndex = 0; segmentIndex < path.length - 1; segmentIndex += 1) {
     const projection = projectToSegment(
@@ -167,16 +173,9 @@ export function matchRoutePosition(
       backwardsM * 2 +
       segmentJump * 3;
 
+    candidates.push({ segmentIndex, score });
+
     if (!best || score < best.score) {
-      const distanceConfidence = clamp01(
-        1 - projection.distanceM / OFF_ROUTE_DISTANCE_M,
-      );
-      const headingConfidence =
-        headingDifference === null ? 0.65 : clamp01(1 - headingDifference / 120);
-      const continuityConfidence = previous
-        ? clamp01(1 - Math.abs(segmentIndex - previous.segmentIndex) / 30) *
-          (backwardsM > 0 ? 0.25 : 1)
-        : 0.65;
       best = {
         point: projection.point,
         segmentIndex,
@@ -184,13 +183,8 @@ export function matchRoutePosition(
         distanceToRouteM: projection.distanceM,
         alongRouteDistanceM,
         headingDifference,
-        matchConfidence: Number(
-          (
-            distanceConfidence * 0.55 +
-            headingConfidence * 0.25 +
-            continuityConfidence * 0.2
-          ).toFixed(3),
-        ),
+        matchConfidence: 0,
+        isAmbiguous: false,
         score,
         segmentLengthM,
       };
@@ -198,6 +192,47 @@ export function matchRoutePosition(
   }
 
   if (!best) return null;
+  const ambiguityWindow = Math.max(
+    6,
+    Math.min(12, Math.max(0, positionUncertaintyM) * 0.25),
+  );
+  // Adjacent segments are one continuous route leg, including at a sharp
+  // turn. Exclude them before looking for a genuinely competing crossing
+  // farther along a self-intersecting route.
+  const competingCandidate = candidates
+    .filter(({ segmentIndex }) => {
+      if (segmentIndex === best.segmentIndex) return false;
+      return Math.abs(best.segmentIndex - segmentIndex) > 1;
+    })
+    .sort((left, right) => left.score - right.score)[0];
+  const competingScore = competingCandidate?.score ?? Number.POSITIVE_INFINITY;
+  const competingGeometry = competingCandidate !== undefined;
+  const isAmbiguous =
+    competingGeometry &&
+    Number.isFinite(competingScore) &&
+    competingScore - best.score <= ambiguityWindow;
+  const distanceConfidence = clamp01(
+    1 - best.distanceToRouteM / OFF_ROUTE_DISTANCE_M,
+  );
+  const headingConfidence =
+    best.headingDifference === null
+      ? 0.65
+      : clamp01(1 - best.headingDifference / 120);
+  const continuityConfidence = previous
+    ? clamp01(1 - Math.abs(best.segmentIndex - previous.segmentIndex) / 30) *
+      (Math.max(0, previous.alongRouteDistanceM - best.alongRouteDistanceM - 15) > 0
+        ? 0.25
+        : 1)
+    : 0.65;
+  best.isAmbiguous = isAmbiguous;
+  best.matchConfidence = Number(
+    (
+      (distanceConfidence * 0.55 +
+        headingConfidence * 0.25 +
+        continuityConfidence * 0.2) *
+      (isAmbiguous ? 0.55 : 1)
+    ).toFixed(3),
+  );
   const { score: _score, segmentLengthM: _segmentLengthM, ...match } = best;
   void _score;
   void _segmentLengthM;
@@ -217,6 +252,7 @@ export function evaluateRouteAdherence(
 ): RouteAdherenceDecision {
   if (
     match &&
+    !match.isAmbiguous &&
     match.distanceToRouteM <= ROUTE_MATCH_DISTANCE_M &&
     match.matchConfidence >= 0.45
   ) {
@@ -224,6 +260,18 @@ export function evaluateRouteAdherence(
       routeState:
         previousState === "ON_NEW_ROUTE" ? "ON_NEW_ROUTE" : "ON_ROUTE",
       offRouteSampleCount: 0,
+      shouldReroute: false,
+    };
+  }
+
+  // A close projection at an intersection or beside a parallel carriageway
+  // is not evidence of the travelled segment. Keep it observable, but do not
+  // count an ambiguous snap toward rerouting.
+  if (match?.isAmbiguous) {
+    return {
+      routeState:
+        previousState === "REROUTING" ? "REROUTING" : "POSSIBLE_OFF_ROUTE",
+      offRouteSampleCount: previousOffRouteSamples,
       shouldReroute: false,
     };
   }

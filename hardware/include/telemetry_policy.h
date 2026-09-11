@@ -18,7 +18,12 @@ constexpr double SPEED_THRESHOLD_KMH = 5.0;
 constexpr double MOVING_SPEED_KMH = 2.5;
 constexpr double STOP_SPEED_KMH = 1.5;
 constexpr uint32_t GNSS_FIX_MAX_AGE_MS = 5000;
-constexpr double GNSS_JUMP_MARGIN_M = 250.0;
+// Keep receiver uncertainty separate from physical travel. The backend
+// mirrors this 15..50 m envelope in telemetryMotion.ts.
+constexpr double GNSS_ERROR_MIN_M = 15.0;
+constexpr double GNSS_ERROR_MAX_M = 50.0;
+constexpr double GNSS_STATIONARY_SPEED_KMH = 2.5;
+constexpr double GNSS_HDOP_MAX = 4.0;
 constexpr uint32_t GNSS_MAX_TRANSITION_GAP_MS = 60UL * 1000;
 constexpr uint32_t GNSS_REACQUIRE_AFTER_MS = 5UL * 60 * 1000;
 // Telemetry is evaluated from the GNSS owner task at this cadence. Keep the
@@ -75,10 +80,36 @@ inline bool gnssFixFieldsAreFresh(
 ) {
   return locationValid &&
          locationAgeMs <= GNSS_FIX_MAX_AGE_MS &&
-         hdopValid &&
-         hdopAgeMs <= GNSS_FIX_MAX_AGE_MS &&
+         // HDOP is useful quality metadata, but some otherwise valid
+         // receivers omit it temporarily. Preserve the location as raw data
+         // and let the adaptive policy use its conservative fallback.
+         (!hdopValid || hdopAgeMs <= GNSS_FIX_MAX_AGE_MS) &&
          (!speedValid || speedAgeMs <= GNSS_FIX_MAX_AGE_MS) &&
          (!courseValid || courseAgeMs <= GNSS_FIX_MAX_AGE_MS);
+}
+
+inline double adaptiveGnssErrorMeters(
+  bool hdopValid,
+  double hdop,
+  double speedKmh,
+  double previousSpeedKmh,
+  uint32_t elapsedMs
+) {
+  const double hdopError = hdopValid && std::isfinite(hdop) && hdop >= 0.0
+    ? GNSS_ERROR_MIN_M + hdop * 7.0
+    : GNSS_ERROR_MAX_M;
+  const double stationaryAllowance =
+    std::max(speedKmh, previousSpeedKmh) <= GNSS_STATIONARY_SPEED_KMH
+      ? 10.0
+      : 0.0;
+  const double gapAllowance = std::min(
+    10.0,
+    static_cast<double>(elapsedMs > 10000 ? elapsedMs - 10000 : 0) / 2000.0
+  );
+  return std::min(
+    GNSS_ERROR_MAX_M,
+    std::max(GNSS_ERROR_MIN_M, hdopError + stationaryAllowance + gapAllowance)
+  );
 }
 
 struct MotionTracker {
@@ -143,7 +174,11 @@ inline bool locationTransitionIsPlausible(
   double previousLat,
   double previousLng,
   double speedKmh,
-  double previousSpeedKmh
+  double previousSpeedKmh,
+  bool hdopValid = false,
+  double hdop = 99.0,
+  bool previousHdopValid = false,
+  double previousHdop = 99.0
 ) {
   if (!hasPrevious) return true;
   if (elapsedMs > GNSS_REACQUIRE_AFTER_MS) return true;
@@ -151,8 +186,24 @@ inline bool locationTransitionIsPlausible(
     elapsedMs,
     GNSS_MAX_TRANSITION_GAP_MS
   );
+  const double errorBudget = std::max(
+    adaptiveGnssErrorMeters(
+      previousHdopValid,
+      previousHdop,
+      previousSpeedKmh,
+      speedKmh,
+      boundedElapsedMs
+    ),
+    adaptiveGnssErrorMeters(
+      hdopValid,
+      hdop,
+      speedKmh,
+      previousSpeedKmh,
+      boundedElapsedMs
+    )
+  );
   const double reachableMeters =
-    GNSS_JUMP_MARGIN_M +
+    errorBudget +
     (std::max(speedKmh, previousSpeedKmh) / 3.6) *
       (static_cast<double>(boundedElapsedMs) / 1000.0);
   return haversineMeters(previousLat, previousLng, lat, lng) <= reachableMeters;

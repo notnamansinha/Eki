@@ -15,6 +15,11 @@ import {
   stopsInRideDirection,
 } from "../lib/rideDirection";
 import { inferRideDirectionFromTelemetry } from "../lib/automaticRideDirection";
+import {
+  adaptiveGnssErrorMeters,
+  GNSS_HDOP_MAX,
+  TELEMETRY_REACQUIRE_AFTER_MS,
+} from "../lib/telemetryMotion";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
 import {
   hasLiveRouteContext,
@@ -62,6 +67,7 @@ interface RouteCacheEntry {
 interface LiveMatchedLocation extends LatLng {
   segmentIndex: number;
   alongRouteDistanceM: number;
+  sampledAt: number;
   routeVersion: number;
 }
 
@@ -291,15 +297,19 @@ function validRouteState(value: unknown): RouteAdherenceState | undefined {
     : undefined;
 }
 
-function previousMatch(
+export function previousMatch(
   value: unknown,
   routeVersion: number,
+  currentTimestamp: number,
 ): PreviousRouteMatch | null {
   if (!value || typeof value !== "object") return null;
   const match = value as Partial<LiveMatchedLocation>;
   return Number.isInteger(match.segmentIndex) &&
     Number.isFinite(match.alongRouteDistanceM) &&
-    match.routeVersion === routeVersion
+    match.routeVersion === routeVersion &&
+    Number.isFinite(match.sampledAt) &&
+    Number(match.sampledAt) <= currentTimestamp &&
+    currentTimestamp - Number(match.sampledAt) <= TELEMETRY_REACQUIRE_AFTER_MS
     ? {
         segmentIndex: Number(match.segmentIndex),
         alongRouteDistanceM: Number(match.alongRouteDistanceM),
@@ -531,6 +541,23 @@ function recentTrajectory(value: unknown, current: LatLng, sample: TelemetryPayl
   ];
 }
 
+/** Elapsed fix time must come from the prior route sample, not current live telemetry. */
+export function routeMatchingElapsedMs(
+  value: unknown,
+  currentTimestamp: number,
+): number {
+  if (!Array.isArray(value) || !Number.isFinite(currentTimestamp)) return 0;
+  const previousTimestamp = value.reduce<number | null>((latest, candidate) => {
+    if (!candidate || typeof candidate !== "object") return latest;
+    const sampledAt = Number((candidate as Record<string, unknown>).sampledAt);
+    if (!Number.isFinite(sampledAt) || sampledAt > currentTimestamp) return latest;
+    return latest === null || sampledAt > latest ? sampledAt : latest;
+  }, null);
+  return previousTimestamp === null
+    ? 0
+    : Math.max(0, currentTimestamp - previousTimestamp);
+}
+
 function encodedGeometry(
   route: StoredRoute,
   direction: "forward" | "reverse",
@@ -668,6 +695,8 @@ async function activateReroute(
     { lat: sample.lat, lng: sample.lng },
     path,
     sample.speed >= 3 ? sample.heading : undefined,
+    null,
+    adaptiveGnssErrorMeters(sample.gpsHdop, sample.speed),
   );
   // Store the full reroute geometry once in a version-keyed sibling node so
   // the live activeBuses child carries only pointer fields and is not
@@ -707,7 +736,7 @@ async function activateReroute(
             mapMatchSampledAt: sample.timestamp,
           }
         : {}),
-      ...(match && telemetryIsCurrent(live, sample)
+      ...(match && !match.isAmbiguous && telemetryIsCurrent(live, sample)
         ? {
             matchedLocation: matchedLocation(match, sample, routeVersion),
             matchConfidence: match.matchConfidence,
@@ -861,9 +890,13 @@ async function processTelemetryRoute(
   const geometry = contextChanged
     ? { ...encodedGeometry(route, direction), source: "configured" as const }
     : await loadActiveGeometry(nodeKey, live as Record<string, unknown>, route, direction);
-  const prior = contextChanged
+  const anchor = live?.plausibilityAnchor as Record<string, unknown> | undefined;
+  const anchorTimestamp = Number(anchor?.timestamp);
+  const requiresReacquisition = Number.isFinite(anchorTimestamp) &&
+    sample.timestamp - anchorTimestamp > TELEMETRY_REACQUIRE_AFTER_MS;
+  const prior = contextChanged || requiresReacquisition
     ? null
-    : previousMatch(live?.matchedLocation, routeVersion);
+    : previousMatch(live?.matchedLocation, routeVersion, sample.timestamp);
   const acceptedPoint = {
     lat: Number(live?.lat),
     lng: Number(live?.lng),
@@ -888,6 +921,16 @@ async function processTelemetryRoute(
     acceptedSample,
   );
   const effectiveHeading = trajectoryHeading(trajectory) ?? acceptedSample.heading;
+  const elapsedMs = routeMatchingElapsedMs(
+    live?.routeMatchHistory,
+    acceptedSample.timestamp,
+  );
+  const positionUncertaintyM = adaptiveGnssErrorMeters(
+    acceptedSample.gpsHdop,
+    acceptedSample.speed,
+    Number(live?.speed),
+    elapsedMs,
+  );
   const match = matchRoutePosition(
     acceptedPoint,
     geometry.path,
@@ -895,6 +938,7 @@ async function processTelemetryRoute(
       ? effectiveHeading
       : undefined,
     prior,
+    positionUncertaintyM,
   );
   const adherence = evaluateRouteAdherence(
     contextChanged ? undefined : validRouteState(live?.routeState),
@@ -939,7 +983,9 @@ async function processTelemetryRoute(
       distanceToActiveRoute:
         match ? Number(match.distanceToRouteM.toFixed(1)) : null,
       matchedLocation:
-        match && match.matchConfidence >= MATCHED_POSITION_CONFIDENCE
+        match &&
+        !match.isAmbiguous &&
+        match.matchConfidence >= MATCHED_POSITION_CONFIDENCE
           ? matchedLocation(match, acceptedSample, routeVersion)
           : null,
     });
@@ -1014,8 +1060,9 @@ export function isReliableMovingSample(acceptedSample: TelemetryPayload): boolea
     acceptedSample.motionState === "moving" &&
     acceptedSample.speed >= 3 &&
     typeof acceptedSample.gpsHdop === "number" &&
+    Number.isFinite(acceptedSample.gpsHdop) &&
     acceptedSample.gpsHdop >= 0 &&
-    acceptedSample.gpsHdop <= 4
+    acceptedSample.gpsHdop <= GNSS_HDOP_MAX
   );
 }
 

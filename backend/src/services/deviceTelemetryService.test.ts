@@ -32,6 +32,7 @@ import {
   invalidateDeviceCredentialCache,
   nextTelemetryValue,
   parseDeviceAuthorization,
+  previousTelemetryGpsHdop,
   shouldApplyRestoreTelemetry,
   summarizeLatencySamples,
   telemetrySampleIsNewer,
@@ -354,5 +355,24 @@ describe("live telemetry ordering", () => {
       deviceSentAt: 4_100,
       timestamp: 4_000,
     }, 4_200)).toBeUndefined();
+  });
+});
+
+describe("previous telemetry HDOP", () => {
+  it("preserves unknown HDOP when no valid fallback exists", () => {
+    expect(previousTelemetryGpsHdop({ gpsHdop: null }, { gpsHdop: null })).toBeNull();
+    expect(previousTelemetryGpsHdop({ gpsHdop: undefined }, {})).toBeNull();
+  });
+
+  it("uses a valid live fallback for null, missing, or invalid anchor HDOP", () => {
+    expect(previousTelemetryGpsHdop({ gpsHdop: null }, { gpsHdop: 2.5 })).toBe(2.5);
+    expect(previousTelemetryGpsHdop({}, { gpsHdop: 3 })).toBe(3);
+    expect(previousTelemetryGpsHdop({ gpsHdop: Number.NaN }, { gpsHdop: 4 })).toBe(4);
+    expect(previousTelemetryGpsHdop({ gpsHdop: Number.POSITIVE_INFINITY }, { gpsHdop: 4 })).toBe(4);
+  });
+
+  it("prefers finite anchor HDOP, including a legitimate zero", () => {
+    expect(previousTelemetryGpsHdop({ gpsHdop: 1.2 }, { gpsHdop: 4 })).toBe(1.2);
+    expect(previousTelemetryGpsHdop({ gpsHdop: 0 }, { gpsHdop: 4 })).toBe(0);
   });
 });
