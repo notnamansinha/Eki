@@ -2,16 +2,60 @@ import { describe, expect, it } from "vitest";
 import { BUS_EXPIRY_MS } from "./liveBusFreshness";
 import {
   filterActiveBusEntries,
+  countActiveServices,
+  devicePresence,
+  isActiveService,
   isActiveBusEntry,
   isLiveChatDeviceOnline,
+  rideServiceState,
 } from "./activeBusEntries";
 
 describe("isLiveChatDeviceOnline", () => {
+  const now = 2_000_000_000_000;
   it("depends only on device presence, not ride status or motion", () => {
-    expect(isLiveChatDeviceOnline({ deviceState: "online", status: "offline", motionState: "stopped" })).toBe(true);
-    expect(isLiveChatDeviceOnline({ deviceState: "online", status: "active", motionState: "moving" })).toBe(true);
-    expect(isLiveChatDeviceOnline({ deviceState: "offline", status: "active", motionState: "moving" })).toBe(false);
-    expect(isLiveChatDeviceOnline(undefined)).toBe(false);
+    expect(isLiveChatDeviceOnline({ deviceState: "online", timestamp: now - 1_000 }, now)).toBe(true);
+    expect(isLiveChatDeviceOnline({ deviceState: "online", timestamp: now - BUS_EXPIRY_MS }, now)).toBe(false);
+    expect(isLiveChatDeviceOnline({ deviceState: "offline", timestamp: now - 1_000 }, now)).toBe(false);
+    expect(isLiveChatDeviceOnline(undefined, now)).toBe(false);
+  });
+});
+
+describe("presence and passenger service state", () => {
+  const now = 2_000_000_000_000;
+
+  it("keeps device presence independent from ride state", () => {
+    expect(devicePresence({ deviceState: "online", timestamp: now - 1_000 }, now)).toBe("online");
+    expect(devicePresence({ deviceState: "offline", timestamp: now - 1_000 }, now)).toBe("offline");
+    expect(devicePresence({ timestamp: now - 1_000 }, now)).toBe("unknown");
+    expect(devicePresence({ deviceState: "online", timestamp: now - BUS_EXPIRY_MS }, now)).toBe("unknown");
+  });
+
+  it("distinguishes not armed, direction pending, pre-departure, service, and completed", () => {
+    expect(rideServiceState({ tripState: "in_service" })).toBe("not_armed");
+    expect(rideServiceState({ status: "active", sessionId: "s1", direction: null, directionState: "pending", tripState: "pre_departure" }))
+      .toBe("direction_pending");
+    expect(rideServiceState({ status: "active", sessionId: "s1", direction: "forward", tripState: "pre_departure" }))
+      .toBe("pre_departure");
+    expect(rideServiceState({ status: "active", sessionId: "s1", direction: "reverse", tripState: "in_service" }))
+      .toBe("in_service");
+    expect(rideServiceState({ status: "active", sessionId: "s1", direction: "forward", tripState: "completed" }))
+      .toBe("completed");
+  });
+
+  it("does not let an in_service string or online device bypass service eligibility", () => {
+    expect(isActiveService({ tripState: "in_service", direction: "forward" })).toBe(false);
+    expect(isActiveService({ status: "active", tripState: "in_service", direction: "forward" })).toBe(false);
+    expect(isActiveService({ status: "active", sessionId: "s1", tripState: "in_service", direction: null })).toBe(false);
+    expect(isActiveService({ status: "active", sessionId: "s1", tripState: "in_service", direction: "forward" })).toBe(true);
+  });
+
+  it("counts unique eligible sessions, not online device-only nodes", () => {
+    expect(countActiveServices([
+      { busId: "device-only", deviceState: "online", timestamp: now - 1_000 },
+      { busId: "pending", status: "active", sessionId: "pending", direction: null, directionState: "pending", tripState: "pre_departure" },
+      { busId: "a", status: "active", sessionId: "service", direction: "forward", tripState: "in_service" },
+      { busId: "a-duplicate", status: "active", sessionId: "service", direction: "forward", tripState: "in_service" },
+    ])).toBe(1);
   });
 });
 

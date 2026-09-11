@@ -12,6 +12,7 @@ import {
   normalizePassengerLiveBus,
   type PassengerLiveBus,
 } from "@/lib/passengerLiveBus";
+import { passengerRerouteNotice } from "@/lib/passengerRouteStatus";
 
 import { WifiOff, Navigation, Navigation2 } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
@@ -456,6 +457,9 @@ function PassengerMapInner({
   const signalLostMinutes = signalLostLastSeen
     ? Math.max(0, Math.round((uiNow - signalLostLastSeen) / 60_000))
     : null;
+  const rerouteNotice = useMemo(() => {
+    return passengerRerouteNotice([...buses.values()].map((bus) => bus.routeState));
+  }, [buses]);
 
   const mapCenter = useMemo(() => ({ lat: targetStop.lat, lng: targetStop.lng }), [targetStop.lat, targetStop.lng]);
   const firstBus = useMemo(() => Array.from(buses.values())[0], [buses]);
@@ -485,7 +489,22 @@ function PassengerMapInner({
           </div>
         </div>
       )}
-      {geolocationNotice && signalLostBuses.size === 0 && (
+      {rerouteNotice && signalLostBuses.size === 0 && (
+        <div className="absolute top-10 left-4 right-4 z-50" role="status">
+          <div
+            className="flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-[12px] font-semibold"
+            style={{
+              background: "var(--status-warning-bg)",
+              border: "1px solid rgba(251, 191, 36, 0.2)",
+              color: "var(--status-warning)",
+            }}
+          >
+            <Navigation className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span>{rerouteNotice}</span>
+          </div>
+        </div>
+      )}
+      {geolocationNotice && signalLostBuses.size === 0 && !rerouteNotice && (
         <div className="absolute top-10 left-4 right-4 z-50" role="status">
           <div
             className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[12px] font-semibold"

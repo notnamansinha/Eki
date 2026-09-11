@@ -20,8 +20,10 @@ Read these technical references in order when onboarding:
 6. [Backend overview](../backend/README.md) — local setup, configuration, verification and device provisioning.
 7. [Backend API](../backend/API.md) — endpoints, authentication, bodies, responses and status codes.
 8. [Test strategy](../testing/TEST_STRATEGY.md) — automated suites, simulations and physical acceptance matrix.
+9. [Reroute latency simulation](../testing/REROUTE_SIMULATION_RESULTS.md) — deterministic adaptive-confirmation and bounded-latency evidence.
 9. [Production readiness audit](../operations/PRODUCTION_READINESS_AUDIT.md) — verified outcome, fixes and residual risks.
 10. [Architecture risk register](../operations/ARCHITECTURE_RISK_REGISTER.md) — active source, firmware and deployment risks with closure criteria.
+11. [Telemetry state partition decision](../design/TELEMETRY_STATE_PARTITION_DECISION.md) — contention measurement gate and compatibility contract for any future split.
 
 Operational documents:
 
