@@ -124,6 +124,34 @@ describe("live bus marker selection", () => {
     },
   );
 
+  it("ignores an older pending-direction snapshot for the same ride", () => {
+    const current = selectLiveBusMarkerPosition(
+      busSample(12, {
+        matchedLocation: matchedLocation(12),
+        mapMatchSeq: 12,
+        mapMatchSampledAt: 12_000,
+      }),
+      null,
+      50,
+    );
+    const olderPending = selectLiveBusMarkerPosition(
+      busSample(11, {
+        direction: null,
+        routeDirection: undefined,
+        matchedLocation: undefined,
+      }),
+      current,
+      100,
+    );
+
+    expect(olderPending).toMatchObject({
+      decision: "matched",
+      reason: "older_snapshot",
+      position: current.position,
+      latestSample: { seq: 12, sampledAt: 12_000 },
+    });
+  });
+
   it("marks signal-loss positions uncertain even when a match completed", () => {
     const result = selectLiveBusMarkerPosition(
       busSample(10, {

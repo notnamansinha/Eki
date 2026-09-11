@@ -71,6 +71,7 @@ export interface LiveBusMarkerSelection {
   uncertain: boolean;
   pendingUntil?: number;
   contextKey: string;
+  identityKey: string;
   latestSample: SampleIdentity;
   rawPosition: LatLng | null;
   retainedMatch?: RetainedMatch;
@@ -87,6 +88,10 @@ function routeContextKey(input: LiveBusPositionInput): string {
     input.activeRouteId ?? "",
     input.routeDirection ?? input.direction ?? "",
   ].join("|");
+}
+
+function rideIdentityKey(input: LiveBusPositionInput): string {
+  return [input.busId ?? "", input.routeId ?? "", input.sessionId ?? ""].join("|");
 }
 
 function sampleIdentity(input: LiveBusPositionInput): SampleIdentity {
@@ -215,6 +220,7 @@ function selection(
     position,
     uncertain,
     contextKey: routeContextKey(input),
+    identityKey: rideIdentityKey(input),
     latestSample,
     rawPosition,
     ...(retainedMatch ? { retainedMatch } : {}),
@@ -258,11 +264,24 @@ export function selectLiveBusMarkerPosition(
   const latestSample = sampleIdentity(input);
   const rawPosition = acceptedRawPosition(input);
   const sameContext = previous?.contextKey === contextKey;
+  const sameIdentity = previous?.identityKey === rideIdentityKey(input);
   const signalUncertain =
     input.deviceState === "offline" || input.motionState === "uncertain";
 
+  if (
+    sameIdentity &&
+    previous &&
+    compareSamples(latestSample, previous.latestSample) < 0
+  ) {
+    const current = expiredSelection(previous, now);
+    return current === previous
+      ? { ...current, reason: "older_snapshot" }
+      : current;
+  }
+
   // Never display or retain route-derived geometry until both lifecycle and
-  // matching context agree on one explicit direction.
+  // matching context agree on one explicit direction. This follows the older
+  // snapshot guard so a late pending snapshot cannot move the marker back.
   if (!directionsMatch(input.direction, input.routeDirection)) {
     return selection(
       input,
@@ -273,17 +292,6 @@ export function selectLiveBusMarkerPosition(
       latestSample,
       rawPosition,
     );
-  }
-
-  if (
-    sameContext &&
-    previous &&
-    compareSamples(latestSample, previous.latestSample) < 0
-  ) {
-    const current = expiredSelection(previous, now);
-    return current === previous
-      ? { ...current, reason: "older_snapshot" }
-      : current;
   }
 
   const matched = currentMatch(input, latestSample);
