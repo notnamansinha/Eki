@@ -9,6 +9,7 @@ import {
   routeRepairSnapshotWrite,
   telemetryRouteSnapshotIsCurrent,
   telemetryIsCurrent,
+  telemetryRouteContextIsCurrent,
 } from "./telemetryRouteService";
 
 describe("matcher route cache versions", () => {
@@ -88,6 +89,9 @@ describe("reroute result guards", () => {
     expect(rerouteContextIsCurrent({ ...live, sessionId: "session-old" }, expected)).toBe(false);
     expect(rerouteContextIsCurrent({ ...live, rerouteRequestId: "request-4" }, expected)).toBe(false);
     expect(rerouteContextIsCurrent({ ...live, direction: "reverse" }, expected)).toBe(false);
+    expect(rerouteContextIsCurrent({ ...live, direction: undefined }, expected)).toBe(false);
+    expect(rerouteContextIsCurrent({ ...live, direction: null }, expected)).toBe(false);
+    expect(rerouteContextIsCurrent({ ...live, direction: "sideways" }, expected)).toBe(false);
   });
 });
 
@@ -136,6 +140,26 @@ describe("matched telemetry transaction guard", () => {
       sample,
       { matchedLocation: { seq: 5, sampledAt: 5_000 } },
     )).toBeUndefined();
+  });
+
+  it("aborts when direction or session becomes unresolved while matching", () => {
+    const expected = { direction: "forward" as const, routeSessionId: "session_1" };
+    const live = {
+      timestamp: sample.timestamp,
+      seq: sample.seq,
+      sessionId: "session_1",
+      direction: "forward",
+    };
+    expect(telemetryRouteContextIsCurrent(live, sample, expected)).toBe(true);
+    for (const direction of [undefined, null, "", "sideways", 123]) {
+      expect(telemetryRouteContextIsCurrent({ ...live, direction }, sample, expected))
+        .toBe(false);
+    }
+    expect(telemetryRouteContextIsCurrent(
+      { ...live, sessionId: "session_2" },
+      sample,
+      expected,
+    )).toBe(false);
   });
 });
 

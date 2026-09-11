@@ -96,6 +96,22 @@ describe("isActiveBusEntry", () => {
     ).toBe(true);
   });
 
+  it.each([undefined, null, "", "sideways", 123])(
+    "keeps a fresh bus visible while direction %p remains pending",
+    (direction) => {
+      const entries = filterActiveBusEntries({
+        pending: {
+          busId: "Bus01",
+          routeId: "route_1",
+          timestamp: now - 1_000,
+          direction,
+        },
+      }, now);
+      expect(entries).toHaveLength(1);
+      expect(entries[0].direction).toBe(direction);
+    },
+  );
+
   it("accepts independently observable raw and matched route positions", () => {
     expect(isActiveBusEntry({
       busId: "Bus01",

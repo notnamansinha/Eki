@@ -40,10 +40,10 @@ import {
   rideServiceState,
 } from "@/lib/activeBusEntries";
 import {
-  directionLabel,
+  directionLabelState,
   isRideDirection,
   normalizeRideDirection,
-  routeInRideDirection,
+  routeInRideDirectionState,
 } from "@/lib/rideDirection";
 
 /* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -110,6 +110,8 @@ function LiveDetailsDrawer({
   routeName: string;
   onClose: () => void;
 }) {
+  const directionState = normalizeRideDirection(entry.direction);
+  const directionPending = directionState === "pending";
   const [msg, setMsg] = useState("");
   const presence = devicePresence(entry);
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -193,12 +195,14 @@ function LiveDetailsDrawer({
             </div>
             <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
               <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Route matching</p>
-              <p className="mt-1 text-sm font-semibold text-white">{entry.routeState ?? "Pending"}</p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {directionPending ? "Direction pending" : entry.routeState ?? "Pending"}
+              </p>
             </div>
             <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
               <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Match confidence</p>
               <p className="mt-1 text-sm font-semibold text-white">
-                {entry.matchConfidence == null
+                {directionPending || entry.matchConfidence == null
                   ? "—"
                   : `${Math.round(entry.matchConfidence * 100)}%`}
               </p>
@@ -206,13 +210,15 @@ function LiveDetailsDrawer({
             <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
               <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Route context</p>
               <p className="mt-1 text-sm font-semibold text-white">
-                v{entry.routeVersion ?? "—"} · {entry.routeSource ?? "configured"}
+                {directionPending
+                  ? "Direction pending"
+                  : `v${entry.routeVersion ?? "—"} · ${entry.routeSource ?? "configured"}`}
               </p>
             </div>
             <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
               <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Distance to route</p>
               <p className="mt-1 text-sm font-semibold text-white">
-                {entry.distanceToActiveRoute == null
+                {directionPending || entry.distanceToActiveRoute == null
                   ? "—"
                   : `${Math.round(entry.distanceToActiveRoute)} m`}
               </p>
@@ -227,7 +233,7 @@ function LiveDetailsDrawer({
                 : "—"}
             </p>
             <p className="mt-1 font-mono">
-              Matched: {entry.matchedLocation
+              Matched: {!directionPending && entry.matchedLocation
                 ? `${entry.matchedLocation.lat.toFixed(6)}, ${entry.matchedLocation.lng.toFixed(6)} · segment ${entry.matchedLocation.segmentIndex}`
                 : "raw fallback"}
             </p>
@@ -352,9 +358,8 @@ function FleetCard({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const bus = buses.find(b => b.id === entry.busId);
   const route = routes.find(r => r.id === entry.routeId);
-  const directedRoute = route && isRideDirection(entry.direction)
-    ? routeInRideDirection(route, entry.direction)
-    : undefined;
+  const directionState = normalizeRideDirection(entry.direction);
+  const directedRoute = routeInRideDirectionState(route, directionState);
   const driver = drivers.find(d => d.id === entry.driverId);
   const ts = TRIP_STATE[rideServiceState(entry)];
   const ms = MOTION_STATE[entry.motionState ?? "uncertain"] ?? MOTION_STATE.uncertain;
@@ -473,7 +478,7 @@ function FleetCard({
                 <p className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</p>
                 {route && isRideDirection(entry.direction) ? (
                   <p className="text-[9px] text-white/40">
-                    {directionLabel(entry.direction, route.stops)}
+                    {directionLabelState(directionState, route.stops)}
                   </p>
                 ) : route ? (
                   <p className="text-[9px] text-amber-300/70">Direction pending</p>
@@ -681,7 +686,7 @@ export default function DashboardPanel() {
       const result = await requestAdmin<{
         sessionId?: string;
         resumed?: boolean;
-        direction?: "forward" | "reverse";
+        direction?: unknown;
       }>(
         "/api/shifts/start",
         {
@@ -693,7 +698,9 @@ export default function DashboardPanel() {
       setArmStatus(
         result.resumed
           ? `Active ride restored (${result.sessionId}).`
-          : `Ride armed (${result.sessionId}) for ${directionLabel(inferredDirection, routes.find((route) => route.id === routeId)?.stops ?? [])}.`,
+          : inferredDirection === "pending"
+            ? `Ride armed (${result.sessionId}); direction pending.`
+            : `Ride armed (${result.sessionId}) for ${directionLabelState(inferredDirection, routes.find((route) => route.id === routeId)?.stops ?? [])}.`,
       );
     } catch (error) {
       setArmStatus(errorMessage(error));

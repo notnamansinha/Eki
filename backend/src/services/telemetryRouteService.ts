@@ -10,13 +10,16 @@ import {
   type LatLng,
 } from "../lib/polylineUtils";
 import {
-  isRideDirection,
   normalizeRideDirection,
   type RideDirection,
   stopsInRideDirection,
 } from "../lib/rideDirection";
 import { inferRideDirectionFromTelemetry } from "../lib/automaticRideDirection";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
+import {
+  hasLiveRouteContext,
+  withoutLiveRouteContext,
+} from "../lib/liveRouteContext";
 import { createLatestPendingScheduler } from "../lib/latestPendingScheduler";
 import { routeGeometrySignature } from "../lib/routeGeometrySignature";
 import { routeDocumentVersion, routeGeometryVersion } from "../lib/routeSaveContract";
@@ -322,7 +325,20 @@ export function nextMatchedTelemetryValue(
 }
 
 function resolvedDirection(value: unknown): RideDirection | null {
-  return isRideDirection(value) ? value : null;
+  return normalizeRideDirection(value);
+}
+
+export function telemetryRouteContextIsCurrent(
+  live: Record<string, unknown> | null,
+  sample: TelemetryPayload,
+  expected: { direction: RideDirection; routeSessionId: string },
+): boolean {
+  const routeSessionId = typeof live?.sessionId === "string"
+    ? live.sessionId
+    : "device-only";
+  return telemetryIsCurrent(live, sample) &&
+    resolvedDirection(live?.direction) === expected.direction &&
+    routeSessionId === expected.routeSessionId;
 }
 
 /**
@@ -463,9 +479,15 @@ async function resolvePendingDirection(
       position: { lat: Number(live.lat), lng: Number(live.lng) },
     });
     if (!direction) {
-      return live.directionState === "pending"
+      return live.direction === null &&
+        live.directionState === "pending" &&
+        !hasLiveRouteContext(live)
         ? undefined
-        : { ...live, direction: null, directionState: "pending" };
+        : {
+            ...withoutLiveRouteContext(live),
+            direction: null,
+            directionState: "pending",
+          };
     }
     const stops = stopsInRideDirection(route.stops, direction);
     const origin = stops[0];
@@ -627,7 +649,7 @@ export function rerouteContextIsCurrent(
     live.rerouteRequestId === expected.requestId &&
     live.routeVersion === expected.routeVersion &&
     live.sessionId === expected.sessionId &&
-    normalizeRideDirection(live.direction) === expected.direction,
+    resolvedDirection(live.direction) === expected.direction,
   );
 }
 
@@ -719,6 +741,7 @@ async function requestReroute(
       live.routeVersion !== expectedVersion ||
       live.status !== "active" ||
       live.tripState !== "in_service" ||
+      resolvedDirection(live.direction) !== direction ||
       (Number.isFinite(lastAttemptAt) && now - lastAttemptAt < REROUTE_RETRY_MS)
     ) {
       return;
@@ -887,6 +910,10 @@ async function processTelemetryRoute(
     if (!telemetryRouteSnapshotIsCurrent(assignment.routeId, route.cacheGeneration)) {
       return;
     }
+    if (!telemetryRouteContextIsCurrent(currentLive, sample, {
+      direction,
+      routeSessionId,
+    })) return;
     return nextMatchedTelemetryValue(currentLive, sample, {
       activeRouteId:
         geometry.source === "configured"

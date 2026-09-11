@@ -25,7 +25,8 @@ import { errorMessage } from "@/lib/errors";
 import { Bus, Loader2, MapPin, Trash2, User, Users, AlertCircle } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import {
-  persistedDirectionLabel,
+  normalizeRideDirection,
+  persistedDirectionLabelState,
 } from "@/lib/rideDirection";
 
 interface PassengerRecord {
@@ -314,8 +315,8 @@ export default function RideHistoryPanel() {
                     </span>
                     <span className="flex items-center gap-1">
                       <MapPin className="size-3" />
-                      Direction: {persistedDirectionLabel(
-                        session.direction,
+                      Direction: {persistedDirectionLabelState(
+                        normalizeRideDirection(session.direction),
                         routeStops.get(session.routeId) ?? [],
                         session.originStopId,
                         session.destinationStopId,

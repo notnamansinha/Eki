@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   directionLabel,
+  directionLabelState,
+  directionsMatch,
+  normalizeRideDirection,
   persistedDirectionLabel,
+  persistedDirectionLabelState,
   routeInRideDirection,
+  routeInRideDirectionState,
 } from "./rideDirection";
 
 const route = {
@@ -21,6 +26,26 @@ const route = {
 };
 
 describe("directional route views", () => {
+  it("keeps missing, null, and invalid direction pending", () => {
+    for (const value of [undefined, null, "", "sideways", 123]) {
+      expect(normalizeRideDirection(value)).toBe("pending");
+    }
+    expect(normalizeRideDirection("forward")).toBe("forward");
+    expect(normalizeRideDirection("reverse")).toBe("reverse");
+  });
+
+  it("does not match, label, order, or expose a route while pending", () => {
+    expect(directionsMatch(undefined, undefined)).toBe(false);
+    expect(directionsMatch(null, "forward")).toBe(false);
+    expect(directionsMatch("sideways", "forward")).toBe(false);
+    expect(directionsMatch("forward", "forward")).toBe(true);
+    expect(directionsMatch("reverse", "reverse")).toBe(true);
+    expect(directionLabelState("pending", route.stops)).toBe("Direction pending");
+    expect(persistedDirectionLabelState("pending", route.stops, "a", "z"))
+      .toBe("Direction pending");
+    expect(routeInRideDirectionState(route, "pending")).toBeUndefined();
+  });
+
   it("orders reverse stops and geometry without mutating Firestore route data", () => {
     const reverse = routeInRideDirection(route, "reverse");
     expect(reverse.stops.map((stop) => stop.id)).toEqual(["z", "a"]);
@@ -32,7 +57,9 @@ describe("directional route views", () => {
   });
 
   it("selects independently routed forward geometry", () => {
-    expect(routeInRideDirection(route, "forward").polyline).toBe("legal-forward");
+    const forward = routeInRideDirection(route, "forward");
+    expect(forward.polyline).toBe("legal-forward");
+    expect(forward.rideDirection).toBe("forward");
   });
 
   it("keeps persisted session endpoints stable after the route is edited", () => {

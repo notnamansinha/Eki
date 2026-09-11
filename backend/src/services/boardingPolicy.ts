@@ -53,7 +53,7 @@ export function validateStopSelection(
   stops: unknown,
   boardingStopId: unknown,
   alightingStopId: unknown,
-  direction: "forward" | "reverse" = "forward",
+  direction: "forward" | "reverse",
 ): { boardingStopId: string; alightingStopId: string } | null {
   if (!Array.isArray(stops) || stops.length < 2) return null;
   if (

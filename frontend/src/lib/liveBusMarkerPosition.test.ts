@@ -92,6 +92,38 @@ describe("live bus marker selection", () => {
     });
   });
 
+  it.each([undefined, null, "", "sideways", 123])(
+    "uses raw telemetry and drops retained matches while direction %p is pending",
+    (direction) => {
+      const prior = selectLiveBusMarkerPosition(
+        busSample(10, {
+          matchedLocation: matchedLocation(10),
+          mapMatchSeq: 10,
+          mapMatchSampledAt: 10_000,
+        }),
+        null,
+        50,
+      );
+      const result = selectLiveBusMarkerPosition(
+        busSample(11, {
+          direction,
+          matchedLocation: matchedLocation(10),
+        }),
+        prior,
+        100,
+      );
+
+      expect(result).toMatchObject({
+        decision: "raw",
+        reason: "direction_pending",
+        position: { lat: busSample(11).lat, lng: busSample(11).lng },
+        uncertain: true,
+      });
+      expect(result.retainedMatch).toBeUndefined();
+      expect(result.pendingUntil).toBeUndefined();
+    },
+  );
+
   it("marks signal-loss positions uncertain even when a match completed", () => {
     const result = selectLiveBusMarkerPosition(
       busSample(10, {

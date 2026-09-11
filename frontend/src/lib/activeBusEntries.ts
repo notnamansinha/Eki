@@ -26,7 +26,8 @@ export interface ActiveBusEntry {
   currentStopIndex?: number;
   delayMinutes?: number;
   sessionId?: string;
-  direction?: "forward" | "reverse" | null;
+  /** Untrusted RTDB value; resolve through normalizeRideDirection before use. */
+  direction?: unknown;
   directionState?: "pending" | "resolved";
   originStopId?: string;
   destinationStopId?: string;
@@ -40,7 +41,8 @@ export interface ActiveBusEntry {
   routeVersion?: number;
   routeSource?: "configured" | "dynamic-reroute";
   routeState?: LiveRouteState;
-  routeDirection?: "forward" | "reverse";
+  /** Untrusted route-match value; unresolved values must not select geometry. */
+  routeDirection?: unknown;
   routeGeometryVersion?: number;
 }
 
@@ -250,25 +252,10 @@ function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
   if (typeof bus.lat === "number" && (bus.lat < -90 || bus.lat > 90)) return false;
   if (typeof bus.lng === "number" && (bus.lng < -180 || bus.lng > 180)) return false;
   if (
-    bus.direction !== undefined &&
-    bus.direction !== null &&
-    bus.direction !== "forward" &&
-    bus.direction !== "reverse"
-  ) {
-    return false;
-  }
-  if (
     bus.directionState !== undefined &&
     bus.directionState !== "pending" &&
     bus.directionState !== "resolved"
   ) return false;
-  if (
-    bus.routeDirection !== undefined &&
-    bus.routeDirection !== "forward" &&
-    bus.routeDirection !== "reverse"
-  ) {
-    return false;
-  }
   if (
     bus.routeSource !== undefined &&
     bus.routeSource !== "configured" &&

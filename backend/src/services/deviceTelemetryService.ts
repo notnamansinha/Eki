@@ -10,6 +10,7 @@ import { createConcurrencyLimiter } from "../lib/concurrency";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
 import { isPlausibleTelemetryTransition } from "../lib/telemetryMotion";
 import { withoutLiveRouteContext } from "../lib/liveRouteContext";
+import { normalizeRideDirection } from "../lib/rideDirection";
 import type { TelemetryPayload } from "./telemetryPayload";
 import { scheduleTelemetryRouteProcessing } from "./telemetryRouteService";
 import {
@@ -486,15 +487,17 @@ async function reserveDistributedDeviceTokens(
   };
 }
 
-function durableLifecycle(
+export function durableLifecycle(
   value: Record<string, unknown>,
 ): Record<string, unknown> | null {
+  const direction = normalizeRideDirection(value.direction);
   if (
     value.status !== "active" ||
     typeof value.sessionId !== "string" ||
     typeof value.driverId !== "string" ||
     (value.tripState !== "pre_departure" &&
-      value.tripState !== "in_service")
+      value.tripState !== "in_service") ||
+    !direction
   ) {
     return null;
   }
@@ -502,7 +505,7 @@ function durableLifecycle(
     sessionId: value.sessionId,
     driverId: value.driverId,
     status: "active",
-    direction: value.direction === "reverse" ? "reverse" : "forward",
+    direction,
     originStopId: typeof value.originStopId === "string" ? value.originStopId : null,
     destinationStopId:
       typeof value.destinationStopId === "string" ? value.destinationStopId : null,

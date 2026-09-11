@@ -1,6 +1,7 @@
 import { SIGNAL_LOST_MS, hasValidBusCoordinates } from "./liveBusFreshness";
 import type { LatLng } from "./polyline";
 import type { ActiveBusEntry, MatchedLiveLocation } from "./activeBusEntries";
+import { directionsMatch } from "./rideDirection";
 
 const MIN_DISPLAY_MATCH_CONFIDENCE = 0.45;
 
@@ -26,6 +27,7 @@ export type LiveBusMarkerReason =
   | "route_changed"
   | "reconnected"
   | "signal_uncertain"
+  | "direction_pending"
   | "raw_only"
   | "invalid_position"
   | "older_snapshot";
@@ -258,6 +260,20 @@ export function selectLiveBusMarkerPosition(
   const sameContext = previous?.contextKey === contextKey;
   const signalUncertain =
     input.deviceState === "offline" || input.motionState === "uncertain";
+
+  // Never display or retain route-derived geometry until both lifecycle and
+  // matching context agree on one explicit direction.
+  if (!directionsMatch(input.direction, input.routeDirection)) {
+    return selection(
+      input,
+      rawPosition ? "raw" : "none",
+      rawPosition ? "direction_pending" : "invalid_position",
+      rawPosition,
+      true,
+      latestSample,
+      rawPosition,
+    );
+  }
 
   if (
     sameContext &&

@@ -1,16 +1,17 @@
 import type { LatLng } from "./polyline";
 import { decodePolyline } from "./polyline";
 import type { RouteData } from "@/hooks/useRoutes";
+import type { RideDirection } from "./rideDirection";
 
 export interface ActiveRouteDisplay {
   polyline: string;
   version: number;
 }
 
-type RouteGeometrySource = Pick<
+type RouteGeometrySource = Omit<Pick<
   RouteData,
   "polyline" | "rideDirection" | "reversePolyline" | "stops"
->;
+>, "rideDirection"> & { rideDirection: RideDirection };
 
 /**
  * Resolve the ordered coordinate path a passenger map should render and use

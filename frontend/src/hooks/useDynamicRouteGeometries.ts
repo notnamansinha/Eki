@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ActiveBusEntry } from "../lib/activeBusEntries";
+import { directionsMatch } from "../lib/rideDirection";
 import {
   activeBusNodeKey,
   cachedActiveRouteGeometry,
@@ -28,6 +29,7 @@ export function selectCurrentRouteGeometries(
   for (const bus of buses.values()) {
     if (
       bus.routeSource !== "dynamic-reroute" ||
+      !directionsMatch(bus.direction, bus.routeDirection) ||
       typeof bus.routeVersion !== "number" ||
       typeof bus.busId !== "string"
     ) {
@@ -63,6 +65,7 @@ export function useDynamicRouteGeometries(
     for (const bus of buses.values()) {
       if (
         bus.routeSource !== "dynamic-reroute" ||
+        !directionsMatch(bus.direction, bus.routeDirection) ||
         typeof bus.routeVersion !== "number" ||
         bus.routeVersion <= 0 ||
         typeof bus.busId !== "string" ||
