@@ -123,3 +123,25 @@ callback-to-render trace, long stationary soak and the user-deferred 30-60 minut
 moving-route run. Cold TLS still has a separate 10-second handshake budget and DNS
 can exceed the TCP connect limit. Do not interpret the shorter steady-state
 measurements as a hard two-second maximum or zero freezes under outages.
+
+
+### Final four-minute capture
+
+208 parsed requests, 194 accepted and 14 failures in the combined reboot,
+tunnel interruption and response-fault window; zero malformed telemetry JSON
+lines. All-request HTTP duration: p50 590 ms, p95 1,443 ms, p99 2,265 ms,
+maximum 2,814 ms. Accepted-request duration: p50 505 ms, p95 1,271 ms,
+p99 2,265 ms, maximum 2,609 ms. These include recovery and should not be
+presented as an uninterrupted stationary baseline. The full largest-gap report
+retains the deliberate tunnel outage, including its 27,016 ms accepted-ingress
+gap. Fifteen telemetry connection attempts across 208 requests demonstrate
+reuse in this window, not a long-run reuse or TLS-expiry guarantee.
+
+Flashed development image SHA-256:
+`a6f018e70b9b856984619122cff77d8a9fdee1ea87cba3e33e0b3d146390247d`.
+
+The pushed-SHA audit initially caught a source-contract test still expecting
+three collected response headers. It was updated to expect the new fourth
+ngrok header; native tests already covered transient classification and preserved
+credential/configuration/rate-limit behavior. Final publication must include this
+test correction. Raw and generated local traces are excluded from Git.

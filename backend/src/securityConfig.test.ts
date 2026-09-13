@@ -549,7 +549,8 @@ describe("production security configuration", () => {
       'http.addHeader("Authorization", authorizationHeader)',
     );
     expect(firmware).not.toContain("HTTPClient::errorToString(responseCode)");
-    expect(firmware).toContain('http.collectHeaders(responseHeaders, 3)');
+    expect(firmware).toContain('http.collectHeaders(responseHeaders, 4)');
+    expect(firmware).toContain('"Ngrok-Error-Code"');
     expect(firmware).toContain('"X-Eki-Server-Received-At"');
     expect(firmware).toContain('"X-Eki-Server-Responded-At"');
     expect(firmware).toContain('#include "secrets.h"');
