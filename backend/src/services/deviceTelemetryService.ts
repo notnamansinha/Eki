@@ -10,6 +10,7 @@ import { createConcurrencyLimiter } from "../lib/concurrency";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
 import { isPlausibleTelemetryTransition } from "../lib/telemetryMotion";
 import { withoutLiveRouteContext } from "../lib/liveRouteContext";
+import { normalizeRideDirection } from "../lib/rideDirection";
 import type { TelemetryPayload } from "./telemetryPayload";
 import { scheduleTelemetryRouteProcessing } from "./telemetryRouteService";
 import {
@@ -486,15 +487,17 @@ async function reserveDistributedDeviceTokens(
   };
 }
 
-function durableLifecycle(
+export function durableLifecycle(
   value: Record<string, unknown>,
 ): Record<string, unknown> | null {
+  const direction = normalizeRideDirection(value.direction);
   if (
     value.status !== "active" ||
     typeof value.sessionId !== "string" ||
     typeof value.driverId !== "string" ||
     (value.tripState !== "pre_departure" &&
-      value.tripState !== "in_service")
+      value.tripState !== "in_service") ||
+    !direction
   ) {
     return null;
   }
@@ -502,7 +505,7 @@ function durableLifecycle(
     sessionId: value.sessionId,
     driverId: value.driverId,
     status: "active",
-    direction: value.direction === "reverse" ? "reverse" : "forward",
+    direction,
     originStopId: typeof value.originStopId === "string" ? value.originStopId : null,
     destinationStopId:
       typeof value.destinationStopId === "string" ? value.destinationStopId : null,
@@ -616,6 +619,24 @@ function scheduleDurableRideRestore(
   durableRideRestores.set(nodeKey, restore);
 }
 
+/**
+ * Preserve unknown HDOP instead of letting Number(null) turn it into 0.
+ * A valid live value may fill an absent, null, or invalid anchor value.
+ */
+export function previousTelemetryGpsHdop(
+  anchor: Record<string, unknown> | undefined,
+  live: Record<string, unknown> | null | undefined,
+): number | null {
+  const anchorHdop = anchor?.gpsHdop;
+  if (typeof anchorHdop === "number" && Number.isFinite(anchorHdop)) {
+    return anchorHdop;
+  }
+  const liveHdop = live?.gpsHdop;
+  return typeof liveHdop === "number" && Number.isFinite(liveHdop)
+    ? liveHdop
+    : null;
+}
+
 export function nextTelemetryValue(
   current: Record<string, unknown> | null,
   assignment: DeviceAssignment,
@@ -631,10 +652,12 @@ export function nextTelemetryValue(
     return undefined;
   }
 
-  const previousLat = Number(current?.lat);
-  const previousLng = Number(current?.lng);
-  const previousSpeed = Number(current?.speed);
-  const previousTimestamp = Number(current?.timestamp);
+  const anchor = current?.plausibilityAnchor as Record<string, unknown> | undefined;
+  const previousLat = Number(anchor?.lat ?? current?.lat);
+  const previousLng = Number(anchor?.lng ?? current?.lng);
+  const previousSpeed = Number(anchor?.speed ?? current?.speed);
+  const previousGpsHdop = previousTelemetryGpsHdop(anchor, current);
+  const previousTimestamp = Number(anchor?.timestamp ?? current?.timestamp);
   const previous =
     Number.isFinite(previousLat) &&
     Number.isFinite(previousLng) &&
@@ -644,6 +667,7 @@ export function nextTelemetryValue(
           lat: previousLat,
           lng: previousLng,
           speed: previousSpeed,
+          gpsHdop: previousGpsHdop,
           timestamp: previousTimestamp,
         }
       : null;
@@ -661,6 +685,9 @@ export function nextTelemetryValue(
             : sample.heading,
         motionState: "uncertain" as const,
       };
+  const plausibilityAnchor = transitionIsPlausible || !previous
+    ? sample
+    : previous;
 
   return {
     // Device presence is not a ride. Lifecycle fields are introduced only by
@@ -679,6 +706,15 @@ export function nextTelemetryValue(
       motionState: sample.motionState,
       seq: sample.seq,
       sampledAt: sample.timestamp,
+    },
+    // Keep the last physically accepted fix separate from the monotonic live
+    // sample timestamp so held outliers cannot reset reacquisition timing.
+    plausibilityAnchor: {
+      lat: plausibilityAnchor.lat,
+      lng: plausibilityAnchor.lng,
+      speed: plausibilityAnchor.speed,
+      gpsHdop: plausibilityAnchor.gpsHdop,
+      timestamp: plausibilityAnchor.timestamp,
     },
     busId: assignment.busId,
     routeId: assignment.routeId,

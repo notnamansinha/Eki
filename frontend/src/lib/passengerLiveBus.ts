@@ -1,6 +1,6 @@
 import {
   isActiveBusEntry,
-  isActiveService,
+  rideServiceState,
   type ActiveBusEntry,
 } from "./activeBusEntries";
 import { hasValidBusCoordinates } from "./liveBusFreshness";
@@ -29,7 +29,8 @@ function busIdFromNodeKey(key: string, routeId: string): string | null {
 /**
  * Convert one untrusted RTDB value into the single shape shared by the
  * passenger route list and map. A complete server-owned service lifecycle is
- * required; device-only and direction-pending nodes remain admin diagnostics.
+ * required. Direction-pending rides remain visible so passengers can see the
+ * pending status, but direction-derived route features stay gated downstream.
  */
 export function normalizePassengerLiveBus(
   key: string,
@@ -48,11 +49,12 @@ export function normalizePassengerLiveBus(
   const candidate: Record<string, unknown> = { ...raw, busId, routeId };
   if (
     !isActiveBusEntry(candidate, now) ||
-    !isActiveService(candidate) ||
     !hasValidBusCoordinates(candidate.lat, candidate.lng)
   ) {
     return null;
   }
+  const serviceState = rideServiceState(candidate);
+  if (serviceState === "not_armed" || serviceState === "completed") return null;
 
   return {
     ...candidate,

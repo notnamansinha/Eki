@@ -93,6 +93,7 @@ interface TurnaroundReadinessInput {
   now: number;
   telemetryTimestamp: number;
   eligibleAt: number;
+  minimumSampleTimestamp?: number;
   motionState: unknown;
   position: Coordinate;
   destination: Coordinate;
@@ -109,7 +110,7 @@ export function automaticTurnaroundIsReady(
     Number.isFinite(input.eligibleAt) &&
     input.eligibleAt > 0 &&
     input.now >= input.eligibleAt &&
-    input.telemetryTimestamp >= input.eligibleAt &&
+    input.telemetryTimestamp >= (Number.isFinite(input.minimumSampleTimestamp) ? input.minimumSampleTimestamp! : input.eligibleAt) &&
     input.telemetryTimestamp <= input.now + 10_000 &&
     input.now - input.telemetryTimestamp <= TURNAROUND_TELEMETRY_MAX_AGE_MS &&
     input.motionState === "stopped" &&

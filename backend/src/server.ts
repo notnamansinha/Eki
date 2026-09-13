@@ -1,3 +1,4 @@
+import { drainTelemetryRouteProcessing } from "./services/telemetryRouteService";
 /**
  * BusTrack Backend - Main Server Entry Point
  *
@@ -345,13 +346,17 @@ async function shutdown(signal: string) {
     closeServer,
     stopBackgroundWorkers,
   ]);
+  const routingResult = await drainTelemetryRouteProcessing().then(
+    () => ({ status: "fulfilled" as const }),
+    (reason: unknown) => ({ status: "rejected" as const, reason }),
+  );
   const firebaseResult = await deleteApp(firebaseAdminApp).then(
     () => ({ status: "fulfilled" as const }),
     (reason: unknown) => ({ status: "rejected" as const, reason }),
   );
   clearTimeout(shutdownBackstop);
 
-  const failures = [serverResult, workerResult, firebaseResult].filter(
+  const failures = [serverResult, workerResult, routingResult, firebaseResult].filter(
     (result) => result.status === "rejected",
   );
   for (const failure of failures) {

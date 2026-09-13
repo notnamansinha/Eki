@@ -1,3 +1,4 @@
+import { endpointSnapshotVersion } from "../lib/endpointSnapshotVersion";
 import { Router, type Request, type Response } from "express";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireAuth } from "../middleware/requireAuth";
@@ -22,19 +23,6 @@ function activeRideId(busId: string, routeId: string): string {
   return `${busId}_${routeId}`;
 }
 
-function endpointSnapshotVersion(stops: readonly Record<string, unknown>[]): string | null {
-  const parts = stops.map((stop) => {
-    if (
-      typeof stop.id !== "string" ||
-      !Number.isFinite(stop.lat) ||
-      !Number.isFinite(stop.lng)
-    ) {
-      return null;
-    }
-    return `${stop.id}:${Number(stop.lat).toFixed(6)}:${Number(stop.lng).toFixed(6)}`;
-  });
-  return parts.every((part): part is string => part !== null) ? parts.join("|") : null;
-}
 
 function normalizedDelayRevision(value: unknown): number {
   return Number.isSafeInteger(value) && Number(value) >= 0
@@ -368,13 +356,8 @@ router.post("/start", requireAuth, async (req: AuthenticatedRequest, res: Respon
         position: { lat: currentLat, lng: currentLng },
       },
     );
-    const previouslyResolvedDirection =
-      isRideDirection(current?.direction) &&
-      current?.directionState === "resolved" &&
-      current?.directionEndpointVersion === routeEndpointVersion
-        ? current.direction
-        : null;
-    const requestedDirection = previouslyResolvedDirection ?? inferredDirection;
+    // New sessions must never inherit the completed or provisional direction.
+    const requestedDirection = inferredDirection;
     const stops = requestedDirection
       ? stopsInRideDirection(naturalStops, requestedDirection)
       : [];

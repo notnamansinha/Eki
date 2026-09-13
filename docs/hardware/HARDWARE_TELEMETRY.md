@@ -77,7 +77,7 @@ The 100-sample queue occupies 5,648 bytes of RTC no-init memory. At the maximum 
 |---|---:|---|
 | Evaluation period | 1 s | Consume current GNSS state |
 | GNSS age maximum | 5 s | Reject stale parser fixes |
-| Short-gap jump margin | 250 m plus reported-speed reach | Reject fragmented/cached fixes after brief signal loss |
+| Short-gap jump margin | Adaptive 15–50 m receiver error plus reported-speed reach | Reject fragmented/cached fixes after brief signal loss |
 | Position reacquisition | after 5 min without an accepted anchor | Permit legitimate relocation after a prolonged outage |
 | HDOP maximum | 4.0 | Reject poor horizontal geometry |
 | Moving enter / stopped enter | 2.5 / 1.5 km/h | Hysteresis against jitter |
@@ -109,7 +109,7 @@ The body fields and limits are defined in [Firebase data model](../data/FIREBASE
 
 ## Trace evidence and gap classification
 
-The configured baseline is a one-second evaluation and moving heartbeat, a five-second stopped heartbeat, three consecutive qualifying motion readings, and a seven-second connect/request timeout. These values remain unchanged until route traces and backend-capacity evidence justify a numeric change. The serial log records each accepted request duration, retry number/delay, stale-queue eviction, and a periodic `Telemetry Evidence` line containing capture, attempt and retry totals, capture/accept ages, queue depth, and remaining retry delay.
+The configured baseline is a one-second evaluation and moving heartbeat, a one-second stopped heartbeat, three consecutive qualifying motion readings, and a one-second connect/TLS handshake limit and 1.5-second HTTP read timeout. These are separate phase limits, not a total request deadline. Validate the shorter budgets with route traces and staging latency measurements. The serial log records each accepted request duration, retry number/delay, stale-queue eviction, and a periodic `Telemetry Evidence` line containing capture, attempt and retry totals, capture/accept ages, queue depth, and remaining retry delay.
 
 Treat a gap as intentional only when `captureSeen=1`, `captureAgeMs` is within the selected heartbeat for the confirmed motion state, and the queue/retry indicators are clear. If `captureAgeMs` exceeds that heartbeat, investigate GNSS capture or fix quality first. If capture remains current, a growing `acceptedAgeMs`, non-zero queue, retry delay, stale drop, transport error, or rejected count is a delivery problem. The extra evidence remains serial-only while backend capacity work decides which additional diagnostic fields can be stored without changing the closed authenticated diagnostics schema.
 
@@ -131,7 +131,7 @@ Treat a gap as intentional only when `captureSeen=1`, `captureAgeMs` is within t
 
 ## Latency analysis
 
-The device serial line is not the normal bottleneck: NMEA parsing continues while HTTPS blocks the publisher task. While moving, designed latency is up to one-second evaluation plus network/TLS/API/RTDB time; the one-second publish floor prevents duplicate bursts without deliberately adding multi-second lag. On recovery the newest eligible state is restored first. Stationary heartbeats arrive every five seconds so endpoint arrival and automatic turnaround do not race the backend's 60-second freshness gate.
+The device serial line is not the normal bottleneck: NMEA parsing continues while HTTPS blocks the publisher task. While moving, designed latency is up to one-second evaluation plus network/TLS/API/RTDB time; the one-second publish floor prevents duplicate bursts without deliberately adding multi-second lag. On recovery the newest eligible state is restored first. Stationary heartbeats arrive every second so endpoint arrival and automatic turnaround do not race the backend's 60-second freshness gate.
 
 Admin-authenticated backend `/api/health.telemetry` provides:
 

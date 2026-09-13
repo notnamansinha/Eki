@@ -650,3 +650,31 @@ describe("shift start after automatic completion", () => {
     expect(harness.liveNode.tripState).toBe("in_service");
   });
 });
+
+describe("new shifts resolve their own direction", () => {
+  it.each([
+    ["completed forward at B", "completed", "forward", 23.2, 72.7, "reverse", "pipe"],
+    ["completed reverse at A", "completed", "reverse", 23.0, 72.5, "forward", "pipe"],
+    ["device-only forward at B", "device", "forward", 23.2, 72.7, "reverse", "hash"],
+    ["device-only with unified endpoint version", "device", "forward", 23.2, 72.7, "reverse", "pipe"],
+  ])("%s", async (_label, state, oldDirection, lat, lng, expected, versionKind) => {
+    const { routeGeometrySignature } = await import("../lib/routeGeometrySignature");
+    const version = versionKind === "pipe"
+      ? harness.routeStops.map(s => `${s.id}:${Number(s.lat).toFixed(6)}:${Number(s.lng).toFixed(6)}`).join("|")
+      : `0:${routeGeometrySignature(harness.routeStops as never)}`;
+    harness.liveNode = {
+      busId: "bus_1", routeId: "route_1", lat, lng,
+      timestamp: Date.now(), motionState: "stopped", gpsHdop: 2,
+      direction: oldDirection, directionState: "resolved", directionEndpointVersion: version,
+      ...(state === "completed" ? {
+        driverId: "driver_1", sessionId: "session_completed", status: "active",
+        tripState: "completed", hasDepartedOrigin: true, currentStopIndex: 1,
+      } : {}),
+    };
+    harness.session = { status: "completed" };
+    const response = await startShift();
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.direction).toBe(expected);
+  });
+});

@@ -86,3 +86,9 @@ describe("automatic ride direction", () => {
     })).toBe(false);
   });
 });
+
+it("allows a return trip on the first stopped sample when no dwell is configured", () => {
+  expect(automaticTurnaroundIsReady({ now: 200000, telemetryTimestamp: 200000,
+    eligibleAt: 200000, motionState: "stopped", position: { lat: 23.1, lng: 72.1 },
+    destination: { lat: 23.1, lng: 72.1 } })).toBe(true);
+});

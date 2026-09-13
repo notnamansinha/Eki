@@ -320,3 +320,13 @@ describe("transactional route saves", () => {
     expect(harness.routes.get("route-1")?.configVersion).toBe(1);
   });
 });
+
+it("saves 100 ordered stops with independently computed return geometry", async () => {
+  harness.routes.set("route-1", storedRoute());
+  const upstream = mockRoutesApi();
+  const longStops = Array.from({ length: 100 }, (_, i) => ({ id: `s${i}`, name: `Stop ${i}`, shortName: `S${i}`, lat: 23 + i * 0.001, lng: 72 }));
+  const response = await save(routeBody({ stops: longStops }));
+  expect(response.status).toBe(200);
+  expect(upstream).toHaveBeenCalledTimes(8);
+  expect(harness.routes.get("route-1")?.stops).toEqual(longStops);
+});

@@ -331,8 +331,8 @@ function RouteEditor({
     setState(s => ({ ...s, [k]: v }));
 
   const handlePlaceSelect = (place: { name: string; lat: number; lng: number }) => {
-    if (state.stops.length >= 27) {
-      setEditorAlertMsg("A route can have at most 27 stops.");
+    if (state.stops.length >= 100) {
+      setEditorAlertMsg("A route can have at most 100 stops.");
       return;
     }
     if (!place.name.trim() || !Number.isFinite(place.lat) || place.lat < -90 || place.lat > 90 || !Number.isFinite(place.lng) || place.lng < -180 || place.lng > 180) {
@@ -354,8 +354,8 @@ function RouteEditor({
   const handleMapClick = (event: VisMapMouseEvent) => {
     if (!placingManualStop || !event.detail.latLng) return;
     event.stop();
-    if (state.stops.length >= 27) {
-      setEditorAlertMsg("A route can have at most 27 stops.");
+    if (state.stops.length >= 100) {
+      setEditorAlertMsg("A route can have at most 100 stops.");
       setPlacingManualStop(false);
       return;
     }
@@ -560,6 +560,7 @@ function RouteEditor({
               polyline={state.mode === "edit" ? state.polyline : undefined}
               color={state.color}
               hasBuses={false}
+              direction="forward"
             />
             {state.stops.map((stop, i) => (
               <AdvancedMarker

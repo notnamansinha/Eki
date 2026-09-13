@@ -33,21 +33,41 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 // fixed windows only for explicitly single-instance deployments. Replicated
 // deployments reserve bounded token leases from the shared RTDB budget.
 const RATE_LIMIT_SHARD_FACTOR = readRateLimitShardFactor();
-const telemetryLimiter = rateLimit({
-  windowMs: 60_000,
-  limit: shardedLimit(120, RATE_LIMIT_SHARD_FACTOR),
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: ipKeyGenerator,
-  handler: (_req, res, _next, options) => {
-    const retryAfterMs = options.windowMs;
-    res.set("Retry-After", String(Math.ceil(retryAfterMs / 1000)));
-    res.status(options.statusCode).json({
-      error: "Telemetry request limit exceeded.",
-      retryAfterMs,
-    });
-  },
-});
+export function createTelemetryIngressLimiter(requestsPerWindow = 6_000, windowMs = 60_000) {
+  return rateLimit({
+    windowMs,
+    // Fleet ingress budget; authenticated per-device limits remain authoritative.
+    limit: shardedLimit(requestsPerWindow, RATE_LIMIT_SHARD_FACTOR),
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: ipKeyGenerator,
+    handler: (_req, res, _next, options) => {
+      const retryAfterMs = options.windowMs;
+      res.set("Retry-After", String(Math.ceil(retryAfterMs / 1000)));
+      res.status(options.statusCode).json({
+        error: "Telemetry request limit exceeded.",
+        retryAfterMs,
+      });
+    },
+  });
+}
+// Short windows limit recovery stalls after NAT-wide throttling. Capacity is
+// configured from the largest fleet sharing one public IP, including stopped
+// devices (both publish at 1 Hz). Caller-controlled IDs never create buckets.
+function ingressFleetSize(): number {
+  const raw = process.env.HTTPS_INGRESS_DEVICES_PER_IP ?? "100";
+  const count = Number(raw);
+  if (!Number.isSafeInteger(count) || count < 1 || count > 100_000) {
+    throw new Error("HTTPS_INGRESS_DEVICES_PER_IP must be an integer from 1 to 100000.");
+  }
+  return count;
+}
+const devicesPerIp = ingressFleetSize();
+// 10 samples per device per window + 50% reconnect/burst headroom.
+const telemetryLimiter = createTelemetryIngressLimiter(devicesPerIp * 15, 10_000);
+// Separate pools prevent manifest/diagnostics traffic spending sample capacity.
+const diagnosticsLimiter = createTelemetryIngressLimiter(devicesPerIp * 2, 10_000);
+const firmwareLimiter = createTelemetryIngressLimiter(devicesPerIp * 2, 10_000);
 
 /**
  * ESP32 devices send a closed nine-field payload over certificate-verified
@@ -133,7 +153,7 @@ router.post(
 
 router.get(
   "/:deviceId/firmware",
-  telemetryLimiter,
+  firmwareLimiter,
   async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
     const deviceId = singleRouteParam(req.params.deviceId);
@@ -194,7 +214,7 @@ router.get(
 
 router.post(
   "/:deviceId/diagnostics",
-  telemetryLimiter,
+  diagnosticsLimiter,
   async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
     const deviceId = singleRouteParam(req.params.deviceId);

@@ -1,3 +1,4 @@
+import { endpointSnapshotVersion } from "../lib/endpointSnapshotVersion";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 import type { Reference } from "firebase-admin/database";
@@ -11,7 +12,6 @@ import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import { SerializedChangeWriter } from "./serializedChangeWriter";
 import { reduceTripState } from "./tripStateReducer";
 import {
-  isRideDirection,
   normalizeRideDirection,
   stopsInRideDirection,
 } from "../lib/rideDirection";
@@ -58,18 +58,7 @@ interface TelemetrySample {
 }
 const processedTelemetry = new LruCache<string, TelemetrySample>(MAX_CACHE_ENTRIES);
 
-function lifecycleDirection(data: Record<string, unknown>) {
-  if (isRideDirection(data.direction)) return data.direction;
-  // Existing durable sessions from before direction-pending existed retain the
-  // historical forward default. New unresolved nodes are explicit (`null` or
-  // directionState=pending), and device-only nodes never acquire that default.
-  if (
-    data.direction === null ||
-    data.directionState === "pending" ||
-    typeof data.sessionId !== "string"
-  ) {
-    return null;
-  }
+export function lifecycleDirection(data: Record<string, unknown>) {
   return normalizeRideDirection(data.direction);
 }
 
@@ -87,8 +76,8 @@ function readIntervalMs(value: string | undefined, fallback: number, minimum: nu
 const STALE_BUS_MS = readIntervalMs(process.env.BUS_STALE_MS, 300_000, 90_000);
 const AUTOMATIC_TURNAROUND_DWELL_MS = readIntervalMs(
   process.env.AUTOMATIC_TURNAROUND_DWELL_MS,
-  120_000,
-  30_000,
+  0,
+  0,
 );
 const TURNAROUND_CLAIM_STALE_MS = 60_000;
 const MISSING_ROUTE_TTL_MS = 60_000;
@@ -172,6 +161,7 @@ async function maybeArmAutomaticTurnaround(
       now,
       telemetryTimestamp: Number(data.timestamp),
       eligibleAt: Number(data.turnaroundEligibleAt),
+      minimumSampleTimestamp: Number(data.turnaroundSampledAt ?? data.turnaroundEligibleAt),
       motionState: data.motionState,
       position: { lat: Number(data.lat), lng: Number(data.lng) },
       destination: completedDestination,
@@ -201,6 +191,7 @@ async function maybeArmAutomaticTurnaround(
         now,
         telemetryTimestamp: Number(live.timestamp),
         eligibleAt: Number(live.turnaroundEligibleAt),
+        minimumSampleTimestamp: Number(live.turnaroundSampledAt ?? live.turnaroundEligibleAt),
         motionState: live.motionState,
         position: { lat: Number(live.lat), lng: Number(live.lng) },
         destination: completedDestination,
@@ -260,6 +251,9 @@ async function maybeArmAutomaticTurnaround(
         destinationStopId: destination.id,
         armedAt: now,
         status: "armed",
+        directionState: "resolved",
+        directionEndpointVersion: endpointSnapshotVersion(naturalStops),
+        directionFirestoreSynced: true,
         automaticTurnaround: true,
         previousSessionId,
         passengers: {},
@@ -272,6 +266,9 @@ async function maybeArmAutomaticTurnaround(
         driverId,
         sessionId: sessionRef.id,
         direction,
+        directionState: "resolved",
+        directionEndpointVersion: endpointSnapshotVersion(naturalStops),
+        directionFirestoreSynced: true,
         automaticTurnaround: true,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -290,6 +287,9 @@ async function maybeArmAutomaticTurnaround(
         hasDepartedOrigin: false,
         delayMinutes: 0,
         delayUpdatedAt: 0,
+        directionState: "resolved",
+        directionEndpointVersion: endpointSnapshotVersion(naturalStops),
+        directionFirestoreSynced: true,
         automaticTurnaround: true,
         previousSessionId,
         updatedAt: FieldValue.serverTimestamp(),
@@ -322,10 +322,14 @@ async function maybeArmAutomaticTurnaround(
         hasDepartedOrigin: false,
         delayMinutes: 0,
         delayUpdatedAt: 0,
+        directionState: "resolved",
+        directionEndpointVersion: endpointSnapshotVersion(naturalStops),
+        directionFirestoreSynced: true,
         automaticTurnaround: true,
         previousSessionId,
         completedAt: null,
         turnaroundEligibleAt: null,
+        turnaroundSampledAt: null,
         turnaroundClaimId: null,
         turnaroundClaimedAt: null,
         lifecycleUpdatedAt: { ".sv": "timestamp" },
@@ -780,6 +784,7 @@ export function startTripStateEngine(): () => Promise<void> {
           ) {
             return;
           }
+          if (lifecycleDirection(live) !== direction) return;
           if (
             live.tripState === "completed" ||
             live.deviceState === "offline"
@@ -922,6 +927,9 @@ export function startTripStateEngine(): () => Promise<void> {
             completedAt: completionTimeMs,
             turnaroundEligibleAt:
               completionTimeMs + AUTOMATIC_TURNAROUND_DWELL_MS,
+            turnaroundSampledAt: AUTOMATIC_TURNAROUND_DWELL_MS === 0
+              ? Number(data.timestamp)
+              : completionTimeMs + AUTOMATIC_TURNAROUND_DWELL_MS,
             turnaroundClaimId: null,
             turnaroundClaimedAt: null,
           };

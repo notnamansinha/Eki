@@ -212,7 +212,7 @@ done safely while retaining the current Wi-Fi stack.
 - A fix requires location age at most five seconds and HDOP at most 4. Motion
   uses three-reading 2.5/1.5 km/h hysteresis.
 - Moving fixes are captured on a one-second cadence; the stopped heartbeat is
-  five seconds so endpoint and turnaround logic always has margin inside the
+  one second so endpoint and turnaround logic always has margin inside the
   backend's 60-second freshness gate. A 100-sample RTC ring survives resets, evicts oldest on overflow,
   sends newest first after outages, compacts acknowledged older fixes, and
   discards samples outside the backend's 55-second safety margin.
@@ -233,3 +233,11 @@ Read [Hardware telemetry](../docs/hardware/HARDWARE_TELEMETRY.md) for parameters
 failure points, and physical acceptance cases. A production release still
 requires controlled signing, immutable HTTPS hosting, backend release metadata,
 and spare-board rollout/rollback evidence.
+
+
+Live ESP32 verification and TLS compatibility details are recorded in
+`docs/testing/LIVE_ESP32_LATENCY_RESULT.md`. Telemetry retains its HTTPClient
+between samples so its destructor cannot defeat keep-alive. The pinned mbedTLS
+profile requires ECDHE-RSA/AES-GCM with P-256 and prepares a fresh, single-use
+client key before opening TCP. Test backend and OTA hosts for this profile before
+fleet deployment. Keep certificate validation enabled.

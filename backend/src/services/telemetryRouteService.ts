@@ -1,3 +1,4 @@
+import { endpointSnapshotVersion } from "../lib/endpointSnapshotVersion";
 import { randomBytes } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { db, rtdb } from "../lib/firebaseAdmin";
@@ -10,13 +11,21 @@ import {
   type LatLng,
 } from "../lib/polylineUtils";
 import {
-  isRideDirection,
   normalizeRideDirection,
   type RideDirection,
   stopsInRideDirection,
 } from "../lib/rideDirection";
 import { inferRideDirectionFromTelemetry } from "../lib/automaticRideDirection";
+import {
+  adaptiveGnssErrorMeters,
+  GNSS_HDOP_MAX,
+  TELEMETRY_REACQUIRE_AFTER_MS,
+} from "../lib/telemetryMotion";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
+import {
+  hasLiveRouteContext,
+  withoutLiveRouteContext,
+} from "../lib/liveRouteContext";
 import { createLatestPendingScheduler } from "../lib/latestPendingScheduler";
 import { routeGeometrySignature } from "../lib/routeGeometrySignature";
 import { routeDocumentVersion, routeGeometryVersion } from "../lib/routeSaveContract";
@@ -32,7 +41,7 @@ import {
 } from "./routeMatching";
 
 const ROUTE_CACHE_MS = 5 * 60_000;
-const REROUTE_RETRY_MS = 30_000;
+const REROUTE_RETRY_MS = 5_000;
 const MATCHED_POSITION_CONFIDENCE = 0.45;
 const MAX_ENCODED_POLYLINE_LENGTH = 500_000;
 
@@ -59,6 +68,7 @@ interface RouteCacheEntry {
 interface LiveMatchedLocation extends LatLng {
   segmentIndex: number;
   alongRouteDistanceM: number;
+  sampledAt: number;
   routeVersion: number;
 }
 
@@ -188,9 +198,8 @@ async function loadStoredRouteUncached(
         forwardCoordinates: forward.path,
         reverseCoordinates: reverse.path,
         stops,
-        // Bind pending direction to both the persisted geometry revision and
-        // an exact route-shaping signature (legacy documents are revision 0).
-        endpointVersion: `${routeGeometryVersion(data)}:${routeGeometrySignature(stops)}`,
+        // Same endpoint binding as shift creation and automatic turnaround.
+        endpointVersion: endpointSnapshotVersion(stops)!,
         geometryVersion: routeGeometryVersion(data),
         cacheGeneration,
       };
@@ -288,15 +297,19 @@ function validRouteState(value: unknown): RouteAdherenceState | undefined {
     : undefined;
 }
 
-function previousMatch(
+export function previousMatch(
   value: unknown,
   routeVersion: number,
+  currentTimestamp: number,
 ): PreviousRouteMatch | null {
   if (!value || typeof value !== "object") return null;
   const match = value as Partial<LiveMatchedLocation>;
   return Number.isInteger(match.segmentIndex) &&
     Number.isFinite(match.alongRouteDistanceM) &&
-    match.routeVersion === routeVersion
+    match.routeVersion === routeVersion &&
+    Number.isFinite(match.sampledAt) &&
+    Number(match.sampledAt) <= currentTimestamp &&
+    currentTimestamp - Number(match.sampledAt) <= TELEMETRY_REACQUIRE_AFTER_MS
     ? {
         segmentIndex: Number(match.segmentIndex),
         alongRouteDistanceM: Number(match.alongRouteDistanceM),
@@ -322,7 +335,20 @@ export function nextMatchedTelemetryValue(
 }
 
 function resolvedDirection(value: unknown): RideDirection | null {
-  return isRideDirection(value) ? value : null;
+  return normalizeRideDirection(value);
+}
+
+export function telemetryRouteContextIsCurrent(
+  live: Record<string, unknown> | null,
+  sample: TelemetryPayload,
+  expected: { direction: RideDirection; routeSessionId: string },
+): boolean {
+  const routeSessionId = typeof live?.sessionId === "string"
+    ? live.sessionId
+    : "device-only";
+  return telemetryIsCurrent(live, sample) &&
+    resolvedDirection(live?.direction) === expected.direction &&
+    routeSessionId === expected.routeSessionId;
 }
 
 /**
@@ -346,7 +372,7 @@ function directionResolutionIsEligible(
     live.busId !== assignment.busId ||
     live.routeId !== assignment.routeId ||
     live.tripState === "completed" ||
-    resolvedDirection(live.direction)
+    (typeof live.sessionId === "string" && resolvedDirection(live.direction))
   ) {
     return false;
   }
@@ -453,7 +479,7 @@ async function resolvePendingDirection(
     const live = current as Record<string, unknown> | null;
     if (!live || !telemetryIsCurrent(live, sample)) return;
     const existingDirection = resolvedDirection(live.direction);
-    if (existingDirection) return;
+    if (existingDirection && typeof live.sessionId === "string") return;
     if (!directionResolutionIsEligible(live, assignment)) return;
     const direction = inferRideDirectionFromTelemetry(route.stops, {
       now,
@@ -463,10 +489,17 @@ async function resolvePendingDirection(
       position: { lat: Number(live.lat), lng: Number(live.lng) },
     });
     if (!direction) {
-      return live.directionState === "pending"
+      return live.direction === null &&
+        live.directionState === "pending" &&
+        !hasLiveRouteContext(live)
         ? undefined
-        : { ...live, direction: null, directionState: "pending" };
+        : {
+            ...withoutLiveRouteContext(live),
+            direction: null,
+            directionState: "pending",
+          };
     }
+    if (direction === existingDirection && live.directionEndpointVersion === route.endpointVersion) return;
     const stops = stopsInRideDirection(route.stops, direction);
     const origin = stops[0];
     const destination = stops.at(-1);
@@ -507,6 +540,23 @@ function recentTrajectory(value: unknown, current: LatLng, sample: TelemetryPayl
     ...history.filter((point) => point.sampledAt < sample.timestamp).slice(-3),
     { ...current, seq: sample.seq, sampledAt: sample.timestamp },
   ];
+}
+
+/** Elapsed fix time must come from the prior route sample, not current live telemetry. */
+export function routeMatchingElapsedMs(
+  value: unknown,
+  currentTimestamp: number,
+): number {
+  if (!Array.isArray(value) || !Number.isFinite(currentTimestamp)) return 0;
+  const previousTimestamp = value.reduce<number | null>((latest, candidate) => {
+    if (!candidate || typeof candidate !== "object") return latest;
+    const sampledAt = Number((candidate as Record<string, unknown>).sampledAt);
+    if (!Number.isFinite(sampledAt) || sampledAt > currentTimestamp) return latest;
+    return latest === null || sampledAt > latest ? sampledAt : latest;
+  }, null);
+  return previousTimestamp === null
+    ? 0
+    : Math.max(0, currentTimestamp - previousTimestamp);
 }
 
 function encodedGeometry(
@@ -624,10 +674,12 @@ export function rerouteContextIsCurrent(
 ): boolean {
   return Boolean(
     live &&
+    live.tripState === "in_service" &&
+    live.routeState === "REROUTING" &&
     live.rerouteRequestId === expected.requestId &&
     live.routeVersion === expected.routeVersion &&
     live.sessionId === expected.sessionId &&
-    normalizeRideDirection(live.direction) === expected.direction,
+    resolvedDirection(live.direction) === expected.direction,
   );
 }
 
@@ -641,21 +693,25 @@ async function activateReroute(
   sample: TelemetryPayload,
   geometry: Awaited<ReturnType<typeof computeRouteGeometry>>,
 ): Promise<void> {
+  // A new session must never reuse a cached geometry version from an earlier ride.
+  const nextVersion = Math.max(expectedVersion + 1, Date.now());
   const path = decodePolyline(geometry.encodedPolyline);
   const match = matchRoutePosition(
     { lat: sample.lat, lng: sample.lng },
     path,
     sample.speed >= 3 ? sample.heading : undefined,
+    null,
+    adaptiveGnssErrorMeters(sample.gpsHdop, sample.speed),
   );
   // Store the full reroute geometry once in a version-keyed sibling node so
   // the live activeBuses child carries only pointer fields and is not
   // rewritten with the encoded polyline on every accepted fix.
-  await rtdb.ref(`activeRouteGeometry/${nodeKey}/${expectedVersion + 1}`).set({
+  await rtdb.ref(`activeRouteGeometry/${nodeKey}/${nextVersion}`).set({
     polyline: geometry.encodedPolyline,
     routeId,
     direction,
     source: "dynamic-reroute",
-    routeVersion: expectedVersion + 1,
+    routeVersion: nextVersion,
   });
   await rtdb.ref(`activeBuses/${nodeKey}`).transaction((current) => {
     const live = current as Record<string, unknown> | null;
@@ -667,7 +723,7 @@ async function activateReroute(
     })) {
       return;
     }
-    const routeVersion = expectedVersion + 1;
+    const routeVersion = nextVersion;
     return {
       ...live,
       activeRouteId: `${routeId}:reroute:${routeVersion}`,
@@ -678,7 +734,14 @@ async function activateReroute(
       offRouteSampleCount: 0,
       rerouteRequestId: null,
       rerouteCompletedAt: { ".sv": "timestamp" },
-      ...(match && telemetryIsCurrent(live, sample)
+      ...(telemetryIsCurrent(live, sample)
+        ? {
+            mapMatchUpdatedAt: { ".sv": "timestamp" },
+            mapMatchSeq: sample.seq,
+            mapMatchSampledAt: sample.timestamp,
+          }
+        : {}),
+      ...(match && !match.isAmbiguous && telemetryIsCurrent(live, sample)
         ? {
             matchedLocation: matchedLocation(match, sample, routeVersion),
             matchConfidence: match.matchConfidence,
@@ -712,6 +775,7 @@ async function requestReroute(
       live.routeVersion !== expectedVersion ||
       live.status !== "active" ||
       live.tripState !== "in_service" ||
+      resolvedDirection(live.direction) !== direction ||
       (Number.isFinite(lastAttemptAt) && now - lastAttemptAt < REROUTE_RETRY_MS)
     ) {
       return;
@@ -736,7 +800,7 @@ async function requestReroute(
       direction,
       Number.isInteger(live.currentStopIndex) ? Number(live.currentStopIndex) : 0,
     );
-    if (remainingStops.length === 0 || remainingStops.length > 26) {
+    if (remainingStops.length === 0 || remainingStops.length > 100) {
       throw new Error("Active trip has no valid rerouting itinerary.");
     }
     const destination = remainingStops[remainingStops.length - 1];
@@ -831,9 +895,13 @@ async function processTelemetryRoute(
   const geometry = contextChanged
     ? { ...encodedGeometry(route, direction), source: "configured" as const }
     : await loadActiveGeometry(nodeKey, live as Record<string, unknown>, route, direction);
-  const prior = contextChanged
+  const anchor = live?.plausibilityAnchor as Record<string, unknown> | undefined;
+  const anchorTimestamp = Number(anchor?.timestamp);
+  const requiresReacquisition = Number.isFinite(anchorTimestamp) &&
+    sample.timestamp - anchorTimestamp > TELEMETRY_REACQUIRE_AFTER_MS;
+  const prior = contextChanged || requiresReacquisition
     ? null
-    : previousMatch(live?.matchedLocation, routeVersion);
+    : previousMatch(live?.matchedLocation, routeVersion, sample.timestamp);
   const acceptedPoint = {
     lat: Number(live?.lat),
     lng: Number(live?.lng),
@@ -858,6 +926,16 @@ async function processTelemetryRoute(
     acceptedSample,
   );
   const effectiveHeading = trajectoryHeading(trajectory) ?? acceptedSample.heading;
+  const elapsedMs = routeMatchingElapsedMs(
+    live?.routeMatchHistory,
+    acceptedSample.timestamp,
+  );
+  const positionUncertaintyM = adaptiveGnssErrorMeters(
+    acceptedSample.gpsHdop,
+    acceptedSample.speed,
+    Number(live?.speed),
+    elapsedMs,
+  );
   const match = matchRoutePosition(
     acceptedPoint,
     geometry.path,
@@ -865,6 +943,10 @@ async function processTelemetryRoute(
       ? effectiveHeading
       : undefined,
     prior,
+    positionUncertaintyM,
+    elapsedMs > 0 && elapsedMs <= 60_000
+      ? (Math.max(acceptedSample.speed, Number(live?.speed) || 0) + 15) / 3.6 * elapsedMs / 1000 + 2 * positionUncertaintyM
+      : undefined,
   );
   const adherence = evaluateRouteAdherence(
     contextChanged ? undefined : validRouteState(live?.routeState),
@@ -880,6 +962,12 @@ async function processTelemetryRoute(
     if (!telemetryRouteSnapshotIsCurrent(assignment.routeId, route.cacheGeneration)) {
       return;
     }
+    if (!telemetryRouteContextIsCurrent(currentLive, sample, {
+      direction,
+      routeSessionId,
+    })) return;
+    // A reroute can finish while this sample is being matched. Do not replace it with the old path.
+    if (currentLive?.routeVersion !== live?.routeVersion) return;
     return nextMatchedTelemetryValue(currentLive, sample, {
       activeRouteId:
         geometry.source === "configured"
@@ -899,11 +987,15 @@ async function processTelemetryRoute(
       routeMatchHistory: trajectory,
       offRouteSampleCount: adherence.offRouteSampleCount,
       mapMatchUpdatedAt: { ".sv": "timestamp" },
+      mapMatchSeq: acceptedSample.seq,
+      mapMatchSampledAt: acceptedSample.timestamp,
       matchConfidence: match?.matchConfidence ?? 0,
       distanceToActiveRoute:
         match ? Number(match.distanceToRouteM.toFixed(1)) : null,
       matchedLocation:
-        match && match.matchConfidence >= MATCHED_POSITION_CONFIDENCE
+        match &&
+        !match.isAmbiguous &&
+        match.matchConfidence >= MATCHED_POSITION_CONFIDENCE
           ? matchedLocation(match, acceptedSample, routeVersion)
           : null,
     });
@@ -916,13 +1008,7 @@ async function processTelemetryRoute(
     committed?.status === "active" &&
     committed?.tripState === "in_service"
   ) {
-    await requestReroute(
-      assignment,
-      acceptedSample,
-      route,
-      direction,
-      routeVersion,
-    );
+    rerouteScheduler.schedule(nodeKey, { assignment, sample: acceptedSample, route, direction, routeVersion });
   }
 }
 
@@ -978,8 +1064,9 @@ export function isReliableMovingSample(acceptedSample: TelemetryPayload): boolea
     acceptedSample.motionState === "moving" &&
     acceptedSample.speed >= 3 &&
     typeof acceptedSample.gpsHdop === "number" &&
+    Number.isFinite(acceptedSample.gpsHdop) &&
     acceptedSample.gpsHdop >= 0 &&
-    acceptedSample.gpsHdop <= 4
+    acceptedSample.gpsHdop <= GNSS_HDOP_MAX
   );
 }
 
@@ -1018,4 +1105,18 @@ export function scheduleTelemetryRouteProcessing(
 /** Operational counters exposed through the authenticated health endpoint. */
 export function getRouteProcessingStatus() {
   return routeProcessingScheduler.snapshot();
+}
+
+// Slow upstream routing must not block matching newer telemetry samples.
+const rerouteScheduler = createLatestPendingScheduler<string, {
+  assignment: DeviceAssignment; sample: TelemetryPayload; route: StoredRoute;
+  direction: RideDirection; routeVersion: number;
+}>(async (_key, task) => {
+  await requestReroute(task.assignment, task.sample, task.route, task.direction, task.routeVersion);
+}, (key, error) => recordBackgroundFailure("devices.rerouting", "Live rerouting", `[Routes] Rerouting failed for ${key}:`, error));
+
+/** Flush both queues before closing Firebase; routing never blocks ingestion. */
+export async function drainTelemetryRouteProcessing(): Promise<void> {
+  await routeProcessingScheduler.drain();
+  await rerouteScheduler.drain();
 }

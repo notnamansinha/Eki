@@ -1,3 +1,4 @@
+import { computeOrderedRouteGeometry } from "./orderedRouteGeometry";
 import * as dotenv from "dotenv";
 import { resolve } from "path";
 
@@ -35,6 +36,13 @@ export async function computeRouteGeometry(
   intermediates: LatLng[] = [],
   options: RouteGeometryOptions = {},
 ): Promise<RouteGeometry> {
+  if (intermediates.length > 25) {
+    const geometry = await computeOrderedRouteGeometry([origin, ...intermediates, destination], async (chunk) => {
+      const result = await computeRouteGeometry(chunk[0], chunk[chunk.length - 1], chunk.slice(1, -1), options);
+      return { polyline: result.encodedPolyline, distanceMeters: result.distanceMeters, duration: result.duration };
+    });
+    return { encodedPolyline: geometry.polyline, distanceMeters: geometry.distanceMeters, duration: geometry.duration, polylineQuality: "HIGH_QUALITY" };
+  }
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
     throw new Error("GOOGLE_MAPS_API_KEY is not set in backend/.env");

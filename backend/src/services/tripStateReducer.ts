@@ -115,11 +115,13 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
 
   const position = { lat, lng };
   const firstStop = stops[0];
-  const lastStop = stops[stops.length - 1];
+  const departureRadius = stops.length > 1
+    ? Math.min(ORIGIN_DEPARTURE_M, Math.max(STOP_GEOFENCE_M, haversineMeters(firstStop, stops[1]) / 2))
+    : ORIGIN_DEPARTURE_M;
   const hasDepartedOrigin =
     input.hasDepartedOrigin ||
     (currentTripState === "in_service" &&
-      haversineMeters(position, firstStop) >= ORIGIN_DEPARTURE_M);
+      haversineMeters(position, firstStop) >= departureRadius);
 
   if (currentTripState === "pre_departure") {
     return {
@@ -152,29 +154,26 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
     // Only the next expected stop may advance the trip. The bounded segment
     // check still catches a fast crossing between two fixes, but it never
     // permits a downstream stop to skip one or more configured stops.
-    const expectedStop = stops[safeCurrentIndex];
-    const reachedExpectedStop =
-      safeCurrentIndex > 0 &&
-      wasStopReached(expectedStop, position, input.previousPosition);
-    if (reachedExpectedStop && safeCurrentIndex < lastIndex) {
-      return {
-        tripState: "in_service",
-        currentStopIndex: safeCurrentIndex + 1,
-        hasDepartedOrigin,
-      };
+    let nextIndex = safeCurrentIndex;
+    let lastCrossing = -Infinity;
+    while (nextIndex > 0 && wasStopReached(stops[nextIndex], position, input.previousPosition)) {
+      // Multiple closely spaced stops may be crossed in one accepted segment.
+      // Consume them only in travel order, never by nearest-stop lookup.
+      const previous = input.previousPosition;
+      const dx = previous ? position.lng - previous.lng : 0;
+      const dy = previous ? position.lat - previous.lat : 0;
+      const lengthSquared = dx * dx + dy * dy;
+      const crossing = previous && lengthSquared > 0
+        ? ((stops[nextIndex].lng - previous.lng) * dx + (stops[nextIndex].lat - previous.lat) * dy) / lengthSquared
+        : 1;
+      if (crossing < lastCrossing) break;
+      lastCrossing = crossing;
+      if (nextIndex === lastIndex) {
+        return { tripState: hasDepartedOrigin ? "completed" : "in_service", currentStopIndex: nextIndex, hasDepartedOrigin };
+      }
+      nextIndex += 1;
     }
-
-    const canComplete =
-      hasDepartedOrigin &&
-      safeCurrentIndex === lastIndex &&
-      reachedExpectedStop &&
-      wasStopReached(lastStop, position, input.previousPosition);
-
-    return {
-      tripState: canComplete ? "completed" : "in_service",
-      currentStopIndex: safeCurrentIndex,
-      hasDepartedOrigin,
-    };
+    return { tripState: "in_service", currentStopIndex: nextIndex, hasDepartedOrigin };
   }
 
   if (currentTripState === "maintenance") {

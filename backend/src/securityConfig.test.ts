@@ -452,7 +452,7 @@ describe("production security configuration", () => {
     expect(server).toContain("shardedLimit(200");
     expect(server).toContain("shardedLimit(30");
     expect(server).toContain("shardedLimit(10");
-    expect(devices).toContain("shardedLimit(120");
+    expect(devices).toContain("shardedLimit(requestsPerWindow");
     // Operators must set the factor to the deployed replica count.
     expect(envExample).toContain("RATE_LIMIT_SHARD_FACTOR");
     expect(envExample).toContain("HTTPS_DEVICE_RATE_LIMIT_MODE=distributed");
@@ -580,7 +580,7 @@ describe("production security configuration", () => {
     const telemetryQueue = workspaceFile("hardware/include/telemetry_queue.h");
     const tripStateEngine = workspaceFile("backend/src/services/tripStateEngine.ts");
 
-    expect(telemetryPolicy).toContain("STOPPED_HEARTBEAT_MS = 5000");
+    expect(telemetryPolicy).toContain("STOPPED_HEARTBEAT_MS = 1000");
     expect(telemetryPolicy).toContain("motionStateChanged");
     expect(tripStateEngine).toContain("const STALE_BUS_MS = readIntervalMs");
     expect(telemetryPolicy).toContain("TELEMETRY_FRESHNESS_MARGIN_MS = 55000");
@@ -760,7 +760,8 @@ describe("production security configuration", () => {
     expect(shifts).toContain("directionState");
     expect(operations).not.toContain('ariaLabel="Travel direction"');
     expect(operations).toContain("Travel direction is inferred from fresh stopped GPS");
-    expect(operations).toContain("directionLabel(inferredDirection");
+    expect(operations).toContain("directionLabelState(inferredDirection");
+    expect(operations).toContain("direction pending");
     expect(shifts).toContain("inferRideDirectionFromTelemetry");
     expect(engine).toContain("maybeArmAutomaticTurnaround");
     expect(passengerBoarding).toContain("Ride in service");

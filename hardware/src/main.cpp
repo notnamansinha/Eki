@@ -23,6 +23,7 @@
 #include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/queue.h>
 #include <mbedtls/sha256.h>
 #include <cstdio>
 #include <cstring>
@@ -81,8 +82,11 @@ static_assert(
 #endif
 #endif
 
+void prepareTelemetryTlsKey();
+void releaseTelemetryTlsKey();
+
 namespace {
-constexpr double HDOP_REJECT_THRESHOLD = 4.0;
+constexpr double HDOP_REJECT_THRESHOLD = eki::telemetry::GNSS_HDOP_MAX;
 constexpr uint32_t GNSS_UTC_MAX_AGE_MS = 2000;
 constexpr uint32_t GNSS_EPOCH_REFERENCE_MAX_AGE_MS = 24UL * 60 * 60 * 1000;
 constexpr uint32_t NTP_CROSS_CHECK_INTERVAL_MS = 6UL * 60 * 60 * 1000;
@@ -124,8 +128,40 @@ constexpr uint8_t STATUS_LED_PIN = 2;
 
 TinyGPSPlus gps;
 HardwareSerial &gpsSerial = Serial2;
-WiFiClientSecure tlsClient;
+class TimedSecureClient : public WiFiClientSecure {
+  const char *channel;
+public:
+  explicit TimedSecureClient(const char *name = "telemetry") : channel(name) {}
+  using WiFiClientSecure::connect;
+  int connect(const char *host, uint16_t port, int32_t timeout) override {
+    const uint32_t preparingAt = millis();
+    prepareTelemetryTlsKey();
+    const uint32_t started = millis();
+    IPAddress address;
+    const bool resolved = WiFi.hostByName(host, address);
+    const uint32_t resolvedAt = millis();
+    _timeout = timeout;
+    const int result = resolved ? WiFiClientSecure::connect(
+      address, port, host, _CA_cert, _cert, _private_key) : 0;
+    releaseTelemetryTlsKey();
+    Serial.printf("[NetworkTiming] dnsMs=%lu tlsConnectMs=%lu timeoutMs=%ld handshakeMs=%lu result=%d channel=%s preparationMs=%lu\n",
+      static_cast<unsigned long>(resolvedAt - started),
+      static_cast<unsigned long>(millis() - resolvedAt), static_cast<long>(timeout),
+      static_cast<unsigned long>(sslclient->handshake_timeout), result, channel,
+      static_cast<unsigned long>(started - preparingAt));
+    return result;
+  }
+};
+TimedSecureClient tlsClient;
 WiFiClient plainClient;
+WiFiClientSecure maintenanceTlsClient;
+// Diagnostic transport belongs exclusively to its worker. Manifest checks
+// retain maintenanceTlsClient on the publisher; no TLS object crosses tasks.
+struct DiagnosticJob { char payload[1024]; size_t length; };
+struct DiagnosticResult { int status; uint32_t durationMs; };
+QueueHandle_t diagnosticJobs = nullptr;
+QueueHandle_t diagnosticResults = nullptr;
+bool diagnosticInFlight = false; // publisher-owned
 #if EKI_FLEET_BUILD
 WiFiClientSecure firmwareTlsClient;
 #endif
@@ -219,6 +255,7 @@ enum class PublishResult : uint8_t {
 double lastCapturedLat = 0;
 double lastCapturedLng = 0;
 double lastCapturedSpeed = 0;
+double lastCapturedHdop = 99.0;
 double lastCapturedHeading = 0;
 bool hasCapturedLocation = false;
 MotionState lastCapturedMotionState = MotionState::Uncertain;
@@ -605,11 +642,11 @@ bool parseEpochMillisecondsHeader(const String &value, int64_t &parsed) {
   return true;
 }
 
-void scheduleHttpsRetry(uint32_t minimumDelayMs = 0) {
+void scheduleHttpsRetry(uint32_t minimumDelayMs = 0, bool transportFailure = false) {
   // Per-device jitter prevents a recovering hotspot/backend from receiving a
   // synchronized retry wave from the whole fleet.
   httpsRetryDelayMs = max<uint32_t>(
-    eki::telemetry::retryDelayMs(consecutiveHttpsFailures, esp_random()),
+    eki::telemetry::deliveryRetryDelayMs(consecutiveHttpsFailures, esp_random(), transportFailure),
     minimumDelayMs
   );
   lastHttpsFailureAt = millis();
@@ -961,7 +998,7 @@ bool installSignedFirmware(const FirmwareManifest &manifest) {
     return false;
   }
   HTTPClient http;
-  http.setConnectTimeout(HTTP_TIMEOUT_MS);
+  http.setConnectTimeout(eki::telemetry::HTTP_CONNECT_TIMEOUT_MS);
   http.setTimeout(15000);
   // The device credential is deliberately not attached to the artifact-host
   // request. Secure Boot authenticates the image; this digest binds the exact
@@ -1113,9 +1150,9 @@ void checkForSignedFirmware() {
   previousFirmwareCheckFailed = true;
 
   HTTPClient http;
-  http.setConnectTimeout(HTTP_TIMEOUT_MS);
-  http.setTimeout(HTTP_TIMEOUT_MS);
-  if (!http.begin(tlsClient, firmwareEndpoint)) {
+  http.setConnectTimeout(eki::telemetry::MAINTENANCE_HTTP_TIMEOUT_MS);
+  http.setTimeout(eki::telemetry::MAINTENANCE_HTTP_TIMEOUT_MS);
+  if (!http.begin(maintenanceTlsClient, firmwareEndpoint)) {
     Serial.println("[OTA] Unable to initialize authenticated release check.");
     return;
   }
@@ -1137,11 +1174,11 @@ void checkForSignedFirmware() {
   if (responseCode != 200 || !parseFirmwareManifest(http, manifest)) {
     Serial.printf("[OTA] Release manifest rejected (HTTP %d).\n", responseCode);
     http.end();
-    tlsClient.stop();
+    maintenanceTlsClient.stop();
     return;
   }
   http.end();
-  tlsClient.stop();
+  maintenanceTlsClient.stop();
   previousFirmwareCheckFailed = !installSignedFirmware(manifest);
 }
 #endif
@@ -1177,8 +1214,11 @@ PublishResult publishFix(const TelemetryFix &fix) {
   }
 
   recordPublishAttempt();
-  HTTPClient http;
-  http.setConnectTimeout(HTTP_TIMEOUT_MS);
+  // HTTPClient's destructor closes even a reusable externally owned socket.
+  // Keep the client alive for the publisher's lifetime to avoid a full TLS
+  // certificate verification on every one-second sample.
+  static HTTPClient http;
+  http.setConnectTimeout(eki::telemetry::HTTP_CONNECT_TIMEOUT_MS);
   http.setTimeout(HTTP_TIMEOUT_MS);
   http.setReuse(true);
   if (!http.begin(getNetworkClient(), telemetryEndpoint)) {
@@ -1195,8 +1235,9 @@ PublishResult publishFix(const TelemetryFix &fix) {
     "Retry-After",
     "X-Eki-Server-Received-At",
     "X-Eki-Server-Responded-At",
+    "Ngrok-Error-Code",
   };
-  http.collectHeaders(responseHeaders, 3);
+  http.collectHeaders(responseHeaders, 4);
   http.addHeader("Authorization", authorizationHeader);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Cache-Control", "no-store");
@@ -1251,8 +1292,10 @@ PublishResult publishFix(const TelemetryFix &fix) {
       attempt
     );
   }
+  const int policyResponseCode = eki::telemetry::classifyIngressResponse(
+    responseCode, http.header("Ngrok-Error-Code").c_str());
   const eki::telemetry::HttpResponseAction action =
-    eki::telemetry::httpResponseAction(responseCode);
+    eki::telemetry::httpResponseAction(policyResponseCode);
   const uint32_t retryAfterMs = responseCode == 429
     ? eki::telemetry::retryAfterDelayMs(http.header("Retry-After").c_str())
     : 0;
@@ -1283,6 +1326,8 @@ PublishResult publishFix(const TelemetryFix &fix) {
       Serial.println("[HTTPS] Check the telemetry payload and GNSS/NTP-disciplined timestamps.");
     } else if (responseCode == 401 || responseCode == 403) {
       Serial.println("[HTTPS] Credential fault latched; correct secrets.h and reflash the device.");
+    } else if (responseCode == 404 && policyResponseCode == 408) {
+      Serial.println("[HTTPS] Tunnel is temporarily offline; retrying the latest fix.");
     } else if (responseCode == 404) {
       Serial.println("[HTTPS] Check BACKEND_URL; the telemetry endpoint was not found.");
     } else if (responseCode == 429) {
@@ -1296,6 +1341,17 @@ PublishResult publishFix(const TelemetryFix &fix) {
       Serial.println("[HTTPS] Backend dependency is unavailable; retaining the latest fix.");
     }
   }
+  // Drain the bounded JSON acknowledgement before issuing another request on
+  // this connection. Unknown/oversized bodies cannot contaminate the next reply.
+  const int responseBytes = http.getSize();
+  if (responseBytes > 0 && responseBytes <= 1024) {
+    const String responseBody = http.getString();
+    if (responseBody.length() != static_cast<size_t>(responseBytes)) {
+      getNetworkClient().stop();
+    }
+  } else if (responseBytes != 0) {
+    getNetworkClient().stop();
+  }
   http.end();
   if (action != eki::telemetry::HttpResponseAction::Accept) {
     getNetworkClient().stop();
@@ -1304,7 +1360,8 @@ PublishResult publishFix(const TelemetryFix &fix) {
       return PublishResult::CredentialFault;
     }
     scheduleHttpsRetry(
-      eki::telemetry::minimumHttpRetryDelayMs(responseCode, retryAfterMs)
+      eki::telemetry::minimumHttpRetryDelayMs(policyResponseCode, retryAfterMs),
+      policyResponseCode <= 0 || policyResponseCode == 408
     );
     const bool retryableAndFresh =
       action == eki::telemetry::HttpResponseAction::RetrySample &&
@@ -1349,6 +1406,7 @@ void publishRemoteDiagnostic() {
     WiFi.status() != WL_CONNECTED ||
     !clockIsSynchronized() ||
     credentialFaultActive ||
+    diagnosticInFlight ||
     !remoteDiagnosticIsDue()
   ) return;
 
@@ -1410,23 +1468,18 @@ void publishRemoteDiagnostic() {
     return;
   }
 
-  HTTPClient http;
-  http.setConnectTimeout(HTTP_TIMEOUT_MS);
-  http.setTimeout(HTTP_TIMEOUT_MS);
-  if (!http.begin(getNetworkClient(), diagnosticsEndpoint)) {
-    Serial.println("[Diagnostics] Unable to initialize remote health request.");
-    scheduleRemoteDiagnosticRetry();
-    return;
-  }
-  http.addHeader("Authorization", authorizationHeader);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Cache-Control", "no-store");
-  const uint32_t startedAt = millis();
-  const int responseCode = http.POST(
-    reinterpret_cast<uint8_t *>(payload),
-    payloadLength
-  );
-  http.end();
+  DiagnosticJob job{};
+  memcpy(job.payload, payload, payloadLength);
+  job.length = payloadLength;
+  diagnosticInFlight = xQueueSend(diagnosticJobs, &job, 0) == pdTRUE;
+  if (!diagnosticInFlight) scheduleRemoteDiagnosticRetry();
+}
+
+void collectDiagnosticResult() {
+  DiagnosticResult result{};
+  if (xQueueReceive(diagnosticResults, &result, 0) != pdTRUE) return;
+  diagnosticInFlight = false;
+  const int responseCode = result.status;
   if (responseCode == 401 || responseCode == 403) {
     latchCredentialFault();
     Serial.println("[Diagnostics] Credential fault latched; firmware reflash required.");
@@ -1444,13 +1497,45 @@ void publishRemoteDiagnostic() {
     Serial.printf(
       "[Diagnostics] Remote health failed (HTTP %d, %lums).\n",
       responseCode,
-      static_cast<unsigned long>(elapsed(startedAt))
+      static_cast<unsigned long>(result.durationMs)
     );
     scheduleRemoteDiagnosticRetry();
   }
 }
 
-TelemetryFix currentFix() {
+// Only immutable request snapshots cross this boundary. Credential faults,
+// retry counters and OTA acceptance remain owned by the publisher task.
+void diagnosticWorker(void *) {
+  WiFiClient plain;
+  TimedSecureClient secure("diagnostics");
+  secure.setCACert(BACKEND_ROOT_CA);
+  secure.setHandshakeTimeout(eki::telemetry::TLS_HANDSHAKE_TIMEOUT_SECONDS);
+  for (;;) {
+    DiagnosticJob job{};
+    if (xQueueReceive(diagnosticJobs, &job, portMAX_DELAY) != pdTRUE) continue;
+    const uint32_t startedAt = millis();
+    HTTPClient http;
+    http.setConnectTimeout(eki::telemetry::MAINTENANCE_HTTP_TIMEOUT_MS);
+    http.setTimeout(eki::telemetry::MAINTENANCE_HTTP_TIMEOUT_MS);
+    int status = -1;
+    if (WiFi.status() == WL_CONNECTED && http.begin(
+        eki::config::backendUrlUsesHttps(BACKEND_URL)
+          ? static_cast<WiFiClient &>(secure) : plain, diagnosticsEndpoint)) {
+      http.addHeader("Authorization", authorizationHeader);
+      http.addHeader("Content-Type", "application/json");
+      http.addHeader("Cache-Control", "no-store");
+      status = http.POST(reinterpret_cast<uint8_t *>(job.payload), job.length);
+    }
+    http.end();
+    secure.stop();
+    plain.stop();
+    DiagnosticResult result{status, elapsed(startedAt)};
+    xQueueOverwrite(diagnosticResults, &result);
+    if (publisherTaskHandle != nullptr) xTaskNotifyGive(publisherTaskHandle);
+  }
+}
+
+TelemetryFix buildFixFromRmc() {
   TelemetryFix fix{};
   if (
     !eki::telemetry::gnssFixFieldsAreFresh(
@@ -1463,7 +1548,7 @@ TelemetryFix currentFix() {
       gps.course.isValid(),
       gps.course.age()
     ) ||
-    gps.hdop.hdop() > HDOP_REJECT_THRESHOLD
+    (gps.hdop.isValid() && gps.hdop.hdop() > HDOP_REJECT_THRESHOLD)
   ) {
     // Reject mixed-epoch GNSS fields as one sample; publishing only the fresh
     // subset would misrepresent receiver quality and motion at this position.
@@ -1478,7 +1563,7 @@ TelemetryFix currentFix() {
   fix.heading = gps.course.isValid()
     ? fmod(max(gps.course.deg(), 0.0), 360.0)
     : 0.0;
-  fix.gpsHdop = gps.hdop.hdop();
+  fix.gpsHdop = gps.hdop.isValid() ? gps.hdop.hdop() : 99.0;
   fix.motionState = motionStateFromTracker(motionTracker.update(rawSpeed));
   fix.timestamp = epochMilliseconds();
   // GNSS quality and wall-clock readiness are separate signals.
@@ -1486,6 +1571,74 @@ TelemetryFix currentFix() {
   // a healthy receiver as lost.
   fix.valid = true;
   return fix;
+}
+
+TelemetryFix latestRmcFix{};
+uint32_t latestRmcAt = 0;
+
+TelemetryFix currentFix() {
+  TelemetryFix fix = latestRmcFix;
+  if (elapsed(latestRmcAt) > GNSS_UTC_MAX_AGE_MS) fix.valid = false;
+  // Timestamp the capture; raw receiver UTC is recorded separately below.
+  fix.timestamp = epochMilliseconds();
+  return fix;
+}
+
+void configureGnssMessages() {
+  // Volatile current-port CFG-MSG settings. Keep position, UTC, speed,
+  // course and HDOP while avoiding multi-constellation GSV UART congestion.
+  for (uint8_t id = 0; id <= 5; ++id) {
+    uint8_t packet[] = {0xb5, 0x62, 0x06, 0x01, 0x03, 0x00,
+      0xf0, id, static_cast<uint8_t>(id == 0 || id == 4), 0, 0};
+    for (size_t i = 2; i < 9; ++i) {
+      packet[9] += packet[i];
+      packet[10] += packet[9];
+    }
+    gpsSerial.write(packet, sizeof(packet));
+  }
+}
+
+void processGpsByte(char byte) {
+  // ACK/NAK frames are ten bytes; verify checksums before reporting them.
+  static uint8_t ack[10]{};
+  static size_t ackLength = 0;
+  const uint8_t value = static_cast<uint8_t>(byte);
+  if (ackLength == 0 && value == 0xb5) ack[ackLength++] = value;
+  else if (ackLength != 0) {
+    ack[ackLength++] = value;
+    if (ackLength == sizeof(ack)) {
+      uint8_t a = 0, b = 0;
+      for (size_t i = 2; i < 8; ++i) { a += ack[i]; b += a; }
+      if (ack[1] == 0x62 && ack[2] == 5 && ack[4] == 2 && ack[5] == 0 &&
+          ack[6] == 6 && ack[7] == 1 && a == ack[8] && b == ack[9]) {
+        Serial.printf("[GNSS] CFG-MSG %s\n", ack[3] == 1 ? "ACK" : "NAK");
+      }
+      ackLength = 0;
+    }
+  }
+  static char sentence[128]{};
+  static size_t length = 0;
+  if (byte == '$') length = 0;
+  if (length + 1 < sizeof(sentence)) sentence[length++] = byte;
+  sentence[length] = '\0';
+  const bool committed = gps.encode(byte);
+  if (!committed || length < 7 || strncmp(sentence + 3, "RMC", 3) != 0) return;
+  // TinyGPS++ commits all RMC fields only after a valid checksum. Snapshot
+  // immediately, before a later GGA changes time/location independently.
+  const char *timeEnd = strchr(sentence + 7, ',');
+  if (timeEnd == nullptr || timeEnd[1] != 'A') {
+    latestRmcFix.valid = false;
+    return;
+  }
+  disciplineClockFromGnss();
+  latestRmcFix = buildFixFromRmc();
+  latestRmcAt = millis();
+  Serial.printf("[GnssTrace] utc=%lld system=%lld mono=%lu timeAge=%lu locationAge=%lu buffered=%d rmc=%.6s\n",
+    static_cast<long long>(latestGnssEpochMs),
+    static_cast<long long>(systemEpochMilliseconds()),
+    static_cast<unsigned long>(latestRmcAt),
+    static_cast<unsigned long>(gps.time.age()),
+    static_cast<unsigned long>(gps.location.age()), gpsSerial.available(), sentence);
 }
 
 bool shouldCapture(const TelemetryFix &fix) {
@@ -1497,7 +1650,11 @@ bool shouldCapture(const TelemetryFix &fix) {
     lastCapturedLat,
     lastCapturedLng,
     fix.speed,
-    lastCapturedSpeed
+    lastCapturedSpeed,
+    gps.hdop.isValid(),
+    fix.gpsHdop,
+    lastCapturedHdop <= eki::telemetry::GNSS_HDOP_MAX,
+    lastCapturedHdop
   )) {
     Serial.printf(
       "[GNSS] Ignoring implausible position jump (%.2fm from last fix).\n",
@@ -1532,9 +1689,13 @@ void rememberCapturedFix(const TelemetryFix &fix) {
   lastCapturedLat = fix.lat;
   lastCapturedLng = fix.lng;
   lastCapturedSpeed = fix.speed;
+  lastCapturedHdop = fix.gpsHdop;
   lastCapturedHeading = fix.heading;
   lastCapturedMotionState = fix.motionState;
-  lastCaptureAt = millis();
+  // The heartbeat is evaluated against the start of this same cycle. Using
+  // its completion time can make the next 1000ms tick look only 999ms old,
+  // unintentionally halving a stationary bus's capture rate.
+  lastCaptureAt = lastEvaluationAt;
   hasCapturedLocation = true;
   recordCapturedFix();
 }
@@ -1597,6 +1758,7 @@ void publisherTask(void *) {
   for (;;) {
     esp_task_wdt_reset();
     serviceConnectivity();
+    collectDiagnosticResult();
     reportNtpCrossCheck();
 #if EKI_FLEET_BUILD
     enforceOtaValidationDeadline();
@@ -1639,13 +1801,19 @@ void publisherTask(void *) {
           }
         }
       }
-      // A diagnostics or OTA request can consume the same seven-second HTTP
-      // budget as telemetry. Defer it whenever a fresh fix is queued, even
+      // Diagnostics enqueue to a separate worker without waiting for HTTP.
+      // Prefer sending queued fixes before preparing maintenance work, even
       // during retry backoff, so recovery always favors current telemetry.
       if (!drainedSample && !freshTelemetryQueued) {
-        publishRemoteDiagnostic();
+        if (remoteDiagnosticIsDue()) {
+          publishRemoteDiagnostic();
+        }
 #if EKI_FLEET_BUILD
-        checkForSignedFirmware();
+        else {
+          // Keep release checks separate from diagnostic preparation.
+          // The release check rechecks queue depth before starting.
+          checkForSignedFirmware();
+        }
 #endif
       }
     }
@@ -1709,6 +1877,7 @@ void setup() {
   gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
   gpsSerial.onReceiveError(onGpsSerialError);
   delay(500);
+  configureGnssMessages();
 
   if (
     bootReason == eki::reset::ResetReason::Brownout ||
@@ -1738,8 +1907,12 @@ void setup() {
 
   if (eki::config::backendUrlUsesHttps(BACKEND_URL)) {
     tlsClient.setCACert(BACKEND_ROOT_CA);
+    tlsClient.setHandshakeTimeout(eki::telemetry::TLS_HANDSHAKE_TIMEOUT_SECONDS);
+    maintenanceTlsClient.setCACert(BACKEND_ROOT_CA);
+    maintenanceTlsClient.setHandshakeTimeout(eki::telemetry::TLS_HANDSHAKE_TIMEOUT_SECONDS);
 #if EKI_FLEET_BUILD
     firmwareTlsClient.setCACert(BACKEND_ROOT_CA);
+    firmwareTlsClient.setHandshakeTimeout(eki::telemetry::TLS_HANDSHAKE_TIMEOUT_SECONDS);
 #endif
   }
   if (!initializeRequestStrings()) {
@@ -1748,6 +1921,14 @@ void setup() {
   }
   sntp_set_time_sync_notification_cb(onNtpTimeSynchronized);
   configureWatchdog();
+  diagnosticJobs = xQueueCreate(1, sizeof(DiagnosticJob));
+  diagnosticResults = xQueueCreate(1, sizeof(DiagnosticResult));
+  if (diagnosticJobs == nullptr || diagnosticResults == nullptr ||
+      xTaskCreatePinnedToCore(diagnosticWorker, "diagnostic-http", 12288,
+        nullptr, PUBLISHER_TASK_PRIORITY, nullptr, 0) != pdPASS) {
+    Serial.println("[Boot] Unable to start diagnostic transport.");
+    haltWithStatusLed(2, true);
+  }
   const BaseType_t taskResult = xTaskCreatePinnedToCore(
     publisherTask,
     "telemetry-publisher",
@@ -1765,8 +1946,7 @@ void setup() {
 
 void loop() {
   esp_task_wdt_reset();
-  while (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
-  disciplineClockFromGnss();
+  while (gpsSerial.available() > 0) processGpsByte(static_cast<char>(gpsSerial.read()));
 
   if (elapsed(lastEvaluationAt) >= eki::telemetry::TELEMETRY_EVALUATION_INTERVAL_MS) {
     lastEvaluationAt = millis();

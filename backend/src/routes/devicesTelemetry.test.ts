@@ -52,7 +52,7 @@ vi.mock("../services/deviceDiagnostics", async (importOriginal) => {
   };
 });
 
-import devicesRouter from "./devices";
+import devicesRouter, { createTelemetryIngressLimiter } from "./devices";
 
 let server: Server;
 let baseUrl = "";
@@ -61,6 +61,8 @@ beforeAll(async () => {
   const app = express();
   app.use(express.json());
   app.use("/api/devices", devicesRouter);
+  app.post("/limited/:deviceId/telemetry", createTelemetryIngressLimiter(4), (_req, res) => res.status(401).end());
+  app.post("/short/:deviceId/telemetry", createTelemetryIngressLimiter(2, 10_000), (_req, res) => res.status(202).end());
   server = await new Promise<Server>((resolve) => {
     const listener = app.listen(0, "127.0.0.1", () => resolve(listener));
   });
@@ -167,7 +169,7 @@ describe("device telemetry HTTP responses", () => {
     expect((await sendDiagnostics()).status).toBe(401);
   });
 
-  it("keeps the pre-auth telemetry limiter shared by campus NAT", async () => {
+  it("accepts two moving buses behind campus NAT without consuming the entire ingress budget", async () => {
     const statuses = await Promise.all(Array.from({ length: 130 }, async (_, attempt) => {
       const deviceId = attempt % 2 === 0 ? "device_1" : "device_2";
       const response = await fetch(`${baseUrl}/api/devices/${deviceId}/telemetry`, {
@@ -181,14 +183,14 @@ describe("device telemetry HTTP responses", () => {
       return response.status;
     }));
 
-    expect(statuses.filter((status) => status === 429).length).toBeGreaterThan(0);
+    expect(statuses.every((status) => status === 202)).toBe(true);
   });
 
   it("still caps unauthenticated telemetry by client IP", async () => {
     const statuses: number[] = [];
-    for (let attempt = 0; attempt < 130; attempt += 1) {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
       const deviceId = attempt % 2 === 0 ? "device_1" : "device_2";
-      const response = await fetch(`${baseUrl}/api/devices/${deviceId}/telemetry`, {
+      const response = await fetch(`${baseUrl}/limited/${deviceId}/telemetry`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sample: true }),
@@ -199,10 +201,10 @@ describe("device telemetry HTTP responses", () => {
     expect(statuses.filter((status) => status === 429).length).toBeGreaterThan(0);
   });
 
-  it("returns the same retry contract when the outer per-device limiter rejects", async () => {
+  it("returns the same retry contract when the outer IP limiter rejects", async () => {
     let limited: Response | undefined;
-    for (let attempt = 0; attempt < 130; attempt += 1) {
-      const response = await sendTelemetry();
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const response = await fetch(`${baseUrl}/limited/device_1/telemetry`, { method: "POST" });
       if (response.status === 429) {
         limited = response;
         break;
@@ -216,4 +218,22 @@ describe("device telemetry HTTP responses", () => {
       retryAfterMs: 60_000,
     });
   });
+});
+
+
+it("uses a short recovery window without trusting supplied device IDs", async () => {
+  for (let index = 0; index < 2; index++) {
+    expect((await fetch(`${baseUrl}/short/device_${index}/telemetry`, { method: "POST" })).status).toBe(202);
+  }
+  const response = await fetch(`${baseUrl}/short/different_id/telemetry`, { method: "POST" });
+  expect(response.status).toBe(429);
+  expect(response.headers.get("retry-after")).toBe("10");
+  expect((await response.json()).retryAfterMs).toBe(10_000);
+});
+
+it("keeps telemetry available after the diagnostics IP pool is exhausted", async () => {
+  let response: Response | undefined;
+  for (let index = 0; index < 205; index++) response = await sendDiagnostics();
+  expect(response?.status).toBe(429);
+  expect((await sendTelemetry()).status).toBe(202);
 });

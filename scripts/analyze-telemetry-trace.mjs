@@ -38,7 +38,10 @@ export function estimateDeviceClockOffset(record) {
   if (t1 === null || t2 === null || t3 === null || t4 === null || t4 < t1 || t3 < t2) {
     return null;
   }
-  const networkRoundTripMs = Math.max(0, (t4 - t1) - (t3 - t2));
+  const monotonicDuration = finite(record.httpDurationMs);
+  if (monotonicDuration !== null && Math.abs((t4 - t1) - monotonicDuration) > 100) return null;
+  const networkRoundTripMs = (t4 - t1) - (t3 - t2);
+  if (networkRoundTripMs < 0) return null;
   return {
     // Positive means the server clock is ahead of the device clock.
     offsetMs: ((t2 - t1) + (t3 - t4)) / 2,
@@ -123,7 +126,7 @@ export function analyzeTelemetryTraces(deviceRecords, browserRecords) {
       motionState: accepted.motionState ?? listener?.motionState ?? "unknown",
       attempts: attempts.length,
       deviceQueueMs: elapsedBetween(deviceSentAt, sampledAt),
-      httpRoundTripMs: elapsedBetween(finite(accepted.deviceReceivedAtDeviceMs), deviceSentAt),
+      httpRoundTripMs: finite(accepted.httpDurationMs) ?? elapsedBetween(finite(accepted.deviceReceivedAtDeviceMs), deviceSentAt),
       clockOffsetMs: clock?.offsetMs ?? null,
       clockUncertaintyMs: clock?.uncertaintyMs ?? null,
       deviceToBackendIngressMs:
@@ -147,7 +150,7 @@ export function analyzeTelemetryTraces(deviceRecords, browserRecords) {
       _browserRenderAtMs: browserRenderAt,
     });
   }
-  rows.sort((left, right) => (left.sampledAtDeviceMs ?? 0) - (right.sampledAtDeviceMs ?? 0));
+  rows.sort((left, right) => (left._serverReceivedAtMs ?? left.sampledAtDeviceMs ?? 0) - (right._serverReceivedAtMs ?? right.sampledAtDeviceMs ?? 0));
   rows.forEach((row, index) => {
     const previous = rows[index - 1];
     if (previous && previous.scenario === row.scenario) {
@@ -162,11 +165,29 @@ export function analyzeTelemetryTraces(deviceRecords, browserRecords) {
         previous._browserRenderAtMs,
       );
     }
+  });
+  rows.forEach((row) => {
     delete row._serverReceivedAtMs;
     delete row._browserListenerAtMs;
     delete row._browserRenderAtMs;
   });
+  const requests = deviceRecords.filter(record => finite(record.httpStatus) !== null);
+  const connections = deviceRecords.filter(record => record.event === "network_connect" && record.channel !== "diagnostics");
+  const gaps = rows.flatMap(row => ["captureUpdateGapMs", "backendIngressUpdateGapMs",
+    "browserListenerUpdateGapMs", "browserRenderUpdateGapMs"].flatMap(metric =>
+      row[metric] > 2000 ? [{ seq: row.seq, scenario: row.scenario, metric, milliseconds: row[metric] }] : []));
   return {
+    counters: {
+      requests: requests.length,
+      httpFailures: requests.filter(record => ![200, 202].includes(record.httpStatus)).length,
+      retries: requests.filter(record => record.attempt > 1).length,
+      tlsConnectionAttempts: connections.length,
+      tlsReconnects: Math.max(0, connections.filter(record => record.result === 1).length - 1),
+      clockDiscontinuities: requests.filter(record => finite(record.httpDurationMs) !== null &&
+        Math.abs((record.deviceReceivedAtDeviceMs - record.deviceSentAtDeviceMs) - record.httpDurationMs) > 100).length,
+    },
+    connections,
+    gaps,
     rows,
     missing: {
       acceptedDeviceSamples: rows.length,
@@ -194,12 +215,12 @@ const METRICS = [
   ["Browser marker-render update gap", "browserRenderUpdateGapMs"],
 ];
 
-function metricTable(rows) {
+function metricTable(rows, metrics = METRICS) {
   const lines = [
     "| Metric | Samples | Average | p50 | p95 | p99 | Max |",
     "|---|---:|---:|---:|---:|---:|---:|",
   ];
-  for (const [label, field] of METRICS) {
+  for (const [label, field] of metrics) {
     const summary = percentileSummary(rows.map((row) => row[field]));
     const show = (value) => value === null ? "—" : Number(value.toFixed(1));
     lines.push(`| ${label} | ${summary.samples} | ${show(summary.average)} | ${show(summary.p50)} | ${show(summary.p95)} | ${show(summary.p99)} | ${show(summary.maximum)} |`);
@@ -250,9 +271,35 @@ export function formatTelemetryReport(analysis, healthSnapshots = []) {
     `- Missing marker-render correlation: ${analysis.missing.withoutRender}`,
     `- Missing clock estimate: ${analysis.missing.withoutClockEstimate}`,
     "",
+    "## Delivery and connection counts",
+    "",
+    ...Object.entries(analysis.counters).map(([name, count]) => `- ${name}: ${count}`),
+    `- Gaps >2 s: ${analysis.gaps.length}`,
+    `- Gaps >5 s: ${analysis.gaps.filter(gap => gap.milliseconds > 5000).length}`,
+    "",
+    "## Every gap >2 seconds (largest first)",
+    "",
+    "| Sequence | Scenario | Stage | Gap ms |",
+    "|---|---|---|---:|",
+    ...[...analysis.gaps].sort((a, b) => b.milliseconds - a.milliseconds)
+      .map(gap => `| ${gap.seq} | ${gap.scenario} | ${gap.metric} | ${gap.milliseconds} |`),
+    "",
+    "## TLS connection timing (ms)",
+    "",
+    metricTable(analysis.connections, [["DNS", "dnsMs"], ["TCP/TLS", "tlsConnectMs"], ["Key preparation", "preparationMs"]]),
+    "",
     "## Overall latency (ms)",
     "",
     metricTable(analysis.rows),
+    "",
+    "## Additional clock-adjusted intervals (ms)",
+    "",
+    metricTable(analysis.rows.map(row => ({
+      sampleToBackendMs: row.deviceQueueMs !== null && row.deviceToBackendIngressMs !== null
+        ? row.deviceQueueMs + row.deviceToBackendIngressMs : null,
+      backendToBrowserMs: row.backendToRtdbMs !== null && row.rtdbToBrowserListenerMs !== null
+        ? row.backendToRtdbMs + row.rtdbToBrowserListenerMs : null,
+    })), [["Sample to backend (offset estimate)", "sampleToBackendMs"], ["Backend to browser", "backendToBrowserMs"]]),
   ];
   for (const scenario of scenarios) {
     sections.push(
@@ -280,8 +327,8 @@ function parseArguments(argv) {
     else throw new Error(`Unknown argument ${name}.`);
     index += 1;
   }
-  if (!parsed.device || parsed.browser.length === 0 || !parsed.out) {
-    throw new Error("Usage: --device <serial.log> --browser <trace.json> [--browser <trace.json>] --out <report.md> [--health <health.json>]");
+  if (!parsed.device || !parsed.out) {
+    throw new Error("Usage: --device <serial.log> [--browser <trace.json>] [--browser <trace.json>] --out <report.md> [--health <health.json>]");
   }
   return parsed;
 }
@@ -290,7 +337,10 @@ async function readDeviceRecords(filename) {
   const text = await readFile(filename, "utf8");
   return text.split(/\r?\n/).flatMap((line) => {
     const start = line.indexOf(DEVICE_TRACE_PREFIX);
-    if (start < 0) return [];
+    if (start < 0) {
+      const match = line.match(/\[NetworkTiming\] dnsMs=(\d+) tlsConnectMs=(\d+) timeoutMs=(\d+) handshakeMs=(\d+) result=(\d+)(?: channel=(\w+) preparationMs=(\d+))?/);
+      return match ? [{ event: "network_connect", dnsMs: Number(match[1]), tlsConnectMs: Number(match[2]), result: Number(match[5]), channel: match[6] ?? "unknown", preparationMs: match[7] ? Number(match[7]) : null }] : [];
+    }
     try {
       return [JSON.parse(line.slice(start + DEVICE_TRACE_PREFIX.length))];
     } catch {

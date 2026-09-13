@@ -240,3 +240,29 @@ describe("reduceTripState", () => {
     expect(arrived.tripState).toBe("in_service");
   });
 });
+
+it("completes 100 stops in both travel orders without skipping an intermediate stop", () => {
+  const natural = Array.from({ length: 100 }, (_, i) => ({ lat: 23 + i * 0.0005, lng: 72 }));
+  for (const stops of [natural, [...natural].reverse()]) {
+    let state = { tripState: "in_service" as const, currentStopIndex: 0, hasDepartedOrigin: false } as ReturnType<typeof reduceTripState>;
+    const start = stops[0];
+    const next = stops[1];
+    state = reduceTripState({ ...start, motionState: "moving", stops, currentTripState: state.tripState, currentStopIndex: state.currentStopIndex, hasDepartedOrigin: state.hasDepartedOrigin,
+      lat: start.lat + (next.lat - start.lat) * 0.6 });
+    expect(state.currentStopIndex).toBe(1);
+    for (let i = 1; i < stops.length; i++) {
+      state = reduceTripState({ ...stops[i], stops, motionState: "stopped", currentTripState: state.tripState,
+        currentStopIndex: state.currentStopIndex, hasDepartedOrigin: state.hasDepartedOrigin });
+      expect(state.currentStopIndex).toBe(Math.min(i + 1, stops.length - 1));
+      expect(state.tripState).toBe(i === stops.length - 1 ? "completed" : "in_service");
+    }
+  }
+});
+
+it("consumes nearby stops crossed in order during one bounded telemetry segment", () => {
+  const stops = [0, 1, 2, 3].map(i => ({ lat: 23 + i * 0.0005, lng: 72 }));
+  const result = reduceTripState({ lat: 23.0011, lng: 72, previousPosition: { lat: 23.0002, lng: 72 },
+    currentTripState: "in_service", currentStopIndex: 1, hasDepartedOrigin: true, motionState: "moving", stops });
+  expect(result.currentStopIndex).toBe(3);
+  expect(result.tripState).toBe("in_service");
+});

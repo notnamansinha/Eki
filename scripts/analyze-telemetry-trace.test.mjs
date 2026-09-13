@@ -129,3 +129,25 @@ test("pairs a listener with a render from the same browser run", () => {
   assert.equal(analysis.rows[0].browserListenerToRenderMs, 30);
   assert.equal(analysis.rows[0].endToEndMs, 330);
 });
+
+
+test("reports failed requests and gaps without deleting timestamps early", () => {
+  const device = [0, 3000, 10000].map((offset, index) => ({
+    seq: index + 1, sampledAtDeviceMs: 1000 + offset, deviceSentAtDeviceMs: 1000 + offset,
+    serverReceivedAtMs: 1100 + offset, serverRespondedAtMs: 1150 + offset,
+    deviceReceivedAtDeviceMs: 1250 + offset, httpDurationMs: 250, httpStatus: 202, attempt: 1,
+  }));
+  device.push({ httpStatus: -11, attempt: 2 });
+  const analysis = analyzeTelemetryTraces(device, []);
+  assert.equal(analysis.rows[1].backendIngressUpdateGapMs, 3000);
+  assert.equal(analysis.rows[2].backendIngressUpdateGapMs, 7000);
+  assert.equal(analysis.counters.httpFailures, 1);
+  assert.equal(analysis.counters.retries, 1);
+  assert.equal(analysis.gaps.filter(gap => gap.metric === "backendIngressUpdateGapMs").length, 2);
+});
+
+test("rejects a wall-clock jump instead of calling it transport latency", () => {
+  assert.equal(estimateDeviceClockOffset({ deviceSentAtDeviceMs: 1000,
+    deviceReceivedAtDeviceMs: 8250, serverReceivedAtMs: 1100, serverRespondedAtMs: 1150,
+    httpDurationMs: 250 }), null);
+});

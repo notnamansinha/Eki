@@ -1,3 +1,4 @@
+import { computeOrderedRouteGeometry, MAX_ROUTE_STOPS } from "../lib/orderedRouteGeometry";
 import { randomBytes } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import { FieldValue } from "firebase-admin/firestore";
@@ -98,7 +99,7 @@ function isValidLatLng(value: unknown): value is LatLng {
 }
 
 function validateStops(value: unknown): ValidatedStop[] | null {
-  if (!Array.isArray(value) || value.length < 2 || value.length > 27) return null;
+  if (!Array.isArray(value) || value.length < 2 || value.length > MAX_ROUTE_STOPS) return null;
   const stops: ValidatedStop[] = [];
   const ids = new Set<string>();
   for (const entry of value) {
@@ -128,7 +129,7 @@ function validateWaypoints(value: unknown): LatLng[] | null {
   if (
     !Array.isArray(value) ||
     value.length < 2 ||
-    value.length > 27 ||
+    value.length > MAX_ROUTE_STOPS ||
     value.some((waypoint) => !isValidLatLng(waypoint))
   ) {
     return null;
@@ -157,6 +158,11 @@ function validEncodedPolyline(value: unknown): value is string {
 }
 
 async function computePolyline(waypoints: LatLng[]) {
+  const geometry = await computeOrderedRouteGeometry(waypoints, computePolylineChunk);
+  return { ...geometry, polylineQuality: STORED_POLYLINE_QUALITY };
+}
+
+async function computePolylineChunk(waypoints: LatLng[]) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
     throw routeError(
@@ -352,10 +358,10 @@ router.post("/compute-polyline", requireAdmin, async (req: Request, res: Respons
   if (
     !Array.isArray(waypoints) ||
     waypoints.length < 2 ||
-    waypoints.length > 27 ||
+    waypoints.length > MAX_ROUTE_STOPS ||
     waypoints.some((waypoint) => !isValidLatLng(waypoint))
   ) {
-    res.status(400).json({ error: "waypoints must contain 2-27 valid coordinates." });
+    res.status(400).json({ error: "waypoints must contain 2-100 valid coordinates." });
     return;
   }
   try {

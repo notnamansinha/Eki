@@ -1,5 +1,5 @@
 import { isActiveRideSnapshot } from "./liveBusSnapshot";
-import { isLiveBusTimestamp } from "./liveBusFreshness";
+import { isLiveBusTimestamp, liveBusFreshnessTimestamp } from "./liveBusFreshness";
 
 /**
  * One shared shape for every fleet view. Superset of the fields the admin
@@ -26,19 +26,23 @@ export interface ActiveBusEntry {
   currentStopIndex?: number;
   delayMinutes?: number;
   sessionId?: string;
-  direction?: "forward" | "reverse" | null;
+  /** Untrusted RTDB value; resolve through normalizeRideDirection before use. */
+  direction?: unknown;
   directionState?: "pending" | "resolved";
   originStopId?: string;
   destinationStopId?: string;
   rawLocation?: RawLiveLocation;
   matchedLocation?: MatchedLiveLocation;
+  mapMatchSeq?: number;
+  mapMatchSampledAt?: number;
   matchConfidence?: number;
   distanceToActiveRoute?: number;
   activeRouteId?: string;
   routeVersion?: number;
   routeSource?: "configured" | "dynamic-reroute";
   routeState?: LiveRouteState;
-  routeDirection?: "forward" | "reverse";
+  /** Untrusted route-match value; unresolved values must not select geometry. */
+  routeDirection?: unknown;
   routeGeometryVersion?: number;
 }
 
@@ -83,13 +87,13 @@ export type RideServiceState =
   | "completed";
 
 export function devicePresence(
-  entry: Pick<ActiveBusEntry, "deviceState" | "timestamp"> | null | undefined,
+  entry: Pick<ActiveBusEntry, "deviceState" | "timestamp" | "backendReceivedAt"> | null | undefined,
   now = Date.now(),
 ): DevicePresence {
   if (entry?.deviceState === "offline") return "offline";
   if (
     entry?.deviceState === "online" &&
-    isLiveBusTimestamp(entry.timestamp, now)
+    isLiveBusTimestamp(liveBusFreshnessTimestamp(entry), now)
   ) return "online";
   return "unknown";
 }
@@ -146,7 +150,7 @@ export const RIDE_SERVICE_LABELS: Record<RideServiceState, string> = {
 
 /** Chat discoverability follows trusted device presence, never trip motion/status. */
 export function isLiveChatDeviceOnline(
-  entry: Pick<ActiveBusEntry, "deviceState" | "timestamp"> | null | undefined,
+  entry: Pick<ActiveBusEntry, "deviceState" | "timestamp" | "backendReceivedAt"> | null | undefined,
   now = Date.now(),
 ): boolean {
   return devicePresence(entry, now) === "online";
@@ -174,6 +178,8 @@ const OPTIONAL_NUMBER_FIELDS = [
   "currentStopIndex",
   "delayMinutes",
   "matchConfidence",
+  "mapMatchSeq",
+  "mapMatchSampledAt",
   "distanceToActiveRoute",
   "routeVersion",
   "routeGeometryVersion",
@@ -246,25 +252,10 @@ function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
   if (typeof bus.lat === "number" && (bus.lat < -90 || bus.lat > 90)) return false;
   if (typeof bus.lng === "number" && (bus.lng < -180 || bus.lng > 180)) return false;
   if (
-    bus.direction !== undefined &&
-    bus.direction !== null &&
-    bus.direction !== "forward" &&
-    bus.direction !== "reverse"
-  ) {
-    return false;
-  }
-  if (
     bus.directionState !== undefined &&
     bus.directionState !== "pending" &&
     bus.directionState !== "resolved"
   ) return false;
-  if (
-    bus.routeDirection !== undefined &&
-    bus.routeDirection !== "forward" &&
-    bus.routeDirection !== "reverse"
-  ) {
-    return false;
-  }
   if (
     bus.routeSource !== undefined &&
     bus.routeSource !== "configured" &&
@@ -291,6 +282,12 @@ function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
   if (
     typeof bus.routeVersion === "number" &&
     (!Number.isSafeInteger(bus.routeVersion) || bus.routeVersion <= 0)
+  ) {
+    return false;
+  }
+  if (
+    typeof bus.mapMatchSeq === "number" &&
+    !Number.isSafeInteger(bus.mapMatchSeq)
   ) {
     return false;
   }
@@ -357,7 +354,7 @@ export function isActiveBusEntry(
   // generic telemetry freshness so fleet views do not show ended service.
   if (bus.tripState === "completed") return false;
   const fresh = isLiveBusTimestamp(
-    typeof bus.timestamp === "number" ? bus.timestamp : undefined,
+    liveBusFreshnessTimestamp(bus),
     now,
   );
   return fresh || isActiveRideSnapshot(bus);

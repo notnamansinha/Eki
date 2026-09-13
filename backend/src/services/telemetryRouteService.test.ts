@@ -3,13 +3,29 @@ import {
   directionProjectionNeedsSync,
   invalidateTelemetryRoute,
   isReliableMovingSample,
+  previousMatch,
   nextMatchedTelemetryValue,
   remainingRerouteStops,
   rerouteContextIsCurrent,
   routeRepairSnapshotWrite,
+  routeMatchingElapsedMs,
   telemetryRouteSnapshotIsCurrent,
   telemetryIsCurrent,
+  telemetryRouteContextIsCurrent,
 } from "./telemetryRouteService";
+
+describe("route-matching sample timing", () => {
+  it("uses the latest prior route sample instead of the current live timestamp", () => {
+    expect(routeMatchingElapsedMs([
+      { sampledAt: 1_000 },
+      { sampledAt: 12_000 },
+      { sampledAt: 8_000 },
+      { sampledAt: 30_000 },
+      { sampledAt: "invalid" },
+    ], 15_000)).toBe(3_000);
+    expect(routeMatchingElapsedMs([], 15_000)).toBe(0);
+  });
+});
 
 describe("matcher route cache versions", () => {
   it("invalidates in-flight snapshots immediately", () => {
@@ -76,6 +92,8 @@ describe("reroute result guards", () => {
     direction: "forward" as const,
   };
   const live = {
+    tripState: "in_service",
+    routeState: "REROUTING",
     rerouteRequestId: expected.requestId,
     routeVersion: expected.routeVersion,
     sessionId: expected.sessionId,
@@ -84,10 +102,15 @@ describe("reroute result guards", () => {
 
   it("accepts only the request for the current route session and version", () => {
     expect(rerouteContextIsCurrent(live, expected)).toBe(true);
+    expect(rerouteContextIsCurrent({ ...live, tripState: "completed" }, expected)).toBe(false);
+    expect(rerouteContextIsCurrent({ ...live, routeState: "ON_ROUTE" }, expected)).toBe(false);
     expect(rerouteContextIsCurrent({ ...live, routeVersion: 6 }, expected)).toBe(false);
     expect(rerouteContextIsCurrent({ ...live, sessionId: "session-old" }, expected)).toBe(false);
     expect(rerouteContextIsCurrent({ ...live, rerouteRequestId: "request-4" }, expected)).toBe(false);
     expect(rerouteContextIsCurrent({ ...live, direction: "reverse" }, expected)).toBe(false);
+    expect(rerouteContextIsCurrent({ ...live, direction: undefined }, expected)).toBe(false);
+    expect(rerouteContextIsCurrent({ ...live, direction: null }, expected)).toBe(false);
+    expect(rerouteContextIsCurrent({ ...live, direction: "sideways" }, expected)).toBe(false);
   });
 });
 
@@ -137,6 +160,26 @@ describe("matched telemetry transaction guard", () => {
       { matchedLocation: { seq: 5, sampledAt: 5_000 } },
     )).toBeUndefined();
   });
+
+  it("aborts when direction or session becomes unresolved while matching", () => {
+    const expected = { direction: "forward" as const, routeSessionId: "session_1" };
+    const live = {
+      timestamp: sample.timestamp,
+      seq: sample.seq,
+      sessionId: "session_1",
+      direction: "forward",
+    };
+    expect(telemetryRouteContextIsCurrent(live, sample, expected)).toBe(true);
+    for (const direction of [undefined, null, "", "sideways", 123]) {
+      expect(telemetryRouteContextIsCurrent({ ...live, direction }, sample, expected))
+        .toBe(false);
+    }
+    expect(telemetryRouteContextIsCurrent(
+      { ...live, sessionId: "session_2" },
+      sample,
+      expected,
+    )).toBe(false);
+  });
 });
 
 describe("reliable moving sample HDOP gate", () => {
@@ -163,6 +206,12 @@ describe("reliable moving sample HDOP gate", () => {
     expect(isReliableMovingSample({ ...base, gpsHdop: 3.2 })).toBe(true);
   });
 
+  it("rejects non-finite and negative HDOP instead of treating it as quality data", () => {
+    expect(isReliableMovingSample({ ...base, gpsHdop: Number.NaN })).toBe(false);
+    expect(isReliableMovingSample({ ...base, gpsHdop: Number.POSITIVE_INFINITY })).toBe(false);
+    expect(isReliableMovingSample({ ...base, gpsHdop: -1 })).toBe(false);
+  });
+
   it("rejects slow, stopped, negative-HDOP, or high-HDOP samples", () => {
     expect(isReliableMovingSample({ ...base, gpsHdop: 2, speed: 2 })).toBe(false);
     expect(
@@ -170,6 +219,39 @@ describe("reliable moving sample HDOP gate", () => {
     ).toBe(false);
     expect(isReliableMovingSample({ ...base, gpsHdop: -0.1 })).toBe(false);
     expect(isReliableMovingSample({ ...base, gpsHdop: 99 })).toBe(false);
+  });
+});
+
+describe("previous route-match continuity window", () => {
+  const match = {
+    segmentIndex: 2,
+    alongRouteDistanceM: 1250,
+    routeVersion: 5,
+    sampledAt: 100_000,
+  };
+
+  it("accepts recent, same-time, and exact-boundary samples", () => {
+    expect(previousMatch(match, 5, 100_001)).toEqual({
+      segmentIndex: 2,
+      alongRouteDistanceM: 1250,
+    });
+    expect(previousMatch(match, 5, 100_000)).toEqual({
+      segmentIndex: 2,
+      alongRouteDistanceM: 1250,
+    });
+    expect(previousMatch(match, 5, 100_000 + 5 * 60_000)).toEqual({
+      segmentIndex: 2,
+      alongRouteDistanceM: 1250,
+    });
+  });
+
+  it("rejects stale and future samples instead of reusing continuity", () => {
+    expect(previousMatch(match, 5, 100_000 + 5 * 60_000 + 1)).toBeNull();
+    expect(previousMatch(match, 5, 99_999)).toBeNull();
+  });
+
+  it("does not reuse a future match after device clock regression", () => {
+    expect(previousMatch({ ...match, sampledAt: 200_000 }, 5, 100_000)).toBeNull();
   });
 });
 

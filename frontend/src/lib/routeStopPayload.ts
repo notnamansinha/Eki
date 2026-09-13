@@ -113,7 +113,7 @@ export function prepareRouteSavePayload(input: RouteSavePayloadInput): RouteSave
   if (!SAFE_COLOR.test(input.color) || !ROUTE_TYPES.has(input.type)) {
     return { ok: false, error: "Choose a valid route colour and type." };
   }
-  if (input.stops.length > 27) return { ok: false, error: "A route can have at most 27 stops." };
+  if (input.stops.length > 100) return { ok: false, error: "A route can have at most 100 stops." };
 
   const stops = input.stops.map(normalizeRouteStopPayload);
   const stopIds = new Set(stops.map((stop) => stop.id));
