@@ -89,8 +89,8 @@ Wi-Fi was initially unavailable and reconnected during the capture without a
 reflash. A watched backend restart changed its serving PID and telemetry resumed.
 A tunnel restart exposed an additional defect: ngrok's offline endpoint returns
 HTTP 404 with `Ngrok-Error-Code: ERR_NGROK_3200`, which previously triggered the
-60-second configuration backoff. Firmware now classifies only that explicit
-404/error-code pair as transient, with the 1-2 second transport retry. Genuine
+60-second configuration backoff. Firmware now classifies that explicit
+404/error-code pair and the 502/ERR_NGROK_8012 upstream-unreachable pair as transient, with the 1-2 second transport retry. Genuine
 404, credential errors, other gateway errors and rate limits retain their policies.
 The exact offline header was measured against the running tunnel; ngrok documents
 the offline error in its [error reference](https://ngrok.com/docs/errors/reference).
@@ -106,8 +106,19 @@ Latest automated checks: 657 web/backend/script tests passed, 7 skipped; all 35
 native firmware tests passed. Full lint, backend build and production frontend
 build passed. The development image compiled successfully. No merge to main.
 
-Still open: final patched tunnel-restart retest, deliberate Wi-Fi interruption,
-TLS idle-expiry and controlled packet-loss/slow-network scenarios, browser
+The final development firmware was flashed with hash verification. A repeated
+tunnel outage produced retry delays around 1.5 seconds (including attempt 5),
+not the former 60-second pause, and accepted telemetry resumed after restart.
+A temporary local HTTP proxy delayed one response by 2.5 seconds and dropped a
+second response after backend processing. Accepted backend-ingress gaps across
+those faults were 4,903 ms and 4,695 ms respectively; next accepted ingress was
+3,909 ms and 3,392 ms after each injected fault. These are application response
+faults, not radio packet-loss or bandwidth-emulation results. The proxy was
+removed and ngrok restored directly to port 4000. The earlier unpatched restart
+trace includes a 68,429 ms accepted-ingress gap; it must not be hidden.
+
+Still open: deliberate Wi-Fi interruption, TLS idle-expiry, radio packet loss,
+controlled bandwidth/latency emulation, browser
 callback-to-render trace, long stationary soak and the user-deferred 30-60 minute
 moving-route run. Cold TLS still has a separate 10-second handshake budget and DNS
 can exceed the TCP connect limit. Do not interpret the shorter steady-state

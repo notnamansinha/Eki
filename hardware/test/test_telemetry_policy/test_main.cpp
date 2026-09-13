@@ -118,6 +118,8 @@ void test_http_response_actions_cover_transport_and_status_families() {
   TEST_ASSERT_EQUAL_INT(404, eki::telemetry::classifyIngressResponse(404, nullptr));
   TEST_ASSERT_EQUAL_INT(404, eki::telemetry::classifyIngressResponse(404, "ERR_NGROK_3208"));
   TEST_ASSERT_EQUAL_INT(401, eki::telemetry::classifyIngressResponse(401, "ERR_NGROK_3200"));
+  TEST_ASSERT_EQUAL_INT(408, eki::telemetry::classifyIngressResponse(502, "ERR_NGROK_8012"));
+  TEST_ASSERT_EQUAL_INT(502, eki::telemetry::classifyIngressResponse(502, ""));
   TEST_ASSERT_EQUAL_UINT32(0, eki::telemetry::minimumHttpRetryDelayMs(
     eki::telemetry::classifyIngressResponse(404, "ERR_NGROK_3200")));
   TEST_ASSERT_EQUAL_INT(

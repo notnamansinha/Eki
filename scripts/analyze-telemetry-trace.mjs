@@ -179,6 +179,7 @@ export function analyzeTelemetryTraces(deviceRecords, browserRecords) {
   return {
     counters: {
       requests: requests.length,
+      malformedTraceLines: deviceRecords.filter(record => record.event === "malformed_trace").length,
       httpFailures: requests.filter(record => ![200, 202].includes(record.httpStatus)).length,
       retries: requests.filter(record => record.attempt > 1).length,
       tlsConnectionAttempts: connections.length,
@@ -209,7 +210,7 @@ const METRICS = [
   ["RTDB commit → browser listener", "rtdbToBrowserListenerMs"],
   ["Browser listener → first marker render", "browserListenerToRenderMs"],
   ["Capture → first marker render", "endToEndMs"],
-  ["Device capture update gap", "captureUpdateGapMs"],
+  ["Capture gap between accepted samples", "captureUpdateGapMs"],
   ["Backend ingress update gap", "backendIngressUpdateGapMs"],
   ["Browser listener update gap", "browserListenerUpdateGapMs"],
   ["Browser marker-render update gap", "browserRenderUpdateGapMs"],
@@ -263,6 +264,7 @@ export function formatTelemetryReport(analysis, healthSnapshots = []) {
     `Generated: ${new Date().toISOString()}`,
     "",
     "Clock offset uses the four HTTP timestamps. The uncertainty column is half of the network-only round trip; cross-clock latency values should be read with that bound.",
+    "Use one device per input. Capture gaps describe accepted samples, not the underlying GNSS sampling cadence. Missing or malformed records limit gap and failure counts.",
     "",
     "## Correlation coverage",
     "",
@@ -344,7 +346,7 @@ async function readDeviceRecords(filename) {
     try {
       return [JSON.parse(line.slice(start + DEVICE_TRACE_PREFIX.length))];
     } catch {
-      return [];
+      return [{ event: "malformed_trace" }];
     }
   });
 }

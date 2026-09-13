@@ -1326,8 +1326,8 @@ PublishResult publishFix(const TelemetryFix &fix) {
       Serial.println("[HTTPS] Check the telemetry payload and GNSS/NTP-disciplined timestamps.");
     } else if (responseCode == 401 || responseCode == 403) {
       Serial.println("[HTTPS] Credential fault latched; correct secrets.h and reflash the device.");
-    } else if (responseCode == 404 && policyResponseCode == 408) {
-      Serial.println("[HTTPS] Tunnel is temporarily offline; retrying the latest fix.");
+    } else if (policyResponseCode == 408 && responseCode != 408) {
+      Serial.println("[HTTPS] Tunnel or upstream is temporarily offline; retrying the latest fix.");
     } else if (responseCode == 404) {
       Serial.println("[HTTPS] Check BACKEND_URL; the telemetry endpoint was not found.");
     } else if (responseCode == 429) {

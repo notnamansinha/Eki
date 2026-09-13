@@ -259,8 +259,12 @@ inline HttpResponseAction httpResponseAction(int responseCode) {
 inline int classifyIngressResponse(int responseCode, const char *ngrokError) {
   // An offline tunnel is a transient transport failure, not an Eki route 404.
   // Do not reinterpret credential errors or arbitrary gateway error codes.
-  return responseCode == 404 && ngrokError != nullptr &&
-    std::strcmp(ngrokError, "ERR_NGROK_3200") == 0 ? 408 : responseCode;
+  if (ngrokError == nullptr) return responseCode;
+  const bool offlineTunnel = responseCode == 404 &&
+    std::strcmp(ngrokError, "ERR_NGROK_3200") == 0;
+  const bool unreachableUpstream = responseCode == 502 &&
+    std::strcmp(ngrokError, "ERR_NGROK_8012") == 0;
+  return offlineTunnel || unreachableUpstream ? 408 : responseCode;
 }
 
 /** Parse the delta-seconds Retry-After form emitted by the Eki backend. */
