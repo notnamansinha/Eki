@@ -48,6 +48,13 @@ export async function apiRequest<T>(
   }: ApiRequestOptions = {},
 ): Promise<T> {
   const backendUrl = configuredBackendUrl();
+  const headers = new Headers(init.headers);
+  const hostname = new URL(backendUrl).hostname;
+  // ngrok serves browser interstitials without API CORS headers unless this
+  // documented programmatic-request header is present on its free endpoints.
+  if ([".ngrok-free.dev", ".ngrok-free.app", ".ngrok.io"].some(suffix => hostname.endsWith(suffix))) {
+    headers.set("ngrok-skip-browser-warning", "1");
+  }
 
   const requestController = new AbortController();
   let abortSource: "caller" | "timeout" | null = null;
@@ -67,6 +74,7 @@ export async function apiRequest<T>(
   try {
     const response = await fetch(`${backendUrl}${path}`, {
       ...init,
+      headers,
       signal: requestController.signal,
     });
     if (response.status === 204) return undefined as T;

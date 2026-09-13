@@ -2,6 +2,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiRequest } from "./apiClient";
 
 describe("apiRequest", () => {
+  it.each(["ngrok-free.dev", "ngrok-free.app", "ngrok.io"])("requests API responses from %s while preserving auth headers", async domain => {
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", `https://test.${domain}`);
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"ok":true}'));
+    vi.stubGlobal("fetch", fetchMock);
+    await apiRequest("/api/test", { headers: { Authorization: "Bearer test-only", "Content-Type": "application/json" } });
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get("ngrok-skip-browser-warning")).toBe("1");
+    expect(headers.get("Authorization")).toBe("Bearer test-only");
+    expect(headers.get("Content-Type")).toBe("application/json");
+  });
+
+  it.each(["api.example.test", "test.ngrok-free.dev.example.test"])("does not add tunnel headers to %s", async hostname => {
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", `https://${hostname}`);
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}'));
+    vi.stubGlobal("fetch", fetchMock);
+    await apiRequest("/api/test");
+    expect((fetchMock.mock.calls[0][1].headers as Headers).has("ngrok-skip-browser-warning")).toBe(false);
+  });
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
