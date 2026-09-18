@@ -1,5 +1,7 @@
 # Eki frontend
 
+Last updated: 2026-09-14.
+
 Next.js 16 App Router static-export PWA with public landing and authenticated passenger, admin and feedback workspaces. Firebase Auth supplies identity; RTDB performs one initial live-fleet sync and then applies `child_added`/`child_changed`/`child_removed` deltas, with route-scoped delivery for maps. Firestore `onSnapshot`/queries provide configuration, sessions, messages, settings and feedback. Administrators arm assigned rides, adjust delays, issue boarding codes and message passengers. REST mutations use native `fetch` with Firebase bearer tokens.
 
 ## Run
@@ -22,7 +24,8 @@ The root `npm run build` follows Next export with Workbox manifest injection and
 
 ## Runtime design
 
-- `RoleGuard` improves presentation/routing only; Firestore/RTDB rules and backend middleware are the authorization boundary.
+- `RoleGuard` improves presentation/routing only, restores the saved workspace (`eki:last-workspace`) on sign-in, and clears caches on logout; Firestore/RTDB rules and backend middleware are the authorization boundary.
+- `resolveFirebaseAuthDomain` resolves the auth helper to same-origin on Firebase Hosting (`web.app` or custom domain), preventing storage-partitioning popup/redirect failures in Safari and Firefox.
 - `liveBusStore` maintains one shared RTDB subscription and prunes stale non-active entries. Firestore collection/settings hooks also share/auth-gate listeners.
 - Google Maps provider loads once per protected workspace. Stored polylines and local distance/speed math avoid passenger runtime Routes calls.
 - Only the active admin tab is mounted, preventing hidden maps/listeners/timers.

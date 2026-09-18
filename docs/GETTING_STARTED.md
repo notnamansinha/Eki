@@ -1,5 +1,7 @@
 # Eki getting started and operating guide
 
+Last updated: 2026-09-14.
+
 This is the plain-language entry point for the Eki campus bus-tracking system.
 It explains what the system does, who uses it, how to run it locally, and
 where to find the detailed technical contracts. It intentionally uses
@@ -205,6 +207,8 @@ See [the data model](data/FIREBASE_DATA_MODEL.md) for the records and
 | `npm run test:rules` | Run Firebase rules emulator integration tests; requires Java |
 | `npm run build` | Build backend/frontend, generate the service worker, and regenerate CSP hashes |
 | `npm run build:production` | Run the strict production environment gate and build |
+| `npm run verify:web-backend-contract` | Verify global CSP backend origin and Firebase Auth frame-src policy |
+| `npm run verify:rtdb-instance` | Preflight check verifying RTDB URLs, matching hosts, and target region |
 | `npm run verify` | Run lint, all tests, build and the production dependency audit |
 | `platformio test --project-dir hardware -e native` | Run host-side firmware policy tests |
 | `platformio run --project-dir hardware -e esp32dev` | Build development firmware |

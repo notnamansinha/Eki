@@ -1,5 +1,7 @@
 # High-level design (HLD)
 
+Last updated: 2026-09-14.
+
 ## Scope and goals
 
 Eki tracks a bounded university bus fleet in near real time, enforces ordered route progress, survives common connectivity/process failures, and exposes distinct passenger and administrator experiences. Administrators perform ride operations for assigned fleet operators. It is a modular monolith, not a multi-tenant platform: one deployment is attached to one Firebase project and one operational authority.

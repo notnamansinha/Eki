@@ -1,5 +1,7 @@
 # Environment and configuration reference
 
+Last updated: 2026-09-14.
+
 This page documents configuration names and safe handling rules. Values below
 are placeholders. Use separate files and projects for local, staging and
 production environments.
@@ -52,7 +54,7 @@ into the browser and should be treated as public identifiers.
 | Variable | Required | Meaning | Safe guidance |
 |---|---|---|---|
 | `NEXT_PUBLIC_FIREBASE_API_KEY` | Yes | Browser Firebase API identifier | Restrict by host and Firebase APIs; it is not a service-account secret |
-| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Yes | Firebase Auth domain | Use the matching environment |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Yes | Firebase Auth domain | Set to `<project>.web.app` or custom domain. On Firebase Hosting, the client normalizes this to same-origin to prevent Safari/Firefox storage-partitioning failures |
 | `NEXT_PUBLIC_FIREBASE_DATABASE_URL` | Yes | Browser RTDB URL | Use the matching environment |
 | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Yes | Firebase project identifier | Do not mix staging and production projects |
 | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Yes | Firebase Storage bucket identifier | Use the matching environment |

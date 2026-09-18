@@ -1,5 +1,7 @@
 # Telemetry latency baseline
 
+Last updated: 2026-09-14.
+
 Use this procedure to measure one device from GNSS capture through the first
 painted marker update. It produces correlated, location-free timing records;
 the normal RTDB live data remains unchanged.

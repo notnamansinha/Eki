@@ -18,13 +18,14 @@ emulator or PlatformIO; run those commands separately. A production release
 additionally runs `npm run build:production` with actual deployment variables;
 it intentionally fails closed when required public configuration is missing.
 
-Last verified 2026-08-14 against the current default branch: 10 repository
-script tests, 248 backend tests with 7 environment-dependent cases skipped, and
-93 frontend tests passed. Backend TypeScript, the frontend production
-build/CSP generation and the production dependency audit passed with zero
-vulnerabilities. PlatformIO native tests passed all 26 cases, and the
-development ESP32 build used 48,356 bytes RAM (14.8%) and 949,481 bytes flash
-(30.2%). The secure fleet build, Firebase rules emulator, and physical device
+Last verified 2026-09-14 against the current default branch: 33 repository
+script tests (including CSP and web/backend contract assertions), 446 backend
+tests with 7 environment-dependent cases skipped, and 215 frontend tests
+(including same-origin Firebase Auth domain resolution) passed. Backend
+TypeScript, the frontend production build/CSP generation, and the production
+dependency audit passed with zero vulnerabilities. PlatformIO native tests
+passed all 35 cases, and the development ESP32 build used 15.3% RAM and 30.5%
+flash. The secure fleet build, Firebase rules emulator, and physical device
 matrix remain separate gates. Re-run rather than trusting these historical
 numbers.
 

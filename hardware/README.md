@@ -1,5 +1,7 @@
 # ESP32 + NEO-M8N tracker
 
+Last updated: 2026-09-14.
+
 The firmware continuously parses NMEA on UART2, captures trusted GNSS state in
 a bounded RTC-memory queue, and publishes it from a separate FreeRTOS task. It
 has no Firebase credential and cannot choose its bus or route.

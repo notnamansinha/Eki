@@ -1,5 +1,7 @@
 # Backend API reference
 
+Last updated: 2026-09-14.
+
 Base path is the deployed backend origin. JSON request bodies are strict and limited to 16 KiB except device telemetry (512 bytes) and diagnostics (1 KiB). `TRACE` and `CONNECT` return 405. Responses are JSON; errors use `{ "error": "…" }` and do not expose stacks/secrets.
 
 ## Quick start

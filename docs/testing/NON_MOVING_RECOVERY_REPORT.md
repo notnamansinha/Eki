@@ -1,6 +1,6 @@
 # Non-moving recovery verification
 
-Updated: 2026-09-13. Tests used the connected stationary ESP32/GNSS, local backend, and public tunnel. Raw serial logs remain under ignored `hardware/.pio`.
+Updated: 2026-09-14. Tests used the connected stationary ESP32/GNSS, local backend, and public tunnel. Raw serial logs remain under ignored `hardware/.pio`.
 
 ## Backend outage and recovery
 

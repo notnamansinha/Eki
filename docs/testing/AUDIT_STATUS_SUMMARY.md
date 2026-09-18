@@ -1,9 +1,11 @@
 # Eki audit fixes and physical-test readiness
 
-Updated: 2026-09-13. Implementation commit `c9e5940` is pushed to `testing`; no merge to `main`.
+Updated: 2026-09-14. Implementation commit `c9e5940` is pushed to `testing`; subsequent branch `codex/rtdb-region-decision` adds RTDB region evaluation, same-origin Firebase Auth helper domain resolution, and CSP frame-src contract verification.
 
 ## Corrected
 
+- **Firebase Auth / Storage Partitioning:** `resolveFirebaseAuthDomain` enforces same-origin auth helper domain on `web.app` and custom domains to prevent popup/redirect failures in Safari and Firefox. `frame-src 'self'` is enforced in `firebase.json` for `/__/auth/iframe` and verified by `verify-web-backend-contract.mjs`.
+- **RTDB Region Selection:** Benchmark approved Singapore (`asia-southeast1`) candidate (67.8% lower front-door latency vs Iowa); staged cutover gate and preflight instance check (`npm run verify:rtdb-instance`) established.
 - **Routes:** fresh endpoint inference preserves A→B→A and B→A→B travel; long ordered routes and shared per-bus reroutes retain their existing race/version guards. Route Type was removed from the editor, payload hash, API validation, persistence, model, tests, and data documentation. Legacy documents with the extra field still load.
 - **Stop editor:** A…Z, AA… labels now come from one shared helper in Admin and Passenger. Move and Remove controls are always visible, keyboard named, and 44×44 px; reordering keeps stable stop objects and invalidates stale geometry.
 - **Ride lifecycle/history:** **End ride early** is a guarded, idempotent server operation. It writes `status=interrupted`, `endTime`, and `manual_end_early`, removes only the matching active ride and bus lock, and retires only the matching RTDB session. Natural completion remains terminal and eligible for automatic return service; interrupted rides do not auto-turn around.
@@ -15,7 +17,7 @@ Updated: 2026-09-13. Implementation commit `c9e5940` is pushed to `testing`; no 
 
 ## Verification
 
-- **UNIT/INTEGRATION VERIFIED:** 33 script tests, 446 backend tests passed with 7 skipped, and 214 frontend tests passed. This includes manual termination races/idempotence, the manual-end/completion race, fresh direction inference, 0 km/h chat, passenger availability policy, route save behavior, A/Z/AA labels, CSP contract, and retry timing.
+- **UNIT/INTEGRATION VERIFIED:** 33 script tests, 446 backend tests passed with 7 skipped, and 215 frontend tests passed (including same-origin Firebase Auth domain resolution). This includes manual termination races/idempotence, the manual-end/completion race, fresh direction inference, 0 km/h chat, passenger availability policy, route save behavior, A/Z/AA labels, CSP contract, and retry timing.
 - **UNIT/INTEGRATION VERIFIED:** 35/35 native firmware tests passed. Development ESP32 build passed at 15.3% RAM and 30.5% flash.
 - **LIVE RUNTIME VERIFIED:** the new firmware was flashed to the attached ESP32 on COM3 with image hash verification.
 - **LIVE RUNTIME VERIFIED:** post-fix three-minute stationary capture: 175 requests, 175 accepted, 0 HTTP failures, 0 retries, 1 TLS connection, 0 reconnects. HTTP p50/p95/p99/max was **567/1,144/1,320/2,032 ms**. Backend-ingress update-gap p50/p95/p99/max was **1,004/1,159/2,003/2,382 ms**; no gap exceeded 5 s. See [POSTFIX_STATIONARY_TRACE.md](POSTFIX_STATIONARY_TRACE.md).

@@ -1,5 +1,7 @@
 # Eki backend
 
+Last updated: 2026-09-14.
+
 The TypeScript/Express backend is the authority for hardware ingestion, fleet/route/device commands and ordered ride lifecycle. It uses Firebase Admin with service-account JSON or Application Default Credentials, writes current data to RTDB and durable state to Firestore, and elects one background worker with a Firestore lease.
 
 ```powershell

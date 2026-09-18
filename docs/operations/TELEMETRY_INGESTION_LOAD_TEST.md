@@ -1,5 +1,7 @@
 # Telemetry ingestion load test
 
+Last updated: 2026-09-14.
+
 Use this staging-only procedure to compare request acknowledgement latency and
 rate-limit transaction contention before and after the token-lease change. The
 load writes valid stopped telemetry into every configured device's live bus

@@ -1,5 +1,7 @@
 # Security Policy
 
+Last updated: 2026-09-14.
+
 This document outlines the security models, vulnerability reporting procedures,
 and database rules governing the Eki ecosystem. For the public-safe
 configuration and documentation boundary, also see

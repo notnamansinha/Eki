@@ -1,5 +1,7 @@
 # Hardware telemetry, latency and failure design
 
+Last updated: 2026-09-14.
+
 Setup boundary: use [the hardware setup guide](README.md) before reading this
 design. It is the source for required `backend/.env`, frontend environment
 templates, `hardware/include/secrets.h`, signing-key custody, provisioning

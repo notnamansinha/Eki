@@ -1,5 +1,7 @@
 # CI, deployment, and release guide
 
+Last updated: 2026-09-14.
+
 This document explains what the repository automation verifies, what it deploys,
 and which production actions still belong to the university operations team.
 It contains names and placeholders only; environment secrets and project IDs
@@ -20,7 +22,8 @@ The workflow performs:
    helper writes isolated temporary copies; committed rules are never modified.
    App Check is enforced separately in Firebase Console for deployed projects.
 5. Strict frontend production build with CI-only placeholder public values,
-   service-worker generation, and deterministic CSP regeneration.
+   service-worker generation, deterministic CSP regeneration, and
+   web/backend CSP contract assertions (origin and Firebase Auth `frame-src 'self'`).
 6. Production dependency audit.
 7. Backend Docker image build and smoke boot. A degraded `503 /health` is
    expected with placeholder Firebase configuration and proves the container

@@ -1,5 +1,7 @@
 # Storage architecture summary
 
+Last updated: 2026-09-14.
+
 The exhaustive field/access/relationship dictionary is [Firebase data model](FIREBASE_DATA_MODEL.md).
 
 | Store | Use | Main paths |

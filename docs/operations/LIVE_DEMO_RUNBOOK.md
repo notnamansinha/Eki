@@ -1,5 +1,7 @@
 # My live bus demo runbook
 
+Last updated: 2026-09-14.
+
 This is the checklist for the student operating the professor demonstration.
 Complete every blocking item before inviting passengers onto the bus.
 

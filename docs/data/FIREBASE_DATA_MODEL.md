@@ -1,5 +1,7 @@
 # Firebase Firestore and RTDB data model
 
+Last updated: 2026-09-14.
+
 ## Reading this document
 
 Firestore is durable/queryable; RTDB is the low-latency latest-state projection. `server` means Firebase Admin SDK and therefore not governed by client rules. Timestamps are called out because this repository contains both Firestore `Timestamp`, ISO strings, RTDB server milliseconds and epoch-millisecond numbers.

@@ -1,5 +1,7 @@
 # Low-level design (LLD)
 
+Last updated: 2026-09-14.
+
 This document maps runtime behavior to source modules. Tests beside a module exercise its pure/security-sensitive behavior.
 
 ## Backend composition
@@ -103,6 +105,7 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 | `hooks/useSmoothPosition.ts` | Bounded rAF interpolation; bypassed for reduced motion |
 | `hooks/useDialogFocus.ts` | Top-dialog focus trap, Escape, scroll lock and focus restoration |
 | `lib/firebaseCore/Auth/Database/Firestore/AppCheck.ts` | Split client SDK initialization to limit route dependencies |
+| `lib/firebaseAuthDomain.ts` | Resolves same-origin auth helper domain on web.app / custom domains to protect storage-partitioned browsers |
 | `lib/authState.ts` | Resolves first auth event before protected listeners attach |
 | `lib/liveBusStore.ts` | One RTDB `onValue` listener and freshness pruning for all consumers |
 | `lib/liveBusFreshness.ts`, `liveBusSnapshot.ts` | Coordinate/timestamp/signal validity and expiry |
@@ -126,7 +129,9 @@ Tests beside pure frontend libraries exercise freshness, RTDB sharing, route dis
 ## Configuration/build files
 
 - Root `package.json` is the npm workspace orchestrator. `package-lock.json` is the reproducible dependency graph.
-- `scripts/build-production.mjs` enables strict public-variable validation. `generate-sw.mjs` injects the Workbox manifest. `update-csp.mjs` hashes emitted inline scripts into `firebase.json`.
+- `scripts/build-production.mjs` enables strict public-variable validation. `generate-sw.mjs` injects the Workbox manifest. `update-csp.mjs` hashes emitted inline scripts and injects connect/frame directives into `firebase.json`.
+- `scripts/verify-web-backend-contract.mjs` verifies the backend origin and Firebase Auth same-origin frame helper (`frame-src 'self'`) in CSP.
+- `scripts/rtdb-instance-config.mjs` verifies matching RTDB instances and expected region configuration (`verify:rtdb-instance`).
 - `firebase.json`, `.firebaserc`, rules and indexes define Hosting/Firebase deployment. Generated CSP changes after builds are intentional and must be committed with the output-producing code.
 - GitHub workflows install, test/build, run emulators where configured, and scan dependencies/code. Dependabot owns scheduled update proposals.
 

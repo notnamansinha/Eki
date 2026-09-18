@@ -1,5 +1,7 @@
 # Architecture and lifecycle summary
 
+Last updated: 2026-09-14.
+
 The authoritative design is split into [High-level design](HIGH_LEVEL_DESIGN.md), [Low-level design](LOW_LEVEL_DESIGN.md), [Firebase data model](../data/FIREBASE_DATA_MODEL.md), and [Hardware telemetry](../hardware/HARDWARE_TELEMETRY.md). This page is the short operational reference.
 
 ```mermaid
