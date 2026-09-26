@@ -895,6 +895,7 @@ describe("production security configuration", () => {
       return [sources[0], sources.slice(1)] as const;
     }));
     expect(directives.get("frame-src")).toEqual([
+      "'self'",
       "https://accounts.google.com",
       "https://*.firebaseapp.com",
       "https://www.google.com/recaptcha/",

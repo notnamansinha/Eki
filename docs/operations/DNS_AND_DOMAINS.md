@@ -58,6 +58,10 @@ When using a custom DNS domain for the frontend web app, Google Sign-In and Fire
 3. Add the frontend hostname, for example `eki.yourdomain.com`. Add the API
    hostname only if that hostname independently serves Firebase Auth redirects;
    Eki's normal API is not an Auth redirect origin.
+4. For Firebase Hosting on `*.web.app` or a custom domain, set the Firebase
+   web app's `authDomain` to the same hostname as the frontend. Add
+   `https://<frontend-hostname>/__/auth/handler` to the Google OAuth client's
+   authorized redirect URIs in Google Cloud Console.
 
 ---
 
@@ -82,8 +86,13 @@ The Express backend must sit behind a valid TLS/HTTPS endpoint with public or ca
 ### Frontend `.env.local` / `env.production`
 ```ini
 NEXT_PUBLIC_BACKEND_URL=https://api.eki.yourdomain.com
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<firebase-project-id>.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<frontend-hostname>
 ```
+
+The client automatically uses its matching Firebase Hosting hostname on
+`*.web.app` and `*.firebaseapp.com` deployments. For custom hosting domains,
+set `authDomain` to the frontend hostname and configure the matching Google
+OAuth redirect URI above.
 
 ### Backend `.env`
 ```ini

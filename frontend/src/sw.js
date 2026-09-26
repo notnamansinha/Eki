@@ -33,8 +33,13 @@ import { ExpirationPlugin } from "workbox-expiration";
 import { CacheableResponsePlugin } from "workbox-cacheable-response";
 
 // ─── Lifecycle ──────────────────────────────────────────────────────────────
-// Updates use the browser's normal waiting lifecycle and activate after tabs
-// using the previous worker close. No deployment can force-reload a live ride.
+// Activate updates as soon as the new worker is installed. The page remains
+// in place until its next navigation/reload, so this replaces stale fetch
+// handling without interrupting an active ride or authentication flow.
+self.addEventListener("install", (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+
 clientsClaim();
 
 // Remove entries from previous precache versions that are no longer in the

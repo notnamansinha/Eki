@@ -57,6 +57,7 @@ const connectSources = [
 ].join(" ");
 csp.value = csp.value.replace(/connect-src [^;]+;/, `connect-src ${connectSources};`);
 const frameSources = [
+  "'self'",
   "https://accounts.google.com",
   "https://*.firebaseapp.com",
   "https://www.google.com/recaptcha/",

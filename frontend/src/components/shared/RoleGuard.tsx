@@ -14,7 +14,18 @@ interface RoleGuardProps {
 }
 
 export default function RoleGuard({ children, allowedRoles, loadingFallback }: RoleGuardProps) {
-  const { user, loading, roleError, loginLoading, loginWithGoogle, logout } = useAuth();
+  const {
+    user,
+    loading,
+    roleError,
+    loginReady,
+    loginError,
+    loginFallbackAvailable,
+    loginLoading,
+    loginWithGoogle,
+    loginWithGoogleRedirect,
+    logout,
+  } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const pathname = usePathname();
 
@@ -73,7 +84,7 @@ export default function RoleGuard({ children, allowedRoles, loadingFallback }: R
         </p>
         <button
           onClick={loginWithGoogle}
-          disabled={loginLoading}
+          disabled={loginLoading || !loginReady}
           className="btn-primary px-6 py-3 flex items-center gap-2.5 text-[13px] font-medium disabled:opacity-60"
         >
           {loginLoading ? (
@@ -83,6 +94,27 @@ export default function RoleGuard({ children, allowedRoles, loadingFallback }: R
           )}
           {loginLoading ? "Opening Google…" : "Sign in with Google"}
         </button>
+        {loginError && (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <p
+              className="max-w-xs text-sm"
+              style={{ color: "var(--status-danger)" }}
+              role="alert"
+            >
+              {loginError}
+            </p>
+            {loginFallbackAvailable && (
+              <button
+                type="button"
+                onClick={loginWithGoogleRedirect}
+                className="text-sm font-semibold underline underline-offset-4"
+                style={{ color: "var(--text-primary)" }}
+              >
+                Continue with full-page sign-in
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   }
