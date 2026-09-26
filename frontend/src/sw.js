@@ -97,7 +97,7 @@ registerRoute(
   ({ url }) =>
     url.origin === "https://maps.googleapis.com" ||
     url.origin === "https://maps.gstatic.com" ||
-    url.origin.includes("ggpht.com"),
+    url.hostname === "ggpht.com" || url.hostname.endsWith(".ggpht.com"),
   new CacheFirst({
     cacheName: "eki-google-maps",
     plugins: [

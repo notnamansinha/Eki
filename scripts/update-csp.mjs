@@ -47,6 +47,8 @@ csp.value = csp.value.replace(/script-src [^;]+;/, `script-src ${sources};`);
 const connectSources = [
   "'self'",
   "https://*.googleapis.com",
+  "https://*.gstatic.com",
+  "https://*.ggpht.com",
   "https://*.firebaseio.com",
   "https://*.firebasedatabase.app",
   "https://*.firebaseapp.com",
@@ -56,6 +58,16 @@ const connectSources = [
   ...(backendOrigin ? [backendOrigin] : []),
 ].join(" ");
 csp.value = csp.value.replace(/connect-src [^;]+;/, `connect-src ${connectSources};`);
+const imageSources = [
+  "'self'",
+  "data:",
+  "blob:",
+  "https://*.googleapis.com",
+  "https://*.gstatic.com",
+  "https://*.googleusercontent.com",
+  "https://*.ggpht.com",
+].join(" ");
+csp.value = csp.value.replace(/img-src [^;]+;/, `img-src ${imageSources};`);
 const frameSources = [
   "'self'",
   "https://accounts.google.com",

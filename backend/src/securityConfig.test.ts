@@ -902,6 +902,8 @@ describe("production security configuration", () => {
       "https://recaptcha.google.com/recaptcha/",
     ]);
     expect(directives.get("connect-src")).toContain("https://www.google.com/recaptcha/");
+    expect(directives.get("connect-src")).toContain("https://*.gstatic.com");
+    expect(directives.get("connect-src")).toContain("https://*.ggpht.com");
     expect(headers.get("Strict-Transport-Security")).toMatch(/^max-age=\d+/);
     expect(headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(headers.get("X-Frame-Options")).toBe("DENY");

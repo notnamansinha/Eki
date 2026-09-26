@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useAuth, UserRole } from "@/hooks/useAuth";
-import { Loader2, ShieldAlert, LogIn } from "lucide-react";
+import { Loader2, ShieldAlert } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 
 interface RoleGuardProps {
@@ -18,16 +18,15 @@ export default function RoleGuard({ children, allowedRoles, loadingFallback }: R
     user,
     loading,
     roleError,
-    loginReady,
-    loginError,
-    loginFallbackAvailable,
-    loginLoading,
-    loginWithGoogle,
-    loginWithGoogleRedirect,
     logout,
   } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !user) router.replace("/");
+  }, [loading, router, user]);
 
   useEffect(() => {
     if (user && allowedRoles.includes(user.role)) {
@@ -59,64 +58,7 @@ export default function RoleGuard({ children, allowedRoles, loadingFallback }: R
   }
 
   if (!user) {
-    return (
-      <div
-        className="w-full flex flex-col items-center justify-center px-6 text-center"
-        style={{ height: "100dvh", background: "var(--surface-0)" }}
-      >
-        <div
-          className="w-14 h-14 rounded-2xl flex items-center justify-center mb-6"
-          style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)" }}
-        >
-          <ShieldAlert className="w-7 h-7" style={{ color: "var(--text-tertiary)" }} />
-        </div>
-        <h1
-          className="text-2xl font-extrabold tracking-tight mb-2"
-          style={{ color: "var(--text-primary)" }}
-        >
-          Access Restricted
-        </h1>
-        <p
-          className="text-[14px] max-w-xs mb-8 leading-relaxed"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          Sign in to access this section.
-        </p>
-        <button
-          onClick={loginWithGoogle}
-          disabled={loginLoading || !loginReady}
-          className="btn-primary px-6 py-3 flex items-center gap-2.5 text-[13px] font-medium disabled:opacity-60"
-        >
-          {loginLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <LogIn className="w-4 h-4" />
-          )}
-          {loginLoading ? "Opening Google…" : "Sign in with Google"}
-        </button>
-        {loginError && (
-          <div className="mt-4 flex flex-col items-center gap-2">
-            <p
-              className="max-w-xs text-sm"
-              style={{ color: "var(--status-danger)" }}
-              role="alert"
-            >
-              {loginError}
-            </p>
-            {loginFallbackAvailable && (
-              <button
-                type="button"
-                onClick={loginWithGoogleRedirect}
-                className="text-sm font-semibold underline underline-offset-4"
-                style={{ color: "var(--text-primary)" }}
-              >
-                Continue with full-page sign-in
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    );
+    return null;
   }
 
   if (roleError) {

@@ -19,7 +19,6 @@ export default function HomePage() {
     loading,
     loginReady,
     loginError,
-    loginFallbackAvailable,
     loginLoading,
     loginWithGoogle,
     loginWithGoogleRedirect,
@@ -115,18 +114,19 @@ export default function HomePage() {
             {loginLoading ? "Opening Google…" : "Sign In with Google"}
           </button>
         </div>
+        {loginReady && (
+          <button
+            type="button"
+            onClick={loginWithGoogleRedirect}
+            disabled={loginLoading}
+            className="mt-4 text-sm font-semibold text-white underline underline-offset-4 disabled:opacity-60"
+          >
+            Continue with full-page Google sign-in
+          </button>
+        )}
         {loginError && (
           <div className="mt-4 flex flex-col items-center gap-2">
             <p className="max-w-lg text-sm text-white" role="alert">{loginError}</p>
-            {loginFallbackAvailable && (
-              <button
-                type="button"
-                onClick={loginWithGoogleRedirect}
-                className="text-sm font-semibold text-white underline underline-offset-4"
-              >
-                Continue with full-page Google sign-in
-              </button>
-            )}
           </div>
         )}
       </section>

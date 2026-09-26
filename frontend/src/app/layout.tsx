@@ -42,6 +42,7 @@ export default function RootLayout({
             not the landing page's auth iframe flow. */}
         <link rel="preconnect" href="https://apis.google.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://accounts.google.com" />
+        <link rel="dns-prefetch" href="https://maps.gstatic.com" />
         <link rel="dns-prefetch" href="https://identitytoolkit.googleapis.com" />
         <link rel="dns-prefetch" href="https://firebaseio.com" />
         {/* Firebase auth's token-refresh endpoint — hit on every PWA cold start
