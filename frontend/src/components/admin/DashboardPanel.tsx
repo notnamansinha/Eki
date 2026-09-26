@@ -881,6 +881,7 @@ export default function DashboardPanel() {
           </div>
           <div className="grid gap-2">
             <CustomSelect
+              name="service-operator"
               ariaLabel="Operator"
               value={driverId}
               onChange={selectDriver}
@@ -891,6 +892,7 @@ export default function DashboardPanel() {
               placeholder="Select operator…"
             />
             <CustomSelect
+              name="service-vehicle"
               ariaLabel="Assigned vehicle"
               value={busId}
               onChange={() => undefined}
@@ -902,6 +904,7 @@ export default function DashboardPanel() {
               placeholder="Assigned vehicle"
             />
             <CustomSelect
+              name="service-route"
               ariaLabel="Route"
               value={routeId}
               onChange={setRouteId}

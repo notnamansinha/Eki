@@ -535,6 +535,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
               className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
             />
             <CustomSelect
+              name="new-operator-vehicle"
               value={newDriverBusId}
               onChange={(val) => setNewDriverBusId(val)}
               ariaLabel="Assign vehicle to new operator"
@@ -659,6 +660,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                               className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
                             />
                             <CustomSelect
+                              name="edit-operator-vehicle"
                               value={editDriverBusId}
                               onChange={(val) => setEditDriverBusId(val)}
                               ariaLabel="Edit assigned vehicle"

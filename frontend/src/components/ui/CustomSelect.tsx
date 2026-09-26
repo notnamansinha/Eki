@@ -9,6 +9,7 @@ export interface CustomSelectOption {
 }
 
 interface CustomSelectProps {
+  name: string;
   value: string;
   onChange: (value: string) => void;
   options: CustomSelectOption[];
@@ -20,6 +21,7 @@ interface CustomSelectProps {
 }
 
 export default function CustomSelect({
+  name,
   value,
   onChange,
   options,
@@ -32,6 +34,7 @@ export default function CustomSelect({
   return (
     <div className={`relative w-full ${className}`} style={style}>
       <select
+        name={name}
         value={value}
         disabled={disabled}
         aria-label={ariaLabel ?? placeholder}

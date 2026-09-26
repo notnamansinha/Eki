@@ -894,6 +894,9 @@ describe("production security configuration", () => {
       const sources = directive.trim().split(/\s+/);
       return [sources[0], sources.slice(1)] as const;
     }));
+    expect(directives.get("script-src")).toContain(
+      "https://bustrack-be165-default-rtdb.firebaseio.com",
+    );
     expect(directives.get("frame-src")).toEqual([
       "'self'",
       "https://accounts.google.com",

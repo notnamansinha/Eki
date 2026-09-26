@@ -6,18 +6,18 @@
  * icons form the install shell; hashed role-specific chunks cache on use.
  *
  * Caching strategies (ordered by priority):
- *   1. Precache  – HTML shell, manifest, icons and hero images.
- *   2. CacheFirst – same-origin hashed Next.js JS/CSS chunks, cached on use.
- *   3. StaleWhileRevalidate – Google Fonts CSS/woff2 (if ever added).
- *   4. CacheFirst – Google Maps tiles, Firebase SDK CDN scripts.
- *   5. NetworkOnly – authenticated Firebase/API responses.
+ *   1. NetworkFirst – HTML navigation, with precached shells for offline use.
+ *   2. Precache – HTML shells, manifest, icons and bootstrap chunks.
+ *   3. CacheFirst – same-origin hashed Next.js JS/CSS chunks, cached on use.
+ *   4. StaleWhileRevalidate – Google Fonts CSS/woff2 (if ever added).
+ *   5. CacheFirst – Google Maps tiles, Firebase SDK CDN scripts.
+ *   6. NetworkOnly – authenticated Firebase/API responses.
  *
- * Navigation requests are served from the precache (offline-capable) with
- * a Network-First fallback for any route not in the manifest.
+ * Navigation requests check Hosting first and use cached HTML when offline.
  */
 
 import { clientsClaim } from "workbox-core";
-import { precacheAndRoute, cleanupOutdatedCaches } from "workbox-precaching";
+import { precacheAndRoute, cleanupOutdatedCaches, matchPrecache } from "workbox-precaching";
 import {
   registerRoute,
   NavigationRoute,
@@ -46,9 +46,41 @@ clientsClaim();
 // manifest. Prevents stale cache bloat across deployments.
 cleanupOutdatedCaches();
 
+// ─── Navigation requests ────────────────────────────────────────────────────
+// Register before the precache route so a refresh checks Hosting for the
+// current HTML instead of always serving the previous deployment's shell.
+const navigationStrategy = new NetworkFirst({
+  cacheName: "eki-navigations",
+  networkTimeoutSeconds: 3,
+  plugins: [
+    new CacheableResponsePlugin({ statuses: [0, 200] }),
+  ],
+});
+const navigationHandler = new NavigationRoute(
+  async (options) => {
+    try {
+      return await navigationStrategy.handle(options);
+    } catch (error) {
+      const pathname = new URL(options.request.url).pathname;
+      const shell = pathname === "/"
+        ? "/index.html"
+        : pathname.endsWith("/") ? `${pathname}index.html` : `${pathname}.html`;
+      const cached = await matchPrecache(shell) || await matchPrecache("/index.html");
+      if (cached) return cached;
+      throw error;
+    }
+  },
+  {
+    // Don't let the SW intercept Firebase Auth iframe URLs
+    denylist: [/\/__\/auth\//, /\/__(.*)/],
+  }
+);
+registerRoute(navigationHandler);
+
 // ─── Precache ───────────────────────────────────────────────────────────────
 // The placeholder below is replaced by workbox-build's injectManifest with
-// the list of URLs and revision hashes from the static export.
+// the list of URLs and revision hashes from the static export. Navigation is
+// handled above; precached HTML remains available when offline.
 precacheAndRoute(self.__WB_MANIFEST || []);
 
 // Hashed Next.js assets are immutable. Cache only the chunks a user's role
@@ -66,28 +98,6 @@ registerRoute(
     ],
   })
 );
-
-// ─── Navigation requests ────────────────────────────────────────────────────
-// All navigation requests (HTML page loads) are served from the precache.
-// Since every route has its own HTML file in the static export, this gives
-// instant page transitions without any network dependency.
-//
-// If a navigation doesn't match a precached URL (e.g. a new route added
-// after the SW was installed), fall back to network-first.
-const navigationHandler = new NavigationRoute(
-  new NetworkFirst({
-    cacheName: "eki-navigations",
-    networkTimeoutSeconds: 3,
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
-    ],
-  }),
-  {
-    // Don't let the SW intercept Firebase Auth iframe URLs
-    denylist: [/\/__\/auth\//, /\/__(.*)/],
-  }
-);
-registerRoute(navigationHandler);
 
 // ─── Runtime caching: Google Maps ───────────────────────────────────────────
 // Map tiles, the Maps JS SDK, and marker icons. Cache-first with a 7-day

@@ -168,6 +168,7 @@ export default function PassengerBoardingView({
         {tripState === "in_service" ? "Ride in service" : "Ride armed · awaiting stop 1"}
       </p>
       <CustomSelect
+        name="boarding-stop"
         ariaLabel="Boarding stop"
         placeholder="Boarding..."
         value={boardingStopId}
@@ -180,6 +181,7 @@ export default function PassengerBoardingView({
         style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
       />
       <CustomSelect
+        name="destination-station"
         ariaLabel="Destination station"
         placeholder="Choose destination station..."
         value={alightingStopId}

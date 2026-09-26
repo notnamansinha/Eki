@@ -55,9 +55,8 @@ export default function ServiceWorkerRegistrar() {
             });
           }, 15 * 60 * 1000);
 
-          // An installed update remains waiting until every tab using the old
-          // worker closes. This prevents a deployment from reloading an active
-          // admin ride or passenger session mid-operation.
+          // The worker activates without reloading an active ride or passenger
+          // session; the next navigation loads the current HTML.
         })
         .catch((error) => {
           console.error("[SW] Registration failed:", error);
