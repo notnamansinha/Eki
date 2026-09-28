@@ -89,10 +89,11 @@ NEXT_PUBLIC_BACKEND_URL=https://api.eki.yourdomain.com
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<frontend-hostname>
 ```
 
-The client automatically uses its matching Firebase Hosting hostname on
-`*.web.app` and `*.firebaseapp.com` deployments. For custom hosting domains,
-set `authDomain` to the frontend hostname and configure the matching Google
-OAuth redirect URI above.
+The client automatically uses the matching Firebase Hosting hostname only on
+the project's primary `<project-id>.web.app` and `<project-id>.firebaseapp.com`
+sites. For a secondary Firebase Hosting site or a custom domain, set
+`NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` to the frontend hostname and configure the
+matching Google OAuth redirect URI above.
 
 ### Backend `.env`
 ```ini

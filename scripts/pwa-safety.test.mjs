@@ -23,10 +23,8 @@ test("precaches each exported shell's immutable bootstrap chunks", () => {
   assert.match(worker, /url\.pathname\.startsWith\("\/_next\/static\/"\)/);
 });
 
-test("activates worker updates without reloading active tabs", () => {
+test("worker updates wait for active tabs without forcing a reload", () => {
   assert.doesNotMatch(registrar, /SKIP_WAITING|controllerchange|location\.reload/);
-  assert.match(worker, /self\.addEventListener\("install",\s*\(event\)\s*=>\s*\{/);
-  assert.match(worker, /event\.waitUntil\(self\.skipWaiting\(\)\)/);
-  assert.match(worker, /clientsClaim\(\)/);
+  assert.doesNotMatch(worker, /skipWaiting\(\)|clientsClaim\(\)/);
   assert.doesNotMatch(worker, /controllerchange|location\.reload/);
 });

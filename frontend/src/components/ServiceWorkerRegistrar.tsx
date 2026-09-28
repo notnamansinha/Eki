@@ -55,8 +55,8 @@ export default function ServiceWorkerRegistrar() {
             });
           }, 15 * 60 * 1000);
 
-          // The worker activates without reloading an active ride or passenger
-          // session; the next navigation loads the current HTML.
+          // The update waits until existing tabs close, preserving the assets
+          // and fetch behavior of an active ride or passenger session.
         })
         .catch((error) => {
           console.error("[SW] Registration failed:", error);

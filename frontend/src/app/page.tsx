@@ -118,8 +118,7 @@ export default function HomePage() {
           <button
             type="button"
             onClick={loginWithGoogleRedirect}
-            disabled={loginLoading}
-            className="mt-4 text-sm font-semibold text-white underline underline-offset-4 disabled:opacity-60"
+            className="mt-4 text-sm font-semibold text-white underline underline-offset-4"
           >
             Continue with full-page Google sign-in
           </button>

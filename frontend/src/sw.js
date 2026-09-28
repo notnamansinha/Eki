@@ -16,7 +16,6 @@
  * Navigation requests check Hosting first and use cached HTML when offline.
  */
 
-import { clientsClaim } from "workbox-core";
 import { precacheAndRoute, cleanupOutdatedCaches, matchPrecache } from "workbox-precaching";
 import {
   registerRoute,
@@ -33,14 +32,9 @@ import { ExpirationPlugin } from "workbox-expiration";
 import { CacheableResponsePlugin } from "workbox-cacheable-response";
 
 // ─── Lifecycle ──────────────────────────────────────────────────────────────
-// Activate updates as soon as the new worker is installed. The page remains
-// in place until its next navigation/reload, so this replaces stale fetch
-// handling without interrupting an active ride or authentication flow.
-self.addEventListener("install", (event) => {
-  event.waitUntil(self.skipWaiting());
-});
-
-clientsClaim();
+// Let an update wait until clients using the previous worker have closed.
+// Replacing their controller mid-session can break lazy-loaded assets that
+// belong to the previous deployment.
 
 // Remove entries from previous precache versions that are no longer in the
 // manifest. Prevents stale cache bloat across deployments.
