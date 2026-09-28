@@ -1,73 +1,31 @@
-import {
-  passengerPanelClassName,
-  passengerPanelStyle,
-  passengerTopSpacerStyle,
-} from "./passengerFrame";
+import { Bell, MapPin } from "lucide-react";
+import styles from "./LiveRoutesHome.module.css";
 
 export default function PassengerLoadingShell() {
   return (
-    <div
-      className="relative overflow-hidden text-white"
-      style={{ height: "100dvh", backgroundColor: "var(--surface-0)" }}
-      aria-hidden="true"
-    >
-      <picture className="pointer-events-none absolute inset-0 block h-full w-full">
-        <source srcSet="/images/hero-background.webp" type="image/webp" />
-        {/* Keep the passenger background on the same full-resolution asset as
-            the login page; a separate 480px source made it look soft on phones. */}
-        <img
-          src="/images/hero-background.jpg"
-          alt=""
-          fetchPriority="high"
-          decoding="async"
-          className="h-full w-full object-cover md:object-[center_30%]"
-        />
-      </picture>
-      <div className="pointer-events-none absolute inset-0 z-0 bg-black/40" />
-
-      <div className="absolute inset-0 z-10 flex flex-col pt-safe">
-        <div
-          className="shrink-0"
-          style={passengerTopSpacerStyle}
-          aria-hidden="true"
-        />
-
-        <div
-          className={passengerPanelClassName}
-          style={passengerPanelStyle}
-        >
-          <div className="mx-6 mb-4 shrink-0 pb-6 text-center">
-            <h1
-              className="mb-2 text-[32px] font-black leading-none tracking-tight"
-              style={{ color: "var(--text-primary)" }}
-            >
-              Live Routes
-            </h1>
-            <p
-              className="mt-2 text-[15px] font-medium"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              Restoring your transit session…
-            </p>
+    <div className={styles.home} style={{ height: "100dvh" }} aria-hidden="true">
+      <div className={styles.background} />
+      <div className={styles.scroll}>
+        <div className={styles.content}>
+          <div className={styles.header}>
+            <span className={styles.location}><MapPin size={19} /> Ahmedabad</span>
+            <span className={styles.notification}><Bell size={20} /></span>
           </div>
-
-          <div className="mx-5 rounded-xl border border-white/5 bg-white/[0.03] px-5 py-6 text-center">
-            <p className="text-[13px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-              Loading live route information
-            </p>
+          <div className={styles.hero}>
+            <p className={styles.eyebrow}>YOUR CITY, IN MOTION</p>
+            <h1>Live Routes<span className={styles.titleDot}>.</span></h1>
+            <p>Restoring your transit session…</p>
+          </div>
+          <div className={styles.alert}><span className={styles.skeletonBlock} style={{ width: "100%", height: 42 }} /></div>
+          <div className={styles.sectionHeading}><h2>Explore routes</h2></div>
+          <div className={styles.filters}><span className={styles.skeletonBlock} style={{ width: "100%", height: 48 }} /></div>
+          <div className={styles.routeList}>
+            <div className={styles.card}><span className={styles.skeletonBlock} style={{ width: "46%", height: 28 }} /><span className={styles.skeletonBlock} style={{ width: "82%", height: 24, marginTop: 30 }} /><span className={styles.skeletonBlock} style={{ width: "62%", height: 16, marginTop: 16 }} /></div>
+            <div className={styles.card}><span className={styles.skeletonBlock} style={{ width: "44%", height: 28 }} /><span className={styles.skeletonBlock} style={{ width: "76%", height: 24, marginTop: 30 }} /></div>
           </div>
         </div>
       </div>
-
-      <div className="absolute inset-x-0 bottom-0 z-20 flex justify-center pb-safe" aria-hidden="true">
-        <div
-          className="flex w-full items-center justify-around rounded-t-[24px] border-t border-white/15 px-2 py-2.5"
-          style={{ background: "rgba(22, 22, 26, 0.98)" }}
-        >
-          <div className="h-[60px] w-[140px] rounded-[20px] bg-white/[0.08]" />
-          <div className="h-[60px] w-[140px] rounded-[20px]" />
-        </div>
-      </div>
+      <div className={styles.dockWrap}><div className={styles.dock}><span className={styles.skeletonBlock} style={{ width: "100%", height: 62 }} /></div></div>
     </div>
   );
 }
