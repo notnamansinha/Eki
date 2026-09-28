@@ -517,6 +517,7 @@ export default function PassengerWorkspace() {
                         />
                       ) : (
                         <CustomSelect
+                          name="destination-station"
                           ariaLabel="Destination station"
                           placeholder="Choose destination station…"
                           value={effectiveDestinationStopId}

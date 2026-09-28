@@ -3,6 +3,7 @@ import {
   AuthVerificationCapacityError,
   verifyRevocationAwareIdToken,
 } from "../services/authTokenVerifier";
+import { recordAuthAttempt } from "../lib/metrics";
 
 const EXPECTED_AUTH_ERROR_CODES = new Set([
   "auth/argument-error",
@@ -35,6 +36,7 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    recordAuthAttempt("missing");
     res.status(401).json({
       error: "Missing or malformed Authorization header.",
       code: "AUTH_REQUIRED",
@@ -50,6 +52,7 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
 
     // Check for admin custom claim
     if (!decoded.admin) {
+      recordAuthAttempt("denied");
       res.status(403).json({
         error: "Forbidden: Admin access required.",
         code: "ADMIN_REQUIRED",
@@ -60,9 +63,11 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
 
     // Attach user info to request for downstream handlers
     req.user = decoded;
+    recordAuthAttempt("success");
     next();
   } catch (error: unknown) {
     if (error instanceof AuthVerificationCapacityError) {
+      recordAuthAttempt("capacity");
       res.set("Retry-After", "1");
       res.status(503).json({
         error: "Authentication service is busy. Retry shortly.",
@@ -73,10 +78,13 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
     }
     const code = authErrorCode(error);
     if (!code || !EXPECTED_AUTH_ERROR_CODES.has(code)) {
+      recordAuthAttempt("error");
       console.error("[Auth] Admin token verification failed unexpectedly.", {
         code: code ?? "unknown",
         message: error instanceof Error ? error.message : "Non-Error thrown",
       });
+    } else {
+      recordAuthAttempt("denied");
     }
     res.status(401).json({
       error: "Invalid or expired token.",

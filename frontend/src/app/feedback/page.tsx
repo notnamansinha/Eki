@@ -436,6 +436,7 @@ export default function FeedbackPage({ embedded = false }: { embedded?: boolean 
           </div>
           <div className="grid grid-cols-2 gap-2 sm:w-[300px]">
             <CustomSelect
+              name="feedback-type"
               ariaLabel="Feedback type"
               value={filterType}
               onChange={(value) => setFilterType(value as FilterType)}
@@ -446,6 +447,7 @@ export default function FeedbackPage({ embedded = false }: { embedded?: boolean 
               ]}
             />
             <CustomSelect
+              name="feedback-status"
               ariaLabel="Feedback status"
               value={filterStatus}
               onChange={(value) => setFilterStatus(value as FilterStatus)}

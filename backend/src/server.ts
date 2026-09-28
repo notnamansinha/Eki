@@ -1,4 +1,3 @@
-import { drainTelemetryRouteProcessing } from "./services/telemetryRouteService";
 /**
  * BusTrack Backend - Main Server Entry Point
  *
@@ -21,16 +20,19 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { deleteApp } from "firebase-admin/app";
 import { db, firebaseAdminApp, rtdb } from "./lib/firebaseAdmin";
+import { recordActiveSpanException, shutdownTelemetry } from "./instrumentation";
 import {
   getHttpsTelemetryStatus,
   TELEMETRY_METRIC_SAMPLE_CAPACITY,
 } from "./services/deviceTelemetryService";
 import {
+  drainTelemetryRouteProcessing,
   getRouteProcessingStatus,
   startTelemetryRouteWatcher,
 } from "./services/telemetryRouteService";
 import { backgroundFailures } from "./lib/backgroundFailureTracker";
 import { createHealthState } from "./lib/healthState";
+import { createHttpMetricsMiddleware, registerOperationalMetrics } from "./lib/metrics";
 import { createIdentityAwareLimiter } from "./lib/rateLimitIdentity";
 import { readRateLimitShardFactor, shardedLimit } from "./lib/rateLimitShard";
 import { requireAdmin } from "./middleware/requireAdmin";
@@ -64,6 +66,7 @@ const configuredCorsOrigins = (process.env.CORS_ORIGIN || "")
   .filter(Boolean);
 
 const app = express();
+app.use(createHttpMetricsMiddleware());
 if (process.env.NODE_ENV === "production") {
   app.set("trust proxy", 1);
   // Fail closed (issue #39 D6): a production API with no configured browser
@@ -211,6 +214,11 @@ app.use("/api/privacy", writeLimiter, privacyRoutes);
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 const health = createHealthState();
+registerOperationalMetrics({
+  health: health.snapshot,
+  telemetry: getHttpsTelemetryStatus,
+  background: backgroundFailures.snapshot,
+});
 const probeFirestore = () => db.collection("_health").limit(1).get();
 const probeRtdb = () => rtdb.ref(".info/connected").once("value");
 void health.probe(probeFirestore, probeRtdb);
@@ -309,6 +317,7 @@ app.use((
   _next: express.NextFunction,
 ) => {
   void _next;
+  recordActiveSpanException(error);
   console.error("[Server] Unhandled request error:", error);
   res.status(500).json({ error: "Internal server error." });
 });
@@ -350,15 +359,23 @@ async function shutdown(signal: string) {
     () => ({ status: "fulfilled" as const }),
     (reason: unknown) => ({ status: "rejected" as const, reason }),
   );
+  const telemetryResult = await shutdownTelemetry().then(
+    () => ({ status: "fulfilled" as const }),
+    (reason: unknown) => ({ status: "rejected" as const, reason }),
+  );
   const firebaseResult = await deleteApp(firebaseAdminApp).then(
     () => ({ status: "fulfilled" as const }),
     (reason: unknown) => ({ status: "rejected" as const, reason }),
   );
   clearTimeout(shutdownBackstop);
 
-  const failures = [serverResult, workerResult, routingResult, firebaseResult].filter(
-    (result) => result.status === "rejected",
-  );
+  const failures = [
+    serverResult,
+    workerResult,
+    telemetryResult,
+    routingResult,
+    firebaseResult,
+  ].filter((result) => result.status === "rejected");
   for (const failure of failures) {
     if (failure.status === "rejected") {
       console.warn("[Server] Shutdown task failed:", failure.reason);

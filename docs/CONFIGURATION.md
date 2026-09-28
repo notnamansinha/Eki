@@ -55,6 +55,7 @@ into the browser and should be treated as public identifiers.
 |---|---|---|---|
 | `NEXT_PUBLIC_FIREBASE_API_KEY` | Yes | Browser Firebase API identifier | Restrict by host and Firebase APIs; it is not a service-account secret |
 | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Yes | Firebase Auth domain | Set to `<project>.web.app` or custom domain. On Firebase Hosting, the client normalizes this to same-origin to prevent Safari/Firefox storage-partitioning failures |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Yes | Firebase Auth domain | Use the matching environment. The project's primary Firebase Hosting site resolves to its live hostname at runtime. Set this explicitly to the frontend hostname for secondary sites and custom domains, and add `https://<frontend-hostname>/__/auth/handler` to the Google OAuth client's authorized redirect URIs. |
 | `NEXT_PUBLIC_FIREBASE_DATABASE_URL` | Yes | Browser RTDB URL | Use the matching environment |
 | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Yes | Firebase project identifier | Do not mix staging and production projects |
 | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Yes | Firebase Storage bucket identifier | Use the matching environment |

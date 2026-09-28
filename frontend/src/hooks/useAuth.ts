@@ -7,6 +7,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { notifyAuthReady } from "@/lib/authState";
@@ -29,9 +30,48 @@ interface AuthContextValue {
   user: AppUser | null;
   loading: boolean;
   roleError: string | null;
+  loginReady: boolean;
+  loginError: string | null;
+  loginFallbackAvailable: boolean;
   loginLoading: boolean;
   loginWithGoogle: () => Promise<void>;
+  loginWithGoogleRedirect: () => Promise<void>;
   logout: () => Promise<void>;
+}
+
+type FirebaseLoginDependencies = {
+  signInWithPopup: typeof import("firebase/auth").signInWithPopup;
+  signInWithRedirect: typeof import("firebase/auth").signInWithRedirect;
+  getRedirectResult: typeof import("firebase/auth").getRedirectResult;
+  auth: typeof import("@/lib/firebaseAuth").auth;
+  googleProvider: typeof import("@/lib/firebaseAuth").googleProvider;
+};
+
+function authErrorCode(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && /^auth\/[a-z-]+$/.test(code) ? code : undefined;
+}
+
+function loginErrorMessage(code: string | undefined): string {
+  if (code === "auth/popup-blocked") {
+    return "Your browser blocked the Google sign-in popup. Allow popups for this site or use full-page sign-in.";
+  }
+  if (code === "auth/unauthorized-domain") {
+    return "This site is not authorized for Google sign-in. Contact the app administrator.";
+  }
+  if (code === "auth/operation-not-allowed") {
+    return "Google sign-in is disabled for this app. Contact the app administrator.";
+  }
+  if (code === "auth/internal-error" || code === "auth/network-request-failed") {
+    return `Google sign-in could not finish${code ? ` (${code})` : ""}. Try again or use full-page sign-in.`;
+  }
+  return `Google sign-in failed${code ? ` (${code})` : ""}. Please try again.`;
+}
+
+function canUseRedirectFallback(code: string | undefined): boolean {
+  return code === "auth/popup-blocked" ||
+    code === "auth/internal-error" ||
+    code === "auth/network-request-failed";
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -40,7 +80,11 @@ function useAuthState(): AuthContextValue {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [roleError, setRoleError] = useState<string | null>(null);
+  const [loginReady, setLoginReady] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginFallbackAvailable, setLoginFallbackAvailable] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
+  const loginDependencies = useRef<FirebaseLoginDependencies | null>(null);
 
   useEffect(() => {
     let generation = 0;
@@ -55,20 +99,51 @@ function useAuthState(): AuthContextValue {
     }, 8000);
 
     void Promise.all([import("firebase/auth"), import("@/lib/firebaseAuth")])
-      .then(async ([{ browserLocalPersistence, onAuthStateChanged, setPersistence }, { auth }]) => {
+      .then(async (dependencies) => {
+        const [authModule, { auth, googleProvider }] = dependencies;
         if (disposed) return;
+
+        // Cache these before enabling login so the click handler can open the
+        // popup synchronously within the browser's user activation.
+        loginDependencies.current = {
+          signInWithPopup: authModule.signInWithPopup,
+          signInWithRedirect: authModule.signInWithRedirect,
+          getRedirectResult: authModule.getRedirectResult,
+          auth,
+          googleProvider,
+        };
 
         // Keep an explicitly signed-in account across navigation, PWA restarts
         // and normal reloads. Only an explicit sign-out should end the session.
-        await setPersistence(auth, browserLocalPersistence);
+        try {
+          await authModule.setPersistence(auth, authModule.browserLocalPersistence);
+        } catch (error) {
+          const code = authErrorCode(error);
+          // Firebase's default persistence selection can still restore auth on
+          // browsers where explicitly forcing local persistence is unavailable.
+          console.warn("[Auth] Could not set preferred persistence; continuing with Firebase's available persistence.", code);
+        }
         if (disposed) return;
 
-        unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        unsubscribe = authModule.onAuthStateChanged(auth, async (firebaseUser) => {
           clearTimeout(authTimeout);
           const currentGen = ++generation;
           notifyAuthReady();
 
           if (firebaseUser) {
+            setLoading(true);
+            setLoginLoading(false);
+            setLoginError(null);
+            setLoginFallbackAvailable(false);
+            setUser({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              displayName: firebaseUser.displayName,
+              photoURL: firebaseUser.photoURL,
+              role: null,
+              isAnonymous: firebaseUser.isAnonymous,
+            });
+
             // Signed-out visitors never need App Check. For returning users,
             // load it in parallel with token restoration and await it only at
             // the point where protected data can begin loading.
@@ -233,12 +308,33 @@ function useAuthState(): AuthContextValue {
             setLoading(false);
           }
         });
+        setLoginReady(true);
+
+        // Complete a full-page OAuth fallback if the prior page redirected here.
+        void authModule.getRedirectResult(auth).then((result) => {
+          if (result?.user && !disposed) {
+            setLoginError(null);
+            setLoginFallbackAvailable(false);
+          }
+        }).catch((error: unknown) => {
+          if (disposed) return;
+          const code = authErrorCode(error);
+          console.error("[Auth] Google redirect sign-in failed.", code);
+          setLoginError(loginErrorMessage(code));
+          setLoginFallbackAvailable(false);
+        });
       })
       .catch((error) => {
-        console.error("Firebase auth initialization failed:", error);
+        const code = authErrorCode(error);
+        console.error("[Auth] Firebase auth initialization failed.", code);
         clearTimeout(authTimeout);
         notifyAuthReady();
-        if (!disposed) setLoading(false);
+        if (!disposed) {
+          loginDependencies.current = null;
+          setLoginReady(false);
+          setLoginError("Google sign-in could not initialize. Reload the page and try again.");
+          setLoading(false);
+        }
       });
 
     return () => {
@@ -249,22 +345,62 @@ function useAuthState(): AuthContextValue {
   }, []);
 
   const loginWithGoogle = useCallback(async () => {
+    const dependencies = loginDependencies.current;
+    if (!dependencies) {
+      console.error("Google sign-in is unavailable because Firebase Auth is not initialized.");
+      setLoginError("Google sign-in is still initializing. Reload the page and try again.");
+      return;
+    }
+
+    setLoginError(null);
+    setLoginFallbackAvailable(false);
     setLoginLoading(true);
+    let showRedirectFallback = false;
+    const fallbackTimer = window.setTimeout(() => {
+      showRedirectFallback = true;
+      setLoginError("Google sign-in is taking longer than usual.");
+      setLoginFallbackAvailable(true);
+    }, 8_000);
     try {
-      const [{ signInWithPopup }, { auth, googleProvider }] = await Promise.all([
-        import("firebase/auth"),
-        import("@/lib/firebaseAuth"),
-      ]);
-      await signInWithPopup(auth, googleProvider);
+      // Do not await module loading before this call: browsers may block a
+      // popup that is no longer directly associated with the user's click.
+      await dependencies.signInWithPopup(dependencies.auth, dependencies.googleProvider);
+      showRedirectFallback = false;
+      setLoginError(null);
+      setLoginFallbackAvailable(false);
     } catch (error: unknown) {
-      const code = (error as { code?: string }).code;
+      const code = authErrorCode(error);
       if (
         code !== "auth/cancelled-popup-request" &&
         code !== "auth/popup-closed-by-user"
       ) {
-        console.error("Login failed:", error);
+        console.error("[Auth] Google popup sign-in failed.", code);
+        setLoginError(loginErrorMessage(code));
+        showRedirectFallback = canUseRedirectFallback(code);
+        setLoginFallbackAvailable(showRedirectFallback);
       }
     } finally {
+      window.clearTimeout(fallbackTimer);
+      setLoginLoading(false);
+      if (!showRedirectFallback) setLoginFallbackAvailable(false);
+    }
+  }, []);
+
+  const loginWithGoogleRedirect = useCallback(async () => {
+    const dependencies = loginDependencies.current;
+    if (!dependencies) {
+      setLoginError("Google sign-in is still initializing. Reload the page and try again.");
+      return;
+    }
+    setLoginError(null);
+    setLoginFallbackAvailable(false);
+    setLoginLoading(true);
+    try {
+      await dependencies.signInWithRedirect(dependencies.auth, dependencies.googleProvider);
+    } catch (error: unknown) {
+      const code = authErrorCode(error);
+      console.error("[Auth] Google full-page sign-in failed.", code);
+      setLoginError(loginErrorMessage(code));
       setLoginLoading(false);
     }
   }, []);
@@ -300,7 +436,18 @@ function useAuthState(): AuthContextValue {
     }
   }, []);
 
-  return { user, loading, roleError, loginLoading, loginWithGoogle, logout };
+  return {
+    user,
+    loading,
+    roleError,
+    loginReady,
+    loginError,
+    loginFallbackAvailable,
+    loginLoading,
+    loginWithGoogle,
+    loginWithGoogleRedirect,
+    logout,
+  };
 }
 
 /**

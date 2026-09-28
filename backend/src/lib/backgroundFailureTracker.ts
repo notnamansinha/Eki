@@ -1,3 +1,6 @@
+import { recordBackgroundFailureSpan } from "../instrumentation";
+import { recordBackgroundFailureMetric } from "./metrics";
+
 /**
  * Rolling failure accounting for fire-and-forget background work (issue #38).
  *
@@ -185,6 +188,8 @@ export function recordBackgroundFailure(
   error: unknown,
 ): void {
   console.warn(message, error);
+  recordBackgroundFailureSpan(source, label, error);
+  recordBackgroundFailureMetric(source);
   backgroundFailures.record(source, label, message);
 }
 

@@ -1,6 +1,7 @@
 # RTDB region latency decision
 
-Status: **Singapore candidate approved; production cutover requires the staged gate below.**  
+Status: **Singapore candidate approved; production cutover requires the staged gate below.**
+
 Decision date: 2026-09-10. Scope: issue #169; this decision does not authorize creating or switching a production database.
 
 ## Verified current state

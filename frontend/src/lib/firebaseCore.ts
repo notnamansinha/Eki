@@ -1,4 +1,5 @@
 import { getApps, initializeApp } from "firebase/app";
+import { resolveFirebaseAuthDomain } from "./firebaseAuthDomain";
 
 // Static non-deployment builds intentionally run without project secrets. A
 // syntactically valid local placeholder prevents the RTDB SDK from emitting a
@@ -6,10 +7,15 @@ import { getApps, initializeApp } from "firebase/app";
 // production build in next.config.ts still fails closed if any real value is
 // missing.
 const buildProjectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "eki-build-placeholder";
+const browserHostname = typeof window === "undefined" ? undefined : window.location.hostname;
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  authDomain: resolveFirebaseAuthDomain(
+    process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    browserHostname,
+  ),
   databaseURL:
     process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ||
     `https://${buildProjectId}-default-rtdb.firebaseio.com`,

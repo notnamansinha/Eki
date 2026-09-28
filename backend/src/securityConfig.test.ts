@@ -894,13 +894,19 @@ describe("production security configuration", () => {
       const sources = directive.trim().split(/\s+/);
       return [sources[0], sources.slice(1)] as const;
     }));
+    expect(directives.get("script-src")).toContain(
+      "https://bustrack-be165-default-rtdb.firebaseio.com",
+    );
     expect(directives.get("frame-src")).toEqual([
+      "'self'",
       "https://accounts.google.com",
       "https://*.firebaseapp.com",
       "https://www.google.com/recaptcha/",
       "https://recaptcha.google.com/recaptcha/",
     ]);
     expect(directives.get("connect-src")).toContain("https://www.google.com/recaptcha/");
+    expect(directives.get("connect-src")).toContain("https://*.gstatic.com");
+    expect(directives.get("connect-src")).toContain("https://*.ggpht.com");
     expect(headers.get("Strict-Transport-Security")).toMatch(/^max-age=\d+/);
     expect(headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(headers.get("X-Frame-Options")).toBe("DENY");
