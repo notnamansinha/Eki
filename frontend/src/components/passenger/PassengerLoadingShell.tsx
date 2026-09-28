@@ -23,6 +23,7 @@ export default function PassengerLoadingShell() {
           className="h-full w-full object-cover md:object-[center_30%]"
         />
       </picture>
+      <div className="pointer-events-none absolute inset-0 z-0 bg-black/40" />
 
       <div className="absolute inset-0 z-10 flex flex-col pt-safe">
         <div
