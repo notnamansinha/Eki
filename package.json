@@ -9,27 +9,34 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace=frontend\" \"npm run dev --workspace=backend\"",
-    "build": "npm run build --workspace=backend && npm run build --workspace=frontend && node scripts/generate-sw.mjs && node scripts/update-csp.mjs",
+    "build": "npm run build --workspace=backend && npm run build --workspace=frontend && node scripts/generate-sw.mjs && node scripts/update-csp.mjs && node scripts/verify-web-backend-contract.mjs",
     "build:production": "node scripts/build-production.mjs",
     "docs:sync": "node scripts/sync-documentation-mirrors.mjs",
     "deploy": "npm run build:production && npx firebase deploy",
     "lint": "npm run lint --workspace=frontend && npm run lint --workspace=backend",
-    "test": "node --test scripts/*.test.mjs && npm run test --workspace=backend && npm run test --workspace=frontend",
+    "test": "node --test scripts/*.test.mjs && npm run verify:ui-contracts && npm run test --workspace=backend && npm run test --workspace=frontend",
+    "test:e2e": "playwright test",
     "test:rules": "node scripts/run-rules-emulator.mjs",
+    "verify:rtdb-instance": "node scripts/rtdb-instance-config.mjs",
+    "verify:web-backend-contract": "node scripts/verify-web-backend-contract.mjs",
+    "verify:ui-contracts": "node scripts/verify-ui-contracts.mjs",
+    "telemetry:load": "node scripts/benchmark-telemetry-ingestion.mjs",
+    "telemetry:analyze": "node scripts/analyze-telemetry-trace.mjs",
     "verify": "npm run lint && npm test && npm run build && npm audit --omit=dev --omit=optional"
   },
   "overrides": {
     "postcss": "^8.5.23",
     "nanoid": "^3.3.17",
-    "js-yaml": "4.3.1",
+    "js-yaml": "^4.3.2",
     "uuid": "11.1.1",
     "glob": "11.1.0",
     "minimatch": "10.2.5",
     "next": {
-      "sharp": "0.35.3"
+      "sharp": "^0.35.4"
     }
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "concurrently": "^8.2.2"
   }
 }

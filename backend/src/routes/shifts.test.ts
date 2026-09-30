@@ -12,6 +12,11 @@ const harness = vi.hoisted(() => ({
   eventLog: [] as string[],
   afterRtdbTransaction: null as (() => void) | null,
   failActiveRidesWrite: false,
+  routeStops: [
+    { id: "stop_1", name: "Stop 1", lat: 23.0, lng: 72.5 },
+    { id: "stop_2", name: "Stop 2", lat: 23.2, lng: 72.7 },
+  ] as Record<string, unknown>[],
+  session: { status: "active" } as Record<string, unknown> | null,
   user: {
     uid: "driver_uid",
     role: "driver",
@@ -47,18 +52,16 @@ vi.mock("../lib/firebaseAdmin", () => {
         return snapshot(true, { assignedRoutes: ["route_1"] });
       }
       if (collectionName === "routes") {
-        return snapshot(true, {
-          stops: [
-            { id: "stop_1", name: "Stop 1", lat: 23.0, lng: 72.5 },
-            { id: "stop_2", name: "Stop 2", lat: 23.2, lng: 72.7 },
-          ],
-        });
+        return snapshot(true, { stops: harness.routeStops });
       }
       if (collectionName === "_active_bus_locks") {
         return snapshot(harness.lock !== null, harness.lock ?? undefined);
       }
       if (collectionName === "ride_sessions" && id) {
-        return snapshot(true, { status: "active" });
+        return snapshot(
+          harness.session !== null,
+          harness.session ?? undefined,
+        );
       }
       if (collectionName === "active_rides") {
         return snapshot(harness.activeRide !== null, harness.activeRide ?? undefined);
@@ -98,6 +101,12 @@ vi.mock("../lib/firebaseAdmin", () => {
                 harness.activeRide ?? undefined,
               );
             }
+            if (typedRef.collectionName === "ride_sessions") {
+              return snapshot(
+                harness.session !== null,
+                harness.session ?? undefined,
+              );
+            }
             return snapshot(harness.lock !== null, harness.lock ?? undefined);
           },
           set: (ref, data) => {
@@ -112,6 +121,12 @@ vi.mock("../lib/firebaseAdmin", () => {
               };
               harness.eventLog.push("firestore");
             }
+            if (typedRef.collectionName === "ride_sessions") {
+              harness.session = {
+                ...(harness.session ?? {}),
+                ...(data as Record<string, unknown>),
+              };
+            }
             harness.docSets.push({
               id: typedRef.id ?? "lock",
               data: data as Record<string, unknown>,
@@ -123,8 +138,14 @@ vi.mock("../lib/firebaseAdmin", () => {
               data: data as Record<string, unknown>,
             });
           },
-          delete: async () => {
-            harness.lock = null;
+          delete: async (ref) => {
+            const typedRef = ref as { collectionName?: string };
+            if (typedRef.collectionName === "active_rides") {
+              harness.activeRide = null;
+            }
+            if (typedRef.collectionName === "_active_bus_locks") {
+              harness.lock = null;
+            }
           },
         });
       },
@@ -197,6 +218,11 @@ beforeEach(() => {
   harness.afterRtdbTransaction = null;
   harness.lock = null;
   harness.failActiveRidesWrite = false;
+  harness.routeStops = [
+    { id: "stop_1", name: "Stop 1", lat: 23.0, lng: 72.5 },
+    { id: "stop_2", name: "Stop 2", lat: 23.2, lng: 72.7 },
+  ];
+  harness.session = { status: "active" };
   harness.user = {
     uid: "driver_uid",
     role: "driver",
@@ -215,6 +241,123 @@ async function startShift(
     body: JSON.stringify({ busId: "bus_1", routeId: "route_1", driverId, ...extra }),
   });
 }
+
+async function stopShift() {
+  return fetch(`${baseUrl}/api/shifts/stop`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      busId: "bus_1",
+      routeId: "route_1",
+      driverId: "driver_1",
+      sessionId: "session_live",
+    }),
+  });
+}
+
+describe("manual shift termination", () => {
+  beforeEach(() => {
+    harness.session = {
+      status: "active",
+      busId: "bus_1",
+      routeId: "route_1",
+      driverId: "driver_1",
+    };
+    harness.activeRide = {
+      status: "active",
+      sessionId: "session_live",
+      busId: "bus_1",
+      routeId: "route_1",
+      driverId: "driver_1",
+    };
+    harness.lock = {
+      sessionId: "session_live",
+      busId: "bus_1",
+      routeId: "route_1",
+      driverId: "driver_1",
+    };
+    harness.liveNode = {
+      status: "active",
+      deviceState: "online",
+      sessionId: "session_live",
+      busId: "bus_1",
+      routeId: "route_1",
+      driverId: "driver_1",
+      direction: "forward",
+      directionState: "resolved",
+      tripState: "in_service",
+      currentStopIndex: 1,
+      activeRouteId: "route_1:reroute:2",
+      lat: 23.1,
+      lng: 72.6,
+      timestamp: Date.now(),
+      motionState: "stopped",
+    };
+  });
+
+  it("records an interrupted history row and retires only the matching live lifecycle", async () => {
+    const response = await stopShift();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      stopped: true,
+      interrupted: true,
+      alreadyInterrupted: false,
+    });
+    expect(harness.session).toMatchObject({
+      status: "interrupted",
+      interruptionReason: "manual_end_early",
+      interruptedBy: "driver_uid",
+    });
+    expect(typeof harness.session?.endTime).toBe("number");
+    expect(harness.activeRide).toBeNull();
+    expect(harness.lock).toBeNull();
+    expect(harness.liveNode).toMatchObject({
+      status: "offline",
+      deviceState: "online",
+      busId: "bus_1",
+      routeId: "route_1",
+      lat: 23.1,
+      lng: 72.6,
+    });
+    expect(harness.liveNode).not.toHaveProperty("sessionId");
+    expect(harness.liveNode).not.toHaveProperty("tripState");
+    expect(harness.liveNode).not.toHaveProperty("activeRouteId");
+  });
+
+  it("is idempotent and repairs a lingering matching live node", async () => {
+    harness.session!.status = "interrupted";
+    harness.activeRide = null;
+    harness.lock = null;
+
+    const response = await stopShift();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      alreadyInterrupted: true,
+    });
+    expect(harness.liveNode).not.toHaveProperty("sessionId");
+  });
+
+  it("does not retire a replacement session that won the route key", async () => {
+    harness.liveNode.sessionId = "replacement_session";
+
+    const response = await stopShift();
+
+    expect(response.status).toBe(200);
+    expect(harness.liveNode.sessionId).toBe("replacement_session");
+  });
+
+  it("keeps natural completion terminal and idempotent", async () => {
+    harness.session!.status = "completed";
+
+    const response = await stopShift();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ alreadyCompleted: true });
+    expect(harness.liveNode.sessionId).toBe("session_live");
+  });
+});
 
 describe("shift delay updates", () => {
   beforeEach(() => {
@@ -342,6 +485,7 @@ describe("shift start after automatic completion", () => {
       lng: 72.5,
       timestamp: Date.now(),
       motionState: "stopped",
+      gpsHdop: 2,
     };
 
     const response = await startShift("driver_1");
@@ -377,6 +521,7 @@ describe("shift start after automatic completion", () => {
       lng: 72.7,
       timestamp: Date.now(),
       motionState: "stopped",
+      gpsHdop: 2,
     };
     harness.lock = null;
 
@@ -423,6 +568,7 @@ describe("shift start after automatic completion", () => {
       lng: 72.7,
       timestamp: Date.now(),
       motionState: "stopped",
+      gpsHdop: 2,
     };
 
     const response = await startShift();
@@ -450,6 +596,7 @@ describe("shift start after automatic completion", () => {
       lng: 72.5,
       timestamp: Date.now(),
       motionState: "stopped",
+      gpsHdop: 2,
     };
 
     const response = await startShift(undefined, { direction: "reverse" });
@@ -462,37 +609,112 @@ describe("shift start after automatic completion", () => {
     });
   });
 
-  it("does not guess direction between endpoints or while the bus is moving", async () => {
+  it("keeps an ambiguous start pending until later eligible telemetry resolves it", async () => {
     harness.liveNode = {
       busId: "bus_1",
       lat: 23.1,
       lng: 72.6,
       timestamp: Date.now(),
       motionState: "stopped",
+      gpsHdop: 2,
     };
-    expect((await startShift()).status).toBe(409);
+    const response = await startShift();
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ direction: null, pending: true });
+    expect(harness.liveNode).toMatchObject({
+      direction: null,
+      directionState: "pending",
+      tripState: "pre_departure",
+    });
+    expect(harness.batchSets.find((entry) => entry.id === "bus_1_route_1")).toBeUndefined();
+  });
 
-    // About 30 m from stop_1: close enough for a broad endpoint hint but
-    // outside the 20 m authoritative stop geofence.
+  it("keeps an unresolved resumed session pending in Firestore", async () => {
     harness.liveNode = {
       busId: "bus_1",
-      lat: 23.00027,
-      lng: 72.5,
-      timestamp: Date.now(),
-      motionState: "stopped",
+      driverId: "driver_1",
+      routeId: "route_1",
+      status: "active",
+      tripState: "pre_departure",
+      sessionId: "session_live",
+      direction: null,
     };
-    expect((await startShift()).status).toBe(409);
+    harness.lock = {
+      busId: "bus_1",
+      routeId: "route_1",
+      driverId: "driver_1",
+      sessionId: "session_live",
+    };
 
+    const response = await startShift();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ resumed: true, pending: true });
+    expect(harness.docSets.find((entry) => entry.id === "session_live")?.data)
+      .toMatchObject({ status: "pending", directionState: "pending" });
+  });
+
+  it("rejects malformed endpoint snapshots before creating a session", async () => {
+    harness.routeStops = [
+      { id: "stop_1", name: "Stop 1", lat: 23.0, lng: 72.5 },
+      { id: "stop_2", name: "Stop 2", lat: Number.NaN, lng: 72.7 },
+    ];
     harness.liveNode = {
       busId: "bus_1",
       lat: 23.0,
       lng: 72.5,
       timestamp: Date.now(),
-      motionState: "moving",
+      motionState: "stopped",
+      gpsHdop: 2,
     };
-    expect((await startShift()).status).toBe(409);
+
+    const response = await startShift();
+
+    expect(response.status).toBe(422);
     expect(harness.docSets).toEqual([]);
     expect(harness.batchSets).toEqual([]);
+  });
+
+  it("derives endpoints from the direction already held by a recovered lock", async () => {
+    harness.liveNode = {
+      busId: "bus_1",
+      lat: 23.1,
+      lng: 72.6,
+      timestamp: Date.now(),
+      motionState: "stopped",
+      gpsHdop: 2,
+    };
+    harness.lock = {
+      busId: "bus_1",
+      routeId: "route_1",
+      driverId: "driver_1",
+      sessionId: "session_existing",
+    };
+    harness.session = {
+      status: "pending",
+      direction: "reverse",
+      armedAt: 1234,
+    };
+
+    const response = await startShift();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      resumed: true,
+      direction: "reverse",
+      pending: false,
+    });
+    expect(harness.liveNode).toMatchObject({
+      direction: "reverse",
+      originStopId: "stop_2",
+      destinationStopId: "stop_1",
+    });
+    expect(harness.batchSets.find((entry) => entry.id === "session_existing")?.data)
+      .toMatchObject({
+        direction: "reverse",
+        originStopId: "stop_2",
+        destinationStopId: "stop_1",
+      });
   });
 
   it("still resumes an in-service shift (regression guard)", async () => {
@@ -555,5 +777,33 @@ describe("shift start after automatic completion", () => {
     expect(response.status).toBe(409);
     expect(harness.liveNode.sessionId).toBe("session_live");
     expect(harness.liveNode.tripState).toBe("in_service");
+  });
+});
+
+describe("new shifts resolve their own direction", () => {
+  it.each([
+    ["completed forward at B", "completed", "forward", 23.2, 72.7, "reverse", "pipe"],
+    ["completed reverse at A", "completed", "reverse", 23.0, 72.5, "forward", "pipe"],
+    ["device-only forward at B", "device", "forward", 23.2, 72.7, "reverse", "hash"],
+    ["device-only with unified endpoint version", "device", "forward", 23.2, 72.7, "reverse", "pipe"],
+  ])("%s", async (_label, state, oldDirection, lat, lng, expected, versionKind) => {
+    const { routeGeometrySignature } = await import("../lib/routeGeometrySignature");
+    const version = versionKind === "pipe"
+      ? harness.routeStops.map(s => `${s.id}:${Number(s.lat).toFixed(6)}:${Number(s.lng).toFixed(6)}`).join("|")
+      : `0:${routeGeometrySignature(harness.routeStops as never)}`;
+    harness.liveNode = {
+      busId: "bus_1", routeId: "route_1", lat, lng,
+      timestamp: Date.now(), motionState: "stopped", gpsHdop: 2,
+      direction: oldDirection, directionState: "resolved", directionEndpointVersion: version,
+      ...(state === "completed" ? {
+        driverId: "driver_1", sessionId: "session_completed", status: "active",
+        tripState: "completed", hasDepartedOrigin: true, currentStopIndex: 1,
+      } : {}),
+    };
+    harness.session = { status: "completed" };
+    const response = await startShift();
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.direction).toBe(expected);
   });
 });

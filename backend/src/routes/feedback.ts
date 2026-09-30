@@ -4,6 +4,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { requireAuth } from "../middleware/requireAuth";
 import { db } from "../lib/firebaseAdmin";
+import { singleRouteParam } from "../lib/requestParams";
 import { evaluateFeedback } from "../services/feedbackService";
 
 const router = Router();
@@ -240,10 +241,11 @@ router.patch("/:feedbackId/status", requireAdmin, async (
   req: AuthenticatedRequest,
   res: Response,
 ) => {
-  const feedbackId = req.params.feedbackId;
+  const feedbackId = singleRouteParam(req.params.feedbackId);
   const body = req.body;
   const status = body?.status;
   if (
+    feedbackId === null ||
     !SAFE_ID.test(feedbackId) ||
     !body ||
     typeof body !== "object" ||

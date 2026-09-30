@@ -4,6 +4,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 
 const router = Router();
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const PLACES_TIMEOUT_MS = 5_000;
 const searchCache = new Map<string, { expiresAt: number; results: PlaceResult[] }>();
 
 interface PlaceResult {
@@ -18,13 +19,30 @@ const placeSearchLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Place search rate limit exceeded." },
+  message: {
+    error: "Place search rate limit exceeded. Wait a minute and retry.",
+    code: "PLACE_SEARCH_RATE_LIMITED",
+    phase: "validation",
+  },
 });
 
-router.get("/search", placeSearchLimiter, requireAdmin, async (req: Request, res: Response) => {
+function placesError(
+  res: Response,
+  status: number,
+  code: string,
+  error: string,
+): void {
+  res.status(status).json({ error, code, phase: "places" });
+}
+
+router.get("/search", requireAdmin, placeSearchLimiter, async (req: Request, res: Response) => {
   const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
   if (query.length < 3 || query.length > 200) {
-    res.status(400).json({ error: "Search text must be between 3 and 200 characters." });
+    res.status(400).json({
+      error: "Search text must be between 3 and 200 characters.",
+      code: "INVALID_PLACE_QUERY",
+      phase: "validation",
+    });
     return;
   }
 
@@ -37,34 +55,48 @@ router.get("/search", placeSearchLimiter, requireAdmin, async (req: Request, res
 
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
-    res.status(503).json({ error: "Place search is not configured on the server." });
+    placesError(
+      res,
+      503,
+      "PLACES_NOT_CONFIGURED",
+      "Place search is not configured on the server.",
+    );
     return;
   }
 
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), PLACES_TIMEOUT_MS);
   try {
-    const timeoutController = new AbortController();
-    const timeoutId = setTimeout(() => timeoutController.abort(), 5_000);
-    let response: globalThis.Response;
-    try {
-      response = await fetch("https://places.googleapis.com/v1/places:searchText", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Goog-Api-Key": apiKey,
-          "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location",
-        },
-        body: JSON.stringify({ textQuery: query, maxResultCount: 5 }),
-        signal: timeoutController.signal,
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location",
+      },
+      body: JSON.stringify({ textQuery: query, maxResultCount: 5 }),
+      signal: timeoutController.signal,
+    });
     if (!response.ok) {
       const upstreamBody = (await response.text()).slice(0, 1_000);
       console.warn(
         `[Places] Upstream request failed with HTTP ${response.status}: ${upstreamBody}`,
       );
-      res.status(502).json({ error: "Place search service is unavailable." });
+      if (response.status === 429) {
+        placesError(
+          res,
+          503,
+          "PLACES_UPSTREAM_RATE_LIMITED",
+          "Place search is busy. Wait briefly and retry.",
+        );
+      } else {
+        placesError(
+          res,
+          502,
+          "PLACES_UPSTREAM_FAILURE",
+          "Place search service is unavailable.",
+        );
+      }
       return;
     }
 
@@ -98,7 +130,24 @@ router.get("/search", placeSearchLimiter, requireAdmin, async (req: Request, res
     res.json({ results });
   } catch (error) {
     console.warn("Place search failed:", error);
-    res.status(502).json({ error: "Place search service is unavailable." });
+    if (timeoutController.signal.aborted) {
+      placesError(
+        res,
+        504,
+        "PLACES_TIMEOUT",
+        "Place search took too long. Please retry.",
+      );
+    } else {
+      placesError(
+        res,
+        502,
+        "PLACES_UPSTREAM_FAILURE",
+        "Place search service is unavailable.",
+      );
+    }
+  } finally {
+    // The deadline covers headers and response-body parsing.
+    clearTimeout(timeoutId);
   }
 });
 

@@ -1,5 +1,7 @@
 # ESP32 fleet security and provisioning
 
+Last updated: 2026-09-14.
+
 This is the mandatory physical acceptance procedure for production trackers.
 Secure Boot V2 and release-mode flash encryption burn irreversible ESP32
 eFuses. Run it first on clearly labelled spare ECO3-or-newer boards, with two

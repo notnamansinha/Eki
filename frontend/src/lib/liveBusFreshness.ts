@@ -13,6 +13,19 @@ export const BUS_EXPIRY_MS =
 
 export const SIGNAL_LOST_MS = Math.min(90_000, Math.floor(BUS_EXPIRY_MS / 2));
 
+/** Transport freshness uses server receipt; sample time still orders GPS fixes. */
+export function liveBusFreshnessTimestamp(bus: {
+  timestamp?: unknown;
+  backendReceivedAt?: unknown;
+}): number | undefined {
+  const sample = typeof bus.timestamp === "number" ? bus.timestamp : undefined;
+  const received = bus.backendReceivedAt;
+  // Only use a receipt paired with a sample inside the backend's accepted skew window.
+  if (typeof received === "number" && Number.isFinite(received) && sample !== undefined &&
+      received - sample >= -10_000 && received - sample <= 60_000) return received;
+  return sample;
+}
+
 export function isLiveBusTimestamp(
   timestamp?: number,
   now = Date.now(),

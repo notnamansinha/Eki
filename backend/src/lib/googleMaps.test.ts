@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   computeRouteGeometry,
+  LIVE_REROUTE_TIMEOUT_MS,
   ROUTE_GEOMETRY_TIMEOUT_MS,
 } from "./googleMaps";
 
@@ -88,5 +89,37 @@ describe("computeRouteGeometry", () => {
     );
 
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("uses the bounded live-reroute policy without changing the admin default", async () => {
+    vi.useFakeTimers();
+    let capturedSignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, options: RequestInit) => {
+        capturedSignal = options.signal;
+        expect(JSON.parse(options.body as string).routingPreference)
+          .toBe("TRAFFIC_AWARE");
+        return new Promise((_resolve, reject) => {
+          capturedSignal?.addEventListener("abort", () =>
+            reject(new DOMException("The operation was aborted.", "AbortError")),
+          );
+        });
+      }),
+    );
+
+    const pending = computeRouteGeometry(
+      { lat: 23, lng: 72 },
+      { lat: 23.1, lng: 72.1 },
+      [],
+      {
+        routingPreference: "TRAFFIC_AWARE",
+        timeoutMs: LIVE_REROUTE_TIMEOUT_MS,
+      },
+    );
+    const aborted = expect(pending).rejects.toThrow("aborted");
+    await vi.advanceTimersByTimeAsync(LIVE_REROUTE_TIMEOUT_MS);
+    await aborted;
+    expect(capturedSignal?.aborted).toBe(true);
   });
 });

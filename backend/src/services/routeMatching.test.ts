@@ -54,7 +54,7 @@ describe("route matching", () => {
     expect(result?.segmentIndex).toBeGreaterThanOrEqual(3);
   });
 
-  it("requires three reliable off-route samples before rerouting", () => {
+  it("requires two reliable ordinary off-route samples before rerouting", () => {
     const offRoute = matchRoutePosition(
       { lat: 23.001, lng: 72.0005 },
       [{ lat: 23, lng: 72 }, { lat: 23, lng: 72.001 }],
@@ -67,20 +67,26 @@ describe("route matching", () => {
       offRoute,
       true,
     );
-    const third = evaluateRouteAdherence(
-      second.routeState,
-      second.offRouteSampleCount,
-      offRoute,
-      true,
-    );
-
     expect(first.routeState).toBe("POSSIBLE_OFF_ROUTE");
-    expect(second.shouldReroute).toBe(false);
-    expect(third).toMatchObject({
+    expect(first.shouldReroute).toBe(false);
+    expect(second).toMatchObject({
       routeState: "OFF_ROUTE",
-      offRouteSampleCount: 3,
+      offRouteSampleCount: 2,
       shouldReroute: true,
     });
+  });
+
+  it("confirms one strong measured deviation but not a missing match", () => {
+    const strong = matchRoutePosition(
+      { lat: 23.002, lng: 72.0005 },
+      [{ lat: 23, lng: 72 }, { lat: 23, lng: 72.001 }],
+      90,
+    );
+
+    expect(evaluateRouteAdherence("ON_ROUTE", 0, strong, true))
+      .toMatchObject({ routeState: "OFF_ROUTE", shouldReroute: true });
+    expect(evaluateRouteAdherence("ON_ROUTE", 0, null, true))
+      .toMatchObject({ routeState: "POSSIBLE_OFF_ROUTE", shouldReroute: false });
   });
 
   it("does not accumulate stationary GPS noise toward rerouting", () => {
@@ -109,4 +115,78 @@ describe("route matching", () => {
       shouldReroute: false,
     });
   });
+
+  it("does not snap a self-intersection when non-adjacent segments are equally plausible", () => {
+    const intersection = matchRoutePosition(
+      { lat: 23, lng: 72.001 },
+      [
+        { lat: 23, lng: 72 },
+        { lat: 23, lng: 72.001 },
+        { lat: 23, lng: 72.002 },
+        { lat: 23.001, lng: 72.002 },
+        { lat: 22.999, lng: 72.002 },
+        { lat: 22.999, lng: 72.001 },
+        { lat: 23.001, lng: 72.001 },
+      ],
+    );
+    expect(intersection?.isAmbiguous).toBe(true);
+    expect(intersection?.matchConfidence).toBeLessThan(0.6);
+    expect(evaluateRouteAdherence("ON_ROUTE", 0, intersection, true)).toEqual({
+      routeState: "POSSIBLE_OFF_ROUTE",
+      offRouteSampleCount: 0,
+      shouldReroute: false,
+    });
+  });
+
+  it("does not treat an ordinary straight-line vertex as ambiguous", () => {
+    const match = matchRoutePosition(
+      { lat: 23, lng: 72.001 },
+      [
+        { lat: 23, lng: 72 },
+        { lat: 23, lng: 72.001 },
+        { lat: 23, lng: 72.002 },
+      ],
+    );
+    expect(match?.isAmbiguous).toBe(false);
+  });
+
+  it("does not treat an ordinary sharp turn as competing geometry", () => {
+    const match = matchRoutePosition(
+      { lat: 23, lng: 72.001 },
+      [
+        { lat: 23, lng: 72 },
+        { lat: 23, lng: 72.001 },
+        { lat: 23.001, lng: 72.001 },
+      ],
+    );
+
+    expect(match?.isAmbiguous).toBe(false);
+  });
+
+  it("finds a non-adjacent crossing when an adjacent runner-up is equivalent", () => {
+    const match = matchRoutePosition(
+      { lat: 23, lng: 72.001 },
+      [
+        { lat: 23, lng: 72 },
+        { lat: 23, lng: 72.001 },
+        { lat: 23, lng: 72.002 },
+        { lat: 23.001, lng: 72.002 },
+        { lat: 22.999, lng: 72.002 },
+        { lat: 22.999, lng: 72.001 },
+        { lat: 23.001, lng: 72.001 },
+      ],
+    );
+
+    expect(match?.segmentIndex).toBe(0);
+    expect(match?.isAmbiguous).toBe(true);
+    expect(match?.matchConfidence).toBeLessThan(0.6);
+  });
+});
+
+it("rejects physically unreachable progress regardless of polyline density", () => {
+  const path = [{ lat: 23, lng: 72 }, { lat: 23, lng: 72.1 }];
+  expect(matchRoutePosition({ lat: 23, lng: 72.08 }, path, 90,
+    { segmentIndex: 0, alongRouteDistanceM: 10 }, 25, 80)).toBeNull();
+  expect(matchRoutePosition({ lat: 23, lng: 72.0003 }, path, 90,
+    { segmentIndex: 0, alongRouteDistanceM: 10 }, 25, 80)).not.toBeNull();
 });

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { normalizeRouteStopPayload, prepareRouteSavePayload, routeIdFromName } from "./routeStopPayload";
+import {
+  normalizeRouteStopPayload,
+  prepareRouteSavePayload,
+  reorderRouteStops,
+  routeIdFromName,
+  swapRouteEndpoints,
+} from "./routeStopPayload";
 
 describe("route stop save payload", () => {
   it("normalizes an old verbose search result and serialized dragged coordinates", () => {
@@ -31,7 +37,6 @@ describe("route stop save payload", () => {
       routeId: "",
       name: "  Shilp House to Club O7  ",
       color: "#3B82F6",
-      type: "circular",
       stops: [
         { id: "stop-search", name: "Shilp House", lat: 23.0278, lng: 72.5067 },
         { id: "stop-map", name: "Club O7", lat: 22.991234, lng: 72.471234 },
@@ -46,7 +51,6 @@ describe("route stop save payload", () => {
         mode: "create",
         name: "Shilp House to Club O7",
         color: "#3B82F6",
-        type: "circular",
         stops: [
           { id: "stop-search", name: "Shilp House", shortName: "Shilp House", lat: 23.0278, lng: 72.5067 },
           { id: "stop-map", name: "Club O7", shortName: "Club O7", lat: 22.991234, lng: 72.471234 },
@@ -61,7 +65,6 @@ describe("route stop save payload", () => {
       routeId: "route-test",
       name: "Test route",
       color: "#10B981",
-      type: "up",
       stops: [
         { id: "stop-a", name: "A", lat, lng: 72.5 },
         { id: "stop-b", name: "B", lat: 23, lng: 72.6 },
@@ -77,7 +80,6 @@ describe("route stop save payload", () => {
       routeId: "route-test",
       name: "Test route",
       color: "#10B981",
-      type: "down",
       stops: [
         { id: "same", name: "A", lat: 23, lng: 72.5 },
         { id: "same", name: "B", lat: 23.1, lng: 72.6 },
@@ -85,5 +87,20 @@ describe("route stop save payload", () => {
     });
 
     expect(result).toEqual({ ok: false, error: "Each stop must be added only once." });
+  });
+
+  it("swaps endpoints twice without changing stable stop identities", () => {
+    const stops = [{ id: "origin" }, { id: "destination" }];
+    const swapped = swapRouteEndpoints(stops);
+    expect(swapped.map((stop) => stop.id)).toEqual(["destination", "origin"]);
+    expect(swapRouteEndpoints(swapped)).toEqual(stops);
+    expect(swapped[0]).toBe(stops[1]);
+  });
+
+  it("reorders a longer route without cloning or regenerating stops", () => {
+    const stops = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    const reordered = reorderRouteStops(stops, 2, 0);
+    expect(reordered.map((stop) => stop.id)).toEqual(["c", "a", "b"]);
+    expect(reordered[0]).toBe(stops[2]);
   });
 });

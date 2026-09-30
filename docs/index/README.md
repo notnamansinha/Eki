@@ -1,6 +1,6 @@
 # Eki documentation map
 
-Repository-wide documentation refresh: 2026-08-14. Technical contracts below
+Repository-wide documentation refresh: 2026-09-14. Technical contracts below
 are maintained against the current source, rules, workflows, and configuration
 templates. Historical decision records remain immutable except for links to
 the current source of truth.
@@ -20,16 +20,31 @@ Read these technical references in order when onboarding:
 6. [Backend overview](../backend/README.md) — local setup, configuration, verification and device provisioning.
 7. [Backend API](../backend/API.md) — endpoints, authentication, bodies, responses and status codes.
 8. [Test strategy](../testing/TEST_STRATEGY.md) — automated suites, simulations and physical acceptance matrix.
-9. [Production readiness audit](../operations/PRODUCTION_READINESS_AUDIT.md) — verified outcome, fixes and residual risks.
-10. [Architecture risk register](../operations/ARCHITECTURE_RISK_REGISTER.md) — active source, firmware and deployment risks with closure criteria.
+9. [Reroute latency simulation](../testing/REROUTE_SIMULATION_RESULTS.md) — deterministic adaptive-confirmation and bounded-latency evidence.
+10. [Production readiness audit](../operations/PRODUCTION_READINESS_AUDIT.md) — verified outcome, fixes and residual risks.
+11. [Architecture risk register](../operations/ARCHITECTURE_RISK_REGISTER.md) — active source, firmware and deployment risks with closure criteria.
+12. [Telemetry state partition decision](../design/TELEMETRY_STATE_PARTITION_DECISION.md) — contention measurement gate and compatibility contract for any future split.
+13. [RTDB region latency decision](../design/RTDB_REGION_LATENCY_DECISION.md) — Singapore candidate evaluation, latency measurements, and staged migration gate.
 
 Operational documents:
 
+- [DNS, custom domains, and SSL/TLS](../operations/DNS_AND_DOMAINS.md)
 - [Live demo runbook](../operations/LIVE_DEMO_RUNBOOK.md)
+- [Telemetry ingestion load test](../operations/TELEMETRY_INGESTION_LOAD_TEST.md)
 - [University deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md)
+- [Telemetry latency baseline](../operations/TELEMETRY_LATENCY_BASELINE.md)
 - [CI, deployment, and release guide](../operations/CI_CD_AND_RELEASES.md)
 - [Storage architecture summary](../data/STORAGE_ARCHITECTURE.md)
 - [Security policy](../repository/SECURITY.md)
+
+Testing and recovery reports:
+
+- [Audit status summary](../testing/AUDIT_STATUS_SUMMARY.md)
+- [Stationary readiness report](../testing/STATIONARY_READINESS_REPORT.md)
+- [Non-moving recovery report](../testing/NON_MOVING_RECOVERY_REPORT.md)
+- [Live ESP32 latency result](../testing/LIVE_ESP32_LATENCY_RESULT.md)
+- [Postfix stationary trace](../testing/POSTFIX_STATIONARY_TRACE.md)
+- [Return route acceptance](../testing/RETURN_ROUTE_ACCEPTANCE.md)
 
 Mirrored package and repository documents:
 

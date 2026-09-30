@@ -1,3 +1,4 @@
+import { computeOrderedRouteGeometry } from "./orderedRouteGeometry";
 import * as dotenv from "dotenv";
 import { resolve } from "path";
 
@@ -19,6 +20,12 @@ export interface RouteGeometry {
 // Matches the runtime callers (polyline.ts 10s, places.ts 5s) so a hung
 // upstream cannot hang `npm run seed` indefinitely (issue #76).
 export const ROUTE_GEOMETRY_TIMEOUT_MS = 10_000;
+export const LIVE_REROUTE_TIMEOUT_MS = 3_500;
+
+export interface RouteGeometryOptions {
+  routingPreference?: "TRAFFIC_AWARE" | "TRAFFIC_AWARE_OPTIMAL";
+  timeoutMs?: number;
+}
 
 /**
  * Computes route geometry using Google Maps Routes API v2
@@ -26,8 +33,16 @@ export const ROUTE_GEOMETRY_TIMEOUT_MS = 10_000;
 export async function computeRouteGeometry(
   origin: LatLng,
   destination: LatLng,
-  intermediates: LatLng[] = []
+  intermediates: LatLng[] = [],
+  options: RouteGeometryOptions = {},
 ): Promise<RouteGeometry> {
+  if (intermediates.length > 25) {
+    const geometry = await computeOrderedRouteGeometry([origin, ...intermediates, destination], async (chunk) => {
+      const result = await computeRouteGeometry(chunk[0], chunk[chunk.length - 1], chunk.slice(1, -1), options);
+      return { polyline: result.encodedPolyline, distanceMeters: result.distanceMeters, duration: result.duration };
+    });
+    return { encodedPolyline: geometry.polyline, distanceMeters: geometry.distanceMeters, duration: geometry.duration, polylineQuality: "HIGH_QUALITY" };
+  }
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
     throw new Error("GOOGLE_MAPS_API_KEY is not set in backend/.env");
@@ -61,7 +76,7 @@ export async function computeRouteGeometry(
       },
     })),
     travelMode: "DRIVE",
-    routingPreference: "TRAFFIC_AWARE_OPTIMAL",
+    routingPreference: options.routingPreference ?? "TRAFFIC_AWARE_OPTIMAL",
     polylineQuality: "HIGH_QUALITY",
     polylineEncoding: "ENCODED_POLYLINE",
     computeAlternativeRoutes: false,
@@ -69,8 +84,11 @@ export async function computeRouteGeometry(
     units: "METRIC",
   };
 
+  const timeoutMs = Number.isFinite(options.timeoutMs) && Number(options.timeoutMs) > 0
+    ? Number(options.timeoutMs)
+    : ROUTE_GEOMETRY_TIMEOUT_MS;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), ROUTE_GEOMETRY_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
       method: "POST",

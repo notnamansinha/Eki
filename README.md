@@ -1,5 +1,7 @@
 # Eki campus bus tracking
 
+Last updated: 2026-09-14.
+
 ## Fast recovery: backend, tunnel, panel, and ESP32
 
 Use these commands when the ESP reports `DNS Failed` or the test tunnel is
@@ -366,6 +368,8 @@ npm run verify
 - [Hardware telemetry and latency/failure analysis](docs/hardware/HARDWARE_TELEMETRY.md)
 - [Backend API](backend/API.md)
 - [Test strategy and failure matrix](docs/testing/TEST_STRATEGY.md)
+- [RTDB region latency decision](docs/design/RTDB_REGION_LATENCY_DECISION.md)
+- [DNS, custom domains, and SSL/TLS](docs/operations/DNS_AND_DOMAINS.md)
 - [Production readiness audit](docs/operations/PRODUCTION_READINESS_AUDIT.md)
 - [Live demo runbook](docs/operations/LIVE_DEMO_RUNBOOK.md)
 - [University deployment checklist](docs/operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md)

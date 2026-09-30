@@ -1,5 +1,7 @@
 # Stable ngrok tunnel for ESP32 bench testing
 
+Last updated: 2026-09-14.
+
 This runbook replaces the rotating Cloudflare Quick Tunnel used during local
 hardware tests. It gives the laptop backend a reusable HTTPS origin so restarting
 the tunnel does not force an ESP32 rebuild and reflash.

@@ -52,7 +52,7 @@ async function runRetentionSweep(now = Date.now()): Promise<void> {
   const tripDays = readDays(process.env.COMPLETED_TRIP_RETENTION_DAYS, 180);
   const operationDays = readDays(process.env.OPERATION_LOG_RETENTION_DAYS, 90);
 
-  const [sessions, feedback, trips, operations] = await Promise.all([
+  const [sessions, feedback, trips, fleetOperations, routeSaveOperations] = await Promise.all([
     deleteDocuments(
       db.collection("ride_sessions")
         .where("status", "in", ["completed", "failed", "interrupted"])
@@ -79,8 +79,20 @@ async function runRetentionSweep(now = Date.now()): Promise<void> {
         .orderBy("createdAt")
         .orderBy(FieldPath.documentId()),
     ),
+    deleteDocuments(
+      db.collection("_route_save_operations")
+        .where("createdAt", "<", Timestamp.fromMillis(now - operationDays * DAY_MS))
+        .orderBy("createdAt")
+        .orderBy(FieldPath.documentId()),
+    ),
   ]);
-  console.log("[Retention] Sweep complete", { sessions, feedback, trips, operations });
+  console.log("[Retention] Sweep complete", {
+    sessions,
+    feedback,
+    trips,
+    fleetOperations,
+    routeSaveOperations,
+  });
 }
 
 export function startRetentionSweeper(): () => void {

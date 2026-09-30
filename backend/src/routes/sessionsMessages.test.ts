@@ -128,6 +128,13 @@ async function send(text = "Hello", requestId = "request_12345678", extra = {}) 
 }
 
 describe("session message route", () => {
+  it.each(["pre_departure", "in_service"])("allows member chat at zero speed while %s", async tripState => {
+    Object.assign(harness.session, { tripState, speed: 0, motionState: "stopped" });
+    expect((await send("Waiting at the stop")).status).toBe(201);
+    expect([...harness.messages.values()][0]).toMatchObject({ text: "Waiting at the stop" });
+    harness.session.passengers = {};
+    expect((await send("Not a member", "request_nonmember_01")).status).toBe(403);
+  });
   it("derives passenger identity and writes message plus rate state atomically", async () => {
     const response = await send();
 

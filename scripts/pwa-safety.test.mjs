@@ -23,7 +23,8 @@ test("precaches each exported shell's immutable bootstrap chunks", () => {
   assert.match(worker, /url\.pathname\.startsWith\("\/_next\/static\/"\)/);
 });
 
-test("never forces a waiting worker to reload an active tab", () => {
+test("worker updates wait for active tabs without forcing a reload", () => {
   assert.doesNotMatch(registrar, /SKIP_WAITING|controllerchange|location\.reload/);
-  assert.doesNotMatch(worker, /skipWaiting|SKIP_WAITING/);
+  assert.doesNotMatch(worker, /skipWaiting\(\)|clientsClaim\(\)/);
+  assert.doesNotMatch(worker, /controllerchange|location\.reload/);
 });

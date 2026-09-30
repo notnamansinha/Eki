@@ -1,5 +1,7 @@
 # High-level design (HLD)
 
+Last updated: 2026-09-14.
+
 ## Scope and goals
 
 Eki tracks a bounded university bus fleet in near real time, enforces ordered route progress, survives common connectivity/process failures, and exposes distinct passenger and administrator experiences. Administrators perform ride operations for assigned fleet operators. It is a modular monolith, not a multi-tenant platform: one deployment is attached to one Firebase project and one operational authority.
@@ -59,9 +61,9 @@ flowchart TB
 4. Express enforces request size, exact schema, timestamps, sequence, device/IP rate limits, scrypt credential verification, and protected registry assignment.
 5. An RTDB transaction rejects older/duplicate timestamp-sequence pairs and writes `activeBuses/{busId}_{routeId}` with server receive/commit times.
 6. A per-node asynchronous matcher preserves `rawLocation`, scores candidates on the direction-specific route using distance, heading and continuity, and publishes a version-bound `matchedLocation` without delaying the device response.
-7. Three reliable moving deviations trigger one asynchronous reroute through the remaining required stops. The active route switches atomically; stale request/version/session results are discarded and trip progress is retained.
+7. Two ordinary reliable moving deviations, or one measured deviation at least 120 m from the route, trigger one asynchronous live reroute through the remaining required stops. Missing matches are never treated as severe. Live routing uses `TRAFFIC_AWARE` with a 3.5-second budget; the active route switches atomically and stale cache-generation/request/version/session results are discarded.
 8. If live lifecycle fields are missing, the backend asynchronously restores them from `active_rides` without delaying the response.
-9. Browser singleton listeners receive the RTDB change; confident current-version matches drive markers, otherwise clients show raw GNSS. The service worker never caches authenticated responses.
+9. Browser singleton listeners receive the RTDB change. Confident current-version matches drive markers; a new on-route sample briefly retains its previous match while matching is pending, then falls back to visibly uncertain accepted raw GNSS after a fixed bound. Off-route and changed-route contexts use raw coordinates immediately. The service worker never caches authenticated responses.
 
 ### Ride start and progression
 
@@ -115,12 +117,12 @@ The software does not promise an absolute end-to-end SLA without real deployment
 | Moving/stopped heartbeat | 1 / 5 seconds |
 | HTTPS request timeout | 7 seconds |
 | Retry | 1–30 seconds exponential with per-device jitter |
-| RTDB write | One transaction per accepted new sample |
+| RTDB write | One ordered live-node transaction per accepted new sample; one shared rate-budget transaction per bounded token lease |
 | Firestore lifecycle | Only state/stop/delay/session changes |
 | Browser live stream | One shared RTDB listener per browser runtime |
 | UI freshness clocks | 15–60 second local-only timers; no API polling |
 
-Admin-only `GET /api/health` returns rolling p50/p95/p99 processing, device-to-server, and RTDB-write latency plus credential cache efficiency. Public `GET /health` exposes readiness only. A device clock anomaly over 24 hours is excluded from the device-to-server window.
+Admin-only `GET /api/health` returns rolling p50/p95/p99 processing, device-to-server, RTDB-write, and authenticated rate-limit decision latency plus credential cache efficiency and shared limiter transaction/retry counters. Public `GET /health` exposes readiness only. A device clock anomaly over 24 hours is excluded from the device-to-server window.
 
 ## Deployment view
 
@@ -131,7 +133,7 @@ The vehicle needs a fused 12 V-to-5 V converter, stable ground, secure enclosure
 ## Residual risks
 
 - Physical GNSS multipath, antenna/power faults and cellular dead zones require route testing.
-- In-memory API/device rate limits are per process; university edge limits are required for multi-instance production.
+- General API rate limits are sharded per process and still require university edge limits. Authenticated device limits use the shared RTDB budget by default; local mode is restricted to an explicitly single-instance deployment.
 - Firebase and Google Maps quotas/regions are external operational dependencies.
 - A pinned CA must be physically updated before issuer expiry/rotation; application OTA deliberately cannot replace trust roots or credentials.
 - Retention/privacy periods need university legal approval and backups need an owned restore drill.

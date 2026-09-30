@@ -9,25 +9,27 @@ import { useRoutes, RouteData, RouteStop } from "@/hooks/useRoutes";
 import { auth } from "@/lib/firebaseAuth";
 import {
   Trash2, Plus, X, CheckCircle, MapPin, Loader2, Search,
-  Pencil, GripVertical, Save,
-  ChevronDown, ChevronUp, ArrowLeft, Crosshair,
+  Pencil, Save,
+  ChevronDown, ChevronUp, ArrowLeft, ArrowLeftRight, Crosshair,
 } from "lucide-react";
-import CustomSelect from "@/components/ui/CustomSelect";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import AlertModal from "@/components/ui/AlertModal";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
-import { apiRequest } from "@/lib/apiClient";
-import { prepareRouteSavePayload, routeIdFromName, stopShortName } from "@/lib/routeStopPayload";
+import { ApiError, apiRequest } from "@/lib/apiClient";
+import { placeSearchErrorMessage } from "@/lib/placeSearchErrors";
+import { newRouteSaveId, saveRoute } from "@/lib/routeSaveClient";
+import {
+  prepareRouteSavePayload,
+  reorderRouteStops,
+  routeIdFromName,
+  stopShortName,
+  swapRouteEndpoints,
+} from "@/lib/routeStopPayload";
+import { stopLabel } from "@/lib/stopLabel";
 
 
 /* ────────────────────────────────────────────────────────────────────────────────────────────────── */
-function stopLabel(i: number): string {
-  const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  if (i < 26) return a[i];
-  return a[Math.floor(i / 26) - 1] + a[i % 26];
-}
-
 const ROUTE_COLORS = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444",
   "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
@@ -44,11 +46,13 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [searchNotice, setSearchNotice] = useState("");
 
   useEffect(() => {
     if (value.trim().length < 3) {
       setSearching(false);
       setPredictions([]);
+      setSearchNotice("");
       return;
     }
     const controller = new AbortController();
@@ -60,6 +64,7 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
       }
       setSearching(true);
       setSearchError("");
+      setSearchNotice("");
       try {
         const token = await currentUser.getIdToken();
         const payload = await apiRequest<{ results?: PlacePrediction[] }>(
@@ -70,11 +75,13 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
             fallbackError: "Place search is temporarily unavailable.",
           },
         );
-        setPredictions(Array.isArray(payload.results) ? payload.results : []);
+        const results = Array.isArray(payload.results) ? payload.results : [];
+        setPredictions(results);
+        setSearchNotice(results.length === 0 ? "No matching places found. Try a more specific search." : "");
       } catch (error) {
         if (!controller.signal.aborted) {
           setPredictions([]);
-          setSearchError(errorMessage(error));
+          setSearchError(placeSearchErrorMessage(error));
         }
       } finally {
         if (!controller.signal.aborted) setSearching(false);
@@ -92,6 +99,7 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
     setPredictions([]);
     setSearching(false);
     setSearchError("");
+    setSearchNotice("");
     onPlaceSelect(prediction);
   };
 
@@ -107,16 +115,26 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
           const nextValue = event.target.value;
           setValue(nextValue);
           setSearchError("");
+          setSearchNotice("");
           if (nextValue.length < 3) setPredictions([]);
         }}
         placeholder="Search for a stop"
         aria-label="Search for a stop"
-        aria-describedby={searchError ? "place-search-error" : undefined}
+        aria-describedby={searchError
+          ? "place-search-error"
+          : searchNotice
+            ? "place-search-notice"
+            : undefined}
         className="w-full h-11 bg-[#09090b] border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-medium"
       />
       {searchError && (
         <p id="place-search-error" className="mt-1 text-xs text-red-400" role="alert">
           {searchError}
+        </p>
+      )}
+      {searchNotice && !searchError && (
+        <p id="place-search-notice" className="mt-1 text-xs text-white/45" role="status">
+          {searchNotice}
         </p>
       )}
       {value.length >= 3 && predictions.length > 0 && (
@@ -175,9 +193,6 @@ function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () =
           {route.stops?.length ?? 0} Stops
           {stopsOpen ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
         </button>
-        {route.type && (
-          <span className="px-2 py-0.5 rounded-full bg-white/5 text-[9px] font-black text-white/30 uppercase">{route.type}</span>
-        )}
         {route.distanceMeters && (
           <span className="text-[9px] text-white/20 tabular-nums">{(route.distanceMeters / 1000).toFixed(1)} km</span>
         )}
@@ -185,7 +200,7 @@ function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () =
       {stopsOpen && route.stops && route.stops.length > 0 && (
         <div className="border-t border-white/5 px-4 py-3 flex flex-col gap-0">
           {route.stops.map((stop, i) => (
-            <div key={i} className="flex items-stretch gap-3">
+            <div key={stop.id} className="flex items-stretch gap-3">
               <div className="flex flex-col items-center shrink-0">
                 <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-black text-[9px] shrink-0">
                   {stopLabel(i)}
@@ -204,16 +219,19 @@ function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () =
 }
 
 /* â”€â”€ Stop list item (draggable in editor) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-function StopItem({ stop, index, onRemove, onNameChange }: {
+function StopItem({ stop, index, onRemove, onNameChange, onMoveUp, onMoveDown, canMoveUp, canMoveDown }: {
   stop: RouteStop; index: number;
   onRemove: (i: number) => void;
   onNameChange: (i: number, name: string) => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(stop.name);
   return (
-    <div className="flex items-center gap-2 group">
-      <GripVertical className="w-4 h-4 text-white/15 shrink-0 cursor-grab" />
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] p-1 sm:flex-nowrap">
       <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 font-black text-[9px] flex items-center justify-center shrink-0">
         {stopLabel(index)}
       </span>
@@ -240,9 +258,17 @@ function StopItem({ stop, index, onRemove, onNameChange }: {
           </span>
         </button>
       )}
-      <button onClick={() => onRemove(index)} aria-label={`Remove stop ${stop.name}`} className="w-11 h-11 rounded-lg text-white/15 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all shrink-0">
-        <X className="w-3.5 h-3.5" />
-      </button>
+      <div className="ml-8 flex shrink-0 items-center gap-1 sm:ml-0">
+        <button type="button" onClick={onMoveUp} disabled={!canMoveUp} aria-label={`Move stop ${stop.name} up`} className="size-11 rounded-lg text-white/65 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:text-white/30">
+          <ChevronUp className="mx-auto size-4" aria-hidden="true" />
+        </button>
+        <button type="button" onClick={onMoveDown} disabled={!canMoveDown} aria-label={`Move stop ${stop.name} down`} className="size-11 rounded-lg text-white/65 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:text-white/30">
+          <ChevronDown className="mx-auto size-4" aria-hidden="true" />
+        </button>
+        <button type="button" onClick={() => onRemove(index)} aria-label={`Remove stop ${stop.name}`} className="size-11 rounded-lg text-red-300/80 hover:bg-red-500/10 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400">
+          <X className="mx-auto size-4" aria-hidden="true" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -255,9 +281,9 @@ interface EditorState {
   routeId: string;
   name: string;
   color: string;
-  type: "up" | "down" | "circular";
   stops: RouteStop[];
   polyline?: string;
+  configVersion: number;
 }
 
 const EMPTY_EDITOR: EditorState = {
@@ -265,8 +291,8 @@ const EMPTY_EDITOR: EditorState = {
   routeId: "",
   name: "",
   color: "#3B82F6",
-  type: "circular",
   stops: [],
+  configVersion: 0,
 };
 
 function RouteEditor({
@@ -285,6 +311,7 @@ function RouteEditor({
   const [positionMessage, setPositionMessage] = useState("Drag any map pin to fine-tune a stop's location.");
   const [placingManualStop, setPlacingManualStop] = useState(false);
   const [routeIdEdited, setRouteIdEdited] = useState(Boolean(initial.routeId));
+  const saveOperationRef = useRef<{ payload: string; saveId: string } | null>(null);
 
   // ── Traffic layer rendered imperatively ──────────────────────────────────
   const TrafficLayer = () => {
@@ -305,8 +332,8 @@ function RouteEditor({
     setState(s => ({ ...s, [k]: v }));
 
   const handlePlaceSelect = (place: { name: string; lat: number; lng: number }) => {
-    if (state.stops.length >= 27) {
-      setEditorAlertMsg("A route can have at most 27 stops.");
+    if (state.stops.length >= 100) {
+      setEditorAlertMsg("A route can have at most 100 stops.");
       return;
     }
     if (!place.name.trim() || !Number.isFinite(place.lat) || place.lat < -90 || place.lat > 90 || !Number.isFinite(place.lng) || place.lng < -180 || place.lng > 180) {
@@ -328,8 +355,8 @@ function RouteEditor({
   const handleMapClick = (event: VisMapMouseEvent) => {
     if (!placingManualStop || !event.detail.latLng) return;
     event.stop();
-    if (state.stops.length >= 27) {
-      setEditorAlertMsg("A route can have at most 27 stops.");
+    if (state.stops.length >= 100) {
+      setEditorAlertMsg("A route can have at most 100 stops.");
       setPlacingManualStop(false);
       return;
     }
@@ -374,13 +401,18 @@ function RouteEditor({
 
   const moveStop = (from: number, to: number) => {
     if (to < 0 || to >= state.stops.length) return;
-    setState(s => {
-      const stops = [...s.stops];
-      const [item] = stops.splice(from, 1);
-      stops.splice(to, 0, item);
-      return { ...s, stops, polyline: undefined };
-    });
+    setState(s => ({
+      ...s,
+      stops: reorderRouteStops(s.stops, from, to),
+      polyline: undefined,
+    }));
   };
+
+  const swapEndpoints = () => setState(s => ({
+    ...s,
+    stops: swapRouteEndpoints(s.stops),
+    polyline: undefined,
+  }));
 
   const updateStopPosition = (i: number, lat: number, lng: number) => {
     setState(s => {
@@ -407,26 +439,24 @@ function RouteEditor({
       }
 
       const token = await currentUser.getIdToken(true);
-      const geometry = await apiRequest<{
-        polyline?: string;
-        distanceMeters?: number;
-        duration?: string;
-      }>(`/api/routes/${encodeURIComponent(routeId)}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-        fallbackError: "Unable to compute route geometry. The route was not saved.",
-      });
-      if (!geometry.polyline || typeof geometry.distanceMeters !== "number" || typeof geometry.duration !== "string") {
-        throw new Error("Route geometry service returned an invalid result.");
+      const operationBody = { ...body, expectedVersion: state.configVersion };
+      const payload = JSON.stringify({ routeId, ...operationBody });
+      if (saveOperationRef.current?.payload !== payload) {
+        saveOperationRef.current = { payload, saveId: newRouteSaveId() };
       }
+      await saveRoute(
+        routeId,
+        saveOperationRef.current.saveId,
+        operationBody,
+        token,
+      );
 
       onSaved();
     } catch (error: unknown) {
-      alert("Failed to save: " + errorMessage(error));
+      if (!(error instanceof ApiError) || !error.outcomeUnknown) {
+        saveOperationRef.current = null;
+      }
+      setEditorAlertMsg("Failed to save: " + errorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -461,20 +491,6 @@ function RouteEditor({
         <div className="flex flex-col gap-1 flex-1 min-w-[220px]">
           <label className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Search Stop</label>
           <PlacesSearchBox onPlaceSelect={handlePlaceSelect} />
-        </div>
-
-        <div className="flex flex-col gap-1 min-w-[110px]">
-          <label className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Type</label>
-          <CustomSelect
-            ariaLabel="Route type"
-            value={state.type}
-            onChange={(val) => setField("type", val as EditorState["type"])}
-            options={[
-              { value: "circular", label: "Circular" },
-              { value: "up", label: "Up" },
-              { value: "down", label: "Down" },
-            ]}
-          />
         </div>
 
         <div className="flex flex-col gap-1">
@@ -531,10 +547,11 @@ function RouteEditor({
               polyline={state.mode === "edit" ? state.polyline : undefined}
               color={state.color}
               hasBuses={false}
+              direction="forward"
             />
             {state.stops.map((stop, i) => (
               <AdvancedMarker
-                key={`s-${i}`}
+                key={stop.id}
                 position={{ lat: stop.lat, lng: stop.lng }}
                 draggable
                 onDragStart={() => setPositionMessage(`Moving stop ${stopLabel(i)}…`)}
@@ -587,7 +604,19 @@ function RouteEditor({
               <MapPin className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Stops</span>
             </div>
-            <span className="text-[9px] font-black text-emerald-400/50 bg-emerald-500/10 px-2 py-0.5 rounded-full">{state.stops.length}</span>
+            <div className="flex items-center gap-2">
+              {state.stops.length === 2 && (
+                <button
+                  type="button"
+                  onClick={swapEndpoints}
+                  className="min-h-9 rounded-lg border border-white/10 bg-white/5 px-2.5 text-[9px] font-black uppercase tracking-wider text-white/60 hover:bg-white/10"
+                  title="Swap route origin and destination"
+                >
+                  <ArrowLeftRight className="mr-1 inline h-3 w-3" /> Swap A &amp; B
+                </button>
+              )}
+              <span className="text-[9px] font-black text-emerald-400/50 bg-emerald-500/10 px-2 py-0.5 rounded-full">{state.stops.length}</span>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5">
             {state.stops.length === 0 ? (
@@ -597,29 +626,17 @@ function RouteEditor({
               </div>
             ) : (
               state.stops.map((stop, i) => (
-                <div key={`${stop.id}-${i}`}>
-                  <StopItem stop={stop} index={i} onRemove={removeStop} onNameChange={renameStop} />
-                  <div className="flex items-center gap-1.5 pl-6 my-0.5">
-                    <div className="w-px h-4 bg-emerald-500/15 mx-2" />
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => moveStop(i, i - 1)}
-                        disabled={i === 0}
-                        className="w-5 h-5 rounded hover:bg-white/5 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="Move up"
-                      >
-                        <ChevronUp className="w-3 h-3 text-white/20" />
-                      </button>
-                      <button
-                        onClick={() => moveStop(i, i + 1)}
-                        disabled={i === state.stops.length - 1}
-                        className="w-5 h-5 rounded hover:bg-white/5 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="Move down"
-                      >
-                        <ChevronDown className="w-3 h-3 text-white/20" />
-                      </button>
-                    </div>
-                  </div>
+                <div key={stop.id}>
+                  <StopItem
+                    stop={stop}
+                    index={i}
+                    onRemove={removeStop}
+                    onNameChange={renameStop}
+                    onMoveUp={() => moveStop(i, i - 1)}
+                    onMoveDown={() => moveStop(i, i + 1)}
+                    canMoveUp={i > 0}
+                    canMoveDown={i < state.stops.length - 1}
+                  />
                 </div>
               ))
             )}
@@ -665,9 +682,11 @@ export default function RouteManagementPanel() {
       routeId: route.id,
       name: route.name,
       color: route.color || "#3B82F6",
-      type: (route.type as EditorState["type"]) || "circular",
       stops: route.stops ?? [],
       polyline: route.polyline,
+      configVersion: Number.isSafeInteger(route.configVersion)
+        ? Number(route.configVersion)
+        : 0,
     });
 
   const handleSaved = () => {

@@ -24,16 +24,52 @@ vi.mock("../lib/firebaseAdmin", () => ({
 }));
 import {
   authenticateDeviceCredentials,
+  durableLifecycle,
   evaluateDeviceRateLimit,
   freshestDelayMinutes,
   hashDeviceSecret,
+  initialDevicePresenceState,
   invalidateDeviceCredentialCache,
+  nextTelemetryValue,
   parseDeviceAuthorization,
+  previousTelemetryGpsHdop,
   shouldApplyRestoreTelemetry,
   summarizeLatencySamples,
   telemetrySampleIsNewer,
+  telemetryUpdateGapMs,
   verifyDeviceSecretHash,
 } from "./deviceTelemetryService";
+
+describe("durable ride restoration direction", () => {
+  const activeRide = {
+    status: "active",
+    sessionId: "session_1",
+    driverId: "driver_1",
+    tripState: "in_service",
+  };
+
+  it.each([undefined, null, "", "sideways", 123])(
+    "does not restore unresolved direction %p as forward",
+    (direction) => {
+      expect(durableLifecycle({ ...activeRide, direction })).toBeNull();
+    },
+  );
+
+  it("restores only explicit directions", () => {
+    expect(durableLifecycle({ ...activeRide, direction: "forward" }))
+      .toMatchObject({ direction: "forward" });
+    expect(durableLifecycle({ ...activeRide, direction: "reverse" }))
+      .toMatchObject({ direction: "reverse" });
+  });
+});
+
+describe("initial device presence", () => {
+  it("does not fabricate an armed ride lifecycle", () => {
+    expect(initialDevicePresenceState()).toEqual({ status: "offline" });
+    expect(initialDevicePresenceState()).not.toHaveProperty("tripState");
+    expect(initialDevicePresenceState()).not.toHaveProperty("currentStopIndex");
+  });
+});
 
 beforeEach(() => {
   harness.collections.clear();
@@ -131,6 +167,12 @@ describe("telemetry latency summaries", () => {
     expect(summarizeLatencySamples([100, 10, 30, 20, 40])).toEqual({
       samples: 5, average: 40, p50: 30, p95: 100, p99: 100,
     });
+  });
+
+  it("measures update gaps only on one monotonic server clock", () => {
+    expect(telemetryUpdateGapMs(1_000, 2_250)).toBe(1_250);
+    expect(telemetryUpdateGapMs(undefined, 2_250)).toBeNull();
+    expect(telemetryUpdateGapMs(3_000, 2_250)).toBeNull();
   });
 });
 
@@ -245,5 +287,92 @@ describe("live telemetry ordering", () => {
 
   it("does not let an equal-time candidate overwrite a legacy sample without a sequence", () => {
     expect(telemetrySampleIsNewer(4_000, undefined, { timestamp: 4_000, seq: 1 })).toBe(false);
+  });
+
+  it("preserves lifecycle and matched state while atomically advancing raw telemetry", () => {
+    const live = {
+      busId: "bus_1",
+      routeId: "route_1",
+      sessionId: "session_1",
+      driverId: "driver_1",
+      status: "active",
+      tripState: "in_service",
+      currentStopIndex: 2,
+      lat: 23,
+      lng: 72,
+      speed: 10,
+      heading: 90,
+      timestamp: 4_000,
+      seq: 4,
+      matchedLocation: { seq: 4, sampledAt: 4_000, lat: 23, lng: 72 },
+    };
+    const next = nextTelemetryValue(live, {
+      busId: "bus_1",
+      routeId: "route_1",
+    }, {
+      lat: 23,
+      lng: 72,
+      speed: 11,
+      heading: 91,
+      gpsHdop: 1.2,
+      motionState: "moving",
+      seq: 5,
+      deviceSentAt: 5_100,
+      timestamp: 5_000,
+    }, 5_200);
+
+    expect(next).toMatchObject({
+      sessionId: "session_1",
+      driverId: "driver_1",
+      status: "active",
+      tripState: "in_service",
+      currentStopIndex: 2,
+      timestamp: 5_000,
+      seq: 5,
+      matchedLocation: live.matchedLocation,
+      rawLocation: { seq: 5, sampledAt: 5_000 },
+      backendReceivedAt: 5_200,
+    });
+  });
+
+  it("aborts a stale raw write before it can overwrite lifecycle state", () => {
+    expect(nextTelemetryValue({
+      sessionId: "session_new",
+      status: "active",
+      timestamp: 5_000,
+      seq: 5,
+    }, {
+      busId: "bus_1",
+      routeId: "route_1",
+    }, {
+      lat: 23,
+      lng: 72,
+      speed: 10,
+      heading: 90,
+      gpsHdop: 1,
+      motionState: "moving",
+      seq: 99,
+      deviceSentAt: 4_100,
+      timestamp: 4_000,
+    }, 4_200)).toBeUndefined();
+  });
+});
+
+describe("previous telemetry HDOP", () => {
+  it("preserves unknown HDOP when no valid fallback exists", () => {
+    expect(previousTelemetryGpsHdop({ gpsHdop: null }, { gpsHdop: null })).toBeNull();
+    expect(previousTelemetryGpsHdop({ gpsHdop: undefined }, {})).toBeNull();
+  });
+
+  it("uses a valid live fallback for null, missing, or invalid anchor HDOP", () => {
+    expect(previousTelemetryGpsHdop({ gpsHdop: null }, { gpsHdop: 2.5 })).toBe(2.5);
+    expect(previousTelemetryGpsHdop({}, { gpsHdop: 3 })).toBe(3);
+    expect(previousTelemetryGpsHdop({ gpsHdop: Number.NaN }, { gpsHdop: 4 })).toBe(4);
+    expect(previousTelemetryGpsHdop({ gpsHdop: Number.POSITIVE_INFINITY }, { gpsHdop: 4 })).toBe(4);
+  });
+
+  it("prefers finite anchor HDOP, including a legitimate zero", () => {
+    expect(previousTelemetryGpsHdop({ gpsHdop: 1.2 }, { gpsHdop: 4 })).toBe(1.2);
+    expect(previousTelemetryGpsHdop({ gpsHdop: 0 }, { gpsHdop: 4 })).toBe(0);
   });
 });

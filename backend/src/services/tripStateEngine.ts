@@ -1,3 +1,4 @@
+import { endpointSnapshotVersion } from "../lib/endpointSnapshotVersion";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 import type { Reference } from "firebase-admin/database";
@@ -9,8 +10,11 @@ import {
 } from "../lib/automaticRideDirection";
 import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import { SerializedChangeWriter } from "./serializedChangeWriter";
-import { reduceTripState, STOP_GEOFENCE_M } from "./tripStateReducer";
-import { normalizeRideDirection, stopsInRideDirection } from "../lib/rideDirection";
+import { reduceTripState } from "./tripStateReducer";
+import {
+  normalizeRideDirection,
+  stopsInRideDirection,
+} from "../lib/rideDirection";
 import {
   drainDynamicPromises,
   normalizeIdentifier,
@@ -54,6 +58,10 @@ interface TelemetrySample {
 }
 const processedTelemetry = new LruCache<string, TelemetrySample>(MAX_CACHE_ENTRIES);
 
+export function lifecycleDirection(data: Record<string, unknown>) {
+  return normalizeRideDirection(data.direction);
+}
+
 /**
  * Parses an environment-derived interval with a fallback and a lower bound.
  *
@@ -68,8 +76,8 @@ function readIntervalMs(value: string | undefined, fallback: number, minimum: nu
 const STALE_BUS_MS = readIntervalMs(process.env.BUS_STALE_MS, 300_000, 90_000);
 const AUTOMATIC_TURNAROUND_DWELL_MS = readIntervalMs(
   process.env.AUTOMATIC_TURNAROUND_DWELL_MS,
-  120_000,
-  30_000,
+  0,
+  0,
 );
 const TURNAROUND_CLAIM_STALE_MS = 60_000;
 const MISSING_ROUTE_TTL_MS = 60_000;
@@ -86,7 +94,9 @@ function fleetLifecycleState(data: Record<string, unknown>) {
     status: typeof data.status === "string" ? data.status : "active",
     deviceState: typeof data.deviceState === "string" ? data.deviceState : "online",
     tripState: typeof data.tripState === "string" ? data.tripState : "pre_departure",
-    direction: normalizeRideDirection(data.direction),
+    // Direction is deliberately nullable for device-only and newly armed
+    // pending nodes. Do not silently classify an unresolved ride as forward.
+    direction: lifecycleDirection(data),
     // Persist the live GNSS state so analytics can count signal loss; without
     // it the admin panel's signalLost count under-reported (issue #48 L2).
     motionState: typeof data.motionState === "string" ? data.motionState : null,
@@ -132,7 +142,8 @@ async function maybeArmAutomaticTurnaround(
   naturalStops: RouteStop[],
   nodeRef: Reference,
 ): Promise<boolean> {
-  const previousDirection = normalizeRideDirection(data.direction);
+  const previousDirection = lifecycleDirection(data);
+  if (!previousDirection) return false;
   const completedStops = stopsInRideDirection(naturalStops, previousDirection);
   const completedDestination = completedStops.at(-1);
   const previousSessionId = normalizeIdentifier(data.sessionId);
@@ -150,10 +161,11 @@ async function maybeArmAutomaticTurnaround(
       now,
       telemetryTimestamp: Number(data.timestamp),
       eligibleAt: Number(data.turnaroundEligibleAt),
+      minimumSampleTimestamp: Number(data.turnaroundSampledAt ?? data.turnaroundEligibleAt),
       motionState: data.motionState,
       position: { lat: Number(data.lat), lng: Number(data.lng) },
       destination: completedDestination,
-    }, STOP_GEOFENCE_M)
+    })
   ) {
     return false;
   }
@@ -179,10 +191,11 @@ async function maybeArmAutomaticTurnaround(
         now,
         telemetryTimestamp: Number(live.timestamp),
         eligibleAt: Number(live.turnaroundEligibleAt),
+        minimumSampleTimestamp: Number(live.turnaroundSampledAt ?? live.turnaroundEligibleAt),
         motionState: live.motionState,
         position: { lat: Number(live.lat), lng: Number(live.lng) },
         destination: completedDestination,
-      }, STOP_GEOFENCE_M)
+        })
     ) {
       return;
     }
@@ -238,6 +251,9 @@ async function maybeArmAutomaticTurnaround(
         destinationStopId: destination.id,
         armedAt: now,
         status: "armed",
+        directionState: "resolved",
+        directionEndpointVersion: endpointSnapshotVersion(naturalStops),
+        directionFirestoreSynced: true,
         automaticTurnaround: true,
         previousSessionId,
         passengers: {},
@@ -250,6 +266,9 @@ async function maybeArmAutomaticTurnaround(
         driverId,
         sessionId: sessionRef.id,
         direction,
+        directionState: "resolved",
+        directionEndpointVersion: endpointSnapshotVersion(naturalStops),
+        directionFirestoreSynced: true,
         automaticTurnaround: true,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -268,6 +287,9 @@ async function maybeArmAutomaticTurnaround(
         hasDepartedOrigin: false,
         delayMinutes: 0,
         delayUpdatedAt: 0,
+        directionState: "resolved",
+        directionEndpointVersion: endpointSnapshotVersion(naturalStops),
+        directionFirestoreSynced: true,
         automaticTurnaround: true,
         previousSessionId,
         updatedAt: FieldValue.serverTimestamp(),
@@ -300,10 +322,14 @@ async function maybeArmAutomaticTurnaround(
         hasDepartedOrigin: false,
         delayMinutes: 0,
         delayUpdatedAt: 0,
+        directionState: "resolved",
+        directionEndpointVersion: endpointSnapshotVersion(naturalStops),
+        directionFirestoreSynced: true,
         automaticTurnaround: true,
         previousSessionId,
         completedAt: null,
         turnaroundEligibleAt: null,
+        turnaroundSampledAt: null,
         turnaroundClaimId: null,
         turnaroundClaimedAt: null,
         lifecycleUpdatedAt: { ".sv": "timestamp" },
@@ -519,12 +545,14 @@ function persistActiveRideLifecycle(
   const documentId = activeRideDocumentId(data);
   const busId = normalizeIdentifier(data.busId);
   const sessionId = normalizeIdentifier(data.sessionId);
+  const direction = lifecycleDirection(data);
   if (
     !documentId ||
     !busId ||
     !sessionId ||
     data.status !== "active" ||
-    typeof data.driverId !== "string"
+    typeof data.driverId !== "string" ||
+    !direction
   ) {
     return Promise.resolve();
   }
@@ -535,7 +563,7 @@ function persistActiveRideLifecycle(
     busId: data.busId,
     driverId: data.driverId,
     routeId: data.routeId,
-    direction: normalizeRideDirection(data.direction),
+    direction,
     originStopId: normalizeIdentifier(data.originStopId),
     destinationStopId: normalizeIdentifier(data.destinationStopId),
     status: "active",
@@ -694,7 +722,14 @@ export function startTripStateEngine(): () => Promise<void> {
       return;
     }
     if (!Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
-    const direction = normalizeRideDirection(data.direction);
+    const direction = lifecycleDirection(data);
+    // Pending direction is operational state, not an implicit forward ride.
+    // Keep fleet visibility, but wait for telemetryRouteService to claim a
+    // direction before deriving stops, completion, or an active-ride mirror.
+    if (!direction) {
+      persistFleetState(data, new Date().toISOString());
+      return;
+    }
     const stops = stopsInRideDirection(naturalStops, direction);
 
     const telemetryTimestamp = Number(data.timestamp);
@@ -749,6 +784,7 @@ export function startTripStateEngine(): () => Promise<void> {
           ) {
             return;
           }
+          if (lifecycleDirection(live) !== direction) return;
           if (
             live.tripState === "completed" ||
             live.deviceState === "offline"
@@ -822,15 +858,31 @@ export function startTripStateEngine(): () => Promise<void> {
       const activeRideId = activeRideDocumentId(data);
       const completedRef = db.collection("completed_trips").doc(completionId);
       try {
-        await db.runTransaction(async (transaction) => {
+        const persistedCompletion = await db.runTransaction(async (transaction) => {
           const activeRideRef = activeRideId
             ? db.collection("active_rides").doc(activeRideId)
             : null;
           const lockRef = db.collection("_active_bus_locks").doc(data.busId);
-          const [activeRide, lock] = await Promise.all([
+          const sessionRef = typeof data.sessionId === "string"
+            ? db.collection("ride_sessions").doc(data.sessionId)
+            : null;
+          const [activeRide, lock, session] = await Promise.all([
             activeRideRef ? transaction.get(activeRideRef) : Promise.resolve(null),
             transaction.get(lockRef),
+            sessionRef ? transaction.get(sessionRef) : Promise.resolve(null),
           ]);
+          if (sessionRef) {
+            const sessionStatus = session?.data()?.status;
+            if (
+              !session?.exists ||
+              lock.data()?.sessionId !== data.sessionId ||
+              (sessionStatus !== "pending" &&
+                sessionStatus !== "armed" &&
+                sessionStatus !== "active")
+            ) {
+              return false;
+            }
+          }
           transaction.set(completedRef, {
             busId: data.busId,
             driverId: data.driverId || "unknown",
@@ -848,7 +900,7 @@ export function startTripStateEngine(): () => Promise<void> {
           }, { merge: true });
           if (typeof data.sessionId === "string") {
             const finalStop = stops[currentStopIndex];
-            transaction.set(db.collection("ride_sessions").doc(data.sessionId), {
+            transaction.set(sessionRef!, {
               status: "completed",
               endTime: Date.now(),
               ...(finalStop
@@ -876,7 +928,11 @@ export function startTripStateEngine(): () => Promise<void> {
           ) {
             transaction.delete(lockRef);
           }
+          return true;
         });
+        // A concurrent manual termination or replacement session won. Do not
+        // overwrite its interrupted history or publish a stale completion.
+        if (!persistedCompletion) return;
         if (activeRideId) {
           activeRideWrites.invalidate(activeRideId);
         }
@@ -891,6 +947,9 @@ export function startTripStateEngine(): () => Promise<void> {
             completedAt: completionTimeMs,
             turnaroundEligibleAt:
               completionTimeMs + AUTOMATIC_TURNAROUND_DWELL_MS,
+            turnaroundSampledAt: AUTOMATIC_TURNAROUND_DWELL_MS === 0
+              ? Number(data.timestamp)
+              : completionTimeMs + AUTOMATIC_TURNAROUND_DWELL_MS,
             turnaroundClaimId: null,
             turnaroundClaimedAt: null,
           };

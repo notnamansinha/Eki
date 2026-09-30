@@ -23,15 +23,15 @@ describe("boarding policy", () => {
 
   it("requires route-owned stops in forward order", () => {
     const stops = [{ id: "s1" }, { id: "s2" }, { id: "s3" }];
-    expect(validateStopSelection(stops, "s1", "s3")).toEqual({
+    expect(validateStopSelection(stops, "s1", "s3", "forward")).toEqual({
       boardingStopId: "s1",
       alightingStopId: "s3",
     });
-    expect(validateStopSelection(stops, "s2", null)).toBeNull();
-    expect(validateStopSelection(stops, "s2", undefined)).toBeNull();
-    expect(validateStopSelection(stops, "missing", null)).toBeNull();
-    expect(validateStopSelection(stops, "s2", "s2")).toBeNull();
-    expect(validateStopSelection(stops, "s3", "s1")).toBeNull();
+    expect(validateStopSelection(stops, "s2", null, "forward")).toBeNull();
+    expect(validateStopSelection(stops, "s2", undefined, "forward")).toBeNull();
+    expect(validateStopSelection(stops, "missing", null, "forward")).toBeNull();
+    expect(validateStopSelection(stops, "s2", "s2", "forward")).toBeNull();
+    expect(validateStopSelection(stops, "s3", "s1", "forward")).toBeNull();
   });
 
   it("requires route-owned stops in reverse travel order", () => {

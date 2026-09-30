@@ -1,3 +1,4 @@
+import { liveBusFreshnessTimestamp } from "./liveBusFreshness";
 import { describe, expect, it } from "vitest";
 import {
   SIGNAL_LOST_MS,
@@ -23,4 +24,10 @@ describe("live bus freshness", () => {
     expect(isLiveBusTimestamp(now + 10_000, now)).toBe(true);
     expect(isLiveBusSignalLost(now + 10_000, now)).toBe(false);
   });
+});
+
+it("uses receipt time for accepted clock skew without refreshing genuinely old samples", () => {
+  expect(liveBusFreshnessTimestamp({ timestamp: 91000, backendReceivedAt: 100000 })).toBe(100000);
+  expect(liveBusFreshnessTimestamp({ timestamp: 1000, backendReceivedAt: 100000 })).toBe(1000);
+  expect(liveBusFreshnessTimestamp({ timestamp: 100000 })).toBe(100000);
 });

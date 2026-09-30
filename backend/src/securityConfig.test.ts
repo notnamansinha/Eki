@@ -260,7 +260,8 @@ describe("production security configuration", () => {
     expect(messagingPanel).toContain("limitToLast(200)");
     expect(messagingPanel).toContain("requestId: pending.requestId");
     expect(messagingPanel).not.toContain("currentUserName");
-    expect(feedbackPage).toContain("/api/feedback/${id}/status");
+    expect(feedbackPage).toContain("/api/feedback/${encodeURIComponent(id)}/status");
+    expect(feedbackPage).toContain("apiRequest(");
     expect(feedbackPage).not.toContain("updateDoc(");
   });
 
@@ -401,6 +402,7 @@ describe("production security configuration", () => {
     const server = workspaceFile("backend/src/server.ts");
     const devices = workspaceFile("backend/src/routes/devices.ts");
     const telemetry = workspaceFile("backend/src/services/deviceTelemetryService.ts");
+    const deviceLimiter = workspaceFile("backend/src/services/deviceRateLimiter.ts");
 
     expect(server).toContain("const routeComputeLimiter");
     expect(server).toContain('app.use("/api/routes", routeComputeLimiter, polylineRoutes)');
@@ -408,10 +410,13 @@ describe("production security configuration", () => {
     expect(server).toContain('express.json({ limit: "512b", strict: true })');
     expect(devices).toContain("telemetryLimiter");
     expect(devices).toContain('"/:deviceId/telemetry"');
-    expect(telemetry).toContain("HTTPS_DEVICE_RATE_PER_MINUTE");
     expect(telemetry).toContain("deviceRateLimitRetryAfterMs");
     expect(telemetry).toContain("DEVICE_RATE_LIMIT_PATH");
     expect(telemetry).toContain(".transaction((value)");
+    expect(deviceLimiter).toContain("HTTPS_DEVICE_RATE_PER_MINUTE");
+    expect(deviceLimiter).toContain("HTTPS_DEVICE_RATE_LIMIT_MODE");
+    expect(deviceLimiter).toContain("AuthenticatedDeviceRateLimiter");
+    expect(deviceLimiter).toContain("reserveRateLimitTokens");
     expect(telemetry).toContain("credentialCacheKey(deviceId, suppliedDigest)");
     expect(telemetry).toContain("DEVICE_CREDENTIAL_VERSION_PATH");
     expect(devices).toContain("publishDeviceCredentialInvalidation(deviceId)");
@@ -448,9 +453,10 @@ describe("production security configuration", () => {
     expect(server).toContain("shardedLimit(200");
     expect(server).toContain("shardedLimit(30");
     expect(server).toContain("shardedLimit(10");
-    expect(devices).toContain("shardedLimit(120");
+    expect(devices).toContain("shardedLimit(requestsPerWindow");
     // Operators must set the factor to the deployed replica count.
     expect(envExample).toContain("RATE_LIMIT_SHARD_FACTOR");
+    expect(envExample).toContain("HTTPS_DEVICE_RATE_LIMIT_MODE=distributed");
     // The exact image that would be replicated builds and smoke-boots in CI.
     expect(workflow).toContain("backend-image");
     expect(workflow).toContain("docker build -f backend/Dockerfile");
@@ -544,7 +550,22 @@ describe("production security configuration", () => {
       'http.addHeader("Authorization", authorizationHeader)',
     );
     expect(firmware).not.toContain("HTTPClient::errorToString(responseCode)");
-    expect(firmware).toContain('http.collectHeaders(responseHeaders, 1)');
+    expect(firmware).toContain('#include "http_response.h"');
+    expect(firmware).not.toContain("http.getString()");
+    expect(firmware).toContain("HTTPC_DISABLE_FOLLOW_REDIRECTS");
+    expect(firmware).toContain("consumeAcceptedResponse<HttpClock>");
+    expect(firmware).toContain("ReuseGuardedClient<WiFiClient>");
+    expect(firmware).toContain("ReuseGuardedClient<WiFiClientSecure>");
+    expect(firmware).toContain("guardNetworkClientReuse()");
+    expect(firmware).not.toContain(
+      "if (networkClient.available() != 0) networkClient.stop();",
+    );
+    expect(firmware).toContain('http.collectHeaders(responseHeaders, 6)');
+    expect(firmware).toContain('"Ngrok-Error-Code"');
+    expect(firmware).toContain('"X-Eki-Server-Received-At"');
+    expect(firmware).toContain('"X-Eki-Server-Responded-At"');
+    expect(firmware).toContain('"Content-Length"');
+    expect(firmware).toContain('"Transfer-Encoding"');
     expect(firmware).toContain('#include "secrets.h"');
     expect(firmware).toContain("eki::config::validate(");
     expect(firmwareConfig).toContain("backendUrlUsesHttps");
@@ -573,7 +594,7 @@ describe("production security configuration", () => {
     const telemetryQueue = workspaceFile("hardware/include/telemetry_queue.h");
     const tripStateEngine = workspaceFile("backend/src/services/tripStateEngine.ts");
 
-    expect(telemetryPolicy).toContain("STOPPED_HEARTBEAT_MS = 5000");
+    expect(telemetryPolicy).toContain("STOPPED_HEARTBEAT_MS = 1000");
     expect(telemetryPolicy).toContain("motionStateChanged");
     expect(tripStateEngine).toContain("const STALE_BUS_MS = readIntervalMs");
     expect(telemetryPolicy).toContain("TELEMETRY_FRESHNESS_MARGIN_MS = 55000");
@@ -636,7 +657,9 @@ describe("production security configuration", () => {
     expect(firmware).toContain("credentialFaultActive = true");
     expect(firmware).toContain("WiFi.disconnect(true, false)");
     expect(firmware).toContain("WiFi.mode(WIFI_OFF)");
-    expect(firmware).toContain("if (!credentialFaultActive)");
+    expect(firmware).toContain(
+      "if (!credentialFaultActive && !httpsRetryIsPending())",
+    );
     expect(firmware).toContain("acknowledgeQueuedFix(fix.sequence)");
     expect(firmware).toContain("removeQueuedFix(fix.sequence)");
     expect(firmware).not.toContain("Preferences");
@@ -653,13 +676,15 @@ describe("production security configuration", () => {
     const routes = ruleBlock(rules, "match /routes/{routeId}");
     const sessions = ruleBlock(rules, "match /ride_sessions/{sessionId}");
     const routeEditor = workspaceFile("frontend/src/components/admin/RouteManagementPanel.tsx");
+    const routeSaveClient = workspaceFile("frontend/src/lib/routeSaveClient.ts");
     const dashboard = workspaceFile("frontend/src/components/admin/DashboardPanel.tsx");
 
     expect(routes).toContain("allow create, update, delete: if false;");
     expect(sessions).toContain("allow create: if false;");
     expect(sessions).toContain("allow update: if false;");
     expect(sessions).not.toContain("resource.data.status in ['armed', 'active']");
-    expect(routeEditor).toContain('method: "PUT"');
+    expect(routeEditor).toContain("saveRoute(");
+    expect(routeSaveClient).toContain('method: "PUT"');
     expect(routeEditor).not.toContain("setDoc(");
     expect(routeEditor).not.toContain("updateDoc(");
     expect(dashboard).toMatch(
@@ -668,6 +693,8 @@ describe("production security configuration", () => {
     expect(dashboard).not.toContain("Force Offline");
     expect(dashboard).not.toContain("Position Override");
     expect(dashboard).not.toContain("update(ref(rtdb");
+    expect(ruleBlock(rules, "match /_route_save_operations/{operationId}"))
+      .toContain("allow read, write: if false;");
   });
 
   it("removes the dead passenger-request client surface entirely", () => {
@@ -738,17 +765,19 @@ describe("production security configuration", () => {
 
     expect(server).toContain('app.use("/api/shifts"');
     expect(operations).toContain("/api/shifts/start");
-    expect(operations).not.toContain("/api/shifts/stop");
+    expect(operations).toContain("/api/shifts/stop");
     expect(operations).not.toContain("arrayUnion(");
     expect(operations).not.toContain("test_bus_1");
     expect(shifts).toContain("nodeRef.transaction");
-    expect(shifts).toContain("final ordered stop");
-    expect(shifts).toContain("STOP_GEOFENCE_M");
-    expect(shifts).toContain("arrivedAtOrigin");
+    expect(shifts).toContain('interruptionReason: "manual_end_early"');
+    expect(shifts).toContain("retireRideLifecycle");
+    expect(shifts).toContain("inferRideDirectionFromTelemetry");
+    expect(shifts).toContain("directionState");
     expect(operations).not.toContain('ariaLabel="Travel direction"');
     expect(operations).toContain("Travel direction is inferred from fresh stopped GPS");
-    expect(operations).toContain("directionLabel(inferredDirection");
-    expect(shifts).toContain("inferRideDirectionAtEndpoint");
+    expect(operations).toContain("directionLabelState(inferredDirection");
+    expect(operations).toContain("direction pending");
+    expect(shifts).toContain("inferRideDirectionFromTelemetry");
     expect(engine).toContain("maybeArmAutomaticTurnaround");
     expect(passengerBoarding).toContain("Ride in service");
   });
@@ -865,13 +894,19 @@ describe("production security configuration", () => {
       const sources = directive.trim().split(/\s+/);
       return [sources[0], sources.slice(1)] as const;
     }));
+    expect(directives.get("script-src")).toContain(
+      "https://bustrack-be165-default-rtdb.firebaseio.com",
+    );
     expect(directives.get("frame-src")).toEqual([
+      "'self'",
       "https://accounts.google.com",
       "https://*.firebaseapp.com",
       "https://www.google.com/recaptcha/",
       "https://recaptcha.google.com/recaptcha/",
     ]);
     expect(directives.get("connect-src")).toContain("https://www.google.com/recaptcha/");
+    expect(directives.get("connect-src")).toContain("https://*.gstatic.com");
+    expect(directives.get("connect-src")).toContain("https://*.ggpht.com");
     expect(headers.get("Strict-Transport-Security")).toMatch(/^max-age=\d+/);
     expect(headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(headers.get("X-Frame-Options")).toBe("DENY");

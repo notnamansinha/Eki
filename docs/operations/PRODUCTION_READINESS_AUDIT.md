@@ -1,6 +1,6 @@
 # Production readiness audit
 
-Audit refreshed: 2026-08-14. Scope: every tracked project source,
+Audit refreshed: 2026-09-14. Scope: every tracked project source,
 configuration, documentation, build/deploy and CI surface across firmware,
 backend, Firebase and frontend. Generated dependencies/build output were
 validated through their manifests/builds rather than treated as maintained
@@ -33,6 +33,10 @@ No known production npm vulnerability remains in required dependencies. All curr
 | Operations workspace | A separate driver-facing workspace duplicated admin operations | Ride operations are admin-managed and assigned-operator authorization is enforced server-side |
 | Hardware latency | Default Wi-Fi power behavior added burst latency | Vehicle-powered modem sleep disabled, fast strongest-AP selection; retry/timeout/buffer retained |
 | UI performance | Every visited admin tab stayed mounted with listeners/maps/timers | Mount only active tab; chunks remain browser-cached |
+| Firebase Auth / Privacy | Storage-partitioning browsers (Safari/Firefox) broke auth popup/redirect state on web.app | `resolveFirebaseAuthDomain` dynamically resolves same-origin auth helper; CSP mandates `frame-src 'self'` for `/__/auth/iframe` with build-time contract test |
+| Deployment integrity | Custom backend or missing auth frame policies could break production deployment silently | `verify-web-backend-contract.mjs` enforces exact CSP connect-src and frame-src contracts during builds |
+| RTDB region latency | Default Iowa RTDB instance adds ~300 ms roundtrip latency from India | Issue #169 measured 67.8% lower front-door latency in Singapore candidate (`asia-southeast1`); staged cutover gate and preflight script (`verify:rtdb-instance`) established |
+| Telemetry recovery | Transport timeouts delayed next fix by full interval | 250–749 ms immediate retry on first timeout, validated via live 175-request stationary bench (0 errors) |
 | ETA correctness/performance | Timer recomputed arrival timestamps from unchanged positions and hid countdown | Recompute only on pushed route/bus change; local 15-second countdown remains |
 | Accessibility | Custom listbox keyboard gaps; dialogs lacked complete focus behavior; clickable divs | Native select, reusable top-dialog focus trap/restore/Escape/scroll lock, semantic tabs/collapsibles/cards |
 | Motion accessibility | JS map interpolation ignored reduced-motion preference | Immediate target update under `prefers-reduced-motion` |

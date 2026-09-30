@@ -1,6 +1,6 @@
 # Architecture risk register
 
-Last source verification: 2026-08-14.
+Last source verification: 2026-09-14.
 
 This register tracks material risks that remain after the verified fixes in the
 [production readiness audit](PRODUCTION_READINESS_AUDIT.md). It is intentionally

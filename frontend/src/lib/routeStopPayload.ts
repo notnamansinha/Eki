@@ -18,7 +18,6 @@ export interface RouteSavePayloadInput {
   routeId: string;
   name: string;
   color: string;
-  type: "up" | "down" | "circular";
   stops: RouteStopPayloadInput[];
 }
 
@@ -28,7 +27,6 @@ export interface RouteSavePayload {
     mode: "create" | "edit";
     name: string;
     color: string;
-    type: "up" | "down" | "circular";
     stops: RouteStopPayload[];
   };
 }
@@ -39,7 +37,6 @@ export type RouteSavePreparation =
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
-const ROUTE_TYPES = new Set(["up", "down", "circular"]);
 
 export function stopShortName(name: string): string {
   return name.split(",", 1)[0].trim().slice(0, 32);
@@ -76,6 +73,29 @@ export function normalizeRouteStopPayload(stop: RouteStopPayloadInput): RouteSto
   };
 }
 
+/** Reorder without recreating stops, so stable IDs survive endpoint changes. */
+export function reorderRouteStops<T>(
+  stops: readonly T[],
+  from: number,
+  to: number,
+): T[] {
+  if (
+    from < 0 ||
+    from >= stops.length ||
+    to < 0 ||
+    to >= stops.length ||
+    from === to
+  ) return [...stops];
+  const reordered = [...stops];
+  const [item] = reordered.splice(from, 1);
+  reordered.splice(to, 0, item);
+  return reordered;
+}
+
+export function swapRouteEndpoints<T>(stops: readonly T[]): T[] {
+  return stops.length === 2 ? [stops[1], stops[0]] : [...stops];
+}
+
 /** Validates and builds the exact request consumed by PUT /api/routes/:routeId. */
 export function prepareRouteSavePayload(input: RouteSavePayloadInput): RouteSavePreparation {
   const name = input.name.trim();
@@ -87,10 +107,10 @@ export function prepareRouteSavePayload(input: RouteSavePayloadInput): RouteSave
     return { ok: false, error: "Route ID may contain only letters, numbers, hyphens, and underscores (max 128 characters)." };
   }
   if (name.length > 100) return { ok: false, error: "Route name must be 100 characters or fewer." };
-  if (!SAFE_COLOR.test(input.color) || !ROUTE_TYPES.has(input.type)) {
-    return { ok: false, error: "Choose a valid route colour and type." };
+  if (!SAFE_COLOR.test(input.color)) {
+    return { ok: false, error: "Choose a valid route colour." };
   }
-  if (input.stops.length > 27) return { ok: false, error: "A route can have at most 27 stops." };
+  if (input.stops.length > 100) return { ok: false, error: "A route can have at most 100 stops." };
 
   const stops = input.stops.map(normalizeRouteStopPayload);
   const stopIds = new Set(stops.map((stop) => stop.id));
@@ -110,7 +130,7 @@ export function prepareRouteSavePayload(input: RouteSavePayloadInput): RouteSave
     ok: true,
     value: {
       routeId,
-      body: { mode: input.mode, name, color: input.color, type: input.type, stops },
+      body: { mode: input.mode, name, color: input.color, stops },
     },
   };
 }

@@ -49,6 +49,7 @@ export default function SettingsPanel() {
   const [saved, setSaved] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isDirty = Object.keys(overrides).length > 0;
 
   useEffect(() => {
     return () => {
@@ -97,17 +98,21 @@ export default function SettingsPanel() {
         </div>
         <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || !isDirty}
+          aria-describedby="settings-save-status"
           className="min-h-11 flex items-center gap-2 px-4 py-3 rounded-xl bg-white text-[#09090b] font-bold text-sm hover:bg-white/90 transition-colors shadow-lg disabled:opacity-50"
         >
           {saving
             ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
             : saved
             ? <><span className="text-emerald-600">✓</span> Saved!</>
-            : <><Save className="w-4 h-4" /> Save All</>
+            : <><Save className="w-4 h-4" /> {isDirty ? "Save changes" : "No changes"}</>
           }
         </button>
       </div>
+      <p id="settings-save-status" className="sr-only" role="status" aria-live="polite">
+        {saving ? "Saving settings" : saved ? "Settings saved" : isDirty ? "Unsaved settings changes" : "Settings unchanged"}
+      </p>
 
       {/* â”€â”€ Service Hours â”€â”€ */}
       <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5">
@@ -206,20 +211,6 @@ export default function SettingsPanel() {
           </div>
         )}
       </div>
-
-      {/* Bottom save button */}
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="w-full flex items-center justify-center gap-2 h-12 rounded-xl bg-white text-[#09090b] font-bold text-sm hover:bg-white/90 transition-colors shadow-lg disabled:opacity-50"
-      >
-        {saving
-          ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
-          : saved
-          ? <><span className="text-emerald-600">✓</span> All changes saved!</>
-          : <><Save className="w-4 h-4" /> Save All Settings</>
-        }
-      </button>
 
       <AlertModal
         isOpen={Boolean(alertMessage)}

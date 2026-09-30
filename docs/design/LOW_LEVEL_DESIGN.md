@@ -1,5 +1,7 @@
 # Low-level design (LLD)
 
+Last updated: 2026-09-14.
+
 This document maps runtime behavior to source modules. Tests beside a module exercise its pure/security-sensitive behavior.
 
 ## Backend composition
@@ -30,9 +32,10 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 | `routes/privacy.ts` | Passenger deletion-request queue |
 | `services/telemetryPayload.ts` | Closed schema, ranges and timestamp freshness |
 | `services/firmwareRelease.ts` | Fail-closed signed release descriptor parsing and sequence validation |
-| `services/deviceTelemetryService.ts` | scrypt credentials/cache, device limit, RTDB transaction, recovery and rolling metrics |
+| `services/deviceRateLimiter.ts` | Explicit single-instance local limiting or bounded leases from a shared per-device RTDB budget |
+| `services/deviceTelemetryService.ts` | scrypt credentials/cache, ordered live-node transaction, recovery and rolling metrics |
 | `services/routeMatching.ts` | Pure projection, direction/heading/continuity scoring and off-route hysteresis |
-| `services/telemetryRouteService.ts` | Per-node async matching, directional-geometry repair, reroute orchestration and stale-result guards |
+| `services/telemetryRouteService.ts` | Per-node bounded latest-pending matching, cross-replica route invalidation, directional-geometry repair, reroute orchestration and stale-result guards |
 | `services/authTokenVerifier.ts` | SHA-256 keyed bounded token verification coalescing/cache |
 | `services/tripStateReducer.ts` | Pure ordered geofence state transition and segment crossing |
 | `services/tripStateLifecycle.ts` | Identifier/live-record normalization and dynamic shutdown draining |
@@ -52,11 +55,11 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 
 ## Telemetry service detail
 
-Credential cache entries hold `{assignment, secretDigest, expiresAt}`; positive TTL is 60 seconds, negative TTL 5 seconds, and capacity 1,000. A SHA-256 digest makes cached comparisons constant-size; the durable store remains scrypt. Rate buckets are per device, one minute, default 90 accepted attempts, capacity 2,000.
+Credential cache entries hold `{assignment, secretDigest, expiresAt}`; positive TTL is 60 seconds, negative TTL 5 seconds, and capacity 1,000. A SHA-256 digest makes cached comparisons constant-size; the durable store remains scrypt. Rate buckets are per device and one minute with a default budget of 90. Distributed mode reserves five tokens per shared transaction by default and bounds local leases to 1,000 devices. Local mode also tracks at most 1,000 devices and fails closed when that table is full.
 
 The RTDB transaction compares `sample.timestamp` plus sequence to existing telemetry. Older/equal samples abort and return duplicate success. New data merges the accepted sample without overwriting an existing active lifecycle, preserves the authenticated fix in `rawLocation`, adds server timing, and derives `deviceState`/`signalState`. A missing active session schedules one coalesced Firestore recovery read per node with a 30-second negative cache.
 
-Accepted fixes schedule (but never await) per-node route processing. Stored forward and reverse polylines are independently computed; legacy documents are repaired and cached. Projection scores distance, heading, backwards progress and segment jumps. Confident current-sample matches populate `matchedLocation`; low-confidence/off-route states deliberately leave clients on raw GNSS. Three reliable moving deviations transition `ON_ROUTE → POSSIBLE_OFF_ROUTE → OFF_ROUTE → REROUTING`. The Routes request includes the next required stops, and activation requires the same request ID, route version, direction and session before incrementing the version and publishing `ON_NEW_ROUTE`.
+Accepted fixes schedule (but never await) per-node route processing. Stored forward and reverse polylines are independently computed; legacy documents are repaired and cached. Projection scores distance, heading, backwards progress and segment jumps. Each completed pass stamps its sample identity. Confident current-sample matches populate `matchedLocation`; while an on-route sample is still pending, clients retain the previous confident match for at most two seconds before showing the accepted raw coordinate. Low-confidence, off-route, route-context-change and reconnect states use raw GNSS immediately and are marked uncertain. Three reliable moving deviations transition `ON_ROUTE → POSSIBLE_OFF_ROUTE → OFF_ROUTE → REROUTING`. The Routes request includes the next required stops, and activation requires the same request ID, route version, direction and session before incrementing the version and publishing `ON_NEW_ROUTE`.
 
 Metrics retain only the latest 512 in-memory samples. Restart resets counters; metrics are diagnostic rather than billing/history.
 
@@ -102,6 +105,7 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 | `hooks/useSmoothPosition.ts` | Bounded rAF interpolation; bypassed for reduced motion |
 | `hooks/useDialogFocus.ts` | Top-dialog focus trap, Escape, scroll lock and focus restoration |
 | `lib/firebaseCore/Auth/Database/Firestore/AppCheck.ts` | Split client SDK initialization to limit route dependencies |
+| `lib/firebaseAuthDomain.ts` | Resolves same-origin auth helper domain on web.app / custom domains to protect storage-partitioned browsers |
 | `lib/authState.ts` | Resolves first auth event before protected listeners attach |
 | `lib/liveBusStore.ts` | One RTDB `onValue` listener and freshness pruning for all consumers |
 | `lib/liveBusFreshness.ts`, `liveBusSnapshot.ts` | Coordinate/timestamp/signal validity and expiry |
@@ -125,7 +129,9 @@ Tests beside pure frontend libraries exercise freshness, RTDB sharing, route dis
 ## Configuration/build files
 
 - Root `package.json` is the npm workspace orchestrator. `package-lock.json` is the reproducible dependency graph.
-- `scripts/build-production.mjs` enables strict public-variable validation. `generate-sw.mjs` injects the Workbox manifest. `update-csp.mjs` hashes emitted inline scripts into `firebase.json`.
+- `scripts/build-production.mjs` enables strict public-variable validation. `generate-sw.mjs` injects the Workbox manifest. `update-csp.mjs` hashes emitted inline scripts and injects connect/frame directives into `firebase.json`.
+- `scripts/verify-web-backend-contract.mjs` verifies the backend origin and Firebase Auth same-origin frame helper (`frame-src 'self'`) in CSP.
+- `scripts/rtdb-instance-config.mjs` verifies matching RTDB instances and expected region configuration (`verify:rtdb-instance`).
 - `firebase.json`, `.firebaserc`, rules and indexes define Hosting/Firebase deployment. Generated CSP changes after builds are intentional and must be committed with the output-producing code.
 - GitHub workflows install, test/build, run emulators where configured, and scan dependencies/code. Dependabot owns scheduled update proposals.
 

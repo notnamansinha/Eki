@@ -1,5 +1,7 @@
 # Environment and configuration reference
 
+Last updated: 2026-09-14.
+
 This page documents configuration names and safe handling rules. Values below
 are placeholders. Use separate files and projects for local, staging and
 production environments.
@@ -18,8 +20,10 @@ runtime secret/configuration system.
 | `FIREBASE_DATABASE_URL` | Yes for RTDB | Firebase RTDB URL | Use the environment’s URL; no code fallback exists |
 | `GOOGLE_MAPS_API_KEY` | Route/places features | Server-side Routes/Places key | Restrict by runtime identity/IP and enabled APIs; keep it different from the browser key |
 | `BUS_STALE_MS` | No | Live bus staleness threshold; minimum `90000`, default `300000` | Align the alert/runbook threshold with the deployed value |
-| `AUTOMATIC_TURNAROUND_DWELL_MS` | No | Stopped endpoint dwell before the backend arms the opposite direction; minimum `30000`, default `120000` | Keep long enough to reject drive-through GPS samples; validate with the real terminal schedule |
+| `AUTOMATIC_TURNAROUND_DWELL_MS` | No | Optional delay after completion before arming the return; minimum/default `0` | A fresh stopped terminal fix is still required. Set a positive delay only when the service schedule requires it |
 | `HTTPS_DEVICE_RATE_PER_MINUTE` | No | Shared accepted device requests per device per minute; default `90` | Supports 1 Hz moving telemetry with retry headroom across replicas; add an edge/WAF limit |
+| `HTTPS_DEVICE_RATE_LIMIT_MODE` | No | Authenticated device limiter mode; defaults to `distributed` | Use `local` only for an explicitly single-instance deployment with `RATE_LIMIT_SHARD_FACTOR=1` |
+| `HTTPS_DEVICE_RATE_LIMIT_LEASE_SIZE` | No | Tokens reserved per shared RTDB transaction in distributed mode; default `5`, capped at the minute limit | Larger values reduce transactions but can temporarily strand unused capacity after replica loss |
 | `FIRMWARE_RELEASE_VERSION` | OTA set | Signed image version in `s<sequence>-<name>` form | Must exactly match the image descriptor; configure all five fields together or leave all unset |
 | `FIRMWARE_RELEASE_SEQUENCE` | OTA set | Strictly increasing positive release number | Must exceed the sequence compiled into the installed image |
 | `FIRMWARE_RELEASE_URL` | OTA set | Exact HTTPS URL of the signed application binary | Publish immutable content; never put credentials in the URL |
@@ -50,7 +54,8 @@ into the browser and should be treated as public identifiers.
 | Variable | Required | Meaning | Safe guidance |
 |---|---|---|---|
 | `NEXT_PUBLIC_FIREBASE_API_KEY` | Yes | Browser Firebase API identifier | Restrict by host and Firebase APIs; it is not a service-account secret |
-| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Yes | Firebase Auth domain | Use the matching environment |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Yes | Firebase Auth domain | Set to `<project>.web.app` or custom domain. On Firebase Hosting, the client normalizes this to same-origin to prevent Safari/Firefox storage-partitioning failures |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Yes | Firebase Auth domain | Use the matching environment. The project's primary Firebase Hosting site resolves to its live hostname at runtime. Set this explicitly to the frontend hostname for secondary sites and custom domains, and add `https://<frontend-hostname>/__/auth/handler` to the Google OAuth client's authorized redirect URIs. |
 | `NEXT_PUBLIC_FIREBASE_DATABASE_URL` | Yes | Browser RTDB URL | Use the matching environment |
 | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Yes | Firebase project identifier | Do not mix staging and production projects |
 | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Yes | Firebase Storage bucket identifier | Use the matching environment |
@@ -69,6 +74,13 @@ into the browser and should be treated as public identifiers.
 The complete tracked template is [`frontend/env.production.example`](../frontend/env.production.example).
 The strict production build fails when mandatory values are missing or when the
 backend URL is local/non-HTTPS.
+
+Before an RTDB migration or release, expose the backend and frontend database
+URLs only as environment variables and run `npm run verify:rtdb-instance`.
+Optionally set `RTDB_EXPECTED_REGION` to the approved region. The preflight
+prints only the verified region and fails if the two instance hosts differ;
+it never prints configuration URLs or credentials. See the
+[RTDB region decision](design/RTDB_REGION_LATENCY_DECISION.md).
 
 ## Firmware configuration
 
@@ -154,3 +166,10 @@ After changing configuration:
 5. For device changes, build the intended PlatformIO environment, verify the
    device-specific artifact in the controlled process, and perform the physical
    acceptance checks in [Hardware telemetry](hardware/HARDWARE_TELEMETRY.md).
+
+
+`HTTPS_INGRESS_DEVICES_PER_IP` defaults to 100 and must be a positive integer at most 100000.
+Set it to the largest fleet sharing a public IP, allowing for uneven replica traffic.
+Telemetry gets 15 requests per configured device per 10 seconds; diagnostics and
+firmware each get an independent 2 requests/device/10 seconds. All three IP pools
+are divided by `RATE_LIMIT_SHARD_FACTOR`. Verified device quotas are unchanged.

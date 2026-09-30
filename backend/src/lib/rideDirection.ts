@@ -1,7 +1,8 @@
 export type RideDirection = "forward" | "reverse";
 
-export function normalizeRideDirection(value: unknown): RideDirection {
-  return value === "reverse" ? "reverse" : "forward";
+/** Resolve only an explicit wire value; unresolved input must stay pending. */
+export function normalizeRideDirection(value: unknown): RideDirection | null {
+  return isRideDirection(value) ? value : null;
 }
 
 export function isRideDirection(value: unknown): value is RideDirection {
@@ -16,14 +17,20 @@ export function stopsInRideDirection<T>(
   return direction === "reverse" ? [...stops].reverse() : [...stops];
 }
 
+/** `total` covers every sampled ride, including the explicit unresolved bucket. */
 export function countRidesByDirection(
   rides: Iterable<{ direction?: unknown }>,
-): { forward: number; reverse: number; total: number } {
+): { forward: number; reverse: number; unresolved: number; total: number } {
   let forward = 0;
   let reverse = 0;
+  let unresolved = 0;
+  let total = 0;
   for (const ride of rides) {
-    if (ride.direction === "reverse") reverse++;
-    else forward++;
+    total++;
+    const direction = normalizeRideDirection(ride.direction);
+    if (direction === "forward") forward++;
+    else if (direction === "reverse") reverse++;
+    else unresolved++;
   }
-  return { forward, reverse, total: forward + reverse };
+  return { forward, reverse, unresolved, total };
 }

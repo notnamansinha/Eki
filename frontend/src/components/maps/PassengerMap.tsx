@@ -4,31 +4,38 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
-import { RouteStop, RouteData } from "@/hooks/useRoutes";
+import { RouteStop } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
-import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
+import { isLiveBusSignalLost, liveBusFreshnessTimestamp } from "@/lib/liveBusFreshness";
 import { subscribeLiveBusesByRoute } from "@/lib/liveBusStore";
 import {
   normalizePassengerLiveBus,
   type PassengerLiveBus,
 } from "@/lib/passengerLiveBus";
+import { passengerRerouteNotice } from "@/lib/passengerRouteStatus";
 
 import { WifiOff, Navigation, Navigation2 } from "lucide-react";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
-import { normalizeRideDirection } from "@/lib/rideDirection";
+import {
+  directionsMatch,
+  type DirectedRouteData,
+} from "@/lib/rideDirection";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
-import { liveBusMarkerPosition } from "@/lib/liveBusMarkerPosition";
+import { sharedRerouteGeometry, busEtaPath } from "@/lib/busRouteGeometry";
+import { selectLiveBusMarkerPosition, type LiveBusMarkerSelection } from "@/lib/liveBusMarkerPosition";
+import { useLiveBusMarkerPosition } from "@/hooks/useLiveBusMarkerPosition";
+import { useSmoothPosition } from "@/hooks/useSmoothPosition";
 import {
   decodeRoutePathForDisplay,
-  type ActiveRouteDisplay,
 } from "@/lib/mapRouteGeometry";
 import { busStopArrivalTimestamps } from "@/lib/busEta";
 import { useDynamicRouteGeometries } from "@/hooks/useDynamicRouteGeometries";
-import type { ActiveRouteGeometry } from "@/lib/activeRouteGeometry";
+import { useTelemetryRenderTrace } from "@/hooks/useTelemetryRenderTrace";
+import { stopLabel } from "@/lib/stopLabel";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
-  route: RouteData | null;
+  route: DirectedRouteData | null;
   resumeGeneration?: number;
 }
 
@@ -47,28 +54,35 @@ function BusMarker({
 }: {
   bus: IncomingBusData;
 }) {
-  const rawPoint = useMemo(
-    () => liveBusMarkerPosition(bus),
-    [bus],
-  );
+  const markerSelection = useLiveBusMarkerPosition(bus);
+  const markerPoint = useSmoothPosition(markerSelection.position);
+  useTelemetryRenderTrace(bus, "passenger", markerPoint !== null);
 
   const [displayHeading, setDisplayHeading] = useState(() =>
     normalizeHeading(bus.heading),
   );
   const displayHeadingRef = useRef(displayHeading);
   useEffect(() => {
+    if (bus.motionState !== "moving" || bus.speed < 3 || bus.deviceState !== "online") return;
     const nextDisplayHeading = unwrapHeading(bus.heading, displayHeadingRef.current);
     displayHeadingRef.current = nextDisplayHeading;
     setDisplayHeading(nextDisplayHeading);
-  }, [bus.heading]);
+  }, [bus.heading, bus.motionState, bus.speed, bus.deviceState]);
 
   const color =
     BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
 
-  if (!rawPoint) return null;
+  if (!markerPoint) return null;
   return (
-    <AdvancedMarker position={rawPoint}>
+    <AdvancedMarker position={markerPoint}>
       <div
+        title={
+          markerSelection.decision === "match_pending"
+            ? `${bus.busId} — updating route position`
+            : markerSelection.uncertain
+              ? `${bus.busId} — approximate GNSS position`
+              : bus.busId
+        }
         style={{
           width: 44,
           height: 44,
@@ -96,7 +110,7 @@ function BusMarker({
             width: 8,
             height: 8,
             borderRadius: "50%",
-            background: color,
+            background: markerSelection.uncertain ? "#FBBF24" : color,
             border: "1.5px solid #09090b",
           }}
         />
@@ -125,7 +139,7 @@ function PassengerMapInner({
   resumeGeneration = 0,
 }: {
   targetStop: RouteStop;
-  route: RouteData;
+  route: DirectedRouteData;
   resumeGeneration?: number;
 }) {
   const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map<string, IncomingBusData>());
@@ -160,41 +174,17 @@ function PassengerMapInner({
   // Surface a shared route overlay only when the fleet agrees on one reroute
   // geometry. If buses carry different reroutes (or none is rerouted), fall
   // back to the configured route so no bus's route and ETA leak to another.
-  const activeRoute = useMemo(() => {
-    const dynamic: {
-      bus: IncomingBusData;
-      geometry: ActiveRouteGeometry;
-      version: number;
-    }[] = [];
-    for (const bus of buses.values()) {
-      if (
-        bus.routeSource === "dynamic-reroute" &&
-        normalizeRideDirection(bus.routeDirection) ===
-          normalizeRideDirection(route.rideDirection)
-      ) {
-        const geometry = dynamicGeometries.get(bus.busId);
-        if (geometry) {
-          dynamic.push({ bus, geometry, version: bus.routeVersion ?? 0 });
-        }
-      }
-    }
-    if (dynamic.length === 0) return null;
-    const first = dynamic[0];
-    const allSame = dynamic.every(
-      (entry) => entry.geometry.polyline === first.geometry.polyline,
-    );
-    if (!allSame) return null;
-    return {
-      polyline: first.geometry.polyline,
-      version: first.version,
-    } satisfies ActiveRouteDisplay;
-  }, [buses, dynamicGeometries, route.rideDirection]);
+  const etaMarkerSelections = useRef(new Map<string, LiveBusMarkerSelection>());
+  const activeRoute = useMemo(
+    () => sharedRerouteGeometry(buses, dynamicGeometries, route.rideDirection),
+    [buses, dynamicGeometries, route.rideDirection],
+  );
   // Backend active geometry is already ordered in travel direction; direction-
   // specific reversePolyline stays in Z→A order. Only legacy forward-only
   // geometry is reversed for a reverse ride (handled in mapRouteGeometry).
   const routePath = useMemo(
-    () => decodeRoutePathForDisplay(route, activeRoute),
-    [route, activeRoute],
+    () => decodeRoutePathForDisplay(route, null),
+    [route],
   );
 
   // ── Passenger geolocation (read-only — ESP32 is sole source for bus GPS) ──
@@ -249,8 +239,7 @@ function PassengerMapInner({
           if (
             !normalized ||
             normalized.routeId !== currentRoute.id ||
-            normalizeRideDirection(normalized.direction) !==
-              normalizeRideDirection(currentRoute.rideDirection)
+            !directionsMatch(normalized.direction, currentRoute.rideDirection)
           ) return;
           const bus: IncomingBusData = {
             ...normalized,
@@ -260,12 +249,13 @@ function PassengerMapInner({
           activeBuses.set(bus.busId, bus);
 
           if (
-            isLiveBusSignalLost(bus.timestamp, now) ||
+            isLiveBusSignalLost(liveBusFreshnessTimestamp(bus), now) ||
             bus.deviceState === "offline"
           ) {
             newSignalLost.add(bus.busId);
-            if (oldestTimestamp === null || bus.timestamp < oldestTimestamp) {
-              oldestTimestamp = bus.timestamp;
+            const receivedAt = liveBusFreshnessTimestamp(bus) ?? bus.timestamp;
+            if (oldestTimestamp === null || receivedAt < oldestTimestamp) {
+              oldestTimestamp = receivedAt;
             }
           }
 
@@ -393,6 +383,9 @@ function PassengerMapInner({
 
     const calculateETAs = () => {
       const now = Date.now();
+      for (const id of etaMarkerSelections.current.keys()) {
+        if (!buses.has(id)) etaMarkerSelections.current.delete(id);
+      }
       const newArrivals: Record<string, number> = {};
 
       for (const bus of Array.from(buses.values())) {
@@ -404,9 +397,11 @@ function PassengerMapInner({
         // geometry is fetched once per route version; until it resolves the
         // bus falls back to the shared configured path.
         const busPath =
-          dynamicGeometries.get(bus.busId)?.path ?? routePath;
+          busEtaPath(bus.busId, dynamicGeometries, routePath);
+        const selection = selectLiveBusMarkerPosition(bus, etaMarkerSelections.current.get(bus.busId), now);
+        etaMarkerSelections.current.set(bus.busId, selection);
         const arrivals = busStopArrivalTimestamps({
-          busPoint: { lat: bus.lat, lng: bus.lng },
+          busPoint: selection.position ?? { lat: bus.lat, lng: bus.lng },
           heading: bus.heading,
           speedKmh: bus.speed,
           delayMinutes: bus.delayMinutes ?? 0,
@@ -448,13 +443,16 @@ function PassengerMapInner({
   const signalLostMinutes = signalLostLastSeen
     ? Math.max(0, Math.round((uiNow - signalLostLastSeen) / 60_000))
     : null;
+  const rerouteNotice = useMemo(() => {
+    return passengerRerouteNotice([...buses.values()].map((bus) => bus.routeState));
+  }, [buses]);
 
   const mapCenter = useMemo(() => ({ lat: targetStop.lat, lng: targetStop.lng }), [targetStop.lat, targetStop.lng]);
+  const firstBus = useMemo(() => Array.from(buses.values())[0], [buses]);
+  const firstBusMarker = useLiveBusMarkerPosition(firstBus);
   const centerTarget = useMemo(() => {
-    const firstBus = Array.from(buses.values())[0];
-    if (!firstBus) return mapCenter;
-    return liveBusMarkerPosition(firstBus) ?? mapCenter;
-  }, [buses, mapCenter]);
+    return firstBusMarker.position ?? mapCenter;
+  }, [firstBusMarker.position, mapCenter]);
 
   return (
     <>
@@ -477,7 +475,22 @@ function PassengerMapInner({
           </div>
         </div>
       )}
-      {geolocationNotice && signalLostBuses.size === 0 && (
+      {rerouteNotice && signalLostBuses.size === 0 && (
+        <div className="absolute top-10 left-4 right-4 z-50" role="status">
+          <div
+            className="flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-[12px] font-semibold"
+            style={{
+              background: "var(--status-warning-bg)",
+              border: "1px solid rgba(251, 191, 36, 0.2)",
+              color: "var(--status-warning)",
+            }}
+          >
+            <Navigation className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span>{rerouteNotice}</span>
+          </div>
+        </div>
+      )}
+      {geolocationNotice && signalLostBuses.size === 0 && !rerouteNotice && (
         <div className="absolute top-10 left-4 right-4 z-50" role="status">
           <div
             className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[12px] font-semibold"
@@ -503,15 +516,27 @@ function PassengerMapInner({
         >
           <MapCenterer target={centerTarget} isCentered={isCentered} />
           <DirectionsRoute
-            key={`${route.id}:${route.rideDirection ?? "forward"}:${activeRoute?.version ?? "configured"}`}
+            key={`${route.id}:${route.rideDirection}:${activeRoute?.version ?? "configured"}`}
             routeId={route.id}
             stops={routeStops}
             polyline={activeRoute?.polyline ?? route.polyline}
             polylineQuality={activeRoute ? "HIGH_QUALITY" : route.polylineQuality}
             color={route.color || "#3b82f6"}
             hasBuses={buses.size > 0}
-            direction={route.rideDirection ?? "forward"}
+            direction={route.rideDirection}
           />
+
+          {!activeRoute && [...dynamicGeometries.entries()].map(([busId, geometry]) => (
+            <DirectionsRoute
+              key={`${busId}:${buses.get(busId)?.routeVersion}`}
+              stops={routeStops}
+              polyline={geometry.polyline}
+              polylineQuality="HIGH_QUALITY"
+              color={route.color || "#3b82f6"}
+              hasBuses
+              direction={route.rideDirection}
+            />
+          ))}
 
           {/* Passenger location dot */}
           {passengerLocation && (
@@ -556,13 +581,13 @@ function PassengerMapInner({
               <AdvancedMarker key={`stop-${stop.id || i}`} position={{ lat: stop.lat, lng: stop.lng }}>
                 {isPast ? (
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 14, height: 14, background: dotColor, opacity: 0.6, borderRadius: "50%" }}>
-                    <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 7 }}>{String.fromCharCode(65 + i)}</span>
+                    <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 7 }}>{stopLabel(i)}</span>
                   </div>
                 ) : isTarget ? (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                     <div style={{ position: "absolute", top: 2, width: 26, height: 26, background: dotColor, borderRadius: "50%", animation: "ripple 2s infinite" }} />
                     <div style={{ width: 26, height: 26, background: dotColor, border: `3.5px solid #000000`, borderRadius: "50%", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.5)" }}>
-                      <span style={{ color: "#ffffff", fontWeight: 900, fontSize: 12 }}>{String.fromCharCode(65 + i)}</span>
+                      <span style={{ color: "#ffffff", fontWeight: 900, fontSize: 12 }}>{stopLabel(i)}</span>
                     </div>
                     <span style={labelStyle}>
                       {stop.shortName}
@@ -571,7 +596,7 @@ function PassengerMapInner({
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                     <div style={{ width: 20, height: 20, background: dotColor, border: `3px solid #000000`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,0.4)" }}>
-                      <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 9 }}>{String.fromCharCode(65 + i)}</span>
+                      <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 9 }}>{stopLabel(i)}</span>
                     </div>
                     <span style={labelStyle}>
                       {stop.shortName}

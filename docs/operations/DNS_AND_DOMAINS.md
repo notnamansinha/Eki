@@ -1,5 +1,7 @@
 # Eki Web App DNS & Domain Setup Guide
 
+Last updated: 2026-09-14.
+
 This document defines the DNS record configurations, custom domain setups, SSL/TLS provisioning, and security integration rules required for deploying the Eki web application and backend API.
 
 All names, project IDs, IP addresses, TXT values and certificates in this guide
@@ -58,6 +60,10 @@ When using a custom DNS domain for the frontend web app, Google Sign-In and Fire
 3. Add the frontend hostname, for example `eki.yourdomain.com`. Add the API
    hostname only if that hostname independently serves Firebase Auth redirects;
    Eki's normal API is not an Auth redirect origin.
+4. For Firebase Hosting on `*.web.app` or a custom domain, set the Firebase
+   web app's `authDomain` to the same hostname as the frontend. Add
+   `https://<frontend-hostname>/__/auth/handler` to the Google OAuth client's
+   authorized redirect URIs in Google Cloud Console.
 
 ---
 
@@ -82,8 +88,24 @@ The Express backend must sit behind a valid TLS/HTTPS endpoint with public or ca
 ### Frontend `.env.local` / `env.production`
 ```ini
 NEXT_PUBLIC_BACKEND_URL=https://api.eki.yourdomain.com
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<firebase-project-id>.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<the-exact-hostname-that-serves-the-frontend>
 ```
+
+For the default Firebase Hosting URL, this is normally
+`<firebase-project-id>.web.app`. For a Firebase Hosting custom domain, use that
+custom hostname and authorize `https://<frontend-host>/__/auth/handler` with the
+OAuth provider. Keeping the Auth helper on the frontend origin prevents
+third-party-storage partitioning from breaking popup/redirect state in Safari,
+Firefox and privacy-restricted browsers. The frontend automatically normalizes
+this via `resolveFirebaseAuthDomain` in `frontend/src/lib/firebaseAuthDomain.ts`.
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<frontend-hostname>
+```
+
+The client automatically uses the matching Firebase Hosting hostname only on
+the project's primary `<project-id>.web.app` and `<project-id>.firebaseapp.com`
+sites. For a secondary Firebase Hosting site or a custom domain, set
+`NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` to the frontend hostname and configure the
+matching Google OAuth redirect URI above.
 
 ### Backend `.env`
 ```ini
@@ -95,13 +117,16 @@ origin is configured in the frontend and firmware; the backend receives its
 browser allowlist through `CORS_ORIGIN`.
 
 ### Firebase Hosting CSP (`firebase.json`)
-If custom backend/API domains are used, ensure `firebase.json` headers permit connections:
-- `connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebasedatabase.app https://*.firebaseapp.com https://api.eki.yourdomain.com`
+Ensure `firebase.json` headers permit required connections and auth frames:
+- `connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebasedatabase.app https://*.firebaseapp.com https://www.google.com/recaptcha/ wss://*.firebaseio.com wss://*.firebasedatabase.app https://api.eki.yourdomain.com`
+- `frame-src 'self' https://accounts.google.com https://*.firebaseapp.com https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/`
 
-The repository's CSP generation script adds the configured
-`NEXT_PUBLIC_BACKEND_URL` origin during the production build. Verify the
-generated `firebase.json` value after changing the backend domain instead of
-hand-editing hashes.
+Firebase Auth requires `frame-src 'self'` for the same-origin `/__/auth/iframe`
+helper on Firebase Hosting. `scripts/verify-web-backend-contract.mjs` strictly
+validates this policy on build. The repository's CSP generation script adds the
+configured `NEXT_PUBLIC_BACKEND_URL` origin during the production build. Verify
+the generated `firebase.json` value after changing the backend domain instead
+of hand-editing hashes.
 
 ---
 

@@ -6,6 +6,7 @@ import { startRetentionSweeper } from "./retentionSweeper";
 import { reconcileFleetAuthorization } from "../routes/fleet";
 import { startPrivacyDeletionWorker } from "./privacyDeletionWorker";
 import { startAbandonedRideReconciler } from "./abandonedRideReconciler";
+import { recordWorkerRun, setWorkerLeadership } from "../lib/metrics";
 
 const LEASE_ID = "trip-state-worker";
 const LEASE_DURATION_MS = 45_000;
@@ -14,6 +15,7 @@ const RENEW_INTERVAL_MS = 15_000;
 /** Coordinates singleton background work under a renewable Firestore lease. */
 export function startWorkerCoordinator(): () => Promise<void> {
   if (process.env.WORKER_ENABLED === "false") {
+    setWorkerLeadership(false);
     console.log("[Worker] Disabled by WORKER_ENABLED=false.");
     return async () => undefined;
   }
@@ -37,6 +39,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
       return;
     }
     active = false;
+    setWorkerLeadership(false);
     const stopTripEngineNow = stopTripEngine;
     const stopRetentionNow = stopRetention;
     const stopPrivacyDeletionNow = stopPrivacyDeletion;
@@ -91,17 +94,26 @@ export function startWorkerCoordinator(): () => Promise<void> {
         await stopWorkPromise;
         if (stopped || active) return;
         active = true;
+        setWorkerLeadership(true);
         stopTripEngine = startTripStateEngine();
         stopRetention = startRetentionSweeper();
         stopPrivacyDeletion = startPrivacyDeletionWorker();
         stopRideReconciliation = startAbandonedRideReconciler();
-        void reconcileFleetAuthorization().catch((error) => {
-          console.error("[Worker] Initial fleet reconciliation failed:", error);
-        });
+        void reconcileFleetAuthorization().then(
+          () => recordWorkerRun("fleet_reconciliation", "success"),
+          (error) => {
+            recordWorkerRun("fleet_reconciliation", "failure");
+            console.error("[Worker] Initial fleet reconciliation failed:", error);
+          },
+        );
         fleetReconcileTimer = setInterval(() => {
-          void reconcileFleetAuthorization().catch((error) => {
-            console.error("[Worker] Fleet reconciliation failed:", error);
-          });
+          void reconcileFleetAuthorization().then(
+            () => recordWorkerRun("fleet_reconciliation", "success"),
+            (error) => {
+              recordWorkerRun("fleet_reconciliation", "failure");
+              console.error("[Worker] Fleet reconciliation failed:", error);
+            },
+          );
         }, 10 * 60 * 1000);
         fleetReconcileTimer.unref();
         console.log(`[Worker] Leadership acquired by ${ownerId}.`);

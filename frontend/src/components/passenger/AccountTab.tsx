@@ -8,7 +8,16 @@ import ConfirmModal from "@/components/ui/ConfirmModal";
 import { auth } from "@/lib/firebaseAuth";
 
 export default function AccountTab() {
-  const { user, loginWithGoogle, logout } = useAuth();
+  const {
+    user,
+    loginReady,
+    loginError,
+    loginFallbackAvailable,
+    loginLoading,
+    loginWithGoogle,
+    loginWithGoogleRedirect,
+    logout,
+  } = useAuth();
   const [showFeedback, setShowFeedback] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -145,6 +154,7 @@ export default function AccountTab() {
           ) : (
             <button
               onClick={loginWithGoogle}
+              disabled={!loginReady || loginLoading}
               className="w-full flex items-center justify-between p-4 bg-transparent hover:bg-[var(--surface-3)] transition-colors group"
             >
               <div className="flex items-center gap-3">
@@ -161,6 +171,23 @@ export default function AccountTab() {
             </button>
           )}
         </div>
+        {loginError && (
+          <div className="px-4 pb-4">
+            <p className="text-sm" style={{ color: "var(--status-danger)" }} role="alert">
+              {loginError}
+            </p>
+            {loginFallbackAvailable && (
+              <button
+                type="button"
+                onClick={loginWithGoogleRedirect}
+                className="mt-2 text-sm font-semibold underline underline-offset-4"
+                style={{ color: "var(--text-primary)" }}
+              >
+                Continue with full-page sign-in
+              </button>
+            )}
+          </div>
+        )}
         {deletionStatus && (
           <p className="text-center text-xs" role="status" style={{ color: "var(--text-secondary)" }}>
             {deletionStatus}

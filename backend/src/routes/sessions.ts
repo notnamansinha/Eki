@@ -4,6 +4,8 @@ import { FieldPath, FieldValue } from "firebase-admin/firestore";
 import { requireAuth } from "../middleware/requireAuth";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { haversineMeters } from "../lib/geo";
+import { singleRouteParam } from "../lib/requestParams";
+import { normalizeRideDirection } from "../lib/rideDirection";
 import {
   evaluateChatRate,
   moderateChatText,
@@ -111,10 +113,10 @@ router.post("/:sessionId/boarding-code", requireAuth, async (
   req: AuthenticatedRequest,
   res: Response,
 ) => {
-  const sessionId = req.params.sessionId;
+  const sessionId = singleRouteParam(req.params.sessionId);
   const user = req.user;
   const isAdmin = user?.role === "admin" || user?.admin === true;
-  if (!SAFE_ID.test(sessionId)) {
+  if (sessionId === null || !SAFE_ID.test(sessionId)) {
     res.status(400).json({ error: "Invalid session ID." });
     return;
   }
@@ -175,9 +177,9 @@ router.post("/:sessionId/join", requireAuth, async (
   req: AuthenticatedRequest,
   res: Response,
 ) => {
-  const sessionId = req.params.sessionId;
+  const sessionId = singleRouteParam(req.params.sessionId);
   const user = req.user;
-  if (!SAFE_ID.test(sessionId)) {
+  if (sessionId === null || !SAFE_ID.test(sessionId)) {
     res.status(400).json({ error: "Invalid session ID." });
     return;
   }
@@ -220,6 +222,13 @@ router.post("/:sessionId/join", requireAuth, async (
     if (!busId || !routeId) {
       throw new BoardingPolicyError(422, "This session has no active vehicle.");
     }
+    const direction = normalizeRideDirection(data.direction);
+    if (!direction) {
+      throw new BoardingPolicyError(
+        409,
+        "Ride direction is pending; wait for the bus to reach a route endpoint.",
+      );
+    }
 
     // An already-authorized passenger may correct their selected stops after
     // location permission disappears. First-time boarding still requires a
@@ -240,7 +249,7 @@ router.post("/:sessionId/join", requireAuth, async (
       route.data()?.stops,
       req.body?.boardingStopId,
       req.body?.alightingStopId,
-      data.direction === "reverse" ? "reverse" : "forward",
+      direction,
     );
     if (!route.exists || !stopSelection) {
       throw new BoardingPolicyError(400, "Select valid stops in route order.");
@@ -282,8 +291,7 @@ router.post("/:sessionId/join", requireAuth, async (
         !BOARDING_STATUSES.has(String(currentData.status)) ||
         currentData.busId !== busId ||
         currentData.routeId !== routeId ||
-        (currentData.direction === "reverse" ? "reverse" : "forward") !==
-          (data.direction === "reverse" ? "reverse" : "forward") ||
+        normalizeRideDirection(currentData.direction) !== direction ||
         !boardingCodesMatch(currentData.boardingCode, submittedCode)
       ) {
         throw new BoardingPolicyError(409, "Boarding authorization expired; ask the driver for the current code.");
@@ -340,9 +348,9 @@ router.post("/:sessionId/join", requireAuth, async (
  */
 router.post("/:sessionId/messages", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const sessionId = req.params.sessionId;
+    const sessionId = singleRouteParam(req.params.sessionId);
     const uid = req.user?.uid;
-    if (!SAFE_ID.test(sessionId) || typeof uid !== "string") {
+    if (sessionId === null || !SAFE_ID.test(sessionId) || typeof uid !== "string") {
       res.status(400).json({ error: "Invalid session ID." });
       return;
     }

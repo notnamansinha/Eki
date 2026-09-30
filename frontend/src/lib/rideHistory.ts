@@ -121,7 +121,7 @@ export function mergeRideHistorySessions<T extends RideHistorySortable>(
 /**
  * Legacy sessions may contain the same stop more than once under different
  * array/object keys. Prefer the earliest record with a valid timestamp. Route
- * index is authoritative because circular routes may revisit a stop ID;
+ * index is authoritative because a route may revisit a stop ID;
  * stop ID is only a fallback for malformed records without a valid index.
  */
 export function dedupeStopRecords(stops: RideStopRecord[]): RideStopRecord[] {

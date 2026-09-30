@@ -31,7 +31,7 @@ void test_gnss_fix_requires_fresh_coherent_fields() {
   TEST_ASSERT_TRUE(gnssFixFieldsAreFresh(true, 0, true, 0, true, fresh, true, fresh));
   TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(false, 0, true, 0, false, 0, false, 0));
   TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, stale, true, 0, false, 0, false, 0));
-  TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, 0, false, 0, false, 0, false, 0));
+  TEST_ASSERT_TRUE(gnssFixFieldsAreFresh(true, 0, false, 0, false, 0, false, 0));
   TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, 0, true, stale, false, 0, false, 0));
   TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, 0, true, 0, true, stale, false, 0));
   TEST_ASSERT_FALSE(gnssFixFieldsAreFresh(true, 0, true, 0, false, 0, true, stale));
@@ -58,7 +58,44 @@ void test_motion_hysteresis_filters_single_noisy_readings() {
   TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(1.0));
 }
 
+void test_motion_hysteresis_requires_consecutive_qualifying_readings() {
+  MotionTracker tracker;
+  TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(3.0));
+  TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(3.0));
+  // A neutral-band sample preserves the confirmed state but breaks this
+  // pending transition. Three new high readings are required.
+  TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(2.0));
+  TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(3.0));
+  TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(3.0));
+  TEST_ASSERT_EQUAL_STRING("moving", tracker.update(3.0));
+
+  TEST_ASSERT_EQUAL_STRING("moving", tracker.update(1.0));
+  TEST_ASSERT_EQUAL_STRING("moving", tracker.update(1.0));
+  TEST_ASSERT_EQUAL_STRING("moving", tracker.update(2.0));
+  TEST_ASSERT_EQUAL_STRING("moving", tracker.update(1.0));
+  TEST_ASSERT_EQUAL_STRING("moving", tracker.update(1.0));
+  TEST_ASSERT_EQUAL_STRING("stopped", tracker.update(1.0));
+}
+
+void test_telemetry_timing_policy_is_explicit_and_safe() {
+  TEST_ASSERT_EQUAL_UINT32(1000, TELEMETRY_EVALUATION_INTERVAL_MS);
+  TEST_ASSERT_EQUAL_UINT32(1000, MOVING_HEARTBEAT_MS);
+  TEST_ASSERT_EQUAL_UINT32(1000, STOPPED_HEARTBEAT_MS);
+  TEST_ASSERT_EQUAL_UINT8(3, MOTION_CONFIRMATION_READINGS);
+  TEST_ASSERT_EQUAL_UINT32(1500, HTTP_REQUEST_TIMEOUT_MS);
+  TEST_ASSERT_EQUAL_UINT32(1000, HTTP_CONNECT_TIMEOUT_MS);
+  TEST_ASSERT_EQUAL_UINT32(10, TLS_HANDSHAKE_TIMEOUT_SECONDS);
+  TEST_ASSERT_EQUAL_UINT32(1500, MAINTENANCE_HTTP_TIMEOUT_MS);
+  TEST_ASSERT_TRUE(HTTP_REQUEST_TIMEOUT_MS < 25000);
+}
+
 void test_retry_backoff_is_jittered_and_bounded() {
+  TEST_ASSERT_EQUAL_UINT32(250, deliveryRetryDelayMs(0, 0, true));
+  TEST_ASSERT_EQUAL_UINT32(749, deliveryRetryDelayMs(0, 999, true));
+  TEST_ASSERT_EQUAL_UINT32(1000, deliveryRetryDelayMs(1, 0, true));
+  TEST_ASSERT_EQUAL_UINT32(1999, deliveryRetryDelayMs(6, 999, true));
+  TEST_ASSERT_EQUAL_UINT32(30000, deliveryRetryDelayMs(6, 999, false));
+
   TEST_ASSERT_EQUAL_UINT32(1000, retryDelayMs(0, 0));
   TEST_ASSERT_EQUAL_UINT32(1999, retryDelayMs(0, 999));
   TEST_ASSERT_EQUAL_UINT32(16042, retryDelayMs(4, 42));
@@ -78,6 +115,15 @@ void test_diagnostic_retry_backoff_is_bounded() {
 }
 
 void test_http_response_actions_cover_transport_and_status_families() {
+  TEST_ASSERT_EQUAL_INT(408, eki::telemetry::classifyIngressResponse(404, "ERR_NGROK_3200"));
+  TEST_ASSERT_EQUAL_INT(404, eki::telemetry::classifyIngressResponse(404, ""));
+  TEST_ASSERT_EQUAL_INT(404, eki::telemetry::classifyIngressResponse(404, nullptr));
+  TEST_ASSERT_EQUAL_INT(404, eki::telemetry::classifyIngressResponse(404, "ERR_NGROK_3208"));
+  TEST_ASSERT_EQUAL_INT(401, eki::telemetry::classifyIngressResponse(401, "ERR_NGROK_3200"));
+  TEST_ASSERT_EQUAL_INT(408, eki::telemetry::classifyIngressResponse(502, "ERR_NGROK_8012"));
+  TEST_ASSERT_EQUAL_INT(502, eki::telemetry::classifyIngressResponse(502, ""));
+  TEST_ASSERT_EQUAL_UINT32(0, eki::telemetry::minimumHttpRetryDelayMs(
+    eki::telemetry::classifyIngressResponse(404, "ERR_NGROK_3200")));
   TEST_ASSERT_EQUAL_INT(
     static_cast<int>(HttpResponseAction::Accept),
     static_cast<int>(httpResponseAction(200))
@@ -404,8 +450,8 @@ void test_publish_policy_handles_floor_changes_and_heartbeats() {
   TEST_ASSERT_TRUE(decide(true, true, 1000, true, "moving", "moving", 23.0, 15, 100));
   TEST_ASSERT_TRUE(decide(true, true, 1000, true, "moving", "moving", 23.0, 10, 115));
   TEST_ASSERT_TRUE(decide(true, true, 1000, true, "moving", "moving", 23.0, 10, 100));
-  TEST_ASSERT_FALSE(decide(true, true, 4999, false, "stopped", "stopped", 23.0, 10, 100));
-  TEST_ASSERT_TRUE(decide(true, true, 5000, false, "stopped", "stopped", 23.0, 10, 100));
+  TEST_ASSERT_FALSE(decide(true, true, 999, false, "stopped", "stopped", 23.0, 10, 100));
+  TEST_ASSERT_TRUE(decide(true, true, 1000, false, "stopped", "stopped", 23.0, 10, 100));
 }
 
 void test_location_transition_rejects_teleportation() {
@@ -413,7 +459,7 @@ void test_location_transition_rejects_teleportation() {
     false, 0, 23.0, 72.5, 0, 0, 0, 0
   ));
   TEST_ASSERT_TRUE(locationTransitionIsPlausible(
-    true, 3000, 23.001, 72.5, 23.0, 72.5, 30, 30
+    true, 3000, 23.0002, 72.5, 23.0, 72.5, 30, 30
   ));
   TEST_ASSERT_FALSE(locationTransitionIsPlausible(
     true, 3000, 23.05, 72.54, 23.0, 72.46, 0, 0
@@ -423,6 +469,18 @@ void test_location_transition_rejects_teleportation() {
   ));
   TEST_ASSERT_TRUE(locationTransitionIsPlausible(
     true, GNSS_REACQUIRE_AFTER_MS + 1, 23.05, 72.54, 23.0, 72.46, 0, 0
+  ));
+}
+
+void test_adaptive_gnss_error_budget_is_bounded() {
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 15.0f, static_cast<float>(adaptiveGnssErrorMeters(true, 0, 30, 30, 0)));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 43.0f, static_cast<float>(adaptiveGnssErrorMeters(true, 4, 30, 30, 0)));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 50.0f, static_cast<float>(adaptiveGnssErrorMeters(false, 99, 0, 0, 60000)));
+  TEST_ASSERT_TRUE(locationTransitionIsPlausible(
+    true, 3000, 23.0002, 72.5, 23.0, 72.5, 0, 0, true, 1, true, 1
+  ));
+  TEST_ASSERT_FALSE(locationTransitionIsPlausible(
+    true, 3000, 23.001, 72.5, 23.0, 72.5, 0, 0, true, 1, true, 1
   ));
 }
 
@@ -541,6 +599,8 @@ int main(int, char **) {
   RUN_TEST(test_gnss_fix_requires_fresh_coherent_fields);
   RUN_TEST(test_implausible_speed_is_rejected_instead_of_clamped);
   RUN_TEST(test_motion_hysteresis_filters_single_noisy_readings);
+  RUN_TEST(test_motion_hysteresis_requires_consecutive_qualifying_readings);
+  RUN_TEST(test_telemetry_timing_policy_is_explicit_and_safe);
   RUN_TEST(test_retry_backoff_is_jittered_and_bounded);
   RUN_TEST(test_diagnostic_retry_backoff_is_bounded);
   RUN_TEST(test_http_response_actions_cover_transport_and_status_families);
@@ -552,6 +612,7 @@ int main(int, char **) {
   RUN_TEST(test_wifi_retry_and_led_code_are_deterministic);
   RUN_TEST(test_publish_policy_handles_floor_changes_and_heartbeats);
   RUN_TEST(test_location_transition_rejects_teleportation);
+  RUN_TEST(test_adaptive_gnss_error_budget_is_bounded);
   RUN_TEST(test_queue_delivers_newest_first_and_retains_failed_samples);
   RUN_TEST(test_queue_acknowledgement_discards_superseded_samples);
   RUN_TEST(test_queue_rejects_corrupted_rtc_state);

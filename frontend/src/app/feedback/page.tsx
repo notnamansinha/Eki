@@ -3,15 +3,13 @@
 import { useMemo, useState } from "react";
 import { Timestamp } from "firebase/firestore";
 import { auth } from "@/lib/firebaseAuth";
+import { apiRequest } from "@/lib/apiClient";
 import { useBuses } from "@/hooks/useBuses";
 import { useCollection } from "@/hooks/useCollection";
 import { useDrivers } from "@/hooks/useDrivers";
 import {
   Star,
   MessageSquare,
-  Bus,
-  User,
-  Clock,
   ShieldCheck,
   ChevronDown,
   ChevronUp,
@@ -19,8 +17,8 @@ import {
   CheckCircle,
   Inbox,
   Filter,
-  Route,
 } from "lucide-react";
+import CustomSelect from "@/components/ui/CustomSelect";
 
 interface FeedbackEntry {
   id: string;
@@ -122,12 +120,12 @@ function FeedbackCard({
 
   return (
     <div
-      className={`group bg-white/3 border rounded-2xl overflow-hidden transition-all duration-300 hover:bg-white/5 ${
+      className={`border-b border-white/10 ${
         entry.status === "new"
-          ? "border-blue-500/20"
+          ? "bg-blue-500/[0.04]"
           : entry.status === "resolved"
-          ? "border-white/5"
-          : "border-amber-500/20"
+          ? "bg-transparent"
+          : "bg-amber-500/[0.03]"
       }`}
     >
       {/* Card Header */}
@@ -135,70 +133,28 @@ function FeedbackCard({
         type="button"
         aria-expanded={expanded}
         aria-controls={`feedback-details-${entry.id}`}
-        className="p-4 flex items-start gap-4 cursor-pointer select-none"
+        className="flex min-h-20 w-full cursor-pointer select-none items-start gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/50"
         onClick={() => setExpanded((o) => !o)}
       >
-        {/* Rating circle / type icon */}
-        <div
-          className={`w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center text-xl font-black shadow-lg ${
-            entry.type === "ride"
-              ? "bg-blue-500/20 text-blue-400"
-              : "bg-emerald-500/20 text-emerald-400"
-          }`}
-        >
-          {entry.type === "ride" ? (
-            <Bus className="w-5 h-5" />
-          ) : (
-            <MessageSquare className="w-5 h-5" />
-          )}
-        </div>
-
         {/* Main info */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-1">
+          <div className="flex items-center justify-between gap-2 mb-1">
             <span className="font-semibold text-white text-sm truncate">{identity.passengerName}</span>
             <StatusBadge status={entry.status} />
-            <span
-              className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${
-                entry.type === "ride"
-                  ? "bg-blue-500/10 text-blue-400/70 border-blue-500/20"
-                  : "bg-emerald-500/10 text-emerald-400/70 border-emerald-500/20"
-              }`}
-            >
-              {entry.type === "ride" ? "Ride feedback" : "General feedback"}
-            </span>
           </div>
-
-          {/* Meta row */}
-          <div className="flex items-center gap-3 flex-wrap text-[10px] text-white/30 font-semibold uppercase tracking-widest">
-            {entry.type === "ride" && (
-              <span className="flex items-center gap-1">
-                <Bus className="w-3 h-3" /> {identity.busName || "Unregistered vehicle"}
-              </span>
-            )}
-            {entry.type === "ride" && (
-              <span className="flex items-center gap-1">
-                <User className="w-3 h-3" /> {identity.driverName || "Unregistered driver"}
-              </span>
-            )}
-            {entry.type === "ride" && entry.sessionId && (
-              <span className="flex items-center gap-1">
-                <Route className="w-3 h-3" /> Session {shortId(entry.sessionId)}
-              </span>
-            )}
-            <span className="flex items-center gap-1">
-              <Clock className="w-3 h-3" /> {formattedTime}
-            </span>
-          </div>
-
-          {/* Star rating */}
-          <div className="mt-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/45">
             <StarDisplay rating={entry.rating} />
+            <span>{entry.type === "ride" ? "Ride feedback" : "General feedback"}</span>
+            <span>{formattedTime}</span>
+            {entry.type === "ride" && (
+              <span>{identity.busName || "Vehicle unavailable"}{identity.driverName ? ` · ${identity.driverName}` : ""}</span>
+            )}
           </div>
+          {entry.comment && <p className="mt-2 truncate text-xs text-white/55">{entry.comment}</p>}
         </div>
 
         {/* Expand chevron */}
-        <div className="text-white/20 group-hover:text-white/50 transition-colors shrink-0 mt-1">
+        <div className="mt-1 shrink-0 text-white/50">
           {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </div>
       </button>
@@ -208,10 +164,8 @@ function FeedbackCard({
         <div id={`feedback-details-${entry.id}`} className="px-4 pb-4 border-t border-white/5 pt-4 flex flex-col gap-4 animate-slide-up">
           {/* Comment */}
           {entry.comment ? (
-            <div className="bg-black/20 rounded-xl p-4 border border-white/5">
-              <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">
-                Feedback Comment
-              </p>
+            <div>
+              <p className="mb-2 text-xs font-semibold text-white/45">Comment</p>
               <p className="text-sm text-white/80 leading-relaxed">{entry.comment}</p>
             </div>
           ) : (
@@ -219,7 +173,7 @@ function FeedbackCard({
           )}
 
           {/* Full details grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <dl className="grid grid-cols-1 gap-x-5 gap-y-3 border-y border-white/5 py-3 sm:grid-cols-2 lg:grid-cols-4">
             {(() => {
               const bus = linkedDetail(entry.busId, "Bus", identity.busName, entry.type);
               const driver = linkedDetail(entry.driverId, "Driver", identity.driverName, entry.type);
@@ -234,30 +188,26 @@ function FeedbackCard({
                   label: "Passenger",
                   value: identity.passengerName,
                   reference: entry.userId ? `Account ID · ${shortId(entry.userId)}` : "Account ID unavailable",
-                  icon: User,
                 },
-                { label: "Vehicle", ...bus, icon: Bus },
-                { label: "Driver", ...driver, icon: User },
-                { label: "Ride session", ...session, icon: Route },
+                { label: "Vehicle", ...bus },
+                { label: "Driver", ...driver },
+                { label: "Ride session", ...session },
               ];
-            })().map(({ label, value, reference, icon: Icon }) => (
+            })().map(({ label, value, reference }) => (
               <div
                 key={label}
-                className="bg-white/3 rounded-xl p-3 border border-white/5"
+                className="min-w-0"
               >
-                <div className="flex items-center gap-1.5 mb-1 text-white/30">
-                  <Icon className="w-3 h-3" />
-                  <span className="text-[9px] font-black uppercase tracking-widest">{label}</span>
-                </div>
-                <p className="text-xs font-semibold text-white/80 truncate" title={value}>
+                <dt className="text-xs font-medium text-white/40">{label}</dt>
+                <dd className="mt-1 truncate text-xs font-semibold text-white/80" title={value}>
                   {value}
-                </p>
+                </dd>
                 <p className="mt-1 text-[9px] font-medium text-white/35 truncate" title={reference}>
                   {reference}
                 </p>
               </div>
             ))}
-          </div>
+          </dl>
 
           {/* Status action buttons */}
           <div className="flex items-center gap-2 pt-1">
@@ -269,7 +219,7 @@ function FeedbackCard({
                 key={s}
                 onClick={() => void onStatusChange(entry.id, s)}
                 disabled={entry.status === s || updating}
-                className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                className={`min-h-11 px-3 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                   s === "resolved"
                     ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30"
                     : s === "reviewed"
@@ -340,20 +290,16 @@ export default function FeedbackPage({ embedded = false }: { embedded?: boolean 
     setUpdatingId(id);
     setStatusError("");
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
       const token = await auth.currentUser?.getIdToken();
-      if (!backendUrl || !token) throw new Error("Feedback admin service is unavailable.");
-      const response = await fetch(`${backendUrl}/api/feedback/${id}/status`, {
+      if (!token) throw new Error("Feedback admin service is unavailable.");
+      await apiRequest(`/api/feedback/${encodeURIComponent(id)}/status`, {
         method: "PATCH",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ status }),
-        signal: AbortSignal.timeout(10_000),
+        fallbackError: "Unable to update feedback status.",
       });
-      const result = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(result.error || "Unable to update feedback status.");
     } catch (e) {
       console.error("Status update failed:", e);
       setStatusError(e instanceof Error ? e.message : "Unable to update feedback status.");
@@ -488,38 +434,44 @@ export default function FeedbackPage({ embedded = false }: { embedded?: boolean 
               className="w-full h-11 bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-semibold"
             />
           </div>
-          <div className="flex gap-2">
-            {(["all", "ride", "general"] as FilterType[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setFilterType(t)}
-                className={`px-3 h-11 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
-                  filterType === t
-                    ? "bg-white text-brand-dark border-white"
-                    : "bg-white/5 text-white/50 border-white/10 hover:border-white/20 hover:text-white/70"
-                }`}
-              >
-                {t}
-              </button>
-            ))}
+          <div className="grid grid-cols-2 gap-2 sm:w-[300px]">
+            <CustomSelect
+              name="feedback-type"
+              ariaLabel="Feedback type"
+              value={filterType}
+              onChange={(value) => setFilterType(value as FilterType)}
+              options={[
+                { value: "all", label: "All types" },
+                { value: "ride", label: "Ride" },
+                { value: "general", label: "General" },
+              ]}
+            />
+            <CustomSelect
+              name="feedback-status"
+              ariaLabel="Feedback status"
+              value={filterStatus}
+              onChange={(value) => setFilterStatus(value as FilterStatus)}
+              options={[
+                { value: "all", label: "All statuses" },
+                { value: "new", label: "New" },
+                { value: "reviewed", label: "Reviewed" },
+                { value: "resolved", label: "Resolved" },
+              ]}
+            />
           </div>
-          <div className="flex gap-2">
-            {(["all", "new", "reviewed", "resolved"] as FilterStatus[]).map(
-              (s) => (
-                <button
-                  key={s}
-                  onClick={() => setFilterStatus(s)}
-                  className={`px-3 h-11 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
-                    filterStatus === s
-                      ? "bg-white text-brand-dark border-white"
-                      : "bg-white/5 text-white/50 border-white/10 hover:border-white/20 hover:text-white/70"
-                  }`}
-                >
-                  {s}
-                </button>
-              )
-            )}
-          </div>
+          {(search || filterType !== "all" || filterStatus !== "all") && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setFilterType("all");
+                setFilterStatus("all");
+              }}
+              className="h-11 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-semibold text-white/70"
+            >
+              Reset
+            </button>
+          )}
         </div>
 
         {/* Results count */}

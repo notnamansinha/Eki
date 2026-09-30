@@ -1,7 +1,13 @@
 # My live bus demo runbook
 
+Last updated: 2026-09-14.
+
 This is the checklist for the student operating the professor demonstration.
 Complete every blocking item before inviting passengers onto the bus.
+
+For a measured rehearsal, follow the
+[telemetry latency baseline procedure](TELEMETRY_LATENCY_BASELINE.md) and keep
+its serial, browser, health, and report artifacts together.
 
 ## 1. Freeze the demo data
 

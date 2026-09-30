@@ -86,10 +86,22 @@ vi.mock("./tripStateReducer", () => ({
   STOP_GEOFENCE_M: 20,
 }));
 
-import { startTripStateEngine } from "./tripStateEngine";
+import { lifecycleDirection, startTripStateEngine } from "./tripStateEngine";
 
 async function flushMicrotasks(turns = 20): Promise<void> {
   for (let index = 0; index < turns; index += 1) await Promise.resolve();
+}
+
+function allowCompletion(sessionId: string): void {
+  mocks.transactionGet.mockImplementation(async (ref: { collectionName?: string }) => {
+    if (ref.collectionName === "_active_bus_locks") {
+      return { exists: true, data: () => ({ sessionId }) };
+    }
+    if (ref.collectionName === "ride_sessions") {
+      return { exists: true, data: () => ({ status: "active" }) };
+    }
+    return { exists: false, data: () => undefined };
+  });
 }
 
 describe("trip-state engine lifecycle", () => {
@@ -125,6 +137,7 @@ describe("trip-state engine lifecycle", () => {
   });
 
   it("runs pending completion retirement immediately during shutdown", async () => {
+    allowCompletion("session-1");
     const stop = startTripStateEngine();
     mocks.routeListeners[0].next({
       docChanges: () => [{
@@ -156,6 +169,7 @@ describe("trip-state engine lifecycle", () => {
         routeId: " route_2 ",
         driverId: "driver-1",
         sessionId: "session-1",
+        direction: "forward",
         status: "active",
         tripState: "in_service",
         currentStopIndex: 0,
@@ -187,6 +201,61 @@ describe("trip-state engine lifecycle", () => {
       { merge: true },
     );
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not overwrite a concurrent manual interruption with stale completion", async () => {
+    mocks.transactionGet.mockImplementation(async (ref: { collectionName?: string }) => {
+      if (ref.collectionName === "_active_bus_locks") {
+        return { exists: true, data: () => ({ sessionId: "session-1" }) };
+      }
+      if (ref.collectionName === "ride_sessions") {
+        return { exists: true, data: () => ({ status: "interrupted" }) };
+      }
+      return { exists: false, data: () => undefined };
+    });
+    const stop = startTripStateEngine();
+    mocks.routeListeners[0].next({
+      docChanges: () => [{
+        type: "added",
+        doc: {
+          id: "route_2",
+          data: () => ({
+            stops: [
+              { id: "origin", name: "Origin", lat: 23, lng: 72 },
+              { id: "destination", name: "Destination", lat: 23.1, lng: 72.1 },
+            ],
+          }),
+        },
+      }],
+    });
+    const liveTransaction = vi.fn();
+
+    mocks.rtdbHandlers.get("child_changed")!({
+      key: "bus_1_route_2",
+      val: () => ({
+        busId: "bus_1",
+        routeId: "route_2",
+        driverId: "driver-1",
+        sessionId: "session-1",
+        direction: "forward",
+        status: "active",
+        tripState: "in_service",
+        currentStopIndex: 0,
+        lat: 23.1,
+        lng: 72.1,
+        timestamp: 1,
+      }),
+      ref: { update: vi.fn(), transaction: liveTransaction },
+    });
+    await flushMicrotasks();
+
+    expect(liveTransaction).not.toHaveBeenCalled();
+    expect(mocks.transactionSet).not.toHaveBeenCalledWith(
+      expect.objectContaining({ collectionName: "completed_trips" }),
+      expect.anything(),
+      expect.anything(),
+    );
+    await stop();
   });
 
   it("negative-caches a missing route across telemetry updates", async () => {
@@ -271,6 +340,7 @@ describe("trip-state engine lifecycle", () => {
         routeId: "route_2",
         driverId: "driver-1",
         sessionId: "session-1",
+        direction: "forward",
         status: "active",
         tripState: "in_service",
         currentStopIndex: 0,
@@ -297,6 +367,7 @@ describe("trip-state engine lifecycle", () => {
   });
 
   it("does not retire a replacement session when completion cleanup already started", async () => {
+    allowCompletion("session-1");
     const stop = startTripStateEngine();
     mocks.routeListeners[0].next({
       docChanges: () => [{
@@ -343,6 +414,7 @@ describe("trip-state engine lifecycle", () => {
         routeId: "route_2",
         driverId: "driver-1",
         sessionId: "session-1",
+        direction: "forward",
         status: "active",
         tripState: "in_service",
         currentStopIndex: 0,
@@ -371,6 +443,7 @@ describe("trip-state engine lifecycle", () => {
   });
 
   it("keeps a completed route cleanup when another route starts", async () => {
+    allowCompletion("session-old");
     const stop = startTripStateEngine();
     mocks.routeListeners[0].next({
       docChanges: () => ["route_old", "route_new"].map((id) => ({
@@ -398,6 +471,7 @@ describe("trip-state engine lifecycle", () => {
         routeId,
         driverId: "driver-1",
         sessionId,
+        direction: "forward",
         status: "active",
         tripState: routeId === "route_old" ? "in_service" : "pre_departure",
         currentStopIndex: 0,
@@ -501,7 +575,10 @@ describe("trip-state engine lifecycle", () => {
     });
   };
 
-  it("arms the opposite ride after a fresh stopped turnaround dwell", async () => {
+  it.each(["forward", "reverse"] as const)("arms the return from %s on a fresh stopped terminal sample", async (previousDirection) => {
+    const direction = previousDirection === "forward" ? "reverse" : "forward";
+    const originId = previousDirection === "forward" ? "destination" : "origin";
+    const destinationId = previousDirection === "forward" ? "origin" : "destination";
     vi.setSystemTime(200_000);
     mocks.transactionGet.mockImplementation(async (ref: {
       collectionName?: string;
@@ -545,16 +622,16 @@ describe("trip-state engine lifecycle", () => {
       status: "offline",
       deviceState: "online",
       tripState: "completed",
-      direction: "forward",
+      direction: previousDirection,
       originStopId: "origin",
       destinationStopId: "destination",
       currentStopIndex: 1,
       hasDepartedOrigin: true,
       motionState: "stopped",
-      lat: 23.1,
-      lng: 72.1,
-      timestamp: 199_000,
-      turnaroundEligibleAt: 180_000,
+      lat: previousDirection === "forward" ? 23.1 : 23,
+      lng: previousDirection === "forward" ? 72.1 : 72,
+      timestamp: 200_000,
+      turnaroundEligibleAt: 200_000,
       activeRouteId: "route_2:reroute:3",
       activeRoutePolyline: "old-polyline",
       routeVersion: 3,
@@ -576,28 +653,28 @@ describe("trip-state engine lifecycle", () => {
     expect(mocks.transactionCreate).toHaveBeenCalledWith(
       expect.objectContaining({ collectionName: "ride_sessions", id: "generated-session" }),
       expect.objectContaining({
-        direction: "reverse",
-        originStopId: "destination",
-        destinationStopId: "origin",
+        direction,
+        originStopId: originId,
+        destinationStopId: destinationId,
         automaticTurnaround: true,
         previousSessionId: "session-1",
       }),
     );
     expect(mocks.transactionCreate).toHaveBeenCalledWith(
       expect.objectContaining({ collectionName: "_active_bus_locks", id: "bus_1" }),
-      expect.objectContaining({ sessionId: "generated-session", direction: "reverse" }),
+      expect.objectContaining({ sessionId: "generated-session", direction }),
     );
     expect(mocks.transactionSet).toHaveBeenCalledWith(
       expect.objectContaining({ collectionName: "active_rides", id: "bus_1_route_2" }),
-      expect.objectContaining({ sessionId: "generated-session", direction: "reverse" }),
+      expect.objectContaining({ sessionId: "generated-session", direction }),
     );
     expect(store.nodeValue()).toMatchObject({
       sessionId: "generated-session",
       status: "active",
       tripState: "pre_departure",
-      direction: "reverse",
-      originStopId: "destination",
-      destinationStopId: "origin",
+      direction,
+      originStopId: originId,
+      destinationStopId: destinationId,
       automaticTurnaround: true,
     });
     expect(store.nodeValue()).not.toHaveProperty("activeRouteId");
@@ -755,6 +832,7 @@ describe("trip-state engine lifecycle", () => {
       routeId: "route_2",
       driverId: "driver-1",
       sessionId: "session-1",
+      direction: "forward",
       status: "active",
       tripState: "pre_departure",
       currentStopIndex: 0,
@@ -825,6 +903,7 @@ describe("trip-state engine lifecycle", () => {
       busId: "bus_1",
       routeId: "route_2",
       sessionId: "session-1",
+      direction: "forward",
       status: "active",
       deviceState: "online",
       tripState: "pre_departure",
@@ -839,5 +918,20 @@ describe("trip-state engine lifecycle", () => {
     expect(store.nodeValue().tripState).toBe("in_service");
     expect(store.nodeValue().currentStopIndex).toBe(1);
     await stop();
+  });
+});
+
+describe("trip-state direction boundary", () => {
+  it.each([undefined, null, "", "sideways", 123])(
+    "keeps unresolved direction %p pending",
+    (direction) => {
+      expect(lifecycleDirection({ sessionId: "legacy-session", direction }))
+        .toBeNull();
+    },
+  );
+
+  it("accepts only explicit travel directions", () => {
+    expect(lifecycleDirection({ direction: "forward" })).toBe("forward");
+    expect(lifecycleDirection({ direction: "reverse" })).toBe("reverse");
   });
 });

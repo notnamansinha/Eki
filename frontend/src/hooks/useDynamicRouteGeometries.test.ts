@@ -24,6 +24,8 @@ function dynamicBus(
     routeId: "route_1",
     routeSource,
     routeVersion,
+    direction: "forward",
+    routeDirection: "forward",
   };
 }
 
@@ -61,5 +63,17 @@ describe("selectCurrentRouteGeometries", () => {
     ]);
     const selected = selectCurrentRouteGeometries(buses, versioned);
     expect(selected.has("b1")).toBe(false);
+  });
+
+  it("never exposes geometry while ride direction is unresolved", () => {
+    const buses = new Map<string, ActiveBusEntry>([[
+      "b1",
+      { ...dynamicBus(2), direction: null },
+    ]]);
+    const versioned = new Map<string, VersionedRouteGeometry>([[
+      "b1",
+      { version: 2, geometry: g2 },
+    ]]);
+    expect(selectCurrentRouteGeometries(buses, versioned).has("b1")).toBe(false);
   });
 });

@@ -5,6 +5,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { ipKeyGenerator } from "../lib/rateLimitIdentity";
 import { readRateLimitShardFactor, shardedLimit } from "../lib/rateLimitShard";
 import { db } from "../lib/firebaseAdmin";
+import { singleRouteParam } from "../lib/requestParams";
 import {
   authenticateDeviceCredentials,
   ingestDeviceTelemetry,
@@ -28,25 +29,45 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 // header supplied by the caller. ingestDeviceTelemetry keeps the authoritative
 // per-device budget after credential verification.
 // Expected replica count for the in-memory pre-auth limiter below; the
-// authoritative per-device budget after credential verification is the
-// shared RTDB-based HTTPS_DEVICE_RATE_PER_MINUTE, which needs no
-// sharding (issue #28).
+// authoritative per-device budget after credential verification uses local
+// fixed windows only for explicitly single-instance deployments. Replicated
+// deployments reserve bounded token leases from the shared RTDB budget.
 const RATE_LIMIT_SHARD_FACTOR = readRateLimitShardFactor();
-const telemetryLimiter = rateLimit({
-  windowMs: 60_000,
-  limit: shardedLimit(120, RATE_LIMIT_SHARD_FACTOR),
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: ipKeyGenerator,
-  handler: (_req, res, _next, options) => {
-    const retryAfterMs = options.windowMs;
-    res.set("Retry-After", String(Math.ceil(retryAfterMs / 1000)));
-    res.status(options.statusCode).json({
-      error: "Telemetry request limit exceeded.",
-      retryAfterMs,
-    });
-  },
-});
+export function createTelemetryIngressLimiter(requestsPerWindow = 6_000, windowMs = 60_000) {
+  return rateLimit({
+    windowMs,
+    // Fleet ingress budget; authenticated per-device limits remain authoritative.
+    limit: shardedLimit(requestsPerWindow, RATE_LIMIT_SHARD_FACTOR),
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: ipKeyGenerator,
+    handler: (_req, res, _next, options) => {
+      const retryAfterMs = options.windowMs;
+      res.set("Retry-After", String(Math.ceil(retryAfterMs / 1000)));
+      res.status(options.statusCode).json({
+        error: "Telemetry request limit exceeded.",
+        retryAfterMs,
+      });
+    },
+  });
+}
+// Short windows limit recovery stalls after NAT-wide throttling. Capacity is
+// configured from the largest fleet sharing one public IP, including stopped
+// devices (both publish at 1 Hz). Caller-controlled IDs never create buckets.
+function ingressFleetSize(): number {
+  const raw = process.env.HTTPS_INGRESS_DEVICES_PER_IP ?? "100";
+  const count = Number(raw);
+  if (!Number.isSafeInteger(count) || count < 1 || count > 100_000) {
+    throw new Error("HTTPS_INGRESS_DEVICES_PER_IP must be an integer from 1 to 100000.");
+  }
+  return count;
+}
+const devicesPerIp = ingressFleetSize();
+// 10 samples per device per window + 50% reconnect/burst headroom.
+const telemetryLimiter = createTelemetryIngressLimiter(devicesPerIp * 15, 10_000);
+// Separate pools prevent manifest/diagnostics traffic spending sample capacity.
+const diagnosticsLimiter = createTelemetryIngressLimiter(devicesPerIp * 2, 10_000);
+const firmwareLimiter = createTelemetryIngressLimiter(devicesPerIp * 2, 10_000);
 
 /**
  * ESP32 devices send a closed nine-field payload over certificate-verified
@@ -62,8 +83,13 @@ router.post(
   "/:deviceId/telemetry",
   telemetryLimiter,
   async (req: Request, res: Response) => {
+    const requestBoundary = res.locals.telemetryServerReceivedAt;
+    const serverReceivedAt =
+      typeof requestBoundary === "number" && Number.isSafeInteger(requestBoundary)
+        ? requestBoundary
+        : Date.now();
     res.set("Cache-Control", "no-store");
-    const deviceId = req.params.deviceId;
+    const deviceId = singleRouteParam(req.params.deviceId);
     const secret = parseDeviceAuthorization(req.get("authorization"));
     let encodedLength = Number.POSITIVE_INFINITY;
     try {
@@ -73,9 +99,9 @@ router.post(
     }
     const parsed =
       encodedLength <= 512
-        ? parseTelemetryValue(req.body)
+        ? parseTelemetryValue(req.body, serverReceivedAt)
         : { ok: false as const, reason: "payload_size" };
-    if (!SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
+    if (deviceId === null || !SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
       recordTelemetryRejection();
       const payloadTooLarge = !parsed.ok && parsed.reason === "payload_size";
       res.status(!secret ? 401 : payloadTooLarge ? 413 : 400).json({
@@ -93,6 +119,7 @@ router.post(
         deviceId,
         secret,
         parsed.value,
+        serverReceivedAt,
       );
       if (!result.ok) {
         if (result.reason === "rate_limit") {
@@ -109,6 +136,9 @@ router.post(
         }
         return;
       }
+      const serverRespondedAt = Date.now();
+      res.set("X-Eki-Server-Received-At", String(serverReceivedAt));
+      res.set("X-Eki-Server-Responded-At", String(serverRespondedAt));
       res.status(result.duplicate ? 200 : 202).json({
         accepted: true,
         duplicate: result.duplicate,
@@ -123,13 +153,13 @@ router.post(
 
 router.get(
   "/:deviceId/firmware",
-  telemetryLimiter,
+  firmwareLimiter,
   async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
-    const deviceId = req.params.deviceId;
+    const deviceId = singleRouteParam(req.params.deviceId);
     const secret = parseDeviceAuthorization(req.get("authorization"));
     const currentSequence = parseFirmwareSequence(req.query.sequence);
-    if (!SAFE_ID.test(deviceId) || !secret || currentSequence === null) {
+    if (deviceId === null || !SAFE_ID.test(deviceId) || !secret || currentSequence === null) {
       res.status(!secret ? 401 : 400).json({
         error: !secret
           ? "Invalid device credentials."
@@ -184,13 +214,13 @@ router.get(
 
 router.post(
   "/:deviceId/diagnostics",
-  telemetryLimiter,
+  diagnosticsLimiter,
   async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
-    const deviceId = req.params.deviceId;
+    const deviceId = singleRouteParam(req.params.deviceId);
     const secret = parseDeviceAuthorization(req.get("authorization"));
     const parsed = parseDeviceDiagnosticsValue(req.body);
-    if (!SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
+    if (deviceId === null || !SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
       res.status(!secret ? 401 : 400).json({
         error: !secret
           ? "Invalid device credentials."
@@ -220,8 +250,8 @@ router.get(
   "/:deviceId/diagnostics",
   requireAdmin,
   async (req: Request, res: Response) => {
-    const deviceId = req.params.deviceId;
-    if (!SAFE_ID.test(deviceId)) {
+    const deviceId = singleRouteParam(req.params.deviceId);
+    if (deviceId === null || !SAFE_ID.test(deviceId)) {
       res.status(400).json({ error: "Invalid device ID." });
       return;
     }
@@ -241,11 +271,12 @@ router.get(
 );
 
 router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
-  const deviceId = req.params.deviceId;
+  const deviceId = singleRouteParam(req.params.deviceId);
   const busId = req.body?.busId;
   const routeId = req.body?.routeId;
   const enabled = req.body?.enabled !== false;
   if (
+    deviceId === null ||
     !SAFE_ID.test(deviceId) ||
     typeof busId !== "string" ||
     !SAFE_ID.test(busId) ||
@@ -349,8 +380,8 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
 });
 
 router.post("/:deviceId/disable", requireAdmin, async (req: Request, res: Response) => {
-  const deviceId = req.params.deviceId;
-  if (!SAFE_ID.test(deviceId)) {
+  const deviceId = singleRouteParam(req.params.deviceId);
+  if (deviceId === null || !SAFE_ID.test(deviceId)) {
     res.status(400).json({ error: "Invalid device ID." });
     return;
   }

@@ -26,7 +26,7 @@ import { Bus, Loader2, MapPin, Trash2, User, Users, AlertCircle } from "lucide-r
 import { useMemo, useRef, useState } from "react";
 import {
   normalizeRideDirection,
-  persistedDirectionLabel,
+  persistedDirectionLabelState,
 } from "@/lib/rideDirection";
 
 interface PassengerRecord {
@@ -49,7 +49,7 @@ interface RideSession {
   passengers?: PassengerRecord[] | Record<string, PassengerRecord>;
   path?: { lat: number; lng: number; timestamp: TimestampValue }[];
   stopsReached?: RideStopRecord[] | Record<string, RideStopRecord>;
-  direction?: "forward" | "reverse";
+  direction?: "forward" | "reverse" | null;
   originStopId?: string | null;
   destinationStopId?: string | null;
 }
@@ -315,7 +315,7 @@ export default function RideHistoryPanel() {
                     </span>
                     <span className="flex items-center gap-1">
                       <MapPin className="size-3" />
-                      Direction: {persistedDirectionLabel(
+                      Direction: {persistedDirectionLabelState(
                         normalizeRideDirection(session.direction),
                         routeStops.get(session.routeId) ?? [],
                         session.originStopId,

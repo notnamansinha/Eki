@@ -14,7 +14,15 @@ function canOpenWorkspace(role: string | null, path: string): boolean {
 }
 
 export default function HomePage() {
-  const { user, loading, loginLoading, loginWithGoogle } = useAuth();
+  const {
+    user,
+    loading,
+    loginReady,
+    loginError,
+    loginLoading,
+    loginWithGoogle,
+    loginWithGoogleRedirect,
+  } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -32,10 +40,13 @@ export default function HomePage() {
   // Only replace the page with a redirect spinner once we KNOW there's a
   // signed-in user. Do NOT block on `loading` — that hides the hero and
   // tanks LCP by 7–22 seconds in Lighthouse while Firebase Auth initialises.
-  if (!loading && user) {
+  if (user) {
     return (
-      <main className="min-h-dvh flex items-center justify-center bg-black">
-        <Loader2 className="w-6 h-6 text-white animate-spin" />
+      <main className="min-h-dvh flex flex-col items-center justify-center gap-3 bg-black text-white">
+        <Loader2 className="w-6 h-6 animate-spin" />
+        <p className="text-sm text-white/80">
+          {loading ? "Finishing your sign-in…" : "Opening your workspace…"}
+        </p>
       </main>
     );
   }
@@ -96,13 +107,27 @@ export default function HomePage() {
         <div className="flex flex-col sm:flex-row w-full sm:w-auto gap-4">
           <button
             onClick={loginWithGoogle}
-          disabled={loginLoading || loading}
+            disabled={loginLoading || loading || !loginReady}
             className="flex items-center justify-center gap-3 px-10 py-5 text-lg font-bold bg-white text-black rounded-full hover:bg-gray-200 active:scale-95 transition-transform disabled:opacity-60 shadow-xl"
           >
             {loginLoading ? <Loader2 className="size-6 animate-spin" /> : <LogIn className="size-6" />}
             {loginLoading ? "Opening Google…" : "Sign In with Google"}
           </button>
         </div>
+        {loginReady && (
+          <button
+            type="button"
+            onClick={loginWithGoogleRedirect}
+            className="mt-4 text-sm font-semibold text-white underline underline-offset-4"
+          >
+            Continue with full-page Google sign-in
+          </button>
+        )}
+        {loginError && (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <p className="max-w-lg text-sm text-white" role="alert">{loginError}</p>
+          </div>
+        )}
       </section>
 
       <footer className="relative z-10 w-full pb-8 px-6 md:px-12 flex justify-between items-center text-white/70">

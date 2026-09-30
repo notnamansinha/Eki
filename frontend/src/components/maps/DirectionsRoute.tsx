@@ -58,7 +58,7 @@ interface DirectionsRouteProps {
   polylineQuality?: "HIGH_QUALITY";
   color?: string;
   hasBuses?: boolean;
-  direction?: "forward" | "reverse";
+  direction: "forward" | "reverse";
 }
 
 /**
@@ -66,7 +66,7 @@ interface DirectionsRouteProps {
  * does not call the browser Directions service: rendering a map must not add
  * routing cost, quota pressure, or delay to the live GNSS stream.
  */
-export default function DirectionsRoute({ routeId, stops, polyline, polylineQuality, color = "#3b82f6", hasBuses = false, direction = "forward" }: DirectionsRouteProps) {
+export default function DirectionsRoute({ routeId, stops, polyline, polylineQuality, color = "#3b82f6", hasBuses = false, direction }: DirectionsRouteProps) {
   const map = useMap();
   const outlineRef = useRef<google.maps.Polyline | null>(null);
   const lineRef = useRef<google.maps.Polyline | null>(null);

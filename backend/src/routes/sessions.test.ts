@@ -9,6 +9,7 @@ const harness = vi.hoisted(() => ({
   sessionPassengers: {} as Record<string, Record<string, unknown>>,
   updates: [] as unknown[][],
   joinUid: "passenger_1",
+  sessionDirection: "forward" as unknown,
 }));
 
 vi.mock("../middleware/requireAuth", () => ({
@@ -32,6 +33,7 @@ vi.mock("../lib/firebaseAdmin", () => {
     boardingCode: "ABCD2345",
     busId: "bus_1",
     routeId: "route_1",
+    direction: harness.sessionDirection,
     passengers: harness.sessionPassengers,
   });
   const document = (collectionName: string) => ({
@@ -115,6 +117,7 @@ beforeEach(() => {
   harness.sessionPassengers = {};
   harness.updates = [];
   harness.joinUid = "passenger_1";
+  harness.sessionDirection = "forward";
 });
 
 async function join(body: Record<string, unknown>) {
@@ -131,6 +134,21 @@ async function join(body: Record<string, unknown>) {
 }
 
 describe("session passenger join route", () => {
+  it.each([undefined, null, "", "sideways", 123])(
+    "keeps unresolved direction %p from creating forward boarding options",
+    async (direction) => {
+      harness.sessionDirection = direction;
+      const response = await join({ lat: 23, lng: 72.5, accuracy: 20 });
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({
+        error: "Ride direction is pending; wait for the bus to reach a route endpoint.",
+      });
+      expect(harness.liveReads).toBe(0);
+      expect(harness.updates).toHaveLength(0);
+    },
+  );
+
   it("records membership in an indexable passengerIds array for privacy deletion", async () => {
     const response = await join({ lat: 23, lng: 72.5, accuracy: 20 });
 

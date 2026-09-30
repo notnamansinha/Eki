@@ -27,21 +27,38 @@ function telemetry(overrides: Record<string, unknown> = {}) {
 }
 
 describe("passenger live-bus normalization", () => {
-  it("shows a fresh powered bus before a ride session exists", () => {
+  it("does not advertise a fresh powered device as passenger service", () => {
     const bus = normalizePassengerLiveBus("Bus01_route_1", telemetry(), now);
-    expect(bus).toMatchObject({
-      busId: "Bus01",
-      routeId: "route_1",
-      deviceState: "online",
-    });
-    expect(bus?.sessionId).toBeUndefined();
+    expect(bus).toBeNull();
   });
+
+  it.each([undefined, null, "sideways"])(
+    "keeps an active ride visible while direction %p remains pending",
+    (direction) => {
+      const pending = telemetry({
+        status: "active",
+        sessionId: "session_pending",
+        direction,
+        directionState: "pending",
+      });
+
+      expect(normalizePassengerLiveBus("Bus01_route_1", pending, now))
+        .toMatchObject({
+          sessionId: "session_pending",
+          direction,
+          directionState: "pending",
+        });
+      expect(passengerLiveBuses({ Bus01_route_1: pending }, now))
+        .toHaveLength(1);
+    },
+  );
 
   it("shows fresh and stale active-session buses", () => {
     const fresh = telemetry({
       status: "active",
       sessionId: "session_1",
       tripState: "in_service",
+      direction: "forward",
     });
     const stale = { ...fresh, timestamp: now - BUS_EXPIRY_MS };
 
@@ -66,6 +83,7 @@ describe("passenger live-bus normalization", () => {
           status: "active",
           sessionId: "session_1",
           tripState: "completed",
+          direction: "forward",
         }),
         now,
       ),
@@ -89,7 +107,13 @@ describe("passenger live-bus normalization", () => {
   });
 
   it("recovers an underscored bus id from a legacy node key", () => {
-    const legacy = telemetry({ busId: undefined, routeId: "route_01" });
+    const legacy = telemetry({
+      busId: undefined,
+      routeId: "route_01",
+      status: "active",
+      sessionId: "session_legacy",
+      direction: "forward",
+    });
     expect(
       normalizePassengerLiveBus("bus_01_route_01", legacy, now)?.busId,
     ).toBe("bus_01");
@@ -107,6 +131,7 @@ describe("passenger live-bus normalization", () => {
         status: "active",
         sessionId: "session_1",
         tripState: "pre_departure",
+        direction: "reverse",
       },
       now,
     );
@@ -119,18 +144,27 @@ describe("passenger live-bus normalization", () => {
     });
   });
 
-  it("preserves multiple buses and gives sessionless selections stable keys", () => {
+  it("keeps only complete services and retains stable selection keys", () => {
     const buses = passengerLiveBuses(
       {
         Bus01_route_1: telemetry(),
-        Bus02_route_1: telemetry({ busId: "Bus02", sessionId: "session_2", status: "active" }),
+        Bus02_route_1: telemetry({
+          busId: "Bus02",
+          sessionId: "session_2",
+          status: "active",
+          direction: "forward",
+        }),
         stale: telemetry({ busId: "Bus03", timestamp: now - BUS_EXPIRY_MS }),
       },
       now,
     );
-    expect(buses.map((bus) => bus.busId)).toEqual(["Bus01", "Bus02"]);
-    expect(passengerLiveBusSelectionKey(buses[0])).toBe("bus:route_1:Bus01");
-    expect(passengerLiveBusSelectionKey(buses[1])).toBe("session:session_2");
+    expect(buses.map((bus) => bus.busId)).toEqual(["Bus02"]);
+    expect(passengerLiveBusSelectionKey(buses[0])).toBe("session:session_2");
+    expect(passengerLiveBusSelectionKey({
+      ...telemetry(),
+      busId: "Bus01",
+      routeId: "route_1",
+    } as never)).toBe("bus:route_1:Bus01");
   });
 
   it("observes a completed session even though that bus is no longer visible", () => {
@@ -138,6 +172,7 @@ describe("passenger live-bus normalization", () => {
       status: "active",
       sessionId: "session_done",
       tripState: "completed",
+      direction: "forward",
     });
     const snapshot = { Bus01_route_1: completed };
 

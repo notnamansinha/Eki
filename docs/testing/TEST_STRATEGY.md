@@ -18,13 +18,14 @@ emulator or PlatformIO; run those commands separately. A production release
 additionally runs `npm run build:production` with actual deployment variables;
 it intentionally fails closed when required public configuration is missing.
 
-Last verified 2026-08-14 against the current default branch: 10 repository
-script tests, 248 backend tests with 7 environment-dependent cases skipped, and
-93 frontend tests passed. Backend TypeScript, the frontend production
-build/CSP generation and the production dependency audit passed with zero
-vulnerabilities. PlatformIO native tests passed all 26 cases, and the
-development ESP32 build used 48,356 bytes RAM (14.8%) and 949,481 bytes flash
-(30.2%). The secure fleet build, Firebase rules emulator, and physical device
+Last verified 2026-09-14 against the current default branch: 33 repository
+script tests (including CSP and web/backend contract assertions), 446 backend
+tests with 7 environment-dependent cases skipped, and 215 frontend tests
+(including same-origin Firebase Auth domain resolution) passed. Backend
+TypeScript, the frontend production build/CSP generation, and the production
+dependency audit passed with zero vulnerabilities. PlatformIO native tests
+passed all 35 cases, and the development ESP32 build used 15.3% RAM and 30.5%
+flash. The secure fleet build, Firebase rules emulator, and physical device
 matrix remain separate gates. Re-run rather than trusting these historical
 numbers.
 
@@ -54,6 +55,7 @@ numbers.
 - Invalid/disabled/unknown device and invalid bus/route binding fail.
 - Positive/negative credential caches and device/IP limits are bounded.
 - Durable ride restore coalesces work and does not delay accepted HTTP response.
+- A first device-only fix creates presence state without fabricating `tripState`, stop progress, direction, or an active service.
 - Rolling latency summary handles empty/unsorted values and nearest-rank percentiles.
 
 ### Lifecycle and concurrency
@@ -73,6 +75,8 @@ numbers.
 ### Routes, privacy and retention
 
 - Stored route segment works forward/reverse, orders stops, rejects coincident endpoints and rejects an out-of-segment via.
+- Route saves replay identical operation IDs, reject changed-payload reuse/stale versions, coalesce concurrent routing work, reuse valid geometry for metadata-only edits, and abort commit when an active ride appears during calculation.
+- Place search distinguishes validation, authentication, configuration, upstream/rate-limit, body-timeout and genuine empty-result outcomes.
 - Terminal history deletion deduplicates projections and rejects active status.
 - Retention is disabled for missing/false/misspelled values and enabled only by explicit `true`.
 - Privacy collection-group queries/rules/indexes are checked; emulator verifies users cannot reach backend-only collections.
@@ -80,6 +84,8 @@ numbers.
 ## Automated frontend cases
 
 - Live timestamps reject missing, too-old and implausibly future samples.
+- Device presence requires an explicit online flag plus a fresh timestamp; missing, stale, and contradictory flags are reported as offline/unknown without changing ride truth.
+- Passenger route visibility and service counts require the complete active-session tuple; device-only, malformed, duplicated-session, completed, and direction-pending nodes cannot inflate service.
 - Active sessions remain visible while stale non-active locations expire.
 - One RTDB listener fans out to subscribers, prunes on the nearest expiry, and tears down at zero subscribers.
 - Visibility/online resume state signals reconnect and clears after a snapshot.
@@ -111,6 +117,10 @@ Use Firebase emulators for repeatable state injection; never point destructive s
 | SIM-14 | Service worker with account A then account B | No authenticated response exists in runtime caches |
 | SIM-15 | Reverse route plan with via | Ordered reverse stops and continuous reverse polyline |
 | SIM-16 | Browser hidden/offline/online | Reconnecting state, stale pruning, one listener after resume |
+| SIM-17 | Two identical route saves while Routes API is blocked | One durable lease/geometry pair; duplicate gets 202 then identical replay |
+| SIM-18 | Route edit computes while a ride starts | Final route transaction returns 409; route/version remain unchanged |
+| SIM-19 | Browser times out after route commit | Same `saveId` reconciliation returns saved version; no second mutation |
+| SIM-20 | Straight turn/parallel road/U-turn/stationary noise | One ≥120 m measured or two ordinary reliable deviations reroute; heading/progress reject wrong carriageway/back-jump; stationary/missing match does not confirm |
 
 For concurrency runs, send a unique correlation timestamp, assert both HTTP outcomes and then inspect `ride_sessions`, `_active_bus_locks`, `active_rides`, and all matching RTDB nodes. Clean emulator state between runs.
 

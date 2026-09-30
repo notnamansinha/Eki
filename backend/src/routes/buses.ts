@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { rtdb } from "../lib/firebaseAdmin";
+import { singleRouteParam } from "../lib/requestParams";
 import { requireAuth } from "../middleware/requireAuth";
 
 const router = Router();
@@ -18,8 +19,8 @@ router.get("/", requireAuth, async (_req, res) => {
 });
 
 router.get("/:busId", requireAuth, async (req, res) => {
-  const { busId } = req.params;
-  if (!SAFE_ID.test(busId)) {
+  const busId = singleRouteParam(req.params.busId);
+  if (busId === null || !SAFE_ID.test(busId)) {
     res.status(400).json({ error: "Invalid busId" });
     return;
   }

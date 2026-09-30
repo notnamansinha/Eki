@@ -20,9 +20,19 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { deleteApp } from "firebase-admin/app";
 import { db, firebaseAdminApp, rtdb } from "./lib/firebaseAdmin";
-import { getHttpsTelemetryStatus } from "./services/deviceTelemetryService";
+import { recordActiveSpanException, shutdownTelemetry } from "./instrumentation";
+import {
+  getHttpsTelemetryStatus,
+  TELEMETRY_METRIC_SAMPLE_CAPACITY,
+} from "./services/deviceTelemetryService";
+import {
+  drainTelemetryRouteProcessing,
+  getRouteProcessingStatus,
+  startTelemetryRouteWatcher,
+} from "./services/telemetryRouteService";
 import { backgroundFailures } from "./lib/backgroundFailureTracker";
 import { createHealthState } from "./lib/healthState";
+import { createHttpMetricsMiddleware, registerOperationalMetrics } from "./lib/metrics";
 import { createIdentityAwareLimiter } from "./lib/rateLimitIdentity";
 import { readRateLimitShardFactor, shardedLimit } from "./lib/rateLimitShard";
 import { requireAdmin } from "./middleware/requireAdmin";
@@ -56,6 +66,7 @@ const configuredCorsOrigins = (process.env.CORS_ORIGIN || "")
   .filter(Boolean);
 
 const app = express();
+app.use(createHttpMetricsMiddleware());
 if (process.env.NODE_ENV === "production") {
   app.set("trust proxy", 1);
   // Fail closed (issue #39 D6): a production API with no configured browser
@@ -143,6 +154,10 @@ const routeComputeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Route computation rate limit exceeded." },
+  // Reconciliation is a cheap Firestore read and may poll while a save lease
+  // is active. It remains under the global limiter but must not consume the
+  // scarce billable-routing budget.
+  skip: (req) => req.method === "GET" && /\/save-operations\//.test(req.originalUrl),
 });
 const routePlanLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -154,6 +169,13 @@ const routePlanLimiter = rateLimit({
 // Enforce the hardware contract against the original request bytes before the
 // broader API parser runs. This prevents whitespace or duplicate-key payloads
 // from bypassing the 512-byte telemetry limit after JSON normalization.
+app.use(
+  "/api/devices/:deviceId/telemetry",
+  (_req, res, next) => {
+    res.locals.telemetryServerReceivedAt = Date.now();
+    next();
+  },
+);
 app.use(
   "/api/devices/:deviceId/telemetry",
   express.json({ limit: "512b", strict: true }),
@@ -192,6 +214,11 @@ app.use("/api/privacy", writeLimiter, privacyRoutes);
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 const health = createHealthState();
+registerOperationalMetrics({
+  health: health.snapshot,
+  telemetry: getHttpsTelemetryStatus,
+  background: backgroundFailures.snapshot,
+});
 const probeFirestore = () => db.collection("_health").limit(1).get();
 const probeRtdb = () => rtdb.ref(".info/connected").once("value");
 void health.probe(probeFirestore, probeRtdb);
@@ -214,6 +241,7 @@ app.get("/health", (_req, res) => {
 // Firebase reads.
 app.get("/api/health", requireAdmin, (_req, res) => {
   const telemetry = getHttpsTelemetryStatus();
+  const routeProcessing = getRouteProcessingStatus();
   const backgroundTasks = backgroundFailures.snapshot();
   const state = health.snapshot();
   res.status(state.ready ? 200 : 503).json({
@@ -232,6 +260,16 @@ app.get("/api/health", requireAdmin, (_req, res) => {
       networkLatencyMs: telemetry.networkLatencyMs,
       deviceToServerLatencyMs: telemetry.deviceToServerLatencyMs,
       rtdbWriteLatencyMs: telemetry.rtdbWriteLatencyMs,
+      rtdbTransactionAttempts: telemetry.rtdbTransactionAttempts,
+      rateLimit: telemetry.rateLimit,
+      serverIngressGapMs: telemetry.serverIngressGapMs,
+      routeProcessing,
+      metricWindow: {
+        scope: "process",
+        maximumSamplesPerMetric: TELEMETRY_METRIC_SAMPLE_CAPACITY,
+        resetsOnRestart: true,
+        crossClockValuesAreEstimates: true,
+      },
     },
     // Fire-and-forget write health (issue #38): counts plus a sustained-failure
     // flag so an external monitor can alert without scraping logs. Kept out of
@@ -279,14 +317,17 @@ app.use((
   _next: express.NextFunction,
 ) => {
   void _next;
+  recordActiveSpanException(error);
   console.error("[Server] Unhandled request error:", error);
   res.status(500).json({ error: "Internal server error." });
 });
 
 // ── Start Server ──────────────────────────────────────────────────────────────
 let stopWorkers: (() => Promise<void>) | null = null;
+let stopTelemetryRouteWatcher: (() => void) | null = null;
 httpServer.listen(Number(PORT), "0.0.0.0", () => {
   console.log(`✅ BusTrack backend running on port ${PORT} (0.0.0.0)`);
+  stopTelemetryRouteWatcher = startTelemetryRouteWatcher();
   stopWorkers = startWorkerCoordinator();
 });
 
@@ -303,6 +344,8 @@ async function shutdown(signal: string) {
   }, 10_000);
 
   clearInterval(healthProbeTimer);
+  stopTelemetryRouteWatcher?.();
+  stopTelemetryRouteWatcher = null;
   const closeServer = new Promise<void>((resolve, reject) => {
     httpServer.close((error) => error ? reject(error) : resolve());
     httpServer.closeIdleConnections();
@@ -312,15 +355,27 @@ async function shutdown(signal: string) {
     closeServer,
     stopBackgroundWorkers,
   ]);
+  const routingResult = await drainTelemetryRouteProcessing().then(
+    () => ({ status: "fulfilled" as const }),
+    (reason: unknown) => ({ status: "rejected" as const, reason }),
+  );
+  const telemetryResult = await shutdownTelemetry().then(
+    () => ({ status: "fulfilled" as const }),
+    (reason: unknown) => ({ status: "rejected" as const, reason }),
+  );
   const firebaseResult = await deleteApp(firebaseAdminApp).then(
     () => ({ status: "fulfilled" as const }),
     (reason: unknown) => ({ status: "rejected" as const, reason }),
   );
   clearTimeout(shutdownBackstop);
 
-  const failures = [serverResult, workerResult, firebaseResult].filter(
-    (result) => result.status === "rejected",
-  );
+  const failures = [
+    serverResult,
+    workerResult,
+    telemetryResult,
+    routingResult,
+    firebaseResult,
+  ].filter((result) => result.status === "rejected");
   for (const failure of failures) {
     if (failure.status === "rejected") {
       console.warn("[Server] Shutdown task failed:", failure.reason);

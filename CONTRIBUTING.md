@@ -1,5 +1,7 @@
 # Contributing to Eki
 
+Last updated: 2026-09-14.
+
 We welcome contributions to the Eki ecosystem. This document outlines the
 standard procedures for contributing code, reporting issues, and proposing
 new features.

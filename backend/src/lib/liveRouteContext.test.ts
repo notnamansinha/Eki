@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { withoutLiveRouteContext } from "./liveRouteContext";
+import { hasLiveRouteContext, withoutLiveRouteContext } from "./liveRouteContext";
 
 describe("withoutLiveRouteContext", () => {
   it("preserves physical telemetry and lifecycle state while removing route-session state", () => {
-    const result = withoutLiveRouteContext({
+    const live = {
       busId: "bus_1",
       sessionId: "old-session",
       lat: 23.2,
@@ -15,6 +15,7 @@ describe("withoutLiveRouteContext", () => {
       routeSource: "dynamic-reroute",
       routeDirection: "forward",
       routeSessionId: "old-session",
+      routeGeometryVersion: 3,
       routeState: "ON_NEW_ROUTE",
       routeMatchHistory: [{ lat: 23.2, lng: 72.7 }],
       offRouteSampleCount: 4,
@@ -27,7 +28,10 @@ describe("withoutLiveRouteContext", () => {
       rerouteError: "old-error",
       rerouteCompletedAt: 950,
       rerouteFailedAt: 975,
-    });
+    };
+
+    expect(hasLiveRouteContext(live)).toBe(true);
+    const result = withoutLiveRouteContext(live);
 
     expect(result).toEqual({
       busId: "bus_1",
@@ -36,5 +40,7 @@ describe("withoutLiveRouteContext", () => {
       lng: 72.7,
       motionState: "stopped",
     });
+    expect(hasLiveRouteContext(result)).toBe(false);
+    expect(hasLiveRouteContext(null)).toBe(false);
   });
 });
