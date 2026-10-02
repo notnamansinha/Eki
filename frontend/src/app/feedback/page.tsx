@@ -1,11 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Timestamp } from "firebase/firestore";
+import { useEffect, useMemo, useState } from "react";
 import { auth } from "@/lib/firebaseAuth";
 import { apiRequest } from "@/lib/apiClient";
 import { useBuses } from "@/hooks/useBuses";
-import { useCollection } from "@/hooks/useCollection";
 import { useDrivers } from "@/hooks/useDrivers";
 import {
   Star,
@@ -30,7 +28,7 @@ interface FeedbackEntry {
   sessionId?: string | null;
   rating: number | null;
   comment: string;
-  timestamp: Timestamp | null;
+  timestamp: { seconds: number; nanoseconds: number } | null;
   status: "new" | "reviewed" | "resolved";
 }
 
@@ -241,16 +239,10 @@ type FilterType = "all" | "ride" | "general";
 type FilterStatus = "all" | "new" | "reviewed" | "resolved";
 
 export default function FeedbackPage({ embedded = false }: { embedded?: boolean }) {
-  const {
-    data: entries,
-    loading,
-    error: loadError,
-    retry: retryFeedback,
-  } = useCollection<FeedbackEntry>("feedbacks", {
-    maxResults: 200,
-    orderByDirection: "desc",
-    orderByField: "timestamp",
-  });
+  const [entries, setEntries] = useState<FeedbackEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryGeneration, setRetryGeneration] = useState(0);
   const { buses } = useBuses();
   const { drivers } = useDrivers();
   const [filterType, setFilterType] = useState<FilterType>("all");
@@ -258,6 +250,34 @@ export default function FeedbackPage({ embedded = false }: { embedded?: boolean 
   const [search, setSearch] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [statusError, setStatusError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setLoadError(null);
+
+    void (async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) throw new Error("Feedback admin service is unavailable.");
+        const result = await apiRequest<{ feedbacks: FeedbackEntry[] }>("/api/v2/feedback", {
+          headers: { Authorization: `Bearer ${token}` },
+          fallbackError: "Permission denied reading feedbacks.",
+        });
+        if (active) setEntries(Array.isArray(result.feedbacks) ? result.feedbacks : []);
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : "Unable to load feedback.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [retryGeneration]);
+
+  const retryFeedback = () => setRetryGeneration((generation) => generation + 1);
 
   const identities = useMemo(() => {
     const busNames = new Map(
@@ -300,6 +320,9 @@ export default function FeedbackPage({ embedded = false }: { embedded?: boolean 
         body: JSON.stringify({ status }),
         fallbackError: "Unable to update feedback status.",
       });
+      setEntries((current) => current.map((entry) =>
+        entry.id === id ? { ...entry, status } : entry,
+      ));
     } catch (e) {
       console.error("Status update failed:", e);
       setStatusError(e instanceof Error ? e.message : "Unable to update feedback status.");

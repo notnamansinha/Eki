@@ -135,18 +135,11 @@ function useAuthState(): AuthContextValue {
             setLoginLoading(false);
             setLoginError(null);
             setLoginFallbackAvailable(false);
-            setUser({
-              uid: firebaseUser.uid,
-              email: firebaseUser.email,
-              displayName: firebaseUser.displayName,
-              photoURL: firebaseUser.photoURL,
-              role: null,
-              isAnonymous: firebaseUser.isAnonymous,
-            });
 
-            // Signed-out visitors never need App Check. For returning users,
-            // load it in parallel with token restoration and await it only at
-            // the point where protected data can begin loading.
+            // Signed-out visitors never need App Check. For signed-in users,
+            // wait for the first App Check token before publishing the user;
+            // Firestore listeners use that state to avoid permission-denied
+            // requests made before App Check is ready.
             const appCheckReady = import("@/lib/firebaseAppCheck")
               .then(({ ensureAppCheck }) => ensureAppCheck());
             const isCurrentAuth = () =>
@@ -154,26 +147,9 @@ function useAuthState(): AuthContextValue {
               currentGen === generation &&
               auth.currentUser?.uid === firebaseUser.uid;
             setRoleError(null);
-            const storedRole = window.localStorage.getItem(`eki:role:${firebaseUser.uid}`);
-            const cachedRole: UserRole =
-              storedRole === "passenger" || storedRole === "driver" || storedRole === "admin"
-                ? storedRole
-                : null;
-
-            // Restore identity for display only. A cached role must never unlock a
-            // workspace while authoritative claims/profile verification is pending.
-            if (cachedRole) {
-              setUser({
-                uid: firebaseUser.uid,
-                email: firebaseUser.email,
-                displayName: firebaseUser.displayName,
-                photoURL: firebaseUser.photoURL,
-                role: null,
-                isAnonymous: firebaseUser.isAnonymous,
-              });
-            }
 
             try {
+              await appCheckReady;
               // Role claims are already present in a persisted Firebase session, so
               // this returns without a Firestore round trip for normal app starts.
               // They are issued by the trusted admin sync job, unlike client data.
@@ -189,8 +165,6 @@ function useAuthState(): AuthContextValue {
                 claimedRole === "driver" ||
                 claimedRole === "admin"
               ) {
-                if (!isCurrentAuth()) return;
-                await appCheckReady;
                 if (!isCurrentAuth()) return;
                 window.localStorage.setItem(`eki:role:${firebaseUser.uid}`, claimedRole);
                 setUser({
@@ -209,10 +183,9 @@ function useAuthState(): AuthContextValue {
               // is server-authoritative (POST /api/users/bootstrap).
               const [{ getFirestore, doc, getDoc }, { firebaseApp }] =
                 await Promise.all([
-                  appCheckReady,
                   import("firebase/firestore"),
                   import("@/lib/firebaseCore"),
-                ]).then(([, firestore, core]) => [firestore, core] as const);
+                ]).then(([firestore, core]) => [firestore, core] as const);
               const db = getFirestore(firebaseApp);
               const userDocRef = doc(db, "users", firebaseUser.uid);
               const userSnap = await withTimeout(
@@ -278,6 +251,15 @@ function useAuthState(): AuthContextValue {
                 isAnonymous: firebaseUser.isAnonymous,
               });
             } catch (err) {
+              if (err instanceof Error && err.message.startsWith("[AppCheck]")) {
+                // Do not publish an authenticated user when App Check failed;
+                // otherwise every protected Firestore listener immediately
+                // retries and surfaces a misleading permission-denied error.
+                if (!isCurrentAuth()) return;
+                setUser(null);
+                setRoleError("Security verification is unavailable. Check App Check configuration and try again.");
+                return;
+              }
               const code = (err as { code?: string })?.code;
               if (code === "permission-denied") {
                 console.warn("[Auth] Firestore role document read permission denied");

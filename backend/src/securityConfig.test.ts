@@ -776,7 +776,6 @@ describe("production security configuration", () => {
     expect(shifts).toContain("inferRideDirectionFromTelemetry");
     expect(shifts).toContain("directionState");
     expect(operations).not.toContain('ariaLabel="Travel direction"');
-    expect(operations).toContain("Travel direction is inferred from fresh stopped GPS");
     expect(operations).toContain("directionLabelState(inferredDirection");
     expect(operations).toContain("direction pending");
     expect(shifts).toContain("inferRideDirectionFromTelemetry");

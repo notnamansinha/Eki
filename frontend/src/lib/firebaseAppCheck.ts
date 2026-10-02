@@ -36,6 +36,11 @@ function initializeFirebaseAppCheck(): AppCheck | null {
   }
   const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY;
   if (!siteKey && !isDebug) {
+    // App Check is required for production, but local development may run
+    // against a Firebase project where enforcement is disabled. In that case
+    // leave App Check uninitialised instead of preventing authenticated users
+    // from entering the app just because no local site key was configured.
+    if (process.env.NODE_ENV !== "production") return null;
     throw new Error("[AppCheck] reCAPTCHA Enterprise site key is not configured.");
   }
   const provider = siteKey ? new ReCaptchaEnterpriseProvider(siteKey) : debugOnlyProvider();
@@ -58,7 +63,9 @@ function initializeFirebaseAppCheck(): AppCheck | null {
 export async function ensureAppCheck(): Promise<void> {
   const instance = initializeFirebaseAppCheck();
   if (!instance) {
-    throw new Error("[AppCheck] Cannot initialize outside the browser.");
+    // This is either server-side invocation (which should be a no-op) or a
+    // development build without App Check configured.
+    return;
   }
   const tokenResult = await withTimeout(
     getToken(instance),

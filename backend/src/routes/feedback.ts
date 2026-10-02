@@ -237,6 +237,34 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
   }
 });
 
+/** GET /api/v2/feedback — admin-only feedback review list. */
+feedbackV2Router.get("/", requireAdmin, async (_req, res) => {
+  try {
+    const snapshot = await db
+      .collection("feedbacks")
+      .orderBy("timestamp", "desc")
+      .limit(200)
+      .get();
+    res.set("Cache-Control", "no-store");
+    res.json({
+      feedbacks: snapshot.docs.map((document) => {
+        const data = document.data();
+        const timestamp = data.timestamp;
+        return {
+          id: document.id,
+          ...data,
+          timestamp: timestamp && typeof timestamp.toMillis === "function"
+            ? { seconds: timestamp.seconds, nanoseconds: timestamp.nanoseconds }
+            : null,
+        };
+      }),
+    });
+  } catch (error) {
+    console.error("[Feedback] Failed to load feedback:", error);
+    res.status(500).json({ error: "Unable to load feedback." });
+  }
+});
+
 /** PATCH /api/feedback/:feedbackId/status — admin-only review workflow. */
 const updateFeedbackStatus = async (
   req: AuthenticatedRequest,

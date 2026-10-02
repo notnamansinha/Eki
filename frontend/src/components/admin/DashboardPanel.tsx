@@ -875,7 +875,6 @@ export default function DashboardPanel() {
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-bold text-white">Start service</h2>
-              <p className="mt-0.5 text-[10px] text-white/35">Create the protected ride session. GNSS controls movement and completion.</p>
             </div>
             <Play className="size-4 text-white/30" aria-hidden="true" />
           </div>
@@ -916,10 +915,6 @@ export default function DashboardPanel() {
               placeholder="Select route…"
             />
           </div>
-          <p className="text-xs text-white/45">
-            Travel direction is inferred from fresh stopped GPS at the first or last stop.
-            After completion, the return service starts automatically following the turnaround dwell.
-          </p>
           <button
             type="button"
             onClick={() => void armRide()}

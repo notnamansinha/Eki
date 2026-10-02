@@ -5221,6 +5221,89 @@
         "x-compatibility-alias-of": "PATCH /api/v2/feedback/{feedbackId}"
       }
     },
+    "/api/v2/feedback": {
+      "get": {
+        "operationId": "getFeedback",
+        "tags": [
+          "Feedback"
+        ],
+        "summary": "Retrieve feedback for admin review",
+        "description": "Retrieve the latest 200 feedback records for the admin review workflow.",
+        "security": [
+          {
+            "FirebaseBearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Feedback retrieved successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, revoked, disabled, or malformed credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated caller lacks the required admin role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded; obey Retry-After when supplied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds before retry when emitted by the rejecting limiter; not supplied by every upstream failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal operation failure; details are redacted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-auth-class": "admin",
+        "x-body-limit-bytes": 16384,
+        "x-rate-limit": "Global 200 requests/verified UID or normalized IP/minute, divided by RATE_LIMIT_SHARD_FACTOR. The edge WAF/LB is the global fleet cap. Mount-level writeLimiter: 30 requests/identity/minute, divided by RATE_LIMIT_SHARD_FACTOR; this also covers GETs on these mounts.",
+        "x-cache-policy": "Handler emits Cache-Control: no-store. Earlier middleware/parser rejections may occur before that header.",
+        "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
+        "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only for this read operation.",
+        "x-idempotency": "Read-only operation; repeating the request does not change feedback records."
+      }
+    },
     "/api/v2/feedback/{feedbackId}": {
       "patch": {
         "operationId": "patchFeedback",
@@ -9237,6 +9320,113 @@
         "required": [],
         "additionalProperties": false,
         "minProperties": 1
+      },
+      "Feedback": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "userName": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "general",
+              "ride"
+            ]
+          },
+          "busId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "driverId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rating": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "comment": {
+            "type": "string"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "seconds": {
+                    "type": "integer"
+                  },
+                  "nanoseconds": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "seconds",
+                  "nanoseconds"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "reviewed",
+              "resolved"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "userName",
+          "type",
+          "busId",
+          "driverId",
+          "rating",
+          "comment",
+          "timestamp",
+          "status"
+        ],
+        "additionalProperties": true
+      },
+      "FeedbackList": {
+        "type": "object",
+        "properties": {
+          "feedbacks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Feedback"
+            }
+          }
+        },
+        "required": [
+          "feedbacks"
+        ],
+        "additionalProperties": false
       },
       "FeedbackStatus": {
         "type": "object",
