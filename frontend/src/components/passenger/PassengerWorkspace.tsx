@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
-import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
+import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff } from "lucide-react";
 import { subscribeLiveBusChanges } from "@/lib/liveBusStore";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import { useSettings } from "@/hooks/useSettings";
@@ -16,11 +16,8 @@ import {
   type PassengerLiveBus,
 } from "@/lib/passengerLiveBus";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
-import {
-  passengerPanelClassName,
-  passengerPanelStyle,
-  passengerTopSpacerStyle,
-} from "./passengerFrame";
+import LiveRoutesHome from "./LiveRoutesHome";
+import styles from "./LiveRoutesHome.module.css";
 import {
   decideRideTracking,
   isPostRideFeedbackEligible,
@@ -44,7 +41,6 @@ const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTr
   ssr: false,
   loading: () => <div className="h-full bg-[var(--surface-0)]" role="status" aria-label="Loading map" />,
 });
-const RouteCarousel = dynamic(() => import("@/components/passenger/ui/RouteCarousel"), { ssr: false });
 const AccountTab = dynamic(() => import("@/components/passenger/AccountTab"), { ssr: false });
 const MessagingPanel = dynamic(() => import("@/components/shared/MessagingPanel"), { ssr: false });
 const FeedbackModal = dynamic(() => import("@/components/shared/FeedbackModal"), { ssr: false });
@@ -72,7 +68,7 @@ export default function PassengerWorkspace() {
   const { user } = useAuth();
   const { settings } = useSettings();
   const [currentView, setCurrentView] = useState<ViewState>("home");
-  const { routes, error: routesError, retry: retryRoutes } = useRoutes();
+  const { routes, loading: routesLoading, error: routesError, retry: retryRoutes } = useRoutes();
   const [selectedRouteId, setSelectedRouteId] = useState("");
   const [selectedDestinationStopId, setSelectedDestinationStopId] = useState("");
   const [selectedLiveBusKey, setSelectedLiveBusKey] = useState("");
@@ -298,26 +294,6 @@ export default function PassengerWorkspace() {
           <span className="text-pretty">Reconnecting to live bus data...</span>
         </div>
       )}
-      {routesError && (
-        <div
-          className="absolute left-4 right-4 z-50 flex items-start gap-3 rounded-xl border border-red-400/20 bg-zinc-950 px-4 py-3 text-sm text-red-300 shadow-lg"
-          style={{ top: isResuming ? "calc(env(safe-area-inset-top) + 5rem)" : "calc(env(safe-area-inset-top) + 1rem)" }}
-          role="alert"
-        >
-          <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          <div className="flex-1">
-            <p className="font-semibold">Routes could not be loaded.</p>
-            <p className="mt-0.5 text-xs text-red-300/70">{routesError}</p>
-          </div>
-          <button
-            type="button"
-            onClick={retryRoutes}
-            className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
-          >
-            Retry
-          </button>
-        </div>
-      )}
       <div className="absolute inset-0 flex flex-col overflow-hidden">
 
         {/* Map layer — only present on tracking */}
@@ -334,76 +310,19 @@ export default function PassengerWorkspace() {
 
 
         {/* ── HOME VIEW ── */}
-        <div className={`absolute inset-0 z-20 flex flex-col pt-safe transition-[opacity,transform] duration-500 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8 pointer-events-none"}`}>
-
-          {/* Top spacer to frame the bus illustration near the top of the screen */}
-          <div className="shrink-0" style={passengerTopSpacerStyle} aria-hidden="true" />
-
-          {/* Unified Transit Panel that fills the rest of the height, with a gap above bottom nav */}
-          <div className={`${passengerPanelClassName} flex-1`}
-            style={passengerPanelStyle}
-          >
-            {/* Heading Section - Fixed */}
-            <div className="text-center pb-6 mb-4 mx-6 shrink-0">
-              <h1 className="text-[32px] font-black tracking-tight mb-2 leading-none" style={{ color: "var(--text-primary)" }}>
-                Live Routes
-              </h1>
-              <p className="text-[15px] font-medium mt-2" style={{ color: "var(--text-secondary)" }}>
-                Select a route to view schedules.
-              </p>
-            </div>
-
-            {/* Status / Routes Section - Scrollable */}
-            <div
-              className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth hide-scrollbar px-4 pb-32"
-              style={{ scrollBehavior: 'smooth', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-            >
-              {displayRoutes.length > 0 ? (
-                <>
-                  {settings.announcementActive && settings.announcementText && (
-                    <div
-                      className="rounded-2xl p-4 mb-3 mx-1 flex items-center justify-center border text-center"
-                      style={{ background: "#4c0519", borderColor: "#881337" }}
-                    >
-                      <p className="text-[13px] font-black tracking-wider uppercase leading-tight text-[#fecdd3]">
-                        {settings.announcementText}
-                      </p>
-                    </div>
-                  )}
-                  <RouteCarousel
-                    routes={displayRoutes}
-                    selectedRouteId={effectiveRouteId}
-                     onClick={handleRouteSelect}
-                     getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
-                     getAvailableBusesCount={(routeId) => availableBuses.filter(b => b.routeId === routeId).length}
-                     getDirectionState={(routeId) => normalizeRideDirection(
-                       activeBuses.find((bus) => bus.routeId === routeId)?.direction,
-                     )}
-                   />
-                </>
-              ) : (
-                <div className="rounded-xl p-8 text-center mx-1 flex flex-col items-center justify-center gap-2"
-                  style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
-                  {settings.announcementActive && settings.announcementText && (
-                    <div className="inline-flex items-center px-4 py-1.5 rounded-full border mb-1"
-                      style={{ background: "#4c0519", borderColor: "#881337" }}>
-                      <span className="text-[12px] font-black tracking-wider uppercase text-[#fecdd3]">
-                        {settings.announcementText}
-                      </span>
-                    </div>
-                  )}
-                  <p className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>
-                    {settings.noBusesMessage || "No buses running"}
-                  </p>
-                  <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
-                    {isResuming
-                      ? "Unable to reach live data. Check your connection."
-                      : (settings.noBusesSubMessage || "Service starts at {time}").replace("{time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+        <div className={`absolute inset-0 z-20 transition-[opacity,transform] duration-300 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8 pointer-events-none"}`}>
+          <LiveRoutesHome
+            routes={routes}
+            activeBuses={activeBuses}
+            availableBuses={availableBuses}
+            announcement={settings.announcementActive ? settings.announcementText : undefined}
+            loading={routesLoading}
+            error={Boolean(routesError)}
+            emptyMessage={settings.noBusesMessage || "No live routes available"}
+            emptyDetail={isResuming ? "Unable to reach live data. Check your connection." : (settings.noBusesSubMessage || "Service starts at {time}").replace("{time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
+            onRetry={retryRoutes}
+            onSelectRoute={handleRouteSelect}
+          />
         </div>
 
         {/* ── TRACKING VIEW ── */}
@@ -642,12 +561,8 @@ export default function PassengerWorkspace() {
       )}
 
       {/* Bottom Navigation — Fixed Transit Tab Bar */}
-      <div className="absolute bottom-0 inset-x-0 z-[100] pb-safe pointer-events-none flex justify-center">
-        <nav className="w-full pointer-events-auto flex items-center justify-around px-2 py-2.5 rounded-t-[24px]"
-          style={{
-            background: "rgba(22, 22, 26, 0.98)",
-            borderTop: "1px solid rgba(255, 255, 255, 0.15)",
-          }}>
+      <div className={styles.dockWrap}>
+        <nav className={styles.dock} aria-label="Passenger navigation">
           <button
             onClick={() => {
               if (visibleView === "tracking" || visibleView === "home") {
@@ -656,34 +571,24 @@ export default function PassengerWorkspace() {
                 setCurrentView("home");
               }
             }}
-            className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-all duration-300 relative group active:scale-95 gap-1.5"
-            style={{
-              background: (visibleView === "home" || visibleView === "tracking") ? "rgba(255,255,255,0.08)" : "transparent"
-            }}
+            type="button"
+            aria-current={visibleView === "home" || visibleView === "tracking" ? "page" : undefined}
+            className={`${styles.dockItem} ${(visibleView === "home" || visibleView === "tracking") ? styles.dockActive : ""}`}
           >
-            <MapIcon className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
-              color: (visibleView === "home" || visibleView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
-            }} />
-            <span className="text-[13px] font-bold transition-colors leading-none" style={{
-              color: (visibleView === "home" || visibleView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
-            }}>
+            <MapIcon size={22} strokeWidth={2.2} aria-hidden="true" />
+            <span>
               Routes
             </span>
           </button>
 
           <button
             onClick={() => setCurrentView("profile")}
-            className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-all duration-300 relative group active:scale-95 gap-1.5"
-            style={{
-              background: visibleView === "profile" ? "rgba(255,255,255,0.08)" : "transparent"
-            }}
+            type="button"
+            aria-current={visibleView === "profile" ? "page" : undefined}
+            className={`${styles.dockItem} ${visibleView === "profile" ? styles.dockActive : ""}`}
           >
-            <User className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
-              color: visibleView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
-            }} />
-            <span className="text-[13px] font-bold transition-colors leading-none" style={{
-              color: visibleView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
-            }}>
+            <User size={22} strokeWidth={2.2} aria-hidden="true" />
+            <span>
               Profile
             </span>
           </button>

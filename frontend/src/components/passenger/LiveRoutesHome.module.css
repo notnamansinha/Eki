@@ -1,0 +1,95 @@
+.home {
+  --routes-accent: #ad1645;
+  --routes-accent-light: #f58aaa;
+  --routes-muted: #adb0ba;
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  color: #f7f7f9;
+  background: #09090c;
+}
+
+.background {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgba(8, 8, 12, .38) 0%, rgba(8, 8, 12, .83) 35%, #09090c 77%), url('/images/hero-background.webp') center top / cover no-repeat;
+}
+
+.scroll { height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+.content { width: min(100%, 520px); margin: 0 auto; padding: calc(env(safe-area-inset-top) + 20px) 20px calc(126px + env(safe-area-inset-bottom)); }
+.header, .location, .notification, .alert, .filters, .filter, .cardTop, .statuses, .arrivalValue, .recommendation { display: flex; align-items: center; }
+.header { justify-content: space-between; min-height: 48px; }
+.locationWrap { position: relative; }
+.location { gap: 8px; font-size: 16px; font-weight: 700; }
+.location svg { color: var(--routes-accent-light); }
+.locationInfo { position: absolute; top: 45px; left: 0; z-index: 2; width: max-content; max-width: 250px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.15); border-radius: 12px; color: #f7f7f9; background: #27232b; box-shadow: 0 12px 25px rgba(0,0,0,.32); font-size: 12px; }
+.notification { position: relative; justify-content: center; width: 46px; height: 46px; border: 1px solid rgba(255,255,255,.14); border-radius: 50%; background: rgba(20,20,25,.72); }
+.notificationDot { position: absolute; top: 10px; right: 9px; width: 7px; height: 7px; border-radius: 50%; background: #f65379; box-shadow: 0 0 0 2px #19191e; }
+.hero { margin: 52px 0 28px; }
+.eyebrow { margin-bottom: 12px; color: var(--routes-accent-light); font-size: 11px; font-weight: 800; letter-spacing: .2em; }
+.hero h1 { margin: 0; font-size: clamp(42px, 11vw, 56px); line-height: 1; letter-spacing: -.055em; font-weight: 800; }
+.titleDot { color: #db3768; }
+.hero > p:last-child { max-width: 340px; margin-top: 14px; color: #c3c4cc; font-size: 15px; line-height: 1.5; }
+.alert { min-height: 82px; gap: 14px; padding: 14px 16px; border: 1px solid rgba(226, 112, 150, .22); border-radius: 22px; background: linear-gradient(110deg, rgba(65,19,38,.78), rgba(22,20,27,.9)); box-shadow: 0 14px 32px rgba(0,0,0,.2); }
+.alertIcon { display: grid; place-items: center; flex: none; width: 46px; height: 46px; color: #f6a4bc; border-radius: 15px; background: rgba(176, 40, 85, .24); }
+.alertCopy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; line-height: 1.3; }
+.alertCopy strong { font-size: 15px; }
+.alertCopy span { color: #c1b4bf; font-size: 13px; overflow-wrap: anywhere; }
+.alertChevron { flex: none; color: #b8aab4; }
+.sectionHeading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 32px 2px 14px; }
+.sectionHeading h2 { margin: 0; font-size: 20px; font-weight: 750; letter-spacing: -.03em; }
+.sectionHeading span { color: #aaaab4; font-size: 12px; }
+.filters { gap: 4px; padding: 5px; min-height: 61px; border: 1px solid rgba(255,255,255,.09); border-radius: 22px; background: rgba(20,20,25,.9); }
+.filter { justify-content: center; flex: 1; gap: 7px; min-width: 0; min-height: 50px; color: #a8a8b2; border-radius: 17px; font-size: 13px; font-weight: 700; transition: background .18s, color .18s, transform .18s; }
+.filter:hover { color: white; background: rgba(255,255,255,.05); }
+.filterActive, .filterActive:hover { color: white; background: linear-gradient(135deg, #a61042, #790d32); box-shadow: 0 6px 16px rgba(117,0,37,.3); }
+.routeList { display: flex; flex-direction: column; gap: 14px; margin-top: 17px; }
+.card { position: relative; min-width: 0; padding: 17px; border: 1px solid rgba(255,255,255,.1); border-radius: 24px; background: rgba(24,25,30,.94); box-shadow: 0 16px 30px rgba(0,0,0,.26), inset 0 1px rgba(255,255,255,.035); }
+.recommended { border-color: rgba(234, 64, 113, .65); box-shadow: 0 16px 32px rgba(0,0,0,.3), 0 0 0 1px rgba(145,10,52,.18); }
+.cardTop { gap: 9px; min-height: 48px; }
+.modeIcon { display: grid; place-items: center; flex: none; width: 45px; height: 45px; border-radius: 14px; color: #f4afc3; background: #512235; }
+.modeName { flex: none; color: #f6f6f7; font-size: 15px; font-weight: 750; }
+.routeBadge { min-width: 0; max-width: 48%; padding: 5px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 8px; color: #f1bdcd; background: rgba(164,42,84,.19); font-size: 11px; font-weight: 800; }
+.saveButton { display: grid; place-items: center; flex: none; width: 44px; height: 44px; margin-left: auto; color: #c9c4cb; border-radius: 13px; }
+.saveButton:hover, .saveButton[aria-pressed="true"] { color: #f59ab6; background: rgba(178,49,91,.13); }
+.recommendation { width: fit-content; gap: 5px; margin: 12px 0 0; padding: 5px 9px; border-radius: 99px; color: #ffb7ca; background: rgba(155,24,67,.25); font-size: 11px; font-weight: 700; }
+.routeAction { display: block; width: 100%; margin-top: 14px; text-align: left; border-radius: 12px; }
+.routeAction:disabled { cursor: default; }
+.routeMain { display: flex; flex-direction: column; min-width: 0; gap: 7px; }
+.routeTitle { color: #fff; font-size: clamp(19px, 5.2vw, 23px); line-height: 1.22; letter-spacing: -.035em; font-weight: 750; overflow-wrap: anywhere; }
+.pathArrow { color: #d66b8b; white-space: nowrap; }
+.via { color: #adb0ba; font-size: 13px; line-height: 1.45; }
+.cardBottom { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,.075); }
+.statuses { flex-wrap: wrap; gap: 9px 13px; min-width: 0; font-size: 12px; font-weight: 650; }
+.statuses > span { display: inline-flex; align-items: center; gap: 5px; }
+.liveStatus { color: #69dfa1; }
+.quietStatus { color: #b3b4be; }
+.delayStatus { color: #ff7996; }
+.statusDot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: currentColor; }
+.arrival { display: flex; flex-direction: column; flex: none; gap: 4px; padding-left: 12px; border-left: 1px solid rgba(255,255,255,.09); }
+.arrivalLabel { color: #9fa1ad; font-size: 11px; }
+.arrivalValue { gap: 4px; color: #fff; font-size: 16px; font-weight: 800; white-space: nowrap; }
+.arrivalValue svg { color: #e17295; }
+.stateCard { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-height: 118px; padding: 24px; border: 1px solid rgba(255,255,255,.1); border-radius: 23px; color: #b7b9c4; background: rgba(24,25,30,.94); font-size: 14px; line-height: 1.45; }
+.stateCard strong { color: white; font-size: 17px; }
+.stateCard button { min-height: 44px; padding: 0 16px; border-radius: 12px; color: white; background: #921239; font-weight: 700; }
+.skeletonBlock { display: block; border-radius: 12px; background: rgba(255,255,255,.11); }
+.home :is(button):focus-visible { outline: 2px solid #ffafc8; outline-offset: 3px; }
+.dockWrap { position: absolute; z-index: 100; right: 0; bottom: 0; left: 0; display: flex; justify-content: center; padding: 0 16px calc(12px + env(safe-area-inset-bottom)); pointer-events: none; }
+.dock { display: flex; width: min(100%, 480px); gap: 8px; padding: 7px; border: 1px solid rgba(255,255,255,.13); border-radius: 29px; background: rgba(25,25,30,.94); box-shadow: 0 18px 40px rgba(0,0,0,.45); backdrop-filter: blur(14px); pointer-events: auto; }
+.dockItem { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-width: 0; min-height: 62px; border-radius: 22px; color: #a8a8b2; font-size: 12px; font-weight: 700; transition: background .18s, color .18s; }
+.dockItem:hover { color: white; background: rgba(255,255,255,.06); }
+.dockActive, .dockActive:hover { color: white; background: linear-gradient(135deg, #a61042, #760c31); }
+.dockItem:focus-visible { outline: 2px solid #ffafc8; outline-offset: 3px; }
+@media (max-width: 360px) {
+  .content { padding-left: 16px; padding-right: 16px; }
+  .hero { margin-top: 38px; }
+  .card { padding: 15px; }
+  .modeName { font-size: 13px; }
+  .cardBottom { align-items: stretch; flex-direction: column; }
+  .arrival { padding: 10px 0 0; border-left: 0; border-top: 1px solid rgba(255,255,255,.09); }
+}
+@media (min-width: 700px) { .content { padding-top: 32px; } }
+@media (prefers-reduced-motion: reduce) { .filter, .dockItem { transition: none; } }
