@@ -1,6 +1,6 @@
 # Eki documentation index
 
-Last updated: 2026-10-06 00:35 IST (UTC+05:30).
+Last updated: 2026-10-06 15:32 IST (UTC+05:30).
 
 ## New to the project
 
@@ -55,6 +55,11 @@ run revisions, dates and measurements. Verify deployed availability separately.
 | [University handover checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) | Release ownership and production acceptance |
 
 ## Testing and evidence
+
+The [current A–Z execution ledger](../testing/WEBAPP_A_Z_AB_TESTING.md) records
+actual browser outcomes, R01–R15 software scope and all 351 pending/partial
+feature cases. The [full plan](../testing/WEBAPP_A_Z_AB_TESTING_PLAN.md) retains
+the supplied historical control/API/race inventories with current overrides.
 
 Start with [the testing index](../testing/README.md). It catalogs every dated
 report, distinguishes stationary/synthetic/physical evidence, and points to
