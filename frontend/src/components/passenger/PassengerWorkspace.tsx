@@ -5,7 +5,8 @@ import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
-import { subscribeLiveBusChanges } from "@/lib/liveBusStore";
+import { subscribeLiveBusChangesByRoute } from "@/lib/liveBusStore";
+import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import { useSettings } from "@/hooks/useSettings";
 import { isAuthoritativeLiveBusDelivery } from "@/lib/liveBusDelivery";
@@ -76,6 +77,7 @@ export default function PassengerWorkspace() {
   const { settings } = useSettings();
   const [currentView, setCurrentView] = useState<ViewState>("home");
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
+  const routeCatalog = useLiveRouteCatalog();
   const [selectedRouteId, setSelectedRouteId] = useState("");
   const [selectedDestinationStopId, setSelectedDestinationStopId] = useState("");
   const [selectedLiveBusKey, setSelectedLiveBusKey] = useState("");
@@ -95,13 +97,23 @@ export default function PassengerWorkspace() {
   const latestTripStatesRef = useRef<Map<string, ActiveBusData["tripState"]>>(new Map());
   const rawLiveBusesRef = useRef(new Map<string, unknown>());
   const activeLiveBusesRef = useRef(new Map<string, ActiveBusData>());
+  const displayRoutes = routes.filter(route => {
+    const availability = routeCatalog[route.id];
+    return availability && (availability.active > 0 || availability.available > 0) &&
+      ((route.stops?.length ?? 0) > 0 || (route.waypoints?.length ?? 0) > 0);
+  });
+  const effectiveRouteId = displayRoutes.some(route => route.id === selectedRouteId)
+    ? selectedRouteId : displayRoutes[0]?.id ?? "";
 
   // Listen to Firebase Realtime Database for active buses using the existing
   // Firebase session established by the root auth provider.
   // Ride actions require a server-owned lifecycle. Online assigned devices
   // also expose a read-only route/location preview.
   useEffect(() => {
-    const unsubscribe = subscribeLiveBusChanges((change) => {
+    const rawBuses = rawLiveBusesRef.current;
+    // Keep an explicitly joined ride observable while browsing another route.
+    const subscribedRoutes = [...new Set([effectiveRouteId, trackedRideRef.current?.routeId].filter((id): id is string => Boolean(id)))];
+    const disposals = subscribedRoutes.map(routeId => subscribeLiveBusChangesByRoute(routeId, (change) => {
         const trackedRideSessionId =
           trackedRideRef.current?.sessionId ?? pendingCompletionSessionIdRef.current;
         const previousTrackedState = trackedRideSessionId
@@ -109,14 +121,18 @@ export default function PassengerWorkspace() {
           : undefined;
         if (change.type === "reset") {
           const rawSnapshot = change.snapshot as Record<string, unknown> | null;
-          rawLiveBusesRef.current = new Map(Object.entries(rawSnapshot ?? {}));
+          for (const [key, raw] of rawLiveBusesRef.current) {
+            if (raw && typeof raw === "object" && (raw as Record<string, unknown>).routeId === routeId) rawLiveBusesRef.current.delete(key);
+          }
+          Object.entries(rawSnapshot ?? {}).forEach(([key, value]) => rawLiveBusesRef.current.set(key, value));
+          const merged = Object.fromEntries(rawLiveBusesRef.current);
           activeLiveBusesRef.current = new Map(
-            passengerLiveBuses(rawSnapshot, Date.now()).map((bus) => [
+            passengerLiveBuses(merged, Date.now()).map((bus) => [
               passengerLiveBusSelectionKey(bus),
               bus,
             ]),
           );
-          latestTripStatesRef.current = passengerTripStates(rawSnapshot);
+          latestTripStatesRef.current = passengerTripStates(merged);
         } else {
           const previous = rawLiveBusesRef.current.get(change.key);
           if (previous && typeof previous === "object") {
@@ -158,14 +174,14 @@ export default function PassengerWorkspace() {
         }
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed:", error.message);
-      });
+      }));
 
     return () => {
-      unsubscribe();
-      rawLiveBusesRef.current.clear();
+      disposals.forEach(dispose => dispose());
+      rawBuses.clear();
       activeLiveBusesRef.current.clear();
     };
-  }, [connectionGeneration, markSnapshotReceived, resumeGeneration]);
+  }, [effectiveRouteId, trackedSessionId, connectionGeneration, markSnapshotReceived, resumeGeneration]);
 
   // Presence expires without another RTDB event after power/network loss.
   useEffect(() => {
@@ -177,17 +193,6 @@ export default function PassengerWorkspace() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const visibleRouteIds = new Set([
-    ...activeBuses.map((bus) => bus.routeId),
-    ...availableBuses.map((bus) => bus.routeId),
-  ]);
-  const serviceOrAvailableRoutes = routes.filter((route) => visibleRouteIds.has(route.id));
-  const displayRoutes = serviceOrAvailableRoutes.filter(
-    (route) => (route.stops?.length ?? 0) > 0 || (route.waypoints?.length ?? 0) > 0,
-  );
-  const effectiveRouteId = displayRoutes.some(route => route.id === selectedRouteId)
-    ? selectedRouteId
-    : displayRoutes[0]?.id ?? "";
   const activeRoute = displayRoutes.find(route => route.id === effectiveRouteId);
   const busesOnRoute: VisibleBusData[] = [...activeBuses, ...availableBuses].filter(
     (bus) => bus.routeId === effectiveRouteId,
@@ -396,7 +401,7 @@ export default function PassengerWorkspace() {
                     routes={displayRoutes}
                     selectedRouteId={effectiveRouteId}
                      onClick={handleRouteSelect}
-                     getActiveBusesCount={(routeId) => activeBuses.filter(b => b.routeId === routeId).length}
+                     getActiveBusesCount={(routeId) => routeCatalog[routeId]?.active ?? 0}
                      getAvailableBusesCount={(routeId) => availableBuses.filter(b => b.routeId === routeId).length}
                      getDirectionState={(routeId) => {
                        const bus = activeBuses.find((entry) => entry.routeId === routeId);

@@ -269,7 +269,7 @@ Device creation/secret rotation is deliberately local: `npm run provision-device
 
 ### `GET /api/buses` — authenticated
 
-Returns `{ "buses": [...] }` from the current RTDB `activeBuses` projection. Prefer the shared client RTDB subscription (initial sync plus child deltas) for continuous live UI; this endpoint is a snapshot, not a polling recommendation.
+Returns `{ "buses": [...] }` from the current RTDB authority, with the same explicit public field whitelist as the route materialization. Prefer the compact per-route client RTDB subscription (initial sync plus child deltas) for continuous live UI; this endpoint is a snapshot, not a polling recommendation.
 
 ### `GET /api/buses/:busId` — authenticated
 

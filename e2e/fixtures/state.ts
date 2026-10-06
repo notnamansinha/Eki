@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStore, useState, useEffect } from "react";
+import { BUS_EXPIRY_MS } from "../../frontend/src/lib/liveBusFreshness";
 const subscribers = new Set<() => void>();
 export const route = {
   id: "qa-route", name: "QA route", color: "#3B82F6", duration: "600s", waypoints: [],
@@ -50,3 +51,18 @@ export function subscribeLiveBusesByRoute(routeId: string, listener: (value: Rec
 }
 const emptyGeometry = new Map();
 export function useDynamicRouteGeometries() { return emptyGeometry; }
+
+export function subscribeLiveBusChangesByRoute(routeId: string, listener: (change: unknown) => void) {
+  return subscribeLiveBusChanges((change: unknown) => {
+    const reset = change as { snapshot: Record<string, { routeId?: string }> };
+    listener({ ...reset, snapshot: Object.fromEntries(Object.entries(reset.snapshot).filter(([, bus]) => bus.routeId === routeId)) });
+  });
+}
+export function useLiveRouteCatalog() {
+  useScenario();
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
+  const buses = Object.values(snapshot) as Record<string, unknown>[];
+  return { [route.id]: { active: buses.filter(bus => bus.sessionId && bus.tripState !== "completed").length,
+    available: buses.filter(bus => !bus.sessionId && bus.deviceState === "online" && now - Number(bus.timestamp) < BUS_EXPIRY_MS).length, freshestAt: Date.now() } };
+}

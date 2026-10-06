@@ -87,7 +87,7 @@ export function onValue(source: { path: string }, success: (snapshot: { val: () 
   queueMicrotask(() => {
     if (!active) return;
     success({ val: () => source.path === ".info/connected" ? sdkConnected : {
-      "qa-bus": { busId: "qa-bus", routeId: "qa-route", sessionId: "qa-session", tripState: "in_service", timestamp: Date.now(), lat: 12, lng: 77 },
+      "qa-route": { buses: { "qa-bus": { busId: "qa-bus", routeId: "qa-route", sessionId: "qa-session", tripState: "in_service", timestamp: Date.now(), lat: 12, lng: 77 } } },
     } });
   });
   return () => { active = false; connectionObservers.delete(success); };

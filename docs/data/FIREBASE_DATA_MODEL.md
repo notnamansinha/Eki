@@ -27,9 +27,15 @@ erDiagram
 
 ## RTDB
 
+### Public live views (R14)
+
+`publicRouteBuses/{routeId}/buses/{busId}_{routeId}` contains only fields explicitly selected by `publicLiveBus`: coordinates, accepted sample identity, matched/raw location, public route state and ride lifecycle. Histories, anchors, claims, retry state and worker metadata are excluded. Passengers subscribe directly to a selected route, plus their explicitly joined ride route when browsing another route. Trusted admins may read the public fleet root. All writes are server-only.
+
+`liveRouteCatalog/values/{routeId}` contains `{active, available, freshestAt}` with minute-bucket preview freshness. It supports route selection without fleet locations. Parent `revisions` and `_workerGeneration` are private. Active rides remain discoverable through signal loss; silent unarmed previews expire. The elected worker repairs missing/removal publications using bounded periodic replay. See [R14 evidence and rollout](../testing/R14_LIVE_PROJECTION.md).
+
 ### `activeBuses/{busId}_{routeId}`
 
-One latest projection per assigned bus/route. The key is an internal composite locator; consumers use stored `busId` and `routeId` and must not split the key because IDs can contain underscores. A telemetry-created node represents device presence only and omits ride lifecycle fields. Passenger service exists only when the server-owned tuple `status: active` + non-empty `sessionId` + resolved `direction` + `tripState: pre_departure|in_service` is complete.
+Backend-only authority, with every browser read/write denied. One latest record per assigned bus/route. The key is an internal composite locator; consumers use stored `busId` and `routeId` and must not split the key because IDs can contain underscores. A telemetry-created node represents device presence only and omits ride lifecycle fields. Passenger service exists only when the server-owned tuple `status: active` + non-empty `sessionId` + resolved `direction` + `tripState: pre_departure|in_service` is complete.
 
 | Field | Type | Meaning/source |
 |---|---|---|
