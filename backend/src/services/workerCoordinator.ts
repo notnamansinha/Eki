@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Timestamp } from "firebase-admin/firestore";
 import { db } from "../lib/firebaseAdmin";
 import { startTripStateEngine } from "./tripStateEngine";
+import { startLiveBusProjection } from "./liveBusProjection";
 import { startRetentionSweeper } from "./retentionSweeper";
 import { reconcileFleetAuthorization } from "../routes/fleet";
 import { startPrivacyDeletionWorker } from "./privacyDeletionWorker";
@@ -27,6 +28,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
   let stopped = false;
   let active = false;
   let stopTripEngine: (() => Promise<void>) | null = null;
+  let stopProjection: (() => Promise<void>) | null = null;
   let stopRetention: (() => void) | null = null;
   let fleetReconcileTimer: NodeJS.Timeout | null = null;
   let stopPrivacyDeletion: (() => void) | null = null;
@@ -51,11 +53,13 @@ export function startWorkerCoordinator(): () => Promise<void> {
     active = false;
     setWorkerLeadership(false);
     const stopTripEngineNow = stopTripEngine;
+    const stopProjectionNow = stopProjection;
     const stopRetentionNow = stopRetention;
     const stopPrivacyDeletionNow = stopPrivacyDeletion;
     const stopRideReconciliationNow = stopRideReconciliation;
     if (fleetReconcileTimer) clearInterval(fleetReconcileTimer);
     stopTripEngine = null;
+    stopProjection = null;
     stopRetention = null;
     fleetReconcileTimer = null;
     stopPrivacyDeletion = null;
@@ -63,6 +67,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
     const stopping = (async () => {
       const results = await Promise.allSettled([
         stopTripEngineNow?.() ?? Promise.resolve(),
+        stopProjectionNow?.() ?? Promise.resolve(),
         Promise.resolve().then(() => stopRetentionNow?.()),
         Promise.resolve().then(() => stopPrivacyDeletionNow?.()),
         Promise.resolve().then(() => stopRideReconciliationNow?.()),
@@ -125,6 +130,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
         const currentFence = fence;
         currentFence.run(() => {
           stopTripEngine = startTripStateEngine();
+          stopProjection = startLiveBusProjection();
           stopRetention = startRetentionSweeper();
           stopPrivacyDeletion = startPrivacyDeletionWorker();
           stopRideReconciliation = startAbandonedRideReconciler();

@@ -436,7 +436,7 @@ async function markDirectionProjectionSynchronized(
       return;
     }
     return { ...currentLive, directionFirestoreSynced: true };
-  });
+  }, undefined, false);
 }
 
 /** Undo only our still-provisional projection after a definitive durable refusal. */
@@ -448,7 +448,7 @@ async function resetRefusedDirection(assignment: DeviceAssignment, live: Record<
         current.directionFirestoreSynced !== false || current.tripState !== "pre_departure") return;
     return { ...withoutLiveRouteContext(current), direction: null, directionState: "pending", directionEndpointVersion: null,
       originStopId: null, destinationStopId: null, directionResolvedAt: null };
-  });
+  }, undefined, false);
 }
 
 async function resolvePendingDirection(
@@ -500,7 +500,7 @@ async function resolvePendingDirection(
       directionFirestoreSynced:
         typeof live.sessionId !== "string" || typeof live.driverId !== "string",
     };
-  });
+  }, undefined, false);
   const live = transaction.snapshot.val() as Record<string, unknown> | null;
   if (!live || !telemetryIsCurrent(live, sample)) return null;
   return { live, direction: resolvedDirection(live.direction) };
@@ -743,7 +743,7 @@ async function activateReroute(
             distanceToActiveRoute: null,
           }),
     };
-  });
+  }, undefined, false);
 }
 
 async function requestReroute(
@@ -779,7 +779,7 @@ async function requestReroute(
       lastRerouteAttemptAt: now,
       rerouteError: null,
     };
-  });
+  }, undefined, false);
   if (!started.committed) return;
 
   const live = started.snapshot.val() as Record<string, unknown>;
@@ -839,7 +839,7 @@ async function requestReroute(
         rerouteError: "Route calculation failed; retrying with live telemetry.",
         rerouteFailedAt: { ".sv": "timestamp" },
       };
-    });
+    }, undefined, false);
     throw error;
   }
 }
@@ -997,7 +997,7 @@ async function processTelemetryRoute(
           ? matchedLocation(match, acceptedSample, routeVersion)
           : null,
     });
-  });
+  }, undefined, false);
 
   const committed = transaction.snapshot.val() as Record<string, unknown> | null;
   if (

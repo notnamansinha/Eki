@@ -145,6 +145,20 @@ describe("trip-state engine lifecycle", () => {
     vi.useRealTimers();
   });
 
+  it("filters matcher-only changes before they occupy lifecycle queue capacity", async () => {
+    let release!: (value: any) => void;
+    mocks.routeDocumentGet.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const stop = startTripStateEngine();
+    const before = getTripStateQueueStatus().filteredLifecycleEvents;
+    const input = { busId: "r14_bus", routeId: "r14_route", status: "active", sessionId: "s1", timestamp: 1 };
+    const emit = (value: unknown) => mocks.rtdbHandlers.get("child_changed")!({ key: "r14_bus_r14_route", val: () => value });
+    emit(input); await flushMicrotasks();
+    for (let i = 0; i < 10; i++) emit({ ...input, mapMatchSeq: i, routeMatchHistory: [i], _workerGeneration: i });
+    expect(getTripStateQueueStatus().intake).toMatchObject({ active: 1, pending: 0 });
+    expect(getTripStateQueueStatus().filteredLifecycleEvents - before).toBe(10);
+    release({ exists: false, data: () => undefined }); await flushMicrotasks(); await stop();
+  });
+
   it("bounds live intake during a route-read stall and recovers rejected current state from RTDB", async () => {
     let release!: (value: any) => void;
     mocks.routeDocumentGet.mockReturnValue(new Promise(done => { release = done; }));

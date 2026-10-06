@@ -638,7 +638,7 @@ async function persistTelemetry(
       sample,
       backendReceivedAt,
     );
-  });
+  }, undefined, false);
   const value = transaction.snapshot.val() as Record<string, unknown> | null;
   recordSample(rtdbWriteLatencySamples, Date.now() - writeStartedAt);
   recordSample(rtdbTransactionAttemptSamples, transactionAttempts);

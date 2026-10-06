@@ -1,28 +1,35 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const listenerState = vi.hoisted(() => ({
+  generation: 0,
   success: null as null | ((snapshot: { val: () => unknown }) => void),
   failure: null as null | ((error: Error) => void),
   childChanged: null as null | ((snapshot: { key: string | null; val: () => unknown }) => void),
   unsubscribe: vi.fn(),
+  routes: new Map<string, { success?: (snapshot: { val: () => unknown }) => void; changed?: (snapshot: { key: string; val: () => unknown }) => void }>(),
 }));
 
 vi.mock("firebase/database", () => ({
-  ref: vi.fn(() => ({ path: "activeBuses" })),
-  onValue: vi.fn((_, success, failure) => {
-    listenerState.success = success;
-    listenerState.failure = failure;
+  ref: vi.fn((_, path) => ({ path })),
+  onValue: vi.fn((reference, success, failure) => {
+    if (reference.path === "publicRouteBuses") {
+      listenerState.success = success;
+      listenerState.failure = failure;
+    } else {
+      listenerState.routes.set(reference.path, { ...listenerState.routes.get(reference.path), success });
+    }
     return listenerState.unsubscribe;
   }),
   onChildAdded: vi.fn(() => listenerState.unsubscribe),
-  onChildChanged: vi.fn((_, success) => {
-    listenerState.childChanged = success;
+  onChildChanged: vi.fn((reference, success) => {
+    if (reference.path === "publicRouteBuses") listenerState.childChanged = success;
+    else listenerState.routes.set(reference.path, { ...listenerState.routes.get(reference.path), changed: success });
     return listenerState.unsubscribe;
   }),
   onChildRemoved: vi.fn(() => listenerState.unsubscribe),
 }));
 
-vi.mock("./authState", () => ({ waitForAuth: vi.fn(() => Promise.resolve()) }));
+vi.mock("./authState", () => ({ waitForAuth: vi.fn(() => Promise.resolve()), getAuthVerificationGeneration: () => listenerState.generation }));
 vi.mock("./firebaseDatabase", () => ({ rtdb: {} }));
 
 async function flushPromises() {
@@ -35,10 +42,12 @@ describe("live bus listener recovery", () => {
     vi.useFakeTimers();
     vi.resetModules();
     vi.spyOn(Math, "random").mockReturnValue(1);
+    listenerState.generation = 0;
     listenerState.success = null;
     listenerState.failure = null;
     listenerState.childChanged = null;
     listenerState.unsubscribe.mockReset();
+    listenerState.routes.clear();
   });
 
   afterEach(() => {
@@ -135,7 +144,13 @@ describe("live bus listener recovery", () => {
     await flushPromises();
 
     listenerState.success?.({ val: () => ({
+      route_1: { buses: { bus_1: { busId: "bus_1", routeId: "route_1", timestamp: Date.now() } } },
+      route_2: { buses: { bus_2: { busId: "bus_2", routeId: "route_2", timestamp: Date.now() } } },
+    }) });
+    listenerState.routes.get("publicRouteBuses/route_1/buses")?.success?.({ val: () => ({
       bus_1: { busId: "bus_1", routeId: "route_1", timestamp: Date.now() },
+    }) });
+    listenerState.routes.get("publicRouteBuses/route_2/buses")?.success?.({ val: () => ({
       bus_2: { busId: "bus_2", routeId: "route_2", timestamp: Date.now() },
     }) });
     changes.mockClear();
@@ -143,7 +158,8 @@ describe("live bus listener recovery", () => {
     routeTwo.mockClear();
 
     const updated = { busId: "bus_1", routeId: "route_1", timestamp: Date.now(), speed: 30 };
-    listenerState.childChanged?.({ key: "bus_1", val: () => updated });
+    listenerState.childChanged?.({ key: "route_1", val: () => ({ buses: { bus_1: updated } }) });
+    listenerState.routes.get("publicRouteBuses/route_1/buses")?.changed?.({ key: "bus_1", val: () => updated });
 
     expect(changes).toHaveBeenCalledOnce();
     expect(changes).toHaveBeenCalledWith({
@@ -160,4 +176,27 @@ describe("live bus listener recovery", () => {
     disposeOne();
     disposeTwo();
   });
+  it("shares route listeners, never opens the fleet root, and ignores old auth and detached callbacks", async () => {
+    const { onValue } = await import("firebase/database"); vi.mocked(onValue).mockClear();
+    const { subscribeLiveBusesByRoute, invalidateLiveBusCache } = await import("./liveBusStore");
+    const first = vi.fn(); const second = vi.fn();
+    const disposeFirst = subscribeLiveBusesByRoute("A", first);
+    const disposeSecond = subscribeLiveBusesByRoute("A", second);
+    await flushPromises();
+    expect(onValue).toHaveBeenCalledOnce();
+    expect(vi.mocked(onValue).mock.calls[0][0]).toEqual({ path: "publicRouteBuses/A/buses" });
+    const old = listenerState.routes.get("publicRouteBuses/A/buses")!.success!;
+    listenerState.generation++;
+    old({ val: () => ({ secret: { timestamp: Date.now() } }) });
+    expect(first).not.toHaveBeenCalled();
+    invalidateLiveBusCache(); await flushPromises(); first.mockClear(); second.mockClear();
+    old({ val: () => ({ secret: { timestamp: Date.now() } }) });
+    expect(first).not.toHaveBeenCalled();
+    const current = listenerState.routes.get("publicRouteBuses/A/buses")!.success!;
+    disposeFirst(); expect(listenerState.unsubscribe).toHaveBeenCalledTimes(4);
+    disposeSecond(); expect(listenerState.unsubscribe).toHaveBeenCalledTimes(8);
+    current({ val: () => ({ ghost: { timestamp: Date.now() } }) });
+    expect(second).not.toHaveBeenCalled();
+  });
+
 });
