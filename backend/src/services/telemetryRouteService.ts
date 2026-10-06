@@ -33,6 +33,7 @@ import { settleTogether } from "../lib/reconciliationPages";
 import { invalidateRouteGeometryRead } from "./routeGeometryReads";
 import { routeGeometrySignature } from "../lib/routeGeometrySignature";
 import { routeDocumentVersion, routeGeometryVersion } from "../lib/routeSaveContract";
+import { readRerouteRetry, rerouteBackoffMs, RerouteProviderCircuit } from "./rerouteRetry";
 import type { DeviceAssignment } from "./deviceTelemetryService";
 import type { TelemetryPayload } from "./telemetryPayload";
 import {
@@ -45,7 +46,7 @@ import {
 } from "./routeMatching";
 
 const ROUTE_CACHE_MS = 5 * 60_000;
-const REROUTE_RETRY_MS = 5_000;
+const rerouteProviderCircuit = new RerouteProviderCircuit();
 const MATCHED_POSITION_CONFIDENCE = 0.45;
 const MAX_ENCODED_POLYLINE_LENGTH = 500_000;
 
@@ -659,6 +660,7 @@ export function rerouteContextIsCurrent(
 ): boolean {
   return Boolean(
     live &&
+    live.status === "active" &&
     live.tripState === "in_service" &&
     live.routeState === "REROUTING" &&
     live.rerouteRequestId === expected.requestId &&
@@ -724,6 +726,8 @@ async function activateReroute(
       offRouteSampleCount: 0,
       rerouteRequestId: null,
       rerouteCompletedAt: { ".sv": "timestamp" },
+      rerouteRetry: null,
+      rerouteError: null,
       ...(telemetryIsCurrent(live, sample)
         ? {
             mapMatchUpdatedAt: { ".sv": "timestamp" },
@@ -752,96 +756,118 @@ async function requestReroute(
   route: StoredRoute,
   direction: "forward" | "reverse",
   expectedVersion: number,
+  expectedSessionId: string,
 ): Promise<void> {
-  const nodeKey = `${assignment.busId}_${assignment.routeId}`;
-  const requestId = `${sample.timestamp}-${sample.seq}-${randomBytes(6).toString("hex")}`;
-  const now = Date.now();
-  const started = await rtdb.ref(`activeBuses/${nodeKey}`).transaction((current) => {
-    // An empty local SDK cache must retry against the authoritative server value.
-    if (current === null) return null;
-    const live = current as Record<string, unknown> | null;
-    const lastAttemptAt = Number(live?.lastRerouteAttemptAt);
-    if (
-      !live || !telemetryRouteSnapshotIsCurrent(assignment.routeId, route.cacheGeneration) ||
-      live.routeState !== "OFF_ROUTE" ||
-      live.routeVersion !== expectedVersion ||
-      live.status !== "active" ||
-      live.tripState !== "in_service" ||
-      resolvedDirection(live.direction) !== direction ||
-      (Number.isFinite(lastAttemptAt) && now - lastAttemptAt < REROUTE_RETRY_MS)
-    ) {
-      return;
-    }
-    return {
-      ...live,
-      routeState: "REROUTING",
-      rerouteRequestId: requestId,
-      lastRerouteAttemptAt: now,
-      rerouteError: null,
-    };
-  });
-  if (!started.committed) return;
-
-  const live = started.snapshot.val() as Record<string, unknown>;
+  const finishProvider = rerouteProviderCircuit.acquire();
+  if (!finishProvider) return;
   try {
-    if (typeof live.sessionId !== "string") {
-      throw new Error("Active trip has no rerouting session.");
-    }
-    const remainingStops = remainingRerouteStops(
-      route.stops,
-      direction,
-      Number.isInteger(live.currentStopIndex) ? Number(live.currentStopIndex) : 0,
-    );
-    if (remainingStops.length === 0 || remainingStops.length > 100) {
-      throw new Error("Active trip has no valid rerouting itinerary.");
-    }
-    const destination = remainingStops[remainingStops.length - 1];
-    const intermediates = remainingStops.slice(0, -1);
-    if (!telemetryRouteSnapshotIsCurrent(assignment.routeId, route.cacheGeneration)) throw new Error("Route configuration changed before rerouting.");
-    const geometry = await computeRouteGeometry(
-      { lat: sample.lat, lng: sample.lng },
-      destination,
-      intermediates,
-      {
-        routingPreference: "TRAFFIC_AWARE",
-        timeoutMs: LIVE_REROUTE_TIMEOUT_MS,
-      },
-    );
-    if (!telemetryRouteSnapshotIsCurrent(assignment.routeId, route.cacheGeneration)) {
-      throw new Error("Route configuration changed while rerouting.");
-    }
-    await activateReroute(
-      nodeKey,
-      requestId,
-      expectedVersion,
-      live.sessionId,
-      direction,
-      assignment.routeId,
-      sample,
-      geometry,
-      route.cacheGeneration,
-    );
-  } catch (error) {
-    await rtdb.ref(`activeBuses/${nodeKey}`).transaction((current) => {
+    const nodeKey = `${assignment.busId}_${assignment.routeId}`;
+    const requestId = `${sample.timestamp}-${sample.seq}-${randomBytes(6).toString("hex")}`;
+    const now = Date.now();
+    const context = createHash("sha256").update(JSON.stringify([
+      expectedSessionId, direction, expectedVersion, route.configVersion, route.geometrySignature,
+    ])).digest("hex");
+    // Choose jitter once; RTDB may rerun the transaction callback.
+    const jitter = Math.random();
+    const started = await rtdb.ref(`activeBuses/${nodeKey}`).transaction((current) => {
       // An empty local SDK cache must retry against the authoritative server value.
       if (current === null) return null;
-      const currentLive = current as Record<string, unknown> | null;
-      if (!rerouteContextIsCurrent(currentLive, {
-        requestId,
-        routeVersion: expectedVersion,
-        sessionId: live.sessionId as string,
-        direction,
-      })) return;
+      const live = current as Record<string, unknown> | null;
+      const retry = readRerouteRetry(live?.rerouteRetry, context);
+      if (
+        !live || !telemetryRouteSnapshotIsCurrent(assignment.routeId, route.cacheGeneration) ||
+        live.routeState !== "OFF_ROUTE" ||
+        live.routeVersion !== expectedVersion ||
+        live.status !== "active" ||
+        live.tripState !== "in_service" ||
+        live.sessionId !== expectedSessionId ||
+        resolvedDirection(live.direction) !== direction ||
+        (retry !== null && now < retry.nextAttemptAt)
+      ) {
+        return;
+      }
       return {
-        ...currentLive,
-        routeState: "OFF_ROUTE",
-        rerouteRequestId: null,
-        rerouteError: "Route calculation failed; retrying with live telemetry.",
-        rerouteFailedAt: { ".sv": "timestamp" },
+        ...live,
+        routeState: "REROUTING",
+        rerouteRequestId: requestId,
+        lastRerouteAttemptAt: now,
+        rerouteError: null,
+        // Reserve the delay before billable work so a lost failure write or
+        // process restart cannot restore five-second provider retries.
+        rerouteRetry: {
+          context, failures: Math.min(32, (retry?.failures ?? 0) + 1),
+          nextAttemptAt: now + rerouteBackoffMs((retry?.failures ?? 0) + 1, jitter),
+        },
       };
     });
-    throw error;
-  }
+    if (!started.committed) return;
+
+    const live = started.snapshot.val() as Record<string, unknown>;
+    try {
+      if (typeof live.sessionId !== "string") {
+        throw new Error("Active trip has no rerouting session.");
+      }
+      const remainingStops = remainingRerouteStops(
+        route.stops,
+        direction,
+        Number.isInteger(live.currentStopIndex) ? Number(live.currentStopIndex) : 0,
+      );
+      if (remainingStops.length === 0 || remainingStops.length > 100) {
+        throw new Error("Active trip has no valid rerouting itinerary.");
+      }
+      const destination = remainingStops[remainingStops.length - 1];
+      const intermediates = remainingStops.slice(0, -1);
+      if (!telemetryRouteSnapshotIsCurrent(assignment.routeId, route.cacheGeneration)) throw new Error("Route configuration changed before rerouting.");
+      const geometry = await computeRouteGeometry(
+        { lat: sample.lat, lng: sample.lng },
+        destination,
+        intermediates,
+        {
+          routingPreference: "TRAFFIC_AWARE",
+          timeoutMs: LIVE_REROUTE_TIMEOUT_MS,
+        },
+      ).then(result => { finishProvider(true); return result; }, error => { finishProvider(false); throw error; });
+      if (!telemetryRouteSnapshotIsCurrent(assignment.routeId, route.cacheGeneration)) {
+        throw new Error("Route configuration changed while rerouting.");
+      }
+      await activateReroute(
+        nodeKey,
+        requestId,
+        expectedVersion,
+        live.sessionId,
+        direction,
+        assignment.routeId,
+        sample,
+        geometry,
+        route.cacheGeneration,
+      );
+    } catch (error) {
+      const failures = readRerouteRetry(live.rerouteRetry, context)?.failures ?? 1;
+      const nextAttemptAt = Date.now() + rerouteBackoffMs(failures, jitter);
+      await rtdb.ref(`activeBuses/${nodeKey}`).transaction((current) => {
+        // An empty local SDK cache must retry against the authoritative server value.
+        if (current === null) return null;
+        const currentLive = current as Record<string, unknown> | null;
+        if (!rerouteContextIsCurrent(currentLive, {
+          requestId,
+          routeVersion: expectedVersion,
+          sessionId: live.sessionId as string,
+          direction,
+        })) return;
+        return {
+          ...currentLive,
+          routeState: "OFF_ROUTE",
+          rerouteRequestId: null,
+          rerouteError: "Route calculation failed; retrying with live telemetry.",
+          rerouteFailedAt: { ".sv": "timestamp" },
+          rerouteRetry: {
+            context, failures, nextAttemptAt,
+          },
+        };
+      });
+      throw error;
+    }
+  } finally { finishProvider(); }
 }
 
 async function processTelemetryRoute(
@@ -979,8 +1005,8 @@ async function processTelemetryRoute(
       routeSessionId,
       routeGeometryVersion: route.geometryVersion,
       routeState: adherence.routeState,
-      ...(contextChanged
-        ? { rerouteRequestId: null, rerouteError: null }
+      ...(contextChanged || adherence.routeState === "ON_ROUTE" || adherence.routeState === "ON_NEW_ROUTE"
+        ? { rerouteRequestId: null, rerouteError: null, rerouteRetry: null }
         : {}),
       routeMatchHistory: trajectory,
       offRouteSampleCount: adherence.offRouteSampleCount,
@@ -1006,7 +1032,9 @@ async function processTelemetryRoute(
     committed?.status === "active" &&
     committed?.tripState === "in_service"
   ) {
-    rerouteScheduler.schedule(nodeKey, { assignment, sample: acceptedSample, route, direction, routeVersion });
+    if (typeof committed.sessionId === "string") {
+      rerouteScheduler.schedule(nodeKey, { assignment, sample: acceptedSample, route, direction, routeVersion, sessionId: committed.sessionId });
+    }
   }
 }
 
@@ -1060,15 +1088,15 @@ export function scheduleTelemetryRouteProcessing(
 
 /** Operational counters exposed through the authenticated health endpoint. */
 export function getRouteProcessingStatus() {
-  return { ...routeProcessingScheduler.snapshot(), rerouting: rerouteScheduler.snapshot() };
+  return { ...routeProcessingScheduler.snapshot(), rerouting: { ...rerouteScheduler.snapshot(), provider: rerouteProviderCircuit.snapshot() } };
 }
 
 // Slow upstream routing must not block matching newer telemetry samples.
 const rerouteScheduler = createLatestPendingScheduler<string, {
   assignment: DeviceAssignment; sample: TelemetryPayload; route: StoredRoute;
-  direction: RideDirection; routeVersion: number;
+  direction: RideDirection; routeVersion: number; sessionId: string;
 }>(async (_key, task) => {
-  await requestReroute(task.assignment, task.sample, task.route, task.direction, task.routeVersion);
+  await requestReroute(task.assignment, task.sample, task.route, task.direction, task.routeVersion, task.sessionId);
 }, (key, error) => recordBackgroundFailure("devices.rerouting", "Live rerouting", `[Routes] Rerouting failed for ${key}:`, error),
 () => performance.now(), { maxConcurrent: 2, maxPending: 64 });
 
