@@ -125,3 +125,5 @@ Passenger deletion now preserves resubmission history, uses bounded fair chunks 
 Live matching and pending directions share a watcher-populated, versioned read-only route catalog, with bounded LRU entries and coalesced monotonic freshness reads. Telemetry never repairs missing configured geometry through Google. See [route catalog](../docs/operations/ROUTE_CATALOG.md) for edit/deletion fences, uncertain direction commits and staging limits.
 
 Passenger geometry reads are cached and read-only; explicit versioned admin saves perform legacy repair through bounded computation. See [geometry read/repair contract](../docs/operations/ROUTE_GEOMETRY_READS.md) for fixed bounds, independent quotas and staging limits.
+
+Route matching limits warm projections by the existing physical progress window; missing continuity keeps full reacquisition. Stale presence scans use timestamp-indexed pages of 25 and four fenced writes at a time. Cold lifecycle recovery starts explicitly with the existing paginated queue admission. See [matching and lifecycle scan measurements](../docs/operations/MATCHING_AND_LIFECYCLE_SCANS.md) for evidence and the rules-before-backend rollout gate.

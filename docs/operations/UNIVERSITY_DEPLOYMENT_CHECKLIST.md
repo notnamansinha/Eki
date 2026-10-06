@@ -60,6 +60,10 @@ local professor demonstration.
   hosting headers, App Check) pass before any production dispatch.
 - [ ] Deploy and monitor the committed `firestore.indexes.json`; retention and
   privacy deletion depend on those indexes.
+- [ ] Deploy `activeBuses/.indexOn: timestamp` from `database.rules.json`
+  before activating indexed stale scans. Verify the deployed instance and run
+  the [matching/lifecycle scan acceptance](MATCHING_AND_LIFECYCLE_SCANS.md),
+  including timestamp ties, session reuse, leader restart and stale backlogs.
 - [ ] Ensure exactly one healthy worker lease owner processes lifecycle,
   stale-state, and retention jobs. The Firestore lease is safe at any replica
   count, so this is about observing the lease, not limiting replicas.
