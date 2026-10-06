@@ -354,13 +354,39 @@
           "Buses"
         ],
         "summary": "Read live bus snapshots",
-        "description": "Snapshot of current activeBuses RTDB nodes. Prefer the shared Firebase SDK listener for continuous browser updates.",
+        "description": "Snapshot of current activeBuses RTDB nodes. Prefer the shared Firebase SDK listener for continuous browser updates. Optional limit/after returns nextCursor. No-query response shape remains supported. Bus routeId filters indexed route ownership.",
         "security": [
           {
             "FirebaseBearer": []
           }
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 250
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            }
+          },
+          {
+            "name": "routeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response.",
@@ -373,7 +399,7 @@
             }
           },
           "400": {
-            "description": "Invalid identifiers, payload, query, or JSON.",
+            "description": "Invalid page query",
             "content": {
               "application/json": {
                 "schema": {
@@ -431,7 +457,7 @@
             }
           },
           "503": {
-            "description": "Dependency unavailable, busy authentication verifier, or missing safe server configuration.",
+            "description": "Read capacity/deadline exceeded; Retry-After: 1",
             "content": {
               "application/json": {
                 "schema": {
@@ -444,8 +470,8 @@
         "x-auth-class": "user",
         "x-body-limit-bytes": 16384,
         "x-rate-limit": "Pre-auth browser ingress: 1000 requests/normalized IP/minute. CORS/preflight runs first. Verified UID read budget: 200/minute; does not consume mutation tokens. Process budgets divided by RATE_LIMIT_SHARD_FACTOR; edge WAF/LB enforces the fleet cap.",
-        "x-cache-policy": "No explicit Cache-Control header from this handler. Authenticated clients must not use shared response caches. This does not imply private server-side caches are absent.",
-        "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
+        "x-cache-policy": "No-store HTTP responses; authenticated server-only bounded cache. Route catalogs 5s, live list 1s. Every request independently verifies credentials.",
+        "x-timeout-policy": "Read-response deadline 3000 ms; an underlying dispatched SDK call retains its bounded slot until settlement. HTTP request-body receipt timeout 15000 ms and header timeout 70000 ms.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
         "x-idempotency": "Safe snapshot/read; no mutation replay key."
       }
@@ -554,7 +580,7 @@
             }
           },
           "503": {
-            "description": "Dependency unavailable, busy authentication verifier, or missing safe server configuration.",
+            "description": "Read capacity/deadline exceeded",
             "content": {
               "application/json": {
                 "schema": {
@@ -567,8 +593,8 @@
         "x-auth-class": "user",
         "x-body-limit-bytes": 16384,
         "x-rate-limit": "Pre-auth browser ingress: 1000 requests/normalized IP/minute. CORS/preflight runs first. Verified UID read budget: 200/minute; does not consume mutation tokens. Process budgets divided by RATE_LIMIT_SHARD_FACTOR; edge WAF/LB enforces the fleet cap.",
-        "x-cache-policy": "No explicit Cache-Control header from this handler. Authenticated clients must not use shared response caches. This does not imply private server-side caches are absent.",
-        "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
+        "x-cache-policy": "No-store HTTP response; bounded single-flight indexed lookup limited to one record, no result TTL. Authenticated on every request.",
+        "x-timeout-policy": "Read-response deadline 3000 ms; an underlying dispatched SDK call retains its bounded slot until settlement. HTTP request-body receipt timeout 15000 ms and header timeout 70000 ms.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
         "x-idempotency": "Safe snapshot/read; no mutation replay key."
       }
@@ -1538,7 +1564,19 @@
             "FirebaseBearer": []
           }
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all"
+              ]
+            },
+            "description": "Absent: original 1000-record sample; all: consistent read-time count aggregations with no sample cap."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response.",
@@ -1551,7 +1589,7 @@
             }
           },
           "400": {
-            "description": "Invalid identifiers, payload, query, or JSON.",
+            "description": "Invalid analytics scope",
             "content": {
               "application/json": {
                 "schema": {
@@ -1619,7 +1657,7 @@
             }
           },
           "503": {
-            "description": "Dependency unavailable, busy authentication verifier, or missing safe server configuration.",
+            "description": "Read capacity/deadline exceeded; Retry-After: 1",
             "content": {
               "application/json": {
                 "schema": {
@@ -1632,8 +1670,8 @@
         "x-auth-class": "admin",
         "x-body-limit-bytes": 16384,
         "x-rate-limit": "Pre-auth browser ingress: 1000 requests/normalized IP/minute. CORS/preflight runs first. Verified UID read budget: 200/minute; does not consume mutation tokens. Process budgets divided by RATE_LIMIT_SHARD_FACTOR; edge WAF/LB enforces the fleet cap.",
-        "x-cache-policy": "No explicit Cache-Control header from this handler. Authenticated clients must not use shared response caches. This does not imply private server-side caches are absent.",
-        "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
+        "x-cache-policy": "Admin authentication on every request; no-store HTTP; successful server summaries cached 10s.",
+        "x-timeout-policy": "Read-response deadline 3000 ms; an underlying dispatched SDK call retains its bounded slot until settlement. HTTP request-body receipt timeout 15000 ms and header timeout 70000 ms.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
         "x-idempotency": "Safe snapshot/read; no mutation replay key."
       }
@@ -3551,13 +3589,31 @@
           "Planning"
         ],
         "summary": "Read bounded route metadata",
-        "description": "At most 250 route records with id/name/color/stops; geometry is omitted. No Google API call. Current handler queries Firestore per request.",
+        "description": "At most 250 route records with id/name/color/stops; geometry is omitted. No Google API call. Current handler queries Firestore per request. Optional limit/after returns nextCursor. No-query response shape remains supported. Bus routeId filters indexed route ownership.",
         "security": [
           {
             "FirebaseBearer": []
           }
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 250
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response.",
@@ -3570,7 +3626,7 @@
             }
           },
           "400": {
-            "description": "Invalid identifiers, payload, query, or JSON.",
+            "description": "Invalid page query",
             "content": {
               "application/json": {
                 "schema": {
@@ -3628,7 +3684,7 @@
             }
           },
           "503": {
-            "description": "Dependency unavailable, busy authentication verifier, or missing safe server configuration.",
+            "description": "Read capacity/deadline exceeded; Retry-After: 1",
             "content": {
               "application/json": {
                 "schema": {
@@ -3641,8 +3697,8 @@
         "x-auth-class": "user",
         "x-body-limit-bytes": 16384,
         "x-rate-limit": "Pre-auth browser ingress: 1000 requests/normalized IP/minute. CORS/preflight runs first. Verified UID read budget: 200/minute; does not consume mutation tokens. Process budgets divided by RATE_LIMIT_SHARD_FACTOR; edge WAF/LB enforces the fleet cap.",
-        "x-cache-policy": "Handler emits Cache-Control: no-store. Earlier middleware/parser rejections may occur before that header.",
-        "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
+        "x-cache-policy": "No-store HTTP responses; authenticated server-only bounded cache. Route catalogs 5s, live list 1s. Every request independently verifies credentials.",
+        "x-timeout-policy": "Read-response deadline 3000 ms; an underlying dispatched SDK call retains its bounded slot until settlement. HTTP request-body receipt timeout 15000 ms and header timeout 70000 ms.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
         "x-idempotency": "Safe snapshot/read; no mutation replay key.",
         "x-compatibility-alias-of": "GET /api/v2/routes"
@@ -3655,13 +3711,31 @@
           "Planning"
         ],
         "summary": "Read bounded route collection projection",
-        "description": "Same bounded Firestore projection as legacy routes-list: at most 250 records and no geometry. It queries Firestore per request.",
+        "description": "Same bounded Firestore projection as legacy routes-list: at most 250 records and no geometry. It queries Firestore per request. Optional limit/after returns nextCursor. No-query response shape remains supported. Bus routeId filters indexed route ownership.",
         "security": [
           {
             "FirebaseBearer": []
           }
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 250
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response.",
@@ -3674,7 +3748,7 @@
             }
           },
           "400": {
-            "description": "Invalid identifiers, payload, query, or JSON.",
+            "description": "Invalid page query",
             "content": {
               "application/json": {
                 "schema": {
@@ -3732,7 +3806,7 @@
             }
           },
           "503": {
-            "description": "Dependency unavailable, busy authentication verifier, or missing safe server configuration.",
+            "description": "Read capacity/deadline exceeded; Retry-After: 1",
             "content": {
               "application/json": {
                 "schema": {
@@ -3745,8 +3819,8 @@
         "x-auth-class": "user",
         "x-body-limit-bytes": 16384,
         "x-rate-limit": "Pre-auth browser ingress: 1000 requests/normalized IP/minute. CORS/preflight runs first. Verified UID read budget: 200/minute; does not consume mutation tokens. Process budgets divided by RATE_LIMIT_SHARD_FACTOR; edge WAF/LB enforces the fleet cap.",
-        "x-cache-policy": "Handler emits Cache-Control: no-store. Earlier middleware/parser rejections may occur before that header.",
-        "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
+        "x-cache-policy": "No-store HTTP responses; authenticated server-only bounded cache. Route catalogs 5s, live list 1s. Every request independently verifies credentials.",
+        "x-timeout-policy": "Read-response deadline 3000 ms; an underlying dispatched SDK call retains its bounded slot until settlement. HTTP request-body receipt timeout 15000 ms and header timeout 70000 ms.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
         "x-idempotency": "Safe snapshot/read; no mutation replay key."
       }
@@ -10659,6 +10733,13 @@
             "items": {
               "$ref": "#/components/schemas/LiveBus"
             }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
           }
         },
         "required": [
@@ -10701,6 +10782,13 @@
             },
             "minItems": 0,
             "maxItems": 250
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
           }
         },
         "required": [
@@ -11584,6 +11672,72 @@
           },
           "passengerCount": {
             "type": "null"
+          },
+          "completedTripsByDirection": {
+            "type": "object",
+            "properties": {
+              "forward": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "reverse": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "unresolved": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "sampleLimit": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "maximum": 1000
+              }
+            },
+            "required": [
+              "forward",
+              "reverse",
+              "unresolved",
+              "total",
+              "sampleLimit"
+            ],
+            "additionalProperties": false
+          },
+          "statistics": {
+            "type": "object",
+            "properties": {
+              "sampled": {
+                "type": "boolean"
+              },
+              "sampleLimit": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "maximum": 1000
+              },
+              "generatedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "sampled",
+              "sampleLimit"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

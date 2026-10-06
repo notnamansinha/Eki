@@ -4,6 +4,8 @@ import express from "express";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => ({
+  assignmentReads: 0,
+  driverBus: "bus_1",
   liveNode: {} as Record<string, unknown>,
   lock: null as Record<string, unknown> | null,
   docSets: [] as { id: string; data: Record<string, unknown> }[],
@@ -47,9 +49,11 @@ vi.mock("../lib/firebaseAdmin", () => {
     id: id ?? "new_session_1",
     get: async () => {
       if (collectionName === "drivers") {
-        return snapshot(true, { authUid: "driver_uid", assignedBusId: "bus_1" });
+        harness.assignmentReads++;
+        return snapshot(true, { authUid: "driver_uid", assignedBusId: harness.driverBus });
       }
       if (collectionName === "buses") {
+        harness.assignmentReads++;
         return snapshot(true, { assignedRoutes: ["route_1"] });
       }
       if (collectionName === "routes") {
@@ -187,7 +191,7 @@ vi.mock("../lib/firebaseAdmin", () => {
   };
 });
 
-import shiftsRouter from "./shifts";
+import shiftsRouter, { rideSessionsRouter } from "./shifts";
 
 let server: Server;
 let baseUrl = "";
@@ -196,6 +200,7 @@ beforeAll(async () => {
   const app = express();
   app.use(express.json());
   app.use("/api/shifts", shiftsRouter);
+  app.use("/api/v2/ride-sessions", rideSessionsRouter);
   server = await new Promise<Server>((resolve) => {
     const listener = app.listen(0, "127.0.0.1", () => resolve(listener));
   });
@@ -211,6 +216,7 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
+  harness.assignmentReads = 0; harness.driverBus = "bus_1";
   harness.docSets = [];
   harness.batchSets = [];
   harness.rtdbUpdates = [];
@@ -806,5 +812,33 @@ describe("new shifts resolve their own direction", () => {
     expect(response.status).toBe(201);
     const body = await response.json();
     expect(body.direction).toBe(expected);
+  });
+});
+
+
+describe("R20 request-local assignment reuse", () => {
+  const session = () => { harness.session = { status: "active", busId: "bus_1", routeId: "route_1", driverId: "driver_1", passengers: {} }; };
+  it("keeps both driver assignment reads fresh on every GET and denies immediate reassignment", async () => {
+    session();
+    expect((await contractFetch(`${baseUrl}/api/v2/ride-sessions/session_live`)).status).toBe(200);
+    expect(harness.assignmentReads).toBe(2);
+    harness.driverBus = "bus_2";
+    expect((await contractFetch(`${baseUrl}/api/v2/ride-sessions/session_live`)).status).toBe(403);
+    expect(harness.assignmentReads).toBe(4);
+  });
+  it.each(["admin", "member"])("avoids irrelevant driver authorization for an already allowed %s", async mode => {
+    session();
+    if (mode === "admin") harness.user.admin = true;
+    else harness.session!.passengers = { driver_uid: { userId: "driver_uid" } };
+    expect((await contractFetch(`${baseUrl}/api/v2/ride-sessions/session_live`)).status).toBe(200);
+    expect(harness.assignmentReads).toBe(0);
+  });
+  it("shares assignment checks only between the v2 PATCH stages of one request", async () => {
+    session(); harness.liveNode = { busId: "bus_1", routeId: "route_1", driverId: "driver_1", sessionId: "session_live", status: "active", tripState: "in_service" };
+    harness.activeRide = { sessionId: "session_live", status: "active" };
+    const patch = () => contractFetch(`${baseUrl}/api/v2/ride-sessions/session_live`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ delayMinutes: 2 }) });
+    expect((await patch()).status).toBe(200); expect(harness.assignmentReads).toBe(2);
+    harness.driverBus = "bus_2";
+    expect((await patch()).status).toBe(403); expect(harness.assignmentReads).toBe(4);
   });
 });

@@ -125,3 +125,5 @@ Passenger deletion now preserves resubmission history, uses bounded fair chunks 
 Live matching and pending directions share a watcher-populated, versioned read-only route catalog, with bounded LRU entries and coalesced monotonic freshness reads. Telemetry never repairs missing configured geometry through Google. See [route catalog](../docs/operations/ROUTE_CATALOG.md) for edit/deletion fences, uncertain direction commits and staging limits.
 
 Passenger geometry reads are cached and read-only; explicit versioned admin saves perform legacy repair through bounded computation. See [geometry read/repair contract](../docs/operations/ROUTE_GEOMETRY_READS.md) for fixed bounds, independent quotas and staging limits.
+
+Authenticated analytics/catalog/live HTTP reads now coalesce within fixed work and memory budgets. Optional full-count analytics uses idempotent native read-time aggregation; sampled responses and legacy adapters remain supported. See [API reads and retirement](../docs/operations/API_READS_AND_RETIREMENT.md) for paging, cache freshness, assignment revocation, measurements and caller evidence.
