@@ -145,6 +145,10 @@ was unavailable and shown as such. Screenshot capture failed with the browser
 tool's CDP timeout on both existing and fresh tabs; DOM/AX interaction evidence
 was retained. No affected-account or live GNSS acceptance is implied.
 
+Read-only review of newer [PR #285](https://github.com/notnamansinha/Eki/pull/285) at 94035ec found useful auth, freshness and no-op takeover repairs. It still lacks the schema/backfill handshake, durable member-only status fallback and same-generation erased-destination recovery verified here. Its green CI does not establish those missing oracles. PR #277 and PR #285 remain unchanged; the final successor credits the reused foundation.
+
+All **37 final loopback emulator cases** passed. One earlier existing crash-child fixture hit a cold Google metadata discovery deadline; the unchanged suite passed with process-only metadata detection disabled and the documented Java workaround. This changes no deployed runtime deadlines or policy.
+
 ## R14 supplemental acceptance oracles
 
 These are required regression oracles for the focused successor to PR #277.
