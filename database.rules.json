@@ -5,7 +5,7 @@
     "activeBuses": {
       ".read": false,
       ".write": false,
-      ".indexOn": ["routeId", "busId"],
+      ".indexOn": ["routeId", "busId", "timestamp"],
       "$busKey": {
         ".write": false
       }

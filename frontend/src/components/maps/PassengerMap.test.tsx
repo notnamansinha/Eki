@@ -4,17 +4,23 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import PassengerMap from "./PassengerMap";
+import { StopProjectionCache } from "@/lib/busEta";
 import { routeInRideDirection } from "@/lib/rideDirection";
 import { SIGNAL_LOST_MS } from "@/lib/liveBusFreshness";
 import { route, fixtureBus } from "../../../../e2e/fixtures/state";
 const state = vi.hoisted(() => ({
   geometries: new Map(), snapshot: {} as Record<string, unknown>, listener: undefined as undefined | ((value: Record<string, unknown>) => void),
   unsubscribe: vi.fn(), arrivals: vi.fn(), panTo: vi.fn(), setZoom: vi.fn(), fitBounds: vi.fn(),
+  markerRenders: new Map<string, number>(),
 }));
 const map = { panTo: state.panTo, setZoom: state.setZoom, fitBounds: state.fitBounds };
 vi.mock("@vis.gl/react-google-maps", () => ({
   Map: ({ children }: { children: ReactNode }) => <div aria-label="Map">{children}</div>,
-  AdvancedMarker: ({ children, position }: { children: ReactNode; position: unknown }) => <div data-marker={JSON.stringify(position)}>{children}</div>,
+  AdvancedMarker: ({ children, position }: { children: ReactNode; position: unknown }) => {
+    const key = JSON.stringify(position);
+    state.markerRenders.set(key, (state.markerRenders.get(key) ?? 0) + 1);
+    return <div data-marker={key}>{children}</div>;
+  },
   useMap: () => map,
 }));
 vi.mock("@/lib/liveBusStore", () => ({ subscribeLiveBusesByRoute: (_routeId: string, listener: typeof state.listener) => {
@@ -24,15 +30,40 @@ vi.mock("@/components/maps/DirectionsRoute", () => ({ default: () => <div>Config
 vi.mock("@/hooks/useDynamicRouteGeometries", () => ({ useDynamicRouteGeometries: () => state.geometries }));
 // Animation has its own real RAF suite; this test isolates map/session routing.
 vi.mock("@/hooks/useSmoothPosition", () => ({ useSmoothPosition: (position: unknown) => position }));
-vi.mock("@/lib/busEta", () => ({ busStopArrivalTimestamps: state.arrivals }));
+vi.mock("@/lib/busEta", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/busEta")>()),
+  busStopArrivalTimestamps: state.arrivals,
+}));
 beforeEach(() => {
   vi.clearAllMocks(); state.listener = undefined;
+  state.markerRenders.clear();
   state.snapshot = { bus: fixtureBus("forward") };
   state.arrivals.mockReturnValue({ b: Date.now() + 60_000 });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 const directed = { ...routeInRideDirection(route, "forward"), polyline: "_ekkC_omvLo}@o}@", polylineQuality: "HIGH_QUALITY" as const };
 describe("passenger map device and ride contexts", () => {
+  it("does not render an unchanged bus marker on another bus's tick", () => {
+    const first = fixtureBus("forward");
+    const second = { ...fixtureBus("forward", "qa-session-2", "qa-bus-2"), lat: 23.005, lng: 72.005 };
+    state.snapshot = { first, second };
+    render(<PassengerMap route={directed} targetStop={route.stops[1]} />);
+    const secondPosition = JSON.stringify({ lat: second.lat, lng: second.lng });
+    const before = state.markerRenders.get(secondPosition) ?? 0;
+    expect(before).toBeGreaterThan(0);
+    act(() => state.listener?.({ first: { ...first, lat: 23.001, seq: (first.seq ?? 0) + 1 }, second }));
+    expect(state.markerRenders.get(secondPosition)).toBe(before);
+    expect(state.markerRenders.get(JSON.stringify({ lat: 23.001, lng: first.lng }))).toBeGreaterThan(0);
+  });
+  it("clears route projection state on route switch and unmount", () => {
+    const clear = vi.spyOn(StopProjectionCache.prototype, "clear");
+    const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} />);
+    view.rerender(<PassengerMap route={{ ...directed, id: "other-route" }} targetStop={route.stops[1]} />);
+    expect(clear).toHaveBeenCalledTimes(1);
+    view.unmount();
+    expect(clear).toHaveBeenCalledTimes(2);
+    clear.mockRestore();
+  });
   it("does not use the first bus's progress in a multi-bus view", async () => {
     state.snapshot = {
       bus: { ...fixtureBus("forward"), currentStopIndex: 1 },

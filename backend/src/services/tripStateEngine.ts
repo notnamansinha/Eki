@@ -1,5 +1,6 @@
 import { assertWorkerLeadership, bindWorkerCallback, bindWorkerContext, workerTransaction, workerRtdbTransaction } from "../lib/workerFence";
 import { BoundedKeyedExecutor } from "../lib/boundedKeyedExecutor";
+import { createStaleBusSweeper } from "./staleBusSweeper";
 import { createPagedLifecycleReplay } from "./pagedLifecycleReplay";
 import { endpointSnapshotVersion } from "../lib/endpointSnapshotVersion";
 import { db, rtdb } from "../lib/firebaseAdmin";
@@ -62,9 +63,11 @@ let filteredLifecycleEvents = 0;
 let requestLifecycleReplay: (() => void) | null = null;
 let replayStatus: (() => { requested: boolean; inFlight: boolean; scanned: number; failures: number; pageSize: number }) | null = null;
 
+let staleSweepStatus: (() => ReturnType<ReturnType<typeof createStaleBusSweeper>["snapshot"]>) | null = null;
+
 export function getTripStateQueueStatus() {
   return { lifecycle: durableExecution.snapshot(), intake: telemetryWrites.snapshot(),
-    filteredLifecycleEvents,
+    staleSweep: staleSweepStatus?.() ?? null, filteredLifecycleEvents,
     recovery: replayStatus?.() ?? { requested: false, inFlight: false, scanned: 0, failures: 0, pageSize: 25 } };
 }
 const backgroundTasks = new Set<Promise<void>>();
@@ -747,6 +750,8 @@ export function startTripStateEngine(): () => Promise<void> {
   replayStatus = replay.snapshot;
   const replayTimer = setInterval(() => { void replay.tick(); }, 1_000);
   replayTimer.unref();
+  // Cold start must also discover missed removals in durable fleet state.
+  replay.request();
   let routeCacheUnsubscribe: (() => void) | null = null;
   let routeReconnectTimer: NodeJS.Timeout | null = null;
   let routeReconnectDelayMs = ROUTE_RECONNECT_INITIAL_MS;
@@ -1122,7 +1127,10 @@ export function startTripStateEngine(): () => Promise<void> {
     if (admitted) intakeFingerprints.set(nodeKey, fingerprint);
     void telemetryWrites.enqueue(nodeKey, null, async () => {
       try {
-        await processLiveSnapshot(snapshot);
+        // A replay page may wait behind newer live events. Resolve its authority
+        // only after reaching this node's serialized queue.
+        const current = replayed ? await rtdb.ref(`activeBuses/${nodeKey}`).once("value") : snapshot;
+        if (!replayed || current.exists()) await processLiveSnapshot(current);
       } catch (error) {
         intakeFingerprints.delete(nodeKey);
         console.error(`[TripState] Failed to process telemetry for ${nodeKey}:`, error);
@@ -1135,7 +1143,9 @@ export function startTripStateEngine(): () => Promise<void> {
     });
     return admitted;
   };
-  const liveSnapshotHandler = bindWorkerCallback((snapshot: DataSnapshot) => { enqueueLiveSnapshot(snapshot); });
+  const liveSnapshotHandler = bindWorkerCallback((snapshot: import("firebase-admin/database").DataSnapshot) => {
+    enqueueLiveSnapshot(snapshot);
+  });
 
   /** Persists the terminal offline state for a removed live-presence node. */
   const childRemovedHandler = bindWorkerCallback((snapshot: import("firebase-admin/database").DataSnapshot) => {
@@ -1171,53 +1181,18 @@ export function startTripStateEngine(): () => Promise<void> {
   // Hardware trackers cannot register an RTDB onDisconnect handler. Sweep only
   // nodes whose server timestamp has exceeded the client freshness horizon.
   let staleSweepInFlight: Promise<void> | null = null;
-  /** Marks stale active rides offline and removes stale terminal nodes. */
-  const runStaleSweep = async () => {
-    try {
-      const snapshot = await busesRef.once("value");
-      if (stopping) return;
-      const now = Date.now();
-      const removals: Promise<unknown>[] = [];
-      snapshot.forEach((child) => {
-        const data = child.val() as {
-          timestamp?: unknown;
-          status?: unknown;
-          tripState?: unknown;
-          deviceState?: unknown;
-        } | null;
-        if (typeof data?.timestamp === "number" && now - data.timestamp > STALE_BUS_MS) {
-          const rideIsActive =
-            data.status === "active" &&
-            (data.tripState === "pre_departure" ||
-              data.tripState === "in_service");
-          if (rideIsActive) {
-            if (data.deviceState !== "offline") {
-              removals.push(workerRtdbTransaction(child.ref, current => {
-                if (!current || current.timestamp !== data.timestamp) return;
-                return { ...current, deviceState: "offline", signalState: "lost",
-                  lifecycleUpdatedAt: { ".sv": "timestamp" } };
-              }));
-            }
-          } else {
-            removals.push(workerRtdbTransaction(child.ref, current => {
-              if (!current || current.timestamp !== data.timestamp) return;
-              return null;
-            }));
-          }
-        }
-      });
-      await Promise.all(removals);
-    } catch (error) {
-      console.error("[TripState] stale bus sweep failed:", error);
-    }
-  };
+  const staleSweeper = createStaleBusSweeper(busesRef, STALE_BUS_MS, error =>
+    recordBackgroundFailure("worker.staleSweep", "Stale presence scan", "[TripState] Stale bus page failed:", error));
+  const sweepStatus = staleSweeper.snapshot;
+  staleSweepStatus = sweepStatus;
+  const runStaleSweep = () => staleSweeper.tick();
   const staleSweepTimer = setInterval(() => {
     if (stopping || staleSweepInFlight) return;
     const sweep = runStaleSweep().finally(() => {
       if (staleSweepInFlight === sweep) staleSweepInFlight = null;
     });
     staleSweepInFlight = sweep;
-  }, STALE_BUS_MS);
+  }, 1_000);
   staleSweepTimer.unref();
 
   return bindWorkerContext(() => {
@@ -1239,6 +1214,8 @@ export function startTripStateEngine(): () => Promise<void> {
       busesRef.off("child_changed", liveSnapshotHandler);
       busesRef.off("child_removed", childRemovedHandler);
       clearInterval(staleSweepTimer);
+      staleSweeper.stop();
+      if (staleSweepStatus === sweepStatus) staleSweepStatus = null;
 
       const getPendingTasks = () => [
         ...telemetryWrites.pending(),

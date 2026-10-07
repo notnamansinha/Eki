@@ -47,6 +47,7 @@ describe("production security configuration", () => {
     expect(database.rules.activeBuses[".write"]).toBe(false);
     expect(activeBus[".write"]).toBe(false);
     expect(database.rules.activeBuses[".indexOn"]).toContain("busId");
+    expect(database.rules.activeBuses[".indexOn"]).toContain("timestamp");
     // Dead rule blocks are gone: nothing reads RTDB messages/users, and the
     // driverRouteAssignments mirror is Admin-SDK-only (default-deny for
     // clients is identical to the removed explicit denies) (issue #49 L2).

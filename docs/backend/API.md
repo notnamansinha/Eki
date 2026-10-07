@@ -398,7 +398,7 @@ Body includes validated route metadata/stops plus `mode`, a stable `saveId`, and
 
 ### `GET /api/routes/:routeId/save-operations/:saveId` — admin
 
-Reconciles a timed-out save. Returns its replayable saved result, 202 while the durable lease is processing, the recorded structured failure, or 404 when the original request never reached the backend.
+Reconciles a timed-out save. Returns its replayable saved result, 202 while the durable lease is processing, the recorded structured failure, or 404 when the original request never reached the backend. This legacy GET returns stored failures as non-2xx responses with their original structured code; clients must not treat those as a processing snapshot. A status-read failure uses 503 `ROUTE_RECONCILIATION_FAILED` and `Retry-After`; authentication-capacity admission can return 503 `AUTH_BUSY` with `Retry-After` before the handler runs. Both differ from a stored save failure. The browser retries temporary network/status-read/auth-capacity failures and read-quota 429 only inside its 35-second reconciliation deadline, retaining the same `saveId`; it stops on 401/403 and other terminal errors and reports an unknown outcome if that deadline expires.
 
 ### `DELETE /api/routes/:routeId` — admin
 
