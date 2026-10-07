@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const listenerState = vi.hoisted(() => ({
   generation: 0,
+  authGate: null as Promise<void> | null,
   success: null as null | ((snapshot: { val: () => unknown }) => void),
   failure: null as null | ((error: Error) => void),
   childChanged: null as null | ((snapshot: { key: string | null; val: () => unknown }) => void),
@@ -29,7 +30,7 @@ vi.mock("firebase/database", () => ({
   onChildRemoved: vi.fn(() => listenerState.unsubscribe),
 }));
 
-vi.mock("./authState", () => ({ waitForAuth: vi.fn(() => Promise.resolve()), getAuthVerificationGeneration: () => listenerState.generation }));
+vi.mock("./authState", () => ({ waitForAuth: vi.fn(() => listenerState.authGate ?? Promise.resolve()), getAuthVerificationGeneration: () => listenerState.generation, onAuthVerificationStarted: () => () => {} }));
 vi.mock("./firebaseDatabase", () => ({ rtdb: {} }));
 
 async function flushPromises() {
@@ -43,6 +44,7 @@ describe("live bus listener recovery", () => {
     vi.resetModules();
     vi.spyOn(Math, "random").mockReturnValue(1);
     listenerState.generation = 0;
+    listenerState.authGate = null;
     listenerState.success = null;
     listenerState.failure = null;
     listenerState.childChanged = null;
@@ -199,4 +201,15 @@ describe("live bus listener recovery", () => {
     expect(second).not.toHaveBeenCalled();
   });
 
+  it("does not replay another auth generation's route cache while verification is pending", async () => {
+    const { subscribeLiveBusesByRoute } = await import("./liveBusStore");
+    const dispose = subscribeLiveBusesByRoute("A", vi.fn()); await flushPromises();
+    listenerState.routes.get("publicRouteBuses/A/buses")!.success!({ val: () => ({ bus: { timestamp: Date.now() } }) });
+    listenerState.generation++;
+    let release!: () => void;
+    listenerState.authGate = new Promise<void>(resolve => { release = resolve; });
+    const next = vi.fn(); const disposeNext = subscribeLiveBusesByRoute("A", next);
+    expect(next.mock.calls.some(([snapshot]) => snapshot?.bus)).toBe(false);
+    release(); await flushPromises(); disposeNext(); dispose();
+  });
 });

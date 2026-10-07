@@ -1,5 +1,6 @@
+import { isDeepStrictEqual } from "node:util";
 import { rtdb } from "../lib/firebaseAdmin";
-import { assertWorkerLeadership, bindWorkerCallback, workerRtdbTransaction } from "../lib/workerFence";
+import { assertWorkerLeadership, bindWorkerCallback, workerRtdbTransaction, workerGeneration } from "../lib/workerFence";
 import { createLatestPendingScheduler } from "../lib/latestPendingScheduler";
 import { LruCache } from "../lib/lruCache";
 import { createPagedLifecycleReplay } from "./pagedLifecycleReplay";
@@ -31,6 +32,13 @@ export function publicLiveBus(value: unknown): Record<string, unknown> | null {
   if (typeof live.busId !== "string" || !SAFE_ID.test(live.busId) ||
       typeof live.routeId !== "string" || !SAFE_ID.test(live.routeId)) return null;
   const output: Record<string, unknown> = pick(live, PUBLIC_FIELDS);
+  // Durable return activation proves completion of this predecessor, even if
+  // the latest-position scheduler never published the intermediate terminal fix.
+  if (live.automaticTurnaround === true && typeof live.previousSessionId === "string" &&
+      SAFE_ID.test(live.previousSessionId) && live.previousSessionId !== live.sessionId) {
+    output.automaticTurnaround = true;
+    output.previousSessionId = live.previousSessionId;
+  }
   for (const [field, fields] of [["rawLocation", RAW_FIELDS], ["matchedLocation", MATCH_FIELDS]] as const) {
     const nested = live[field];
     if (nested && typeof nested === "object" && !Array.isArray(nested)) output[field] = pick(nested as Record<string, unknown>, fields);
@@ -40,15 +48,24 @@ export function publicLiveBus(value: unknown): Record<string, unknown> | null {
 
 export function routeAvailability(buses: Record<string, Record<string, unknown>>, now = Date.now()) {
   let active = 0; let available = 0; let freshestAt = 0;
+  const previewFreshness: Record<string, number> = {};
   for (const bus of Object.values(buses)) {
     if (bus.tripState === "completed") continue;
     const isRide = bus.status === "active" && typeof bus.sessionId === "string" &&
       (bus.tripState === "pre_departure" || bus.tripState === "in_service");
-    const at = typeof bus.backendReceivedAt === "number" ? bus.backendReceivedAt : Number(bus.timestamp);
+    const sample = typeof bus.timestamp === "number" ? bus.timestamp : NaN;
+    const received = bus.backendReceivedAt;
+    const at = typeof received === "number" && Number.isFinite(received) &&
+      received - sample >= -10_000 && received - sample <= 60_000 ? received : sample;
     if (isRide) active++;
-    else if (bus.deviceState === "online" && at <= now + 10_000 && now - at < 300_000) { available++; freshestAt = Math.max(freshestAt, Math.floor(at / 60_000) * 60_000); }
+    else if (bus.deviceState === "online" && Number.isFinite(at)) {
+      // Timestamp/count buckets let each client apply its configured expiry;
+      // a newer preview must not extend older previews' availability.
+      previewFreshness[String(at)] = (previewFreshness[String(at)] ?? 0) + 1;
+      if (at <= now + 10_000 && now - at < 300_000) { available++; freshestAt = Math.max(freshestAt, at); }
+    }
   }
-  return { active, available, freshestAt };
+  return { active, available, freshestAt, previewFreshness };
 }
 
 let projectionStatus = () => ({ scheduled: 0, processed: 0, coalesced: 0, failed: 0, rejected: 0 });
@@ -60,18 +77,24 @@ export function startLiveBusProjection(): () => Promise<void> {
   const fingerprints = new LruCache<string, string>(1000);
   const catalogFingerprints = new LruCache<string, string>(1000);
   const registeredRoutes = new LruCache<string, boolean>(1000);
-  const counters = { events: 0, skipped: 0, sourceReads: 0, transactionAttempts: 0, committed: 0, publicBytes: 0 };
+  const counters = { events: 0, skipped: 0, sourceReads: 0, transactionAttempts: 0, committed: 0, generationClaims: 0, publicBytes: 0 };
   let stopped = false;
+  let stopPromise: Promise<void> | null = null;
+  const generation = workerGeneration();
   const routeTails = new Map<string, Promise<void>>();
   const materialize = async (key: string, routeId: string) => {
+    if (stopped) return;
     assertWorkerLeadership();
     // Persist discoverability before the view: a crash cannot leave an orphan
     // projection outside the bounded startup/removal reconciliation scan.
     if (!registeredRoutes.get(routeId)) {
       await workerRtdbTransaction(rtdb.ref("liveRouteCatalog"), current => {
-        if (stopped || current?.values?.[routeId]) return;
+        if (stopped) return;
+        if (current?.values?.[routeId]) return Number(current._workerGeneration ?? 0) < Number(generation ?? 0) ? current : undefined;
         return { ...current, values: { ...current?.values, [routeId]: { active: 0, available: 0, freshestAt: 0 } } };
       });
+      if (stopped) return;
+      assertWorkerLeadership();
       registeredRoutes.set(routeId, true);
     }
     // Replay and queued notifications read current authority, never publish an old captured session.
@@ -80,16 +103,26 @@ export function startLiveBusProjection(): () => Promise<void> {
     if (stopped) return;
     const live = publicLiveBus(snapshot.val());
     const value = live?.routeId === routeId && key === `${live.busId}_${routeId}` ? live : null;
+    let publicChanged = false;
     const result = await workerRtdbTransaction(rtdb.ref(`publicRouteBuses/${routeId}`), current => {
       counters.transactionAttempts++;
+      publicChanged = false;
       if (stopped) return;
       const previous = current?.buses?.[key] ?? null;
-      if (JSON.stringify(previous) === JSON.stringify(value)) return;
+      if (isDeepStrictEqual(previous, value)) {
+        // A no-op takeover must still fence a delayed former leader at this destination.
+        return Number(current?._workerGeneration ?? 0) < Number(generation ?? 0) ? current : undefined;
+      }
+      publicChanged = true;
       const buses = { ...(current?.buses ?? {}) };
       if (value) buses[key] = value; else delete buses[key];
       return { ...current, buses, revision: Number(current?.revision ?? 0) + 1 };
     });
-    if (result.committed) { counters.committed++; counters.publicBytes += Buffer.byteLength(JSON.stringify(value)); }
+    if (stopped) return;
+    assertWorkerLeadership();
+    if (Number(result.snapshot.val()?._workerGeneration ?? 0) > Number(generation ?? Infinity)) return;
+    if (result.committed && publicChanged) { counters.committed++; counters.publicBytes += Buffer.byteLength(JSON.stringify(value)); }
+    else if (result.committed) counters.generationClaims++;
     // An abort can also mean a newer generation rejected the write; keep catalog reads canonical.
     const view = result.snapshot.val();
     const availability = routeAvailability(view?.buses ?? {});
@@ -109,6 +142,7 @@ export function startLiveBusProjection(): () => Promise<void> {
     routeTails.set(routeId, task);
     try { await task; } finally { if (routeTails.get(routeId) === task) routeTails.delete(routeId); }
   }, (key, error) => {
+    if (stopped) return;
     fingerprints.delete(key); replay.request();
     recordBackgroundFailure("worker.liveProjection", "Public live projection", "[LiveProjection] Materialization failed:", error);
   }, () => performance.now(), { maxConcurrent: 2, maxPending: 64, maxQueueAgeMs: 5000 });
@@ -150,6 +184,7 @@ export function startLiveBusProjection(): () => Promise<void> {
     onError: error => recordBackgroundFailure("worker.liveProjectionReplay", "Public view recovery", "[LiveProjection] Recovery failed:", error),
   });
   const receive = bindWorkerCallback((snapshot: import("firebase-admin/database").DataSnapshot) => {
+    if (stopped) return;
     counters.events++;
     const raw = snapshot.val(); const live = publicLiveBus(raw); const key = snapshot.key;
     if (!key || !live) { replay.request(); return; }
@@ -158,6 +193,7 @@ export function startLiveBusProjection(): () => Promise<void> {
     if (schedule(key, live.routeId as string)) fingerprints.set(key, fingerprint); else replay.request();
   });
   const removed = bindWorkerCallback((snapshot: import("firebase-admin/database").DataSnapshot) => {
+    if (stopped) return;
     const live = publicLiveBus(snapshot.val());
     if (snapshot.key && live) { fingerprints.delete(snapshot.key); if (!schedule(snapshot.key, live.routeId as string)) replay.request(); }
   });
@@ -167,9 +203,22 @@ export function startLiveBusProjection(): () => Promise<void> {
   replay.request();
   const timer = setInterval(() => { void replay.tick(); }, 1000); timer.unref();
   const recover = setInterval(() => replay.request(), 60_000); recover.unref();
-  return async () => {
+  return () => {
+    if (stopPromise) return stopPromise;
     stopped = true; clearInterval(timer); clearInterval(recover); replay.stop();
     source.off("child_added", receive); source.off("child_changed", receive); source.off("child_removed", removed);
-    await Promise.allSettled([scheduler.drain(), replay.pending()]);
+    stopPromise = (async () => {
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          Promise.allSettled([scheduler.drain(), replay.pending()]),
+          new Promise<void>(resolve => { deadline = setTimeout(() => {
+            recordBackgroundFailure("worker.liveProjectionDrain", "Public view shutdown", "[LiveProjection] Drain timed out:", new Error("Projection shutdown exceeded 3 seconds; stopped callbacks cannot publish."));
+            resolve();
+          }, 3000); deadline.unref(); }),
+        ]);
+      } finally { if (deadline) clearTimeout(deadline); }
+    })();
+    return stopPromise;
   };
 }

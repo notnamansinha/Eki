@@ -1,7 +1,7 @@
 "use client";
 
 import { onChildAdded, onChildChanged, onChildRemoved, onValue, ref } from "firebase/database";
-import { waitForAuth, getAuthVerificationGeneration } from "./authState";
+import { waitForAuth, getAuthVerificationGeneration, onAuthVerificationStarted } from "./authState";
 import { rtdb } from "./firebaseDatabase";
 import { millisecondsUntilNextPrune, pruneExpiredLiveBuses, type LiveBusSnapshot } from "./liveBusSnapshot";
 import type { LiveBusDeliverySource } from "./liveBusDelivery";
@@ -36,6 +36,8 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
   let cached: LiveBusSnapshot | null = null;
   let unsubscribes: (() => void)[] = [];
   let starting = false;
+  let cacheGeneration = getAuthVerificationGeneration();
+  let detachAuth: (() => void) | null = null;
   let epoch = 0;
   let expiryTimer: ReturnType<typeof setTimeout> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -133,6 +135,7 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
     if (unsubscribes.length === 0) return;
     detachListeners();
     cached = null;
+    cacheGeneration = getAuthVerificationGeneration();
     if (expiryTimer) clearTimeout(expiryTimer);
     expiryTimer = null;
     notifySnapshotSubscribers("invalidation");
@@ -142,8 +145,12 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
   }
 
   function invalidateLiveBusCache(): void {
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+    retryAttempt = 0;
     detachListeners();
     cached = null;
+    cacheGeneration = getAuthVerificationGeneration();
     if (expiryTimer) clearTimeout(expiryTimer);
     expiryTimer = null;
     notifySnapshotSubscribers("invalidation");
@@ -222,7 +229,9 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
           ? Object.assign({}, ...Object.values(raw as Record<string, { buses?: LiveBusSnapshot }>).map(route => route.buses ?? {}))
           : raw as LiveBusSnapshot | null;
         recordRealtimePayload("active_buses", value);
-        cached = value ? pruneExpiredLiveBuses(value) : null;
+        // Deliver terminal states once before expiry removes their map entries.
+        cached = value;
+        cacheGeneration = authGeneration;
         buffered.forEach((change) => {
           if (change.type === "upsert") {
             cached ??= {};
@@ -259,10 +268,18 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
     retryTimer = null;
     if (expiryTimer) clearTimeout(expiryTimer);
     expiryTimer = null;
+    detachAuth?.();
+    detachAuth = null;
     onIdle();
   }
 
+  function prepareSubscription(): void {
+    detachAuth ??= onAuthVerificationStarted(invalidateLiveBusCache);
+    if (cacheGeneration !== getAuthVerificationGeneration()) invalidateLiveBusCache();
+  }
+
   function subscribeLiveBuses(next: Subscriber["next"], error?: Subscriber["error"]): () => void {
+    prepareSubscription();
     const subscriber = { next, error };
     subscribers.add(subscriber);
     if (cached !== null) next(cached, "cache");
@@ -275,6 +292,7 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
     next: ChangeSubscriber["next"],
     error?: ChangeSubscriber["error"],
   ): () => void {
+    prepareSubscription();
     const subscriber = { next, error };
     changeSubscribers.add(subscriber);
     if (cached !== null) next({ type: "reset", snapshot: cached, source: "cache" });

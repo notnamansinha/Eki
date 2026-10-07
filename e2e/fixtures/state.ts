@@ -63,6 +63,6 @@ export function useLiveRouteCatalog() {
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const buses = Object.values(snapshot) as Record<string, unknown>[];
-  return { [route.id]: { active: buses.filter(bus => bus.sessionId && bus.tripState !== "completed").length,
-    available: buses.filter(bus => !bus.sessionId && bus.deviceState === "online" && now - Number(bus.timestamp) < BUS_EXPIRY_MS).length, freshestAt: Date.now() } };
+  return { catalog: { [route.id]: { active: buses.filter(bus => bus.sessionId && bus.tripState !== "completed").length,
+    available: buses.filter(bus => !bus.sessionId && bus.deviceState === "online" && now - Number(bus.timestamp) < BUS_EXPIRY_MS).length, freshestAt: Date.now() } }, error: null, retry: () => {} };
 }

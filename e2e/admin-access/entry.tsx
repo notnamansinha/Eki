@@ -1,12 +1,16 @@
 import { createRoot } from "react-dom/client";
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { AuthProvider } from "@/hooks/useAuth";
 import { useCollection } from "@/hooks/useCollection";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
 import { useActiveBuses } from "@/hooks/useActiveBuses";
 import RoleGuard from "@/components/shared/RoleGuard";
 import FeedbackPanel from "@/components/admin/FeedbackPanel";
-import { approveVerification, rejectVerification, reverifyAccount, switchAccount, signOut, tokenWaiting, subscribeTokenWaiting, socketStats, subscribeSocketStats } from "./firebase";
+import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
+import { subscribeLiveBusesByRoute } from "@/lib/liveBusStore";
+import { passengerTripStates } from "@/lib/passengerLiveBus";
+import { passengerBusAvailabilities } from "@/lib/passengerBusAvailability";
+import { approveVerification, publishPreview, publishAutomaticReturn, rejectVerification, reverifyAccount, switchAccount, signOut, tokenWaiting, subscribeTokenWaiting, socketStats, subscribeSocketStats } from "./firebase";
 import "../../frontend/src/app/globals.css";
 function Metadata() {
   const buses = useCollection<{ name: string }>("buses");
@@ -30,6 +34,20 @@ function Resume() {
     {buses.map(bus => <p key={bus.busId}>Live {bus.busId}</p>)}
   </main>;
 }
+function RouteProjection() {
+  const { catalog } = useLiveRouteCatalog();
+  const [snapshot, setSnapshot] = useState<Record<string, Record<string, unknown>> | null>(null);
+  useEffect(() => subscribeLiveBusesByRoute("qa-route", setSnapshot), []);
+  const states = passengerTripStates(snapshot);
+  return <main>
+    <h1>Route projection</h1>
+    <button onClick={publishPreview}>Publish preview</button>
+    <button onClick={publishAutomaticReturn}>Publish automatic return</button>
+    <output aria-label="Preview count">{passengerBusAvailabilities(snapshot).length}</output>
+    <output aria-label="Catalog preview count">{catalog["qa-route"]?.available ?? 0}</output>
+    <output aria-label="Joined session state">{states.get("joined") ?? "unknown"}</output>
+  </main>;
+}
 function Fixture() {
   const waiting = useSyncExternalStore(subscribeTokenWaiting, tokenWaiting);
   return <>
@@ -41,7 +59,7 @@ function Fixture() {
     <button onClick={() => void signOut()}>Synthetic sign out</button>
   </aside>
   <AuthProvider><RoleGuard allowedRoles={["admin"]}><div style={{ paddingTop: 65 }}>
-    {new URLSearchParams(location.search).has("resume") ? <Resume /> : new URLSearchParams(location.search).has("metadata") ? <Metadata /> : <FeedbackPanel embedded={new URLSearchParams(location.search).has("embedded")} />}
+    {new URLSearchParams(location.search).has("projection") ? <RouteProjection /> : new URLSearchParams(location.search).has("resume") ? <Resume /> : new URLSearchParams(location.search).has("metadata") ? <Metadata /> : <FeedbackPanel embedded={new URLSearchParams(location.search).has("embedded")} />}
   </div></RoleGuard></AuthProvider>
 </>;
 }

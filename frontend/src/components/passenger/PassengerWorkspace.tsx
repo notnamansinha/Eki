@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
-import { subscribeLiveBusChangesByRoute } from "@/lib/liveBusStore";
+import { subscribeLiveBusChangesByRoute, invalidateLiveBusCache } from "@/lib/liveBusStore";
 import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import { useSettings } from "@/hooks/useSettings";
@@ -77,7 +77,8 @@ export default function PassengerWorkspace() {
   const { settings } = useSettings();
   const [currentView, setCurrentView] = useState<ViewState>("home");
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
-  const routeCatalog = useLiveRouteCatalog();
+  const { catalog: routeCatalog, error: catalogError, retry: retryCatalog } = useLiveRouteCatalog();
+  const [liveErrors, setLiveErrors] = useState<Record<string, string>>({});
   const [selectedRouteId, setSelectedRouteId] = useState("");
   const [selectedDestinationStopId, setSelectedDestinationStopId] = useState("");
   const [selectedLiveBusKey, setSelectedLiveBusKey] = useState("");
@@ -110,10 +111,14 @@ export default function PassengerWorkspace() {
   // Ride actions require a server-owned lifecycle. Online assigned devices
   // also expose a read-only route/location preview.
   useEffect(() => {
+    let alive = true;
     const rawBuses = rawLiveBusesRef.current;
     // Keep an explicitly joined ride observable while browsing another route.
     const subscribedRoutes = [...new Set([effectiveRouteId, trackedRideRef.current?.routeId].filter((id): id is string => Boolean(id)))];
+    const readyRoutes = new Set<string>();
+    queueMicrotask(() => { if (alive) setLiveErrors({}); });
     const disposals = subscribedRoutes.map(routeId => subscribeLiveBusChangesByRoute(routeId, (change) => {
+        if (!alive) return;
         const trackedRideSessionId =
           trackedRideRef.current?.sessionId ?? pendingCompletionSessionIdRef.current;
         const previousTrackedState = trackedRideSessionId
@@ -169,14 +174,21 @@ export default function PassengerWorkspace() {
           Object.fromEntries(rawLiveBusesRef.current),
           Date.now(),
         ));
+        if (change.source === "invalidation") readyRoutes.delete(routeId);
         if (isAuthoritativeLiveBusDelivery(change.source)) {
-          markSnapshotReceived();
+          readyRoutes.add(routeId);
+          setLiveErrors(previous => { const next = { ...previous }; delete next[routeId]; return next; });
+          if (subscribedRoutes.every(id => readyRoutes.has(id))) markSnapshotReceived();
         }
       }, (error) => {
+        if (!alive) return;
+        readyRoutes.delete(routeId);
+        setLiveErrors(previous => ({ ...previous, [routeId]: "Live bus data is unavailable. Check your access or retry." }));
         console.warn("[RTDB] activeBuses read failed:", error.message);
       }));
 
     return () => {
+      alive = false;
       disposals.forEach(dispose => dispose());
       rawBuses.clear();
       activeLiveBusesRef.current.clear();
@@ -345,6 +357,12 @@ export default function PassengerWorkspace() {
       )}
       <div className="absolute inset-0 flex flex-col overflow-hidden">
 
+        {(catalogError || Object.keys(liveErrors).length > 0) && (
+          <div role="alert" className="absolute bottom-24 inset-x-4 z-50 rounded-xl bg-[var(--surface-2)] border border-[var(--border-default)] p-4">
+            <p>{catalogError || Object.values(liveErrors)[0]}</p>
+            <button type="button" onClick={() => { retryCatalog(); invalidateLiveBusCache(); }} className="mt-2 underline">Retry live data</button>
+          </div>
+        )}
         {/* Map layer — only present on tracking */}
         <div inert={visibleView !== "tracking"} aria-hidden={visibleView !== "tracking"} className={`absolute inset-0 z-0 transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
           {visibleView === "tracking" && mapRoute && targetStop && (
@@ -402,7 +420,7 @@ export default function PassengerWorkspace() {
                     selectedRouteId={effectiveRouteId}
                      onClick={handleRouteSelect}
                      getActiveBusesCount={(routeId) => routeCatalog[routeId]?.active ?? 0}
-                     getAvailableBusesCount={(routeId) => availableBuses.filter(b => b.routeId === routeId).length}
+                     getAvailableBusesCount={(routeId) => routeCatalog[routeId]?.available ?? 0}
                      getDirectionState={(routeId) => {
                        const bus = activeBuses.find((entry) => entry.routeId === routeId);
                        return bus?.directionState === "pending" ? "pending" : normalizeRideDirection(bus?.direction);

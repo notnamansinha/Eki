@@ -1,6 +1,6 @@
 # R14 live projection: evidence and rollout
 
-Date: 6 October 2026. Base: testing b358dd2. Software evidence only; moving and cloud rollout acceptance remain in #245/#246.
+Date: 7 October 2026. Base: testing 41ffbc7. Focused successor to PR #277 (78fe091), including its compact-view foundation. Software evidence only; moving and cloud rollout acceptance remain in #245/#246.
 
 ## Decision and measured scope
 
@@ -21,22 +21,35 @@ A separate bounded payload fixture uses 100 buses across 10 routes, raw/matched 
 |---|---:|
 | Raw fleet, 100 buses | 86,571 |
 | Public selected route, 10 buses | 4,268 |
-| Counts-only route catalog | 521 |
+| Counts/freshness route catalog | 741 |
 
-Route plus catalog is 4,789 bytes (94.5% smaller in this fixture). These are serialized application values, excluding protocol frames, geometry/configuration, listener initialization overlap and billing overhead. They are not production usage or end-to-end latency measurements. Passengers intentionally tracking a joined ride on another route subscribe to that second route too.
+Route plus catalog is 5,009 bytes (94.2% smaller in this fixture). These are serialized application values, excluding protocol frames, geometry/configuration, listener initialization overlap and billing overhead. They are not production usage or end-to-end latency measurements. Passengers intentionally tracking a joined ride on another route subscribe to that second route too.
 
-Run `npm run test:rules` with Java 21 and loopback Firebase emulators. The measurement prints `R14_TRANSACTION_MEASUREMENT` and `R14_PAYLOAD_MEASUREMENT`. Never redirect these fault/load fixtures at a cloud project. The local focused rules/measurement run passed 10 cases. Unit tests additionally cover projection whitelist, metadata filtering before admission, completion-write retry, current-source rereads, missed deletions, bounded replay and worker takeover.
+Run `npm run test:rules` with Java 21 and loopback Firebase emulators. The measurement prints `R14_TRANSACTION_MEASUREMENT` and `R14_PAYLOAD_MEASUREMENT`. Never redirect these fault/load fixtures at a cloud project. The complete actual-emulator suite passed 31 cases, including real public-view no-op takeover, rejected former-leader transactions, automatic-return completion preservation, source deletion and held-read shutdown. Local Windows execution used Java 21, `METADATA_SERVER_DETECTION=none`, and serial test files to avoid external metadata discovery and emulator resource contention. The standard CI runner remains unchanged. Unit tests additionally cover projection whitelist, metadata filtering before admission, completion-write retry, current-source rereads, missed deletions, bounded replay and worker takeover.
 
 ## Ordering, ownership and recovery
 
 - Durable lifecycle input remains FIFO per bus. Only fields unused by lifecycle are excluded from the admission fingerprint; same-fix session, direction, completion, presence and turnaround changes remain eligible. Errors clear admission fingerprints, and replay bypasses deduplication.
 - The elected worker owns public views. Positions use bounded latest-pending scheduling (2 active, 64 pending, 5-second queue age); publications also serialize per route. Dispatch reads current source authority rather than an old queued/replayed session. Rejected/failed publications request bounded reconciliation.
+- No-op public-view and catalog takeovers explicitly claim the elected generation without advancing the public revision. Structural equality ignores field order. `generationClaims` counts those metadata-only view commits separately from `committed`/`publicBytes`.
 - Public route parent transactions retain private worker generation and revision outside the readable `buses` subtree. Catalog transactions reject older route revisions. Registration precedes publication, making crash-created views discoverable during recovery.
 - Startup/periodic reconciliation uses source/view pages of 25 and one catalog route at a time; it repairs absent publications and missed removals. Terminal and removed source records do not become active catalog rides. Sessionless previews expire; active rides remain discoverable during signal loss.
 - Passenger listeners read `publicRouteBuses/{routeId}/buses`; only trusted admins read the public fleet root. `liveRouteCatalog/values` carries counts/freshness, never locations. Raw authority and private projection metadata have no client read access. Existing HTTP bus snapshots apply the same explicit whitelist.
-- Frontend route stores share listeners, release idle scopes, and reject callbacks after detach or an auth-verification generation change. Reconnect/retry and joined-ride observation survive route switching.
+- Frontend route stores share listeners, release idle scopes, and synchronously invalidate caches/detach when auth verification starts. New subscribers cannot replay a previous generation's data while verification is pending. Detached/old callbacks are fenced, and manual retry cancels a pending backoff before reopening listeners.
+- Snapshot pruning uses the same accepted server-receipt window as marker/preview normalization. Initial terminal snapshots reach joined-ride observers before local expiry removes map entries. Automatic-return `previousSessionId` is explicitly whitelisted with `automaticTurnaround: true`, preserving the immediate predecessor's completion even when queued positions reread the return. This is not a full terminal-session history.
+- Catalog `previewFreshness` contains timestamp/count buckets. Frontend expiry uses `BUS_EXPIRY_MS` with exact scheduled deadlines, including differently aged previews and future-skew checks. Bucket size grows with distinct online preview receipts; the catalog still carries no locations, bus identities or passenger manifests.
+- Readiness waits for authoritative listener deliveries from **all** selected/joined route scopes; cache, expiry and invalidation cannot clear recovery. An initialized shared listener's child event can establish readiness after reconnect. Route-detail/catalog denials render a visible retry notice, rather than looking like an empty fleet.
+- Stop is idempotent, detaches admission/replay immediately, and bounds drain to three seconds with a recorded diagnostic. Already-dispatched SDK work may settle later; stopped callbacks and transaction retries cannot begin further projection/catalog publications. A write committed before stop cannot be recalled.
 
 The materializer adds one source read per dispatched bus publication, a route-parent transaction and occasional catalog updates. Replay adds bounded reads. This is an explicit privacy/egress versus backend work tradeoff. Within-route serialization avoids competing public writers on the same elected worker; it does not establish capacity for an arbitrarily large route.
+
+## Successor regression evidence
+
+Five independent regression cases were run against PR #277's original production modules and failed: synchronous auth/cache revocation, receipt-based snapshot expiry, frontend automatic-return completion, backend completion preservation and unchanged-generation takeover. All pass after the repairs. Component tests additionally exercise selected plus joined route readiness, denied detail reads with retry, detached callbacks and feedback for the joined predecessor. Catalog hook tests cover exact configured expiry, mixed preview ages and same-generation access recovery. Worker unit tests hold source reads, transaction callbacks and replay pages across stop/leadership revocation.
+
+Browser verification runs the actual auth gate, route store, catalog hook and completion/availability helpers with synthetic SDK transport in mobile and desktop Edge. It verifies route plus catalog paths (no fleet/authority reads), delayed sample receipt freshness, silent expiry, automatic-return completion and reverification. Existing admin access, feedback and reconnect scenarios remain covered. It does not certify a physical moving bus or cloud egress.
+
+Final local verification: **799 backend unit cases, 489 frontend cases, 74 script cases, all 31 actual Firebase emulator cases and 20 mobile/desktop browser cases passed**. Lint, TypeScript, the 70-operation OpenAPI and UI/source contracts, strict production build/static export/service-worker/CSP contract, and production dependency audit (zero vulnerabilities) passed. Build placeholders were isolated to the verification process; generated CI CSP values are not committed as production configuration.
 
 ## Protected rollout and moving measurement
 
