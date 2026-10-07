@@ -25,7 +25,7 @@ previous terminal records were deleted. Numeric timestamps from zero through
 the cutoff are queried; timestamps exactly at the freshness horizon are not
 mutated. Missing/non-numeric timestamps retain the prior skip behavior. Completed
 cycles pause for `BUS_STALE_MS`; failed pages retain their cursor with bounded
-1?30 second backoff. Large backlogs take multiple ticks, deliberately trading
+1–30 second backoff. Large backlogs take multiple ticks, deliberately trading
 cleanup latency for bounded work.
 
 Transactions recheck timestamp, sequence, server-received time, bus/route/driver,
