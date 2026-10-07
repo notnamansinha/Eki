@@ -354,7 +354,7 @@
           "Buses"
         ],
         "summary": "Read live bus snapshots",
-        "description": "Snapshot of current activeBuses RTDB nodes. Prefer the shared Firebase SDK listener for continuous browser updates. Optional limit/after returns nextCursor. No-query response shape remains supported. Bus routeId filters indexed route ownership.",
+        "description": "Snapshot of current bus authority using the explicit public live-bus whitelist. Prefer the shared Firebase SDK listener for continuous browser updates. Optional limit/after returns nextCursor. No-query response shape remains supported. Bus routeId filters indexed route ownership.",
         "security": [
           {
             "FirebaseBearer": []

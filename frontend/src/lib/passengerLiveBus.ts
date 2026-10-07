@@ -111,6 +111,10 @@ export function passengerTripStates(
   for (const value of Object.values(snapshot)) {
     if (typeof value !== "object" || value === null) continue;
     const bus = value as Record<string, unknown>;
+    if (bus.automaticTurnaround === true && typeof bus.previousSessionId === "string" &&
+        /^[A-Za-z0-9_-]{1,128}$/.test(bus.previousSessionId) && bus.previousSessionId !== bus.sessionId) {
+      states.set(bus.previousSessionId, "completed");
+    }
     if (typeof bus.sessionId !== "string" || bus.sessionId.length === 0) continue;
     if (
       bus.tripState !== "pre_departure" &&
@@ -127,6 +131,28 @@ export function passengerTripStates(
 export type PassengerMapBus = Omit<PassengerLiveBus, "tripState"> & {
   tripState?: PassengerLiveBus["tripState"];
 };
+
+function sameField(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object" ||
+      Array.isArray(left) || Array.isArray(right)) return false;
+  const a = left as Record<string, unknown>;
+  const b = right as Record<string, unknown>;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length &&
+    keys.every((key) => Object.hasOwn(b, key) && Object.is(a[key], b[key]));
+}
+
+/** Preserve identity for unchanged normalized RTDB entries, including fresh reset snapshots. */
+export function reusePassengerMapBus(previous: PassengerMapBus | undefined, next: PassengerMapBus): PassengerMapBus {
+  if (!previous) return next;
+  const a = previous as unknown as Record<string, unknown>;
+  const b = next as unknown as Record<string, unknown>;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length &&
+    keys.every((key) => Object.hasOwn(b, key) && sameField(a[key], b[key]))
+    ? previous : next;
+}
 
 /** Viewing an online device does not create or authorize a passenger ride. */
 export function normalizePassengerMapBus(

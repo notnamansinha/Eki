@@ -1,4 +1,4 @@
-import { BUS_EXPIRY_MS, isLiveBusTimestamp } from "./liveBusFreshness";
+import { BUS_EXPIRY_MS, isLiveBusTimestamp, liveBusFreshnessTimestamp } from "./liveBusFreshness";
 
 export type LiveBusSnapshot = Record<string, Record<string, unknown>>;
 
@@ -24,7 +24,7 @@ export function pruneExpiredLiveBuses(
       return false;
     }
     const fresh = isLiveBusTimestamp(
-      typeof bus.timestamp === "number" ? bus.timestamp : undefined,
+      liveBusFreshnessTimestamp(bus),
       now,
     );
     const retain = fresh || isActiveRideSnapshot(bus);
@@ -42,7 +42,7 @@ export function millisecondsUntilNextPrune(
   for (const bus of Object.values(snapshot)) {
     if (bus.tripState === "completed") return 0;
     if (isActiveRideSnapshot(bus)) continue;
-    const timestamp = bus.timestamp;
+    const timestamp = liveBusFreshnessTimestamp(bus);
     if (
       typeof timestamp !== "number" ||
       !Number.isFinite(timestamp) ||

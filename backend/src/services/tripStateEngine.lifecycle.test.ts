@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => {
   const transactionCreate = vi.fn();
   const transactionGet = vi.fn(async () => ({ exists: false, data: () => undefined }));
   const reduceTripState = vi.fn();
+  const replayNodes = new Map<string, any>();
   const replayRead = vi.fn(async () => ({ forEach: vi.fn() }));
   const replayQuery: any = { once: replayRead };
   replayQuery.startAfter = vi.fn(() => replayQuery);
@@ -26,7 +27,11 @@ const mocks = vi.hoisted(() => {
   fleetQuery.startAfter = vi.fn(() => fleetQuery);
   fleetQuery.limit = vi.fn(() => fleetQuery);
 
+  const sweepRead = vi.fn(async () => ({ forEach: vi.fn() }));
+  const sweepQuery: any = { once: sweepRead };
+  for (const method of ["startAt", "startAfter", "endAt", "limitToFirst"]) sweepQuery[method] = vi.fn(() => sweepQuery);
   const busesRef = {
+    orderByChild: vi.fn(() => sweepQuery),
     orderByKey: vi.fn(() => replayQuery),
     on: vi.fn((event: string, handler: (snapshot: any) => void) => {
       rtdbHandlers.set(event, handler);
@@ -73,9 +78,12 @@ const mocks = vi.hoisted(() => {
     batchDelete,
     batchSet,
     busesRef,
+    sweepRead,
+    sweepQuery,
     db,
     documentSet,
     reduceTripState,
+    replayNodes,
     replayRead,
     replayQuery,
     fleetRead,
@@ -91,7 +99,12 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("../lib/firebaseAdmin", () => ({
   db: mocks.db,
-  rtdb: { ref: vi.fn(() => mocks.busesRef) },
+  rtdb: { ref: vi.fn((path: string) => {
+    const key = path?.startsWith("activeBuses/") ? path.slice("activeBuses/".length) : null;
+    return key && mocks.replayNodes.has(key)
+      ? { once: async () => mocks.replayNodes.get(key) }
+      : mocks.busesRef;
+  }) },
 }));
 
 vi.mock("./tripStateReducer", () => ({
@@ -129,6 +142,7 @@ describe("trip-state engine lifecycle", () => {
     mocks.transactionDelete.mockReset();
     mocks.routeListeners.length = 0;
     mocks.rtdbHandlers.clear();
+    mocks.replayNodes.clear();
     mocks.routeDocumentGet.mockResolvedValue({ exists: false, data: () => undefined });
     mocks.transactionGet.mockResolvedValue({ exists: false, data: () => undefined });
     mocks.reduceTripState.mockReturnValue({
@@ -138,6 +152,7 @@ describe("trip-state engine lifecycle", () => {
     });
     mocks.replayRead.mockResolvedValue({ forEach: vi.fn() });
     mocks.fleetRead.mockResolvedValue({ docs: [], size: 0 });
+    mocks.sweepRead.mockResolvedValue({ forEach: vi.fn() });
     mocks.busesRef.once.mockResolvedValue({ forEach: vi.fn() });
   });
 
@@ -145,13 +160,64 @@ describe("trip-state engine lifecycle", () => {
     vi.useRealTimers();
   });
 
+  it("starts bounded cold replay without needing a rejected event", async () => {
+    const child = (i: number) => {
+      const snapshot = { key: `cold_${i}`, exists: () => true, val: () => ({ busId: `cold_${i}`, routeId: "cold_route", status: "active" }) };
+      mocks.replayNodes.set(snapshot.key, snapshot);
+      return snapshot;
+    };
+    mocks.replayRead.mockResolvedValueOnce({ forEach: vi.fn(fn => { for (let i=0;i<25;i++) fn(child(i)); }) });
+    mocks.replayRead.mockResolvedValueOnce({ forEach: vi.fn(fn => fn(child(25))) });
+    const stop = startTripStateEngine();
+    const before = getTripStateQueueStatus().recovery.scanned;
+    expect(mocks.replayRead).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000); await flushMicrotasks(80);
+    expect(mocks.replayRead).toHaveBeenCalledTimes(1);
+    expect(getTripStateQueueStatus().recovery.scanned - before).toBe(25);
+    await vi.advanceTimersByTimeAsync(1000); await flushMicrotasks(80);
+    expect(mocks.replayQuery.startAfter).toHaveBeenCalledWith("cold_24");
+    expect(getTripStateQueueStatus().recovery.scanned - before).toBe(26);
+    expect(mocks.replayQuery.limitToFirst).toHaveBeenCalledWith(25);
+    await stop();
+  });
+
+  it.each(["new-session", "new-lifecycle", "deleted"])("re-reads queued cold replay authority: %s", async mode => {
+    const old = { busId: "replay_bus", routeId: "replay_route", sessionId: "old", driverId: "driver",
+      lat: 23, lng: 72, direction: null, status: "active", tripState: "in_service", motionState: "moving" };
+    const current = { ...old, sessionId: mode === "new-session" ? "new" : "old", motionState: "stationary" };
+    const key = "replay_bus_replay_route";
+    mocks.replayRead.mockResolvedValueOnce({ forEach: vi.fn(fn => fn({ key, val: () => old })) });
+    mocks.replayNodes.set(key, { key, exists: () => mode !== "deleted", val: () => current });
+    mocks.transactionGet.mockResolvedValue({ exists: true, data: () => ({ sessionId: current.sessionId }) });
+    const stop = startTripStateEngine();
+    await vi.advanceTimersByTimeAsync(1000); await flushMicrotasks(80);
+    const writes = mocks.transactionSet.mock.calls.filter(([ref]) => ref.collectionName === "bus_locations");
+    if (mode === "deleted") expect(writes).toHaveLength(0);
+    else { expect(writes).toHaveLength(1); expect(writes[0][1]).toMatchObject({ sessionId: current.sessionId, motionState: "stationary" }); }
+    await stop();
+    });
+
+  it("filters matcher-only changes before they occupy lifecycle queue capacity", async () => {
+    let release!: (value: any) => void;
+    mocks.routeDocumentGet.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const stop = startTripStateEngine();
+    const before = getTripStateQueueStatus().filteredLifecycleEvents;
+    const input = { busId: "r14_bus", routeId: "r14_route", status: "active", sessionId: "s1", timestamp: 1 };
+    const emit = (value: unknown) => mocks.rtdbHandlers.get("child_changed")!({ key: "r14_bus_r14_route", val: () => value });
+    emit(input); await flushMicrotasks();
+    for (let i = 0; i < 10; i++) emit({ ...input, mapMatchSeq: i, routeMatchHistory: [i], _workerGeneration: i });
+    expect(getTripStateQueueStatus().intake).toMatchObject({ active: 1, pending: 0 });
+    expect(getTripStateQueueStatus().filteredLifecycleEvents - before).toBe(10);
+    release({ exists: false, data: () => undefined }); await flushMicrotasks(); await stop();
+  });
+
   it("bounds live intake during a route-read stall and recovers rejected current state from RTDB", async () => {
     let release!: (value: any) => void;
     mocks.routeDocumentGet.mockReturnValue(new Promise(done => { release = done; }));
-    const sample = (i: number) => ({ key: `bounded_${i}_route`, val: () => ({
+    const sample = (i: number) => { const snapshot = { key: `bounded_${i}_route`, exists: () => true, val: () => ({
       busId: `bounded_${i}`, routeId: `route_bound_${i}`, sessionId: `session_bound_${i}`,
       driverId: "driver", direction: null, lat: 23, lng: 72, status: "active", tripState: "pre_departure",
-    }) });
+    }) }; mocks.replayNodes.set(snapshot.key, snapshot); return snapshot; };
     mocks.transactionGet.mockImplementation(async (ref: any) => ({ exists: true, data: () => ({
       sessionId: `session_bound_${String(ref.id).replace("bounded_", "")}`,
     }) }));

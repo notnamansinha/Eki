@@ -177,8 +177,7 @@ The application expects these separately managed resources:
 - Firebase Authentication for identity and custom role claims.
 - Firestore for configuration, durable ride state, locks, sessions, messages,
   feedback, requests, and internal worker/privacy state.
-- RTDB for the current `activeBuses` projection and limited server-managed
-  assignment mirrors.
+- RTDB for backend-only `activeBuses` authority, compact `publicRouteBuses` client views, `liveRouteCatalog` availability and server-managed assignment mirrors.
 - Firebase Hosting for the static Next.js export and security headers.
 - A managed HTTPS runtime for the Express backend, with monitoring, backups,
   WAF/global rate limits, and a single effective worker lease owner.

@@ -2,6 +2,7 @@ import { apiReadFailure, createApiReadCache } from "../services/apiReadCache";
 import { Router } from "express";
 import { rtdb } from "../lib/firebaseAdmin";
 import { singleRouteParam } from "../lib/requestParams";
+import { publicLiveBus } from "../services/liveBusProjection";
 import { requireAuth } from "../middleware/requireAuth";
 
 const router = Router();
@@ -33,10 +34,10 @@ router.get("/", requireAuth, async (req, res) => {
         query = query.limitToFirst(pageSize + 1);
       }
       const snapshot = await query.once("value");
-      if (!paged) return { buses: Object.values(snapshot.val() || {}) };
+      if (!paged) return { buses: Object.values(snapshot.val() || {}).map(publicLiveBus).filter(Boolean) };
       const rows: import("firebase-admin/database").DataSnapshot[] = [];
       snapshot.forEach(child => { rows.push(child); });
-      return { buses: rows.slice(0, pageSize).map(child => child.val()), nextCursor: rows.length > pageSize ? rows[pageSize - 1].key : null };
+      return { buses: rows.slice(0, pageSize).map(child => publicLiveBus(child.val())).filter(Boolean), nextCursor: rows.length > pageSize ? rows[pageSize - 1].key : null };
     });
     res.json(result);
   } catch (error) { apiReadFailure(res, error, "Failed to fetch active buses"); }
@@ -53,7 +54,7 @@ router.get("/:busId", requireAuth, async (req, res) => {
   try {
     const data = await busReads.read(busId, async () => {
       const snapshot = await rtdb.ref("activeBuses").orderByChild("busId").equalTo(busId).limitToFirst(1).once("value");
-      return Object.values(snapshot.val() || {})[0] ?? null;
+      return publicLiveBus(Object.values(snapshot.val() || {})[0]) ?? null;
     });
     if (!data) { res.status(404).json({ error: "Bus not found or inactive" }); return; }
     res.json(data);

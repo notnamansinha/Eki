@@ -1,6 +1,6 @@
 # Operation resources (#194)
 
-Last updated: 2026-10-05 15:56 IST (UTC+05:30).
+Last updated: 2026-10-06 IST (UTC+05:30).
 
 Current implemented contract on `testing`. The original design baseline was `9a7f109`; deployed availability must still be checked per environment.
 
@@ -56,6 +56,19 @@ retry hint. The v2 status resource exposes normalized operation state and
 the stored outcome. Existing route-save lease recovery is retained, so retries
 after an ambiguous expired lease can recompute geometry; this contract does
 not claim exactly-once billing for such recovery.
+
+The admin route editor still uses the legacy `/api/routes/:routeId` PUT and
+`/api/routes/:routeId/save-operations/:saveId` GET. That GET returns a stored
+failure as a non-2xx response with its original structured code. Its status
+read can instead fail temporarily with 503 `ROUTE_RECONCILIATION_FAILED`;
+admin authentication capacity can reject the read before the handler with
+503 `AUTH_BUSY` and `Retry-After: 1`. The editor retries these read failures,
+network failures, generic gateway 5xx and read-quota 429 inside one 35-second
+reconciliation window, honoring Retry-After with a 250–2000 ms poll interval.
+Every poll keeps the same `saveId` and issues no new PUT. A 401/403 or stored
+save failure stops immediately; expiry reports an unknown outcome rather than
+claiming the save failed. A missing operation (404) retains the existing single
+same-ID PUT recovery only after an unknown initial write outcome.
 
 Operation records follow OPERATION_LOG_RETENTION_DAYS (default 90 days).
 Preview/fleet retention starts at terminal completion; existing route-save

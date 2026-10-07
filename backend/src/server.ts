@@ -11,6 +11,7 @@
  * - Authenticated API routes require a valid Firebase ID token
  */
 
+import { getRouteMatchingWork } from "./services/routeMatching";
 import "dotenv/config";
 import { createRouteComputeLimiter } from "./lib/routeComputeLimiter";
 
@@ -43,6 +44,7 @@ import { requireAdmin } from "./middleware/requireAdmin";
 import { assertRetentionConfiguration } from "./services/retentionSweeper";
 import { startWorkerCoordinator } from "./services/workerCoordinator";
 import { getTripStateQueueStatus } from "./services/tripStateEngine";
+import { getLiveBusProjectionStatus } from "./services/liveBusProjection";
 import busRoutes from "./routes/buses";
 import { apiCompatibilityStatus, createApiCompatibilityTraffic } from "./lib/apiCompatibilityTraffic";
 import { apiReadCacheStatus } from "./services/apiReadCache";
@@ -243,13 +245,14 @@ app.get("/api/health", requireAdmin, (_req, res) => {
       lastRejectedAt: telemetry.lastRejectedAt,
       credentialCacheHitRate: telemetry.credentialCacheHitRate,
       credentialFills: telemetry.credentialFills,
-      workQueues: { kdf: telemetry.kdfExecution, ingestion: telemetry.ingestionExecution, ...getTripStateQueueStatus() },
+      workQueues: { kdf: telemetry.kdfExecution, ingestion: telemetry.ingestionExecution, ...getTripStateQueueStatus(), publicProjection: getLiveBusProjectionStatus() },
       processingLatencyMs: telemetry.processingLatencyMs,
       deviceQueueLatencyMs: telemetry.deviceQueueLatencyMs,
       networkLatencyMs: telemetry.networkLatencyMs,
       deviceToServerLatencyMs: telemetry.deviceToServerLatencyMs,
       rtdbWriteLatencyMs: telemetry.rtdbWriteLatencyMs,
       rtdbTransactionAttempts: telemetry.rtdbTransactionAttempts,
+      routeMatching: getRouteMatchingWork(),
       rateLimit: telemetry.rateLimit,
       serverIngressGapMs: telemetry.serverIngressGapMs,
       apiReads: apiReadCacheStatus(),

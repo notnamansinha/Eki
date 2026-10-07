@@ -91,6 +91,7 @@ describe("reroute result guards", () => {
     direction: "forward" as const,
   };
   const live = {
+    status: "active",
     tripState: "in_service",
     routeState: "REROUTING",
     rerouteRequestId: expected.requestId,

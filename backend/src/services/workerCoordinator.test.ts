@@ -10,6 +10,7 @@ vi.mock("../lib/firebaseAdmin", () => ({ db: {
   collection: () => ({ doc: () => ({ get: async () => ({ data: () => ({ cursor: mocks.cursor }) }) }) }), runTransaction: mocks.transaction,
 } }));
 vi.mock("./tripStateEngine", () => ({ startTripStateEngine: mocks.tripStart }));
+vi.mock("./liveBusProjection", () => ({ startLiveBusProjection: () => async () => undefined }));
 vi.mock("./retentionSweeper", () => ({ startRetentionSweeper: () => mocks.retentionStop }));
 vi.mock("./privacyDeletionWorker", () => ({ startPrivacyDeletionWorker: () => mocks.privacyStop }));
 vi.mock("./abandonedRideReconciler", () => ({ startAbandonedRideReconciler: () => mocks.rideStop }));

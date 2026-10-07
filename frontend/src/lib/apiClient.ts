@@ -21,6 +21,19 @@ export class ApiError extends Error {
   }
 }
 
+function retryAfterHeaderMs(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+    return Number.isSafeInteger(seconds) ? seconds * 1_000 : undefined;
+  }
+  const date = Date.parse(trimmed);
+  return Number.isFinite(date) && /[A-Za-z]/.test(trimmed)
+    ? Math.max(0, date - Date.now())
+    : undefined;
+}
+
 function configuredBackendUrl(): string {
   const configured = process.env.NEXT_PUBLIC_BACKEND_URL;
   if (!configured) throw new Error("Backend URL is invalid or not configured.");
@@ -111,9 +124,10 @@ export async function apiRequest<T>(
         response.status,
         typeof result.phase === "string" ? result.phase : undefined,
         false,
-        typeof result.retryAfterMs === "number" && Number.isFinite(result.retryAfterMs) && result.retryAfterMs >= 0
-          ? result.retryAfterMs
-          : undefined,
+        retryAfterHeaderMs(response.headers.get("Retry-After")) ??
+          (typeof result.retryAfterMs === "number" && Number.isFinite(result.retryAfterMs) && result.retryAfterMs >= 0
+            ? result.retryAfterMs
+            : undefined),
       );
     }
     if (validateResponse && !validateResponse(result)) {

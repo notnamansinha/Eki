@@ -5,6 +5,14 @@
  * Each auth change closes the gate again; a timeout never opens it.
  */
 
+const verificationListeners = new Set<() => void>();
+
+/** Synchronously revoke cached listener data before a new principal can subscribe. */
+export function onAuthVerificationStarted(listener: () => void): () => void {
+  verificationListeners.add(listener);
+  return () => { verificationListeners.delete(listener); };
+}
+
 let ready = false;
 let generation = 0;
 let wake: () => void = () => {};
@@ -19,6 +27,7 @@ function signalChange() {
 export function beginAuthVerification(): void {
   generation++;
   ready = false;
+  verificationListeners.forEach(listener => listener());
   signalChange();
 }
 

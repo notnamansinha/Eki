@@ -109,7 +109,7 @@ and App Check configuration for SDK reads apply independently of HTTP auth.
 
 | SDK channel | Data and audience | Recovery |
 |---|---|---|
-| RTDB `activeBuses` | Shared authenticated live-bus projection for browser maps; never includes boarding codes/device secrets | SDK reconnect; frontend stale/freshness checks; HTTP bus snapshot is a fallback |
+| RTDB `publicRouteBuses/{routeId}/buses` | Authenticated compact per-route browser view; raw `activeBuses` is backend-only | SDK reconnect, bounded worker replay and frontend freshness checks |
 | Firestore `settings/global` | Service configuration and announcements | SDK listener snapshot/reconnect |
 | Firestore `routes` | Route configuration allowed by security rules | SDK listener snapshot/reconnect |
 | Firestore `ride_sessions/{id}/messages` | Authorized session chat | SDK listener reconnect; writes use idempotent HTTP message creation |

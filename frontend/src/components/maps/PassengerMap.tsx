@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { memo, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
@@ -11,6 +11,7 @@ import { subscribeLiveBusesByRoute } from "@/lib/liveBusStore";
 import {
   normalizePassengerMapBus,
   passengerLiveBusSelectionKey,
+  reusePassengerMapBus,
   type PassengerMapBus,
 } from "@/lib/passengerLiveBus";
 import { passengerRerouteNotice } from "@/lib/passengerRouteStatus";
@@ -29,7 +30,8 @@ import { useSmoothPosition } from "@/hooks/useSmoothPosition";
 import {
   decodeRoutePathForDisplay,
 } from "@/lib/mapRouteGeometry";
-import { busStopArrivalTimestamps } from "@/lib/busEta";
+import { busStopArrivalTimestamps, StopProjectionCache } from "@/lib/busEta";
+import { positionAlongPolyline, preparePolylineDistanceIndex } from "@/lib/polylineDistance";
 import { useDynamicRouteGeometries } from "@/hooks/useDynamicRouteGeometries";
 import { useTelemetryRenderTrace } from "@/hooks/useTelemetryRenderTrace";
 import { stopLabel } from "@/lib/stopLabel";
@@ -54,7 +56,7 @@ const BUS_MOTION_COLORS: Record<string, string> = {
   uncertain: "#F87171", // red     — GPS fix lost
 };
 
-function BusMarker({
+const BusMarker = memo(function BusMarker({
   bus,
 }: {
   bus: IncomingBusData;
@@ -122,7 +124,7 @@ function BusMarker({
       </div>
     </AdvancedMarker>
   );
-}
+});
 
 
 // ── Traffic layer rendered imperatively ──────────────────────────────────────
@@ -175,20 +177,22 @@ function PassengerMapInner({
   selectedBusKey?: string;
 }) {
   const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map<string, IncomingBusData>());
+  const previousBusesRef = useRef<Map<string, IncomingBusData>>(new Map());
   const [stopETAs, setStopETAs] = useState<Record<string, number>>({});
   const [uiNow, setUiNow] = useState(() => Date.now());
   const [activeBusStopIndex, setActiveBusStopIndex] = useState<number | undefined>(undefined);
-  const lastBuzzedStopIdRef = useRef<string | null>(null);
   const lastStopIndexRef = useRef<Record<string, number>>({});
-  const stopEntryTimeRef = useRef<Record<string, number>>({});
   // Hysteresis: tracks which stops are "inside" (entered but not yet exited via the larger exit radius)
   const stopInsideRef = useRef<Record<string, boolean>>({}); // busId+stopId -> inside state
   const routeRef = useRef(route);
-  const targetStopRef = useRef(targetStop);
   useEffect(() => {
     routeRef.current = route;
-    targetStopRef.current = targetStop;
-  }, [route, targetStop]);
+  }, [route]);
+  useEffect(() => {
+    lastStopIndexRef.current = {};
+    stopInsideRef.current = {};
+    previousBusesRef.current = new Map();
+  }, [route.id, route.rideDirection, route.configVersion, route.stops, selectedBusKey]);
 
   const [passengerLocation, setPassengerLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [geolocationNotice, setGeolocationNotice] = useState<string | null>(null);
@@ -206,6 +210,24 @@ function PassengerMapInner({
   // geometry. If buses carry different reroutes (or none is rerouted), fall
   // back to the configured route so no bus's route and ETA leak to another.
   const etaMarkerSelections = useRef(new Map<string, LiveBusMarkerSelection>());
+  const etaSelectionInputs = useRef(new Map<string, IncomingBusData>());
+  const etaBusPositions = useRef(new Map<string, {
+    path: readonly LatLng[]; point: LatLng; heading: number;
+    routeVersion: number | undefined; direction: unknown; position: number | null;
+  }>());
+  const stopProjectionCache = useRef(new StopProjectionCache());
+  useEffect(() => {
+    const selections = etaMarkerSelections.current;
+    const inputs = etaSelectionInputs.current;
+    const positions = etaBusPositions.current;
+    const projections = stopProjectionCache.current;
+    return () => {
+      selections.clear();
+      inputs.clear();
+      positions.clear();
+      projections.clear();
+    };
+  }, [route.id, route.rideDirection, route.configVersion, route.geometryVersion]);
   const activeRoute = useMemo(
     () => sharedRerouteGeometry(buses, dynamicGeometries, route.rideDirection),
     [buses, dynamicGeometries, route.rideDirection],
@@ -268,9 +290,11 @@ function PassengerMapInner({
         const allData = snapshot as Record<string, unknown> | null;
         const now = Date.now();
         const currentRoute = routeRef.current;
-        const currentTargetStop = targetStopRef.current;
 
         if (!allData) {
+          previousBusesRef.current = new Map();
+          arrivalTimestampsRef.current = {};
+          setStopETAs({});
           setBuses(new Map());
           setActiveBusStopIndex(undefined);
           return;
@@ -286,15 +310,16 @@ function PassengerMapInner({
             (selectedBusKey && passengerLiveBusSelectionKey(normalized) !== selectedBusKey) ||
             (!preview && !directionsMatch(normalized.direction, currentRoute.rideDirection))
           ) return;
-          const bus: IncomingBusData = {
+          const nextBus: IncomingBusData = {
             ...normalized,
             ...(preview ? { direction: undefined, matchedLocation: undefined, mapMatchSeq: undefined, mapMatchSampledAt: undefined, routeSource: undefined } : {}),
             heading: normalizeHeading(normalized.heading),
           };
 
+          const bus = reusePassengerMapBus(previousBusesRef.current.get(nextBus.busId), nextBus);
           activeBuses.set(bus.busId, bus);
 
-          if (preview) return;
+          if (preview || bus === previousBusesRef.current.get(bus.busId)) return;
 
           if (!currentRoute.stops?.length) return;
 
@@ -332,7 +357,6 @@ function PassengerMapInner({
 
           const STOP_ENTRY_RADIUS_M = 35;
           const STOP_EXIT_RADIUS_M = 45;
-          const DWELL_GATE_MS = 10_000;
           const lastKnownIndex = lastStopIndexRef.current[bus.busId] ?? 0;
           const sequenceStart = Math.max(0, lastKnownIndex - 1);
           const sequenceEnd = Math.min(
@@ -353,31 +377,23 @@ function PassengerMapInner({
 
             if (!wasInside && distance < STOP_ENTRY_RADIUS_M) {
               stopInsideRef.current[insideKey] = true;
-              stopEntryTimeRef.current[insideKey] ??= now;
               if (index > (lastStopIndexRef.current[bus.busId] ?? 0)) {
                 lastStopIndexRef.current[bus.busId] = index;
               }
             } else if (wasInside && distance > STOP_EXIT_RADIUS_M) {
               stopInsideRef.current[insideKey] = false;
-              delete stopEntryTimeRef.current[insideKey];
             }
           }
 
-          const busDistance = getDistanceMeters(bus, currentTargetStop);
-          const dwellAtTarget =
-            stopEntryTimeRef.current[bus.busId + ":" + currentTargetStop.id];
-          const isAtTarget =
-            dwellAtTarget !== undefined &&
-            now - dwellAtTarget >= DWELL_GATE_MS;
-          if (
-            busDistance < STOP_EXIT_RADIUS_M &&
-            isAtTarget &&
-            lastBuzzedStopIdRef.current !== currentTargetStop.id
-          ) {
-            lastBuzzedStopIdRef.current = currentTargetStop.id;
-          }
         });
-        setBuses(activeBuses);
+        previousBusesRef.current = activeBuses;
+        if (activeBuses.size === 0) {
+          arrivalTimestampsRef.current = {};
+          setStopETAs({});
+        }
+        setBuses((previous) => previous.size === activeBuses.size &&
+          [...activeBuses].every(([id, bus]) => previous.get(id) === bus)
+          ? previous : activeBuses);
         // Progress belongs to one bus. A fleet view aggregates earliest
         // arrivals but never borrows one bus's passed/next-stop state.
         const firstEntry = activeBuses.values().next().value as IncomingBusData | undefined;
@@ -390,7 +406,7 @@ function PassengerMapInner({
     return () => {
       unsubscribe();
     };
-  }, [route.id, resumeGeneration, preview, selectedBusKey]);
+  }, [route.id, route.rideDirection, route.configVersion, route.stops, resumeGeneration, preview, selectedBusKey]);
 
   // ── High-Frequency Speed-Aware ETA Fallback (Haversine) ──────────────────
   const updateUI = useCallback(() => {
@@ -410,7 +426,9 @@ function PassengerMapInner({
       // the bus that produced them (#67).
       if (Object.keys(arrivalTimestampsRef.current).length > 0) {
         arrivalTimestampsRef.current = {};
-        setStopETAs({});
+        let cancelled = false;
+        queueMicrotask(() => { if (!cancelled) setStopETAs({}); });
+        return () => { cancelled = true; };
       }
       return;
     }
@@ -418,7 +436,11 @@ function PassengerMapInner({
     const calculateETAs = () => {
       const now = Date.now();
       for (const id of etaMarkerSelections.current.keys()) {
-        if (!buses.has(id)) etaMarkerSelections.current.delete(id);
+        if (!buses.has(id)) {
+          etaMarkerSelections.current.delete(id);
+          etaSelectionInputs.current.delete(id);
+          etaBusPositions.current.delete(id);
+        }
       }
       const newArrivals: Record<string, number> = {};
 
@@ -434,16 +456,46 @@ function PassengerMapInner({
         if (bus.routeSource === "dynamic-reroute" && !dynamicGeometries.has(bus.busId)) continue;
         const busPath = busEtaPath(bus.busId, dynamicGeometries, roadPath);
         if (busPath.length < 2) continue;
-        const selection = selectLiveBusMarkerPosition(bus, etaMarkerSelections.current.get(bus.busId), now);
+        const previousSelection = etaMarkerSelections.current.get(bus.busId);
+        const selection = etaSelectionInputs.current.get(bus.busId) === bus &&
+          previousSelection && (previousSelection.pendingUntil === undefined || now < previousSelection.pendingUntil)
+          ? previousSelection
+          : selectLiveBusMarkerPosition(bus, previousSelection, now);
         etaMarkerSelections.current.set(bus.busId, selection);
+        etaSelectionInputs.current.set(bus.busId, bus);
+        const busPoint = selection.position ?? { lat: bus.lat, lng: bus.lng };
+        const cachedPosition = etaBusPositions.current.get(bus.busId);
+        // An exact same-point hint is safe even for loops and divided roads.
+        // A moved point, changed heading/path/version/direction reacquires with
+        // the full search instead of constraining to nearby segments.
+        const busPathPosition = cachedPosition?.path === busPath &&
+          cachedPosition.point.lat === busPoint.lat && cachedPosition.point.lng === busPoint.lng &&
+          cachedPosition.heading === bus.heading && cachedPosition.routeVersion === bus.routeVersion &&
+          cachedPosition.direction === bus.routeDirection
+          ? cachedPosition.position
+          : positionAlongPolyline(busPoint, preparePolylineDistanceIndex(busPath), { headingDegrees: bus.heading });
+        etaBusPositions.current.set(bus.busId, {
+          path: busPath, point: busPoint, heading: bus.heading,
+          routeVersion: bus.routeVersion, direction: bus.routeDirection, position: busPathPosition,
+        });
+        const geometryKey = bus.routeSource === "dynamic-reroute"
+          ? ["dynamic", bus.busId, bus.routeVersion]
+          : ["configured", route.id, route.geometryVersion];
+        const stopPositions = stopProjectionCache.current.positions(
+          JSON.stringify([...geometryKey, route.rideDirection, route.configVersion]),
+          busPath,
+          route.stops,
+        );
         const arrivals = busStopArrivalTimestamps({
-          busPoint: selection.position ?? { lat: bus.lat, lng: bus.lng },
+          busPoint,
           heading: bus.heading,
           speedKmh: bus.speed,
           delayMinutes: bus.delayMinutes ?? 0,
           path: busPath,
           remainingStops,
           now,
+          stopPositions,
+          busPathPosition,
         });
         for (const [stopId, arrivalTimestamp] of Object.entries(arrivals)) {
           if (
@@ -469,6 +521,9 @@ function PassengerMapInner({
     uiNow,
     preview,
     route.id,
+    route.rideDirection,
+    route.configVersion,
+    route.geometryVersion,
     route.stops,
     roadPath,
     dynamicGeometries,

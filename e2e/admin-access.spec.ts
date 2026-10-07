@@ -129,3 +129,35 @@ test("same-account verification hides and reloads protected feedback", async ({ 
   await page.getByRole("button", { name: "Approve verification" }).click();
   await expect(page.getByText("Session 2")).toBeVisible(); expect(reads).toBe(2);
 });
+
+test("route projection uses receipt freshness for both preview and catalog and expires silently", async ({ page }) => {
+  await page.addInitScript(() => {
+    const reads: string[] = []; Object.assign(window, { qaRtdbReads: reads });
+    window.addEventListener("qa-rtdb-read", event => reads.push((event as CustomEvent).detail.path));
+  });
+  await page.clock.install(); await page.goto("/?projection");
+  await page.getByRole("button", { name: "Approve verification" }).click();
+  await page.getByRole("button", { name: "Publish preview" }).click();
+  const reads = await page.evaluate(() => (window as typeof window & { qaRtdbReads: string[] }).qaRtdbReads);
+  expect(reads).toContain("publicRouteBuses/qa-route/buses");
+  expect(reads).toContain("liveRouteCatalog/values");
+  expect(reads).not.toContain("publicRouteBuses");
+  expect(reads).not.toContain("activeBuses");
+  await expect(page.getByLabel("Preview count", { exact: true })).toHaveText("1");
+  await expect(page.getByLabel("Catalog preview count")).toHaveText("1");
+  await page.clock.runFor(11_000); // Sample is now stale, but receipt remains fresh.
+  await expect(page.getByLabel("Preview count", { exact: true })).toHaveText("1");
+  await page.clock.runFor(49_001);
+  await expect(page.getByLabel("Preview count", { exact: true })).toHaveText("0");
+  await expect(page.getByLabel("Catalog preview count")).toHaveText("0");
+});
+test("route projection preserves coalesced return completion and hides it during reverification", async ({ page }) => {
+  await page.goto("/?projection"); await page.getByRole("button", { name: "Approve verification" }).click();
+  await page.getByRole("button", { name: "Publish automatic return" }).click();
+  await expect(page.getByLabel("Joined session state")).toHaveText("completed");
+  await page.getByRole("button", { name: "Reverify account" }).click();
+  await expect(page.getByLabel("Joined session state")).toHaveCount(0);
+  await expect(page.getByText(/Signing you in/)).toBeVisible();
+  await page.getByRole("button", { name: "Approve verification" }).click();
+  await expect(page.getByLabel("Joined session state")).toHaveText("completed");
+});

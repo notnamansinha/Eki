@@ -111,6 +111,20 @@ function projectToSegment(point: LatLng, start: LatLng, end: LatLng) {
   };
 }
 
+const work = { calls: 0, boundedSearches: 0, fullSearches: 0, segmentProjections: 0, skippedSegments: 0 };
+export function getRouteMatchingWork() { return { ...work }; }
+
+/** First cumulative vertex >= bound (or > bound for the upper edge). */
+function distanceBound(values: readonly number[], bound: number, upper: boolean): number {
+  let low = 0; let high = values.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (values[middle] < bound || (upper && values[middle] === bound)) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
 const distanceCache = new WeakMap<readonly LatLng[], number[]>();
 function cumulativeDistances(path: readonly LatLng[]): number[] {
   const cached = distanceCache.get(path);
@@ -138,8 +152,29 @@ export function matchRoutePosition(
   positionUncertaintyM = 25,
   maximumProgressChangeM?: number,
 ): RouteMatch | null {
+  work.calls++;
   if (path.length < 2) return null;
   const cumulative = cumulativeDistances(path);
+  let firstSegment = 0; let endSegment = path.length - 1;
+  // This narrows the existing physical-progress gate, not a vertex-count
+  // heuristic. Every interval intersecting that gate remains eligible,
+  // including parallel roads, loop legs, long segments and repeated vertices.
+  if (previous && Number.isFinite(previous.alongRouteDistanceM) &&
+      maximumProgressChangeM !== undefined && Number.isFinite(maximumProgressChangeM) &&
+      maximumProgressChangeM >= 0 && Number.isFinite(cumulative.at(-1))) {
+    const roundingPad = Number.EPSILON * Math.max(1, Math.abs(previous.alongRouteDistanceM), maximumProgressChangeM) * 4;
+    const minimum = previous.alongRouteDistanceM - maximumProgressChangeM - roundingPad;
+    const maximum = previous.alongRouteDistanceM + maximumProgressChangeM + roundingPad;
+    firstSegment = Math.max(0, distanceBound(cumulative, minimum, false) - 1);
+    endSegment = Math.min(path.length - 1, distanceBound(cumulative, maximum, true));
+    work.boundedSearches++;
+  } else {
+    // Cold start, expired/session/geometry-invalidated prior, or absent/invalid
+    // bounds keep the full ambiguity/reacquisition scan.
+    work.fullSearches++;
+  }
+  work.segmentProjections += endSegment - firstSegment;
+  work.skippedSegments += path.length - 1 - (endSegment - firstSegment);
   let best:
     | (RouteMatch & { score: number; segmentLengthM: number })
     | null = null;
@@ -148,7 +183,7 @@ export function matchRoutePosition(
     score: number;
   }> = [];
 
-  for (let segmentIndex = 0; segmentIndex < path.length - 1; segmentIndex += 1) {
+  for (let segmentIndex = firstSegment; segmentIndex < endSegment; segmentIndex += 1) {
     const projection = projectToSegment(
       rawPoint,
       path[segmentIndex],

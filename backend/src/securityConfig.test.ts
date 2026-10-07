@@ -47,6 +47,7 @@ describe("production security configuration", () => {
     expect(database.rules.activeBuses[".write"]).toBe(false);
     expect(activeBus[".write"]).toBe(false);
     expect(database.rules.activeBuses[".indexOn"]).toContain("busId");
+    expect(database.rules.activeBuses[".indexOn"]).toContain("timestamp");
     // Dead rule blocks are gone: nothing reads RTDB messages/users, and the
     // driverRouteAssignments mirror is Admin-SDK-only (default-deny for
     // clients is identical to the removed explicit denies) (issue #49 L2).
@@ -309,7 +310,8 @@ describe("production security configuration", () => {
 
   it("keeps Realtime Database rules valid while App Check is enforced by Firebase", () => {
     const database = JSON.parse(workspaceFile("database.rules.json"));
-    expect(database.rules.activeBuses[".read"]).toBe("auth != null");
+    expect(database.rules.activeBuses[".read"]).toBe(false);
+    expect(database.rules.publicRouteBuses.$routeId.buses[".read"]).toBe("auth != null");
     expect(database.rules.activeRouteGeometry[".read"]).toBe("auth != null");
     expect(database.rules.activeRouteGeometry[".write"]).toBe(false);
     expect(JSON.stringify(database)).not.toContain("request.app");

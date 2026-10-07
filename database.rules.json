@@ -3,9 +3,9 @@
     ".read": false,
     ".write": false,
     "activeBuses": {
-      ".read": "auth != null",
+      ".read": false,
       ".write": false,
-      ".indexOn": ["routeId", "busId"],
+      ".indexOn": ["routeId", "busId", "timestamp"],
       "$busKey": {
         ".write": false
       }
@@ -13,6 +13,17 @@
     "activeRouteGeometry": {
       ".read": "auth != null",
       ".write": false
+    },
+    "publicRouteBuses": {
+      ".read": "auth != null && (auth.token.admin == true || auth.token.role == 'admin')",
+      ".write": false,
+      "$routeId": {
+        "buses": { ".read": "auth != null", ".write": false }
+      }
+    },
+    "liveRouteCatalog": {
+      ".write": false,
+      "values": { ".read": "auth != null" }
     },
     "_deviceRateLimits": {
       ".read": false,
