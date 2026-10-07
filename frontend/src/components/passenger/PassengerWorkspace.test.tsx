@@ -8,6 +8,7 @@ import { BUS_EXPIRY_MS } from "@/lib/liveBusFreshness";
 import { setScenario } from "../../../../e2e/fixtures/state";
 configure({ asyncUtilTimeout: 5_000 });
 vi.mock("@/hooks/useAuth", async () => import("../../../../e2e/fixtures/state"));
+vi.mock("@/hooks/useLiveRouteCatalog", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useRoutes", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useSettings", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useRTDBResume", async () => import("../../../../e2e/fixtures/state"));

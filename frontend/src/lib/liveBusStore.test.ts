@@ -87,4 +87,10 @@ describe("live bus snapshot expiry", () => {
   it("prunes malformed inactive entries without polling", () => {
     expect(millisecondsUntilNextPrune({ malformed: {} }, now)).toBe(0);
   });
+  it("uses accepted server receipt for pruning and its exact expiry deadline", () => {
+    const bus = { timestamp: now - BUS_EXPIRY_MS - 1, backendReceivedAt: now - BUS_EXPIRY_MS + 59_999 };
+    expect(pruneExpiredLiveBuses({ bus }, now)).toEqual({ bus });
+    expect(millisecondsUntilNextPrune({ bus }, now)).toBe(59_999);
+    expect(pruneExpiredLiveBuses({ bus }, now + 59_999)).toEqual({});
+  });
 });

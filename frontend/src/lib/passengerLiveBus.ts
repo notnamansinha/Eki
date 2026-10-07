@@ -111,6 +111,10 @@ export function passengerTripStates(
   for (const value of Object.values(snapshot)) {
     if (typeof value !== "object" || value === null) continue;
     const bus = value as Record<string, unknown>;
+    if (bus.automaticTurnaround === true && typeof bus.previousSessionId === "string" &&
+        /^[A-Za-z0-9_-]{1,128}$/.test(bus.previousSessionId) && bus.previousSessionId !== bus.sessionId) {
+      states.set(bus.previousSessionId, "completed");
+    }
     if (typeof bus.sessionId !== "string" || bus.sessionId.length === 0) continue;
     if (
       bus.tripState !== "pre_departure" &&

@@ -6,7 +6,7 @@ export default defineConfig({
   root: local("."),
   server: { host: "127.0.0.1", port: Number(process.env.EKI_QA_PORT || 3100), strictPort: true },
   resolve: { alias: [
-    ...["@/hooks/useAuth", "@/hooks/useRoutes", "@/hooks/useSettings", "@/hooks/useRTDBResume", "@/hooks/useDynamicRouteGeometries", "@/lib/liveBusStore"].map(find => ({ find, replacement: local("state.ts") })),
+    ...["@/hooks/useAuth", "@/hooks/useRoutes", "@/hooks/useLiveRouteCatalog", "@/hooks/useSettings", "@/hooks/useRTDBResume", "@/hooks/useDynamicRouteGeometries", "@/lib/liveBusStore"].map(find => ({ find, replacement: local("state.ts") })),
     ...["@/components/passenger/AccountTab", "@/components/shared/MessagingPanel", "@/components/shared/FeedbackModal", "@/components/passenger/PassengerBoardingView"].map(find => ({ find, replacement: local("panels.tsx") })),
     { find: "@vis.gl/react-google-maps", replacement: local("map-adapter.tsx") },
     { find: "@/components/maps/DirectionsRoute", replacement: local("map-adapter.tsx") },

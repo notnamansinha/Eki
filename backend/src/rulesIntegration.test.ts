@@ -60,6 +60,13 @@ rulesDescribe("Firebase security rules integration", () => {
         motionState: "stopped",
         timestamp: Date.now(),
       });
+      await set(ref(context.database(), "publicRouteBuses"), {
+        route_1: { _workerGeneration: 7, revision: 1, buses: { bus_1_route_1: { busId: "bus_1", routeId: "route_1", lat: 23 } } },
+        route_2: { _workerGeneration: 7, revision: 1, buses: { bus_2_route_2: { busId: "bus_2", routeId: "route_2", lat: 24 } } },
+      });
+      await set(ref(context.database(), "liveRouteCatalog"), {
+        _workerGeneration: 7, revisions: { route_1: 1 }, values: { route_1: { active: 1, available: 0, freshestAt: 0 } },
+      });
       await set(ref(context.database(), "activeRouteGeometry/bus_1_route_1/2"), {
         routeId: "route_1",
         direction: "forward",
@@ -108,7 +115,8 @@ rulesDescribe("Firebase security rules integration", () => {
     const passenger = environment.authenticatedContext("passenger_1", { role: "passenger" });
     const admin = environment.authenticatedContext("admin_1", { role: "admin", admin: true });
     const device = environment.authenticatedContext("device_1", { role: "device" });
-    await assertSucceeds(get(ref(passenger.database(), "activeBuses")));
+    await assertFails(get(ref(passenger.database(), "activeBuses")));
+    await assertFails(get(ref(admin.database(), "activeBuses/bus_1_route_1")));
     await assertSucceeds(get(ref(passenger.database(), "activeRouteGeometry/bus_1_route_1/2")));
     await assertFails(get(ref(environment.unauthenticatedContext().database(), "activeBuses")));
     await assertFails(get(ref(environment.unauthenticatedContext().database(), "activeRouteGeometry")));
@@ -118,6 +126,24 @@ rulesDescribe("Firebase security rules integration", () => {
     await assertFails(set(ref(passenger.database(), "activeRouteGeometry/x/1"), { polyline: "x" }));
     await assertFails(set(ref(admin.database(), "activeRouteGeometry/x/1"), { polyline: "x" }));
     await assertFails(set(ref(device.database(), "activeRouteGeometry/x/1"), { polyline: "x" }));
+  });
+
+  it("scopes passengers to public route buses and hides authority and projection metadata", async () => {
+    const passenger = environment.authenticatedContext("route_viewer", { role: "passenger" });
+    const admin = environment.authenticatedContext("fleet_viewer", { role: "admin", admin: true });
+    const route = await assertSucceeds(get(ref(passenger.database(), "publicRouteBuses/route_1/buses")));
+    expect(Object.keys(route.val())).toEqual(["bus_1_route_1"]);
+    expect(route.val().bus_1_route_1).toEqual({ busId: "bus_1", routeId: "route_1", lat: 23 });
+    await assertFails(get(ref(passenger.database(), "publicRouteBuses")));
+    await assertFails(get(ref(passenger.database(), "publicRouteBuses/route_1")));
+    await assertFails(get(ref(passenger.database(), "liveRouteCatalog/revisions")));
+    await assertSucceeds(get(ref(passenger.database(), "liveRouteCatalog/values")));
+    await assertSucceeds(get(ref(admin.database(), "publicRouteBuses")));
+    await assertFails(get(ref(environment.unauthenticatedContext().database(), "publicRouteBuses/route_1/buses")));
+    for (const context of [passenger, admin]) {
+      await assertFails(set(ref(context.database(), "publicRouteBuses/route_1/buses/x"), { lat: 1 }));
+      await assertFails(set(ref(context.database(), "liveRouteCatalog/values/route_1"), { active: 99 }));
+    }
   });
 
   it("denies browser route/device/session mutations and recovery-state reads", async () => {

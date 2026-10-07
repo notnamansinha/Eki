@@ -354,7 +354,7 @@
           "Buses"
         ],
         "summary": "Read live bus snapshots",
-        "description": "Snapshot of current activeBuses RTDB nodes. Prefer the shared Firebase SDK listener for continuous browser updates.",
+        "description": "Snapshot of current bus authority using the explicit public live-bus whitelist. Prefer compact per-route Firebase SDK listeners for continuous browser updates.",
         "security": [
           {
             "FirebaseBearer": []

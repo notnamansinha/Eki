@@ -240,3 +240,13 @@ describe("passenger location preview", () => {
     expect(normalizePassengerMapBus("Bus01_route_1", telemetry(overrides), now)).toBeNull();
   });
 });
+
+describe("automatic return completion observation", () => {
+  it("retains the predecessor completion even when no terminal snapshot was delivered", () => {
+    expect(passengerTripStates({ bus: { sessionId: "return", tripState: "pre_departure", automaticTurnaround: true, previousSessionId: "joined" } }))
+      .toEqual(new Map([["joined", "completed"], ["return", "pre_departure"]]));
+    for (const bus of [{ previousSessionId: "joined" }, { automaticTurnaround: true, previousSessionId: "bad/path" }, { automaticTurnaround: true, previousSessionId: "return" }]) {
+      expect(passengerTripStates({ bus: { sessionId: "return", tripState: "pre_departure", ...bus } }).has("joined")).toBe(false);
+    }
+  });
+});
