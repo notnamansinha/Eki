@@ -30,6 +30,7 @@ describe("withoutLiveRouteContext", () => {
       rerouteError: "old-error",
       rerouteCompletedAt: 950,
       rerouteFailedAt: 975,
+      rerouteRetry: { context: "old", failures: 4, nextAttemptAt: 100_000 },
     };
 
     expect(hasLiveRouteContext(live)).toBe(true);
@@ -47,7 +48,7 @@ describe("withoutLiveRouteContext", () => {
     expect(live.mapMatchSeq).toBe(4);
   });
 
-  it.each(["mapMatchSeq", "mapMatchSampledAt"])(
+  it.each(["mapMatchSeq", "mapMatchSampledAt", "rerouteRetry"])(
     "clears a leftover %s even when no other route context exists",
     (field) => {
       const live = { [field]: 123, sessionId: "s1", seq: 123, timestamp: 456 };
