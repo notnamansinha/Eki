@@ -20,6 +20,7 @@ const LIVE_ROUTE_CONTEXT_FIELDS = [
   "rerouteError",
   "rerouteCompletedAt",
   "rerouteFailedAt",
+  "rerouteRetry",
 ] as const;
 
 /** True when any direction-derived matching or rerouting state is present. */
