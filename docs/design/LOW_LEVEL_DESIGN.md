@@ -97,7 +97,7 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 | `components/MapProviders.tsx` | Single Maps API provider/load per workspace |
 | `components/ServiceWorkerRegistrar.tsx` | SW registration/update check and controlled one-time reload |
 | `components/maps/DirectionsRoute.tsx` | Draw active direction/version stored geometry; missing legacy geometry requires admin repair |
-| `components/maps/PassengerMap.tsx` | RTDB route filtering, matched/raw marker policy, dynamic route overlay and heuristic ETA |
+| `components/maps/PassengerMap.tsx`, `lib/busEta.ts` | RTDB route filtering, matched/raw marker policy, dynamic route overlay and heuristic ETA; unchanged bus objects and marker props retain identity, while per-map stop projections use bounded route/version/direction keys and verify path and stop coordinates before reuse |
 | `components/admin/DashboardPanel.tsx` | Live Ops matched markers, per-bus route overlays and raw/match/version diagnostics |
 | `components/maps/PassengerTrackingMap.tsx` | Passenger tracking composition |
 | `components/admin/*Panel.tsx` | Operations, dashboard, routes, fleet/personnel, history and settings |
@@ -123,6 +123,8 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 | `lib/feedback.ts` | Validated admin list/status response parsing |
 | `lib/predefinedRoutes.ts` | Seed source geometry/stops |
 | `config/maps.ts`, `config/passenger.ts`, `etaConstants.ts` | Central public/runtime tuning |
+
+Passenger ETAs project stops once per route geometry, version, direction and ordered stop set. A changed path reference or stop coordinate forces reprojection even before a version update arrives. The map holds at most 16 stop-projection entries and discards them with the route view. Exact same-point continuity reuse is safe; moved or ambiguous positions use the full polyline search. See [R18 synthetic evidence](../testing/PASSENGER_MAP_PER_BUS_WORK.md) for counters and the remaining live boundary.
 | `sw.js` | Precache static export; cache public maps/fonts/images; network-only Firebase/auth/backend/unknown |
 
 Tests beside pure frontend libraries exercise freshness, RTDB sharing, route distance/snapping, resume state, history and feedback eligibility.

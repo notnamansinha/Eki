@@ -102,6 +102,7 @@ they are not a claim that a newer head or production deployment passed.
   jitters and clears only after connection plus authoritative snapshot. See
   [browser recovery bounds](../operations/RTDB_RECONNECT_RECOVERY.md).
 - Polyline distance index and snapping choose the correct segment/direction.
+- Passenger map synthetic counters verify that a tick for one bus skips unchanged peers' marker renders and stop projections; route version, direction, path and stop edits invalidate projections, and route switches/unmount clear local cache state. ETA values are compared with the uncached calculation. See [R18 evidence](PASSENGER_MAP_PER_BUS_WORK.md); moving-device render latency and road confidence require separate live acceptance in #245.
 - Ride feedback eligibility requires completed session/passenger identity.
 - Ride-history timestamp/status/stop normalization handles legacy forms.
 

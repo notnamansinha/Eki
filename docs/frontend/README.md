@@ -38,7 +38,7 @@ Open `http://localhost:3000`. Restart after changing public environment variable
 | `lib/liveBusStore.ts` | One shared initial live-fleet sync, followed by RTDB child deltas and route-scoped delivery; dispose at zero subscribers |
 | `hooks/useRTDBResume.ts`, `lib/liveBusRetry.ts` | Preserve healthy short-tab data; debounce confirmed disconnect/30-second suspension with cooldown and bounded independent retry jitter |
 | `hooks/useCollection.ts`, `hooks/useSettings.ts` | Shared auth-ready Firestore configuration/session listeners and cache disposal |
-| `components/maps/` | Stored directional geometry, current matched/raw position, honest freshness and local ETA math |
+| `components/maps/`, `lib/busEta.ts` | Stored directional geometry, current matched/raw position, honest freshness and local ETA math; unchanged buses retain marker identity and static stop projections are cached per route geometry/version/direction with edit and unmount invalidation |
 | `lib/apiClient.ts`, `lib/routeSaveClient.ts` | Firebase bearer-token HTTP calls, deadlines and Retry-After hints; bounded route-save reconciliation without duplicate poll-triggered writes |
 | `components/ui/` | In-app listbox controls plus focus-contained alert/confirmation dialogs |
 | `src/sw.js` | Static/public caching; Firebase, authenticated API and unknown requests are network-only |
@@ -59,6 +59,10 @@ debounce and 5-second manual-handshake cooldown. Live listener retry windows
 range from 0.5–1 second to 15–30 seconds with independent jitter. See the
 [reconnect runbook](../operations/RTDB_RECONNECT_RECOVERY.md) for cache,
 snapshot-readiness and actual-network acceptance limits.
+
+Passenger map per-bus identity, marker and ETA projection behavior is described
+in the [R18 synthetic evidence](../testing/PASSENGER_MAP_PER_BUS_WORK.md).
+The moving-device render and road-confidence gates remain in #245.
 
 ## Verify and build
 
