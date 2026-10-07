@@ -1,6 +1,6 @@
 # Eki A–Z testing status
 
-Last updated: 2026-10-07 22:28 IST (UTC+05:30).
+Last updated: 2026-10-07 23:04 IST (UTC+05:30).
 
 The current [execution ledger](docs/testing/WEBAPP_A_Z_AB_TESTING.md) records
 actual localhost observations, software/emulator evidence, pending gates and

@@ -1,6 +1,6 @@
 # Eki A–Z acceptance execution ledger
 
-Last updated: 2026-10-07 22:28 IST (UTC+05:30).
+Last updated: 2026-10-07 23:04 IST (UTC+05:30).
 
 This is the current status companion to the
 [complete supplied A–Z plan](WEBAPP_A_Z_AB_TESTING_PLAN.md), including all
@@ -102,7 +102,7 @@ for external gates. Completion here is software scope, not a full field pass.
 | R11 | [PR276](https://github.com/notnamansinha/Eki/pull/276) merged `31db267`; tested head `e8b490c` and fetched merge trees identical; 18 merged focused and 74 script checks, 70-operation OpenAPI/UI contracts, audits zero; [push](https://github.com/notnamansinha/Eki/actions/runs/37444429836), [PR](https://github.com/notnamansinha/Eki/actions/runs/37444696350) and [merged CI](https://github.com/notnamansinha/Eki/actions/runs/37445413131) pass all three jobs. Index-first protected workflow and strict bounded name-only query readiness gate; actual cloud deployment readiness pending |
 | R12 | PR266 merged `c160242`; route catalog/watch invalidation, actual ordering/ack-loss emulator checks; [catalog contract](../operations/ROUTE_CATALOG.md) |
 | R13 | PR267 merged `bff3b02`; bounded read-only geometry GET and explicit authorized repair; [geometry contract](../operations/ROUTE_GEOMETRY_READS.md) |
-| R14 | Measurement and isolated software verification underway; retain pending until actual isolation/order/fence coverage and merge evidence exist |
+| R14 | [PR #287](https://github.com/notnamansinha/Eki/pull/287), exact head `fa7f570` / tree `e5f3dcc`; 859 backend / 552 frontend / 74 scripts / 37 actual emulator / 16 synthetic admin browser checks pass. Independent65+9 and74+59; lint/TypeScript,71-operation contracts, strict local Webpack export/SW/CSP and zero audits pass. [Push CI](https://github.com/notnamansinha/Eki/actions/runs/37657663763) and [PR CI](https://github.com/notnamansinha/Eki/actions/runs/37657812742) pass web/backend-image/firmware including clean default production build. Merge awaits repository code-owner approval or owner-authorized override; matching cloud rollout and moving acceptance pending. [Rollout contract](R14_LIVE_PROJECTION.md) |
 | R15 | [PR275](https://github.com/notnamansinha/Eki/pull/275) merged `b358dd2`; tested integrated head `a202a5f` and merge trees identical; 25 focused +19 mirror +16 synthetic browser checks pass on fetched merge; [push](https://github.com/notnamansinha/Eki/actions/runs/37445787428), [PR](https://github.com/notnamansinha/Eki/actions/runs/37445792389) and [merged CI](https://github.com/notnamansinha/Eki/actions/runs/37446408451) pass all three jobs. Healthy short switches, 30-second suspension gate, visible+online debounce, natural recovery cancellation, 5-second cooldown and bounded equal jitter; real PWA/network/many-client acceptance pending |
 
 On the final integrated R15 head, actual Chrome clicks on the local synthetic
@@ -123,7 +123,7 @@ handover without a redundant revision, same-generation reconstruction of erased
 destinations, captured generation across SDK retries, bounded replay, stop and
 leadership fencing, and strict session membership. Independent frontend review
 passed **74 new acceptance cases** and **59 existing lifecycle cases**. Final
-owner gates and PR/merge evidence are recorded separately once complete.
+owner gates and exact-head CI are recorded above; merged evidence follows after approval.
 
 In the same two-route fixture with 20 raw, 20 matched and 40 internal updates,
 the raw listener delivered 80 callbacks / 78,611 decoded JSON bytes; selected
@@ -152,8 +152,8 @@ All **37 final loopback emulator cases** passed. One earlier existing crash-chil
 ## R14 supplemental acceptance oracles
 
 These are required regression oracles for the focused successor to PR #277.
-They remain pending until the final source and recorded results below establish
-execution; the original PR's green CI alone did not cover these failures.
+The recorded final software checks exercise these oracles; field/provider
+acceptance remains pending. The original PR's green CI alone did not cover these failures.
 
 | Area | Accepted path and adverse/recovery oracle |
 | --- | --- |
@@ -676,3 +676,7 @@ expand these rows rather than being silently omitted.
 | REL07 | Backend origin changed from tunnel, DNS/TLS/CA/key/CORS/CSP/auth changes | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | REL08 | Backup restore/retention enable/monitoring/WAF/quotas/owners | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 
+
+## Current R14 commit and browser boundary
+
+Final source `fa7f570d67fc323086769f12cfcd3bc2d291bb03` has tree `e5f3dcc8bb8f928ec0e9ea893eb4c8c54c9a0d98`. Actual Chrome on the committed isolated localhost fixture repeated the unready banner, Retry recovery, distinct route-B tracking identity `qa-session-B`, corrected unknown-status card and loaded actual map logic with a synthetic SDK. Earlier denials, picker and timeline clicks used the same final code before commit. No real provider/GNSS/account acceptance is inferred. Browser screenshot capture also timed out after restart; DOM/AX proof is retained. Clean exact-head CI passes the default production pipeline. Local default Turbopack rejected the shared external dependency junction; strict local Webpack export/SW/CSP passed unchanged source.
