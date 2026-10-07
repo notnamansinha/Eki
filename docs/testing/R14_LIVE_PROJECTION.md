@@ -49,7 +49,7 @@ Five independent regression cases were run against PR #277's original production
 
 Browser verification runs the actual auth gate, route store, catalog hook and completion/availability helpers with synthetic SDK transport in mobile and desktop Edge. It verifies route plus catalog paths (no fleet/authority reads), delayed sample receipt freshness, silent expiry, automatic-return completion and reverification. Existing admin access, feedback and reconnect scenarios remain covered. It does not certify a physical moving bus or cloud egress.
 
-Final local verification: **799 backend unit cases, 489 frontend cases, 74 script cases, all 31 actual Firebase emulator cases and 20 mobile/desktop browser cases passed**. Lint, TypeScript, the 70-operation OpenAPI and UI/source contracts, strict production build/static export/service-worker/CSP contract, and production dependency audit (zero vulnerabilities) passed. Build placeholders were isolated to the verification process; generated CI CSP values are not committed as production configuration.
+Final local verification: **799 backend unit cases, 489 frontend cases, 74 script cases, all 31 actual Firebase emulator cases and 20 mobile/desktop browser cases passed**. Lint, TypeScript, the 70-operation OpenAPI and UI/source contracts, strict production build/static export/service-worker/CSP contract, and runtime and tooling dependency audits (zero vulnerabilities after reusing PR #280's isolated transitive `shell-quote` lockfile repair) passed. Build placeholders were isolated to the verification process; generated CI CSP values are not committed as production configuration.
 
 ## Protected rollout and moving measurement
 
