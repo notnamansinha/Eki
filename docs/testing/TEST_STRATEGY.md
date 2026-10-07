@@ -84,7 +84,7 @@ they are not a claim that a newer head or production deployment passed.
 ### Routes, privacy and retention
 
 - Stored route segment works forward/reverse, orders stops, rejects coincident endpoints and rejects an out-of-segment via.
-- Route saves replay identical operation IDs, reject changed-payload reuse/stale versions, coalesce concurrent routing work, reuse valid geometry for metadata-only edits, and abort commit when an active ride appears during calculation.
+- Route saves replay identical operation IDs, reject changed-payload reuse/stale versions, coalesce concurrent routing work, reuse valid geometry for metadata-only edits, and abort commit when an active ride appears during calculation. Browser regressions first reproduced a committed save failing after one transient 503/network status poll, then the protected status GET failing on `AUTH_BUSY` before the handler ran; they verify bounded retry and Retry-After, stable `saveId`, no extra PUT, abort and late-result fencing, deadline unknown outcome, and immediate terminal 401/403/stored 5xx propagation on the legacy GET.
 - Place search distinguishes validation, authentication, configuration, upstream/rate-limit, body-timeout and genuine empty-result outcomes.
 - Terminal history deletion deduplicates projections and rejects active status.
 - Retention is disabled for missing/false/misspelled values and enabled only by explicit `true`.
@@ -102,6 +102,7 @@ they are not a claim that a newer head or production deployment passed.
   jitters and clears only after connection plus authoritative snapshot. See
   [browser recovery bounds](../operations/RTDB_RECONNECT_RECOVERY.md).
 - Polyline distance index and snapping choose the correct segment/direction.
+- Passenger map synthetic counters verify that a tick for one bus skips unchanged peers' marker renders and stop projections; route version, direction, path and stop edits invalidate projections, and route switches/unmount clear local cache state. ETA values are compared with the uncached calculation. See [R18 evidence](PASSENGER_MAP_PER_BUS_WORK.md); moving-device render latency and road confidence require separate live acceptance in #245.
 - Ride feedback eligibility requires completed session/passenger identity.
 - Ride-history timestamp/status/stop normalization handles legacy forms.
 

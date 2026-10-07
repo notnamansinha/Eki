@@ -1,0 +1,95 @@
+{
+  "node": "v26.8.2",
+  "results": [
+    {
+      "case": "dense-continuity",
+      "segments": 10000,
+      "samples": 300,
+      "baseline": {
+        "p50Ms": 0.5734,
+        "p95Ms": 0.7589,
+        "projectedSegmentsPerFix": 10000
+      },
+      "optimized": {
+        "p50Ms": 0.0145,
+        "p95Ms": 0.0252,
+        "projectedSegmentsPerFix": 158
+      }
+    },
+    {
+      "case": "sparse-continuity",
+      "segments": 1000,
+      "samples": 300,
+      "baseline": {
+        "p50Ms": 0.0581,
+        "p95Ms": 0.1363,
+        "projectedSegmentsPerFix": 1000
+      },
+      "optimized": {
+        "p50Ms": 0.0037,
+        "p95Ms": 0.006,
+        "projectedSegmentsPerFix": 16
+      }
+    },
+    {
+      "case": "loop-continuity",
+      "segments": 1000,
+      "samples": 300,
+      "baseline": {
+        "p50Ms": 0.0736,
+        "p95Ms": 0.172,
+        "projectedSegmentsPerFix": 1000
+      },
+      "optimized": {
+        "p50Ms": 0.0423,
+        "p95Ms": 0.0858,
+        "projectedSegmentsPerFix": 476
+      }
+    },
+    {
+      "case": "no-prior-warm-geometry",
+      "segments": 10000,
+      "samples": 300,
+      "baseline": {
+        "p50Ms": 0.894,
+        "p95Ms": 1.3518,
+        "projectedSegmentsPerFix": 10000
+      },
+      "optimized": {
+        "p50Ms": 0.9033,
+        "p95Ms": 1.4436,
+        "projectedSegmentsPerFix": 10000
+      }
+    },
+    {
+      "case": "reacquisition-no-bound",
+      "segments": 10000,
+      "samples": 300,
+      "baseline": {
+        "p50Ms": 0.982,
+        "p95Ms": 1.4387,
+        "projectedSegmentsPerFix": 10000
+      },
+      "optimized": {
+        "p50Ms": 0.9779,
+        "p95Ms": 1.4689,
+        "projectedSegmentsPerFix": 10000
+      }
+    },
+    {
+      "case": "long-single-segment",
+      "segments": 1,
+      "samples": 300,
+      "baseline": {
+        "p50Ms": 0.0027,
+        "p95Ms": 0.0035,
+        "projectedSegmentsPerFix": 1
+      },
+      "optimized": {
+        "p50Ms": 0.0034,
+        "p95Ms": 0.004,
+        "projectedSegmentsPerFix": 1
+      }
+    }
+  ]
+}

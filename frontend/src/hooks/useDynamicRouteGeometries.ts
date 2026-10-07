@@ -56,6 +56,10 @@ export function useDynamicRouteGeometries(
   const [versioned, setVersioned] = useState<Map<string, VersionedRouteGeometry>>(
     new Map(),
   );
+  const selectionKey = JSON.stringify([...buses.values()].map((bus) => [
+    bus.busId, bus.routeId, bus.routeSource, bus.routeVersion,
+    bus.direction, bus.routeDirection,
+  ]));
 
   useEffect(() => {
     let cancelled = false;
@@ -84,7 +88,7 @@ export function useDynamicRouteGeometries(
             if (!cancelled && geometry) {
               next.set(bus.busId, { version, geometry });
               // Publish each bus immediately; a slow fleet peer cannot hold it back.
-              setVersioned(new Map(next));
+              setVersioned((previous) => sameVersioned(previous, next) ? previous : new Map(next));
             }
           }),
         );
@@ -92,17 +96,12 @@ export function useDynamicRouteGeometries(
     }
 
     void Promise.resolve().then(() => {
-      if (!cancelled) setVersioned(new Map(next));
+      if (!cancelled) setVersioned((previous) => sameVersioned(previous, next) ? previous : new Map(next));
     });
     void Promise.all(pending).then(() => {
       if (cancelled) return;
       setVersioned((prev) => {
-        if (
-          prev.size === next.size &&
-          [...prev.entries()].every(
-            ([id, entry]) => next.get(id)?.geometry === entry.geometry,
-          )
-        ) {
+        if (sameVersioned(prev, next)) {
           return prev;
         }
         return next;
@@ -114,8 +113,15 @@ export function useDynamicRouteGeometries(
     };
   }, [buses]);
 
-  return useMemo(
-    () => selectCurrentRouteGeometries(buses, versioned),
-    [buses, versioned],
-  );
+  // Only geometry-relevant bus fields participate; location/speed ticks keep
+  // the selected map identity and avoid a second ETA effect pass.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => selectCurrentRouteGeometries(buses, versioned), [selectionKey, versioned]);
+}
+
+function sameVersioned(left: ReadonlyMap<string, VersionedRouteGeometry>, right: ReadonlyMap<string, VersionedRouteGeometry>): boolean {
+  return left.size === right.size && [...left].every(([id, entry]) => {
+    const other = right.get(id);
+    return other?.version === entry.version && other.geometry === entry.geometry;
+  });
 }

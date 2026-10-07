@@ -6,6 +6,7 @@ import {
   passengerLiveBuses,
   passengerLiveBusSelectionKey,
   passengerTripStates,
+  reusePassengerMapBus,
 } from "./passengerLiveBus";
 
 const now = 2_000_000_000_000;
@@ -28,6 +29,17 @@ function telemetry(overrides: Record<string, unknown> = {}) {
 }
 
 describe("passenger live-bus normalization", () => {
+  it("reuses unchanged bus identity while changing only the updated bus", () => {
+    const raw = { lat: 23.03, lng: 72.47, speed: 20, heading: 70, motionState: "moving", seq: 1, sampledAt: now - 1000 };
+    const service = { status: "active", sessionId: "session_1", direction: "forward" };
+    const first = normalizePassengerMapBus("Bus01_route_1", telemetry({ ...service, rawLocation: raw }), now)!;
+    const unchanged = normalizePassengerMapBus("Bus01_route_1", telemetry({ ...service, rawLocation: { ...raw } }), now)!;
+    expect(reusePassengerMapBus(first, unchanged)).toBe(first);
+    const moved = normalizePassengerMapBus("Bus01_route_1", telemetry({ ...service, rawLocation: { ...raw, lat: 23.04 }, lat: 23.04 }), now)!;
+    expect(reusePassengerMapBus(first, moved)).toBe(moved);
+    const rerouted = normalizePassengerMapBus("Bus01_route_1", telemetry({ ...service, rawLocation: raw, routeVersion: 2 }), now)!;
+    expect(reusePassengerMapBus(first, rerouted)).toBe(rerouted);
+  });
   it.each([-1, 201])("rejects out-of-range speed %s at both passenger boundaries", speed => {
     const service = telemetry({ status: "active", sessionId: "session_1", direction: "forward", speed });
     expect(normalizePassengerLiveBus("Bus01_route_1", service, now)).toBeNull();
