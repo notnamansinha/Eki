@@ -1,11 +1,5 @@
 import { SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
-import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
-import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
-import { NodeSDK } from "@opentelemetry/sdk-node";
+import type { NodeSDK } from "@opentelemetry/sdk-node";
 
 let sdk: NodeSDK | null = null;
 
@@ -31,60 +25,31 @@ export function redactHttpSpanUrl(
   setAttribute("url.query", "");
 }
 
-/** Starts before application modules load so HTTP/Express patches are effective. */
-export function startTelemetry(): boolean {
-  if (sdk || !isTelemetryEnabled()) return Boolean(sdk);
+let starting: Promise<boolean> | null = null;
 
-  sdk = new NodeSDK({
-    serviceName: process.env.OTEL_SERVICE_NAME?.trim() || "eki-backend",
-    traceExporter: new OTLPTraceExporter(),
-    metricReaders: [
-      new PeriodicExportingMetricReader({
-        exporter: new OTLPMetricExporter(),
-        exportIntervalMillis: 30_000,
-        exportTimeoutMillis: 10_000,
-      }),
-    ],
-    logRecordProcessors: [
-      new BatchLogRecordProcessor({
-        exporter: new OTLPLogExporter(),
-        scheduledDelayMillis: 2_000,
-        exportTimeoutMillis: 10_000,
-        maxQueueSize: 2_048,
-        maxExportBatchSize: 512,
-      }),
-    ],
-    instrumentations: [
-      getNodeAutoInstrumentations({
-        // File-system spans are high-volume and rarely useful for this API.
-        "@opentelemetry/instrumentation-fs": { enabled: false },
-        "@opentelemetry/instrumentation-http": {
-          // Keep load-balancer probes from drowning out actionable requests.
-          ignoreIncomingRequestHook: request =>
-            request.url?.split("?", 1)[0] === "/health",
-          // URLs can contain free-form place searches, user/device IDs, or
-          // other query values. Keep those out of exported HTTP spans.
-          requestHook: span => redactHttpSpanUrl((key, value) => span.setAttribute(key, value)),
-        },
-        "@opentelemetry/instrumentation-pino": {
-          disableLogCorrelation: false,
-          // Application logs are emitted explicitly by lib/logger so every
-          // console call is captured even across Pino major versions.
-          disableLogSending: true,
-        },
-        "@opentelemetry/instrumentation-runtime-node": {
-          monitoringPrecision: 5_000,
-          captureUncaughtException: true,
-        },
-      }),
-    ],
-  });
-  sdk.start();
-  console.log("[OpenTelemetry] Traces, metrics, and logs enabled.");
-  return true;
+/** Default root sampling is 10%; respect explicit standard SDK overrides. */
+export function configureTraceSampling(env: NodeJS.ProcessEnv = process.env): void {
+  if (env.OTEL_TRACES_SAMPLER?.trim()) return;
+  env.OTEL_TRACES_SAMPLER = "parentbased_traceidratio";
+  env.OTEL_TRACES_SAMPLER_ARG = "0.1";
+}
+
+/** Must be awaited before application modules load. Concurrent starts share a fill. */
+export function startTelemetry(): Promise<boolean> {
+  if (sdk) return Promise.resolve(true);
+  if (starting) return starting;
+  if (!isTelemetryEnabled()) return Promise.resolve(false);
+  configureTraceSampling();
+  starting = import("./telemetrySdk").then(({ createTelemetrySdk }) => {
+    sdk = createTelemetrySdk();
+    console.log("[OpenTelemetry] Traces, metrics, and logs enabled.");
+    return true;
+  }).finally(() => { starting = null; });
+  return starting;
 }
 
 export async function shutdownTelemetry(): Promise<void> {
+  await starting;
   const activeSdk = sdk;
   sdk = null;
   await activeSdk?.shutdown();

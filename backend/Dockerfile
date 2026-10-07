@@ -1,4 +1,4 @@
-FROM node:24-alpine AS builder
+FROM node:24.21.0-alpine3.23@sha256:9ec4a2e289874ed0d722e1772ec2de45d2801541db8612f3638b26f128c69ac2 AS builder
 
 WORKDIR /app
 
@@ -15,7 +15,7 @@ RUN npm run build --workspace=backend
 RUN npm prune --omit=dev --omit=optional
 
 
-FROM node:24-alpine AS runtime
+FROM node:24.21.0-alpine3.23@sha256:9ec4a2e289874ed0d722e1772ec2de45d2801541db8612f3638b26f128c69ac2 AS runtime
 
 WORKDIR /app
 ENV NODE_ENV=production

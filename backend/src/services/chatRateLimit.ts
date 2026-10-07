@@ -100,22 +100,19 @@ const CHARACTER_VARIANTS: Record<string, string> = {
   t: "[t7+]",
   u: "[uüúùûv]",
 };
-const OBFUSCATION_SEPARATOR = "[\\p{M}\\p{Cf}\\p{P}\\p{S}\\s_]*";
+const OBFUSCATION_SEPARATOR = /^[\p{M}\p{Cf}\p{P}\p{S}\s_]$/u;
+const WORD_CHARACTER = /^[\p{L}\p{N}]$/u;
 
 function escapeRegex(character: string): string {
   return character.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function profanityPattern(term: string): string {
+function profanityPattern(term: string): RegExp[] {
   return Array.from(term.normalize("NFKC").toLowerCase())
-    .map((character) => `${CHARACTER_VARIANTS[character] ?? escapeRegex(character)}+`)
-    .join(OBFUSCATION_SEPARATOR);
+    .map((character) => new RegExp(`^(?:${CHARACTER_VARIANTS[character] ?? escapeRegex(character)})$`, "iu"));
 }
 
-const PROFANITY_REGEX = new RegExp(
-  `(?<![\\p{L}\\p{N}])(?:${PROFANITY_TERMS.map(profanityPattern).join("|")})(?![\\p{L}\\p{N}])`,
-  "giu",
-);
+const PROFANITY_PATTERNS = PROFANITY_TERMS.map(profanityPattern);
 
 const UNSAFE_FORMATTING = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/gu;
 
@@ -128,7 +125,72 @@ export function normalizeChatText(text: string): string {
 }
 
 export function censorText(text: string): string {
-  return text.replace(PROFANITY_REGEX, "***");
+  const characters = Array.from(text);
+  const size = characters.length;
+  const separators = characters.map(character => OBFUSCATION_SEPARATOR.test(character));
+  const word = characters.map(character => WORD_CHARACTER.test(character));
+  const matches = new Map<string, boolean[]>();
+  const present = new Map<string, boolean>();
+  const ends: Int32Array[] = [];
+  const terminal = Int32Array.from({ length: size + 1 }, (_, i) => !word[i] ? i : -1);
+
+  // Evaluate each fixed pattern backwards. Each state is visited once rather
+  // than backtracking across overlapping repeated letters/symbol separators.
+  // Greedy repetition/separators and term order retain the old regex policy.
+  // O(code points * total dictionary characters), O(code points * term count).
+  for (const pattern of PROFANITY_PATTERNS) {
+    // An exact character-class absence check can safely skip a term: every
+    // stage must occur somewhere. Unlike a literal-word prefilter, this keeps
+    // every leetspeak, separator and Unicode variant eligible for detection.
+    const eligible = pattern.every(variant => {
+      if (!matches.has(variant.source)) {
+        const unique = new Map<string, boolean>();
+        const accepted = characters.map(character => {
+          if (!unique.has(character)) unique.set(character, variant.test(character));
+          return unique.get(character)!;
+        });
+        matches.set(variant.source, accepted);
+        present.set(variant.source, accepted.some(Boolean));
+      }
+      return present.get(variant.source);
+    });
+    if (!eligible) continue;
+    let following = terminal;
+    for (let stage = pattern.length - 1; stage >= 0; stage--) {
+      const variant = pattern[stage];
+      const accepted = matches.get(variant.source)!;
+      const repeated = new Int32Array(size + 1).fill(-1);
+      for (let i = size - 1; i >= 0; i--) {
+        if (accepted[i]) {
+          repeated[i] = repeated[i + 1] >= 0 ? repeated[i + 1] : following[i + 1];
+        }
+      }
+      if (stage === 0) {
+        following = repeated;
+      } else {
+        const separated = new Int32Array(size + 1).fill(-1);
+        for (let i = size - 1; i >= 0; i--) {
+          separated[i] = separators[i] && separated[i + 1] >= 0
+            ? separated[i + 1] : repeated[i];
+        }
+        following = separated;
+      }
+    }
+    ends.push(following);
+  }
+
+  const output: string[] = [];
+  for (let i = 0; i < size;) {
+    const end = (i === 0 || !word[i - 1])
+      ? ends.find(term => term[i] >= 0)?.[i] : undefined;
+    if (end !== undefined) {
+      output.push("***");
+      i = end;
+    } else {
+      output.push(characters[i++]);
+    }
+  }
+  return output.join("");
 }
 
 export type ModeratedChatText = {

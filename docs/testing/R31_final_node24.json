@@ -1,0 +1,126 @@
+{
+  "node": "v24.21.0",
+  "platform": "win32",
+  "arch": "x64",
+  "startupScope": "instrumentation import + start, fresh processes; no app/Firebase; endpoint loopback discard",
+  "moderation": {
+    "ordinary": {
+      "length": 47,
+      "accepted": true,
+      "firstMs": 2.641600000000004,
+      "p50Ms": 0.18430000000000746,
+      "p95Ms": 0.3841999999999999,
+      "maxMs": 1.1073999999999984,
+      "cpuMsPerCall": 0.4166666666666667
+    },
+    "clean500": {
+      "length": 500,
+      "accepted": true,
+      "firstMs": 4.033700000000003,
+      "p50Ms": 0.653899999999993,
+      "p95Ms": 1.5157000000000096,
+      "maxMs": 2.874299999999998,
+      "cpuMsPerCall": 1.15
+    },
+    "obfuscated": {
+      "length": 42,
+      "accepted": true,
+      "firstMs": 3.548400000000001,
+      "p50Ms": 0.2388000000000048,
+      "p95Ms": 0.4960000000000093,
+      "maxMs": 1.882399999999997,
+      "cpuMsPerCall": 0.36333333333333334
+    },
+    "repeatedPrefix": {
+      "length": 499,
+      "accepted": true,
+      "firstMs": 3.3038000000000025,
+      "p50Ms": 0.45000000000000284,
+      "p95Ms": 0.68719999999999,
+      "maxMs": 1.7614000000000019,
+      "cpuMsPerCall": 0.6266666666666667
+    },
+    "overlappingSymbols": {
+      "length": 499,
+      "accepted": true,
+      "firstMs": 3.026199999999996,
+      "p50Ms": 0.4655999999999949,
+      "p95Ms": 0.808400000000006,
+      "maxMs": 2.046599999999998,
+      "cpuMsPerCall": 0.57
+    },
+    "unicode": {
+      "length": 500,
+      "accepted": true,
+      "firstMs": 3.2879000000000005,
+      "p50Ms": 0.35829999999999984,
+      "p95Ms": 0.5975999999999999,
+      "maxMs": 1.386499999999998,
+      "cpuMsPerCall": 0.4166666666666667
+    },
+    "formatting2000": {
+      "length": 2000,
+      "accepted": true,
+      "firstMs": 3.415700000000001,
+      "p50Ms": 0.45999999999999375,
+      "p95Ms": 0.6459000000000117,
+      "maxMs": 1.3323000000000036,
+      "cpuMsPerCall": 0.5733333333333334
+    },
+    "rejected2001": {
+      "length": 2001,
+      "accepted": false,
+      "firstMs": 0.03829999999999956,
+      "p50Ms": 0.00030000000000285354,
+      "p95Ms": 0.0005000000000023874,
+      "maxMs": 0.006099999999996442,
+      "cpuMsPerCall": 0
+    }
+  },
+  "startup": {
+    "disabled": {
+      "wallMs": {
+        "p50": 54.09499999999999,
+        "max": 60.8091
+      },
+      "cpuMs": {
+        "p50": 48,
+        "max": 62
+      },
+      "rssDeltaMiB": {
+        "p50": 6.0078125,
+        "max": 6.0859375
+      },
+      "heapDeltaMiB": {
+        "p50": 1.1504898071289062,
+        "max": 1.1687469482421875
+      },
+      "loadedModules": {
+        "p50": 45,
+        "max": 45
+      }
+    },
+    "enabled": {
+      "wallMs": {
+        "p50": 694.1074,
+        "max": 1354.3103
+      },
+      "cpuMs": {
+        "p50": 891,
+        "max": 1250
+      },
+      "rssDeltaMiB": {
+        "p50": 28.625,
+        "max": 29.0390625
+      },
+      "heapDeltaMiB": {
+        "p50": 9.809883117675781,
+        "max": 10.1719970703125
+      },
+      "loadedModules": {
+        "p50": 510,
+        "max": 510
+      }
+    }
+  }
+}

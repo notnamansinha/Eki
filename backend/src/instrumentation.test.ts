@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { isTelemetryEnabled, redactHttpSpanUrl } from "./instrumentation";
+import { configureTraceSampling, isTelemetryEnabled, redactHttpSpanUrl } from "./instrumentation";
 
 describe("OpenTelemetry configuration", () => {
+  it("defaults root traces to ten percent and respects explicit sampler policy", () => {
+    const env: NodeJS.ProcessEnv = {};
+    configureTraceSampling(env);
+    expect(env).toEqual({ OTEL_TRACES_SAMPLER: "parentbased_traceidratio", OTEL_TRACES_SAMPLER_ARG: "0.1" });
+    const explicit = { OTEL_TRACES_SAMPLER: "always_on", OTEL_TRACES_SAMPLER_ARG: "1" };
+    configureTraceSampling(explicit);
+    expect(explicit).toEqual({ OTEL_TRACES_SAMPLER: "always_on", OTEL_TRACES_SAMPLER_ARG: "1" });
+  });
   it("stays disabled when no OTLP endpoint is configured", () => {
     expect(isTelemetryEnabled({})).toBe(false);
   });
