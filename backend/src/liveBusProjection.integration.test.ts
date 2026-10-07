@@ -56,11 +56,11 @@ integration("R14 loopback transaction and payload measurement", () => {
         plausibilityAnchor: { lat: 23, lng: 72, speed: 10, gpsHdop: 2, timestamp: 1_800_000_000_000 },
         routeMatchHistory: Array.from({ length: 4 }, (_, i) => ({ lat: 23 + i / 1000, lng: 72, sampledAt: 1_800_000_000_000 + i, seq: i })) };
       fleet[key] = value;
-      if (routeId === "route0") projected[key] = publicLiveBus(value);
+      if (routeId === "route0") projected[`node:${key}`] = publicLiveBus(value);
 
     }
     for (const routeId of new Set(Object.values(fleet).map(bus => bus.routeId))) {
-      catalog[routeId] = routeAvailability(Object.fromEntries(Object.entries(fleet).filter(([, bus]) => bus.routeId === routeId)), 1_800_000_000_000);
+      catalog[`route:${routeId}`] = routeAvailability(Object.fromEntries(Object.entries(fleet).filter(([, bus]) => bus.routeId === routeId)), 1_800_000_000_000);
     }
     const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
     const result = { fleetBuses: 100, routes: 10, selectedBuses: 10, fleetBytes: bytes(fleet), selectedRouteBytes: bytes(projected), catalogBytes: bytes(catalog) };

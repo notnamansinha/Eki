@@ -21,8 +21,8 @@ export class WorkerFence {
   run<T>(callback: () => T): T { this.assert(); return context.run(this, callback); }
 }
 const context = new AsyncLocalStorage<WorkerFence>();
-export function workerGeneration(): number | undefined { return context.getStore()?.generation; }
 export function assertWorkerLeadership(): void { context.getStore()?.assert(); }
+export function workerGeneration(): number { return context.getStore()?.generation ?? 0; }
 
 /** Cleanup must retain the old authority even when called by a new coordinator. */
 export function bindWorkerContext<T>(callback: () => T): () => T {

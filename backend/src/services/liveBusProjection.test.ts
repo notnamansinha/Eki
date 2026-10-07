@@ -52,47 +52,47 @@ describe("public live projection", () => {
     }
   });
   it("counts active rides separately from fresh sessionless previews", () => {
-    expect(routeAvailability({ active: live(), stale: { deviceState: "online", timestamp: 1 }, fresh: { deviceState: "online", timestamp: 600_001 }, done: { ...live(), tripState: "completed" } }, 600_001)).toEqual({ active: 1, available: 1, freshestAt: 600_001, previewFreshness: { "1": 1, "600001": 1 } });
+    expect(routeAvailability({ active: live(), stale: { deviceState: "online", timestamp: 1 }, fresh: { deviceState: "online", timestamp: 600_001 }, done: { ...live(), tripState: "completed" } }, 600_001)).toEqual({ active: 1, available: 1, freshestAt: 600_000, availableReceipts: [1, 600_001] });
   });
   it("re-reads authority instead of publishing a queued stale session and suppresses internal-only events", async () => {
     const old = live(); fixture.data.activeBuses = { bus1_route1: live("s2") }; start(); emit("child_changed", old); await settle();
-    expect(fixture.data.publicRouteBuses.route1.buses.bus1_route1.sessionId).toBe("s2");
+    expect(fixture.data.publicRouteBuses["route:route1"].buses["node:bus1_route1"].sessionId).toBe("s2");
     emit("child_changed", { ...old, telemetryRouteContext: { retry: 7 } }); await settle();
     expect(getLiveBusProjectionStatus()).toMatchObject({ events: 2, skipped: 1, sourceReads: 1, committed: 1 });
     delete fixture.data.activeBuses.bus1_route1; emit("child_removed", old); await settle();
-    expect(fixture.data.publicRouteBuses.route1.buses).toEqual({});
+    expect(fixture.data.publicRouteBuses["route:route1"].buses).toEqual({});
     expect(fixture.data.liveRouteCatalog.values.route1.active).toBe(0);
   });
   it("periodically repairs failed publication and orphaned removals using bounded pages", async () => {
     fixture.data.activeBuses = { bus1_route1: live() }; fixture.fail = true; start(); emit("child_changed", live()); await settle();
     await vi.advanceTimersByTimeAsync(4000); await settle();
-    expect(fixture.data.publicRouteBuses.route1.buses.bus1_route1.sessionId).toBe("s1");
+    expect(fixture.data.publicRouteBuses["route:route1"].buses["node:bus1_route1"].sessionId).toBe("s1");
     delete fixture.data.activeBuses.bus1_route1;
     await vi.advanceTimersByTimeAsync(65_000); await settle();
-    expect(fixture.data.publicRouteBuses.route1.buses).toEqual({});
+    expect(fixture.data.publicRouteBuses["route:route1"].buses).toEqual({});
     expect(fixture.reads.filter(r => r.limit).every(r => r.limit! <= 25)).toBe(true);
   });
   it("cannot overwrite a newer generation's public state", async () => {
     fixture.data.activeBuses = { bus1_route1: live("old") };
-    fixture.data.publicRouteBuses = { route1: { _workerGeneration: 10, revision: 5, buses: { bus1_route1: live("new") } } };
-    fixture.data.liveRouteCatalog = { _workerGeneration: 10, values: { route1: { active: 1, available: 0, freshestAt: 0 } } };
+    fixture.data.publicRouteBuses = { "route:route1": { _workerGeneration: 10, revision: 5, buses: { "node:bus1_route1": live("new") } } };
+    fixture.data.liveRouteCatalog = { _workerGeneration: 10, values: { "route:route1": { active: 1, available: 0, freshestAt: 0 } } };
     start(9); emit("child_changed", live("old")); await settle();
-    expect(fixture.data.publicRouteBuses.route1.buses.bus1_route1.sessionId).toBe("new");
-    expect(fixture.data.publicRouteBuses.route1.revision).toBe(5);
+    expect(fixture.data.publicRouteBuses["route:route1"].buses["node:bus1_route1"].sessionId).toBe("new");
+    expect(fixture.data.publicRouteBuses["route:route1"].revision).toBe(5);
   });
   it("claims unchanged route and catalog destinations on worker takeover", async () => {
     const bus = publicLiveBus(live())!; fixture.data.activeBuses = { bus1_route1: bus };
-    fixture.data.publicRouteBuses = { route1: { _workerGeneration: 1, revision: 5, buses: { bus1_route1: bus } } };
-    fixture.data.liveRouteCatalog = { _workerGeneration: 1, revisions: { route1: 5 }, values: { route1: routeAvailability({ bus }) } };
+    fixture.data.publicRouteBuses = { "route:route1": { _workerGeneration: 1, revision: 5, buses: { "node:bus1_route1": bus } } };
+    fixture.data.liveRouteCatalog = { _workerGeneration: 1, revisions: { "route:route1": 5 }, values: { "route:route1": routeAvailability({ bus }) } };
     start(2); emit("child_changed", bus); await settle();
-    expect(fixture.data.publicRouteBuses.route1._workerGeneration).toBe(2);
-    expect(fixture.data.publicRouteBuses.route1.revision).toBe(5);
+    expect(fixture.data.publicRouteBuses["route:route1"]._workerGeneration).toBe(2);
+    expect(fixture.data.publicRouteBuses["route:route1"].revision).toBe(5);
     expect(fixture.data.liveRouteCatalog._workerGeneration).toBe(2);
   });
   it("preserves completion proof when dispatch rereads the already activated automatic return", async () => {
     fixture.data.activeBuses = { bus1_route1: { ...live("return"), tripState: "pre_departure", automaticTurnaround: true, previousSessionId: "s1" } };
     start(); emit("child_changed", { ...live(), tripState: "completed" }); await settle();
-    expect(fixture.data.publicRouteBuses.route1.buses.bus1_route1).toMatchObject({ sessionId: "return", previousSessionId: "s1", automaticTurnaround: true });
+    expect(fixture.data.publicRouteBuses["route:route1"].buses["node:bus1_route1"]).toMatchObject({ sessionId: "return", previousSessionId: "s1", automaticTurnaround: true });
   });
   it("bounds shutdown with an unsettled source read and ignores detached callbacks and late replies", async () => {
     let release!: () => void; fixture.gate = new Promise<void>(resolve => { release = resolve; });
@@ -101,7 +101,7 @@ describe("public live projection", () => {
     emit("child_changed", live()); await settle();
     const stopping = stop!(); expect(stop!()).toBe(stopping);
     const reads = fixture.reads.length; callback({ key: "bus1_route1", val: () => live("late") });
-    await vi.advanceTimersByTimeAsync(3000); await stopping;
+    await vi.advanceTimersByTimeAsync(8000); await stopping;
     release(); await settle();
     expect(fixture.reads).toHaveLength(reads);
     expect(fixture.data.publicRouteBuses).toBeUndefined();
@@ -109,7 +109,7 @@ describe("public live projection", () => {
   });
   it("rejects a dispatched transaction after leadership is revoked", async () => {
     let release!: () => void; fixture.gate = new Promise<void>(resolve => { release = resolve; });
-    fixture.heldPath = "publicRouteBuses/route1"; fixture.holdTransaction = true;
+    fixture.heldPath = "publicRouteBuses/route:route1"; fixture.holdTransaction = true;
     fixture.data.activeBuses = { bus1_route1: live() };
     const fence = start(); emit("child_changed", live()); await settle();
     fence.revoke(); release(); await settle();
@@ -119,7 +119,7 @@ describe("public live projection", () => {
     let release!: () => void; fixture.gate = new Promise<void>(resolve => { release = resolve; });
     fixture.heldPath = "activeBuses"; fixture.data.activeBuses = { bus1_route1: live() };
     start(); await vi.advanceTimersByTimeAsync(1000);
-    const stopping = stop!(); await vi.advanceTimersByTimeAsync(3000); await stopping;
+    const stopping = stop!(); await vi.advanceTimersByTimeAsync(8000); await stopping;
     release(); await settle();
     expect(fixture.data.publicRouteBuses).toBeUndefined();
     expect(fixture.reads).toEqual([{ path: "activeBuses", limit: 25 }]);

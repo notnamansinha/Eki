@@ -72,6 +72,8 @@ export function getTripStateQueueStatus() {
 }
 const backgroundTasks = new Set<Promise<void>>();
 interface TelemetrySample {
+  sessionId?: string;
+  direction?: string | null;
   timestamp: number;
   lat: number;
   lng: number;
@@ -847,7 +849,8 @@ export function startTripStateEngine(): () => Promise<void> {
     const stops = stopsInRideDirection(naturalStops, direction);
 
     const telemetryTimestamp = Number(data.timestamp);
-    const previousTelemetry = processedTelemetry.get(nodeKey);
+    const cachedTelemetry = processedTelemetry.get(nodeKey);
+    const previousTelemetry = cachedTelemetry && cachedTelemetry.sessionId === data.sessionId && cachedTelemetry.direction === direction ? cachedTelemetry : undefined;
     const isNewTelemetry =
       Number.isFinite(telemetryTimestamp) &&
       (!previousTelemetry || telemetryTimestamp > previousTelemetry.timestamp);
@@ -1041,6 +1044,7 @@ export function startTripStateEngine(): () => Promise<void> {
             currentStopIndex,
             hasDepartedOrigin,
             completedAt: completionTimeMs,
+            ...(typeof data.sessionId === "string" ? { lastCompletedSessionId: data.sessionId, lastCompletedAt: completionTimeMs, lastCompletedRouteId: data.routeId } : {}),
             turnaroundEligibleAt,
             turnaroundSampledAt: AUTOMATIC_TURNAROUND_DWELL_MS === 0
               ? Number(data.timestamp)
@@ -1107,7 +1111,7 @@ export function startTripStateEngine(): () => Promise<void> {
     }
 
     if (isNewTelemetry) {
-      processedTelemetry.set(nodeKey, { timestamp: telemetryTimestamp, lat: data.lat, lng: data.lng });
+      processedTelemetry.set(nodeKey, { timestamp: telemetryTimestamp, lat: data.lat, lng: data.lng, sessionId: data.sessionId, direction });
     }
     persistFleetState({ ...data, tripState }, new Date().toISOString());
   };

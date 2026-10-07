@@ -17,6 +17,7 @@ export function setScenario(next: string) {
   const bus = fixtureBus(next === "pending" ? null : next === "reverse" ? "reverse" : "forward");
   snapshot = next === "empty" ? {} : next === "device" ? { bus: { busId: bus.busId, routeId: bus.routeId, deviceState: "online", status: "offline", timestamp: Date.now(), lat: 23.004, lng: 72.004, heading: 0, speed: 0, motionState: "stopped" } } : next === "multiple" ? { bus, second: fixtureBus("reverse", "qa-session-2", "qa-bus-2") } : { bus };
   if (next === "completed") snapshot = { bus: { ...bus, tripState: "completed" } };
+  if (next === "two-routes") snapshot = { bus, second: { ...fixtureBus("reverse", "qa-session-B", "qa-bus-B"), routeId: "qa-route-2" } };
   if (next === "mixed") snapshot = { bus, second: {
     busId: "qa-bus-2", routeId: route.id, deviceState: "online", timestamp: Date.now(),
     lat: 23.007, lng: 72.007, speed: 0, motionState: "stopped", status: "offline",
@@ -30,8 +31,9 @@ export function subscribeLiveBusChanges(fn: (change: unknown) => void) {
   fn({ type: "reset", snapshot, source: "listener" });
   return () => { liveSubscribers.delete(fn); };
 }
-export function useAuth() { return { user: { uid: "qa-passenger", displayName: "QA Passenger", role: "passenger" }, logout: async () => {} }; }
-export function useRoutes() { return { routes: [route], error: null, retry: () => {} }; }
+const qaUser = { uid: "qa-passenger", displayName: "QA Passenger", role: "passenger" };
+export function useAuth() { return { user: qaUser, logout: async () => {} }; }
+export function useRoutes() { useScenario(); return { routes: scenario === "two-routes" ? [route, { ...route, id: "qa-route-2", name: "QA route B", color: "#F59E0B" }] : [route], error: null, retry: () => {} }; }
 let settings = { noBusesMessage: "No buses running", noBusesSubMessage: "Service starts at {time}", serviceStartTime: "8:00 am", announcementActive: false, announcementText: "" };
 export function useSettings() {
   const current = useSyncExternalStore(subscribe, () => settings);
@@ -52,9 +54,10 @@ export function subscribeLiveBusesByRoute(routeId: string, listener: (value: Rec
 const emptyGeometry = new Map();
 export function useDynamicRouteGeometries() { return emptyGeometry; }
 
-export function subscribeLiveBusChangesByRoute(routeId: string, listener: (change: unknown) => void) {
+export function subscribeLiveBusChangesByRoute(routeId: string, listener: (change: unknown) => void, error?: (error: Error) => void) {
   return subscribeLiveBusChanges((change: unknown) => {
     const reset = change as { snapshot: Record<string, { routeId?: string }> };
+    if (scenario === "detail-denied") { error?.(new Error("QA synthetic detail PERMISSION_DENIED")); return; }
     listener({ ...reset, snapshot: Object.fromEntries(Object.entries(reset.snapshot).filter(([, bus]) => bus.routeId === routeId)) });
   });
 }
@@ -63,6 +66,9 @@ export function useLiveRouteCatalog() {
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const buses = Object.values(snapshot) as Record<string, unknown>[];
-  return { catalog: { [route.id]: { active: buses.filter(bus => bus.sessionId && bus.tripState !== "completed").length,
-    available: buses.filter(bus => !bus.sessionId && bus.deviceState === "online" && now - Number(bus.timestamp) < BUS_EXPIRY_MS).length, freshestAt: Date.now() } }, error: null, retry: () => {} };
+  return { catalog: Object.fromEntries([route.id, "qa-route-2"].map(routeId => [routeId, { active: buses.filter(bus => bus.routeId === routeId && bus.sessionId && bus.tripState !== "completed").length,
+    available: buses.filter(bus => bus.routeId === routeId && !bus.sessionId && bus.deviceState === "online" && now - Number(bus.timestamp) < BUS_EXPIRY_MS).length, freshestAt: Date.now() }])), projectionReady: scenario !== "projection-unready", catalogReady: scenario !== "catalog-denied", error: scenario === "catalog-denied" ? "QA synthetic route catalog PERMISSION_DENIED. Retry after checking permissions." : scenario === "projection-unready" ? "QA synthetic projection unavailable: worker backfill/schema is not ready." : null, retry: () => setScenario("two-routes") };
 }
+export function getJoinedRideStatus(sessionId: string) { return Promise.resolve({ sessionId, busId: "qa-bus", routeId: route.id, status: "completed" }); }
+export function getAuthVerificationGeneration() { return 1; }
+export function invalidateLiveBusCache() { setScenario(scenario === "detail-denied" ? "two-routes" : scenario); }

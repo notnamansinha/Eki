@@ -503,6 +503,26 @@ function privateResponse(_req: Request, res: Response, next: NextFunction) {
   res.set("Cache-Control", "no-store");
   next();
 }
+/** Closed recovery status; manifests and boarding credentials never leave this endpoint. */
+router.get("/:sessionId/status", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const sessionId = singleRouteParam(req.params.sessionId);
+  res.setHeader("Cache-Control", "no-store");
+  if (!sessionId || !SAFE_ID.test(sessionId)) { res.status(400).json({ error: "Invalid session ID." }); return; }
+  try {
+    const snapshot = await db.collection("ride_sessions").doc(sessionId).get();
+    const data = snapshot.data(), user = req.user;
+    const entry = user ? passengerManifest(data?.passengers)[user.uid] : null;
+    const allowed = data && user && (user.admin === true ||
+      (user.role === "driver" && typeof user.driverId === "string" && SAFE_ID.test(user.driverId) && typeof user.assignedBusId === "string" && SAFE_ID.test(user.assignedBusId) && user.driverId === data.driverId && user.assignedBusId === data.busId) ||
+      ((user.role === undefined || user.role === "passenger") && hasPassenger(passengerManifest(data.passengers), user.uid) && entry && typeof entry === "object" && !Array.isArray(entry) && entry.userId === user.uid));
+    // Identical response for an unknown session and another passenger's ride.
+    if (!snapshot.exists || !allowed) { res.status(403).json({ error: "Ride status is unavailable for this account." }); return; }
+    if (typeof data.busId !== "string" || !SAFE_ID.test(data.busId) || typeof data.routeId !== "string" || !SAFE_ID.test(data.routeId) || typeof data.status !== "string" || !["pending", "armed", "active", "completed", "interrupted", "failed"].includes(data.status)) {
+      res.status(503).json({ error: "Ride status is temporarily unavailable." }); return;
+    }
+    res.json({ sessionId, busId: data.busId, routeId: data.routeId, status: data.status });
+  } catch { res.status(503).json({ error: "Ride status is temporarily unavailable." }); }
+});
 router.post("/:sessionId/boarding-code", requireAuth, issueBoardingCode);
 router.post("/:sessionId/join", requireAuth, joinSession);
 router.post("/:sessionId/messages", requireAuth, sendMessage);

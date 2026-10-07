@@ -87,13 +87,13 @@ export function publishPreview() {
   const received = Date.now() - 30_000;
   routeBus = { busId: "qa-bus", routeId: "qa-route", deviceState: "online", status: "offline",
     timestamp: received - 50_000, backendReceivedAt: received, lat: 23, lng: 72 };
-  routeChildren.forEach(callback => callback({ key: "qa-bus_qa-route", val: () => routeBus }));
-  catalogObservers.forEach(callback => callback({ val: () => ({ "qa-route": { active: 0, available: 1, freshestAt: received, previewFreshness: { [received]: 1 } } }) }));
+  routeChildren.forEach(callback => callback({ key: "node:qa-bus_qa-route", val: () => routeBus }));
+  catalogObservers.forEach(callback => callback({ val: () => ({ "route:qa-route": { active: 0, available: 1, freshestAt: received, availableReceipts: [received] } }) }));
 }
 export function publishAutomaticReturn() {
   routeBus = { busId: "qa-bus", routeId: "qa-route", sessionId: "return", previousSessionId: "joined",
     automaticTurnaround: true, tripState: "pre_departure", status: "active", timestamp: Date.now() };
-  routeChildren.forEach(callback => callback({ key: "qa-bus_qa-route", val: () => routeBus }));
+  routeChildren.forEach(callback => callback({ key: "node:qa-bus_qa-route", val: () => routeBus }));
 }
 export function onValue(source: { path: string }, success: (snapshot: { val: () => unknown }) => void) {
   window.dispatchEvent(new CustomEvent("qa-rtdb-read", { detail: { path: source.path } }));
@@ -103,17 +103,17 @@ export function onValue(source: { path: string }, success: (snapshot: { val: () 
   else { fleetReads++; notifySocketStats(); }
   queueMicrotask(() => {
     if (!active) return;
-    const scoped = source.path === "publicRouteBuses/qa-route/buses";
+    const scoped = source.path === "publicRouteBuses/route:qa-route/buses";
     const catalog = source.path === "liveRouteCatalog/values";
-    success({ val: () => source.path === ".info/connected" ? sdkConnected : scoped ? (routeBus ? { "qa-bus_qa-route": routeBus } : {}) : catalog ? { "qa-route": { active: 1, available: 0, freshestAt: 0 } } : {
-      "qa-route": { buses: { "qa-bus": { busId: "qa-bus", routeId: "qa-route", sessionId: "qa-session", tripState: "in_service", timestamp: Date.now(), lat: 12, lng: 77 } } },
+    success({ val: () => source.path === ".info/connected" ? sdkConnected : source.path === "clientProjectionStatus/public" ? { schemaVersion: 1, ready: true } : scoped ? (routeBus ? { "node:qa-bus_qa-route": routeBus } : {}) : catalog ? { "route:qa-route": { active: 1, available: 0, freshestAt: 0 } } : {
+      "route:qa-route": { buses: { "node:qa-bus": { busId: "qa-bus", routeId: "qa-route", sessionId: "qa-session", tripState: "in_service", timestamp: Date.now(), lat: 12, lng: 77 } } },
     } });
   });
   return () => { active = false; connectionObservers.delete(success); catalogObservers.delete(success); };
 }
 export const onChildAdded = () => () => {};
 export const onChildChanged = (source: { path: string }, callback: (snapshot: { key: string; val: () => unknown }) => void) => {
-  if (source.path === "publicRouteBuses/qa-route/buses") routeChildren.add(callback);
+  if (source.path === "publicRouteBuses/route:qa-route/buses") routeChildren.add(callback);
   return () => { routeChildren.delete(callback); };
 };
 export const onChildRemoved = () => () => {};
