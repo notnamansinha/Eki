@@ -1,3 +1,5 @@
+// Frozen full-scan oracle from testing 41ffbc7, before R19. Test/benchmark only.
+// Keep scoring unchanged here so the optimized candidate search is checked independently.
 import { haversineMeters } from "../lib/geo";
 import type { LatLng } from "../lib/polylineUtils";
 
@@ -111,20 +113,6 @@ function projectToSegment(point: LatLng, start: LatLng, end: LatLng) {
   };
 }
 
-const work = { calls: 0, boundedSearches: 0, fullSearches: 0, segmentProjections: 0, skippedSegments: 0 };
-export function getRouteMatchingWork() { return { ...work }; }
-
-/** First cumulative vertex >= bound (or > bound for the upper edge). */
-function distanceBound(values: readonly number[], bound: number, upper: boolean): number {
-  let low = 0; let high = values.length;
-  while (low < high) {
-    const middle = low + Math.floor((high - low) / 2);
-    if (values[middle] < bound || (upper && values[middle] === bound)) low = middle + 1;
-    else high = middle;
-  }
-  return low;
-}
-
 const distanceCache = new WeakMap<readonly LatLng[], number[]>();
 function cumulativeDistances(path: readonly LatLng[]): number[] {
   const cached = distanceCache.get(path);
@@ -152,29 +140,8 @@ export function matchRoutePosition(
   positionUncertaintyM = 25,
   maximumProgressChangeM?: number,
 ): RouteMatch | null {
-  work.calls++;
   if (path.length < 2) return null;
   const cumulative = cumulativeDistances(path);
-  let firstSegment = 0; let endSegment = path.length - 1;
-  // This narrows the existing physical-progress gate, not a vertex-count
-  // heuristic. Every interval intersecting that gate remains eligible,
-  // including parallel roads, loop legs, long segments and repeated vertices.
-  if (previous && Number.isFinite(previous.alongRouteDistanceM) &&
-      maximumProgressChangeM !== undefined && Number.isFinite(maximumProgressChangeM) &&
-      maximumProgressChangeM >= 0 && Number.isFinite(cumulative.at(-1))) {
-    const roundingPad = Number.EPSILON * Math.max(1, Math.abs(previous.alongRouteDistanceM), maximumProgressChangeM) * 4;
-    const minimum = previous.alongRouteDistanceM - maximumProgressChangeM - roundingPad;
-    const maximum = previous.alongRouteDistanceM + maximumProgressChangeM + roundingPad;
-    firstSegment = Math.max(0, distanceBound(cumulative, minimum, false) - 1);
-    endSegment = Math.min(path.length - 1, distanceBound(cumulative, maximum, true));
-    work.boundedSearches++;
-  } else {
-    // Cold start, expired/session/geometry-invalidated prior, or absent/invalid
-    // bounds keep the full ambiguity/reacquisition scan.
-    work.fullSearches++;
-  }
-  work.segmentProjections += endSegment - firstSegment;
-  work.skippedSegments += path.length - 1 - (endSegment - firstSegment);
   let best:
     | (RouteMatch & { score: number; segmentLengthM: number })
     | null = null;
@@ -183,7 +150,7 @@ export function matchRoutePosition(
     score: number;
   }> = [];
 
-  for (let segmentIndex = firstSegment; segmentIndex < endSegment; segmentIndex += 1) {
+  for (let segmentIndex = 0; segmentIndex < path.length - 1; segmentIndex += 1) {
     const projection = projectToSegment(
       rawPoint,
       path[segmentIndex],
@@ -279,74 +246,4 @@ export function matchRoutePosition(
   void _score;
   void _segmentLengthM;
   return match;
-}
-
-/**
- * A high-quality fix far from the route can confirm immediately. Ordinary or
- * unmatchable fixes require two consecutive reliable moving samples; missing
- * matches are deliberately never classified as a strong deviation.
- */
-export function evaluateRouteAdherence(
-  previousState: RouteAdherenceState | undefined,
-  previousOffRouteSamples: number,
-  match: RouteMatch | null,
-  reliablyMoving: boolean,
-): RouteAdherenceDecision {
-  if (
-    match &&
-    !match.isAmbiguous &&
-    match.distanceToRouteM <= ROUTE_MATCH_DISTANCE_M &&
-    match.matchConfidence >= 0.45
-  ) {
-    return {
-      routeState:
-        previousState === "ON_NEW_ROUTE" ? "ON_NEW_ROUTE" : "ON_ROUTE",
-      offRouteSampleCount: 0,
-      shouldReroute: false,
-    };
-  }
-
-  // A close projection at an intersection or beside a parallel carriageway
-  // is not evidence of the travelled segment. Keep it observable, but do not
-  // count an ambiguous snap toward rerouting.
-  if (match?.isAmbiguous) {
-    return {
-      routeState:
-        previousState === "REROUTING" ? "REROUTING" : "POSSIBLE_OFF_ROUTE",
-      offRouteSampleCount: previousOffRouteSamples,
-      shouldReroute: false,
-    };
-  }
-
-  if (!reliablyMoving) {
-    return {
-      routeState:
-        previousState === "REROUTING"
-          ? "REROUTING"
-          : "POSSIBLE_OFF_ROUTE",
-      offRouteSampleCount: previousOffRouteSamples,
-      shouldReroute: false,
-    };
-  }
-
-  const strongDeviation =
-    match !== null && match.distanceToRouteM >= STRONG_OFF_ROUTE_DISTANCE_M;
-
-  const offRouteSampleCount = Math.min(
-    OFF_ROUTE_CONFIRMATION_SAMPLES,
-    strongDeviation
-      ? OFF_ROUTE_CONFIRMATION_SAMPLES
-      : previousOffRouteSamples + 1,
-  );
-  const confirmed = offRouteSampleCount >= OFF_ROUTE_CONFIRMATION_SAMPLES;
-  return {
-    routeState:
-      confirmed && previousState === "REROUTING"
-        ? "REROUTING"
-        : confirmed
-          ? "OFF_ROUTE"
-          : "POSSIBLE_OFF_ROUTE",
-    offRouteSampleCount,
-    shouldReroute: confirmed && previousState !== "REROUTING",
-  };
 }

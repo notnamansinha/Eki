@@ -11,6 +11,7 @@
  * - Authenticated API routes require a valid Firebase ID token
  */
 
+import { getRouteMatchingWork } from "./services/routeMatching";
 import "dotenv/config";
 import { createRouteComputeLimiter } from "./lib/routeComputeLimiter";
 
@@ -247,6 +248,7 @@ app.get("/api/health", requireAdmin, (_req, res) => {
       deviceToServerLatencyMs: telemetry.deviceToServerLatencyMs,
       rtdbWriteLatencyMs: telemetry.rtdbWriteLatencyMs,
       rtdbTransactionAttempts: telemetry.rtdbTransactionAttempts,
+      routeMatching: getRouteMatchingWork(),
       rateLimit: telemetry.rateLimit,
       serverIngressGapMs: telemetry.serverIngressGapMs,
       routeProcessing,
