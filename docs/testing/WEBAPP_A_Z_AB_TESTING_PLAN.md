@@ -1,4 +1,8 @@
-> **Current execution overlay — 6 October 2026 (IST).** Read
+# Eki full A–Z testing plan and current contract overlay
+
+Last updated: 2026-10-07 22:28 IST (UTC+05:30).
+
+> **Current execution overlay — 7 October 2026 (IST).** Read
 > [WEBAPP_A_Z_AB_TESTING.md](WEBAPP_A_Z_AB_TESTING.md) for current results,
 > evidence limits, and the full 351-case execution ledger. The material below
 > this overlay is the preserved historical specification at `722ab6e`; its
@@ -15,10 +19,12 @@
 ## Current contract overrides for historical cases
 
 Use the current source, [API](../../backend/API.md), and
-[OpenAPI](../../backend/openapi.json) when the old census differs. The verified
-pre-R11/R14/R15 baseline has **70** HTTP operations; Appendix C/I's 59 operations
-and schema inventory remain historical snapshots. Regenerate the census after
-any API change rather than certifying all endpoints from an old table.
+[OpenAPI](../../backend/openapi.json) when the old census differs. The historical pre-R14
+baseline had **70** HTTP operations; R14 adds a member-authorized
+`GET /api/sessions/{sessionId}/status`, bringing the current contract to **71**.
+Appendix C/I's 59 operations and schema inventory remain historical snapshots.
+Regenerate the census after any API change rather than certifying all endpoints
+from an old table.
 
 - **ROUTE24:** R13 geometry GET is cached and read-only; it cannot lazily repair,
   call Google, or write Firestore. Test explicit authorized, versioned admin
@@ -38,6 +44,12 @@ any API change rather than certifying all endpoints from an old table.
   is shared, privileged publication requires both trusted admin claims, and
   stale generations cannot publish protected snapshots. PR269 adds map/editor
   interaction regressions. Actual affected-account acceptance remains open.
+- **R14 joined-session recovery:** the status GET returns only session ID,
+  bus ID, route ID and a closed durable status enum. Test exact membership,
+  assigned driver/admin claims, no-store responses, same denial for missing/
+  foreign sessions, malformed data/provider failure, request/auth deadlines,
+  cancellation, and single-flight nonterminal rechecks while visible/online.
+  Interrupted or failed rides cannot create completion or feedback.
 - **R11/R14/R15:** use the current ledger's implementation and verification
   entries. Automated software evidence does not close index deployment,
   moving-route, real-provider or real-client recovery acceptance.

@@ -1,6 +1,8 @@
 # Eki A–Z acceptance execution ledger
 
-Updated 6 October 2026 (IST). This is the current status companion to the
+Last updated: 2026-10-07 22:28 IST (UTC+05:30).
+
+This is the current status companion to the
 [complete supplied A–Z plan](WEBAPP_A_Z_AB_TESTING_PLAN.md), including all
 351 feature cases, the C01–C22 control matrix, H01–H18 HTTP matrix, boundary/race
 expansions, physical checks and future A/B experiments. Catalog inclusion is
@@ -9,7 +11,9 @@ the user's current instructions define authorized work.
 
 Current work is issue #246 **R01–R15 only**. R16+ repair work is deferred;
 previously completed later-numbered items retain their historical evidence.
-Later open PRs/worktrees are preserved, with no new testing/merge claim here.
+This task preserves later open PRs/worktrees and makes no new acceptance claim
+for them. Remote `testing` also contains externally merged PR #270 (R21) and
+PR #271 (R23), through `41ffbc7`; their presence does not expand this task scope.
 This scope restriction refers to Rxx repair subissues, not feature case IDs.
 GNSS is disconnected and `npm run dev` stopped. There is no separate Firebase
 staging project; destructive/load/privacy checks use disposable loopback
@@ -17,7 +21,10 @@ emulators. Do not treat the existing testing Firebase project as disposable.
 
 ## Pending execution
 
-- Affected administrator **Aryan**: witness his actual sign-in with current
+- Affected administrator **Aryan**: the owner reported on 7 October that the
+  failure was likely a debug-token issue and believes access now works. This
+  remains reported recovery, without witnessed affected-account acceptance.
+  Witness his actual sign-in with current
   testing source and matching enrolled App Check configuration, open every
   admin panel, and exercise a denied-read Retry if it occurs. A different
   existing administrator session does not establish this account's acceptance.
@@ -28,7 +35,9 @@ emulators. Do not treat the existing testing Firebase project as disposable.
 - R11: deployment in a suitable protected environment, new index build
   readiness, and the real retention/collection-group queries after readiness.
   A mock REST response or emulator does not prove an actual cloud index ready.
-- R14: see the final software evidence below; real fleet/replica egress,
+- R14: matching backend/status endpoint, schema/backfill, restrictive RTDB
+  rules and browser rollout must be verified together before field testing.
+  Merging software does not perform that deployment. Real fleet/replica egress,
   latency and concurrency acceptance needs a representative observed window.
 - R15: prolonged real mobile/PWA suspension, real SDK disconnect/flapping,
   and measured many-client recovery with SDK/network/billing behavior.
@@ -42,11 +51,11 @@ emulators. Do not treat the existing testing Firebase project as disposable.
 | Evidence | Source and result | Limit |
 | --- | --- | --- |
 | Historical full plan | Supplied baseline `722ab6e`; original SHA-256 recorded in companion | Static file/control/API/history census; declared cases are not executed |
-| Admin recovery software | PR268, merged testing `0b24b52`; 47 focused, 12 synthetic browser, 24 actual emulator cases; final-head and merged CI pass | Account/browser enrollment acceptance stays open |
-| Route interaction software | [PR269](https://github.com/notnamansinha/Eki/pull/269), head `f52c9dd`, merge `9579cdc`; 74 focused and 12 synthetic mobile/desktop browser cases; 9 merged route/map cases pass | Synthetic map/provider/save transport |
-| PR269 CI | [Push](https://github.com/notnamansinha/Eki/actions/runs/37359330129), [PR](https://github.com/notnamansinha/Eki/actions/runs/37359385536), [merged testing](https://github.com/notnamansinha/Eki/actions/runs/37360092803): web/backend-image/firmware pass; tested head and merge trees identical | CI covers committed software, not actual OAuth/Google/cloud UX |
+| Admin recovery software | PR #268, merged testing `0b24b52`; 47 focused, 12 synthetic browser, 24 actual emulator cases; final-head and merged CI pass | Account/browser enrollment acceptance stays open |
+| Route interaction software | [PR #269](https://github.com/notnamansinha/Eki/pull/269), head `f52c9dd`, merge `9579cdc`; 74 focused and 12 synthetic mobile/desktop browser cases; 9 merged route/map cases pass | Synthetic map/provider/save transport |
+| PR #269 CI | [Push](https://github.com/notnamansinha/Eki/actions/runs/37359330129), [PR](https://github.com/notnamansinha/Eki/actions/runs/37359385536), [merged testing](https://github.com/notnamansinha/Eki/actions/runs/37360092803): web/backend-image/firmware pass; tested head and merge trees identical | CI covers committed software, not actual OAuth/Google/cloud UX |
 | Actual localhost browser | Chrome, testing `0b24b52`, 6 October before disconnect; details below | Signed-in principal was not established as Aryan; no final merged code or hardware acceptance implied |
-| Stationary tunnel observation | 00:37:17.567–00:38:18.398 IST on 6 October, 60.83 seconds, 59 captured telemetry entries, 32 captured202, 27 still-in-flight0, no read errors | Pending entries were not revisited; zero is not a settled failure, and this is not complete response latency or sample→paint evidence |
+| Stationary tunnel observation | 00:37:17.567–00:38:18.398 IST on 6 October, 60.83 seconds, 59 captured telemetry entries, 32 captured HTTP 202, 27 still in flight (status 0), no read errors | Pending entries were not revisited; zero is not a settled failure, and this is not complete response latency or sample→paint evidence |
 
 The original checkout's comment-only tracked change and untracked files were
 preserved. Documentation and repairs use isolated managed worktrees. The
@@ -83,8 +92,8 @@ published in this ledger.
 
 ## R01–R15 software checklist
 
-Use [issue246](https://github.com/notnamansinha/Eki/issues/246) for exact merged
-heads, tests and pending acceptance; [issue245](https://github.com/notnamansinha/Eki/issues/245)
+Use [issue #246](https://github.com/notnamansinha/Eki/issues/246) for exact merged
+heads, tests and pending acceptance; [issue #245](https://github.com/notnamansinha/Eki/issues/245)
 for external gates. Completion here is software scope, not a full field pass.
 
 | Repairs | Current record |
@@ -106,6 +115,54 @@ synthetic SDK/HTTP, with no live project or affected-account acceptance.
 The resume fixture displayed Ready with a live synthetic bus; full suspension/
 flap/handshake assertions come from the 16-case controlled browser suite.
 
+## R14 independent software and browser evidence
+
+The final independent review passed **65 focused publisher/HTTP/OpenAPI tests**
+and **9 actual Firebase SDK emulator tests**, plus lint. These cover worker
+handover without a redundant revision, same-generation reconstruction of erased
+destinations, captured generation across SDK retries, bounded replay, stop and
+leadership fencing, and strict session membership. Independent frontend review
+passed **74 new acceptance cases** and **59 existing lifecycle cases**. Final
+owner gates and PR/merge evidence are recorded separately once complete.
+
+In the same two-route fixture with 20 raw, 20 matched and 40 internal updates,
+the raw listener delivered 80 callbacks / 78,611 decoded JSON bytes; selected
+route A delivered 40 / 14,734 (**81.26% fewer decoded bytes**). Route B updates
+delivered no route A callbacks. The active-session window made zero catalog
+writes/callbacks. Publisher work was 40 source reads / 17,626 bytes, 80 actual
+transaction attempts / 40 commits / 13,894 public-value bytes, and zero
+reconstruction reads during the measured 20-fix window. Startup and periodic
+repair costs are separate; this is not production billing, network framing,
+latency or reduced authority contention evidence.
+
+Actual Chrome interaction on the isolated localhost fixture recovered unready,
+catalog-denied and detail-denied states through visible Retry, opened each route's
+own tracking identity, opened/closed the timeline, returned home, and selected a
+destination in the in-app picker. This exposed and verified the correction of an
+unfetched route card to **Open for live status**, rather than a false pending
+direction. SDK, authentication and transport were synthetic. Real road geometry
+was unavailable and shown as such. Screenshot capture failed with the browser
+tool's CDP timeout on both existing and fresh tabs; DOM/AX interaction evidence
+was retained. No affected-account or live GNSS acceptance is implied.
+
+## R14 supplemental acceptance oracles
+
+These are required regression oracles for the focused successor to PR #277.
+They remain pending until the final source and recorded results below establish
+execution; the original PR's green CI alone did not cover these failures.
+
+| Area | Accepted path and adverse/recovery oracle |
+| --- | --- |
+| Public isolation | The selected-route UI listener receives only its whitelisted route detail; its payload excludes other-route coordinates, raw histories, anchors, claims and worker metadata. Admin fleet and existing authenticated HTTP compatibility endpoints use the same whitelist; scoping does not deny all cross-route HTTP access. |
+| Auth generations | A new sign-in cannot replay a previous generation's cache while verification is pending; a late old callback cannot publish. Denied detail/catalog/schema reads show actionable recovery, and Retry passes through shared verification. |
+| Readiness and rollout | Missing, incompatible or incomplete backfill remains visibly unavailable. Selected and joined routes each need authoritative delivery before recovery clears. A genuinely empty compatible route is distinguished from denied or unready data. |
+| Freshness | Catalog and detail use configured expiry with receipt paired to the accepted sample. Delayed-but-valid samples stay visible for their receipt window; future/stale and unrelated receipts cannot extend it. Boundary checks use explicit clocks. |
+| Completion | A joined session's completion survives coalesced automatic turnaround and route changes. Authoritative session status resolves disappearance without treating an interrupted/missing session as completed. Feedback applies to the completed session only. |
+| Session/direction | Equal telemetry coordinates/timestamps in a new session or changed direction still reset relevant lifecycle state. The projection preserves public completion markers without another route's coordinates. |
+| Fencing | A no-op handover still stamps the new worker generation. Revoked/stopped workers cannot publish after delayed reads, transaction retries or queued work; a dispatched operation retains its permit until settlement. |
+| Recovery and bounds | Startup/source/catalog/view replay is paged, capacity bounded and resumable after failed reads, missed notifications, removal and lost acknowledgments. Shutdown returns within its documented bound and does not authorize late writes. Existing legal route IDs, including reserved JavaScript keys, remain supported safely. |
+| Measured cost | Compare the same fixture, write sequence and time window for raw versus projected listeners. Record bytes/events, transaction retries and server work separately; smaller client payloads do not prove fewer authority transaction attempts or production egress. |
+
 ## Reproduce and extend later
 
 Record each execution's exact Git/build, timezone/window, actor role, provider,
@@ -123,7 +180,7 @@ head checks, fetched merge tree/ancestry verification, relevant merged tests
 and merged-testing CI. Run heavy local suites sequentially to avoid fixture
 startup/deadline noise; retain first failures and explain unchanged reruns.
 
-On this Windows/Java21 machine, local emulators required a process-scoped
+On this Windows/Java 21 machine, local emulators required a process-scoped
 `JAVA_TOOL_OPTIONS=-Djdk.net.unixdomain.tmpdir=C:\eki-emulator-disabled-unix-socket-directory`
 where that directory does not exist, to use TCP selector fallback. Emulator
 project IDs and ports must be isolated; never fall back to live Firebase if
@@ -138,7 +195,7 @@ roads, assignment/delete guards and approved cleanup. Expand C01–C22 for each
 control occurrence and H01–H18 for **each current** OpenAPI method/path; the
 old59-operation appendix cannot substitute for a current census.
 
-The supplied GNSS generator is an offline planning helper until explicit
+The supplied [GNSS generator](simulations/generate-gnss.mjs) is an offline planning helper until explicit
 loopback replay is configured. Generated coordinates/seed/JSONL validate input
 plans only. They do not prove ingestion, matching, motion, physical GNSS or
 latency; use current isolated backend/emulator fixtures for those assertions.
@@ -156,7 +213,7 @@ no network replay or backend/matching/physical acceptance occurred.
 
 ## All 351 feature cases: execution state
 
-The original actions and full expected oracle remain in section5 of the
+The original actions and full expected oracle remain in section 5 of the
 companion plan. **NOT_RUN** means this session has no full-case execution;
 earlier regression evidence may cover a subset. Rows below preserve every
 identifier. No complete feature case is marked PASS from a partial click or
@@ -191,15 +248,15 @@ expand these rows rather than being silently omitted.
 
 | Case | Planned action | Current result and next evidence |
 | --- | --- | --- |
-| PAX01 | One fresh resolved live route; click `Track <route name>` | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| PAX01 | One fresh resolved live route; click `Track <route name>` | PARTIAL — Synthetic Chrome: Track A opened its bus/session map; complete live-provider and adverse-path oracle pending. |
 | PAX02 | Fresh online stationary device without session; click its card | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| PAX03 | Pending-direction session; open card, choose destination and inspect timeline | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| PAX03 | Pending-direction session; open card, choose destination and inspect timeline | PARTIAL — Synthetic Chrome: pending direction stayed explicit and Beta destination selection persisted; real boarding/ETA/timeline matrix pending. |
 | PAX04 | Device marker far outside configured route while stationary | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | PAX05 | Route has no stops/waypoints or malformed projection | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| PAX06 | Zero buses, loading routes, routes listener failure and retry | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| PAX07 | Multiple routes and buses with identical names/different IDs | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| PAX06 | Zero buses, loading routes, routes listener failure and retry | PARTIAL — Synthetic Chrome: unready, catalog-denied and detail-denied states showed Retry and recovered; full empty/loading/provider matrix pending. |
+| PAX07 | Multiple routes and buses with identical names/different IDs | PARTIAL — Synthetic Chrome: Track A and B opened distinct identities; duplicate names, ETA/chat and real-provider matrix pending. |
 | PAX08 | Active bus plus available unarmed bus on same route | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| PAX09 | Click Routes→tracking→Back→Profile→Routes repeatedly | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| PAX09 | Click Routes→tracking→Back→Profile→Routes repeatedly | PARTIAL — Synthetic Chrome: tracking, timeline close and Back returned route cards; repeated Profile navigation and full layer matrix pending. |
 | PAX10 | Tab through home while hidden tracking layer remains mounted | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | PAX11 | Switch selected route during pending geometry/ETA/chat request | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | PAX12 | Switch selected bus while old session update arrives | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
@@ -260,9 +317,9 @@ expand these rows rather than being silently omitted.
 | MAP09 | One malformed dynamic geometry among several valid entries | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP10 | Active route context resets matcher IDs | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP11 | Initial route fit with bus outside endpoints; user drags map then new fixes | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| MAP12 | Click Center on bus before first fix/after fix/after bus disappears | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| MAP13 | Destination dropdown pointer, arrows, Home/End, typeahead if implemented, Enter/Escape/outside | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| MAP14 | Expand timeline by click and keyboard; collapse/backdrop/Escape | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| MAP12 | Click Center on bus before first fix/after fix/after bus disappears | PARTIAL — Synthetic Chrome: Center on bus clicked with a fix; actual Google pan and before-fix/disappeared cases pending. |
+| MAP13 | Destination dropdown pointer, arrows, Home/End, typeahead if implemented, Enter/Escape/outside | PARTIAL — Synthetic Chrome: in-app destination picker opened and Beta persisted after pointer selection; keyboard/focus/outside matrix pending. |
+| MAP14 | Expand timeline by click and keyboard; collapse/backdrop/Escape | PARTIAL — Synthetic Chrome: timeline opened with two stops and explicit unavailable geometry; close worked, keyboard/backdrop/Escape matrix pending. |
 | MAP15 | Forward/reverse paths on divided or parallel roads | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP16 | GPS jitter at stop and along parallel road with weak HDOP | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP17 | Stops before/after bus, destination changes, passed stop | NOT_RUN — execute the complete current-source oracle and boundary matrix. |

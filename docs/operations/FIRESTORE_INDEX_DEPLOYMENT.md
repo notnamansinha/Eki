@@ -1,5 +1,7 @@
 # Firestore index deployment (issue #246 R11)
 
+Last updated: 2026-10-06 15:32 IST (UTC+05:30).
+
 Both jobs in `.github/workflows/deploy.yml` deploy the committed
 `firestore.indexes.json` with `--only firestore:indexes --non-interactive`
 to their explicit project before releasing hosting or rules. Existing branch,
