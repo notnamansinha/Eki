@@ -22,6 +22,26 @@ describe("apiRequest", () => {
       .rejects.toMatchObject({ status: 429, retryAfterMs: body && "retryAfterMs" in body && body.retryAfterMs === 5000 ? 5000 : undefined });
     expect(status).toHaveBeenCalledWith(429);
   });
+  it.each([
+    ["2", 2_000],
+    ["bogus", 900],
+    ["-1", 900],
+  ])("reads Retry-After %s with a safe body fallback", async (header, expected) => {
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ retryAfterMs: 900 }), {
+      status: 503, headers: { "Retry-After": header },
+    })));
+    await expect(apiRequest("/api/test")).rejects.toMatchObject({ retryAfterMs: expected });
+  });
+  it("accepts an HTTP-date Retry-After hint", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-06T10:00:00.000Z"));
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", {
+      status: 503, headers: { "Retry-After": "Tue, 06 Oct 2026 10:00:02 GMT" },
+    })));
+    await expect(apiRequest("/api/test")).rejects.toMatchObject({ retryAfterMs: 2_000 });
+  });
   it.each(["ngrok-free.dev", "ngrok-free.app", "ngrok.io"])("requests API responses from %s while preserving auth headers", async domain => {
     vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", `https://test.${domain}`);
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"ok":true}'));
