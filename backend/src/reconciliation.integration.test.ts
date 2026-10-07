@@ -2,7 +2,7 @@ import express from "express";
 import type { Server } from "node:http";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { initializeApp, deleteApp, type App } from "firebase-admin/app";
-import { Firestore } from "firebase-admin/firestore";
+import { Firestore, Timestamp } from "firebase-admin/firestore";
 import { getDatabase, type Database } from "firebase-admin/database";
 const state = vi.hoisted(() => ({ firestore: null as Firestore | null, realtime: null as Database | null,
   claims: new Map<string, Record<string, unknown>>(), active: 0, maximum: 0 }));
@@ -108,5 +108,20 @@ integration("bounded reconciliation against actual Firebase emulators", () => {
     expect((await state.realtime!.ref("activeBuses").get()).val()).toEqual({ keep: { busId: "another" } });
     expect((await bus.get()).exists).toBe(false);
   }, 60000);
+
+  it("preserves timestamp and nested bus metadata through real merge transforms, including first creation", async () => {
+    const bus = state.firestore!.collection("buses").doc("bus");
+    const createdAt = Timestamp.fromMillis(123000);
+    const metadata = { inspections: { lastAt: Timestamp.fromMillis(456000), passed: true }, tags: ["accessible"] };
+    await bus.set({ name: "Before", assignedRouteId: "legacy", createdAt, metadata });
+    await state.firestore!.collection("routes").doc("route").set({ name: "Route" });
+    const save = (id: string, body: unknown) => fetch(`${base}/api/fleet/buses/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const edited = await save("bus", { name: "After", assignedRoutes: ["route"], metadata: { injected: true }, createdAt: 999 });
+    expect(edited.status).toBe(200); expect(await edited.json()).toEqual({ saved: true });
+    expect((await bus.get()).data()).toEqual({ id: "bus", name: "After", assignedRoutes: ["route"], createdAt, metadata });
+    const created = await save("new_bus", { name: "New", assignedRoutes: [], createdAt: 999 });
+    expect(created.status).toBe(200); await created.json();
+    expect((await state.firestore!.collection("buses").doc("new_bus").get()).data()).toEqual({ id: "new_bus", name: "New", assignedRoutes: [] });
+  });
 
 });

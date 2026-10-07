@@ -280,7 +280,11 @@ router.put("/buses/:id", fleetMutation(async (req: Request, res: Response) => {
         res.status(409).json({ error: "Reassign every bound device before removing its route." }); return;
       }
     }
-    await db.collection("buses").doc(id).set({ id, name, assignedRoutes });
+    // Own only editable catalog fields. Merge preserves server timestamps and
+    // unrelated metadata without replaying a stale document snapshot.
+    await db.collection("buses").doc(id).set({
+      id, name, assignedRoutes, assignedRouteId: FieldValue.delete(),
+    }, { merge: true });
 
     let checked = 0;
     for await (const drivers of reconciliationPages(db.collection("drivers").where("assignedBusId", "==", id))) {

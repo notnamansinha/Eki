@@ -1,6 +1,6 @@
 # Firebase Firestore and RTDB data model
 
-Last updated: 2026-10-05 15:56 IST (UTC+05:30).
+Last updated: 2026-10-06 00:18 IST (UTC+05:30).
 
 recorded in [the field contract audit](../testing/RTDB_FIELD_CONTRACT_AUDIT_2026_10_02.md).
 
@@ -145,7 +145,7 @@ Any authenticated user reads. All client writes are denied; admin backend valida
 
 ### `buses/{busId}`
 
-Fields: `id`, `name` (≤100), and `assignedRoutes: string[]` (≤50); legacy readers also tolerate `assignedRouteId`. Authenticated users read; only admin backend writes. Devices, drivers, route deletion, start authorization and UI catalogs join by `busId`.
+Fields: `id`, `name` (≤100), and `assignedRoutes: string[]` (≤50); legacy readers also tolerate `assignedRouteId`. Admin bus saves merge only these editable catalog fields, preserve unrelated server timestamps/nested metadata, and explicitly delete legacy `assignedRouteId`. Unknown request fields are ignored; new documents contain only the catalog fields. Authenticated users read; only admin backend writes. Devices, drivers, route deletion, start authorization and UI catalogs join by `busId`.
 
 ### `drivers/{driverId}`
 

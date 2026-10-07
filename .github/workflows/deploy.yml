@@ -99,6 +99,20 @@ jobs:
         run: node scripts/verify-appcheck-enforcement.mjs --project bustrack-be165 --enforce
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      - name: Deploy required Firestore indexes
+        run: >-
+          $FIREBASE_CLI deploy
+          --project bustrack-be165
+          --only firestore:indexes
+          --non-interactive
+          --token "$FIREBASE_TOKEN"
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      - name: Wait for retention and privacy indexes
+        timeout-minutes: 32
+        run: node scripts/verify-firestore-indexes.mjs --project bustrack-be165
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       - name: Deploy to staging (hosting + rules)
         run: >-
           $FIREBASE_CLI deploy
@@ -148,6 +162,20 @@ jobs:
         run: npm run build:production
       - name: Verify Firebase App Check enforcement
         run: node scripts/verify-appcheck-enforcement.mjs --project eki-production
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      - name: Deploy required Firestore indexes
+        run: >-
+          $FIREBASE_CLI deploy
+          --project eki-production
+          --only firestore:indexes
+          --non-interactive
+          --token "$FIREBASE_TOKEN"
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      - name: Wait for retention and privacy indexes
+        timeout-minutes: 32
+        run: node scripts/verify-firestore-indexes.mjs --project eki-production
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       - name: Deploy to production (explicit project, never the default)

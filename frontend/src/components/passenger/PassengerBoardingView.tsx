@@ -5,7 +5,9 @@ import { RouteData } from "@/hooks/useRoutes";
 import InAppSelect from "@/components/ui/InAppSelect";
 import { errorMessage } from "@/lib/errors";
 import { auth } from "@/lib/firebaseAuth";
-import { apiRequest } from "@/lib/apiClient";
+import { ApiError, apiRequest } from "@/lib/apiClient";
+import { withTimeout } from "@/lib/promiseTimeout";
+import { getAuthVerificationGeneration } from "@/lib/authState";
 
 interface Props {
   sessionId: string;
@@ -24,6 +26,25 @@ const formatStopName = (name: string) => {
   return name;
 };
 
+const PREPARATION_TIMEOUT_MS = 10_000;
+const BOARDING_API_TIMEOUT_MS = 10_000;
+
+function untilCancelled<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      signal.removeEventListener("abort", abort);
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    if (signal.aborted) { abort(); return; }
+    signal.addEventListener("abort", abort, { once: true });
+    void promise.then(value => {
+      signal.removeEventListener("abort", abort); resolve(value);
+    }, error => {
+      signal.removeEventListener("abort", abort); reject(error);
+    });
+  });
+}
+
 function getCurrentPosition(): Promise<{ lat: number; lng: number; accuracy: number }> {
   return new Promise((resolve, reject) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -36,8 +57,12 @@ function getCurrentPosition(): Promise<{ lat: number; lng: number; accuracy: num
         lng: position.coords.longitude,
         accuracy: position.coords.accuracy,
       }),
-      () => reject(new Error("Location access is required to board this bus.")),
-      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 10_000 },
+      error => reject(new Error(error.code === 1
+        ? "Location access is required to board this bus."
+        : error.code === 3
+          ? "Location acquisition timed out. Please try again."
+          : "Location is unavailable. Check your device location settings and try again.")),
+      { enableHighAccuracy: true, maximumAge: 10_000, timeout: PREPARATION_TIMEOUT_MS },
     );
   });
 }
@@ -62,15 +87,20 @@ export default function PassengerBoardingView({
   const [hasJoined, setHasJoined] = useState(false);
   const joinAbortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
+  const sessionRef = useRef(sessionId);
+  sessionRef.current = sessionId;
 
   useEffect(() => {
     mountedRef.current = true;
+    setHasJoined(false);
+    setJoinState("idle");
+    setJoinError("");
     return () => {
       mountedRef.current = false;
       joinAbortRef.current?.abort();
       joinAbortRef.current = null;
     };
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     if (destinationStopId !== undefined) setAlightingStopId(destinationStopId);
@@ -82,6 +112,8 @@ export default function PassengerBoardingView({
   }));
 
   const joinRide = async () => {
+    // State updates are batched; a ref closes the same-render double-click gap.
+    if (joinAbortRef.current) return;
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
     const currentUser = auth.currentUser;
     if (!backendUrl) {
@@ -104,14 +136,21 @@ export default function PassengerBoardingView({
     setJoinError("");
     const updatingExistingPassenger = hasJoined;
     const controller = new AbortController();
-    joinAbortRef.current?.abort();
     joinAbortRef.current = controller;
-    const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
+    const authGeneration = getAuthVerificationGeneration();
+    const isCurrent = () => mountedRef.current &&
+      joinAbortRef.current === controller && !controller.signal.aborted &&
+      sessionRef.current === sessionId && auth.currentUser === currentUser &&
+      getAuthVerificationGeneration() === authGeneration;
     try {
       const [token, position] = await Promise.all([
-        currentUser.getIdToken(),
-        updatingExistingPassenger ? Promise.resolve(null) : getCurrentPosition(),
+        withTimeout(untilCancelled(currentUser.getIdToken(), controller.signal), PREPARATION_TIMEOUT_MS, "Sign-in verification timed out. Please try again."),
+        updatingExistingPassenger ? Promise.resolve(null) : withTimeout(
+          untilCancelled(getCurrentPosition(), controller.signal), PREPARATION_TIMEOUT_MS,
+          "Location acquisition timed out. Please try again.",
+        ),
       ]);
+      if (!isCurrent()) return;
       const result = await apiRequest<{ joined?: boolean }>(`/api/sessions/${encodeURIComponent(sessionId)}/join`, {
         method: "POST",
         headers: {
@@ -125,28 +164,30 @@ export default function PassengerBoardingView({
           alightingStopId: alightingStopId || null,
         }),
         signal: controller.signal,
+        timeoutMs: BOARDING_API_TIMEOUT_MS,
         fallbackError: "Unable to board.",
       });
       if (!result || result.joined !== true) {
         throw new Error("Unable to board.");
       }
-      if (!mountedRef.current || controller.signal.aborted) return;
+      if (!isCurrent()) return;
       setHasJoined(true);
       setJoinState("joined");
       onJoined?.();
     } catch (error) {
-      if (!mountedRef.current) return;
+      if (!isCurrent()) return;
       // If the server no longer sees the prior manifest entry, the next attempt
       // must perform the first-boarding proximity check again.
       if (updatingExistingPassenger) setHasJoined(false);
       setJoinState("error");
       setJoinError(
-        controller.signal.aborted
+        error instanceof ApiError && error.code === "NETWORK_TIMEOUT"
           ? "The boarding request timed out. Please try again."
           : errorMessage(error),
       );
     } finally {
-      window.clearTimeout(timeoutId);
+      // Cancel any other preparation still pending after a failed stage.
+      controller.abort();
       if (joinAbortRef.current === controller) joinAbortRef.current = null;
     }
   };

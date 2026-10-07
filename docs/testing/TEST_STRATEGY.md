@@ -1,6 +1,6 @@
 # Test strategy and failure matrix
 
-Last updated: 2026-10-05 17:46 IST (UTC+05:30).
+Last updated: 2026-10-06 00:35 IST (UTC+05:30).
 
 ## Quality gates
 
@@ -84,7 +84,7 @@ they are not a claim that a newer head or production deployment passed.
 ### Routes, privacy and retention
 
 - Stored route segment works forward/reverse, orders stops, rejects coincident endpoints and rejects an out-of-segment via.
-- Route saves replay identical operation IDs, reject changed-payload reuse/stale versions, coalesce concurrent routing work, reuse valid geometry for metadata-only edits, and abort commit when an active ride appears during calculation.
+- Route saves replay identical operation IDs, reject changed-payload reuse/stale versions, coalesce concurrent routing work, reuse valid geometry for metadata-only edits, and abort commit when an active ride appears during calculation. Browser regressions first reproduced a committed save failing after one transient 503/network status poll, then the protected status GET failing on `AUTH_BUSY` before the handler ran; they verify bounded retry and Retry-After, stable `saveId`, no extra PUT, abort and late-result fencing, deadline unknown outcome, and immediate terminal 401/403/stored 5xx propagation on the legacy GET.
 - Place search distinguishes validation, authentication, configuration, upstream/rate-limit, body-timeout and genuine empty-result outcomes.
 - Terminal history deletion deduplicates projections and rejects active status.
 - Retention is disabled for missing/false/misspelled values and enabled only by explicit `true`.
@@ -97,7 +97,10 @@ they are not a claim that a newer head or production deployment passed.
 - Passenger route visibility and service counts require the complete active-session tuple; device-only, malformed, duplicated-session, completed, and direction-pending nodes cannot inflate service.
 - Active sessions remain visible while stale non-active locations expire.
 - One shared RTDB snapshot/delta pipeline fans out to subscribers, prunes on the nearest expiry, and tears down at zero subscribers.
-- Visibility/online resume state signals reconnect and clears after a snapshot.
+- Healthy short tab switches and unrelated online events preserve data and
+  subscriptions. Meaningful suspension/confirmed disconnect recovery debounces,
+  jitters and clears only after connection plus authoritative snapshot. See
+  [browser recovery bounds](../operations/RTDB_RECONNECT_RECOVERY.md).
 - Polyline distance index and snapping choose the correct segment/direction.
 - Ride feedback eligibility requires completed session/passenger identity.
 - Ride-history timestamp/status/stop normalization handles legacy forms.
@@ -235,3 +238,7 @@ Run `telemetryRouteCatalog.test.ts`, route service/live-routing cases and `telem
 ### Read-only passenger geometry (R13)
 
 Run route geometry reads, route compute limiter and polyline HTTP suites. Check legacy enumeration and administrator GET invoke no Google/write, sixty stored reads share one document read, authorized versioned saves refresh the cache, bounded raw/waiting computation survives stalled dependencies, and read quotas do not spend computation tokens. The catalog emulator suite additionally verifies actual watcher cache invalidation. Live provider/replica/road acceptance remains #245.
+
+## Bus edit metadata regression (R21)
+
+`routes/fleetOperations.test.ts` exercises HTTP bus edit/create, preserving existing timestamps/nested metadata, ignoring injected request fields, explicitly deleting legacy `assignedRouteId`, and retaining all fields when an active ride blocks removal. `reconciliation.integration.test.ts` repeats edit/create through real loopback Firestore merge/delete transforms with actual Timestamp fields. The integration case requires local emulators; synthetic HTTP tests alone do not certify deployed behavior. Browser acceptance should edit a disposable bus and verify the original server metadata and assignment mirrors, then verify active-ride/bound-device conflict outcomes.

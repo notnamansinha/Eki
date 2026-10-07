@@ -34,6 +34,7 @@ describe("live bus listener recovery", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.resetModules();
+    vi.spyOn(Math, "random").mockReturnValue(1);
     listenerState.success = null;
     listenerState.failure = null;
     listenerState.childChanged = null;

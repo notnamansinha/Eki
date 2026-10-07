@@ -62,3 +62,36 @@ export function onSnapshot(source: { name: string }, success: (snapshot: unknown
   });
   return () => { active = false; };
 }
+
+export const rtdb = {};
+export const ref = (_db: unknown, path: string) => ({ path });
+const connectionObservers = new Set<(snapshot: { val: () => unknown }) => void>();
+let sdkConnected = true;
+let offlineCalls = 0;
+let onlineCalls = 0;
+let fleetReads = 0;
+const socketObservers = new Set<() => void>();
+export const socketStats = () => `${offlineCalls}:${onlineCalls}:${fleetReads}`;
+export function subscribeSocketStats(callback: () => void) { socketObservers.add(callback); return () => { socketObservers.delete(callback); }; }
+function notifySocketStats() { socketObservers.forEach(callback => callback()); }
+export function setRealtimeConnected(value: boolean) {
+  sdkConnected = value;
+  connectionObservers.forEach(callback => callback({ val: () => value }));
+}
+export function goOffline() { offlineCalls++; setRealtimeConnected(false); notifySocketStats(); }
+export function goOnline() { onlineCalls++; setRealtimeConnected(true); notifySocketStats(); }
+export function onValue(source: { path: string }, success: (snapshot: { val: () => unknown }) => void) {
+  let active = true;
+  if (source.path === ".info/connected") connectionObservers.add(success);
+  else { fleetReads++; notifySocketStats(); }
+  queueMicrotask(() => {
+    if (!active) return;
+    success({ val: () => source.path === ".info/connected" ? sdkConnected : {
+      "qa-bus": { busId: "qa-bus", routeId: "qa-route", sessionId: "qa-session", tripState: "in_service", timestamp: Date.now(), lat: 12, lng: 77 },
+    } });
+  });
+  return () => { active = false; connectionObservers.delete(success); };
+}
+export const onChildAdded = () => () => {};
+export const onChildChanged = () => () => {};
+export const onChildRemoved = () => () => {};

@@ -1,6 +1,6 @@
 # Low-level design (LLD)
 
-Last updated: 2026-10-05 17:01 IST (UTC+05:30).
+Last updated: 2026-10-06 00:35 IST (UTC+05:30).
 
 This document maps runtime behavior to source modules. Tests beside a module exercise its pure/security-sensitive behavior.
 
@@ -25,7 +25,7 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 | `routes/shifts.ts` | Driver authorization, delay, start/resume, early interruption, message/history deletion |
 | `routes/feedback.ts` | Admin feedback list/status and server-authoritative passenger submission |
 | `routes/rideSessions.ts` | Versioned session resources and idempotent creation/member commands |
-| `routes/fleet.ts` | Admin buses/drivers, Auth claims, RTDB assignment mirrors, reconciliation |
+| `routes/fleet.ts` | Admin buses/drivers, Auth claims, RTDB assignment mirrors, reconciliation; bus saves merge editable catalog fields, preserve metadata and explicitly remove the legacy assignment |
 | `routes/polyline.ts` | Admin route geometry create/update/delete with active-use guards |
 | `routes/plan.ts` | Authenticated route segment from stored polyline; no Maps call |
 | `routes/routesList.ts` | Bounded cached route list |
@@ -109,7 +109,7 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 | `hooks/useAuth.ts` | App Check/role verification before user/readiness publication; account/sign-out generation guards and cache disposal |
 | `hooks/useCollection.ts` | Auth-ready singleton/bounded collection listener pattern |
 | `hooks/useBuses.ts`, `useDrivers.ts`, `useRoutes.ts`, `useSettings.ts` | Typed shared Firestore subscriptions |
-| `hooks/useRTDBResume.ts`, `rtdbResumeState.ts` | Online/visibility recovery state machine |
+| `hooks/useRTDBResume.ts`, `rtdbResumeState.ts`, `lib/liveBusRetry.ts` | Confirmed-disconnect/30-second suspension gates, 1–1.5 second debounce, 5-second cooldown and capped exponential equal-jitter retries; healthy short tabs preserve cache |
 | `hooks/useSmoothPosition.ts` | Bounded rAF interpolation; bypassed for reduced motion |
 | `hooks/useDialogFocus.ts` | Top-dialog focus trap, Escape, scroll lock and focus restoration |
 | `lib/firebaseCore/Auth/Database/Firestore/AppCheck.ts` | Split client SDK initialization to limit route dependencies |

@@ -1,4 +1,45 @@
 import { expect, test } from "@playwright/test";
+test("healthy short tab switches keep fleet data without another handshake or read", async ({ page }) => {
+  await page.clock.install(); await page.goto("/?resume");
+  await page.getByRole("button", { name: "Approve verification" }).click();
+  await expect(page.getByText("Live qa-bus", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Connection state")).toHaveText("Ready");
+  const before = await page.getByLabel("Socket stats").textContent();
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.clock.runFor(1000);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange")); window.dispatchEvent(new Event("online"));
+  });
+  await page.clock.runFor(6000);
+  await expect(page.getByLabel("Socket stats")).toHaveText(before!);
+  await expect(page.getByText("Live qa-bus", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Connection state")).toHaveText("Ready");
+});
+test("long suspension makes one debounced handshake and receives a fresh fleet snapshot", async ({ page }) => {
+  await page.clock.install(); await page.goto("/?resume");
+  await page.getByRole("button", { name: "Approve verification" }).click();
+  await expect(page.getByLabel("Connection state")).toHaveText("Ready");
+  const readsBefore = Number((await page.getByLabel("Socket stats").textContent())!.split(":")[2]);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.clock.runFor(31_000);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(page.getByLabel("Socket stats")).toHaveText(`0:0:${readsBefore}`);
+  await page.clock.runFor(2000);
+  await expect(page.getByLabel("Socket stats")).toContainText("1:1:");
+  await expect(page.getByText("Live qa-bus", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Connection state")).toHaveText("Ready");
+  expect(Number((await page.getByLabel("Socket stats").textContent())!.split(":")[2])).toBeGreaterThan(readsBefore);
+});
 const entry = { id: "feedback", userId: "passenger", userName: "Browser Passenger", type: "general", busId: null,
   driverId: null, sessionId: null, rating: null, comment: "Browser verification", timestamp: null, status: "new" };
 test("fleet and route denial retries share fresh verification before resubscribing", async ({ page }, testInfo) => {

@@ -1,6 +1,7 @@
 import type { Server } from "node:http";
 import type { Request, Response, NextFunction } from "express";
 import express from "express";
+import { FieldValue } from "firebase-admin/firestore";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { contractFetch } from "../../test-support/openapi";
 
@@ -36,7 +37,11 @@ vi.mock("../lib/firebaseAdmin", () => {
         if (state.failFinalWrite && path.startsWith("_fleet_reconciliation_jobs/") && (data.status === "failed" || data.status === "succeeded")) {
           state.failFinalWrite = false; throw new Error("ambiguous outcome write");
         }
-        state.docs.set(path, options?.merge ? { ...state.docs.get(path), ...data } : data);
+        const next = options?.merge ? { ...state.docs.get(path), ...data } : { ...data };
+        for (const [field, value] of Object.entries(next)) {
+          if (value instanceof FieldValue && value.isEqual(FieldValue.delete())) delete next[field];
+        }
+        state.docs.set(path, next);
       },
     };
   }
@@ -133,6 +138,34 @@ const poll = (id = key) => contractFetch(`${base}/api/v2/fleet-reconciliation-jo
 const waitTerminal = (id = key) => vi.waitFor(() => expect(state.docs.get(`_fleet_reconciliation_jobs/${id}`)?.status).not.toBe("processing"));
 
 describe("fleet operation resources", () => {
+  it("preserves existing bus timestamps and nested metadata while explicitly migrating the legacy assignment", async () => {
+    state.docs.delete("drivers/driver_1");
+    state.docs.set("routes/route_1", { name: "Route" });
+    const metadata = { manufacturer: { name: "Example", serial: "synthetic" }, tags: ["accessible"] };
+    state.docs.set("buses/bus_1", { id: "bus_1", name: "Before", assignedRouteId: "legacy_route", createdAt: 123, inspectedAt: 456, metadata });
+    const response = await contractFetch(`${base}/api/fleet/buses/bus_1`, { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: " After ", assignedRoutes: ["route_1", "route_1"], createdAt: 999, metadata: { injected: true }, admin: true }) });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ saved: true });
+    expect(state.docs.get("buses/bus_1")).toEqual({ id: "bus_1", name: "After", assignedRoutes: ["route_1"], createdAt: 123, inspectedAt: 456, metadata });
+  });
+  it("creates only allowed bus fields and supports an explicit empty route assignment", async () => {
+    state.docs.delete("drivers/driver_1");
+    state.docs.delete("buses/bus_1");
+    const response = await contractFetch(`${base}/api/fleet/buses/bus_1`, { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "New bus", assignedRoutes: [], createdAt: 999, metadata: { injected: true } }) });
+    expect(response.status).toBe(200);
+    expect(state.docs.get("buses/bus_1")).toEqual({ id: "bus_1", name: "New bus", assignedRoutes: [] });
+  });
+  it("keeps all bus fields when a live ride blocks assignment removal", async () => {
+    const bus = { id: "bus_1", name: "Before", assignedRoutes: ["route_1"], assignedRouteId: "route_1", createdAt: 123, metadata: { accessible: true } };
+    state.docs.set("buses/bus_1", bus);
+    state.docs.set("active_rides/ride_1", { busId: "bus_1", routeId: "route_1" });
+    const response = await contractFetch(`${base}/api/fleet/buses/bus_1`, { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "After", assignedRoutes: [] }) });
+    expect(response.status).toBe(409);
+    expect(state.docs.get("buses/bus_1")).toEqual(bus);
+  });
   it("keeps admin authorization and rejects unsupported bodies/keys", async () => {
     expect((await post("bad")).status).toBe(400); expect((await post(key, { authUid: "injected" })).status).toBe(400);
     state.admin = false; expect((await post()).status).toBe(403); expect((await poll()).status).toBe(403);

@@ -1,6 +1,6 @@
 # Eki documentation index
 
-Last updated: 2026-10-05 17:01 IST (UTC+05:30).
+Last updated: 2026-10-06 00:35 IST (UTC+05:30).
 
 ## New to the project
 
@@ -11,10 +11,8 @@ Last updated: 2026-10-05 17:01 IST (UTC+05:30).
 5. Use [test strategy](../testing/TEST_STRATEGY.md) and [contributing](../../CONTRIBUTING.md)
    before opening a PR against the intended branch.
 
-The maintained guides reflect `testing` at `abd45a6` (4 October 2026), including
-App Check/auth readiness, admin feedback HTTP access, sign-out protections,
-passenger in-app selectors, cold-power checkpoints and retention recovery.
-Deployment availability must be checked separately.
+The guides describe current `testing` software. Evidence pages retain actual
+run revisions, dates and measurements. Verify deployed availability separately.
 
 ## Current technical references
 
@@ -40,6 +38,7 @@ Deployment availability must be checked separately.
 | Document | Covers |
 |---|---|
 | [Versioned telemetry route catalog](../operations/ROUTE_CATALOG.md) | Shared watcher data, freshness and edit/deletion fencing |
+| [RTDB browser reconnect recovery](../operations/RTDB_RECONNECT_RECOVERY.md) | Suspension/disconnection gates, debounce, jitter and snapshot readiness |
 | [Privacy deletion queue and recovery](../operations/PRIVACY_DELETION.md) | Fair bounded cleanup, backoff, resubmission and stopped-executor recovery |
 | [Architecture risk register](../operations/ARCHITECTURE_RISK_REGISTER.md) | Risk status and closure evidence |
 | [CI, deployment, and release guide](../operations/CI_CD_AND_RELEASES.md) | CI checks, branch deployment gates and rollback |
