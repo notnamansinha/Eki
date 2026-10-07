@@ -154,7 +154,20 @@ type AuthenticatedRequest = Request & {
   };
 };
 
-async function authorizeOperator(
+type Assignment = { driverId: string; busId: string; routeId: string };
+const requestAssignments = new WeakMap<Request, Map<string, Promise<Assignment | null>>>();
+async function authorizeOperator(req: AuthenticatedRequest, busId: unknown, routeId: unknown, requestedDriverId: unknown) {
+  // Only reuse checks inside this request. Each later request reads current
+  // assignment documents; reassignment/revocation never waits for a TTL.
+  const key = JSON.stringify([req.user, busId, routeId, requestedDriverId]);
+  let checks = requestAssignments.get(req);
+  if (!checks) { checks = new Map(); requestAssignments.set(req, checks); }
+  const existing = checks.get(key); if (existing) return existing;
+  const check = readOperatorAssignment(req, busId, routeId, requestedDriverId);
+  checks.set(key, check); return check;
+}
+
+async function readOperatorAssignment(
   req: AuthenticatedRequest,
   busId: unknown,
   routeId: unknown,
@@ -1032,7 +1045,7 @@ async function readSession(req: AuthenticatedRequest, res: Response) {
     const admin = user.role === "admin" || user.admin === true;
     const member = Object.prototype.hasOwnProperty.call(data.passengers ?? {}, user.uid) &&
       data.passengers[user.uid]?.userId === user.uid;
-    const operator = user.role === "driver" && user.driverId === data.driverId &&
+    const operator = !admin && !member && user.role === "driver" && user.driverId === data.driverId &&
       !!await authorizeOperator(req, data.busId, data.routeId, data.driverId);
     if (!admin && !member && !operator) {
       res.status(403).json({ error: "Ride session membership is required." });

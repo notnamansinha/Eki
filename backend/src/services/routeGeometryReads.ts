@@ -1,3 +1,4 @@
+import { routeListCache } from "./apiReadCache";
 import { db } from "../lib/firebaseAdmin";
 import { LruCache } from "../lib/lruCache";
 import { createBoundedSingleFlight } from "../lib/boundedSingleFlight";
@@ -9,6 +10,7 @@ const cache = new LruCache<string, RouteRead>(100);
 const fills = createBoundedSingleFlight<RouteRead>({ maxFills: 16, maxWaitersPerFill: 32, responseMs: 3_000 });
 
 export function invalidateRouteGeometryRead(routeId?: string): void {
+  routeListCache.invalidate();
   if (routeId === undefined) cache.clear(); else cache.delete(routeId);
   fills.invalidate(routeId);
 }

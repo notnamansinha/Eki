@@ -23,6 +23,7 @@ vi.mock("../middleware/requireAuth", () => ({
 vi.mock("../lib/firebaseAdmin", () => ({
   db: {
     collection: (collection: string) => ({
+      select: () => ({ orderBy: () => ({ limit: (count: number) => ({ get: async () => ({ docs: [...harness.routes.entries()].slice(0, count).map(([id, data]) => ({ id, data: () => data })) }) }) }) }),
       limit: (count: number) => ({
         get: async () => ({
           docs: [...harness.routes.entries()].slice(0, count).map(([id, data]) => ({ id, data: () => data })),
@@ -40,6 +41,7 @@ vi.mock("../lib/firebaseAdmin", () => ({
   },
 }));
 
+import { routeListCache } from "../services/apiReadCache";
 import planRouter, { segmentRoutes } from "./plan";
 import routesListRouter, { routesCollectionRoutes } from "./routesList";
 
@@ -72,6 +74,7 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
+  routeListCache.invalidate();
   harness.routes = new Map();
 });
 

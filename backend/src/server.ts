@@ -46,6 +46,8 @@ import { startWorkerCoordinator } from "./services/workerCoordinator";
 import { getTripStateQueueStatus } from "./services/tripStateEngine";
 import { getLiveBusProjectionStatus } from "./services/liveBusProjection";
 import busRoutes from "./routes/buses";
+import { apiCompatibilityStatus, createApiCompatibilityTraffic } from "./lib/apiCompatibilityTraffic";
+import { apiReadCacheStatus } from "./services/apiReadCache";
 import analyticsRoutes from "./routes/analytics";
 import requestRoutes from "./routes/requests";
 import polylineRoutes, { routeSaveResourcesRouter, routeGeometryPreviewsRouter } from "./routes/polyline";
@@ -75,6 +77,7 @@ const configuredCorsOrigins = (process.env.CORS_ORIGIN || "")
 
 const app = express();
 app.use(createHttpMetricsMiddleware());
+app.use(createApiCompatibilityTraffic());
 if (process.env.NODE_ENV === "production") {
   app.set("trust proxy", 1);
   // Fail closed (issue #39 D6): a production API with no configured browser
@@ -252,6 +255,8 @@ app.get("/api/health", requireAdmin, (_req, res) => {
       routeMatching: getRouteMatchingWork(),
       rateLimit: telemetry.rateLimit,
       serverIngressGapMs: telemetry.serverIngressGapMs,
+      apiReads: apiReadCacheStatus(),
+      apiCompatibility: apiCompatibilityStatus(),
       routeProcessing,
       metricWindow: {
         scope: "process",

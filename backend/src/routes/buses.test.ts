@@ -3,8 +3,9 @@ import type { Server } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("../lib/firebaseAdmin", () => {
-  const query: any = { once: async () => ({ val: () => state.value }) };
-  query.orderByChild = () => query; query.equalTo = () => query;
+  const query: any = { once: async () => ({ val: () => state.value,
+    forEach: (visit: (child: unknown) => void) => Object.entries(state.value).forEach(([key, value]) => visit({ key, val: () => value })) }) };
+  for (const method of ["orderByChild", "orderByKey", "equalTo", "limitToFirst", "startAt", "startAfter", "endAt"]) query[method] = () => query;
   return { rtdb: { ref: () => query } };
 });
 vi.mock("../middleware/requireAuth", () => ({ requireAuth: (_req: unknown, _res: unknown, next: () => void) => next() }));
@@ -19,6 +20,7 @@ describe("legacy bus snapshot public fields", () => {
     server = app.listen(0, "127.0.0.1"); await new Promise<void>(done => server.once("listening", done));
     const address = server.address() as { port: number }; const url = `http://127.0.0.1:${address.port}/buses`;
     expect(await (await fetch(url)).json()).toEqual({ buses: [publicFields] });
+    expect(await (await fetch(`${url}?routeId=route1&limit=1`)).json()).toEqual({ buses: [publicFields], nextCursor: null });
     expect(await (await fetch(`${url}/bus1`)).json()).toEqual(publicFields);
   });
 });
