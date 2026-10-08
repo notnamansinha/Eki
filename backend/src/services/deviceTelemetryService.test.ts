@@ -30,6 +30,7 @@ vi.mock("../lib/firebaseAdmin", () => ({
 }));
 import {
   authenticateDeviceCredentials,
+  DeviceCredentialVerificationInvalidatedError,
   durableLifecycle,
   evaluateDeviceRateLimit,
   freshestDelayMinutes,
@@ -141,12 +142,23 @@ describe("HTTPS device credentials", () => {
     });
     invalidateDeviceCredentialCache("device_1");
     release();
-    await expect(pending).resolves.toBeNull();
+    await expect(pending).rejects.toBeInstanceOf(DeviceCredentialVerificationInvalidatedError);
     harness.beforeReturn = undefined;
     if (change === "rotation") await expect(authenticateDeviceCredentials("device_1", secret, 1_001)).resolves.toBeNull();
     await expect(authenticateDeviceCredentials("device_1", nextSecret, 1_002)).resolves.toEqual({
       busId: change === "rotation" ? "bus_1" : "bus_2", routeId: change === "rotation" ? "route_1" : "route_2",
     });
+  });
+  it("retries verification after an initial version notification without rejecting valid credentials", async () => {
+    const secret = await configure();
+    harness.beforeReturn = async collection => {
+      if (collection === "devices") invalidateDeviceCredentialCache("device_1");
+    };
+    await expect(authenticateDeviceCredentials("device_1", secret, 1_000))
+      .rejects.toBeInstanceOf(DeviceCredentialVerificationInvalidatedError);
+    harness.beforeReturn = undefined;
+    await expect(authenticateDeviceCredentials("device_1", secret, 1_001))
+      .resolves.toEqual({ busId: "bus_1", routeId: "route_1" });
   });
   it("clears a failed database fill and refreshes after the positive TTL", async () => {
     const secret = await configure();

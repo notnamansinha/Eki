@@ -48,6 +48,10 @@ export interface DeviceAssignment {
   routeId: string;
 }
 
+export class DeviceCredentialVerificationInvalidatedError extends Error {
+  constructor() { super("Device credentials changed during verification; retry with the current registry."); }
+}
+
 interface CredentialCacheEntry {
   assignment: DeviceAssignment | null;
   secretDigest: Buffer | null;
@@ -341,18 +345,24 @@ export async function authenticateDeviceCredentials(
   credentialCacheMisses += 1;
   return credentialFills.run(cacheKey, deviceId, async isCurrent => {
     if (!isCurrent()) throw new SingleFlightDeadlineError();
+    const assertCurrent = () => {
+      // An initial version snapshot or concurrent credential update invalidates
+      // this read; it is not evidence that the supplied secret is incorrect.
+      // Throw so device routes return a retryable 503 instead of latching 401.
+      if (!isCurrent()) throw new DeviceCredentialVerificationInvalidatedError();
+    };
     const fillStartedAt = performance.now();
     const publish = (value: CredentialCacheEntry) => {
-      if (!isCurrent()) return false;
+      assertCurrent();
       cacheCredential(cacheKey, value);
       return true;
     };
     const deviceDoc = await db.collection("devices").doc(deviceId).get();
-    if (!isCurrent()) return null;
+    assertCurrent();
     const device = deviceDoc.data() as Record<string, unknown> | undefined;
     const assignment = deviceDoc.exists ? assignmentFromDevice(device) : null;
     const secretMatches = await verifyDeviceSecretHash(secret, device?.secretHash, isCurrent);
-    if (!isCurrent()) return null;
+    assertCurrent();
     if (!assignment || !secretMatches) {
       publish({
         assignment: null,
