@@ -61,7 +61,7 @@ describe("public live projection", () => {
     expect(getLiveBusProjectionStatus()).toMatchObject({ events: 2, skipped: 1, sourceReads: 1, committed: 1 });
     delete fixture.data.activeBuses.bus1_route1; emit("child_removed", old); await settle();
     expect(fixture.data.publicRouteBuses["route:route1"].buses).toEqual({});
-    expect(fixture.data.liveRouteCatalog.values.route1.active).toBe(0);
+    expect(fixture.data.liveRouteCatalog.values["route:route1"].active).toBe(0);
   });
   it("periodically repairs failed publication and orphaned removals using bounded pages", async () => {
     fixture.data.activeBuses = { bus1_route1: live() }; fixture.fail = true; start(); emit("child_changed", live()); await settle();

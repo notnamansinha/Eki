@@ -1,6 +1,6 @@
 # HTTP contract and compatibility checks
 
-Last updated: 2026-10-07 22:40 IST (UTC+05:30).
+Last updated: 2026-10-08 08:22 IST (UTC+05:30).
 
 The machine-readable contract is [`backend/openapi.json`](../../backend/openapi.json),
 in OpenAPI 3.1.1 JSON format. [`backend/API.md`](../../backend/API.md) remains the

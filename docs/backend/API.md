@@ -1,6 +1,6 @@
 # Backend API reference
 
-Last updated: 2026-10-07 22:40 IST (UTC+05:30).
+Last updated: 2026-10-08 08:22 IST (UTC+05:30).
 
 The machine-readable contract is `backend/openapi.json` (OpenAPI 3.1.1).
 See [HTTP contract checks and rollout](../api/HTTP_CONTRACT.md) for schema

@@ -118,12 +118,16 @@ export default function PassengerWorkspace() {
   // Ride actions require a server-owned lifecycle. Online assigned devices
   // also expose a read-only route/location preview.
   useEffect(() => {
-    if (!projectionReady || !catalogReady) return;
+    if (!user || !projectionReady || !catalogReady) return;
+    let alive = true;
+    const authGeneration = getAuthVerificationGeneration();
+    const current = () => alive && authGeneration === getAuthVerificationGeneration();
     const rawBuses = rawLiveBusesRef.current;
     // Keep an explicitly joined ride observable while browsing another route.
     const subscribedRoutes = [...new Set([effectiveRouteId, joinedRouteId].filter((id): id is string => Boolean(id)))];
     const authoritative = new Set<string>();
     const disposals = subscribedRoutes.map(routeId => subscribeLiveBusChangesByRoute(routeId, (change) => {
+        if (!current()) return;
         const trackedRideSessionId =
           trackedRideRef.current?.sessionId ?? pendingCompletionSessionIdRef.current;
         const previousTrackedState = trackedRideSessionId
@@ -185,15 +189,18 @@ export default function PassengerWorkspace() {
         }
         if (change.source === "invalidation") authoritative.delete(routeId);
       }, (error) => {
+        if (!current()) return;
+        authoritative.delete(routeId);
         setDetailDataError(`Live bus data could not be loaded. ${error.message}. Retry after checking your connection.`);
       }));
 
     return () => {
+      alive = false;
       disposals.forEach(dispose => dispose());
       rawBuses.clear();
       activeLiveBusesRef.current.clear();
     };
-  }, [projectionReady, catalogReady, catalogError, effectiveRouteId, joinedRouteId, trackedSessionId, connectionGeneration, markSnapshotReceived, resumeGeneration]);
+  }, [user, projectionReady, catalogReady, catalogError, effectiveRouteId, joinedRouteId, trackedSessionId, connectionGeneration, markSnapshotReceived, resumeGeneration]);
 
   useEffect(() => {
     if (projectionReady && catalogReady && !catalogError && !detailDataError && !effectiveRouteId && !joinedRouteId) markSnapshotReceived();

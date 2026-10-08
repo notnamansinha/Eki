@@ -2,7 +2,7 @@
 import { lazy, Suspense, type ComponentType } from "react";
 import type { LiveBusChange } from "@/lib/liveBusStore";
 import PassengerWorkspace from "./PassengerWorkspace";
-import { act, cleanup, render, screen, fireEvent } from "@testing-library/react";
+import { act, cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({
   mark: vi.fn(), retryCatalog: vi.fn(), invalidate: vi.fn(), generation: 0,
@@ -63,7 +63,7 @@ describe("passenger route recovery", () => {
     render(<PassengerWorkspace />); await act(async () => { await Promise.resolve(); });
     act(() => fixture.listeners.get("A")!.error(new Error("permission denied")));
     expect(screen.getByRole("alert").textContent).toContain("Live bus data");
-    fireEvent.click(screen.getByRole("button", { name: "Retry" })); expect(fixture.invalidate).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" })); await waitFor(() => expect(fixture.invalidate).toHaveBeenCalledOnce());
     act(() => deliver("A")); expect(screen.queryByRole("alert")).toBeNull();
   });
   it("finishes the joined predecessor and prompts feedback after a coalesced automatic return", async () => {

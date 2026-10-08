@@ -203,13 +203,14 @@ describe("live bus listener recovery", () => {
 
   it("does not replay another auth generation's route cache while verification is pending", async () => {
     const { subscribeLiveBusesByRoute } = await import("./liveBusStore");
-    const dispose = subscribeLiveBusesByRoute("A", vi.fn()); await flushPromises();
-    listenerState.routes.get("publicRouteBuses/A/buses")!.success!({ val: () => ({ bus: { timestamp: Date.now() } }) });
+    const first = vi.fn(); const dispose = subscribeLiveBusesByRoute("A", first); await flushPromises();
+    listenerState.routes.get("publicRouteBuses/route:A/buses")!.success!({ val: () => ({ "node:bus": { timestamp: Date.now() } }) });
+    expect(first).toHaveBeenLastCalledWith({ "node:bus": { timestamp: expect.any(Number) } }, "listener");
     listenerState.generation++;
     let release!: () => void;
     listenerState.authGate = new Promise<void>(resolve => { release = resolve; });
     const next = vi.fn(); const disposeNext = subscribeLiveBusesByRoute("A", next);
-    expect(next.mock.calls.some(([snapshot]) => snapshot?.bus)).toBe(false);
+    expect(next.mock.calls.some(([snapshot]) => snapshot?.["node:bus"])).toBe(false);
     release(); await flushPromises(); disposeNext(); dispose();
   });
 });

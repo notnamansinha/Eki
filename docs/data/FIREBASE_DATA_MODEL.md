@@ -1,6 +1,6 @@
 # Firebase Firestore and RTDB data model
 
-Last updated: 2026-10-07 22:40 IST (UTC+05:30).
+Last updated: 2026-10-08 08:22 IST (UTC+05:30).
 
 Field ownership and compatibility build on [the field contract audit](../testing/RTDB_FIELD_CONTRACT_AUDIT_2026_10_02.md).
 
