@@ -1,6 +1,6 @@
 # Eki A–Z acceptance execution ledger
 
-Last updated: 2026-10-07 23:04 IST (UTC+05:30).
+Last updated: 2026-10-08 08:40 IST (UTC+05:30).
 
 This is the current status companion to the
 [complete supplied A–Z plan](WEBAPP_A_Z_AB_TESTING_PLAN.md), including all
@@ -102,7 +102,7 @@ for external gates. Completion here is software scope, not a full field pass.
 | R11 | [PR276](https://github.com/notnamansinha/Eki/pull/276) merged `31db267`; tested head `e8b490c` and fetched merge trees identical; 18 merged focused and 74 script checks, 70-operation OpenAPI/UI contracts, audits zero; [push](https://github.com/notnamansinha/Eki/actions/runs/37444429836), [PR](https://github.com/notnamansinha/Eki/actions/runs/37444696350) and [merged CI](https://github.com/notnamansinha/Eki/actions/runs/37445413131) pass all three jobs. Index-first protected workflow and strict bounded name-only query readiness gate; actual cloud deployment readiness pending |
 | R12 | PR266 merged `c160242`; route catalog/watch invalidation, actual ordering/ack-loss emulator checks; [catalog contract](../operations/ROUTE_CATALOG.md) |
 | R13 | PR267 merged `bff3b02`; bounded read-only geometry GET and explicit authorized repair; [geometry contract](../operations/ROUTE_GEOMETRY_READS.md) |
-| R14 | [PR #287](https://github.com/notnamansinha/Eki/pull/287), exact head `fa7f570` / tree `e5f3dcc`; 859 backend / 552 frontend / 74 scripts / 37 actual emulator / 16 synthetic admin browser checks pass. Independent65+9 and74+59; lint/TypeScript,71-operation contracts, strict local Webpack export/SW/CSP and zero audits pass. [Push CI](https://github.com/notnamansinha/Eki/actions/runs/37657663763) and [PR CI](https://github.com/notnamansinha/Eki/actions/runs/37657812742) pass web/backend-image/firmware including clean default production build. Merge awaits repository code-owner approval or owner-authorized override; matching cloud rollout and moving acceptance pending. [Rollout contract](R14_LIVE_PROJECTION.md) |
+| R14 | [PR #287](https://github.com/notnamansinha/Eki/pull/287), head `078f40a`, merge `64bb5a1` and identical tested/fetched tree; final CI 917 backend / 597 frontend / 74 scripts / 45 actual emulator / 20 synthetic browser cases, independent76+9 backend/SDK and153 frontend, lint/TypeScript,71-operation contracts, strict export/SW/CSP and zero audits; [push](https://github.com/notnamansinha/Eki/actions/runs/37720570118) / [PR](https://github.com/notnamansinha/Eki/actions/runs/37720572562) / [merged CI](https://github.com/notnamansinha/Eki/actions/runs/37720983796) all three jobs pass. [Contract and rollout](R14_LIVE_PROJECTION.md); matching cloud rollout and moving/replica measurement pending |
 | R15 | [PR275](https://github.com/notnamansinha/Eki/pull/275) merged `b358dd2`; tested integrated head `a202a5f` and merge trees identical; 25 focused +19 mirror +16 synthetic browser checks pass on fetched merge; [push](https://github.com/notnamansinha/Eki/actions/runs/37445787428), [PR](https://github.com/notnamansinha/Eki/actions/runs/37445792389) and [merged CI](https://github.com/notnamansinha/Eki/actions/runs/37446408451) pass all three jobs. Healthy short switches, 30-second suspension gate, visible+online debounce, natural recovery cancellation, 5-second cooldown and bounded equal jitter; real PWA/network/many-client acceptance pending |
 
 On the final integrated R15 head, actual Chrome clicks on the local synthetic
@@ -117,13 +117,13 @@ flap/handshake assertions come from the 16-case controlled browser suite.
 
 ## R14 independent software and browser evidence
 
-The final independent review passed **65 focused publisher/HTTP/OpenAPI tests**
+The final independent review passed **76 focused publisher/HTTP/OpenAPI tests**
 and **9 actual Firebase SDK emulator tests**, plus lint. These cover worker
 handover without a redundant revision, same-generation reconstruction of erased
 destinations, captured generation across SDK retries, bounded replay, stop and
 leadership fencing, and strict session membership. Independent frontend review
-passed **74 new acceptance cases** and **59 existing lifecycle cases**. Final
-owner gates and exact-head CI are recorded above; merged evidence follows after approval.
+passed **153 focused cases**, including **76 new acceptance cases** and retained normalization, lifecycle, auth and recovery cases. Final
+owner gates and PR/merge evidence appear in the checklist above.
 
 In the same two-route fixture with 20 raw, 20 matched and 40 internal updates,
 the raw listener delivered 80 callbacks / 78,611 decoded JSON bytes; selected
@@ -141,13 +141,14 @@ own tracking identity, opened/closed the timeline, returned home, and selected a
 destination in the in-app picker. This exposed and verified the correction of an
 unfetched route card to **Open for live status**, rather than a false pending
 direction. SDK, authentication and transport were synthetic. Real road geometry
-was unavailable and shown as such. Screenshot capture failed with the browser
-tool's CDP timeout on both existing and fresh tabs; DOM/AX interaction evidence
-was retained. No affected-account or live GNSS acceptance is implied.
+was unavailable and shown as such. Earlier screenshot capture failed on existing
+and fresh tabs; the final 8 October repetition captured the reverse timeline and
+selected destination screenshots successfully. DOM/AX evidence was also retained.
+No affected-account or live GNSS acceptance is implied.
 
-Read-only review of newer [PR #285](https://github.com/notnamansinha/Eki/pull/285) at 94035ec found useful auth, freshness and no-op takeover repairs. It still lacks the schema/backfill handshake, durable member-only status fallback and same-generation erased-destination recovery verified here. Its green CI does not establish those missing oracles. PR #277 and PR #285 remain unchanged; the final successor credits the reused foundation.
+Read-only review of newer [PR #285](https://github.com/notnamansinha/Eki/pull/285) at 94035ec found useful auth, freshness and no-op takeover repairs. It still lacks the schema/backfill handshake, durable member-only status fallback and same-generation erased-destination recovery verified here. Its green CI does not establish those missing oracles. PR #277 and PR #285 were subsequently merged by other contributors; the final successor retains their useful changes and repairs the remaining gaps.
 
-All **37 final loopback emulator cases** passed. One earlier existing crash-child fixture hit a cold Google metadata discovery deadline; the unchanged suite passed with process-only metadata detection disabled and the documented Java workaround. This changes no deployed runtime deadlines or policy.
+The earlier pre-integration run passed **37 loopback emulator cases**; the final integrated source passes **45**, as recorded above. One earlier existing crash-child fixture hit a cold Google metadata discovery deadline; the unchanged suite passed with process-only metadata detection disabled and the documented Java workaround. This changes no deployed runtime deadlines or policy.
 
 ## R14 supplemental acceptance oracles
 
@@ -677,6 +678,12 @@ expand these rows rather than being silently omitted.
 | REL08 | Backup restore/retention enable/monitoring/WAF/quotas/owners | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 
 
-## Current R14 commit and browser boundary
+## Earlier 7 October R14 commit and browser boundary
 
-Final source `fa7f570d67fc323086769f12cfcd3bc2d291bb03` has tree `e5f3dcc8bb8f928ec0e9ea893eb4c8c54c9a0d98`. Actual Chrome on the committed isolated localhost fixture repeated the unready banner, Retry recovery, distinct route-B tracking identity `qa-session-B`, corrected unknown-status card and loaded actual map logic with a synthetic SDK. Earlier denials, picker and timeline clicks used the same final code before commit. No real provider/GNSS/account acceptance is inferred. Browser screenshot capture also timed out after restart; DOM/AX proof is retained. Clean exact-head CI passes the default production pipeline. Local default Turbopack rejected the shared external dependency junction; strict local Webpack export/SW/CSP passed unchanged source.
+Earlier verified source `fa7f570d67fc323086769f12cfcd3bc2d291bb03` has tree `e5f3dcc8bb8f928ec0e9ea893eb4c8c54c9a0d98`. Actual Chrome on the committed isolated localhost fixture repeated the unready banner, Retry recovery, distinct route-B tracking identity `qa-session-B`, corrected unknown-status card and loaded actual map logic with a synthetic SDK. Earlier denials, picker and timeline clicks used the same final code before commit. No real provider/GNSS/account acceptance is inferred. Browser screenshot capture also timed out after restart; DOM/AX proof is retained. Clean exact-head CI passes the default production pipeline. Local default Turbopack rejected the shared external dependency junction; strict local Webpack export/SW/CSP passed unchanged source.
+
+## Final R14 source boundary
+
+[PR #287](https://github.com/notnamansinha/Eki/pull/287) merged only into testing at `64bb5a1b840b18522c26c52fa95d1c149eb4a55d` after exact head `078f40a66d1fbe33836e4a1dae30d152f7f41370` passed all three jobs; [push](https://github.com/notnamansinha/Eki/actions/runs/37720570118) / [PR](https://github.com/notnamansinha/Eki/actions/runs/37720572562) / [merged CI](https://github.com/notnamansinha/Eki/actions/runs/37720983796) pass web/backend-image/firmware. Head and fetched merge trees equal `fa277227ae281d61db43bf468ee40aa8608dfebe` and ancestry verified. Final CI checks: 917 backend, 597 frontend, 74 scripts, 71-operation OpenAPI/UI contracts, 45 actual loopback emulator and 20 synthetic mobile/desktop browser cases. Independent focused checks pass 76 publisher/HTTP and 9 actual SDK cases; frontend review passes 153 focused cases. Earlier strict local Webpack export/SW/CSP passed after default Turbopack rejected the worktree dependency junction; clean exact-head CI proves the default production pipeline. Both full/runtime audits report zero. The successor now layers focused repairs onto externally merged PR285, which includes PR277. It preserves its synchronous verification-start hook and extra regressions, plus all externally merged later-subissue source. It addresses auth-generation cache isolation, configured receipt freshness, selected/joined authoritative readiness, detached callback fencing, visible denied Retry, bounded completion markers plus member-only durable status, generation-fenced structural no-op publication and erased-destination reconstruction. The useful PR285 foundation still lacked the schema/backfill handshake, durable status fallback and current-generation erased-view recovery before these repairs. Same-window actual SDK fixture: raw80 callbacks/78,611 decoded bytes; selected A40/14,734 (81.26% fewer), unrelated B zero A callbacks, catalog zero writes in this active-session window. Publisher40 source reads/17,626 bytes,80 transaction attempts/40 commits/13,894 public-value bytes; zero reconstruction reads during20fix window. Startup/periodic and preview catalog costs are separate; no production billing/latency/capacity claim. Actual localhost synthetic Chrome clicks exercised Retry, distinct route tracking, timeline close/Back, destination selection and corrected unknown-status card. Earlier screenshot attempts timed out; final 8 October screenshot and DOM/AX evidence are retained locally. The final browser repetition used runtime3a44515, unchanged by the fixture-only078f40a correction. Earlier actual Google route creation/save/reload belongs to0b24b52; QAvehicle outcome remainsUNVERIFIED. Aryan reports likely debug-token recovery without witnessed affected-account acceptance. Before field testing, deploy matching backend/status/backfill, restrictive RTDB rules and browser in order and confirm current-generation schema readiness. No cloud deployment performed. R11 cloud-index, R15 real PWA/network/many-client and #245 moving/physical/institutional gates remain pending; R16+ work deferred.
+
+External testing merges PR280 (R17), PR278 (R19), PR283 (R18), PR274 (R35), PR286 (R31) and PR281 (R20) were preserved during integration. This task did not implement or certify their later-subissue acceptance. The final CI found three inherited PR285 emulator fixtures using legacy bare paths or the older shutdown bound; fixture-only078f40a updates them to the canonical keys and documented eight-second shutdown contract, retaining their assertions. Final runtime and publisher are unchanged from3a44515.

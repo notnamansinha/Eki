@@ -1,8 +1,8 @@
 # Eki full A–Z testing plan and current contract overlay
 
-Last updated: 2026-10-07 23:04 IST (UTC+05:30).
+Last updated: 2026-10-08 08:40 IST (UTC+05:30).
 
-> **Current execution overlay — 7 October 2026 (IST).** Read
+> **Current execution overlay — 8 October 2026 (IST).** Read
 > [WEBAPP_A_Z_AB_TESTING.md](WEBAPP_A_Z_AB_TESTING.md) for current results,
 > evidence limits, and the full 351-case execution ledger. The material below
 > this overlay is the preserved historical specification at `722ab6e`; its
