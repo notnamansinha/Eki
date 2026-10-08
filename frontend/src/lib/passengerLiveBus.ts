@@ -115,6 +115,7 @@ export function passengerTripStates(
         /^[A-Za-z0-9_-]{1,128}$/.test(bus.previousSessionId) && bus.previousSessionId !== bus.sessionId) {
       states.set(bus.previousSessionId, "completed");
     }
+    if (typeof bus.lastCompletedSessionId === "string" && bus.lastCompletedSessionId && typeof bus.lastCompletedAt === "number" && Number.isFinite(bus.lastCompletedAt)) states.set(bus.lastCompletedSessionId, "completed");
     if (typeof bus.sessionId !== "string" || bus.sessionId.length === 0) continue;
     if (
       bus.tripState !== "pre_departure" &&

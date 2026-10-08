@@ -5,8 +5,10 @@ import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
-import { subscribeLiveBusChangesByRoute, invalidateLiveBusCache } from "@/lib/liveBusStore";
+import { subscribeLiveBusChangesByRoute } from "@/lib/liveBusStore";
 import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
+import { getJoinedRideStatus } from "@/lib/joinedRideStatus";
+import { getAuthVerificationGeneration } from "@/lib/authState";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import { useSettings } from "@/hooks/useSettings";
 import { isAuthoritativeLiveBusDelivery } from "@/lib/liveBusDelivery";
@@ -77,8 +79,7 @@ export default function PassengerWorkspace() {
   const { settings } = useSettings();
   const [currentView, setCurrentView] = useState<ViewState>("home");
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
-  const { catalog: routeCatalog, error: catalogError, retry: retryCatalog } = useLiveRouteCatalog();
-  const [liveErrors, setLiveErrors] = useState<Record<string, string>>({});
+  const { catalog: routeCatalog, projectionReady, catalogReady, error: catalogError, retry: retryCatalog } = useLiveRouteCatalog(`${connectionGeneration}:${resumeGeneration}`);
   const [selectedRouteId, setSelectedRouteId] = useState("");
   const [selectedDestinationStopId, setSelectedDestinationStopId] = useState("");
   const [selectedLiveBusKey, setSelectedLiveBusKey] = useState("");
@@ -93,6 +94,12 @@ export default function PassengerWorkspace() {
   const [feedbackSessionId, setFeedbackSessionId] = useState("");
   const [completedRide, setCompletedRide] = useState<TrackedRide | null>(null);
   const [trackedSessionId, setTrackedSessionId] = useState("");
+  const [joinedRouteId, setJoinedRouteId] = useState("");
+  const [detailDataError, setDetailDataError] = useState<string | null>(null);
+  const [rideRecoveryError, setRideRecoveryError] = useState<string | null>(null);
+  const [rideRecoveryNotice, setRideRecoveryNotice] = useState<string | null>(null);
+  const [rideStatusRetry, setRideStatusRetry] = useState(0);
+  const liveDataError = catalogError || detailDataError || rideRecoveryError;
   const trackedRideRef = useRef<TrackedRide | null>(null);
   const pendingCompletionSessionIdRef = useRef<string | null>(null);
   const latestTripStatesRef = useRef<Map<string, ActiveBusData["tripState"]>>(new Map());
@@ -111,14 +118,16 @@ export default function PassengerWorkspace() {
   // Ride actions require a server-owned lifecycle. Online assigned devices
   // also expose a read-only route/location preview.
   useEffect(() => {
+    if (!user || !projectionReady || !catalogReady) return;
     let alive = true;
+    const authGeneration = getAuthVerificationGeneration();
+    const current = () => alive && authGeneration === getAuthVerificationGeneration();
     const rawBuses = rawLiveBusesRef.current;
     // Keep an explicitly joined ride observable while browsing another route.
-    const subscribedRoutes = [...new Set([effectiveRouteId, trackedRideRef.current?.routeId].filter((id): id is string => Boolean(id)))];
-    const readyRoutes = new Set<string>();
-    queueMicrotask(() => { if (alive) setLiveErrors({}); });
+    const subscribedRoutes = [...new Set([effectiveRouteId, joinedRouteId].filter((id): id is string => Boolean(id)))];
+    const authoritative = new Set<string>();
     const disposals = subscribedRoutes.map(routeId => subscribeLiveBusChangesByRoute(routeId, (change) => {
-        if (!alive) return;
+        if (!current()) return;
         const trackedRideSessionId =
           trackedRideRef.current?.sessionId ?? pendingCompletionSessionIdRef.current;
         const previousTrackedState = trackedRideSessionId
@@ -174,17 +183,15 @@ export default function PassengerWorkspace() {
           Object.fromEntries(rawLiveBusesRef.current),
           Date.now(),
         ));
-        if (change.source === "invalidation") readyRoutes.delete(routeId);
         if (isAuthoritativeLiveBusDelivery(change.source)) {
-          readyRoutes.add(routeId);
-          setLiveErrors(previous => { const next = { ...previous }; delete next[routeId]; return next; });
-          if (subscribedRoutes.every(id => readyRoutes.has(id))) markSnapshotReceived();
+          authoritative.add(routeId);
+          if (authoritative.size === subscribedRoutes.length) { setDetailDataError(null); if (!catalogError) markSnapshotReceived(); }
         }
+        if (change.source === "invalidation") authoritative.delete(routeId);
       }, (error) => {
-        if (!alive) return;
-        readyRoutes.delete(routeId);
-        setLiveErrors(previous => ({ ...previous, [routeId]: "Live bus data is unavailable. Check your access or retry." }));
-        console.warn("[RTDB] activeBuses read failed:", error.message);
+        if (!current()) return;
+        authoritative.delete(routeId);
+        setDetailDataError(`Live bus data could not be loaded. ${error.message}. Retry after checking your connection.`);
       }));
 
     return () => {
@@ -193,7 +200,43 @@ export default function PassengerWorkspace() {
       rawBuses.clear();
       activeLiveBusesRef.current.clear();
     };
-  }, [effectiveRouteId, trackedSessionId, connectionGeneration, markSnapshotReceived, resumeGeneration]);
+  }, [user, projectionReady, catalogReady, catalogError, effectiveRouteId, joinedRouteId, trackedSessionId, connectionGeneration, markSnapshotReceived, resumeGeneration]);
+
+  useEffect(() => {
+    if (projectionReady && catalogReady && !catalogError && !detailDataError && !effectiveRouteId && !joinedRouteId) markSnapshotReceived();
+  }, [projectionReady, catalogReady, catalogError, detailDataError, effectiveRouteId, joinedRouteId, markSnapshotReceived]);
+
+  const joinedProjectionPresent = activeBuses.some(bus => bus.sessionId === trackedSessionId);
+  useEffect(() => {
+    const ride = trackedRideRef.current;
+    if (!user || !projectionReady || !catalogReady || !ride?.hasJoined || !trackedSessionId || joinedProjectionPresent || latestTripStatesRef.current.get(trackedSessionId) === "completed") return;
+    const controller = new AbortController();
+    const authGeneration = getAuthVerificationGeneration();
+    const current = () => !controller.signal.aborted && authGeneration === getAuthVerificationGeneration();
+    let timer: ReturnType<typeof setTimeout> | undefined, running = false, failed = false;
+    const visibleOnline = () => document.visibilityState === "visible" && navigator.onLine;
+    const check = async () => {
+      if (!current() || running || failed || !visibleOnline()) return;
+      if (timer) clearTimeout(timer); timer = undefined; running = true;
+      let nonterminal = false;
+      try {
+        const status = await getJoinedRideStatus(trackedSessionId, controller.signal);
+        if (!current() || trackedRideRef.current?.sessionId !== trackedSessionId) return;
+        if (status.sessionId !== trackedSessionId || status.busId !== ride.busId || status.routeId !== ride.routeId) throw Error("Recovered ride identity did not match the joined session.");
+        setRideRecoveryError(null);
+        if (status.status === "completed") { latestTripStatesRef.current.set(status.sessionId, "completed"); setActiveBuses(buses => [...buses]); }
+        else if (status.status === "interrupted" || status.status === "failed") {
+          setRideRecoveryNotice(status.status === "interrupted" ? "Your joined ride was interrupted." : "Your joined ride ended without completion.");
+          trackedRideRef.current = null; setTrackedSessionId(""); setJoinedRouteId("");
+        } else nonterminal = true;
+      } catch { if (current()) { failed = true; setRideRecoveryError("Your joined ride status could not be recovered. Retry to check its authoritative status."); } }
+      finally { running = false; if (nonterminal && current() && visibleOnline()) timer = setTimeout(() => { timer = undefined; void check(); }, 15_000); }
+    };
+    const resume = () => { if (visibleOnline()) void check(); else if (timer) { clearTimeout(timer); timer = undefined; } };
+    document.addEventListener("visibilitychange", resume); window.addEventListener("online", resume); window.addEventListener("offline", resume);
+    void check();
+    return () => { controller.abort(); if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", resume); window.removeEventListener("online", resume); window.removeEventListener("offline", resume); };
+  }, [projectionReady, catalogReady, trackedSessionId, joinedProjectionPresent, user, connectionGeneration, resumeGeneration, rideStatusRetry]);
 
   // Presence expires without another RTDB event after power/network loss.
   useEffect(() => {
@@ -272,6 +315,7 @@ export default function PassengerWorkspace() {
         trackedRideRef.current = null;
         queueMicrotask(() => {
           setTrackedSessionId("");
+          setJoinedRouteId("");
           setCompletedRide(rideToComplete);
         });
         break;
@@ -335,7 +379,8 @@ export default function PassengerWorkspace() {
           <span className="text-pretty">Reconnecting to live bus data...</span>
         </div>
       )}
-      {routesError && (
+      {rideRecoveryNotice && <div className="absolute left-4 right-4 z-50 rounded-xl bg-zinc-950 px-4 py-3 text-sm text-amber-300" role="status" style={{ top: "calc(env(safe-area-inset-top) + 1rem)" }}>{rideRecoveryNotice}</div>}
+      {(routesError || liveDataError) && (
         <div
           className="absolute left-4 right-4 z-50 flex items-start gap-3 rounded-xl border border-red-400/20 bg-zinc-950 px-4 py-3 text-sm text-red-300 shadow-lg"
           style={{ top: isResuming ? "calc(env(safe-area-inset-top) + 5rem)" : "calc(env(safe-area-inset-top) + 1rem)" }}
@@ -343,12 +388,12 @@ export default function PassengerWorkspace() {
         >
           <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           <div className="flex-1">
-            <p className="font-semibold">Routes could not be loaded.</p>
-            <p className="mt-0.5 text-xs text-red-300/70">{routesError}</p>
+            <p className="font-semibold">{routesError ? "Routes could not be loaded." : "Live bus data unavailable."}</p>
+            <p className="mt-0.5 text-xs text-red-300/70">{routesError || liveDataError}</p>
           </div>
           <button
             type="button"
-            onClick={retryRoutes}
+            onClick={() => { if (routesError) retryRoutes(); if (catalogError || detailDataError) { retryCatalog(); import("@/lib/liveBusStore").then(module => module.invalidateLiveBusCache()); } if (rideRecoveryError) setRideStatusRetry(value => value + 1); }}
             className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
           >
             Retry
@@ -357,12 +402,6 @@ export default function PassengerWorkspace() {
       )}
       <div className="absolute inset-0 flex flex-col overflow-hidden">
 
-        {(catalogError || Object.keys(liveErrors).length > 0) && (
-          <div role="alert" className="absolute bottom-24 inset-x-4 z-50 rounded-xl bg-[var(--surface-2)] border border-[var(--border-default)] p-4">
-            <p>{catalogError || Object.values(liveErrors)[0]}</p>
-            <button type="button" onClick={() => { retryCatalog(); invalidateLiveBusCache(); }} className="mt-2 underline">Retry live data</button>
-          </div>
-        )}
         {/* Map layer — only present on tracking */}
         <div inert={visibleView !== "tracking"} aria-hidden={visibleView !== "tracking"} className={`absolute inset-0 z-0 transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
           {visibleView === "tracking" && mapRoute && targetStop && (
@@ -423,6 +462,7 @@ export default function PassengerWorkspace() {
                      getAvailableBusesCount={(routeId) => routeCatalog[routeId]?.available ?? 0}
                      getDirectionState={(routeId) => {
                        const bus = activeBuses.find((entry) => entry.routeId === routeId);
+                       if (!bus) return "unknown";
                        return bus?.directionState === "pending" ? "pending" : normalizeRideDirection(bus?.direction);
                      }}
                    />
@@ -516,6 +556,8 @@ export default function PassengerWorkspace() {
                               },
                             );
                             setTrackedSessionId(activeBusOnRoute.sessionId);
+                            setJoinedRouteId(activeBusOnRoute.routeId);
+                            setRideRecoveryError(null); setRideRecoveryNotice(null);
                           }}
                         />
                       ) : (

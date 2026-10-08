@@ -12,7 +12,7 @@ interface RouteCarouselProps {
   onClick: (id: string) => void;
   getActiveBusesCount: (routeId: string) => number;
   getAvailableBusesCount: (routeId: string) => number;
-  getDirectionState: (routeId: string) => RideDirectionState;
+  getDirectionState: (routeId: string) => RideDirectionState | "unknown";
 }
 
 export default function RouteCarousel({ routes, selectedRouteId, onClick, getActiveBusesCount, getAvailableBusesCount, getDirectionState }: RouteCarouselProps) {
@@ -36,7 +36,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
         const availableCount = getAvailableBusesCount(route.id);
         const hasService = activeCount > 0;
         const directionState = getDirectionState(route.id);
-        const directedRoute = hasService
+        const directedRoute = hasService && directionState !== "unknown"
           ? routeInRideDirectionState(route, directionState)
           : null;
         const stops = directedRoute?.stops ?? route.stops ?? [];
@@ -74,7 +74,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
                     </p>
                   ) : (
                     <p className="text-[14.5px] font-bold mt-2" style={{ color: "var(--text-secondary)" }}>
-                      {hasService ? "Direction pending" : "Vehicle available — service not started"}
+                      {hasService ? directionState === "unknown" ? "Open for live status" : "Direction pending" : "Vehicle available — service not started"}
                     </p>
                   )}
                 </div>

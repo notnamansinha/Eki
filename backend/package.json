@@ -15,7 +15,7 @@
     "measure:rtdb": "tsx src/measureRtdbLatency.ts",
     "retention:rtdb": "tsx src/rtdbRetentionCli.ts",
     "test": "vitest run src",
-    "test:rules-integration": "vitest run src/rulesIntegration.test.ts src/workerFence.integration.test.ts src/httpOperations.integration.test.ts src/reconciliation.integration.test.ts src/privacyDeletion.integration.test.ts src/telemetryCatalog.integration.test.ts src/staleBusSweeper.integration.test.ts src/liveBusProjection.integration.test.ts src/apiReads.integration.test.ts"
+    "test:rules-integration": "vitest run src/rulesIntegration.test.ts src/workerFence.integration.test.ts src/httpOperations.integration.test.ts src/reconciliation.integration.test.ts src/privacyDeletion.integration.test.ts src/telemetryCatalog.integration.test.ts src/staleBusSweeper.integration.test.ts src/liveBusProjection.integration.test.ts src/apiReads.integration.test.ts src/liveBusProjection.fences.integration.test.ts --maxWorkers=1 --no-file-parallelism"
   },
   "dependencies": {
     "@google-cloud/firestore": "8.7.0",

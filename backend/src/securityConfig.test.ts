@@ -312,6 +312,9 @@ describe("production security configuration", () => {
     const database = JSON.parse(workspaceFile("database.rules.json"));
     expect(database.rules.activeBuses[".read"]).toBe(false);
     expect(database.rules.publicRouteBuses.$routeId.buses[".read"]).toBe("auth != null");
+    expect(database.rules.publicRouteBuses[".read"]).toBe("auth != null && auth.token.admin == true");
+    expect(database.rules.clientProjectionStatus[".read"]).toBe(false);
+    expect(database.rules.clientProjectionStatus.public[".read"]).toBe("auth != null");
     expect(database.rules.activeRouteGeometry[".read"]).toBe("auth != null");
     expect(database.rules.activeRouteGeometry[".write"]).toBe(false);
     expect(JSON.stringify(database)).not.toContain("request.app");

@@ -13,7 +13,7 @@ function scope(routeId?: string): Store {
   if (routeId !== undefined && !/^[A-Za-z0-9_-]{1,128}$/.test(routeId)) throw new Error("Invalid live route ID.");
   let store = scopes.get(key);
   if (!store) {
-    store = createLiveBusStore(routeId ? `publicRouteBuses/${routeId}/buses` : "publicRouteBuses",
+    store = createLiveBusStore(routeId ? `publicRouteBuses/route:${routeId}/buses` : "publicRouteBuses",
       !routeId, () => { scopes.delete(key); });
     scopes.set(key, store);
   }

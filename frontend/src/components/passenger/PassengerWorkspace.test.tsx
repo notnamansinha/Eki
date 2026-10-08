@@ -13,6 +13,8 @@ vi.mock("@/hooks/useRoutes", async () => import("../../../../e2e/fixtures/state"
 vi.mock("@/hooks/useSettings", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useRTDBResume", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/lib/liveBusStore", async () => import("../../../../e2e/fixtures/state"));
+vi.mock("@/lib/joinedRideStatus", async () => import("../../../../e2e/fixtures/state"));
+vi.mock("@/lib/authState", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("next/dynamic", () => ({ default: (loader: () => Promise<{ default: ComponentType<Record<string, unknown>> }>) => {
   const Loaded = lazy(loader);
   return function TestDynamic(props: Record<string, unknown>) { return <Suspense><Loaded {...props} /></Suspense>; };

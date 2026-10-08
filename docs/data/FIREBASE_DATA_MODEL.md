@@ -1,8 +1,8 @@
 # Firebase Firestore and RTDB data model
 
-Last updated: 2026-10-06 00:18 IST (UTC+05:30).
+Last updated: 2026-10-08 08:22 IST (UTC+05:30).
 
-recorded in [the field contract audit](../testing/RTDB_FIELD_CONTRACT_AUDIT_2026_10_02.md).
+Field ownership and compatibility build on [the field contract audit](../testing/RTDB_FIELD_CONTRACT_AUDIT_2026_10_02.md).
 
 ## Reading this document
 
@@ -29,9 +29,13 @@ erDiagram
 
 ### Public live views (R14)
 
-`publicRouteBuses/{routeId}/buses/{busId}_{routeId}` contains only fields explicitly selected by `publicLiveBus`: coordinates, accepted sample identity, matched/raw location, public route state and ride lifecycle. Automatic returns also expose the validated `automaticTurnaround: true` and `previousSessionId` link: the durable return claim proves the predecessor completed even when position coalescing skipped its terminal publication. Histories, anchors, claims, retry state and worker metadata are excluded. Passengers subscribe directly to a selected route, plus their explicitly joined ride route when browsing another route. Trusted admins may read the public fleet root. All writes are server-only.
+`publicRouteBuses/route:{routeId}/buses/node:{busId}_{routeId}` contains only fields explicitly selected by `publicLiveBus`: coordinates, accepted sample identity, matched/raw location, public route state and ride lifecycle. Opaque prefixes safely preserve legal prototype-like IDs. Histories, anchors, claims, retry state and worker metadata are excluded. Passengers subscribe directly to a selected route, plus their explicitly joined ride route when browsing another route. Trusted boolean administrators may read the public fleet root. All writes are server-only; bare legacy route/node entries are excluded from schema 1 browser consumption.
 
-`liveRouteCatalog/values/{routeId}` contains `{active, available, freshestAt, previewFreshness?}`. `freshestAt` is the exact accepted receipt time (sample fallback). `previewFreshness` maps distinct accepted freshness timestamps to online preview counts, without bus identities or coordinates. Clients count each timestamp against `NEXT_PUBLIC_BUS_EXPIRY_MS`; one fresh preview cannot extend another preview's deadline. Older catalogs fall back to `freshestAt` with the same configured expiry. It supports route selection without fleet locations. Parent `revisions` and `_workerGeneration` are private. Active rides remain discoverable through signal loss; silent unarmed previews expire. The elected worker repairs missing/removal publications using bounded periodic replay. See [R14 evidence and rollout](../testing/R14_LIVE_PROJECTION.md).
+`liveRouteCatalog/values/route:{routeId}` contains active counts and `availableReceipts`, an exact bounded receipt vector with no coordinates or identities. The browser applies its configured freshness window; receipt/sample pairing follows the accepted -10s/+60s skew contract. Legacy `available`/`freshestAt` remain diagnostics and do not decide browser expiry. Parent `revisions`, per-route `generations` and `_workerGeneration` are private. The elected worker repairs missing/removal publications using bounded periodic replay, including empty route tombstones and successor revision lineage.
+
+`clientProjectionStatus/public` exposes only `{schemaVersion:1,ready}`. It becomes ready after current-generation bounded backfill and queued publications settle. Absent/incompatible/not-ready status is an actionable unavailable state, rather than an empty fleet; a compatible ready empty fleet is valid. The status parent retains a private worker fence. Deploy the publisher and verify backfill before restrictive rules and the browser release; a testing merge does not deploy any of them.
+
+The guarded natural-completion write retains one `lastCompletedSessionId/lastCompletedAt/lastCompletedRouteId` marker through automatic turnaround. This bounded marker is public lifecycle evidence, not full ride history. Older/cross-route joined-session recovery uses the closed member-authorized HTTP status endpoint backed by durable `ride_sessions`. Removed/offline/interrupted data never invents completion. See [R14 evidence and rollout](../testing/R14_LIVE_PROJECTION.md).
 
 ### `activeBuses/{busId}_{routeId}`
 

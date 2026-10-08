@@ -4797,6 +4797,127 @@
         "x-idempotency": "Creates once or returns existing code for this authorized session."
       }
     },
+    "/api/sessions/{sessionId}/status": {
+      "get": {
+        "operationId": "getJoinedRideStatus",
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Recover a joined ride lifecycle without exposing passenger manifests.",
+        "description": "Requires exact passenger manifest membership, the assigned operator, or a trusted administrator. Unknown and unauthorized sessions return identical403 responses. No-store; completed is distinct from interrupted/failed.",
+        "security": [
+          {
+            "FirebaseBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Closed durable lifecycle status.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JoinedRideStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid identifiers, payload, query, or JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, revoked, disabled, or malformed credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated caller lacks the required role, assignment, proximity, or membership.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Raw JSON request exceeds the configured body limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded; obey Retry-After when supplied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds before retry when emitted by the rejecting limiter; not supplied by every upstream failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable, busy authentication verifier, or missing safe server configuration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-auth-class": "joined-passenger-or-assigned-driver-or-trusted-admin",
+        "x-body-limit-bytes": 16384,
+        "x-rate-limit": "Pre-auth browser ingress: 1000 requests/normalized IP/minute. CORS/preflight runs first. Verified UID mutation budget: 30/minute; GET/HEAD uses the separate 200/minute read budget. Process budgets divided by RATE_LIMIT_SHARD_FACTOR; edge WAF/LB enforces the fleet cap.",
+        "x-cache-policy": "Cache-Control: no-store. No passenger manifests or boarding credentials.",
+        "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
+        "x-retry-policy": "Single-flight visible/online browser recovery every15seconds for nonterminal joined sessions while their projection is missing; permissions/errors require explicitRetry. Token preparation and HTTP each have10second client deadlines.",
+        "x-idempotency": "Read-only durable lifecycle status; unknown and unauthorized sessions use the same403 response."
+      }
+    },
     "/api/sessions/{sessionId}/join": {
       "post": {
         "operationId": "joinSession",
@@ -10098,6 +10219,41 @@
       }
     },
     "schemas": {
+      "JoinedRideStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sessionId",
+          "busId",
+          "routeId",
+          "status"
+        ],
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          },
+          "busId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          },
+          "routeId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "armed",
+              "active",
+              "completed",
+              "interrupted",
+              "failed"
+            ]
+          }
+        }
+      },
       "Liveness": {
         "type": "object",
         "required": [

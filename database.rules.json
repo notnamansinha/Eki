@@ -15,7 +15,7 @@
       ".write": false
     },
     "publicRouteBuses": {
-      ".read": "auth != null && (auth.token.admin == true || auth.token.role == 'admin')",
+      ".read": "auth != null && auth.token.admin == true",
       ".write": false,
       "$routeId": {
         "buses": { ".read": "auth != null", ".write": false }
@@ -24,6 +24,11 @@
     "liveRouteCatalog": {
       ".write": false,
       "values": { ".read": "auth != null" }
+    },
+    "clientProjectionStatus": {
+      ".read": false,
+      ".write": false,
+      "public": { ".read": "auth != null", ".write": false }
     },
     "_deviceRateLimits": {
       ".read": false,

@@ -14,12 +14,13 @@ describe("live bus auth isolation with the real verification gate", () => {
     const first = vi.fn(); const stopFirst = subscribeLiveBusesByRoute("A", first);
     await Promise.resolve(); await Promise.resolve();
     const old = fixture.receive!;
-    old({ val: () => ({ bus: { timestamp: Date.now() } }) });
+    old({ val: () => ({ "node:bus": { timestamp: Date.now() } }) });
+    expect(first).toHaveBeenLastCalledWith({ "node:bus": { timestamp: expect.any(Number) } }, "listener");
     auth.beginAuthVerification();
     expect(first).toHaveBeenLastCalledWith(null, "invalidation");
     expect(fixture.detach).toHaveBeenCalledTimes(4);
     const next = vi.fn(); const stopNext = subscribeLiveBusesByRoute("A", next);
-    old({ val: () => ({ private: { timestamp: Date.now() } }) });
+    old({ val: () => ({ "node:private": { timestamp: Date.now() } }) });
     await Promise.resolve(); expect(next).not.toHaveBeenCalled();
     auth.notifyAuthReady(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
     fixture.receive!({ val: () => null });
@@ -32,8 +33,8 @@ describe("live bus auth isolation with the real verification gate", () => {
     const next = vi.fn(); const stop = subscribeLiveBusChangesByRoute("A", next);
     await Promise.resolve(); await Promise.resolve();
     const bus = { timestamp: Date.now(), sessionId: "joined", tripState: "completed" };
-    fixture.receive!({ val: () => ({ bus }) });
-    expect(next).toHaveBeenCalledWith({ type: "reset", snapshot: { bus }, source: "listener" });
+    fixture.receive!({ val: () => ({ "node:bus": bus }) });
+    expect(next).toHaveBeenCalledWith({ type: "reset", snapshot: { "node:bus": bus }, source: "listener" });
     stop();
   });
 });

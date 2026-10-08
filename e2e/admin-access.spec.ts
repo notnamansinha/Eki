@@ -139,7 +139,7 @@ test("route projection uses receipt freshness for both preview and catalog and e
   await page.getByRole("button", { name: "Approve verification" }).click();
   await page.getByRole("button", { name: "Publish preview" }).click();
   const reads = await page.evaluate(() => (window as typeof window & { qaRtdbReads: string[] }).qaRtdbReads);
-  expect(reads).toContain("publicRouteBuses/qa-route/buses");
+  expect(reads).toContain("publicRouteBuses/route:qa-route/buses");
   expect(reads).toContain("liveRouteCatalog/values");
   expect(reads).not.toContain("publicRouteBuses");
   expect(reads).not.toContain("activeBuses");

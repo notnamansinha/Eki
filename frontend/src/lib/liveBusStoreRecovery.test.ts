@@ -146,32 +146,32 @@ describe("live bus listener recovery", () => {
     await flushPromises();
 
     listenerState.success?.({ val: () => ({
-      route_1: { buses: { bus_1: { busId: "bus_1", routeId: "route_1", timestamp: Date.now() } } },
-      route_2: { buses: { bus_2: { busId: "bus_2", routeId: "route_2", timestamp: Date.now() } } },
+      "route:route_1": { buses: { "node:bus_1": { busId: "bus_1", routeId: "route_1", timestamp: Date.now() } } },
+      "route:route_2": { buses: { "node:bus_2": { busId: "bus_2", routeId: "route_2", timestamp: Date.now() } } },
     }) });
-    listenerState.routes.get("publicRouteBuses/route_1/buses")?.success?.({ val: () => ({
-      bus_1: { busId: "bus_1", routeId: "route_1", timestamp: Date.now() },
+    listenerState.routes.get("publicRouteBuses/route:route_1/buses")?.success?.({ val: () => ({
+      "node:bus_1": { busId: "bus_1", routeId: "route_1", timestamp: Date.now() },
     }) });
-    listenerState.routes.get("publicRouteBuses/route_2/buses")?.success?.({ val: () => ({
-      bus_2: { busId: "bus_2", routeId: "route_2", timestamp: Date.now() },
+    listenerState.routes.get("publicRouteBuses/route:route_2/buses")?.success?.({ val: () => ({
+      "node:bus_2": { busId: "bus_2", routeId: "route_2", timestamp: Date.now() },
     }) });
     changes.mockClear();
     routeOne.mockClear();
     routeTwo.mockClear();
 
     const updated = { busId: "bus_1", routeId: "route_1", timestamp: Date.now(), speed: 30 };
-    listenerState.childChanged?.({ key: "route_1", val: () => ({ buses: { bus_1: updated } }) });
-    listenerState.routes.get("publicRouteBuses/route_1/buses")?.changed?.({ key: "bus_1", val: () => updated });
+    listenerState.childChanged?.({ key: "route:route_1", val: () => ({ buses: { "node:bus_1": updated } }) });
+    listenerState.routes.get("publicRouteBuses/route:route_1/buses")?.changed?.({ key: "node:bus_1", val: () => updated });
 
     expect(changes).toHaveBeenCalledOnce();
     expect(changes).toHaveBeenCalledWith({
       type: "upsert",
-      key: "bus_1",
+      key: "node:bus_1",
       value: updated,
       source: "listener",
     });
     expect(routeOne).toHaveBeenCalledOnce();
-    expect(routeOne.mock.calls[0][0]).toEqual({ bus_1: updated });
+    expect(routeOne.mock.calls[0][0]).toEqual({ "node:bus_1": updated });
     expect(routeTwo).not.toHaveBeenCalled();
 
     disposeChanges();
@@ -186,15 +186,15 @@ describe("live bus listener recovery", () => {
     const disposeSecond = subscribeLiveBusesByRoute("A", second);
     await flushPromises();
     expect(onValue).toHaveBeenCalledOnce();
-    expect(vi.mocked(onValue).mock.calls[0][0]).toEqual({ path: "publicRouteBuses/A/buses" });
-    const old = listenerState.routes.get("publicRouteBuses/A/buses")!.success!;
+    expect(vi.mocked(onValue).mock.calls[0][0]).toEqual({ path: "publicRouteBuses/route:A/buses" });
+    const old = listenerState.routes.get("publicRouteBuses/route:A/buses")!.success!;
     listenerState.generation++;
     old({ val: () => ({ secret: { timestamp: Date.now() } }) });
     expect(first).not.toHaveBeenCalled();
     invalidateLiveBusCache(); await flushPromises(); first.mockClear(); second.mockClear();
     old({ val: () => ({ secret: { timestamp: Date.now() } }) });
     expect(first).not.toHaveBeenCalled();
-    const current = listenerState.routes.get("publicRouteBuses/A/buses")!.success!;
+    const current = listenerState.routes.get("publicRouteBuses/route:A/buses")!.success!;
     disposeFirst(); expect(listenerState.unsubscribe).toHaveBeenCalledTimes(4);
     disposeSecond(); expect(listenerState.unsubscribe).toHaveBeenCalledTimes(8);
     current({ val: () => ({ ghost: { timestamp: Date.now() } }) });
@@ -203,13 +203,14 @@ describe("live bus listener recovery", () => {
 
   it("does not replay another auth generation's route cache while verification is pending", async () => {
     const { subscribeLiveBusesByRoute } = await import("./liveBusStore");
-    const dispose = subscribeLiveBusesByRoute("A", vi.fn()); await flushPromises();
-    listenerState.routes.get("publicRouteBuses/A/buses")!.success!({ val: () => ({ bus: { timestamp: Date.now() } }) });
+    const first = vi.fn(); const dispose = subscribeLiveBusesByRoute("A", first); await flushPromises();
+    listenerState.routes.get("publicRouteBuses/route:A/buses")!.success!({ val: () => ({ "node:bus": { timestamp: Date.now() } }) });
+    expect(first).toHaveBeenLastCalledWith({ "node:bus": { timestamp: expect.any(Number) } }, "listener");
     listenerState.generation++;
     let release!: () => void;
     listenerState.authGate = new Promise<void>(resolve => { release = resolve; });
     const next = vi.fn(); const disposeNext = subscribeLiveBusesByRoute("A", next);
-    expect(next.mock.calls.some(([snapshot]) => snapshot?.bus)).toBe(false);
+    expect(next.mock.calls.some(([snapshot]) => snapshot?.["node:bus"])).toBe(false);
     release(); await flushPromises(); disposeNext(); dispose();
   });
 });

@@ -1,6 +1,6 @@
 # Backend API reference
 
-Last updated: 2026-10-06 00:18 IST (UTC+05:30).
+Last updated: 2026-10-08 08:22 IST (UTC+05:30).
 
 The machine-readable contract is `backend/openapi.json` (OpenAPI 3.1.1).
 See [HTTP contract checks and rollout](../docs/api/HTTP_CONTRACT.md) for schema
@@ -302,6 +302,12 @@ Deletes messages in batches from the session subcollection. Returns `{deleted:nu
 Only `completed|interrupted|failed` sessions. Recursively deletes session/subcollections and same-ID/query-matching completed projections. Returns `{deleted:true,...counts}`. Active/pending/armed is 409; invalid ID 400; absence/errors follow deletion service response.
 
 ## Session boarding endpoints
+
+### `GET /api/sessions/:sessionId/status` — joined passenger, assigned operator, or trusted admin
+
+Recovers a joined ride when its public projection disappears or advances to another session. Returns only `{sessionId,busId,routeId,status}` with `pending|armed|active|completed|interrupted|failed`; `Cache-Control: no-store`. The passenger manifest must contain an own entry whose `userId` equals the verified UID. Operators must match both driver and assigned bus; administrator access requires the trusted boolean `admin: true`. Unknown and unauthorized sessions both return the same 403 response. Invalid IDs return 400; corrupt or unavailable status returns 503. Manifests, boarding codes and other session fields remain private.
+
+The browser uses one request at a time while an explicitly joined session has no live projection. A nonterminal response schedules another check after 15 seconds, only while visible and online; presence, terminal status, auth change and unmount cancel recovery. Permission and transport errors show Retry. Token verification/preparation and HTTP each have a 10-second client budget. `completed` permits the existing feedback flow; `interrupted` and `failed` never manufacture completion.
 
 ### `POST /api/sessions/:sessionId/boarding-code` — assigned operator or admin
 

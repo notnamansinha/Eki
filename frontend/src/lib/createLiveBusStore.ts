@@ -34,10 +34,10 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
   const subscribers = new Set<Subscriber>();
   const changeSubscribers = new Set<ChangeSubscriber>();
   let cached: LiveBusSnapshot | null = null;
+  let cacheAuthGeneration: number | null = null;
+  let detachAuth: (() => void) | null = null;
   let unsubscribes: (() => void)[] = [];
   let starting = false;
-  let cacheGeneration = getAuthVerificationGeneration();
-  let detachAuth: (() => void) | null = null;
   let epoch = 0;
   let expiryTimer: ReturnType<typeof setTimeout> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -135,7 +135,7 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
     if (unsubscribes.length === 0) return;
     detachListeners();
     cached = null;
-    cacheGeneration = getAuthVerificationGeneration();
+    cacheAuthGeneration = null;
     if (expiryTimer) clearTimeout(expiryTimer);
     expiryTimer = null;
     notifySnapshotSubscribers("invalidation");
@@ -145,12 +145,8 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
   }
 
   function invalidateLiveBusCache(): void {
-    if (retryTimer) clearTimeout(retryTimer);
-    retryTimer = null;
-    retryAttempt = 0;
     detachListeners();
     cached = null;
-    cacheGeneration = getAuthVerificationGeneration();
     if (expiryTimer) clearTimeout(expiryTimer);
     expiryTimer = null;
     notifySnapshotSubscribers("invalidation");
@@ -175,7 +171,7 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
       > = [];
       let initialized = false;
       const receiveOne = (type: "upsert" | "remove", snapshot: { key: string | null; val: () => unknown }) => {
-        if (!current() || !snapshot.key) return;
+        if (!current() || !snapshot.key?.startsWith("node:")) return;
         const rawValue = snapshot.val();
         if (initialized) recordRealtimePayload("active_buses", rawValue);
         const normalizedType = type === "upsert" &&
@@ -201,10 +197,11 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
       const receive = (type: "upsert" | "remove", snapshot: { key: string | null; val: () => unknown }) => {
         if (!current() || !snapshot.key) return;
         if (!fleet) { receiveOne(type, snapshot); return; }
+        if (!snapshot.key.startsWith("route:")) return;
         const raw = snapshot.val() as { buses?: LiveBusSnapshot } | null;
         const buses = type === "remove" ? {} : raw?.buses ?? {};
         for (const [key, value] of Object.entries(cached ?? {})) {
-          if (value.routeId === snapshot.key && !(key in buses)) receiveOne("remove", { key, val: () => null });
+          if (value.routeId === (snapshot.key.startsWith("route:") ? snapshot.key.slice(6) : snapshot.key) && !(key in buses)) receiveOne("remove", { key, val: () => null });
         }
         for (const [key, value] of Object.entries(buses)) receiveOne("upsert", { key, val: () => value });
       };
@@ -225,13 +222,13 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
         if (!current()) return;
         retryAttempt = 0;
         const raw = snapshot.val();
-        const value: LiveBusSnapshot | null = fleet && raw
-          ? Object.assign({}, ...Object.values(raw as Record<string, { buses?: LiveBusSnapshot }>).map(route => route.buses ?? {}))
-          : raw as LiveBusSnapshot | null;
+        const value: LiveBusSnapshot | null = raw ? Object.fromEntries((fleet
+          ? Object.entries(raw as Record<string, { buses?: LiveBusSnapshot }>).filter(([key]) => key.startsWith("route:")).flatMap(([, route]) => Object.entries(route.buses ?? {}))
+          : Object.entries(raw as LiveBusSnapshot)).filter(([key]) => key.startsWith("node:"))) : null;
         recordRealtimePayload("active_buses", value);
-        // Deliver terminal states once before expiry removes their map entries.
-        cached = value;
-        cacheGeneration = authGeneration;
+        // Deliver authoritative terminal state once before local expiry prunes it.
+        cached = value ? Object.fromEntries(Object.entries(value)) : null;
+        cacheAuthGeneration = authGeneration;
         buffered.forEach((change) => {
           if (change.type === "upsert") {
             cached ??= {};
@@ -273,13 +270,9 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
     onIdle();
   }
 
-  function prepareSubscription(): void {
-    detachAuth ??= onAuthVerificationStarted(invalidateLiveBusCache);
-    if (cacheGeneration !== getAuthVerificationGeneration()) invalidateLiveBusCache();
-  }
-
   function subscribeLiveBuses(next: Subscriber["next"], error?: Subscriber["error"]): () => void {
-    prepareSubscription();
+    detachAuth ??= onAuthVerificationStarted(invalidateLiveBusCache);
+    if (cached && cacheAuthGeneration !== getAuthVerificationGeneration()) invalidateLiveBusCache();
     const subscriber = { next, error };
     subscribers.add(subscriber);
     if (cached !== null) next(cached, "cache");
@@ -292,7 +285,8 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
     next: ChangeSubscriber["next"],
     error?: ChangeSubscriber["error"],
   ): () => void {
-    prepareSubscription();
+    detachAuth ??= onAuthVerificationStarted(invalidateLiveBusCache);
+    if (cached && cacheAuthGeneration !== getAuthVerificationGeneration()) invalidateLiveBusCache();
     const subscriber = { next, error };
     changeSubscribers.add(subscriber);
     if (cached !== null) next({ type: "reset", snapshot: cached, source: "cache" });

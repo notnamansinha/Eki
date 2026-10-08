@@ -2,7 +2,7 @@
 import { lazy, Suspense, type ComponentType } from "react";
 import type { LiveBusChange } from "@/lib/liveBusStore";
 import PassengerWorkspace from "./PassengerWorkspace";
-import { act, cleanup, render, screen, fireEvent } from "@testing-library/react";
+import { act, cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({
   mark: vi.fn(), retryCatalog: vi.fn(), invalidate: vi.fn(), generation: 0,
@@ -13,7 +13,9 @@ const routes = ["A", "B"].map(id => ({ id, name: id, stops: [{ id: "origin", nam
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: fixture.user }) }));
 vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes, error: null, retry: vi.fn() }) }));
 vi.mock("@/hooks/useSettings", () => ({ useSettings: () => ({ settings: {} }) }));
-vi.mock("@/hooks/useLiveRouteCatalog", () => ({ useLiveRouteCatalog: () => ({ catalog: { A: { active: 1, available: 0 }, B: { active: 1, available: 0 } }, error: null, retry: fixture.retryCatalog }) }));
+vi.mock("@/hooks/useLiveRouteCatalog", () => ({ useLiveRouteCatalog: () => ({ catalog: { A: { active: 1, available: 0 }, B: { active: 1, available: 0 } }, projectionReady: true, catalogReady: true, error: null, retry: fixture.retryCatalog }) }));
+vi.mock("@/lib/authState", () => ({ getAuthVerificationGeneration: () => fixture.generation }));
+vi.mock("@/lib/joinedRideStatus", () => ({ getJoinedRideStatus: async (sessionId: string) => ({ sessionId, busId: "bus", routeId: "A", status: "active" }) }));
 vi.mock("@/hooks/useRTDBResume", () => ({ useRTDBResume: () => ({ isResuming: true, connectionGeneration: fixture.generation, resumeGeneration: 0, markSnapshotReceived: fixture.mark }) }));
 vi.mock("@/lib/liveBusStore", () => ({ invalidateLiveBusCache: fixture.invalidate,
   subscribeLiveBusChangesByRoute: (route: string, next: (change: LiveBusChange) => void, error: (error: Error) => void) => {
@@ -30,7 +32,7 @@ vi.mock("@/components/passenger/AccountTab", () => ({ default: () => <div>Accoun
 vi.mock("@/components/shared/MessagingPanel", () => ({ default: () => <div>Chat</div> }));
 vi.mock("@/components/shared/FeedbackModal", () => ({ default: ({ sessionId }: { sessionId: string }) => <div>Feedback {sessionId}</div> }));
 const bus = (route = "A", session = "joined") => ({ busId: "bus", routeId: route, sessionId: session, driverId: "driver", status: "active", tripState: "in_service", direction: "forward", lat: 23, lng: 72, timestamp: Date.now() });
-const deliver = (route: string, value = bus(route)) => fixture.listeners.get(route)!.next({ type: "reset", snapshot: { [`bus_${route}`]: value }, source: "listener" });
+const deliver = (route: string, value = bus(route)) => fixture.listeners.get(route)!.next({ type: "reset", snapshot: { [`node:bus_${route}`]: value }, source: "listener" });
 beforeEach(() => { fixture.listeners.clear(); fixture.mark.mockClear(); fixture.invalidate.mockClear(); fixture.generation = 0; });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 async function join() {
@@ -50,7 +52,7 @@ describe("passenger route recovery", () => {
     act(() => fixture.listeners.get("B")!.next({ type: "reset", snapshot: null, source: "cache" }));
     expect(fixture.mark).not.toHaveBeenCalled();
     act(() => deliver("B", bus("B", "other"))); expect(fixture.mark).not.toHaveBeenCalled();
-    act(() => fixture.listeners.get("A")!.next({ type: "upsert", key: "bus_A", value: bus(), source: "listener" })); expect(fixture.mark).toHaveBeenCalledOnce();
+    act(() => fixture.listeners.get("A")!.next({ type: "upsert", key: "node:bus_A", value: bus(), source: "listener" })); expect(fixture.mark).toHaveBeenCalledOnce();
     fixture.mark.mockClear();
     act(() => fixture.listeners.get("A")!.next({ type: "reset", snapshot: null, source: "invalidation" }));
     act(() => deliver("B", bus("B", "other"))); expect(fixture.mark).not.toHaveBeenCalled();
@@ -60,8 +62,8 @@ describe("passenger route recovery", () => {
   it("shows detail permission denial and retries without treating invalidation as an empty fleet", async () => {
     render(<PassengerWorkspace />); await act(async () => { await Promise.resolve(); });
     act(() => fixture.listeners.get("A")!.error(new Error("permission denied")));
-    expect(screen.getByRole("alert").textContent).toContain("Live bus data is unavailable");
-    fireEvent.click(screen.getByRole("button", { name: "Retry live data" })); expect(fixture.invalidate).toHaveBeenCalledOnce();
+    expect(screen.getByRole("alert").textContent).toContain("Live bus data");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" })); await waitFor(() => expect(fixture.invalidate).toHaveBeenCalledOnce());
     act(() => deliver("A")); expect(screen.queryByRole("alert")).toBeNull();
   });
   it("finishes the joined predecessor and prompts feedback after a coalesced automatic return", async () => {
