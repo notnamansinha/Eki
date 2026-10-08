@@ -1,9 +1,13 @@
 # Testing and acceptance evidence
 
-Last updated: 2026-10-05 17:01 IST (UTC+05:30).
+Last updated: 2026-10-06 15:15 IST (UTC+05:30).
 
 ## Start with the current gates
 
+- [Current A–Z execution ledger](WEBAPP_A_Z_AB_TESTING.md): all 351 feature
+  cases, actual localhost outcomes, software evidence and pending gates.
+- [Full supplied A–Z plan](WEBAPP_A_Z_AB_TESTING_PLAN.md): preserved historical
+  inventories, control/API/race matrices and current contract overrides.
 - [Test strategy](TEST_STRATEGY.md): software, rules, browser, firmware and
   physical checks; required commands and their limits.
 - [3 October acceptance](TESTING_ACCEPTANCE_2026_10_03.md): later consolidated
