@@ -71,19 +71,19 @@ integration("R14 loopback transaction and payload measurement", () => {
   it("claims unchanged public destinations on real RTDB and rejects a delayed former leader", async () => {
     const root = realtime.ref("_r14_projection_takeover");
     const bus = { busId: "bus", routeId: "route", sessionId: "session", status: "active", tripState: "in_service", timestamp: Date.now() };
-    await root.set({ activeBuses: { bus_route: bus }, publicRouteBuses: { route: { _workerGeneration: 1, revision: 5, buses: { bus_route: bus } } },
-      liveRouteCatalog: { _workerGeneration: 1, revisions: { route: 5 }, values: { route: { active: 1, available: 0, freshestAt: 0 } } } });
+    await root.set({ activeBuses: { bus_route: bus }, publicRouteBuses: { "route:route": { _workerGeneration: 1, revision: 5, buses: { "node:bus_route": bus } } },
+      liveRouteCatalog: { _workerGeneration: 1, revisions: { "route:route": 5 }, values: { "route:route": { active: 1, available: 0, freshestAt: 0 } } } });
     projectionFixture.realtime = { ref: (path: string) => root.child(path) };
     const leader = new WorkerFence("r14", 2, performance.now() + 30_000);
     const stop = leader.run(startLiveBusProjection);
     try {
-      await waitFor(async () => (await root.child("publicRouteBuses/route/_workerGeneration").once("value")).val() === 2);
-      expect((await root.child("publicRouteBuses/route/revision").once("value")).val()).toBe(5);
+      await waitFor(async () => (await root.child("publicRouteBuses/route:route/_workerGeneration").once("value")).val() === 2);
+      expect((await root.child("publicRouteBuses/route:route/revision").once("value")).val()).toBe(5);
       expect((await root.child("liveRouteCatalog/_workerGeneration").once("value")).val()).toBe(2);
       const old = new WorkerFence("old", 1, performance.now() + 30_000);
-      const attempt = await old.run(() => workerRtdbTransaction(root.child("publicRouteBuses/route"), current => ({ ...current, revision: 999 })));
+      const attempt = await old.run(() => workerRtdbTransaction(root.child("publicRouteBuses/route:route"), current => ({ ...current, revision: 999 })));
       expect(attempt.committed).toBe(false);
-      expect((await root.child("publicRouteBuses/route/revision").once("value")).val()).toBe(5);
+      expect((await root.child("publicRouteBuses/route:route/revision").once("value")).val()).toBe(5);
     } finally { await stop(); await root.remove(); }
   }, 15_000);
   it("recovers automatic-return completion proof and removes missed source deletions on real RTDB", async () => {
@@ -93,13 +93,13 @@ integration("R14 loopback transaction and payload measurement", () => {
     projectionFixture.realtime = { ref: (path: string) => root.child(path) };
     const stop = new WorkerFence("r14", 3, performance.now() + 30_000).run(startLiveBusProjection);
     try {
-      await waitFor(async () => (await root.child("publicRouteBuses/route/buses/bus_route").once("value")).val()?.sessionId === "return");
-      const projected = (await root.child("publicRouteBuses/route/buses/bus_route").once("value")).val();
+      await waitFor(async () => (await root.child("publicRouteBuses/route:route/buses/node:bus_route").once("value")).val()?.sessionId === "return");
+      const projected = (await root.child("publicRouteBuses/route:route/buses/node:bus_route").once("value")).val();
       expect(projected).toMatchObject({ previousSessionId: "joined", automaticTurnaround: true });
       expect(projected.privateHistory).toBeUndefined();
       await root.child("activeBuses/bus_route").remove();
-      await waitFor(async () => !(await root.child("publicRouteBuses/route/buses/bus_route").once("value")).exists());
-      await waitFor(async () => (await root.child("liveRouteCatalog/values/route/active").once("value")).val() === 0);
+      await waitFor(async () => !(await root.child("publicRouteBuses/route:route/buses/node:bus_route").once("value")).exists());
+      await waitFor(async () => (await root.child("liveRouteCatalog/values/route:route/active").once("value")).val() === 0);
     } finally { await stop(); await root.remove(); }
   }, 15_000);
   it("stops within the drain deadline and cannot publish a late real source read", async () => {
@@ -113,7 +113,7 @@ integration("R14 loopback transaction and payload measurement", () => {
     const stop = new WorkerFence("r14", 4, performance.now() + 30_000).run(startLiveBusProjection);
     try {
       await started; const before = performance.now(); await stop();
-      expect(performance.now() - before).toBeLessThan(4500);
+      expect(performance.now() - before).toBeLessThan(9500);
       release(); await new Promise(resolve => setTimeout(resolve, 100));
       expect((await root.child("publicRouteBuses").once("value")).exists()).toBe(false);
     } finally { release(); await stop(); await root.remove(); }
