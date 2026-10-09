@@ -98,6 +98,14 @@ firmware keys and screenshots stay in ignored `temp/` or isolated test folders.
 The local Docker daemon was unavailable; the PR's required backend-image
 build/boot smoke job must pass in GitHub CI before merge.
 
+The first PR CI run exposed a browser assertion race: busy buttons disable
+before asynchronous attestation dispatches the PATCH. The regression now waits
+for the actual request, holds its response to assert the old status is retained,
+then releases acknowledgement and checks the saved status. The complete local
+mobile/desktop run passed all 20 cases with the normal two-worker configuration.
+Push CI passed all three jobs at the preceding head; final-head PR checks must
+pass as well. The repository requires an approving review before integration.
+
 ## Evidence boundaries and remaining external acceptance
 
 All 115 GitHub issues were audited: 113 closed and #245/#246 still open at the

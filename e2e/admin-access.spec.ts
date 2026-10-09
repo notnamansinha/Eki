@@ -77,15 +77,29 @@ test.beforeEach(async ({ page }) => {
   });
 });
 test("protected data waits for verification and status updates after acknowledgement", async ({ page }) => {
+  let acknowledgePatch!: () => void;
+  const patchAcknowledgement = new Promise<void>(resolve => { acknowledgePatch = resolve; });
+  await page.route("**/api/v2/feedback**", async route => {
+    if (route.request().method() !== "PATCH") return route.fallback();
+    await patchAcknowledgement;
+    await route.fulfill({ json: { updated: true, status: "reviewed" } });
+  });
   const attestations: Array<string | undefined> = [];
   page.on("request", request => { if (request.url().includes("/api/v2/feedback")) attestations.push(request.headers()["x-firebase-appcheck"]); });
   const requests: string[] = []; page.on("request", request => { if (request.url().includes("/api/v2/feedback")) requests.push(request.url()); });
   await page.goto("/"); await expect(page.getByText("Signing you in…")).toBeVisible(); expect(requests).toEqual([]);
   await page.getByRole("button", { name: "Approve verification" }).click(); await expect(page.getByText("Browser Passenger")).toBeVisible();
   await page.getByRole("button", { expanded: false }).click(); await page.getByRole("button", { name: "reviewed", exact: true }).click();
+  // Busy controls disable before asynchronous attestation dispatches HTTP.
+  // Observe the actual request, then hold its response to check no optimistic status.
+  await expect.poll(() => requests.length).toBe(2);
+  await expect(page.getByRole("button", { expanded: true })).toContainText("new");
   await expect(page.getByRole("button", { name: "reviewed", exact: true })).toBeDisabled();
   expect(requests).toHaveLength(2);
   expect(attestations).toEqual(["synthetic-attestation", "synthetic-attestation"]);
+  acknowledgePatch();
+  await expect(page.getByRole("button", { expanded: true })).toContainText("reviewed");
+  await expect(page.getByRole("button", { name: "reviewed", exact: true })).toBeDisabled();
 });
 test("App Check errors show recovery controls without mounting feedback", async ({ page }) => {
   await page.goto("/"); await expect(page.getByText("Signing you in…")).toBeVisible();
