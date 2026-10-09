@@ -52,6 +52,7 @@ export class Timestamp {}
 export const collection = (_db: unknown, name: string) => ({ name });
 export const query = (source: { name: string }) => source;
 export const limit = () => ({});
+export const limitToLast = () => ({});
 export const where = () => ({});
 export const orderBy = () => ({});
 const reads = new Map<string, number>();
@@ -69,6 +70,7 @@ export function onSnapshot(source: { name: string }, success: (snapshot: unknown
 }
 
 export const rtdb = {};
+export async function get() { throw new Error("Unexpected synthetic one-shot RTDB read"); }
 export const ref = (_db: unknown, path: string) => ({ path });
 const connectionObservers = new Set<(snapshot: { val: () => unknown }) => void>();
 let sdkConnected = true;

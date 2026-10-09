@@ -69,6 +69,15 @@ swap and move-up controls changed only the unsaved draft, which was canceled.
 Settings loaded its original values with a disabled No changes button. These
 observations cover these controls, not every cloud failure/conflict/delete case.
 
+The final 390 × 844 live check found the service form and counters exhausting
+the mobile sidebar's height and clipping the fleet controls. The entire mobile
+sidebar now scrolls; desktop retains its independently scrolling fleet list.
+Real Chrome then opened and closed Bus01 Details and opened Chat, which correctly
+showed the waiting-for-service notice with disabled input/send controls. No
+message was sent. History, Settings, Routes, Fleet and Feedback also fit the
+390 px viewport without horizontal page overflow. The temporary viewport was
+reset after verification.
+
 ## Local software verification
 
 | Gate | Result |
@@ -76,7 +85,7 @@ observations cover these controls, not every cloud failure/conflict/delete case.
 | Backend unit/HTTP suite | 950 passed after adding the generated frontend instruction-file mirrors; 46 integration cases skipped in the unit invocation |
 | Frontend suite | 631 passed across 76 files |
 | Actual loopback Firebase integration/rules suite | 46 passed in the separate emulator invocation |
-| Synthetic desktop/mobile browser suite | 20 passed with the real app components and synthetic SDK/HTTP providers |
+| Synthetic desktop/mobile browser suite | 22 passed with the real app components and synthetic SDK/HTTP providers |
 | Script tests | 75 passed |
 | OpenAPI / UI contracts | 71 registered operations / passed |
 | Frontend/backend lint | Passed |
@@ -103,8 +112,17 @@ before asynchronous attestation dispatches the PATCH. The regression now waits
 for the actual request, holds its response to assert the old status is retained,
 then releases acknowledgement and checks the saved status. The complete local
 mobile/desktop run passed all 20 cases with the normal two-worker configuration.
-Push CI passed all three jobs at the preceding head; final-head PR checks must
-pass as well. The repository requires an approving review before integration.
+The mobile fleet fix adds two real-layout browser cases: clicking Details must
+open its dialog, closing returns the control to the viewport, and the page stays
+within its width. Map rendering and Firebase transport are synthetic in these
+regressions. All 22 cases passed locally. Both push and PR CI passed at the
+preceding head; final-head checks remain a merge gate. The repository requires
+an approving review before integration.
+
+Running the full frontend suite alongside browser tests and lint produced two
+five-second interaction timeouts and one route-button lookup timeout. A complete
+rerun with two Vitest workers passed all 631 cases without changing assertions.
+Lint and strict production export also passed after the mobile fix.
 
 ## Evidence boundaries and remaining external acceptance
 

@@ -6,7 +6,7 @@ export default defineConfig({
   root: local("."), server: { host: "127.0.0.1", port: 3105, strictPort: true },
   resolve: { alias: [
     ...["firebase/auth", "firebase/app-check", "firebase/firestore", "firebase/database", "@/lib/firebaseAuth", "@/lib/firebaseFirestore", "@/lib/firebaseDatabase", "./firebaseDatabase", "./firebaseCore"].map(find => ({ find, replacement: local("firebase.ts") })),
-    ...["@/hooks/useBuses", "@/hooks/useDrivers", "@/hooks/useSettings", "next/navigation", "next/link"].map(find => ({ find, replacement: local("adapters.tsx") })),
+    ...["@/hooks/useBuses", "@/hooks/useDrivers", "@/hooks/useSettings", "next/navigation", "next/link", "@vis.gl/react-google-maps"].map(find => ({ find, replacement: local("adapters.tsx") })),
     { find: "@", replacement: local("../../frontend/src") },
   ] },
   css: { postcss: { plugins: [tailwindcss()] } }, oxc: { jsx: { runtime: "automatic" } },

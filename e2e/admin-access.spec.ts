@@ -1,4 +1,15 @@
 import { expect, test } from "@playwright/test";
+test("live fleet details remain reachable below service controls on a short screen", async ({ page }) => {
+  await page.goto("/?dashboard");
+  await page.getByRole("button", { name: "Approve verification" }).click();
+  const details = page.getByRole("button", { name: "Open live details for qa-bus", exact: true });
+  await details.click();
+  await expect(page.getByRole("dialog", { name: "Live details for qa-bus", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close live details", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Live details for qa-bus", exact: true })).toHaveCount(0);
+  await expect(details).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
+});
 test("healthy short tab switches keep fleet data without another handshake or read", async ({ page }) => {
   await page.clock.install(); await page.goto("/?resume");
   await page.getByRole("button", { name: "Approve verification" }).click();
