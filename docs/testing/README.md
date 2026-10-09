@@ -1,9 +1,28 @@
 # Testing and acceptance evidence
 
-Last updated: 2026-10-06 15:15 IST (UTC+05:30).
+Last updated: 2026-10-09 (Asia/Kolkata).
 
 ## Start with the current gates
 
+- [9 October non-moving software verification](NON_MOVING_READINESS_2026_10_09.md):
+  remaining chat/diagnostic/API boundary repairs, immediate reassignment
+  retirement, passenger reload recovery, full local suites and explicit
+  physical/deployment evidence limits. This supersedes earlier descriptions
+  of these software fixes as uncommitted or still unimplemented.
+- [9 October webapp readiness](WEBAPP_READINESS_2026_10_09.md): actual Chrome
+  port-3000 passenger boarding, repeat/reload recovery and populated admin History;
+  both chosen stops are visible. Local repairs and current tests passed. Full
+  live-provider feature and physical moving-route gates retain their recorded
+  limits; reassignment retirement now has HTTP and real emulator coverage.
+- [8 October webapp readiness](WEBAPP_READINESS_2026_10_08.md): actual browser
+  route/stop/admin/History checks, stationary QA service, frontend repairs and
+  database-to-browser timing. Passenger location, intermittent sign-in and populated manifest acceptance
+  remain open; this is not full feature or field sign-off.
+- [8 October balcony readiness](BALCONY_READINESS_2026_10_08.md): 20-minute
+  stationary capture, complete issue inventory, measured authority/public-path
+  latency and locally verified repair of continuous-update restart readiness.
+  The fix is local and uncommitted; moving/browser/firmware identity and release
+  acceptance remain explicit follow-ups.
 - [Current A–Z execution ledger](WEBAPP_A_Z_AB_TESTING.md): all 351 feature
   cases, actual localhost outcomes, software evidence and pending gates.
 - [Full supplied A–Z plan](WEBAPP_A_Z_AB_TESTING_PLAN.md): preserved historical
