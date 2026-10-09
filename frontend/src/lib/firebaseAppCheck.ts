@@ -66,11 +66,11 @@ function initializeFirebaseAppCheck(): AppCheck | null {
  * Browser production resolves only after a valid first App Check token.
  * Server calls and explicitly unenforced local development are no-ops.
  */
-export async function ensureAppCheck(options: { forceRefresh?: boolean } = {}): Promise<void> {
-  if (typeof window === "undefined") return;
+export async function browserAppCheckToken(options: { forceRefresh?: boolean } = {}): Promise<string | null> {
+  if (typeof window === "undefined") return null;
   try {
     const instance = initializeFirebaseAppCheck();
-    if (!instance) return;
+    if (!instance) return null;
     if (!tokenFlight) {
       const flight = { startedAt: performance.now(), raw: getToken(instance, options.forceRefresh === true) };
       tokenFlight = flight;
@@ -86,9 +86,14 @@ export async function ensureAppCheck(options: { forceRefresh?: boolean } = {}): 
     );
     const result = tokenResult as typeof tokenResult & { error?: unknown };
     if (!result.token || result.error || performance.now() - flight.startedAt >= APP_CHECK_TOKEN_TIMEOUT_MS) throw new Error("[AppCheck] Token acquisition failed.");
+    return result.token;
   } catch {
     // Normalize provider, configuration and deadline failures without leaking
     // provider response/debug credential details into UI messages.
     throw new AppCheckVerificationError();
   }
+}
+
+export async function ensureAppCheck(options: { forceRefresh?: boolean } = {}): Promise<void> {
+  await browserAppCheckToken(options);
 }

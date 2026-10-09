@@ -51,6 +51,16 @@ constexpr uint32_t HTTPS_RETRY_AFTER_MAX_MS = 5 * 60 * 1000;
 constexpr int64_t TELEMETRY_FRESHNESS_MARGIN_MS = 55000;
 constexpr uint32_t DIAGNOSTIC_RETRY_BASE_MS = 5000;
 constexpr uint32_t DIAGNOSTIC_RETRY_MAX_MS = 60UL * 1000;
+class FirstDiagnosticDelay {
+  uint32_t startedAt_;
+  bool ready_ = false;
+public:
+  explicit FirstDiagnosticDelay(uint32_t startedAt = 0) : startedAt_(startedAt) {}
+  bool due(uint32_t now, uint32_t delayMs) {
+    if (static_cast<uint32_t>(now - startedAt_) >= delayMs) ready_ = true;
+    return ready_;
+  }
+};
 
 inline uint32_t diagnosticRetryDelayMs(
   uint8_t consecutiveFailures,

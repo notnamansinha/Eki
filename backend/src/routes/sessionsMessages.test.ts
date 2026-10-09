@@ -255,7 +255,7 @@ describe.each([false, true])("session message route v2=%s", mode => {
 
     expect(response.status).toBe(201);
     expect([...harness.messages.values()][0]).toMatchObject({
-      from: "driver",
+      from: "admin",
       senderId: "admin_auth",
       senderName: "Campus Admin",
     });

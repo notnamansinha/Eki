@@ -415,7 +415,7 @@ async function sendMessage(req: AuthenticatedRequest, res: Response) {
         throw new ChatPolicyError(403, "You are not part of this ride.");
       }
 
-      const from = isDriver || isAdmin ? "driver" : "passenger";
+      const from = isAdmin ? "admin" : isDriver ? "driver" : "passenger";
       const passengerName = passengerEntry?.userName;
       const tokenName = req.user?.name;
       const rawSenderName = (
@@ -503,7 +503,7 @@ function privateResponse(_req: Request, res: Response, next: NextFunction) {
   res.set("Cache-Control", "no-store");
   next();
 }
-/** Closed recovery status; manifests and boarding credentials never leave this endpoint. */
+/** Closed recovery status and the requesting passenger's own stop choices. */
 router.get("/:sessionId/status", requireAuth, async (req: AuthenticatedRequest, res) => {
   const sessionId = singleRouteParam(req.params.sessionId);
   res.setHeader("Cache-Control", "no-store");
@@ -520,7 +520,14 @@ router.get("/:sessionId/status", requireAuth, async (req: AuthenticatedRequest, 
     if (typeof data.busId !== "string" || !SAFE_ID.test(data.busId) || typeof data.routeId !== "string" || !SAFE_ID.test(data.routeId) || typeof data.status !== "string" || !["pending", "armed", "active", "completed", "interrupted", "failed"].includes(data.status)) {
       res.status(503).json({ error: "Ride status is temporarily unavailable." }); return;
     }
-    res.json({ sessionId, busId: data.busId, routeId: data.routeId, status: data.status });
+    const ownBoarding = user.admin !== true && (user.role === undefined || user.role === "passenger") &&
+      entry && typeof entry === "object" && !Array.isArray(entry) && entry.userId === user.uid &&
+      typeof entry.boardingStopId === "string" && SAFE_ID.test(entry.boardingStopId) &&
+      (entry.alightingStopId === null || (typeof entry.alightingStopId === "string" && SAFE_ID.test(entry.alightingStopId)))
+      ? { boardingStopId: entry.boardingStopId, alightingStopId: entry.alightingStopId }
+      : undefined;
+    res.json({ sessionId, busId: data.busId, routeId: data.routeId, status: data.status,
+      ...(ownBoarding ? { boarding: ownBoarding } : {}) });
   } catch { res.status(503).json({ error: "Ride status is temporarily unavailable." }); }
 });
 router.post("/:sessionId/boarding-code", requireAuth, issueBoardingCode);

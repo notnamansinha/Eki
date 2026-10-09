@@ -14,6 +14,7 @@ interface Props {
   route: RouteData;
   tripState: "pre_departure" | "in_service";
   destinationStopId?: string;
+  restoredBoarding?: { boardingStopId: string; alightingStopId: string | null };
   onDestinationStopChange?: (stopId: string) => void;
   onJoined?: () => void;
 }
@@ -76,6 +77,7 @@ export default function PassengerBoardingView({
   route,
   tripState,
   destinationStopId,
+  restoredBoarding,
   onDestinationStopChange,
   onJoined,
 }: Props) {
@@ -105,6 +107,20 @@ export default function PassengerBoardingView({
   useEffect(() => {
     if (destinationStopId !== undefined) setAlightingStopId(destinationStopId);
   }, [destinationStopId]);
+
+  useEffect(() => {
+    if (!restoredBoarding) return;
+    let current = true;
+    queueMicrotask(() => {
+      if (!current || !mountedRef.current || sessionRef.current !== sessionId) return;
+      setBoardingStopId(restoredBoarding.boardingStopId);
+      setAlightingStopId(restoredBoarding.alightingStopId ?? "");
+      setHasJoined(true);
+      setJoinState("joined");
+      setJoinError("");
+    });
+    return () => { current = false; };
+  }, [restoredBoarding, sessionId]);
 
   const stopOptions = (route.stops ?? []).map((stop) => ({
     value: stop.id,

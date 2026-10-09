@@ -624,7 +624,7 @@ export default function DashboardPanel() {
   }, [activeEntries, routes, dynamicGeometries]);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
-  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
+  const [, setFreshnessNow] = useState(() => Date.now());
   const [driverId, setDriverId] = useState("");
   const [busId, setBusId] = useState("");
   const [routeId, setRouteId] = useState("");
@@ -667,10 +667,10 @@ export default function DashboardPanel() {
       .filter((sessionId): sessionId is string => Boolean(sessionId)),
   ).size;
   const devicesOnline = activeEntries.filter(
-    (entry) => devicePresence(entry, freshnessNow) === "online",
+    (entry) => devicePresence(entry) === "online",
   ).length;
   const unavailableDevices = activeEntries.filter(
-    (entry) => devicePresence(entry, freshnessNow) !== "online",
+    (entry) => devicePresence(entry) !== "online",
   ).length;
   const activeServices = countActiveServices(activeEntries);
 

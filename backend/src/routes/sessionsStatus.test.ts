@@ -38,6 +38,25 @@ beforeEach(() => {
 const request = () => contractFetch(`${origin}/api/sessions/session_1/status`);
 
 describe("joined ride status authorization and closed HTTP response", () => {
+  it("restores only the requesting passenger's verified stop choices", async () => {
+    state.session!.passengers = {
+      passenger_1: { userId: "passenger_1", userName: "Private", boardingStopId: "origin", alightingStopId: "destination" },
+      another: { userId: "another", boardingStopId: "other-origin", alightingStopId: "other-destination" },
+    };
+    const response = await request(); expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ sessionId: "session_1", busId: "bus_1", routeId: "route_1", status: "completed", boarding: { boardingStopId: "origin", alightingStopId: "destination" } });
+    state.principal = { uid: "admin", role: "admin", admin: true };
+    expect(await (await request()).json()).not.toHaveProperty("boarding");
+    state.principal = { uid: "outsider", role: "passenger" }; expect((await request()).status).toBe(403);
+  });
+  it.each(["bad/path", 123, undefined])("omits malformed stop metadata %j", async boardingStopId => {
+    state.session!.passengers = { passenger_1: { userId: "passenger_1", boardingStopId, alightingStopId: null } };
+    expect(await (await request()).json()).not.toHaveProperty("boarding");
+  });
+  it("returns an explicit null destination for a legacy joined passenger without a destination", async () => {
+    state.session!.passengers = { passenger_1: { userId: "passenger_1", boardingStopId: "origin", alightingStopId: null } };
+    expect((await (await request()).json()).boarding).toEqual({ boardingStopId: "origin", alightingStopId: null });
+  });
   it("requires authentication before reading a durable ride", async () => {
     state.principal = null; const response = await request(); expect(response.status).toBe(401); expect(state.reads).toBe(0);
   });

@@ -1,6 +1,7 @@
 "use client";
 
 import { AuthProvider } from "@/hooks/useAuth";
+import TelemetryTraceControls from "@/components/TelemetryTraceControls";
 
 /**
  * Root providers — intentionally lean.
@@ -14,5 +15,5 @@ import { AuthProvider } from "@/hooks/useAuth";
  * rather than here as a side-effect import, so it no longer blocks LCP.
  */
 export default function Providers({ children }: { children: React.ReactNode }) {
-  return <AuthProvider>{children}</AuthProvider>;
+  return <AuthProvider>{children}<TelemetryTraceControls /></AuthProvider>;
 }

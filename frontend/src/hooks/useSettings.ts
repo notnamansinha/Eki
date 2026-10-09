@@ -32,6 +32,13 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   announcementActive: false,
 };
 
+function readGlobalSettings(value: unknown): GlobalSettings {
+  const data = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return Object.fromEntries(Object.entries(DEFAULT_SETTINGS).map(([key, fallback]) =>
+    [key, typeof data[key] === typeof fallback ? data[key] : fallback],
+  )) as unknown as GlobalSettings;
+}
+
 // ── Singleton state ───────────────────────────────────────────────────────────
 let _settings: GlobalSettings = DEFAULT_SETTINGS;
 let _loading = true;
@@ -62,7 +69,7 @@ async function ensureListener() {
       (snap) => {
         if (generation !== _generation) return;
         _settings = snap.exists()
-          ? { ...DEFAULT_SETTINGS, ...(snap.data() as Partial<GlobalSettings>) }
+          ? readGlobalSettings(snap.data())
           : DEFAULT_SETTINGS;
         _loading = false;
         notifyAll();

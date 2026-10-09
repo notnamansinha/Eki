@@ -77,12 +77,15 @@ test.beforeEach(async ({ page }) => {
   });
 });
 test("protected data waits for verification and status updates after acknowledgement", async ({ page }) => {
+  const attestations: Array<string | undefined> = [];
+  page.on("request", request => { if (request.url().includes("/api/v2/feedback")) attestations.push(request.headers()["x-firebase-appcheck"]); });
   const requests: string[] = []; page.on("request", request => { if (request.url().includes("/api/v2/feedback")) requests.push(request.url()); });
   await page.goto("/"); await expect(page.getByText("Signing you in…")).toBeVisible(); expect(requests).toEqual([]);
   await page.getByRole("button", { name: "Approve verification" }).click(); await expect(page.getByText("Browser Passenger")).toBeVisible();
   await page.getByRole("button", { expanded: false }).click(); await page.getByRole("button", { name: "reviewed", exact: true }).click();
   await expect(page.getByRole("button", { name: "reviewed", exact: true })).toBeDisabled();
   expect(requests).toHaveLength(2);
+  expect(attestations).toEqual(["synthetic-attestation", "synthetic-attestation"]);
 });
 test("App Check errors show recovery controls without mounting feedback", async ({ page }) => {
   await page.goto("/"); await expect(page.getByText("Signing you in…")).toBeVisible();

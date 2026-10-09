@@ -19,6 +19,14 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); clearSettingsCache(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 describe("verified settings workflow", () => {
+  it("excludes stored audit metadata and defaults malformed fields", async () => {
+    const hook = renderHook(() => useSettings());
+    await waitFor(() => expect(mocks.listen).toHaveBeenCalledOnce());
+    act(() => mocks.listen.mock.calls[0][1]({ exists: () => true, data: () => ({
+      serviceStartTime: "7:30 am", announcementActive: "true", updatedAt: { seconds: 123 }, updatedBy: "admin", unrelated: "metadata",
+    }) }));
+    expect(hook.result.current.settings).toEqual({ serviceStartTime: "7:30 am", noBusesMessage: "No buses running", noBusesSubMessage: "Service starts at {time}", announcementText: "", announcementActive: false });
+  });
   it("does not read before verification and detaches on sign-out", async () => {
     mocks.loading = true; const hook = renderHook(() => useSettings()); await act(async () => {});
     expect(mocks.listen).not.toHaveBeenCalled(); mocks.loading = false; hook.rerender();

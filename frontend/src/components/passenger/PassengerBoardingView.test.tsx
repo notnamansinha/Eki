@@ -29,6 +29,17 @@ async function prepare() {
   return { user, joined };
 }
 describe("passenger boarding workflow", () => {
+  it("shows verified restored choices without replaying boarding or caching a code", async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    const { rerender } = render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" restoredBoarding={{ boardingStopId: "alpha", alightingStopId: "beta" }} />);
+    const button = await screen.findByRole("button", { name: "On board" });
+    expect(screen.getByRole("combobox", { name: "Boarding stop" }).textContent).toContain("Alpha");
+    expect(screen.getByRole("combobox", { name: "Destination station" }).textContent).toContain("Beta");
+    expect(screen.getByLabelText("Boarding code")).toHaveProperty("value", "");
+    expect(button).toHaveProperty("disabled", true); expect(gps).not.toHaveBeenCalled(); expect(fetchMock).not.toHaveBeenCalled();
+    rerender(<PassengerBoardingView sessionId="other-session" route={route} tripState="in_service" />);
+    expect(await screen.findByRole("button", { name: "Board" })).toBeTruthy();
+  });
   it("submits code, chosen stops and GPS once and only announces a confirmed join", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"joined":true}')); vi.stubGlobal("fetch", fetchMock);
     const { user, joined } = await prepare(); await user.click(screen.getByRole("button", { name: "Board" }));

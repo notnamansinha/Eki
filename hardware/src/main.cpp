@@ -306,6 +306,8 @@ uint32_t lastNtpCrossCheckAt = 0;
 uint32_t lastHttpsFailureAt = 0;
 uint32_t httpsRetryDelayMs = 0;
 uint32_t lastRemoteDiagnosticAt = 0;
+eki::telemetry::FirstDiagnosticDelay firstDiagnosticDelay;
+int lastTelemetryResponseCode = 0;
 bool remoteDiagnosticPublished = false;
 uint32_t remoteDiagnosticRetryStartedAt = 0;
 uint32_t remoteDiagnosticRetryDelayMs = 0;
@@ -371,6 +373,8 @@ uint32_t lastCapturedEvidenceAt = 0;
 uint32_t lastAcceptedEvidenceAt = 0;
 bool captureEvidenceSeen = false;
 bool acceptedEvidenceSeen = false;
+bool diagnosticGnssAvailable = false;
+uint32_t diagnosticNoFixStartedAt = 0;
 
 struct HealthCounters {
   uint32_t uartBufferOverflows;
@@ -1491,6 +1495,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
   }
   const int policyResponseCode = eki::telemetry::classifyIngressResponse(
     responseCode, http.header("Ngrok-Error-Code").c_str());
+  lastTelemetryResponseCode = responseCode;
   const eki::telemetry::HttpResponseAction action =
     eki::telemetry::httpResponseAction(policyResponseCode);
   const uint32_t retryAfterMs = responseCode == 429
@@ -1582,7 +1587,7 @@ bool remoteDiagnosticIsDue() {
   }
   return remoteDiagnosticPublished
     ? elapsed(lastRemoteDiagnosticAt) >= REMOTE_DIAGNOSTIC_INTERVAL_MS
-    : millis() >= FIRST_REMOTE_DIAGNOSTIC_DELAY_MS;
+    : firstDiagnosticDelay.due(millis(), FIRST_REMOTE_DIAGNOSTIC_DELAY_MS);
 }
 
 void scheduleRemoteDiagnosticRetry() {
@@ -1597,12 +1602,14 @@ void scheduleRemoteDiagnosticRetry() {
 }
 
 void publishRemoteDiagnostic() {
+  // Advance/latch the first deadline even while Wi-Fi or clock readiness blocks sending.
+  const bool diagnosticDue = remoteDiagnosticIsDue();
   if (
     WiFi.status() != WL_CONNECTED ||
     !clockIsSynchronized() ||
     credentialFaultActive ||
     diagnosticInFlight ||
-    !remoteDiagnosticIsDue()
+    !diagnosticDue
   ) return;
 
   const TelemetryQueue::Stats queue = telemetryQueueStats();
@@ -1654,9 +1661,16 @@ void publishRemoteDiagnostic() {
   document["flashEncryption"] = flashEncryptionActive;
   document["secureBoot"] = secureBootActive;
   document["timestamp"] = epochMilliseconds();
+  portENTER_CRITICAL(&healthMetricsMux);
+  const bool gnssAvailable = diagnosticGnssAvailable;
+  const uint32_t noFixStartedAt = diagnosticNoFixStartedAt;
+  portEXIT_CRITICAL(&healthMetricsMux);
+  document["gnssFixAvailable"] = gnssAvailable;
+  document["gnssNoFixMs"] = gnssAvailable ? 0 : elapsed(noFixStartedAt);
+  document["lastTelemetryResponseCode"] = lastTelemetryResponseCode;
 
   char payload[1024]{};
-  const size_t payloadLength = eki::json::serializeCompletePayload(document, 18, payload, sizeof(payload));
+  const size_t payloadLength = eki::json::serializeCompletePayload(document, 21, payload, sizeof(payload));
   if (payloadLength == 0 || payloadLength >= sizeof(payload)) {
     Serial.println("[Diagnostics] Refusing incomplete or oversized health payload.");
     scheduleRemoteDiagnosticRetry();
@@ -1907,6 +1921,10 @@ void rememberCapturedFix(const TelemetryFix &fix) {
 
 void evaluateTelemetry() {
   const TelemetryFix fix = currentFix();
+  portENTER_CRITICAL(&healthMetricsMux);
+  if (diagnosticGnssAvailable && !fix.valid) diagnosticNoFixStartedAt = millis();
+  diagnosticGnssAvailable = fix.valid;
+  portEXIT_CRITICAL(&healthMetricsMux);
   portENTER_CRITICAL(&maintenanceSnapshotMux);
   maintenanceSnapshot = {fix.valid, fix.motionState == MotionState::Stopped, millis()};
   portEXIT_CRITICAL(&maintenanceSnapshotMux);

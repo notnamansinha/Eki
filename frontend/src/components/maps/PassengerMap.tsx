@@ -535,10 +535,10 @@ function PassengerMapInner({
     return () => clearInterval(interval);
   }, [updateUI]);
 
-  // Evaluate silence on the UI clock too: a missing update cannot refresh
-  // presence or prevent the lost-signal banner from appearing.
+  // The UI timer triggers renders during silence. Evaluate against the actual
+  // clock on every render: a new fix can be newer than the last timer tick.
   const signalLostBuses = [...buses.values()].filter(bus =>
-    bus.deviceState === "offline" || isLiveBusSignalLost(liveBusFreshnessTimestamp(bus), uiNow),
+    bus.deviceState === "offline" || isLiveBusSignalLost(liveBusFreshnessTimestamp(bus)),
   );
   const signalLostLastSeen = signalLostBuses.length
     ? Math.min(...signalLostBuses.map(bus => liveBusFreshnessTimestamp(bus) ?? bus.timestamp)) : null;

@@ -3,14 +3,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import FleetManagementPanel from "./FleetManagementPanel";
+import type { ActiveBusEntry } from "@/lib/activeBusEntries";
+const live = vi.hoisted(() => ({ entries: [] as ActiveBusEntry[] }));
 vi.mock("@/hooks/useBuses", () => ({ useBuses: () => ({ buses: [{ id: "qa-bus", name: "QA Bus", assignedRoutes: ["qa-route"] }], loading: false }) }));
 vi.mock("@/hooks/useDrivers", () => ({ useDrivers: () => ({ drivers: [{ id: "qa-driver", name: "QA Driver", authUid: "qa-driver-uid", busId: "qa-bus" }], loading: false }) }));
 vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes: [{ id: "qa-route", name: "QA route" }], loading: false }) }));
-vi.mock("@/hooks/useActiveBuses", () => ({ useActiveBuses: () => [] }));
+vi.mock("@/hooks/useActiveBuses", () => ({ useActiveBuses: () => live.entries }));
 vi.mock("@/lib/firebaseAuth", () => ({ auth: { currentUser: { getIdToken: async () => "test-token" } } }));
-beforeEach(() => vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev"));
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+beforeEach(() => { live.entries = []; vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev"); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 describe("fleet and personnel controls", () => {
+  it("keeps a newly received fix online between freshness ticks and still expires silence", () => {
+    vi.useFakeTimers(); const start = Date.now();
+    live.entries = [{ busId: "qa-bus", routeId: "qa-route", deviceState: "online", timestamp: start }];
+    const view = render(<FleetManagementPanel />);
+    expect(screen.getByText("Device online")).toBeTruthy();
+    vi.setSystemTime(start + 12_000);
+    live.entries = [{ ...live.entries[0], timestamp: Date.now() }];
+    view.rerender(<FleetManagementPanel />);
+    expect(screen.getByText("Device online")).toBeTruthy();
+    vi.setSystemTime(start + 400_000);
+    view.rerender(<FleetManagementPanel />);
+    expect(screen.getByText("Device offline / stale")).toBeTruthy();
+  });
   it("validates empty vehicle and operator forms before any API call", async () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock); render(<FleetManagementPanel />); const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Add new vehicle" })); expect(screen.getByText("Vehicle ID is required.")).toBeTruthy();

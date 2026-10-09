@@ -16,6 +16,7 @@ runtime secret/configuration system.
 | `PORT` | No | HTTP listener port; defaults to `4000` in local use | Expose through the managed HTTPS runtime in production |
 | `NODE_ENV` | Recommended | Set `production` to enable production guards | Production refuses to start without `CORS_ORIGIN` |
 | `CORS_ORIGIN` | Production | Comma-separated exact frontend origins | Never use `*` for this credential-free API; do not include paths |
+| `API_APPCHECK_MODE` | No | `off` (compatibility default) or `enforce`: additional attestation for browser mutations and high-cost reads | Stage after consumer/provider verification; does not replace ID-token/RBAC or device authentication. See [browser API security](operations/BROWSER_API_SECURITY.md) |
 | `FIREBASE_SERVICE_ACCOUNT` | Conditional | Server-side Firebase Admin JSON | Prefer Workload Identity/ADC or Secret Manager; never commit or log it |
 | `FIREBASE_DATABASE_URL` | Yes for RTDB | Firebase RTDB URL | Use the environment’s URL; no code fallback exists |
 | `GOOGLE_MAPS_API_KEY` | Route/places features | Server-side Routes/Places key | Restrict by runtime identity/IP and enabled APIs; keep it different from the browser key |

@@ -10229,6 +10229,26 @@
           "status"
         ],
         "properties": {
+          "boarding": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "boardingStopId",
+              "alightingStopId"
+            ],
+            "properties": {
+              "boardingStopId": {
+                "$ref": "#/components/schemas/Id"
+              },
+              "alightingStopId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+              }
+            }
+          },
           "sessionId": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]{1,128}$"
@@ -12516,6 +12536,19 @@
             "type": "integer",
             "minimum": 1700000000000,
             "maximum": 9999999999999
+          },
+          "gnssFixAvailable": {
+            "type": "boolean"
+          },
+          "gnssNoFixMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          },
+          "lastTelemetryResponseCode": {
+            "type": "integer",
+            "minimum": -1000,
+            "maximum": 599
           }
         },
         "required": [
@@ -12538,7 +12571,63 @@
           "secureBoot",
           "timestamp"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "gnssFixAvailable",
+                  "gnssNoFixMs",
+                  "lastTelemetryResponseCode"
+                ]
+              },
+              {
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "gnssFixAvailable"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "gnssNoFixMs"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "lastTelemetryResponseCode"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "anyOf": [
+              {
+                "properties": {
+                  "gnssFixAvailable": {
+                    "enum": [
+                      false
+                    ]
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "gnssNoFixMs": {
+                    "enum": [
+                      0
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
       },
       "DiagnosticsReport": {
         "type": "object",
@@ -12675,6 +12764,19 @@
                 "type": "null"
               }
             ]
+          },
+          "gnssFixAvailable": {
+            "type": "boolean"
+          },
+          "gnssNoFixMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          },
+          "lastTelemetryResponseCode": {
+            "type": "integer",
+            "minimum": -1000,
+            "maximum": 599
           }
         },
         "required": [

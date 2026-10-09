@@ -17,8 +17,12 @@ function traceKey(record) {
 
 function browserPhaseKey(record) {
   const key = record && traceKey(record);
+  // Projection listeners include the RTDB wire prefix; map phases use the
+  // logical bus/route key. Preserve run and ride isolation across both forms.
+  const nodeKey = typeof record?.nodeKey === "string"
+    ? record.nodeKey.replace(/^node:/, "") : "";
   return key && typeof record.runId === "string"
-    ? JSON.stringify([key, record.runId, record.nodeKey ?? "", record.sessionId ?? ""])
+    ? JSON.stringify([key, record.runId, nodeKey, record.sessionId ?? ""])
     : null;
 }
 

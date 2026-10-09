@@ -140,6 +140,20 @@ test("uses nearest-rank percentiles", () => {
   });
 });
 
+test("correlates projected wire keys with logical map keys without crossing rides", () => {
+  const common = { seq: 8, sampledAtDeviceMs: 1900, runId: "browser", sessionId: "ride" };
+  const device = [{ ...common, httpStatus: 202 }];
+  const browser = [
+    { ...common, event: "browser_listener", nodeKey: "node:bus_route", browserMonotonicAtMs: 50 },
+    { ...common, event: "browser_render", nodeKey: "bus_route", displayKind: "raw", browserMonotonicAtMs: 75 },
+    { ...common, event: "browser_marker_settled", nodeKey: "bus_route", sessionId: "old", displayKind: "raw", browserMonotonicAtMs: 80 },
+    { ...common, event: "browser_marker_settled", nodeKey: "bus_route", displayKind: "raw", browserMonotonicAtMs: 150 },
+  ];
+  const row = analyzeTelemetryTraces(device, browser).rows[0];
+  assert.equal(row.browserListenerToRenderMs, 25);
+  assert.equal(row.browserListenerToMarkerSettledMs, 100);
+});
+
 test("pairs a listener with a render from the same browser run", () => {
   const device = [{
     seq: 8,

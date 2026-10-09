@@ -117,16 +117,9 @@ function useAuthState(): AuthContextValue {
           googleProvider,
         };
 
-        // Keep an explicitly signed-in account across navigation, PWA restarts
-        // and normal reloads. Only an explicit sign-out should end the session.
-        try {
-          await authModule.setPersistence(auth, authModule.browserLocalPersistence);
-        } catch (error) {
-          const code = authErrorCode(error);
-          // Firebase's default persistence selection can still restore auth on
-          // browsers where explicitly forcing local persistence is unavailable.
-          console.warn("[Auth] Could not set preferred persistence; continuing with Firebase's available persistence.", code);
-        }
+        // firebaseAuth chooses persistent storage before restoring the account.
+        // Do not migrate storage here: removing the old auth record signs out
+        // other tabs, and an unavailable local store must retain its fallback.
         if (disposed) return;
 
         const verifyUser = async (firebaseUser: import("firebase/auth").User | null, forceRefresh = false) => {

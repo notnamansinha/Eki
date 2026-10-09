@@ -71,7 +71,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   const { drivers, loading: driversLoading, error: driversError, retry: retryDrivers } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const activeEntries = useActiveBuses();
-  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
+  const [, setFreshnessNow] = useState(() => Date.now());
 
   useEffect(() => {
     const interval = window.setInterval(() => setFreshnessNow(Date.now()), 15_000);
@@ -90,7 +90,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
     : activeEntries.filter((e) => registeredBusIds.has(e.busId)); // buses loaded — filter to registered only
   const onlineBusIds = new Set(
     filteredActiveEntries
-      .filter((entry) => devicePresence(entry, freshnessNow) === "online")
+      .filter((entry) => devicePresence(entry) === "online")
       .map((entry) => entry.busId),
   );
 

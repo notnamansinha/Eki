@@ -34,6 +34,7 @@ function pick(value: Record<string, unknown>, fields: readonly string[]) {
 export function publicLiveBus(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const live = value as Record<string, unknown>;
+  if (typeof live.retiredAssignmentRevision === "number") return null;
   if (typeof live.busId !== "string" || !SAFE_ID.test(live.busId) ||
       typeof live.routeId !== "string" || !SAFE_ID.test(live.routeId)) return null;
   const output: Record<string, unknown> = pick(live, PUBLIC_FIELDS);
@@ -86,6 +87,11 @@ export function startLiveBusProjection(): () => Promise<void> {
   const fingerprints = new LruCache<string, string>(1000);
   const catalogFingerprints = new LruCache<string, string>(1000);
   const registeredRoutes = new LruCache<string, boolean>(1000);
+  // Startup coverage must not wait for a continuously updating fleet to go
+  // globally idle. Remember successful publications and only wait for keys
+  // whose first publication (or failed recovery) has not settled yet.
+  const startupPublished = new LruCache<string, boolean>(1000);
+  const startupPending = new Set<string>();
   const counters = { events: 0, skipped: 0, sourceReads: 0, sourceReadBytes: 0, reconstructionReads: 0, reconstructionReadBytes: 0, transactionAttempts: 0, committed: 0, publicBytes: 0, catalogTransactionAttempts: 0, committedCatalogWrites: 0, catalogPublicBytes: 0 };
   let stopped = false;
   let initialized = false, readyPublished = false, readinessWrite: Promise<void> | null = null, stopPromise: Promise<void> | null = null;
@@ -154,15 +160,26 @@ export function startLiveBusProjection(): () => Promise<void> {
     const previous = routeTails.get(routeId) ?? Promise.resolve();
     const task = previous.catch(() => {}).then(() => materialize(key, routeId));
     routeTails.set(routeId, task);
-    try { await task; } finally { if (routeTails.get(routeId) === task) routeTails.delete(routeId); }
+    try {
+      await task;
+      if (!stopped) { startupPublished.set(key, true); startupPending.delete(key); }
+    } finally { if (routeTails.get(routeId) === task) routeTails.delete(routeId); }
   }, (key, error) => {
+    startupPublished.delete(key);
+    startupPending.delete(key);
     fingerprints.delete(key); replay.request();
     recordBackgroundFailure("worker.liveProjection", "Public live projection", "[LiveProjection] Materialization failed:", error);
   }, () => performance.now(), { maxConcurrent: 2, maxPending: 64, maxQueueAgeMs: 5000 });
   const schedule = (key: string, routeId: string) => {
     const busId = key.slice(0, -(routeId.length + 1));
     if (stopped || !SAFE_ID.test(routeId) || !SAFE_ID.test(busId) || key !== `${busId}_${routeId}`) return false;
-    return scheduler.schedule(key, routeId);
+    const needsStartupPublication = !readyPublished && !startupPublished.get(key);
+    const alreadyPending = startupPending.has(key);
+    // Enrollment precedes dispatch, including synchronous executor admission.
+    if (needsStartupPublication) startupPending.add(key);
+    const admitted = scheduler.schedule(key, routeId);
+    if (!admitted && !alreadyPending) startupPending.delete(key);
+    return admitted;
   };
   type Item = { key: string; routeId: string };
   const replay = createPagedLifecycleReplay<Item>({
@@ -229,6 +246,12 @@ export function startLiveBusProjection(): () => Promise<void> {
   const receive = bindWorkerCallback((snapshot: import("firebase-admin/database").DataSnapshot) => {
     counters.events++;
     const raw = snapshot.val(); const live = publicLiveBus(raw); const key = snapshot.key;
+    if (key && !live && typeof raw?.retiredAssignmentRevision === "number" &&
+        typeof raw.routeId === "string" && key === `${raw.busId}_${raw.routeId}`) {
+      fingerprints.delete(key);
+      if (!schedule(key, raw.routeId)) replay.request();
+      return;
+    }
     if (!key || !live) { replay.request(); return; }
     const fingerprint = JSON.stringify(live);
     if (fingerprints.get(key) === fingerprint) { counters.skipped++; return; }
@@ -248,8 +271,8 @@ export function startLiveBusProjection(): () => Promise<void> {
       if (stopped) return null;
       return workerRtdbTransaction(rtdb.ref("clientProjectionStatus"), () => {
       if (stopped) return;
-      const pending = scheduler.snapshot(), recovery = replay.snapshot();
-      if (ready && (pending.activeWorkers || pending.pendingKeys || recovery.requested || recovery.inFlight)) return;
+      const recovery = replay.snapshot();
+      if (ready && (startupPending.size || recovery.requested || recovery.inFlight)) return;
       return { public: { schemaVersion: 1, ready } };
       });
     }).then(result => { if (result?.committed && !stopped) { initialized = true; readyPublished = ready; } }).catch(report).finally(() => { if (readinessWrite === writing) readinessWrite = null; });
@@ -260,8 +283,8 @@ export function startLiveBusProjection(): () => Promise<void> {
     if (stopped) return;
     if (!initialized) { publishReadiness(false); return; }
     void replay.tick().then(() => {
-      const pending = scheduler.snapshot(), recovery = replay.snapshot();
-      if (!readyPublished && !stopped && !pending.activeWorkers && !pending.pendingKeys && !recovery.requested && !recovery.inFlight) publishReadiness(true);
+      const recovery = replay.snapshot();
+      if (!readyPublished && !stopped && !startupPending.size && !recovery.requested && !recovery.inFlight) publishReadiness(true);
     }).catch(report);
   }), 1000); timer.unref();
   const recover = setInterval(() => replay.request(), 60_000); recover.unref();

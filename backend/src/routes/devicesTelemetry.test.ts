@@ -97,7 +97,7 @@ function sendTelemetry() {
   });
 }
 
-function sendDiagnostics() {
+function sendDiagnostics(extra = {}) {
   return contractFetch(`${baseUrl}/api/devices/device_1/diagnostics`, {
     method: "POST",
     headers: {
@@ -123,11 +123,17 @@ function sendDiagnostics() {
       flashEncryption: true,
       secureBoot: true,
       timestamp: 1_800_000_000_000,
+      ...extra,
     }),
   });
 }
 
 describe("device telemetry HTTP responses", () => {
+  it("accepts the complete diagnostic extension through the documented HTTP contract", async () => {
+    const response = await sendDiagnostics({ gnssFixAvailable: false, gnssNoFixMs: 60000, lastTelemetryResponseCode: 400 });
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({ accepted: true });
+  });
   it.each([false, true])("reports deadline commit uncertainty accurately: %s", async dispatched => {
     harness.failure = new ExecutionDeadlineError("dependency", dispatched);
     const response = await sendTelemetry();

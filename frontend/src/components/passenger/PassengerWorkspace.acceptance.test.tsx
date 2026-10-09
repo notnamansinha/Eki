@@ -69,6 +69,7 @@ async function mountJoined() {
   return user;
 }
 beforeEach(() => {
+  localStorage.clear();
   fixture.mark.mockClear(); fixture.retryCatalog.mockClear(); fixture.retryDetails.mockClear(); fixture.status.mockReset();
   fixture.status.mockImplementation(async sessionId => ({ sessionId, busId: "bus", routeId: "A", status: "active" }));
   fixture.listeners = []; fixture.generation = 1; fixture.connectionGeneration = 0; fixture.resumeGeneration = 0;

@@ -158,6 +158,16 @@ describe("passenger map device and ride contexts", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS + 15_001); });
     expect(screen.getByText(/GPS signal lost/)).toBeTruthy();
   });
+  it("keeps fresh streamed fixes online between the 15-second clock ticks", async () => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    state.snapshot = { bus: fixtureBus("forward") };
+    await act(async () => { render(<PassengerMap route={directed} targetStop={route.stops[1]} />); });
+    // New telemetry arrives before the independent silence timer next fires.
+    vi.setSystemTime(start + 12_000);
+    await act(async () => { state.listener?.({ bus: fixtureBus("forward") }); });
+    expect(screen.queryByText(/GPS signal lost/)).toBeNull();
+  });
   it("clears old ETAs after the selected bus disappears", async () => {
     render(<PassengerMap route={directed} targetStop={route.stops[1]} />);
     await userEvent.setup().click(screen.getByRole("button", { name: "Route Timeline" }));

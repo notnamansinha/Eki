@@ -3,13 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import RideHistoryPanel from "./RideHistoryPanel";
-const state = vi.hoisted(() => ({ sessions: [{ id: "qa-session", busId: "qa-bus", driverId: "qa-driver", routeId: "qa-route", status: "completed", armedAt: 1_750_000_000_000, startTime: 1_750_000_001_000, endTime: 1_750_000_600_000, passengers: [], stopsReached: [] }], error: null as string | null, retry: vi.fn() }));
+const state = vi.hoisted(() => ({ sessions: [{ id: "qa-session", busId: "qa-bus", driverId: "qa-driver", routeId: "qa-route", status: "completed", armedAt: 1_750_000_000_000, startTime: 1_750_000_001_000, endTime: 1_750_000_600_000, passengers: [] as {userId: string; userName: string; boardingStopId: string; alightingStopId: string | null; joinedAt: number}[], stopsReached: [] }], error: null as string | null, retry: vi.fn() }));
 vi.mock("@/hooks/useCollection", () => ({ useCollection: () => ({ data: state.sessions, loading: false, error: state.error, retry: state.retry }) }));
 vi.mock("@/hooks/useBuses", () => ({ useBuses: () => ({ buses: [{ id: "qa-bus", name: "QA Bus" }], loading: false }) }));
 vi.mock("@/hooks/useDrivers", () => ({ useDrivers: () => ({ drivers: [{ id: "qa-driver", name: "QA Driver" }], loading: false }) }));
-vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes: [{ id: "qa-route", name: "QA route", stops: [] }], loading: false }) }));
+vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes: [{ id: "qa-route", name: "QA route", stops: [{ id: "origin", name: "Origin" }, { id: "destination", name: "Destination" }] }], loading: false }) }));
 vi.mock("@/lib/firebaseAuth", () => ({ auth: { currentUser: { getIdToken: async () => "test-token" } } }));
-beforeEach(() => { state.sessions[0].status = "completed"; state.error = null; state.retry.mockClear(); vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev"); });
+beforeEach(() => { state.sessions[0].status = "completed"; state.sessions[0].passengers = []; state.error = null; state.retry.mockClear(); vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev"); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 async function openConfirmation() {
   const user = userEvent.setup(); render(<RideHistoryPanel />);
@@ -18,6 +18,13 @@ async function openConfirmation() {
   return user;
 }
 describe("ride-history controls", () => {
+  it("shows both persisted stop choices without inventing arrival time", async () => {
+    state.sessions[0].passengers = [{ userId: "qa-user", userName: "QA Passenger", boardingStopId: "origin", alightingStopId: "destination", joinedAt: 1_750_000_010_000 }];
+    render(<RideHistoryPanel />); await userEvent.setup().click(screen.getByRole("button", { expanded: false }));
+    expect(screen.getByText("Boarding stop:").parentElement?.textContent).toBe("Boarding stop: Origin");
+    expect(screen.getByText("Arrival stop:").parentElement?.textContent).toBe("Arrival stop: Destination");
+    expect(screen.getByText("Destination time not recorded")).toBeTruthy();
+  });
   it("expands and collapses stored history without an API write", async () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock); render(<RideHistoryPanel />); const user = userEvent.setup();
     await user.click(screen.getByRole("button", { expanded: false }));

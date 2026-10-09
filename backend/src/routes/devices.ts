@@ -19,6 +19,8 @@ import {
   readFirmwareRelease,
 } from "../services/firmwareRelease";
 import { parseTelemetryValue } from "../services/telemetryPayload";
+import { retireDeviceAssignment } from "../services/deviceAssignmentRetirement";
+import { recordDiagnosticRejection, recordDiagnosticSchema } from "../services/telemetryDiagnosticCounters";
 import {
   ingestDeviceDiagnostics,
   parseDeviceDiagnosticsValue,
@@ -104,6 +106,7 @@ router.post(
         : { ok: false as const, reason: "payload_size" };
     if (deviceId === null || !SAFE_ID.test(deviceId) || !secret || !parsed.ok) {
       recordTelemetryRejection();
+      recordDiagnosticRejection(!secret ? "credentials" : !parsed.ok ? parsed.reason : "payload");
       const payloadTooLarge = !parsed.ok && parsed.reason === "payload_size";
       res.status(!secret ? 401 : payloadTooLarge ? 413 : 400).json({
         error: !secret
@@ -123,6 +126,7 @@ router.post(
         serverReceivedAt,
       );
       if (!result.ok) {
+        recordDiagnosticRejection(result.reason);
         if (result.reason === "rate_limit") {
           res.set(
             "Retry-After",
@@ -138,6 +142,7 @@ router.post(
         return;
       }
       const serverRespondedAt = Date.now();
+      recordDiagnosticSchema(req.body as Record<string, unknown>);
       res.set("X-Eki-Server-Received-At", String(serverReceivedAt));
       res.set("X-Eki-Server-Responded-At", String(serverRespondedAt));
       res.status(result.duplicate ? 200 : 202).json({
@@ -146,6 +151,7 @@ router.post(
       });
     } catch (error) {
       recordTelemetryRejection();
+      recordDiagnosticRejection("dependency");
       console.error("[Devices] HTTPS telemetry ingestion failed:", error);
       res.set("Retry-After", "1");
       res.status(503).json({ error: "Telemetry service unavailable.", retryAfterMs: 1_000,
@@ -370,6 +376,9 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
         !existingDevice.exists ||
         previous?.busId !== busId ||
         previous?.routeId !== routeId;
+      const pending = previous?.pendingAssignmentRetirement as
+        { busId: string; routeId: string; revision: number } | undefined;
+      if (assignmentChanged && pending) return "retirement_pending" as const;
       const targetOwnedByAnotherDevice = targetDevices.docs.some(
         (candidate) => candidate.id !== deviceId,
       );
@@ -397,12 +406,21 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
         }
       }
 
+      const revision = assignmentChanged
+        ? (Number.isSafeInteger(previous?.assignmentRevision) ? Number(previous?.assignmentRevision) : 0) + 1
+        : (Number.isSafeInteger(previous?.assignmentRevision) ? Number(previous?.assignmentRevision) : 0);
+      if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("Invalid assignment revision.");
+      const retirement = assignmentChanged && typeof previous?.busId === "string" && typeof previous?.routeId === "string"
+        ? { busId: previous.busId, routeId: previous.routeId, revision } : pending;
       transaction.set(
         deviceRef,
-        { deviceId, busId, routeId, enabled, updatedAt: FieldValue.serverTimestamp() },
+        { deviceId, busId, routeId, enabled,
+          assignmentRevision: revision,
+          ...(retirement ? { pendingAssignmentRetirement: retirement } : {}),
+          updatedAt: FieldValue.serverTimestamp() },
         { merge: true },
       );
-      return "saved" as const;
+      return { saved: true, retirement, revision };
     });
     if (result === "invalid_assignment") {
       res.status(400).json({ error: "Device assignment must match an existing bus route." });
@@ -420,7 +438,21 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
       });
       return;
     }
+    if (result === "retirement_pending") {
+      res.status(409).json({ error: "Retry the current assignment before assigning this device again." });
+      return;
+    }
     await publishDeviceCredentialInvalidation(deviceId);
+    if (result.retirement) {
+      const retirement = result.retirement;
+      await retireDeviceAssignment(deviceId, retirement.busId, retirement.routeId, retirement.revision);
+      await db.runTransaction(async transaction => {
+        const current = await transaction.get(deviceRef);
+        if (current.data()?.pendingAssignmentRetirement?.revision === retirement.revision) {
+          transaction.update(deviceRef, { pendingAssignmentRetirement: FieldValue.delete() });
+        }
+      });
+    }
     res.json({ saved: true });
   } catch (error) {
     console.error("[Devices] Registry update failed:", error);

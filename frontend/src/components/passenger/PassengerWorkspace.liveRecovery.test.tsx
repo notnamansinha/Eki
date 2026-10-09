@@ -33,7 +33,7 @@ vi.mock("@/components/shared/MessagingPanel", () => ({ default: () => <div>Chat<
 vi.mock("@/components/shared/FeedbackModal", () => ({ default: ({ sessionId }: { sessionId: string }) => <div>Feedback {sessionId}</div> }));
 const bus = (route = "A", session = "joined") => ({ busId: "bus", routeId: route, sessionId: session, driverId: "driver", status: "active", tripState: "in_service", direction: "forward", lat: 23, lng: 72, timestamp: Date.now() });
 const deliver = (route: string, value = bus(route)) => fixture.listeners.get(route)!.next({ type: "reset", snapshot: { [`node:bus_${route}`]: value }, source: "listener" });
-beforeEach(() => { fixture.listeners.clear(); fixture.mark.mockClear(); fixture.invalidate.mockClear(); fixture.generation = 0; });
+beforeEach(() => { localStorage.clear(); fixture.listeners.clear(); fixture.mark.mockClear(); fixture.invalidate.mockClear(); fixture.generation = 0; });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 async function join() {
   render(<PassengerWorkspace />);

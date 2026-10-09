@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import DashboardPanel from "./DashboardPanel";
-const state = vi.hoisted(() => ({ entries: [], geometries: new Map() }));
+import type { ActiveBusEntry } from "@/lib/activeBusEntries";
+const state = vi.hoisted(() => ({ entries: [] as ActiveBusEntry[], geometries: new Map() }));
 vi.mock("@vis.gl/react-google-maps", () => ({ Map: ({children}: {children: ReactNode}) => <div>{children}</div>, AdvancedMarker: () => null, useMap: () => null }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ role: "admin", user: {uid: "qa-admin"} }) }));
 vi.mock("@/hooks/useActiveBuses", () => ({ useActiveBuses: () => state.entries }));
@@ -15,8 +16,8 @@ vi.mock("@/hooks/useDrivers", () => ({ useDrivers: () => ({ drivers: [{id: "qa-d
 vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes: [{id: "qa-route", name: "QA route", stops: []}] }) }));
 vi.mock("@/lib/firebaseAuth", () => ({ auth: {currentUser: {getIdToken: async () => "synthetic-token"}} }));
 vi.mock("@/components/ui/CustomSelect", () => ({default: ({ariaLabel, value, options, onChange, disabled}: {ariaLabel: string; value: string; options: {value: string; label: string}[]; onChange: (value: string) => void; disabled?: boolean}) => <select aria-label={ariaLabel} value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>}));
-beforeEach(() => vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test"));
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+beforeEach(() => { state.entries = []; vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test"); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 async function prepare() {
   const user = userEvent.setup(); render(<DashboardPanel />);
   expect((screen.getByRole("button", {name: "Start service"}) as HTMLButtonElement).disabled).toBe(true);
@@ -24,6 +25,16 @@ async function prepare() {
   return user;
 }
 describe("admin service creation", () => {
+  it("keeps the online counter current when telemetry arrives between clock ticks", () => {
+    vi.useFakeTimers(); const start = Date.now();
+    state.entries = [{ busId: "qa-bus", routeId: "qa-route", deviceState: "online", timestamp: start }];
+    const view = render(<DashboardPanel />);
+    expect(screen.getByText("1 device online · 0 services")).toBeTruthy();
+    vi.setSystemTime(start + 12_000);
+    state.entries = [{ ...state.entries[0], timestamp: Date.now() }];
+    view.rerender(<DashboardPanel />);
+    expect(screen.getByText("1 device online · 0 services")).toBeTruthy();
+  });
   it.each([200, 503])("reuses the operation key after an uncertain HTTP %i reply and accepts only a confirmed session", async status => {
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response('{}', {status})).mockResolvedValueOnce(new Response('{"sessionId":"qa-session","direction":null}'));
     vi.stubGlobal("fetch", fetchMock); const user = await prepare();
