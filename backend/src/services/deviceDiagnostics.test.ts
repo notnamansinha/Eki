@@ -25,6 +25,14 @@ function validDiagnostics() {
 }
 
 describe("device diagnostics payload", () => {
+  it("accepts complete no-fix and last-response evidence while retaining legacy compatibility", () => {
+    const payload = { ...validDiagnostics(), gnssFixAvailable: false, gnssNoFixMs: 300000, lastTelemetryResponseCode: 400 };
+    expect(parseDeviceDiagnosticsValue(payload)).toEqual({ ok: true, value: payload });
+    expect(parseDeviceDiagnosticsValue({ ...payload, gnssFixAvailable: true })).toEqual({ ok: false });
+    expect(parseDeviceDiagnosticsValue({ ...payload, gnssNoFixMs: -1 })).toEqual({ ok: false });
+    expect(parseDeviceDiagnosticsValue({ ...validDiagnostics(), gnssFixAvailable: false })).toEqual({ ok: false });
+    expect(parseDeviceDiagnosticsValue({ ...payload, secret: "no" })).toEqual({ ok: false });
+  });
   it("accepts the closed bounded firmware health contract", () => {
     expect(parseDeviceDiagnosticsValue(validDiagnostics())).toEqual({
       ok: true,

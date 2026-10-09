@@ -1,6 +1,6 @@
 # Eki A–Z acceptance execution ledger
 
-Last updated: 2026-10-08 08:40 IST (UTC+05:30).
+Last updated: 2026-10-09, following the port-3000 passenger and admin run (IST).
 
 This is the current status companion to the
 [complete supplied A–Z plan](WEBAPP_A_Z_AB_TESTING_PLAN.md), including all
@@ -9,13 +9,22 @@ expansions, physical checks and future A/B experiments. Catalog inclusion is
 not an executed pass. Attached documents are historical requirements/evidence;
 the user's current instructions define authorized work.
 
-Current work is issue #246 **R01–R15 only**. R16+ repair work is deferred;
+The user's evening request expands current work to webapp readiness with GNSS
+connected at the balcony. See [current browser evidence](WEBAPP_READINESS_2026_10_09.md)
+and [balcony issue audit](BALCONY_READINESS_2026_10_08.md). All case IDs remain;
+partial observations below are not full-oracle passes.
+
+The earlier 08:40 scope was issue #246 **R01–R15 only**, superseded by the owner's
+9 October instruction to finish non-moving webapp work and use a PR into testing.
+See [the current software record](NON_MOVING_READINESS_2026_10_09.md) for R22/R30,
+API App Check capability and reassignment retirement. R16+ repair work was deferred;
 previously completed later-numbered items retain their historical evidence.
-This task preserves later open PRs/worktrees and makes no new acceptance claim
-for them. Remote `testing` also contains externally merged PR #270 (R21) and
+That earlier task preserved later open PRs/worktrees and made no new acceptance
+claim for them. Remote `testing` also contains externally merged PR #270 (R21) and
 PR #271 (R23), through `41ffbc7`; their presence does not expand this task scope.
 This scope restriction refers to Rxx repair subissues, not feature case IDs.
-GNSS is disconnected and `npm run dev` stopped. There is no separate Firebase
+GNSS was disconnected and `npm run dev` stopped at that earlier boundary; both
+were running for the evening audit. There is no separate Firebase
 staging project; destructive/load/privacy checks use disposable loopback
 emulators. Do not treat the existing testing Firebase project as disposable.
 
@@ -28,10 +37,14 @@ emulators. Do not treat the existing testing Firebase project as disposable.
   testing source and matching enrolled App Check configuration, open every
   admin panel, and exercise a denied-read Retry if it occurs. A different
   existing administrator session does not establish this account's acceptance.
-- Full admin CRUD: routes provider/error/conflict/delete paths, bus creation
-  result and metadata/assignment persistence, operators, settings, feedback,
-  history, chat and ride start/stop are pending actual provider acceptance.
-  Later R16+ fixes are deferred even when this future catalog names their tests.
+- Full admin CRUD: route provider/error/conflict/delete boundaries, bus creation,
+  operators, valid settings saves, feedback mutations and chat delivery remain
+  pending actual provider acceptance. The evening browser run witnessed route
+  creation, vehicle metadata/assignment persistence, ride start/end and History
+  reads; their complete boundary matrices remain open. On 9 October, real Chrome
+  port-3000 passenger boarding, repeat idempotency, verified reload recovery and
+  populated terminal History with both stop choices succeeded. Historical R16+
+  deferral does not restrict the owner's subsequent webapp readiness request.
 - R11: deployment in a suitable protected environment, new index build
   readiness, and the real retention/collection-group queries after readiness.
   A mock REST response or emulator does not prove an actual cloud index ready.
@@ -79,10 +92,10 @@ conflicts, long routes and deletion were not established by this interaction.
 
 Fleet/People exposed saved buses, an operator and route choices. A QA vehicle
 form (`qa-stationary-bus-20261006`, **QA Stationary Vehicle**) was filled and
-submitted with the QA route. Its creation outcome was interrupted and remains
-**UNVERIFIED**. Inspect whether it exists before another submit; do not infer
-success or absence. The QA route remains saved, unassigned at the observation
-point. No cleanup was performed or claimed. Before later removal, check current
+submitted with the QA route. Its creation outcome was interrupted on 6 October.
+On 8 October the vehicle and saved QA assignment were confirmed through the
+browser and cloud; its name was edited, reloaded and restored. The QA route was
+saved and unassigned at the original observation point. Before later removal, check current
 assignments/active rides and use the normal guarded confirmation flow.
 
 Settings/feedback/history/chat mutations, ride start/stop, real denied Retry,
@@ -231,9 +244,9 @@ expand these rows rather than being silently omitted.
 | Case | Planned action | Current result and next evidence |
 | --- | --- | --- |
 | AUTH01 | Anonymous load `/`, `/passenger`, `/admin`, `/feedback` directly | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| AUTH02 | Click Google popup sign-in once; complete allowed isolated account login | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| AUTH03 | Cancel popup / block popup / provider network failure | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| AUTH04 | Use full-page sign-in; reload callback; back/forward | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| AUTH02 | Click Google popup sign-in once; complete allowed isolated account login | PARTIAL — 9 October Chrome port-3000 popup completed existing PASSENGER and ADMIN sign-in; both workspaces survived reload. Prior embedded-browser failures and complete reliability matrix remain open. |
+| AUTH03 | Cancel popup / block popup / provider network failure | PARTIAL — Actual auth/network-request-failed displayed an actionable fallback; popup cancel/block and successful recovery pending. |
+| AUTH04 | Use full-page sign-in; reload callback; back/forward | PARTIAL — Google chooser reached; embedded-browser reload later recovered PASSENGER. Chrome redirect returned unsigned in; back/forward and reliable callback matrix pending. |
 | AUTH05 | Same-origin Hosting helper on web.app and firebaseapp.com; configured custom domain | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | AUTH06 | Invalid/unregistered OAuth origin, redirect URI, referrer or App Check hostname | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | AUTH07 | Auth restore stalled beyond current 8-second guard and role verification beyond 10 seconds | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
@@ -245,7 +258,7 @@ expand these rows rather than being silently omitted.
 | AUTH13 | Role revoked or operator assignment changed while tab open | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | AUTH14 | Delete/disable Firebase account while client token remains | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | AUTH15 | Missing environment variables vs valid config; local/tunnel backend URL s | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| AUTH16 | Two tabs sign in/out and one reloads after role change | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| AUTH16 | Two tabs sign in/out and one reloads after role change | PARTIAL — Actual two-tab restoration/reload disruption reproduced and repaired; independent workspace reloads retained admin auth. Sign-in/out and role-change oracle pending. |
 | AUTH17 | 404/unknown path, static export deep links, malformed URL IDs | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | AUTH18 | Auth/App Check refresh during HTTP retry and listener reconnect | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 
@@ -253,15 +266,15 @@ expand these rows rather than being silently omitted.
 
 | Case | Planned action | Current result and next evidence |
 | --- | --- | --- |
-| PAX01 | One fresh resolved live route; click `Track <route name>` | PARTIAL — Synthetic Chrome: Track A opened its bus/session map; complete live-provider and adverse-path oracle pending. |
-| PAX02 | Fresh online stationary device without session; click its card | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| PAX03 | Pending-direction session; open card, choose destination and inspect timeline | PARTIAL — Synthetic Chrome: pending direction stayed explicit and Beta destination selection persisted; real boarding/ETA/timeline matrix pending. |
-| PAX04 | Device marker far outside configured route while stationary | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| PAX01 | One fresh resolved live route; click `Track <route name>` | PARTIAL — Actual Chrome opened live balcony QA route, bus map and stop pickers. Successful joined passenger/provider adverse matrix pending. |
+| PAX02 | Fresh online stationary device without session; click its card | PARTIAL — Actual unarmed online device was trackable with service-not-started state and gated boarding/ETA. Full oracle pending. |
+| PAX03 | Pending-direction session; open card, choose destination and inspect timeline | PARTIAL — Actual pending service retained configured route/destination/timeline and gated boarding. Full pending ETA and boundary matrix pending. |
+| PAX04 | Device marker far outside configured route while stationary | PARTIAL — Actual stationary bus far from original endpoints displayed raw approximate position; physical off-route recovery pending. |
 | PAX05 | Route has no stops/waypoints or malformed projection | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | PAX06 | Zero buses, loading routes, routes listener failure and retry | PARTIAL — Synthetic Chrome: unready, catalog-denied and detail-denied states showed Retry and recovered; full empty/loading/provider matrix pending. |
 | PAX07 | Multiple routes and buses with identical names/different IDs | PARTIAL — Synthetic Chrome: Track A and B opened distinct identities; duplicate names, ETA/chat and real-provider matrix pending. |
 | PAX08 | Active bus plus available unarmed bus on same route | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| PAX09 | Click Routes→tracking→Back→Profile→Routes repeatedly | PARTIAL — Synthetic Chrome: tracking, timeline close and Back returned route cards; repeated Profile navigation and full layer matrix pending. |
+| PAX09 | Click Routes→tracking→Back→Profile→Routes repeatedly | PARTIAL — Actual Routes, tracking, Back and Profile navigation worked; full repeated layer/focus matrix pending. |
 | PAX10 | Tab through home while hidden tracking layer remains mounted | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | PAX11 | Switch selected route during pending geometry/ETA/chat request | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | PAX12 | Switch selected bus while old session update arrives | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
@@ -272,26 +285,26 @@ expand these rows rather than being silently omitted.
 | PAX17 | Announcement active/inactive/empty; service-start placeholder and long text | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | PAX18 | Carousel swipe/pointer/keyboard at first/last card and one/zero cards | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | PAX19 | Profile name/photo absent/broken/untrusted text | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| PAX20 | Open general feedback, cancel, reopen; change account | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| PAX21 | Sign-out confirmation cancel/confirm/Escape | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| PAX20 | Open general feedback, cancel, reopen; change account | PARTIAL — Actual feedback draft validation and Cancel exercised under admin profile; submission/account change pending. |
+| PAX21 | Sign-out confirmation cancel/confirm/Escape | PARTIAL — Actual sign-out confirmation Cancel retained authentication; Confirm/Escape pending. |
 | PAX22 | Passenger deletion request cancel/confirm/retry | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | PAX23 | Admin/operator views profile deletion affordance / calls API directly | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | PAX24 | Slow route/settings listener with live data already loaded | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| PAX25 | Browser reload mid-tracking / back gesture on mobile | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| PAX25 | Browser reload mid-tracking / back gesture on mobile | PARTIAL — 9 October reproduced lost On board/stops; local server-verified recovery then restored active tracking and both choices on full Chrome reload. Mobile back-gesture matrix pending. |
 | PAX26 | Service direction changes forward→reverse while destination open | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 
 ### BOARD
 
 | Case | Planned action | Current result and next evidence |
 | --- | --- | --- |
-| BOARD01 | Resolved armed/active ride; valid ordered stops, eight-character code, nearby accurate geolocation | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| BOARD01 | Resolved armed/active ride; valid ordered stops, eight-character code, nearby accurate geolocation | PARTIAL — 9 October real PASSENGER with valid code and Chrome location joined resolved QA service; manifest persisted both stops. Repeat stayed one passenger, reload restored state, admin terminal History showed both choices. Complete boundary matrix pending. |
 | BOARD02 | Missing boarding/destination/code; code lengths 0/7/8/9 | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | BOARD03 | Lowercase/whitespace code vs alphabet exclusions I/O/0/1 and punctuation | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | BOARD04 | Browser permission denied, unavailable GPS or 10-second geolocation timeout | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | BOARD05 | Accuracy negative, zero, 100m, 100m+epsilon, missing, string | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | BOARD06 | Passenger distance 149.99m, 150m, 150.01m from trusted hardware | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | BOARD07 | Hardware fix age 60 s±1 ms; future skew 10 s±1 ms; receipt/sample mismatch | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| BOARD08 | Pending direction/unarmed/offline/terminal ride | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| BOARD08 | Pending direction/unarmed/offline/terminal ride | PARTIAL — Actual unarmed and direction-pending services gated boarding. Offline/terminal boundary matrix pending. |
 | BOARD09 | Same stop, unknown stop, reverse order, duplicate stop ID | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | BOARD10 | Forward join then reverse route with proper reversed stop selection | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | BOARD11 | Wrong code from another session/bus, rotated code during transaction | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
@@ -303,7 +316,7 @@ expand these rows rather than being silently omitted.
 | BOARD17 | Submit forged user Name/user Id/admin fields | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | BOARD18 | HTML 200/204/missing `joined`/wrong session acknowledgement/network lost after commit | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | BOARD19 | Unmount or switch ride while geolocation/token requests resolve | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| BOARD20 | Passenger Q tries P's membership endpoint/body UID; operator/admin attempts passenger self-join | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| BOARD20 | Passenger Q tries P's membership endpoint/body UID; operator/admin attempts passenger self-join | PARTIAL — Actual admin self-join rejected with passenger-account-required error. Passenger-Q versus P and operator boundaries pending. |
 | BOARD21 | Trusted live projection exists but mismatched device/bus/route/session | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | BOARD22 | Code request as assigned operator/admin/unassigned operator/passenger | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 
@@ -322,19 +335,19 @@ expand these rows rather than being silently omitted.
 | MAP09 | One malformed dynamic geometry among several valid entries | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP10 | Active route context resets matcher IDs | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP11 | Initial route fit with bus outside endpoints; user drags map then new fixes | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| MAP12 | Click Center on bus before first fix/after fix/after bus disappears | PARTIAL — Synthetic Chrome: Center on bus clicked with a fix; actual Google pan and before-fix/disappeared cases pending. |
-| MAP13 | Destination dropdown pointer, arrows, Home/End, typeahead if implemented, Enter/Escape/outside | PARTIAL — Synthetic Chrome: in-app destination picker opened and Beta persisted after pointer selection; keyboard/focus/outside matrix pending. |
-| MAP14 | Expand timeline by click and keyboard; collapse/backdrop/Escape | PARTIAL — Synthetic Chrome: timeline opened with two stops and explicit unavailable geometry; close worked, keyboard/backdrop/Escape matrix pending. |
+| MAP12 | Click Center on bus before first fix/after fix/after bus disappears | PARTIAL — Actual Google map Center on bus worked with a real fix; before-fix/disappeared boundaries pending. |
+| MAP13 | Destination dropdown pointer, arrows, Home/End, typeahead if implemented, Enter/Escape/outside | PARTIAL — Actual pointer selection and keyboard picker activation worked for destinations; full keyboard/focus/outside matrix pending. |
+| MAP14 | Expand timeline by click and keyboard; collapse/backdrop/Escape | PARTIAL — Actual real stop timeline opened and selected destination displayed on desktop/mobile; full close/Escape/backdrop keyboard matrix pending. |
 | MAP15 | Forward/reverse paths on divided or parallel roads | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP16 | GPS jitter at stop and along parallel road with weak HDOP | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP17 | Stops before/after bus, destination changes, passed stop | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| MAP18 | Speed 0/stopped/slow/fast and configured delay | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| MAP18 | Speed 0/stopped/slow/fast and configured delay | PARTIAL — Actual stopped QA bus, ETA and acknowledged +1-minute delay observed; other speeds and limit matrix pending. |
 | MAP19 | Invalid speed/heading ranges in RTDB boundary | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP20 | Last route bus removed, selected bus stale, route switch | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP21 | Geometry loop/self-intersection/close parallel segments/anti-meridian | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP22 | Large polyline, malformed/truncated encoding, invalid points or missing geometry | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP23 | Maps script/key/referrer/billing failure or slow load | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| MAP24 | Resize/rotate/high DPR/zoom/reduced motion | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| MAP24 | Resize/rotate/high DPR/zoom/reduced motion | PARTIAL — Actual 390 × 844 and desktop route/stop views inspected and header contrast repaired; rotate/high-DPR/reduced-motion matrix pending. |
 | MAP25 | Burst80 ms fixes, 500 ms delayed match, out-of-order delivery | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP26 | Background/foreground/OS sleep and long RAF gaps | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | MAP27 | Same sample ancillary update before scheduled render trace callback | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
@@ -420,20 +433,20 @@ expand these rows rather than being silently omitted.
 
 | Case | Planned action | Current result and next evidence |
 | --- | --- | --- |
-| OPS01 | Open all six tabs via pointer and keyboard arrows/Home/End | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| OPS01 | Open all six tabs via pointer and keyboard arrows/Home/End | PARTIAL — Actual all six panels opened successfully; complete keyboard arrows/Home/End oracle pending. |
 | OPS02 | Operator subscription auth/permission/quota/network failure; Retry | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| OPS03 | Select assigned/unassigned operator; inspect derived vehicle field | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| OPS04 | Start service valid online assigned device | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| OPS03 | Select assigned/unassigned operator; inspect derived vehicle field | PARTIAL — Actual assigned operator derived AU/Bus01 and allowed routes; unassigned operator matrix pending. |
+| OPS04 | Start service valid online assigned device | PARTIAL — Actual pending and resolved stationary services created on 8/9 October; 9 October nearby service accepted real passenger. Moving/completion oracle pending. |
 | OPS05 | Start double click, dropped response after commit, retry after refresh | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | OPS06 | Start ack HTML/204/empty/missing session ID or wrong shape | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| OPS07 | Start disabled device/offline/missing route/stale assignment/active conflicting session | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| OPS08 | Expand each live ride/map marker/Open live details with same names | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| OPS09 | Delay−2/−1/+1/+2 at0/1/1439/1440 and rapid alternating updates | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| OPS07 | Start disabled device/offline/missing route/stale assignment/active conflicting session | PARTIAL — Actual QA start rejected until matching hardware assignment had fresh GNSS; other disabled/conflict boundaries pending. |
+| OPS08 | Expand each live ride/map marker/Open live details with same names | PARTIAL — Actual fleet expansion and real GNSS details modal opened; duplicate-name/context boundaries pending. |
+| OPS09 | Delay−2/−1/+1/+2 at0/1/1439/1440 and rapid alternating updates | PARTIAL — Actual +1-minute delay acknowledged; full min/max/rapid-update matrix pending. |
 | OPS10 | Delay unknown ack/conflict/session changes during request | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| OPS11 | Request boarding code / missing code ack / invalid code length | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| OPS11 | Request boarding code / missing code ack / invalid code length | PARTIAL — Actual active QA boarding-code endpoint returned a code; missing/malformed/expiry boundaries pending. |
 | OPS12 | Open chat then switch session; clear messages at zero/nonzero | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | OPS13 | Clear ack missing/negative/nonfinite or proxy HTML | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| OPS14 | End ride early confirm/cancel/Escape and concurrent replacement session | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| OPS14 | End ride early confirm/cancel/Escape and concurrent replacement session | PARTIAL — Actual End early confirmation Cancel and Confirm worked; interrupted session persisted in History. Concurrent replacement and Escape pending. |
 | OPS15 | Completed ride appears while controls pending | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | OPS16 | Zero fleet/multiple routes/large lists/long names/mobile | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | OPS17 | Reopen panels repeatedly and principal change during dynamic import | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
@@ -444,13 +457,13 @@ expand these rows rather than being silently omitted.
 | Case | Planned action | Current result and next evidence |
 | --- | --- | --- |
 | ROUTE01 | Add route; set name/ID/color; two valid stops; Save | PARTIAL — Real create/save/reload succeeded; stable IDs, colors and independent reverse provider geometry not fully checked. |
-| ROUTE02 | Generated ID vs explicit create ID; existing route edit ID field | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| ROUTE02 | Generated ID vs explicit create ID; existing route edit ID field | PARTIAL — 9 October explicit QA create ID persisted; saved edit ID was disabled. Generated-ID and full matrix pending. |
 | ROUTE03 | Name blank/long/Unicode, colors all eight choices | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | ROUTE04 | Search0/1/2/3 chars and rapidly change query around 300 ms debounce | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| ROUTE05 | Places unauthorized/429/timeout 5 s/502/malformed/zero results | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| ROUTE05 | Places unauthorized/429/timeout 5 s/502/malformed/zero results | PARTIAL — 9 October coordinate-text query returned 502 PLACES_UPSTREAM_FAILURE; named-place query then returned 200. Cause not isolated; complete error/budget matrix pending. |
 | ROUTE06 | Select result with incomplete/invalid coordinates, duplicate stop | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| ROUTE07 | Toggle Pick on map; click map/POI; drag stop marker | PARTIAL — Real mode-gated map picks and drag persisted; all POI/accidental-click boundaries pending. |
-| ROUTE08 | Rename stop blur/Enter/Escape where supported; reorder first/middle/last | PARTIAL — Real rename/reorder persisted; Enter/Escape and all boundary positions pending. |
+| ROUTE07 | Toggle Pick on map; click map/POI; drag stop marker | PARTIAL — Real mode-gated picks/drag persisted; 9 October Google marker keyboard drag saved origin inside existing 20 m endpoint geofence. All POI/accidental-click boundaries pending. |
+| ROUTE08 | Rename stop blur/Enter/Escape where supported; reorder first/middle/last | PARTIAL — Real rename/reorder persisted; 9 October Enter rename saved. Escape and all boundary positions pending. |
 | ROUTE09 | Remove down to1/0 stops and try Save | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | ROUTE10 | Swap A & B on2 and many stops; swap twice | PARTIAL — Real two-stop swap observed; many-stop/twice-restoration matrix pending. |
 | ROUTE11 | Metadata-only name/color/short Name change | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
@@ -464,7 +477,7 @@ expand these rows rather than being silently omitted.
 | ROUTE19 | Route endpoints changed while active ride/assignment exists | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | ROUTE20 | Cancel editor with unsaved changes, reopen other route while save completes | PARTIAL — Real unsaved name Cancel discarded draft; concurrent save/other-editor race pending. |
 | ROUTE21 | Delete route valid/unassigned vs assigned/active; confirm cancel | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| ROUTE22 | Expand stops in route list; zero/malformed metadata/loading error Retry | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| ROUTE22 | Expand stops in route list; zero/malformed metadata/loading error Retry | PARTIAL — Actual nine-stop route list read and QA stop lists inspected; malformed/empty/retry boundaries pending. |
 | ROUTE23 | Admin token expires midway through long save/poll | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | ROUTE24 | Geometry GET lazy repair concurrent with save/version change | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | ROUTE25 | Route segment from/to/via valid invalid reverse and out-of-order | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
@@ -474,9 +487,9 @@ expand these rows rather than being silently omitted.
 
 | Case | Planned action | Current result and next evidence |
 | --- | --- | --- |
-| FLEET01 | Add vehicle ID/name with route checkboxes; zero/one/many routes | PARTIAL — Fleet read and QA vehicle submission observed; creation outcome unverified, full oracle pending. |
+| FLEET01 | Add vehicle ID/name with route checkboxes; zero/one/many routes | PARTIAL — Existing 6 Oct QA vehicle and route assignment confirmed on 8 Oct. Zero/many routes and adverse creation boundaries pending. |
 | FLEET02 | Vehicle ID collisions/case/invalid chars/very long and duplicate names | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| FLEET03 | Edit vehicle name/routes; save/cancel; edit while pending | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| FLEET03 | Edit vehicle name/routes; save/cancel; edit while pending | PARTIAL — Actual QA vehicle name save/reload/restore and Bus01 allowed-route addition worked; bound-device removal correctly rejected. Complete concurrent-save matrix pending. |
 | FLEET04 | Delete vehicle unassigned/assigned/active and concurrent ride start | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | FLEET05 | Add operator ID/name/Auth UID/vehicle | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | FLEET06 | Auth UID missing/nonexistent/already bound or Firebase claims update fails | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
@@ -533,21 +546,21 @@ expand these rows rather than being silently omitted.
 
 | Case | Planned action | Current result and next evidence |
 | --- | --- | --- |
-| SET01 | Load all four text fields and announcement switch | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| SET02 | Save valid partial update; change one field; toggle active | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| SET03 | Limits service 64/main 200/sub 300/announcement 500 at±1; blank required text | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| SET01 | Load all four text fields and announcement switch | PARTIAL — 9 October actual admin loaded all existing text fields and active announcement; complete loading/error matrix pending. |
+| SET02 | Save valid partial update; change one field; toggle active | PARTIAL — Actual save exposed unknown updatedAt metadata; local reader/payload repair then sent only serviceStartTime and received 200 saved:true using the existing value. New-value/toggle and full rollback matrix pending. |
+| SET03 | Limits service 64/main 200/sub 300/announcement 500 at±1; blank required text | PARTIAL — 8 October actual blank service-start value rejected before save. Full at±1 field limits pending. |
 | SET04 | `announcementActive` true false vs string/number/null | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| SET05 | Save no changes/double click/pending | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| SET05 | Save no changes/double click/pending | PARTIAL — 9 October No changes disabled; actual save locked fields during request and returned clean state after acknowledgement. Complete duplicate/pending matrix pending. |
 | SET06 | Save draft A then type B while A in flight | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| SET07 | Conflict/errors/HTML 204/missing ack; retry | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| SET07 | Conflict/errors/HTML 204/missing ack; retry | PARTIAL — Actual unknown-setting error retained draft and displayed modal; after repair retry acknowledged saved:true. 14 focused settings/recovery regressions pass. Full conflict/invalid-ack/provider matrix pending. |
 | SET08 | Listener update from other admin during local dirty draft | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 
 ### HIST
 
 | Case | Planned action | Current result and next evidence |
 | --- | --- | --- |
-| HIST01 | Completed/interrupted/failed sessions with stop arrivals | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| HIST02 | Expand/collapse rows with duplicate bus names and deleted metadata | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
+| HIST01 | Completed/interrupted/failed sessions with stop arrivals | PARTIAL — 9 October real joined QA ride ended early; admin reload retained one passenger, boarding/destination choices and origin arrival. Destination time correctly unrecorded. Earlier completed records read; failure and full boundaries pending. |
+| HIST02 | Expand/collapse rows with duplicate bus names and deleted metadata | PARTIAL — Existing and 9 October terminal QA rows expanded; reloaded QA manifest retained both chosen stops and route log. Duplicate/deleted metadata and full collapse boundaries pending. |
 | HIST03 | Delete terminal session; confirm cancel/Escape and focus | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | HIST04 | Delete pending/armed/active session directly | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | HIST05 | Delete parent succeeds then subcollection batch fails; restart worker | NOT_RUN — execute the complete current-source oracle and boundary matrix. |

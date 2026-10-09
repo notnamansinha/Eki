@@ -619,8 +619,17 @@ void test_large_clock_corrections_require_fresh_agreeing_peer() {
   TEST_ASSERT_FALSE(candidateSafe(base, 0, false, 0));
 }
 
+void test_first_diagnostic_delay_is_rollover_safe_and_latched() {
+    FirstDiagnosticDelay first(UINT32_MAX - 10000);
+    TEST_ASSERT_FALSE(first.due(UINT32_MAX - 1, 30000));
+    TEST_ASSERT_FALSE(first.due(19998, 30000));
+    TEST_ASSERT_TRUE(first.due(19999, 30000));
+    TEST_ASSERT_TRUE(first.due(UINT32_MAX - 10000, 30000)); // ready stays latched over another rollover
+}
+
 int main(int, char **) {
   UNITY_BEGIN();
+  RUN_TEST(test_first_diagnostic_delay_is_rollover_safe_and_latched);
   RUN_TEST(test_haversine_and_heading_wrap);
   RUN_TEST(test_gnss_fix_requires_fresh_coherent_fields);
   RUN_TEST(test_implausible_speed_is_rejected_instead_of_clamped);

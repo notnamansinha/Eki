@@ -22,6 +22,7 @@ const DIAGNOSTIC_KEYS = [
   "secureBoot",
   "timestamp",
 ] as const;
+const EXTENDED_KEYS = ["gnssFixAvailable", "gnssNoFixMs", "lastTelemetryResponseCode"] as const;
 
 export interface DeviceDiagnosticsPayload {
   firmwareVersion: string;
@@ -42,6 +43,9 @@ export interface DeviceDiagnosticsPayload {
   flashEncryption: boolean;
   secureBoot: boolean;
   timestamp: number;
+  gnssFixAvailable?: boolean;
+  gnssNoFixMs?: number;
+  lastTelemetryResponseCode?: number;
 }
 
 type ParseResult =
@@ -64,9 +68,15 @@ export function parseDeviceDiagnosticsValue(value: unknown): ParseResult {
   }
   const record = value as Record<string, unknown>;
   const keys = Object.keys(record);
+  const extended = keys.length === DIAGNOSTIC_KEYS.length + EXTENDED_KEYS.length;
   if (
-    keys.length !== DIAGNOSTIC_KEYS.length ||
-    keys.some((key) => !(DIAGNOSTIC_KEYS as readonly string[]).includes(key))
+    (!extended && keys.length !== DIAGNOSTIC_KEYS.length) ||
+    keys.some((key) => !(DIAGNOSTIC_KEYS as readonly string[]).includes(key) &&
+      !(extended && (EXTENDED_KEYS as readonly string[]).includes(key))) ||
+    (extended && (typeof record.gnssFixAvailable !== "boolean" ||
+      !isBoundedInteger(record.gnssNoFixMs, 0, 0xFFFFFFFF) ||
+      !isBoundedInteger(record.lastTelemetryResponseCode, -1000, 599) ||
+      (record.gnssFixAvailable && record.gnssNoFixMs !== 0)))
   ) return { ok: false };
 
   const firmwareVersion = record.firmwareVersion;

@@ -360,6 +360,11 @@ export default function RideHistoryPanel() {
                   ) : (
                     <div className="space-y-2">
                       {passengers.map((passenger, index) => {
+                        const boardingStopName = resolveArrivalStopName(
+                          passenger.boardingStopId,
+                          stopsReached,
+                          routeStops.get(session.routeId) ?? [],
+                        );
                         const arrivalStopName = resolveArrivalStopName(
                           passenger.alightingStopId,
                           stopsReached,
@@ -379,6 +384,10 @@ export default function RideHistoryPanel() {
                               {passenger.userName || "Unknown passenger"}
                             </span>
                             <div className="flex flex-col text-xs text-white/60 tabular-nums sm:items-end">
+                              <span>
+                                <span className="text-white/40">Boarding stop:</span>{" "}
+                                {boardingStopName === ARRIVAL_STOP_UNAVAILABLE ? "Unavailable" : boardingStopName}
+                              </span>
                               {arrivalStopName === ARRIVAL_STOP_UNAVAILABLE ? (
                                 <span>{ARRIVAL_STOP_UNAVAILABLE}</span>
                               ) : (

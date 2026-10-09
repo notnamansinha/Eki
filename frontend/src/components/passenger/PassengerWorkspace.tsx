@@ -8,6 +8,7 @@ import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, 
 import { subscribeLiveBusChangesByRoute } from "@/lib/liveBusStore";
 import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
 import { getJoinedRideStatus } from "@/lib/joinedRideStatus";
+import { clearJoinedRidePointer, readJoinedRidePointer, saveJoinedRidePointer } from "@/lib/joinedRidePointer";
 import { getAuthVerificationGeneration } from "@/lib/authState";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import { useSettings } from "@/hooks/useSettings";
@@ -99,12 +100,50 @@ export default function PassengerWorkspace() {
   const [rideRecoveryError, setRideRecoveryError] = useState<string | null>(null);
   const [rideRecoveryNotice, setRideRecoveryNotice] = useState<string | null>(null);
   const [rideStatusRetry, setRideStatusRetry] = useState(0);
+  const [restoredBoarding, setRestoredBoarding] = useState<{
+    uid: string; sessionId: string; boardingStopId: string; alightingStopId: string | null;
+  } | null>(null);
   const liveDataError = catalogError || detailDataError || rideRecoveryError;
   const trackedRideRef = useRef<TrackedRide | null>(null);
   const pendingCompletionSessionIdRef = useRef<string | null>(null);
   const latestTripStatesRef = useRef<Map<string, ActiveBusData["tripState"]>>(new Map());
   const rawLiveBusesRef = useRef(new Map<string, unknown>());
   const activeLiveBusesRef = useRef(new Map<string, ActiveBusData>());
+  const boardingRevisionRef = useRef(0);
+  useEffect(() => {
+    if (!user || user.role !== "passenger" || trackedRideRef.current?.hasJoined) return;
+    const sessionId = readJoinedRidePointer(user.uid);
+    if (!sessionId) return;
+    const controller = new AbortController();
+    const boardingRevision = boardingRevisionRef.current;
+    const authGeneration = getAuthVerificationGeneration();
+    const current = () => !controller.signal.aborted && boardingRevision === boardingRevisionRef.current && authGeneration === getAuthVerificationGeneration() &&
+      readJoinedRidePointer(user.uid) === sessionId;
+    void getJoinedRideStatus(sessionId, controller.signal).then(status => {
+      if (!current()) return;
+      if (!status.boarding || status.status === "completed" || status.status === "interrupted" || status.status === "failed") {
+        clearJoinedRidePointer(user.uid);
+        if (status.status === "interrupted" || status.status === "failed") setRideRecoveryNotice("Your joined ride has ended.");
+        return;
+      }
+      trackedRideRef.current = recordSuccessfulJoin(null, {
+        sessionId, busId: status.busId, routeId: status.routeId, driverId: "",
+      });
+      setRestoredBoarding({ uid: user.uid, sessionId, ...status.boarding });
+      setTrackedSessionId(sessionId);
+      setJoinedRouteId(status.routeId);
+      setSelectedRouteId(status.routeId);
+      setSelectedBusId(status.busId);
+      setSelectedDestinationStopId(status.boarding.alightingStopId ?? "");
+      setRideRecoveryError(null);
+      setCurrentView("tracking");
+    }).catch(error => {
+      if (!current()) return;
+      if (error?.status === 403 || error?.status === 404) clearJoinedRidePointer(user.uid);
+      setRideRecoveryError("Your boarding could not be restored. Retry to verify your joined ride.");
+    });
+    return () => controller.abort();
+  }, [user, rideStatusRetry]);
   const displayRoutes = routes.filter(route => {
     const availability = routeCatalog[route.id];
     return availability && (availability.active > 0 || availability.available > 0) &&
@@ -512,7 +551,8 @@ export default function PassengerWorkspace() {
                     <ArrowLeft className="w-5 h-5" style={{ color: "var(--text-secondary)" }} />
                   </button>
                   {activeBusOnRoute ? (
-                    <div className="flex-1 min-w-0 flex flex-col gap-2">
+                    <div className="flex-1 min-w-0 flex flex-col gap-2 rounded-2xl p-3"
+                      style={{ background: "var(--surface-1)", border: "1px solid var(--border-default)" }}>
                       {busesOnRoute.length > 1 &&
                         !busesOnRoute.some(
                           (bus) => bus.sessionId === trackedSessionId,
@@ -544,8 +584,11 @@ export default function PassengerWorkspace() {
                           route={directedRoute}
                           tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
                           destinationStopId={effectiveDestinationStopId}
+                          restoredBoarding={restoredBoarding && restoredBoarding.uid === user?.uid && restoredBoarding.sessionId === activeBusOnRoute.sessionId ? restoredBoarding : undefined}
                           onDestinationStopChange={setSelectedDestinationStopId}
                           onJoined={() => {
+                            boardingRevisionRef.current++;
+                            if (user?.role === "passenger") saveJoinedRidePointer(user.uid, activeBusOnRoute.sessionId);
                             trackedRideRef.current = recordSuccessfulJoin(
                               trackedRideRef.current,
                               {

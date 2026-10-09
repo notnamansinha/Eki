@@ -22,6 +22,13 @@ curl -i https://api.example.edu/live
 Browser endpoints use a Firebase ID token. The frontend obtains that token
 after sign-in and sends it as a bearer token:
 
+Configured browsers also send `X-Firebase-AppCheck`. Backend
+`API_APPCHECK_MODE=off|enforce` stages additional attestation for mutations and
+high-cost lookup/geometry reads, with independent ID-token/RBAC authorization.
+The compatibility default is `off`; device-authenticated intake is separate.
+See [browser API security and diagnostic interpretation](../docs/operations/BROWSER_API_SECURITY.md)
+before enabling enforcement or interpreting the extended health fields.
+
 ```bash
 TOKEN="<firebase-id-token>"
 curl -H "Authorization: Bearer $TOKEN" \

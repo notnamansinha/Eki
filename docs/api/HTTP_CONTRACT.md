@@ -60,6 +60,11 @@ Device security is a header API key whose complete value is
 Responses omit credentials and stacks. Typical errors have `error`; route and
 Places errors may additionally carry `code`, `phase`, version/outcome details.
 Parser and authentication failures can precede handler-specific headers/errors.
+When `API_APPCHECK_MODE=enforce`, browser mutations and high-cost route/Places/
+planning reads additionally require `X-Firebase-AppCheck`. Missing/invalid
+attestation returns 403; verification dependency/capacity failure returns 503
+with Retry-After. Device intake keeps separate authentication. The rollout
+default is off; see [the API security boundary](../operations/BROWSER_API_SECURITY.md).
 On detailed health, 503 can be a readiness snapshot or authentication-busy error.
 
 Public `GET /live` returns `200 {"status":"alive"}` without querying dependencies.

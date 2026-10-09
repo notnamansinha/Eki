@@ -17,9 +17,9 @@ export async function setPersistence() {}
 export async function getRedirectResult() { return null; }
 export async function signInWithPopup() {}
 export async function signInWithRedirect() {}
-export async function signOut() { auth.currentUser = null; observers.forEach(callback => callback(null)); }
-export function switchAccount() { auth.currentUser = account("qa-second"); observers.forEach(callback => callback(auth.currentUser)); }
-export function reverifyAccount() { observers.forEach(callback => callback(auth.currentUser)); }
+export async function signOut() { cachedAttestation = null; auth.currentUser = null; observers.forEach(callback => callback(null)); }
+export function switchAccount() { cachedAttestation = null; auth.currentUser = account("qa-second"); observers.forEach(callback => callback(auth.currentUser)); }
+export function reverifyAccount() { cachedAttestation = null; observers.forEach(callback => callback(auth.currentUser)); }
 export class ReCaptchaEnterpriseProvider {}
 export class CustomProvider {}
 export function initializeAppCheck() { return {}; }
@@ -30,11 +30,16 @@ export function subscribeTokenWaiting(callback: () => void) { tokenObservers.add
 function notifyWaiting(value: boolean) { waiting = value; tokenObservers.forEach(callback => callback()); }
 let approve: ((result: { token: string }) => void) | undefined;
 let deny: ((error: Error) => void) | undefined;
+let cachedAttestation: { token: string } | null = null;
 export function getToken(_instance: unknown, forceRefresh: boolean) {
+  // Match the SDK's reuse of a valid app token for API headers. Explicit
+  // recovery/account-switch controls above simulate an expired attestation.
+  if (cachedAttestation && !forceRefresh) return Promise.resolve(cachedAttestation);
+  cachedAttestation = null;
   window.dispatchEvent(new CustomEvent("qa-verification", { detail: { forceRefresh } }));
   return new Promise<{ token: string }>((resolve, reject) => { approve = resolve; deny = reject; notifyWaiting(true); });
 }
-export function approveVerification() { approve?.({ token: "synthetic-attestation" }); notifyWaiting(false); }
+export function approveVerification() { cachedAttestation = { token: "synthetic-attestation" }; approve?.(cachedAttestation); notifyWaiting(false); }
 export function rejectVerification() { deny?.(new Error("Synthetic provider failure")); notifyWaiting(false); }
 
 // Only the synthetic SDK transport is replaced; the production collection hook,
@@ -47,6 +52,7 @@ export class Timestamp {}
 export const collection = (_db: unknown, name: string) => ({ name });
 export const query = (source: { name: string }) => source;
 export const limit = () => ({});
+export const limitToLast = () => ({});
 export const where = () => ({});
 export const orderBy = () => ({});
 const reads = new Map<string, number>();
@@ -64,6 +70,7 @@ export function onSnapshot(source: { name: string }, success: (snapshot: unknown
 }
 
 export const rtdb = {};
+export async function get() { throw new Error("Unexpected synthetic one-shot RTDB read"); }
 export const ref = (_db: unknown, path: string) => ({ path });
 const connectionObservers = new Set<(snapshot: { val: () => unknown }) => void>();
 let sdkConnected = true;

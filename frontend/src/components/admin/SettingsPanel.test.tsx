@@ -10,6 +10,18 @@ vi.mock("@/hooks/useSettings", () => ({ useSettings: () => ({ settings: mocks.se
 beforeEach(() => { mocks.save.mockReset(); });
 afterEach(cleanup);
 describe("admin settings editing", () => {
+  it("saves only edited fields even when persisted settings include audit metadata", async () => {
+    Object.assign(mocks.settings, { updatedAt: { seconds: 123 }, updatedBy: "admin" });
+    try {
+      mocks.save.mockResolvedValue(undefined); render(<SettingsPanel />); const user = userEvent.setup();
+      await user.clear(screen.getByLabelText("Service Start Time")); await user.type(screen.getByLabelText("Service Start Time"), "7:30 am");
+      await user.click(screen.getByRole("button", { name: "Save changes" }));
+      expect(await screen.findByText("Settings saved")).toBeTruthy();
+      expect(mocks.save).toHaveBeenCalledWith({ serviceStartTime: "7:30 am" });
+    } finally {
+      Reflect.deleteProperty(mocks.settings, "updatedAt"); Reflect.deleteProperty(mocks.settings, "updatedBy");
+    }
+  });
   it("locks all draft fields while saving so later edits cannot be discarded by the pending save", async () => {
     let finish!: () => void;
     mocks.save.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));

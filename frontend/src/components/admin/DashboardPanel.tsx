@@ -624,7 +624,7 @@ export default function DashboardPanel() {
   }, [activeEntries, routes, dynamicGeometries]);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
-  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
+  const [, setFreshnessNow] = useState(() => Date.now());
   const [driverId, setDriverId] = useState("");
   const [busId, setBusId] = useState("");
   const [routeId, setRouteId] = useState("");
@@ -667,10 +667,10 @@ export default function DashboardPanel() {
       .filter((sessionId): sessionId is string => Boolean(sessionId)),
   ).size;
   const devicesOnline = activeEntries.filter(
-    (entry) => devicePresence(entry, freshnessNow) === "online",
+    (entry) => devicePresence(entry) === "online",
   ).length;
   const unavailableDevices = activeEntries.filter(
-    (entry) => devicePresence(entry, freshnessNow) !== "online",
+    (entry) => devicePresence(entry) !== "online",
   ).length;
   const activeServices = countActiveServices(activeEntries);
 
@@ -884,7 +884,7 @@ export default function DashboardPanel() {
       </div>
 
       {/* â”€â”€ Sidebar â”€â”€ */}
-      <div className="flex max-h-[55%] min-h-0 w-full shrink-0 flex-col overflow-hidden border-t border-white/5 lg:max-h-none lg:w-[360px] lg:border-l lg:border-t-0">
+      <div className="flex max-h-[55%] min-h-0 w-full shrink-0 flex-col overflow-y-auto overscroll-contain border-t border-white/5 lg:max-h-none lg:w-[360px] lg:overflow-hidden lg:border-l lg:border-t-0">
         <section className="shrink-0 border-b border-white/5 p-3">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
@@ -963,7 +963,7 @@ export default function DashboardPanel() {
         </div>
 
         {/* Fleet list */}
-        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain p-3">
+        <div className="flex shrink-0 flex-col gap-2 p-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain">
           <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 px-1">Live Fleet</p>
           {activeEntries.length === 0 ? (
             <div className={`flex flex-col items-center justify-center py-16 text-center gap-2 ${isResuming ? "text-amber-300" : "opacity-30"}`}>

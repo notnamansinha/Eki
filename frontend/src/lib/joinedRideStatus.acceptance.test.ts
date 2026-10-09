@@ -19,6 +19,17 @@ beforeEach(() => {
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("joined-session recovery transport", () => {
+  it("accepts server-verified own boarding choices", async () => {
+    const { getJoinedRideStatus } = await import("./joinedRideStatus");
+    const body = { ...status, boarding: { boardingStopId: "origin", alightingStopId: "destination" } };
+    fixture.fetch.mockResolvedValue(new Response(JSON.stringify(body)));
+    await expect(getJoinedRideStatus("old", new AbortController().signal)).resolves.toEqual(body);
+  });
+  it.each([null, {}, { boardingStopId: "bad/path", alightingStopId: null }, { boardingStopId: "origin", alightingStopId: "bad/path" }])("rejects malformed own stop metadata %j", async boarding => {
+    const { getJoinedRideStatus } = await import("./joinedRideStatus");
+    fixture.fetch.mockResolvedValue(new Response(JSON.stringify({ ...status, boarding })));
+    await expect(getJoinedRideStatus("old", new AbortController().signal)).rejects.toMatchObject({ code: "INVALID_ACKNOWLEDGEMENT" });
+  });
   it("makes one authenticated request and returns a validated completed identity", async () => {
     const { getJoinedRideStatus } = await import("./joinedRideStatus");
     fixture.fetch.mockResolvedValue(new Response(JSON.stringify(status)));

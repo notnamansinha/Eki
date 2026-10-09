@@ -23,7 +23,7 @@ const MAX_MESSAGES_PER_MINUTE = 10;
 interface Message {
   id: string;
   text: string;
-  from: "driver" | "passenger";
+  from: "driver" | "passenger" | "admin";
   senderName: string;
   senderId: string;
   timestamp: Timestamp | null;
@@ -343,6 +343,12 @@ export default function MessagingPanel({
                     style={{ color: isMe ? "var(--accent)" : "var(--text-ghost)" }}>
                     {isMe ? 'You' : msg.senderName}
                   </span>
+                  {msg.from === "admin" && (
+                    <span className="text-[10px] font-semibold" style={{ color: "var(--accent)" }}>Administrator</span>
+                  )}
+                  {msg.from === "driver" && (
+                    <span className="text-[10px] font-semibold" style={{ color: "var(--text-ghost)" }}>Operator</span>
+                  )}
                   {msg.timestamp instanceof Timestamp && (
                     <span className="text-[9px] font-medium" style={{ color: "var(--text-ghost)" }}>
                       {msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

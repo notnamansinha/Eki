@@ -1,7 +1,39 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiRequest, acknowledgedField } from "./apiClient";
+const appCheck = vi.hoisted(() => ({ token: vi.fn(async () => "test-app-token") }));
+vi.mock("./firebaseAppCheck", () => ({ browserAppCheckToken: appCheck.token }));
 
 describe("apiRequest", () => {
+  it("attaches browser attestation without replacing identity authorization", async () => {
+    vi.stubGlobal("window", {}); vi.stubEnv("NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY", "test-site-key");
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}')); vi.stubGlobal("fetch", fetchMock);
+    await apiRequest("/api/test", { headers: { Authorization: "Bearer test-only" } });
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get("X-Firebase-AppCheck")).toBe("test-app-token");
+    expect(headers.get("Authorization")).toBe("Bearer test-only");
+  });
+  it("bounds a stalled attestation within the API deadline without dispatching a write", async () => {
+    vi.useFakeTimers(); vi.stubGlobal("window", {});
+    vi.stubEnv("NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY", "test-site-key");
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
+    appCheck.token.mockImplementationOnce(() => new Promise<string>(() => {}));
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    const result = expect(apiRequest("/api/test", { method: "POST", timeoutMs: 1000 })).rejects.toMatchObject({ code: "NETWORK_TIMEOUT" });
+    await vi.advanceTimersByTimeAsync(1001); await result;
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it.each(["http://api.example.test", "http://localhost.example.test", "http://192.168.1.2"])("rejects non-local cleartext transport before sending credentials: %s", async url => {
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", url);
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    await expect(apiRequest("/api/test", { headers: { Authorization: "Bearer test-only" } })).rejects.toThrow("Backend URL is invalid");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it.each(["localhost", "127.0.0.1", "[::1]"])("allows loopback development transport: %s", async host => {
+    vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", `http://${host}:4000`);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response('{"ok":true}')));
+    await expect(apiRequest("/api/test")).resolves.toEqual({ ok: true });
+  });
   it.each([{}, null, { saved: false }, { saved: "true" }])("rejects missing write acknowledgements: %j", async body => {
     vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(body))));

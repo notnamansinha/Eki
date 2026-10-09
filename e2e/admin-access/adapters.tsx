@@ -1,6 +1,9 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 export function useBuses() { return { buses: [] }; }
 export function useDrivers() { return { drivers: [] }; }
+export function Map({ children, style }: { children: ReactNode; style?: CSSProperties }) { return <div aria-label="Synthetic map" style={style}>{children}</div>; }
+export function AdvancedMarker() { return null; }
+export function useMap() { return null; }
 export function clearCollectionCache() {}
 export function clearSettingsCache() {}
 export function invalidateLiveBusCache() {}

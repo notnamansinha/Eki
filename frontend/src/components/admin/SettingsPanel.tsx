@@ -68,7 +68,7 @@ export default function SettingsPanel() {
     }
     setSaving(true);
     try {
-      await saveSettings(draft);
+      await saveSettings(overrides);
       setOverrides({});
       setSaved(true);
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);

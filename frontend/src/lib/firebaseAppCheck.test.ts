@@ -16,6 +16,11 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 describe("App Check verification", () => {
+  it("returns the verified SDK token for the authenticated API header", async () => {
+    vi.stubEnv("NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY", "test-key");
+    const { browserAppCheckToken } = await import("./firebaseAppCheck");
+    expect(await browserAppCheckToken()).toBe("valid");
+  });
   it("forces an App Check refresh for explicit access recovery", async () => {
     vi.stubEnv("NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY", "test-key");
     const { ensureAppCheck } = await import("./firebaseAppCheck");

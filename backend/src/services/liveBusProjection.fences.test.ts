@@ -113,6 +113,32 @@ afterEach(async () => {
 });
 
 describe("independent public projection fencing and lifecycle regressions", () => {
+  it("becomes ready after startup coverage while an already published bus keeps updating", async () => {
+    fixture.data.activeBuses = { bus1_route1: live() };
+    start(); emit("child_added", "bus1_route1", fixture.data.activeBuses.bus1_route1); await settle();
+    expect(Object.keys(buses("route1"))).toHaveLength(1);
+    const release = gate(fixture.readGates, "activeBuses/bus1_route1");
+    fixture.data.activeBuses.bus1_route1 = { ...live(), timestamp: Date.now() + 1 };
+    emit("child_changed", "bus1_route1", fixture.data.activeBuses.bus1_route1); await settle();
+    await recover();
+    expect(getLiveBusProjectionStatus()).toMatchObject({ activeWorkers: 1 });
+    expect(fixture.data.clientProjectionStatus.public).toEqual({ schemaVersion: 1, ready: true });
+    release(); await settle();
+  });
+
+  it("still waits for the first publication of a newly observed bus during startup", async () => {
+    fixture.data.activeBuses = { bus1_route1: live() };
+    start(); emit("child_added", "bus1_route1", fixture.data.activeBuses.bus1_route1); await settle();
+    const release = gate(fixture.readGates, "activeBuses/bus2_route1");
+    fixture.data.activeBuses.bus2_route1 = live("new", "route1", "bus2");
+    emit("child_added", "bus2_route1", fixture.data.activeBuses.bus2_route1); await settle();
+    await recover();
+    expect(fixture.data.clientProjectionStatus.public.ready).toBe(false);
+    release(); await recover();
+    expect(fixture.data.clientProjectionStatus.public.ready).toBe(true);
+    expect(Object.keys(buses("route1"))).toHaveLength(2);
+  });
+
   it("stamps a successor generation even when its public value is identical", async () => {
     const current = publicLiveBus(live());
     fixture.data.activeBuses = { bus1_route1: current };

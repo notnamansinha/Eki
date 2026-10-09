@@ -39,6 +39,15 @@ function start(generation = 1) { const fence = new WorkerFence("test", generatio
 beforeEach(() => { vi.useFakeTimers(); fixture.data = {}; fixture.listeners.clear(); fixture.reads = []; fixture.fail = false; fixture.gate = null; fixture.heldPath = ""; fixture.holdTransaction = false; });
 afterEach(async () => { await stop?.(); stop = undefined; vi.useRealTimers(); });
 describe("public live projection", () => {
+  it("removes retired assignment presence from both the public view and route catalog", async () => {
+    const retired = { ...live(), status: undefined, sessionId: undefined, deviceState: "offline", retiredAssignmentRevision: 2 };
+    fixture.data.activeBuses = { bus1_route1: live() }; start(); emit("child_changed", live()); await settle();
+    fixture.data.activeBuses.bus1_route1 = retired;
+    emit("child_changed", retired); await settle();
+    expect(publicLiveBus(retired)).toBeNull();
+    expect(fixture.data.publicRouteBuses["route:route1"].buses).toEqual({});
+    expect(fixture.data.liveRouteCatalog.values["route:route1"]).toMatchObject({ active: 0, available: 0 });
+  });
   it("whitelists nested and scalar fields without history, claims or worker state", () => {
     expect(publicLiveBus({ ...live(), _workerGeneration: 9, recentSamples: [{ secret: true }], turnaroundClaimId: "private", telemetryRouteContext: { private: true },
       rawLocation: { lat: 23, secret: "private" }, matchedLocation: { lat: 24, history: [] } })).toEqual({ ...live(), rawLocation: { lat: 23 }, matchedLocation: { lat: 24 } });

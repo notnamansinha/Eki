@@ -6,6 +6,7 @@ vi.mock("./lib/firebaseAdmin", () => ({ get rtdb() { return projectionFixture.re
 import { publicLiveBus, routeAvailability, startLiveBusProjection } from "./services/liveBusProjection";
 import { WorkerFence, workerRtdbTransaction } from "./lib/workerFence";
 import { lifecycleIntakeFingerprint } from "./services/lifecycleIntake";
+import { retireDeviceAssignment } from "./services/deviceAssignmentRetirement";
 const integration = process.env.FIREBASE_RULES_TEST === "1" ? describe : describe.skip;
 integration("R14 loopback transaction and payload measurement", () => {
   let app: App; let realtime: Database;
@@ -17,6 +18,25 @@ integration("R14 loopback transaction and payload measurement", () => {
     realtime = getDatabase(app);
   });
   afterAll(async () => { if (app) await deleteApp(app); });
+  it("retires old device presence through actual RTDB transactions and removes its public availability", async () => {
+    const root = realtime.ref("_assignment_retirement_integration");
+    const presence = { busId: "bus", routeId: "route", deviceId: "device", assignmentRevision: 1,
+      deviceState: "online", status: "offline", timestamp: Date.now() };
+    await root.set({ activeBuses: { bus_route: presence } });
+    projectionFixture.realtime = { ref: (path: string) => root.child(path) };
+    const leader = new WorkerFence("assignment-retirement", 19, performance.now() + 40_000);
+    const stop = leader.run(() => startLiveBusProjection());
+    try {
+      await vi.waitFor(async () => expect((await root.child("liveRouteCatalog/values/route:route").once("value")).val()?.available).toBe(1), { timeout: 5000 });
+      await retireDeviceAssignment("device", "bus", "route", 2);
+      await vi.waitFor(async () => expect((await root.child("publicRouteBuses/route:route/buses").once("value")).val()).toBeNull(), { timeout: 5000 });
+      await vi.waitFor(async () => expect((await root.child("liveRouteCatalog/values/route:route").once("value")).val()).toMatchObject({ active: 0, available: 0 }), { timeout: 5000 });
+      expect((await root.child("activeBuses/bus_route").once("value")).val()).toMatchObject({ retiredAssignmentRevision: 2 });
+      await root.child("activeBuses/bus_route").set({ ...presence, assignmentRevision: 3 });
+      await retireDeviceAssignment("device", "bus", "route", 2);
+      expect((await root.child("activeBuses/bus_route").once("value")).val()).toMatchObject({ assignmentRevision: 3, deviceState: "online" });
+    } finally { await stop(); leader.revoke(); await root.remove(); }
+  });
   it("records attempts/events/JSON bytes per fix for speculative and committed-only server transactions", async () => {
     const results = [];
     for (const speculative of [true, false]) {

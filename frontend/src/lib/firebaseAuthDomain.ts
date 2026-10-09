@@ -2,8 +2,8 @@ const FIREBASE_HOSTING_DOMAINS = ["web.app", "firebaseapp.com"] as const;
 
 /**
  * Firebase Auth's popup/redirect helper must be same-origin on Firebase
- * Hosting. Browsers that partition storage cannot recover helper state when
- * a web.app deployment is configured with firebaseapp.com.
+ * Hosting. Safari and other storage-partitioning browsers cannot recover the
+ * helper state when a web.app deployment is configured with firebaseapp.com.
  */
 export function resolveFirebaseAuthDomain(
   configuredAuthDomain: string | undefined,

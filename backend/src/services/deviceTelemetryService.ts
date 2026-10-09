@@ -16,6 +16,7 @@ import { restoreDurableRide } from "./durableRideRecovery";
 export { durableLifecycle, freshestDelayMinutes, shouldApplyRestoreTelemetry } from "./durableRideRecoveryPolicy";
 export type { DelayPreference } from "./durableRideRecoveryPolicy";
 import type { TelemetryPayload } from "./telemetryPayload";
+import { telemetryDiagnosticCounters } from "./telemetryDiagnosticCounters";
 import { scheduleTelemetryRouteProcessing } from "./telemetryRouteService";
 import {
   AuthenticatedDeviceRateLimiter,
@@ -46,6 +47,8 @@ const DEVICE_CREDENTIAL_VERSION_PATH = "_deviceCredentialVersions";
 export interface DeviceAssignment {
   busId: string;
   routeId: string;
+  deviceId?: string;
+  assignmentRevision?: number;
 }
 
 export class DeviceCredentialVerificationInvalidatedError extends Error {
@@ -60,6 +63,7 @@ interface CredentialCacheEntry {
 }
 
 export interface HttpsTelemetryStatus {
+  diagnostics: ReturnType<typeof telemetryDiagnosticCounters>;
   accepted: number;
   rejected: number;
   lastAcceptedAt: string | null;
@@ -289,7 +293,10 @@ function assignmentFromDevice(
   ) {
     return null;
   }
-  return { busId, routeId };
+  return { busId, routeId,
+    ...(typeof device?.deviceId === "string" ? { deviceId: device.deviceId } : {}),
+    ...(Number.isSafeInteger(device?.assignmentRevision) ? { assignmentRevision: Number(device?.assignmentRevision) } : {}),
+  };
 }
 
 export async function verifyDeviceSecretHash(
@@ -531,6 +538,9 @@ export function nextTelemetryValue(
   sample: TelemetryPayload,
   backendReceivedAt: number,
 ): Record<string, unknown> | undefined {
+  if (typeof current?.retiredAssignmentRevision === "number" &&
+      (!assignment.deviceId || assignment.deviceId === current.deviceId) &&
+      (assignment.assignmentRevision ?? 0) < current.retiredAssignmentRevision) return;
   const existingTimestamp = Number(current?.timestamp);
   if (!telemetrySampleIsNewer(
     existingTimestamp,
@@ -587,6 +597,7 @@ export function nextTelemetryValue(
   delete currentState.rtdbCommittedAt; // Same server timestamp as receivedAt.
   delete currentState.activeRoutePolyline; // Geometry lives in the versioned sibling store.
   delete currentState.plausibilityReacquisition;
+  delete currentState.retiredAssignmentRevision;
 
   return {
     // Device presence is not a ride. Lifecycle fields are introduced only by
@@ -618,6 +629,8 @@ export function nextTelemetryValue(
     },
     busId: assignment.busId,
     routeId: assignment.routeId,
+    ...(assignment.deviceId ? { deviceId: assignment.deviceId } : {}),
+    ...(assignment.assignmentRevision !== undefined ? { assignmentRevision: assignment.assignmentRevision } : {}),
     deviceState: "online",
     signalState:
       acceptedSample.motionState === "uncertain"
@@ -701,7 +714,7 @@ async function executeDeviceTelemetry(
     return { ok: false, reason: "rate_limit", retryAfterMs };
   }
 
-  const persisted = await deadline.dependency("telemetry commit", () => persistTelemetry(assignment, sample, serverReceivedAt));
+  const persisted = await deadline.dependency("telemetry commit", () => persistTelemetry({ ...assignment, deviceId }, sample, serverReceivedAt));
   if (!persisted.hasSession) {
     // RTDB already contains the accepted fix at this point. Recover the
     // durable lifecycle immediately in the background so the hardware response
@@ -769,6 +782,7 @@ export function getHttpsTelemetryStatus(): HttpsTelemetryStatus {
   const credentialAttempts = credentialCacheHits + credentialCacheMisses;
   return {
     ...status,
+    diagnostics: telemetryDiagnosticCounters(),
     credentialCacheHitRate:
       credentialAttempts === 0
         ? null
