@@ -62,7 +62,11 @@ not prove provider setup or enforcement in a deployed project.
 
 Both deployment paths run the RTDB instance preflight, deploy the declared
 Firestore indexes, and wait for the required deployed query shapes to become
-ready before Hosting is released. The preflight needs the environment-scoped
+ready before Hosting is released. Name-only, one-record probes cover retention,
+privacy collection-group cleanup, the pending privacy queue, abandoned rides,
+and processing route-preview/fleet-job recovery. They check the actual deployed
+query shapes, including automatic indexes; a declaration count is insufficient.
+The preflight needs the environment-scoped
 backend and frontend database URL secrets to name the same instance.
 
 `testing` is the integration branch: pushes and PRs run verification, but a

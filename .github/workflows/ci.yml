@@ -161,6 +161,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install platformio
+      - name: Verify fleet JTAG configuration rejects unsafe overrides
+        run: python hardware/scripts/test_verify_secure_fleet.py
       - name: Install non-production firmware build configuration
         run: cp hardware/include/secrets.example.h hardware/include/secrets.h
       - run: platformio test --project-dir hardware -e native

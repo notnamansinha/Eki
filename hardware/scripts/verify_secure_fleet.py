@@ -33,7 +33,10 @@ required_security_options = {
     "CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE=y",
     "CONFIG_SECURE_DISABLE_ROM_DL_MODE=y",
 }
-disabled_security_options = {"CONFIG_ESP32_WIFI_NVS_ENABLED"}
+disabled_security_options = {
+    "CONFIG_ESP32_WIFI_NVS_ENABLED",
+    "CONFIG_SECURE_BOOT_ALLOW_JTAG",
+}
 
 missing_options = sorted(required_security_options.difference(sdkconfig.splitlines()))
 if missing_options:
@@ -53,6 +56,9 @@ if missing_disabled_options:
         "Fleet build options must be disabled in sdkconfig.defaults: "
         + ", ".join(missing_disabled_options)
     )
+
+if any(f"{option}=y" in sdkconfig.splitlines() for option in disabled_security_options):
+    raise RuntimeError("Fleet build forbidden options are enabled in sdkconfig.defaults.")
 
 effective_sdkconfig_path = project_dir / f"sdkconfig.{env.subst('$PIOENV')}"
 if effective_sdkconfig_path.exists():

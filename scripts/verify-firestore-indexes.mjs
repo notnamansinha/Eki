@@ -3,7 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { accessTokenFromFirebaseToken, projectIdFromArgs } from "./verify-appcheck-enforcement.mjs";
 
 const fieldFilter = (fieldPath, op, value) => ({ fieldFilter: { field: { fieldPath }, op, value } });
-// Match the indexed query shapes in retentionSweeper and privacyDeletionWorker.
+// Match retention, privacy, reconciliation and operation-recovery query shapes.
 // Read only document names, at most one per query; never delete or log records.
 export function requiredQueries(now = Date.now()) {
   return [
@@ -23,6 +23,21 @@ export function requiredQueries(now = Date.now()) {
       query: {
         from: [{ collectionId, allDescendants: true }],
         where: fieldFilter(field, "EQUAL", { stringValue: "__eki_index_readiness_probe__" }),
+      },
+    })),
+    ...[
+      ["privacy pending queue", "_privacy_deletion_requests", ["pending"]],
+      ["abandoned ride reconciliation", "ride_sessions", ["pending", "armed", "active"]],
+      ["route preview recovery", "_route_geometry_previews", ["processing"]],
+      ["fleet job recovery", "_fleet_reconciliation_jobs", ["processing"]],
+    ].map(([name, collectionId, statuses]) => ({
+      name,
+      query: {
+        from: [{ collectionId }],
+        where: statuses.length === 1
+          ? fieldFilter("status", "EQUAL", { stringValue: statuses[0] })
+          : fieldFilter("status", "IN", { arrayValue: { values: statuses.map(stringValue => ({ stringValue })) } }),
+        orderBy: [{ field: { fieldPath: "__name__" }, direction: "ASCENDING" }],
       },
     })),
   ].map(({ name, query }) => ({ name, query: { ...query, select: { fields: [{ fieldPath: "__name__" }] }, limit: 1 } }));
@@ -98,7 +113,7 @@ export async function verifyFirestoreIndexes({
       await wait(Math.min(pollMs, remaining));
     }
   }
-  log(`Firestore retention and privacy queries ready for ${projectId}.`);
+  log(`Firestore retention, privacy and recovery queries ready for ${projectId}.`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

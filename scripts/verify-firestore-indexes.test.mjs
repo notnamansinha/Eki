@@ -5,6 +5,7 @@ import { requiredQueries, verifyFirestoreIndexes } from "./verify-firestore-inde
 
 const ready = { ok: true, json: async () => [{ readTime: "2026-10-06T00:00:00Z" }] };
 const building = { ok: false, status: 400, json: async () => ({ error: { status: "FAILED_PRECONDITION", message: "The query requires an index that is building." } }) };
+const probeCount = requiredQueries().length;
 function harness(responses = []) {
   let now = 0;
   const requests = [];
@@ -27,7 +28,7 @@ function harness(responses = []) {
 describe("Firestore deployed query readiness", () => {
   it("checks the retention IN/range/order shape and both collection-group filters with bounded name-only reads", () => {
     const probes = requiredQueries(180 * 86_400_000);
-    assert.equal(probes.length, 3);
+    assert.equal(probes.length, 7);
     assert.deepEqual(probes[0].query.where.compositeFilter.filters[0].fieldFilter.value.arrayValue.values,
       ["completed", "failed", "interrupted"].map(stringValue => ({ stringValue })));
     assert.equal(probes[0].query.where.compositeFilter.filters[1].fieldFilter.value.integerValue, "0");
@@ -42,10 +43,25 @@ describe("Firestore deployed query readiness", () => {
     }
   });
 
+  it("probes every document-ID ordered queue and recovery query before deployment", () => {
+    const probes = requiredQueries().slice(3);
+    assert.deepEqual(probes.map(p => p.query.from[0].collectionId),
+      ["_privacy_deletion_requests", "ride_sessions", "_route_geometry_previews", "_fleet_reconciliation_jobs"]);
+    for (const { query } of probes) {
+      assert.deepEqual(query.orderBy, [{ field: { fieldPath: "__name__" }, direction: "ASCENDING" }]);
+      assert.equal(query.where.fieldFilter.field.fieldPath, "status");
+    }
+    assert.deepEqual(probes.map(p => p.query.where.fieldFilter.value), [
+      { stringValue: "pending" },
+      { arrayValue: { values: ["pending", "armed", "active"].map(stringValue => ({ stringValue })) } },
+      { stringValue: "processing" }, { stringValue: "processing" },
+    ]);
+  });
+
   it("accepts an empty database response and uses the explicit project and refreshed credential", async () => {
     const h = harness();
     await verifyFirestoreIndexes(h.options);
-    assert.equal(h.requests.length, 3);
+    assert.equal(h.requests.length, probeCount);
     for (const { url, init } of h.requests) {
       assert.equal(url, "https://firestore.googleapis.com/v1/projects/eki-test/databases/(default)/documents:runQuery");
       assert.equal(init.headers.Authorization, "Bearer access-token");
@@ -58,17 +74,17 @@ describe("Firestore deployed query readiness", () => {
   it("retries only unavailable indexes and succeeds after their build completes", async () => {
     const h = harness([building, ready, building, ready, ready]);
     await verifyFirestoreIndexes(h.options);
-    assert.equal(h.requests.length, 5);
+    assert.equal(h.requests.length, probeCount + 2);
     assert.deepEqual(h.waits, [10]);
-    assert.equal(JSON.parse(h.requests[3].init.body).structuredQuery.from[0].collectionId, "ride_sessions");
-    assert.equal(JSON.parse(h.requests[4].init.body).structuredQuery.from[0].collectionId, "messageRateLimits");
+    assert.equal(JSON.parse(h.requests[probeCount].init.body).structuredQuery.from[0].collectionId, "ride_sessions");
+    assert.equal(JSON.parse(h.requests[probeCount + 1].init.body).structuredQuery.from[0].collectionId, "messageRateLimits");
   });
 
   it("fails within the deadline when an index never becomes available", async () => {
-    const h = harness(Array(20).fill(building));
+    const h = harness(Array(probeCount * 3).fill(building));
     await assert.rejects(verifyFirestoreIndexes(h.options), /timed out/);
     assert.deepEqual(h.waits, [10, 10, 10]);
-    assert.equal(h.requests.length, 9);
+    assert.equal(h.requests.length, probeCount * 3);
   });
 
   for (const status of [401, 403, 404, 500]) {
@@ -117,7 +133,7 @@ describe("Firestore deployed query readiness", () => {
       { ok: true, json: async () => [{ readTime: "2026-10-06T00:00:00Z" }] },
     ]);
     await verifyFirestoreIndexes(h.options);
-    assert.equal(h.requests.length, 3);
+    assert.equal(h.requests.length, probeCount);
     assert.deepEqual(h.waits, []);
   });
 

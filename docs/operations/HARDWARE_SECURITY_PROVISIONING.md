@@ -77,6 +77,10 @@ Before the unit is accepted for fleet use, both operators must verify from the
 post-provisioning eFuse summary that JTAG is permanently disabled and record
 the board-specific eFuse name/value. Quarantine any board where that cannot be
 proved. The development board is not security-provisioning evidence.
+The fleet defaults explicitly leave `CONFIG_SECURE_BOOT_ALLOW_JTAG` disabled,
+and the build verifier rejects enabling it in either defaults or effective
+configuration. ESP-IDF's bootloader disables JTAG during secure provisioning;
+this configuration check does not prove that an individual board was provisioned.
 
 ## Compile-time configuration and rotation
 

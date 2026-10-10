@@ -80,6 +80,9 @@ static_assert(
 #if !defined(CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES) || !CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES
 #error "Fleet builds require signed application binaries."
 #endif
+#if defined(CONFIG_SECURE_BOOT_ALLOW_JTAG) && CONFIG_SECURE_BOOT_ALLOW_JTAG
+#error "Fleet builds must disable JTAG during secure provisioning."
+#endif
 #if !defined(CONFIG_SECURE_FLASH_ENC_ENABLED) || !CONFIG_SECURE_FLASH_ENC_ENABLED
 #error "Fleet builds require flash encryption."
 #endif
