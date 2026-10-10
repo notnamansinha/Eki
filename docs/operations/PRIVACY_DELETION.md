@@ -14,9 +14,10 @@ including an existing failed request, and does not certify deletion.
 Admission and admin controls each allow eight raw fills and sixteen waiters per
 fill, with a three-second caller deadline. Timed-out dispatched calls retain
 capacity until real settlement. Retry an uncertain admission with the same UID.
-Creation is transactional. Resubmission updates audit metadata and preserves
-original request time, status, attempts, generation, error timestamps and due time.
-It never restarts failed or processing work. Current Auth creation time is bound
+Creation is transactional. Resubmission preserves the original request time,
+lifetime attempts and error history. A failed request returns to pending with a
+fresh generation and failure budget; an active processing claim remains untouched.
+Current Auth creation time is bound
 to the target: a recreated UID requires IT review rather than deleting its new
 account automatically.
 
@@ -72,8 +73,8 @@ No retention period, privacy entitlement or product policy is changed here.
    lock using the existing fleet lock recovery endpoint. Lock release writes an
    atomic audit including linked privacy status. Never clear a running mutex.
 5. Inspect durable status after an uncertain recovery acknowledgement. A changed
-   generation rejects a duplicate recovery; passenger resubmission does not reset
-   a retry cycle. With no live process holding the mutex, normal queue turns resume.
+   generation rejects a duplicate recovery; passenger resubmission restarts only
+   failed work. With no live process holding the mutex, normal queue turns resume.
 
 All fleet API Auth-changing paths and privacy deletion share the same non-expiring
 mutex. Eligibility is rechecked inside it before cleanup and Auth dispatch. CLI

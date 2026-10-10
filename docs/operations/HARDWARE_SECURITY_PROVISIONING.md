@@ -106,8 +106,9 @@ belong in `secrets.h`.
    it, and restart the device. If the compiled ID and secret remain correct but
    a credential was disabled or its backend registry/assignment is wrong,
    repair the backend record and restart the device without reflashing. A
-   401/403 latches publishing off and disables the station radio until the
-   applicable repair is followed by that restart.
+   401 latches publishing off and disables the station radio until the
+   applicable repair is followed by a restart. A valid but unassigned device
+   receives 403 and retries after one minute without disabling the radio.
 
 ## Signed OTA release and rollback
 

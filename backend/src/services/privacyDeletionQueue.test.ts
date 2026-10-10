@@ -31,7 +31,7 @@ vi.mock("../lib/firebaseAdmin", () => {
     auth: { getUser: async () => ({ customClaims: state.claims, metadata: { creationTime: "2026-01-01T00:00:00Z" } }),
       deleteUser: async (uid: string) => { state.deleted.push(uid); await state.hold; if (uid.startsWith("poison")) throw Error("temporary Auth failure"); } } };
 });
-import { recoverPrivacyDeletion, privacyExecutions } from "./privacyDeletionRequests";
+import { recoverPrivacyDeletion, requestPrivacyDeletion, privacyExecutions } from "./privacyDeletionRequests";
 import { recoverFleetLock } from "./httpOperations";
 import { runPrivacyDeletionQueue, drainPrivacyDeletions, privacyQueueStatus, startPrivacyDeletionWorker } from "./privacyDeletionWorker";
 let tick: () => void;
@@ -45,6 +45,16 @@ beforeEach(() => {
 });
 afterEach(async () => { stop?.(); stop = undefined; await drainPrivacyDeletions(false); vi.restoreAllMocks(); });
 describe("privacy queue recovery", () => {
+  it("requeues a failed passenger request on resubmission while preserving attempt history", async () => {
+    state.docs.clear();
+    state.docs.set("_privacy_deletion_requests/passenger", { status: "failed", attempts: 5, failures: 5, generation: 8,
+      targetCreatedAt: "2026-01-01T00:00:00Z", nextAttemptAt: Date.now() + 60_000 });
+    await requestPrivacyDeletion("passenger");
+    expect(state.docs.get("_privacy_deletion_requests/passenger")).toMatchObject({ status: "pending", attempts: 5,
+      failures: 0, generation: 9 });
+    await runPrivacyDeletionQueue(); await drainPrivacyDeletions(false);
+    expect(state.deleted).toContain("passenger");
+  });
   it("visits later passengers instead of repeating the first 20 poison requests", async () => {
     stop = startPrivacyDeletionWorker();
     await vi.waitFor(() => expect(state.deleted.length).toBeGreaterThanOrEqual(20));

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 const harness = vi.hoisted(() => ({
   authenticated: true,
+  unassigned: false,
   activeRide: false,
   activeBusLock: false,
   maintenance: null as Record<string, unknown> | null,
@@ -55,6 +56,9 @@ vi.mock("../services/deviceTelemetryService", () => ({
   authenticateDeviceCredentials: async () => harness.authenticated
     ? { busId: "bus_1", routeId: "route_1" }
     : null,
+  checkDeviceCredentials: async () => !harness.authenticated ? { status: "invalid" }
+    : harness.unassigned ? { status: "unassigned" }
+      : { status: "assigned", assignment: { busId: "bus_1", routeId: "route_1" } },
   ingestDeviceTelemetry: async () => ({ ok: false, reason: "credentials" }),
   invalidateDeviceCredentialCache: () => undefined,
   publishDeviceCredentialInvalidation: async (id: string) => {
@@ -104,6 +108,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   harness.authenticated = true;
+  harness.unassigned = false;
   harness.activeRide = false;
   harness.activeBusLock = false;
   harness.maintenance = null;
@@ -200,6 +205,11 @@ describe("device firmware release endpoint", () => {
     harness.authenticated = false;
     expect((await requestFirmware()).status).toBe(401);
     expect((await requestFirmware("-1")).status).toBe(400);
+  });
+  it("returns 403 for a valid device without an assignment on OTA endpoints", async () => {
+    harness.unassigned = true;
+    expect((await requestFirmware()).status).toBe(403);
+    expect((await maintenance("acquire")).status).toBe(403);
   });
 
   it("fails closed when release configuration is partial", async () => {

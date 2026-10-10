@@ -55,8 +55,9 @@ accepted sequenced/HDOP versus legacy schema counts. Their scope is explicitly
 **this process since startup**, not a persistent per-device or fleet aggregate.
 Restart resets them. Existing aggregate rejected-fix counts remain separate.
 
-After a 401/403 credential fault, firmware halts authenticated publishing,
-including diagnostics. Alert on missing diagnostic heartbeat and stale last
+After a 401 credential fault, firmware halts authenticated publishing,
+including diagnostics. A 403 keeps the radio on and retries after assignment
+repair. Alert on missing diagnostic heartbeat and stale last
 accepted telemetry; correlate the last credential rejection/registry change
 with the last received health report and authorized local serial evidence.
 Silence alone does not distinguish loss of power, network, fix or credentials.

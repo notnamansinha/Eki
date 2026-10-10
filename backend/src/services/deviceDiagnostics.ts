@@ -1,6 +1,6 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { db } from "../lib/firebaseAdmin";
-import { authenticateDeviceCredentials } from "./deviceTelemetryService";
+import { checkDeviceCredentials } from "./deviceTelemetryService";
 
 const DIAGNOSTIC_KEYS = [
   "firmwareVersion",
@@ -111,9 +111,10 @@ export async function ingestDeviceDiagnostics(
   secret: string,
   diagnostics: DeviceDiagnosticsPayload,
   now = Date.now(),
-): Promise<boolean> {
-  const assignment = await authenticateDeviceCredentials(deviceId, secret, now);
-  if (!assignment) return false;
+): Promise<"accepted" | "credentials" | "unassigned"> {
+  const credential = await checkDeviceCredentials(deviceId, secret, now);
+  if (credential.status !== "assigned") return credential.status === "unassigned" ? "unassigned" : "credentials";
+  const assignment = credential.assignment;
   await db.collection("_device_diagnostics").doc(deviceId).set({
     ...diagnostics,
     deviceId,
@@ -121,5 +122,5 @@ export async function ingestDeviceDiagnostics(
     routeId: assignment.routeId,
     receivedAt: FieldValue.serverTimestamp(),
   });
-  return true;
+  return "accepted";
 }

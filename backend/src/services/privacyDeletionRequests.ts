@@ -40,7 +40,11 @@ export async function requestPrivacyDeletion(uid: string): Promise<void> {
       const ref = db.collection(PRIVACY_REQUESTS).doc(uid), existing = (await transaction.get(ref)).data();
       if (existing?.targetCreatedAt && existing.targetCreatedAt !== targetCreatedAt) throw new PrivacyConflict("Account identity changed; recovery requires operator review.");
       if (!isCurrent()) throw Error("Privacy admission expired.");
-      if (existing) transaction.set(ref, { targetCreatedAt, resubmittedAt: FieldValue.serverTimestamp(), resubmissions: FieldValue.increment(1), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      if (existing) transaction.set(ref, {
+        targetCreatedAt, resubmittedAt: FieldValue.serverTimestamp(), resubmissions: FieldValue.increment(1), updatedAt: FieldValue.serverTimestamp(),
+        ...(existing.status === "failed" ? { status: "pending", failures: 0, generation: Number(existing.generation ?? 0) + 1,
+          nextAttemptAt: Date.now(), phase: "cleaning" } : {}),
+      }, { merge: true });
       else transaction.create(ref, { status: "pending", attempts: 0, failures: 0, generation: 0, targetCreatedAt, nextAttemptAt: Date.now(), requestedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
     });
   });

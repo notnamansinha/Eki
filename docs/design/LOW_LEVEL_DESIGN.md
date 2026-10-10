@@ -157,8 +157,9 @@ acceptance profile; normal development uses `partitions_development.csv`.
 See [cold-power recovery](../hardware/COLD_POWER_RECOVERY.md).
 
 GNSS loss queues one uncertain fix at the last verified point. Invalid compile-
-time configuration halts before networking; HTTP 401/403 latches publishing
-off and disables the radio until credential repair/restart. Header policies
+time configuration halts before networking; HTTP 401 latches publishing
+off and disables the radio until credential repair/restart. HTTP 403 keeps
+the radio on and retries after assignment repair. Header policies
 and checkpoint/response tests run on the native host. Physical GNSS, power,
 radio, TLS, Secure Boot and OTA acceptance require the hardware runbooks.
 

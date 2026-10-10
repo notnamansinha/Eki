@@ -30,6 +30,7 @@ vi.mock("../lib/firebaseAdmin", () => ({
 }));
 import {
   authenticateDeviceCredentials,
+  checkDeviceCredentials,
   DeviceCredentialVerificationInvalidatedError,
   durableLifecycle,
   evaluateDeviceRateLimit,
@@ -124,6 +125,17 @@ describe("HTTPS device credentials", () => {
     expect(harness.reads).toEqual(["devices/device_1", "buses/bus_1", "routes/route_1"]);
     await authenticateDeviceCredentials("device_1", secret, 1_001);
     expect(harness.reads).toHaveLength(3);
+  });
+  it("distinguishes valid unassigned credentials from invalid credentials", async () => {
+    const secret = await configure();
+    delete harness.collections.get("devices")!.get("device_1")!.routeId;
+    expect(await checkDeviceCredentials("device_1", secret, 1_000)).toEqual({ status: "unassigned" });
+    expect(await checkDeviceCredentials("device_1", secret, 1_001)).toEqual({ status: "unassigned" });
+    expect(await authenticateDeviceCredentials("device_1", secret, 1_001)).toBeNull();
+    expect(await checkDeviceCredentials("device_1", "wrong-secret", 1_001)).toEqual({ status: "invalid" });
+    harness.collections.get("devices")!.get("device_1")!.enabled = false;
+    invalidateDeviceCredentialCache("device_1");
+    expect(await checkDeviceCredentials("device_1", secret, 1_002)).toEqual({ status: "invalid" });
   });
   it.each([ ["rotation", "devices"], ["reassignment", "devices"], ["rotation", "buses"], ["reassignment", "buses"] ])("fences %s during %s fill", async (change, blockedCollection) => {
     const secret = await configure();

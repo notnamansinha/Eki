@@ -138,6 +138,13 @@ const poll = (id = key) => contractFetch(`${base}/api/v2/fleet-reconciliation-jo
 const waitTerminal = (id = key) => vi.waitFor(() => expect(state.docs.get(`_fleet_reconciliation_jobs/${id}`)?.status).not.toBe("processing"));
 
 describe("fleet operation resources", () => {
+  it("preserves operator metadata when updating editable driver fields", async () => {
+    state.docs.set("drivers/driver_1", { authUid: "auth_uid", assignedBusId: "bus_1", createdAt: 123, badge: { number: "synthetic" } });
+    const response = await contractFetch(`${base}/api/fleet/drivers/driver_1`, { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Driver", authUid: "auth_uid", assignedBusId: "bus_1" }) });
+    expect(response.status).toBe(200);
+    expect(state.docs.get("drivers/driver_1")).toMatchObject({ name: "Driver", createdAt: 123, badge: { number: "synthetic" } });
+  });
   it("preserves existing bus timestamps and nested metadata while explicitly migrating the legacy assignment", async () => {
     state.docs.delete("drivers/driver_1");
     state.docs.set("routes/route_1", { name: "Route" });

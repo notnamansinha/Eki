@@ -100,10 +100,10 @@ describe("privacy deletion request aliases", () => {
     harness.claims = claims;
     expect((await contractFetch(`${baseUrl}/api/v2/privacy-deletion-requests`, { method: "POST" })).status).toBe(409);
   });
-  it("does not restart a failed request or erase its history on resubmission", async () => {
+  it("restarts a failed request while preserving its attempt and error history", async () => {
     harness.requests.set("user_1", { status: "failed", attempts: 5, failures: 5, generation: 7, lastErrorCode: "DEPENDENCY_FAILURE" });
     expect((await contractFetch(`${baseUrl}/api/v2/privacy-deletion-requests`, { method: "POST" })).status).toBe(202);
-    expect(harness.requests.get("user_1")).toMatchObject({ status: "failed", attempts: 5, failures: 5, generation: 7, lastErrorCode: "DEPENDENCY_FAILURE" });
+    expect(harness.requests.get("user_1")).toMatchObject({ status: "pending", attempts: 5, failures: 0, generation: 8, lastErrorCode: "DEPENDENCY_FAILURE" });
   });
   it("protects monitoring/recovery and compares executor generation", async () => {
     expect((await contractFetch(`${baseUrl}/api/v2/privacy-deletion-requests`)).status).toBe(403);

@@ -8,7 +8,7 @@ const harness = vi.hoisted(() => ({
 vi.mock("../middleware/requireAdmin", () => ({ requireAdmin: (_req: unknown, _res: unknown, next: () => void) => next() }));
 vi.mock("../services/deviceAssignmentRetirement", () => ({ retireDeviceAssignment: harness.retire }));
 vi.mock("../services/deviceTelemetryService", () => ({
-  authenticateDeviceCredentials: vi.fn(), ingestDeviceTelemetry: vi.fn(), parseDeviceAuthorization: vi.fn(),
+  authenticateDeviceCredentials: vi.fn(), checkDeviceCredentials: vi.fn(), ingestDeviceTelemetry: vi.fn(), parseDeviceAuthorization: vi.fn(),
   publishDeviceCredentialInvalidation: harness.invalidate, recordTelemetryRejection: vi.fn(),
 }));
 vi.mock("../services/deviceDiagnostics", () => ({ ingestDeviceDiagnostics: vi.fn(), parseDeviceDiagnosticsValue: vi.fn() }));
