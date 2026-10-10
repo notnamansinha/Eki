@@ -144,9 +144,10 @@ credential values:
 
 If a boot validation message names `WIFI_SSID`, `WIFI_PASS`, `DEVICE_ID`,
 `DEVICE_SECRET`, `BACKEND_URL`, or `BACKEND_ROOT_CA`, correct that definition in
-the ignored file and rebuild. A 401/403 is a backend registry/credential or
-assignment problem; update the registry and flash the corrected device secret
-when required. A TLS error is a hostname, clock, certificate-chain, or root-CA
+the ignored file and rebuild. A 401 means invalid credentials and latches the
+radio off until restart; a 403 means a valid device awaits an assignment and
+retries after one minute. Repair the backend assignment without reflashing when
+the compiled credentials are correct. A TLS error is a hostname, clock, certificate-chain, or root-CA
 problem; do not bypass certificate validation.
 
 ## Wiring
@@ -236,9 +237,9 @@ done safely while retaining the current Wi-Fi stack.
   strongest-AP fast scan, auto-reconnect, and modem sleep disabled.
 - HTTP 200/202 succeeds. Transport errors, 408/425/429, and 5xx retain the
   newest eligible sample with bounded backoff. Other permanent rejection drops
-  that sample. A 401/403 latches publishing off, disables the station radio,
-  and emits three GPIO2 pulses every two seconds; correction requires updating
-  `secrets.h` and reflashing.
+  that sample. A 401 latches publishing off, disables the station radio, and
+  emits three GPIO2 pulses every two seconds. A 403 keeps Wi-Fi enabled and
+  retries after one minute while waiting for a valid backend assignment.
 - A 25-second watchdog covers both tasks. Authenticated remote diagnostics send
   bounded health state every five minutes while idle and never send credentials.
 - Fleet OTA discovery runs on its own watched task. Installation requires a

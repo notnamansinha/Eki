@@ -8,7 +8,7 @@ import { db } from "../lib/firebaseAdmin";
 import { singleRouteParam } from "../lib/requestParams";
 import { TelemetryExecutionFailure } from "../lib/executionDeadline";
 import {
-  authenticateDeviceCredentials,
+  checkDeviceCredentials,
   ingestDeviceTelemetry,
   parseDeviceAuthorization,
   publishDeviceCredentialInvalidation,
@@ -136,6 +136,8 @@ router.post(
             error: "Telemetry rate limit exceeded.",
             retryAfterMs: result.retryAfterMs,
           });
+        } else if (result.reason === "unassigned") {
+          res.status(403).json({ error: "Device assignment is unavailable." });
         } else {
           res.status(401).json({ error: "Invalid device credentials." });
         }
@@ -178,15 +180,16 @@ router.get(
     }
 
     try {
-      const assignment = await authenticateDeviceCredentials(
+      const credential = await checkDeviceCredentials(
         deviceId,
         secret,
         Date.now(),
       );
-      if (!assignment) {
-        res.status(401).json({ error: "Invalid device credentials." });
+      if (credential.status !== "assigned") {
+        res.status(credential.status === "unassigned" ? 403 : 401).json({ error: credential.status === "unassigned" ? "Device assignment is unavailable." : "Invalid device credentials." });
         return;
       }
+      const assignment = credential.assignment;
 
       const configuration = readFirmwareRelease();
       if (configuration.state === "invalid") {
@@ -236,8 +239,9 @@ router.post(
       return;
     }
     try {
-      const assignment = await authenticateDeviceCredentials(deviceId, secret, Date.now());
-      if (!assignment) { res.status(401).json({ error: "Invalid device credentials." }); return; }
+      const credential = await checkDeviceCredentials(deviceId, secret, Date.now());
+      if (credential.status !== "assigned") { res.status(credential.status === "unassigned" ? 403 : 401).json({ error: credential.status === "unassigned" ? "Device assignment is unavailable." : "Invalid device credentials." }); return; }
+      const assignment = credential.assignment;
       const lockRef = db.collection("_active_bus_locks").doc(assignment.busId);
       const rideRef = db.collection("active_rides").doc(`${assignment.busId}_${assignment.routeId}`);
       const deviceRef = db.collection("devices").doc(deviceId);
@@ -289,8 +293,8 @@ router.post(
         secret,
         parsed.value,
       );
-      if (!accepted) {
-        res.status(401).json({ error: "Invalid device credentials." });
+      if (accepted !== "accepted") {
+        res.status(accepted === "unassigned" ? 403 : 401).json({ error: accepted === "unassigned" ? "Device assignment is unavailable." : "Invalid device credentials." });
         return;
       }
       res.status(202).json({ accepted: true });

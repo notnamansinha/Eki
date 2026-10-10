@@ -70,7 +70,7 @@ export function isPlausibleTelemetryTransition(
 }
 
 function withinTravelEnvelope(previous: TelemetryMotionSample, next: TelemetryMotionSample, elapsedMs: number): boolean {
-  const maximumSpeedKmh = Math.max(previous.speed, next.speed, 0);
+  const maximumSpeedKmh = clamp(Math.max(previous.speed, next.speed, 0), 0, 200);
   const errorBudget = Math.max(
     adaptiveGnssErrorMeters(
       previous.gpsHdop,

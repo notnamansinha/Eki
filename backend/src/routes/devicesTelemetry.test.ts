@@ -5,12 +5,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 type IngestResult =
   | { ok: true; duplicate: boolean }
-  | { ok: false; reason: "credentials" }
+  | { ok: false; reason: "credentials" | "unassigned" }
   | { ok: false; reason: "rate_limit"; retryAfterMs: number };
 
 const harness = vi.hoisted(() => ({
   result: { ok: true, duplicate: false } as IngestResult,
-  diagnosticsAccepted: true,
+  diagnosticsAccepted: "accepted" as "accepted" | "credentials" | "unassigned",
   failure: undefined as Error | undefined,
 }));
 
@@ -38,6 +38,7 @@ vi.mock("../services/telemetryPayload", () => ({
 
 vi.mock("../services/deviceTelemetryService", () => ({
   authenticateDeviceCredentials: async () => null,
+  checkDeviceCredentials: async () => ({ status: "invalid" }),
   ingestDeviceTelemetry: async () => { if (harness.failure) throw harness.failure; return harness.result; },
   invalidateDeviceCredentialCache: () => undefined,
   publishDeviceCredentialInvalidation: async () => undefined,
@@ -82,7 +83,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   harness.result = { ok: true, duplicate: false };
-  harness.diagnosticsAccepted = true;
+  harness.diagnosticsAccepted = "accepted";
   harness.failure = undefined;
 });
 
@@ -182,8 +183,15 @@ describe("device telemetry HTTP responses", () => {
   it("accepts authenticated remote diagnostics and rejects bad credentials", async () => {
     expect((await sendDiagnostics()).status).toBe(202);
 
-    harness.diagnosticsAccepted = false;
+    harness.diagnosticsAccepted = "credentials";
     expect((await sendDiagnostics()).status).toBe(401);
+  });
+
+  it("keeps authenticated but unassigned devices retryable on both ingress paths", async () => {
+    harness.result = { ok: false, reason: "unassigned" };
+    expect((await sendTelemetry()).status).toBe(403);
+    harness.diagnosticsAccepted = "unassigned";
+    expect((await sendDiagnostics()).status).toBe(403);
   });
 
   it("accepts two moving buses behind campus NAT without consuming the entire ingress budget", async () => {

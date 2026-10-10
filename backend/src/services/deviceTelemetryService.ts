@@ -51,12 +51,17 @@ export interface DeviceAssignment {
   assignmentRevision?: number;
 }
 
+export type DeviceCredentialResult =
+  | { status: "invalid" | "unassigned" }
+  | { status: "assigned"; assignment: DeviceAssignment };
+
 export class DeviceCredentialVerificationInvalidatedError extends Error {
   constructor() { super("Device credentials changed during verification; retry with the current registry."); }
 }
 
 interface CredentialCacheEntry {
   assignment: DeviceAssignment | null;
+  unassigned: boolean;
   secretDigest: Buffer | null;
   expiresAt: number;
   expiresMonotonicAt: number;
@@ -113,7 +118,7 @@ export type TelemetryIngestResult =
   | { ok: true; duplicate: boolean }
   | {
       ok: false;
-      reason: "credentials";
+      reason: "credentials" | "unassigned";
     }
   | {
       ok: false;
@@ -122,7 +127,7 @@ export type TelemetryIngestResult =
     };
 
 const credentialCache = new Map<string, CredentialCacheEntry>();
-const credentialFills = createBoundedSingleFlight<DeviceAssignment | null>({
+const credentialFills = createBoundedSingleFlight<DeviceCredentialResult>({
   maxFills: 16, maxWaitersPerFill: 64, responseMs: 5_000,
 });
 const durableRideRestores = new Map<string, Promise<void>>();
@@ -328,11 +333,11 @@ export async function verifyDeviceSecretHash(
   return safeBufferEqual(derived, storedKey) && storedHashIsValid;
 }
 
-export async function authenticateDeviceCredentials(
+export async function checkDeviceCredentials(
   deviceId: string,
   secret: string,
   now: number,
-): Promise<DeviceAssignment | null> {
+): Promise<DeviceCredentialResult> {
   ensureDeviceCredentialInvalidationListener();
   const suppliedDigest = digestSecret(secret);
   const cacheKey = credentialCacheKey(deviceId, suppliedDigest);
@@ -344,9 +349,9 @@ export async function authenticateDeviceCredentials(
       cached.secretDigest &&
       safeBufferEqual(suppliedDigest, cached.secretDigest)
     ) {
-      return cached.assignment;
+      return { status: "assigned", assignment: cached.assignment };
     }
-    return null;
+    return { status: cached.unassigned && cached.secretDigest && safeBufferEqual(suppliedDigest, cached.secretDigest) ? "unassigned" : "invalid" };
   }
 
   credentialCacheMisses += 1;
@@ -371,13 +376,15 @@ export async function authenticateDeviceCredentials(
     const secretMatches = await verifyDeviceSecretHash(secret, device?.secretHash, isCurrent);
     assertCurrent();
     if (!assignment || !secretMatches) {
+      const unassigned = secretMatches && device?.enabled !== false;
       publish({
         assignment: null,
+        unassigned,
         secretDigest: suppliedDigest,
         expiresAt: now + NEGATIVE_CACHE_MS,
         expiresMonotonicAt: fillStartedAt + NEGATIVE_CACHE_MS,
       });
-      return null;
+      return { status: unassigned ? "unassigned" : "invalid" };
     }
 
     const [busDoc, routeDoc] = await Promise.all([
@@ -397,21 +404,28 @@ export async function authenticateDeviceCredentials(
     ) {
       publish({
         assignment: null,
+        unassigned: true,
         secretDigest: suppliedDigest,
         expiresAt: now + NEGATIVE_CACHE_MS,
         expiresMonotonicAt: fillStartedAt + NEGATIVE_CACHE_MS,
       });
-      return null;
+      return { status: "unassigned" };
     }
 
     const published = publish({
       assignment,
+      unassigned: false,
       secretDigest: suppliedDigest,
       expiresAt: now + CREDENTIAL_CACHE_MS,
       expiresMonotonicAt: fillStartedAt + CREDENTIAL_CACHE_MS,
     });
-    return published ? assignment : null;
+    return published ? { status: "assigned", assignment } : { status: "invalid" };
   });
+}
+
+export async function authenticateDeviceCredentials(deviceId: string, secret: string, now: number): Promise<DeviceAssignment | null> {
+  const result = await checkDeviceCredentials(deviceId, secret, now);
+  return result.status === "assigned" ? result.assignment : null;
 }
 
 async function deviceRateLimitRetryAfterMs(
@@ -701,12 +715,13 @@ async function executeDeviceTelemetry(
     return { ok: false, reason: "credentials" };
   }
 
-  const assignment = await deadline.dependency("credentials", () => authenticateDeviceCredentials(deviceId, secret, now));
-  if (!assignment) {
+  const credential = await deadline.dependency("credentials", () => checkDeviceCredentials(deviceId, secret, now));
+  if (credential.status !== "assigned") {
     status.rejected += 1;
     status.lastRejectedAt = new Date(now).toISOString();
-    return { ok: false, reason: "credentials" };
+    return { ok: false, reason: credential.status === "unassigned" ? "unassigned" : "credentials" };
   }
+  const assignment = credential.assignment;
   const retryAfterMs = await deadline.dependency("rate limit", () => deviceRateLimitRetryAfterMs(deviceId, now));
   if (retryAfterMs !== null) {
     status.rejected += 1;

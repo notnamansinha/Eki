@@ -34,8 +34,8 @@ integration("privacy recovery against actual loopback Firestore", () => {
     await runPrivacyDeletionQueue(); await drainPrivacyDeletions(false); expect(state.deleted).toEqual(["z_healthy"]);
     const ref = state.firestore!.collection("_privacy_deletion_requests").doc("poison_00");
     await ref.set({ status: "failed", attempts: 5, failures: 5, generation: 5, lastErrorCode: "DEPENDENCY_FAILURE", lastErrorAt: new Date("2026-01-01"), nextAttemptAt: Date.now() + 60000 }, { merge: true });
-    await requestPrivacyDeletion("poison_00"); expect((await ref.get()).data()).toMatchObject({ status: "failed", attempts: 5, failures: 5, lastErrorCode: "DEPENDENCY_FAILURE" });
-    const page = await listPrivacyDeletions() as any; expect(page.requests).toHaveLength(20); expect(page.nextCursor).toBe("poison_19"); expect(page.requests[0]).toMatchObject({ recoveryRequired: true, lastErrorAt: "2026-01-01T00:00:00.000Z" });
+    await requestPrivacyDeletion("poison_00"); expect((await ref.get()).data()).toMatchObject({ status: "pending", attempts: 5, failures: 0, generation: 6, lastErrorCode: "DEPENDENCY_FAILURE" });
+    const page = await listPrivacyDeletions() as any; expect(page.requests).toHaveLength(20); expect(page.nextCursor).toBe("poison_19"); expect(page.requests[0]).toMatchObject({ recoveryRequired: false, lastErrorAt: "2026-01-01T00:00:00.000Z" });
   }, 30000);
   it("cleans manifests and collection groups through bounded resumable chunks, then retires the account", async () => {
     const uid = "big"; const batch = state.firestore!.batch();

@@ -705,7 +705,17 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, expired, revoked, disabled, or malformed credential.",
+            "description": "Missing, invalid, or disabled device credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated device has no usable assignment; retry after registry repair.",
             "content": {
               "application/json": {
                 "schema": {
@@ -828,7 +838,17 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, expired, revoked, disabled, or malformed credential.",
+            "description": "Missing, invalid, or disabled device credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated device has no usable assignment; retry after registry repair.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1084,7 +1104,17 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, expired, revoked, disabled, or malformed credential.",
+            "description": "Missing, invalid, or disabled device credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated device has no usable assignment; retry after registry repair.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9950,7 +9980,17 @@
             }
           },
           "401": {
-            "description": "Missing, invalid, expired, revoked, disabled, or malformed credential.",
+            "description": "Missing, invalid, or disabled device credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated device has no usable assignment; retry after registry repair.",
             "content": {
               "application/json": {
                 "schema": {

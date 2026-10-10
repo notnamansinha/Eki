@@ -132,7 +132,7 @@ void test_http_response_actions_cover_transport_and_status_families() {
     static_cast<int>(HttpResponseAction::Accept),
     static_cast<int>(httpResponseAction(202))
   );
-  for (const int code : {-11, 408, 425, 429, 500, 503, 599}) {
+  for (const int code : {-11, 403, 408, 425, 429, 500, 503, 599}) {
     TEST_ASSERT_EQUAL_INT(
       static_cast<int>(HttpResponseAction::RetrySample),
       static_cast<int>(httpResponseAction(code))
@@ -144,7 +144,7 @@ void test_http_response_actions_cover_transport_and_status_families() {
       static_cast<int>(httpResponseAction(code))
     );
   }
-  for (const int code : {401, 403}) {
+  for (const int code : {401}) {
     TEST_ASSERT_EQUAL_INT(
       static_cast<int>(HttpResponseAction::HaltCredentials),
       static_cast<int>(httpResponseAction(code))
@@ -162,6 +162,7 @@ void test_retry_after_is_strict_bounded_and_status_aware() {
   TEST_ASSERT_EQUAL_UINT32(120000, minimumHttpRetryDelayMs(429, 120000));
   TEST_ASSERT_EQUAL_UINT32(HTTPS_RETRY_AFTER_MAX_MS, minimumHttpRetryDelayMs(429, 999999));
   TEST_ASSERT_EQUAL_UINT32(0, minimumHttpRetryDelayMs(401));
+  TEST_ASSERT_EQUAL_UINT32(HTTPS_CONFIGURATION_RETRY_MS, minimumHttpRetryDelayMs(403));
   TEST_ASSERT_EQUAL_UINT32(30000, minimumHttpRetryDelayMs(400));
   TEST_ASSERT_EQUAL_UINT32(0, minimumHttpRetryDelayMs(503));
 }

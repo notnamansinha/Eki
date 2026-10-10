@@ -1320,7 +1320,7 @@ void checkForSignedFirmware() {
   http.addHeader("Authorization", authorizationHeader);
   http.addHeader("Cache-Control", "no-store");
   const int responseCode = http.GET();
-  if (responseCode == 401 || responseCode == 403) {
+  if (responseCode == 401) {
     http.end();
     firmwareCredentialRejected = true;
     Serial.println("[OTA] Credential fault latched during release check.");
@@ -1526,8 +1526,10 @@ PublishResult publishFix(const TelemetryFix &fix) {
     );
     if (responseCode == 400 || responseCode == 413 || responseCode == 422) {
       Serial.println("[HTTPS] Check the telemetry payload and GNSS/NTP-disciplined timestamps.");
-    } else if (responseCode == 401 || responseCode == 403) {
+    } else if (responseCode == 401) {
       Serial.println("[HTTPS] Credential fault latched; correct secrets.h and reflash the device.");
+    } else if (responseCode == 403) {
+      Serial.println("[HTTPS] Device assignment unavailable; retrying without disabling Wi-Fi.");
     } else if (policyResponseCode == 408 && responseCode != 408) {
       Serial.println("[HTTPS] Tunnel or upstream is temporarily offline; retrying the latest fix.");
     } else if (responseCode == 404) {
@@ -1693,9 +1695,15 @@ void collectDiagnosticResult() {
   if (xQueueReceive(diagnosticResults, &result, 0) != pdTRUE) return;
   diagnosticInFlight = false;
   const int responseCode = result.status;
-  if (responseCode == 401 || responseCode == 403) {
+  if (responseCode == 401) {
     latchCredentialFault();
     Serial.println("[Diagnostics] Credential fault latched; firmware reflash required.");
+    return;
+  }
+  if (responseCode == 403) {
+    remoteDiagnosticRetryStartedAt = millis();
+    remoteDiagnosticRetryDelayMs = eki::telemetry::HTTPS_CONFIGURATION_RETRY_MS;
+    Serial.println("[Diagnostics] Device assignment unavailable; retrying later.");
     return;
   }
   if (responseCode >= 200 && responseCode < 300) {

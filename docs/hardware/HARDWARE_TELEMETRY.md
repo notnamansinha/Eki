@@ -56,12 +56,13 @@ flowchart LR
     NEWEST --> POST["Certificate-verified HTTPS POST"]
     POST -->|200/202| ACK["Remove acknowledged sequence"]
     POST -->|"transport, 408/425/429, 5xx"| RETRY["Keep queued; bounded backoff"]
-    POST -->|"401/403"| AUTH["Retain sample; latch credential fault"]
+    POST -->|"401"| AUTH["Retain sample; latch credential fault"]
+    POST -->|"403 after 60 s"| RETRY
     POST -->|"other HTTP rejection"| REJECT["Remove rejected sequence"]
     ACK --> NEWEST
     RETRY --> WIFI
     REJECT --> WIFI
-    AUTH --> REFLASH["Wait for corrected firmware reflash"]
+    AUTH --> REFLASH["Wait for corrected credentials and restart"]
   end
 
   QUEUE -. "task notification" .-> NEWEST
@@ -116,7 +117,7 @@ Deterministic UTC conversion/discipline lives in `hardware/include/clock_policy.
 
 ## Payload and HTTP outcomes
 
-The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). Each captured fix includes receiver HDOP so off-route confirmation can reject poor-quality evidence; GNSS fixes above HDOP 4 are already rejected on-device. The device treats only 200/202 as telemetry success. A success removes the acknowledged fix plus older superseded fixes, while preserving any newer fix captured during the request. Transport errors, 408/425/429 and 5xx retain the attempted sample for retry; other permanent HTTP statuses remove only that sample. HTTP 401/403 retains the rejected sample, latches a credential fault, disables the station radio, and requires a corrected firmware reflash so a doomed secret cannot create an infinite loop. Normal freshness eviction still prevents an old retained sample from violating the backend's timestamp contract. HTTP 429 honors the bounded delta-seconds `Retry-After` value. If a newer fix arrives during a retryable request, it becomes the next recovery candidate. Remote diagnostics is a separate best-effort 1 KiB POST containing only bounded counters/state; its failure never evicts or delays a queued fix.
+The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). Each captured fix includes receiver HDOP so off-route confirmation can reject poor-quality evidence; GNSS fixes above HDOP 4 are already rejected on-device. The device treats only 200/202 as telemetry success. A success removes the acknowledged fix plus older superseded fixes, while preserving any newer fix captured during the request. Transport errors, 408/425/429 and 5xx retain the attempted sample for retry; other permanent HTTP statuses remove only that sample. HTTP 401 retains the rejected sample, latches a credential fault and disables the station radio. HTTP 403 means the authenticated device lacks a usable assignment; it keeps Wi-Fi on and retries after 60 seconds. Normal freshness eviction prevents an old retained sample from violating the backend's timestamp contract. HTTP 429 honors the bounded delta-seconds `Retry-After` value. If a newer fix arrives during a retryable request, it becomes the next recovery candidate. Remote diagnostics is a separate best-effort 1 KiB POST containing only bounded counters/state; its failure never evicts or delays a queued fix.
 
 ## Trace evidence and gap classification
 
@@ -141,7 +142,8 @@ Treat a gap as intentional only when `captureSeen=1`, `captureAgeMs` is within t
 | Fleet firmware halts at security gate | Flash encryption or Secure Boot inactive | Quarantine the unit; repeat only the witnessed spare-board procedure, never bypass the gate |
 | Negative HTTPClient/transport failure | DNS/backend unreachable, wrong hostname/CA, expired issuer, bad clock | Use the printed transport string; verify URL chain and NTP; never use insecure mode |
 | HTTP 400 | Firmware/backend contract mismatch or timestamp/range | Compare the deployed schema (nine-field current; eight-field sequenced and six-field legacy compatibility), sequence, and clock |
-| HTTP 401/403 + three LED pulses | ID/secret disabled/mismatched or assignment invalid | Rotate/inspect registry, update `secrets.h`, build a protected artifact, and reflash |
+| HTTP 401 + three LED pulses | ID/secret missing or mismatched, or device disabled | Inspect registry, correct credentials or enable the device, then restart or reflash as required |
+| HTTP 403 | Authenticated device has no usable assignment | Repair bus/route assignment; device retries without a reflash |
 | HTTP 429 | IP/device limiter | Check publish loop/config and WAF limits |
 | HTTP 503/timeouts | Backend/Firebase/network outage | Inspect `/health`; backoff retains the bounded queue |
 | Repeated watchdog reset | HTTP/network stack longer than 25 s or task fault | Inspect reset reason/serial; verify the separate 1 s connect, 1.5 s request/read and 10 s TLS handshake limits |
@@ -171,7 +173,8 @@ Each latency is a rolling in-process 512-sample window with average/p50/p95/p99.
 | Clock | No TLS/invalid timestamp | Fresh GNSS UTC primary; NTP cross-check/fallback; no invalid publish | Validate receiver UTC and NTP paths on target hardware |
 | TLS CA rotation | TLS failure | Fail closed | Controlled physical trust-root reflash before issuer expiry |
 | Signed OTA | Manifest withheld during active ride; candidate pending validation | Idle/stopped local gate, exact size/SHA-256, Secure Boot signature and dual-slot rollback | Prove wrong-key/digest rejection and five-minute rollback on spare boards |
-| Device credential | 401/403, rejected metric, three-pulse LED | Publishing latches off and station radio stops | Rotate registry secret, reflash complete config, verify diagnostics |
+| Device credential | 401, rejected metric, three-pulse LED | Publishing latches off and station radio stops | Repair credentials, restart or reflash as required |
+| Device assignment | 403, rejected metric | Wi-Fi stays on; retry after 60 seconds | Repair backend bus/route assignment |
 | Hardware security | Boot gate and remote diagnostic booleans | Fleet firmware halts unless both protections are active | Witness first boot and retain spare-board evidence |
 | Backend/Firebase | 503/latency metrics | Bounded queue retained; jitter retry | Regional managed runtime/alerts |
 | Process restart | health/worker lease | Durable active ride and reconnect | Runbook/availability deployment |
@@ -183,4 +186,4 @@ The `esp32dev-secure` environment builds a signed Secure Boot V2 image with rele
 
 ## Physical acceptance
 
-Bench compile is necessary but insufficient. Test cold/warm GNSS acquisition, stationary drift, urban multipath, tunnel/covered loss, Wi-Fi loss/recovery, backend outage/recovery, power cycling during active ride, CA/credential rejection, long HTTP failure, every route geofence in order, and final completion. Verify Wi-Fi credentials are never recovered after reflashing a different `secrets.h`, no soft AP or port-80 listener appears during outages, a 401/403 drops STA and latches the three-pulse fault, and only a corrected signed reflash restores publishing. Record p50/p95/p99 display latency, serial reset/failure logs, commit, firmware hash, route/weather and evidence.
+Bench compile is necessary but insufficient. Test cold/warm GNSS acquisition, stationary drift, urban multipath, tunnel/covered loss, Wi-Fi loss/recovery, backend outage/recovery, power cycling during active ride, CA/credential rejection, long HTTP failure, every route geofence in order, and final completion. Verify Wi-Fi credentials are never recovered after reflashing a different `secrets.h`, no soft AP or port-80 listener appears during outages, 401 drops STA and latches the three-pulse fault, and 403 keeps the radio on for assignment repair. Record p50/p95/p99 display latency, serial reset/failure logs, commit, firmware hash, route/weather and evidence.

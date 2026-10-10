@@ -421,7 +421,7 @@ router.put("/drivers/:id", fleetMutation(async (req: Request, res: Response) => 
       // old account retains claims that still match the RTDB assignment mirror.
       await demoteDriverAccount(previousAuthUid);
     }
-    await db.collection("drivers").doc(id).set({ id, name, authUid, assignedBusId });
+    await db.collection("drivers").doc(id).set({ id, name, authUid, assignedBusId }, { merge: true });
     await db.collection("users").doc(authUid).set({ role: "driver" }, { merge: true });
     await applyDriverAuthorization(id, authUid, assignedBusId);
     res.json({ saved: true });

@@ -85,7 +85,7 @@ not a substitute for the physical and institutional acceptance work in the
 - **Repository evidence:** the native suite covers newest-first ordering,
   in-flight retry retention, arbitrary acknowledgement, wraparound,
   oldest-drop overflow, stale compaction and RTC configuration identity. HTTP
-  policy tests cover transport errors, latched 401/403, 429/`Retry-After` and
+  policy tests cover transport errors, latched 401, retryable 403, 429/`Retry-After` and
   5xx. Separate pure policies cover strict GNSS UTC calendar conversion,
   bounded clock discipline, Wi-Fi exponential retry and a three-pulse
   credential-fault LED code. Wi-Fi, device identity/secret, backend origin, and
