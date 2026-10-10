@@ -82,6 +82,7 @@ const releaseVariables = [
   "FIRMWARE_RELEASE_VERSION",
   "FIRMWARE_RELEASE_SEQUENCE",
   "FIRMWARE_RELEASE_URL",
+  "FIRMWARE_RELEASE_ALLOWED_ORIGIN",
   "FIRMWARE_RELEASE_SHA256",
   "FIRMWARE_RELEASE_SIZE",
 ] as const;
@@ -118,6 +119,7 @@ beforeEach(() => {
   process.env.FIRMWARE_RELEASE_VERSION = "s2-gnss-v2";
   process.env.FIRMWARE_RELEASE_SEQUENCE = "2";
   process.env.FIRMWARE_RELEASE_URL = "https://releases.example.edu/firmware.bin";
+  process.env.FIRMWARE_RELEASE_ALLOWED_ORIGIN = "https://releases.example.edu";
   process.env.FIRMWARE_RELEASE_SHA256 = "ab".repeat(32);
   process.env.FIRMWARE_RELEASE_SIZE = "1500000";
 });

@@ -28,6 +28,7 @@ import { ApiError, apiRequest, isApiRecord, acknowledgedField, type ApiRequestOp
 import CustomSelect from "@/components/ui/CustomSelect";
 import MessagingPanel from "@/components/shared/MessagingPanel";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
+import TrafficLayer from "@/components/maps/TrafficLayer";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { useTelemetryRenderTrace } from "@/hooks/useTelemetryRenderTrace";
 import { useLiveBusMarkerPosition } from "@/hooks/useLiveBusMarkerPosition";
@@ -644,20 +645,6 @@ export default function DashboardPanel() {
   }, []);
 
   // â”€â”€ Traffic layer rendered imperatively â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const TrafficLayer = () => {
-    const map = useMap();
-    const layerRef = useRef<google.maps.TrafficLayer | null>(null);
-
-    useEffect(() => {
-      if (!map) return;
-      layerRef.current = new google.maps.TrafficLayer();
-      layerRef.current.setMap(map);
-      return () => { layerRef.current?.setMap(null); };
-    }, [map]);
-
-    return null;
-  };
-
   const inService = countActiveServices(activeEntries, "in_service");
   const awaitingStart = countActiveServices(activeEntries, "pre_departure");
   const directionPending = new Set(

@@ -5,6 +5,7 @@ import {
   Map as GoogleMap, AdvancedMarker, useMap, type MapMouseEvent as VisMapMouseEvent,
 } from "@vis.gl/react-google-maps";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
+import TrafficLayer from "@/components/maps/TrafficLayer";
 import { useRoutes, RouteData, RouteStop } from "@/hooks/useRoutes";
 import { auth } from "@/lib/firebaseAuth";
 import {
@@ -313,21 +314,6 @@ function RouteEditor({
   const [routeIdEdited, setRouteIdEdited] = useState(Boolean(initial.routeId));
   const saveOperationRef = useRef<{ payload: string; saveId: string } | null>(null);
   const editorId = useId();
-
-  // ── Traffic layer rendered imperatively ──────────────────────────────────
-  const TrafficLayer = () => {
-    const map = useMap();
-    const layerRef = useRef<google.maps.TrafficLayer | null>(null);
-
-    useEffect(() => {
-      if (!map) return;
-      layerRef.current = new google.maps.TrafficLayer();
-      layerRef.current.setMap(map);
-      return () => { layerRef.current?.setMap(null); };
-    }, [map]);
-
-    return null;
-  };
 
   const setField = <K extends keyof EditorState>(k: K, v: EditorState[K]) =>
     setState(s => ({ ...s, [k]: v }));

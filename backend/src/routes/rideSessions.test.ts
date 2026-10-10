@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   sequence: 0,
   transactionTail: Promise.resolve() as Promise<unknown>,
   beforeLiveWrite: null as (() => void) | null,
+  beforeTransactionRead: null as (() => void) | null,
   afterLiveWrite: null as (() => void) | null,
   failProjectionOnce: false,
   batchSizes: [] as number[],
@@ -63,7 +64,10 @@ vi.mock("../lib/firebaseAdmin", () => {
     const set = (document: Ref, data: Record<string, unknown>, options?: { merge?: boolean }) => {
       pending.push(() => state.docs.set(document.path, options?.merge ? { ...state.docs.get(document.path), ...data } : data));
     };
-    return { get: async (document: Ref) => snapshot(document.path),
+    return { get: async (document: Ref) => {
+      state.beforeTransactionRead?.(); state.beforeTransactionRead = null;
+      return snapshot(document.path);
+    },
       set, update: (document: Ref, data: Record<string, unknown>) => set(document, data, { merge: true }),
       create: (document: Ref, data: Record<string, unknown>) => {
         if (state.docs.has(document.path)) throw new Error("Already exists");
@@ -118,7 +122,8 @@ beforeAll(async () => {
 afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 beforeEach(() => {
   state.docs.clear(); state.sequence = 0; state.transactionTail = Promise.resolve();
-  state.beforeLiveWrite = null; state.afterLiveWrite = null; state.failProjectionOnce = false; state.batchSizes = [];
+  state.beforeLiveWrite = null; state.beforeTransactionRead = null; state.afterLiveWrite = null;
+  state.failProjectionOnce = false; state.batchSizes = [];
   state.user = { uid: "driver_uid", role: "driver", driverId: "driver_1", assignedBusId: "bus_1" };
   state.docs.set("drivers/driver_1", { authUid: "driver_uid", assignedBusId: "bus_1" });
   state.docs.set("buses/bus_1", { assignedRoutes: ["route_1", "route_2"] });
@@ -261,6 +266,31 @@ describe("versioned session identity and lifecycle", () => {
     state.user = { uid: "driver_uid", role: "driver", driverId: "driver_1", assignedBusId: "bus_1" };
     end(); expect((await code()).status).toBe(403);
     expect(state.live).not.toHaveProperty("boardingCode");
+  });
+  it("rejects a wrong boarding code and a code rotated before the transaction", async () => {
+    const { sessionId } = await (await start()).json();
+    state.docs.set(`ride_sessions/${sessionId}`, {
+      ...state.docs.get(`ride_sessions/${sessionId}`),
+      status: "active", direction: "forward", boardingCode: "ABZ2349H",
+    });
+    state.live = { ...state.live, sessionId, busId: "bus_1", routeId: "route_1",
+      status: "active", tripState: "in_service", timestamp: Date.now() };
+    state.user = { uid: "passenger", role: "passenger" };
+    const body = { boardingCode: "ABZ2349H", lat: 23, lng: 72.5, accuracy: 5,
+      boardingStopId: "stop_1", alightingStopId: "stop_2" };
+    const board = (override = {}) => contractFetch(`${base}/api/sessions/${sessionId}/join`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, ...override }),
+    });
+    expect((await board({ boardingCode: "ABZ2349J" })).status).toBe(403);
+    expect(state.docs.get(`ride_sessions/${sessionId}`)?.passengers).toEqual({});
+    state.beforeTransactionRead = () => {
+      state.docs.set(`ride_sessions/${sessionId}`, {
+        ...state.docs.get(`ride_sessions/${sessionId}`), boardingCode: "ABZ2349J",
+      });
+    };
+    expect((await board()).status).toBe(409);
+    expect(state.docs.get(`ride_sessions/${sessionId}`)?.passengers).toEqual({});
   });
   it("guards live history, bounds message cleanup and retains key tombstones", async () => {
     const { sessionId } = await (await start()).json();

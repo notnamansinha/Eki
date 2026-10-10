@@ -104,7 +104,7 @@ them in the managed container/runtime using [CONFIGURATION.md](../CONFIGURATION.
 prefer Workload Identity/ADC, and keep `FIREBASE_SERVICE_ACCOUNT` out of the
 repository. Production must set exact `CORS_ORIGIN`, `FIREBASE_DATABASE_URL`,
 server Maps configuration, worker settings, rate-limit shard factor and
-approved retention values. Signed device releases additionally require all five
+approved retention values. Signed device releases additionally require all six
 `FIRMWARE_RELEASE_*` values from the controlled hardware release procedure.
 
 ## Release sequence
@@ -137,7 +137,7 @@ approved retention values. Signed device releases additionally require all five
   prepare a corrected device-specific protected image, and reflash under the
   witnessed hardware procedure. Never place a replacement secret in an issue
   or deployment log.
-- Firmware: stop distribution by unsetting all five `FIRMWARE_RELEASE_*`
+- Firmware: stop distribution by unsetting all six `FIRMWARE_RELEASE_*`
   values. Healthy candidates self-confirm after backend acceptance; unhealthy
   candidates remain pending and bootloader rollback restores the prior slot.
   Never publish an older sequence as a downgrade mechanism.

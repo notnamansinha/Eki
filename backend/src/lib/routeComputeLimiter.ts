@@ -6,7 +6,7 @@ import { shardedLimit } from "./rateLimitShard";
 export function createRouteComputeLimiter(shardFactor: number) {
   return rateLimit({
     windowMs: 60_000,
-    max: shardedLimit(10, shardFactor),
+    limit: shardedLimit(10, shardFactor),
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: verifiedUserKeyGenerator,

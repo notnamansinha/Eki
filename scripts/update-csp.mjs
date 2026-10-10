@@ -37,10 +37,9 @@ if (!csp) throw new Error("Global Content-Security-Policy header not found.");
 const backendOrigin = backendOriginFromUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
 // RTDB's long-poll fallback loads /.lp through script elements, so connect-src
 // alone does not allow it. Production builds use the configured instance.
-const databaseHostname = parseRtdbInstanceUrl(
-  process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ||
-    "https://bustrack-be165-default-rtdb.firebaseio.com",
-).hostname;
+const databaseHostname = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL
+  ? parseRtdbInstanceUrl(process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL).hostname
+  : null;
 
 const sources = [
   "'self'",
@@ -49,7 +48,7 @@ const sources = [
   "https://www.gstatic.com",
   "https://www.google.com",
   "https://maps.googleapis.com",
-  `https://${databaseHostname}`,
+  ...(databaseHostname ? [`https://${databaseHostname}`] : []),
 ].join(" ");
 csp.value = csp.value.replace(/script-src [^;]+;/, `script-src ${sources};`);
 const connectSources = [

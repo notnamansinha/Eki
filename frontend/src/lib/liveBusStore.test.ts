@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BUS_EXPIRY_MS } from "./liveBusFreshness";
 import {
+  ACTIVE_RIDE_RETENTION_MS,
   millisecondsUntilNextPrune,
   pruneExpiredLiveBuses,
   type LiveBusSnapshot,
@@ -81,7 +82,24 @@ describe("live bus snapshot expiry", () => {
     expect(millisecondsUntilNextPrune(snapshot, now)).toBe(
       BUS_EXPIRY_MS - olderFreshAgeMs,
     );
-    expect(millisecondsUntilNextPrune({ active: snapshot.active }, now)).toBeNull();
+    expect(millisecondsUntilNextPrune({ active: snapshot.active }, now)).toBe(
+      ACTIVE_RIDE_RETENTION_MS - BUS_EXPIRY_MS,
+    );
+  });
+
+  it("expires an orphaned active ride at its bounded retention deadline", () => {
+    const active = {
+      timestamp: now - BUS_EXPIRY_MS,
+      status: "active",
+      sessionId: "session_1",
+      tripState: "in_service",
+    };
+    const deadline = now + ACTIVE_RIDE_RETENTION_MS - BUS_EXPIRY_MS;
+    expect(pruneExpiredLiveBuses({ active }, deadline - 1)).toEqual({ active });
+    expect(millisecondsUntilNextPrune({ active }, deadline - 1)).toBe(1);
+    expect(pruneExpiredLiveBuses({ active }, deadline)).toEqual({});
+    expect(millisecondsUntilNextPrune({ active }, deadline)).toBe(0);
+    expect(pruneExpiredLiveBuses({ active: { ...active, timestamp: undefined } }, now)).toEqual({});
   });
 
   it("prunes malformed inactive entries without polling", () => {

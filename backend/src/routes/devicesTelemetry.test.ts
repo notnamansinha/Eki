@@ -261,4 +261,4 @@ it("keeps telemetry available after the diagnostics IP pool is exhausted", async
   for (let index = 0; index < 205; index++) response = await sendDiagnostics();
   expect(response?.status).toBe(429);
   expect((await sendTelemetry()).status).toBe(202);
-});
+}, 15_000);

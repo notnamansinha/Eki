@@ -94,7 +94,7 @@ local professor demonstration.
   environment, protect/delete plaintext `secrets.h` and unencrypted artifacts,
   and demonstrate independent signed-reflash secret rotation, revocation, and
   lost-device disablement.
-- [ ] Configure immutable HTTPS signed-firmware hosting and all five backend
+- [ ] Configure immutable HTTPS signed-firmware hosting and all six backend
   release fields; prove active-ride withholding, wrong-key/digest rejection,
   healthy confirmation and five-minute automatic rollback on spare boards.
 
