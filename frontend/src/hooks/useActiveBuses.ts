@@ -19,6 +19,8 @@ export interface UseActiveBusesOptions {
   connectionGeneration?: number;
   resumeGeneration?: number;
   markSnapshotReceived?: () => void;
+  onReadError?: () => void;
+  onReadRecovered?: () => void;
 }
 
 /**
@@ -27,7 +29,8 @@ export interface UseActiveBusesOptions {
  * which buses are active.
  */
 export function useActiveBuses(options: UseActiveBusesOptions = {}): ActiveBusEntry[] {
-  const { connectionGeneration, resumeGeneration, markSnapshotReceived } = options;
+  const { connectionGeneration, resumeGeneration, markSnapshotReceived,
+    onReadError, onReadRecovered } = options;
   const [active, setActive] = useState<ActiveBusEntry[]>([]);
   const activeByKeyRef = useRef(new Map<string, ActiveBusEntry>());
 
@@ -36,6 +39,7 @@ export function useActiveBuses(options: UseActiveBusesOptions = {}): ActiveBusEn
       (change) => {
         if (isAuthoritativeLiveBusDelivery(change.source)) {
           markSnapshotReceived?.();
+          onReadRecovered?.();
         }
         if (change.type === "reset") {
           activeByKeyRef.current = new Map(
@@ -54,13 +58,14 @@ export function useActiveBuses(options: UseActiveBusesOptions = {}): ActiveBusEn
       },
       (error) => {
         console.warn("[RTDB] activeBuses read failed:", error.message);
+        onReadError?.();
       },
     );
     return () => {
       unsubscribe();
       activeByKeyRef.current.clear();
     };
-  }, [connectionGeneration, resumeGeneration, markSnapshotReceived]);
+  }, [connectionGeneration, resumeGeneration, markSnapshotReceived, onReadError, onReadRecovered]);
 
   return active;
 }

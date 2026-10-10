@@ -79,6 +79,27 @@ describe("computeRouteGeometry", () => {
     });
   });
 
+  it("rejects invalid coordinates before calling Google", async () => {
+    const request = vi.fn();
+    vi.stubGlobal("fetch", request);
+    await expect(computeRouteGeometry(
+      { lat: Number.NaN, lng: 72 }, { lat: 23, lng: 72 },
+    )).rejects.toThrow(RangeError);
+    await expect(computeRouteGeometry(
+      { lat: 23, lng: 72 }, { lat: 23, lng: 72 }, [{ lat: 91, lng: 1 }],
+    )).rejects.toThrow(RangeError);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("preserves upstream HTTP status when its error body is not JSON", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: false, status: 503, json: async () => { throw new SyntaxError("not JSON"); },
+    })));
+    await expect(computeRouteGeometry(
+      { lat: 23, lng: 72 }, { lat: 23.1, lng: 72.1 },
+    )).rejects.toThrow("Google Routes request failed (HTTP 503).");
+  });
+
   it("clears the timeout after a successful response", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn(async () => fetchResponse(validRouteResponse)));

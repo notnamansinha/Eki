@@ -36,6 +36,14 @@ export async function computeRouteGeometry(
   intermediates: LatLng[] = [],
   options: RouteGeometryOptions = {},
 ): Promise<RouteGeometry> {
+  const validPoint = (point: LatLng) =>
+    point !== null && typeof point === "object" &&
+    Number.isFinite(point.lat) && point.lat >= -90 && point.lat <= 90 &&
+    Number.isFinite(point.lng) && point.lng >= -180 && point.lng <= 180;
+  if (!validPoint(origin) || !validPoint(destination) ||
+      !Array.isArray(intermediates) || !intermediates.every(validPoint)) {
+    throw new RangeError("Route waypoints must have valid latitude and longitude.");
+  }
   if (intermediates.length > 25) {
     const geometry = await computeOrderedRouteGeometry([origin, ...intermediates, destination], async (chunk) => {
       const result = await computeRouteGeometry(chunk[0], chunk[chunk.length - 1], chunk.slice(1, -1), options);
@@ -102,8 +110,9 @@ export async function computeRouteGeometry(
     });
 
     if (!response.ok) {
-      const errorData = (await response.json()) as any;
-      throw new Error(errorData.error?.message || "Failed to compute route via Routes API v2");
+      // Upstream error bodies are not guaranteed to be JSON. Keep the status
+      // visible without letting a parse error hide the actual HTTP failure.
+      throw new Error(`Google Routes request failed (HTTP ${response.status}).`);
     }
 
     const data = (await response.json()) as any;

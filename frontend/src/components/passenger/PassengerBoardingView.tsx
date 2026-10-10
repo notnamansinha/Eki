@@ -142,7 +142,7 @@ export default function PassengerBoardingView({
       setJoinError("Sign in is required to board.");
       return;
     }
-    if (!boardingStopId || !alightingStopId || boardingCode.length !== 8) {
+    if (!boardingStopId || !alightingStopId || boardingStopId === alightingStopId || boardingCode.length !== 8) {
       setJoinState("error");
       setJoinError("Choose boarding and destination stations, then enter the 8-character code from the driver.");
       return;
@@ -230,6 +230,10 @@ export default function PassengerBoardingView({
         disabled={joinState === "joining"}
         onChange={(value) => {
           setBoardingStopId(value);
+          if (value === alightingStopId) {
+            setAlightingStopId("");
+            onDestinationStopChange?.("");
+          }
           selectionChanged();
         }}
         options={[{ value: "", label: "Boarding..." }, ...stopOptions]}
@@ -246,7 +250,8 @@ export default function PassengerBoardingView({
           onDestinationStopChange?.(value);
           selectionChanged();
         }}
-        options={[{ value: "", label: "Choose destination station..." }, ...stopOptions]}
+        options={[{ value: "", label: "Choose destination station..." },
+          ...stopOptions.filter((stop) => stop.value !== boardingStopId)]}
         style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
       />
       <div className="flex gap-2">
@@ -268,7 +273,8 @@ export default function PassengerBoardingView({
         <button
           type="button"
           onClick={() => void joinRide()}
-          disabled={joinState === "joining" || !boardingStopId || !alightingStopId || boardingCode.length !== 8}
+          disabled={joinState === "joining" || !boardingStopId || !alightingStopId ||
+            boardingStopId === alightingStopId || boardingCode.length !== 8}
           className="rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-50"
           style={{ background: "var(--status-live)", color: "var(--surface-0)" }}
         >

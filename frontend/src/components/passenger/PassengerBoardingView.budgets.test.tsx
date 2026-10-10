@@ -15,6 +15,7 @@ vi.mock("@/components/ui/InAppSelect", () => ({ default: ({ ariaLabel, value, on
 const route: RouteData = { id: "qa-route", name: "QA route", color: "#3B82F6", waypoints: [], stops: [
   { id: "alpha", name: "Alpha", shortName: "A", lat: 23, lng: 72 },
   { id: "beta", name: "Beta", shortName: "B", lat: 23.01, lng: 72.01 },
+  { id: "gamma", name: "Gamma", shortName: "C", lat: 23.02, lng: 72.02 },
 ] };
 type GPS = { success: PositionCallback; failure: PositionErrorCallback };
 let callbacks: GPS[];
@@ -132,7 +133,7 @@ describe("boarding preparation and API budgets", () => {
 
   it("allows an existing passenger's stop correction without GPS and requires GPS in a different session", async () => {
     const fetchMock = delayedFetch(1); const view = prepare(); view.board(); act(() => fix()); await flush(); await advance(1);
-    fireEvent.change(screen.getByLabelText("Destination station"), { target: { value: "alpha" } }); view.board();
+    fireEvent.change(screen.getByLabelText("Destination station"), { target: { value: "gamma" } }); view.board();
     await flush(); await advance(1); expect(gps).toHaveBeenCalledOnce();
     expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).not.toHaveProperty("lat");
     view.rerender(<PassengerBoardingView sessionId="qa-next-session" route={route} tripState="in_service" onJoined={view.joined} />);

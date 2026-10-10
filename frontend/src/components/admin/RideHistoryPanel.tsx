@@ -164,6 +164,7 @@ export default function RideHistoryPanel() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteStates, setDeleteStates] = useState<Record<string, RideHistoryDeletionState>>({});
   const [deleteErrors, setDeleteErrors] = useState<Record<string, string>>({});
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
   const deletionInFlight = useRef(new Set<string>());
   const historyHeadingRef = useRef<HTMLHeadingElement>(null);
 
@@ -192,6 +193,7 @@ export default function RideHistoryPanel() {
   };
 
   const openDeleteConfirmation = (sessionId: string) => {
+    setDeleteNotice(null);
     updateDeleteState(sessionId, "open");
     setDeleteErrors((current) => {
       const next = { ...current };
@@ -221,6 +223,7 @@ export default function RideHistoryPanel() {
     try {
       await deleteRideHistoryRequest(sessionId);
       updateDeleteState(sessionId, "success");
+      setDeleteNotice("Ride history deleted.");
       setExpandedId(null);
     } catch (error) {
       updateDeleteState(sessionId, "failure");
@@ -268,6 +271,7 @@ export default function RideHistoryPanel() {
   return (
     <div className="mx-auto w-full max-w-4xl space-y-4 p-4 animate-slide-up sm:p-6">
       <h2 ref={historyHeadingRef} tabIndex={-1} className="mb-4 text-balance text-xl font-bold text-white">Ride History</h2>
+      {deleteNotice && <p role="status" className="text-sm text-emerald-300">{deleteNotice}</p>}
       {sessions.length === 0 ? (
         <div className="py-10 text-center text-sm text-white/50">
           No rides recorded yet.

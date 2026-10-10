@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
@@ -70,7 +70,10 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   } = useBuses();
   const { drivers, loading: driversLoading, error: driversError, retry: retryDrivers } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
-  const activeEntries = useActiveBuses();
+  const [liveReadFailed, setLiveReadFailed] = useState(false);
+  const onLiveReadError = useCallback(() => setLiveReadFailed(true), []);
+  const onLiveReadRecovered = useCallback(() => setLiveReadFailed(false), []);
+  const activeEntries = useActiveBuses({ onReadError: onLiveReadError, onReadRecovered: onLiveReadRecovered });
   const [, setFreshnessNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -96,6 +99,15 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
 
   // ── Error state ──────────────────────────────────────────────────────────
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const runSave = async (work: () => Promise<void>) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try { await work(); }
+    finally { savingRef.current = false; setSaving(false); }
+  };
 
   // ── Modal confirmation states ──────────────────────────────────────────────
   const [confirmDeleteBusId, setConfirmDeleteBusId] = useState<string | null>(null);
@@ -145,11 +157,12 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
       return;
     }
     try {
-      await fleetRequest(`/buses/${encodeURIComponent(newBusId.trim())}`, "PUT", {
-        name: newBusName.trim(),
-        assignedRoutes: newBusRoutes,
+      await runSave(async () => {
+        await fleetRequest(`/buses/${encodeURIComponent(newBusId.trim())}`, "PUT", {
+          name: newBusName.trim(), assignedRoutes: newBusRoutes,
+        });
+        setNewBusId(""); setNewBusName(""); setNewBusRoutes([]);
       });
-      setNewBusId(""); setNewBusName(""); setNewBusRoutes([]);
     } catch (error: unknown) { setErrorMsg("Failed to add Vehicle: " + errorMessage(error)); }
   };
 
@@ -185,11 +198,12 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
       return;
     }
     try {
-      await fleetRequest(`/buses/${encodeURIComponent(id)}`, "PUT", {
-        name: editBusName.trim(),
-        assignedRoutes: editBusRoutes,
+      await runSave(async () => {
+        await fleetRequest(`/buses/${encodeURIComponent(id)}`, "PUT", {
+          name: editBusName.trim(), assignedRoutes: editBusRoutes,
+        });
+        setEditingBusId(null);
       });
-      setEditingBusId(null);
     } catch (error: unknown) { setErrorMsg("Failed to update Vehicle: " + errorMessage(error)); }
   };
 
@@ -202,12 +216,12 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
     }
     const authUid = newDriverAuthUid.trim();
     try {
-      await fleetRequest(`/drivers/${encodeURIComponent(newDriverId.trim())}`, "PUT", {
-        name: newDriverName.trim(),
-        authUid,
-        assignedBusId: newDriverBusId || null,
+      await runSave(async () => {
+        await fleetRequest(`/drivers/${encodeURIComponent(newDriverId.trim())}`, "PUT", {
+          name: newDriverName.trim(), authUid, assignedBusId: newDriverBusId || null,
+        });
+        setNewDriverId(""); setNewDriverName(""); setNewDriverAuthUid(""); setNewDriverBusId("");
       });
-      setNewDriverId(""); setNewDriverName(""); setNewDriverAuthUid(""); setNewDriverBusId("");
     } catch (error: unknown) { setErrorMsg("Failed to add Operator: " + errorMessage(error)); }
   };
 
@@ -245,12 +259,12 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
     }
     const authUid = editDriverAuthUid.trim();
     try {
-      await fleetRequest(`/drivers/${encodeURIComponent(id)}`, "PUT", {
-        name: editDriverName.trim(),
-        authUid,
-        assignedBusId: editDriverBusId || null,
+      await runSave(async () => {
+        await fleetRequest(`/drivers/${encodeURIComponent(id)}`, "PUT", {
+          name: editDriverName.trim(), authUid, assignedBusId: editDriverBusId || null,
+        });
+        setEditingDriverId(null);
       });
-      setEditingDriverId(null);
     } catch (error: unknown) { setErrorMsg("Failed to update Operator: " + errorMessage(error)); }
   };
 
@@ -286,6 +300,8 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-5 p-3 md:p-6 animate-slide-up">
+
+      {liveReadFailed && <ErrorBanner message="Live vehicle updates are unavailable. Check your connection and reload to retry." onDismiss={() => setLiveReadFailed(false)} />}
 
       {/* â”€â”€ Global error banner â”€â”€ */}
       {errorMsg && (
@@ -361,9 +377,10 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
             <button
               onClick={handleAddBus}
               aria-label="Add new vehicle"
+              disabled={saving}
               className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-[11px] tracking-widest px-4"
             >
-              <Plus className="w-4 h-4" /> Add Vehicle
+              <Plus className="w-4 h-4" /> {saving ? "Saving…" : "Add Vehicle"}
             </button>
           </div>
 
@@ -486,9 +503,10 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                             <button
                               onClick={() => handleSaveBus(bus.id)}
                               aria-label="Save vehicle changes"
+                              disabled={saving}
                               className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-[11px] tracking-widest px-4"
                             >
-                              <Check className="w-4 h-4" /> Save Changes
+                              <Check className="w-4 h-4" /> {saving ? "Saving…" : "Save Changes"}
                             </button>
                           </div>
                         )}
@@ -551,9 +569,10 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
             <button
               onClick={handleAddDriver}
               aria-label="Add new operator"
+              disabled={saving}
               className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-[11px] tracking-widest px-4"
             >
-              <Plus className="w-4 h-4" /> Add Operator
+              <Plus className="w-4 h-4" /> {saving ? "Saving…" : "Add Operator"}
             </button>
           </div>
 
@@ -676,9 +695,10 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                             <button
                               onClick={() => handleSaveDriver(driver.id)}
                               aria-label="Save operator changes"
+                              disabled={saving}
                               className="h-11 bg-blue-500 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
                             >
-                              <Check className="w-4 h-4" /> Save Changes
+                              <Check className="w-4 h-4" /> {saving ? "Saving…" : "Save Changes"}
                             </button>
                           </div>
                         )}

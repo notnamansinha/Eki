@@ -51,6 +51,7 @@ describe("ride-history controls", () => {
     await user.keyboard("{Escape}"); expect(screen.getByRole("dialog")).toBeTruthy();
     await act(async () => resolve(new Response('{"deleted":true}', { status: 200 })));
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("status").textContent).toBe("Ride history deleted.");
     expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Ride History" }));
   });
   it("keeps the record and error available after a failed delete", async () => {

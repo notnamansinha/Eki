@@ -196,6 +196,7 @@ function PassengerMapInner({
 
   const [passengerLocation, setPassengerLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [geolocationNotice, setGeolocationNotice] = useState<string | null>(null);
+  const [liveReadFailed, setLiveReadFailed] = useState(false);
   const [isCentered, setIsCentered] = useState(true);
   const [focusBus, setFocusBus] = useState(false);
   const arrivalTimestampsRef = useRef<Record<string, number>>({});
@@ -287,6 +288,7 @@ function PassengerMapInner({
   // ── RTDB subscription: filtered by routeId ───────────────────────────────
   useEffect(() => {
     const unsubscribe = subscribeLiveBusesByRoute(route.id, (snapshot) => {
+        setLiveReadFailed(false);
         const allData = snapshot as Record<string, unknown> | null;
         const now = Date.now();
         const currentRoute = routeRef.current;
@@ -401,6 +403,7 @@ function PassengerMapInner({
           ? lastStopIndexRef.current[firstEntry.busId] ?? 0 : undefined);
       }, (error) => {
         console.warn("[RTDB] activeBuses read failed:", error.message);
+        setLiveReadFailed(true);
       });
 
     return () => {
@@ -558,13 +561,19 @@ function PassengerMapInner({
 
   return (
     <>
+      {liveReadFailed && (
+        <div className="absolute top-10 left-4 right-4 z-50 rounded-xl px-4 py-2.5 text-[12px] font-semibold"
+          style={{ background: "var(--status-warning-bg)", color: "var(--status-warning)" }} role="alert">
+          Live bus updates are unavailable. Check your connection and reload to retry.
+        </div>
+      )}
       {preview && buses.size === 0 && (
         <div className="absolute top-[190px] left-4 right-4 z-40 rounded-xl bg-zinc-950/90 p-3 text-sm" role="status">
           Waiting for a valid GPS fix. The configured route remains available.
         </div>
       )}
       {/* ── Signal Lost Banner ── */}
-      {signalLostBuses.length > 0 && (
+      {!liveReadFailed && signalLostBuses.length > 0 && (
         <div className="absolute top-10 left-4 right-4 z-50 animate-slide-down" role="status" aria-live="polite">
           <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[12px] font-semibold"
             style={{ 
@@ -582,7 +591,7 @@ function PassengerMapInner({
           </div>
         </div>
       )}
-      {rerouteNotice && signalLostBuses.length === 0 && (
+      {!liveReadFailed && rerouteNotice && signalLostBuses.length === 0 && (
         <div className="absolute top-10 left-4 right-4 z-50" role="status">
           <div
             className="flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-[12px] font-semibold"
@@ -597,7 +606,7 @@ function PassengerMapInner({
           </div>
         </div>
       )}
-      {geolocationNotice && signalLostBuses.length === 0 && !rerouteNotice && (
+      {!liveReadFailed && geolocationNotice && signalLostBuses.length === 0 && !rerouteNotice && (
         <div className="absolute top-10 left-4 right-4 z-50" role="status">
           <div
             className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[12px] font-semibold"

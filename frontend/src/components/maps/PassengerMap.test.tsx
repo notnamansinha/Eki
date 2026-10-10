@@ -10,6 +10,7 @@ import { SIGNAL_LOST_MS } from "@/lib/liveBusFreshness";
 import { route, fixtureBus } from "../../../../e2e/fixtures/state";
 const state = vi.hoisted(() => ({
   geometries: new Map(), snapshot: {} as Record<string, unknown>, listener: undefined as undefined | ((value: Record<string, unknown>) => void),
+  onReadError: undefined as undefined | ((error: Error) => void),
   unsubscribe: vi.fn(), arrivals: vi.fn(), panTo: vi.fn(), setZoom: vi.fn(), fitBounds: vi.fn(),
   markerRenders: new Map<string, number>(),
 }));
@@ -23,8 +24,8 @@ vi.mock("@vis.gl/react-google-maps", () => ({
   },
   useMap: () => map,
 }));
-vi.mock("@/lib/liveBusStore", () => ({ subscribeLiveBusesByRoute: (_routeId: string, listener: typeof state.listener) => {
-  state.listener = listener; listener?.(state.snapshot); return state.unsubscribe;
+vi.mock("@/lib/liveBusStore", () => ({ subscribeLiveBusesByRoute: (_routeId: string, listener: typeof state.listener, onReadError?: typeof state.onReadError) => {
+  state.listener = listener; state.onReadError = onReadError; listener?.(state.snapshot); return state.unsubscribe;
 } }));
 vi.mock("@/components/maps/DirectionsRoute", () => ({ default: () => <div>Configured road geometry</div> }));
 vi.mock("@/hooks/useDynamicRouteGeometries", () => ({ useDynamicRouteGeometries: () => state.geometries }));
@@ -35,7 +36,7 @@ vi.mock("@/lib/busEta", async (importOriginal) => ({
   busStopArrivalTimestamps: state.arrivals,
 }));
 beforeEach(() => {
-  vi.clearAllMocks(); state.listener = undefined;
+  vi.clearAllMocks(); state.listener = undefined; state.onReadError = undefined;
   state.markerRenders.clear();
   state.snapshot = { bus: fixtureBus("forward") };
   state.arrivals.mockReturnValue({ b: Date.now() + 60_000 });
@@ -43,6 +44,13 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 const directed = { ...routeInRideDirection(route, "forward"), polyline: "_ekkC_omvLo}@o}@", polylineQuality: "HIGH_QUALITY" as const };
 describe("passenger map device and ride contexts", () => {
+  it("shows a live-data failure and clears it after a recovered snapshot", () => {
+    render(<PassengerMap route={directed} targetStop={route.stops[1]} />);
+    act(() => state.onReadError?.(new Error("permission denied")));
+    expect(screen.getByRole("alert").textContent).toContain("Live bus updates are unavailable");
+    act(() => state.listener?.(state.snapshot));
+    expect(screen.queryByText(/Live bus updates are unavailable/)).toBeNull();
+  });
   it("does not render an unchanged bus marker on another bus's tick", () => {
     const first = fixtureBus("forward");
     const second = { ...fixtureBus("forward", "qa-session-2", "qa-bus-2"), lat: 23.005, lng: 72.005 };

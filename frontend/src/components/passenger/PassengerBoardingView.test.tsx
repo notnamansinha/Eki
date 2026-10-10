@@ -29,6 +29,20 @@ async function prepare() {
   return { user, joined };
 }
 describe("passenger boarding workflow", () => {
+  it("keeps boarding and destination stops distinct", async () => {
+    const user = userEvent.setup();
+    render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" />);
+    await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
+    await user.click(screen.getByRole("option", { name: "Alpha" }));
+    await user.click(screen.getByRole("combobox", { name: "Destination station" }));
+    expect(screen.queryByRole("option", { name: "Alpha" })).toBeNull();
+    await user.click(screen.getByRole("option", { name: "Beta" }));
+    await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
+    await user.click(screen.getByRole("option", { name: "Beta" }));
+    expect(screen.getByRole("combobox", { name: "Destination station" }).textContent)
+      .toContain("Choose destination station");
+    expect(screen.getByRole("button", { name: "Board" })).toHaveProperty("disabled", true);
+  });
   it("shows verified restored choices without replaying boarding or caching a code", async () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
     const { rerender } = render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" restoredBoarding={{ boardingStopId: "alpha", alightingStopId: "beta" }} />);

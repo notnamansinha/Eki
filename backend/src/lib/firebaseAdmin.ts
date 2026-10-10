@@ -28,7 +28,15 @@ if (!firebaseAdminApp) {
 
   let credential: Credential;
   if (rawServiceAccount) {
-    const serviceAccount = JSON.parse(rawServiceAccount);
+    let serviceAccount;
+    try {
+      serviceAccount = JSON.parse(rawServiceAccount);
+    } catch {
+      throw new Error("FIREBASE_SERVICE_ACCOUNT must contain valid JSON.");
+    }
+    if (!serviceAccount || typeof serviceAccount !== "object" || Array.isArray(serviceAccount)) {
+      throw new Error("FIREBASE_SERVICE_ACCOUNT must contain a JSON object.");
+    }
     if (typeof serviceAccount.private_key === "string") {
       serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
     }

@@ -554,6 +554,9 @@ function FleetCard({
 /* â”€â”€ Main Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function DashboardPanel() {
   const { user } = useAuth();
+  const [liveReadFailed, setLiveReadFailed] = useState(false);
+  const onLiveReadError = useCallback(() => setLiveReadFailed(true), []);
+  const onLiveReadRecovered = useCallback(() => setLiveReadFailed(false), []);
   const {
     isResuming,
     connectionGeneration,
@@ -564,6 +567,8 @@ export default function DashboardPanel() {
     connectionGeneration,
     resumeGeneration,
     markSnapshotReceived,
+    onReadError: onLiveReadError,
+    onReadRecovered: onLiveReadRecovered,
   });
   const { buses, error: busesError, retry: retryBuses } = useBuses();
   const activeEntriesMap = useMemo(
@@ -829,6 +834,11 @@ export default function DashboardPanel() {
 
         {/* Map overlay stats */}
         <div className="absolute top-3 left-3 right-3 flex flex-col items-start gap-2 pointer-events-none">
+          {liveReadFailed && (
+            <div className="pointer-events-auto w-full max-w-lg rounded-xl border border-amber-400/20 bg-zinc-950/95 px-3 py-2 text-xs text-amber-300 shadow-lg" role="alert">
+              Live vehicle updates are unavailable. Check your connection and reload to retry.
+            </div>
+          )}
           {(busesError || routesError || driversError) && (
             <div
               className="pointer-events-auto flex w-full max-w-lg items-start gap-2 rounded-xl border border-red-400/20 bg-zinc-950/95 px-3 py-2 text-xs text-red-300 shadow-lg"
