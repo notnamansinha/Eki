@@ -25,7 +25,9 @@ unidentified serial port.
    Secure Boot V2 requires ESP32 ECO3 or newer.
 2. Save `espefuse.py summary` output before any write. Both operators must
    confirm that the board is unused and that the expected security eFuses are
-   not already in a conflicting state.
+   not already in a conflicting state. Include the JTAG-disable eFuse in this
+   review; Secure Boot and flash encryption do not by themselves establish
+   that a live debug port cannot read credentials from RAM.
 3. Confirm the signing-key fingerprint against the university release record.
    Place the private key at
    `hardware/keys/secure_boot_signing_key.pem` only inside the approved signing
@@ -71,6 +73,10 @@ quarantine the board for review.
 The application must report `fleet-build=yes`, `flash-encryption=enabled`, and
 `secure-boot=enabled`. Any other combination halts before credentials are read
 or networking starts.
+Before the unit is accepted for fleet use, both operators must verify from the
+post-provisioning eFuse summary that JTAG is permanently disabled and record
+the board-specific eFuse name/value. Quarantine any board where that cannot be
+proved. The development board is not security-provisioning evidence.
 
 ## Compile-time configuration and rotation
 
@@ -124,14 +130,17 @@ key or eFuses. Those changes retain the witnessed physical procedure above.
    size and SHA-256 digest in the controlled signing environment.
 3. Publish the exact signed binary at an immutable HTTPS URL whose certificate
    chains to `BACKEND_ROOT_CA`. Do not put credentials in that URL.
-4. Configure all five backend `FIRMWARE_RELEASE_*` values together. A partial or
-   malformed descriptor fails closed; leaving all five unset disables OTA.
+4. Configure all six backend `FIRMWARE_RELEASE_*` values together. A partial or
+   malformed descriptor fails closed; leaving all six unset disables OTA.
 5. Prove on a spare board that an active ride receives no update, a modified or
    wrong-key image is rejected, a healthy candidate confirms after backend
    telemetry/diagnostics, and a candidate unable to reach the backend rolls
-   back within five minutes.
+   back within five minutes. The validation timer runs even without Wi-Fi: a
+   healthy candidate installed just before a coverage dead zone can roll back.
+   Install in a depot with stable backend access and record a deliberate
+   post-update outage trial before fleet rollout.
 6. Roll out in controlled cohorts and retain old signed artifacts and metadata.
-   To stop distribution, unset all five backend values; do not delete rollback
+   To stop distribution, unset all six backend values; do not delete rollback
    evidence or reuse the sequence.
 
 Changing only route geometry or assigning the unchanged device credential to a

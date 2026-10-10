@@ -15,15 +15,23 @@ export type FirmwareReleaseConfiguration =
   | { state: "invalid" }
   | { state: "ready"; release: FirmwareRelease };
 
-function releaseUrl(value: string | undefined): string | null {
+function releaseUrl(value: string | undefined, allowedOrigin: string | undefined): string | null {
   if (!value || value.length > 512) return null;
   try {
     const parsed = new URL(value);
+    const approved = new URL(allowedOrigin ?? "");
     if (
       parsed.protocol !== "https:" ||
       parsed.username ||
       parsed.password ||
-      parsed.hash
+      parsed.hash ||
+      approved.protocol !== "https:" ||
+      approved.username ||
+      approved.password ||
+      approved.pathname !== "/" ||
+      approved.search ||
+      approved.hash ||
+      parsed.origin !== approved.origin
     ) return null;
     return parsed.toString();
   } catch {
@@ -43,6 +51,7 @@ export function readFirmwareRelease(
     environment.FIRMWARE_RELEASE_VERSION,
     environment.FIRMWARE_RELEASE_SEQUENCE,
     environment.FIRMWARE_RELEASE_URL,
+    environment.FIRMWARE_RELEASE_ALLOWED_ORIGIN,
     environment.FIRMWARE_RELEASE_SHA256,
     environment.FIRMWARE_RELEASE_SIZE,
   ];
@@ -52,7 +61,10 @@ export function readFirmwareRelease(
 
   const version = environment.FIRMWARE_RELEASE_VERSION?.trim() ?? "";
   const sequence = Number(environment.FIRMWARE_RELEASE_SEQUENCE);
-  const url = releaseUrl(environment.FIRMWARE_RELEASE_URL?.trim());
+  const url = releaseUrl(
+    environment.FIRMWARE_RELEASE_URL?.trim(),
+    environment.FIRMWARE_RELEASE_ALLOWED_ORIGIN?.trim(),
+  );
   const sha256 = environment.FIRMWARE_RELEASE_SHA256?.trim().toLowerCase() ?? "";
   const size = Number(environment.FIRMWARE_RELEASE_SIZE);
   const versionSequence = VERSION_PATTERN.exec(version)?.[1];

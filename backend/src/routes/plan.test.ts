@@ -186,6 +186,6 @@ describe("GET /api/v2/routes projection", () => {
     expect(await legacy.json()).toEqual(await response.clone().json());
     await expect(response.json()).resolves.toEqual({ routes: [{
       id: "route_1", name: "Route 1", color: "#123456", stops: [A, Z],
-    }] });
+    }], nextCursor: null });
   });
 });

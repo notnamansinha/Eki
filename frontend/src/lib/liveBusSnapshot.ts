@@ -2,6 +2,10 @@ import { BUS_EXPIRY_MS, isLiveBusTimestamp, liveBusFreshnessTimestamp } from "./
 
 export type LiveBusSnapshot = Record<string, Record<string, unknown>>;
 
+// A live ride survives a short telemetry outage, but a permanently orphaned
+// RTDB node must eventually leave the map even if no further event arrives.
+export const ACTIVE_RIDE_RETENTION_MS = 24 * 60 * 60 * 1000;
+
 export function isActiveRideSnapshot(
   bus: Record<string, unknown>,
 ): boolean {
@@ -27,7 +31,14 @@ export function pruneExpiredLiveBuses(
       liveBusFreshnessTimestamp(bus),
       now,
     );
-    const retain = fresh || isActiveRideSnapshot(bus);
+    const timestamp = liveBusFreshnessTimestamp(bus);
+    const activeAge = typeof timestamp === "number" ? now - timestamp : NaN;
+    const retain = fresh || (
+      isActiveRideSnapshot(bus) &&
+      Number.isFinite(activeAge) &&
+      activeAge >= -10_000 &&
+      activeAge < ACTIVE_RIDE_RETENTION_MS
+    );
     if (!retain) changed = true;
     return retain;
   });
@@ -41,7 +52,6 @@ export function millisecondsUntilNextPrune(
   let nextDelay = Number.POSITIVE_INFINITY;
   for (const bus of Object.values(snapshot)) {
     if (bus.tripState === "completed") return 0;
-    if (isActiveRideSnapshot(bus)) continue;
     const timestamp = liveBusFreshnessTimestamp(bus);
     if (
       typeof timestamp !== "number" ||
@@ -50,7 +60,10 @@ export function millisecondsUntilNextPrune(
     ) {
       return 0;
     }
-    nextDelay = Math.min(nextDelay, timestamp + BUS_EXPIRY_MS - now);
+    const retentionMs = isActiveRideSnapshot(bus)
+      ? ACTIVE_RIDE_RETENTION_MS
+      : BUS_EXPIRY_MS;
+    nextDelay = Math.min(nextDelay, timestamp + retentionMs - now);
   }
   return Number.isFinite(nextDelay)
     ? Math.max(0, Math.ceil(nextDelay))

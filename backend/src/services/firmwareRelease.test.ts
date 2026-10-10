@@ -5,6 +5,7 @@ const VALID = {
   FIRMWARE_RELEASE_VERSION: "s12-gnss-v2.1.0",
   FIRMWARE_RELEASE_SEQUENCE: "12",
   FIRMWARE_RELEASE_URL: "https://releases.example.edu/eki/device-12.bin",
+  FIRMWARE_RELEASE_ALLOWED_ORIGIN: "https://releases.example.edu",
   FIRMWARE_RELEASE_SHA256: "ab".repeat(32),
   FIRMWARE_RELEASE_SIZE: "1500000",
 };
@@ -33,6 +34,9 @@ describe("firmware release configuration", () => {
   it.each([
     { ...VALID, FIRMWARE_RELEASE_URL: "http://releases.example.edu/image.bin" },
     { ...VALID, FIRMWARE_RELEASE_URL: "https://user:pass@example.edu/image.bin" },
+    { ...VALID, FIRMWARE_RELEASE_ALLOWED_ORIGIN: undefined },
+    { ...VALID, FIRMWARE_RELEASE_ALLOWED_ORIGIN: "https://other.example.edu" },
+    { ...VALID, FIRMWARE_RELEASE_ALLOWED_ORIGIN: "https://releases.example.edu/other" },
     { ...VALID, FIRMWARE_RELEASE_SHA256: "not-a-digest" },
     { ...VALID, FIRMWARE_RELEASE_SEQUENCE: "0" },
     { ...VALID, FIRMWARE_RELEASE_SEQUENCE: "13" },

@@ -204,7 +204,9 @@ The artifact request never receives the device credential. The device verifies
 the stream digest before activating the slot, and Secure Boot V2 rejects an
 image not signed by the fleet key. A candidate becomes permanent only after an
 authenticated telemetry or diagnostics response; otherwise the bootloader
-rolls it back after five minutes. The artifact host certificate must chain to
+rolls it back after five minutes, including time spent outside Wi-Fi coverage.
+Install at a depot with stable backend access and rehearse the dead-zone case
+on a spare board. The artifact host certificate must chain to
 `BACKEND_ROOT_CA`.
 
 Arduino-ESP32 2.x unconditionally initializes a small framework system
@@ -234,7 +236,11 @@ done safely while retaining the current Wi-Fi stack.
   newer uncommitted fixes can be lost. Serial `[PowerCheckpoint]` logs expose
   readiness, recovery, storage slots, interval, commit outcome and write time.
 - Wi-Fi retries indefinitely with bounded 5-60 second exponential backoff,
-  strongest-AP fast scan, auto-reconnect, and modem sleep disabled.
+  strongest-AP fast scan, auto-reconnect, and modem sleep disabled. A retry
+  also starts when the ESP32 has lost its access-point association even if the
+  Arduino Wi-Fi status still says connected. The retry always issues a new
+  connect attempt after any preceding disconnect error; `[WiFi]` serial lines
+  report state and retry results without printing the SSID or password.
 - HTTP 200/202 succeeds. Transport errors, 408/425/429, and 5xx retain the
   newest eligible sample with bounded backoff. Other permanent rejection drops
   that sample. A 401 latches publishing off, disables the station radio, and

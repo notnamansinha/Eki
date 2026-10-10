@@ -18,7 +18,7 @@ interface PlaceResult {
 
 const placeSearchLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: shardedLimit(20, readRateLimitShardFactor()),
+  limit: shardedLimit(20, readRateLimitShardFactor()),
   keyGenerator: verifiedUserKeyGenerator,
   standardHeaders: true,
   legacyHeaders: false,

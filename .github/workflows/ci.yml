@@ -27,6 +27,11 @@ jobs:
           echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
           "$JAVA_HOME_21_X64/bin/java" -version
       - run: npm ci
+      - name: Verify frontend/backend RTDB instance preflight
+        run: npm run verify:rtdb-instance
+        env:
+          FIREBASE_DATABASE_URL: https://eki-unit-test-default-rtdb.firebaseio.com
+          NEXT_PUBLIC_FIREBASE_DATABASE_URL: https://eki-unit-test-default-rtdb.firebaseio.com
       - name: Cache Next.js + backend TypeScript build caches
         # Persistent Turbopack cache (.next/cache — includes the workbox SW
         # replay cache), the backend emitted output, and incremental build info.

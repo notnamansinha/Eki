@@ -10,6 +10,10 @@ namespace connectivity {
 
 constexpr uint32_t WIFI_RETRY_BASE_MS = 5000;
 constexpr uint32_t WIFI_RETRY_MAX_MS = 60000;
+
+inline bool wifiLinkUsable(bool statusConnected, bool accessPointPresent) {
+  return statusConnected && accessPointPresent;
+}
 enum class FaultCode : uint8_t {
   None,
   CredentialRejected,

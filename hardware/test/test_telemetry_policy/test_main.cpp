@@ -413,6 +413,20 @@ void test_wifi_retry_and_led_code_are_deterministic() {
   TEST_ASSERT_FALSE(pulsePatternLedOn(4, 1200));
 }
 
+void test_stale_connected_status_still_retries_after_ap_loss() {
+  using namespace eki::connectivity;
+  WifiRetrySupervisor supervisor;
+  const bool staleConnected = wifiLinkUsable(true, false);
+  TEST_ASSERT_FALSE(staleConnected);
+  supervisor.observe(staleConnected, 100);
+  TEST_ASSERT_TRUE(supervisor.attemptDue(100));
+  supervisor.recordAttempt(100);
+  TEST_ASSERT_FALSE(supervisor.attemptDue(5099));
+  TEST_ASSERT_TRUE(supervisor.attemptDue(5100));
+  supervisor.observe(wifiLinkUsable(true, true), 5101);
+  TEST_ASSERT_FALSE(supervisor.attemptDue(5101));
+}
+
 void test_publish_policy_handles_floor_changes_and_heartbeats() {
   const auto decide = [](
     bool valid,
@@ -648,6 +662,7 @@ int main(int, char **) {
   RUN_TEST(test_clock_corroboration_rejects_duplicate_stalled_and_inconsistent_epochs);
   RUN_TEST(test_large_clock_corrections_require_fresh_agreeing_peer);
   RUN_TEST(test_wifi_retry_and_led_code_are_deterministic);
+  RUN_TEST(test_stale_connected_status_still_retries_after_ap_loss);
   RUN_TEST(test_publish_policy_handles_floor_changes_and_heartbeats);
   RUN_TEST(test_location_transition_rejects_teleportation);
   RUN_TEST(test_adaptive_gnss_error_budget_is_bounded);

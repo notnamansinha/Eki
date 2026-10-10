@@ -87,6 +87,7 @@ integration("R20 API reads against actual loopback Firebase", () => {
     await batch.commit(); routeListCache.invalidate();
     const first = await read("/api/v2/routes?limit=250", "reader"); const body = await first.json();
     expect(body.routes).toHaveLength(250); expect(body.nextCursor).toBe("route_249");
+    expect(await (await read("/api/routes-list", "reader")).json()).toEqual(body);
     expect(JSON.stringify(body)).not.toContain("secret-geometry");
     expect(await (await read("/api/routes-list?limit=250", "reader")).json()).toEqual(body);
     expect((await (await read(`/api/v2/routes?limit=250&after=${body.nextCursor}`, "reader")).json()).routes).toHaveLength(10);

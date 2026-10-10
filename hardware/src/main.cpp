@@ -25,6 +25,7 @@
 #include <esp_system.h>
 #include <esp_idf_version.h>
 #include <esp_ota_ops.h>
+#include <esp_wifi.h>
 #include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -847,16 +848,34 @@ void configureStationRadio() {
   WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
 }
 
+bool stationLinkPresent() {
+  // Arduino-ESP32's WL_CONNECTED is event-backed and can remain stale after
+  // an AP disappears. The driver must still know the associated access point.
+  wifi_ap_record_t accessPoint{};
+  return eki::connectivity::wifiLinkUsable(
+    WiFi.status() == WL_CONNECTED,
+    esp_wifi_sta_get_ap_info(&accessPoint) == ESP_OK
+  );
+}
+
 void attemptWifiConnection() {
   if (credentialFaultActive) return;
   getNetworkClient().stop();
   if (!wifiConfigured) {
     configureStationRadio();
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    const wl_status_t status = WiFi.begin(WIFI_SSID, WIFI_PASS);
     wifiConfigured = true;
-  } else {
-    WiFi.reconnect();
+    Serial.printf("[WiFi] Initial station attempt, status=%d.\n", static_cast<int>(status));
+    return;
   }
+  // WiFi.reconnect() returns early if esp_wifi_disconnect() fails. WiFi.begin()
+  // can also return early when its event-backed status is stale. Always issue
+  // the connect operation, including after an already-disconnected result.
+  const esp_err_t disconnectStatus = esp_wifi_disconnect();
+  const esp_err_t connectStatus = esp_wifi_connect();
+  Serial.printf("[WiFi] Station retry %u, disconnect=%d connect=%d.\n",
+    static_cast<unsigned>(wifiRetrySupervisor.completedAttempts() + 1),
+    static_cast<int>(disconnectStatus), static_cast<int>(connectStatus));
 }
 
 void updateConnectivityFault() {
@@ -896,7 +915,7 @@ void latchCredentialFault() {
 
 void serviceConnectivity() {
   const uint32_t now = millis();
-  const bool connected = WiFi.status() == WL_CONNECTED;
+  const bool connected = stationLinkPresent();
   if (!wifiStatusKnown || connected != lastWifiConnected) {
     wifiStatusKnown = true;
     lastWifiConnected = connected;
@@ -1289,7 +1308,7 @@ bool installSignedFirmware(const FirmwareManifest &manifest) {
 void checkForSignedFirmware() {
   const TelemetryQueue::Stats queue = telemetryQueueStats();
   if (
-    WiFi.status() != WL_CONNECTED ||
+    !stationLinkPresent() ||
     !eki::update::locallySafeToUpdate(
       credentialFaultActive,
       clockIsSynchronized(),
@@ -1354,7 +1373,7 @@ void firmwareMaintenanceWorker(void *) {
   bool recoveredReservation = false;
   for (;;) {
     esp_task_wdt_reset();
-    if (WiFi.status() == WL_CONNECTED && clockIsSynchronized()) {
+    if (stationLinkPresent() && clockIsSynchronized()) {
       if (!recoveredReservation || firmwareReservationMayBeHeld) {
         recoveredReservation = reserveFirmwareMaintenance(false);
         firmwareReservationMayBeHeld = !recoveredReservation;
@@ -1369,7 +1388,7 @@ void firmwareMaintenanceWorker(void *) {
 PublishResult publishFix(const TelemetryFix &fix) {
   if (
     !fix.valid ||
-    WiFi.status() != WL_CONNECTED ||
+    !stationLinkPresent() ||
     !clockIsSynchronized()
   ) {
     return PublishResult::RetryLatest;
@@ -1607,7 +1626,7 @@ void publishRemoteDiagnostic() {
   // Advance/latch the first deadline even while Wi-Fi or clock readiness blocks sending.
   const bool diagnosticDue = remoteDiagnosticIsDue();
   if (
-    WiFi.status() != WL_CONNECTED ||
+    !stationLinkPresent() ||
     !clockIsSynchronized() ||
     credentialFaultActive ||
     diagnosticInFlight ||
@@ -1739,7 +1758,7 @@ void diagnosticWorker(void *) {
     http.setConnectTimeout(eki::telemetry::MAINTENANCE_HTTP_TIMEOUT_MS);
     http.setTimeout(eki::telemetry::MAINTENANCE_HTTP_TIMEOUT_MS);
     int status = -1;
-    if (WiFi.status() == WL_CONNECTED && http.begin(
+    if (stationLinkPresent() && http.begin(
         eki::config::backendUrlUsesHttps(BACKEND_URL)
           ? static_cast<WiFiClient &>(secure) : plain, diagnosticsEndpoint)) {
       http.addHeader("Authorization", authorizationHeader);
@@ -1937,7 +1956,7 @@ void evaluateTelemetry() {
   maintenanceSnapshot = {fix.valid, fix.motionState == MotionState::Stopped, millis()};
   portEXIT_CRITICAL(&maintenanceSnapshotMux);
   if (
-    WiFi.status() == WL_CONNECTED &&
+    stationLinkPresent() &&
     (!gnssStatusKnown || fix.valid != lastGnssConnected)
   ) {
     gnssStatusKnown = true;
@@ -2001,7 +2020,7 @@ void publisherTask(void *) {
 
     bool drainedSample = false;
     bool freshTelemetryQueued = false;
-    if (WiFi.status() == WL_CONNECTED) {
+    if (stationLinkPresent()) {
       synchronizeClock();
       if (clockIsSynchronized()) {
         TelemetryFix fix{};

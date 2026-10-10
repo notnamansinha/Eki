@@ -9,6 +9,7 @@
 # Required GitHub secrets (environment-scoped):
 #   staging / production environments each need:
 #   - FIREBASE_TOKEN: a Firebase CLI CI token for that project
+#   - FIREBASE_DATABASE_URL: the backend's deployed RTDB instance origin
 #   - NEXT_PUBLIC_FIREBASE_API_KEY, NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
 #     NEXT_PUBLIC_FIREBASE_DATABASE_URL, NEXT_PUBLIC_FIREBASE_PROJECT_ID,
 #     NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET, NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
@@ -70,6 +71,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Verify backend/frontend RTDB target before staging release
+        run: npm run verify:rtdb-instance
+        env:
+          FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+          NEXT_PUBLIC_FIREBASE_DATABASE_URL: ${{ secrets.NEXT_PUBLIC_FIREBASE_DATABASE_URL }}
+          RTDB_EXPECTED_REGION: ${{ vars.RTDB_EXPECTED_REGION }}
       - name: Cache Next.js + backend TypeScript build caches
         # Same cache namespace as ci.yml so deploys reuse what verification built.
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -135,6 +142,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Verify backend/frontend RTDB target before production release
+        run: npm run verify:rtdb-instance
+        env:
+          FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+          NEXT_PUBLIC_FIREBASE_DATABASE_URL: ${{ secrets.NEXT_PUBLIC_FIREBASE_DATABASE_URL }}
+          RTDB_EXPECTED_REGION: ${{ vars.RTDB_EXPECTED_REGION }}
       - name: Cache Next.js + backend TypeScript build caches
         # Same cache namespace as ci.yml so deploys reuse what verification built.
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4

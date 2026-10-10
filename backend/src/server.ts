@@ -137,7 +137,7 @@ app.use((req, res, next) => {
 const routeComputeLimiter = createRouteComputeLimiter(RATE_LIMIT_SHARD_FACTOR);
 const routePlanLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: shardedLimit(30, RATE_LIMIT_SHARD_FACTOR),
+  limit: shardedLimit(30, RATE_LIMIT_SHARD_FACTOR),
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: verifiedUserKeyGenerator,

@@ -247,11 +247,12 @@ See [the data model](data/FIREBASE_DATA_MODEL.md) for the records and
 | `platformio run --project-dir hardware -e esp32dev` | Build development firmware |
 | `platformio run --project-dir hardware -e esp32dev-secure` | Build a signed fleet artifact in the controlled signing environment |
 
-`npm run deploy` deploys the static Firebase Hosting output and Firebase rules.
-The backend container/runtime, DNS, TLS, WAF, secrets, monitoring and
-replication are separate deployment responsibilities; use the university
-deployment checklist rather than treating a successful Hosting deploy as a
-complete production rollout.
+Deploy through the approval-gated [Deploy workflow](../.github/workflows/deploy.yml)
+from `main`. It selects the Firebase project explicitly and runs the App Check
+and Firestore index gates before publishing Hosting and rules. The backend
+container/runtime, DNS, TLS, WAF, secrets, monitoring and replication are
+separate deployment responsibilities; use the university deployment checklist
+for the full rollout.
 
 ## Troubleshooting guide
 
