@@ -149,6 +149,8 @@ describe("passenger live-bus normalization", () => {
     expect(
       normalizePassengerLiveBus("bus_01_route_01", legacy, now)?.busId,
     ).toBe("bus_01");
+    expect(normalizePassengerLiveBus("node:bus_01_route_01", legacy, now)?.busId)
+      .toBe("bus_01");
     expect(normalizePassengerLiveBus("unrelated", legacy, now)).toBeNull();
   });
 

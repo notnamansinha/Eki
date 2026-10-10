@@ -20,20 +20,17 @@
 /**
  * Reads the expected replica count from `RATE_LIMIT_SHARD_FACTOR`.
  *
- * Defaults to 1 (single instance) and falls back to 1 on any malformed value
- * rather than failing closed on a typo'd environment variable.
+ * Defaults to 1 only when unset; a malformed configured value blocks startup
+ * so a replica-count typo cannot multiply the fleet's effective rate limits.
  */
 export function readRateLimitShardFactor(
   env: NodeJS.ProcessEnv = process.env,
 ): number {
   const raw = env.RATE_LIMIT_SHARD_FACTOR;
-  if (raw === undefined || raw === "") return 1;
+  if (raw === undefined) return 1;
   const parsed = Number(raw);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    console.warn(
-      `[RateLimit] Ignoring invalid RATE_LIMIT_SHARD_FACTOR=${JSON.stringify(raw)}; using 1.`,
-    );
-    return 1;
+  if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(parsed)) {
+    throw new RangeError("RATE_LIMIT_SHARD_FACTOR must be a positive decimal replica count.");
   }
   return parsed;
 }

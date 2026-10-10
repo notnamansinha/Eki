@@ -62,6 +62,13 @@ describe("directional route views", () => {
     expect(forward.rideDirection).toBe("forward");
   });
 
+  it("keeps legacy forward geometry available for reverse display fallback", () => {
+    const legacy = { ...route, reversePolyline: undefined };
+    const reverse = routeInRideDirection(legacy, "reverse");
+    expect(reverse.polyline).toBe("legacy-forward");
+    expect(reverse.polylineQuality).toBeUndefined();
+  });
+
   it("keeps persisted session endpoints stable after the route is edited", () => {
     const editedStops = [
       { id: "new-a", name: "New Alpha", shortName: "NA", lat: 0, lng: 0 },

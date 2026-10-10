@@ -31,7 +31,7 @@ runtime secret/configuration system.
 | `FIRMWARE_RELEASE_ALLOWED_ORIGIN` | OTA set | Exact HTTPS origin permitted to host the release binary | Must match `FIRMWARE_RELEASE_URL`; no path, query, credentials or fragment |
 | `FIRMWARE_RELEASE_SHA256` | OTA set | SHA-256 digest of the exact signed binary | Record and verify this from the controlled signing environment |
 | `FIRMWARE_RELEASE_SIZE` | OTA set | Exact binary size in bytes (maximum 1,966,080) | Must match both the hosted object and signed release evidence |
-| `RATE_LIMIT_SHARD_FACTOR` | No | Expected backend replica count used to divide in-process budgets; default `1` | Set to the deployed replica count; values above the smallest in-process budget are rejected |
+| `RATE_LIMIT_SHARD_FACTOR` | No | Expected backend replica count used to divide in-process budgets; default `1` only when unset | Set to the deployed replica count; malformed and over-budget values reject startup |
 | `AUTH_REVOCATION_CACHE_MS` | No | Short cache for ordinary passenger Firebase Auth revocation checks; `0` disables it, maximum `60000` | Privileged admin/driver claims receive a fresh check for each HTTP request; admission and route middleware reuse that request's verified token |
 | `AUTH_MAX_PENDING_VERIFICATIONS` | No | Maximum distinct Firebase Auth verifications in flight per backend process; default `256`, maximum `2000` | Size for expected concurrency; overflow fails with retryable HTTP 503 instead of growing memory without bound |
 | `WORKER_ENABLED` | No | Enables the Firestore-lease background worker; default `true` | Keep enabled for lifecycle recovery, abandonment and retention jobs |

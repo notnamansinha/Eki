@@ -95,7 +95,7 @@ sibling store below is authoritative. Route context also owns
 roles. Context reset clears `mapMatchSeq` and `mapMatchSampledAt` as well as the
 previous match result.
 
-Read: any authenticated Firebase user (`.read: auth != null`); App Check is enforced through the Firebase console. Write: denied to all clients; server only. Indexed by `routeId`, `busId`. Active rides survive stale hardware and are marked offline; stale non-active nodes can be removed.
+Read and write: denied to all clients at `/activeBuses`; the backend owns the authoritative node. Browsers read the scoped `/publicRouteBuses` projection instead. App Check is enforced through the Firebase console. Indexed by `routeId`, `busId`. Active rides survive stale hardware and are marked offline; stale non-active nodes can be removed.
 
 ### `activeRouteGeometry/{busId}_{routeId}/{routeVersion}`
 
@@ -163,7 +163,7 @@ Fields: `id`, `name`, `authUid`, `assignedBusId` (`string|null`), and optional `
 
 ### `bus_locations/{busId}`
 
-Compact server lifecycle projection: `routeId`, `driverId`, `status`, `deviceState`, `tripState`, `lastSeen`, plus legacy/optional motion fields. It changes on lifecycle/fleet state, not every coordinate. Admin-only client read/write rule; backend writes. Fleet analytics consumes it.
+Compact server lifecycle projection: `routeId`, `driverId`, `status`, `deviceState`, `tripState`, `lastSeen`, plus legacy/optional motion fields. It changes on lifecycle/fleet state, not every coordinate. Admin clients may read; client writes are denied and the backend writes. Fleet analytics consumes it.
 
 ### `passenger_requests/{uid}`
 

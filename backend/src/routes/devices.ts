@@ -333,14 +333,16 @@ router.put("/:deviceId", requireAdmin, async (req: Request, res: Response) => {
   const deviceId = singleRouteParam(req.params.deviceId);
   const busId = req.body?.busId;
   const routeId = req.body?.routeId;
-  const enabled = req.body?.enabled !== false;
+  const enabled = Object.prototype.hasOwnProperty.call(req.body ?? {}, "enabled")
+    ? req.body.enabled : true;
   if (
     deviceId === null ||
     !SAFE_ID.test(deviceId) ||
     typeof busId !== "string" ||
     !SAFE_ID.test(busId) ||
     typeof routeId !== "string" ||
-    !SAFE_ID.test(routeId)
+    !SAFE_ID.test(routeId) ||
+    typeof enabled !== "boolean"
   ) {
     res.status(400).json({ error: "Invalid device, bus, or route ID." });
     return;

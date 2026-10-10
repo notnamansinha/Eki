@@ -47,6 +47,13 @@ beforeEach(() => {
 const assign = (routeId = "new") => fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ busId: "bus", routeId, enabled: true }) });
 describe("device assignment HTTP retirement", () => {
+  it("rejects non-boolean enabled values before changing the assignment", async () => {
+    const response = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ busId: "bus", routeId: "new", enabled: "false" }) });
+    expect(response.status).toBe(400);
+    expect(harness.device.routeId).toBe("old");
+    expect(harness.retire).not.toHaveBeenCalled();
+  });
   it("invalidates credentials and retires old presence before acknowledging", async () => {
     expect((await assign()).status).toBe(200);
     expect(harness.device).toMatchObject({ routeId: "new", assignmentRevision: 2 });

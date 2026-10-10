@@ -102,7 +102,7 @@ export function routeInRideDirection(
   return {
     ...route,
     rideDirection: "reverse",
-    polyline: route.reversePolyline,
+    polyline: route.reversePolyline ?? route.polyline,
     polylineQuality: hasDirectionalGeometry ? route.polylineQuality : undefined,
     distanceMeters: route.reverseDistanceMeters ?? route.distanceMeters,
     duration: route.reverseDuration ?? route.duration,

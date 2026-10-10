@@ -3,7 +3,8 @@ import pino from "pino";
 
 const REDACTED = "[REDACTED]";
 const SENSITIVE_KEY = /(authorization|cookie|token|secret|password|credential|service.?account|private.?key|email|phone|latitude|longitude|\blat\b|\blng\b)/i;
-const BEARER_VALUE = /Bearer\s+[A-Za-z0-9._~+\/-]+=*/gi;
+// Redact the whole supplied value, including malformed token characters.
+const BEARER_VALUE = /\bBearer\s+\S+/gi;
 const GRAFANA_TOKEN = /glc_[A-Za-z0-9_-]+/gi;
 const MAX_DEPTH = 4;
 const MAX_ARRAY_ITEMS = 25;

@@ -60,6 +60,11 @@ Production checks enforcement without changing it. Both require the correct
 project-scoped runtime credentials. Local emulator/synthetic browser tests do
 not prove provider setup or enforcement in a deployed project.
 
+Both deployment paths run the RTDB instance preflight, deploy the declared
+Firestore indexes, and wait for the required deployed query shapes to become
+ready before Hosting is released. The preflight needs the environment-scoped
+backend and frontend database URL secrets to name the same instance.
+
 `testing` is the integration branch: pushes and PRs run verification, but a
 merge into `testing` does not trigger the automatic `main` deployment path.
 

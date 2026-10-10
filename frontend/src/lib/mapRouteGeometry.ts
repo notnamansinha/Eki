@@ -44,5 +44,9 @@ export function decodeRoutePathForDisplay(
       // Fall back to stop coordinates below.
     }
   }
-  return (route.stops ?? []).map((stop) => ({ lat: stop.lat, lng: stop.lng }));
+  const validStops = (route.stops ?? [])
+    .filter((stop) => Number.isFinite(stop.lat) && Number.isFinite(stop.lng) &&
+      stop.lat >= -90 && stop.lat <= 90 && stop.lng >= -180 && stop.lng <= 180)
+    .map((stop) => ({ lat: stop.lat, lng: stop.lng }));
+  return validStops.length >= 2 ? validStops : [];
 }

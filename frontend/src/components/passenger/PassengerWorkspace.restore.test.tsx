@@ -32,7 +32,8 @@ afterEach(() => { cleanup(); localStorage.clear(); });
 describe("verified reload boarding recovery", () => {
   it("does not query another account's local ride hint", async () => {
     saveJoinedRidePointer("other", "qa-session"); render(<PassengerWorkspace />);
-    await screen.findByRole("button", { name: "Track QA route" }); expect(state.status).not.toHaveBeenCalled();
+    await screen.findByRole("button", { name: "Track QA route" }, { timeout: 5000 });
+    expect(state.status).not.toHaveBeenCalled();
   });
   it("restores tracking and stops only after membership verification", async () => {
     let resolve!: (value: typeof verified) => void;

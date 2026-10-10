@@ -26,8 +26,11 @@ export function buildRouteSegment<T extends SegmentStop>(
   for (const stop of stops) {
     stopIndices.set(stop, closestPolylineIndex(fullCoordinates, stop));
   }
-  const startIndex = stopIndices.get(start) ?? 0;
-  const endIndex = stopIndices.get(end) ?? 0;
+  const startIndex = stopIndices.get(start);
+  const endIndex = stopIndices.get(end);
+  if (startIndex === undefined || endIndex === undefined) {
+    throw new Error("Selected start or end stop is not part of the route.");
+  }
   if (startIndex === endIndex) {
     throw new Error("Start and end stops are too close together on the polyline.");
   }
@@ -49,9 +52,7 @@ export function buildRouteSegment<T extends SegmentStop>(
       const index = stopIndices.get(stop);
       return index !== undefined && index >= lower && index <= upper;
     })
-    .sort((left, right) =>
-      direction * ((stopIndices.get(left) ?? 0) - (stopIndices.get(right) ?? 0)),
-    );
+    .sort((left, right) => direction * (stopIndices.get(left)! - stopIndices.get(right)!));
 
   return { coordinates, stops: orderedStops };
 }

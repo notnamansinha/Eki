@@ -231,6 +231,13 @@ function StopItem({ stop, index, onRemove, onNameChange, onMoveUp, onMoveDown, c
 }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(stop.name);
+  const committedRef = useRef(false);
+  const commitName = () => {
+    if (committedRef.current) return;
+    committedRef.current = true;
+    onNameChange(index, val);
+    setEditing(false);
+  };
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] p-1 sm:flex-nowrap">
       <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 font-black text-[9px] flex items-center justify-center shrink-0">
@@ -240,8 +247,8 @@ function StopItem({ stop, index, onRemove, onNameChange, onMoveUp, onMoveDown, c
         <input
           value={val}
           onChange={e => setVal(e.target.value)}
-          onBlur={() => { onNameChange(index, val); setEditing(false); }}
-          onKeyDown={e => e.key === "Enter" && (onNameChange(index, val), setEditing(false))}
+          onBlur={commitName}
+          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commitName(); } }}
           autoFocus
           aria-label={`Rename stop ${stop.name}`}
           className="flex-1 h-11 bg-white/5 border border-white/20 rounded-lg px-2 text-sm text-white focus:outline-none focus:border-white/40"
@@ -250,7 +257,7 @@ function StopItem({ stop, index, onRemove, onNameChange, onMoveUp, onMoveDown, c
         <button
           type="button"
           className="flex-1 min-h-11 text-left cursor-text min-w-0"
-          onClick={() => setEditing(true)}
+          onClick={() => { committedRef.current = false; setVal(stop.name); setEditing(true); }}
           title="Click to rename"
         >
           <span className="block truncate text-sm text-white/80 font-medium">{stop.name}</span>

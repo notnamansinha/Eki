@@ -101,4 +101,14 @@ describe("decodeRoutePathForDisplay", () => {
     );
     expect(ordered(path)).toEqual(["23.0100,72.0100", "23.0000,72.0000"]);
   });
+
+  it("does not pass malformed stop coordinates to map geometry", () => {
+    const path = decodeRoutePathForDisplay({
+      polyline: "",
+      rideDirection: "forward",
+      reversePolyline: undefined,
+      stops: [A, { ...Z, lat: Number.NaN }, { ...Z, lng: 181 }, Z],
+    }, null);
+    expect(ordered(path)).toEqual(["23.0000,72.0000", "23.0100,72.0100"]);
+  });
 });

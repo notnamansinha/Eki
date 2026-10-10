@@ -95,7 +95,7 @@ HTTP requestTimeout bounds receipt of a request body, not service execution.
 Places uses a 5-second whole-response upstream deadline. Google Routes chunks
 use 10-second deadlines; route save has a 30-second operation lease and the
 browser reconciles unknown outcomes using the same save ID. Current 202 route
-responses carry `retryAfterMs`; they do not yet emit `Location` or `Retry-After`.
+responses carry `retryAfterMs`, `Location`, and `Retry-After`.
 Fleet audit fingerprints are audit records, not durable HTTP replay guarantees.
 
 Device authentication cache misses have a separate 5s monotonic response budget

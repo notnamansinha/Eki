@@ -132,7 +132,7 @@ export default function RouteTimelineSheet({
               <div className="flex-1 -mt-1 min-w-0">
                 {isNextStop && !isDimmed && (
                   <div className="text-[9px] font-bold uppercase tracking-widest mb-1 flex items-center gap-1" style={{ color: "var(--status-live)" }}>
-                    <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: "var(--status-live)", animation: "pulse 1.5s infinite" }} />
+                    <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: "var(--status-live)", animation: "pulse-dot 1.5s infinite" }} />
                     Next Stop
                   </div>
                 )}

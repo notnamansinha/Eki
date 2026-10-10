@@ -11,7 +11,7 @@ The exhaustive field/access/relationship dictionary is [Firebase data model](FIR
 
 RTDB contains one current point, not coordinate history. Firestore receives lifecycle/stop/delay/session changes, not every GNSS fix. This avoids duplicate high-frequency writes and keeps recovery/history queryable.
 
-ESP32 devices have no Firebase credentials. The backend is the only writer to RTDB live state and backend-only Firestore collections. Browsers read through constrained rules and use protected APIs for fleet/route/device/shift mutations. Passenger manifest, messaging, feedback and settings are the only narrowly permitted client writes.
+ESP32 devices have no Firebase credentials. The backend is the only writer to RTDB live state and the Firestore `bus_locations` fleet projection. Browsers read through constrained rules and use protected APIs for fleet/route/device/shift mutations. Passenger manifest has narrowly permitted client writes; messaging, feedback and settings mutations use protected backend APIs.
 
 `active_rides` restores an interrupted live projection. `_active_bus_locks` enforces one active session per physical bus. `ride_sessions` is detailed history; `completed_trips` is a compact analytics projection; `bus_locations` is compact fleet lifecycle state.
 

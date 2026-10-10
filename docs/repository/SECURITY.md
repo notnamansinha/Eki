@@ -60,7 +60,7 @@ ESP32 GNSS units post a closed nine-field payload to
 ### Firebase Security Rules Perimeter (`database.rules.json`)
 
 - **`/activeBuses`**: Backend-only authoritative state; every client read/write is denied.
-- **`/publicRouteBuses/{routeId}/buses`**: Authenticated route-scoped reads of explicit public fields. Only trusted admins can read the fleet root. Every client write is denied.
+- **`/publicRouteBuses/route:{routeId}/buses`**: Authenticated route-scoped reads of explicit public fields. Only trusted admins can read the fleet root. Every client write is denied.
 - **`/liveRouteCatalog/values`**: Authenticated counts/availability only; revisions and worker generations remain private. Every client write is denied.
 - **`/driverRouteAssignments` and `/messages`**: Client reads and writes are
   denied; chat is stored under Firestore ride sessions with scoped rules.

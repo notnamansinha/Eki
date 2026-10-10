@@ -295,7 +295,8 @@ describe("production security configuration", () => {
     expect(routes).toContain("allow read: if isAuthenticated();");
     expect(buses).toContain("allow read: if isAuthenticated();");
     expect(settings).toContain("allow read: if isAuthenticated();");
-    expect(locations).toContain("allow read, write: if isAdmin();");
+    expect(locations).toContain("allow read: if isAdmin();");
+    expect(locations).toContain("allow write: if false;");
     expect(planRoute).toContain('router.post("/", requireAuth');
     expect(planRoute).toContain('segmentRoutes.get("/:routeId/segments", requireAuth');
     expect(routesList).toContain('router.get("/", requireAuth');

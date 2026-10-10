@@ -68,9 +68,10 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    // ── Bus locations — authenticated-admin read/write (fleet projection) ──
+    // ── Bus locations — admin read, backend-owned fleet projection ──
     match /bus_locations/{busId} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // passenger_requests is backend-authoritative: no client rule block. The

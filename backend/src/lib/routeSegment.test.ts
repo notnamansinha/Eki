@@ -35,4 +35,9 @@ describe("buildRouteSegment", () => {
     expect(() => buildRouteSegment(coordinates, [...stops, duplicate], stops[1], duplicate))
       .toThrow("too close together");
   });
+
+  it("rejects a requested endpoint outside the route's stop list", () => {
+    expect(() => buildRouteSegment(coordinates, stops,
+      { ...stops[1] }, stops[4])).toThrow("not part of the route");
+  });
 });

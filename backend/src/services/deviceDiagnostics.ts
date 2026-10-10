@@ -23,6 +23,7 @@ const DIAGNOSTIC_KEYS = [
   "timestamp",
 ] as const;
 const EXTENDED_KEYS = ["gnssFixAvailable", "gnssNoFixMs", "lastTelemetryResponseCode"] as const;
+const SAFE_DEVICE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 export interface DeviceDiagnosticsPayload {
   firmwareVersion: string;
@@ -112,6 +113,7 @@ export async function ingestDeviceDiagnostics(
   diagnostics: DeviceDiagnosticsPayload,
   now = Date.now(),
 ): Promise<"accepted" | "credentials" | "unassigned"> {
+  if (!SAFE_DEVICE_ID.test(deviceId)) return "credentials";
   const credential = await checkDeviceCredentials(deviceId, secret, now);
   if (credential.status !== "assigned") return credential.status === "unassigned" ? "unassigned" : "credentials";
   const assignment = credential.assignment;

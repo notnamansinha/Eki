@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseDeviceDiagnosticsValue } from "./deviceDiagnostics";
+import { ingestDeviceDiagnostics, parseDeviceDiagnosticsValue } from "./deviceDiagnostics";
 
 function validDiagnostics() {
   return {
@@ -25,6 +25,10 @@ function validDiagnostics() {
 }
 
 describe("device diagnostics payload", () => {
+  it("rejects an invalid document ID before credential or database access", async () => {
+    await expect(ingestDeviceDiagnostics("bad/path", "secret", validDiagnostics()))
+      .resolves.toBe("credentials");
+  });
   it("accepts complete no-fix and last-response evidence while retaining legacy compatibility", () => {
     const payload = { ...validDiagnostics(), gnssFixAvailable: false, gnssNoFixMs: 300000, lastTelemetryResponseCode: 400 };
     expect(parseDeviceDiagnosticsValue(payload)).toEqual({ ok: true, value: payload });

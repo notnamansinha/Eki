@@ -1,17 +1,13 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { readRateLimitShardFactor, shardedLimit } from "./rateLimitShard";
 
-const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-
 afterEach(() => {
-  warn.mockClear();
   delete process.env.RATE_LIMIT_SHARD_FACTOR;
 });
 
 describe("readRateLimitShardFactor", () => {
-  it("defaults to 1 when unset or empty", () => {
+  it("defaults to 1 when unset", () => {
     expect(readRateLimitShardFactor({})).toBe(1);
-    expect(readRateLimitShardFactor({ RATE_LIMIT_SHARD_FACTOR: "" })).toBe(1);
   });
 
   it("reads a positive integer replica count", () => {
@@ -21,11 +17,11 @@ describe("readRateLimitShardFactor", () => {
     expect(readRateLimitShardFactor()).toBe(4);
   });
 
-  it("falls back to 1 and warns on malformed values", () => {
-    for (const bad of ["0", "-2", "2.5", "abc", "Infinity"]) {
-      expect(readRateLimitShardFactor({ RATE_LIMIT_SHARD_FACTOR: bad })).toBe(1);
+  it("fails startup on a malformed configured replica count", () => {
+    for (const bad of ["", "0", "-2", "2.5", "abc", "Infinity", "0x2", "9007199254740992"]) {
+      expect(() => readRateLimitShardFactor({ RATE_LIMIT_SHARD_FACTOR: bad }))
+        .toThrow(RangeError);
     }
-    expect(warn).toHaveBeenCalledTimes(5);
   });
 });
 

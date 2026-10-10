@@ -23,7 +23,8 @@ export interface PassengerLiveBus extends ActiveBusEntry {
 function busIdFromNodeKey(key: string, routeId: string): string | null {
   const suffix = `_${routeId}`;
   if (!key.endsWith(suffix)) return null;
-  const busId = key.slice(0, -suffix.length).trim();
+  const rawBusId = key.slice(0, -suffix.length).trim();
+  const busId = rawBusId.startsWith("node:") ? rawBusId.slice(5) : rawBusId;
   return busId.length > 0 ? busId : null;
 }
 
