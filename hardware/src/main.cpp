@@ -1549,7 +1549,7 @@ PublishResult publishFix(const TelemetryFix &fix) {
     if (responseCode == 400 || responseCode == 413 || responseCode == 422) {
       Serial.println("[HTTPS] Check the telemetry payload and GNSS/NTP-disciplined timestamps.");
     } else if (responseCode == 401) {
-      Serial.println("[HTTPS] Credential fault latched; correct secrets.h and reflash the device.");
+      Serial.println("[HTTPS] Credential fault latched; repair registry or secrets.h, then restart. Changed secrets.h requires reflashing.");
     } else if (responseCode == 403) {
       Serial.println("[HTTPS] Device assignment unavailable; retrying without disabling Wi-Fi.");
     } else if (policyResponseCode == 408 && responseCode != 408) {
@@ -1719,7 +1719,7 @@ void collectDiagnosticResult() {
   const int responseCode = result.status;
   if (responseCode == 401) {
     latchCredentialFault();
-    Serial.println("[Diagnostics] Credential fault latched; firmware reflash required.");
+    Serial.println("[Diagnostics] Credential fault latched; repair registry or secrets.h, then restart. Changed secrets.h requires reflashing.");
     return;
   }
   if (responseCode == 403) {
