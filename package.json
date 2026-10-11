@@ -24,7 +24,12 @@
     "telemetry:analyze": "node scripts/analyze-telemetry-trace.mjs",
     "realtime:analyze": "node scripts/analyze-realtime-trace.mjs",
     "verify": "npm run lint && npm test && npm run build && npm audit --omit=dev --omit=optional",
-    "verify:openapi": "node scripts/verify-openapi.mjs"
+    "verify:openapi": "node scripts/verify-openapi.mjs",
+    "qa:check": "node scripts/qa/safety-preflight.mjs && node scripts/qa/acceptance-catalog.mjs --check",
+    "qa:catalog": "node scripts/qa/acceptance-catalog.mjs",
+    "qa:safety": "node scripts/qa/safety-preflight.mjs",
+    "qa:test": "node --test scripts/qa-catalog.test.mjs",
+    "qa:budget": "node scripts/qa/coverage-budget.mjs"
   },
   "overrides": {
     "@next/eslint-plugin-next": {

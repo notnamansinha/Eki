@@ -1,5 +1,10 @@
 # Testing and acceptance evidence
 
+The [deterministic acceptance catalog](../../qa/README.md) imports the full
+A-Z requirements and current source census, preserves historical evidence
+separately, and defines the PR coverage-budget/safety checks. Its static report
+does not certify application, provider or physical acceptance.
+
 Last updated: 2026-10-11 (Asia/Kolkata).
 
 ## Start with the current gates

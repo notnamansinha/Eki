@@ -13,6 +13,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # The static acceptance budget compares immutable PR/base commits.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -27,6 +29,22 @@ jobs:
           echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
           "$JAVA_HOME_21_X64/bin/java" -version
       - run: npm ci
+      - name: Verify acceptance catalog and deterministic QA configuration
+        run: npm run qa:check
+      - name: Require mapped regressions for changed critical source
+        if: github.event_name == 'pull_request'
+        env:
+          EKI_QA_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: npm run qa:budget
+      - name: Publish static acceptance coverage without claiming execution
+        run: npm run qa:catalog
+      - name: Retain source-attributed acceptance catalog
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: static-acceptance-catalog
+          path: artifacts/qa/
+          if-no-files-found: error
+          retention-days: 7
       - name: Verify frontend/backend RTDB instance preflight
         run: npm run verify:rtdb-instance
         env:
