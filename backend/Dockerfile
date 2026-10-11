@@ -25,6 +25,11 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/backend/dist ./dist
 COPY --from=builder /app/backend/package.json ./package.json
 
+# The server starts with node directly. Exclude the base image's bundled npm
+# toolchain from the runtime image; it is unused there and adds vulnerable
+# transitive packages that are not part of the application dependency tree.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
 # Run with no root privileges and no writable application source directory.
 RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001 -G nodejs
 USER nodejs
