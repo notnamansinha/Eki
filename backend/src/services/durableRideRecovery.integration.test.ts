@@ -4,6 +4,7 @@ const store = vi.hoisted(() => ({
   documents: new Map<string, Record<string, unknown>>(),
   nodes: new Map<string, Record<string, unknown>>(),
   beforePublish: undefined as (() => void) | undefined,
+  beforeRead: undefined as (() => Promise<void>) | undefined,
   reads: [] as string[],
   writes: [] as string[],
 }));
@@ -15,6 +16,7 @@ vi.mock("../lib/firebaseAdmin", () => ({
     } }) }),
     runTransaction: async (work: (transaction: unknown) => unknown) => work({
       get: async (ref: { path: string }) => {
+        if (ref.path.startsWith("active_rides/")) await store.beforeRead?.();
         store.reads.push(ref.path);
         const value = store.documents.get(ref.path);
         return { exists: value !== undefined, data: () => value };
@@ -29,12 +31,12 @@ vi.mock("../lib/firebaseAdmin", () => ({
   } }) },
 }));
 vi.mock("./telemetryRouteService", () => ({ scheduleTelemetryRouteProcessing: () => undefined }));
-import { restoreDurableRide } from "./durableRideRecovery";
+import { drainDurableRideRecovery, restoreDurableRide } from "./durableRideRecovery";
 import { hashDeviceSecret, ingestDeviceTelemetry } from "./deviceTelemetryService";
 import type { TelemetryPayload } from "./telemetryPayload";
 
 let sequence = 0;
-beforeEach(() => { store.documents.clear(); store.nodes.clear(); store.reads = []; store.writes = []; store.beforePublish = undefined; });
+beforeEach(() => { store.documents.clear(); store.nodes.clear(); store.reads = []; store.writes = []; store.beforePublish = undefined; store.beforeRead = undefined; });
 function claimed() {
   const assignment = { busId: `bus_${++sequence}`, routeId: "route" };
   const key = `${assignment.busId}_route`;
@@ -62,6 +64,32 @@ function claimed() {
 }
 
 describe("durable return-session recovery", () => {
+  it("drains more than 16 distinct rides without another telemetry fix", async () => {
+    let releaseReads!: () => void;
+    const blocked = new Promise<void>(resolve => { releaseReads = resolve; });
+    let inFlight = 0;
+    let peak = 0;
+    store.beforeRead = async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await blocked;
+      inFlight--;
+    };
+    const rides = Array.from({ length: 24 }, () => claimed());
+    const restores = rides.map(ride => restoreDurableRide(ride.assignment, undefined, ride.newSession));
+    expect(restoreDurableRide(rides[23].assignment, undefined, rides[23].newSession)).toBe(restores[23]);
+    for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+    expect(peak).toBe(16);
+    expect(store.writes).toHaveLength(0);
+    const drained = drainDurableRideRecovery();
+    releaseReads();
+    expect(await Promise.all(restores)).toEqual(Array(24).fill(true));
+    await drained;
+    expect(store.writes).toHaveLength(24);
+    for (const ride of rides) {
+      expect(store.nodes.get(`activeBuses/${ride.key}`)?.sessionId).toBe(ride.newSession);
+    }
+  });
   it("actual telemetry ingestion triggers recovery when the old completed node still says active", async () => {
     const context = claimed();
     const now = Date.now();
