@@ -19,7 +19,7 @@ This is a disposition of the grouped Low list in `eki-testing-prod-readiness-aud
 | LRU `clear`/throwing eviction hook | Retained `clear` intentionally drops entries without firing eviction work; trip-state shutdown settles deferred work explicitly. Throwing hooks could still interrupt `set`; review per caller before altering cache semantics. |
 | Haversine NaN | Resolved by finite-coordinate validation and tests. |
 | Service-account `JSON.parse` | Retained fail-closed startup on malformed explicitly supplied credentials; managed runtime uses ADC. Do not log raw credential text. |
-| Google Maps error parse/coordinate validation | Open provider-error hardening; existing bounded network deadline and caller validation do not prove every malformed provider payload is classified. |
+| Google Maps error parse/coordinate validation | Resolved for request inputs and non-2xx responses: `computeRouteGeometry` validates finite in-range coordinates and reports the upstream HTTP status without parsing an error body. Malformed successful provider payloads remain a separate integration concern. |
 | Shard-factor typo | Resolved: invalid values fail configuration validation rather than silently using a different budget. |
 | Logger Bearer redaction | Resolved for whitespace-separated Bearer tokens by case-insensitive redaction; structured field/sensitive-log review remains a release practice. |
 | Scheduler double-count metric | Open metric interpretation review before alerting on this particular count. |
