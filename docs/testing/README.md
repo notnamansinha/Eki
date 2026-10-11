@@ -1,9 +1,13 @@
 # Testing and acceptance evidence
 
-Last updated: 2026-10-09 (Asia/Kolkata).
+Last updated: 2026-10-11 (Asia/Kolkata).
 
 ## Start with the current gates
 
+- [11 October stationary GNSS and hotspot recovery](STATIONARY_GNSS_HOTSPOT_2026_10_11.md):
+  three captured phone-hotspot outages, receiver-backed stationary fixes,
+  redacted cloud/browser correlation, and a serial control-line capture fix.
+  Repeated HTTPS refusals and moving/physical gates remain open.
 - [9 October non-moving software verification](NON_MOVING_READINESS_2026_10_09.md):
   remaining chat/diagnostic/API boundary repairs, immediate reassignment
   retirement, passenger reload recovery, full local suites and explicit
@@ -90,6 +94,7 @@ software/emulator checks do not close #245's live replica and route gates.
 | [Reroute simulations](REROUTE_SIMULATION_RESULTS.md) | Deterministic route/matching scenarios; not field latency |
 | [Return-route acceptance](RETURN_ROUTE_ACCEPTANCE.md) | Direction/turnaround evidence and open physical cases |
 | [Stationary readiness](STATIONARY_READINESS_REPORT.md) | Stationary runtime checks at its recorded build |
+| [11 October stationary recovery](STATIONARY_GNSS_HOTSPOT_2026_10_11.md) | Live GNSS/hotspot cycles and serial capture control-line validation |
 | [Non-moving recovery](NON_MOVING_RECOVERY_REPORT.md) | Backend/tunnel/reboot recovery window |
 | [Live ESP32 latency](LIVE_ESP32_LATENCY_RESULT.md) | Actual device/backend measurements and TLS profile |
 | [Transport evidence audit](REALTIME_TRANSPORT_EVIDENCE_AUDIT.md) | Available transport evidence and missing same-window usage/paint data |
