@@ -229,7 +229,9 @@ export default function MessagingPanel({
         ? Number((error as { status?: number }).status)
         : 0;
       if (code === 409) pendingMessageRef.current = null;
-      if (code === 429 || (typeof error === "object" && error !== null && "message" in error && String((error as { message?: string }).message).includes("wait"))) {
+      if (code === 409) {
+        showTransientMessage("This message request was already used. Check the chat before sending again.");
+      } else if (code === 429 || (typeof error === "object" && error !== null && "message" in error && String((error as { message?: string }).message).includes("wait"))) {
         showTransientMessage("Please wait before sending another message.");
       } else {
         console.error("Failed to send message", error);

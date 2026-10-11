@@ -43,13 +43,13 @@ This is a disposition of the grouped Low list in `eki-testing-prod-readiness-aud
 | --- | --- |
 | Eight-second auth restoration timeout | Open affected-account/slow-network acceptance; the timeout surfaces a recoverable error instead of granting access. |
 | Missing pulse keyframe | Withdrawn: `pulse-dot` is defined in `src/app/globals.css`. |
-| Silent RTDB read failure | Open user-visible error-state improvement; the hook currently logs the failure and listeners should still be tested offline. |
+| Silent RTDB read failure | Resolved for dashboard/fleet consumers: both pass `onReadError`/`onReadRecovered` and render a visible error state. Offline recovery still needs deployed acceptance. |
 | Double stop-rename commit | Resolved in PRs #290–#294; one draft update is made. |
 | Fleet save pending state | Withdrawn for the cited buttons: `saving` disables and labels the save controls. |
-| Ride-history delete success feedback | Open UI feedback polish. |
+| Ride-history delete success feedback | Resolved: acknowledged deletion sets a visible `role=status` notice. |
 | Feedback status writes serialized globally | Open per-record concurrency polish; current serialization protects in-flight status order. |
-| Chat 409 generic error | Open response-specific feedback; do not represent an unknown outcome as accepted without server reconciliation. |
-| Equal boarding/destination stops | Open client validation polish; authoritative backend validation remains mandatory. |
+| Chat 409 generic error | Resolved in PR #297: reused request IDs get a specific conflict message and preserve the draft; an unknown outcome is never represented as accepted. |
+| Equal boarding/destination stops | Withdrawn: the destination selector excludes the boarding stop and the join handler rejects equal IDs before a request. |
 | Raw Google `photoURL` in image | Informational; controlled by Firebase account profile and browser image/CSP policy. Avoid treating it as a demonstrated script injection. |
 
 ## Frontend library (7)

@@ -69,6 +69,12 @@ describe("ride chat user workflows", () => {
     expect(mocks.trace).toHaveBeenCalledWith("qa-session", "qa-message", 42, 200);
     expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("");
   });
+  it("explains a reused request ID conflict without claiming the message was accepted", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response('{"error":"Message request ID was already used."}', { status: 409 })));
+    panel(); await send();
+    expect(await screen.findByText("This message request was already used. Check the chat before sending again.")).toBeTruthy();
+    expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("Please wait at Alpha.");
+  });
   it("blocks double sends while a request is in flight", async () => {
     let finish!: (response: Response) => void;
     const fetchMock = vi.fn(() => new Promise<Response>(resolve => { finish = resolve; }));
