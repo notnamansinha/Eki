@@ -1,10 +1,10 @@
 // Static source census only: this never imports application modules or runs tests.
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import ts from 'typescript';
 
-const dir = process.env.EKI_QA_RESEARCH_DIR || path.join(os.tmpdir(), 'eki-az-qa-2026-10-03');
+if (!process.env.EKI_QA_RESEARCH_DIR) throw new Error('Set EKI_QA_RESEARCH_DIR to your private snapshot directory.');
+const dir = path.resolve(process.env.EKI_QA_RESEARCH_DIR);
 const ledger = JSON.parse(fs.readFileSync(path.join(dir, 'files.json'), 'utf8'));
 for (const file of ledger) {
   if (file.binary) continue;

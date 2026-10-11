@@ -58,18 +58,20 @@ const updateSettings = async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const sanitized: Record<string, string | boolean> = {};
-    for (const [key, value] of Object.entries(partial)) {
-      if (key === "announcementActive") {
-        if (typeof value !== "boolean") {
-          res.status(400).json({ error: "announcementActive must be a boolean." });
-          return;
-        }
-        sanitized[key] = value;
-        continue;
+    if (Object.hasOwn(partial, "announcementActive")) {
+      if (typeof partial.announcementActive !== "boolean") {
+        res.status(400).json({ error: "announcementActive must be a boolean." });
+        return;
       }
+      sanitized.announcementActive = partial.announcementActive;
+    }
+    // Destination keys come from the server-owned schema, never request keys.
+    for (const [key, maximumLength] of Object.entries(STRING_LIMITS)) {
+      if (!Object.hasOwn(partial, key)) continue;
+      const value = partial[key];
       if (
         typeof value !== "string" ||
-        value.length > (STRING_LIMITS[key] ?? 1000) ||
+        value.length > maximumLength ||
         (key !== "announcementText" && value.trim().length === 0)
       ) {
         res.status(400).json({ error: `Invalid value for ${key}.` });

@@ -9,8 +9,10 @@ import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = Path(os.environ.get('EKI_QA_RESEARCH_DIR', str(Path(os.environ.get('TEMP', '/tmp')) / 'eki-az-qa-2026-10-03')))
-OUT.mkdir(parents=True, exist_ok=True)
+if not os.environ.get('EKI_QA_RESEARCH_DIR'):
+    raise SystemExit('Set EKI_QA_RESEARCH_DIR to your private snapshot directory.')
+OUT = Path(os.environ['EKI_QA_RESEARCH_DIR']).resolve()
+OUT.mkdir(parents=True, exist_ok=True, mode=0o700)
 
 def gh(path):
     p = subprocess.run(['gh', 'api', '--paginate', '--slurp', path], capture_output=True, text=True, encoding='utf-8', check=True)

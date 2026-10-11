@@ -43,8 +43,9 @@
     }
   },
   "devDependencies": {
-    "fast-glob": "file:tools/next-lint-glob",
     "@playwright/test": "^1.63.0",
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "fast-glob": "file:tools/next-lint-glob",
+    "parse5": "8.0.1"
   }
 }

@@ -7,7 +7,9 @@ import hashlib
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA = Path(os.environ.get('EKI_QA_RESEARCH_DIR', str(Path(os.environ['TEMP']) / 'eki-az-qa-2026-10-03')))
+if not os.environ.get('EKI_QA_RESEARCH_DIR'):
+    raise SystemExit('Set EKI_QA_RESEARCH_DIR to your private snapshot directory.')
+DATA = Path(os.environ['EKI_QA_RESEARCH_DIR']).resolve()
 PLAN = ROOT / 'docs/testing/WEBAPP_A_Z_AB_TESTING_PLAN.md'
 COMMIT = '722ab6e1489290cafda3d2cf30821f5c193acf86'
 BASE = f'https://github.com/notnamansinha/Eki/blob/{COMMIT}/'

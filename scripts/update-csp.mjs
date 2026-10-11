@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { backendOriginFromUrl } from "./csp-backend-origin.mjs";
 import { parseRtdbInstanceUrl } from "./rtdb-instance-config.mjs";
+import { inlineScriptHashes } from "./inline-script-hashes.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const output = path.join(root, "frontend", "out");
@@ -21,10 +21,7 @@ async function htmlFiles(directory) {
 const hashes = new Set();
 for (const file of await htmlFiles(output)) {
   const html = await readFile(file, "utf8");
-  for (const match of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)) {
-    if (/\bsrc\s*=/.test(match[1]) || match[2].length === 0) continue;
-    hashes.add(`'sha256-${createHash("sha256").update(match[2]).digest("base64")}'`);
-  }
+  for (const hash of inlineScriptHashes(html)) hashes.add(hash);
 }
 
 if (hashes.size === 0) throw new Error("No inline Next.js scripts found; refusing to write an empty CSP.");

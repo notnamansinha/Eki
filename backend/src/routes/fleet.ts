@@ -115,11 +115,12 @@ async function applyDriverAuthorization(
       : mirrorRef.once("value").then((snapshot) => snapshot.val()),
   ]);
 
-  const expectedMirror = {
-    [assignedBusId]: Object.fromEntries(
+  // fromEntries defines own data properties even for prototype-like IDs.
+  const expectedMirror = Object.fromEntries([
+    [assignedBusId, Object.fromEntries(
       [...new Set(routeIds)].sort().map((routeId) => [routeId, true]),
-    ),
-  };
+    )],
+  ]);
   const claimsChanged =
     existing.role !== "driver" ||
     existing.admin !== undefined ||

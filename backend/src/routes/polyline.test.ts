@@ -463,7 +463,7 @@ describe("durable geometry preview resources", () => {
     expect((await post(waypoints)).status).toBe(202);
     await vi.waitFor(() => expect(harness.previews.get(key)?.status).toBe("succeeded"));
     expect(upstream).toHaveBeenCalledTimes(4);
-    for (const [url, options] of vi.mocked(globalThis.fetch).mock.calls) if (String(url).includes("googleapis.com")) {
+    for (const [url, options] of vi.mocked(globalThis.fetch).mock.calls) if (new URL(String(url)).origin === "https://routes.googleapis.com") {
       expect(options?.signal).toBeInstanceOf(AbortSignal);
       expect(options?.headers).toMatchObject({ "X-Goog-FieldMask": "routes.polyline.encodedPolyline,routes.distanceMeters,routes.duration" });
     }
