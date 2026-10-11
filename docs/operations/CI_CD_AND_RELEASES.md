@@ -1,6 +1,6 @@
 # CI, deployment, and release guide
 
-Last updated: 2026-10-05 (Asia/Kolkata).
+Last updated: 2026-10-11 (Asia/Kolkata).
 
 This document explains what the repository automation verifies, what it deploys,
 and which production actions still belong to the university operations team.
@@ -35,6 +35,16 @@ The workflow performs:
 
 9. Chromium mobile/desktop admin-access and feedback regressions through
    `npm run test:e2e:admin`, using real UI modules with synthetic Firebase data.
+10. A CycloneDX production-dependency SBOM retained as a 30-day run artifact.
+11. A fixed-severity Trivy gate on the built backend runtime image. Fixed HIGH
+    and CRITICAL OS/library findings fail the job; unfixed findings remain
+    visible for review.
+
+The separate `.github/workflows/codeql.yml` scans JavaScript/TypeScript and
+Python on pushes and pull requests with GitHub's security-extended queries.
+GitHub secret scanning and push protection are enabled on the public repository.
+CodeQL and Trivy findings require triage; passing scans cannot prove that a
+runtime, firmware image, or external service is free of vulnerabilities.
 
 The Firebase emulator gate includes worker destination fencing alongside client
 authorization rules: valid/superseded Firestore writes, expiry during a dispatched

@@ -113,6 +113,17 @@ jobs:
       - run: npm audit --omit=dev --omit=optional
       - name: Audit development tooling as well as runtime dependencies
         run: npm audit
+      - name: Generate production dependency SBOM
+        run: |
+          npm sbom --omit=dev --sbom-format cyclonedx --sbom-type application --package-lock-only > sbom.cdx.json
+          node -e 'const b=require("./sbom.cdx.json"); if(b.bomFormat!=="CycloneDX" || !Array.isArray(b.components) || b.components.length===0) process.exit(1)'
+      - name: Retain SBOM for release review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-dependency-sbom
+          path: sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 30
 
   backend-image:
     # Issue #28: the backend runs as replicated containers, so the exact image
@@ -151,6 +162,15 @@ jobs:
           grep -q '"status":"alive"' /tmp/live.json
           test "$(docker inspect --format '{{.Config.Healthcheck.Test}}' eki-backend-smoke)" = '[CMD-SHELL wget -qO- http://127.0.0.1:8080/live || exit 1]'
           docker logs eki-backend-smoke
+      - name: Scan runtime image for high-severity vulnerabilities
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: eki-backend:ci
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          vuln-type: os,library
 
   firmware:
     runs-on: ubuntu-latest

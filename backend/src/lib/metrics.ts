@@ -123,6 +123,27 @@ export function registerOperationalMetrics(readers: {
   meter.createObservableCounter("eki.device.telemetry.rejected", {
     description: "Cumulative rejected device telemetry samples.",
   }).addCallback(result => result.observe(readers.telemetry().rejected));
+  meter.createObservableCounter("eki.device.telemetry.diagnostic.rejections", {
+    description: "Process-local telemetry rejection counts by bounded reason.",
+  }).addCallback(result => {
+    for (const [reason, count] of Object.entries(readers.telemetry().diagnostics.rejectionReasons)) {
+      result.observe(count, { reason });
+    }
+  });
+  meter.createObservableCounter("eki.device.telemetry.diagnostic.schemas", {
+    description: "Process-local accepted telemetry schemas.",
+  }).addCallback(result => {
+    for (const [schema, count] of Object.entries(readers.telemetry().diagnostics.schemas)) {
+      result.observe(count, { schema });
+    }
+  });
+  meter.createObservableCounter("eki.device.telemetry.diagnostic.hdop_quality", {
+    description: "Process-local accepted telemetry HDOP quality, without location or device labels.",
+  }).addCallback(result => {
+    for (const [quality, count] of Object.entries(readers.telemetry().diagnostics.hdopQuality)) {
+      result.observe(count, { quality });
+    }
+  });
   meter.createObservableGauge("eki.device.credential_cache.hit_ratio", {
     description: "Device credential cache hit ratio.",
   }).addCallback(result => {

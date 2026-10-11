@@ -54,6 +54,11 @@ timestamp, credential, rate-limit, payload and dependency rejections, and
 accepted sequenced/HDOP versus legacy schema counts. Their scope is explicitly
 **this process since startup**, not a persistent per-device or fleet aggregate.
 Restart resets them. Existing aggregate rejected-fix counts remain separate.
+Invalid HDOP values have their own rejection counter. Accepted samples also
+count HDOP at or below the motion-quality threshold, HDOP above that threshold,
+and legacy samples without HDOP. The backend exports those fixed-cardinality
+counters through OpenTelemetry without device identifiers or coordinates.
+An accepted high-HDOP sample is a quality warning, not an intake rejection.
 
 After a 401 credential fault, firmware halts authenticated publishing,
 including diagnostics. A 403 keeps the radio on and retries after assignment
