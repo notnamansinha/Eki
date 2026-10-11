@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 export interface LatestPendingSchedulerMetrics {
   scheduled: number;
+  /** Completed attempts, including failures; failed is a subset, not additive. */
   processed: number;
   coalesced: number;
   failed: number;

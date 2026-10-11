@@ -202,23 +202,21 @@ describe("profile bootstrap route", () => {
     expect(harness.revokeCalls).toEqual([]);
   });
 
-  it("removes stale privileged claims and revokes refresh tokens", async () => {
+  it.each([
+    { role: "driver", driverId: "driver_1", assignedBusId: "bus_1", featureFlag: true },
+    { role: "admin", admin: true, featureFlag: true },
+  ])("preserves fresh $role claims when the passenger profile is stale", async claims => {
     harness.profile = { uid: "user_1", role: "passenger" };
-    harness.authClaims = {
-      role: "driver",
-      driverId: "driver_1",
-      assignedBusId: "bus_1",
-      featureFlag: true,
-    };
+    harness.authClaims = claims;
 
     const response = await contractFetch(`${baseUrl}/api/users/bootstrap`, { method: "POST" });
 
     expect(response.status).toBe(200);
-    expect(harness.setCustomClaimsCalls[0]?.claims).toEqual({
-      featureFlag: true,
-      role: "passenger",
-    });
-    expect(harness.revokeCalls).toEqual(["user_1"]);
+    await expect(response.json()).resolves.toEqual({ role: claims.role });
+    expect(harness.authClaims).toEqual(claims);
+    expect(harness.setCustomClaimsCalls).toEqual([]);
+    expect(harness.revokeCalls).toEqual([]);
+    expect(harness.profile.role).toBe("passenger");
   });
 });
 

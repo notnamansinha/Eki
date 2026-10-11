@@ -125,8 +125,24 @@ Choose exactly one build path:
 | Purpose | Command | Use |
 |---|---|---|
 | Host policy tests | `platformio test --project-dir hardware -e native` | Safe repeatable tests; no board or secrets required by the native target |
+| Host protocol tests | `python hardware/scripts/test_host_protocols.py` after native tests | Requires gcc/g++; real AES-GCM checkpoint codec, TinyGPSPlus parser and TLS wrapper, with host adapters for radio/tasks/entropy |
 | Bench/development board | `platformio run --project-dir hardware -e esp32dev` then `platformio run --project-dir hardware -e esp32dev --target upload` | Local testing only; never install this image in a production vehicle |
 | Signed fleet board | Follow [fleet security provisioning](../operations/HARDWARE_SECURITY_PROVISIONING.md) and use `esp32dev-secure` | Production-capable artifact; requires the signing key, ECO3+ board, witnessed first boot and physical evidence |
+
+Host protocol tests download checksum-pinned upstream Mbed TLS 2.28.7, matching
+the version in the pinned Arduino SDK. They reject checkpoint tampering, recover
+the previous authenticated journal record, test no-fix/checksum/clock-rollover
+NMEA input, and exercise actual cipher configuration and single-use ECDH keys.
+Radio entropy and task ownership are deterministic host adapters; ESP acceleration,
+certificate/hostname behavior through WiFiClientSecure and physical flash writes
+still require board acceptance.
+
+CI also runs `hardware/scripts/test_signed_image.py` on the compiled signed fleet
+image using its ephemeral CI-only RSA-3072 key. It rejects changed application
+bytes, an altered signature with repaired CRC, truncation, unsigned data and a
+foreign key. Local `--fixture` mode generates disposable data/key material to
+check this harness; it does not certify a fleet artifact, OTA installation,
+rollback or provision a board.
 
 After flashing, open the monitor at 115200 baud and verify, without exposing
 credential values:

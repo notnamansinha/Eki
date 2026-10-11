@@ -70,7 +70,7 @@ export function evaluateFeedback(
     return {
       allowed: false,
       reason: "cooldown",
-      retryAfterMs: FEEDBACK_COOLDOWN_MS - (now - lastSubmittedAtMs),
+      retryAfterMs: Math.min(FEEDBACK_COOLDOWN_MS, FEEDBACK_COOLDOWN_MS - (now - lastSubmittedAtMs)),
     };
   }
 

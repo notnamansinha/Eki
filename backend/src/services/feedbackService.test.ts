@@ -76,6 +76,12 @@ describe("evaluateFeedback", () => {
     });
   });
 
+  it("keeps future cooldown state denied while bounding the retry hint", () => {
+    expect(evaluateFeedback("general", "Hello", null, rideOk, now + FEEDBACK_COOLDOWN_MS, now)).toEqual({
+      allowed: false, reason: "cooldown", retryAfterMs: FEEDBACK_COOLDOWN_MS,
+    });
+  });
+
   it("allows general feedback once the cooldown has elapsed", () => {
     expect(
       evaluateFeedback("general", "Hello", null, rideOk, now - FEEDBACK_COOLDOWN_MS - 1, now),

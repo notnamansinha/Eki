@@ -361,7 +361,7 @@ Body: `{ "status":"new|reviewed|resolved" }`. Updates only review state plus ser
 
 ### `POST /api/users/bootstrap` — authenticated
 
-Creates a missing `users/{uid}` passenger profile transactionally from verified ID-token claims; request-body identity fields are ignored and existing profiles/roles are never overwritten. Returns 201 when created or 200 when already present, with `Cache-Control: no-store`.
+Creates a missing `users/{uid}` passenger profile transactionally from verified ID-token claims; request-body identity fields are ignored and existing profiles/roles are never overwritten. Passenger claim repair checks fresh Auth claims and preserves an existing administrator/driver role if the profile lags, returning that current role without demotion or token revocation. Dedicated authorization workflows own role removal. Returns 201 when created or 200 when already present, with `Cache-Control: no-store`.
 
 ### `PUT /api/settings` — admin
 

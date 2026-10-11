@@ -186,6 +186,8 @@ jobs:
       - name: Install non-production firmware build configuration
         run: cp hardware/include/secrets.example.h hardware/include/secrets.h
       - run: platformio test --project-dir hardware -e native
+      - name: Exercise real checkpoint cryptography, TLS wrapper and NMEA parser
+        run: python hardware/scripts/test_host_protocols.py
       - name: Keep firmware runtime reachable in build verification
         # The example's short secret intentionally fails boot validation.
         # A valid-length fake secret avoids optimizing all network/task code
@@ -212,3 +214,9 @@ jobs:
           mkdir -p hardware/keys
           openssl genrsa -out hardware/keys/secure_boot_signing_key.pem 3072
           platformio run --project-dir hardware -e esp32dev-secure
+      - name: Verify fleet artifact signature rejects modification and foreign keys
+        run: >-
+          python hardware/scripts/test_signed_image.py
+          --esptool-dir "$HOME/.platformio/packages/tool-esptoolpy"
+          --image hardware/.pio/build/esp32dev-secure/firmware-signed.bin
+          --key hardware/keys/secure_boot_signing_key.pem

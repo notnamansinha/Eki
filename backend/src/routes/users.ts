@@ -21,15 +21,27 @@ function cleanClaim(value: unknown, maximumLength: number, fallback = ""): strin
     : fallback;
 }
 
-async function ensurePassengerRoleClaim(uid: string): Promise<boolean> {
+async function ensurePassengerRoleClaim(uid: string): Promise<{
+  role: "passenger" | "driver" | "admin";
+  claimsUpdated: boolean;
+}> {
   const user = await auth.getUser(uid);
   const existingClaims = user.customClaims ?? {};
+  // A profile can lag the fleet/admin claim update. Bootstrap must not undo
+  // current privileged Auth state based only on that stale profile. Revocation
+  // and demotion belong to the dedicated authorization workflow.
+  if (existingClaims.admin === true || existingClaims.role === "admin" || existingClaims.role === "driver") {
+    return {
+      role: existingClaims.admin === true || existingClaims.role === "admin" ? "admin" : "driver",
+      claimsUpdated: false,
+    };
+  }
   const alreadySynchronized =
     existingClaims.role === "passenger" &&
     existingClaims.admin === undefined &&
     existingClaims.driverId === undefined &&
     existingClaims.assignedBusId === undefined;
-  if (alreadySynchronized) return false;
+  if (alreadySynchronized) return { role: "passenger", claimsUpdated: false };
 
   const passengerClaims = { ...existingClaims };
   delete passengerClaims.admin;
@@ -37,15 +49,8 @@ async function ensurePassengerRoleClaim(uid: string): Promise<boolean> {
   delete passengerClaims.assignedBusId;
   passengerClaims.role = "passenger";
 
-  const hadPrivilegedClaims =
-    existingClaims.admin === true ||
-    existingClaims.role === "admin" ||
-    existingClaims.role === "driver";
   await auth.setCustomUserClaims(uid, passengerClaims);
-  if (hadPrivilegedClaims) {
-    await auth.revokeRefreshTokens(uid);
-  }
-  return true;
+  return { role: "passenger", claimsUpdated: true };
 }
 
 /**
@@ -87,14 +92,14 @@ router.post("/bootstrap", requireAuth, async (req: AuthenticatedRequest, res: Re
     // Only the least-privileged role is repaired here. Driver/admin claims
     // require the dedicated fleet authorization workflow and its assignment
     // validation; a profile bootstrap must never manufacture those claims.
-    const claimsUpdated = result.role === "passenger"
+    const synchronized = result.role === "passenger"
       ? await ensurePassengerRoleClaim(uid)
-      : false;
+      : { role: result.role, claimsUpdated: false };
 
     res.setHeader("Cache-Control", "no-store");
     res.status(result.created ? 201 : 200).json({
-      role: result.role,
-      ...(claimsUpdated ? { claimsUpdated: true } : {}),
+      role: synchronized.role,
+      ...(synchronized.claimsUpdated ? { claimsUpdated: true } : {}),
     });
   } catch (error) {
     console.error("[Users] Failed to bootstrap profile:", error);

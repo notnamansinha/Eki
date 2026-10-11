@@ -55,7 +55,9 @@ export function evaluateChatRate(
 
   const gapMs = now - lastSentAt;
   if (gapMs < MIN_GAP_MS) {
-    return { allowed: false, reason: "cooldown", retryAfterMs: MIN_GAP_MS - gapMs };
+    // A future stored server timestamp still denies admission, but must not
+    // turn the client's retry schedule into an unbounded delay.
+    return { allowed: false, reason: "cooldown", retryAfterMs: Math.min(MIN_GAP_MS, MIN_GAP_MS - gapMs) };
   }
 
   const hourlyWindow = previous.filter((timestamp) => now - timestamp < HOUR_MS);

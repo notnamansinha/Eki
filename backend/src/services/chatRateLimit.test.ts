@@ -31,6 +31,12 @@ describe("evaluateChatRate", () => {
     });
   });
 
+  it("denies a future server timestamp with a bounded retry hint", () => {
+    expect(evaluateChatRate({ sentAt: [now + HOUR_MS] }, now)).toEqual({
+      allowed: false, reason: "cooldown", retryAfterMs: MIN_GAP_MS,
+    });
+  });
+
   it("appends to the rolling window when under the hourly cap", () => {
     const existing = { sentAt: [now - 20_000], lastSentAt: now - 10_000 };
     expect(evaluateChatRate(existing, now)).toEqual({
