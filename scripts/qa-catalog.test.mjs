@@ -44,7 +44,7 @@ test('malformed oracle columns fail rather than silently shortening a case', () 
 
 test('historical appendix rows cannot duplicate current acceptance definitions', () => {
   const source = ['## 5. Feature catalog', '| AUTH01 | action | oracle |', '## Appendix A. History',
-    '| AUTH01 | obsolete | obsolete |'];
+    '## 5. Copied historical specification', '| AUTH01 | obsolete | obsolete |'];
   assert.equal(parseRequirements(source).cases.length, 1);
 });
 

@@ -45,6 +45,9 @@ export function parseRequirements(lines, source = planPath) {
       else if (/^## 11\./.test(line)) zone = 'experiment';
       else if (/^## /.test(line)) zone = '';
     }
+    // Historical PR/comment headings can resemble sections 4/5. Never import
+    // them back into the active specification after the appendix boundary.
+    if (appendix) continue;
     if (/^\| Profile \|/.test(line) && zone === 'simulation') simulationTable = true;
     const cells = tableCells(line);
     if (cells) {
@@ -172,7 +175,8 @@ export async function buildCatalog(root = repositoryRoot, mappings = testMap) {
   const profileDefinition = /const profiles = new Set\(\[([\s\S]*?)\]\)/.exec(generator);
   if (!profileDefinition) throw new Error('Generator profile declaration needs explicit inventory support');
   const profiles = [...profileDefinition[1].matchAll(/'([a-z][a-z0-9-]*)'/g)].map(match => match[1]);
-  if (new Set(requirements.simulations.map(item => item.profile)).size !== profiles.length ||
+  if (requirements.simulations.length !== profiles.length ||
+      new Set(requirements.simulations.map(item => item.profile)).size !== profiles.length ||
       profiles.some(profile => !requirements.simulations.some(item => item.profile === profile))) {
     throw new Error('Generator profiles and plan simulations differ');
   }
