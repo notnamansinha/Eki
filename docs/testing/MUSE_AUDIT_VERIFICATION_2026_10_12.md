@@ -60,6 +60,7 @@ remain covered. Timestamp compatibility and freshness rules are unchanged.
 | Full backend suite | 1,058 passed; 46 emulator-only cases skipped |
 | Full frontend suite | 637 passed in 76 files with two workers; first highly parallel invocation hit timeouts and was interrupted |
 | OpenAPI and UI source contracts | Passed |
+| Acceptance catalog and critical-source coverage budget | BOARD07 maps the coordinate-validity sub-oracle to exact policy/HTTP regression titles; no whole-case acceptance claim |
 | Frontend and backend lint | Passed |
 | Backend TypeScript build | Passed |
 | Full dependency audit, including development tools | Zero vulnerabilities |
