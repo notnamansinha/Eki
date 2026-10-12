@@ -13,6 +13,7 @@ const harness = vi.hoisted(() => ({
   sessionDirection: "forward" as unknown,
   sessionStatus: "active",
   completeBeforeTransaction: false,
+  livePosition: { lat: 23, lng: 72.5 } as { lat: unknown; lng: unknown },
 }));
 
 vi.mock("../middleware/requireAuth", () => ({
@@ -81,8 +82,7 @@ vi.mock("../lib/firebaseAdmin", () => {
               status: "active",
               deviceState: "online",
               motionState: "stopped",
-              lat: 23,
-              lng: 72.5,
+              ...harness.livePosition,
               timestamp: Date.now(),
             }),
           };
@@ -126,6 +126,7 @@ beforeEach(() => {
   harness.sessionDirection = "forward";
   harness.sessionStatus = "active";
   harness.completeBeforeTransaction = false;
+  harness.livePosition = { lat: 23, lng: 72.5 };
 });
 
 async function join(body: Record<string, unknown>) {
@@ -200,6 +201,34 @@ describe.each([false, true])("session passenger join route v2=%s", mode => {
 
     expect(response.status).toBe(200);
     expect(harness.liveReads).toBe(1);
+    expect(harness.updates).toHaveLength(1);
+  });
+
+  describe.each(["lat", "lng"] as const)("live bus %s", (axis) => {
+    it.each([null, undefined, "", false, "23"])(
+      "rejects malformed coordinate %p before recording membership",
+      async (value) => {
+        harness.livePosition[axis] = value;
+        // Match the old coerced coordinate so proximity alone cannot hide the bug.
+        const position = { lat: 23, lng: 72.5, [axis]: value === undefined ? 0 : Number(value) };
+        const response = await join({ ...position, accuracy: 20 });
+
+        expect(response.status).toBe(409);
+        await expect(response.json()).resolves.toEqual({
+          error: "The live bus position is unavailable; wait for a fresh hardware fix.",
+        });
+        expect(harness.liveReads).toBe(1);
+        expect(harness.updates).toHaveLength(0);
+      },
+    );
+  });
+
+  it("allows first boarding at valid numeric zero coordinates", async () => {
+    harness.livePosition = { lat: 0, lng: 0 };
+    const response = await join({ lat: 0, lng: 0, accuracy: 20 });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ joined: true, sessionId: "session_1" });
     expect(harness.updates).toHaveLength(1);
   });
 

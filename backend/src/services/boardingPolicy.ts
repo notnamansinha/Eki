@@ -98,8 +98,10 @@ export function validateLiveBoardingProjection(
   ) {
     return null;
   }
-  const lat = Number(live.lat);
-  const lng = Number(live.lng);
+  // Reject malformed projections instead of coercing missing values to zero.
+  if (typeof live.lat !== "number" || typeof live.lng !== "number") return null;
+  const lat = live.lat;
+  const lng = live.lng;
   const timestamp = Number(live.timestamp);
   if (
     !Number.isFinite(lat) || lat < -90 || lat > 90 ||

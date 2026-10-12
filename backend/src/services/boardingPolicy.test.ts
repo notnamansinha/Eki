@@ -72,4 +72,42 @@ describe("boarding policy", () => {
     expect(validatePassengerPosition(23, 72.5, 101)).toBeNull();
     expect(validatePassengerPosition("23", 72.5, 25)).toBeNull();
   });
+
+  describe("live bus coordinates", () => {
+    const now = 1_800_000_000_000;
+    const expected = { sessionId: "session_1", busId: "bus_1", routeId: "route_1" };
+    const live = {
+      ...expected,
+      status: "active",
+      deviceState: "online",
+      motionState: "stopped",
+      lat: 23,
+      lng: 72.5,
+      timestamp: now - 1_000,
+    };
+
+    describe.each(["lat", "lng"] as const)("%s", (axis) => {
+      it.each([
+        null, undefined, "", " ", false, true, "23", [], [23], {},
+        Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY,
+      ])("rejects malformed coordinate %p", (value) => {
+        expect(validateLiveBoardingProjection({ ...live, [axis]: value }, expected, now)).toBeNull();
+      });
+
+      it.each([-1, 1])("rejects a coordinate beyond the range in direction %s", (sign) => {
+        const limit = axis === "lat" ? 90 : 180;
+        expect(validateLiveBoardingProjection({ ...live, [axis]: sign * (limit + 0.001) }, expected, now)).toBeNull();
+      });
+    });
+
+    it.each([
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 72.5 },
+      { lat: 23, lng: 0 },
+      { lat: -90, lng: -180 },
+      { lat: 90, lng: 180 },
+    ])("accepts valid numeric coordinates %p", (position) => {
+      expect(validateLiveBoardingProjection({ ...live, ...position }, expected, now)).toEqual(position);
+    });
+  });
 });
