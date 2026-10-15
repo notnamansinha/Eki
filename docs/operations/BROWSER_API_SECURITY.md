@@ -1,5 +1,7 @@
 # Browser API security and fleet viewing
 
+Last updated: 2026-10-16 00:00 IST (UTC+05:30).
+
 The owner confirmed on 9 October 2026 that any signed-in Google account may
 view a bus while it is live. Institutional affiliation is not an access
 requirement. Mutation privileges remain server-authorized: administrator and
@@ -19,9 +21,14 @@ are rejected; only localhost, 127.0.0.1 and ::1 may use HTTP for development.
 `API_APPCHECK_MODE=off|enforce` controls additional backend attestation.
 `off` is the compatibility default; invalid values fail startup. `enforce`
 verifies Firebase App Check for browser mutations, legacy route/Places/planning
-reads and v2 route geometry reads. Ordinary identity/RBAC checks still apply.
-Exact device POST telemetry/diagnostics and GET firmware routes remain under
-device credential authentication and do not require browser attestation.
+reads and v2 route geometry/segment paths, including the production
+`GET /api/v2/routes/{routeId}/segments` planner. Protected reads require
+attestation for both GET and HEAD, including mixed-case route spellings and
+encoded identifiers accepted by Express. Identifier values retain their case.
+Ordinary identity/RBAC checks still apply.
+Exact device POST telemetry/diagnostics/firmware-installation and GET firmware
+routes remain under device credential authentication and do not require
+browser attestation.
 Method/path mismatches cannot obtain a device exemption by supplying a header.
 
 Verification permits at most 64 raw fills and 32 coalesced waiters per token

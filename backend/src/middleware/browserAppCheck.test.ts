@@ -22,12 +22,16 @@ describe("browser API App Check boundary", () => {
     expect(requiresBrowserAttestation("GET", "/api/places/search")).toBe(true);
     expect(requiresBrowserAttestation("HEAD", "/API/PLACES/search")).toBe(true);
     expect(requiresBrowserAttestation("GET", "/Api/v2/RouTes/CaseSensitiveId/GEOMETRY")).toBe(true);
+    expect(requiresBrowserAttestation("GET", "/api/v2/routes/%43aseSensitiveId/geometry")).toBe(true);
+    expect(requiresBrowserAttestation("HEAD", "/API/v2/routes/%43aseSensitiveId/SEGMENTS/")).toBe(true);
+    expect(requiresBrowserAttestation("GET", "/api/v2/routes/id/segments")).toBe(true);
     expect(requiresBrowserAttestation("POST", "/api/devices/device/telemetry")).toBe(false);
     expect(requiresBrowserAttestation("GET", "/api/devices/device/firmware")).toBe(false);
     expect(requiresBrowserAttestation("POST", "/api/devices/device/firmware/installation")).toBe(false);
     expect(requiresBrowserAttestation("POST", "/api/devices/device/firmware/installation/extra")).toBe(true);
     expect(requiresBrowserAttestation("PUT", "/api/devices/device/firmware/installation")).toBe(true);
     expect(requiresBrowserAttestation("GET", "/api/v2/routes")).toBe(false);
+    expect(requiresBrowserAttestation("GET", "/api/v2/routes/id/segments-other")).toBe(false);
   });
   it("rejects missing attestation even with a forged Device header on a browser route", async () => {
     const response = await fetch(`${url}/api/v2/settings/global`, { method: "PATCH", headers: { Authorization: "Device forged" } });

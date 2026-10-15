@@ -12,8 +12,10 @@ export function requiresBrowserAttestation(method: string, path: string): boolea
   if (method !== "GET" && method !== "HEAD") return true;
   // Express matches route names without regard to case and dispatches HEAD to GET handlers.
   // Match only fixed segments here; leave identifier values in the original request untouched.
+  // Match Express's raw parameter segment, including percent-encoded IDs. Validation
+  // belongs to the handler after attestation; a narrower ID regex can skip this guard.
   return /^\/api\/(?:places|plan|routes)(?:\/|$)/i.test(path) ||
-    /^\/api\/v2\/routes\/[A-Za-z0-9_-]{1,128}\/geometry(?:\/|$)/i.test(path);
+    /^\/api\/v2\/routes\/[^/]+\/(?:geometry|segments)(?:\/|$)/i.test(path);
 }
 /** Opt-in staged API enforcement; bearer identity/RBAC and device auth remain independent. */
 export function createBrowserAppCheck(mode = process.env.API_APPCHECK_MODE ?? "off") {

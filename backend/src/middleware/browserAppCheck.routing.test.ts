@@ -3,15 +3,19 @@ import { rateLimit } from "express-rate-limit";
 import type { Server } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ verifyApp: vi.fn(), verifyIdentity: vi.fn() }));
+const fixture = vi.hoisted(() => ({ verifyApp: vi.fn(), verifyIdentity: vi.fn(), readRoute: vi.fn() }));
 vi.mock("firebase-admin/app-check", () => ({ getAppCheck: () => ({ verifyToken: fixture.verifyApp }) }));
-vi.mock("../lib/firebaseAdmin", () => ({ firebaseAdminApp: {} }));
+vi.mock("../lib/firebaseAdmin", () => ({
+  firebaseAdminApp: {},
+  db: { collection: () => ({ doc: (id: string) => ({ get: () => fixture.readRoute(id) }) }) },
+}));
 vi.mock("./verifiedRequest", () => ({ verifyRequestToken: fixture.verifyIdentity }));
 
 import { createBrowserAdmission } from "../lib/browserAdmission";
 import { requireAdmin } from "./requireAdmin";
 import { requireAuth } from "./requireAuth";
 import { createBrowserAppCheck } from "./browserAppCheck";
+import { segmentRoutes } from "../routes/plan";
 
 const servers: Server[] = [];
 afterEach(async () => {
@@ -20,6 +24,7 @@ afterEach(async () => {
   })));
   fixture.verifyApp.mockReset();
   fixture.verifyIdentity.mockReset();
+  fixture.readRoute.mockReset();
 });
 
 async function boot(mode: "enforce" | "off" = "enforce") {
@@ -43,6 +48,7 @@ async function boot(mode: "enforce" | "off" = "enforce") {
     res.json({ routeId: req.params.routeId });
   });
   app.use("/api/v2/routes", geometry);
+  app.use("/api/v2/routes", fixtureLimiter, segmentRoutes);
   const devices = express.Router();
   devices.post("/:deviceId/firmware/installation", (req, res) => {
     if (req.get("Authorization") !== "Device valid") { res.sendStatus(401); return; }
@@ -64,7 +70,7 @@ describe("App Check through mounted browser and device routers", () => {
     fixture.verifyIdentity.mockResolvedValue({ uid: "admin", admin: true });
     fixture.verifyApp.mockRejectedValue(Object.assign(Error("invalid"), { code: "app-check/invalid-token" }));
     const { url, work } = await boot();
-    for (const path of ["/api/places/search", "/API/PLACES/search", "/Api/PlAn/RideId", "/aPi/RoUtEs/RideId", "/API/v2/RouTes/CaseSensitiveId/GEOMETRY"]) {
+    for (const path of ["/api/places/search", "/API/PLACES/search", "/Api/PlAn/RideId", "/aPi/RoUtEs/RideId", "/API/v2/RouTes/CaseSensitiveId/GEOMETRY", "/api/v2/routes/%43aseSensitiveId/geometry", "/API/v2/RouTes/%43aseSensitiveId/GEOMETRY/"]) {
       for (const method of ["GET", "HEAD"]) {
         for (const appToken of [undefined, "invalid-app-token"]) {
           const response = await fetch(url + path, { method, headers: {
@@ -76,6 +82,37 @@ describe("App Check through mounted browser and device routers", () => {
       }
     }
     expect(work()).toBe(0);
+  });
+
+  it("guards the production v2 segment router before route reads for GET and HEAD", async () => {
+    fixture.verifyIdentity.mockResolvedValue({ uid: "rider", admin: false });
+    fixture.verifyApp.mockRejectedValue(Object.assign(Error("invalid"), { code: "app-check/invalid-token" }));
+    fixture.readRoute.mockResolvedValue({ exists: false });
+    const { url } = await boot();
+    for (const path of ["/api/v2/routes/CaseSensitiveId/segments", "/API/v2/RouTes/%43aseSensitiveId/SEGMENTS/"]) {
+      for (const method of ["GET", "HEAD"]) {
+        for (const token of [undefined, "invalid-app-token"]) {
+          const response = await fetch(`${url}${path}?from=a&to=z`, { method, headers: {
+            Authorization: "Bearer rider",
+            ...(token ? { "X-Firebase-AppCheck": token } : {}),
+          } });
+          expect(response.status, `${method} ${path}`).toBe(403);
+        }
+      }
+    }
+    expect(fixture.readRoute).not.toHaveBeenCalled();
+    fixture.verifyApp.mockResolvedValue({ appId: "test-app" });
+    for (const method of ["GET", "HEAD"]) {
+      const response = await fetch(`${url}/API/v2/RouTes/%43aseSensitiveId/SEGMENTS/?from=a&to=z`, {
+        method, headers: { Authorization: "Bearer rider", "X-Firebase-AppCheck": "valid-app-token" },
+      });
+      expect(response.status).toBe(404);
+    }
+    expect(fixture.readRoute.mock.calls).toEqual([["CaseSensitiveId"], ["CaseSensitiveId"]]);
+    const off = await boot("off");
+    expect((await fetch(`${off.url}/api/v2/routes/CaseSensitiveId/segments?from=a&to=z`, {
+      headers: { Authorization: "Bearer rider" },
+    })).status).toBe(404);
   });
 
   it("permits verified requests while preserving identity and admin checks", async () => {
