@@ -1,5 +1,11 @@
 import type { LegacyTripState, MotionState, TripState } from "../types";
 import { haversineMeters } from "../lib/geo";
+import { GNSS_HDOP_MAX, GNSS_STATIONARY_SPEED_KMH } from "../lib/telemetryMotion";
+
+export interface TerminalArrivalEvidence {
+  startedAt: number;
+  lastSampledAt: number;
+}
 
 interface TripRouteStop {
   lat: number;
@@ -15,12 +21,18 @@ export interface TripStateInput {
   currentStopIndex: number;
   stops: TripRouteStop[];
   hasDepartedOrigin: boolean;
+  timestamp?: number;
+  now?: number;
+  gpsHdop?: number | null;
+  speed?: number;
+  terminalArrival?: TerminalArrivalEvidence | null;
 }
 
 export interface TripStateResult {
   tripState: TripState;
   currentStopIndex: number;
   hasDepartedOrigin: boolean;
+  terminalArrival?: TerminalArrivalEvidence;
 }
 
 // Stop arrival and endpoint direction inference are intentionally distinct
@@ -29,6 +41,11 @@ export const STOP_ARRIVAL_GEOFENCE_M = 20;
 export const STOP_GEOFENCE_M = STOP_ARRIVAL_GEOFENCE_M;
 export const ORIGIN_DEPARTURE_M = 150;
 const MAX_TELEMETRY_SEGMENT_M = 250;
+// Two one-second hardware heartbeats must span this interval. This is arrival
+// confirmation, independent of the post-completion turnaround wait.
+const configuredConfirmationMs = Number(process.env.TERMINAL_ARRIVAL_CONFIRMATION_MS);
+export const TERMINAL_ARRIVAL_CONFIRMATION_MS = Number.isFinite(configuredConfirmationMs) && configuredConfirmationMs >= 1_000
+  ? Math.floor(configuredConfirmationMs) : 2_000;
 
 function distanceToSegmentMeters(
   point: TripRouteStop,
@@ -102,7 +119,8 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
     };
   }
 
-  if (motionState === "uncertain") {
+  if (motionState === "uncertain" || (typeof input.now === "number" &&
+    (!Number.isFinite(input.timestamp) || input.now - input.timestamp! > 60_000 || input.timestamp! > input.now + 10_000))) {
     return {
       tripState:
         currentTripState === "maintenance"
@@ -124,13 +142,12 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
       haversineMeters(position, firstStop) >= departureRadius);
 
   if (currentTripState === "pre_departure") {
+    const departed = motionState === "moving" &&
+      haversineMeters(position, firstStop) >= departureRadius;
     return {
-      tripState:
-        haversineMeters(position, firstStop) <= STOP_GEOFENCE_M
-          ? "in_service"
-          : "pre_departure",
-      currentStopIndex,
-      hasDepartedOrigin,
+      tripState: departed ? "in_service" : "pre_departure",
+      currentStopIndex: departed && stops.length > 1 ? Math.max(1, currentStopIndex) : currentStopIndex,
+      hasDepartedOrigin: hasDepartedOrigin || departed,
     };
   }
 
@@ -169,7 +186,21 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
       if (crossing < lastCrossing) break;
       lastCrossing = crossing;
       if (nextIndex === lastIndex) {
-        return { tripState: hasDepartedOrigin ? "completed" : "in_service", currentStopIndex: nextIndex, hasDepartedOrigin };
+        const reliableArrival = hasDepartedOrigin && motionState === "stopped" &&
+          typeof input.gpsHdop === "number" && Number.isFinite(input.gpsHdop) &&
+          input.gpsHdop >= 0 && input.gpsHdop <= GNSS_HDOP_MAX &&
+          typeof input.speed === "number" && input.speed >= 0 && input.speed <= GNSS_STATIONARY_SPEED_KMH &&
+          Number.isSafeInteger(input.timestamp) &&
+          haversineMeters(position, stops[lastIndex]) <= STOP_GEOFENCE_M;
+        if (!reliableArrival) return { tripState: "in_service", currentStopIndex: nextIndex, hasDepartedOrigin };
+        const timestamp = input.timestamp!;
+        const prior = input.terminalArrival;
+        const usablePrior = prior && Number.isSafeInteger(prior.startedAt) && Number.isSafeInteger(prior.lastSampledAt) &&
+          prior.startedAt <= prior.lastSampledAt && prior.lastSampledAt <= timestamp && timestamp - prior.lastSampledAt <= 60_000;
+        const evidence = usablePrior ? { ...prior, lastSampledAt: timestamp } : { startedAt: timestamp, lastSampledAt: timestamp };
+        const confirmed = usablePrior && timestamp > prior.lastSampledAt && timestamp - prior.startedAt >= TERMINAL_ARRIVAL_CONFIRMATION_MS;
+        return { tripState: confirmed ? "completed" : "in_service", currentStopIndex: nextIndex, hasDepartedOrigin,
+          ...(!confirmed ? { terminalArrival: evidence } : {}) };
       }
       nextIndex += 1;
     }

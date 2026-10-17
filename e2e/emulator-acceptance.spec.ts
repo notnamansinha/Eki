@@ -429,12 +429,23 @@ test('actual route editor keeps identity immutable and cancels a local rename wi
 test('authenticated telemetry completes the joined ride and arms a distinct return while feedback and history retain identity', async ({ page, request, context }) => {
   test.setTimeout(60000);
   await page.goto('/'); await login(page); await board(page);
+  const chatResult = await page.evaluate(async () => {
+    const { auth } = await import('/firebase.ts');
+    const token = await auth.currentUser!.getIdToken();
+    const response = await fetch('http://127.0.0.1:3116/api/sessions/qa_session/messages', {
+      method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Synthetic journey message retained in history.', requestId: 'routing_history_chat_12345678' }),
+    });
+    return { status: response.status, token };
+  });
+  expect(chatResult.status).toBe(201);
   const joined = (await evidence(request)).passengers.qa_passenger;
   const middle = await request.post(`${control}/telemetry/middle`);
   expect(middle.ok()).toBe(true); expect((await middle.json()).statuses).toEqual([202, 202]);
   await expect.poll(async () => (await evidence(request)).live.currentStopIndex).toBe(2);
   const end = await request.post(`${control}/telemetry/end`);
-  expect(end.ok()).toBe(true); expect((await end.json()).statuses).toEqual([202]);
+  const terminalResult = await end.json();
+  expect(end.ok(), JSON.stringify(terminalResult)).toBe(true); expect(terminalResult.statuses).toEqual([202, 202, 202]);
   await expect(page.getByText('Route ended', { exact: true })).toBeVisible({ timeout: 15000 });
   await expect.poll(async () => (await evidence(request)).sessions.filter((ride: { automaticTurnaround?: boolean }) => ride.automaticTurnaround).length,
     { timeout: 15000 }).toBe(1);
@@ -443,9 +454,11 @@ test('authenticated telemetry completes the joined ride and arms a distinct retu
   const returning = completed.sessions.find((ride: { automaticTurnaround?: boolean }) => ride.automaticTurnaround);
   expect(original).toMatchObject({ status: 'completed', direction: 'forward', passengerIds: ['qa_passenger'] });
   expect(original.passengers.qa_passenger).toEqual(joined);
+  expect(original.lastKnownLocation).toMatchObject({ lat: 23.0036, lng: 72 });
+  expect(completed.messages).toEqual([expect.objectContaining({ text: 'Synthetic journey message retained in history.' })]);
   expect(returning).toMatchObject({ direction: 'reverse', previousSessionId: 'qa_session', passengers: {} });
-  // The real engine may already advance armed to active at the return origin.
-  expect(['armed', 'active']).toContain(returning.status);
+  expect(returning.status).toBe('armed');
+  expect(completed.live).toMatchObject({ direction: 'reverse', tripState: 'pre_departure', hasDepartedOrigin: false });
   expect(returning.id).not.toBe('qa_session');
   expect(completed.lock.sessionId).toBe(returning.id);
   expect(completed.completions).toEqual([expect.objectContaining({ id: 'qa_session', sessionId: 'qa_session', direction: 'forward' })]);
@@ -456,11 +469,28 @@ test('authenticated telemetry completes the joined ride and arms a distinct retu
   expect((await evidence(request)).feedbacks).toEqual([expect.objectContaining({ userId: 'qa_passenger', type: 'ride',
     sessionId: 'qa_session', busId: 'qa_bus', driverId: 'qa_driver' })]);
   await page.goto('/?panel=history'); await login(page, 'qa_admin');
+  const cleared = await page.evaluate(async () => {
+    const { auth } = await import('/firebase.ts');
+    const token = await auth.currentUser!.getIdToken();
+    const response = await fetch('http://127.0.0.1:3116/api/shifts/qa_session/messages', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    return { status: response.status, body: await response.json() };
+  });
+  expect(cleared).toEqual({ status: 200, body: { deleted: 1 } });
+  const archivedReplay = await request.post('http://127.0.0.1:3116/api/sessions/qa_session/messages', {
+    headers: { Authorization: `Bearer ${chatResult.token}` },
+    data: { text: 'Synthetic journey message retained in history.', requestId: 'routing_history_chat_12345678' },
+  });
+  expect(archivedReplay.status()).toBe(200);
+  const archived = await evidence(request);
+  expect(archived.messages).toHaveLength(0);
+  expect(archived.archivedMessages).toEqual([expect.objectContaining({ text: 'Synthetic journey message retained in history.' })]);
   const row = page.getByRole('button').filter({ hasText: 'Completed' });
   await expect(row).toHaveCount(1); await row.click();
   const details = page.locator('#ride-history-details-qa_session');
   await expect(details).toContainText('qa_passenger');
   await expect(details).toContainText('Synthetic origin'); await expect(details).toContainText('Synthetic end');
+  await expect(details).toContainText('Synthetic journey message retained in history.');
+  await expect(details).toContainText('Last received GNSS: 23.003600, 72.000000');
   await page.reload();
   await expect(page.getByLabel('Verified fixture account')).toHaveText('qa_admin');
   await expect(page.getByRole('button').filter({ hasText: 'Completed' })).toHaveCount(1);
@@ -475,6 +505,7 @@ test('authenticated telemetry completes the joined ride and arms a distinct retu
   const deleted = await evidence(request);
   expect(deleted.sessions.map((ride: { id: string }) => ride.id)).toEqual([returning.id]);
   expect(deleted.completions).toEqual([]); expect(deleted.lock.sessionId).toBe(returning.id);
+  expect(deleted.archivedMessages).toEqual([]);
   await page.goto('/?panel=feedback');
   const feedbackCard = page.getByRole('button').filter({ hasText: 'Synthetic completed ride feedback.' });
   await feedbackCard.click();

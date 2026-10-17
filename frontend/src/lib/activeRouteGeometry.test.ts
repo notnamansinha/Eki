@@ -90,11 +90,12 @@ describe("activeRouteGeometry", () => {
 
   it("fetches and decodes reroute geometry once per version", async () => {
     const path = `activeRouteGeometry/bus_01_route_1/3`;
-    harness.data.set(path, { polyline: validPolyline });
+    harness.data.set(path, { polyline: validPolyline, firstStopIndex: 2 });
 
     const geometry = await fetchActiveRouteGeometry("bus_01_route_1", 3);
     expect(geometry?.polyline).toBe(validPolyline);
     expect(geometry?.path).toHaveLength(2);
+    expect(geometry?.firstStopIndex).toBe(2);
     // The resolved geometry is cached synchronously and the fetch is not
     // repeated for the same version.
     expect(cachedActiveRouteGeometry("bus_01_route_1", 3)).toEqual(geometry);

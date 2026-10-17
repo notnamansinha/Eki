@@ -24,21 +24,23 @@ router.get("/fleet", requireAdmin, async (req, res) => {
           const fleet = db.collection("bus_locations"); const trips = db.collection("completed_trips");
           const queries = [fleet, fleet.where("status", "==", "active"),
             fleet.where(Filter.or(Filter.where("deviceState", "==", "offline"), Filter.where("motionState", "==", "uncertain"))),
-            trips, trips.where("direction", "==", "forward"), trips.where("direction", "==", "reverse")];
-          const [total, active, lost, completed, forward, reverse] = await Promise.all(queries.map(async query => (await transaction.get(query.count())).data().count));
-          return { totalBuses: total, activeBuses: active, idleBuses: total - active, signalLostBuses: lost, ongoingTrips: active,
+            trips, trips.where("direction", "==", "forward"), trips.where("direction", "==", "reverse"),
+            fleet.where("status", "==", "active").where("tripState", "==", "in_service")];
+          const [total, active, lost, completed, forward, reverse, inService] = await Promise.all(queries.map(async query => (await transaction.get(query.count())).data().count));
+          return { totalBuses: total, activeBuses: active, idleBuses: total - active, signalLostBuses: lost, ongoingTrips: inService,
             passengerCount: null, completedTripsByDirection: { forward, reverse, unresolved: completed - forward - reverse, total: completed, sampleLimit: null },
             statistics: { sampled: false, sampleLimit: null, generatedAt: new Date().toISOString() } };
         }, { readOnly: true });
       }
       // Get persistent bus count from Firestore
       const [busSnapshot, completedTrips] = await Promise.all([
-        db.collection("bus_locations").select("deviceState", "motionState", "status").limit(1_000).get(),
+        db.collection("bus_locations").select("deviceState", "motionState", "status", "tripState").limit(1_000).get(),
         db.collection("completed_trips").select("direction").limit(1_000).get(),
       ]);
       let activeCount = 0;
       let idleCount = 0;
       let signalLostCount = 0;
+      let inServiceCount = 0;
 
       busSnapshot.forEach((doc) => {
         const data = doc.data();
@@ -48,6 +50,7 @@ router.get("/fleet", requireAdmin, async (req, res) => {
         ) signalLostCount++;
         if (data.status === "active") activeCount++;
         else idleCount++;
+        if (data.status === "active" && data.tripState === "in_service") inServiceCount++;
       });
 
       const directionalTrips = countRidesByDirection(
@@ -59,7 +62,7 @@ router.get("/fleet", requireAdmin, async (req, res) => {
         activeBuses: activeCount,
         idleBuses: idleCount,
         signalLostBuses: signalLostCount,
-        ongoingTrips: activeCount,
+        ongoingTrips: inServiceCount,
         passengerCount: null, // Requires a dedicated analytics collection
         completedTripsByDirection: {
           ...directionalTrips,

@@ -45,6 +45,8 @@ export interface ActiveBusEntry {
   /** Untrusted route-match value; unresolved values must not select geometry. */
   routeDirection?: unknown;
   routeGeometryVersion?: number;
+  routeComputedAt?: number;
+  routeTrafficState?: "pending" | "current" | "fallback";
 }
 
 export interface RawLiveLocation {

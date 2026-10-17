@@ -95,7 +95,7 @@ export function matchingSession(
 export interface ReconciliationDecision {
   stale: boolean;
   lastActivity: number | null;
-  reason: "stale" | "terminal" | "recent" | "unknown_activity";
+  reason: "stale" | "terminal" | "recent" | "unknown_activity" | "ready";
 }
 
 export function reconciliationDecision(
@@ -109,6 +109,16 @@ export function reconciliationDecision(
     session.status as (typeof RECONCILABLE_RIDE_STATUSES)[number],
   )) {
     return { stale: false, lastActivity: null, reason: "terminal" };
+  }
+
+  // Automatic readiness is durable terminal intent, not an abandoned service
+  // trip. Power-off overnight must not consume its only return session. A
+  // departed or explicitly operated/interrupted session keeps the usual policy.
+  if (session.status === "armed" && session.automaticTurnaround === true && session.startTime == null &&
+    matchingSession(activeRide, sessionId) && activeRide?.tripState === "pre_departure" &&
+    activeRide.hasDepartedOrigin === false &&
+    (!matchingSession(liveBus, sessionId) || liveBus?.tripState === "pre_departure")) {
+    return { stale: false, lastActivity: latestSessionActivity(session), reason: "ready" };
   }
 
   const sessionActivity = latestSessionActivity(session);

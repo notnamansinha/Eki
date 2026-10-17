@@ -91,10 +91,28 @@ export function durableLifecycle(
       ? value.currentStopIndex
       : 0,
     hasDepartedOrigin: value.hasDepartedOrigin === true,
+    terminalArrival: value.terminalArrival ?? null,
+    // A restored same-session stream must not revive a lower geometry revision.
+    ...(Number.isSafeInteger(value.lastRouteVersion) && Number(value.lastRouteVersion) > 0
+      ? { routeVersion: Number(value.lastRouteVersion) + 1 } : {}),
     delayMinutes:
       typeof value.delayMinutes === "number" ? value.delayMinutes : 0,
     delayUpdatedAt:
       typeof value.delayUpdatedAt === "number" ? value.delayUpdatedAt : 0,
   };
+}
+
+/** New checkpoints only: legacy history is not proof of qualified service. */
+export function durableTerminalLifecycle(value: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  if (!value || value.consumedBy !== null || !normalizeRideDirection(value.direction) ||
+    typeof value.sessionId !== "string" || typeof value.driverId !== "string" ||
+    typeof value.directionEndpointVersion !== "string" ||
+    !Number.isFinite(value.completedAt) || !Number.isFinite(value.turnaroundEligibleAt) ||
+    !Number.isFinite(value.turnaroundSampledAt) || value.hasDepartedOrigin !== true ||
+    !Number.isInteger(value.currentStopIndex)) return null;
+  return { ...value, status: "offline", tripState: "completed", terminalArrival: null,
+    terminalArrivalConfirmedAt: value.completedAt, directionState: "resolved",
+    turnaroundClaimId: null, turnaroundClaimedAt: null,
+    lastCompletedSessionId: value.sessionId, lastCompletedAt: value.completedAt, lastCompletedRouteId: value.routeId };
 }
 

@@ -17,10 +17,10 @@ const state = vi.hoisted(() => ({
 const map = { panTo: state.panTo, setZoom: state.setZoom, fitBounds: state.fitBounds };
 vi.mock("@vis.gl/react-google-maps", () => ({
   Map: ({ children }: { children: ReactNode }) => <div aria-label="Map">{children}</div>,
-  AdvancedMarker: ({ children, position }: { children: ReactNode; position: unknown }) => {
+  AdvancedMarker: ({ children, position, anchorLeft, anchorTop }: { children: ReactNode; position: unknown; anchorLeft?: string; anchorTop?: string }) => {
     const key = JSON.stringify(position);
     state.markerRenders.set(key, (state.markerRenders.get(key) ?? 0) + 1);
-    return <div data-marker={key}>{children}</div>;
+    return <div data-marker={key} data-anchor={JSON.stringify([anchorLeft, anchorTop])}>{children}</div>;
   },
   useMap: () => map,
 }));
@@ -56,6 +56,7 @@ describe("passenger map device and ride contexts", () => {
     const second = { ...fixtureBus("forward", "qa-session-2", "qa-bus-2"), lat: 23.005, lng: 72.005 };
     state.snapshot = { first, second };
     render(<PassengerMap route={directed} targetStop={route.stops[1]} />);
+    expect(screen.getByTitle(/^qa-bus(?: —.*)?$/).closest("[data-marker]")?.getAttribute("data-anchor")).toBe('["-50%","-50%"]');
     const secondPosition = JSON.stringify({ lat: second.lat, lng: second.lng });
     const before = state.markerRenders.get(secondPosition) ?? 0;
     expect(before).toBeGreaterThan(0);

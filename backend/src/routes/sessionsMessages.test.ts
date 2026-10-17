@@ -13,6 +13,7 @@ type User = {
 
 const harness = vi.hoisted(() => ({
   messages: new Map<string, Record<string, unknown>>(),
+  archivedMessages: new Map<string, Record<string, unknown>>(),
   rate: undefined as Record<string, unknown> | undefined,
   session: {} as Record<string, unknown>,
   setKinds: [] as string[],
@@ -33,7 +34,7 @@ vi.mock("../middleware/requireAuth", () => ({
 
 vi.mock("../lib/firebaseAdmin", () => {
   type Ref = {
-    kind: "session" | "rate" | "message" | "profile";
+    kind: "session" | "rate" | "message" | "profile" | "archive";
     id: string;
     collection: (name: string) => { doc: (id: string) => Ref };
     get: () => Promise<ReturnType<typeof snapshot>>;
@@ -47,7 +48,7 @@ vi.mock("../lib/firebaseAdmin", () => {
     id,
     collection: (name: string) => ({
       doc: (childId: string) => makeRef(
-        name === "messageRateLimits" ? "rate" : "message",
+        name === "messageRateLimits" ? "rate" : name === "archivedMessages" ? "archive" : "message",
         childId,
       ),
     }),
@@ -57,7 +58,7 @@ vi.mock("../lib/firebaseAdmin", () => {
     if (ref.kind === "profile") return snapshot(harness.profileExists);
     if (ref.kind === "session") return snapshot(true, harness.session);
     if (ref.kind === "rate") return snapshot(Boolean(harness.rate), harness.rate);
-    const message = harness.messages.get(ref.id);
+    const message = (ref.kind === "archive" ? harness.archivedMessages : harness.messages).get(ref.id);
     return snapshot(Boolean(message), message);
   };
 
@@ -113,6 +114,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   harness.messages = new Map();
+  harness.archivedMessages = new Map();
   harness.rate = undefined;
   harness.setKinds = []; harness.profileExists = true;
   harness.user = { uid: "passenger_1", role: "passenger", name: "Token Name" };
@@ -189,6 +191,16 @@ describe.each([false, true])("session message route v2=%s", mode => {
     expect(retry.status).toBe(200);
     expect(harness.setKinds).toEqual([]);
     expect(harness.messages.size).toBe(1);
+  });
+  it("retains retry identity and rejects changed content after live chat is archived", async () => {
+    const original = await (await send()).json();
+    harness.archivedMessages = new Map(harness.messages); harness.messages.clear();
+    harness.setKinds = [];
+    const replay = await send();
+    expect(replay.status).toBe(200); expect(await replay.json()).toEqual(original);
+    expect((await send("Changed after clear")).status).toBe(409);
+    expect(harness.messages.size).toBe(0); expect(harness.archivedMessages.size).toBe(1);
+    expect(harness.setKinds).toEqual([]);
   });
 
   it("replays the same message after completion without another write", async () => {

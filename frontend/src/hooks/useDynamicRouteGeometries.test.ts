@@ -30,13 +30,18 @@ function dynamicBus(
 }
 
 describe("selectCurrentRouteGeometries", () => {
+  it("does not reuse the same numbered revision across routes or sessions", () => {
+    const bus = { ...dynamicBus(2), routeId: "route_new", sessionId: "session_new" };
+    const old = { version: 2, geometry: g1, routeId: "route_1", sessionId: "session_old", direction: "forward" };
+    expect(selectCurrentRouteGeometries(new Map([["b1", bus]]), new Map([["b1", old]])).size).toBe(0);
+  });
   it("does not expose obsolete v1 geometry while a bus is at v2", () => {
     const buses = new Map<string, ActiveBusEntry>([
       ["b1", dynamicBus(2)],
     ]);
     const versioned = new Map<string, VersionedRouteGeometry>([
-      ["b1", { version: 1, geometry: g1 }], // stale — bus is now on v2
-      ["b2", { version: 2, geometry: g2 }], // another bus entirely
+      ["b1", { version: 1, geometry: g1, routeId: "route_1", direction: "forward" }], // stale — bus is now on v2
+      ["b2", { version: 2, geometry: g2, routeId: "route_1", direction: "forward" }], // another bus entirely
     ]);
     const selected = selectCurrentRouteGeometries(buses, versioned);
     // b1's v1 geometry must NOT be used for its v2 ride.
@@ -48,7 +53,7 @@ describe("selectCurrentRouteGeometries", () => {
       ["b1", dynamicBus(2)],
     ]);
     const versioned = new Map<string, VersionedRouteGeometry>([
-      ["b1", { version: 2, geometry: g2 }],
+      ["b1", { version: 2, geometry: g2, routeId: "route_1", direction: "forward" }],
     ]);
     const selected = selectCurrentRouteGeometries(buses, versioned);
     expect(selected.get("b1")).toBe(g2);
@@ -59,7 +64,7 @@ describe("selectCurrentRouteGeometries", () => {
       ["b1", dynamicBus(2, "configured")],
     ]);
     const versioned = new Map<string, VersionedRouteGeometry>([
-      ["b1", { version: 2, geometry: g2 }],
+      ["b1", { version: 2, geometry: g2, routeId: "route_1", direction: "forward" }],
     ]);
     const selected = selectCurrentRouteGeometries(buses, versioned);
     expect(selected.has("b1")).toBe(false);
@@ -72,7 +77,7 @@ describe("selectCurrentRouteGeometries", () => {
     ]]);
     const versioned = new Map<string, VersionedRouteGeometry>([[
       "b1",
-      { version: 2, geometry: g2 },
+      { version: 2, geometry: g2, routeId: "route_1", direction: "forward" },
     ]]);
     expect(selectCurrentRouteGeometries(buses, versioned).has("b1")).toBe(false);
   });

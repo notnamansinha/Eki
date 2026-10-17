@@ -13,6 +13,8 @@ function input(overrides: Partial<Parameters<typeof reduceTripState>[0]> = {}) {
     currentStopIndex: 0,
     stops: [origin, about200mNorth],
     hasDepartedOrigin: false,
+    timestamp: 10_000, gpsHdop: 1, speed: 0,
+    terminalArrival: { startedAt: 8_000, lastSampledAt: 9_000 },
     ...overrides,
   };
 }
@@ -218,7 +220,7 @@ describe("reduceTripState", () => {
     expect(recovered.tripState).toBe("in_service");
   });
 
-  it("starts only when a trustworthy fix enters the origin geofence", () => {
+  it("keeps a parked armed ride ready until observed departure", () => {
     const waiting = reduceTripState(
       input({
         currentTripState: "pre_departure",
@@ -237,7 +239,7 @@ describe("reduceTripState", () => {
 
     expect(waiting.tripState).toBe("pre_departure");
     expect(uncertainAtOrigin.tripState).toBe("pre_departure");
-    expect(arrived.tripState).toBe("in_service");
+    expect(arrived.tripState).toBe("pre_departure");
   });
 });
 
@@ -252,7 +254,8 @@ it("completes 100 stops in both travel orders without skipping an intermediate s
     expect(state.currentStopIndex).toBe(1);
     for (let i = 1; i < stops.length; i++) {
       state = reduceTripState({ ...stops[i], stops, motionState: "stopped", currentTripState: state.tripState,
-        currentStopIndex: state.currentStopIndex, hasDepartedOrigin: state.hasDepartedOrigin });
+        currentStopIndex: state.currentStopIndex, hasDepartedOrigin: state.hasDepartedOrigin,
+        timestamp: 10_000, gpsHdop: 1, speed: 0, terminalArrival: { startedAt: 8_000, lastSampledAt: 9_000 } });
       expect(state.currentStopIndex).toBe(Math.min(i + 1, stops.length - 1));
       expect(state.tripState).toBe(i === stops.length - 1 ? "completed" : "in_service");
     }

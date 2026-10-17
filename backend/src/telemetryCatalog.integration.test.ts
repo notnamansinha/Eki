@@ -21,6 +21,9 @@ integration("versioned telemetry catalog against actual Firebase emulators", () 
     state.firestore = new Firestore({ projectId: "demo-eki-catalog-test", host: process.env.FIRESTORE_EMULATOR_HOST, ssl: false }); state.realtime = getDatabase(app);
   });
   beforeEach(async () => {
+    // This suite measures catalog reads/invalidation without provider work.
+    // Departure refresh is tested separately with the feature enabled.
+    vi.stubEnv("LIVE_DEPARTURE_ROUTES_ENABLED", "false");
     invalidateRouteGeometryRead();
     state.reads = 0; state.snapshots = 0; state.version = 0; state.paused = false; state.pending = []; state.failAck = false; state.compute.mockReset();
     for (const name of ["routes", "ride_sessions", "_active_bus_locks"]) {
@@ -28,7 +31,7 @@ integration("versioned telemetry catalog against actual Firebase emulators", () 
     }
     await state.realtime!.ref().set(null);
   });
-  afterEach(async () => { stop?.(); stop = undefined; await drainTelemetryRouteProcessing(); });
+  afterEach(async () => { stop?.(); stop = undefined; await drainTelemetryRouteProcessing(); vi.unstubAllEnvs(); });
   afterAll(async () => { await state.firestore?.terminate(); if (app) await deleteApp(app); });
   it("coalesces passenger document reads and invalidates them on actual streamed edits/deletions", async () => {
     const ref = state.firestore!.collection("routes").doc("route"); await ref.set({ geometryVersion: 1 });

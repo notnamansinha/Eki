@@ -1,0 +1,6 @@
+{
+  "extends": "../../../frontend/tsconfig.json",
+  "compilerOptions": { "baseUrl": "../../../frontend", "incremental": false },
+  "include": ["./*.ts", "./*.tsx", "./*.mts"],
+  "exclude": []
+}

@@ -17,6 +17,7 @@ const PUBLIC_FIELDS = [
   "deviceSentAt", "backendReceivedAt", "receivedAt", "status", "deviceState", "signalState", "motionState",
   "tripState", "currentStopIndex", "delayMinutes", "direction", "directionState", "originStopId", "destinationStopId",
   "activeRouteId", "routeVersion", "routeSource", "routeState", "routeDirection", "routeGeometryVersion",
+  "routeComputedAt", "routeTrafficState",
   "mapMatchSeq", "mapMatchSampledAt", "mapMatchUpdatedAt", "matchConfidence", "distanceToActiveRoute",
 ] as const;
 const RAW_FIELDS = ["lat", "lng", "speed", "heading", "gpsHdop", "motionState", "seq", "sampledAt"];

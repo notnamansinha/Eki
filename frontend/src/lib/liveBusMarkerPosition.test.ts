@@ -56,6 +56,29 @@ function busSample(
 }
 
 describe("live bus marker selection", () => {
+  it("bridges one completed low-confidence sample without jumping to the parallel road", () => {
+    const prior = selectLiveBusMarkerPosition(busSample(10, {
+      matchedLocation: matchedLocation(10), mapMatchSeq: 10, mapMatchSampledAt: 10_000,
+    }), null, 50);
+    const uncertain = selectLiveBusMarkerPosition(busSample(11, {
+      matchedLocation: undefined, mapMatchSeq: 11, mapMatchSampledAt: 11_000,
+      routeState: "ON_ROUTE",
+    }), prior, 100);
+    expect(uncertain.position).toEqual(prior.position);
+    expect(uncertain.uncertain).toBe(true);
+    expect(uncertain.decision).toBe("match_pending");
+  });
+
+  it("rejects an older geometry revision even when its GPS sample is newer", () => {
+    const current = selectLiveBusMarkerPosition(busSample(10, {
+      matchedLocation: matchedLocation(10), routeVersion: 4,
+    }), null, 50);
+    const late = selectLiveBusMarkerPosition(busSample(11, {
+      routeVersion: 3, matchedLocation: matchedLocation(11, 11_000, 3),
+    }), current, 100);
+    expect(late.position).toEqual(current.position);
+  });
+
   it("exposes raw and none decisions during startup", () => {
     const raw = selectLiveBusMarkerPosition(busSample(1), null, 100);
     expect(raw).toMatchObject({
@@ -266,7 +289,7 @@ describe("live bus marker selection", () => {
     });
   });
 
-  it("does not wait after matching completed without a displayable match", () => {
+  it("briefly holds a prior match after matching completed without a displayable match", () => {
     const prior = selectLiveBusMarkerPosition(
       busSample(10, { matchedLocation: matchedLocation(10) }),
       null,
@@ -283,8 +306,8 @@ describe("live bus marker selection", () => {
     );
 
     expect(result).toMatchObject({
-      decision: "raw",
-      reason: "match_unavailable",
+      decision: "match_pending",
+      reason: "awaiting_match",
       uncertain: true,
     });
 
@@ -301,8 +324,8 @@ describe("live bus marker selection", () => {
       100,
     );
     expect(lowConfidence).toMatchObject({
-      decision: "raw",
-      reason: "match_unavailable",
+      decision: "match_pending",
+      reason: "awaiting_match",
       uncertain: true,
     });
   });

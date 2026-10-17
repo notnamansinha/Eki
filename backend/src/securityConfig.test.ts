@@ -842,7 +842,7 @@ describe("production security configuration", () => {
       "backend/src/services/deviceTelemetryService.ts",
     );
     expect(telemetry).toContain("durableRideRestores");
-    expect(telemetry).toContain("scheduleDurableRideRestore(assignment, sample, persisted.claimId)");
+    expect(telemetry).toContain("scheduleDurableRideRestore(assignment, sample, persisted.claimId, persisted.recoverTerminal)");
     expect(telemetry).not.toContain("await restoreDurableRide(assignment, sample)");
   });
 

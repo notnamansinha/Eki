@@ -1,0 +1,12 @@
+@import "../../../frontend/src/app/globals.css";
+@source "../../../frontend/src";
+body { margin: 0; background: #09090b; color: #ececef; font-family: system-ui, sans-serif; }
+.replay-toolbar { padding: 16px 24px; border-bottom: 1px solid #333; }
+.replay-toolbar h1 { font-size: 22px; font-weight: 700; }
+.replay-toolbar p, .replay-toolbar output { font-size: 13px; color: #aaa; }
+.replay-toolbar nav { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+.replay-toolbar button { background: #27272a; border: 1px solid #555; padding: 8px 14px; border-radius: 6px; }
+.replay-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 16px; padding: 16px; }
+.replay-grid h2 { font-weight: 700; padding-bottom: 8px; }
+.replay-pane { height: 720px; position: relative; overflow: hidden; border: 1px solid #444; border-radius: 10px; }
+@media (max-width: 900px) { .replay-grid { grid-template-columns: 1fr; } }

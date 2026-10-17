@@ -90,6 +90,14 @@ describe("computeRouteGeometry", () => {
     )).rejects.toThrow(RangeError);
     expect(request).not.toHaveBeenCalled();
   });
+  it("reports provider fallback instead of claiming the requested traffic mode was used", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => fetchResponse({ ...validRouteResponse,
+      fallbackInfo: { routingMode: "FALLBACK_TRAFFIC_UNAWARE", reason: "SERVER_ERROR" } })));
+    expect(await computeRouteGeometry({ lat: 23, lng: 72 }, { lat: 23.1, lng: 72.1 }))
+      .toMatchObject({ trafficFallback: true });
+    const [, request] = vi.mocked(fetch).mock.calls[0];
+    expect(new Headers(request?.headers).get("X-Goog-FieldMask")).toContain("fallbackInfo");
+  });
 
   it("preserves upstream HTTP status when its error body is not JSON", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({

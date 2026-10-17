@@ -38,6 +38,9 @@ async function tick(bus = "bus", point = { lat: 24, lng: 73 }) {
   await service.drainTelemetryRouteProcessing();
 }
 beforeEach(async () => {
+  // These counters measure deviation retries. Departure traffic has its own
+  // capped replay tests and is an independently configurable feature.
+  vi.stubEnv("LIVE_DEPARTURE_ROUTES_ENABLED", "false");
   vi.resetModules(); now = 1_000_000; sequence = 0;
   vi.spyOn(Date, "now").mockImplementation(() => now);
   vi.spyOn(performance, "now").mockImplementation(() => now);
@@ -49,7 +52,7 @@ beforeEach(async () => {
   service = await import("./telemetryRouteService");
   initial();
 });
-afterEach(() => { vi.restoreAllMocks(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 describe("reroute scheduling with persisted backoff", () => {
   it("reduces a minute of persistent failures from the legacy 12 attempts to 3", async () => {

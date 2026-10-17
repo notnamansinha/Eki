@@ -13,6 +13,15 @@ import {
 export interface VersionedRouteGeometry {
   version: number;
   geometry: ActiveRouteGeometry;
+  routeId?: string;
+  sessionId?: string;
+  direction?: unknown;
+}
+
+function geometryMatchesBus(geometry: ActiveRouteGeometry, bus: ActiveBusEntry): boolean {
+  return (geometry.routeId === undefined || geometry.routeId === bus.routeId) &&
+    (geometry.sessionId === undefined || geometry.sessionId === bus.sessionId) &&
+    (geometry.direction === undefined || directionsMatch(geometry.direction, bus.direction));
 }
 
 /**
@@ -36,7 +45,8 @@ export function selectCurrentRouteGeometries(
       continue;
     }
     const entry = versioned.get(bus.busId);
-    if (entry && entry.version === bus.routeVersion) {
+    if (entry && entry.version === bus.routeVersion && entry.routeId === bus.routeId &&
+      entry.sessionId === bus.sessionId && directionsMatch(entry.direction, bus.direction) && geometryMatchesBus(entry.geometry, bus)) {
       selected.set(bus.busId, entry.geometry);
     }
   }
@@ -58,7 +68,7 @@ export function useDynamicRouteGeometries(
   );
   const selectionKey = JSON.stringify([...buses.values()].map((bus) => [
     bus.busId, bus.routeId, bus.routeSource, bus.routeVersion,
-    bus.direction, bus.routeDirection,
+    bus.sessionId, bus.direction, bus.routeDirection,
   ]));
 
   useEffect(() => {
@@ -78,15 +88,18 @@ export function useDynamicRouteGeometries(
         continue;
       }
       const version = bus.routeVersion;
+      const entry = (geometry: ActiveRouteGeometry): VersionedRouteGeometry => ({
+        version, geometry, routeId: bus.routeId, sessionId: bus.sessionId, direction: bus.direction,
+      });
       const nodeKey = activeBusNodeKey(bus.busId, bus.routeId);
       const existing = cachedActiveRouteGeometry(nodeKey, version);
-      if (existing) {
-        next.set(bus.busId, { version, geometry: existing });
+      if (existing && geometryMatchesBus(existing, bus)) {
+        next.set(bus.busId, entry(existing));
       } else if (existing === undefined) {
         pending.push(
           fetchActiveRouteGeometry(nodeKey, version).then((geometry) => {
-            if (!cancelled && geometry) {
-              next.set(bus.busId, { version, geometry });
+            if (!cancelled && geometry && geometryMatchesBus(geometry, bus)) {
+              next.set(bus.busId, entry(geometry));
               // Publish each bus immediately; a slow fleet peer cannot hold it back.
               setVersioned((previous) => sameVersioned(previous, next) ? previous : new Map(next));
             }
@@ -122,6 +135,7 @@ export function useDynamicRouteGeometries(
 function sameVersioned(left: ReadonlyMap<string, VersionedRouteGeometry>, right: ReadonlyMap<string, VersionedRouteGeometry>): boolean {
   return left.size === right.size && [...left].every(([id, entry]) => {
     const other = right.get(id);
-    return other?.version === entry.version && other.geometry === entry.geometry;
+    return other?.version === entry.version && other.geometry === entry.geometry &&
+      other.routeId === entry.routeId && other.sessionId === entry.sessionId && other.direction === entry.direction;
   });
 }

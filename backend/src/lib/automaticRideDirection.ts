@@ -95,6 +95,7 @@ interface TurnaroundReadinessInput {
   eligibleAt: number;
   minimumSampleTimestamp?: number;
   motionState: unknown;
+  gpsHdop?: unknown;
   position: Coordinate;
   destination: Coordinate;
 }
@@ -114,6 +115,8 @@ export function automaticTurnaroundIsReady(
     input.telemetryTimestamp <= input.now + 10_000 &&
     input.now - input.telemetryTimestamp <= TURNAROUND_TELEMETRY_MAX_AGE_MS &&
     input.motionState === "stopped" &&
+    typeof input.gpsHdop === "number" && Number.isFinite(input.gpsHdop) &&
+    input.gpsHdop >= 0 && input.gpsHdop <= DIRECTION_INFERENCE_MAX_HDOP &&
     validCoordinate(input.position) &&
     validCoordinate(input.destination) &&
     Number.isFinite(radiusMeters) &&

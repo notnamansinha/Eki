@@ -4434,8 +4434,8 @@
         "tags": [
           "Shifts"
         ],
-        "summary": "Delete session messages in batches",
-        "description": "Delete session messages in batches",
+        "summary": "Clear live session messages while retaining ride history",
+        "description": "Atomically archive and remove live messages in batches of at most 200. Original message IDs and content remain in the operator-only ride history until explicit history deletion. A concurrent history deletion prevents archive recreation.",
         "security": [
           {
             "FirebaseBearer": []
@@ -7483,8 +7483,8 @@
         "tags": [
           "Shifts"
         ],
-        "summary": "Delete session messages in batches",
-        "description": "Delete session messages in batches",
+        "summary": "Clear live session messages while retaining ride history",
+        "description": "Atomically archive and remove live messages in batches of at most 200. Original message IDs and content remain in the operator-only ride history until explicit history deletion. A concurrent history deletion prevents archive recreation.",
         "security": [
           {
             "FirebaseBearer": []

@@ -5,6 +5,10 @@ import { decodePolyline, type LatLng } from "./polyline";
 export interface ActiveRouteGeometry {
   polyline: string;
   path: LatLng[];
+  routeId?: string;
+  sessionId?: string;
+  direction?: string;
+  firstStopIndex?: number;
 }
 
 /**
@@ -74,7 +78,7 @@ async function loadGeometry(
     return null;
   }
   let geometry: ActiveRouteGeometry | null = null;
-  const value = snapshot?.val() as { polyline?: unknown } | null;
+  const value = snapshot?.val() as { polyline?: unknown; routeId?: unknown; sessionId?: unknown; direction?: unknown; firstStopIndex?: unknown } | null;
   if (
     typeof value?.polyline === "string" &&
     value.polyline.length > 0 &&
@@ -82,7 +86,13 @@ async function loadGeometry(
   ) {
     try {
       const path = decodePolyline(value.polyline);
-      if (path.length >= 2) geometry = { polyline: value.polyline, path };
+      if (path.length >= 2) geometry = { polyline: value.polyline, path,
+        ...(typeof value.routeId === "string" ? { routeId: value.routeId } : {}),
+        ...(typeof value.sessionId === "string" ? { sessionId: value.sessionId } : {}),
+        ...(typeof value.direction === "string" ? { direction: value.direction } : {}),
+        ...(Number.isSafeInteger(value.firstStopIndex) && Number(value.firstStopIndex) >= 1
+          ? { firstStopIndex: Number(value.firstStopIndex) } : {}),
+      };
     } catch {
       // Stored corruption must fall back to configured geometry, just as it
       // does on the server, without rejecting the hook's pending fetch batch.

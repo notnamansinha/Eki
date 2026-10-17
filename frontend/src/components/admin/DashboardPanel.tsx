@@ -301,9 +301,9 @@ function BusMarker({
 
   if (!markerPoint) return null;
   return (
-    <AdvancedMarker position={markerPoint} onClick={() => onClick(markerPoint)}>
+    <AdvancedMarker position={markerPoint} anchorLeft="-50%" anchorTop="-50%" onClick={() => onClick(markerPoint)}>
       <div
-        style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer" }}
+        style={{ position: "relative", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
         title={`${entry.busId} — ${ts.label}${markerSelection.decision === "match_pending" ? " — updating route position" : markerSelection.uncertain ? " — approximate GNSS position" : ""}`}
       >
         <div style={{
@@ -327,7 +327,7 @@ function BusMarker({
           />
         </div>
         <div style={{
-          marginTop: 4, padding: "2px 6px", borderRadius: 5,
+          position: "absolute", top: 40, left: "50%", transform: "translateX(-50%)", padding: "2px 6px", borderRadius: 5,
           background: "rgba(9,9,11,0.9)", border: "1px solid rgba(255,255,255,0.1)",
           color: "white", fontSize: 9, whiteSpace: "nowrap", fontWeight: 700,
           letterSpacing: "0.08em",
@@ -587,6 +587,8 @@ export default function DashboardPanel() {
       polylineQuality?: "HIGH_QUALITY";
       direction: "forward" | "reverse";
       stops: Array<{ lat: number; lng: number }>;
+      nextStopIndices: number[];
+      firstStopIndex?: number;
     }>();
     for (const entry of activeEntries) {
       if (!entry.routeId || !isActiveService(entry) || !isRideDirection(entry.direction)) continue;
@@ -601,30 +603,33 @@ export default function DashboardPanel() {
           ? dynamicGeometries.get(entry.busId)
           : undefined;
       const hasDynamic = Boolean(geometry);
-      const overlayKey = hasDynamic
-        ? entry.activeRouteId ?? `${route.id}:${entry.routeVersion ?? 0}:${entry.busId}`
-        : `${route.id}:${direction}`;
-      if (overlays.has(overlayKey)) continue;
-      overlays.set(overlayKey, {
+      const overlayKey = `${route.id}:${direction}`;
+      const existing = overlays.get(overlayKey);
+      const indices = Number.isSafeInteger(entry.currentStopIndex) ? [entry.currentStopIndex!] : [];
+      const naturalStops = route.stops ?? route.waypoints ?? [];
+      const orderedStops = (direction === "reverse" ? [...naturalStops].reverse() : naturalStops).map(({ lat, lng }) => ({ lat, lng }));
+      if (existing) {
+        if (entry.routeSource !== "dynamic-reroute") existing.nextStopIndices.push(...indices);
+      } else overlays.set(overlayKey, {
         key: overlayKey,
         routeId: route.id,
         color: route.color,
-        polyline: hasDynamic && geometry
-          ? geometry.polyline
-          : (direction === "reverse"
+        polyline: (direction === "reverse"
               ? route.reversePolyline
               : route.forwardPolyline ?? route.polyline),
-        polylineQuality: hasDynamic && geometry
-          ? "HIGH_QUALITY"
-          : hasDirectionalGeometry
+        polylineQuality: hasDirectionalGeometry
             ? route.polylineQuality
             : undefined,
         direction,
-        stops: (route.stops ?? route.waypoints ?? []).map(({ lat, lng }) => ({
-          lat,
-          lng,
-        })),
+        stops: orderedStops,
+        nextStopIndices: entry.routeSource === "dynamic-reroute" ? [] : [...indices],
       });
+      if (hasDynamic && geometry) {
+        const key = `${overlayKey}:${entry.busId}:${entry.routeVersion}`;
+        overlays.set(key, { key, routeId: route.id, color: route.color, polyline: geometry.polyline,
+          polylineQuality: "HIGH_QUALITY", direction, stops: orderedStops,
+          nextStopIndices: indices, firstStopIndex: geometry.firstStopIndex ?? -1 });
+      }
     }
     return [...overlays.values()];
   }, [activeEntries, routes, dynamicGeometries]);
@@ -820,6 +825,8 @@ export default function DashboardPanel() {
               polylineQuality={route.polylineQuality}
               color={route.color || "#3b82f6"}
               hasBuses
+              nextStopIndices={route.nextStopIndices}
+              firstStopIndex={route.firstStopIndex}
               direction={route.direction}
             />
           ))}

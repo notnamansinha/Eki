@@ -4,7 +4,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import RideHistoryPanel from "./RideHistoryPanel";
 const state = vi.hoisted(() => ({ sessions: [{ id: "qa-session", busId: "qa-bus", driverId: "qa-driver", routeId: "qa-route", status: "completed", armedAt: 1_750_000_000_000, startTime: 1_750_000_001_000, endTime: 1_750_000_600_000, passengers: [] as {userId: string; userName: string; boardingStopId: string; alightingStopId: string | null; joinedAt: number}[], stopsReached: [] }], error: null as string | null, retry: vi.fn() }));
-vi.mock("@/hooks/useCollection", () => ({ useCollection: () => ({ data: state.sessions, loading: false, error: state.error, retry: state.retry }) }));
+vi.mock("@/hooks/useCollection", () => ({ useCollection: (path: string, options: { maxResults: number }) => ({ data: path.endsWith("/archivedMessages") ? [{ id: "archived", senderName: "QA Passenger", text: "Chat retained after live clear", timestamp: 1_750_000_009_000 }] : path.endsWith("/messages") ? [{ id: "kept-message", senderName: "QA Passenger", text: "Stored ride chat", timestamp: 1_750_000_010_000 }] : state.sessions.slice(0, options.maxResults), loading: false, error: state.error, retry: state.retry }) }));
 vi.mock("@/hooks/useBuses", () => ({ useBuses: () => ({ buses: [{ id: "qa-bus", name: "QA Bus" }], loading: false }) }));
 vi.mock("@/hooks/useDrivers", () => ({ useDrivers: () => ({ drivers: [{ id: "qa-driver", name: "QA Driver" }], loading: false }) }));
 vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes: [{ id: "qa-route", name: "QA route", stops: [{ id: "origin", name: "Origin" }, { id: "destination", name: "Destination" }] }], loading: false }) }));
@@ -18,6 +18,17 @@ async function openConfirmation() {
   return user;
 }
 describe("ride-history controls", () => {
+  it("loads older rides beyond the initial hundred without deleting retained history", async () => {
+    const original = state.sessions;
+    try {
+      state.sessions = Array.from({ length: 101 }, (_, i) => ({ ...original[0], id: `ride-${i}` }));
+      render(<RideHistoryPanel />);
+      expect(screen.getAllByRole("button", { expanded: false })).toHaveLength(100);
+      await userEvent.setup().click(screen.getByRole("button", { name: "Load older rides" }));
+      expect(screen.getAllByRole("button", { expanded: false })).toHaveLength(101);
+      expect(screen.queryByRole("button", { name: "Load older rides" })).toBeNull();
+    } finally { state.sessions = original; }
+  });
   it("shows both persisted stop choices without inventing arrival time", async () => {
     state.sessions[0].passengers = [{ userId: "qa-user", userName: "QA Passenger", boardingStopId: "origin", alightingStopId: "destination", joinedAt: 1_750_000_010_000 }];
     render(<RideHistoryPanel />); await userEvent.setup().click(screen.getByRole("button", { expanded: false }));
@@ -29,6 +40,9 @@ describe("ride-history controls", () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock); render(<RideHistoryPanel />); const user = userEvent.setup();
     await user.click(screen.getByRole("button", { expanded: false }));
     expect(screen.getByText("Passenger Manifest")).toBeTruthy();
+    expect(screen.getByText("Stored ride chat")).toBeTruthy();
+    expect(screen.getByText("Chat retained after live clear")).toBeTruthy();
+    expect(screen.getByText(/Service armed:/)).toBeTruthy();
     await user.click(screen.getByRole("button", { expanded: true }));
     expect(screen.queryByText("Passenger Manifest")).toBeNull(); expect(fetchMock).not.toHaveBeenCalled();
   });

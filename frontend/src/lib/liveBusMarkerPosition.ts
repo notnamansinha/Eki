@@ -75,6 +75,7 @@ export interface LiveBusMarkerSelection {
   latestSample: SampleIdentity;
   rawPosition: LatLng | null;
   retainedMatch?: RetainedMatch;
+  routeVersion?: number;
 }
 
 const ON_ROUTE_STATES = new Set(["ON_ROUTE", "ON_NEW_ROUTE"]);
@@ -222,6 +223,7 @@ function selection(
     contextKey: routeContextKey(input),
     identityKey: rideIdentityKey(input),
     latestSample,
+    routeVersion: input.routeVersion,
     rawPosition,
     ...(retainedMatch ? { retainedMatch } : {}),
     ...(pendingUntil !== undefined ? { pendingUntil } : {}),
@@ -277,7 +279,9 @@ export function selectLiveBusMarkerPosition(
   if (
     sameIdentity &&
     previous &&
-    compareSamples(latestSample, previous.latestSample) < 0
+    (compareSamples(latestSample, previous.latestSample) < 0 ||
+      (typeof input.routeVersion === "number" && typeof previous.routeVersion === "number" &&
+        input.routeVersion < previous.routeVersion))
   ) {
     const current = expiredSelection(previous, now);
     return current === previous
@@ -336,7 +340,10 @@ export function selectLiveBusMarkerPosition(
     !signalUncertain &&
     !offRoute &&
     (ON_ROUTE_STATES.has(input.routeState ?? "") || input.routeState === "POSSIBLE_OFF_ROUTE") &&
-    (!matchingCompleted || input.routeState === "POSSIBLE_OFF_ROUTE")
+    // A completed low-confidence match is also transient uncertainty. Hold the
+    // last trusted point for the same bounded interval; never reset the timer
+    // merely because another unmatchable sample arrives.
+    !matched
   ) {
     const retained = retainedMatchForPending(
       input,

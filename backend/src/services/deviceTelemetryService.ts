@@ -504,11 +504,12 @@ function scheduleDurableRideRestore(
   assignment: DeviceAssignment,
   sample: TelemetryPayload,
   claimId: string | null,
+  recoverTerminal: boolean,
 ): void {
   const nodeKey = `${assignment.busId}_${assignment.routeId}`;
   if (durableRideRestores.has(nodeKey)) return;
 
-  const restore = restoreDurableRide(assignment, sample, claimId)
+  const restore = restoreDurableRide(assignment, sample, claimId, recoverTerminal)
     .then(() => undefined)
     .catch((error) => {
       // Surface through the failure tracker too (issue #38): sustained
@@ -659,7 +660,7 @@ async function persistTelemetry(
   assignment: DeviceAssignment,
   sample: TelemetryPayload,
   backendReceivedAt: number,
-): Promise<{ committed: boolean; hasSession: boolean; claimId: string | null }> {
+): Promise<{ committed: boolean; hasSession: boolean; claimId: string | null; recoverTerminal: boolean }> {
   const deadline = currentExecutionDeadline();
   deadline?.markWriteDispatched();
   const writeStartedAt = Date.now();
@@ -685,6 +686,7 @@ async function persistTelemetry(
       value?.status === "active" && typeof value.sessionId === "string" && value.sessionId.length > 0 &&
       (value.tripState === "pre_departure" || value.tripState === "in_service"),
     claimId: typeof value?.turnaroundClaimId === "string" ? value.turnaroundClaimId : null,
+    recoverTerminal: typeof value?.sessionId !== "string" || !value.sessionId,
   };
 }
 
@@ -734,7 +736,7 @@ async function executeDeviceTelemetry(
     // RTDB already contains the accepted fix at this point. Recover the
     // durable lifecycle immediately in the background so the hardware response
     // is not delayed by an additional Firestore read.
-    scheduleDurableRideRestore(assignment, sample, persisted.claimId);
+    scheduleDurableRideRestore(assignment, sample, persisted.claimId, persisted.recoverTerminal);
   }
   if (persisted.committed) {
     status.accepted += 1;

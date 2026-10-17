@@ -144,6 +144,24 @@ rulesDescribe("Firebase security rules integration", () => {
     await assertSucceeds(getDoc(doc(environment.authenticatedContext("retained_operator", { role: "driver", driverId: "retained_driver", assignedBusId: "retained_bus", authorizationVersion: "current" }).firestore(), "ride_sessions", session, "messages", "retained")));
   });
 
+  it("restricts cleared ride chat archives to current operators and denies client mutation", async () => {
+    await environment.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), "users", "archive_admin"), { role: "admin" });
+      await setDoc(doc(context.firestore(), "_userAuthorization", "archive_admin"), { role: "admin", version: "current" });
+      await setDoc(doc(context.firestore(), "ride_sessions", "archive_session"), { passengers: { archive_passenger: { userId: "archive_passenger" } } });
+      await setDoc(doc(context.firestore(), "ride_sessions", "archive_session", "archivedMessages", "kept"), { text: "Retained after clear" });
+    });
+    const admin = environment.authenticatedContext("archive_admin", { role: "admin", admin: true, authorizationVersion: "current" });
+    const passenger = environment.authenticatedContext("archive_passenger", { role: "passenger" });
+    const archived = (context: ReturnType<typeof environment.authenticatedContext>) => doc(context.firestore(), "ride_sessions", "archive_session", "archivedMessages", "kept");
+    await assertSucceeds(getDoc(archived(admin)));
+    await assertSucceeds(getDocs(collection(admin.firestore(), "ride_sessions", "archive_session", "archivedMessages")));
+    await assertFails(getDoc(archived(passenger)));
+    await assertFails(getDoc(archived(environment.unauthenticatedContext())));
+    await assertFails(setDoc(archived(admin), { text: "Forged" }));
+    await assertFails(deleteDoc(archived(admin)));
+  });
+
   it("allows authenticated RTDB reads but denies every client write", async () => {
     const passenger = environment.authenticatedContext("passenger_1", { role: "passenger" });
     const admin = environment.authenticatedContext("admin_1", { role: "admin", admin: true, authorizationVersion: "current" });

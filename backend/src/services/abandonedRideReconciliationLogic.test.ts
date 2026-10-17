@@ -7,6 +7,19 @@ import {
 
 describe("abandoned ride reconciliation logic", () => {
   const cutoff = 1_800_000_000_000;
+  it("preserves an undeparted automatic return across an overnight power-off", () => {
+    expect(reconciliationDecision("return", {
+      status: "armed", automaticTurnaround: true, armedAt: cutoff - 60_000,
+    }, { sessionId: "return", tripState: "pre_departure", hasDepartedOrigin: false, updatedAt: cutoff - 60_000 },
+    { sessionId: "return", tripState: "pre_departure", timestamp: cutoff - 60_000 }, cutoff))
+      .toMatchObject({ stale: false, reason: "ready" });
+  });
+  it.each(["manual", "departed"])("still retires stale %s sessions", mode => {
+    expect(reconciliationDecision("return", {
+      status: mode === "departed" ? "active" : "armed", automaticTurnaround: mode !== "manual", armedAt: cutoff - 60_000,
+    }, { sessionId: "return", tripState: mode === "departed" ? "in_service" : "pre_departure",
+      hasDepartedOrigin: mode === "departed", updatedAt: cutoff - 60_000 }, null, cutoff).stale).toBe(true);
+  });
 
   it("normalizes legacy and Firestore timestamps", () => {
     expect(timestampMillis(1_750_000_000)).toBe(1_750_000_000_000);

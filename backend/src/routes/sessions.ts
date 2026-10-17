@@ -395,8 +395,11 @@ async function sendMessage(req: AuthenticatedRequest, res: Response) {
         if (!profile.exists) throw new ChatPolicyError(403, "An active passenger profile is required.");
       }
 
-      if (existingMessage.exists) {
-        const previous = existingMessage.data();
+      const retainedMessage = existingMessage.exists ? existingMessage : await transaction.get(
+        sessionRef.collection("archivedMessages").doc(messageRef.id),
+      );
+      if (retainedMessage.exists) {
+        const previous = retainedMessage.data();
         if (previous?.senderId !== uid || previous?.requestHash !== requestHash) {
           throw new ChatPolicyError(409, "Message request ID was already used.");
         }

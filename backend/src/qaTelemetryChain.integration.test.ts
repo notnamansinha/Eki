@@ -18,6 +18,7 @@ import { hashDeviceSecret, invalidateDeviceCredentialCache } from "./services/de
 import { startTelemetryRouteWatcher, drainTelemetryRouteProcessing } from "./services/telemetryRouteService";
 import { startTripStateEngine } from "./services/tripStateEngine";
 import { startLiveBusProjection } from "./services/liveBusProjection";
+import { createStaleBusSweeper } from "./services/staleBusSweeper";
 import { WorkerFence, WORKER_LEASE_ID } from "./lib/workerFence";
 import { encodePolyline } from "./lib/polylineUtils";
 
@@ -54,7 +55,7 @@ integration("authenticated telemetry to durable lifecycle and public emulator pr
   });
   beforeEach(async () => {
     epoch = Date.now() - 45000;
-    for (const name of ["devices", "buses", "routes", "ride_sessions", "_active_bus_locks", "bus_locations", "_worker_leases"])
+    for (const name of ["devices", "buses", "drivers", "routes", "ride_sessions", "active_rides", "completed_trips", "_active_bus_locks", "bus_locations", "_worker_leases"])
       await state.firestore!.recursiveDelete(state.firestore!.collection(name));
     await state.realtime!.ref().set(null); invalidateDeviceCredentialCache(device);
     await state.firestore!.collection("devices").doc(device).set({ busId: bus, routeId: route, enabled: true, secretHash: await hashDeviceSecret(secret) });
@@ -66,6 +67,49 @@ integration("authenticated telemetry to durable lifecycle and public emulator pr
     stopWatcher = startTelemetryRouteWatcher();
     stopEngine = fence.run(startTripStateEngine); stopProjection = fence.run(startLiveBusProjection);
   }, 30000);
+  it("recovers a qualified terminal after actual stale deletion and a leader restart, exactly once", async () => {
+    const driverId = "qa_terminal_driver";
+    await state.firestore!.collection("drivers").doc(driverId).set({ assignedBusId: bus });
+    const lifecycle = { busId: bus, routeId: route, driverId, sessionId: session, status: "active",
+      tripState: "in_service", direction: "forward", currentStopIndex: 2, hasDepartedOrigin: true };
+    await state.firestore!.collection("_active_bus_locks").doc(bus).set(lifecycle);
+    await state.firestore!.collection("active_rides").doc(`${bus}_${route}`).set(lifecycle);
+    await state.firestore!.collection("ride_sessions").doc(session).set({ ...lifecycle,
+      stopsReached: { origin: "previously-observed", middle: "previously-observed" } });
+    await state.realtime!.ref(node).set(lifecycle);
+    const stopped = (seq: number) => ({ ...fix(seq, 0, stops[2].lat), motionState: "stopped", speed: 0,
+      timestamp: Date.now(), deviceSentAt: Date.now() });
+    expect((await send(stopped(1))).status).toBe(202);
+    await vi.waitFor(async () => expect((await state.realtime!.ref(node).get()).val()?.terminalArrival).toBeTruthy(), { timeout: 10000 });
+    await new Promise(resolve => setTimeout(resolve, 2100));
+    expect((await send(stopped(2))).status).toBe(202);
+    await vi.waitFor(async () => expect((await state.firestore!.collection("ride_sessions").doc(session).get()).data()?.status).toBe("completed"), { timeout: 10000 });
+    const checkpoint = (await state.firestore!.collection("bus_locations").doc(bus).get()).data()!.terminalJourney;
+    expect(checkpoint).toMatchObject({ sessionId: session, direction: "forward", consumedBy: null });
+    await stopEngine!(); stopEngine = undefined;
+    await state.realtime!.ref(node).update({ timestamp: Date.now() - 301_000 });
+    const sweepErrors: unknown[] = [];
+    const sweeper = createStaleBusSweeper(state.realtime!.ref("activeBuses"), 300_000, error => sweepErrors.push(error));
+    await sweeper.tick(); sweeper.stop();
+    expect(sweepErrors).toEqual([]);
+    expect((await state.realtime!.ref(node).get()).exists()).toBe(false);
+    const remainingWait = checkpoint.turnaroundEligibleAt - Date.now();
+    if (remainingWait >= 0) await new Promise(resolve => setTimeout(resolve, remainingWait + 50));
+    stopEngine = new WorkerFence("qa-worker", 41, performance.now() + 300000).run(startTripStateEngine);
+    expect((await send(stopped(3))).status).toBe(202);
+    await vi.waitFor(async () => expect((await state.realtime!.ref(node).get()).val()).toMatchObject({
+      direction: "reverse", tripState: "pre_departure", previousSessionId: session,
+    }), { timeout: 15000 });
+    expect((await send(stopped(4))).status).toBe(202);
+    await vi.waitFor(async () => expect((await state.realtime!.ref(publicNode).get()).val()).toMatchObject({
+      direction: "reverse", tripState: "pre_departure", previousSessionId: session,
+    }), { timeout: 10000 });
+    const sessions = await state.firestore!.collection("ride_sessions").get();
+    expect(sessions.docs.filter(doc => doc.data().previousSessionId === session)).toHaveLength(1);
+    const returnSession = sessions.docs.find(doc => doc.data().previousSessionId === session)!;
+    expect(returnSession.data().status).toBe("armed");
+    expect((await state.firestore!.collection("bus_locations").doc(bus).get()).data()!.terminalJourney.consumedBy).toBe(returnSession.id);
+  }, 75000);
   afterEach(async () => {
     await drainTelemetryRouteProcessing();
     await stopEngine?.(); await stopProjection?.(); stopWatcher?.();

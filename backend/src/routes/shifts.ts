@@ -7,6 +7,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { inferRideDirectionFromTelemetry } from "../lib/automaticRideDirection";
 import { withoutLiveRouteContext } from "../lib/liveRouteContext";
+import { newerJourneyLocation } from "../services/journeyLocation";
 import { singleRouteParam } from "../lib/requestParams";
 import {
   isRideDirection,
@@ -634,6 +635,10 @@ async function startShift(req: AuthenticatedRequest, res: Response) {
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
+      // A deliberate new shift consumes any earlier terminal recovery intent.
+      transaction.set(db.collection("bus_locations").doc(assignment.busId), {
+        terminalJourney: FieldValue.delete(),
+      }, { merge: true });
       return {
         sessionId: proposedSessionRef.id,
         armedAt: proposedArmedAt,
@@ -877,6 +882,7 @@ router.post("/stop", requireAuth, async (req: AuthenticatedRequest, res: Respons
       .doc(activeRideId(assignment.busId, assignment.routeId));
     const lockRef = activeBusLockRef(assignment.busId);
     const endedAt = Date.now();
+    const liveAtEnd = (await rtdb.ref(`activeBuses/${activeRideId(assignment.busId, assignment.routeId)}`).once("value")).val();
     const outcome = await db.runTransaction(async (transaction) => {
       const [currentSession, activeRide, lock] = await Promise.all([
         transaction.get(sessionRef),
@@ -903,6 +909,8 @@ router.post("/stop", requireAuth, async (req: AuthenticatedRequest, res: Respons
         }
         transaction.set(sessionRef, {
           status: "interrupted",
+          ...(liveAtEnd?.sessionId === sessionId && newerJourneyLocation(liveAtEnd, current.lastKnownLocation)
+            ? { lastKnownLocation: newerJourneyLocation(liveAtEnd, current.lastKnownLocation) } : {}),
           endTime: endedAt,
           interruptionReason: "manual_end_early",
           interruptedBy: req.user?.uid ?? null,
@@ -960,14 +968,25 @@ async function clearMessages(req: Request, res: Response) {
     return;
   }
   try {
-    const messages = db.collection("ride_sessions").doc(sessionId).collection("messages");
+    const sessionRef = db.collection("ride_sessions").doc(sessionId);
+    const deletionRef = db.collection("_ride_history_deletion_jobs").doc(sessionId);
+    const messages = sessionRef.collection("messages");
+    const archive = sessionRef.collection("archivedMessages");
     let deleted = 0;
     while (true) {
-      const snapshot = await messages.limit(400).get();
+      const snapshot = await messages.limit(200).get();
       if (snapshot.empty) break;
-      const batch = db.batch();
-      snapshot.docs.forEach((message) => batch.delete(message.ref));
-      await batch.commit();
+      const cleared = await db.runTransaction(async transaction => {
+        const [session, deletion] = await Promise.all([transaction.get(sessionRef), transaction.get(deletionRef)]);
+        // A concurrent history deletion must not leave recreated descendants.
+        if (!session.exists || deletion.exists) return false;
+        snapshot.docs.forEach(message => {
+          transaction.set(archive.doc(message.ref.id), message.data(), { merge: true });
+          transaction.delete(message.ref);
+        });
+        return true;
+      });
+      if (!cleared) break;
       deleted += snapshot.size;
     }
     res.json({ deleted });

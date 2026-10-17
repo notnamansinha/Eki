@@ -72,6 +72,7 @@ describe("automatic ride direction", () => {
       telemetryTimestamp: 199_000,
       eligibleAt: 180_000,
       motionState: "stopped",
+      gpsHdop: 1,
       position: { lat: 23.1, lng: 72.1 },
       destination: { lat: 23.1, lng: 72.1 },
     };
@@ -89,6 +90,6 @@ describe("automatic ride direction", () => {
 
 it("allows a return trip on the first stopped sample when no dwell is configured", () => {
   expect(automaticTurnaroundIsReady({ now: 200000, telemetryTimestamp: 200000,
-    eligibleAt: 200000, motionState: "stopped", position: { lat: 23.1, lng: 72.1 },
+    eligibleAt: 200000, motionState: "stopped", gpsHdop: 1, position: { lat: 23.1, lng: 72.1 },
     destination: { lat: 23.1, lng: 72.1 } })).toBe(true);
 });

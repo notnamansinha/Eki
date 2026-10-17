@@ -23,7 +23,7 @@ import {
   type DirectedRouteData,
 } from "@/lib/rideDirection";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
-import { sharedRerouteGeometry, busEtaPath } from "@/lib/busRouteGeometry";
+import { busEtaPath } from "@/lib/busRouteGeometry";
 import { selectLiveBusMarkerPosition, type LiveBusMarkerSelection } from "@/lib/liveBusMarkerPosition";
 import { useLiveBusMarkerPosition } from "@/hooks/useLiveBusMarkerPosition";
 import { useSmoothPosition } from "@/hooks/useSmoothPosition";
@@ -81,7 +81,7 @@ const BusMarker = memo(function BusMarker({
 
   if (!markerPoint) return null;
   return (
-    <AdvancedMarker position={markerPoint}>
+    <AdvancedMarker position={markerPoint} anchorLeft="-50%" anchorTop="-50%">
       <div
         title={
           markerSelection.decision === "match_pending"
@@ -207,9 +207,7 @@ function PassengerMapInner({
   // version-keyed sibling node (`activeRouteGeometry`), so the high-frequency
   // activeBuses child never carries the full polyline.
   const dynamicGeometries = useDynamicRouteGeometries(buses);
-  // Surface a shared route overlay only when the fleet agrees on one reroute
-  // geometry. If buses carry different reroutes (or none is rerouted), fall
-  // back to the configured route so no bus's route and ETA leak to another.
+  // Each bus keeps its own geometry and next-stop progress.
   const etaMarkerSelections = useRef(new Map<string, LiveBusMarkerSelection>());
   const etaSelectionInputs = useRef(new Map<string, IncomingBusData>());
   const etaBusPositions = useRef(new Map<string, {
@@ -229,10 +227,6 @@ function PassengerMapInner({
       projections.clear();
     };
   }, [route.id, route.rideDirection, route.configVersion, route.geometryVersion]);
-  const activeRoute = useMemo(
-    () => sharedRerouteGeometry(buses, dynamicGeometries, route.rideDirection),
-    [buses, dynamicGeometries, route.rideDirection],
-  );
   // Backend active geometry is already ordered in travel direction; direction-
   // specific reversePolyline stays in Z→A order. Only legacy forward-only
   // geometry is reversed for a reverse ride (handled in mapRouteGeometry).
@@ -634,18 +628,19 @@ function PassengerMapInner({
             previewPoints={preview && !focusBus ? (routePath.length ? routePath : routeStops) : undefined}
             hasBus={Boolean(firstBusMarker.position)} />
           <DirectionsRoute
-            key={`${route.id}:${route.rideDirection}:${activeRoute?.version ?? "configured"}`}
+            key={`${route.id}:${route.rideDirection}:configured`}
             routeId={route.id}
             stops={routeStops}
-            polyline={activeRoute?.polyline ?? route.polyline}
-            polylineQuality={activeRoute ? "HIGH_QUALITY" : route.polylineQuality}
+            polyline={route.polyline}
+            polylineQuality={route.polylineQuality}
             color={route.color || "#3b82f6"}
             hasBuses={buses.size > 0}
             direction={route.rideDirection}
-            onGeometryReady={!activeRoute ? onConfiguredGeometryReady : undefined}
+            nextStopIndices={preview ? [] : [...buses.values()].filter(bus => bus.routeSource !== "dynamic-reroute").flatMap(bus => Number.isSafeInteger(bus.currentStopIndex) ? [bus.currentStopIndex!] : [])}
+            onGeometryReady={onConfiguredGeometryReady}
           />
 
-          {!activeRoute && [...dynamicGeometries.entries()].map(([busId, geometry]) => (
+          {[...dynamicGeometries.entries()].map(([busId, geometry]) => (
             <DirectionsRoute
               key={`${busId}:${buses.get(busId)?.routeVersion}`}
               stops={routeStops}
@@ -653,6 +648,8 @@ function PassengerMapInner({
               polylineQuality="HIGH_QUALITY"
               color={route.color || "#3b82f6"}
               hasBuses
+              nextStopIndices={Number.isSafeInteger(buses.get(busId)?.currentStopIndex) ? [buses.get(busId)!.currentStopIndex!] : []}
+              firstStopIndex={geometry.firstStopIndex ?? -1}
               direction={route.rideDirection}
             />
           ))}

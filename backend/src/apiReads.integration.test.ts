@@ -71,7 +71,7 @@ integration("R20 API reads against actual loopback Firebase", () => {
     const responses = await Promise.all(Array.from({ length: 32 }, () => read("/api/analytics/fleet?scope=all")));
     for (const response of responses) expect(await response.json()).toMatchObject({ totalBuses: 10, activeBuses: 7, idleBuses: 3,
       signalLostBuses: 4, completedTripsByDirection: { forward: 400, reverse: 400, unresolved: 400, total: 1200, sampleLimit: null }, statistics: { sampled: false } });
-    expect(state.aggregateCalls).toBe(6); expect(new Set(state.readTimes).size).toBe(1); const burstQueries = state.aggregateCalls;
+    expect(state.aggregateCalls).toBe(7); expect(new Set(state.readTimes).size).toBe(1); const burstQueries = state.aggregateCalls;
     expect((await read("/api/analytics/fleet?scope=all", "reader")).status).toBe(403);
     const sample = await read("/api/analytics/fleet"); expect(await sample.json()).toMatchObject({ completedTripsByDirection: { total: 1000, sampleLimit: 1000 }, statistics: { sampled: true } });
     const trip = state.firestore!.collection("completed_trips").doc("trip_0000");

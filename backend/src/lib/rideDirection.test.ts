@@ -79,9 +79,11 @@ describe("ride direction", () => {
       currentStopIndex: middle.currentStopIndex,
       stops,
       hasDepartedOrigin: middle.hasDepartedOrigin,
+      timestamp: 10_000, gpsHdop: 1, speed: 0,
+      terminalArrival: { startedAt: 8_000, lastSampledAt: 9_000 },
     });
 
-    expect(activated.tripState).toBe("in_service");
+    expect(activated.tripState).toBe("pre_departure");
     expect(departed).toMatchObject({ currentStopIndex: 1, hasDepartedOrigin: true });
     expect(middle.currentStopIndex).toBe(2);
     expect(completed.tripState).toBe("completed");

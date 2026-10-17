@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import DashboardPanel from "./DashboardPanel";
 import type { ActiveBusEntry } from "@/lib/activeBusEntries";
 const state = vi.hoisted(() => ({ entries: [] as ActiveBusEntry[], geometries: new Map() }));
-vi.mock("@vis.gl/react-google-maps", () => ({ Map: ({children}: {children: ReactNode}) => <div>{children}</div>, AdvancedMarker: () => null, useMap: () => null }));
+vi.mock("@vis.gl/react-google-maps", () => ({ Map: ({children}: {children: ReactNode}) => <div>{children}</div>, AdvancedMarker: ({ children, position, anchorLeft, anchorTop }: { children: ReactNode; position: unknown; anchorLeft?: string; anchorTop?: string }) => <div data-marker={JSON.stringify(position)} data-anchor={JSON.stringify([anchorLeft, anchorTop])}>{children}</div>, useMap: () => null }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ role: "admin", user: {uid: "qa-admin"} }) }));
 vi.mock("@/hooks/useActiveBuses", () => ({ useActiveBuses: () => state.entries }));
 vi.mock("@/hooks/useDynamicRouteGeometries", () => ({ useDynamicRouteGeometries: () => state.geometries }));
@@ -25,6 +25,15 @@ async function prepare() {
   return user;
 }
 describe("admin service creation", () => {
+  it("centers the bus glyph on its coordinate while its label stays outside the anchor box", () => {
+    state.entries = [{ busId: "qa-bus", routeId: "qa-route", lat: 23, lng: 72, timestamp: Date.now(), deviceState: "online", motionState: "stopped", speed: 0 }];
+    render(<DashboardPanel />);
+    const glyph = screen.getByTitle(/^qa-bus —/);
+    expect(glyph.closest("[data-marker]")?.getAttribute("data-anchor")).toBe('["-50%","-50%"]');
+    expect(glyph.style.width).toBe("36px"); expect(glyph.style.height).toBe("36px");
+    expect((glyph.lastElementChild as HTMLElement).style.position).toBe("absolute");
+    expect(glyph.closest("[data-marker]")?.getAttribute("data-marker")).toBe('{"lat":23,"lng":72}');
+  });
   it("keeps the online counter current when telemetry arrives between clock ticks", () => {
     vi.useFakeTimers(); const start = Date.now();
     state.entries = [{ busId: "qa-bus", routeId: "qa-route", deviceState: "online", timestamp: start }];

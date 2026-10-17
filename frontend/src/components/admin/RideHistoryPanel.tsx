@@ -53,6 +53,11 @@ interface RideSession {
   direction?: "forward" | "reverse" | null;
   originStopId?: string | null;
   destinationStopId?: string | null;
+  lastKnownLocation?: { lat: number; lng: number; sampledAt: TimestampValue };
+  lastSignalLostAt?: TimestampValue;
+  firstTelemetryAt?: TimestampValue;
+  firstKnownLocation?: { lat: number; lng: number; sampledAt: TimestampValue };
+  connectionEvents?: Record<string, { type: string; observedAt: TimestampValue; location?: { lat: number; lng: number } }>;
 }
 
 const SERVICE_TIME_ZONE =
@@ -121,7 +126,34 @@ async function deleteRideHistoryRequest(sessionId: string): Promise<void> {
   );
 }
 
+/** Subscribe only while this ride is expanded; older messages remain accessible. */
+function RideHistoryMessages({ sessionId }: { sessionId: string }) {
+  const [messageLimit, setMessageLimit] = useState(100);
+  type HistoricalMessage = {
+    id: string; text: string; senderName?: string; from?: string; timestamp: TimestampValue;
+  };
+  const options = { maxResults: messageLimit, orderByField: "timestamp", orderByDirection: "desc" as const };
+  const live = useCollection<HistoricalMessage>(`ride_sessions/${sessionId}/messages`, options);
+  const archive = useCollection<HistoricalMessage>(`ride_sessions/${sessionId}/archivedMessages`, options);
+  const data = [...new Map([...archive.data, ...live.data].map(message => [message.id, message])).values()]
+    .sort((a, b) => (timestampDate(a.timestamp)?.getTime() ?? 0) - (timestampDate(b.timestamp)?.getTime() ?? 0));
+  const loading = live.loading || archive.loading, error = live.error ?? archive.error;
+  const retry = () => { live.retry(); archive.retry(); };
+  return <section className="mt-4 border-t border-white/10 pt-4" aria-label="Ride chat history">
+    <h4 className="mb-3 text-xs font-semibold uppercase text-white/50">Chat history</h4>
+    {loading ? <p role="status">Loading messages…</p> : error ? <div role="alert">Messages unavailable. <button type="button" onClick={retry}>Retry messages</button></div> : <>
+      {!data.length && <p className="text-xs text-white/50">No messages recorded.</p>}
+      <ol className="space-y-2">{data.map(message => <li key={message.id} className="rounded border border-white/10 p-3 text-sm text-white/80">
+        <p className="text-xs text-white/50">{message.senderName || message.from || "Unknown sender"} · {formatServiceTime(message.timestamp)}</p>
+        <p className="whitespace-pre-wrap break-words">{message.text}</p>
+      </li>)}</ol>
+      {(live.data.length === messageLimit || archive.data.length === messageLimit) && <button type="button" className="mt-3 min-h-10 text-sm text-sky-300" onClick={() => setMessageLimit(limit => limit + 100)}>Load older messages</button>}
+    </>}
+  </section>;
+}
+
 export default function RideHistoryPanel() {
+  const [historyLimit, setHistoryLimit] = useState(100);
   const {
     data: armedSessions,
     loading: armedSessionsLoading,
@@ -130,7 +162,7 @@ export default function RideHistoryPanel() {
   } = useCollection<RideSession>(
     "ride_sessions",
     {
-      maxResults: 100,
+      maxResults: historyLimit,
       orderByDirection: "desc",
       orderByField: "armedAt",
     },
@@ -143,14 +175,14 @@ export default function RideHistoryPanel() {
   } = useCollection<RideSession>(
     "ride_sessions",
     {
-      maxResults: 100,
+      maxResults: historyLimit,
       orderByDirection: "desc",
       orderByField: "startTime",
     },
   );
   const sessions = useMemo(
-    () => mergeRideHistorySessions(armedSessions, startedSessions),
-    [armedSessions, startedSessions],
+    () => mergeRideHistorySessions(armedSessions, startedSessions, historyLimit),
+    [armedSessions, startedSessions, historyLimit],
   );
   const sessionsLoading = armedSessionsLoading || startedSessionsLoading;
   const sessionsError = armedSessionsError ?? startedSessionsError;
@@ -356,6 +388,15 @@ export default function RideHistoryPanel() {
 
               {expandedId === session.id && (
                 <div id={`ride-history-details-${session.id}`} className="border-t border-white/10 bg-black/20 px-4 pt-4 pb-4">
+                  <div className="mb-4 space-y-1 text-xs text-white/60">
+                    <p>Service armed: {formatServiceTime(session.armedAt)}</p>
+                    <p>Journey started: {formatServiceTime(session.startTime)}</p>
+                    {session.firstKnownLocation && <p>First received GNSS: {session.firstKnownLocation.lat.toFixed(6)}, {session.firstKnownLocation.lng.toFixed(6)} · {formatServiceTime(session.firstKnownLocation.sampledAt)}</p>}
+                    {session.lastKnownLocation && <p>Last received GNSS: {session.lastKnownLocation.lat.toFixed(6)}, {session.lastKnownLocation.lng.toFixed(6)} · {formatServiceTime(session.lastKnownLocation.sampledAt)}</p>}
+                    {Object.entries(session.connectionEvents ?? {}).map(([id, event]) => <p key={id}>
+                      Signal lost: {formatServiceTime(event.observedAt)}{event.location ? ` · ${event.location.lat.toFixed(6)}, ${event.location.lng.toFixed(6)}` : ""}
+                    </p>)}
+                  </div>
                   <h4 className="mb-3 text-xs font-semibold uppercase text-white/50">
                     Passenger Manifest
                   </h4>
@@ -412,7 +453,7 @@ export default function RideHistoryPanel() {
                             </div>
                           </div>
                         );
-                      })}
+        })}
                     </div>
                   )}
 
@@ -447,6 +488,7 @@ export default function RideHistoryPanel() {
                       </div>
                     </div>
                   )}
+                  <RideHistoryMessages key={session.id} sessionId={session.id} />
                   {canDeleteRideHistory(session.status) && (
                     <div className="mt-4 border-t border-red-500/20 pt-4">
                         <button
@@ -479,6 +521,10 @@ export default function RideHistoryPanel() {
           );
         })
       )}
+      {(armedSessions.length === historyLimit || startedSessions.length === historyLimit) && <button
+        type="button" className="min-h-10 text-sm text-sky-300" onClick={() => setHistoryLimit(limit => limit + 100)}>
+        Load older rides
+      </button>}
     </div>
   );
 }

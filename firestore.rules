@@ -130,6 +130,12 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+      // Clearing live chat retains an operator-only ride history copy.
+      match /archivedMessages/{messageId} {
+        allow read: if isSessionOperator(sessionId);
+        allow create, update, delete: if false;
+      }
+
       match /messageRateLimits/{uid} {
         // Read is permitted for the owner so the UI can reflect limits, but
         // writes are backend-only: the server maintains the rolling window.

@@ -11,6 +11,9 @@ for (const path of ['.env', 'backend/.env', 'e2e/emulator/.env']) {
   if (existsSync(resolve(root, path))) throw new Error('Browser acceptance requires a clean disposable checkout without .env files');
 }
 safetyPreflight(process.env, { mode: 'emulator' });
+// Arrival evidence stays real; omit only the post-completion wait in browser
+// journeys. The HTTP emulator suite separately exercises the default 30s wait.
+process.env.AUTOMATIC_TURNAROUND_DWELL_MS = '0';
 if (!globalThis.__ekiQaNetworkGuard?.enabled) throw new Error('Browser backend needs the preloaded loopback guard');
 const require = createRequire(resolve(root, 'backend/package.json'));
 const { initializeApp, applicationDefault } = require('firebase-admin/app');
@@ -63,7 +66,7 @@ async function reset() {
   providers.reset();
   epoch = Date.now() - 45000;
   for (const collection of ['ride_sessions', 'routes', 'buses', 'users', 'feedbacks', 'feedbackCooldowns',
-    'completed_trips', 'drivers', 'devices', 'active_rides', '_active_bus_locks', '_feedback_idempotency', '_privacy_deletion_requests', '_route_save_operations', '_userAuthorization'])
+    'completed_trips', 'drivers', 'devices', 'active_rides', 'bus_locations', '_active_bus_locks', '_feedback_idempotency', '_privacy_deletion_requests', '_route_save_operations', '_userAuthorization'])
     await db.recursiveDelete(db.collection(collection));
   for (const uid of ['qa_passenger', 'qa_other', 'qa_admin']) {
     // Deletion acceptance retires an actual emulator identity. Recreate only
@@ -99,6 +102,20 @@ async function reset() {
   await publishUserAuthorization('qa_admin', { role: 'admin', admin: true });
 }
 await reset();
+async function waitForLifecycle(predicate) {
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    if (await predicate((await realtime.ref('activeBuses/qa_bus_qa_route').get()).val())) return;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  const live = (await realtime.ref('activeBuses/qa_bus_qa_route').get()).val();
+  throw new Error(`Synthetic lifecycle checkpoint timed out: ${JSON.stringify({
+    seq: live?.seq, lat: live?.lat, lng: live?.lng, speed: live?.speed, motionState: live?.motionState,
+    tripState: live?.tripState, currentStopIndex: live?.currentStopIndex, hasDepartedOrigin: live?.hasDepartedOrigin,
+    terminalArrival: live?.terminalArrival, timestamp: live?.timestamp, anchor: live?.plausibilityAnchor,
+    raw: live?.rawLocation,
+  })}`);
+}
 // A separate test-control listener, bound to loopback. No test endpoints enter
 // the production Express app. Owned QA runners are the only callers; only synthetic
 // demo data is reset/read. Production middleware/routes/workers boot below.
@@ -120,13 +137,25 @@ const control = createServer(async (req, res) => {
       const samples = req.url === '/telemetry/middle'
         ? [{ seq: 2, offset: 20000, lat: 23.0018, speed: 45, motionState: 'moving' },
           { seq: 3, offset: 25000, lat: 23.0018, speed: 45, motionState: 'moving' }]
-        : req.url === '/telemetry/end' ? [{ seq: 4, offset: 45000, lat: 23.0036, speed: 0, motionState: 'stopped' }]
-        : [{ seq: 5, offset: Date.now() - epoch, lat: 23, speed: 0, motionState: 'stopped' }];
+        : req.url === '/telemetry/end' ? [4, 5, 6].map(seq => ({ seq, offset: 0, lat: 23.0036, speed: 0, motionState: 'stopped' }))
+        : [{ seq: 7, offset: Date.now() - epoch, lat: 23, speed: 0, motionState: 'stopped' }];
       const statuses = [];
       for (const { offset, ...sample } of samples) {
+        if (req.url === '/telemetry/end' && sample.seq === 5) {
+          await waitForLifecycle(live => live?.terminalArrival);
+          await new Promise(resolve => setTimeout(resolve, 2100));
+        }
+        if (req.url === '/telemetry/end' && sample.seq === 6) {
+          // With the fixture's explicit zero dwell, the return may already
+          // replace completed presence. Wait on durable completion authority.
+          await waitForLifecycle(async () =>
+            (await db.collection('ride_sessions').doc('qa_session').get()).data()?.status === 'completed');
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        const timestamp = req.url === '/telemetry/end' ? Date.now() : epoch + offset;
         const response = await fetch('http://127.0.0.1:3116/api/devices/qa_device/telemetry', {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Device ${deviceSecret}` },
-          body: JSON.stringify({ ...sample, lng: 72, heading: 0, gpsHdop: 1, timestamp: epoch + offset, deviceSentAt: Date.now() }),
+          body: JSON.stringify({ ...sample, lng: 72, heading: 0, gpsHdop: 1, timestamp, deviceSentAt: Date.now() }),
           signal: AbortSignal.timeout(10000), redirect: 'error' });
         statuses.push(response.status);
         if (response.status !== 202) throw new Error('Synthetic telemetry was not accepted');
@@ -136,7 +165,9 @@ const control = createServer(async (req, res) => {
           const live = (await realtime.ref('activeBuses/qa_bus_qa_route').get()).val();
           if (live?.seq === sample.seq && (sample.seq !== 2 || live.currentStopIndex >= 1)
             && (sample.seq !== 3 || live.currentStopIndex >= 2)
-            && (sample.seq !== 4 || (await db.collection('ride_sessions').doc('qa_session').get()).data()?.status === 'completed')) break;
+            && (sample.seq !== 4 || live.terminalArrival)
+            && (req.url !== '/telemetry/end' || sample.seq !== 5 ||
+              (await db.collection('ride_sessions').doc('qa_session').get()).data()?.status === 'completed')) break;
           if (Date.now() >= deadline) throw new Error('Synthetic telemetry worker deadline exceeded');
           await new Promise(resolve => setTimeout(resolve, 100));
         }
@@ -146,6 +177,7 @@ const control = createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/evidence') {
       const ride = (await db.collection('ride_sessions').doc('qa_session').get()).data();
       const messages = await db.collection('ride_sessions').doc('qa_session').collection('messages').get();
+      const archivedMessages = await db.collection('ride_sessions').doc('qa_session').collection('archivedMessages').get();
       const feedbacks = await db.collection('feedbacks').get();
       const buses = await db.collection('buses').get();
       const sessions = await db.collection('ride_sessions').get();
@@ -154,7 +186,7 @@ const control = createServer(async (req, res) => {
       const routes = await db.collection('routes').get();
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ fixtureProcessId: process.pid, passengers: ride?.passengers ?? {}, passengerIds: ride?.passengerIds ?? [],
-        messages: messages.docs.map(doc => ({ id: doc.id, ...doc.data() })), feedbacks: feedbacks.docs.map(doc => doc.data()),
+        messages: messages.docs.map(doc => ({ id: doc.id, ...doc.data() })), archivedMessages: archivedMessages.docs.map(doc => ({ id: doc.id, ...doc.data() })), feedbacks: feedbacks.docs.map(doc => doc.data()),
         buses: buses.docs.map(doc => ({ id: doc.id, ...doc.data() })),
         sessions: sessions.docs.map(doc => ({ id: doc.id, ...doc.data() })),
         completions: completions.docs.map(doc => ({ id: doc.id, ...doc.data() })),
@@ -183,7 +215,10 @@ const control = createServer(async (req, res) => {
       res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ documents, principals, telemetry, userAuthorization, rateLimitCount })); return;
     }
     res.statusCode = 404; res.end('{}');
-  } catch { res.statusCode = 500; res.end('{"error":"Synthetic fixture operation failed"}'); }
+  } catch (error) {
+    console.error('[QA synthetic control]', error.message);
+    res.statusCode = 500; res.end(JSON.stringify({ error: error.message }));
+  }
 });
 control.listen(3117, '127.0.0.1');
 process.once('SIGTERM', () => control.close()); process.once('SIGINT', () => control.close());

@@ -164,6 +164,19 @@ function end(status = "completed") {
 }
 
 describe("versioned session identity and lifecycle", () => {
+  it("captures the final raw fix before a manual early end without losing the manifest or chat", async () => {
+    const { sessionId } = await (await start()).json();
+    Object.assign(state.docs.get(`ride_sessions/${sessionId}`)!, { passengers: { rider: { userId: "rider" } } });
+    state.docs.set(`ride_sessions/${sessionId}/messages/kept`, { text: "Synthetic retained chat" });
+    const now = Date.now();
+    Object.assign(state.live, { timestamp: now, seq: 10, rawLocation: { lat: 23.001, lng: 72.501, sampledAt: now, seq: 10 } });
+    const response = await contractFetch(`${base}/api/shifts/stop`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ busId: "bus_1", routeId: "route_1", sessionId }) });
+    expect(response.status).toBe(200);
+    expect(state.docs.get(`ride_sessions/${sessionId}`)).toMatchObject({ status: "interrupted", interruptionReason: "manual_end_early",
+      passengers: { rider: { userId: "rider" } }, lastKnownLocation: { lat: 23.001, lng: 72.501, sampledAt: now, seq: 10 } });
+    expect(state.docs.get(`ride_sessions/${sessionId}/messages/kept`)).toMatchObject({ text: "Synthetic retained chat" });
+    expect(state.docs.has("_active_bus_locks/bus_1")).toBe(false);
+  });
   async function closedRecovery(phase: number) {
     state.transactionFailureAt = phase;
     state.transactionFailures = [{ code: 3, details: "Transaction is invalid or closed." }];
@@ -361,12 +374,24 @@ describe("versioned session identity and lifecycle", () => {
     for (let index = 0; index < 805; index++) state.docs.set(`ride_sessions/${sessionId}/messages/m_${index}`, { text: "x" });
     state.batchSizes = [];
     const cleanup = await request(`/${sessionId}/messages`, "DELETE");
-    expect((await cleanup.json()).deleted).toBe(805); expect(state.batchSizes).toEqual([400, 400, 5]);
+    expect((await cleanup.json()).deleted).toBe(805); expect(state.batchSizes).toEqual([400, 400, 400, 400, 10]);
+    expect([...state.docs.keys()].filter(key => key.startsWith(`ride_sessions/${sessionId}/messages/`))).toHaveLength(0);
+    expect([...state.docs.keys()].filter(key => key.startsWith(`ride_sessions/${sessionId}/archivedMessages/`))).toHaveLength(805);
     end(); state.docs.set(`completed_trips/${sessionId}`, { sessionId });
     expect((await request(`/${sessionId}`, "DELETE")).status).toBe(200);
+    expect([...state.docs.keys()].filter(key => key.startsWith(`ride_sessions/${sessionId}/`))).toHaveLength(0);
     expect(state.docs.has(`_ride_history_deletion_jobs/${sessionId}`)).toBe(false);
     expect((await request(`/${sessionId}`, "DELETE")).status).toBe(200);
     state.user = { uid: "driver_uid", role: "driver", driverId: "driver_1", assignedBusId: "bus_1" };
     expect((await start()).status).toBe(410);
+  });
+  it("does not recreate chat archives when history deletion has started", async () => {
+    const { sessionId } = await (await start()).json();
+    state.user = { uid: "admin", role: "admin", admin: true };
+    state.docs.set(`ride_sessions/${sessionId}/messages/kept`, { text: "Synthetic chat" });
+    state.docs.set(`_ride_history_deletion_jobs/${sessionId}`, { requestedAt: Date.now() });
+    const response = await request(`/${sessionId}/messages`, "DELETE");
+    expect((await response.json()).deleted).toBe(0);
+    expect(state.docs.has(`ride_sessions/${sessionId}/archivedMessages/kept`)).toBe(false);
   });
 });
