@@ -49,6 +49,55 @@ describe("browser telemetry trace activation", () => {
     expect(trace.beginMessageWriteTrace("session")).toBeNull();
   });
 
+  it("records visibility, network hints and page lifecycle without retaining page content", async () => {
+    const browserWindow = Object.assign(new EventTarget(), {
+      location: { search: "?telemetryTrace=1" },
+      matchMedia: () => ({ matches: true }),
+    }) as unknown as Window & typeof globalThis;
+    const browserDocument = Object.assign(new EventTarget(), { visibilityState: "visible", title: "private title" });
+    const browserNavigator = { onLine: true };
+    vi.stubGlobal("window", browserWindow);
+    vi.stubGlobal("document", browserDocument);
+    vi.stubGlobal("navigator", browserNavigator);
+    const trace = await import("./telemetryTrace");
+    trace.recordRealtimeConnection(true);
+    const api = browserWindow.__ekiTelemetryTrace!;
+    expect(api.snapshot().records[0]).toMatchObject({ browserVisibilityState: "visible", browserOnline: true, browserReducedMotion: true });
+    browserDocument.visibilityState = "hidden";
+    browserDocument.dispatchEvent(new Event("visibilitychange"));
+    browserNavigator.onLine = false;
+    browserWindow.dispatchEvent(new Event("offline"));
+    browserWindow.dispatchEvent(Object.assign(new Event("pagehide"), { persisted: true }));
+    const records = api.snapshot().records;
+    expect(records.slice(1).map(record => record.trigger)).toEqual(["visibilitychange", "offline", "pagehide"]);
+    expect(records[1]).toMatchObject({ event: "browser_lifecycle", browserVisibilityState: "hidden", browserOnline: true });
+    expect(records[2]).toMatchObject({ browserOnline: false });
+    expect(records[3]).toMatchObject({ persisted: true });
+    expect(records.every(record => typeof record.browserWallAtMs === "number" && typeof record.browserMonotonicAtMs === "number")).toBe(true);
+    expect(JSON.stringify(api.snapshot())).not.toContain("private");
+    const originalRun = api.snapshot().runId;
+    api.clear();
+    browserDocument.visibilityState = "visible";
+    browserDocument.dispatchEvent(new Event("visibilitychange"));
+    browserWindow.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+    expect(api.snapshot().runId).not.toBe(originalRun);
+    expect(api.snapshot().records.map(record => record.eventId)).toEqual([1, 2]);
+    expect(api.snapshot().records[1]).toMatchObject({ trigger: "pageshow", persisted: true });
+  });
+
+  it("leaves unavailable browser context explicit and installs no observers when disabled", async () => {
+    const browserWindow = { location: { search: "" }, addEventListener: vi.fn() } as unknown as Window & typeof globalThis;
+    vi.stubGlobal("window", browserWindow);
+    vi.stubGlobal("document", undefined);
+    vi.stubGlobal("navigator", undefined);
+    const trace = await import("./telemetryTrace");
+    expect(browserWindow.addEventListener).not.toHaveBeenCalled();
+    expect(browserWindow.__ekiTelemetryTrace).toBeUndefined();
+    browserWindow.location.search = "?telemetryTrace=1";
+    trace.recordRealtimeConnection(true);
+    expect(browserWindow.__ekiTelemetryTrace!.snapshot().records[0]).toMatchObject({ browserVisibilityState: "unknown", browserOnline: null, browserReducedMotion: null });
+  });
+
   it("exports UTF-8 byte estimates and timing without message content", async () => {
     const browserWindow = { location: { search: "?telemetryTrace=1" } } as unknown as Window & typeof globalThis;
     vi.stubGlobal("window", browserWindow);

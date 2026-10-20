@@ -54,4 +54,16 @@ export const routingTestMap = [{
   sourcePaths: ['frontend/src/components/passenger/PassengerWorkspace.tsx', 'frontend/src/components/maps/PassengerMap.tsx'],
   tests: [{ path: 'frontend/src/components/passenger/PassengerWorkspace.test.tsx', name: 'device preview lifecycle > keeps the preview camera fallback separate from destination selection and clearing', level: 'L1', semantics: 'Mounted workspace preserves its camera fallback while passing empty, explicitly selected and cleared destination identities independently to the map boundary.' },
     { path: 'frontend/src/components/maps/PassengerMap.test.tsx', name: 'published passenger stop progress > distinguishes a camera fallback from an explicitly selected or cleared destination', level: 'L1', semantics: 'Actual map and timeline components with mocked Maps/RTDB show endpoint badges until a destination is explicitly selected and remove the selected badge after clearing it.' }],
+}, {
+  caseId: 'OBS05',
+  scope: 'Trace context and lifecycle recording with synthetic browser events only; OS suspension, actual display paint and real role/network acceptance remain separate.',
+  sourcePaths: ['frontend/src/lib/telemetryTrace.ts'],
+  tests: [{ path: 'frontend/src/lib/telemetryTrace.test.ts', name: 'browser telemetry trace activation > records visibility, network hints and page lifecycle without retaining page content', level: 'L1', semantics: 'Synthetic visible/hidden, offline, persisted pagehide/pageshow and clear events retain current trace context, reduced-motion preference, timestamps and sequence identity without page content.' },
+    { path: 'frontend/src/lib/telemetryTrace.test.ts', name: 'browser telemetry trace activation > leaves unavailable browser context explicit and installs no observers when disabled', level: 'L1', semantics: 'No lifecycle observer is installed while tracing is disabled; absent visibility, network and reduced-motion APIs export explicit unknown/null context after activation.' },
+    { path: 'e2e/admin-access.spec.ts', name: 'opt-in traces retain actual browser online and reduced-motion context', level: 'L3', semantics: 'Chromium toggles real offline/online state and emulated reduced motion in the synthetic app fixture; the opt-in export retains the corresponding context without certifying OS suspension or live provider reachability.' }],
+}, {
+  caseId: 'PAX15',
+  scope: 'Mounted map warning on silence and fresh-update recovery with fake time and mocked Maps/RTDB; does not establish the physical reason for missing updates.',
+  sourcePaths: ['frontend/src/components/maps/PassengerMap.tsx'],
+  tests: [{ path: 'frontend/src/components/maps/PassengerMap.test.tsx', name: 'passenger map device and ride contexts > announces delayed location without diagnosing GNSS loss when an armed bus goes silent', level: 'L1', semantics: 'Crossing the silence threshold without a new network event announces delayed location without claiming GNSS loss or active reconnect; a fresh streamed fix clears the warning.' }],
 }];

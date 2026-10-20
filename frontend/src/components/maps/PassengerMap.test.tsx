@@ -296,12 +296,15 @@ describe("passenger map device and ride contexts", () => {
     expect(screen.getByRole("status").textContent).toContain("Waiting for a valid GPS fix");
     expect(state.arrivals).not.toHaveBeenCalled();
   });
-  it("announces signal loss when an armed bus goes silent without another network event", async () => {
+  it("announces delayed location without diagnosing GNSS loss when an armed bus goes silent", async () => {
     vi.useFakeTimers(); state.snapshot = { bus: fixtureBus("forward") };
     await act(async () => { render(<PassengerMap route={directed} targetStop={route.stops[1]} />); });
-    expect(screen.queryByText(/GPS signal lost/)).toBeNull();
+    expect(screen.queryByText(/Live location updates delayed/)).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS + 15_001); });
-    expect(screen.getByText(/GPS signal lost/)).toBeTruthy();
+    expect(screen.getByText(/Live location updates delayed/)).toBeTruthy();
+    expect(screen.queryByText(/GPS signal lost|reconnecting/)).toBeNull();
+    await act(async () => { state.listener?.({ bus: fixtureBus("forward") }); });
+    expect(screen.queryByText(/Live location updates delayed/)).toBeNull();
   });
   it("keeps fresh streamed fixes online between the 15-second clock ticks", async () => {
     vi.useFakeTimers();
@@ -311,7 +314,7 @@ describe("passenger map device and ride contexts", () => {
     // New telemetry arrives before the independent silence timer next fires.
     vi.setSystemTime(start + 12_000);
     await act(async () => { state.listener?.({ bus: fixtureBus("forward") }); });
-    expect(screen.queryByText(/GPS signal lost/)).toBeNull();
+    expect(screen.queryByText(/Live location updates delayed/)).toBeNull();
   });
   it("clears old ETAs after the selected bus disappears", async () => {
     render(<PassengerMap route={directed} targetStop={route.stops[1]} />);

@@ -498,7 +498,7 @@ function PassengerMapInner({
           Waiting for a valid GPS fix. The configured route remains available.
         </div>
       )}
-      {/* ── Signal Lost Banner ── */}
+      {/* Telemetry silence does not identify a receiver or network failure. */}
       {!liveReadFailed && signalLostBuses.length > 0 && (
         <div className="absolute top-10 left-4 right-4 z-50 animate-slide-down" role="status" aria-live="polite">
           <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[12px] font-semibold"
@@ -509,10 +509,10 @@ function PassengerMapInner({
             }}>
             <WifiOff className="w-3.5 h-3.5 shrink-0" />
             <span>
-              GPS signal lost
+              Live location updates delayed
               {signalLostMinutes !== null && signalLostMinutes > 0
-                ? ` · ${signalLostMinutes}m ago`
-                : " · reconnecting…"}
+                ? ` · last update ${signalLostMinutes}m ago`
+                : " · waiting for a fresh update…"}
             </span>
           </div>
         </div>

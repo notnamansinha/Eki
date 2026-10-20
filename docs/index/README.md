@@ -1,6 +1,6 @@
 # Eki documentation index
 
-Last updated: 2026-10-06 15:32 IST (UTC+05:30).
+Last updated: 2026-10-20 18:50 IST (UTC+05:30).
 
 ## New to the project
 
@@ -52,6 +52,7 @@ run revisions, dates and measurements. Verify deployed availability separately.
 | [RTDB legacy and geometry retention](../operations/RTDB_RETENTION.md) | Dry-run inventory, legacy retirement and geometry cleanup |
 | [Telemetry ingestion load test](../operations/TELEMETRY_INGESTION_LOAD_TEST.md) | Staging load and limiter contention procedure |
 | [Telemetry latency baseline](../operations/TELEMETRY_LATENCY_BASELINE.md) | GNSS-to-marker measurement procedure |
+| [Browser telemetry context](../operations/BROWSER_TELEMETRY_TRACE.md) | Visibility, page lifecycle and location-delay interpretation |
 | [University handover checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) | Release ownership and production acceptance |
 
 ## Testing and evidence

@@ -1,4 +1,22 @@
 import { expect, test } from "@playwright/test";
+test("opt-in traces retain actual browser online and reduced-motion context", async ({ page, context }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/?telemetryTrace=1");
+  await expect.poll(() => page.evaluate(() => Boolean(window.__ekiTelemetryTrace))).toBe(true);
+  await page.evaluate(() => window.__ekiTelemetryTrace!.clear());
+  try {
+    await context.setOffline(true);
+    await expect.poll(() => page.evaluate(() => window.__ekiTelemetryTrace!.snapshot().records
+      .find(record => record.trigger === "offline"))).toMatchObject({
+      event: "browser_lifecycle", browserOnline: false, browserVisibilityState: "visible", browserReducedMotion: true,
+    });
+  } finally {
+    await context.setOffline(false);
+  }
+  await expect.poll(() => page.evaluate(() => window.__ekiTelemetryTrace!.snapshot().records
+    .find(record => record.trigger === "online"))).toMatchObject({ browserOnline: true });
+});
+
 test("live fleet details remain reachable below service controls on a short screen", async ({ page }) => {
   await page.goto("/?dashboard");
   await page.getByRole("button", { name: "Approve verification" }).click();

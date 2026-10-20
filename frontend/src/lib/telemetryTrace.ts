@@ -150,6 +150,21 @@ function installBrowserApi(): void {
       );
     },
   };
+  const lifecycle = (trigger: string, persisted: boolean | null = null) => {
+    appendRecord(ensureState(), {
+      event: "browser_lifecycle",
+      trigger,
+      persisted,
+      browserMonotonicAtMs: monotonicNow(),
+    });
+  };
+  if (typeof document !== "undefined") {
+    document.addEventListener?.("visibilitychange", () => lifecycle("visibilitychange"));
+  }
+  window.addEventListener?.("pagehide", event => lifecycle("pagehide", event.persisted));
+  window.addEventListener?.("pageshow", event => lifecycle("pageshow", event.persisted));
+  window.addEventListener?.("online", () => lifecycle("online"));
+  window.addEventListener?.("offline", () => lifecycle("offline"));
 }
 
 function ensureState(): TraceState {
@@ -168,7 +183,15 @@ function appendRecord(
     eventId: current.nextEventId,
     runId: current.runId,
     scenario: current.scenario,
+    browserWallAtMs: wallClockNow(),
     ...record,
+    browserVisibilityState: typeof document !== "undefined" &&
+      ["visible", "hidden"].includes(document.visibilityState) ? document.visibilityState : "unknown",
+    // This browser hint is not proof that Firebase, the backend or Maps is reachable.
+    browserOnline: typeof navigator !== "undefined" && typeof navigator.onLine === "boolean"
+      ? navigator.onLine : null,
+    browserReducedMotion: typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : null,
   });
   current.nextEventId += 1;
 }
