@@ -5,6 +5,7 @@ import {
   estimateDeviceClockOffset,
   percentileSummary,
   parseDeviceRecords,
+  formatTelemetryReport,
 } from "./analyze-telemetry-trace.mjs";
 
 test("recovers independently framed records from interleaved and concatenated serial output", () => {
@@ -234,6 +235,59 @@ test("reports failed requests and gaps without deleting timestamps early", () =>
   assert.equal(analysis.counters.httpFailures, 1);
   assert.equal(analysis.counters.retries, 1);
   assert.equal(analysis.gaps.filter(gap => gap.metric === "backendIngressUpdateGapMs").length, 2);
+});
+
+test("measures browser cadence through a serial recording gap using every browser sample", () => {
+  const device = [0, 9000].map((offset, index) => ({
+    seq: index ? 10 : 1, sampledAtDeviceMs: 1000 + offset,
+    serverReceivedAtMs: 1100 + offset, httpStatus: 202,
+  }));
+  const browser = Array.from({ length: 10 }, (_, index) => ({
+    event: "browser_listener", runId: "tab", nodeKey: "node:bus_route", sessionId: "ride",
+    seq: index + 1, sampledAtDeviceMs: 1000 + index * 1000,
+    browserMonotonicAtMs: index * 1000, browserEstimatedServerAtMs: 1200 + index * 1000,
+  }));
+  const analysis = analyzeTelemetryTraces(device, [...browser, ...browser]);
+  assert.equal(analysis.rows[1].browserListenerUpdateGapMs, 1000);
+  assert.equal(analysis.browserUpdates.length, 10);
+  assert.equal(analysis.gaps.filter(gap => gap.metric === "browserListenerUpdateGapMs").length, 0);
+  assert.match(formatTelemetryReport(analysis), /serial-observed accepted samples/);
+  assert.match(formatTelemetryReport(analysis), /do not establish a backend outage/);
+});
+
+test("retains browser-only gaps and isolates tabs, routes, sessions and scenario transitions", () => {
+  const sample = (seq, time, overrides = {}) => ({
+    event: "browser_listener", runId: "tab", nodeKey: "bus_route", sessionId: "ride",
+    seq, sampledAtDeviceMs: seq * 1000, browserMonotonicAtMs: time,
+    browserEstimatedServerAtMs: 100000 - time, scenario: "moving", ...overrides,
+  });
+  const analysis = analyzeTelemetryTraces([], [
+    sample(1, 100), sample(2, 3100),
+    sample(3, 8000, { runId: "other" }),
+    sample(4, 9000, { nodeKey: "other_route" }),
+    sample(5, 10000, { sessionId: "other_ride" }),
+    sample(6, 11000, { scenario: "stopped" }), sample(7, 12000),
+    sample(8, 13000, { event: "browser_render", displayKind: "held" }),
+    sample(9, 14000, { browserMonotonicAtMs: undefined }),
+  ]);
+  assert.deepEqual(analysis.gaps.map(gap => [gap.seq, gap.metric, gap.milliseconds]),
+    [[2, "browserListenerUpdateGapMs", 3000]]);
+  assert.equal(analysis.browserUpdates.find(row => row.seq === 7).browserListenerUpdateGapMs, null);
+});
+
+test("reports browser-only render cadence without counting held markers as new arrivals", () => {
+  const sample = (seq, time, displayKind) => ({
+    event: "browser_render", runId: "tab", nodeKey: "bus_route", sessionId: "ride",
+    seq, sampledAtDeviceMs: seq * 1000, browserMonotonicAtMs: time, displayKind, scenario: "recovery",
+  });
+  const analysis = analyzeTelemetryTraces([], [
+    sample(1, 0, "raw"), sample(2, 2000, "held"), sample(3, 4000, "matched"),
+    sample(4, -1, "raw"), sample(5, Number.NaN, "raw"),
+  ]);
+  assert.equal(analysis.browserUpdates.length, 2);
+  assert.deepEqual(analysis.gaps.map(gap => [gap.metric, gap.milliseconds]),
+    [["browserRenderUpdateGapMs", 4000]]);
+  assert.match(formatTelemetryReport(analysis), /Scenario: recovery/);
 });
 
 test("rejects a wall-clock jump instead of calling it transport latency", () => {

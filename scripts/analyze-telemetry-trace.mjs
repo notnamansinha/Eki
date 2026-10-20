@@ -83,7 +83,42 @@ function monotonicElapsed(later, earlier) {
   return elapsed <= 120_000 ? elapsed : null;
 }
 
+function browserCadence(browserRecords) {
+  const selected = new Map();
+  for (const record of browserRecords) {
+    if (!["browser_listener", "browser_render"].includes(record.event) ||
+        ["none", "held"].includes(record.displayKind) ||
+        nonNegative(record.browserMonotonicAtMs) === null) continue;
+    const phase = browserPhaseKey(record);
+    if (!phase) continue;
+    const key = JSON.stringify([phase, record.event, record.scenario ?? "unclassified"]);
+    const previous = selected.get(key);
+    if (!previous || record.browserMonotonicAtMs < previous.browserMonotonicAtMs) selected.set(key, record);
+  }
+  const streams = new Map();
+  const byPhase = new Map();
+  const updates = [];
+  // Use the tab's monotonic clock, independently of serial availability and
+  // server-offset adjustments. Overlapping exports count each sample once.
+  for (const record of [...selected.values()].sort((a, b) => a.browserMonotonicAtMs - b.browserMonotonicAtMs)) {
+    const nodeKey = typeof record.nodeKey === "string" ? record.nodeKey.replace(/^node:/, "") : "";
+    const stream = JSON.stringify([record.runId, nodeKey,
+      record.sessionId ?? "", record.event]);
+    const previous = streams.get(stream);
+    const scenario = record.scenario ?? "unclassified";
+    const metric = record.event === "browser_listener" ? "browserListenerUpdateGapMs" : "browserRenderUpdateGapMs";
+    const gap = previous && (previous.scenario ?? "unclassified") === scenario
+      ? elapsedBetween(record.browserMonotonicAtMs, previous.browserMonotonicAtMs) : null;
+    const update = { seq: record.seq, scenario, [metric]: gap };
+    updates.push(update);
+    byPhase.set(JSON.stringify([browserPhaseKey(record), record.event, scenario]), gap);
+    streams.set(stream, record);
+  }
+  return { updates, byPhase };
+}
+
 export function analyzeTelemetryTraces(deviceRecords, browserRecords) {
+  const cadence = browserCadence(browserRecords);
   const deviceByKey = new Map();
   for (const record of deviceRecords) {
     if (finite(record.httpStatus) === null) continue;
@@ -180,8 +215,6 @@ export function analyzeTelemetryTraces(deviceRecords, browserRecords) {
       browserListenerUpdateGapMs: null,
       browserRenderUpdateGapMs: null,
       _serverReceivedAtMs: serverReceivedAt,
-      _browserListenerAtMs: browserListenerAt,
-      _browserRenderAtMs: browserRenderAt,
     });
   }
   rows.sort((left, right) => (left._serverReceivedAtMs ?? left.sampledAtDeviceMs ?? 0) - (right._serverReceivedAtMs ?? right.sampledAtDeviceMs ?? 0));
@@ -190,26 +223,23 @@ export function analyzeTelemetryTraces(deviceRecords, browserRecords) {
     if (previous && previous.scenario === row.scenario) {
       row.captureUpdateGapMs = elapsedBetween(row.sampledAtDeviceMs, previous.sampledAtDeviceMs);
       row.backendIngressUpdateGapMs = elapsedBetween(row._serverReceivedAtMs, previous._serverReceivedAtMs);
-      row.browserListenerUpdateGapMs = elapsedBetween(
-        row._browserListenerAtMs,
-        previous._browserListenerAtMs,
-      );
-      row.browserRenderUpdateGapMs = elapsedBetween(
-        row._browserRenderAtMs,
-        previous._browserRenderAtMs,
-      );
     }
+    const listener = listeners.get(row.key);
+    const phase = listener && browserPhaseKey(listener);
+    row.browserListenerUpdateGapMs = cadence.byPhase.get(JSON.stringify([phase, "browser_listener", row.scenario])) ?? null;
+    row.browserRenderUpdateGapMs = cadence.byPhase.get(JSON.stringify([phase, "browser_render", row.scenario])) ?? null;
   });
   rows.forEach((row) => {
     delete row._serverReceivedAtMs;
-    delete row._browserListenerAtMs;
-    delete row._browserRenderAtMs;
   });
   const requests = deviceRecords.filter(record => finite(record.httpStatus) !== null);
   const connections = deviceRecords.filter(record => record.event === "network_connect" && record.channel !== "diagnostics");
-  const gaps = rows.flatMap(row => ["captureUpdateGapMs", "backendIngressUpdateGapMs",
-    "browserListenerUpdateGapMs", "browserRenderUpdateGapMs"].flatMap(metric =>
-      row[metric] > 2000 ? [{ seq: row.seq, scenario: row.scenario, metric, milliseconds: row[metric] }] : []));
+  const gaps = [
+    ...rows.flatMap(row => ["captureUpdateGapMs", "backendIngressUpdateGapMs"].flatMap(metric =>
+      row[metric] > 2000 ? [{ seq: row.seq, scenario: row.scenario, metric, milliseconds: row[metric], scope: "serial-observed accepted samples" }] : [])),
+    ...cadence.updates.flatMap(row => ["browserListenerUpdateGapMs", "browserRenderUpdateGapMs"].flatMap(metric =>
+      row[metric] > 2000 ? [{ seq: row.seq, scenario: row.scenario, metric, milliseconds: row[metric], scope: "browser observations" }] : [])),
+  ];
   return {
     counters: {
       requests: requests.length,
@@ -225,6 +255,7 @@ export function analyzeTelemetryTraces(deviceRecords, browserRecords) {
         Math.abs((record.deviceReceivedAtDeviceMs - record.deviceSentAtDeviceMs) - record.httpDurationMs) > 100).length,
     },
     connections,
+    browserUpdates: cadence.updates,
     gaps,
     rows,
     missing: {
@@ -258,10 +289,13 @@ const METRICS = [
   ["Browser listener → marker target (5 cm tolerance)", "browserListenerToMarkerSettledMs"],
   ["Marker animation after React snapshot", "markerAnimationMs"],
   ["Capture → marker target (5 cm tolerance)", "endToEndMarkerSettledMs"],
-  ["Capture gap between accepted samples", "captureUpdateGapMs"],
-  ["Backend ingress update gap", "backendIngressUpdateGapMs"],
-  ["Browser listener update gap", "browserListenerUpdateGapMs"],
-  ["Browser marker-render update gap", "browserRenderUpdateGapMs"],
+  ["Capture interval between serial-observed accepted samples", "captureUpdateGapMs"],
+  ["Ingress interval between serial-observed accepted samples", "backendIngressUpdateGapMs"],
+];
+
+const BROWSER_CADENCE_METRICS = [
+  ["Observed browser listener update gap", "browserListenerUpdateGapMs"],
+  ["Observed browser marker-render update gap", "browserRenderUpdateGapMs"],
 ];
 
 function metricTable(rows, metrics = METRICS) {
@@ -305,7 +339,7 @@ function healthTables(healthSnapshots) {
 }
 
 export function formatTelemetryReport(analysis, healthSnapshots = []) {
-  const scenarios = [...new Set(analysis.rows.map((row) => row.scenario))];
+  const scenarios = [...new Set([...analysis.rows, ...analysis.browserUpdates].map((row) => row.scenario))];
   const sections = [
     "# Telemetry latency baseline",
     "",
@@ -313,6 +347,7 @@ export function formatTelemetryReport(analysis, healthSnapshots = []) {
     "",
     "Clock offset uses the four HTTP timestamps. The uncertainty column is half of the network-only round trip; cross-clock latency values should be read with that bound.",
     "Use one device per input. Capture gaps describe accepted samples, not the underlying GNSS sampling cadence. Missing or malformed records limit gap and failure counts.",
+    "Ingress intervals between serial-observed accepted samples do not establish a backend outage: USB disconnection or missing serial records can omit successful intervening requests. Browser cadence uses all unique browser samples on each tab's monotonic clock, including samples absent from serial. Tabs, routes, rides and scenario transitions are isolated. Missing monotonic timestamps are unavailable. Browser gaps describe the exported observations; suspension, export truncation and missing records can also create gaps. Check recorder coverage and an independent cloud observer before attributing an outage.",
     `Browser samples without a recorded ride session: ${analysis.counters.browserSamplesWithoutSession}. Location-only samples cannot establish boarding, stop progression, completion or automatic return.`,
     "Version 2 firmware records retain receiver UTC, RMC first-byte/checksum arrival, evaluation/enqueue, request send, response headers and completed body drain separately. Monotonic phases handle one rollover and reject impossible intervals. Missing phases remain unavailable, including RTC/checkpoint recovery. Receiver UTC comparisons include clock disagreement and UART buffering; they are not pure network latency. HTTP round trip remains the header phase used for clock estimation; the complete device cycle includes body drain.",
     "",
@@ -332,10 +367,14 @@ export function formatTelemetryReport(analysis, healthSnapshots = []) {
     "",
     "## Every gap >2 seconds (largest first)",
     "",
-    "| Sequence | Scenario | Stage | Gap ms |",
-    "|---|---|---|---:|",
+    "| Sequence | Scenario | Scope | Stage | Gap ms |",
+    "|---|---|---|---|---:|",
     ...[...analysis.gaps].sort((a, b) => b.milliseconds - a.milliseconds)
-      .map(gap => `| ${gap.seq} | ${gap.scenario} | ${gap.metric} | ${gap.milliseconds} |`),
+      .map(gap => `| ${gap.seq} | ${gap.scenario} | ${gap.scope} | ${gap.metric} | ${gap.milliseconds} |`),
+    "",
+    "## Browser cadence independent of serial (ms)",
+    "",
+    metricTable(analysis.browserUpdates, BROWSER_CADENCE_METRICS),
     "",
     "## TLS connection timing (ms)",
     "",
@@ -360,6 +399,8 @@ export function formatTelemetryReport(analysis, healthSnapshots = []) {
       `## Scenario: ${scenario} (ms)`,
       "",
       metricTable(analysis.rows.filter((row) => row.scenario === scenario)),
+      "",
+      metricTable(analysis.browserUpdates.filter((row) => row.scenario === scenario), BROWSER_CADENCE_METRICS),
     );
   }
   const health = healthTables(healthSnapshots);

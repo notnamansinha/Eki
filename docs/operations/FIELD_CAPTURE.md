@@ -1,6 +1,6 @@
 # Recording a physical GNSS test
 
-Last updated: 2026-10-20 13:19 IST (UTC+05:30).
+Last updated: 2026-10-20 18:34 IST (UTC+05:30).
 
 Prepare the recorder before boarding. Device presence, location delivery and an
 armed service are separate checks. A moving location trace without a ride session
@@ -71,6 +71,18 @@ The analyzer preserves malformed serial fragments and independently parses
 complete concatenated records. Samples without a recorded session are counted
 explicitly. A React snapshot/marker-target callback is not independently measured
 display paint; clock-adjusted intervals carry the four-timestamp uncertainty.
+Browser cadence uses all unique listener/render samples in the exports, including
+samples missing from serial, measured on each tab's monotonic clock. Overlapping
+exports are deduplicated; tabs, routes, sessions and scenario transitions stay
+separate. Missing monotonic timestamps cannot establish cadence. Background
+suspension or truncated exports can still create apparent browser gaps.
+
+The capture and ingress intervals in the latency table are intervals between
+**serial-observed accepted samples**. They do not establish a backend outage:
+successful intervening requests can be absent during a USB recording interruption.
+Correlate the serial recorder's events sidecar, browser cadence and an independent
+cloud stream before assigning an outage to a system stage. Preserve intervals and
+missing coverage as evidence; do not describe an unobserved interval as healthy.
 Do not turn sequence gaps into packet-loss percentages. A device read timeout
 can accompany a backend acceptance; correlate sequence and device-send time
 before interpreting unknown acknowledgements.
