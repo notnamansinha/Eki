@@ -1,6 +1,6 @@
 # Hardware telemetry, latency and failure design
 
-Last updated: 2026-10-05 (Asia/Kolkata).
+Last updated: 2026-10-20 19:08 IST (UTC+05:30).
 
 Setup boundary: use [the hardware setup guide](README.md) before reading this
 design. It is the source for required `backend/.env`, frontend environment
@@ -53,7 +53,10 @@ flowchart LR
   subgraph DELIVERY["FreeRTOS publisher task / core 0"]
     WIFI["Bounded Wi-Fi retry + NTP cross-check"] --> FRESH["Drop and count samples older than 55 s"]
     FRESH --> NEWEST["Peek newest eligible sample"]
-    NEWEST --> POST["Certificate-verified HTTPS POST"]
+    NEWEST --> SENDTIME{"Sample fresh at exact send clock?"}
+    SENDTIME -->|yes| POST["Certificate-verified HTTPS POST"]
+    SENDTIME -->|no| DROPLOCAL["Drop original sample; no HTTP rejection backoff"]
+    DROPLOCAL --> WIFI
     POST -->|200/202| ACK["Remove acknowledged sequence"]
     POST -->|"transport, 408/425/429, 5xx"| RETRY["Keep queued; bounded backoff"]
     POST -->|"401"| AUTH["Retain sample; latch credential fault"]
@@ -69,6 +72,18 @@ flowchart LR
 ```
 
 The two tasks share only short critical sections around the fixed-capacity ring and fault counters. TLS can consume its full connect/request timeout without delaying NMEA parsing. The 8,192-byte UART buffer remains as protection against scheduler and diagnostic jitter, while HardwareSerial buffer/FIFO overflow callbacks and TinyGPSPlus checksum failures make any loss observable.
+
+Immediately before preparing each request, the publisher rechecks the original
+sample against the exact `deviceSentAt` value that will enter the payload. The
+existing 55-second freshness policy rejects future or expired samples if clock
+discipline changed after dequeue. Such a sample is removed without sending HTTP
+or scheduling the 30-second invalid-payload rejection delay; the next fresh sample
+uses the normal cadence. Sample/send timestamps are never rewritten to fabricate
+ordering, and backend timestamp validation remains strict. The 20 October capture
+contained one payload whose declared send time preceded its sample by 30 ms;
+replaying it produces `invalid_device_sent_at`. This establishes the invalid
+ordering, not the exact physical cause of the clock adjustment. Native policy
+tests and builds do not establish that new firmware was flashed or field-tested.
 
 Fresh TinyGPSPlus date/time (maximum two-second age, strict calendar/range validation) is converted without timezone-sensitive `mktime` and applied using `settimeofday`. This establishes TLS-valid time before Wi-Fi/NTP is available and corrects drift of at least 1.5 seconds no more than once per minute. Once Wi-Fi connects, SNTP is scheduled as a six-hour cross-check/fallback. GNSS remains the primary discipline source; invalid/stale GNSS time is never applied.
 

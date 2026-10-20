@@ -179,6 +179,30 @@ void test_retry_retains_only_samples_that_can_stay_fresh() {
   TEST_ASSERT_FALSE(retryKeepsSampleFresh(now + 1, now, 1000, margin));
 }
 
+void test_send_boundary_rechecks_original_sample_after_clock_rewind() {
+  constexpr int64_t sampledAt = 1704067201000LL;
+  constexpr int64_t margin = TELEMETRY_FRESHNESS_MARGIN_MS;
+  NewestFirstTelemetryQueue<QueuedSample, 3> queue;
+  queue.reset(7);
+  const uint32_t sequence = queue.push({sampledAt, 0, 1});
+  QueuedSample fix{};
+  TEST_ASSERT_TRUE(queue.newest(fix));
+  TEST_ASSERT_TRUE(retryKeepsSampleFresh(fix.timestamp, sampledAt, 0, margin));
+  // Matches the captured invalid ordering, with synthetic time/position data:
+  // dequeue succeeds, then the disciplined clock is 30 ms behind the sample.
+  TEST_ASSERT_FALSE(retryKeepsSampleFresh(fix.timestamp, sampledAt - 30, 0, margin));
+  TEST_ASSERT_TRUE(fix.timestamp == sampledAt);
+  TEST_ASSERT_EQUAL_UINT32(sequence, fix.sequence);
+  TEST_ASSERT_TRUE(queue.remove(fix.sequence));
+  TEST_ASSERT_EQUAL_UINT32(0, queue.size());
+  const uint32_t nextSequence = queue.push({sampledAt + 1000, 0, 2});
+  TEST_ASSERT_TRUE(queue.newest(fix));
+  TEST_ASSERT_EQUAL_UINT32(sequence + 1, nextSequence);
+  TEST_ASSERT_TRUE(retryKeepsSampleFresh(fix.timestamp, sampledAt + 1000, 0, margin));
+  TEST_ASSERT_TRUE(retryKeepsSampleFresh(fix.timestamp, fix.timestamp + margin - 1, 0, margin));
+  TEST_ASSERT_FALSE(retryKeepsSampleFresh(fix.timestamp, fix.timestamp + margin, 0, margin));
+}
+
 void test_firmware_configuration_validation_identifies_the_failing_field() {
   using namespace eki::config;
   constexpr char CERTIFICATE[] =
@@ -656,6 +680,7 @@ int main(int, char **) {
   RUN_TEST(test_http_response_actions_cover_transport_and_status_families);
   RUN_TEST(test_retry_after_is_strict_bounded_and_status_aware);
   RUN_TEST(test_retry_retains_only_samples_that_can_stay_fresh);
+  RUN_TEST(test_send_boundary_rechecks_original_sample_after_clock_rewind);
   RUN_TEST(test_firmware_configuration_validation_identifies_the_failing_field);
   RUN_TEST(test_example_configuration_compiles_but_cannot_boot_unchanged);
   RUN_TEST(test_gnss_utc_conversion_and_clock_discipline_are_strict);

@@ -1399,6 +1399,14 @@ PublishResult publishFix(const TelemetryFix &fix) {
   if (httpsRetryIsPending()) return PublishResult::RetryLatest;
 
   const int64_t deviceSentAt = epochMilliseconds();
+  // The GNSS/NTP reference can change after dequeue. Recheck the exact clock
+  // value carried in the payload; never clamp send time to invent ordering.
+  if (!eki::telemetry::retryKeepsSampleFresh(
+    fix.timestamp, deviceSentAt, 0, eki::telemetry::TELEMETRY_FRESHNESS_MARGIN_MS
+  )) {
+    Serial.println("[HTTPS] Dropping sample outside send-time clock/freshness bounds.");
+    return PublishResult::Dropped;
+  }
   const uint32_t jsonStartedAt = EKI_ENABLE_FLEET_TRACES ? micros() : 0;
   const uint32_t heapBeforeJson = EKI_ENABLE_FLEET_TRACES ? ESP.getFreeHeap() : 0;
   JsonDocument document;
