@@ -442,22 +442,6 @@ export default function PassengerWorkspace() {
       )}
       <div className="absolute inset-0 flex flex-col overflow-hidden">
 
-        {/* Map layer — only present on tracking */}
-        <div inert={visibleView !== "tracking"} aria-hidden={visibleView !== "tracking"} className={`absolute inset-0 z-0 transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-          {visibleView === "tracking" && mapRoute && targetStop && (
-            <PassengerTrackingMap
-              targetStop={targetStop}
-              selectedDestinationStopId={effectiveDestinationStopId}
-              route={mapRoute}
-              resumeGeneration={resumeGeneration}
-              preview={preview}
-              selectedBusKey={activeBusOnRoute ? passengerLiveBusSelectionKey(activeBusOnRoute) : undefined}
-            />
-          )}
-        </div>
-
-
-
         {/* ── HOME VIEW ── */}
         <div inert={visibleView !== "home"} aria-hidden={visibleView !== "home"} className={`absolute inset-0 z-20 flex flex-col pt-safe transition-[opacity,transform] duration-500 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8 pointer-events-none"}`}>
 
@@ -534,11 +518,11 @@ export default function PassengerWorkspace() {
         </div>
 
         {/* ── TRACKING VIEW ── */}
-        <div inert={visibleView !== "tracking"} aria-hidden={visibleView !== "tracking"} className={`absolute inset-0 z-20 pointer-events-none transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0"}`}>
+        <div inert={visibleView !== "tracking"} aria-hidden={visibleView !== "tracking"} className={`absolute inset-0 z-20 flex flex-col pointer-events-none transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0"}`}>
           {!endedMessage && mapRoute && targetStop ? (
             <>
               {/* Top bar: back + route info */}
-              <div className="absolute top-0 w-full z-40 pt-safe px-4 pb-6 pointer-events-auto"
+              <div className="relative shrink-0 w-full z-40 pt-safe px-4 pb-6 pointer-events-auto"
                 style={{ background: "linear-gradient(to bottom, rgba(9,9,11,0.92) 0%, transparent 100%)" }}>
                 <div className="flex items-center gap-4 max-w-lg mx-auto pt-4">
                   <button
@@ -680,7 +664,19 @@ export default function PassengerWorkspace() {
                 )}
               </div>
 
-              {/* Passenger Boarding View was moved to the header above */}
+              {/* Reserve the actual header height so map notices cannot sit behind ride controls. */}
+              <div className="relative min-h-0 flex-1 pointer-events-auto">
+                {visibleView === "tracking" && (
+                  <PassengerTrackingMap
+                    targetStop={targetStop}
+                    selectedDestinationStopId={effectiveDestinationStopId}
+                    route={mapRoute}
+                    resumeGeneration={resumeGeneration}
+                    preview={preview}
+                    selectedBusKey={activeBusOnRoute ? passengerLiveBusSelectionKey(activeBusOnRoute) : undefined}
+                  />
+                )}
+              </div>
 
               {/* Messaging Overlay */}
               {visibleView === "tracking" && activeSessionId && isMessagingOpen && isLiveChatDeviceOnline(activeBusOnRoute) && (

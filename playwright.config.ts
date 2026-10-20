@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  testIgnore: ["admin-access.spec.ts", "**/routing/**"],
+  testIgnore: ["admin-access.spec.ts", "**/routing/**", "**/passenger-layout/**"],
   timeout: 30_000,
   retries: process.env.CI ? 1 : 0,
   use: {

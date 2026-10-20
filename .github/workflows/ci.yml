@@ -106,6 +106,16 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Verify admin access and feedback in mobile and desktop browsers
         run: npm run test:e2e:admin
+      - name: Verify passenger warnings clear variable ride controls
+        run: npx playwright test --config playwright.passenger-layout.config.ts
+      - name: Retain passenger warning layout screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: passenger-warning-layout
+          path: artifacts/passenger-layout/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Verify actual passenger components and backend with disposable emulators
         run: node scripts/run-rules-emulator.mjs --browser
       - name: Verify published protected HTTP authorization with disposable emulators

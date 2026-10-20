@@ -1,6 +1,6 @@
 # Browser telemetry context
 
-Last updated: 2026-10-20 18:50 IST (UTC+05:30).
+Last updated: 2026-10-20 19:28 IST (UTC+05:30).
 
 Open an authenticated Eki view with `?telemetryTrace=1` before recording. Keep
 each role/tab's export separate and use **Download telemetry trace** before and
@@ -27,6 +27,10 @@ The passenger silence banner says **Live location updates delayed** and clears
 when a fresh update arrives. An old fix or an offline device projection alone
 does not identify a GNSS receiver failure, Wi-Fi failure or an active reconnect.
 This wording does not change expiry thresholds, boarding eligibility or ride state.
+The tracking header reserves its actual height above the map. Map warnings appear
+below the ride controls, including the variable-height bus selector/boarding/chat
+area. [Isolated layout checks](../../e2e/fixtures/README.md) retain viewport and
+occlusion evidence separately from live-provider acceptance.
 
 Browser traces are application evidence. They do not replace Chrome Network HAR
 or Performance traces, independent position/timing instruments, genuine role

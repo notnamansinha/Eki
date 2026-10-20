@@ -64,6 +64,7 @@ export const routingTestMap = [{
 }, {
   caseId: 'PAX15',
   scope: 'Mounted map warning on silence and fresh-update recovery with fake time and mocked Maps/RTDB; does not establish the physical reason for missing updates.',
-  sourcePaths: ['frontend/src/components/maps/PassengerMap.tsx'],
-  tests: [{ path: 'frontend/src/components/maps/PassengerMap.test.tsx', name: 'passenger map device and ride contexts > announces delayed location without diagnosing GNSS loss when an armed bus goes silent', level: 'L1', semantics: 'Crossing the silence threshold without a new network event announces delayed location without claiming GNSS loss or active reconnect; a fresh streamed fix clears the warning.' }],
+  sourcePaths: ['frontend/src/components/maps/PassengerMap.tsx', 'frontend/src/components/passenger/PassengerWorkspace.tsx'],
+  tests: [{ path: 'frontend/src/components/maps/PassengerMap.test.tsx', name: 'passenger map device and ride contexts > announces delayed location without diagnosing GNSS loss when an armed bus goes silent', level: 'L1', semantics: 'Crossing the silence threshold without a new network event announces delayed location without claiming GNSS loss or active reconnect; a fresh streamed fix clears the warning.' },
+    { path: 'e2e/passenger-layout/warnings.spec.ts', name: 'location delay stays below variable ride controls and clears on recovery', level: 'L3', semantics: 'Chromium at 360/390/1280 CSS px renders actual workspace/map components with synthetic Maps/RTDB and placeholder boarding content, advances silence time, verifies no header overlap or occlusion, retains screenshots and clears the warning on fresh delivery. Real provider and complete boarding-card acceptance remain separate.' }],
 }];
