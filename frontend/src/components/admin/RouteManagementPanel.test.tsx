@@ -18,6 +18,25 @@ beforeEach(() => { mocks.save.mockReset(); mocks.newId.mockReset().mockReturnVal
 afterEach(cleanup);
 async function edit() { render(<RouteManagementPanel />); const user = userEvent.setup(); await user.click(screen.getByRole("button", { name: "Edit route QA route" })); return user; }
 describe("route editing and operation recovery", () => {
+  it.each([
+    { draft: "", commit: "{Enter}" },
+    { draft: "   ", commit: "{Enter}" },
+    { draft: "", commit: "{Tab}" },
+    { draft: "   ", commit: "{Tab}" },
+  ])("keeps the previous stop name and explains a blank rename: %j", async ({ draft, commit }) => {
+    mocks.save.mockResolvedValue({ saved: true });
+    const user = await edit();
+    await user.click(screen.getByRole("button", { name: /^Alpha/ }));
+    const input = screen.getByRole("textbox", { name: "Rename stop Alpha" });
+    await user.clear(input);
+    if (draft) await user.type(input, draft);
+    await user.keyboard(commit);
+    expect(screen.getByRole("alert").textContent).toContain("Stop name cannot be blank");
+    expect(screen.getByRole("button", { name: /^Alpha/ })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Update" }));
+    expect(mocks.save.mock.calls[0][2].stops[0].name).toBe("Alpha");
+  });
+
   it("cancels a stop rename with Escape, then allows a fresh rename to commit once", async () => {
     mocks.save.mockResolvedValue({ saved: true });
     const user = await edit();

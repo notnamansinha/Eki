@@ -632,7 +632,7 @@ export default function PassengerWorkspace() {
                       <p className="text-[11px] font-semibold uppercase tracking-widest leading-none" style={{ color: "var(--accent)" }}>
                         Waiting for live bus data…
                       </p>
-                      <p className="text-[17px] font-semibold truncate leading-tight" style={{ color: "var(--text-primary)" }}>
+                      <p className="break-words text-pretty text-[17px] font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>
                         {mapRoute.name} · {directionLabelState(rideDirectionState, activeRoute?.stops ?? [])}
                       </p>
                     </div>

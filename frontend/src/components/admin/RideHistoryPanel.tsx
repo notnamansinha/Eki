@@ -47,6 +47,7 @@ interface RideSession {
   startTime?: TimestampValue;
   endTime?: TimestampValue;
   status: "pending" | "armed" | "active" | "completed" | "failed" | "interrupted";
+  interruptionReason?: string;
   passengers?: PassengerRecord[] | Record<string, PassengerRecord>;
   path?: { lat: number; lng: number; timestamp: TimestampValue }[];
   stopsReached?: RideStopRecord[] | Record<string, RideStopRecord>;
@@ -74,6 +75,14 @@ const STATUS_CONFIG: Record<
   failed: { label: "Failed", className: "bg-red-500/20 text-red-300" },
   interrupted: { label: "Ended early", className: "bg-amber-500/15 text-amber-300" },
 };
+
+function interruptionMessage(reason: RideSession["interruptionReason"]): string {
+  if (reason === "manual_end_early") return "Manually ended before the final stop.";
+  if (reason === "abandoned_session_timeout") return "Closed after the ride's inactivity limit was reached.";
+  return reason
+    ? "The interruption reason is unavailable."
+    : "The interruption reason was not recorded.";
+}
 
 function passengerRecords(passengers: RideSession["passengers"]): PassengerRecord[] {
   if (!passengers) return [];
@@ -372,9 +381,10 @@ export default function RideHistoryPanel() {
                     </span>
                   </div>
                   {session.status === "interrupted" && (
-                    <p className="text-pretty text-xs text-amber-200/70">
-                      The ride ended before the final stop was recorded.
-                    </p>
+                    <div className="space-y-1 text-pretty text-xs text-amber-200/70">
+                      <p>The ride ended before the final stop was recorded.</p>
+                      <p>{interruptionMessage(session.interruptionReason)}</p>
+                    </div>
                   )}
                 </div>
 

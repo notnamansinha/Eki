@@ -47,28 +47,28 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
           <button
             type="button"
             key={route.id}
-            className="w-full flex items-stretch text-left transition-all duration-300 ease-out disabled:cursor-default"
+            className="w-full min-w-0 flex items-stretch text-left transition-all duration-300 ease-out disabled:cursor-default"
             onClick={() => onClick(route.id)}
             aria-label={`Track ${route.name}`}
           >
             <div
-              className="w-full text-left transition-all duration-300 rounded-[20px] p-4 border relative overflow-hidden flex flex-col min-h-[140px]"
+              className="w-full min-w-0 text-left transition-all duration-300 rounded-[20px] p-4 border relative overflow-hidden flex flex-col min-h-[140px]"
               style={{
                 background: "var(--surface-3)",
                 borderColor: route.id === selectedRouteId ? "var(--accent)" : "var(--border-subtle)",
                 boxShadow: "0 4px 12px rgba(0, 0, 0, 0.05)",
               }}
             >
-              <div className="pl-2 flex flex-col h-full justify-between">
+              <div className="min-w-0 pl-2 flex flex-col h-full justify-between">
                 <div>
                   <h3
-                    className="text-[22px] font-black tracking-tight line-clamp-1"
+                    className="text-balance break-words text-[22px] font-black tracking-tight"
                     style={{ color: "var(--text-primary)" }}
                   >
                     {route.name}
                   </h3>
                   {directedRoute && stops.length > 0 ? (
-                    <p className="text-[14.5px] font-bold mt-2 line-clamp-1" style={{ color: "var(--text-secondary)" }}>
+                    <p className="mt-2 break-words text-pretty text-[14.5px] font-bold" style={{ color: "var(--text-secondary)" }}>
                       {stops[0].name.split(',')[0]} <span className="mx-1 opacity-60">&rarr;</span> {stops[stops.length - 1].name.split(',')[0]}
                     </p>
                   ) : (

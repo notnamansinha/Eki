@@ -231,11 +231,21 @@ function StopItem({ stop, index, onRemove, onNameChange, onMoveUp, onMoveDown, c
 }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(stop.name);
+  const [nameError, setNameError] = useState("");
+  const nameErrorId = useId();
   const committedRef = useRef(false);
   const commitName = () => {
     if (committedRef.current) return;
     committedRef.current = true;
-    onNameChange(index, val);
+    const nextName = val.trim();
+    if (!nextName) {
+      setVal(stop.name);
+      setNameError("Stop name cannot be blank. Previous name kept.");
+      setEditing(false);
+      return;
+    }
+    setNameError("");
+    onNameChange(index, nextName);
     setEditing(false);
   };
   return (
@@ -243,38 +253,42 @@ function StopItem({ stop, index, onRemove, onNameChange, onMoveUp, onMoveDown, c
       <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 font-black text-[9px] flex items-center justify-center shrink-0">
         {stopLabel(index)}
       </span>
-      {editing ? (
-        <input
-          value={val}
-          onChange={e => setVal(e.target.value)}
-          onBlur={commitName}
-          onKeyDown={e => {
-            if (e.key === "Enter") { e.preventDefault(); commitName(); }
-            else if (e.key === "Escape") {
-              e.preventDefault();
-              // Fence a blur from the removed input so it cannot save the draft.
-              committedRef.current = true;
-              setVal(stop.name);
-              setEditing(false);
-            }
-          }}
-          autoFocus
-          aria-label={`Rename stop ${stop.name}`}
-          className="flex-1 h-11 bg-white/5 border border-white/20 rounded-lg px-2 text-sm text-white focus:outline-none focus:border-white/40"
-        />
-      ) : (
-        <button
-          type="button"
-          className="flex-1 min-h-11 text-left cursor-text min-w-0"
-          onClick={() => { committedRef.current = false; setVal(stop.name); setEditing(true); }}
-          title="Click to rename"
-        >
-          <span className="block truncate text-sm text-white/80 font-medium">{stop.name}</span>
-          <span className="block text-[10px] tabular-nums text-white/35">
-            {Number(stop.lat).toFixed(6)}, {Number(stop.lng).toFixed(6)}
-          </span>
-        </button>
-      )}
+      <div className="min-w-0 flex-1">
+        {editing ? (
+          <input
+            value={val}
+            onChange={e => setVal(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={e => {
+              if (e.key === "Enter") { e.preventDefault(); commitName(); }
+              else if (e.key === "Escape") {
+                e.preventDefault();
+                // Fence a blur from the removed input so it cannot save the draft.
+                committedRef.current = true;
+                setVal(stop.name);
+                setEditing(false);
+              }
+            }}
+            autoFocus
+            aria-label={`Rename stop ${stop.name}`}
+            className="w-full min-w-0 h-11 bg-white/5 border border-white/20 rounded-lg px-2 text-sm text-white focus:outline-none focus:border-white/40"
+          />
+        ) : (
+          <button
+            type="button"
+            className="w-full min-h-11 text-left cursor-text min-w-0"
+            onClick={() => { committedRef.current = false; setNameError(""); setVal(stop.name); setEditing(true); }}
+            aria-describedby={nameError ? nameErrorId : undefined}
+            title="Click to rename"
+          >
+            <span className="block truncate text-sm text-white/80 font-medium">{stop.name}</span>
+            <span className="block text-[10px] tabular-nums text-white/35">
+              {Number(stop.lat).toFixed(6)}, {Number(stop.lng).toFixed(6)}
+            </span>
+          </button>
+        )}
+        {nameError && <p id={nameErrorId} role="alert" className="mt-1 text-pretty text-xs text-red-300">{nameError}</p>}
+      </div>
       <div className="ml-8 flex shrink-0 items-center gap-1 sm:ml-0">
         <button type="button" onClick={onMoveUp} disabled={!canMoveUp} aria-label={`Move stop ${stop.name} up`} className="size-11 rounded-lg text-white/65 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:text-white/30">
           <ChevronUp className="mx-auto size-4" aria-hidden="true" />
