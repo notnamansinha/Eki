@@ -13,5 +13,5 @@ export default defineConfig({
     { find: "@", replacement: local("../../frontend/src") },
   ] },
   css: { postcss: { plugins: [tailwindcss()] } }, oxc: { jsx: { runtime: "automatic" } },
-  define: { "process.env": JSON.stringify({ NEXT_PUBLIC_BACKEND_URL: "http://127.0.0.1:3123" }) },
+  define: { "process.env": JSON.stringify({ NEXT_PUBLIC_BACKEND_URL: "http://127.0.0.1:3123", NEXT_PUBLIC_BUS_EXPIRY_MS: "300000" }) },
 });

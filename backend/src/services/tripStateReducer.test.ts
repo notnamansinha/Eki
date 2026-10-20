@@ -20,6 +20,16 @@ function input(overrides: Partial<Parameters<typeof reduceTripState>[0]> = {}) {
 }
 
 describe("reduceTripState", () => {
+  it.each([
+    { motionState: "moving" as const }, { motionState: "uncertain" as const },
+    { gpsHdop: null }, { gpsHdop: 4.1 }, { speed: 2.6 },
+    { timestamp: 9_000 }, { timestamp: 9_999 },
+    { now: 70_001 }, { now: -1 },
+  ])("does not complete at the final stop without reliable confirmed arrival: %j", overrides => {
+    const result = reduceTripState(input({ lat: about200mNorth.lat, currentStopIndex: 1,
+      hasDepartedOrigin: true, ...overrides }));
+    expect(result.tripState).toBe("in_service");
+  });
   it("uses a 10m arrival circle in both directions without advancing at 11m", () => {
     const metersToLatitude = (meters: number) => meters / 6_371_000 * 180 / Math.PI;
     const middle = about200mNorth;

@@ -28,6 +28,26 @@ async function prepare() {
   return user;
 }
 describe("admin service creation", () => {
+  it("marks retained telemetry delayed using the passenger threshold and recovers on a fresh receipt", async () => {
+    const { SIGNAL_LOST_MS } = await import("@/lib/liveBusFreshness");
+    const now = Date.now();
+    state.entries = [{ ...fixtureBus("forward"), timestamp: now - SIGNAL_LOST_MS - 1000, backendReceivedAt: now - SIGNAL_LOST_MS - 1000 } as ActiveBusEntry];
+    const user = userEvent.setup(); const view = render(<DashboardPanel />);
+    expect(screen.getByText("Live location updates delayed")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Open live details for qa-bus" }));
+    expect(within(screen.getByRole("dialog")).getByText("Live location updates delayed")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).queryByText("Connected")).toBeNull();
+    state.entries = [{ ...state.entries[0], timestamp: Date.now(), backendReceivedAt: Date.now() }];
+    view.rerender(<DashboardPanel />);
+    expect(screen.queryByText("Live location updates delayed")).toBeNull();
+    expect(within(screen.getByRole("dialog")).getByText("Connected")).toBeTruthy();
+  });
+  it("does not infer receiver failure from uncertain motion", () => {
+    state.entries = [{ ...fixtureBus("forward"), motionState: "uncertain" } as ActiveBusEntry];
+    render(<DashboardPanel />);
+    expect(screen.getByText("Motion uncertain")).toBeTruthy();
+    expect(screen.queryByText("No GPS")).toBeNull();
+  });
   it.each(["forward", "reverse"] as const)("shows only published passed stops and the ordered next stop in %s travel", async direction => {
     state.routes = [{ ...route, stops: [...route.stops, { id: "c", name: "Gamma", shortName: "C", lat: 23.02, lng: 72.02 }] }];
     state.entries = [{ ...fixtureBus(direction), currentStopIndex: 2 } as ActiveBusEntry];

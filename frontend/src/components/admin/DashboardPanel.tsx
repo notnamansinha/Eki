@@ -14,6 +14,8 @@ import { useActiveBuses, type ActiveBusEntry } from "@/hooks/useActiveBuses";
 import { useAuth } from "@/hooks/useAuth";
 import {
   hasValidBusCoordinates,
+  isLiveBusSignalLost,
+  liveBusFreshnessTimestamp,
 } from "@/lib/liveBusFreshness";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
@@ -59,7 +61,7 @@ const TRIP_STATE: Record<string, { label: string; color: string; bg: string; dot
 const MOTION_STATE: Record<string, { label: string; color: string }> = {
   moving:    { label: "Moving",  color: "text-emerald-400" },
   stopped:   { label: "Stopped", color: "text-amber-400" },
-  uncertain: { label: "No GPS",  color: "text-red-400" },
+  uncertain: { label: "Motion uncertain",  color: "text-amber-400" },
 };
 function timeSince(t?: string | number): string {
   if (!t) return "—";
@@ -118,6 +120,7 @@ function LiveDetailsDrawer({
   const directionPending = directionState === "pending";
   const [msg, setMsg] = useState("");
   const presence = devicePresence(entry);
+  const locationDelayed = isLiveBusSignalLost(liveBusFreshnessTimestamp(entry));
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -179,7 +182,7 @@ function LiveDetailsDrawer({
               <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Signal</p>
               <p className="mt-1 text-sm font-semibold text-white">
                 {presence === "online"
-                  ? "Connected"
+                  ? locationDelayed ? "Live location updates delayed" : "Connected"
                   : presence === "offline"
                     ? "Offline"
                     : "Unknown / stale"}
@@ -376,6 +379,7 @@ function FleetCard({
   const nextStop = nextStopIndex !== undefined ? directedRoute?.stops[nextStopIndex] : undefined;
   const followingStop = nextStopIndex !== undefined ? directedRoute?.stops[nextStopIndex + 1] : undefined;
   const serviceState = rideServiceState(entry);
+  const locationDelayed = entry.deviceState === "offline" || isLiveBusSignalLost(liveBusFreshnessTimestamp(entry));
   const canEndRide = Boolean(
     entry.sessionId && entry.driverId && entry.routeId &&
     (serviceState === "direction_pending" ||
@@ -413,6 +417,7 @@ function FleetCard({
               <p className="font-semibold text-white text-sm truncate">{bus?.name ?? entry.busId}</p>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                 <span className={`text-[9px] font-black uppercase tracking-wider ${ts.color}`}>{ts.label}</span>
+                {locationDelayed && <span className="text-[9px] font-semibold text-amber-400">Live location updates delayed</span>}
                 <span className={`text-[9px] font-semibold ${ms.color}`}>{ms.label}</span>
                 {entry.speed != null && <span className="text-[9px] text-white/30 tabular-nums">{Math.round(entry.speed)} km/h</span>}
                 {(entry.delayMinutes ?? 0) > 0 && (
@@ -452,7 +457,7 @@ function FleetCard({
               {[
                 { label: "Speed", value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "—" },
                 { label: "Heading", value: headingLabel(entry.heading) },
-                { label: "Last Update", value: timeSince(entry.timestamp) },
+                { label: "Last Update", value: timeSince(liveBusFreshnessTimestamp(entry)) },
                 { label: "Next stop", value: nextStopIndex !== undefined ? `${nextStopIndex + 1}/${stopCount}` : "—" },
               ].map(({ label, value }) => (
                 <div key={label} className="bg-white/3 border border-white/5 rounded-lg p-2 flex flex-col gap-0.5">

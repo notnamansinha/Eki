@@ -19,13 +19,24 @@ export function useCollection(path: string) {
   return { data: path === "ride_sessions" ? sessions : [], loading: false, error: null, retry: () => {} };
 }
 let sequence = 0;
+let telemetryAge = 0;
+export function setTelemetryAge(age: number) { telemetryAge = age; base.setScenario("forward"); }
 export function advanceMotion() { sequence++; base.setScenario("forward"); }
 function moving(snapshot: Record<string, unknown>) {
+  if (telemetryAge) return Object.fromEntries(Object.entries(snapshot).map(([key, value]) => [key, {
+    ...(value as object), timestamp: Date.now() - telemetryAge, backendReceivedAt: Date.now() - telemetryAge,
+  }]));
   if (!sequence) return snapshot;
   return Object.fromEntries(Object.entries(snapshot).map(([key, value]) => [key, {
     ...(value as object), seq: sequence, lat: 23 + sequence * .00001, lng: 72 + sequence * .00001,
     heading: sequence * 4, speed: 18, motionState: "moving", timestamp: Date.now(), backendReceivedAt: Date.now(),
   }]));
+}
+export function subscribeLiveBusChanges(listener: (change: unknown) => void) {
+  return base.subscribeLiveBusChanges(change => {
+    const reset = change as { snapshot: Record<string, unknown> };
+    listener({ ...reset, snapshot: moving(reset.snapshot) });
+  });
 }
 export function subscribeLiveBusesByRoute(routeId: string, listener: (value: Record<string, unknown>) => void) {
   return base.subscribeLiveBusesByRoute(routeId, value => listener(moving(value)));

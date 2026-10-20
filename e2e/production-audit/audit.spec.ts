@@ -11,6 +11,48 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/**", route => route.fulfill({ json: route.request().url().includes("/places/search") ? { results: [] } : { saved: true } }));
   await page.goto("/");
 });
+
+async function publishAge(page: Page, age: number) {
+  await page.getByText("QA controls", { exact: true }).click();
+  await page.getByRole("button", { name: `Publish age ${age}`, exact: true }).click();
+  await page.getByText("QA controls", { exact: true }).click();
+}
+test("admin and passenger label 90 to 200 second telemetry gaps and recover without reload", async ({ page }, info) => {
+  await view(page, "admin");
+  await page.getByRole("button", { name: "Open live details for qa-bus" }).click();
+  const drawer = page.getByRole("dialog", { name: "Live details for qa-bus" });
+  await expect(drawer.getByText("Connected", { exact: true })).toBeVisible();
+  await drawer.getByRole("button", { name: "Close live details" }).click();
+  for (const age of [90_001, 120_000, 200_000]) {
+    await publishAge(page, age);
+    await expect(page.getByText("Live location updates delayed", { exact: true })).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Open live details for qa-bus" }).click();
+  await expect(drawer.getByText("Live location updates delayed", { exact: true })).toBeVisible();
+  await drawer.getByRole("button", { name: "Close live details" }).click();
+  await page.screenshot({ path: info.outputPath("admin-delayed-location.png"), fullPage: true });
+  await publishAge(page, 0);
+  await expect(page.getByText("Live location updates delayed", { exact: true })).toHaveCount(0);
+  await view(page, "passenger");
+  await page.getByRole("button", { name: `Track ${routeName}`, exact: true }).click();
+  for (const age of [90_001, 120_000, 200_000]) {
+    await publishAge(page, age);
+    await expect(page.getByText(/Live location updates delayed/)).toBeVisible();
+  }
+  await publishAge(page, 0);
+  await expect(page.getByText(/Live location updates delayed/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Back to home" })).toBeVisible();
+});
+test("passenger read denial is distinct from telemetry delay and recovers on a new delivery", async ({ page }) => {
+  await page.getByRole("button", { name: `Track ${routeName}`, exact: true }).click();
+  await page.getByText("QA controls", { exact: true }).click();
+  await page.getByLabel("QA scenario").selectOption("detail-denied");
+  await page.getByText("QA controls", { exact: true }).click();
+  await expect(page.getByText("Live bus data unavailable.", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Live location updates delayed/)).toHaveCount(0);
+  await publishAge(page, 0);
+  await expect(page.getByText("Live bus data unavailable.", { exact: true })).toHaveCount(0);
+});
 test("long route and endpoint labels remain fully rendered and selectable", async ({ page }, info) => {
   const title = page.getByRole("heading", { name: routeName });
   await expect(title).toBeVisible();

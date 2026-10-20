@@ -132,7 +132,7 @@ const control = createServer(async (req, res) => {
     if (req.method === 'POST' && /^\/providers\/(routes|places)\/(valid|rate-limit|malformed|timeout)$/.test(req.url)) {
       const segments = req.url.split('/'); providers.setMode(segments[2], segments[3]); res.end('{}'); return;
     }
-    if (req.method === 'POST' && ['/telemetry/middle', '/telemetry/middle-outside', '/telemetry/middle-inside', '/telemetry/end', '/telemetry/fresh-origin'].includes(req.url)) {
+    if (req.method === 'POST' && ['/telemetry/middle', '/telemetry/middle-outside', '/telemetry/middle-inside', '/telemetry/end', '/telemetry/fresh-origin', '/telemetry/moving-after-end'].includes(req.url)) {
       // Real authenticated device HTTP ingestion; no direct completion writes.
       const samples = ['/telemetry/middle-outside', '/telemetry/middle-inside'].includes(req.url)
         ? [{ seq: req.url.endsWith('outside') ? 2 : 3,
@@ -142,6 +142,7 @@ const control = createServer(async (req, res) => {
         ? [{ seq: 2, lat: 23.0018, speed: 45, motionState: 'moving' },
           { seq: 3, lat: 23.0018, speed: 45, motionState: 'moving' }]
         : req.url === '/telemetry/end' ? [4, 5, 6].map(seq => ({ seq, lat: 23.0036, speed: 0, motionState: 'stopped' }))
+        : req.url === '/telemetry/moving-after-end' ? [{ seq: 6, lat: 23.00015, speed: 18, motionState: 'moving' }]
         : [{ seq: 7, lat: 23, speed: 0, motionState: 'stopped' }];
       const statuses = [];
       for (const sample of samples) {
@@ -209,6 +210,8 @@ const control = createServer(async (req, res) => {
         otherAccountClaims: (await auth.getUser('qa_other')).customClaims,
         routes: routes.docs.map(doc => ({ id: doc.id, ...doc.data() })), providers: providers.evidence(),
         live: (await realtime.ref('activeBuses/qa_bus_qa_route').get()).val(),
+        publicRoute: (await realtime.ref('publicRouteBuses/route:qa_route').get()).val(),
+        activeRide: (await db.collection('active_rides').doc('qa_bus_qa_route').get()).data() ?? null,
         lock: (await db.collection('_active_bus_locks').doc('qa_bus').get()).data() ?? null,
         settings: (await db.collection('settings').doc('global').get()).data(), transport: globalThis.__ekiQaNetworkGuard })); return;
     }

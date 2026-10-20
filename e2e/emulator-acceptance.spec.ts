@@ -644,6 +644,22 @@ test('admin live service controls persist bounded delay and interrupt safely bef
   await page.getByRole('dialog').getByRole('button', { name: 'End ride', exact: true }).click();
   await expect(page.getByText('Ride qa_session ended early and was saved to history.', { exact: true })).toBeVisible();
   expect((await evidence(request)).sessions.find((ride: { id: string }) => ride.id === 'qa_session').status).toBe('interrupted');
+  const movingAfterEnd = await request.post(`${control}/telemetry/moving-after-end`);
+  expect(movingAfterEnd.ok()).toBe(true);
+  expect((await movingAfterEnd.json()).statuses).toEqual([202]);
+  await expect.poll(async () => {
+    const stored = await evidence(request);
+    return {
+      status: stored.sessions.find((ride: { id: string }) => ride.id === 'qa_session').status,
+      reason: stored.sessions.find((ride: { id: string }) => ride.id === 'qa_session').interruptionReason,
+      activeRide: stored.activeRide, lock: stored.lock,
+      seq: stored.live?.seq, sessionId: stored.live?.sessionId ?? null,
+      publicSession: stored.publicRoute?.buses?.['node:qa_bus_qa_route']?.sessionId ?? null,
+      publicDeviceState: stored.publicRoute?.buses?.['node:qa_bus_qa_route']?.deviceState,
+      deviceState: stored.live?.deviceState,
+    };
+  }, { timeout: 10_000 }).toEqual({ status: 'interrupted', reason: 'manual_end_early', activeRide: null,
+    lock: null, seq: 6, sessionId: null, publicSession: null, publicDeviceState: 'online', deviceState: 'online' });
   // A slow worker may legitimately age the original seed beyond the real
   // sixty-second arm policy. Supply a new authenticated fix before restarting.
   const freshFix = await request.post(`${control}/telemetry/fresh-origin`);

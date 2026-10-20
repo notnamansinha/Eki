@@ -9,9 +9,11 @@ export const productionAuditTestMap = [
   }, {
     caseId: 'PAX14',
     scope: 'Synthetic-browser sub-oracle: loss of the selected live snapshot preserves an unclipped route label in the waiting state. Does not certify complete recovery or feedback behavior.',
-    sourcePaths: ['frontend/src/components/passenger/PassengerWorkspace.tsx'],
+    sourcePaths: ['frontend/src/components/passenger/PassengerWorkspace.tsx', 'frontend/src/components/admin/DashboardPanel.tsx'],
     tests: [{ path, name: 'tracking keeps the full route name while waiting for live data', level: 'L3',
-      semantics: 'Select an actual rendered route, remove its synthetic live snapshot, then verify the fallback route label remains visible and fully rendered.' }],
+      semantics: 'Select an actual rendered route, remove its synthetic live snapshot, then verify the fallback route label remains visible and fully rendered.' },
+    { path, name: 'admin and passenger label 90 to 200 second telemetry gaps and recover without reload', level: 'L3',
+      semantics: 'Real admin and passenger components use the same shared receipt-age threshold with 90.001, 120 and 200 second synthetic gaps, then remove the warning on a fresh delivery without navigation refresh.' }],
   }, {
     caseId: 'ROUTE08',
     scope: 'Local stop-rename sub-oracle: empty and whitespace Enter/blur retain the prior valid stop name with immediate inline feedback. Valid retry and Escape remain tested; persistence/provider acceptance is separate.',
