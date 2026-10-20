@@ -1,11 +1,11 @@
 # Testing and acceptance evidence
 
+Last updated: 2026-10-20 18:56 IST (UTC+05:30).
+
 The [deterministic acceptance catalog](../../qa/README.md) imports the full
 A-Z requirements and current source census, preserves historical evidence
 separately, and defines the PR coverage-budget/safety checks. Its static report
 does not certify application, provider or physical acceptance.
-
-Last updated: 2026-10-20 13:19 IST (UTC+05:30).
 
 The [Antigravity browser testing skill](EKI_Antigravity_Webapp_Testing_Skill.md)
 provides a standalone playbook for PR #323 and current Eki checkouts. Its
@@ -15,6 +15,11 @@ separate synthetic/emulator results from provider, deployment and hardware gates
 
 ## Start with the current gates
 
+- [20 October armed moving capture](MOVING_GNSS_CAPTURE_2026_10_20.md):
+  one forward service, serial/cloud/browser evidence and an explicit allocation
+  for all 64 open requirements. USB/ceiling gaps, unknown acknowledgements,
+  unavailable saved DevTools traces and missing truth/role/lifecycle acceptance
+  remain visible; no complete field gate is marked passed.
 - [19 October short moving GNSS capture](MOVING_GNSS_CAPTURE_2026_10_19.md):
   299 raw fixes, 202 accepted serial moving samples, role-specific browser timing,
   actual transport timeouts and owner-confirmed final power-off. No service was
