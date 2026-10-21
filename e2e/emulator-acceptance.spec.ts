@@ -39,8 +39,11 @@ test.beforeEach(async ({ context, request, browser }, testInfo) => {
   await context.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.hostname === '127.0.0.1' && ['3115', '3116', '8085', '9005', '9095'].includes(url.port)) {
-      const gate = url.port === '3116' && route.request().method() === 'PATCH' &&
-        /^\/api\/v2\/feedback\/[A-Za-z0-9_-]+$/.test(url.pathname) ? feedbackStatusGates.get(context) : undefined;
+      const isFeedbackApiStatusWrite = url.port === '3116' && route.request().method() === 'PATCH' &&
+        /^\/api\/v2\/feedback\/[A-Za-z0-9_-]+$/.test(url.pathname);
+      const isFirestoreCommit = url.port === '8085' && route.request().method() === 'POST' &&
+        url.pathname.endsWith('/documents:commit');
+      const gate = isFeedbackApiStatusWrite || isFirestoreCommit ? feedbackStatusGates.get(context) : undefined;
       if (gate) { feedbackStatusGates.delete(context); await gate(); }
       await route.continue();
     }
