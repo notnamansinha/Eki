@@ -47,6 +47,7 @@ run revisions, dates and measurements. Verify deployed availability separately.
 | [My live bus demo runbook](../operations/LIVE_DEMO_RUNBOOK.md) | Demo preparation and recovery checklist |
 | [Local web, phone and ESP32 testing](../operations/LOCAL_TESTING.md) | Laptop, phone and ESP32 test handoff/cleanup |
 | [Stable ngrok tunnel for ESP32 bench testing](../operations/NGROK_TUNNEL.md) | Stable backend tunnel and TLS trust |
+| [ngrok removal and managed backend migration](../operations/NGROK_REMOVAL_AND_FIREBASE_BACKEND_MIGRATION.md) | Cloud Run migration spec, risks, staged rollout and acceptance |
 | [Production readiness audit](../operations/PRODUCTION_READINESS_AUDIT.md) | Historical audit; current gates are linked at the top |
 | [Realtime transport measurement runbook](../operations/REALTIME_TRANSPORT_MEASUREMENTS.md) | Watch, payload, reconnect and chat measurement |
 | [RTDB legacy and geometry retention](../operations/RTDB_RETENTION.md) | Dry-run inventory, legacy retirement and geometry cleanup |
