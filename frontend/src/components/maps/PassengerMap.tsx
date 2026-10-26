@@ -139,13 +139,21 @@ function MapCenterer({ target, isCentered, previewPoints, hasBus, controlsInset 
     return () => { observer?.disconnect(); sheet?.removeEventListener("transitionend", measure); };
   }, [map]);
   const fittedStage = useRef<string | null>(null);
+  // Content identity, not array identity: a rebuilt but identical path must not
+  // refit over a manual drag, while an edited route path must refit.
+  const geometryKey = useMemo(() => {
+    if (!previewPoints) return "";
+    let hash = 0;
+    for (const { lat, lng } of previewPoints) hash = (Math.imul(hash, 31) + Math.round(lat * 1e6) * 7 + Math.round(lng * 1e6)) | 0;
+    return `${previewPoints.length}:${hash}`;
+  }, [previewPoints]);
   useEffect(() => {
     if (!map) return;
     if (!isCentered) { fittedStage.current = null; return; }
     if (previewPoints) {
       // Fit once for the route, and once when its first GPS fix arrives.
       // Subsequent fixes must not repeatedly zoom or override a manual drag.
-      const stage = `${hasBus ? "bus" : "route"}:${topInset}:${bottomInset}`;
+      const stage = `${geometryKey}:${hasBus ? "bus" : "route"}:${topInset}:${bottomInset}`;
       if (fittedStage.current === stage) return;
       const points = [...previewPoints, ...(hasBus && target ? [target] : [])]
         .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lng));
@@ -163,7 +171,7 @@ function MapCenterer({ target, isCentered, previewPoints, hasBus, controlsInset 
       if (fittedStage.current !== "follow") map.setZoom(16);
       fittedStage.current = "follow";
     }
-  }, [isCentered, target, map, previewPoints, hasBus, topInset, bottomInset]);
+  }, [isCentered, target, map, previewPoints, geometryKey, hasBus, topInset, bottomInset]);
   return null;
 }
 
@@ -501,6 +509,8 @@ function PassengerMapInner({
   const firstBusMarker = useLiveBusMarkerPosition(firstBus);
   const estimatesUnavailable = liveReadFailed || !liveUpdatesAvailable ? "Updates unavailable"
     : signalLostBuses.length === buses.size && buses.size > 0 ? "Signal delayed"
+    // Paused automatic service has fresh location but no live ride progress.
+    : buses.size > 0 && [...buses.values()].every(bus => bus.automaticServicePaused === true) ? "Tracking paused"
     : preview ? (firstBus?.sessionId ? "Direction pending" : "Service not started")
     : buses.size === 0 ? "Waiting for bus"
     : progressBus && activeBusStopIndex === undefined ? "Stop progress unavailable"
@@ -648,6 +658,8 @@ function PassengerMapInner({
             return <AdvancedMarker key={`stop-${stop.id || i}`} position={{lat:stop.lat,lng:stop.lng}} anchorLeft="-50%" anchorTop="-50%">
               <button type="button" aria-label={`Show stop ${stop.name}`} title={`${stop.name}${isPast ? " — passed" : ""}`}
                 onClick={() => setInspectedStopId(stop.id)} onFocus={() => setInspectedStopId(stop.id)}
+                // Inspecting a stop is not a manual pan; keep following the bus.
+                onPointerDown={event => event.stopPropagation()} onTouchStart={event => event.stopPropagation()}
                 className="relative flex size-11 items-center justify-center" style={{opacity:isPast ? 0.6 : 1}}>
                 <span aria-label={isPast ? `${stop.name} — passed` : undefined} className="flex size-5 items-center justify-center rounded-full border-2 border-white text-[10px] font-bold text-white shadow-sm"
                   style={{background:isPast ? "#71717a" : "var(--accent)",outline:isTarget ? "2px solid #18181b" : undefined}}>{stopLabel(i)}</span>

@@ -1,5 +1,5 @@
 import { liveBusFreshnessTimestamp } from "./liveBusFreshness";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   BUS_EXPIRY_MS,
   SIGNAL_LOST_MS,
@@ -8,8 +8,12 @@ import {
 } from "./liveBusFreshness";
 
 describe("live bus freshness", () => {
-  it("uses the same default five-minute expiry in local and deployed builds", () => {
-    expect(BUS_EXPIRY_MS).toBe(300000);
+  it("uses the same default five-minute expiry in local and deployed builds", async () => {
+    // Isolated from a developer's local override; the default is what ships.
+    vi.stubEnv("NEXT_PUBLIC_BUS_EXPIRY_MS", "");
+    vi.resetModules();
+    try { expect((await import("./liveBusFreshness")).BUS_EXPIRY_MS).toBe(300000); }
+    finally { vi.unstubAllEnvs(); }
   });
   const now = 1_800_000_000_000;
 

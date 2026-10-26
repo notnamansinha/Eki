@@ -58,8 +58,9 @@ These are scoped transport guards, not an OS sandbox for arbitrary native code.
 ## Assertions and evidence
 
 Fifteen named cases run once in each Chromium mobile/desktop viewport, one worker,
-no retries. They cover successful boarding and reload restoration, wrong-code
-and distant-position denial with no membership mutation, lost chat response
+no retries. They cover successful boarding and reload restoration, code-free
+boarding with one authenticated passenger record, distant-position denial with
+no membership mutation, lost chat response
 after a real commit and idempotent retry/listener delivery, persisted feedback
 and local cooldown, profile sign-out confirmation/cancellation, admin settings
 and role switch, all six tabs with keyboard focus, vehicle creation/edit cancel/

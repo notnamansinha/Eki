@@ -71,6 +71,8 @@ test("tracking keeps the full route name while waiting for live data", async ({ 
   await page.getByText("QA controls", { exact: true }).click();
   await page.getByLabel("QA scenario").selectOption("empty");
   await page.getByText("QA controls", { exact: true }).click();
+  // Without a live bus there is no confirmed direction, so the header shows only the full name.
+  await expect(page.getByText("Waiting for live bus data…", { exact: true })).toBeVisible();
   const label = page.getByRole("paragraph").filter({ hasText: new RegExp(`^${routeName}$`) });
   await expect(label).toBeVisible();
   expect(await label.evaluate(el => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)).toBe(false);

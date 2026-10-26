@@ -51,6 +51,19 @@ describe("passenger route recovery", () => {
     act(() => deliver("A"));
     expect(await screen.findByRole("button", { name: "Join joined" })).toBeTruthy();
   });
+  it("shows a fallback while the selected bus is absent without replacing the selection", async () => {
+    const pair = (...sessions: string[]) => ({ type: "reset" as const, source: "listener" as const,
+      snapshot: Object.fromEntries(sessions.map(session => [`node:${session}_A`, { ...bus("A", session), busId: session }])) });
+    render(<PassengerWorkspace />);
+    act(() => fixture.listeners.get("A")?.next(pair("first", "second")));
+    fireEvent.click(await screen.findByRole("button", { name: "Track A" }));
+    act(() => fixture.listeners.get("A")!.next(pair("first", "second")));
+    expect(await screen.findByRole("button", { name: "Join first" })).toBeTruthy();
+    act(() => fixture.listeners.get("A")!.next(pair("second")));
+    expect(await screen.findByRole("button", { name: "Join second" })).toBeTruthy();
+    act(() => fixture.listeners.get("A")!.next(pair("first", "second")));
+    expect(await screen.findByRole("button", { name: "Join first" })).toBeTruthy();
+  });
   it("waits for authoritative snapshots from both selected and joined routes and fences detached callbacks", async () => {
     await join();
     fireEvent.click(screen.getByRole("button", { name: "Back to home" }));

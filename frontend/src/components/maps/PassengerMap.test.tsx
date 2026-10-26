@@ -53,6 +53,29 @@ describe("published passenger stop progress", () => {
     expect(state.fitBounds.mock.calls.length).toBeGreaterThan(before);
     expect(state.fitBounds).toHaveBeenLastCalledWith({north:23.01,south:23,east:72.01,west:72},expect.any(Object));
   });
+  it("refits the open overview when the route path changes, but not for an identical rebuilt path", () => {
+    state.snapshot = {};
+    const view = render(<PassengerMap route={routeInRideDirection(route,"forward")} targetStop={route.stops[1]} preview />);
+    expect(state.fitBounds).toHaveBeenLastCalledWith({north:23.01,south:23,east:72.01,west:72},expect.any(Object));
+    const fitted = state.fitBounds.mock.calls.length;
+    view.rerender(<PassengerMap route={routeInRideDirection({ ...route, stops: route.stops.map(stop => ({ ...stop })) },"forward")} targetStop={route.stops[1]} preview />);
+    expect(state.fitBounds).toHaveBeenCalledTimes(fitted);
+    const moved = { ...route, stops: [route.stops[0], { ...route.stops[1], lat: 23.02, lng: 72.03 }] };
+    view.rerender(<PassengerMap route={routeInRideDirection(moved,"forward")} targetStop={moved.stops[1]} preview />);
+    expect(state.fitBounds).toHaveBeenLastCalledWith({north:23.02,south:23,east:72.03,west:72},expect.any(Object));
+  });
+  it("keeps following the bus when a stop is inspected, unlike a manual drag", () => {
+    const bus = fixtureBus("forward");
+    state.snapshot = { bus };
+    render(<PassengerMap route={directed} targetStop={route.stops[1]} />);
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Show stop Beta" }));
+    fireEvent.touchStart(screen.getByRole("button", { name: "Show stop Beta" }));
+    act(() => state.listener?.({ bus: { ...bus, lat: 23.004, seq: 2, timestamp: Date.now() } }));
+    expect(state.panTo).toHaveBeenLastCalledWith({ lat: 23.004, lng: bus.lng });
+    fireEvent.pointerDown(screen.getByLabelText("Map").parentElement!);
+    act(() => state.listener?.({ bus: { ...bus, lat: 23.006, seq: 3, timestamp: Date.now() } }));
+    expect(state.panTo).not.toHaveBeenCalledWith({ lat: 23.006, lng: bus.lng });
+  });
   it("fits above the measured bottom sheet rather than a fixed inset", () => {
     const frame=document.createElement("div"), viewport=document.createElement("div"),sheet=document.createElement("div");
     frame.setAttribute("data-passenger-map","");sheet.setAttribute("data-map-sheet","");frame.append(viewport,sheet);
@@ -117,6 +140,15 @@ describe("published passenger stop progress", () => {
     expect(screen.getByTitle("qa-bus — last known location")).toBeTruthy();
     act(() => state.listener?.({ bus: { ...bus, timestamp: Date.now(), backendReceivedAt: Date.now() } }));
     expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ unavailable: undefined }));
+  });
+  it("withholds stop ETAs while automatic service is paused and restores them on resume", () => {
+    const bus = { ...fixtureBus("forward"), currentStopIndex: 1 };
+    state.snapshot = { bus: { ...bus, automaticServicePaused: true } };
+    const changed = vi.fn();
+    render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ minutes: {}, unavailable: "Tracking paused" }));
+    act(() => state.listener?.({ bus }));
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ minutes: { b: 1 }, unavailable: undefined }));
   });
   it("renders one accessible bus glyph with no duplicate status or passenger-location marker", () => {
     const watchPosition = vi.fn(success => { success({ coords: { latitude: 24, longitude: 73 } }); return 1; });
