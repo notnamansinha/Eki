@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { subscribeLiveBusChanges } from "@/lib/liveBusStore";
 import {
-  isActiveBusEntry,
+  isFleetBusEntry,
   type ActiveBusEntry,
 } from "@/lib/activeBusEntries";
 import { isAuthoritativeLiveBusDelivery } from "@/lib/liveBusDelivery";
@@ -26,7 +26,7 @@ export interface UseActiveBusesOptions {
 /**
  * Shared live-fleet subscription. One hook, one filter, one ActiveBusEntry
  * type — the admin dashboard and fleet panel can no longer disagree about
- * which buses are active.
+ * which buses are active. Offline buses stay at their last reported location.
  */
 export function useActiveBuses(options: UseActiveBusesOptions = {}): ActiveBusEntry[] {
   const { connectionGeneration, resumeGeneration, markSnapshotReceived,
@@ -44,12 +44,12 @@ export function useActiveBuses(options: UseActiveBusesOptions = {}): ActiveBusEn
         if (change.type === "reset") {
           activeByKeyRef.current = new Map(
             Object.entries(change.snapshot ?? {}).flatMap(([key, value]) =>
-              isActiveBusEntry(value) ? [[key, value] as const] : []
+              isFleetBusEntry(value) ? [[key, value] as const] : []
             ),
           );
         } else if (change.type === "remove") {
           activeByKeyRef.current.delete(change.key);
-        } else if (isActiveBusEntry(change.value)) {
+        } else if (isFleetBusEntry(change.value)) {
           activeByKeyRef.current.set(change.key, change.value);
         } else {
           activeByKeyRef.current.delete(change.key);

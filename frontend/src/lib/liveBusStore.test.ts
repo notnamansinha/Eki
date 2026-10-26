@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { BUS_EXPIRY_MS } from "./liveBusFreshness";
 import { filterActiveBusEntries } from "./activeBusEntries";
 import {
-  ACTIVE_RIDE_RETENTION_MS,
   millisecondsUntilNextPrune,
   pruneExpiredLiveBuses,
   type LiveBusSnapshot,
@@ -34,7 +33,7 @@ describe("live bus snapshot expiry", () => {
     });
   });
 
-  it("retains a stale active ride so signal loss does not end it", () => {
+  it("expires a stale active ride with its telemetry, like an offline device", () => {
     const snapshot: LiveBusSnapshot = {
       active: {
         timestamp: now - BUS_EXPIRY_MS,
@@ -49,9 +48,8 @@ describe("live bus snapshot expiry", () => {
       },
     };
 
-    expect(pruneExpiredLiveBuses(snapshot, now)).toEqual({
-      active: snapshot.active,
-    });
+    expect(pruneExpiredLiveBuses(snapshot, now)).toEqual({});
+    expect(millisecondsUntilNextPrune(snapshot, now)).toBe(0);
   });
 
   it("does not retain a stale active ride without a non-empty session", () => {
@@ -84,12 +82,11 @@ describe("live bus snapshot expiry", () => {
     expect(millisecondsUntilNextPrune(snapshot, now)).toBe(0);
   });
 
-  it("schedules one expiry at the earliest inactive deadline", () => {
+  it("schedules one expiry at the earliest deadline, rides included", () => {
     const snapshot: LiveBusSnapshot = {
       later: { timestamp: now - recentAgeMs },
-      earlier: { timestamp: now - olderFreshAgeMs },
-      active: {
-        timestamp: now - BUS_EXPIRY_MS,
+      earlier: {
+        timestamp: now - olderFreshAgeMs,
         status: "active",
         sessionId: "session_1",
         tripState: "in_service",
@@ -99,24 +96,9 @@ describe("live bus snapshot expiry", () => {
     expect(millisecondsUntilNextPrune(snapshot, now)).toBe(
       BUS_EXPIRY_MS - olderFreshAgeMs,
     );
-    expect(millisecondsUntilNextPrune({ active: snapshot.active }, now)).toBe(
-      ACTIVE_RIDE_RETENTION_MS - BUS_EXPIRY_MS,
-    );
-  });
-
-  it("expires an orphaned active ride at its bounded retention deadline", () => {
-    const active = {
-      timestamp: now - BUS_EXPIRY_MS,
-      status: "active",
-      sessionId: "session_1",
-      tripState: "in_service",
-    };
-    const deadline = now + ACTIVE_RIDE_RETENTION_MS - BUS_EXPIRY_MS;
-    expect(pruneExpiredLiveBuses({ active }, deadline - 1)).toEqual({ active });
-    expect(millisecondsUntilNextPrune({ active }, deadline - 1)).toBe(1);
-    expect(pruneExpiredLiveBuses({ active }, deadline)).toEqual({});
-    expect(millisecondsUntilNextPrune({ active }, deadline)).toBe(0);
-    expect(pruneExpiredLiveBuses({ active: { ...active, timestamp: undefined } }, now)).toEqual({});
+    const deadline = now + BUS_EXPIRY_MS - olderFreshAgeMs;
+    expect(pruneExpiredLiveBuses(snapshot, deadline - 1)).toBe(snapshot);
+    expect(pruneExpiredLiveBuses(snapshot, deadline)).toEqual({ later: snapshot.later });
   });
 
   it("prunes malformed inactive entries without polling", () => {

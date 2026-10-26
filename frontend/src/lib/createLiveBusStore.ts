@@ -108,7 +108,9 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
   function scheduleExpiry(): void {
     if (expiryTimer) clearTimeout(expiryTimer);
     expiryTimer = null;
-    if (!cached || subscriberCount() === 0) return;
+    // The fleet view keeps each bus's last reported location while it is
+    // offline; the server's presence record decides when a bus leaves.
+    if (fleet || !cached || subscriberCount() === 0) return;
     const delay = millisecondsUntilNextPrune(cached);
     if (delay === null) return;
     expiryTimer = setTimeout(() => {

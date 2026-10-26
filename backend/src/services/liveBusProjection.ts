@@ -71,7 +71,8 @@ export function routeAvailability(buses: Record<string, Record<string, unknown>>
     const sample = typeof bus.timestamp === "number" ? bus.timestamp : NaN;
     const received = bus.backendReceivedAt;
     const at = typeof received === "number" && Number.isFinite(received) && received - sample >= -10_000 && received - sample <= 60_000 ? received : sample;
-    if (isRide) active++;
+    // An offline ride is retained for recovery, but passengers are not shown it.
+    if (isRide) { if (bus.deviceState !== "offline") active++; }
     else if (bus.deviceState === "online" && Number.isFinite(at)) { availableReceipts.push(at); if (at <= now + 10_000 && now - at < 300_000) { available++; freshestAt = Math.max(freshestAt, Math.floor(at / 60_000) * 60_000); } }
   }
   return { active, available, freshestAt, availableReceipts: availableReceipts.sort((a, b) => a - b) };

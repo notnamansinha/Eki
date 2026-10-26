@@ -6,11 +6,13 @@ import userEvent from "@testing-library/user-event";
 import DashboardPanel from "./DashboardPanel";
 import type { ActiveBusEntry } from "@/lib/activeBusEntries";
 import type { RouteData } from "@/hooks/useRoutes";
+import type { BusLocationData } from "@/hooks/useBusLocations";
 import { fixtureBus, route } from "../../../../e2e/fixtures/state";
-const state = vi.hoisted(() => ({ entries: [] as ActiveBusEntry[], geometries: new Map(), routes: [] as RouteData[], resuming: false, driversLoading: false }));
+const state = vi.hoisted(() => ({ entries: [] as ActiveBusEntry[], geometries: new Map(), routes: [] as RouteData[], resuming: false, driversLoading: false, busLocations: [] as BusLocationData[] }));
 vi.mock("@vis.gl/react-google-maps", () => ({ Map: ({children}: {children: ReactNode}) => <div>{children}</div>, AdvancedMarker: ({ children, position, anchorLeft, anchorTop }: { children: ReactNode; position: unknown; anchorLeft?: string; anchorTop?: string }) => <div data-marker={JSON.stringify(position)} data-anchor={JSON.stringify([anchorLeft, anchorTop])}>{children}</div>, useMap: () => null }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ role: "admin", user: {uid: "qa-admin"} }) }));
 vi.mock("@/hooks/useActiveBuses", () => ({ useActiveBuses: () => state.entries }));
+vi.mock("@/hooks/useBusLocations", () => ({ useBusLocations: () => ({ busLocations: state.busLocations }) }));
 vi.mock("@/hooks/useDynamicRouteGeometries", () => ({ useDynamicRouteGeometries: () => state.geometries }));
 vi.mock("@/hooks/useRTDBResume", () => ({ useRTDBResume: () => ({ isResuming: state.resuming }) }));
 vi.mock("@/hooks/useBuses", () => ({ useBuses: () => ({ buses: [{id: "qa-bus", name: "QA bus", assignedRoutes: ["qa-route"]}] }) }));
@@ -20,7 +22,7 @@ vi.mock("@/components/maps/DirectionsRoute", () => ({ default: ({ nextStopIndice
 vi.mock("@/components/shared/MessagingPanel", () => ({ default: ({ sessionId }: { sessionId: string }) => <p>Chat session {sessionId}</p> }));
 vi.mock("@/lib/firebaseAuth", () => ({ auth: {currentUser: {getIdToken: async () => "synthetic-token"}} }));
 vi.mock("@/components/ui/CustomSelect", () => ({default: ({ariaLabel, value, options, onChange, disabled}: {ariaLabel: string; value: string; options: {value: string; label: string}[]; onChange: (value: string) => void; disabled?: boolean}) => <select aria-label={ariaLabel} value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>}));
-beforeEach(() => { state.entries = []; state.resuming = false; state.driversLoading = false; state.routes = [{ ...route, stops: [] }]; state.geometries.clear(); vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test"); });
+beforeEach(() => { state.entries = []; state.busLocations = []; state.resuming = false; state.driversLoading = false; state.routes = [{ ...route, stops: [] }]; state.geometries.clear(); vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test"); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 describe("admin service creation", () => {
   it("offers recovery for a terminal automatic intent without reviving the old ride",()=>{
@@ -68,6 +70,33 @@ describe("admin service creation", () => {
     render(<DashboardPanel />);
     expect(screen.getByText("Service paused")).toBeTruthy();
     expect(screen.getByText("0 devices online · 0 services")).toBeTruthy();
+  });
+  it("keeps a bus at its last known location after its live record is removed", () => {
+    state.busLocations = [{ id: "qa-bus", routeId: "qa-route", lastKnownLocation: { lat: 23.5, lng: 72.5, sampledAt: Date.now() - 3 * 3_600_000 } }];
+    const { container } = render(<DashboardPanel />);
+    expect(screen.getByText("Offline")).toBeTruthy();
+    expect(screen.getByText("Last seen 3h ago")).toBeTruthy();
+    expect(container.querySelector('[data-marker*="23.5"]')).toBeTruthy();
+    expect(screen.getByText("0 devices online · 0 services")).toBeTruthy();
+  });
+  it("prefers the live record over the durable last fix", () => {
+    state.entries = [{ ...fixtureBus("forward") } as ActiveBusEntry];
+    state.busLocations = [{ id: "qa-bus", routeId: "qa-route", lastKnownLocation: { lat: 23.5, lng: 72.5, sampledAt: 1 } }];
+    render(<DashboardPanel />);
+    expect(screen.getAllByRole("button", { name: "Open live details for qa-bus" })).toHaveLength(1);
+    expect(screen.queryByText("Offline")).toBeNull();
+  });
+  it("labels an ended ride on an offline bus as completed, not paused", () => {
+    state.entries = [{ ...fixtureBus("forward"), tripState: "completed", status: "offline", deviceState: "offline" } as ActiveBusEntry];
+    render(<DashboardPanel />);
+    expect(screen.getByText("Completed")).toBeTruthy();
+    expect(screen.queryByText("Service paused")).toBeNull();
+  });
+  it("does not offer resume while the paused receiver is offline", () => {
+    state.entries = [{ ...fixtureBus(), status: "offline", sessionId: undefined, automaticServicePaused: true, deviceState: "offline" } as ActiveBusEntry];
+    render(<DashboardPanel />);
+    expect(screen.getByText("Tracking paused")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resume automatic tracking for qa-bus" })).toBeNull();
   });
   it("offers an explicit resume only for an intentionally paused receiver", async () => {
     state.entries=[{...fixtureBus(),status:"offline",sessionId:undefined,automaticServicePaused:true} as ActiveBusEntry];

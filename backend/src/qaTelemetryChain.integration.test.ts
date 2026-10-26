@@ -21,6 +21,7 @@ import { startLiveBusProjection } from "./services/liveBusProjection";
 import { drainAutomaticServiceAdmission } from "./services/automaticServiceAdmission";
 import { drainDurableRideRecovery } from "./services/durableRideRecovery";
 import { createStaleBusSweeper } from "./services/staleBusSweeper";
+import { runAbandonedRideReconciliation } from "./services/abandonedRideReconciler";
 import { WorkerFence, WORKER_LEASE_ID } from "./lib/workerFence";
 import { encodePolyline } from "./lib/polylineUtils";
 
@@ -147,6 +148,26 @@ integration("authenticated telemetry to durable lifecycle and public emulator pr
     await vi.waitFor(async()=>expect((await state.realtime!.ref(node).get()).val()?.automaticServiceState).toBe("paused"),{timeout:10000});
     expect((await state.firestore!.collection("ride_sessions").get()).docs).toHaveLength(1);
     expect((await state.firestore!.collection("ride_sessions").doc(id).get()).data()?.status).toBe("interrupted");
+  },25000);
+  it("starts a fresh automatic service after the reconciler times out an abandoned ride", async () => {
+    await state.firestore!.collection("drivers").doc("qa_timeout_driver").set({assignedBusId:bus});
+    const stopped=(seq:number)=>({...fix(seq,0,stops[0].lat),motionState:"stopped",speed:0,timestamp:Date.now(),deviceSentAt:Date.now()});
+    expect((await send(stopped(1))).status).toBe(202);
+    await vi.waitFor(async()=>expect((await state.realtime!.ref(node).get()).val()?.sessionId).toEqual(expect.any(String)),{timeout:10000});
+    await drainAutomaticServiceAdmission();
+    const abandoned=(await state.realtime!.ref(node).get()).val().sessionId;
+    const fence=new WorkerFence("qa-worker",41,performance.now()+300000);
+    const summary=await fence.run(()=>runAbandonedRideReconciliation({now:Date.now()+13*60*60*1000}));
+    expect(summary.interruptedIds).toEqual([abandoned]);
+    expect((await send(stopped(2))).status).toBe(202);
+    await vi.waitFor(async()=>{
+      const live=(await state.realtime!.ref(node).get()).val();
+      expect(live?.sessionId).toEqual(expect.any(String));
+      expect(live.sessionId).not.toBe(abandoned);
+      expect(live.automaticServiceState).toBeUndefined();
+    },{timeout:10000});
+    expect((await state.firestore!.collection("ride_sessions").doc(abandoned).get()).data()?.status).toBe("interrupted");
+    expect((await state.firestore!.collection("ride_sessions").get()).docs).toHaveLength(2);
   },25000);
   it("does not wait forever for an already failed consumed return", async () => {
     await state.firestore!.collection("drivers").doc("qa_failed_return_driver").set({assignedBusId:bus});

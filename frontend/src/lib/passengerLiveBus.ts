@@ -3,7 +3,7 @@ import {
   rideServiceState,
   type ActiveBusEntry,
 } from "./activeBusEntries";
-import { hasValidBusCoordinates } from "./liveBusFreshness";
+import { hasValidBusCoordinates, isLiveBusTimestamp, liveBusFreshnessTimestamp } from "./liveBusFreshness";
 import { normalizePassengerBusAvailability } from "./passengerBusAvailability";
 
 export interface PassengerLiveBus extends ActiveBusEntry {
@@ -57,6 +57,12 @@ export function normalizePassengerLiveBus(
   }
   const serviceState = rideServiceState(candidate);
   if (serviceState === "not_armed" || serviceState === "completed") return null;
+  // An offline ride stays retained server-side for recovery, but passengers
+  // see it exactly like an offline device: not at all.
+  if (
+    candidate.deviceState === "offline" ||
+    !isLiveBusTimestamp(liveBusFreshnessTimestamp(candidate), now)
+  ) return null;
 
   return {
     ...candidate,

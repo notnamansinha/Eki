@@ -2,10 +2,6 @@ import { BUS_EXPIRY_MS, isLiveBusTimestamp, liveBusFreshnessTimestamp } from "./
 
 export type LiveBusSnapshot = Record<string, Record<string, unknown>>;
 
-// A live ride survives a short telemetry outage, but a permanently orphaned
-// RTDB node must eventually leave the map even if no further event arrives.
-export const ACTIVE_RIDE_RETENTION_MS = 24 * 60 * 60 * 1000;
-
 export function isActiveRideSnapshot(
   bus: Record<string, unknown>,
 ): boolean {
@@ -17,28 +13,19 @@ export function isActiveRideSnapshot(
   );
 }
 
+/**
+ * Passenger-scope expiry. An offline ride is hidden exactly like an offline
+ * device, so every entry leaves with its telemetry; the server still retains
+ * the ride for recovery. The admin fleet store does not prune at all.
+ */
 export function pruneExpiredLiveBuses(
   snapshot: LiveBusSnapshot,
   now = Date.now(),
 ): LiveBusSnapshot {
   let changed = false;
   const freshEntries = Object.entries(snapshot).filter(([, bus]) => {
-    if (bus.tripState === "completed") {
-      changed = true;
-      return false;
-    }
-    const fresh = isLiveBusTimestamp(
-      liveBusFreshnessTimestamp(bus),
-      now,
-    );
-    const timestamp = liveBusFreshnessTimestamp(bus);
-    const activeAge = typeof timestamp === "number" ? now - timestamp : NaN;
-    const retain = fresh || (
-      isActiveRideSnapshot(bus) &&
-      Number.isFinite(activeAge) &&
-      activeAge >= -10_000 &&
-      activeAge < ACTIVE_RIDE_RETENTION_MS
-    );
+    const retain = bus.tripState !== "completed" &&
+      isLiveBusTimestamp(liveBusFreshnessTimestamp(bus), now);
     if (!retain) changed = true;
     return retain;
   });
@@ -60,10 +47,7 @@ export function millisecondsUntilNextPrune(
     ) {
       return 0;
     }
-    const retentionMs = isActiveRideSnapshot(bus)
-      ? ACTIVE_RIDE_RETENTION_MS
-      : BUS_EXPIRY_MS;
-    nextDelay = Math.min(nextDelay, timestamp + retentionMs - now);
+    nextDelay = Math.min(nextDelay, timestamp + BUS_EXPIRY_MS - now);
   }
   return Number.isFinite(nextDelay)
     ? Math.max(0, Math.ceil(nextDelay))

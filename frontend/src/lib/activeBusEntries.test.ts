@@ -6,8 +6,10 @@ import {
   devicePresence,
   isActiveService,
   isActiveBusEntry,
+  isFleetBusEntry,
   isLiveChatDeviceOnline,
   rideServiceState,
+  withLastKnownLocations,
 } from "./activeBusEntries";
 
 describe("isLiveChatDeviceOnline", () => {
@@ -295,5 +297,36 @@ describe("filterActiveBusEntries", () => {
       now,
     );
     expect(entries).toEqual([]);
+  });
+});
+
+describe("admin fleet last location", () => {
+  const now = 2_000_000_000_000;
+  const stale = now - BUS_EXPIRY_MS * 10;
+
+  it("keeps an offline bus and an ended ride at their last reported location", () => {
+    expect(isFleetBusEntry({ busId: "bus_1", deviceState: "offline", status: "offline", lat: 23, lng: 72, timestamp: stale }, now)).toBe(true);
+    expect(isFleetBusEntry({ busId: "bus_1", deviceState: "offline", status: "offline", sessionId: "s1",
+      tripState: "completed", lat: 23, lng: 72, timestamp: stale }, now)).toBe(true);
+    expect(isActiveBusEntry({ busId: "bus_1", deviceState: "offline", lat: 23, lng: 72, timestamp: stale }, now)).toBe(false);
+  });
+
+  it("still rejects entries without an identity or a valid location", () => {
+    expect(isFleetBusEntry({ busId: "", lat: 23, lng: 72, timestamp: stale }, now)).toBe(false);
+    expect(isFleetBusEntry({ busId: "bus_1", timestamp: stale }, now)).toBe(false);
+    expect(isFleetBusEntry({ busId: "bus_1", lat: 91, lng: 72, timestamp: stale }, now)).toBe(false);
+    expect(isFleetBusEntry({ busId: "bus_1", lat: 23, lng: 72, timestamp: stale, deviceState: "lost" }, now)).toBe(false);
+  });
+
+  it("falls back to the durable last fix only for buses without a live entry", () => {
+    const live = [{ busId: "bus_1", lat: 23, lng: 72, timestamp: now, deviceState: "online" as const }];
+    const fix = { lat: 23.1, lng: 72.1, sampledAt: stale };
+    expect(withLastKnownLocations(live, [
+      { id: "bus_1", routeId: "r1", lastKnownLocation: fix },
+      { id: "bus_2", routeId: "r2", lastKnownLocation: fix },
+      { id: "bus_3", lastKnownLocation: { lat: 91, lng: 72, sampledAt: stale } },
+      { id: "bus_4", lastKnownLocation: null },
+    ])).toEqual([...live, { busId: "bus_2", routeId: "r2", lat: 23.1, lng: 72.1, timestamp: stale, status: "offline", deviceState: "offline" }]);
+    expect(withLastKnownLocations(live, [])).toBe(live);
   });
 });

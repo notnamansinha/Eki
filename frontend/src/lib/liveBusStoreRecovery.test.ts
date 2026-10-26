@@ -178,6 +178,27 @@ describe("live bus listener recovery", () => {
     disposeOne();
     disposeTwo();
   });
+  it("keeps an offline bus in the admin fleet but expires it for passengers", async () => {
+    const { BUS_EXPIRY_MS } = await import("./liveBusFreshness");
+    const { subscribeLiveBusChanges, subscribeLiveBusesByRoute } = await import("./liveBusStore");
+    const fleet = vi.fn();
+    const passenger = vi.fn();
+    const disposeFleet = subscribeLiveBusChanges(fleet);
+    const disposePassenger = subscribeLiveBusesByRoute("route_1", passenger);
+    await flushPromises();
+    const ride = { busId: "bus_1", routeId: "route_1", status: "active", sessionId: "s1", tripState: "in_service",
+      deviceState: "online", lat: 23, lng: 72, timestamp: Date.now() };
+    listenerState.success?.({ val: () => ({ "route:route_1": { buses: { "node:bus_1": ride } } }) });
+    listenerState.routes.get("publicRouteBuses/route:route_1/buses")?.success?.({ val: () => ({ "node:bus_1": ride }) });
+    fleet.mockClear(); passenger.mockClear();
+
+    await vi.advanceTimersByTimeAsync(BUS_EXPIRY_MS + 1);
+
+    expect(passenger).toHaveBeenLastCalledWith(null, "expiry");
+    expect(fleet).not.toHaveBeenCalled();
+    disposeFleet();
+    disposePassenger();
+  });
   it("shares route listeners, never opens the fleet root, and ignores old auth and detached callbacks", async () => {
     const { onValue } = await import("firebase/database"); vi.mocked(onValue).mockClear();
     const { subscribeLiveBusesByRoute, invalidateLiveBusCache } = await import("./liveBusStore");

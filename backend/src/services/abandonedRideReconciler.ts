@@ -161,10 +161,12 @@ async function runReconciliationPage(options: AbandonedRideReconciliationOptions
 
     const transactionResult = await workerTransaction(firestore, async (transaction) => {
       const sessionRef = firestore.collection("ride_sessions").doc(sessionId);
-      const [currentSessionDocument, currentActiveRideDocument, currentBusLock] = await settleTogether([
+      const busLocationRef = firestore.collection("bus_locations").doc(busId);
+      const [currentSessionDocument, currentActiveRideDocument, currentBusLock, currentBusLocation] = await settleTogether([
         transaction.get(sessionRef),
         transaction.get(activeRideRef),
         transaction.get(busLockRef),
+        transaction.get(busLocationRef),
       ]);
       if (!currentSessionDocument.exists) return { interrupted: false, deleted: false };
       const currentSession = currentSessionDocument.data()!;
@@ -197,6 +199,18 @@ async function runReconciliationPage(options: AbandonedRideReconciliationOptions
       if (deleteActiveRide) transaction.delete(activeRideRef);
       if (currentBusLock.data()?.sessionId === sessionId) {
         transaction.delete(busLockRef);
+      }
+      // A timed-out ride ended without an operator decision. Unless a newer
+      // session already owns the bus, open a new automatic-service generation
+      // so the receiver's next qualified fix starts service instead of
+      // waiting for Resume tracking. A deliberate pause stays in force.
+      if (!currentBusLock.exists || currentBusLock.data()?.sessionId === sessionId) {
+        transaction.set(busLocationRef, {
+          automaticServiceEpoch: FieldValue.increment(1),
+          ...(currentBusLocation.data()?.terminalJourney?.consumedBy === sessionId
+            ? { terminalJourney: FieldValue.delete() }
+            : {}),
+        }, { merge: true });
       }
       return { interrupted: true, deleted: deleteActiveRide };
     });

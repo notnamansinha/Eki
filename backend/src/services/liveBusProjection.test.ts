@@ -62,6 +62,7 @@ describe("public live projection", () => {
   });
   it("counts active rides separately from fresh sessionless previews", () => {
     expect(routeAvailability({ active: live(), stale: { deviceState: "online", timestamp: 1 }, fresh: { deviceState: "online", timestamp: 600_001 }, done: { ...live(), tripState: "completed" } }, 600_001)).toEqual({ active: 1, available: 1, freshestAt: 600_000, availableReceipts: [1, 600_001] });
+    expect(routeAvailability({ offlineRide: { ...live(), deviceState: "offline" } }, 600_001)).toEqual({ active: 0, available: 0, freshestAt: 0, availableReceipts: [] });
   });
   it("re-reads authority instead of publishing a queued stale session and suppresses internal-only events", async () => {
     const old = live(); fixture.data.activeBuses = { bus1_route1: live("s2") }; start(); emit("child_changed", old); await settle();

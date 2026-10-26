@@ -85,7 +85,7 @@ describe("passenger live-bus normalization", () => {
     },
   );
 
-  it("shows fresh and stale active-session buses", () => {
+  it("shows a fresh ride and hides it like an offline device once its receiver is offline", () => {
     const fresh = telemetry({
       status: "active",
       sessionId: "session_1",
@@ -96,8 +96,8 @@ describe("passenger live-bus normalization", () => {
 
     expect(normalizePassengerLiveBus("Bus01_route_1", fresh, now)?.sessionId)
       .toBe("session_1");
-    expect(normalizePassengerLiveBus("Bus01_route_1", stale, now)?.sessionId)
-      .toBe("session_1");
+    expect(normalizePassengerLiveBus("Bus01_route_1", stale, now)).toBeNull();
+    expect(normalizePassengerLiveBus("Bus01_route_1", { ...fresh, deviceState: "offline" }, now)).toBeNull();
   });
 
   it("hides stale sessionless and completed buses", () => {
@@ -154,7 +154,7 @@ describe("passenger live-bus normalization", () => {
     expect(normalizePassengerLiveBus("unrelated", legacy, now)).toBeNull();
   });
 
-  it("supplies safe display defaults for a stale active legacy ride", () => {
+  it("hides a stale active legacy ride", () => {
     const bus = normalizePassengerLiveBus(
       "Bus01_route_1",
       {
@@ -169,13 +169,7 @@ describe("passenger live-bus normalization", () => {
       },
       now,
     );
-    expect(bus).toMatchObject({
-      heading: 0,
-      speed: 0,
-      timestamp: 0,
-      deviceState: "offline",
-      motionState: "uncertain",
-    });
+    expect(bus).toBeNull();
   });
 
   it("keeps only complete services and retains stable selection keys", () => {
