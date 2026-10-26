@@ -12,6 +12,6 @@ export interface BusLocationData {
  * outlives the bus's live presence record.
  */
 export function useBusLocations() {
-  const { data: busLocations, error } = useCollection<BusLocationData>("bus_locations");
-  return { busLocations, error };
+  const { data: busLocations, error, retry } = useCollection<BusLocationData>("bus_locations");
+  return { busLocations, error, retry };
 }

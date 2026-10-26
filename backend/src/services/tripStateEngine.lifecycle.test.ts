@@ -1112,10 +1112,26 @@ describe("trip-state engine lifecycle", () => {
     const store = makeNodeRef(live);
     mocks.rtdbHandlers.get("child_changed")!({ ...queuedSnapshot(store, "bus_gap_route_2"), val: () => ({ ...queuedSnapshot(store, "bus_gap_route_2").val(), ...live }) });
     await flushMicrotasks(50);
-    expect(mocks.reduceTripState).toHaveBeenCalledWith(expect.objectContaining({ gnssGapSince: null }));
+    // The old session's gap (5) is ignored; with no earlier fix on record the fix itself opens one.
+    expect(mocks.reduceTripState).toHaveBeenCalledWith(expect.objectContaining({ gnssGapSince: 1 }));
     expect(store.nodeValue()).toMatchObject({ gnssGap: { sessionId: "session-1", since: 7 } });
     expect(mocks.transactionSet).toHaveBeenCalledWith(expect.objectContaining({ collectionName: "active_rides" }),
       expect.objectContaining({ gnssGapSince: 7 }), { merge: true });
+    await stop();
+  });
+
+  it("treats an in-service ride as gapped only until the engine has seen an earlier fix", async () => {
+    allowCompletion("session-1");
+    mocks.reduceTripState.mockReturnValue({ tripState: "in_service", currentStopIndex: 1, hasDepartedOrigin: true });
+    const stop = startTripStateEngine(); gapRoute();
+    const live = { sessionId: "session-1", direction: "forward", status: "active", deviceState: "online", tripState: "in_service",
+      currentStopIndex: 1, hasDepartedOrigin: true };
+    const store = makeNodeRef(live);
+    const fix = (timestamp: number) => ({ ...queuedSnapshot(store, "bus_seen_route_2"),
+      val: () => ({ ...queuedSnapshot(store, "bus_seen_route_2").val(), ...live, timestamp }) });
+    mocks.rtdbHandlers.get("child_changed")!(fix(10)); await flushMicrotasks(50);
+    mocks.rtdbHandlers.get("child_changed")!(fix(11)); await flushMicrotasks(50);
+    expect(mocks.reduceTripState.mock.calls.map(([input]) => input.gnssGapSince)).toEqual([10, null]);
     await stop();
   });
 

@@ -78,11 +78,13 @@ test("location delay stays below variable ride controls and clears on recovery",
   await expect(warning).toHaveCount(0);
 });
 
-test("offline buses disappear from new choices and return on fresh telemetry", async ({ page }) => {
+test("an offline ride disappears like an offline device and returns on fresh telemetry", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Track QA route", exact: true }).click();
   await scenario(page, "offline");
-  await expect(page.getByText("Live tracking paused", { exact: true })).toBeVisible();
+  // Once its receiver is offline the ride is not shown at all, even to a viewer already tracking it.
+  await expect(page.getByText("Waiting for live bus data…", { exact: true })).toBeVisible();
+  await expect(page.getByText("Live tracking paused", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Open live chat", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Back to home", exact: true }).click();
   await expect(page.getByRole("button", { name: "Track QA route", exact: true })).toHaveCount(0);

@@ -936,7 +936,10 @@ export function startTripStateEngine(): () => Promise<void> {
       stops,
       hasDepartedOrigin: data.hasDepartedOrigin === true,
       terminalArrival: data.terminalArrival,
-      gnssGapSince: liveGnssGapSince(data),
+      // With no earlier fix on record for this in-service ride (restart, leader
+      // handoff or a restored live record), stops may have passed unobserved.
+      gnssGapSince: liveGnssGapSince(data) ??
+        (!previousTelemetry && data.tripState === "in_service" ? telemetryTimestamp : null),
       timestamp: telemetryTimestamp,
       now: Date.now(),
       gpsHdop: data.gpsHdop,

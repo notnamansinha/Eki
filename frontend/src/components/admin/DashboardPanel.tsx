@@ -598,7 +598,7 @@ export default function DashboardPanel() {
     onReadError: onLiveReadError,
     onReadRecovered: onLiveReadRecovered,
   });
-  const { busLocations } = useBusLocations();
+  const { busLocations, error: busLocationsError, retry: retryBusLocations } = useBusLocations();
   const activeEntries = useMemo(
     () => withLastKnownLocations(liveFleet, busLocations),
     [liveFleet, busLocations],
@@ -866,19 +866,22 @@ export default function DashboardPanel() {
               Live vehicle updates are unavailable. Check your connection and reload to retry.
             </div>
           )}
-          {(busesError || routesError || driversError) && (
+          {(busesError || routesError || driversError || busLocationsError) && (
             <div
               className="pointer-events-auto flex w-full max-w-lg items-start gap-2 rounded-xl border border-red-400/20 bg-zinc-950/95 px-3 py-2 text-xs text-red-300 shadow-lg"
               role="alert"
             >
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <span className="flex-1">Fleet metadata is unavailable. {busesError || routesError || driversError}</span>
+              <span className="flex-1">{busesError || routesError || driversError
+                ? `Fleet metadata is unavailable. ${busesError || routesError || driversError}`
+                : `Last known locations of offline buses are unavailable. ${busLocationsError}`}</span>
               <button
                 type="button"
                 onClick={() => {
                   if (busesError) retryBuses();
                   if (routesError) retryRoutes();
             if (driversError) retryDrivers();
+                  if (busLocationsError) retryBusLocations();
                 }}
                 className="rounded-md bg-white/10 px-2 py-1 font-semibold text-white"
               >
