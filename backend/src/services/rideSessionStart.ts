@@ -9,7 +9,7 @@ import { isRideDirection, stopsInRideDirection, type RideDirection } from "../li
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 export interface ServiceAssignment { driverId: string; busId: string; routeId: string }
 export class RideSessionStartError extends Error {
-  constructor(readonly statusCode: number, message: string, readonly reason?: "terminal_session") { super(message); }
+  constructor(readonly statusCode: number, message: string, readonly reason?: "terminal_session" | "interrupted_session") { super(message); }
 }
 export interface ServiceStartResult { sessionId: string; resumed: boolean; direction: RideDirection | null; pending: boolean; created: boolean }
 
@@ -156,7 +156,11 @@ export async function startAssignedService(assignment: ServiceAssignment, option
     }
     const data = pinned.data();
     if (["completed", "interrupted", "failed"].includes(data?.status)) {
-      if (options.automatic) throw new RideSessionStartError(409, "The prior automatic service is terminal; explicit operator recovery is required.", "terminal_session");
+      if (options.automatic) {
+        throw data?.status === "completed"
+          ? new RideSessionStartError(409, "The prior automatic service is terminal; explicit operator recovery is required.", "terminal_session")
+          : new RideSessionStartError(409, "The prior automatic service ended early.", "interrupted_session");
+      }
       const direction = isRideDirection(data?.direction) ? data.direction : null;
       return { ...{ sessionId: pinnedSessionId, resumed: true, direction, pending: !direction }, created: false };
     }

@@ -173,6 +173,8 @@ PR/run artifacts after execution, not in this specification.
 
 ## Harness fault demonstration
 
+Historical note: the code-rejection demonstration below predates the 25 October removal of passenger boarding codes. Current boarding uses verified identity, ordered stops and live-bus proximity; code-free boarding and distant-position rejection are exercised separately.
+
 On 11 October, the Linux development run used Node 22.23.2, Java 21.0.12
 and Chromium 153.0.8010.12. All twenty executions passed with zero skipped,
 flaky or retried tests. This was a dirty development checkout, not immutable

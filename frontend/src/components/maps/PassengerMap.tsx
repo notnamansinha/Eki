@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { memo, useEffect, useRef, useState, useMemo, useCallback, type CSSProperties } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
 import DirectionsRoute from "@/components/maps/DirectionsRoute";
@@ -49,6 +49,7 @@ export interface PassengerMapProps {
   /** Explicit destination selection; targetStop may only be a camera fallback. */
   selectedDestinationStopId?: string;
   onStopEstimatesChange?: (estimates: PassengerStopEstimates) => void;
+  liveUpdatesAvailable?: boolean;
 }
 
 type IncomingBusData = PassengerMapBus;
@@ -109,18 +110,21 @@ const BusMarker = memo(function BusMarker({
 
 // ── Traffic layer rendered imperatively ──────────────────────────────────────
 // ── Pan/zoom controller ──────────────────────────────────────────────────────
-function MapCenterer({ target, isCentered, previewPoints, hasBus }: {
+function MapCenterer({ target, isCentered, previewPoints, hasBus, controlsInset }: {
   target: { lat: number; lng: number } | null;
   isCentered: boolean;
   previewPoints?: { lat: number; lng: number }[];
   hasBus: boolean;
+  controlsInset: number;
 }) {
   const map = useMap();
+  const topInset = Math.max(32, controlsInset + 24);
   const [bottomInset, setBottomInset] = useState(160);
   useEffect(() => {
     const viewport = map?.getDiv?.();
     if (!viewport) return;
-    const sheet = viewport.closest("[data-passenger-map]")?.querySelector<HTMLElement>("[data-map-sheet]");
+    const mapRoot = viewport.closest<HTMLElement>("[data-passenger-map]");
+    const sheet = mapRoot?.querySelector<HTMLElement>("[data-map-sheet]");
     const measure = () => {
       const bounds = viewport.getBoundingClientRect();
       const overlay = sheet?.getBoundingClientRect();
@@ -141,16 +145,16 @@ function MapCenterer({ target, isCentered, previewPoints, hasBus }: {
     if (previewPoints) {
       // Fit once for the route, and once when its first GPS fix arrives.
       // Subsequent fixes must not repeatedly zoom or override a manual drag.
-      const stage = `${hasBus ? "bus" : "route"}:${bottomInset}`;
+      const stage = `${hasBus ? "bus" : "route"}:${topInset}:${bottomInset}`;
       if (fittedStage.current === stage) return;
-      const points = previewPoints
+      const points = [...previewPoints, ...(hasBus && target ? [target] : [])]
         .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lng));
       if (points.length === 0) return;
       const bounds = points.reduce((result, point) => ({
         north: Math.max(result.north, point.lat), south: Math.min(result.south, point.lat),
         east: Math.max(result.east, point.lng), west: Math.min(result.west, point.lng),
       }), { north: -Infinity, south: Infinity, east: -Infinity, west: Infinity });
-      map.fitBounds(bounds, { top: 32, bottom: bottomInset, left: 32, right: 32 });
+      map.fitBounds(bounds, { top: topInset, bottom: bottomInset, left: 32, right: 32 });
       fittedStage.current = stage;
       return;
     }
@@ -159,7 +163,7 @@ function MapCenterer({ target, isCentered, previewPoints, hasBus }: {
       if (fittedStage.current !== "follow") map.setZoom(16);
       fittedStage.current = "follow";
     }
-  }, [isCentered, target, map, previewPoints, hasBus, bottomInset]);
+  }, [isCentered, target, map, previewPoints, hasBus, topInset, bottomInset]);
   return null;
 }
 
@@ -171,6 +175,7 @@ function PassengerMapInner({
   selectedBusKey,
   selectedDestinationStopId,
   onStopEstimatesChange,
+  liveUpdatesAvailable = true,
 }: {
   targetStop: RouteStop;
   route: DirectedRouteData;
@@ -179,7 +184,22 @@ function PassengerMapInner({
   selectedBusKey?: string;
   selectedDestinationStopId?: string;
   onStopEstimatesChange?: PassengerMapProps["onStopEstimatesChange"];
+  liveUpdatesAvailable?: boolean;
 }) {
+  const mapRootRef = useRef<HTMLDivElement>(null);
+  const [controlsInset, setControlsInset] = useState(0);
+  // Notices need the same overlay inset even before the Maps SDK is ready.
+  useEffect(() => {
+    const root = mapRootRef.current;
+    const header = root?.closest("[data-passenger-tracking]")?.querySelector<HTMLElement>("[data-tracking-controls]");
+    if (!root || !header) return;
+    const measure = () => setControlsInset(Math.round(Math.max(0,
+      header.getBoundingClientRect().bottom - root.getBoundingClientRect().top)));
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(root); observer?.observe(header);
+    return () => observer?.disconnect();
+  }, []);
   const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map<string, IncomingBusData>());
   const previousBusesRef = useRef<Map<string, IncomingBusData>>(new Map());
   const [stopETAs, setStopETAs] = useState<Record<string, number>>({});
@@ -465,7 +485,7 @@ function PassengerMapInner({
   // The UI timer triggers renders during silence. Evaluate against the actual
   // clock on every render: a new fix can be newer than the last timer tick.
   const signalLostBuses = [...buses.values()].filter(bus =>
-    bus.deviceState === "offline" || isLiveBusSignalLost(liveBusFreshnessTimestamp(bus)),
+    !liveUpdatesAvailable || bus.deviceState === "offline" || isLiveBusSignalLost(liveBusFreshnessTimestamp(bus)),
   );
   const signalLostLastSeen = signalLostBuses.length
     ? Math.min(...signalLostBuses.map(bus => liveBusFreshnessTimestamp(bus) ?? bus.timestamp)) : null;
@@ -479,7 +499,7 @@ function PassengerMapInner({
   const mapCenter = useMemo(() => ({ lat: targetStop.lat, lng: targetStop.lng }), [targetStop.lat, targetStop.lng]);
   const firstBus = useMemo(() => Array.from(buses.values())[0], [buses]);
   const firstBusMarker = useLiveBusMarkerPosition(firstBus);
-  const estimatesUnavailable = liveReadFailed ? "Updates unavailable"
+  const estimatesUnavailable = liveReadFailed || !liveUpdatesAvailable ? "Updates unavailable"
     : signalLostBuses.length === buses.size && buses.size > 0 ? "Signal delayed"
     : preview ? (firstBus?.sessionId ? "Direction pending" : "Service not started")
     : buses.size === 0 ? "Waiting for bus"
@@ -495,11 +515,11 @@ function PassengerMapInner({
   }, [firstBusMarker.position, mapCenter]);
 
   return (
-    <div data-passenger-map className="relative h-full w-full">
-      <div className="pointer-events-none absolute left-4 right-20 top-4 z-40 flex flex-col gap-2">
-      {liveReadFailed && (
+    <div ref={mapRootRef} data-passenger-map className="relative h-full w-full" style={{ "--tracking-controls-inset": `${controlsInset}px` } as CSSProperties}>
+      <div data-map-notices className="pointer-events-none absolute left-4 right-20 z-40 flex flex-col gap-2" style={{ top: "calc(var(--tracking-controls-inset, 0px) + 16px)" }}>
+      {(liveReadFailed || !liveUpdatesAvailable) && (
         <div className="rounded-xl px-4 py-2.5 text-[12px] font-semibold"
-          style={{ background: "var(--status-warning-bg)", color: "var(--status-warning)" }} role="alert">
+          style={{ background: "var(--surface-2)", color: "var(--status-warning)" }} role="alert">
           Live bus updates are unavailable. Check your connection and reload to retry.
         </div>
       )}
@@ -509,11 +529,11 @@ function PassengerMapInner({
         </div>
       )}
       {/* Telemetry silence does not identify a receiver or network failure. */}
-      {!liveReadFailed && signalLostBuses.length > 0 && (
+      {!liveReadFailed && liveUpdatesAvailable && signalLostBuses.length > 0 && (
         <div role="status" aria-live="polite">
           <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[12px] font-semibold"
             style={{ 
-              background: "var(--status-warning-bg)", 
+              background: "var(--surface-2)",
               border: "1px solid rgba(251, 191, 36, 0.2)",
               color: "var(--status-warning)" 
             }}>
@@ -532,7 +552,7 @@ function PassengerMapInner({
           <div
             className="flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-[12px] font-semibold"
             style={{
-              background: "var(--status-warning-bg)",
+              background: "var(--surface-2)",
               border: "1px solid rgba(251, 191, 36, 0.2)",
               color: "var(--status-warning)",
             }}
@@ -568,6 +588,7 @@ function PassengerMapInner({
           {...MAP_OPTIONS}
         >
           <MapCenterer target={centerTarget} isCentered={isCentered}
+            controlsInset={controlsInset}
             previewPoints={!focusBus ? (routePath.length ? routePath : routeStops) : undefined}
             hasBus={Boolean(firstBusMarker.position)} />
           <DirectionsRoute
@@ -616,7 +637,7 @@ function PassengerMapInner({
 
           {/* Bus markers */}
           {Array.from(buses.values()).map(bus => (
-            <BusMarker key={bus.busId} bus={bus} signalLost={bus.deviceState !== "online" || isLiveBusSignalLost(liveBusFreshnessTimestamp(bus))} />
+            <BusMarker key={bus.busId} bus={bus} signalLost={!liveUpdatesAvailable || bus.deviceState !== "online" || isLiveBusSignalLost(liveBusFreshnessTimestamp(bus))} />
           ))}
 
           {/* Ordinary stops stay compact; labels are reserved for the current selection. */}
@@ -639,7 +660,7 @@ function PassengerMapInner({
 
 
 
-      <div className="absolute top-4 right-4 z-40 flex flex-col gap-2">
+      <div data-map-camera-controls className="absolute right-4 z-40 flex flex-col gap-2" style={{ top: "calc(var(--tracking-controls-inset, 0px) + 16px)" }}>
         <button
           disabled={!firstBusMarker.position}
           onClick={() => { setFocusBus(true); setIsCentered(true); }}
@@ -690,6 +711,7 @@ export default function PassengerMap(props: PassengerMapProps) {
         selectedBusKey={props.selectedBusKey}
         selectedDestinationStopId={props.selectedDestinationStopId}
         onStopEstimatesChange={props.onStopEstimatesChange}
+        liveUpdatesAvailable={props.liveUpdatesAvailable}
       />
     </div>
   );

@@ -93,8 +93,13 @@ test("destination ETA, passed stops, segmented road and one bus glyph stay consi
 test("a detour replaces the original future road, retains covered road and restores configured tracking on rejoin", async ({ page }, info) => {
   await page.goto("/");
   const grey = page.locator('[data-road-color="#71717a"] polyline');
+  // Wait for the initial confident match, rather than sampling its stop-only
+  // first render before the marker selection has settled.
+  await expect.poll(async () => (await grey.getAttribute("points"))?.trim().split(/\s+/).length).toBe(3);
   const before = await grey.getAttribute("points");
   const configured = await page.locator('[data-road-color="#3b82f6"] polyline').first().getAttribute("points");
+  await page.getByRole("button", { name: "Publish uncertain fix", exact: true }).click();
+  await expect(grey).toHaveAttribute("points", before!);
   await page.getByRole("button", { name: "Publish pending detour", exact: true }).click();
   await expect(page.locator('[data-road-color="#3b82f6"]')).toHaveCount(0);
   await expect(grey).toHaveAttribute("points", before!);

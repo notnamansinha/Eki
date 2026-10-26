@@ -11,7 +11,7 @@ vi.mock("@/lib/firebaseDatabase", () => ({ rtdb: {} }));
 vi.mock("@/lib/authState", () => ({ waitForAuth: async () => {}, getAuthVerificationGeneration: () => state.generation }));
 vi.mock("./useAuth", () => ({ useAuth: () => ({ user: state.user, loading: false, roleError: null }) }));
 import { useLiveRouteCatalog } from "./useLiveRouteCatalog";
-import { BUS_EXPIRY_MS } from "@/lib/liveBusFreshness";
+import { SIGNAL_LOST_MS } from "@/lib/liveBusFreshness";
 const markerPath = "clientProjectionStatus/public", catalogPath = "liveRouteCatalog/values";
 const flush = async () => { for (let step = 0; step < 4; step++) await Promise.resolve(); };
 const emit = (path: string, value: unknown) => state.listeners.get(path)!.receive({ val: () => value });
@@ -22,23 +22,23 @@ describe("route catalog freshness and access", () => {
   it("expires each preview at the configured deadline without another database event", async () => {
     const at = Date.now(); const { result } = renderHook(() => useLiveRouteCatalog()); await act(flush);
     act(() => { ready(); emit(catalogPath, { "route:A": { active: 1, available: 2, freshestAt: at,
-      availableReceipts: [at - BUS_EXPIRY_MS + 1000, at] } }); });
+      activeReceipts: [at], availableReceipts: [at - SIGNAL_LOST_MS + 999, at] } }); });
     expect(result.current.catalog.A.available).toBe(2);
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(result.current.catalog.A.available).toBe(1);
-    await act(async () => { await vi.advanceTimersByTimeAsync(BUS_EXPIRY_MS - 1000); });
-    expect(result.current.catalog.A).toMatchObject({ active: 1, available: 0 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS); });
+    expect(result.current.catalog.A).toMatchObject({ active: 0, available: 0 });
   });
   it("uses configured expiry and rejects stale or far future preview receipts", async () => {
     const now = Date.now(); const { result } = renderHook(() => useLiveRouteCatalog()); await act(flush);
     act(() => { ready(); emit(catalogPath, { "route:A": { active: 0, available: 2, freshestAt: now,
-      availableReceipts: [now - BUS_EXPIRY_MS, now + 10_001] } }); });
+      availableReceipts: [now - SIGNAL_LOST_MS - 1, now + 10_001] } }); });
     expect(result.current.catalog.A.available).toBe(0);
   });
   it("hides cross-generation data immediately and reports permission denial with recovery", async () => {
     const { result, rerender } = renderHook(() => useLiveRouteCatalog()); await act(flush);
     const old = state.listeners.get(catalogPath)!.receive;
-    act(() => { ready(); old({ val: () => ({ "route:A": { active: 1, available: 0, freshestAt: 0 } }) }); });
+    act(() => { ready(); old({ val: () => ({ "route:A": { active: 1, available: 0, freshestAt: 0, activeReceipts: [Date.now()] } }) }); });
     expect(result.current.catalog.A.active).toBe(1);
     state.generation++; state.user = null; rerender();
     expect(result.current.catalog).toEqual({});
@@ -50,5 +50,11 @@ describe("route catalog freshness and access", () => {
     act(() => result.current.retry()); await act(flush);
     act(() => { ready(); emit(catalogPath, null); });
     expect(result.current.error).toBeNull(); expect(result.current.catalogReady).toBe(true);
+  });
+  it("fails closed for legacy durable counts and malformed active leases", async () => {
+    const { result } = renderHook(() => useLiveRouteCatalog()); await act(flush);
+    act(() => { ready(); emit(catalogPath, { "route:legacy": { active: 8 }, "route:bad": { active: 1, activeReceipts: [NaN] } }); });
+    expect(result.current.catalog.legacy.active).toBe(0);
+    expect(result.current.catalog.bad).toBeUndefined();
   });
 });

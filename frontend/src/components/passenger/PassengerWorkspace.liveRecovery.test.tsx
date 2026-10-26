@@ -16,7 +16,7 @@ vi.mock("@/hooks/useSettings", () => ({ useSettings: () => ({ settings: {} }) })
 vi.mock("@/hooks/useLiveRouteCatalog", () => ({ useLiveRouteCatalog: () => ({ catalog: { A: { active: 1, available: 0 }, B: { active: 1, available: 0 } }, projectionReady: true, catalogReady: true, error: null, retry: fixture.retryCatalog }) }));
 vi.mock("@/lib/authState", () => ({ getAuthVerificationGeneration: () => fixture.generation }));
 vi.mock("@/lib/joinedRideStatus", () => ({ getJoinedRideStatus: async (sessionId: string) => ({ sessionId, busId: "bus", routeId: "A", status: "active" }) }));
-vi.mock("@/hooks/useRTDBResume", () => ({ useRTDBResume: () => ({ isResuming: true, connectionGeneration: fixture.generation, resumeGeneration: 0, markSnapshotReceived: fixture.mark }) }));
+vi.mock("@/hooks/useRTDBResume", () => ({ useRTDBResume: () => ({ isResuming: false, isConnected: true, connectionGeneration: fixture.generation, resumeGeneration: 0, markSnapshotReceived: fixture.mark }) }));
 vi.mock("@/lib/liveBusStore", () => ({ invalidateLiveBusCache: fixture.invalidate,
   subscribeLiveBusChangesByRoute: (route: string, next: (change: LiveBusChange) => void, error: (error: Error) => void) => {
     const listener = { next, error }; fixture.listeners.set(route, listener);
@@ -31,7 +31,7 @@ vi.mock("@/components/passenger/ui/RouteCarousel", () => ({ default: ({ onClick 
 vi.mock("@/components/passenger/AccountTab", () => ({ default: () => <div>Account</div> }));
 vi.mock("@/components/shared/MessagingPanel", () => ({ default: () => <div>Chat</div> }));
 vi.mock("@/components/shared/FeedbackModal", () => ({ default: ({ sessionId }: { sessionId: string }) => <div>Feedback {sessionId}</div> }));
-const bus = (route = "A", session = "joined") => ({ busId: "bus", routeId: route, sessionId: session, driverId: "driver", status: "active", tripState: "in_service", direction: "forward", lat: 23, lng: 72, timestamp: Date.now() });
+const bus = (route = "A", session = "joined") => ({ busId: "bus", routeId: route, sessionId: session, driverId: "driver", deviceState: "online", status: "active", tripState: "in_service", direction: "forward", lat: 23, lng: 72, timestamp: Date.now() });
 const deliver = (route: string, value = bus(route)) => fixture.listeners.get(route)!.next({ type: "reset", snapshot: { [`node:bus_${route}`]: value }, source: "listener" });
 beforeEach(() => { localStorage.clear(); fixture.listeners.clear(); fixture.mark.mockClear(); fixture.invalidate.mockClear(); fixture.generation = 0; });
 afterEach(() => { cleanup(); vi.useRealTimers(); });

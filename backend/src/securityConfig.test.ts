@@ -745,7 +745,6 @@ describe("production security configuration", () => {
     expect(sessionsRoute).toContain('router.post("/:sessionId/join", requireAuth');
     expect(sessionsRoute).toContain('router.post("/:sessionId/boarding-code", requireAuth');
     expect(sessionsRoute).toContain('user?.role === "admin"');
-    expect(sessionsRoute).toContain("boardingCodesMatch");
     expect(sessionsRoute).toContain("validateLiveBoardingProjection");
     expect(sessionsRoute).toContain("db.runTransaction");
     expect(sessionsRoute).toContain('new FieldPath("passengers", user.uid)');

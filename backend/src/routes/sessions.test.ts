@@ -35,7 +35,6 @@ vi.mock("../lib/firebaseAdmin", () => {
   });
   const sessionData = () => ({
     status: harness.sessionStatus,
-    boardingCode: "ABCD2345",
     busId: "bus_1",
     routeId: "route_1",
     direction: harness.sessionDirection,
@@ -136,7 +135,6 @@ async function join(body: Record<string, unknown>) {
     method: v2 ? "PUT" : "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      boardingCode: "ABCD2345",
       boardingStopId: "stop_1",
       alightingStopId: "stop_2",
       ...body,
@@ -146,6 +144,12 @@ async function join(body: Record<string, unknown>) {
 
 describe.each([false, true])("session passenger join route v2=%s", mode => {
   beforeEach(() => { v2 = mode; });
+  it("boards a nearby authenticated passenger without a boarding code", async () => {
+    const response = await join({ lat: 23, lng: 72.5, accuracy: 20 });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ joined: true, sessionId: "session_1" });
+    expect(harness.updates).toHaveLength(1);
+  });
   it("cannot modify retained membership after profile retirement", async () => {
     harness.profileExists = false;
     harness.sessionPassengers = { passenger_1: { userId: "passenger_1", userName: "Retained name" } };

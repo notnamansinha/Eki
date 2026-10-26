@@ -22,15 +22,17 @@ export function sliceRoadPath(path: readonly LatLng[], from: number, to: number)
 
 /** Bound partial-leg paint to the server's next stop; a visual projection cannot skip a stop. */
 export function routeProgressPaths(path: readonly LatLng[], legs: ReadonlyMap<number, LatLng[]>, nextIndex: number,
-  matchedDistance?: number): { completed: LatLng[]; active: LatLng[] } {
+  matchedDistance?: number): { completed: LatLng[]; active: LatLng[]; matchedDistanceM?: number } {
   let start = 0;
   for (const [index, leg] of legs) {
     const distances = preparePolylineDistanceIndex(leg).cumulative;
     const end = start + distances[distances.length - 1];
     if (index === nextIndex) {
-      const split = typeof matchedDistance === "number" && Number.isFinite(matchedDistance) &&
-        matchedDistance >= start && matchedDistance <= end ? matchedDistance : start;
-      return { completed: sliceRoadPath(path, 0, split), active: sliceRoadPath(path, split, end) };
+      const validMatch = typeof matchedDistance === "number" && Number.isFinite(matchedDistance) &&
+        matchedDistance >= start && matchedDistance <= end;
+      const split = validMatch ? matchedDistance : start;
+      return { completed: sliceRoadPath(path, 0, split), active: sliceRoadPath(path, split, end),
+        ...(validMatch ? { matchedDistanceM: matchedDistance } : {}) };
     }
     start = end;
   }

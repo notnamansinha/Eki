@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 
 export const passengerTopSpacerStyle: CSSProperties = {
   height: "34vh",
-  minHeight: "250px",
+  minHeight: "min(250px, 20dvh)",
 };
 
 export const passengerPanelClassName =

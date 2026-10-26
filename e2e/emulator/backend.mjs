@@ -36,6 +36,7 @@ globalThis.fetch = providers.fetch;
 process.env.GOOGLE_MAPS_API_KEY = syntheticProviderKey;
 const { hashDeviceSecret, invalidateDeviceCredentialCache } = require(resolve(root, 'backend/dist/services/deviceTelemetryService.js'));
 const { publishUserAuthorization } = require(resolve(root, 'backend/dist/services/userAuthorization.js'));
+const { routeAvailability } = require(resolve(root, 'backend/dist/services/liveBusProjection.js'));
 const deviceSecret = 'synthetic-browser-device-only';
 const secretHash = await hashDeviceSecret(deviceSecret);
 let epoch;
@@ -89,7 +90,7 @@ async function reset() {
     currentStopIndex: 0, timestamp: epoch, backendReceivedAt: Date.now(), seq: 1 };
   await realtime.ref().set({ activeBuses: { [`qa_bus_${route.id}`]: live },
     publicRouteBuses: { [`route:${route.id}`]: { buses: { [`node:qa_bus_${route.id}`]: live } } },
-    liveRouteCatalog: { values: { [`route:${route.id}`]: { active: 1, available: 0, availableReceipts: [], freshestAt: Date.now() } } },
+    liveRouteCatalog: { values: { [`route:${route.id}`]: routeAvailability({ fixture: live }) } },
     clientProjectionStatus: { public: { schemaVersion: 1, ready: true } } });
   // Initialize current admin authority after replacing the RTDB fixture root.
   // Use the real publisher so browser reads exercise the migrated rules policy.

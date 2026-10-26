@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useState, useEffect } from "react";
-import { BUS_EXPIRY_MS } from "../../frontend/src/lib/liveBusFreshness";
+import { isPassengerBusSelectable } from "../../frontend/src/lib/passengerAvailability";
 const subscribers = new Set<() => void>();
 export const route = {
   id: "qa-route", name: "QA route", color: "#3B82F6", duration: "600s", waypoints: [],
@@ -17,6 +17,12 @@ export function setScenario(next: string) {
   const bus = fixtureBus(next === "pending" || next === "reconnecting" ? null : next === "reverse" ? "reverse" : "forward");
   snapshot = next === "empty" ? {} : next === "device" ? { bus: { busId: bus.busId, routeId: bus.routeId, deviceState: "online", status: "offline", timestamp: Date.now(), lat: 23.004, lng: 72.004, heading: 0, speed: 0, motionState: "stopped" } } : next === "multiple" ? { bus, second: fixtureBus("reverse", "qa-session-2", "qa-bus-2") } : { bus };
   if (next === "completed") snapshot = { bus: { ...bus, tripState: "completed" } };
+  if (next === "stale") snapshot = { bus: { ...bus, timestamp: Date.now() - 120_000, backendReceivedAt: Date.now() - 120_000 } };
+  if (next === "offline") snapshot = { bus: { ...bus, deviceState: "offline" } };
+  if (next === "multiple-stale") snapshot = {
+    bus: { ...bus, timestamp: Date.now() - 120_000, backendReceivedAt: Date.now() - 120_000 },
+    second: fixtureBus("reverse", "qa-session-2", "qa-bus-2"),
+  };
   if (next === "two-routes") snapshot = { bus, second: { ...fixtureBus("reverse", "qa-session-B", "qa-bus-B"), routeId: "qa-route-2" } };
   if (next === "mixed") snapshot = { bus, second: {
     busId: "qa-bus-2", routeId: route.id, deviceState: "online", timestamp: Date.now(),
@@ -43,7 +49,7 @@ export function useSettings() {
   } };
 }
 const markSnapshotReceived = () => {};
-export function useRTDBResume() { const current = useScenario(); return { isResuming: current === "reconnecting", resumeGeneration: 0, connectionGeneration: current === "reconnecting" ? 1 : 0, markSnapshotReceived }; }
+export function useRTDBResume() { const current = useScenario(); return { isConnected: current !== "reconnecting", isResuming: current === "reconnecting", resumeGeneration: 0, connectionGeneration: current === "reconnecting" ? 1 : 0, markSnapshotReceived }; }
 
 export function subscribeLiveBusesByRoute(routeId: string, listener: (value: Record<string, unknown>) => void) {
   return subscribeLiveBusChanges((change: unknown) => {
@@ -66,8 +72,8 @@ export function useLiveRouteCatalog() {
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const buses = Object.values(snapshot) as Record<string, unknown>[];
-  return { catalog: Object.fromEntries([route.id, "qa-route-2"].map(routeId => [routeId, { active: buses.filter(bus => bus.routeId === routeId && bus.sessionId && bus.tripState !== "completed").length,
-    available: buses.filter(bus => bus.routeId === routeId && !bus.sessionId && bus.deviceState === "online" && now - Number(bus.timestamp) < BUS_EXPIRY_MS).length, freshestAt: Date.now() }])), projectionReady: scenario !== "projection-unready", catalogReady: scenario !== "catalog-denied", error: scenario === "catalog-denied" ? "QA synthetic route catalog PERMISSION_DENIED. Retry after checking permissions." : scenario === "projection-unready" ? "QA synthetic projection unavailable: worker backfill/schema is not ready." : null, retry: () => setScenario("two-routes") };
+  return { catalog: Object.fromEntries([route.id, "qa-route-2"].map(routeId => [routeId, { active: buses.filter(bus => bus.routeId === routeId && bus.sessionId && bus.tripState !== "completed" && isPassengerBusSelectable(bus, now)).length,
+    available: buses.filter(bus => bus.routeId === routeId && !bus.sessionId && isPassengerBusSelectable(bus, now)).length, freshestAt: Date.now() }])), projectionReady: scenario !== "projection-unready", catalogReady: scenario !== "catalog-denied", error: scenario === "catalog-denied" ? "QA synthetic route catalog PERMISSION_DENIED. Retry after checking permissions." : scenario === "projection-unready" ? "QA synthetic projection unavailable: worker backfill/schema is not ready." : null, retry: () => setScenario("two-routes") };
 }
 export function getJoinedRideStatus(sessionId: string) { return Promise.resolve({ sessionId, busId: "qa-bus", routeId: route.id, status: "completed" }); }
 export function getAuthVerificationGeneration() { return 1; }

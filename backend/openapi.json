@@ -5325,7 +5325,7 @@
           "Sessions"
         ],
         "summary": "Join or update the authenticated passenger manifest entry",
-        "description": "Requires passenger token, valid nonpublic boarding code, route-owned stops ordered by session direction. First join requires lat/lng/accuracy<=100m within 150m of fresh <=60s nonfuture device-backed exact session/bus/route fix. Existing authenticated membership may update stops without coordinates; transaction rechecks state/code/membership. Manifest limit 1000; UID/name/timestamps are server-derived.",
+        "description": "Requires passenger token, route-owned stops ordered by session direction. First join requires lat/lng/accuracy<=100m within 150m of fresh <=60s nonfuture device-backed exact session/bus/route fix. Existing authenticated membership may update stops without coordinates; transaction rechecks state/assignment/direction/membership. Manifest limit 1000; UID/name/timestamps are server-derived. Boarding codes are not required. Browser coordinates remain client-supplied location evidence.",
         "security": [
           {
             "FirebaseBearer": []
@@ -8471,7 +8471,7 @@
           "Sessions"
         ],
         "summary": "Join or update the authenticated passenger manifest entry",
-        "description": "Requires passenger token, valid nonpublic boarding code, route-owned stops ordered by session direction. First join requires lat/lng/accuracy<=100m within 150m of fresh <=60s nonfuture device-backed exact session/bus/route fix. Existing authenticated membership may update stops without coordinates; transaction rechecks state/code/membership. Manifest limit 1000; UID/name/timestamps are server-derived.",
+        "description": "Requires passenger token, route-owned stops ordered by session direction. First join requires lat/lng/accuracy<=100m within 150m of fresh <=60s nonfuture device-backed exact session/bus/route fix. Existing authenticated membership may update stops without coordinates; transaction rechecks state/assignment/direction/membership. Manifest limit 1000; UID/name/timestamps are server-derived. Boarding codes are not required. Browser coordinates remain client-supplied location evidence.",
         "security": [
           {
             "FirebaseBearer": []
@@ -12408,10 +12408,6 @@
       "JoinInput": {
         "type": "object",
         "properties": {
-          "boardingCode": {
-            "type": "string",
-            "description": "Normalized to uppercase with whitespace/hyphens removed before validating the eight-character code."
-          },
           "boardingStopId": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]{1,128}$"
@@ -12437,11 +12433,11 @@
           }
         },
         "required": [
-          "boardingCode",
           "boardingStopId",
           "alightingStopId"
         ],
-        "additionalProperties": true
+        "additionalProperties": true,
+        "description": "Choose boarding and destination stops. First boarding also requires a fresh browser location near the live bus. No boarding code is required; legacy extra fields are ignored."
       },
       "Joined": {
         "type": "object",

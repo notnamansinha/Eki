@@ -21,7 +21,7 @@ Open `http://localhost:3000`. Restart after changing public environment variable
 
 ## Workflows
 
-- Passenger: select a route, bus and destination; track live position; join an armed/active ride using the boarding code; view the timeline, messages, account and feedback.
+- Passenger: select a route, bus and destination; track live position; join an armed/active ride after sign-in and a live-bus proximity check; view the timeline, messages, account and feedback.
 - Passenger account deletion: **Profile → Delete Account** opens a confirmation explaining that feedback, passenger ride entries and messages are retained. A valid API acknowledgement opens **Deletion requested**; OK, Escape or backdrop dismissal signs the passenger out. Failed requests keep the passenger signed in. Sign-out confirms neither deletion completion nor a deadline; the backend worker processes the queue asynchronously. See [account deletion and recovery](../docs/operations/PRIVACY_DELETION.md).
 - Passenger selectors: destination and bus controls stay inside the web app. Destination order follows the ride direction, falls back to the terminal stop, and carries into boarding as `alightingStopId`. Device-only presence supports planning but cannot grant boarding eligibility.
 - Passenger boarding: Auth-token and location preparation each have a ten-second deadline, followed by a separate full ten-second API budget. Location denial, unavailable position and acquisition timeout are distinct; session changes and unmount cancel old work. Existing members may still correct stops without another location prompt. See [boarding request checks](../docs/testing/BOARDING_REQUEST_BUDGETS.md).

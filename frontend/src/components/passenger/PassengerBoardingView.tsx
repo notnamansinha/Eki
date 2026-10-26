@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RouteData } from "@/hooks/useRoutes";
 import InAppSelect from "@/components/ui/InAppSelect";
 import { errorMessage } from "@/lib/errors";
@@ -70,10 +70,6 @@ function getCurrentPosition(): Promise<{ lat: number; lng: number; accuracy: num
   });
 }
 
-function normalizeCode(value: string): string {
-  return value.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g, "").slice(0, 8);
-}
-
 export default function PassengerBoardingView({
   sessionId,
   route,
@@ -84,10 +80,8 @@ export default function PassengerBoardingView({
   onDestinationStopChange,
   onJoined,
 }: Props) {
-  const codeHintId = useId();
   const [boardingStopId, setBoardingStopId] = useState("");
   const [alightingStopId, setAlightingStopId] = useState(destinationStopId ?? "");
-  const [boardingCode, setBoardingCode] = useState("");
   const [joinState, setJoinState] = useState<JoinState>("idle");
   const [joinError, setJoinError] = useState("");
   const [hasJoined, setHasJoined] = useState(false);
@@ -97,7 +91,7 @@ export default function PassengerBoardingView({
   const mountedRef = useRef(true);
   const sessionRef = useRef(sessionId);
   // Adjust only the session result when props change. Keep the passenger's
-  // draft choices/code, and never commit a frame showing the previous join.
+  // draft choices, and never commit a frame showing the previous join.
   if (renderedSessionId !== sessionId) {
     setRenderedSessionId(sessionId);
     setHasJoined(false);
@@ -155,9 +149,9 @@ export default function PassengerBoardingView({
       setJoinError("Sign in is required to board.");
       return;
     }
-    if (!boardingStopId || !alightingStopId || boardingStopId === alightingStopId || boardingCode.length !== 8) {
+    if (!boardingStopId || !alightingStopId || boardingStopId === alightingStopId) {
       setJoinState("error");
-      setJoinError("Choose boarding and destination stations, then enter the 8-character code from the driver.");
+      setJoinError("Choose distinct boarding and destination stations.");
       return;
     }
 
@@ -188,7 +182,6 @@ export default function PassengerBoardingView({
         },
         body: JSON.stringify({
           ...(position ?? {}),
-          boardingCode,
           boardingStopId,
           alightingStopId: alightingStopId || null,
         }),
@@ -267,39 +260,19 @@ export default function PassengerBoardingView({
           ...stopOptions.filter((stop) => stop.value !== boardingStopId)]}
         style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
       />
-      <div className="flex gap-2">
-        <input
-          value={boardingCode}
-          disabled={joinState === "joining"}
-          onChange={(event) => {
-            setBoardingCode(normalizeCode(event.target.value));
-            selectionChanged();
-          }}
-          className="min-w-0 flex-1 rounded-lg px-3 py-2 text-sm font-bold uppercase tracking-[0.18em] outline-none"
-          style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
-          aria-label="Boarding code"
-          aria-describedby={codeHintId}
-          placeholder="8-CHAR CODE"
-          autoComplete="one-time-code"
-          inputMode="text"
-        />
-        <button
-          type="button"
-          onClick={() => void joinRide()}
-          disabled={joinState === "joining" || !boardingStopId || !alightingStopId ||
-            boardingStopId === alightingStopId || boardingCode.length !== 8}
-          className="rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ background: "var(--status-live)", color: "var(--surface-0)" }}
-        >
-          {joinState === "joining" ? "Checking…" : joinState === "joined" ? "On board" : "Board"}
-        </button>
-      </div>
-      <p id={codeHintId} className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-        Enter the driver’s 8-character code. Spaces and hyphens are removed automatically.
-      </p>
+      <button
+        type="button"
+        onClick={() => void joinRide()}
+        disabled={joinState === "joining" || joinState === "joined" || !boardingStopId || !alightingStopId ||
+          boardingStopId === alightingStopId}
+        className="rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-50"
+        style={{ background: "var(--status-live)", color: "var(--surface-0)" }}
+      >
+        {joinState === "joining" ? "Checking…" : joinState === "joined" ? "On board" : "Board"}
+      </button>
       {joinState === "joining" && (
         <p className="text-[11px] font-semibold" style={{ color: "var(--status-warning)" }} role="status">
-          Verifying the session code and live bus position…
+          Verifying your boarding stops and live bus position…
         </p>
       )}
       {joinState === "joined" && (

@@ -291,7 +291,7 @@ Requires agreement among Auth claim, `drivers`, `buses`, route assignment and a 
 
 At the inferred origin, the session starts `active/in_service` and records stop 0. An active session always restores its immutable stored direction after hardware/backend interruption. After final-stop completion, a fresh stopped fix at that destination after the `AUTOMATIC_TURNAROUND_DWELL_MS` delay (default 30,000 ms; minimum 0) causes the backend to atomically arm a new session in the opposite direction; stale, moving, mid-route or contested state never auto-arms.
 
-An armed automatic return that has never departed survives overnight, but expires after 24 hours without session or matching lifecycle activity (or the configured abandoned-ride threshold, if longer). The hourly reconciler marks it interrupted and releases only its matching bus lock and lifecycle records, allowing a fresh shift. Unless a newer session owns the bus, a ride the reconciler times out also opens a new automatic-service generation and releases a terminal journey that ride consumed, so the receiver's next qualified fix starts a fresh automatic service without Resume tracking; a deliberate End ride pause stays in force. Unknown activity timestamps remain protected for manual inspection.
+An armed automatic return that has never departed survives overnight, but expires after 24 hours without session or matching lifecycle activity (or the configured abandoned-ride threshold, if longer). The hourly reconciler marks it interrupted and releases only its matching bus lock and lifecycle records, allowing a fresh shift. Unknown activity timestamps remain protected for manual inspection.
 
 ### `PATCH /api/shifts/delay` — assigned operator or admin
 

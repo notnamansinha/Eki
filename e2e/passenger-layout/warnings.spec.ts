@@ -1,23 +1,34 @@
 import { expect, test } from "@playwright/test";
 
-test("reconnecting status leaves the tracking title and destination control unobscured", async ({ page }, info) => {
-  await page.goto("/?scenario=reconnecting");
-  await expect(page.getByText("Reconnecting to live bus data...",{exact:true})).toBeVisible();
+async function scenario(page: import("@playwright/test").Page, value: string) {
+  await page.getByText("QA controls (synthetic)", { exact: true }).click();
+  await page.getByLabel("QA scenario").selectOption(value);
+  await page.getByText("QA controls (synthetic)", { exact: true }).click();
+}
+async function fullMap(page: import("@playwright/test").Page) {
+  const frame = (await page.locator("[data-passenger-tracking]").boundingBox())!;
+  const map = (await page.locator("[data-passenger-map]").boundingBox())!;
+  expect(map.y).toBeCloseTo(frame.y, 0);
+  expect(map.height).toBeCloseTo(frame.height, 0);
+  expect(frame.y).toBeGreaterThanOrEqual(0);
+}
+test("reconnecting retains a full map and paused tracking without new ride controls", async ({ page }, info) => {
+  await page.goto("/");
   await page.getByRole("button", { name: "Track QA route", exact: true }).click();
-  const title = page.getByRole("button", { name: "Back to home", exact: true }).locator("..").getByText(/→|Direction pending/).first();
-  for (const control of [title, page.getByRole("combobox", { name: "Destination station" })]) {
-    await expect(control).toBeVisible();
-    expect(await control.evaluate(el => {
-      const r=el.getBoundingClientRect(), top=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
-      return top===el || el.contains(top);
-    })).toBe(true);
-  }
+  await scenario(page, "reconnecting");
+  await expect(page.getByText("Reconnecting to live bus data...",{exact:true})).toBeVisible();
+  await expect(page.getByText("Live tracking paused", { exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Destination station" })).toHaveCount(0);
+  await fullMap(page);
+  await page.getByRole("button", { name: "Back to home", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Track QA route", exact: true })).toHaveCount(0);
   await page.screenshot({path:info.outputPath("reconnecting-header.png")});
 });
 
 test("destination dropdown stays above notices in the map pane", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  await fullMap(page);
   await page.getByRole("combobox", { name: "Destination station" }).click();
   for (const name of ["Alpha", "Beta"]) {
     const option = page.getByRole("option", { name, exact: true });
@@ -40,13 +51,14 @@ test("location delay stays below variable ride controls and clears on recovery",
   const warning = page.getByText(/Live location updates delayed/);
   await expect(page.getByLabel("Synthetic map", { exact: true })).toBeVisible();
   await expect(warning).toHaveCount(0);
-  await page.clock.runFor(90_001);
+  await page.clock.runFor(95_001);
   await expect(warning).toBeVisible();
   // Visibility alone does not establish that another layer leaves text readable.
   const header = page.getByRole("button", { name: "Back to home", exact: true }).locator("..").locator("..");
   const headerBox = (await header.boundingBox())!;
   const warningBox = (await warning.boundingBox())!;
   expect(warningBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
+  await fullMap(page);
   expect(await warning.evaluate(element => {
     const box = element.getBoundingClientRect();
     // Notices deliberately pass pointer events through to the map. Enable
@@ -64,4 +76,43 @@ test("location delay stays below variable ride controls and clears on recovery",
   await page.getByText("QA controls (synthetic)", { exact: true }).click();
   await page.getByLabel("QA scenario").selectOption("reverse");
   await expect(warning).toHaveCount(0);
+});
+
+test("offline buses disappear from new choices and return on fresh telemetry", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  await scenario(page, "offline");
+  await expect(page.getByText("Live tracking paused", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open live chat", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Back to home", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Track QA route", exact: true })).toHaveCount(0);
+  await scenario(page, "pending");
+  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Destination station" })).toBeVisible();
+  await fullMap(page);
+});
+
+test("one stale bus neither hides another fresh bus nor becomes a picker option", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  await scenario(page, "multiple-stale");
+  await expect(page.getByText("Live tracking paused", { exact: true })).toBeVisible();
+  await page.getByRole("combobox", { name: "Live bus", exact: true }).click();
+  await expect(page.getByRole("listbox", { name: "Live bus", exact: true }).getByRole("option")).toHaveCount(1);
+  await page.getByRole("option", { name: "Bus qa-bus-2 · B → A", exact: true }).click();
+  await expect(page.getByText("Live tracking paused", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Back to home", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Track QA route", exact: true })).toBeVisible();
+});
+
+test("navigation cannot scroll the tracking frame under the viewport", async ({ page }) => {
+  await page.goto("/");
+  for (let visit = 0; visit < 3; visit++) {
+    await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+    await page.getByLabel("Synthetic map", { exact: true }).waitFor();
+    await fullMap(page);
+    await page.getByRole("button", { name: "Back to home", exact: true }).click();
+    await page.getByRole("button", { name: "Profile", exact: true }).click();
+    await page.getByRole("button", { name: "Routes", exact: true }).click();
+  }
 });

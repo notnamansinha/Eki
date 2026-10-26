@@ -76,7 +76,7 @@ import { getLiveBusProjectionStatus, publicLiveBus, startLiveBusProjection } fro
 
 let stop: (() => Promise<void>) | undefined;
 let fence: WorkerFence;
-const live = (sessionId = "current", routeId = "route1", busId = "bus1") => ({ busId, routeId, sessionId, status: "active", tripState: "in_service", direction: "forward", timestamp: Date.now(), lat: 23, lng: 72 });
+const live = (sessionId = "current", routeId = "route1", busId = "bus1") => ({ busId, routeId, sessionId, deviceState: "online", status: "active", tripState: "in_service", direction: "forward", timestamp: Date.now(), lat: 23, lng: 72 });
 const routeKey = (routeId: string) => `route:${routeId}`;
 const routePath = (routeId: string) => `publicRouteBuses/${routeKey(routeId)}`;
 const projection = (routeId: string) => fixture.data.publicRouteBuses?.[routeKey(routeId)];
@@ -269,7 +269,7 @@ describe("independent public projection fencing and lifecycle regressions", () =
     fixture.data.publicRouteBuses = exists ? { [routeKey("route1")]: { _workerGeneration: 3, revision: 5 } } : {};
     fixture.data.liveRouteCatalog = { _workerGeneration: 3, values: { [routeKey("route1")]: { active: 1, available: 2, freshestAt: 1, availableReceipts: [1] } }, revisions: { [routeKey("route1")]: 5 } };
     start(4); await recover();
-    expect(fixture.data.liveRouteCatalog.values[routeKey("route1")]).toEqual({ active: 0, available: 0, freshestAt: 0, availableReceipts: [] });
+    expect(fixture.data.liveRouteCatalog.values[routeKey("route1")]).toEqual({ active: 0, available: 0, freshestAt: 0, activeReceipts: [], availableReceipts: [] });
     expect(fixture.data.liveRouteCatalog._workerGeneration).toBe(4);
     expect(projection("route1")._workerGeneration).toBe(4);
     expect(fixture.data.clientProjectionStatus.public.ready).toBe(true);
@@ -279,7 +279,8 @@ describe("independent public projection fencing and lifecycle regressions", () =
     fixture.data.activeBuses = { bus1_route1: live() };
     fixture.data.liveRouteCatalog = { _workerGeneration: 3, values: { [routeKey("route1")]: { active: 0, available: 2, freshestAt: 1, availableReceipts: [1] } }, revisions: { [routeKey("route1")]: 5 } };
     start(4); await recover();
-    expect(fixture.data.liveRouteCatalog.values[routeKey("route1")]).toEqual({ active: 1, available: 0, freshestAt: 0, availableReceipts: [] });
+    expect(fixture.data.liveRouteCatalog.values[routeKey("route1")]).toMatchObject({ active: 1, available: 0, availableReceipts: [] });
+    expect(fixture.data.liveRouteCatalog.values[routeKey("route1")].activeReceipts).toHaveLength(1);
     expect(projection("route1")._workerGeneration).toBe(4);
     expect(fixture.data.clientProjectionStatus.public.ready).toBe(true);
   });
@@ -289,7 +290,8 @@ describe("independent public projection fencing and lifecycle regressions", () =
     fixture.data.liveRouteCatalog = { _workerGeneration: 4, generations: { [routeKey("route1")]: 4 }, values: { [routeKey("route1")]: { active: 8, available: 2, freshestAt: 1, availableReceipts: [1] } }, revisions: { [routeKey("route1")]: 5 } };
     start(4); await recover();
     expect(fixture.data.clientProjectionStatus.public.ready).toBe(true);
-    expect(fixture.data.liveRouteCatalog.values[routeKey("route1")]).toEqual({ active: sourceExists ? 1 : 0, available: 0, freshestAt: 0, availableReceipts: [] });
+    expect(fixture.data.liveRouteCatalog.values[routeKey("route1")]).toMatchObject({ active: sourceExists ? 1 : 0, available: 0, availableReceipts: [] });
+    expect(fixture.data.liveRouteCatalog.values[routeKey("route1")].activeReceipts).toHaveLength(sourceExists ? 1 : 0);
     expect(projection("route1")._workerGeneration).toBe(4);
     expect(fixture.data.clientProjectionStatus.public.ready).toBe(true);
   });

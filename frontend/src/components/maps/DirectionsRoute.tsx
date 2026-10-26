@@ -118,7 +118,8 @@ export default function DirectionsRoute({ routeId, stops, polyline, polylineQual
   const baseColor = nextStopIndices !== undefined ? "#3b82f6" : (color ?? "#3b82f6");
   const singleProgress = (JSON.parse(activeIndices) as number[]).length === 1;
   const completedIndex = publishedStopIndex(completedStopIndex, stableStops.length);
-  const confirmedPrefix = useRef<{ path: LatLng[]; context: string; completed: LatLng[] } | null>(null);
+  const confirmedPrefix = useRef<{ path: LatLng[]; context: string; nextStopIndex: number;
+    sections: ReturnType<typeof routeProgressPaths> } | null>(null);
 
   useEffect(() => {
     onGeometryReady?.(path);
@@ -178,12 +179,17 @@ export default function DirectionsRoute({ routeId, stops, polyline, polylineQual
         strokeWeight: hasBuses ? 5 : 3, strokeOpacity: 1, zIndex, map }));
     };
     if (completedIndex !== undefined && completedIndex > 0) {
-      add(confirmedPrefix.current?.completed ?? routeProgressPaths(path, legs, completedIndex).completed, "#71717a", 22);
+      add(confirmedPrefix.current?.sections.completed ?? routeProgressPaths(path, legs, completedIndex).completed, "#71717a", 22);
     }
     for (const index of JSON.parse(activeIndices) as number[]) {
       if (singleProgress) {
-        const sections = routeProgressPaths(path, legs, index, progressDistanceM);
-        if (progressContext && !hideRemaining) confirmedPrefix.current = { path, context: progressContext, completed: sections.completed };
+        const measured = routeProgressPaths(path, legs, index, progressDistanceM);
+        const sections = measured.matchedDistanceM === undefined && confirmedPrefix.current?.nextStopIndex === index
+          ? confirmedPrefix.current.sections : measured;
+        if (progressContext && !hideRemaining && (measured.matchedDistanceM !== undefined ||
+            !confirmedPrefix.current || confirmedPrefix.current.nextStopIndex !== index)) {
+          confirmedPrefix.current = { path, context: progressContext, nextStopIndex: index, sections };
+        }
         add(sections.completed, "#71717a", 22);
         if (!hideRemaining) add(sections.active, "#3b82f6", 23);
       } else {

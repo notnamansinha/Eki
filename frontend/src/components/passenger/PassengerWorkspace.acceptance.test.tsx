@@ -29,7 +29,7 @@ vi.mock("@/lib/authState", () => ({ getAuthVerificationGeneration: () => fixture
 vi.mock("@/lib/joinedRideStatus", () => ({ getJoinedRideStatus: (sessionId: string, signal?: AbortSignal) => fixture.status(sessionId, signal) }));
 vi.mock("@/hooks/useRTDBResume", () => ({ useRTDBResume: () => {
   useFixtureRevision();
-  return { isResuming: true, isConnected: true, connectionGeneration: fixture.connectionGeneration, resumeGeneration: fixture.resumeGeneration, markSnapshotReceived: fixture.mark };
+  return { isResuming: false, isConnected: true, connectionGeneration: fixture.connectionGeneration, resumeGeneration: fixture.resumeGeneration, markSnapshotReceived: fixture.mark };
 } }));
 vi.mock("@/hooks/useLiveRouteCatalog", () => ({ useLiveRouteCatalog: () => {
   useFixtureRevision();

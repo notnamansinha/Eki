@@ -32,7 +32,7 @@ vi.mock("../lib/firebaseAdmin", () => {
 import { getLiveBusProjectionStatus, publicLiveBus, routeAvailability, startLiveBusProjection } from "./liveBusProjection";
 import { lifecycleIntakeFingerprint } from "./lifecycleIntake";
 let stop: (() => Promise<void>) | undefined;
-const live = (sessionId = "s1") => ({ busId: "bus1", routeId: "route1", sessionId, status: "active", tripState: "in_service", timestamp: Date.now(), lat: 23, lng: 72 });
+const live = (sessionId = "s1") => ({ busId: "bus1", routeId: "route1", sessionId, deviceState: "online", status: "active", tripState: "in_service", timestamp: Date.now(), lat: 23, lng: 72 });
 const emit = (event: string, value: any) => fixture.listeners.get(event)?.({ key: "bus1_route1", val: () => value });
 async function settle() { for (let n = 0; n < 40; n++) await Promise.resolve(); }
 function start(generation = 1) { const fence = new WorkerFence("test", generation, performance.now() + 100_000); stop = fence.run(startLiveBusProjection); return fence; }
@@ -61,8 +61,24 @@ describe("public live projection", () => {
     }
   });
   it("counts active rides separately from fresh sessionless previews", () => {
-    expect(routeAvailability({ active: live(), stale: { deviceState: "online", timestamp: 1 }, fresh: { deviceState: "online", timestamp: 600_001 }, done: { ...live(), tripState: "completed" } }, 600_001)).toEqual({ active: 1, available: 1, freshestAt: 600_000, availableReceipts: [1, 600_001] });
-    expect(routeAvailability({ offlineRide: { ...live(), deviceState: "offline" } }, 600_001)).toEqual({ active: 0, available: 0, freshestAt: 0, availableReceipts: [] });
+    expect(routeAvailability({ active: { ...live(), timestamp: 600_001 }, stale: { deviceState: "online", timestamp: 1 }, fresh: { deviceState: "online", timestamp: 600_001 }, done: { ...live(), tripState: "completed" } }, 600_001)).toEqual({ active: 1, available: 1, freshestAt: 600_000, activeReceipts: [600_000], availableReceipts: [600_000] });
+  });
+  it.each([
+    { deviceState: "offline" }, { automaticServicePaused: true },
+    { timestamp: 509_999 }, { timestamp: 610_001 }, { timestamp: NaN },
+    { timestamp: 509_999, backendReceivedAt: 600_000 },
+  ])("does not advertise an unavailable durable ride: %j", change => {
+    expect(routeAvailability({ bus: { ...live(), timestamp: 600_000, ...change } }, 600_000).active).toBe(0);
+  });
+  it("keeps a fresh bus selectable when another bus on its route goes silent", () => {
+    expect(routeAvailability({ stale: { ...live(), timestamp: 500_000 }, fresh: { ...live("s2"), timestamp: 600_000 } }, 600_000)).toMatchObject({ active: 1, activeReceipts: [600_000] });
+  });
+  it("does not rewrite catalog leases on every fix, but renews them across 30s buckets", () => {
+    const availability = (at: number) => routeAvailability({ bus: { ...live(), timestamp: at } }, at);
+    expect(availability(600_001)).toEqual(availability(629_999));
+    expect(availability(630_000)).not.toEqual(availability(629_999));
+    // Quantization never extends availability beyond the actual 90s deadline.
+    expect(routeAvailability({ bus: { ...live(), timestamp: 629_999 } }, 690_001).active).toBe(0);
   });
   it("re-reads authority instead of publishing a queued stale session and suppresses internal-only events", async () => {
     const old = live(); fixture.data.activeBuses = { bus1_route1: live("s2") }; start(); emit("child_changed", old); await settle();

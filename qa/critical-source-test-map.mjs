@@ -116,7 +116,9 @@ export const criticalSourceTestMap = [{
 }, {
   caseId: 'PAX02',
   scope: 'Pure passenger normalization distinguishes a powered device from an active service; complete map-preview acceptance remains separate.',
-  sourcePaths: ['frontend/src/lib/passengerLiveBus.ts'],
+  sourcePaths: ['frontend/src/lib/passengerLiveBus.ts', 'frontend/src/lib/passengerAvailability.ts'],
   tests: [link('frontend/src/lib/passengerLiveBus.test.ts', 'passenger live-bus normalization > does not advertise a fresh powered device as passenger service',
-    'Fresh sessionless/pending hardware does not become an active boardable service.')],
+    'Fresh sessionless/pending hardware does not become an active boardable service.'),
+  link('frontend/src/lib/passengerAvailability.test.ts', 'new passenger bus selections > accepts stationary fresh GPS without requiring movement or a direction',
+    'A new route selection requires live online telemetry; stationary fixes remain selectable without inventing movement or direction.')],
 }];

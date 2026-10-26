@@ -360,29 +360,24 @@ describe("versioned session identity and lifecycle", () => {
     end(); expect((await code()).status).toBe(403);
     expect(state.live).not.toHaveProperty("boardingCode");
   });
-  it("rejects a wrong boarding code and a code rotated before the transaction", async () => {
+  it("rejects a session ending between code-free proximity validation and manifest commit", async () => {
     const { sessionId } = await (await start()).json();
     state.docs.set(`ride_sessions/${sessionId}`, {
-      ...state.docs.get(`ride_sessions/${sessionId}`),
-      status: "active", direction: "forward", boardingCode: "ABZ2349H",
+      ...state.docs.get(`ride_sessions/${sessionId}`), status: "active", direction: "forward",
     });
     state.live = { ...state.live, sessionId, busId: "bus_1", routeId: "route_1",
       status: "active", tripState: "in_service", timestamp: Date.now() };
     state.user = { uid: "passenger", role: "passenger" };
-    const body = { boardingCode: "ABZ2349H", lat: 23, lng: 72.5, accuracy: 5,
-      boardingStopId: "stop_1", alightingStopId: "stop_2" };
-    const board = (override = {}) => contractFetch(`${base}/api/sessions/${sessionId}/join`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...body, ...override }),
-    });
-    expect((await board({ boardingCode: "ABZ2349J" })).status).toBe(403);
-    expect(state.docs.get(`ride_sessions/${sessionId}`)?.passengers).toEqual({});
     state.beforeTransactionRead = () => {
       state.docs.set(`ride_sessions/${sessionId}`, {
-        ...state.docs.get(`ride_sessions/${sessionId}`), boardingCode: "ABZ2349J",
+        ...state.docs.get(`ride_sessions/${sessionId}`), status: "completed",
       });
     };
-    expect((await board()).status).toBe(409);
+    const response = await contractFetch(`${base}/api/sessions/${sessionId}/join`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 23, lng: 72.5, accuracy: 5, boardingStopId: "stop_1", alightingStopId: "stop_2" }),
+    });
+    expect(response.status).toBe(409);
     expect(state.docs.get(`ride_sessions/${sessionId}`)?.passengers).toEqual({});
   });
   it("guards live history, bounds message cleanup and retains key tombstones", async () => {

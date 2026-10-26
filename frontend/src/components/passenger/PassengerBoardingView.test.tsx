@@ -25,7 +25,6 @@ async function prepare() {
   await user.click(screen.getByRole("option", { name: "Alpha" }));
   await user.click(screen.getByRole("combobox", { name: "Destination station" }));
   await user.click(screen.getByRole("option", { name: "Beta" }));
-  await user.type(screen.getByLabelText("Boarding code"), "abcdefgh");
   return { user, joined };
 }
 describe("passenger boarding workflow", () => {
@@ -41,15 +40,15 @@ describe("passenger boarding workflow", () => {
     expect(screen.getByRole("option", { name: "Beta" }).textContent).toContain("Signal delayed");
     expect(screen.queryByText("3 min")).toBeNull();
   });
-  it("accepts the full pasted driver code with separators and explains normalization", async () => {
-    render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" />);
-    const user = userEvent.setup();
-    const input = screen.getByRole("textbox", { name: "Boarding code" });
-    await user.click(input);
-    await user.paste("ABCD-EFGH");
-    expect(input).toHaveProperty("value", "ABCDEFGH");
-    expect(input.getAttribute("placeholder")).toBe("8-CHAR CODE");
-    expect(document.getElementById(input.getAttribute("aria-describedby")!)?.textContent).toContain("Spaces and hyphens are removed automatically");
+  it("allows stop selection and boarding without displaying or submitting a code", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"joined":true}')); vi.stubGlobal("fetch", fetchMock);
+    const { user, joined } = await prepare();
+    expect(screen.queryByRole("textbox", { name: "Boarding code" })).toBeNull();
+    expect(screen.queryByText(/8-character|8-CHAR|session code/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Board" })).toHaveProperty("disabled", false);
+    await user.click(screen.getByRole("button", { name: "Board" }));
+    await waitFor(() => expect(joined).toHaveBeenCalledOnce());
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("boardingCode");
   });
   it("keeps boarding and destination stops distinct", async () => {
     const user = userEvent.setup();
@@ -71,16 +70,16 @@ describe("passenger boarding workflow", () => {
     const button = await screen.findByRole("button", { name: "On board" });
     expect(screen.getByRole("combobox", { name: "Boarding stop" }).textContent).toContain("Alpha");
     expect(screen.getByRole("combobox", { name: "Destination station" }).textContent).toContain("Beta");
-    expect(screen.getByLabelText("Boarding code")).toHaveProperty("value", "");
+    expect(screen.queryByLabelText("Boarding code")).toBeNull();
     expect(button).toHaveProperty("disabled", true); expect(gps).not.toHaveBeenCalled(); expect(fetchMock).not.toHaveBeenCalled();
     rerender(<PassengerBoardingView sessionId="other-session" route={route} tripState="in_service" />);
     expect(await screen.findByRole("button", { name: "Board" })).toBeTruthy();
   });
-  it("submits code, chosen stops and GPS once and only announces a confirmed join", async () => {
+  it("submits chosen stops and GPS once and only announces a confirmed join", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"joined":true}')); vi.stubGlobal("fetch", fetchMock);
     const { user, joined } = await prepare(); await user.click(screen.getByRole("button", { name: "Board" }));
     await waitFor(() => expect(joined).toHaveBeenCalledOnce());
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ boardingCode: "ABCDEFGH", boardingStopId: "alpha", alightingStopId: "beta", lat: 23, lng: 72, accuracy: 10 });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ boardingStopId: "alpha", alightingStopId: "beta", lat: 23, lng: 72, accuracy: 10 });
     expect(new Headers(fetchMock.mock.calls[0][1].headers).get("ngrok-skip-browser-warning")).toBe("1");
     expect(gps).toHaveBeenCalledOnce();
   });

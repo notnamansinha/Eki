@@ -20,6 +20,7 @@ import {
   type PassengerLiveBus,
 } from "@/lib/passengerLiveBus";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
+import { isPassengerBusSelectable } from "@/lib/passengerAvailability";
 import {
   passengerPanelClassName,
   passengerPanelStyle,
@@ -73,6 +74,7 @@ function hasSessionId(bus: VisibleBusData): bus is ActiveSessionBusData {
 
 export default function PassengerWorkspace() {
   const {
+    isConnected,
     isResuming,
     resumeGeneration,
     connectionGeneration,
@@ -95,6 +97,7 @@ export default function PassengerWorkspace() {
   const [selectedBusId, setSelectedBusId] = useState("");
   const [activeBuses, setActiveBuses] = useState<ActiveBusData[]>([]);
   const [availableBuses, setAvailableBuses] = useState<PassengerBusAvailability[]>([]);
+  const [availabilityNow, setAvailabilityNow] = useState(() => Date.now());
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -152,14 +155,17 @@ export default function PassengerWorkspace() {
     });
     return () => controller.abort();
   }, [user, rideStatusRetry]);
-  const displayRoutes = routes.filter(route => {
+  const catalogRoutes = routes.filter(route => {
     const availability = routeCatalog[route.id];
     return availability && (availability.active > 0 || availability.available > 0) &&
       ((route.stops?.length ?? 0) > 0 || (route.waypoints?.length ?? 0) > 0);
   });
+  const displayRoutes = isConnected && !liveDataError ? catalogRoutes : [];
   // Keep observing the chosen route through temporary catalog/data gaps.
-  const effectiveRouteId = ((currentView === "tracking" && Boolean(selectedRouteId)) || displayRoutes.some(route => route.id === selectedRouteId))
-    ? selectedRouteId : displayRoutes[0]?.id ?? "";
+  // Hiding choices after a detail error must not detach the listener needed
+  // to recover them. Catalog scope and user-selectable availability differ.
+  const effectiveRouteId = ((currentView === "tracking" && Boolean(selectedRouteId)) || catalogRoutes.some(route => route.id === selectedRouteId))
+    ? selectedRouteId : catalogRoutes[0]?.id ?? "";
 
   // Listen to Firebase Realtime Database for active buses using the existing
   // Firebase session established by the root auth provider.
@@ -289,7 +295,9 @@ export default function PassengerWorkspace() {
   // Presence expires without another RTDB event after power/network loss.
   useEffect(() => {
     const timer = window.setInterval(() => {
-      const next = passengerBusAvailabilities(Object.fromEntries(rawLiveBusesRef.current), Date.now());
+      const now = Date.now();
+      setAvailabilityNow(now);
+      const next = passengerBusAvailabilities(Object.fromEntries(rawLiveBusesRef.current), now);
       setAvailableBuses(previous => reuseUnchangedAvailabilities(previous, next));
     }, 2_000);
     return () => window.clearInterval(timer);
@@ -303,8 +311,17 @@ export default function PassengerWorkspace() {
     busesOnRoute.find((bus) => bus.sessionId === trackedSessionId) ??
     busesOnRoute.find((bus) => passengerLiveBusSelectionKey(bus) === selectedLiveBusKey) ??
     busesOnRoute.find((bus) => bus.busId === selectedBusId) ??
+    busesOnRoute.find((bus) => isPassengerBusSelectable(bus, availabilityNow)) ??
     busesOnRoute[0];
+  // Pick a fresh bus for a new selection, then retain that identity through a
+  // signal gap instead of silently moving an existing viewer to another bus.
+  if (currentView === "tracking" && activeBusOnRoute) {
+    const key = passengerLiveBusSelectionKey(activeBusOnRoute);
+    if (key !== selectedLiveBusKey) { setSelectedLiveBusKey(key); setSelectedBusId(activeBusOnRoute.busId); }
+  }
   const activeSessionId = activeBusOnRoute?.sessionId;
+  const busSelectable = isConnected && !isResuming && !liveDataError && isPassengerBusSelectable(activeBusOnRoute, availabilityNow);
+  const selectableBusesOnRoute = busesOnRoute.filter(bus => isConnected && !isResuming && !liveDataError && isPassengerBusSelectable(bus, availabilityNow));
   const directionPending = activeBusOnRoute?.directionState === "pending";
   const normalizedDirection = normalizeRideDirection(activeBusOnRoute?.direction);
   const rideDirectionState = directionPending ? "pending"
@@ -419,7 +436,7 @@ export default function PassengerWorkspace() {
   };
 
   return (
-    <div className="relative flex flex-col overflow-hidden text-white" style={{ height: "100dvh" }}>
+    <div data-passenger-workspace className="relative flex flex-col overflow-hidden text-white" style={{ height: "100dvh" }}>
       {(isResuming || rideRecoveryNotice || routesError || liveDataError) && <div className="relative z-50 shrink-0 space-y-2 bg-zinc-950 px-4 pb-2 pt-safe">
       {isResuming && (
         <div
@@ -452,7 +469,7 @@ export default function PassengerWorkspace() {
         </div>
       )}
       </div>}
-      <div className="relative min-h-0 flex-1 overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-clip">
 
         {/* ── HOME VIEW ── */}
         <div inert={visibleView !== "home"} aria-hidden={visibleView !== "home"} className={`absolute inset-0 z-20 flex flex-col pt-safe transition-[opacity,transform] duration-500 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8 pointer-events-none"}`}>
@@ -498,7 +515,7 @@ export default function PassengerWorkspace() {
                      getActiveBusesCount={(routeId) => routeCatalog[routeId]?.active ?? 0}
                      getAvailableBusesCount={(routeId) => routeCatalog[routeId]?.available ?? 0}
                      getDirectionState={(routeId) => {
-                       const bus = activeBuses.find((entry) => entry.routeId === routeId);
+                       const bus = activeBuses.find((entry) => entry.routeId === routeId && isPassengerBusSelectable(entry, availabilityNow));
                        if (!bus) return "unknown";
                        return bus?.directionState === "pending" ? "pending" : normalizeRideDirection(bus?.direction);
                      }}
@@ -530,13 +547,13 @@ export default function PassengerWorkspace() {
         </div>
 
         {/* ── TRACKING VIEW ── */}
-        <div inert={visibleView !== "tracking"} aria-hidden={visibleView !== "tracking"} className={`absolute inset-0 z-20 flex flex-col pointer-events-none transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100" : "opacity-0"}`}>
+        <div data-passenger-tracking inert={visibleView !== "tracking"} aria-hidden={visibleView !== "tracking"} className={`absolute inset-0 z-20 flex flex-col pointer-events-none transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100 bg-zinc-950" : "opacity-0"}`}>
           {!endedMessage && mapRoute && targetStop ? (
             <>
               {/* Top bar: back + route info */}
-              <div className="relative shrink-0 w-full z-40 pt-safe px-4 pb-6 pointer-events-auto"
+              <div data-tracking-controls className="absolute inset-x-0 top-0 w-full z-40 pt-safe px-4 pb-4 pointer-events-none"
                 style={{ background: "linear-gradient(to bottom, rgba(9,9,11,0.92) 0%, transparent 100%)" }}>
-                <div className="flex items-center gap-4 max-w-lg mx-auto pt-4">
+                <div className="flex items-center gap-4 max-w-lg mx-auto pt-4 pointer-events-auto">
                   <button
                     type="button"
                     onClick={() => {
@@ -558,7 +575,7 @@ export default function PassengerWorkspace() {
                   {activeBusOnRoute ? (
                     <div className="relative z-10 flex-1 min-w-0 flex flex-col gap-2 rounded-2xl p-3"
                       style={{ background: "var(--surface-1)", border: "1px solid var(--border-default)" }}>
-                      {busesOnRoute.length > 1 &&
+                      {(selectableBusesOnRoute.length > 1 || (!busSelectable && selectableBusesOnRoute.length > 0)) &&
                         !busesOnRoute.some(
                           (bus) => bus.sessionId === trackedSessionId,
                         ) && (
@@ -576,13 +593,21 @@ export default function PassengerWorkspace() {
                             color: "var(--text-primary)",
                           }}
                           ariaLabel="Live bus"
-                          options={busesOnRoute.map(bus => ({
+                          placeholder="Choose a live bus…"
+                          options={selectableBusesOnRoute.map(bus => ({
                             value: passengerLiveBusSelectionKey(bus),
                             label: `Bus ${bus.busId} · ${hasSessionId(bus) ? directionLabelState(bus.directionState === "pending" ? "pending" : normalizeRideDirection(bus.direction), activeRoute?.stops ?? []) : "Service not started"}`,
                           }))}
                         />
                       )}
-                      {!preview && directedRoute && hasSessionId(activeBusOnRoute) ? (
+                      {!busSelectable ? (
+                        <div role="status">
+                          <p className="text-xs font-semibold text-amber-300">Live tracking paused</p>
+                          <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+                            Location updates are unavailable. The last known location is shown; live ETAs and boarding resume when tracking returns.
+                          </p>
+                        </div>
+                      ) : !preview && directedRoute && hasSessionId(activeBusOnRoute) ? (
                         <PassengerBoardingView
                           key={activeBusOnRoute.sessionId}
                           sessionId={activeBusOnRoute.sessionId}
@@ -647,13 +672,13 @@ export default function PassengerWorkspace() {
                         Waiting for live bus data…
                       </p>
                       <p className="break-words text-pretty text-[17px] font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>
-                        {mapRoute.name} · {directionLabelState(rideDirectionState, activeRoute?.stops ?? [])}
+                        {mapRoute.name}
                       </p>
                     </div>
                   )}
                 </div>
                 {/* Keep chat in header flow, below the variable-height boarding card. */}
-                {activeSessionId && isLiveChatDeviceOnline(activeBusOnRoute) && !isMessagingOpen && (
+                {busSelectable && activeSessionId && isLiveChatDeviceOnline(activeBusOnRoute) && !isMessagingOpen && (
                   <div className="mt-2 flex justify-end max-w-lg mx-auto animate-scale-in pointer-events-none">
                     <button
                       onClick={handleOpenMessaging}
@@ -678,8 +703,8 @@ export default function PassengerWorkspace() {
                 )}
               </div>
 
-              {/* Reserve the actual header height so map notices cannot sit behind ride controls. */}
-              <div className="relative z-0 min-h-0 flex-1 pointer-events-auto">
+              {/* Full-bleed map; camera padding and notices measure the overlay. */}
+              <div className="absolute inset-0 z-0 pointer-events-auto">
                 {visibleView === "tracking" && (
                   <PassengerTrackingMap
                     targetStop={targetStop}
@@ -687,6 +712,7 @@ export default function PassengerWorkspace() {
                     onStopEstimatesChange={updateStopEstimates}
                     route={mapRoute}
                     resumeGeneration={resumeGeneration}
+                    liveUpdatesAvailable={isConnected && !isResuming && !liveDataError}
                     preview={preview}
                     selectedBusKey={activeBusOnRoute ? passengerLiveBusSelectionKey(activeBusOnRoute) : undefined}
                   />
@@ -694,7 +720,7 @@ export default function PassengerWorkspace() {
               </div>
 
               {/* Messaging Overlay */}
-              {visibleView === "tracking" && activeSessionId && isMessagingOpen && isLiveChatDeviceOnline(activeBusOnRoute) && (
+              {visibleView === "tracking" && busSelectable && activeSessionId && isMessagingOpen && isLiveChatDeviceOnline(activeBusOnRoute) && (
                 <div className="absolute inset-x-0 top-16 bottom-[80px] z-50 animate-slide-up flex flex-col pointer-events-auto">
                    <MessagingPanel
                     key={activeSessionId || "online-no-session"}

@@ -38,7 +38,6 @@ function prepare() {
   const view = render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" onJoined={joined} />);
   fireEvent.change(screen.getByLabelText("Boarding stop"), { target: { value: "alpha" } });
   fireEvent.change(screen.getByLabelText("Destination station"), { target: { value: "beta" } });
-  fireEvent.change(screen.getByLabelText("Boarding code"), { target: { value: "ABCDEFGH" } });
   const board = () => fireEvent.click(screen.getByRole("button", { name: "Board" }));
   return { ...view, joined, board };
 }
@@ -58,7 +57,7 @@ describe("boarding preparation and API budgets", () => {
     view.rerender(<PassengerBoardingView {...props} />);
     expect(screen.getByLabelText("Destination station")).toHaveProperty("value", "gamma");
     expect(screen.getByLabelText("Boarding stop")).toHaveProperty("value", "alpha");
-    expect(screen.getByLabelText("Boarding code")).toHaveProperty("value", "ABCDEFGH");
+    expect(screen.queryByLabelText("Boarding code")).toBeNull();
     fireEvent.change(screen.getByLabelText("Destination station"), { target: { value: "beta" } });
     view.rerender(<PassengerBoardingView {...props} />);
     expect(screen.getByLabelText("Destination station")).toHaveProperty("value", "beta");

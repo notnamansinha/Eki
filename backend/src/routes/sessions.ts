@@ -12,7 +12,6 @@ import {
 } from "../services/chatRateLimit";
 import {
   JOIN_RADIUS_M,
-  boardingCodesMatch,
   generateBoardingCode,
   normalizeBoardingCode,
   validateLiveBoardingProjection,
@@ -29,7 +28,7 @@ const CHAT_STATUSES = new Set(["armed", "active"]);
 // Each manifest entry is at most ~200 bytes (userName capped at 100 chars, a
 // fixed stop selection, and one timestamp). Capping at 1000 entries keeps the
 // worst-case manifest near 200 KB — a 5× margin under Firestore's 1 MiB
-// document cap — so a boarding-code spammer cannot brick the session doc for
+// document cap — so a join-request spammer cannot brick the session doc for
 // every other passenger (issue #75).
 const MAX_PASSENGER_MANIFEST_ENTRIES = 1000;
 
@@ -105,10 +104,8 @@ function stableHash(value: string): string {
 /**
  * POST /api/sessions/:sessionId/boarding-code
  *
- * Returns the session-scoped code to the assigned driver or an administrator.
- * The code is
- * deliberately absent from RTDB and passenger-readable data. It supplies the
- * server-verifiable proof that browser geolocation alone cannot provide.
+ * Legacy operator endpoint retained for cached clients. Codes remain private;
+ * passenger boarding no longer requires or consumes them.
  */
 async function issueBoardingCode(req: AuthenticatedRequest, res: Response) {
   const sessionId = singleRouteParam(req.params.sessionId);
@@ -166,10 +163,9 @@ async function issueBoardingCode(req: AuthenticatedRequest, res: Response) {
 /**
  * POST /api/sessions/:sessionId/join
  *
- * A passenger needs both a driver-visible, session-scoped code and a fresh
- * browser position near the trusted hardware fix. Browser coordinates are
- * attacker-controlled and therefore only defense in depth; the boarding code
- * is the server-verifiable authorization that closes public-session self-join.
+ * Passenger boarding requires a verified account, ordered stops and proximity
+ * to a fresh trusted bus fix. Browser location is client supplied; it is not
+ * independent proof of physical presence. No driver code is required.
  */
 async function joinSession(req: AuthenticatedRequest, res: Response) {
   const sessionId = singleRouteParam(req.params.sessionId);
@@ -188,12 +184,6 @@ async function joinSession(req: AuthenticatedRequest, res: Response) {
     req.body?.lng,
     req.body?.accuracy,
   );
-  const submittedCode = normalizeBoardingCode(req.body?.boardingCode);
-  if (!submittedCode) {
-    res.status(400).json({ error: "Invalid boarding details." });
-    return;
-  }
-
   try {
     const sessionRef = db.collection("ride_sessions").doc(sessionId);
     const session = await sessionRef.get();
@@ -203,9 +193,6 @@ async function joinSession(req: AuthenticatedRequest, res: Response) {
     }
     if (!BOARDING_STATUSES.has(String(data.status))) {
       throw new BoardingPolicyError(409, "This ride is no longer boarding.");
-    }
-    if (!boardingCodesMatch(data.boardingCode, submittedCode)) {
-      throw new BoardingPolicyError(403, "The boarding code is invalid.");
     }
 
     const busId = typeof data.busId === "string" && SAFE_ID.test(data.busId)
@@ -275,10 +262,9 @@ async function joinSession(req: AuthenticatedRequest, res: Response) {
         !BOARDING_STATUSES.has(String(currentData.status)) ||
         currentData.busId !== busId ||
         currentData.routeId !== routeId ||
-        normalizeRideDirection(currentData.direction) !== direction ||
-        !boardingCodesMatch(currentData.boardingCode, submittedCode)
+        normalizeRideDirection(currentData.direction) !== direction
       ) {
-        throw new BoardingPolicyError(409, "Boarding authorization expired; ask the driver for the current code.");
+        throw new BoardingPolicyError(409, "The ride changed before boarding; refresh and try again.");
       }
       const profile = await transaction.get(db.collection("users").doc(user.uid));
       if (!profile.exists) throw new BoardingPolicyError(403, "An active passenger profile is required.");

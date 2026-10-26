@@ -63,7 +63,7 @@ export function publicLiveBus(value: unknown): Record<string, unknown> | null {
 
 export function routeAvailability(buses: Record<string, Record<string, unknown>>, now = Date.now()) {
   let active = 0; let available = 0; let freshestAt = 0;
-  const availableReceipts: number[] = [];
+  const activeReceipts: number[] = [], availableReceipts: number[] = [];
   for (const bus of Object.values(buses)) {
     if (bus.tripState === "completed") continue;
     const isRide = bus.status === "active" && typeof bus.sessionId === "string" &&
@@ -71,11 +71,17 @@ export function routeAvailability(buses: Record<string, Record<string, unknown>>
     const sample = typeof bus.timestamp === "number" ? bus.timestamp : NaN;
     const received = bus.backendReceivedAt;
     const at = typeof received === "number" && Number.isFinite(received) && received - sample >= -10_000 && received - sample <= 60_000 ? received : sample;
-    // An offline ride is retained for recovery, but passengers are not shown it.
-    if (isRide) { if (bus.deviceState !== "offline") active++; }
-    else if (bus.deviceState === "online" && Number.isFinite(at)) { availableReceipts.push(at); if (at <= now + 10_000 && now - at < 300_000) { available++; freshestAt = Math.max(freshestAt, Math.floor(at / 60_000) * 60_000); } }
+    if (bus.deviceState !== "online" || bus.automaticServicePaused === true || !Number.isFinite(at) || at > now + 10_000 || now - at > 90_000) continue;
+    // Conservative 30s leases expire 60–90s after the last fix. Unlike a raw
+    // receipt on every fix, this bounds catalog heartbeat writes to 2/min/bus.
+    // A durable ride/session alone must never advertise live availability.
+    const receipt = Math.floor(at / 30_000) * 30_000;
+    if (now - receipt > 90_000) continue;
+    if (isRide) { active++; activeReceipts.push(receipt); }
+    else { available++; availableReceipts.push(receipt); }
+    freshestAt = Math.max(freshestAt, receipt);
   }
-  return { active, available, freshestAt, availableReceipts: availableReceipts.sort((a, b) => a - b) };
+  return { active, available, freshestAt, activeReceipts: activeReceipts.sort((a, b) => a - b), availableReceipts: availableReceipts.sort((a, b) => a - b) };
 }
 
 let projectionStatus = () => ({ scheduled: 0, processed: 0, coalesced: 0, failed: 0, rejected: 0 });
@@ -130,7 +136,7 @@ export function startLiveBusProjection(): () => Promise<void> {
         counters.catalogTransactionAttempts++;
         if (stopped) return;
         if (current?.values?.[routeKey]) return current?._workerGeneration === generation ? undefined : { ...current, generations: catalogGenerations(current) };
-        return { ...current, generations: catalogGenerations(current), values: { ...current?.values, [routeKey]: { active: 0, available: 0, freshestAt: 0, availableReceipts: [] } } };
+        return { ...current, generations: catalogGenerations(current), values: { ...current?.values, [routeKey]: { active: 0, available: 0, freshestAt: 0, activeReceipts: [], availableReceipts: [] } } };
       });
       if (registered.committed) { counters.committedCatalogWrites++; counters.catalogPublicBytes += Buffer.byteLength(JSON.stringify(registered.snapshot.val()?.values ?? null)); }
       if (stopped) return;

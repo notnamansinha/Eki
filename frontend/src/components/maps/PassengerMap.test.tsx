@@ -70,12 +70,11 @@ describe("published passenger stop progress", () => {
     await userEvent.setup().click(screen.getByRole("button",{name:"Show stop Middle district"}));
     expect(within(marker).getByText("Middle district")).toBeTruthy();
   });
-  it("keeps the configured route readable when its bus is far away", () => {
+  it("includes both the configured route and an off-route bus in overview", () => {
     state.snapshot={bus:{...fixtureBus(null),lat:24,lng:73}};
     render(<PassengerMap route={routeInRideDirection(route,"forward")} targetStop={route.stops[1]} preview />);
     const bounds=state.fitBounds.mock.lastCall?.[0];
-    expect(bounds.north).toBeLessThan(24);
-    expect(bounds.east).toBeLessThan(73);
+    expect(bounds).toEqual({ north: 24, south: 23, east: 73, west: 72 });
   });
   it("reprojects identical bus coordinates and heading onto the authoritative itinerary visit", () => {
     const a = { id: "a", name: "A", shortName: "A", lat: 23, lng: 72 };
@@ -343,7 +342,7 @@ describe("passenger map device and ride contexts", () => {
     state.snapshot = { bus: device };
     render(<PassengerMap route={directed} targetStop={route.stops[1]} preview />);
     expect(await screen.findByTitle(/qa-bus/)).toBeTruthy();
-    expect(state.fitBounds).toHaveBeenLastCalledWith({ north: 23.01, south: 23, east: 72.01, west: 72 }, expect.any(Object));
+    expect(state.fitBounds).toHaveBeenLastCalledWith({ north: 23.1, south: 23, east: 72.1, west: 72 }, expect.any(Object));
     const fitted = state.fitBounds.mock.calls.length;
     act(() => state.listener?.({ bus: { ...device, lat: 23.11, seq: 2 } }));
     expect(state.fitBounds).toHaveBeenCalledTimes(fitted);
@@ -357,15 +356,15 @@ describe("passenger map device and ride contexts", () => {
     const beforeOverview = state.fitBounds.mock.calls.length;
     await userEvent.setup().click(screen.getByRole("button", {name:"Show route overview"}));
     expect(state.fitBounds.mock.calls.length).toBeGreaterThan(beforeOverview);
-    expect(state.fitBounds).toHaveBeenLastCalledWith({north:23.01,south:23,east:72.01,west:72},expect.any(Object));
+    expect(state.fitBounds).toHaveBeenLastCalledWith({north:23.12,south:23,east:72.1,west:72},expect.any(Object));
   });
-  it("keeps route framing stable when the first off-route fix arrives", async () => {
+  it("includes the first off-route fix without losing configured route bounds", async () => {
     state.snapshot = {};
     render(<PassengerMap route={directed} targetStop={route.stops[1]} preview />);
     expect(state.fitBounds).toHaveBeenLastCalledWith({ north: 23.01, south: 23, east: 72.01, west: 72 }, expect.any(Object));
     act(() => state.listener?.({ bus: { ...fixtureBus(), sessionId: undefined, status: "offline", tripState: undefined, lat: 23.1, lng: 72.1 } }));
     expect(await screen.findByTitle(/qa-bus/)).toBeTruthy();
-    expect(state.fitBounds).toHaveBeenLastCalledWith({ north: 23.01, south: 23, east: 72.01, west: 72 }, expect.any(Object));
+    expect(state.fitBounds).toHaveBeenLastCalledWith({ north: 23.1, south: 23, east: 72.1, west: 72 }, expect.any(Object));
   });
   it("keeps a direction-pending session visible as raw GPS without inferred progress", async () => {
     state.snapshot = { bus: fixtureBus() };

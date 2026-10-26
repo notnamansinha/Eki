@@ -118,24 +118,33 @@ integration("R14 actual SDK publisher fences, recovery and listener isolation", 
   }, 30_000);
 
   it("reconstructs the active catalog from source when an older high revision has no destination", async () => {
-    await realtime.ref("activeBuses/busA_routeA").set(live());
+    const bus = live();
+    await realtime.ref("activeBuses/busA_routeA").set(bus);
     await realtime.ref("liveRouteCatalog").set({ _workerGeneration: 3, values: { "route:routeA": { active: 0, available: 2, freshestAt: 1, availableReceipts: [1] } }, revisions: { "route:routeA": 5 } });
     await start(4);
-    expect(await read("liveRouteCatalog/values/route:routeA")).toMatchObject({ active: 1, available: 0, freshestAt: 0 });
+    // An active ride's fresh receipt, leased to 30s, now sets catalog freshness.
+    const receipt = Math.floor(bus.timestamp / 30_000) * 30_000;
+    expect(await read("liveRouteCatalog/values/route:routeA")).toMatchObject({ active: 1, available: 0, freshestAt: receipt, activeReceipts: [receipt] });
     expect(await read("publicRouteBuses/route:routeA/buses/node:busA_routeA")).toMatchObject({ sessionId: "sessionA" });
   }, 30_000);
 
   it.each([false, true])("reconstructs an erased same-generation destination with source=%j", async sourceExists => {
-    if (sourceExists) await realtime.ref("activeBuses/busA_routeA").set(live());
+    const bus = live();
+    if (sourceExists) await realtime.ref("activeBuses/busA_routeA").set(bus);
     await realtime.ref("liveRouteCatalog").set({ _workerGeneration: 4, generations: { "route:routeA": 4 }, values: { "route:routeA": { active: 8, available: 2, freshestAt: 1, availableReceipts: [1] } }, revisions: { "route:routeA": 5 } });
     await start(4);
-    expect(await read("liveRouteCatalog/values/route:routeA")).toMatchObject({ active: sourceExists ? 1 : 0, available: 0, freshestAt: 0 });
+    const freshestAt = sourceExists ? Math.floor(bus.timestamp / 30_000) * 30_000 : 0;
+    expect(await read("liveRouteCatalog/values/route:routeA")).toMatchObject({ active: sourceExists ? 1 : 0, available: 0, freshestAt });
     expect(await read("liveRouteCatalog/generations/route:routeA")).toBe(4);
     expect((await read("publicRouteBuses/route:routeA"))?.revision).toBeGreaterThan(5);
     expect((await read("liveRouteCatalog/revisions/route:routeA"))).toBeGreaterThan(5);
   }, 30_000);
 
   it("measures a controlled 20-fix actual publisher workload and excludes internal and unrelated route events", async () => {
+    // Catalog receipts are 30s leases, so crossing a lease boundary legitimately
+    // writes the catalog. Start early in a lease so the workload stays inside it.
+    const intoLease = Date.now() % 30_000;
+    if (intoLease > 10_000) await new Promise(resolve => setTimeout(resolve, 30_000 - intoLease + 100));
     await realtime.ref("activeBuses").set({ busA_routeA: live(), busB_routeB: live("busB", "routeB", "sessionB") });
     await start(); await idle();
     const measurement = { fixes: 20, rawEvents: 0, rawBytes: 0, selectedEvents: 0, selectedBytes: 0, catalogEvents: 0, catalogBytes: 0 };
@@ -167,5 +176,5 @@ integration("R14 actual SDK publisher fences, recovery and listener isolation", 
     await eventually(async () => (await read("publicRouteBuses/route:routeB/buses/node:busB_routeB"))?.seq === 99, "unrelated route publication"); await idle();
     expect(measurement.selectedEvents).toBe(selectedBefore);
     process.stdout.write(`R14_ACTUAL_PUBLISHER_MEASUREMENT ${JSON.stringify({ ...controlled, publisherDelta: delta, decodedPayloadBytesPerFix: { fleet: controlled.rawBytes / 20, selectedRoute: controlled.selectedBytes / 20 }, includesProtocolOverhead: false, workload: "20 sequential raw+matched+2 internal updates; post-workload unrelated route isolation check" })}\n`);
-  }, 45_000);
+  }, 60_000);
 });

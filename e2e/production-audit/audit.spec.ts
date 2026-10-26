@@ -71,7 +71,7 @@ test("tracking keeps the full route name while waiting for live data", async ({ 
   await page.getByText("QA controls", { exact: true }).click();
   await page.getByLabel("QA scenario").selectOption("empty");
   await page.getByText("QA controls", { exact: true }).click();
-  const label = page.getByText(new RegExp(routeName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " ·"));
+  const label = page.getByRole("paragraph").filter({ hasText: new RegExp(`^${routeName}$`) });
   await expect(label).toBeVisible();
   expect(await label.evaluate(el => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)).toBe(false);
   await page.screenshot({ path: info.outputPath("tracking-route-label.png") });

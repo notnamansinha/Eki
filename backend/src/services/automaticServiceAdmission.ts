@@ -1,4 +1,4 @@
-import type { Transaction } from "firebase-admin/firestore";
+import { FieldValue, type Transaction } from "firebase-admin/firestore";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { endpointSnapshotVersion } from "../lib/endpointSnapshotVersion";
 import { BoundedKeyedExecutor } from "../lib/boundedKeyedExecutor";
@@ -27,7 +27,25 @@ async function publishBlocked(assignment:DeviceAssignment,state:AdmissionState) 
   },undefined,false);
 }
 
-async function admit(assignment:DeviceAssignment) {
+/**
+ * A ride cut short without an operator pause (abandoned-ride cleanup, failure)
+ * must not hold the bus paused. Moving to a fresh epoch releases the start key
+ * pinned to that ride, so the next admission creates a new service. An admin's
+ * "End ride early" sets automaticServicePaused and still requires Resume.
+ */
+async function rearmAfterEarlyEnd(busId:string,generation:number,consumedBy?:string):Promise<boolean> {
+  const ref=db.collection("bus_locations").doc(busId);
+  return db.runTransaction(async transaction=>{
+    const data=(await transaction.get(ref)).data();
+    if (data?.automaticServicePaused===true || Number(data?.automaticServiceEpoch??0)!==generation) return false;
+    if (consumedBy!==undefined && data?.terminalJourney?.consumedBy!==consumedBy) return false;
+    transaction.set(ref,{automaticServiceEpoch:FieldValue.increment(1),
+      ...(consumedBy!==undefined?{terminalJourney:FieldValue.delete()}:{})},{merge:true});
+    return true;
+  });
+}
+
+async function admit(assignment:DeviceAssignment,rearm=true):Promise<void> {
   if (!assignment.deviceId || !safeId.test(assignment.deviceId)) return;
   const driverQuery=db.collection("drivers").where("assignedBusId","==",assignment.busId).limit(2);
   const deviceRef=db.collection("devices").doc(assignment.deviceId);
@@ -43,8 +61,10 @@ async function admit(assignment:DeviceAssignment) {
     const consumedBy=locationData.terminalJourney.consumedBy;
     if (typeof consumedBy==="string" && safeId.test(consumedBy)) {
       const consumed=(await db.collection("ride_sessions").doc(consumedBy).get()).data();
-      if (consumed?.busId===assignment.busId && consumed?.routeId===assignment.routeId && ["failed","interrupted"].includes(consumed.status))
+      if (consumed?.busId===assignment.busId && consumed?.routeId===assignment.routeId && ["failed","interrupted"].includes(consumed.status)) {
+        if (rearm && await rearmAfterEarlyEnd(assignment.busId,Number(locationData.automaticServiceEpoch??0),consumedBy)) return admit(assignment,false);
         throw new AdmissionBlocked("paused");
+      }
     }
     throw new AdmissionBlocked("awaiting_return");
   }
@@ -66,10 +86,16 @@ async function admit(assignment:DeviceAssignment) {
       throw new AdmissionBlocked("paused");
     if (lifecycle?.terminalJourney) throw new AdmissionBlocked("awaiting_return");
   };
-  await startAssignedService({busId:assignment.busId,routeId:assignment.routeId,driverId},{
-    principalScope:`device:${assignment.deviceId}:${assignment.assignmentRevision??0}:${generation}`,
-    idempotencyKey:"automatic-service-v1",automatic:true,assignmentRevision:assignment.assignmentRevision??0,verify,
-  });
+  try {
+    await startAssignedService({busId:assignment.busId,routeId:assignment.routeId,driverId},{
+      principalScope:`device:${assignment.deviceId}:${assignment.assignmentRevision??0}:${generation}`,
+      idempotencyKey:"automatic-service-v1",automatic:true,assignmentRevision:assignment.assignmentRevision??0,verify,
+    });
+  } catch(error) {
+    if (rearm && error instanceof RideSessionStartError && error.reason==="interrupted_session" &&
+        await rearmAfterEarlyEnd(assignment.busId,generation)) return admit(assignment,false);
+    throw error;
+  }
 }
 
 function admissionKey(assignment:DeviceAssignment):string {
@@ -105,7 +131,7 @@ export function scheduleAutomaticServiceAdmission(assignment:DeviceAssignment,sa
         if (error instanceof AdmissionBlocked) await publishBlocked(assignment,error.state);
         else if (error instanceof RideSessionStartError || error instanceof SessionCreationConflict) {
           console.warn("[Devices] Automatic service setup pending:",error.message);
-          await publishBlocked(assignment,error instanceof RideSessionStartError && error.reason==="terminal_session" ? "paused" : "setup_pending");
+          await publishBlocked(assignment,error instanceof RideSessionStartError && (error.reason==="terminal_session" || error.reason==="interrupted_session") ? "paused" : "setup_pending");
         }
         else throw error;
       }

@@ -4,9 +4,9 @@ import { onValue, ref } from "firebase/database";
 import { rtdb } from "@/lib/firebaseDatabase";
 import { getAuthVerificationGeneration, waitForAuth } from "@/lib/authState";
 import { liveBusRetryDelayMs } from "@/lib/liveBusRetry";
-import { isLiveBusTimestamp } from "@/lib/liveBusFreshness";
+import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
 import { useAuth } from "./useAuth";
-export interface LiveRouteAvailability { active: number; available: number; freshestAt: number; availableReceipts?: number[] }
+export interface LiveRouteAvailability { active: number; available: number; freshestAt: number; activeReceipts?: number[]; availableReceipts?: number[] }
 export function useLiveRouteCatalog(recoveryKey = "") {
   const { user, loading, roleError } = useAuth();
   const generation = getAuthVerificationGeneration();
@@ -43,8 +43,12 @@ export function useLiveRouteCatalog(recoveryKey = "") {
             const routeId = key.startsWith("route:") ? key.slice(6) : key;
             const value = item as LiveRouteAvailability;
             const receipts = value?.availableReceipts ?? [];
-            if (!/^[A-Za-z0-9_-]{1,128}$/.test(routeId) || !value || !Number.isSafeInteger(value.active) || value.active < 0 || !Array.isArray(receipts) || !receipts.every(at => typeof at === "number" && Number.isFinite(at))) return [];
-            return [[routeId, { active: value.active, available: 0, freshestAt: value.freshestAt ?? 0, availableReceipts: receipts }] as const];
+            const activeReceipts = value?.activeReceipts ?? [];
+            if (!/^[A-Za-z0-9_-]{1,128}$/.test(routeId) || !value || !Number.isSafeInteger(value.active) || value.active < 0 ||
+              ![receipts, activeReceipts].every(items => Array.isArray(items) && items.every(at => typeof at === "number" && Number.isFinite(at)))) return [];
+            // Old publishers lack an active freshness lease: fail closed until
+            // backfill rather than resurrecting a cached, disconnected ride.
+            return [[routeId, { active: value.active, available: 0, freshestAt: value.freshestAt ?? 0, activeReceipts, availableReceipts: receipts }] as const];
           });
           catalog = Object.fromEntries(entries); catalogReady = true; catalogError = null;
           if (projectionReady && !markerError) attempt = 0;
@@ -66,6 +70,8 @@ export function useLiveRouteCatalog(recoveryKey = "") {
   }, [generation, user, loading, roleError, revision, recoveryKey]);
   const compatible = state.generation === generation && state.recoveryKey === recoveryKey;
   const catalog = compatible && state.projectionReady && state.catalogReady
-    ? Object.fromEntries(Object.entries(state.catalog).map(([routeId, value]) => [routeId, { ...value, available: (value.availableReceipts ?? []).filter(at => isLiveBusTimestamp(at, now)).length }])) : {};
+    ? Object.fromEntries(Object.entries(state.catalog).map(([routeId, value]) => [routeId, { ...value,
+      active: Math.min(value.active, (value.activeReceipts ?? []).filter(at => !isLiveBusSignalLost(at, now)).length),
+      available: (value.availableReceipts ?? []).filter(at => !isLiveBusSignalLost(at, now)).length }])) : {};
   return { catalog, projectionReady: compatible && state.projectionReady, catalogReady: compatible && state.catalogReady, error: compatible ? state.error : null, retry: () => setRevision(value => value + 1) };
 }

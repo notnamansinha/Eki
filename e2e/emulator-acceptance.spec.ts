@@ -14,11 +14,10 @@ const select = async (page: Page, name: string, option: string) => {
   await picker.click();
   await page.getByRole('option', { name: option, exact: true }).click();
 };
-const prepareBoarding = async (page: Page, code = 'ABCD2345') => {
+const prepareBoarding = async (page: Page) => {
   await page.getByRole('button', { name: 'Track Synthetic route', exact: true }).click();
   await select(page, 'Boarding stop', 'Synthetic origin');
   await select(page, 'Destination station', 'Synthetic end');
-  await page.getByRole('textbox', { name: 'Boarding code' }).fill(code);
 };
 const board = async (page: Page) => {
   await prepareBoarding(page);
@@ -209,14 +208,16 @@ test('boards through real auth API and persistence then restores one membership 
   expect((await evidence(request)).passengers.qa_passenger.joinedAt).toEqual(before.passengers.qa_passenger.joinedAt);
 });
 
-test('rejects a wrong code without a manifest write and permits a corrected retry', async ({ page, request }) => {
-  await page.goto('/'); await login(page); await prepareBoarding(page, 'ZZZZ2345');
+test('boards without requesting a code and records one authenticated passenger', async ({ page, request }, info) => {
+  await page.goto('/'); await login(page); await prepareBoarding(page);
+  await expect(page.getByRole('textbox', { name: 'Boarding code' })).toHaveCount(0);
+  await expect(page.getByText(/8-character|8-CHAR CODE/)).toHaveCount(0);
+  const submitted = page.waitForRequest(req => req.url().endsWith('/api/sessions/qa_session/join') && req.method() === 'POST');
   await page.getByRole('button', { name: 'Board', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('boarding code is invalid');
-  expect((await evidence(request)).passengerIds).toEqual([]);
-  await page.getByRole('textbox', { name: 'Boarding code' }).fill('ABCD2345');
-  await page.getByRole('button', { name: 'Board', exact: true }).click();
+  expect((await submitted).postDataJSON()).not.toHaveProperty('boardingCode');
   await expect(page.getByRole('button', { name: 'On board', exact: true })).toBeVisible();
+  expect((await evidence(request)).passengerIds).toEqual(['qa_passenger']);
+  await page.screenshot({ path: info.outputPath('passenger-board-without-code.png'), fullPage: true });
 });
 
 test('rejects distant geolocation without a manifest or optimistic success', async ({ page, context, request }) => {

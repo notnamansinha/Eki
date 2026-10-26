@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BUS_EXPIRY_MS } from "@/lib/liveBusFreshness";
+import { SIGNAL_LOST_MS } from "@/lib/liveBusFreshness";
 
 type Listener = { path: string; next: (snapshot: { val: () => unknown }) => void; fail: (error: Error) => void; detach: ReturnType<typeof vi.fn> };
 const fixture = vi.hoisted(() => ({ generation: 1, ready: Promise.resolve(), user: { uid: "passenger", role: "passenger" }, listeners: [] as Listener[] }));
@@ -34,8 +34,8 @@ describe("public route catalog acceptance", () => {
   it.each(["legacy-first", "canonical-first"] as const)("keeps canonical receipts and counts when legacy keys coexist (%s)", async order => {
     const { useLiveRouteCatalog } = await import("./useLiveRouteCatalog");
     const hook = renderHook(() => useLiveRouteCatalog()); await act(flush); await emit(statusPath, compatible);
-    const canonical = ["route:A", { active: 1, available: 1, freshestAt: Date.now(), availableReceipts: [Date.now()] }];
-    const legacy = ["A", { active: 7, available: 7, freshestAt: 0, availableReceipts: [Date.now() - BUS_EXPIRY_MS - 1] }];
+    const canonical = ["route:A", { activeReceipts: [Date.now()], active: 1, available: 1, freshestAt: Date.now(), availableReceipts: [Date.now()] }];
+    const legacy = ["A", { active: 7, available: 7, freshestAt: 0, availableReceipts: [Date.now() - SIGNAL_LOST_MS - 1] }];
     await emit(catalogPath, Object.fromEntries(order === "legacy-first" ? [legacy, canonical] : [canonical, legacy]));
     expect(Object.keys(hook.result.current.catalog)).toEqual(["A"]);
     expect(hook.result.current.catalog.A).toMatchObject({ active: 1, available: 1, availableReceipts: [Date.now()] });
@@ -66,14 +66,14 @@ describe("public route catalog acceptance", () => {
     const { useLiveRouteCatalog } = await import("./useLiveRouteCatalog");
     const hook = renderHook(() => useLiveRouteCatalog()); await act(flush); await emit(statusPath, compatible);
     await emit(catalogPath, {
-      "route:A": { active: 0, available: 2, freshestAt: Date.now(), availableReceipts: [Date.now() - BUS_EXPIRY_MS / 2, Date.now()] },
+      "route:A": { active: 0, available: 2, freshestAt: Date.now(), availableReceipts: [Date.now() - SIGNAL_LOST_MS / 2, Date.now()] },
       "route:__proto__": { active: 1, available: 0, freshestAt: 0 },
     });
     expect(hook.result.current.catalog.A.available).toBe(2);
     expect(Object.hasOwn(hook.result.current.catalog, "__proto__")).toBe(true);
-    await act(async () => { await vi.advanceTimersByTimeAsync(BUS_EXPIRY_MS / 2 + 2_001); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS / 2 + 2_001); });
     expect(hook.result.current.catalog.A.available).toBe(1);
-    await act(async () => { await vi.advanceTimersByTimeAsync(BUS_EXPIRY_MS / 2 + 2_001); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS / 2 + 2_001); });
     expect(hook.result.current.catalog.A.available).toBe(0);
   });
 

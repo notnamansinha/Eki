@@ -133,7 +133,7 @@ integration("authenticated telemetry to durable lifecycle and public emulator pr
     expect((await state.firestore!.collection("ride_sessions").get()).docs).toHaveLength(0);
     expect((await state.realtime!.ref(node).get()).val()?.sessionId).toBeUndefined();
   },15000);
-  it("exposes a terminal automatic intent for explicit resume without resurrecting it", async () => {
+  it("starts a fresh automatic service after cleanup interrupts the previous one, without resurrecting it", async () => {
     await state.firestore!.collection("drivers").doc("qa_terminal_auto_driver").set({assignedBusId:bus});
     const stopped=(seq:number)=>({...fix(seq,0,stops[0].lat),motionState:"stopped",speed:0,timestamp:Date.now(),deviceSentAt:Date.now()});
     expect((await send(stopped(1))).status).toBe(202);
@@ -145,8 +145,9 @@ integration("authenticated telemetry to durable lifecycle and public emulator pr
     await state.firestore!.collection("_active_bus_locks").doc(bus).delete();
     await state.realtime!.ref(node).remove();
     expect((await send(stopped(2))).status).toBe(202);
-    await vi.waitFor(async()=>expect((await state.realtime!.ref(node).get()).val()?.automaticServiceState).toBe("paused"),{timeout:10000});
-    expect((await state.firestore!.collection("ride_sessions").get()).docs).toHaveLength(1);
+    await vi.waitFor(async()=>expect((await state.realtime!.ref(node).get()).val()?.sessionId).toEqual(expect.any(String)),{timeout:10000});
+    expect((await state.realtime!.ref(node).get()).val()?.sessionId).not.toBe(id);
+    expect((await state.firestore!.collection("ride_sessions").get()).docs).toHaveLength(2);
     expect((await state.firestore!.collection("ride_sessions").doc(id).get()).data()?.status).toBe("interrupted");
   },25000);
   it("starts a fresh automatic service after the reconciler times out an abandoned ride", async () => {
@@ -169,14 +170,15 @@ integration("authenticated telemetry to durable lifecycle and public emulator pr
     expect((await state.firestore!.collection("ride_sessions").doc(abandoned).get()).data()?.status).toBe("interrupted");
     expect((await state.firestore!.collection("ride_sessions").get()).docs).toHaveLength(2);
   },25000);
-  it("does not wait forever for an already failed consumed return", async () => {
+  it("starts a fresh automatic service after a consumed return fails", async () => {
     await state.firestore!.collection("drivers").doc("qa_failed_return_driver").set({assignedBusId:bus});
     await state.firestore!.collection("ride_sessions").doc("qa_failed_return").set({status:"failed",busId:bus,routeId:route});
     await state.firestore!.collection("bus_locations").doc(bus).set({terminalJourney:{consumedBy:"qa_failed_return"}});
     const sample={...fix(1,0,stops[0].lat),motionState:"stopped",speed:0,timestamp:Date.now(),deviceSentAt:Date.now()};
     expect((await send(sample)).status).toBe(202);
-    await vi.waitFor(async()=>expect((await state.realtime!.ref(node).get()).val()?.automaticServiceState).toBe("paused"),{timeout:10000});
-    expect((await state.firestore!.collection("ride_sessions").get()).docs).toHaveLength(1);
+    await vi.waitFor(async()=>expect((await state.realtime!.ref(node).get()).val()?.sessionId).toEqual(expect.any(String)),{timeout:10000});
+    expect((await state.firestore!.collection("ride_sessions").get()).docs).toHaveLength(2);
+    expect((await state.firestore!.collection("bus_locations").doc(bus).get()).data()?.terminalJourney).toBeUndefined();
   },15000);
   it("recovers a qualified terminal after actual stale deletion and a leader restart, exactly once", async () => {
     const driverId = "qa_terminal_driver";

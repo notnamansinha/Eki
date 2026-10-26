@@ -30,15 +30,44 @@ vi.mock("@/components/shared/FeedbackModal", () => ({ default: () => <div>QA fee
 beforeEach(() => setScenario("pending"));
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe("passenger workspace navigation", () => {
+  it("retains an open stale ride as paused while removing it from new route choices, then recovers", async () => {
+    render(<PassengerWorkspace />); const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Track QA route" }));
+    await screen.findByRole("combobox", { name: "Destination station" });
+    act(() => setScenario("stale"));
+    await screen.findByText("Live tracking paused");
+    expect(screen.queryByRole("combobox", { name: "Destination station" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open live chat" })).toBeNull();
+    expect(screen.queryByText("QA feedback")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Back to home" }));
+    expect(screen.queryByRole("button", { name: "Track QA route" })).toBeNull();
+    act(() => setScenario("pending"));
+    expect(await screen.findByRole("button", { name: "Track QA route" })).toBeTruthy();
+  });
+  it("offers only the fresh bus when a selected bus on the same route becomes stale", async () => {
+    render(<PassengerWorkspace />); const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Track QA route" }));
+    act(() => setScenario("multiple-stale"));
+    await screen.findByText("Live tracking paused");
+    await user.click(screen.getByRole("combobox", { name: "Live bus" }));
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    await user.click(screen.getByRole("option", { name: "Bus qa-bus-2 · B → A" }));
+    expect(await screen.findByText("Boarding qa-session-2")).toBeTruthy();
+  });
+  it("does not offer cached routes while the passenger connection is offline", async () => {
+    setScenario("reconnecting"); render(<PassengerWorkspace />);
+    expect(screen.queryByRole("button", { name: "Track QA route" })).toBeNull();
+    expect(screen.getByText("Reconnecting to live bus data...")).toBeTruthy();
+  });
   it("labels an initial connection separately from reconnecting", () => {
-    const resume=vi.spyOn(fixtures,"useRTDBResume").mockReturnValue({isResuming:true,resumeGeneration:0,connectionGeneration:0,markSnapshotReceived:()=>{}});
+    const resume=vi.spyOn(fixtures,"useRTDBResume").mockReturnValue({isConnected:false,isResuming:true,resumeGeneration:0,connectionGeneration:0,markSnapshotReceived:()=>{}});
     try { render(<PassengerWorkspace />);expect(screen.getByText("Connecting to live bus data...")).toBeTruthy(); }
     finally {resume.mockRestore();}
   });
   it("acknowledges a ready empty catalog without waiting for a nonexistent bus subscription", async () => {
     setScenario("empty");
     const received = vi.fn();
-    const resume = vi.spyOn(fixtures, "useRTDBResume").mockReturnValue({ isResuming: true,
+    const resume = vi.spyOn(fixtures, "useRTDBResume").mockReturnValue({ isConnected: true, isResuming: true,
       resumeGeneration: 0, connectionGeneration: 1, markSnapshotReceived: received });
     try {
       render(<PassengerWorkspace />);

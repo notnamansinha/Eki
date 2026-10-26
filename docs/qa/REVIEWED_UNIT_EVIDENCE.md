@@ -12,7 +12,7 @@ pure, mocked, loopback Express or actual React/jsdom components/hooks; real OAut
 behavior is not claimed.
 
 Explicit feature mappings cover limited sub-oracles for auth cache and
-readiness, boarding code/accuracy/trusted-fix/order, trip reducer/shutdown,
+readiness, legacy operator-code formatting and current boarding accuracy/trusted-fix/order, trip reducer/shutdown,
 privacy queue recovery, passenger ride identity, directional views/cache,
 feedback eligibility and history interaction. Each link was compared with its
 source oracle and assertion body; titles alone do not establish applicability.

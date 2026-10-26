@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { FieldValue } from "firebase-admin/firestore";
 vi.mock("../lib/firebaseAdmin", () => ({ db: {}, rtdb: {} }));
 import { runAbandonedRideReconciliation } from "./abandonedRideReconciler";
 
@@ -81,7 +80,6 @@ describe("abandoned reconciler recovery", () => {
     expect(summary.interruptedIds).toEqual(["s1"]);
     expect(docs._active_bus_locks.bus1).toEqual({ sessionId: "s2" });
     expect(live.bus1_r1).toBeDefined();
-    expect(docs.bus_locations).toBeUndefined();
   });
 
   it("recovers on the next run after a transient Firestore failure post RTDB retirement", async () => {
@@ -104,31 +102,5 @@ describe("abandoned reconciler recovery", () => {
     const summary = await runAbandonedRideReconciliation({ ...s, now });
     expect(summary.protectedIds).toEqual(["s1"]);
     expect(docs.ride_sessions.s1.status).toBe("active");
-    expect(docs.bus_locations).toBeUndefined();
-  });
-
-  it("opens a new automatic-service generation and releases the return it consumed", async () => {
-    const docs: any = { ride_sessions: { s1: session("bus1") }, _active_bus_locks: { bus1: { sessionId: "s1" } },
-      bus_locations: { bus1: { automaticServiceEpoch: 2, terminalJourney: { consumedBy: "s1" } } } };
-    const summary = await runAbandonedRideReconciliation({ ...store(docs, {}), now });
-    expect(summary.interruptedIds).toEqual(["s1"]);
-    expect(docs.bus_locations.bus1.automaticServiceEpoch.isEqual(FieldValue.increment(1))).toBe(true);
-    expect(docs.bus_locations.bus1.terminalJourney.isEqual(FieldValue.delete())).toBe(true);
-  });
-
-  it("keeps a deliberate pause and a terminal journey owned by another session", async () => {
-    const journey = { consumedBy: "s2" };
-    const docs: any = { ride_sessions: { s1: session("bus1") },
-      bus_locations: { bus1: { automaticServicePaused: true, terminalJourney: journey } } };
-    await runAbandonedRideReconciliation({ ...store(docs, {}), now });
-    expect(docs.bus_locations.bus1).toMatchObject({ automaticServicePaused: true, terminalJourney: journey });
-    expect(docs.bus_locations.bus1.automaticServiceEpoch.isEqual(FieldValue.increment(1))).toBe(true);
-  });
-
-  it("does not open a new generation on a dry run", async () => {
-    const docs: any = { ride_sessions: { s1: session("bus1") } };
-    const summary = await runAbandonedRideReconciliation({ ...store(docs, {}), now, dryRun: true });
-    expect(summary.staleIds).toEqual(["s1"]);
-    expect(docs.bus_locations).toBeUndefined();
   });
 });
