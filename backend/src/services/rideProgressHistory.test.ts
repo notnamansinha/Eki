@@ -27,6 +27,11 @@ describe("durable stop history", () => {
     expect(missingStopHistory(natural, "in_service", 3, additions, 200)).toEqual({});
   });
 
+  it("labels stops skipped during a GNSS gap separately from the stop actually reached", () => {
+    const additions = missingStopHistory(natural, "in_service", 4, { 0: { timestamp: 10 } }, 50, 1, [1, 2]);
+    expect(Object.values(additions).map(stop => stop.evidence)).toEqual(["skipped_gnss_gap", "skipped_gnss_gap", "gnss_progress"]);
+  });
+
   it.each(["pre_departure", "unknown"])("does not invent arrivals for %s", state => {
     expect(missingStopHistory(natural, state, 0, {}, 100)).toEqual({});
   });

@@ -27,11 +27,13 @@ describe("stationary readiness simulations", () => {
     const midpoint = (stops[49].lat + stops[50].lat) / 2;
     let state: TripStateResult = { tripState: "in_service", currentStopIndex: 50, hasDepartedOrigin: true };
     for (let tick = 0; tick < 3600; tick++) {
+      // Uncertain samples open a GNSS gap; parked between stops it must never skip one.
       state = reduceTripState({ lat: midpoint + Math.sin(tick) * 0.00001, lng: 72,
         motionState: tick % 30 === 0 ? "uncertain" : "stopped", stops,
         currentTripState: state.tripState, currentStopIndex: state.currentStopIndex,
-        hasDepartedOrigin: state.hasDepartedOrigin });
-      expect(state).toEqual({ tripState: "in_service", currentStopIndex: 50, hasDepartedOrigin: true });
+        hasDepartedOrigin: state.hasDepartedOrigin, gnssGapSince: state.gnssGapSince });
+      expect(state).toMatchObject({ tripState: "in_service", currentStopIndex: 50, hasDepartedOrigin: true });
+      expect(state.skippedStopIndices).toBeUndefined();
     }
   });
 });

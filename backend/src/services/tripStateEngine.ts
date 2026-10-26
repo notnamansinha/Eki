@@ -367,6 +367,7 @@ async function maybeArmAutomaticTurnaround(
         currentStopIndex: 0,
         hasDepartedOrigin: false,
         terminalArrival: null,
+        gnssGap: null,
         delayMinutes: 0,
         delayUpdatedAt: 0,
         directionState: "resolved",
@@ -617,6 +618,13 @@ function activeRideDocumentId(
     : null;
 }
 
+/** An open GNSS gap belongs to one session; never carry it into another ride. */
+function liveGnssGapSince(data: Record<string, unknown>): number | null {
+  const gap = data.gnssGap as { sessionId?: unknown; since?: unknown } | null | undefined;
+  return gap && typeof data.sessionId === "string" && gap.sessionId === data.sessionId &&
+    typeof gap.since === "number" && Number.isFinite(gap.since) ? gap.since : null;
+}
+
 /** Serializes the durable active-ride lifecycle write for one ride. */
 function persistActiveRideLifecycle(
   data: Record<string, unknown>,
@@ -625,6 +633,8 @@ function persistActiveRideLifecycle(
   hasDepartedOrigin: boolean,
   stops: RouteStop[],
   terminalArrival: TerminalArrivalEvidence | null = null,
+  gnssGapSince: number | null = null,
+  skippedStopIndices: readonly number[] = [],
 ): Promise<RideCheckpoint | undefined> {
   const documentId = activeRideDocumentId(data);
   const busId = normalizeIdentifier(data.busId);
@@ -655,6 +665,7 @@ function persistActiveRideLifecycle(
     currentStopIndex,
     hasDepartedOrigin,
     terminalArrival,
+    gnssGapSince,
     hasTelemetry: journeyLocation(data) !== null,
     lastRouteVersion: Number.isSafeInteger(data.routeVersion) && Number(data.routeVersion) > 0 ? Number(data.routeVersion) : 0,
     delayMinutes,
@@ -698,7 +709,7 @@ function persistActiveRideLifecycle(
         if (session.exists && ["pending", "armed", "active"].includes(sessionData?.status)) {
           const stopsReached = missingStopHistory(
             stops, checkpoint.tripState, checkpoint.currentStopIndex, sessionData?.stopsReached,
-            FieldValue.serverTimestamp(), Number(data.currentStopIndex),
+            FieldValue.serverTimestamp(), Number(data.currentStopIndex), skippedStopIndices,
           );
           const activating = checkpoint.tripState === "in_service" && sessionData?.status !== "active";
           const firstLocation = !sessionData?.firstKnownLocation ? journeyLocation(data) : null;
@@ -912,7 +923,7 @@ export function startTripStateEngine(): () => Promise<void> {
     const isNewTelemetry =
       Number.isFinite(telemetryTimestamp) &&
       (!previousTelemetry || telemetryTimestamp > previousTelemetry.timestamp);
-    let { tripState, currentStopIndex, hasDepartedOrigin, terminalArrival } = isNewTelemetry
+    const reduced = isNewTelemetry
       ? reduceTripState({
       lat: data.lat,
       lng: data.lng,
@@ -925,6 +936,7 @@ export function startTripStateEngine(): () => Promise<void> {
       stops,
       hasDepartedOrigin: data.hasDepartedOrigin === true,
       terminalArrival: data.terminalArrival,
+      gnssGapSince: liveGnssGapSince(data),
       timestamp: telemetryTimestamp,
       now: Date.now(),
       gpsHdop: data.gpsHdop,
@@ -935,17 +947,23 @@ export function startTripStateEngine(): () => Promise<void> {
           currentStopIndex: data.currentStopIndex,
           hasDepartedOrigin: data.hasDepartedOrigin === true,
           terminalArrival: data.terminalArrival ?? null,
+          gnssGapSince: liveGnssGapSince(data) ?? undefined,
+          skippedStopIndices: undefined,
         };
+    let { tripState, currentStopIndex, hasDepartedOrigin, terminalArrival } = reduced;
+    const gnssGapSince = reduced.gnssGapSince ?? null;
 
     if (tripState === "pre_departure" || tripState === "in_service") {
       // Commit lifecycle and all crossed-stop history together before exposing
       // the next index. A failed write leaves the same sample retryable.
-      const checkpoint = await persistActiveRideLifecycle(data, tripState, currentStopIndex, hasDepartedOrigin, stops, terminalArrival ?? null);
+      const checkpoint = await persistActiveRideLifecycle(data, tripState, currentStopIndex, hasDepartedOrigin, stops,
+        terminalArrival ?? null, gnssGapSince, reduced.skippedStopIndices);
       if (checkpoint) ({ tripState, currentStopIndex, hasDepartedOrigin, terminalArrival } = checkpoint);
     }
     const liveStateChanged = tripState !== data.tripState || currentStopIndex !== data.currentStopIndex ||
       hasDepartedOrigin !== (data.hasDepartedOrigin === true) ||
-      JSON.stringify(terminalArrival ?? null) !== JSON.stringify(data.terminalArrival ?? null);
+      JSON.stringify(terminalArrival ?? null) !== JSON.stringify(data.terminalArrival ?? null) ||
+      gnssGapSince !== liveGnssGapSince(data);
     if (liveStateChanged && tripState !== "completed") {
       try {
         // Guarded write: the plain update() could recreate a node the stale
@@ -975,6 +993,8 @@ export function startTripStateEngine(): () => Promise<void> {
             currentStopIndex,
             hasDepartedOrigin,
             terminalArrival: terminalArrival ?? null,
+            gnssGap: gnssGapSince !== null && typeof data.sessionId === "string"
+              ? { sessionId: data.sessionId, since: gnssGapSince } : null,
           };
         });
       } catch (error) {
@@ -1132,6 +1152,7 @@ export function startTripStateEngine(): () => Promise<void> {
             currentStopIndex,
             hasDepartedOrigin,
             terminalArrival: null,
+            gnssGap: null,
             terminalArrivalConfirmedAt: completionTimeMs,
             completedAt: completionTimeMs,
             ...(typeof data.sessionId === "string" ? { lastCompletedSessionId: data.sessionId, lastCompletedAt: completionTimeMs, lastCompletedRouteId: data.routeId } : {}),

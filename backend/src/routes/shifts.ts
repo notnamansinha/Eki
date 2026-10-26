@@ -35,6 +35,7 @@ function retireRideLifecycle(
     "tripState",
     "currentStopIndex",
     "hasDepartedOrigin",
+    "gnssGap",
     "delayMinutes",
     "delayUpdatedAt",
     "automaticTurnaround",

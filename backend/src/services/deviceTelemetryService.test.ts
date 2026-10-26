@@ -71,6 +71,13 @@ describe("durable ride restoration direction", () => {
     expect(durableLifecycle({ ...activeRide, direction: "reverse" }))
       .toMatchObject({ direction: "reverse" });
   });
+
+  it("restores an open GNSS gap for the same session only", () => {
+    expect(durableLifecycle({ ...activeRide, direction: "forward", gnssGapSince: 30_000 }))
+      .toMatchObject({ gnssGap: { sessionId: "session_1", since: 30_000 } });
+    expect(durableLifecycle({ ...activeRide, direction: "forward", gnssGapSince: null }))
+      .toMatchObject({ gnssGap: null });
+  });
 });
 
 describe("initial device presence", () => {

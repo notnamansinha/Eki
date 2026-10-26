@@ -81,6 +81,7 @@ Backend-only authority, with every browser read/write denied. One latest record 
 | `automaticTurnaround`, `previousSessionId` | boolean / string | Identifies a backend-armed return session and its completed predecessor |
 | `currentStopIndex` | integer | Zero-based next/current ordered stop progress |
 | `hasDepartedOrigin` | boolean | Prevents repeated origin activation |
+| `gnssGap` | `{sessionId,since}` / null | Worker-owned GNSS gap marker: `since` is the last sample time before ten missed 1 Hz heartbeats, an untrusted fix or a segment too long to check. While it is open, a reliably observed later stop credits the unobserved stops before it as skipped; observing any stop clears it. Ignored unless `sessionId` matches the node's session; not public |
 | `delayMinutes` | number | Driver API value, 0–1440 |
 | `delayUpdatedAt` | epoch ms | Delay revision for conflict-safe recovery/projection |
 | `lifecycleUpdatedAt` | RTDB server epoch ms | Server lifecycle/status mutation time |
@@ -199,7 +200,7 @@ Durable ride record and parent of messages.
 | `boardingCode` | eight-character string | Driver-visible session proof; never projected into RTDB |
 | `boardingCodeIssuedAt` | Firestore Timestamp | Server issuance time |
 | `stopsReached` | map keyed zero-based index | Ordered server evidence |
-| `stopsReached.{i}` | `{stopIndex,stopId,stopName,timestamp,evidence?}` | Stop evidence; new `evidence` is `gnss_progress` or `recovered_checkpoint`, whose timestamp denotes repair time rather than original arrival |
+| `stopsReached.{i}` | `{stopIndex,stopId,stopName,timestamp,evidence?}` | Stop evidence; new `evidence` is `gnss_progress`, `recovered_checkpoint` (timestamp denotes repair time rather than original arrival) or `skipped_gnss_gap` (credited because a later stop was observed after a GNSS gap; never observed itself) |
 | `automaticTurnaround`, `previousSessionId` | boolean / string | Present on an automatically armed opposite-direction session |
 | `path` | legacy map/array | Older history tolerated/read/deleted; no current per-fix writes |
 
@@ -239,7 +240,7 @@ Fields: `deviceId`, `busId`, `routeId`, `enabled`, `secretHash` (`32-hex-salt:12
 
 ### `active_rides/{busId}_{routeId}`
 
-Minimal recovery state: `sessionId`, `busId`, `routeId`, `driverId`, `direction`, `originStopId`, `destinationStopId`, `status: active`, `tripState`, direction-ordered `currentStopIndex`, `hasDepartedOrigin`, `delayMinutes`, optional `automaticTurnaround`/`previousSessionId`, and `updatedAt`. No coordinate history. Recovery reads this projection, its bus lock and non-terminal session in one Firestore transaction. Telemetry and the leader's initial/completed RTDB snapshots restore missing lifecycle fields. A completed predecessor can be replaced only by its own durable automatic return, with a matching claim when present; unrelated or newer live sessions and terminal durable sessions are protected. Recovery reuses the claimed session ID, clears old completion/claim and match/reroute context, preserves newer raw telemetry and same-session delays, and leaves completed history/locks untouched. A newly observed claim bypasses the earlier no-ride miss cache; claimed misses retry after 1s rather than 30s. Completion/reconciliation deletes only a matching session.
+Minimal recovery state: `sessionId`, `busId`, `routeId`, `driverId`, `direction`, `originStopId`, `destinationStopId`, `status: active`, `tripState`, direction-ordered `currentStopIndex`, `hasDepartedOrigin`, `gnssGapSince` (open GNSS gap or null), `delayMinutes`, optional `automaticTurnaround`/`previousSessionId`, and `updatedAt`. No coordinate history. Recovery reads this projection, its bus lock and non-terminal session in one Firestore transaction. Telemetry and the leader's initial/completed RTDB snapshots restore missing lifecycle fields. A completed predecessor can be replaced only by its own durable automatic return, with a matching claim when present; unrelated or newer live sessions and terminal durable sessions are protected. Recovery reuses the claimed session ID, clears old completion/claim and match/reroute context, preserves newer raw telemetry and same-session delays, and leaves completed history/locks untouched. A newly observed claim bypasses the earlier no-ride miss cache; claimed misses retry after 1s rather than 30s. Completion/reconciliation deletes only a matching session.
 
 ### `_active_bus_locks/{busId}`
 

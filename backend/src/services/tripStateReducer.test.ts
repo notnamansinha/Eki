@@ -395,3 +395,67 @@ it.each(["pre_departure", "in_service"] as const)(
       currentStopIndex: 0, stops, hasDepartedOrigin: false })).toMatchObject({ currentStopIndex: 0, hasDepartedOrigin: false });
   },
 );
+
+describe("stops missed during a GNSS gap", () => {
+  const north = (meters: number) => ({ lat: 23 + meters / 6_371_000 * 180 / Math.PI, lng: 72 });
+  // origin, A, B, C, terminal: 300 m apart.
+  const stops = [north(0), north(300), north(600), north(900), north(1200)];
+  const fix = (meters: number, timestamp: number, extra: Partial<Parameters<typeof reduceTripState>[0]> = {}) => ({
+    ...north(meters), motionState: "moving" as const, currentTripState: "in_service" as const, currentStopIndex: 1,
+    stops, hasDepartedOrigin: true, timestamp, gpsHdop: 1, speed: 30, ...extra,
+  });
+
+  it("skips A and B when the bus is next observed at C after losing GNSS before A", () => {
+    const result = reduceTripState(fix(900, 90_000, { previousPosition: { ...north(250), timestamp: 30_000 } }));
+    expect(result).toMatchObject({ tripState: "in_service", currentStopIndex: 4, skippedStopIndices: [1, 2] });
+    expect(result.gnssGapSince).toBeUndefined();
+  });
+
+  it("keeps the gap open between stops, then skips when a later stop is crossed", () => {
+    const reappeared = reduceTripState(fix(850, 90_000, { previousPosition: { ...north(250), timestamp: 30_000 } }));
+    expect(reappeared).toMatchObject({ currentStopIndex: 1, gnssGapSince: 30_000 });
+    expect(reappeared.skippedStopIndices).toBeUndefined();
+    const crossed = reduceTripState(fix(905, 91_000, { previousPosition: { ...north(850), timestamp: 90_000 },
+      gnssGapSince: reappeared.gnssGapSince }));
+    expect(crossed).toMatchObject({ currentStopIndex: 4, skippedStopIndices: [1, 2] });
+    expect(crossed.gnssGapSince).toBeUndefined();
+  });
+
+  it.each([
+    ["ten missed heartbeats", { previousPosition: { ...north(890), timestamp: 79_999 } }],
+    ["an untrusted previous fix", { previousPosition: { ...north(890), timestamp: 89_000, motionState: "uncertain" as const } }],
+    ["a segment too long to check", { previousPosition: { ...north(600), timestamp: 89_000 } }],
+  ])("opens a gap from %s", (_name, extra) => {
+    expect(reduceTripState(fix(900, 90_000, extra))).toMatchObject({ currentStopIndex: 4, skippedStopIndices: [1, 2] });
+  });
+
+  it("opens a gap on an untrusted fix without moving the ride", () => {
+    expect(reduceTripState(fix(500, 90_000, { motionState: "uncertain", previousPosition: { ...north(250), timestamp: 89_000 } })))
+      .toEqual({ tripState: "in_service", currentStopIndex: 1, hasDepartedOrigin: true, gnssGapSince: 89_000 });
+  });
+
+  it("never skips a stop without a GNSS gap", () => {
+    const result = reduceTripState(fix(900, 90_000, { previousPosition: { ...north(890), timestamp: 89_000 } }));
+    expect(result).toEqual({ tripState: "in_service", currentStopIndex: 1, hasDepartedOrigin: true });
+  });
+
+  it("closes the gap without skipping when the expected stop is observed", () => {
+    const result = reduceTripState(fix(300, 90_000, { previousPosition: { ...north(290), timestamp: 89_000 }, gnssGapSince: 30_000 }));
+    expect(result).toEqual({ tripState: "in_service", currentStopIndex: 2, hasDepartedOrigin: true });
+  });
+
+  it("skips to the terminal but still requires a confirmed stopped arrival", () => {
+    const arrived = reduceTripState(fix(1200, 90_000, { motionState: "stopped", speed: 0,
+      previousPosition: { ...north(250), timestamp: 30_000 } }));
+    expect(arrived).toMatchObject({ tripState: "in_service", currentStopIndex: 4, skippedStopIndices: [1, 2, 3],
+      terminalArrival: { startedAt: 90_000, lastSampledAt: 90_000 } });
+    const confirmed = reduceTripState(fix(1200, 92_000, { motionState: "stopped", speed: 0, currentStopIndex: 4,
+      previousPosition: { ...north(1200), timestamp: 90_000 }, terminalArrival: arrived.terminalArrival }));
+    expect(confirmed.tripState).toBe("completed");
+  });
+
+  it("does not let a stale replay open a gap", () => {
+    const result = reduceTripState(fix(900, 90_000, { now: 200_000, previousPosition: { ...north(250), timestamp: 30_000 } }));
+    expect(result).toEqual({ tripState: "in_service", currentStopIndex: 1, hasDepartedOrigin: true });
+  });
+});

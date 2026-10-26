@@ -14,6 +14,7 @@ interface TripRouteStop {
 interface TripPosition extends TripRouteStop {
   motionState?: MotionState;
   gpsHdop?: number | null;
+  timestamp?: number;
 }
 
 /** Legacy fixes omit HDOP; an explicitly bad quality measurement is never arrival evidence. */
@@ -36,6 +37,8 @@ export interface TripStateInput {
   gpsHdop?: number | null;
   speed?: number;
   terminalArrival?: TerminalArrivalEvidence | null;
+  /** Sample time before an open GNSS gap; persisted by the caller like terminalArrival. */
+  gnssGapSince?: number | null;
 }
 
 export interface TripStateResult {
@@ -43,6 +46,10 @@ export interface TripStateResult {
   currentStopIndex: number;
   hasDepartedOrigin: boolean;
   terminalArrival?: TerminalArrivalEvidence;
+  /** Present while a GNSS gap may hide passed stops and no stop has been observed since. */
+  gnssGapSince?: number;
+  /** Stops credited as passed during a GNSS gap without being observed. */
+  skippedStopIndices?: number[];
 }
 
 // Stop arrival and endpoint direction inference are intentionally distinct
@@ -55,6 +62,9 @@ export const STOP_GEOFENCE_M = STOP_ARRIVAL_GEOFENCE_M;
 export const ORIGIN_DEPARTURE_M = 150;
 const MIN_ORIGIN_DEPARTURE_M = 10;
 const MAX_TELEMETRY_SEGMENT_M = 250;
+// Hardware publishes at 1 Hz. Ten missing heartbeats, an untrusted fix or a
+// segment too long to check can hide a passed stop: that opens a GNSS gap.
+export const GNSS_GAP_MS = 10_000;
 // Two one-second hardware heartbeats must span this interval. This is arrival
 // confirmation, independent of the post-completion turnaround wait.
 const configuredConfirmationMs = Number(process.env.TERMINAL_ARRIVAL_CONFIRMATION_MS);
@@ -107,6 +117,19 @@ function wasStopReached(
   );
 }
 
+/** Sample time before the gap this update opens, or undefined when nothing was missed. */
+function detectedGnssGap(input: TripStateInput): number | undefined {
+  const previous = input.previousPosition;
+  const missed = unreliableTripFix(input) || (previous !== undefined && (
+    unreliableTripFix(previous) ||
+    haversineMeters(previous, input) > MAX_TELEMETRY_SEGMENT_M ||
+    (Number.isFinite(previous.timestamp) && Number.isFinite(input.timestamp) &&
+      input.timestamp! - previous.timestamp! > GNSS_GAP_MS)));
+  if (!missed) return undefined;
+  const since = previous?.timestamp ?? input.timestamp;
+  return Number.isFinite(since) ? since! : 0;
+}
+
 /**
  * Pure trip lifecycle decision. Departure evidence is supplied by and returned
  * to the caller so it can be persisted with the active trip, rather than lost
@@ -133,8 +156,13 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
     };
   }
 
-  if (unreliableTripFix(input) || (typeof input.now === "number" &&
-    (!Number.isFinite(input.timestamp) || input.now - input.timestamp! > 60_000 || input.timestamp! > input.now + 10_000))) {
+  const priorGap = typeof input.gnssGapSince === "number" && Number.isFinite(input.gnssGapSince)
+    ? input.gnssGapSince : undefined;
+  const staleFix = typeof input.now === "number" &&
+    (!Number.isFinite(input.timestamp) || input.now - input.timestamp! > 60_000 || input.timestamp! > input.now + 10_000);
+  // A stale replay is not a GNSS gap; an untrusted fix is.
+  const gnssGap = priorGap ?? (staleFix ? undefined : detectedGnssGap(input));
+  if (unreliableTripFix(input) || staleFix) {
     return {
       tripState:
         currentTripState === "maintenance"
@@ -142,6 +170,7 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
           : currentTripState,
       currentStopIndex,
       hasDepartedOrigin: input.hasDepartedOrigin,
+      ...(gnssGap !== undefined ? { gnssGapSince: gnssGap } : {}),
     };
   }
 
@@ -169,6 +198,7 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
         tripState: departed ? "in_service" : "pre_departure",
         currentStopIndex,
         hasDepartedOrigin: hasDepartedOrigin || departed,
+        ...(gnssGap !== undefined ? { gnssGapSince: gnssGap } : {}),
       };
     }
     leavingOrigin = true;
@@ -193,11 +223,27 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
 
     // Only the next expected stop may advance the trip. The bounded segment
     // check still catches a fast crossing between two fixes, but it never
-    // permits a downstream stop to skip one or more configured stops.
+    // permits a downstream stop to skip one or more configured stops, except
+    // after a GNSS gap: a reliably observed later stop then credits the
+    // unobserved stops before it as skipped instead of stranding the ride.
     let nextIndex = safeCurrentIndex;
+    let skippedStopIndices: number[] | undefined;
+    if (gnssGap !== undefined && nextIndex > 0 &&
+      !wasStopReached(stops[nextIndex], position, input.previousPosition)) {
+      const lastSkippable = leavingOrigin ? lastIndex - 1 : lastIndex;
+      for (let index = nextIndex + 1; index <= lastSkippable; index += 1) {
+        if (!wasStopReached(stops[index], position, input.previousPosition)) continue;
+        skippedStopIndices = Array.from({ length: index - nextIndex }, (_, offset) => nextIndex + offset);
+        nextIndex = index;
+        break;
+      }
+    }
+    const skipped = skippedStopIndices ? { skippedStopIndices } : {};
     let lastCrossing = -Infinity;
+    let observedStop = false;
     while (nextIndex > 0 && !(leavingOrigin && nextIndex === lastIndex) &&
       wasStopReached(stops[nextIndex], position, input.previousPosition)) {
+      observedStop = true;
       // Multiple closely spaced stops may be crossed in one accepted segment.
       // Consume them only in travel order, never by nearest-stop lookup.
       const previous = input.previousPosition;
@@ -216,7 +262,7 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
           typeof input.speed === "number" && input.speed >= 0 && input.speed <= GNSS_STATIONARY_SPEED_KMH &&
           Number.isSafeInteger(input.timestamp) &&
           haversineMeters(position, stops[lastIndex]) <= STOP_GEOFENCE_M;
-        if (!reliableArrival) return { tripState: "in_service", currentStopIndex: nextIndex, hasDepartedOrigin };
+        if (!reliableArrival) return { tripState: "in_service", currentStopIndex: nextIndex, hasDepartedOrigin, ...skipped };
         const timestamp = input.timestamp!;
         const prior = input.terminalArrival;
         const usablePrior = prior && Number.isSafeInteger(prior.startedAt) && Number.isSafeInteger(prior.lastSampledAt) &&
@@ -224,20 +270,24 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
         const evidence = usablePrior ? { ...prior, lastSampledAt: timestamp } : { startedAt: timestamp, lastSampledAt: timestamp };
         const confirmed = usablePrior && timestamp > prior.lastSampledAt && timestamp - prior.startedAt >= TERMINAL_ARRIVAL_CONFIRMATION_MS;
         return { tripState: confirmed ? "completed" : "in_service", currentStopIndex: nextIndex, hasDepartedOrigin,
-          ...(!confirmed ? { terminalArrival: evidence } : {}) };
+          ...(!confirmed ? { terminalArrival: evidence } : {}), ...skipped };
       }
       nextIndex += 1;
     }
-    return { tripState: "in_service", currentStopIndex: nextIndex, hasDepartedOrigin: hasDepartedOrigin || leavingOrigin };
+    // Observing any stop closes the gap; until then it stays open.
+    return { tripState: "in_service", currentStopIndex: nextIndex, hasDepartedOrigin: hasDepartedOrigin || leavingOrigin,
+      ...(!observedStop && gnssGap !== undefined ? { gnssGapSince: gnssGap } : {}), ...skipped };
   }
 
+  const openGap = gnssGap !== undefined ? { gnssGapSince: gnssGap } : {};
   if (currentTripState === "maintenance") {
     return {
       tripState: "in_service",
       currentStopIndex,
       hasDepartedOrigin,
+      ...openGap,
     };
   }
 
-  return { tripState: currentTripState, currentStopIndex, hasDepartedOrigin };
+  return { tripState: currentTripState, currentStopIndex, hasDepartedOrigin, ...openGap };
 }

@@ -1082,6 +1082,43 @@ describe("trip-state engine lifecycle", () => {
     await stop();
   });
 
+  const gapRoute = () => mocks.routeListeners[0].next({ docChanges: () => [{ type: "added", doc: {
+    id: "route_2", data: () => ({ stops: Array.from({ length: 5 }, (_, i) => ({ id: `s${i}`, name: `Stop ${i}`, lat: 23 + i * 0.0005, lng: 72 })) }),
+  } }] });
+
+  it("carries the session's GNSS gap into the reducer and records the stops skipped during it", async () => {
+    allowCompletion("session-1");
+    mocks.reduceTripState.mockReturnValue({ tripState: "in_service", currentStopIndex: 3, hasDepartedOrigin: true, skippedStopIndices: [1] });
+    const stop = startTripStateEngine(); gapRoute();
+    const live = { sessionId: "session-1", direction: "forward", status: "active", deviceState: "online", tripState: "in_service",
+      currentStopIndex: 1, hasDepartedOrigin: true, gnssGap: { sessionId: "session-1", since: 5 } };
+    const store = makeNodeRef(live);
+    mocks.rtdbHandlers.get("child_changed")!({ ...queuedSnapshot(store, "bus_gap_route_2"), val: () => ({ ...queuedSnapshot(store, "bus_gap_route_2").val(), ...live }) });
+    await flushMicrotasks(50);
+    expect(mocks.reduceTripState).toHaveBeenCalledWith(expect.objectContaining({ gnssGapSince: 5 }));
+    const history = mocks.transactionSet.mock.calls.find(([ref, data]) => ref.collectionName === "ride_sessions" && data.stopsReached)?.[1].stopsReached;
+    expect(history[1]).toMatchObject({ stopId: "s1", evidence: "skipped_gnss_gap" });
+    expect(history[2]).toMatchObject({ stopId: "s2", evidence: "gnss_progress" });
+    expect(store.nodeValue()).toMatchObject({ currentStopIndex: 3, gnssGap: null });
+    await stop();
+  });
+
+  it("ignores another session's GNSS gap and persists one the reducer opens", async () => {
+    allowCompletion("session-1");
+    mocks.reduceTripState.mockReturnValue({ tripState: "in_service", currentStopIndex: 1, hasDepartedOrigin: true, gnssGapSince: 7 });
+    const stop = startTripStateEngine(); gapRoute();
+    const live = { sessionId: "session-1", direction: "forward", status: "active", deviceState: "online", tripState: "in_service",
+      currentStopIndex: 1, hasDepartedOrigin: true, gnssGap: { sessionId: "old-session", since: 5 } };
+    const store = makeNodeRef(live);
+    mocks.rtdbHandlers.get("child_changed")!({ ...queuedSnapshot(store, "bus_gap_route_2"), val: () => ({ ...queuedSnapshot(store, "bus_gap_route_2").val(), ...live }) });
+    await flushMicrotasks(50);
+    expect(mocks.reduceTripState).toHaveBeenCalledWith(expect.objectContaining({ gnssGapSince: null }));
+    expect(store.nodeValue()).toMatchObject({ gnssGap: { sessionId: "session-1", since: 7 } });
+    expect(mocks.transactionSet).toHaveBeenCalledWith(expect.objectContaining({ collectionName: "active_rides" }),
+      expect.objectContaining({ gnssGapSince: 7 }), { merge: true });
+    await stop();
+  });
+
   it("repairs an older live index from the same session's durable checkpoint", async () => {
     allowCompletion("session-1");
     const get = mocks.transactionGet.getMockImplementation()!;

@@ -344,7 +344,8 @@ describe("routing lifecycle through actual ingestion and listeners", () => {
     await a.send(23.001, 15_000); await b.send(23.001, 15_000);
     await a.send(23.002, 30_000); await b.send(23.004, 55_000, "stopped");
     expect(a.live()).toMatchObject({ sessionId: a.sessionId, routeId: a.routeId, currentStopIndex: 2 });
-    expect(b.live()).toMatchObject({ sessionId: b.sessionId, routeId: b.routeId, currentStopIndex: 1 });
+    // b reappears at its terminal after a 40 s gap, so its unobserved middle stop is skipped.
+    expect(b.live()).toMatchObject({ sessionId: b.sessionId, routeId: b.routeId, currentStopIndex: 2 });
     expect(a.live().routeSessionId).toBe(a.sessionId);
     expect(b.live().routeSessionId).toBe(b.sessionId);
   });
@@ -376,12 +377,16 @@ describe("routing lifecycle through actual ingestion and listeners", () => {
       expect(f.live()).toMatchObject({ direction: "reverse", tripState: "pre_departure" });
     } finally { await stopReplica(); }
   });
-  it("keeps an unobserved intermediate stop pending at the terminal", async () => {
+  it("skips a stop missed during a GNSS gap when the bus reappears at the terminal", async () => {
     const f = await fixture();
     await f.send(23, 0, "stopped"); await f.send(23.001, 15_000);
-    await f.send(23.004, 55_000, "stopped"); await f.send(23.004, 58_000, "stopped");
-    expect(f.live()).toMatchObject({ currentStopIndex: 1, tripState: "in_service", direction: "forward" });
-    expect(state.docs.get(`ride_sessions/${f.sessionId}`)?.status).toBe("active");
+    await f.send(23.004, 55_000, "stopped");
+    expect(f.live()).toMatchObject({ currentStopIndex: 2, tripState: "in_service", direction: "forward" });
+    expect(f.live().gnssGap).toBeNull();
+    const reached = state.docs.get(`ride_sessions/${f.sessionId}`)?.stopsReached;
+    expect(reached?.[1]).toMatchObject({ stopIndex: 1, evidence: "skipped_gnss_gap" });
+    await f.send(23.004, 58_000, "stopped");
+    expect(state.docs.get(`ride_sessions/${f.sessionId}`)?.status).toBe("completed");
   });
   it("recovers an incomplete arrival conservatively after power loss", async () => {
     const f = await fixture();

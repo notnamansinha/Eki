@@ -92,6 +92,8 @@ export function durableLifecycle(
       : 0,
     hasDepartedOrigin: value.hasDepartedOrigin === true,
     terminalArrival: value.terminalArrival ?? null,
+    gnssGap: typeof value.gnssGapSince === "number" && typeof value.sessionId === "string"
+      ? { sessionId: value.sessionId, since: value.gnssGapSince } : null,
     // A restored same-session stream must not revive a lower geometry revision.
     ...(Number.isSafeInteger(value.lastRouteVersion) && Number(value.lastRouteVersion) > 0
       ? { routeVersion: Number(value.lastRouteVersion) + 1 } : {}),
