@@ -49,6 +49,8 @@ export interface ActiveBusEntry {
   routeGeometryVersion?: number;
   routeComputedAt?: number;
   routeTrafficState?: "pending" | "current" | "fallback";
+  /** Sample time of a durable last fix standing in for a missing live position. */
+  lastKnownLocationAt?: number;
 }
 
 export interface RawLiveLocation {
@@ -406,29 +408,44 @@ export function isFleetBusEntry(
 /**
  * Once the server removes a bus's live presence record (stale sweep or an
  * abandoned-ride timeout), its last accepted GNSS fix in `bus_locations`
- * keeps it on the admin map as an offline bus.
+ * keeps it on the admin map as an offline bus. A live record created before
+ * its first fix (a driver-started shift) borrows the same fix for its
+ * position; `lastKnownLocationAt` keeps that position's age apart from the
+ * record's own freshness.
  */
 export function withLastKnownLocations(
   live: ActiveBusEntry[],
   busLocations: readonly { id: string; routeId?: unknown; lastKnownLocation?: unknown }[],
 ): ActiveBusEntry[] {
-  const liveBusIds = new Set(live.map((entry) => entry.busId));
-  const offline = busLocations.flatMap((location): ActiveBusEntry[] => {
+  const fixes = new Map<string, { routeId?: string; lat: number; lng: number; sampledAt: number }>();
+  for (const location of busLocations) {
     const fix = location.lastKnownLocation as Record<string, unknown> | null | undefined;
     if (
-      liveBusIds.has(location.id) || !fix ||
-      typeof fix.sampledAt !== "number" || !Number.isFinite(fix.sampledAt) ||
+      !fix || typeof fix.sampledAt !== "number" || !Number.isFinite(fix.sampledAt) ||
       !hasValidBusCoordinates(fix.lat as number, fix.lng as number)
-    ) return [];
-    return [{
-      busId: location.id,
+    ) continue;
+    fixes.set(location.id, {
       ...(typeof location.routeId === "string" ? { routeId: location.routeId } : {}),
       lat: fix.lat as number,
       lng: fix.lng as number,
-      timestamp: fix.sampledAt,
+      sampledAt: fix.sampledAt,
+    });
+  }
+  let placed = false;
+  const positioned = live.map((entry) => {
+    const fix = fixes.get(entry.busId);
+    if (!fix || hasValidBusCoordinates(entry.lat, entry.lng)) return entry;
+    placed = true;
+    return { ...entry, lat: fix.lat, lng: fix.lng, lastKnownLocationAt: fix.sampledAt };
+  });
+  const liveBusIds = new Set(live.map((entry) => entry.busId));
+  const offline = [...fixes].flatMap(([busId, { sampledAt, ...fix }]): ActiveBusEntry[] =>
+    liveBusIds.has(busId) ? [] : [{
+      busId,
+      ...fix,
+      timestamp: sampledAt,
       status: "offline",
       deviceState: "offline",
-    }];
-  });
-  return offline.length > 0 ? [...live, ...offline] : live;
+    }]);
+  return placed || offline.length > 0 ? [...positioned, ...offline] : live;
 }

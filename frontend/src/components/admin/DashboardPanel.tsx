@@ -570,6 +570,7 @@ function FleetCard({
             {hasValidBusCoordinates(entry.lat, entry.lng) && (
               <p className="text-[9px] text-white/20 tabular-nums">
                 {entry.lat!.toFixed(5)}, {entry.lng!.toFixed(5)}
+                {entry.lastKnownLocationAt !== undefined && ` · last known ${timeSince(entry.lastKnownLocationAt)}`}
               </p>
             )}
           </div>

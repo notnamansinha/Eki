@@ -329,4 +329,11 @@ describe("admin fleet last location", () => {
     ])).toEqual([...live, { busId: "bus_2", routeId: "r2", lat: 23.1, lng: 72.1, timestamp: stale, status: "offline", deviceState: "offline" }]);
     expect(withLastKnownLocations(live, [])).toBe(live);
   });
+
+  it("gives a live entry without a position the durable last fix, keeping its own freshness", () => {
+    const live = [{ busId: "bus_1", status: "active" as const, sessionId: "s1", tripState: "pre_departure" as const,
+      timestamp: now, deviceState: "online" as const }];
+    expect(withLastKnownLocations(live, [{ id: "bus_1", routeId: "r1", lastKnownLocation: { lat: 23.1, lng: 72.1, sampledAt: stale } }]))
+      .toEqual([{ ...live[0], lat: 23.1, lng: 72.1, lastKnownLocationAt: stale }]);
+  });
 });

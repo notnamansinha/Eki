@@ -86,6 +86,15 @@ describe("admin service creation", () => {
     await userEvent.setup().click(within(screen.getByRole("alert")).getByRole("button", { name: "Retry" }));
     expect(state.retryBusLocations).toHaveBeenCalledOnce();
   });
+  it("places a live ride with no fix yet at the bus's last known location", async () => {
+    state.entries = [{ ...fixtureBus("forward"), lat: undefined, lng: undefined } as ActiveBusEntry];
+    state.busLocations = [{ id: "qa-bus", routeId: "qa-route", lastKnownLocation: { lat: 23.5, lng: 72.5, sampledAt: Date.now() - 2 * 3_600_000 } }];
+    const { container } = render(<DashboardPanel />);
+    expect(container.querySelector('[data-marker*="23.5"]')).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Open live details for qa-bus" })).toHaveLength(1);
+    await userEvent.setup().click(screen.getByText("QA bus").closest("button")!);
+    expect(screen.getByText(/last known 2h ago/)).toBeTruthy();
+  });
   it("prefers the live record over the durable last fix", () => {
     state.entries = [{ ...fixtureBus("forward") } as ActiveBusEntry];
     state.busLocations = [{ id: "qa-bus", routeId: "qa-route", lastKnownLocation: { lat: 23.5, lng: 72.5, sampledAt: 1 } }];
