@@ -28,24 +28,36 @@ async function publishBlocked(assignment:DeviceAssignment,state:AdmissionState) 
 }
 
 /**
+ * How many times one attempt may re-read after a rearm. Each rearm, or each time another replica moved the bus
+ * first, spends one; two covers a lost race followed by the next generation also ending early.
+ */
+const MAX_REARMS=2;
+type Rearm="rearmed"|"raced"|"refused";
+
+/**
  * A ride cut short without an operator pause (abandoned-ride cleanup, failure)
  * must not hold the bus paused. Moving to a fresh epoch releases the start key
  * pinned to that ride, so the next admission creates a new service. An admin's
  * "End ride early" sets automaticServicePaused and still requires Resume.
+ *
+ * This is a compare-and-swap on the epoch (and the return marker, when one is being released) the caller read.
+ * "raced" means another replica or writer already moved that state, so the caller must re-read it rather than
+ * treat the bus as paused: of several concurrent callers exactly one writes epoch + 1.
  */
-async function rearmAfterEarlyEnd(busId:string,generation:number,consumedBy?:string):Promise<boolean> {
+async function rearmAfterEarlyEnd(busId:string,generation:number,consumedBy?:string):Promise<Rearm> {
   const ref=db.collection("bus_locations").doc(busId);
-  return db.runTransaction(async transaction=>{
+  return db.runTransaction<Rearm>(async transaction=>{
     const data=(await transaction.get(ref)).data();
-    if (data?.automaticServicePaused===true || Number(data?.automaticServiceEpoch??0)!==generation) return false;
-    if (consumedBy!==undefined && data?.terminalJourney?.consumedBy!==consumedBy) return false;
+    if (data?.automaticServicePaused===true) return "refused";
+    if (Number(data?.automaticServiceEpoch??0)!==generation) return "raced";
+    if (consumedBy!==undefined && data?.terminalJourney?.consumedBy!==consumedBy) return "raced";
     transaction.set(ref,{automaticServiceEpoch:FieldValue.increment(1),
       ...(consumedBy!==undefined?{terminalJourney:FieldValue.delete()}:{})},{merge:true});
-    return true;
+    return "rearmed";
   });
 }
 
-async function admit(assignment:DeviceAssignment,rearm=true):Promise<void> {
+async function admit(assignment:DeviceAssignment,rearms=MAX_REARMS):Promise<void> {
   if (!assignment.deviceId || !safeId.test(assignment.deviceId)) return;
   const driverQuery=db.collection("drivers").where("assignedBusId","==",assignment.busId).limit(2);
   const deviceRef=db.collection("devices").doc(assignment.deviceId);
@@ -62,7 +74,8 @@ async function admit(assignment:DeviceAssignment,rearm=true):Promise<void> {
     if (typeof consumedBy==="string" && safeId.test(consumedBy)) {
       const consumed=(await db.collection("ride_sessions").doc(consumedBy).get()).data();
       if (consumed?.busId===assignment.busId && consumed?.routeId===assignment.routeId && ["failed","interrupted"].includes(consumed.status)) {
-        if (rearm && await rearmAfterEarlyEnd(assignment.busId,Number(locationData.automaticServiceEpoch??0),consumedBy)) return admit(assignment,false);
+        if (rearms>0 && await rearmAfterEarlyEnd(assignment.busId,Number(locationData.automaticServiceEpoch??0),consumedBy)!=="refused")
+          return admit(assignment,rearms-1);
         throw new AdmissionBlocked("paused");
       }
     }
@@ -92,8 +105,8 @@ async function admit(assignment:DeviceAssignment,rearm=true):Promise<void> {
       idempotencyKey:"automatic-service-v1",automatic:true,assignmentRevision:assignment.assignmentRevision??0,verify,
     });
   } catch(error) {
-    if (rearm && error instanceof RideSessionStartError && error.reason==="interrupted_session" &&
-        await rearmAfterEarlyEnd(assignment.busId,generation)) return admit(assignment,false);
+    if (rearms>0 && error instanceof RideSessionStartError && error.reason==="interrupted_session" &&
+        await rearmAfterEarlyEnd(assignment.busId,generation)!=="refused") return admit(assignment,rearms-1);
     throw error;
   }
 }
