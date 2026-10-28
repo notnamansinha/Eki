@@ -1924,14 +1924,20 @@ bool shouldCapture(const TelemetryFix &fix) {
       fix.lng
     );
     // The reference itself may be the outlier, or the bus outran its reported
-    // speed during an outage. Three coherent rejected fixes re-anchor it.
+    // speed during an outage. Three coherent rejected fixes, each reachable
+    // from the reference, re-anchor it. The RMC arrival time identifies the
+    // fix, so a sentence evaluated twice is counted once.
     if (!reacquisitionCandidate.observeRejected(
-      lastEvaluationAt,
+      latestRmcAt,
       fix.lat,
       fix.lng,
       fix.speed,
       gps.hdop.isValid(),
-      fix.gpsHdop
+      fix.gpsHdop,
+      hasCapturedLocation,
+      elapsed(lastCaptureAt),
+      lastCapturedLat,
+      lastCapturedLng
     )) {
       Serial.printf(
         "[GNSS] Ignoring implausible position jump (%.2fm from last fix).\n",

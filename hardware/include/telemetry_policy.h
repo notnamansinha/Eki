@@ -295,7 +295,10 @@ inline bool locationTransitionIsPlausible(
  * Mirroring the backend's outage-reacquisition rule, GNSS_REANCHOR_FIXES
  * consecutive rejected fixes with acceptable HDOP, each 0.5..5 s after the
  * previous one and plausible against it, are accepted as the new reference.
- * A single outlier never re-anchors.
+ * Each must also be reachable from the old reference at the 200 km/h cap over
+ * the time since it, so a farther jump needs longer corroboration and a brief
+ * multipath cluster cannot capture the reference. A single outlier, or one
+ * receiver sentence evaluated twice, never re-anchors.
  */
 constexpr uint8_t GNSS_REANCHOR_FIXES = 3;
 constexpr uint32_t GNSS_REANCHOR_MIN_SPACING_MS = 500;
@@ -315,18 +318,31 @@ struct ReacquisitionCandidate {
     count = 0;
   }
 
-  /** Returns true when this rejected fix completes a coherent chain. */
+  /**
+   * Returns true when this rejected fix completes a coherent chain. nowMs is
+   * when the receiver produced the fix; referenceElapsedMs is the time since
+   * the current reference was captured.
+   */
   bool observeRejected(
     uint32_t nowMs,
     double fixLat,
     double fixLng,
     double fixSpeedKmh,
     bool hdopValid,
-    double fixHdop
+    double fixHdop,
+    bool hasReference = false,
+    uint32_t referenceElapsedMs = 0,
+    double referenceLat = 0,
+    double referenceLng = 0
   ) {
+    if (has && nowMs == at) return false;
     if (
       !hdopValid || !gnssHdopIsAcceptable(fixHdop) ||
-      !coordinatesAreValid(fixLat, fixLng) || !speedIsPlausible(fixSpeedKmh)
+      !coordinatesAreValid(fixLat, fixLng) || !speedIsPlausible(fixSpeedKmh) ||
+      (hasReference && !withinTravelEnvelope(
+        referenceElapsedMs, fixLat, fixLng, referenceLat, referenceLng,
+        200.0, 200.0, true, fixHdop, false, 99.0
+      ))
     ) {
       reset();
       return false;
