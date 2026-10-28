@@ -175,9 +175,6 @@ describe("reduceTripState invariants under seeded random fix sequences", () => {
       const outAndBack = r() < 0.4 && stops.length >= 3 && dist(stops[0], stops.at(-1)!) > 0;
       if (outAndBack) stops = [...stops, ...stops.slice(0, -1).reverse()]; // shared stops on the way back
       const fixes = idealDrive(stops, r);
-      // A blackout over an out-and-back turnaround is a separate, known limitation: the next expected
-      // outbound stop is then credited by its own return copy. Keep the turnaround in view here.
-      const turnaround = outAndBack ? fixes.findIndex(fix => dist(fix.p, stops[(stops.length - 1) / 2]) === 0) : -1;
       // Drop a contiguous run of moving fixes (at least 11 s, so a real gap opens) once the bus has
       // been seen clear of the origin, ending while it is still seen driving into the terminal.
       const departed = fixes.findIndex(fix => dist(fix.p, stops[0]) > 160);
@@ -186,11 +183,6 @@ describe("reduceTripState invariants under seeded random fix sequences", () => {
       const span = Math.min(lastMoving - departed - 1, 11 + Math.floor(r() * 120));
       if (span < 11) continue;
       const start = departed + 1 + Math.floor(r() * (lastMoving - departed - span));
-      if (turnaround >= start && turnaround < start + span) continue;
-      // Also known and separate: a short straight chord across the blackout that touches a stop observes
-      // that stop, which closes the gap before the stops hidden beyond it can be credited.
-      const [before, after] = [fixes[start - 1].p, fixes[start + span].p];
-      if (dist(before, after) <= 250 && stops.some(stop => segDist(stop, before, after) <= 2.6)) continue;
       const kept = [...fixes.slice(0, start), ...fixes.slice(start + span)];
       const end = simulate(stops, kept);
       if (end.tripState !== "completed") failures.push(`seed ${seed} stops=${stops.length} hidden=${start}+${span} -> ${JSON.stringify(end)}`);

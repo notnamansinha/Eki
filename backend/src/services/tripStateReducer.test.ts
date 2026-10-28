@@ -605,4 +605,62 @@ describe("GNSS gap that really hid a drive round to a revisited stop location", 
     const end = drive(loop, inService(1), beforeGap, parked(at(0), 4_030_000, 120));
     expect(end).toMatchObject({ tripState: "in_service", currentStopIndex: 1, skipped: [] });
   });
+
+  /** Moving 1 Hz fixes every 10 m from one point to another, endpoints excluded. */
+  const along = (from: [number, number], to: [number, number], t0: number) => {
+    const steps = Math.ceil(Math.hypot(to[0] - from[0], to[1] - from[1]) / 10);
+    return Array.from({ length: steps - 1 }, (_, i): Fix => ({ t: t0 + i * 1000, motion: "moving",
+      p: at(from[0] + (to[0] - from[0]) * (i + 1) / steps, from[1] + (to[1] - from[1]) * (i + 1) / steps) }));
+  };
+
+  it("does not let a straight chord across a long blackout observe a stop and close the gap", () => {
+    // The bus was heading for stop 1 when GNSS went dark for 65 s; it passed
+    // stops 1-3 unseen and came back. The straight 180 m line between the
+    // fixes on either side passes straight through stop 1.
+    const route = [at(0), at(-211, -10), at(-426, 188), at(-440, 179), at(-318, -73)];
+    const beforeGap: Fix = { p: at(-160, -8), t: 1_044_000, motion: "moving" };
+    const reappears: Fix = { p: at(-340, -15), t: 1_109_000, motion: "moving" };
+    expect(drive(route, inService(1), beforeGap, [reappears]))
+      .toMatchObject({ tripState: "in_service", currentStopIndex: 1, gnssGapSince: 1_044_000, skipped: [] });
+    const end = drive(route, inService(1), beforeGap,
+      [reappears, ...along([-340, -15], [-318, -73], 1_110_000), ...parked(at(-318, -73), 1_117_000, 5)]);
+    expect(end).toMatchObject({ tripState: "completed", skipped: [1, 2, 3] });
+  });
+
+  // Out-and-back A, B, C, D, C', B', A' on one road; the shared copies
+  // coincide. The bus was seen past B (next stop C) when GNSS went dark.
+  const outAndBack = [at(0), at(200), at(400), at(600), at(400), at(200), at(0)];
+  const pastB: Fix = { p: at(250), t: 5_000_000, motion: "moving" };
+  const homeFrom = (north: number, t0: number) =>
+    [...along([north, 0], [0, 0], t0), ...parked(at(0), t0 + north * 100, 5)];
+
+  it("credits the return copy, not the outbound stop, when a blackout hid the turnaround", () => {
+    const end = drive(outAndBack, inService(2), pastB,
+      [{ p: at(450), t: 5_060_000, motion: "moving" }, ...homeFrom(450, 5_061_000)]);
+    expect(end).toMatchObject({ tripState: "completed", skipped: [2, 3] });
+  });
+
+  it("waits for a direction when the bus reappears sitting on a shared stop after the turnaround", () => {
+    const sitting = parked(at(400), 5_060_000, 5);
+    expect(drive(outAndBack, inService(2), pastB, sitting))
+      .toMatchObject({ tripState: "in_service", currentStopIndex: 2, gnssGapSince: 5_000_000, skipped: [] });
+    const end = drive(outAndBack, inService(2), pastB, [...sitting, ...homeFrom(400, 5_065_000)]);
+    expect(end).toMatchObject({ tripState: "completed", skipped: [2, 3] });
+  });
+
+  it("credits the outbound stop without skipping when the bus dwells there after a gap and drives on", () => {
+    // Long outage, then seen dwelling at outbound C: it may not skip the turnaround.
+    const sitting = parked(at(400), 5_060_000, 30);
+    const onward = [...along([400, 0], [600, 0], 5_090_000), ...parked(at(600), 5_109_000, 3)];
+    const atTurnaround = drive(outAndBack, inService(2), pastB, [...sitting, ...onward]);
+    expect(atTurnaround).toMatchObject({ tripState: "in_service", currentStopIndex: 4, skipped: [] });
+    expect(atTurnaround.gnssGapSince).toBeUndefined();
+  });
+
+  it("completes when a blackout hides the stops before a terminal that shares an earlier stop's location", () => {
+    // A, B, C, D, C (terminal): the bus parks at the terminal with no fix to show its direction.
+    const lollipop = [at(0), at(200), at(400), at(500, 100), at(400)];
+    const end = drive(lollipop, inService(2), pastB, parked(at(400), 5_090_000, 6));
+    expect(end).toMatchObject({ tripState: "completed", skipped: [2, 3] });
+  });
 });
