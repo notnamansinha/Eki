@@ -5,6 +5,8 @@ vi.mock("firebase/database", () => ({ ref: (_: unknown, path: string) => ({ path
   onValue: (_: unknown, receive: typeof fixture.receive) => { fixture.receive = receive; return fixture.detach; },
   onChildAdded: () => fixture.detach, onChildChanged: () => fixture.detach, onChildRemoved: () => fixture.detach }));
 vi.mock("./firebaseDatabase", () => ({ rtdb: {} }));
+// Bus-listener counts only; the server-clock listener has its own suite.
+vi.mock("./serverClockSync", () => ({ attachServerClock: () => () => {} }));
 beforeEach(() => { vi.resetModules(); fixture.detach.mockClear(); });
 afterEach(() => { vi.restoreAllMocks(); });
 describe("live bus auth isolation with the real verification gate", () => {

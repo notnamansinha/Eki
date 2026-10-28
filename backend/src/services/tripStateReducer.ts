@@ -226,13 +226,20 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
     // permits a downstream stop to skip one or more configured stops, except
     // after a GNSS gap: a reliably observed later stop then credits the
     // unobserved stops before it as skipped instead of stranding the ride.
+    // A later stop sharing the location of a stop already passed (out-and-back
+    // or loop routes) is ambiguous: the bus may still be at the passed copy, so
+    // it is never credited and the gap stays open.
     let nextIndex = safeCurrentIndex;
     let skippedStopIndices: number[] | undefined;
+    const passedStops = stops.slice(0, nextIndex);
+    const atPassedStopLocation = (point: TripRouteStop) =>
+      passedStops.some(stop => haversineMeters(point, stop) <= STOP_GEOFENCE_M);
     if (gnssGap !== undefined && nextIndex > 0 &&
-      !wasStopReached(stops[nextIndex], position, input.previousPosition)) {
+      !wasStopReached(stops[nextIndex], position, input.previousPosition) && !atPassedStopLocation(position)) {
       const lastSkippable = leavingOrigin ? lastIndex - 1 : lastIndex;
       for (let index = nextIndex + 1; index <= lastSkippable; index += 1) {
-        if (!wasStopReached(stops[index], position, input.previousPosition)) continue;
+        if (atPassedStopLocation(stops[index]) ||
+          !wasStopReached(stops[index], position, input.previousPosition)) continue;
         skippedStopIndices = Array.from({ length: index - nextIndex }, (_, offset) => nextIndex + offset);
         nextIndex = index;
         break;

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AccountTab from "./AccountTab";
 const mocks = vi.hoisted(() => ({ logout: vi.fn(),
@@ -16,6 +16,24 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 describe("account confirmations", () => {
+  it("flips the profile photo into a golden coin after two taps, then restores it", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-27T12:00:00Z"));
+    try {
+      render(<AccountTab />);
+      const photo = screen.getByRole("button", { name: "Profile photo, double tap for a surprise" });
+      fireEvent.click(photo);
+      expect(screen.queryByRole("img", { name: "Golden coin: 19" })).toBeNull();
+      fireEvent.click(photo);
+      expect(screen.getByRole("img", { name: "Golden coin: 19" })).toBeTruthy();
+      expect(screen.getAllByText("19")).toHaveLength(1);
+      act(() => vi.advanceTimersByTime(4_000));
+      expect(screen.queryByRole("img", { name: "Golden coin: 19" })).toBeNull();
+      expect(screen.getByRole("img", { name: "Default profile" })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("shows the admin panel link only while the current user has the admin role", () => {
     mocks.user = { uid: "qa-admin", displayName: "QA Admin", role: "admin", photoURL: "" };
     const view = render(<AccountTab />);

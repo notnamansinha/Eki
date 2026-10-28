@@ -456,3 +456,87 @@ describe("hostile browser storage and legacy profiles", () => {
     expect(hook.result.current.user).toBeNull(); expect(hook.result.current.loginReady).toBe(true);
   });
 });
+describe("sign-in recovery dead ends", () => {
+  it("clears the slow-popup message and fallback when the user closes the popup after the timer", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const popup = deferred();
+    mocks.popup.mockImplementation(async () => { await popup.promise; throw { code: "auth/popup-closed-by-user" }; });
+    const hook = await mount();
+    let signingIn!: Promise<void>;
+    await act(async () => { signingIn = hook.result.current.loginWithGoogle(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(8_500); });
+    expect(hook.result.current.loginError).toContain("taking longer");
+    expect(hook.result.current.loginFallbackAvailable).toBe(true);
+    // A deliberate cancellation is not a failure: match the fast-cancel path.
+    await act(async () => { popup.resolve(); await signingIn; });
+    expect(hook.result.current.loginLoading).toBe(false);
+    expect(hook.result.current.loginError).toBeNull();
+    expect(hook.result.current.loginFallbackAvailable).toBe(false);
+  });
+
+  it("re-enables sign-in when a started full-page redirect is restored from the back/forward cache", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)");
+    const hook = await mount();
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+    // signInWithRedirect navigates away and never settles in this document.
+    await act(async () => { void hook.result.current.loginWithGoogle(); });
+    expect(mocks.redirect).toHaveBeenCalledOnce();
+    expect(hook.result.current.loginLoading).toBe(true);
+    // A fresh (non-persisted) pageshow is a normal load and changes nothing.
+    await act(async () => { window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: false })); });
+    expect(hook.result.current.loginLoading).toBe(true);
+    // The user presses Back on Google's page and the frozen page is restored.
+    await act(async () => { window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true })); });
+    expect(hook.result.current.loginLoading).toBe(false);
+    expect(hook.result.current.loginError).toBeNull();
+    expect(hook.result.current.loginFallbackAvailable).toBe(false);
+    // The abandoned attempt must not surface "did not restore your session" on a later reload.
+    expect(consumeGoogleRedirectPending()).toBe(false);
+    await act(async () => { void hook.result.current.loginWithGoogle(); });
+    expect(mocks.redirect).toHaveBeenCalledTimes(2);
+  });
+
+  it("removes the back/forward-cache listener on unmount", async () => {
+    const removed = vi.spyOn(window, "removeEventListener");
+    const hook = await mount();
+    hook.unmount();
+    expect(removed).toHaveBeenCalledWith("pageshow", expect.any(Function));
+  });
+
+  it("keeps restoration guidance when 'Try again' runs before Firebase has restored the session", async () => {
+    // Firebase is still completing a pending redirect: neither the observer
+    // nor getRedirectResult has settled.
+    mocks.redirectResult.mockReturnValue(new Promise(() => {}));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const hook = await mount();
+    const opened = vi.fn(); void waitForAuth().then(opened);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8_100); });
+    expect(hook.result.current.roleError).toContain("timed out");
+    await act(async () => { await hook.result.current.refreshAccess(); });
+    expect(hook.result.current.loading).toBe(false);
+    expect(hook.result.current.roleError).toContain("still restoring");
+    // An unknown session is never published as a confirmed sign-out.
+    expect(opened).not.toHaveBeenCalled();
+    // Once Firebase reports the restored state, the normal path resumes.
+    await act(async () => { await mocks.callback!(null); });
+    expect(hook.result.current.roleError).toBeNull();
+    expect(opened).toHaveBeenCalledOnce();
+  });
+
+  it("keeps restoration guidance when sign-out is queued behind Firebase restoration", async () => {
+    mocks.redirectResult.mockReturnValue(new Promise(() => {}));
+    const signOut = deferred(); mocks.signOut.mockReturnValue(signOut.promise);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const hook = await mount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(8_100); });
+    let signingOut!: Promise<void>;
+    await act(async () => { signingOut = hook.result.current.logout(); });
+    await waitFor(() => expect(mocks.signOut).toHaveBeenCalledOnce());
+    expect(hook.result.current.loading).toBe(false);
+    expect(hook.result.current.roleError).toContain("still restoring");
+    await act(async () => { await mocks.callback!(null); signOut.resolve(); await signingOut; });
+    expect(hook.result.current.roleError).toBeNull();
+    expect(hook.result.current.loading).toBe(false);
+    expect(hook.result.current.user).toBeNull();
+  });
+});

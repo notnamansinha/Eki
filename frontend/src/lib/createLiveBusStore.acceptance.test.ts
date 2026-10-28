@@ -21,6 +21,8 @@ vi.mock("./authState", () => ({
   },
 }));
 vi.mock("./firebaseDatabase", () => ({ rtdb: {} }));
+// Bus-listener counts only; the server-clock listener has its own suite.
+vi.mock("./serverClockSync", () => ({ attachServerClock: () => () => {} }));
 vi.mock("./telemetryTrace", () => ({
   recordRealtimePayload: vi.fn(), recordRealtimeWatch: vi.fn(), recordTelemetryListenerDelivery: vi.fn(),
   setTelemetryServerTimeOffset: vi.fn(), telemetryTraceEnabled: () => false,

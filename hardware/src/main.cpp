@@ -300,6 +300,7 @@ double lastCapturedHeading = 0;
 bool hasCapturedLocation = false;
 MotionState lastCapturedMotionState = MotionState::Uncertain;
 eki::telemetry::MotionTracker motionTracker;
+eki::telemetry::ReacquisitionCandidate reacquisitionCandidate;
 uint32_t lastCaptureAt = 0;
 uint32_t lastEvaluationAt = 0;
 uint32_t latestRmcAt = 0;
@@ -1916,16 +1917,35 @@ bool shouldCapture(const TelemetryFix &fix) {
     lastCapturedHdop <= eki::telemetry::GNSS_HDOP_MAX,
     lastCapturedHdop
   )) {
-    Serial.printf(
-      "[GNSS] Ignoring implausible position jump (%.2fm from last fix).\n",
-      eki::telemetry::haversineMeters(
-        lastCapturedLat,
-        lastCapturedLng,
-        fix.lat,
-        fix.lng
-      )
+    const double jumpMeters = eki::telemetry::haversineMeters(
+      lastCapturedLat,
+      lastCapturedLng,
+      fix.lat,
+      fix.lng
     );
-    return false;
+    // The reference itself may be the outlier, or the bus outran its reported
+    // speed during an outage. Three coherent rejected fixes re-anchor it.
+    if (!reacquisitionCandidate.observeRejected(
+      lastEvaluationAt,
+      fix.lat,
+      fix.lng,
+      fix.speed,
+      gps.hdop.isValid(),
+      fix.gpsHdop
+    )) {
+      Serial.printf(
+        "[GNSS] Ignoring implausible position jump (%.2fm from last fix).\n",
+        jumpMeters
+      );
+      return false;
+    }
+    Serial.printf(
+      "[GNSS] Re-anchoring after %u coherent fixes (%.2fm from last fix).\n",
+      static_cast<unsigned>(eki::telemetry::GNSS_REANCHOR_FIXES),
+      jumpMeters
+    );
+  } else {
+    reacquisitionCandidate.reset();
   }
   return eki::telemetry::shouldPublishFix(
     fix.valid,
@@ -1957,6 +1977,7 @@ void rememberCapturedFix(const TelemetryFix &fix) {
   // unintentionally halving a stationary bus's capture rate.
   lastCaptureAt = lastEvaluationAt;
   hasCapturedLocation = true;
+  reacquisitionCandidate.reset();
   recordCapturedFix();
 }
 

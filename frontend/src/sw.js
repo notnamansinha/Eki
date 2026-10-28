@@ -9,8 +9,11 @@
  *   1. NetworkFirst – HTML navigation, with precached shells for offline use.
  *   2. Precache – HTML shells, manifest, icons and bootstrap chunks.
  *   3. CacheFirst – same-origin hashed Next.js JS/CSS chunks, cached on use.
- *   4. StaleWhileRevalidate – Google Fonts CSS/woff2 (if ever added).
- *   5. CacheFirst – Google Maps tiles.
+ *   4. StaleWhileRevalidate – Google Fonts CSS/woff2 (if ever added); CORS
+ *      (status 200) responses only, never opaque ones.
+ *   5. NetworkOnly – Google Maps loader, tiles and icons. These are no-cors
+ *      requests whose opaque responses hide upstream errors, so caching one
+ *      would replay a broken map after the upstream recovers.
  *   6. NetworkOnly – Google Auth helpers and authenticated Firebase/API responses.
  *
  * Navigation requests check Hosting first and use cached HTML when offline.
@@ -46,21 +49,36 @@ cleanupOutdatedCaches();
 // hashed chunks that this worker's precache cleanup removes and Hosting no
 // longer serves, so an offline or slow-network fallback to it cannot boot.
 // Until a fresh page is cached, the fallback uses this worker's precached shell.
+// Earlier workers cached opaque Google Maps responses, possibly upstream errors;
+// Maps is now network-only, so drop that cache too.
 self.addEventListener("activate", (event) => {
   event.waitUntil(Promise.all([
     caches.delete("eki-firebase-sdk"),
     caches.delete("eki-navigations"),
+    caches.delete("eki-google-maps"),
   ]));
 });
 
 // ─── Navigation requests ────────────────────────────────────────────────────
 // Register before the precache route so a refresh checks Hosting for the
 // current HTML instead of always serving the previous deployment's shell.
+// The static export's HTML does not depend on the query string (it is read
+// only on the client), so store and look up one bounded entry per path rather
+// than one full HTML copy per UTM/QR/trace query.
 const navigationStrategy = new NetworkFirst({
   cacheName: "eki-navigations",
   networkTimeoutSeconds: 3,
   plugins: [
+    {
+      cacheKeyWillBeUsed: async ({ request }) => {
+        const url = new URL(request.url);
+        url.search = "";
+        url.hash = "";
+        return url.href;
+      },
+    },
     new CacheableResponsePlugin({ statuses: [0, 200] }),
+    new ExpirationPlugin({ maxEntries: 10, maxAgeSeconds: 7 * 24 * 60 * 60 }),
   ],
 });
 const navigationHandler = new NavigationRoute(
@@ -106,33 +124,33 @@ registerRoute(
   })
 );
 
-// ─── Runtime caching: Google Maps ───────────────────────────────────────────
-// Map tiles, the Maps JS SDK, and marker icons. Cache-first with a 7-day
-// expiration and a cap of 200 entries — tiles are large and we don't want
-// to consume excessive storage on low-end devices.
+// ─── Google Maps ─────────────────────────────────────────────────────────────
+// The Maps JS loader (a plain <script> without crossOrigin) and raster tiles
+// (<img>) are no-cors requests, so the worker only sees opaque status-0
+// responses and cannot tell a 503/429/403 from success. Caching them would
+// replay a transient upstream failure (or a stale versioned loader) for days
+// and bill several MB of quota padding per entry. Keep them on the network;
+// the browser HTTP cache still honours Google's own cache headers.
 registerRoute(
   ({ url }) =>
     url.origin === "https://maps.googleapis.com" ||
     url.origin === "https://maps.gstatic.com" ||
     url.hostname === "ggpht.com" || url.hostname.endsWith(".ggpht.com"),
-  new CacheFirst({
-    cacheName: "eki-google-maps",
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
-      new ExpirationPlugin({ maxEntries: 200, maxAgeSeconds: 7 * 24 * 60 * 60 }),
-    ],
-  })
+  new NetworkOnly()
 );
 
 // ─── Runtime caching: Google Fonts ──────────────────────────────────────────
 // Currently using system fonts, but if Google Fonts are added in future,
-// the stylesheets use SWR and the font files use cache-first.
+// the stylesheets use SWR and the font files use cache-first. Only readable
+// (CORS, status 200) responses are stored: an opaque response could be an
+// upstream error that would otherwise be replayed.
 registerRoute(
   ({ url }) => url.origin === "https://fonts.googleapis.com",
   new StaleWhileRevalidate({
     cacheName: "eki-google-fonts-css",
     plugins: [
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
+      new CacheableResponsePlugin({ statuses: [200] }),
+      new ExpirationPlugin({ maxEntries: 10, maxAgeSeconds: 365 * 24 * 60 * 60, purgeOnQuotaError: true }),
     ],
   })
 );
@@ -142,8 +160,8 @@ registerRoute(
   new CacheFirst({
     cacheName: "eki-google-fonts-woff",
     plugins: [
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
-      new ExpirationPlugin({ maxEntries: 30, maxAgeSeconds: 365 * 24 * 60 * 60 }),
+      new CacheableResponsePlugin({ statuses: [200] }),
+      new ExpirationPlugin({ maxEntries: 30, maxAgeSeconds: 365 * 24 * 60 * 60, purgeOnQuotaError: true }),
     ],
   })
 );

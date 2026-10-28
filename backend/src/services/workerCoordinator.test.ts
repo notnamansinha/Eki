@@ -154,3 +154,47 @@ describe("worker leadership expiry", () => {
     expect(mocks.cursorWrites).toEqual([]); expect(mocks.fleet).toHaveBeenCalledOnce(); await stop();
   });
 });
+
+describe("WORKER_ENABLED parsing", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: 1_000_000, toFake: ["Date", "performance", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    vi.clearAllMocks();
+    mocks.fleet.mockResolvedValue({ checked: 0, repaired: 0, failed: 0, records: [], nextCursor: null, timeBudgetExceeded: false });
+    mocks.tripStart.mockReturnValue(mocks.tripStop);
+    mocks.transaction.mockImplementation(async (callback) => callback({
+      get: async () => ({ data: () => undefined }), set: vi.fn(), delete: vi.fn(),
+    }));
+  });
+  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllEnvs(); });
+
+  // RETENTION_SWEEPER_ENABLED and OTEL_SDK_DISABLED were already trimmed and
+  // case-normalized; WORKER_ENABLED used to honour only the exact "false".
+  for (const value of ["false", "FALSE", "False", " false", "0", "no", "off"]) {
+    it(`WORKER_ENABLED=${JSON.stringify(value)} disables leader election and leader work`, async () => {
+      vi.stubEnv("WORKER_ENABLED", value);
+      const stop = startWorkerCoordinator();
+      await vi.advanceTimersByTimeAsync(20_000);
+      await stop();
+      expect(mocks.transaction).not.toHaveBeenCalled();
+      expect(mocks.tripStart).not.toHaveBeenCalled();
+      expect(mocks.leadership).toHaveBeenCalledWith(false);
+    });
+  }
+
+  it("still runs leader election when WORKER_ENABLED is unset or explicitly enabled", async () => {
+    for (const value of [undefined, "TRUE", " 1 "]) {
+      vi.clearAllMocks();
+      if (value === undefined) delete process.env.WORKER_ENABLED; else vi.stubEnv("WORKER_ENABLED", value);
+      const stop = startWorkerCoordinator();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.tripStart, String(value)).toHaveBeenCalledTimes(1);
+      await stop();
+    }
+  });
+
+  it("refuses an unrecognized WORKER_ENABLED value instead of silently starting the worker", () => {
+    vi.stubEnv("WORKER_ENABLED", "disabled");
+    expect(() => startWorkerCoordinator()).toThrow(/WORKER_ENABLED must be/);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+});

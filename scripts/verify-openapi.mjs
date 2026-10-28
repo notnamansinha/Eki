@@ -124,7 +124,45 @@ export function operationKeys(spec) {
     .filter(method => methods.has(method)).map(method => `${method.toUpperCase()} ${path}`));
 }
 
-export async function verifyOpenApi(spec, registered = registeredOperations()) {
+// The global JSON parser runs before every /api handler (GETs included) and
+// browser/device admission can reject before it, so every /api operation can
+// answer these statuses. Bearer-authenticated operations can additionally fail
+// token verification (401) or its bounded verifier capacity (503).
+const API_BASELINE_STATUSES = ["400", "413", "415", "429"];
+const BEARER_BASELINE_STATUSES = ["401", "503"];
+
+/** Statuses an operation must declare because shared middleware can emit them. */
+export function missingBaselineStatuses(path, operation) {
+  if (!path.startsWith("/api/")) return [];
+  const required = [...API_BASELINE_STATUSES];
+  if ((operation.security ?? []).some(requirement => "FirebaseBearer" in requirement)) {
+    required.push(...BEARER_BASELINE_STATUSES);
+  }
+  return required.filter(status => !(status in (operation.responses ?? {})));
+}
+
+/** METHOD /path mentions in the human API reference, with :param normalized to {param}. */
+export function documentedOperations(markdown) {
+  return new Set([...markdown.matchAll(/\b(GET|POST|PUT|PATCH|DELETE)\s+`?(\/[A-Za-z0-9_/{}:.-]+)/g)]
+    .map(([, method, path]) => `${method} ${path.replace(/:([A-Za-z0-9_]+)/g, "{$1}").replace(/[/.]+$/, "")}`));
+}
+
+/** Fails when backend/API.md omits an operation or names one that does not exist. */
+export function verifyApiReference(spec, markdown) {
+  const declared = operationKeys(spec).filter(key => !key.startsWith("HEAD ") && !key.startsWith("OPTIONS "));
+  const documented = documentedOperations(markdown);
+  const undocumented = declared.filter(key => !documented.has(key));
+  const unknown = [...documented].filter(key => !declared.includes(key));
+  if (undocumented.length || unknown.length) {
+    throw new Error(`backend/API.md drift. Undocumented: ${undocumented.join(", ") || "none"}; unknown: ${unknown.join(", ") || "none"}`);
+  }
+}
+
+export async function verifyOpenApi(
+  spec,
+  registered = registeredOperations(),
+  apiReference = readFileSync(resolve(root, "backend/API.md"), "utf8"),
+) {
   // This validates the OAS structure, all references and JSON Schema dialect.
   // Disable network/file dereferencing: this contract is intentionally self-contained.
   await SwaggerParser.validate(structuredClone(spec), { resolve: { external: false } });
@@ -159,10 +197,13 @@ export async function verifyOpenApi(spec, registered = registeredOperations()) {
           if (response.content) throw new Error(`${key}: 204 must have no body`);
         } else if (!response.content?.["application/json"]?.schema) throw new Error(`${key}: ${status} missing JSON response schema`);
       }
+      const missingStatuses = missingBaselineStatuses(path, operation);
+      if (missingStatuses.length) throw new Error(`${key}: missing middleware statuses ${missingStatuses.join(", ")}`);
       const alias = operation["x-compatibility-alias-of"];
       if (alias && !declared.includes(alias)) throw new Error(`${key}: alias target does not exist: ${alias}`);
     }
   }
+  verifyApiReference(spec, apiReference);
   return declared.length;
 }
 
@@ -170,7 +211,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const spec = JSON.parse(readFileSync(resolve(root, "backend/openapi.json"), "utf8"));
   try {
     const count = await verifyOpenApi(spec);
-    console.log(`OpenAPI verified: ${count} registered HTTP operations, schemas and policy metadata.`);
+    console.log(`OpenAPI verified: ${count} registered HTTP operations, schemas, policy metadata, middleware statuses and backend/API.md coverage.`);
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

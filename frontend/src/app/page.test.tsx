@@ -65,3 +65,22 @@ describe("landing sign-in and redirect recovery", () => {
     expect(fixture.auth.logout).toHaveBeenCalledOnce();
   });
 });
+describe("sign-in initialization stall", () => {
+  it("explains a disabled sign-in button and offers reload when sign-in never becomes ready", async () => {
+    vi.useFakeTimers();
+    Object.assign(fixture.auth, { loading: false, loginReady: false, loginError: null, roleError: null });
+    render(<HomePage />);
+    expect((screen.getByRole("button", { name: "Sign In with Google" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(screen.getByRole("status").textContent).toContain("still loading");
+    expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
+  });
+  it("does not show the stall notice once sign-in is ready", async () => {
+    vi.useFakeTimers();
+    Object.assign(fixture.auth, { loading: false, loginReady: true, loginError: null, roleError: null });
+    render(<HomePage />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
+  });
+});

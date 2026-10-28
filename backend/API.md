@@ -1,13 +1,13 @@
 # Backend API reference
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+Last updated: 2026-10-27 04:10 IST (UTC+05:30).
 
 The machine-readable contract is `backend/openapi.json` (OpenAPI 3.1.1).
 See [HTTP contract checks and rollout](../docs/api/HTTP_CONTRACT.md) for schema
 validation, policy extensions, Firebase listener channels, and compatibility.
 Run `npm run verify:openapi` from the repository root.
 
-Base path is the deployed backend origin. JSON request bodies are strict and limited to 16 KiB except device telemetry (512 bytes) and diagnostics (1 KiB). `TRACE` and `CONNECT` return 405. Malformed JSON returns 400, an oversized body 413, an unsupported body charset or `Content-Encoding` 415, and a corrupt compressed body or undecodable path parameter 400, each with a fixed generic message. An unmatched path or method returns 404 `{ "error": "Not found." }` without echoing the path; other unexpected failures return an opaque 500. Responses are JSON; errors use `{ "error": "…" }` and do not expose stacks/secrets.
+Base path is the deployed backend origin. JSON request bodies are strict and limited to 16 KiB except device telemetry (512 bytes), diagnostics (1 KiB) and route saves (`PUT /api/routes/:routeId` and its v2 alias, 64 KiB so 100 maximum-length stops fit). The parser runs before every handler, GETs included, so any `/api` operation can return these parser statuses. `TRACE` and `CONNECT` return 405. Malformed JSON returns 400, an oversized body 413, an unsupported body charset or `Content-Encoding` 415, and a corrupt compressed body or undecodable path parameter 400, each with a fixed generic message. An unmatched path or method returns 404 `{ "error": "Not found." }` without echoing the path; other unexpected failures return an opaque 500. Responses are JSON; errors use `{ "error": "…" }` and do not expose stacks/secrets.
 
 ## Quick start
 
@@ -61,14 +61,23 @@ available during the rollout.
 |---|---|---|
 | Health | `GET /health`; `GET /live`; `GET /api/health` | Public readiness/liveness; admin diagnostics |
 | Live buses | `GET /api/buses`, `GET /api/buses/:busId` | Authenticated |
-| Device ingestion/update | `POST /api/devices/:deviceId/telemetry`, `POST /api/devices/:deviceId/diagnostics`, `GET /api/devices/:deviceId/firmware` | Device credential |
-| Device administration | `GET /api/devices/:deviceId/diagnostics`, `PUT /api/devices/:deviceId`, `POST /api/devices/:deviceId/disable` | Admin |
+| Device ingestion/update | `POST /api/devices/:deviceId/telemetry`, `POST /api/devices/:deviceId/diagnostics`, `GET /api/devices/:deviceId/firmware`, `POST /api/devices/:deviceId/firmware/installation` | Device credential |
+| Device administration | `GET /api/devices/:deviceId/diagnostics`, `PUT /api/devices/:deviceId`, `POST /api/devices/:deviceId/disable`, `PATCH /api/v2/devices/:deviceId` | Admin |
 | Ride operations | `POST /api/shifts/start`, `PATCH /api/shifts/delay`, `POST /api/shifts/stop` | Assigned operator or admin |
 | Boarding and chat | Session boarding-code, join and messages endpoints | Session member/operator/admin as applicable |
 | Passenger/account | Feedback submission, bootstrap, privacy deletion, requests | Authenticated/admin as noted below |
 | Admin feedback | `GET /api/v2/feedback`, `PATCH /api/v2/feedback/:feedbackId` | Admin |
-| Fleet and settings | Fleet, analytics, route, settings and places endpoints | Admin unless noted below |
-| Route planning | `POST /api/plan`, `GET /api/routes-list` | Authenticated |
+| Fleet and settings | Fleet, analytics, route, settings (`PUT /api/settings`, `PATCH /api/v2/settings/global`) and places endpoints | Admin unless noted below |
+| Route planning | `POST /api/plan`, `GET /api/v2/routes/:routeId/segments`, `GET /api/routes-list`, `GET /api/v2/routes` | Authenticated |
+
+The v2 aliases share the legacy handlers' validation and side effects:
+
+| Legacy endpoint | v2 alias | Difference |
+|---|---|---|
+| `PUT /api/settings` | `PATCH /api/v2/settings/global` | Same partial-settings body, validation and audit merge |
+| `POST /api/plan` | `GET /api/v2/routes/:routeId/segments?from=…&to=…&via=…` | Query parameters replace the body; unknown/repeated query keys return 400 |
+| `GET /api/routes-list` | `GET /api/v2/routes` | Optional `limit`/`after` paging returns `nextCursor` |
+| `POST /api/devices/:deviceId/disable` | `PATCH /api/v2/devices/:deviceId` | Body must be exactly `{"enabled":false}` |
 
 The sections below provide human-oriented request, response and side-effect
 guidance; the OpenAPI contract and schema-backed tests check HTTP conformance.
@@ -79,7 +88,7 @@ guidance; the OpenAPI contract and schema-backed tests check HTTP conformance.
 - Hardware: `Authorization: Device <per-device secret>`. It is not a Firebase token and must never use `Bearer`.
 - Public: only `GET /health`.
 
-IDs accept 1–128 ASCII letters, digits, `_`, or `-`. CORS/preflight runs before admission. A generous normalized-IP ingress guard admits 1,000 browser requests/minute before authentication; scoped public GET/HEAD probes and exact device-ingress paths are exempt. After revocation-aware token verification, separate per-UID budgets permit 200 reads/minute and 30 mutations/minute (POST/PUT/PATCH/DELETE); read polling never consumes mutation tokens. Detailed admin health is authenticated and exempt from the user read budget. Route compute/plan endpoints use dedicated verified-UID limiters (10/min and 30/min), and Places search has a verified-UID 20/minute limiter, and device telemetry bypasses global and write limiters while enforcing separate pre-auth IP (15 requests per configured device per 10 seconds before replica sharding; `HTTPS_INGRESS_DEVICES_PER_IP` defaults to 100, with separate diagnostics and firmware pools of 2 requests per configured device per 10 seconds) and authenticated per-device limits. The safe default device mode reserves bounded token leases from a shared RTDB fixed-window budget, so replicas cannot exceed the fleet-wide limit without paying for one transaction per fix. Local device limiting requires explicit `HTTPS_DEVICE_RATE_LIMIT_MODE=local` and `RATE_LIMIT_SHARD_FACTOR=1`. Other sharded counters divide their budgets by `RATE_LIMIT_SHARD_FACTOR` (set it to the deployed replica count; invalid values fall back to 1). If the replica count exceeds the smallest in-process budget (currently 10/minute), startup fails; use a shared distributed limiter beyond that scale. An edge load balancer or WAF cap is an external deployment requirement for global rate protection.
+IDs accept 1–128 ASCII letters, digits, `_`, or `-`; route, save-operation, bus and driver IDs that become Firestore document IDs must also not match the reserved `__…__` form. CORS/preflight runs before admission. Pre-auth IP buckets key on Express `req.ip`: the socket peer unless `TRUST_PROXY` says which reverse proxy may supply `X-Forwarded-For` (production defaults to one hop; use `loopback` behind a local ngrok agent so tunnelled clients do not share one bucket). A generous normalized-IP ingress guard admits 1,000 browser requests/minute before authentication; scoped public GET/HEAD probes and exact device-ingress paths are exempt. After revocation-aware token verification, separate per-UID budgets permit 200 reads/minute and 30 mutations/minute (POST/PUT/PATCH/DELETE); read polling never consumes mutation tokens. Detailed admin health is authenticated and exempt from the user read budget. Route compute/plan endpoints use dedicated verified-UID limiters (10/min and 30/min), and Places search has a verified-UID 20/minute limiter, and device telemetry bypasses global and write limiters while enforcing separate pre-auth IP (15 requests per configured device per 10 seconds before replica sharding; `HTTPS_INGRESS_DEVICES_PER_IP` defaults to 100, with separate diagnostics and firmware pools of 2 requests per configured device per 10 seconds) and authenticated per-device limits. The safe default device mode reserves bounded token leases from a shared RTDB fixed-window budget, so replicas cannot exceed the fleet-wide limit without paying for one transaction per fix. Local device limiting requires explicit `HTTPS_DEVICE_RATE_LIMIT_MODE=local` and `RATE_LIMIT_SHARD_FACTOR=1`. Other sharded counters divide their budgets by `RATE_LIMIT_SHARD_FACTOR` (set it to the deployed replica count; invalid values fall back to 1). If the replica count exceeds the smallest in-process budget (currently 10/minute), startup fails; use a shared distributed limiter beyond that scale. An edge load balancer or WAF cap is an external deployment requirement for global rate protection.
 
 ## Health
 
@@ -212,8 +221,15 @@ cached for at most 60s, negative results for 5s, anchored to fill start with
 monotonic expiry; access does not extend TTL. Rotation/reassignment invalidation
 fences all in-flight digests as well as existing cache entries. A failed
 invalidation listener clears authorization and detaches before reconnecting.
+A device ID and secret digest that verified before (and were not invalidated
+since) re-verify through a reserved lane of 8 fills and a separate 2-slot KDF
+limiter, so a flood of unknown device IDs or guessed secrets, which only ever
+use the shared 16-fill pool and 4-slot KDF, cannot starve the fleet's 60s
+refresh. If that reserved lane is itself saturated, the previous assignment is
+served for at most 10 minutes past expiry; explicit invalidation removes it
+immediately.
 Detailed admin health exposes `telemetry.credentialFills.activeFills` and
-`waitingCallers` without device IDs, digests or secrets.
+`waitingCallers` (shared pool) without device IDs, digests or secrets.
 
 ### `POST /api/devices/:deviceId/telemetry` — device
 
@@ -236,7 +252,7 @@ present or older. Route matching and durable-lifecycle repair remain
 background work and cannot change that acknowledgement contract.
 
 - 202 `{accepted:true,duplicate:false}`: new RTDB fix.
-- 200 `{accepted:true,duplicate:true}`: older timestamp or duplicate timestamp/sequence safely ignored.
+- 200 `{accepted:true,duplicate:true}`: older timestamp or duplicate timestamp/sequence safely ignored. A future `timestamp` is clamped to server time; the live node then keeps the raw capture time as backend-only `deviceTimestamp`, and a late-delivered sample whose raw capture time and `seq` are both lower is also ignored as older.
 - 400 invalid ID/payload, including a missing body or a non-JSON `Content-Type` that the JSON parser skips; 401 bad/missing/disabled credential or registry, or a Firestore-reserved `__…__` device ID; 403 authenticated device without a usable assignment (including a reserved `__…__` registry `busId`/`routeId`), retry after registry repair; 413 raw body too large; 429 limiter with `Retry-After` and `retryAfterMs`; 503 Firebase/ingestion failure.
 - Successful 200/202 responses have `Cache-Control: no-store` plus
   `X-Eki-Server-Received-At` and `X-Eki-Server-Responded-At` epoch-millisecond
@@ -245,7 +261,7 @@ background work and cannot change that acknowledgement contract.
 
 ### `POST /api/devices/:deviceId/diagnostics` — device
 
-Accepts the closed 1 KiB firmware-health object: firmware version, uptime, free heap, RSSI, queue depth/high-water/drop counters, accepted/rejected fixes, NMEA/UART errors, reset total, fault code, flash-encryption and Secure-Boot booleans, and device timestamp. Device ID, bus, and route come from the authenticated server registry; credentials and network names are never accepted in the body. The latest report overwrites `_device_diagnostics/{deviceId}` through the Admin SDK. Returns 202, 400, 401, 429, or 503 with `Cache-Control: no-store`.
+Accepts the closed 1 KiB firmware-health object: firmware version, uptime, free heap, RSSI, queue depth/high-water/drop counters, accepted/rejected fixes, NMEA/UART errors, reset total, fault code, flash-encryption and Secure-Boot booleans, and device timestamp. Device ID, bus, and route come from the authenticated server registry; credentials and network names are never accepted in the body. The latest report overwrites `_device_diagnostics/{deviceId}` through the Admin SDK. Returns 202, 400, 401, 403 (authenticated device without a usable assignment), 413, 415, 429, or 503 with `Cache-Control: no-store`.
 
 ### `GET /api/devices/:deviceId/firmware?sequence=N` — device
 
@@ -256,6 +272,22 @@ current, or ride-gated; 200 contains `version`, `sequence`, immutable HTTPS
 `url`, exact `sha256`, and exact `size`. Partial/unsafe deployment configuration
 fails closed with 503. The backend never proxies the binary and the device never
 sends its credential to the artifact host.
+
+### `POST /api/devices/:deviceId/firmware/installation` — device
+
+Body: exactly `{ "action":"acquire" }` or `{ "action":"release" }`, with the
+same `Authorization: Device …` credential and pre-auth firmware IP pool as the
+release lookup. `acquire` transactionally creates a `kind:"firmware"`
+`_active_bus_locks/{busId}` reservation for the device's registry assignment, so
+no ride (manual or automatic) can start while the image flashes; it returns 409
+`{ error:"Bus is busy." }` when an active ride or any other lock already owns the
+bus, or the registry entry is disabled/reassigned. `release` deletes only this
+device's own firmware reservation and is idempotent. The reservation has no
+timed expiry: the same board releases it after success, failure or reboot, and a
+lost board needs operator recovery after proving the flash stopped. Returns 200
+`{acknowledged:true}`, 400 invalid ID/body, 401 bad/missing credential, 403
+authenticated device without a usable assignment, 409, 413, 415, 429 or 503,
+with `Cache-Control: no-store`.
 
 ### `GET /api/devices/:deviceId/diagnostics` — admin
 
@@ -303,7 +335,7 @@ Body: `{ "busId":"…", "routeId":"…", "sessionId":"…" }`. Pending, armed an
 
 ### `DELETE /api/shifts/:sessionId/messages` — admin
 
-Deletes messages in batches from the session subcollection. Returns `{deleted:number}` or 400/500.
+Copies messages to the session's `archivedMessages` subcollection and deletes them, in pages of up to 200 messages per transaction. Returns `{deleted:number}` or 400/500.
 
 ### `DELETE /api/shifts/:sessionId/history` — admin
 
@@ -408,7 +440,7 @@ Returns cached independently routed `forwardPolyline` and `reversePolyline` geom
 
 ### `PUT /api/routes/:routeId` — admin
 
-Body includes validated route metadata/stops plus `mode`, a stable `saveId`, and `expectedVersion` (`0` for a legacy route/create). A Firestore operation lease deduplicates concurrent/restarted requests; the final transaction rechecks route version and active rides before atomically storing the route and replayable result. `configVersion` advances on every edit; `geometryVersion` advances only when exact ordered coordinates/routing inputs change. Valid directional geometry is reused for metadata-only edits. The browser allows 30 seconds for the routing/persistence budget and reconciles unknown outcomes with the same operation ID. A recorded `outcomeUnknown` failure (for example 503 `ROUTE_PERSISTENCE_FAILED`) is written only while that operation still holds its lease, which proves the route was not committed, so resubmitting the same `saveId` and payload reclaims the operation instead of replaying the failure; definitive failures still replay. Returns 200 saved/replayed, 202 processing, or structured 400/404/409/502/503/504 errors with `code` and `phase`.
+Body includes validated route metadata/stops plus `mode`, a stable `saveId`, and `expectedVersion` (`0` for a legacy route/create). A Firestore operation lease deduplicates concurrent/restarted requests; the final transaction rechecks route version, active rides and session-owned `_active_bus_locks` for the route (so an edit cannot land while a ride on it is starting, including a pending-direction session) before atomically storing the route and replayable result. A starting ride re-reads the route inside its bus-lock transaction and returns 409 if the route changed after it was read, so an active ride always keeps the route version it started with. The JSON body limit for this endpoint is 64 KiB. Route and save IDs follow the general ID rule and must not match Firestore's reserved `__…__` form; such IDs return 400 `INVALID_ROUTE_DATA` (or 400 on geometry/delete/save-operation reads) instead of an unknown-outcome 503. `configVersion` advances on every edit; `geometryVersion` advances only when exact ordered coordinates/routing inputs change. Valid directional geometry is reused for metadata-only edits. The browser allows 30 seconds for the routing/persistence budget and reconciles unknown outcomes with the same operation ID. A recorded `outcomeUnknown` failure (for example 503 `ROUTE_PERSISTENCE_FAILED`) is written only while that operation still holds its lease, which proves the route was not committed, so resubmitting the same `saveId` and payload reclaims the operation instead of replaying the failure; definitive failures still replay. Returns 200 saved/replayed, 202 processing, or structured 400/404/409/502/503/504 errors with `code` and `phase`.
 
 ### `GET /api/routes/:routeId/save-operations/:saveId` — admin
 
@@ -420,7 +452,7 @@ Blocked by active rides and bus assignments. Deletes route when safe; invalid/ab
 
 ### `POST /api/plan` — authenticated
 
-Body: `{ "routeId":"…", "startStopId":"…", "endStopId":"…", "viaStopId":"…" }` (`viaStopId` optional). Uses cached Firestore route and pure stored-polyline slicing; makes no Google API request. Works in either direction, orders stops by travel direction, and requires via to lie between endpoints. Returns route metadata, stop objects, ordered `stopsOnSegment`, encoded `polyline`, and `totalStops`; 400/404/422/500 on invalid input/data.
+Body: `{ "routeId":"…", "startStopId":"…", "endStopId":"…", "viaStopId":"…" }` (`viaStopId` optional). Uses cached Firestore route and pure stored-polyline slicing; makes no Google API request. Works in either direction: stops are projected onto the directional polyline in travel order, so loop and out-and-back routes (a later stop sharing an earlier stop's coordinates) slice the correct visit forward, and via must lie between the endpoints in that order. Returns route metadata, stop objects, ordered `stopsOnSegment`, encoded `polyline`, and `totalStops`; 400/404/422/500 on invalid input/data. Missing or undecodable stored forward geometry returns 422 "Load or re-save the route to repair it"; an undecodable `reversePolyline` falls back to the reversed forward geometry like a missing one.
 
 ### `GET /api/routes-list` — authenticated
 
@@ -432,11 +464,11 @@ Bounded query string search proxied to Google Places with server key, five-secon
 
 ## Passenger/privacy endpoints
 
-### `PATCH /api/requests/:uid` — admin
+### `PATCH /api/requests/:id` — admin
 
 Body status is one of `pending|accepted|completed|cancelled`; updates existing request. Returns merged request or 400/404/500.
 
-### `DELETE /api/requests/:uid` — admin
+### `DELETE /api/requests/:id` — admin
 
 Deletes existing request. Returns `{message:"Deleted successfully"}` or 400/404/500.
 
@@ -480,7 +512,7 @@ legacy routes; Firebase SDK reads retain their existing authorization rules.
 | `POST /api/v2/ride-sessions/:sessionId/boarding-code` | Existing idempotent operator/admin issuance command, armed/active only. |
 | `PUT /api/v2/ride-sessions/:sessionId/passengers/me` | Existing join body; binds membership to token UID, rechecks boarding code, proximity, stop order and live state. |
 | `POST /api/v2/ride-sessions/:sessionId/messages` | Existing text/requestId body; same moderation, membership, durable rate limit and request ID replay. Reads remain Firestore listeners. |
-| `DELETE /api/v2/ride-sessions/:sessionId/messages` | Admin; messages deleted in batches of at most 400, including during live sessions under existing policy. |
+| `DELETE /api/v2/ride-sessions/:sessionId/messages` | Admin; pages of up to 200 messages are copied to the session's `archivedMessages` subcollection and deleted in one transaction per page, including during live sessions under existing policy. |
 | `DELETE /api/v2/ride-sessions/:sessionId` | Admin; only terminal or absent sessions, recursive history/projection cleanup. Creation-key bindings survive deletion. |
 
 Normal completion remains telemetry-owned. `POST /api/shifts/stop` remains an

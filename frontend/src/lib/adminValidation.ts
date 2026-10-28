@@ -1,8 +1,12 @@
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+// Vehicle and operator IDs become Firestore document IDs, which reject this form.
+const RESERVED_DOCUMENT_ID = /^__.*__$/;
+const RESERVED_ID_MESSAGE = "cannot both start and end with two underscores.";
 
 export function validateVehicleInput(id: string, name: string, assignedRoutes: string[]): string | null {
   if (!id.trim()) return "Vehicle ID is required.";
   if (!SAFE_ID.test(id.trim())) return "Vehicle ID may contain only letters, numbers, hyphens, and underscores (max 128 characters).";
+  if (RESERVED_DOCUMENT_ID.test(id.trim())) return `Vehicle ID ${RESERVED_ID_MESSAGE}`;
   if (!name.trim()) return "Vehicle display name is required.";
   if (name.trim().length > 100) return "Vehicle display name must be 100 characters or fewer.";
   if (assignedRoutes.length > 50) return "A vehicle can be assigned to at most 50 routes.";
@@ -12,6 +16,7 @@ export function validateVehicleInput(id: string, name: string, assignedRoutes: s
 export function validateOperatorInput(id: string, name: string, authUid: string): string | null {
   if (!id.trim()) return "Operator ID is required.";
   if (!SAFE_ID.test(id.trim())) return "Operator ID may contain only letters, numbers, hyphens, and underscores (max 128 characters).";
+  if (RESERVED_DOCUMENT_ID.test(id.trim())) return `Operator ID ${RESERVED_ID_MESSAGE}`;
   if (!name.trim()) return "Operator display name is required.";
   if (name.trim().length > 100) return "Operator display name must be 100 characters or fewer.";
   if (!authUid.trim()) return "Firebase Auth UID is required.";

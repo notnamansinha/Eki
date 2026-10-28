@@ -3,6 +3,7 @@ import {
   normalizeRouteStopPayload,
   prepareRouteSavePayload,
   reorderRouteStops,
+  ROUTE_SAVE_MAX_BODY_BYTES,
   routeIdFromName,
   swapRouteEndpoints,
 } from "./routeStopPayload";
@@ -87,6 +88,52 @@ describe("route stop save payload", () => {
     });
 
     expect(result).toEqual({ ok: false, error: "Each stop must be added only once." });
+  });
+
+  it("rejects Firestore-reserved __…__ route IDs before calling the API", () => {
+    const result = prepareRouteSavePayload({
+      mode: "create",
+      routeId: "__main__",
+      name: "Main",
+      color: "#10B981",
+      stops: [
+        { id: "__a__", name: "A", lat: 23, lng: 72.5 },
+        { id: "stop-b", name: "B", lat: 23.1, lng: 72.6 },
+      ],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Route ID may contain only letters, numbers, hyphens, and underscores (max 128 characters), and cannot both start and end with two underscores.",
+    });
+  });
+
+  const maximumStops = (name: string) => Array.from({ length: 100 }, (_, index) => ({
+    id: `${String(index).padStart(3, "0")}${"x".repeat(125)}`,
+    name: name.repeat(100),
+    lat: -23.123456789012345,
+    lng: -172.12345678901234,
+  }));
+
+  it("accepts 100 maximum-length multi-byte stops within the route-save body limit", () => {
+    const result = prepareRouteSavePayload({
+      mode: "edit", routeId: "r".repeat(128), name: "क".repeat(100), color: "#10B981", stops: maximumStops("क"),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    const bytes = new TextEncoder().encode(JSON.stringify({ ...result.value.body, saveId: "s".repeat(128), expectedVersion: 1 })).length;
+    expect(bytes).toBeGreaterThan(16 * 1024);
+    expect(bytes).toBeLessThanOrEqual(ROUTE_SAVE_MAX_BODY_BYTES);
+  });
+
+  it("explains an over-limit route instead of letting the server reject it with 413", () => {
+    // Control characters escape to six JSON bytes each.
+    const result = prepareRouteSavePayload({
+      mode: "edit", routeId: "route-test", name: "Test route", color: "#10B981", stops: maximumStops("\u0001"),
+    });
+
+    expect(result).toEqual({ ok: false, error: "Route is too large to save; shorten stop names or remove stops." });
   });
 
   it("swaps endpoints twice without changing stable stop identities", () => {

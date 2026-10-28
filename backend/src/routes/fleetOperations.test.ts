@@ -297,6 +297,22 @@ describe("fleet operation resources", () => {
     expect(response.status).toBe(200);
     expect(state.docs.get("buses/bus_1")).toEqual({ id: "bus_1", name: "New bus", assignedRoutes: [] });
   });
+  it("rejects Firestore-reserved __…__ bus, driver and route IDs with 400 before any write", async () => {
+    state.docs.set("routes/__main__", { name: "Unreachable" });
+    const put = (path: string, body: unknown) => contractFetch(`${base}/api/fleet/${path}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    expect((await put("buses/__bus__", { name: "Reserved", assignedRoutes: [] })).status).toBe(400);
+    expect((await put("buses/bus_1", { name: "Bus", assignedRoutes: ["__main__"] })).status).toBe(400);
+    expect((await put("drivers/__driver__", { name: "Reserved", authUid: "auth_uid", assignedBusId: "bus_1" })).status).toBe(400);
+    expect((await put("drivers/driver_1", { name: "Driver", authUid: "auth_uid", assignedBusId: "__bus__" })).status).toBe(400);
+    expect((await contractFetch(`${base}/api/fleet/buses/__bus__`, { method: "DELETE" })).status).toBe(400);
+    expect((await contractFetch(`${base}/api/fleet/drivers/__driver__`, { method: "DELETE" })).status).toBe(400);
+    expect(state.docs.has("buses/__bus__")).toBe(false);
+    expect(state.docs.has("drivers/__driver__")).toBe(false);
+    expect(state.docs.get("buses/bus_1")).toEqual({ assignedRoutes: ["route_1"] });
+    expect(state.writes).toBe(0);
+  });
   it("keeps all bus fields when a live ride blocks assignment removal", async () => {
     const bus = { id: "bus_1", name: "Before", assignedRoutes: ["route_1"], assignedRouteId: "route_1", createdAt: 123, metadata: { accessible: true } };
     state.docs.set("buses/bus_1", bus);

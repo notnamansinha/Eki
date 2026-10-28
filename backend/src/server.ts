@@ -41,6 +41,9 @@ import { createHttpMetricsMiddleware, registerOperationalMetrics } from "./lib/m
 import { createBrowserAdmission, createBrowserIngressLimiter } from "./lib/browserAdmission";
 import { verifiedUserKeyGenerator } from "./lib/rateLimitIdentity";
 import { readRateLimitShardFactor, shardedLimit } from "./lib/rateLimitShard";
+import { readTrustProxySetting } from "./lib/trustProxy";
+import { assertBooleanEnvConfiguration } from "./lib/booleanEnv";
+import { createRouteSaveBodyParser } from "./lib/routeSaveBody";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { clientRequestErrorHandler, notFoundHandler, unhandledRequestErrorHandler } from "./lib/requestErrors";
 import { assertRetentionConfiguration } from "./services/retentionSweeper";
@@ -77,11 +80,17 @@ const configuredCorsOrigins = (process.env.CORS_ORIGIN || "")
   .map(origin => origin.trim())
   .filter(Boolean);
 
+// Which reverse proxy may supply X-Forwarded-For for pre-auth IP buckets:
+// one hop in production by default; TRUST_PROXY=loopback behind a local ngrok
+// agent so tunnelled clients do not all share the agent's loopback bucket.
+const TRUST_PROXY = readTrustProxySetting();
+assertBooleanEnvConfiguration();
+
 const app = express();
 app.use(createHttpMetricsMiddleware());
 app.use(createApiCompatibilityTraffic());
+if (TRUST_PROXY !== false) app.set("trust proxy", TRUST_PROXY);
 if (process.env.NODE_ENV === "production") {
-  app.set("trust proxy", 1);
   // Fail closed (issue #39 D6): a production API with no configured browser
   // origin is misconfigured. Refuse to start rather than serve with an empty
   // allowlist. CORS is not an auth boundary, but the missing env var almost
@@ -162,6 +171,11 @@ app.use(
   "/api/devices/:deviceId/diagnostics",
   express.json({ limit: "1kb", strict: true }),
 );
+// Route saves may carry 100 stops at their maximum validated field lengths,
+// which exceeds the general cap (64 KiB for exact PUT saves only).
+const parseRouteSaveBody = createRouteSaveBodyParser();
+app.use("/api/routes/:routeId", parseRouteSaveBody);
+app.use("/api/v2/routes/:routeId", parseRouteSaveBody);
 app.use(express.json({ limit: "16kb", strict: true })); // Prevent request body size attacks
 app.use("/api", createBrowserAdmission(RATE_LIMIT_SHARD_FACTOR));
 
@@ -295,6 +309,7 @@ httpServer.listen(Number(PORT), "0.0.0.0", () => {
 });
 
 let shuttingDown = false;
+const SHUTDOWN_FLUSH_MS = 500;
 /** Drains network, worker, and Firebase resources within the platform grace period. */
 async function shutdown(signal: string) {
   if (shuttingDown) return;
@@ -350,6 +365,12 @@ async function shutdown(signal: string) {
     }
   }
   process.exitCode = failures.length > 0 ? 1 : 0;
+  // Every drain has settled, but an SDK retry timer can outlive deleteApp():
+  // an in-flight health probe against a degraded Firestore keeps a ref'd
+  // gRPC backoff timer alive for tens of seconds. Leave a short flush window
+  // for buffered logs, then exit with the computed status instead of waiting
+  // for the orchestrator's SIGKILL.
+  setTimeout(() => process.exit(process.exitCode), SHUTDOWN_FLUSH_MS).unref();
 }
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 process.once("SIGINT", () => void shutdown("SIGINT"));

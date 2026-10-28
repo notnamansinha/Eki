@@ -2,12 +2,13 @@ import { operationRecovery, operationRecoveryList } from "./operationRecovery";
 import { computeOrderedRouteGeometry, MAX_ROUTE_STOPS } from "../lib/orderedRouteGeometry";
 import { randomBytes, randomUUID } from "node:crypto";
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, type QuerySnapshot } from "firebase-admin/firestore";
 import { db } from "../lib/firebaseAdmin";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { requireAuth } from "../middleware/requireAuth";
 import { decodePolyline } from "../lib/polylineUtils";
 import { singleRouteParam } from "../lib/requestParams";
+import { isSafeDocumentId, RESERVED_DOCUMENT_ID } from "../lib/documentId";
 import { routeGeometrySignature } from "../lib/routeGeometrySignature";
 import {
   decideRouteSaveOperation,
@@ -28,7 +29,8 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
 const STORED_POLYLINE_QUALITY = "HIGH_QUALITY";
 const ROUTE_SAVE_LEASE_MS = 30_000;
-const SAFE_OPERATION_ID = /^[A-Za-z0-9_-]{1,128}$/;
+// One lock per physical bus; far more buses than any route serves.
+const ROUTE_LOCK_SCAN_LIMIT = 50;
 interface DirectionalRouteGeometry {
   polyline: string;
   forwardPolyline: string;
@@ -379,7 +381,7 @@ router.post("/compute-polyline", requireAdmin, async (req: Request, res: Respons
 /** Read-only stored geometry. Repair requires an authorized, versioned admin save. */
 router.get("/:routeId/geometry", requireAuth, async (req: Request, res: Response) => {
   const routeId = singleRouteParam(req.params.routeId);
-  if (routeId === null || !SAFE_ID.test(routeId)) {
+  if (!isSafeDocumentId(routeId)) {
     res.status(400).json({ error: "Invalid route ID." });
     return;
   }
@@ -440,8 +442,8 @@ router.get(
     if (
       routeId === null ||
       saveId === null ||
-      !SAFE_ID.test(routeId) ||
-      !SAFE_OPERATION_ID.test(saveId)
+      !isSafeDocumentId(routeId) ||
+      !isSafeDocumentId(saveId)
     ) {
       sendRouteError(
         res,
@@ -494,12 +496,12 @@ async function saveRoute(req: Request, res: Response) {
   const stops = validateStops(req.body?.stops);
   if (
     routeId === null ||
-    !SAFE_ID.test(routeId) ||
+    !isSafeDocumentId(routeId) ||
     !name ||
     name.length > 100 ||
     !SAFE_COLOR.test(color) ||
     (mode !== "create" && mode !== "edit") ||
-    !SAFE_OPERATION_ID.test(saveId) ||
+    !isSafeDocumentId(saveId) ||
     !Number.isSafeInteger(expectedVersion) ||
     expectedVersion < 0 ||
     (mode === "create" && expectedVersion !== 0) ||
@@ -522,6 +524,14 @@ async function saveRoute(req: Request, res: Response) {
   const activeRidesQuery = db.collection("active_rides")
     .where("routeId", "==", routeId)
     .limit(1);
+  // A ride claims its bus lock (after re-reading this route) before it writes
+  // active_rides, so the lock closes the start/edit window. Firmware
+  // maintenance reservations carry no session and do not pin the route.
+  const busLocksQuery = db.collection("_active_bus_locks")
+    .where("routeId", "==", routeId)
+    .limit(ROUTE_LOCK_SCAN_LIMIT);
+  const rideOwnsRoute = (activeRides: QuerySnapshot, busLocks: QuerySnapshot) =>
+    !activeRides.empty || busLocks.docs.some(lock => typeof lock.data()?.sessionId === "string");
   const payloadHash = routeSavePayloadHash({
     routeId,
     mode,
@@ -558,10 +568,11 @@ async function saveRoute(req: Request, res: Response) {
 
   try {
     const claim = await db.runTransaction(async (transaction) => {
-      const [operation, route, activeRides] = await Promise.all([
+      const [operation, route, activeRides, busLocks] = await Promise.all([
         transaction.get(operationRef),
         transaction.get(routeRef),
         transaction.get(activeRidesQuery),
+        transaction.get(busLocksQuery),
       ]);
       const operationData = operation.data() as Record<string, unknown> | undefined;
       const decision = decideRouteSaveOperation(operationData, payloadHash, Date.now());
@@ -575,7 +586,7 @@ async function saveRoute(req: Request, res: Response) {
       if (currentVersion !== expectedVersion) {
         return { kind: "stale", currentVersion } as const;
       }
-      if (mode === "edit" && !activeRides.empty) return { kind: "active-ride" } as const;
+      if (mode === "edit" && rideOwnsRoute(activeRides, busLocks)) return { kind: "active-ride" } as const;
 
       transaction.set(operationRef, {
         routeId,
@@ -687,10 +698,11 @@ async function saveRoute(req: Request, res: Response) {
     };
 
     await db.runTransaction(async (transaction) => {
-      const [operation, route, activeRides] = await Promise.all([
+      const [operation, route, activeRides, busLocks] = await Promise.all([
         transaction.get(operationRef),
         transaction.get(routeRef),
         transaction.get(activeRidesQuery),
+        transaction.get(busLocksQuery),
       ]);
       const operationData = operation.data() as Record<string, unknown> | undefined;
       if (
@@ -723,7 +735,7 @@ async function saveRoute(req: Request, res: Response) {
           },
         );
       }
-      if (mode === "edit" && !activeRides.empty) {
+      if (mode === "edit" && rideOwnsRoute(activeRides, busLocks)) {
         throw routeError(
           409,
           "ACTIVE_RIDE_ROUTE_EDIT",
@@ -763,7 +775,7 @@ async function saveRoute(req: Request, res: Response) {
 
 router.delete("/:routeId", requireAdmin, async (req: Request, res: Response) => {
   const routeId = singleRouteParam(req.params.routeId);
-  if (routeId === null || !SAFE_ID.test(routeId)) {
+  if (!isSafeDocumentId(routeId)) {
     res.status(400).json({ error: "Invalid route ID." });
     return;
   }
@@ -840,7 +852,7 @@ function saveResourceHeaders(req: Request, res: Response, next: NextFunction) {
   res.json = body => {
     const routeId = singleRouteParam(req.params.routeId);
     const saveId = singleRouteParam(req.params.saveId) ?? req.body?.saveId;
-    if (routeId && SAFE_ID.test(routeId) && typeof saveId === "string" && SAFE_OPERATION_ID.test(saveId) && res.statusCode < 300) {
+    if (isSafeDocumentId(routeId) && isSafeDocumentId(saveId) && res.statusCode < 300) {
       const prefix = req.baseUrl.startsWith("/api/v2") ? "/api/v2/routes" : "/api/routes";
       res.location(`${prefix}/${routeId}/save-operations/${saveId}`);
       if (res.statusCode === 202) res.set("Retry-After", "1");
@@ -853,7 +865,7 @@ function saveResourceHeaders(req: Request, res: Response, next: NextFunction) {
 async function readSaveResource(req: Request, res: Response) {
   const routeId = singleRouteParam(req.params.routeId);
   const saveId = singleRouteParam(req.params.saveId);
-  if (!routeId || !saveId || !SAFE_ID.test(routeId) || !SAFE_OPERATION_ID.test(saveId)) {
+  if (!isSafeDocumentId(routeId) || !isSafeDocumentId(saveId)) {
     sendRouteError(res, routeError(400, "INVALID_SAVE_OPERATION", "validation", "Invalid save operation.")); return;
   }
   try {
@@ -883,7 +895,7 @@ router.put("/:routeId", requireAdmin, saveResourceHeaders, saveRoute);
 routeGeometryPreviewsRouter.post("/", privateResponse, requireAdmin, async (req: Request, res: Response) => {
   const id = req.get("Idempotency-Key");
   const waypoints = validateWaypoints(req.body?.waypoints);
-  if (!id || !OPERATION_ID.test(id) || !waypoints || Object.keys(req.body).some(key => key !== "waypoints")) {
+  if (!id || !OPERATION_ID.test(id) || RESERVED_DOCUMENT_ID.test(id) || !waypoints || Object.keys(req.body).some(key => key !== "waypoints")) {
     res.status(400).json({ error: "A valid Idempotency-Key and 2-100 waypoints are required.", code: "INVALID_PREVIEW" }); return;
   }
   try {
@@ -911,7 +923,7 @@ routeGeometryPreviewsRouter.post("/:operationId/recovery", privateResponse, requ
 routeGeometryPreviewsRouter.get("/recovery", privateResponse, requireAdmin, operationRecoveryList("_route_geometry_previews"));
 routeGeometryPreviewsRouter.get("/:operationId", privateResponse, requireAdmin, async (req: Request, res: Response) => {
   const id = singleRouteParam(req.params.operationId);
-  if (!id || !OPERATION_ID.test(id)) { res.status(400).json({ error: "Invalid operation ID.", code: "INVALID_OPERATION_ID" }); return; }
+  if (!id || !OPERATION_ID.test(id) || RESERVED_DOCUMENT_ID.test(id)) { res.status(400).json({ error: "Invalid operation ID.", code: "INVALID_OPERATION_ID" }); return; }
   try {
     const snapshot = await readOperation("_route_geometry_previews", id);
     if (!snapshot) { res.status(404).json({ error: "Preview not found.", code: "OPERATION_NOT_FOUND" }); return; }

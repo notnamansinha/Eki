@@ -33,6 +33,7 @@ import { LruCache } from "../lib/lruCache";
 import { settleTogether } from "../lib/reconciliationPages";
 import { invalidateRouteGeometryRead } from "./routeGeometryReads";
 import { routeGeometrySignature } from "../lib/routeGeometrySignature";
+import { readBooleanEnv } from "../lib/booleanEnv";
 import { routeDocumentVersion, routeGeometryVersion } from "../lib/routeSaveContract";
 import { readRerouteRetry, rerouteBackoffMs, RerouteProviderCircuit } from "./rerouteRetry";
 import type { DeviceAssignment } from "./deviceTelemetryService";
@@ -831,7 +832,7 @@ interface DeparturePlan {
 }
 
 function departureRoutePlan(live: Record<string, unknown>, route: StoredRoute, now: number): DeparturePlan | null {
-  if (process.env.LIVE_DEPARTURE_ROUTES_ENABLED === "false" || live.status !== "active" ||
+  if (!readBooleanEnv("LIVE_DEPARTURE_ROUTES_ENABLED", true) || live.status !== "active" ||
     typeof live.sessionId !== "string" || !resolvedDirection(live.direction) ||
     (live.tripState !== "pre_departure" && live.tripState !== "in_service")) return null;
   const phase = live.tripState === "pre_departure" ? "ready" : "departure";

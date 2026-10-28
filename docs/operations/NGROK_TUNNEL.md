@@ -1,6 +1,6 @@
 # Stable ngrok tunnel for ESP32 bench testing
 
-Last updated: 2026-10-04 14:20 IST (UTC+05:30).
+Last updated: 2026-10-27 12:00 IST (UTC+05:30).
 
 This runbook replaces the rotating Cloudflare Quick Tunnel used during local
 hardware tests. It gives the laptop backend a reusable HTTPS origin so restarting
@@ -55,7 +55,15 @@ screenshots, or test logs.
 ## 2. Start and verify the backend tunnel
 
 After setting backend `NODE_ENV=development` and `PORT=4000` as described in
-[local setup](../GETTING_STARTED.md#local-development), start Terminal 1:
+[local setup](../GETTING_STARTED.md#local-development), also set
+`TRUST_PROXY=loopback` in `backend/.env`. The ngrok agent connects to the
+backend over loopback, so without it every internet client (devices, phones and
+any anonymous caller who knows the tunnel URL) shares the agent's single
+pre-auth rate-limit bucket, and a junk flood can return 429 to real ESP32s.
+With `loopback`, Express trusts `X-Forwarded-For` only from a proxy on this
+machine and keys each caller by the client address ngrok appends; forged
+leading entries from remote callers are ignored. Only processes on the laptop
+itself could forge a key. Start Terminal 1:
 
 ```powershell
 npm run dev --workspace=backend
@@ -130,9 +138,15 @@ the service can change its issuing chain in the future.
 
 Use the same stable backend origin for the browser application:
 
-- Set `NEXT_PUBLIC_BACKEND_URL` in the ignored frontend environment.
-- Regenerate the production CSP and redeploy Firebase Hosting after changing a
-  production backend origin.
+- Set `NEXT_PUBLIC_BACKEND_URL` in the ignored frontend environment
+  (`frontend/.env.local` or `frontend/.env.production`). The root build's CSP
+  generator and web/backend contract check load these files the same way
+  `next build` does, so the generated `connect-src` includes the origin the
+  bundle calls; a value exported in the shell takes precedence.
+- After changing a production backend origin, run `npm run build:production`
+  before `firebase deploy --only hosting` (or `firestore:rules,hosting`). It
+  regenerates the CSP in `firebase.json` and fails instead of deploying a policy
+  that blocks the backend.
 - Keep backend `CORS_ORIGIN` set to frontend origins, not the ngrok backend URL.
 - Never set `BACKEND_URL` in `backend/.env`; the backend still listens locally.
 

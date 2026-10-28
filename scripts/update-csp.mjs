@@ -3,8 +3,12 @@ import path from "node:path";
 import { backendOriginFromUrl } from "./csp-backend-origin.mjs";
 import { parseRtdbInstanceUrl } from "./rtdb-instance-config.mjs";
 import { inlineScriptHashes } from "./inline-script-hashes.mjs";
+import { loadFrontendEnv } from "./load-frontend-env.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
+// Read NEXT_PUBLIC_* the way `next build` did, or the CSP would omit origins
+// that only frontend/.env* configures while the bundle still calls them.
+loadFrontendEnv(root);
 const output = path.join(root, "frontend", "out");
 const firebasePath = path.join(root, "firebase.json");
 
@@ -44,7 +48,8 @@ function replaceDirective(name, sources) {
 
 const backendOrigin = backendOriginFromUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
 // RTDB's long-poll fallback loads /.lp through script elements, so connect-src
-// alone does not allow it. Production builds use the configured instance.
+// alone does not allow it. Production builds name the configured instance, but
+// only its /.lp path: the bare origin would also allow REST `?callback=` JSONP.
 const databaseHostname = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL
   ? parseRtdbInstanceUrl(process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL).hostname
   : null;
@@ -57,14 +62,15 @@ const rtdbLongPollSources = [
   "https://*.firebasedatabase.app/.lp",
 ];
 
+// Never add a host that serves callback-reflecting JSONP (for example
+// www.google.com): it would run attacker-chosen calls despite the hashes.
 const sources = [
   "'self'",
   ...[...hashes].sort(),
   "https://apis.google.com",
   "https://www.gstatic.com",
-  "https://www.google.com",
   "https://maps.googleapis.com",
-  ...(databaseHostname ? [`https://${databaseHostname}`] : []),
+  ...(databaseHostname ? [`https://${databaseHostname}/.lp`] : []),
   ...rtdbLongPollSources,
 ].join(" ");
 replaceDirective("script-src", sources);

@@ -15,6 +15,12 @@ describe("admin form validation", () => {
     expect(validateOperatorInput(" drv_1 ", " Ravi ", " uid_1 ")).toBeNull();
   });
 
+  it("rejects Firestore-reserved __…__ vehicle and operator IDs that the API answers with 400", () => {
+    expect(validateVehicleInput("__bus__", "Bus one", [])).toContain("two underscores");
+    expect(validateOperatorInput("__drv__", "Ravi", "uid_1")).toContain("two underscores");
+    expect(validateVehicleInput("__bus", "Bus one", [])).toBeNull();
+  });
+
   it("matches the settings API's required fields and length limits", () => {
     const valid = {
       serviceStartTime: "8:00 am",

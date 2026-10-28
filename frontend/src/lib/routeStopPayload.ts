@@ -37,6 +37,12 @@ export type RouteSavePreparation =
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
+// Firestore rejects document IDs of this form; the backend answers 400.
+const RESERVED_DOCUMENT_ID = /^__.*__$/;
+/** Mirrors the backend route-save JSON body limit (backend/src/lib/routeSaveBody.ts). */
+export const ROUTE_SAVE_MAX_BODY_BYTES = 64 * 1024;
+// The caller adds saveId (at most 128 characters) and expectedVersion.
+const OPERATION_FIELDS_BYTES = JSON.stringify({ saveId: "x".repeat(128), expectedVersion: Number.MAX_SAFE_INTEGER }).length;
 
 export function stopShortName(name: string): string {
   return name.split(",", 1)[0].trim().slice(0, 32);
@@ -103,8 +109,8 @@ export function prepareRouteSavePayload(input: RouteSavePayloadInput): RouteSave
   if (input.stops.length < 2) return { ok: false, error: "Add at least 2 stops before saving the route." };
 
   const routeId = input.routeId.trim() || routeIdFromName(name);
-  if (!SAFE_ID.test(routeId)) {
-    return { ok: false, error: "Route ID may contain only letters, numbers, hyphens, and underscores (max 128 characters)." };
+  if (!SAFE_ID.test(routeId) || RESERVED_DOCUMENT_ID.test(routeId)) {
+    return { ok: false, error: "Route ID may contain only letters, numbers, hyphens, and underscores (max 128 characters), and cannot both start and end with two underscores." };
   }
   if (name.length > 100) return { ok: false, error: "Route name must be 100 characters or fewer." };
   if (!SAFE_COLOR.test(input.color)) {
@@ -126,11 +132,9 @@ export function prepareRouteSavePayload(input: RouteSavePayloadInput): RouteSave
   );
   if (invalidStop) return { ok: false, error: "Each stop needs a name and valid map coordinates." };
 
-  return {
-    ok: true,
-    value: {
-      routeId,
-      body: { mode: input.mode, name, color: input.color, stops },
-    },
-  };
+  const body = { mode: input.mode, name, color: input.color, stops };
+  if (new TextEncoder().encode(JSON.stringify(body)).length + OPERATION_FIELDS_BYTES > ROUTE_SAVE_MAX_BODY_BYTES) {
+    return { ok: false, error: "Route is too large to save; shorten stop names or remove stops." };
+  }
+  return { ok: true, value: { routeId, body } };
 }

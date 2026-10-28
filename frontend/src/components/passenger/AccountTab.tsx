@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import WorkspaceLink from "@/components/shared/WorkspaceLink";
 import { CircleUserRound, LogOut, ChevronRight, LogIn, HeartHandshake, Trash2, LayoutDashboard } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -38,6 +38,28 @@ export default function AccountTab() {
   const [showDeletionAccepted, setShowDeletionAccepted] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletionStatus, setDeletionStatus] = useState("");
+  const [showCoin, setShowCoin] = useState(false);
+  const lastPhotoTap = useRef<number | null>(null);
+  const coinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (coinTimer.current) clearTimeout(coinTimer.current);
+  }, []);
+
+  const handlePhotoTap = () => {
+    const now = Date.now();
+    if (lastPhotoTap.current !== null && now - lastPhotoTap.current <= 350 && !showCoin) {
+      setShowCoin(true);
+      lastPhotoTap.current = null;
+      coinTimer.current = setTimeout(() => {
+        setShowCoin(false);
+        lastPhotoTap.current = null;
+        coinTimer.current = null;
+      }, 4_000);
+    } else if (!showCoin) {
+      lastPhotoTap.current = now;
+    }
+  };
 
   const confirmDeletion = async () => {
     setIsDeleting(true);
@@ -82,10 +104,20 @@ export default function AccountTab() {
         <div className="p-6 rounded-2xl relative overflow-hidden" 
           style={{ background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
           <div className="flex flex-col items-center gap-5 relative z-10">
-            <div className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden"
+            <div className="w-20 h-20 rounded-full flex items-center justify-center"
               role="group" aria-label="Profile photo"
-              style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)" }}>
-               <ProfilePhoto key={JSON.stringify([user?.uid, user?.photoURL])} photoURL={user?.photoURL} />
+              >
+              <button type="button" onClick={handlePhotoTap}
+                aria-label="Profile photo, double tap for a surprise"
+                className="relative w-full h-full rounded-full flex items-center justify-center overflow-hidden touch-manipulation"
+                style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)", perspective: "500px" }}>
+                {showCoin ? (
+                  <span className="profile-coin" role="img" aria-label="Golden coin: 19">
+                    <span className="profile-coin-face profile-coin-front" aria-hidden="true" />
+                    <span className="profile-coin-face profile-coin-back" aria-hidden="true">19</span>
+                  </span>
+                ) : <ProfilePhoto key={JSON.stringify([user?.uid, user?.photoURL])} photoURL={user?.photoURL} />}
+              </button>
             </div>
             
             <div className="text-center">

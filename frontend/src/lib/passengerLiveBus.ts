@@ -1,3 +1,4 @@
+import { serverNow } from "./serverClock";
 import {
   isActiveBusEntry,
   rideServiceState,
@@ -37,7 +38,7 @@ function busIdFromNodeKey(key: string, routeId: string): string | null {
 export function normalizePassengerLiveBus(
   key: string,
   value: unknown,
-  now = Date.now(),
+  now = serverNow(),
 ): PassengerLiveBus | null {
   if (typeof value !== "object" || value === null) return null;
   const raw = value as Record<string, unknown>;
@@ -94,7 +95,7 @@ export function normalizePassengerLiveBus(
 
 export function passengerLiveBuses(
   snapshot: Record<string, unknown> | null | undefined,
-  now = Date.now(),
+  now = serverNow(),
 ): PassengerLiveBus[] {
   if (!snapshot) return [];
   return Object.entries(snapshot).flatMap(([key, value]) => {
@@ -164,7 +165,7 @@ export function reusePassengerMapBus(previous: PassengerMapBus | undefined, next
 
 /** Viewing an online device does not create or authorize a passenger ride. */
 export function normalizePassengerMapBus(
-  key: string, value: unknown, now = Date.now(),
+  key: string, value: unknown, now = serverNow(),
 ): PassengerMapBus | null {
   const service = normalizePassengerLiveBus(key, value, now);
   if (service) return service;

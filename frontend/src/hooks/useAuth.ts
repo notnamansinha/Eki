@@ -16,6 +16,7 @@ import { apiRequest } from "@/lib/apiClient";
 import { consumeGoogleRedirectPending, markGoogleRedirectPending, prefersGoogleRedirect } from "@/lib/googleSignInFlow";
 
 const ROLE_VERIFICATION_TIMEOUT_MS = 10_000;
+const AUTH_STILL_RESTORING_MESSAGE = "Sign-in is still restoring. Reload the page to try again.";
 const ACCESS_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
 
 function transientAccessFailure(error: unknown): boolean {
@@ -106,6 +107,9 @@ function useAuthState(): AuthContextValue {
   const [loginFallbackAvailable, setLoginFallbackAvailable] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const signingOut = useRef(false);
+  // Until Firebase reports its first auth state (or settles a redirect result),
+  // auth.currentUser === null means "unknown", not "signed out".
+  const authInitialized = useRef(false);
   const loginAttempt = useRef(0);
   const invalidateLoginAttempt = useCallback(() => { loginAttempt.current++; }, []);
   const loginDependencies = useRef<FirebaseLoginDependencies | null>(null);
@@ -120,6 +124,7 @@ function useAuthState(): AuthContextValue {
     let verifiedUser: import("firebase/auth").User | null = null;
     let verifiedGeneration = -1;
     let recoverAccess: (() => void) | null = null;
+    authInitialized.current = false;
     const clearRecovery = () => {
       clearTimeout(retryTimer);
       retryTimer = undefined;
@@ -135,6 +140,21 @@ function useAuthState(): AuthContextValue {
     };
     window.addEventListener("online", resumeAccess);
     document.addEventListener("visibilitychange", resumeAccess);
+    // signInWithRedirect never settles in the document that navigates away.
+    // When Back restores that frozen page from the back/forward cache, the
+    // OAuth attempt is over: re-enable sign-in instead of a stuck spinner.
+    const resumeFromHistory = (event: PageTransitionEvent) => {
+      if (!event.persisted || disposed) return;
+      const wasRedirecting = consumeGoogleRedirectPending();
+      invalidateLoginAttempt();
+      setLoginLoading(false);
+      if (wasRedirecting && !loginDependencies.current?.auth.currentUser) {
+        // The user deliberately backed out; leave a clean, enabled button.
+        setLoginError(null);
+        setLoginFallbackAvailable(false);
+      }
+    };
+    window.addEventListener("pageshow", resumeFromHistory);
     const authTimeout = window.setTimeout(() => {
       if (!disposed) {
         console.warn("Firebase auth restoration timed out.");
@@ -349,10 +369,21 @@ function useAuthState(): AuthContextValue {
           if (onlyIfNeeded && signingOut.current) return Promise.resolve();
           if (onlyIfNeeded && auth.currentUser === verifiedUser &&
               verifiedGeneration === getAuthVerificationGeneration()) return Promise.resolve();
+          if (!authInitialized.current) {
+            // Never publish a null currentUser as a confirmed sign-out while
+            // Firebase is still restoring (e.g. a pending redirect). The first
+            // observer callback will verify the real state.
+            if (!onlyIfNeeded) {
+              setRoleError(AUTH_STILL_RESTORING_MESSAGE);
+              setLoading(false);
+            }
+            return Promise.resolve();
+          }
           retryAttempt = 0;
           return runVerification(auth.currentUser);
         };
         unsubscribe = authModule.onAuthStateChanged(auth, firebaseUser => {
+          authInitialized.current = true;
           retryAttempt = 0;
           return runVerification(firebaseUser);
         });
@@ -361,6 +392,8 @@ function useAuthState(): AuthContextValue {
         // redirect session. Both paths share the observer's trusted role checks.
         void authModule.getRedirectResult(auth).then(async (result) => {
           if (disposed) return;
+          // getRedirectResult settles only after Firebase initialization.
+          authInitialized.current = true;
           const wasRedirecting = consumeGoogleRedirectPending();
           if (result?.user && auth.currentUser?.uid === result.user.uid) {
             await refreshVerification.current?.(true);
@@ -402,6 +435,7 @@ function useAuthState(): AuthContextValue {
       clearRecovery();
       window.removeEventListener("online", resumeAccess);
       document.removeEventListener("visibilitychange", resumeAccess);
+      window.removeEventListener("pageshow", resumeFromHistory);
       refreshVerification.current = null;
       clearTimeout(authTimeout);
       unsubscribe();
@@ -482,9 +516,14 @@ function useAuthState(): AuthContextValue {
       if (attempt !== loginAttempt.current) return;
       const code = authErrorCode(error);
       if (
-        code !== "auth/cancelled-popup-request" &&
-        code !== "auth/popup-closed-by-user"
+        code === "auth/cancelled-popup-request" ||
+        code === "auth/popup-closed-by-user"
       ) {
+        // A deliberate cancellation ends the attempt: drop any slow-popup
+        // notice and fallback, matching a cancellation before the timer.
+        showRedirectFallback = false;
+        setLoginError(null);
+      } else {
         console.error("[Auth] Google popup sign-in failed.", code);
         setLoginError(loginErrorMessage(code));
         showRedirectFallback = canUseRedirectFallback(code);
@@ -517,7 +556,14 @@ function useAuthState(): AuthContextValue {
       beginAuthVerification();
       logoutGeneration = getAuthVerificationGeneration();
       setUser(null);
-      setLoading(true);
+      if (authInitialized.current) {
+        setLoading(true);
+      } else {
+        // signOut queues behind Firebase restoration; keep actionable guidance
+        // visible until the observer reports the signed-out state.
+        setRoleError(AUTH_STILL_RESTORING_MESSAGE);
+        setLoading(false);
+      }
       await signOut(auth);
       // Lazy cache cleanup must not block the next OAuth click after Firebase
       // has confirmed sign-out (those imports can be slow on mobile).

@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import {
   assertWebBackendContract,
   connectSourcesFromCsp,
@@ -43,6 +48,83 @@ describe("web/backend deployment contract", () => {
       true,
     ));
     assert.throws(() => assertWebBackendContract(config("connect-src 'self';"), "", true));
+  });
+});
+
+const execute = promisify(execFile);
+
+/**
+ * Runs the real verifier CLI in an isolated repo layout. The temp tree stays
+ * below the workspace so `@next/env` resolves through the root node_modules.
+ */
+async function runVerifier({ envFiles = {}, csp, shell = {} }) {
+  const scratch = fileURLToPath(new URL("../temp/", import.meta.url));
+  await mkdir(scratch, { recursive: true });
+  const root = await mkdtemp(path.join(scratch, "eki-contract-"));
+  try {
+    await mkdir(path.join(root, "scripts"));
+    await mkdir(path.join(root, "frontend"));
+    for (const file of ["verify-web-backend-contract.mjs", "csp-backend-origin.mjs", "load-frontend-env.mjs"])
+      await copyFile(new URL(file, import.meta.url), path.join(root, "scripts", file));
+    for (const [name, contents] of Object.entries(envFiles))
+      await writeFile(path.join(root, "frontend", name), contents);
+    await writeFile(path.join(root, "firebase.json"), JSON.stringify(config(csp)));
+    const env = { ...process.env, ...shell };
+    for (const name of ["NEXT_PUBLIC_BACKEND_URL", "EKI_STRICT_PRODUCTION_BUILD", "EKI_RUNTIME_SMOKE", "NODE_ENV"])
+      if (!(name in shell)) delete env[name];
+    try {
+      const { stdout } = await execute(process.execPath, [path.join(root, "scripts/verify-web-backend-contract.mjs")], { env });
+      return { code: 0, output: stdout };
+    } catch (error) {
+      return { code: error.code, output: `${error.stdout}${error.stderr}` };
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+describe("web/backend contract CLI resolves the URL the way next build does", () => {
+  it("checks a backend URL that only frontend/.env.local configures", async () => {
+    const result = await runVerifier({
+      envFiles: { ".env.local": "NEXT_PUBLIC_BACKEND_URL=http://localhost:4000\n" },
+      csp: "default-src 'self'; connect-src 'self';",
+    });
+    assert.notEqual(result.code, 0, result.output);
+    assert.match(result.output, /missing from CSP connect-src/);
+    assert.doesNotMatch(result.output, /skipped/);
+  });
+
+  it("passes when the CSP contains the env-file origin", async () => {
+    const result = await runVerifier({
+      envFiles: { ".env.local": "NEXT_PUBLIC_BACKEND_URL=http://localhost:4000\n" },
+      csp: "default-src 'self'; connect-src 'self' http://localhost:4000;",
+    });
+    assert.equal(result.code, 0, result.output);
+    assert.match(result.output, /contract verified/);
+  });
+
+  it("lets the strict production gate accept a URL from frontend/.env.production", async () => {
+    const result = await runVerifier({
+      envFiles: { ".env.production": "NEXT_PUBLIC_BACKEND_URL=https://api.example.test\n" },
+      csp: "default-src 'self'; connect-src 'self' https://api.example.test;",
+      shell: { EKI_STRICT_PRODUCTION_BUILD: "true" },
+    });
+    assert.equal(result.code, 0, result.output);
+  });
+
+  it("keeps a shell value ahead of frontend env files, as next build does", async () => {
+    const result = await runVerifier({
+      envFiles: { ".env.local": "NEXT_PUBLIC_BACKEND_URL=http://localhost:4000\n" },
+      csp: "default-src 'self'; connect-src 'self' https://api.example.test;",
+      shell: { NEXT_PUBLIC_BACKEND_URL: "https://api.example.test" },
+    });
+    assert.equal(result.code, 0, result.output);
+  });
+
+  it("skips only when neither the shell nor any frontend env file sets the URL", async () => {
+    const result = await runVerifier({ csp: "default-src 'self'; connect-src 'self';" });
+    assert.equal(result.code, 0, result.output);
+    assert.match(result.output, /skipped: no NEXT_PUBLIC_BACKEND_URL in the shell or frontend\/\.env\* files/);
   });
 });
 

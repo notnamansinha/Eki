@@ -30,3 +30,29 @@ export function isFeedbackList(value: unknown): value is { feedbacks: FeedbackEn
         (entry.timestamp.nanoseconds as number) >= 0 && (entry.timestamp.nanoseconds as number) < 1e9));
   });
 }
+
+const optionalString = (value: unknown) => typeof value === "string" ? value : null;
+
+/**
+ * Coerces one stored feedback document field by field, matching the backend list route, so a
+ * single legacy or hand-edited document can never blank the whole admin feedback list.
+ */
+export function normalizeFeedbackEntry(id: string, data: Record<string, unknown>): FeedbackEntry {
+  const timestamp = isApiRecord(data.timestamp) ? data.timestamp : null;
+  return {
+    id,
+    userId: typeof data.userId === "string" ? data.userId : "",
+    userName: typeof data.userName === "string" ? data.userName : "Passenger",
+    type: data.type === "ride" ? "ride" : "general",
+    busId: optionalString(data.busId),
+    driverId: optionalString(data.driverId),
+    sessionId: optionalString(data.sessionId),
+    rating: typeof data.rating === "number" && Number.isFinite(data.rating) ? data.rating : null,
+    comment: typeof data.comment === "string" ? data.comment : "",
+    status: data.status === "reviewed" || data.status === "resolved" ? data.status : "new",
+    timestamp: timestamp && Number.isSafeInteger(timestamp.seconds) && Number.isInteger(timestamp.nanoseconds) &&
+      (timestamp.nanoseconds as number) >= 0 && (timestamp.nanoseconds as number) < 1e9
+      ? { seconds: timestamp.seconds as number, nanoseconds: timestamp.nanoseconds as number }
+      : null,
+  };
+}

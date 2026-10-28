@@ -37,6 +37,7 @@ describe("deterministic GNSS software properties", () => {
       const input = { ...valid, timestamp, deviceSentAt: Math.max(timestamp, epoch) };
       expect(parseTelemetryValue(input, epoch)).toEqual({ ok: true, value: {
         ...input, timestamp: Math.min(timestamp, epoch), deviceSentAt: epoch,
+        ...(timestamp > epoch ? { deviceTimestamp: timestamp } : {}),
       } });
     }
     for (const offset of [-60001, 10001]) expect(parseTelemetryValue({ ...valid, timestamp: epoch + offset }, epoch))
@@ -88,7 +89,8 @@ describe("deterministic GNSS software properties", () => {
     check: (input: typeof valid) => {
       const payload = { ...input, deviceSentAt: Math.max(epoch, input.timestamp) };
       expect(parseTelemetryPayload(encode(payload), epoch)).toEqual({ ok: true, value: { ...input,
-        timestamp: Math.min(epoch, input.timestamp), deviceSentAt: epoch } });
+        timestamp: Math.min(epoch, input.timestamp), deviceSentAt: epoch,
+        ...(input.timestamp > epoch ? { deviceTimestamp: input.timestamp } : {}) } });
     } });
   });
   it("rejects seeded adversarial authority fields without modifying the valid input", () => {

@@ -33,6 +33,18 @@ export default function HomePage() {
   } = useAuth();
   const router = useRouter();
   const [redirectDelayed, setRedirectDelayed] = useState(false);
+  // A disabled sign-in button must never be the only thing on the page.
+  const loginStalled = !user && !roleError && !loginReady && !loginError;
+  const [loginStallVisible, setLoginStallVisible] = useState(false);
+
+  useEffect(() => {
+    if (!loginStalled) return;
+    const timer = window.setTimeout(() => setLoginStallVisible(true), 10_000);
+    return () => {
+      window.clearTimeout(timer);
+      setLoginStallVisible(false);
+    };
+  }, [loginStalled]);
 
   useEffect(() => {
     if (!user) return;
@@ -161,6 +173,14 @@ export default function HomePage() {
         {loginError && (
           <div className="mt-4 flex flex-col items-center gap-2">
             <p className="max-w-lg text-sm text-white" role="alert">{loginError}</p>
+          </div>
+        )}
+        {loginStalled && loginStallVisible && (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <p className="max-w-lg text-sm text-white" role="status">Sign-in is still loading.</p>
+            <button type="button" className="text-sm font-semibold text-white underline underline-offset-4" onClick={() => window.location.reload()}>
+              Reload
+            </button>
           </div>
         )}
       </section>

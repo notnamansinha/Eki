@@ -2,7 +2,7 @@ import { contractFetch } from "../../test-support/openapi";
 import type { Server } from "node:http";
 import express from "express";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { encodePolyline } from "../lib/polylineUtils";
+import { decodePolyline, encodePolyline } from "../lib/polylineUtils";
 
 const harness = vi.hoisted(() => ({
   user: { uid: "passenger_1", name: "Token Name" },
@@ -164,6 +164,66 @@ describe("POST /api/plan directional geometry", () => {
 
     const forward = await plan("empty_route", "a", "z");
     expect(forward.status).toBe(422);
+  });
+
+  it("answers corrupt stored forward geometry with the repairable 422 instead of a 500", async () => {
+    harness.routes.set("corrupt_route", {
+      id: "corrupt_route", name: "Corrupt", color: "#000", stops: [A, Z],
+      waypoints: [], polyline: "~~~~corrupt",
+    });
+    const response = await plan("corrupt_route", "a", "z") as { status: number; error?: string };
+    expect(response.status).toBe(422);
+    expect(response.error).toBe(
+      "Route has no stored forward geometry. Load or re-save the route to repair it.",
+    );
+  });
+
+  it("keeps planning both directions when only the stored reversePolyline is corrupt", async () => {
+    harness.routes.set("corrupt_reverse_route", {
+      id: "corrupt_reverse_route", name: "Corrupt reverse", color: "#000", stops: [A, Z],
+      waypoints: [], polyline: forwardPolyline, forwardPolyline, reversePolyline: "~~~~corrupt",
+    });
+    const forward = await plan("corrupt_reverse_route", "a", "z");
+    expect(forward.status).toBe(200);
+    expect(forward.polyline).toBe(forwardPolyline);
+    const reverse = await plan("corrupt_reverse_route", "z", "a");
+    expect(reverse.status).toBe(200);
+    expect(reverse.polyline).toBe(encodePolyline([Z, A]));
+  });
+
+  it("plans the remaining forward part of a loop whose end stop sits at the origin", async () => {
+    // Campus loop: Gate -> Library -> Hostel -> back to Gate.
+    const road = [
+      { lat: 23.0, lng: 72.0 }, { lat: 23.0, lng: 72.001 }, { lat: 23.0, lng: 72.002 },
+      { lat: 23.001, lng: 72.002 }, { lat: 23.001, lng: 72.001 }, { lat: 23.001, lng: 72.0 },
+      { lat: 23.0, lng: 72.0 },
+    ];
+    const stop = (id: string, lat: number, lng: number) => ({ id, name: id, shortName: id, lat, lng });
+    harness.routes.set("loop_route", {
+      id: "loop_route", name: "Loop", color: "#000", waypoints: [], polyline: encodePolyline(road),
+      stops: [stop("gate", 23.0, 72.0), stop("library", 23.0, 72.002),
+        stop("hostel", 23.001, 72.001), stop("gate_end", 23.0, 72.0)],
+    });
+    const response = await contractFetch(`${baseUrl}/api/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ routeId: "loop_route", startStopId: "hostel", endStopId: "gate_end" }),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      direction: string; polyline: string; stopsOnSegment: { id: string }[];
+    };
+    expect(body.direction).toBe("forward");
+    expect(body.stopsOnSegment.map((entry) => entry.id)).toEqual(["hostel", "gate_end"]);
+    expect(decodePolyline(body.polyline)).toEqual(road.slice(4));
+
+    const backwards = await contractFetch(
+      `${baseUrl}/api/v2/routes/loop_route/segments?from=gate_end&to=library`,
+    );
+    expect(backwards.status).toBe(200);
+    const reverse = await backwards.json() as { direction: string; stopsOnSegment: { id: string }[] };
+    expect(reverse.direction).toBe("reverse");
+    expect(reverse.stopsOnSegment.map((entry) => entry.id)).toEqual(["gate_end", "hostel", "library"]);
   });
 
   it("returns the same segment and direction through the bounded GET alias", async () => {

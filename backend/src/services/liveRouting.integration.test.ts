@@ -98,6 +98,15 @@ describe("live routing publication", () => {
     expect(state.values.get(key)).toMatchObject({ routeSource: "configured", routeTrafficState: "fallback",
       departureRoute: { state: "failed", requestId: null } });
   });
+  it.each(["false", "FALSE", " False ", "0", "off"])("skips billable departure previews when LIVE_DEPARTURE_ROUTES_ENABLED=%j", async value => {
+    vi.stubEnv("LIVE_DEPARTURE_ROUTES_ENABLED", value);
+    try {
+      state.values.set(key, { ...state.values.get(key), tripState: "pre_departure", currentStopIndex: 0 });
+      state.compute.mockResolvedValue({ encodedPolyline: encodePolyline(stops), distanceMeters: 10000, duration: "1000s" });
+      publish({ ...sample(1), ...stops[0], speed: 0, motionState: "stopped" }); await drainTelemetryRouteProcessing();
+      expect(state.compute).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); }
+  });
   it("refreshes an old parked preview only when departure is observed", async () => {
     let now = 1_000_000;
     vi.spyOn(Date, "now").mockImplementation(() => now);

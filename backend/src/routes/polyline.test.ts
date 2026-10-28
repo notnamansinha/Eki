@@ -14,6 +14,7 @@ const harness = vi.hoisted(() => ({
   previews: new Map<string, Row>(),
   admin: true,
   activeRides: new Map<string, Row>(),
+  locks: new Map<string, Row>(),
   failNextCommit: false,
   transactionTail: Promise.resolve() as Promise<unknown>,
   routeReads: 0,
@@ -36,7 +37,8 @@ vi.mock("../lib/firebaseAdmin", () => {
     ? harness.routes
     : collection === "_route_save_operations"
       ? harness.operations
-      : collection === "_route_geometry_previews" ? harness.previews : harness.activeRides;
+      : collection === "_route_geometry_previews" ? harness.previews
+        : collection === "_active_bus_locks" ? harness.locks : harness.activeRides;
   const snapshot = (value: Row | undefined) => ({
     exists: Boolean(value),
     data: () => value,
@@ -102,6 +104,7 @@ vi.mock("../lib/firebaseAdmin", () => {
             ["_route_save_operations", new Map(harness.operations)],
             ["_route_geometry_previews", new Map(harness.previews)],
             ["active_rides", new Map(harness.activeRides)],
+            ["_active_bus_locks", new Map(harness.locks)],
           ]);
           const copiedStore = (name: string) => copies.get(name)!;
           const result = await callback({
@@ -129,6 +132,7 @@ vi.mock("../lib/firebaseAdmin", () => {
           harness.operations = copiedStore("_route_save_operations");
           harness.previews = copiedStore("_route_geometry_previews");
           harness.activeRides = copiedStore("active_rides");
+          harness.locks = copiedStore("_active_bus_locks");
           return result;
         });
         harness.transactionTail = run.catch(() => undefined);
@@ -178,6 +182,7 @@ beforeEach(() => {
   harness.previews = new Map();
   harness.admin = true;
   harness.activeRides = new Map();
+  harness.locks = new Map();
   harness.failNextCommit = false;
   harness.transactionTail = Promise.resolve();
   harness.routeReads = 0;
@@ -392,6 +397,62 @@ describe.each([false, true])("transactional route saves v2=%s", mode => {
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({ code: "ACTIVE_RIDE_ROUTE_EDIT" });
     expect(harness.routes.get("route-1")?.configVersion).toBe(1);
+  });
+
+  it("refuses an edit while a session owns a bus lock on the route, even before active_rides exists", async () => {
+    harness.routes.set("route-1", storedRoute());
+    mockRoutesApi();
+    // A starting (or pending-direction) ride holds the lock before it writes active_rides.
+    harness.locks.set("bus-1", { busId: "bus-1", routeId: "route-1", sessionId: "session-1", direction: null });
+    const response = await save(routeBody());
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: "ACTIVE_RIDE_ROUTE_EDIT" });
+    expect(harness.routes.get("route-1")?.configVersion).toBe(1);
+    // Firmware maintenance reservations carry no session and do not pin the route.
+    harness.locks.set("bus-1", { kind: "firmware", deviceId: "device-1", routeId: "route-1" });
+    expect((await save(routeBody({ saveId: "save-firmware" }))).status).toBe(200);
+  });
+
+  it("does not commit when a ride claims the bus lock during geometry calculation", async () => {
+    harness.routes.set("route-1", storedRoute({ geometrySignature: "stale" }));
+    let release!: () => void;
+    const upstream = mockRoutesApi(new Promise<void>((resolve) => { release = resolve; }));
+    const pending = save(routeBody({ saveId: "save-lock-race" }));
+    await vi.waitFor(() => expect(upstream).toHaveBeenCalled());
+    harness.locks.set("bus-1", { busId: "bus-1", routeId: "route-1", sessionId: "session-1", direction: "forward" });
+    release();
+    const response = await pending;
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: "ACTIVE_RIDE_ROUTE_EDIT" });
+    expect(harness.routes.get("route-1")?.configVersion).toBe(1);
+  });
+
+  it("rejects Firestore-reserved __…__ route and save IDs as invalid input, not unknown outcomes", async () => {
+    const upstream = mockRoutesApi();
+    const put = (path: string, body: Row) => networkFetch(`${baseUrl}${path}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    for (const prefix of ["/api/routes", "/api/v2/routes"]) {
+      const reservedRoute = await put(`${prefix}/__main__`, routeBody({ mode: "create", expectedVersion: 0 }));
+      expect(reservedRoute.status, prefix).toBe(400);
+      await expect(reservedRoute.json()).resolves.toMatchObject({ code: "INVALID_ROUTE_DATA", phase: "validation" });
+      expect(reservedRoute.headers.get("retry-after")).toBeNull();
+      const reservedSave = await put(`${prefix}/route-1`, routeBody({ mode: "create", expectedVersion: 0, saveId: "__save__" }));
+      expect(reservedSave.status, prefix).toBe(400);
+      expect((await networkFetch(`${baseUrl}${prefix}/route-1/save-operations/__save__`)).status, prefix).toBe(400);
+      expect((await networkFetch(`${baseUrl}${prefix}/__main__/save-operations/save-1`)).status, prefix).toBe(400);
+    }
+    expect((await networkFetch(`${baseUrl}/api/routes/__main__/geometry`)).status).toBe(400);
+    expect((await networkFetch(`${baseUrl}/api/routes/__main__`, { method: "DELETE" })).status).toBe(400);
+    const preview = await networkFetch(`${baseUrl}/api/v2/route-geometry-previews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": `__${"k".repeat(16)}__` },
+      body: JSON.stringify({ waypoints: stops.map(({ lat, lng }) => ({ lat, lng })) }),
+    });
+    expect(preview.status).toBe(400);
+    expect(upstream).not.toHaveBeenCalled();
+    expect(harness.routes.size).toBe(0);
+    expect(harness.operations.size).toBe(0);
   });
 
   it("returns an unknown-outcome persistence error without mutating the route", async () => {

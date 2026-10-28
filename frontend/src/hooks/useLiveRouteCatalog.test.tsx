@@ -12,12 +12,13 @@ vi.mock("@/lib/authState", () => ({ waitForAuth: async () => {}, getAuthVerifica
 vi.mock("./useAuth", () => ({ useAuth: () => ({ user: state.user, loading: false, roleError: null }) }));
 import { useLiveRouteCatalog } from "./useLiveRouteCatalog";
 import { SIGNAL_LOST_MS } from "@/lib/liveBusFreshness";
+import { setServerTimeOffset } from "@/lib/serverClock";
 const markerPath = "clientProjectionStatus/public", catalogPath = "liveRouteCatalog/values";
 const flush = async () => { for (let step = 0; step < 4; step++) await Promise.resolve(); };
 const emit = (path: string, value: unknown) => state.listeners.get(path)!.receive({ val: () => value });
 const ready = () => emit(markerPath, { schemaVersion: 1, ready: true });
 beforeEach(() => { vi.useFakeTimers(); state.generation = 0; state.user = { uid: "passenger" }; state.listeners.clear(); state.detach.mockClear(); });
-afterEach(() => { cleanup(); vi.clearAllTimers(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.clearAllTimers(); vi.useRealTimers(); setServerTimeOffset(0); });
 describe("route catalog freshness and access", () => {
   it("expires each preview at the configured deadline without another database event", async () => {
     const at = Date.now(); const { result } = renderHook(() => useLiveRouteCatalog()); await act(flush);
@@ -34,6 +35,15 @@ describe("route catalog freshness and access", () => {
     act(() => { ready(); emit(catalogPath, { "route:A": { active: 0, available: 2, freshestAt: now,
       availableReceipts: [now - SIGNAL_LOST_MS - 1, now + 10_001] } }); });
     expect(result.current.catalog.A.available).toBe(0);
+  });
+  it.each([["2 min ahead", 120_000], ["15 s behind", -15_000]])("counts a fresh receipt on the server timeline when the device clock is %s", async (_label, skew) => {
+    // Backend receipts are 30 s-floored server times.
+    const serverTime = 1_800_000_000_000; const receipt = Math.floor(serverTime / 30_000) * 30_000;
+    vi.setSystemTime(serverTime + skew);
+    const { result } = renderHook(() => useLiveRouteCatalog()); await act(flush);
+    act(() => { emit(".info/serverTimeOffset", -skew); ready(); emit(catalogPath, { "route:A": { active: 1, available: 1, freshestAt: receipt,
+      activeReceipts: [receipt], availableReceipts: [receipt] } }); });
+    expect(result.current.catalog.A).toMatchObject({ active: 1, available: 1 });
   });
   it("hides cross-generation data immediately and reports permission denial with recovery", async () => {
     const { result, rerender } = renderHook(() => useLiveRouteCatalog()); await act(flush);

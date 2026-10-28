@@ -21,7 +21,7 @@ for (const database of [undefined, 'https://demo-transport-default-rtdb.firebase
     try {
       await mkdir(path.join(root, 'scripts'));
       await mkdir(path.join(root, 'frontend/out'), { recursive: true });
-      for (const file of ['update-csp.mjs', 'csp-backend-origin.mjs', 'rtdb-instance-config.mjs', 'inline-script-hashes.mjs'])
+      for (const file of ['update-csp.mjs', 'csp-backend-origin.mjs', 'rtdb-instance-config.mjs', 'inline-script-hashes.mjs', 'load-frontend-env.mjs'])
         await copyFile(new URL(file, import.meta.url), path.join(root, 'scripts', file));
       await writeFile(path.join(root, 'frontend/out/index.html'), '<html><script>window.fixture=true;</script></html>');
       const policy = "default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; frame-src 'self'; object-src 'none';";
@@ -46,7 +46,14 @@ for (const database of [undefined, 'https://demo-transport-default-rtdb.firebase
       }
       assert(directives['script-src'].some(value => value.startsWith("'sha256-")));
       assert.deepEqual(directives['object-src'], ["'none'"]);
-      if (database) assert(directives['script-src'].includes(new URL(database).origin));
+      // JSONP gadgets: www.google.com reflects ?callback= with attacker text and
+      // RTDB REST answers /<path>.json?callback=. Only the /.lp transport path
+      // of the configured instance may load scripts.
+      assert(!new Set(directives['script-src']).has('https://www.google.com'), 'script-src must not allow the www.google.com JSONP host');
+      if (database) {
+        assert(!directives['script-src'].includes(new URL(database).origin), 'the bare RTDB origin allows REST JSONP');
+        assert(directives['script-src'].includes(`${new URL(database).origin}/.lp`));
+      }
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 }

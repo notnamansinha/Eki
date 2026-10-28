@@ -74,6 +74,16 @@ describe("passenger workspace navigation", () => {
       await waitFor(() => expect(received).toHaveBeenCalled());
     } finally { resume.mockRestore(); }
   });
+  it("shows a stored service start time containing replacement patterns literally in the empty state", () => {
+    setScenario("empty");
+    const settings = vi.spyOn(fixtures, "useSettings").mockReturnValue({ loading: false, saveSettings: async () => {},
+      settings: { noBusesMessage: "No buses running", noBusesSubMessage: "Service starts at {time}",
+        serviceStartTime: "$& sharp ($$ fare)", announcementActive: false, announcementText: "" } });
+    try {
+      render(<PassengerWorkspace />);
+      expect(screen.getByText("Service starts at $& sharp ($$ fare)")).toBeTruthy();
+    } finally { settings.mockRestore(); }
+  });
   it("shares map estimates with boarding and immediately invalidates them when the selected bus changes", async () => {
     setScenario("multiple"); render(<PassengerWorkspace />); const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Track QA route" }));

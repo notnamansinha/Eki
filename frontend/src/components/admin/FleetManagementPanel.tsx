@@ -14,6 +14,7 @@ import {
 import CustomSelect from "@/components/ui/CustomSelect";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { errorMessage } from "@/lib/errors";
+import { serverNow } from "@/lib/serverClock";
 import { apiRequest, acknowledgedField } from "@/lib/apiClient";
 import { validateOperatorInput, validateVehicleInput } from "@/lib/adminValidation";
 import {
@@ -74,10 +75,10 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   const onLiveReadError = useCallback(() => setLiveReadFailed(true), []);
   const onLiveReadRecovered = useCallback(() => setLiveReadFailed(false), []);
   const activeEntries = useActiveBuses({ onReadError: onLiveReadError, onReadRecovered: onLiveReadRecovered });
-  const [, setFreshnessNow] = useState(() => Date.now());
+  const [, setFreshnessNow] = useState(() => serverNow());
 
   useEffect(() => {
-    const interval = window.setInterval(() => setFreshnessNow(Date.now()), 15_000);
+    const interval = window.setInterval(() => setFreshnessNow(serverNow()), 15_000);
     return () => window.clearInterval(interval);
   }, []);
   // Only show buses that are registered in the Firestore `buses` collection.

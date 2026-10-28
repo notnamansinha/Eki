@@ -6,7 +6,7 @@ import { auth } from "@/lib/firebaseAuth";
 import { db } from "@/lib/firebaseFirestore";
 import { getAuthVerificationGeneration } from "./authState";
 import { FEEDBACK_WORD_LIMIT } from "@/config/passenger";
-import { isFeedbackList, type FeedbackEntry } from "./feedback";
+import { isFeedbackList, normalizeFeedbackEntry, type FeedbackEntry } from "./feedback";
 
 const ONE_DAY_MS = 86_400_000;
 
@@ -70,49 +70,55 @@ export async function submitFeedback(uid: string, input: FeedbackSubmission, req
   const feedbackRef = doc(db, "feedbacks", feedbackId);
   const cooldownRef = doc(db, "feedbackCooldowns", uid);
   const profileRef = doc(db, "users", uid);
-  await runTransaction(db, async transaction => {
-    currentIdentity(uid, generation);
-    const [existing, cooldown, profile] = await Promise.all([
-      transaction.get(feedbackRef), transaction.get(cooldownRef), transaction.get(profileRef),
-    ]);
-    currentIdentity(uid, generation);
-    if (!profile.exists()) throw new FeedbackError("An active profile is required to send feedback.", 403);
-    if (existing.exists()) {
-      if (existing.data().userId !== uid || existing.data().requestHash !== requestHash) throw new FeedbackError("This feedback request was already used. Please submit again.", 409);
-      return;
-    }
-    const stamp = cooldown.data()?.lastSubmittedAt;
-    const lastSubmittedAt = typeof stamp === "number" ? stamp : stamp?.toMillis?.();
-    const remaining = ONE_DAY_MS - (Date.now() - lastSubmittedAt);
-    if (Number.isFinite(remaining) && remaining > 0) throw new FeedbackError("Feedback limit reached.", 429, Math.min(ONE_DAY_MS, remaining));
-    const name = profile.data()?.displayName;
-    transaction.set(feedbackRef, {
-      userId: uid,
-      userName: typeof name === "string" && name.trim() && name.length <= 100 ? name : "Passenger",
-      type: normalized.kind,
-      sessionId: normalized.sessionId, busId: normalized.busId, driverId: normalized.driverId,
-      rating: normalized.rating, comment, requestHash,
-      timestamp: serverTimestamp(), status: "new",
+  // Device-clock age of the stored server cooldown stamp; the rules alone use server time.
+  let cooldownAgeMs: number | undefined;
+  try {
+    await runTransaction(db, async transaction => {
+      cooldownAgeMs = undefined;
+      currentIdentity(uid, generation);
+      const [existing, cooldown, profile] = await Promise.all([
+        transaction.get(feedbackRef), transaction.get(cooldownRef), transaction.get(profileRef),
+      ]);
+      currentIdentity(uid, generation);
+      if (!profile.exists()) throw new FeedbackError("An active profile is required to send feedback.", 403);
+      if (existing.exists()) {
+        if (existing.data().userId !== uid || existing.data().requestHash !== requestHash) throw new FeedbackError("This feedback request was already used. Please submit again.", 409);
+        return;
+      }
+      const stamp = cooldown.data()?.lastSubmittedAt;
+      const lastSubmittedAt = typeof stamp === "number" ? stamp : stamp?.toMillis?.();
+      cooldownAgeMs = Number.isFinite(lastSubmittedAt) ? Date.now() - lastSubmittedAt : undefined;
+      // A device clock behind the server's own stamp is skewed: skip the estimate and let the rules decide.
+      if (cooldownAgeMs !== undefined && cooldownAgeMs >= 0 && cooldownAgeMs < ONE_DAY_MS) {
+        throw new FeedbackError("Feedback limit reached.", 429, ONE_DAY_MS - cooldownAgeMs);
+      }
+      const name = profile.data()?.displayName;
+      transaction.set(feedbackRef, {
+        userId: uid,
+        userName: typeof name === "string" && name.trim() && name.length <= 100 ? name : "Passenger",
+        type: normalized.kind,
+        sessionId: normalized.sessionId, busId: normalized.busId, driverId: normalized.driverId,
+        rating: normalized.rating, comment, requestHash,
+        timestamp: serverTimestamp(), status: "new",
     });
     transaction.set(cooldownRef, { userId: uid, feedbackId, lastSubmittedAt: serverTimestamp() });
-  });
+    });
+  } catch (error) {
+    // A device clock that runs ahead passes the estimate above, so the rules' server-time
+    // cooldown is what denies the write. Report that as a cooldown rather than an access problem.
+    if ((error as { code?: string } | null)?.code === "permission-denied" &&
+        cooldownAgeMs !== undefined && cooldownAgeMs < 2 * ONE_DAY_MS) {
+      throw new FeedbackError("Feedback limit reached.", 429);
+    }
+    throw error;
+  }
   currentIdentity(uid, generation);
 }
 
 export async function loadFeedback(): Promise<FeedbackEntry[]> {
   // A retry must reach Firestore, never silently return a stale cached list.
   const snapshot = await getDocsFromServer(query(collection(db, "feedbacks"), orderBy("timestamp", "desc"), limit(200)));
-  const feedbacks = snapshot.docs.map(document => {
-    const data = document.data();
-    return {
-      id: document.id, userId: data.userId ?? "", userName: data.userName ?? "Passenger",
-      type: data.type === "ride" ? "ride" : "general",
-      busId: data.busId ?? null, driverId: data.driverId ?? null, sessionId: data.sessionId ?? null,
-      rating: data.rating ?? null, comment: data.comment ?? "", timestamp: data.timestamp ?? null,
-      status: data.status ?? "new",
-    };
-  });
-  const result = { feedbacks };
+  const result = { feedbacks: snapshot.docs.map(document => normalizeFeedbackEntry(document.id, document.data())) };
   if (!isFeedbackList(result)) throw new Error("Firestore returned invalid feedback data. Please retry.");
   return result.feedbacks;
 }

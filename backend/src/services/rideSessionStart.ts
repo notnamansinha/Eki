@@ -3,6 +3,7 @@ import { FieldValue, type DocumentReference, type Transaction } from "firebase-a
 import type { Reference } from "firebase-admin/database";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { endpointSnapshotVersion } from "../lib/endpointSnapshotVersion";
+import { routeDocumentVersion } from "../lib/routeSaveContract";
 import { inferRideDirectionFromTelemetry } from "../lib/automaticRideDirection";
 import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import { isRideDirection, stopsInRideDirection, type RideDirection } from "../lib/rideDirection";
@@ -272,7 +273,9 @@ export async function startAssignedService(assignment: ServiceAssignment, option
     throw new RideSessionStartError(409, "This bus already has an active shift.");
   }
 
-  const routeDoc = await db.collection("routes").doc(assignment.routeId).get();
+  const routeRef = db.collection("routes").doc(assignment.routeId);
+  const routeDoc = await routeRef.get();
+  const routeConfigVersion = routeDocumentVersion(routeDoc.data());
   const routeStops = routeDoc.data()?.stops;
   const naturalStops = Array.isArray(routeStops) ? routeStops : [];
   if (naturalStops.length < 2) {
@@ -317,6 +320,16 @@ export async function startAssignedService(assignment: ServiceAssignment, option
   const lockRef = activeBusLockRef(assignment.busId);
   const proposedArmedAt = Date.now();
   const lockClaim = await guardedTransaction(async (transaction) => {
+    // Direction, origin and destination came from the read above. Re-read the
+    // route in the transaction that claims the bus lock: a route save checks
+    // that lock, so either the save sees this ride or this ride sees the save.
+    const latestRoute = await transaction.get(routeRef);
+    if (
+      routeDocumentVersion(latestRoute.data()) !== routeConfigVersion ||
+      endpointSnapshotVersion(Array.isArray(latestRoute.data()?.stops) ? latestRoute.data()!.stops : []) !== routeEndpointVersion
+    ) {
+      throw new RideSessionStartError(409, "The route changed while the shift was starting; retry.");
+    }
     const binding = keyRef ? await transaction.get(keyRef) : null;
     const lock = await transaction.get(lockRef);
     if (binding?.exists && (!matchesAssignment(binding.data()!) ||

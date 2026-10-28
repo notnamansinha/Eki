@@ -1,3 +1,4 @@
+import { serverNow } from "./serverClock";
 import { isActiveRideSnapshot } from "./liveBusSnapshot";
 import { hasValidBusCoordinates, isLiveBusTimestamp, liveBusFreshnessTimestamp } from "./liveBusFreshness";
 
@@ -95,7 +96,7 @@ export type RideServiceState =
 
 export function devicePresence(
   entry: Pick<ActiveBusEntry, "deviceState" | "timestamp" | "backendReceivedAt"> | null | undefined,
-  now = Date.now(),
+  now = serverNow(),
 ): DevicePresence {
   if (entry?.deviceState === "offline") return "offline";
   if (
@@ -158,7 +159,7 @@ export const RIDE_SERVICE_LABELS: Record<RideServiceState, string> = {
 /** Chat discoverability follows trusted device presence, never trip motion/status. */
 export function isLiveChatDeviceOnline(
   entry: Pick<ActiveBusEntry, "deviceState" | "timestamp" | "backendReceivedAt"> | null | undefined,
-  now = Date.now(),
+  now = serverNow(),
 ): boolean {
   return devicePresence(entry, now) === "online";
 }
@@ -351,7 +352,7 @@ function hasValidOptionalFields(bus: Record<string, unknown>): boolean {
  */
 export function isActiveBusEntry(
   value: unknown,
-  now = Date.now(),
+  now = serverNow(),
 ): value is ActiveBusEntry {
   if (typeof value !== "object" || value === null) return false;
   const bus = value as Record<string, unknown>;
@@ -380,7 +381,7 @@ export function isActiveBusEntry(
  */
 export function filterActiveBusEntries(
   data: Record<string, unknown> | null | undefined,
-  now = Date.now(),
+  now = serverNow(),
 ): ActiveBusEntry[] {
   if (!data) return [];
   return Object.values(data).filter(
@@ -396,7 +397,7 @@ export function filterActiveBusEntries(
  */
 export function isFleetBusEntry(
   value: unknown,
-  now = Date.now(),
+  now = serverNow(),
 ): value is ActiveBusEntry {
   if (isActiveBusEntry(value, now)) return true;
   if (typeof value !== "object" || value === null) return false;

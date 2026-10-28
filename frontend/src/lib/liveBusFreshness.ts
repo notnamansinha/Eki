@@ -1,3 +1,5 @@
+import { serverNow } from "./serverClock";
+
 const DEFAULT_BUS_EXPIRY_MS = 300_000;
 
 function readPositiveMs(value: string | undefined): number | undefined {
@@ -25,20 +27,25 @@ export function liveBusFreshnessTimestamp(bus: {
   return sample;
 }
 
+/**
+ * `now` defaults to the server timeline (`serverNow()`), because freshness
+ * timestamps are server receipts; a skewed viewer clock must not hide buses.
+ */
 export function isLiveBusTimestamp(
   timestamp?: number,
-  now = Date.now(),
+  now = serverNow(),
 ): boolean {
   if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) return false;
   const age = now - timestamp;
-  // Reject future timestamps (allow max 10s forward clock skew for IoT NTP drift),
-  // and reject stale timestamps older than BUS_EXPIRY_MS.
+  // Reject future timestamps beyond 10 s (server-offset estimate error and
+  // legacy entries that only carry a device sample time), and reject stale
+  // timestamps older than BUS_EXPIRY_MS.
   return age >= -10_000 && age < BUS_EXPIRY_MS;
 }
 
 export function isLiveBusSignalLost(
   timestamp?: number,
-  now = Date.now(),
+  now = serverNow(),
 ): boolean {
   if (typeof timestamp !== "number" || !isLiveBusTimestamp(timestamp, now)) {
     return true;

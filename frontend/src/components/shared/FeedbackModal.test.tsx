@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import FeedbackModal from "./FeedbackModal";
+import { FeedbackError } from "@/lib/feedbackStore";
 
 const session = vi.hoisted(() => ({ currentUser: { uid: "qa-passenger" } }));
 const store = vi.hoisted(() => ({ submitFeedback: vi.fn() }));
@@ -78,6 +79,33 @@ describe("passenger feedback workflow", () => {
       render(<FeedbackModal userId="qa-passenger" onClose={vi.fn()} />);
       expect((screen.getByRole("button", { name: /^Wait/ }) as HTMLButtonElement).disabled).toBe(true);
     } finally { vi.useRealTimers(); }
+  });
+  it("rounds a sub-minute server cooldown up and re-enables submit when it ends", async () => {
+    store.submitFeedback.mockRejectedValueOnce(new FeedbackError("Feedback limit reached.", 429, 30_000));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<FeedbackModal userId="qa-passenger" onClose={vi.fn()} />);
+      await user.type(screen.getByRole("textbox"), "The route card should open reliably.");
+      await user.click(screen.getByRole("button", { name: "Submit Feedback" }));
+      await screen.findByText("Limit reached. Please try again in 1m.");
+      const wait = screen.getByRole("button", { name: /^Wait/ }) as HTMLButtonElement;
+      expect(wait.disabled).toBe(true);
+      expect(wait.textContent).toBe("Wait 1m");
+      await act(async () => { vi.advanceTimersByTime(30_100); });
+      expect((screen.getByRole("button", { name: "Submit Feedback" }) as HTMLButtonElement).disabled).toBe(false);
+    } finally { vi.useRealTimers(); }
+  });
+  it("shows the last minute of a local cooldown as 1m, never 0m", () => {
+    localStorage.setItem("feedbackCooldown:qa-passenger", String(Date.now() - 86_400_000 + 20_000));
+    render(<FeedbackModal userId="qa-passenger" onClose={vi.fn()} />);
+    expect(screen.getByRole("status").textContent).toBe("Wait 1m");
+  });
+  it("explains a rules cooldown denial without storing a client-computed cooldown", async () => {
+    store.submitFeedback.mockRejectedValue(new FeedbackError("Feedback limit reached.", 429));
+    await submitGeneral();
+    expect(await screen.findByText(/You can send feedback once every 24 hours/)).toBeTruthy();
+    expect(localStorage.getItem("feedbackCooldown:qa-passenger")).toBeNull();
   });
   it("never locks feedback for longer than one day after a device clock jump", () => {
     localStorage.setItem("feedbackCooldown:qa-passenger", String(Date.now() + 365 * 86_400_000));

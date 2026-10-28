@@ -1,6 +1,6 @@
 # Firebase Firestore and RTDB data model
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+Last updated: 2026-10-27 12:00 IST (UTC+05:30).
 
 Field ownership and compatibility build on [the field contract audit](../testing/RTDB_FIELD_CONTRACT_AUDIT_2026_10_02.md).
 
@@ -62,6 +62,7 @@ Backend-only authority, with every browser read/write denied. One latest record 
 | `motionState` | `moving` / `stopped` / `uncertain` | Firmware; uncertain means trustworthy GNSS lost |
 | `timestamp` | epoch ms | NTP-synchronised device measurement time |
 | `seq`, `deviceSentAt`, `backendReceivedAt` | number / epoch ms | Sample tie-breaker, device send time, and backend ingress/freshness boundary |
+| `deviceTimestamp` | optional epoch ms | Backend-only. Raw device capture time, present only while the accepted sample's future `timestamp` was clamped to server time. A candidate whose raw capture time and `seq` are both lower is rejected as an older late delivery; never used for freshness and not projected to browsers |
 | `receivedAt` | RTDB server epoch ms | Backend commit time |
 | `plausibilityAnchor` | object | Last physically accepted `{lat,lng,speed,gpsHdop,timestamp}`; held outliers do not advance its timestamp |
 | `plausibilityReacquisition` | optional object | Temporary `{count,startedAt}` for three coherent, good-quality fixes after a 60–300 second accepted-position gap. Uses existing `rawLocation` as the preceding candidate, requires 0.5–5 second spacing and the full bounded travel envelope. Clears on acceptance or an ineligible fix; it is not ride progress/history. |
@@ -81,7 +82,7 @@ Backend-only authority, with every browser read/write denied. One latest record 
 | `automaticTurnaround`, `previousSessionId` | boolean / string | Identifies a backend-armed return session and its completed predecessor |
 | `currentStopIndex` | integer | Zero-based next/current ordered stop progress |
 | `hasDepartedOrigin` | boolean | Prevents repeated origin activation |
-| `gnssGap` | `{sessionId,since}` / null | Worker-owned GNSS gap marker: `since` is the last sample time before ten missed 1 Hz heartbeats, an untrusted fix or a segment too long to check. While it is open, a reliably observed later stop credits the unobserved stops before it as skipped; observing any stop clears it. Ignored unless `sessionId` matches the node's session; not public |
+| `gnssGap` | `{sessionId,since}` / null | Worker-owned GNSS gap marker: `since` is the last sample time before ten missed 1 Hz heartbeats, an untrusted fix or a segment too long to check. While it is open, a reliably observed later stop credits the unobserved stops before it as skipped; a later stop at the same location as a stop already passed is not credited, nor is any stop while the fix is at a passed stop's location. Observing any stop clears it. Ignored unless `sessionId` matches the node's session; not public |
 | `delayMinutes` | number | Driver API value, 0–1440 |
 | `delayUpdatedAt` | epoch ms | Delay revision for conflict-safe recovery/projection |
 | `lifecycleUpdatedAt` | RTDB server epoch ms | Server lifecycle/status mutation time |
@@ -200,7 +201,7 @@ Durable ride record and parent of messages.
 | `boardingCode` | eight-character string | Driver-visible session proof; never projected into RTDB |
 | `boardingCodeIssuedAt` | Firestore Timestamp | Server issuance time |
 | `stopsReached` | map keyed zero-based index | Ordered server evidence |
-| `stopsReached.{i}` | `{stopIndex,stopId,stopName,timestamp,evidence?}` | Stop evidence; new `evidence` is `gnss_progress`, `recovered_checkpoint` (timestamp denotes repair time rather than original arrival) or `skipped_gnss_gap` (credited because a later stop was observed after a GNSS gap; never observed itself) |
+| `stopsReached.{i}` | `{stopIndex,stopId,stopName,timestamp,evidence?}` | Stop evidence; new `evidence` is `gnss_progress`, `recovered_checkpoint` (timestamp denotes repair time rather than original arrival) or `skipped_gnss_gap` (credited because a later stop was observed after a GNSS gap; never observed itself). Admin History shows only `gnss_progress` and legacy records without `evidence` as observed arrivals: skipped stops read "Skipped (GNSS gap)", recovered ones "Recovered HH:MM:SS", and neither yields a passenger "Destination reached" time |
 | `automaticTurnaround`, `previousSessionId` | boolean / string | Present on an automatically armed opposite-direction session |
 | `path` | legacy map/array | Older history tolerated/read/deleted; no current per-fix writes |
 
@@ -220,11 +221,20 @@ Fields: `busId`, `driverId`, `routeId`, `direction`, `originStopId`, `destinatio
 
 ### `feedbacks/{feedbackId}`
 
-Fields: `userId`, server-derived `userName`, `type` (`general|ride`), nullable `sessionId/busId/driverId/rating`, `comment` (≤2000 characters and 200 words), `requestHash`, `timestamp`, `status` (`new|reviewed|resolved`), and optional review audit fields. All client writes are denied. The idempotent feedback endpoint checks completed-session passenger eligibility and cooldown in the write transaction. Admin review uses `GET /api/v2/feedback` (latest 200 records, no-store) and a status PATCH; the browser does not attach a direct feedback listener. The admin status endpoint changes review state. Retention can delete feedback; passenger account deletion preserves it.
+Fields: `userId`, `userName` (profile `displayName` or `Passenger`), `type` (`general|ride`), nullable `sessionId/busId/driverId/rating`, `comment` (≤2000 characters and 200 words), `requestHash` (SHA-256 of the normalized submission), `timestamp` (server time), `status` (`new|reviewed|resolved`), and optional review audit fields `reviewedAt`/`reviewedBy`. The document ID is the SHA-256 hex of the user's UID and the client `requestId`, so a retry finds the same record.
+
+Feedback goes to Firestore directly (`frontend/src/lib/feedbackStore.ts`), so it does not depend on the backend tunnel. The rules allow these client operations:
+
+- **Create (passenger):** a signed-in user with a `users/{uid}` profile creates the feedback and its `feedbackCooldowns/{uid}` document in one atomic client transaction. `validFeedback` requires exactly the fields above, `userId == auth.uid`, a `userName` of `Passenger` or the profile `displayName`, `status: new`, `timestamp == request.time`, a 64-hex `requestHash`, and the comment limits. It also checks the type. `general` feedback needs a non-blank comment and null ride fields. `ride` feedback needs bounded IDs, an integer rating from 1 to 5 or a non-blank comment, and a `completed` session whose `busId`/`driverId` match and whose `passengers` manifest contains the caller. `feedbackCooldownReady` enforces the 24-hour cooldown. A `getAfter` check binds the cooldown's `feedbackId` to this document and its `lastSubmittedAt` to `request.time`.
+- **Get:** the owner may read their own record. Any signed-in user may probe a missing ID, so the transaction can check for an existing record before it creates one. Admins may read any record.
+- **List and update (admin, trusted claims):** admins fetch the latest 200 records with a server read ordered by `timestamp` descending. The browser coerces each field per document (unknown `status` to `new`, invalid `rating`/`timestamp` to `null`, non-string text to a default), so a legacy document never fails the whole list. They may change only `status`, `reviewedAt` and `reviewedBy`, with `reviewedAt == request.time` and `reviewedBy == auth.uid`.
+- **Delete:** denied to every client.
+
+The backend still serves the legacy feedback endpoints, but the web UI does not call them: `POST /api/feedback` and `PATCH /api/feedback/{feedbackId}/status`, plus `GET /api/v2/feedback` and `PATCH /api/v2/feedback/{feedbackId}`. They use the Admin SDK and are not governed by these rules. Retention can delete feedback; passenger account deletion preserves it.
 
 ### `feedbackCooldowns/{uid}`
 
-`userId` and `lastSubmittedAt`. Read and advanced inside the same server transaction as feedback, preventing concurrent cooldown bypass; one submission per 24 hours. Owner reads; all client writes are denied.
+Fields: `userId`, `feedbackId` and `lastSubmittedAt`. One submission per 24 hours. The owner may read the document. The owner may also create or update it, but only in the same commit as a new feedback document, and only once the cooldown is ready. The keys must be exactly `userId`/`feedbackId`/`lastSubmittedAt`, with `userId == uid` and `lastSubmittedAt == request.time`. `feedbackId` must be a 64-hex string naming a feedback document that does not exist before the commit; a `getAfter` check confirms it exists afterwards with this `userId` and `timestamp == request.time`. Standalone cooldown edits are therefore rejected, and so is sharing one stamp between several feedbacks. Delete is denied to every client.
 
 ### `settings/global`
 

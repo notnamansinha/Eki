@@ -1,12 +1,12 @@
 # Local web, phone and ESP32 testing
 
-Last updated: 2026-10-04 14:20 IST (UTC+05:30).
+Last updated: 2026-10-27 04:10 IST (UTC+05:30).
 
 Use this runbook after [local setup](../GETTING_STARTED.md#local-development). Run commands from the repository root. Use a development Firebase project and disposable test records.
 
 ## 1. Start and check the services
 
-Set backend `NODE_ENV=development`, `PORT=4000` and `CORS_ORIGIN=http://localhost:3000`. Set frontend `NEXT_PUBLIC_BACKEND_URL=http://localhost:4000`. Configure Auth as described in [configuration](../CONFIGURATION.md#local-auth-setup).
+Set backend `NODE_ENV=development`, `PORT=4000` and `CORS_ORIGIN=http://localhost:3000`. When phones or the ESP32 reach this backend through a local ngrok agent, also set `TRUST_PROXY=loopback` so each tunnelled client gets its own pre-auth rate-limit bucket (see [ngrok tunnel](NGROK_TUNNEL.md)). Set frontend `NEXT_PUBLIC_BACKEND_URL=http://localhost:4000`. Configure Auth as described in [configuration](../CONFIGURATION.md#local-auth-setup).
 
 ```powershell
 npm run dev

@@ -110,9 +110,12 @@ test("PAX-02 reduced motion switches immediately", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await navButton(page, "Profile").click();
-  const opacity = await page.getByRole("button", { name: "Send Feedback" }).evaluate(element =>
-    Number(getComputedStyle(element.closest("[aria-hidden]")!).opacity));
-  expect(opacity).toBeGreaterThanOrEqual(0.999);
+  const view = page.getByRole("button", { name: "Send Feedback" }).locator("xpath=ancestor::*[@aria-hidden][1]");
+  // Deterministic: the global reduced-motion override collapses the fade.
+  expect(await view.evaluate(element => parseFloat(getComputedStyle(element).transitionDuration))).toBeLessThan(0.001);
+  // And observable: full opacity well inside the normal 200ms fade.
+  await expect.poll(() => view.evaluate(element => Number(getComputedStyle(element).opacity)), { timeout: 120 })
+    .toBeGreaterThanOrEqual(0.999);
 });
 
 async function openFeedback(page: Page, draft: string) {
@@ -272,10 +275,13 @@ test("edge: chat overlay ends at the navigation instead of under it", async ({ p
   await injectInsets(page);
   await page.getByRole("button", { name: "Track QA route", exact: true }).click();
   const open = page.getByRole("button", { name: "Open live chat", exact: true });
-  test.skip(!(await open.isVisible().catch(() => false)), "fixture scenario exposes no live chat");
+  await expect(open).toBeVisible();
   await open.click();
-  const panel = page.getByText(/Isolated map or panel/).locator("xpath=..");
+  // The chat overlay is the tracking view's slide-up layer; wait out its entry animation.
+  const overlay = page.locator("[data-passenger-tracking] .animate-slide-up");
+  await expect(overlay).toHaveCount(1);
+  await overlay.evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
   const navBox = (await nav(page).boundingBox())!;
-  const box = (await panel.boundingBox())!;
+  const box = (await overlay.boundingBox())!;
   expect(box.y + box.height).toBeLessThanOrEqual(navBox.y + 0.5);
 });

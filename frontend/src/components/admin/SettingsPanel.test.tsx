@@ -92,4 +92,18 @@ describe("admin settings editing", () => {
     await user.type(field, "{Backspace}");
     expect(hasUnsavedChanges()).toBe(false);
   });
+  it.each([
+    ["6:30 am ($$ fare)", "Service starts at 6:30 am ($$ fare)"],
+    ["$& sharp", "Service starts at $& sharp"],
+    ["8:00 $'", "Service starts at 8:00 $'"],
+  ])("previews a stored start time containing replacement patterns (%j) literally", (time, expected) => {
+    const original = mocks.settings.serviceStartTime;
+    mocks.settings.serviceStartTime = time;
+    try {
+      render(<SettingsPanel />);
+      expect(screen.getByText(/^Preview:/).querySelector("strong")?.textContent).toBe(expected);
+    } finally {
+      mocks.settings.serviceStartTime = original;
+    }
+  });
 });

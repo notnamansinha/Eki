@@ -8,6 +8,7 @@ import BusPositionGlyph from "@/components/maps/BusPositionGlyph";
 import { RouteStop } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
 import { isLiveBusSignalLost, liveBusFreshnessTimestamp } from "@/lib/liveBusFreshness";
+import { serverNow } from "@/lib/serverClock";
 import { subscribeLiveBusesByRoute } from "@/lib/liveBusStore";
 import {
   normalizePassengerMapBus,
@@ -211,7 +212,7 @@ function PassengerMapInner({
   const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map<string, IncomingBusData>());
   const previousBusesRef = useRef<Map<string, IncomingBusData>>(new Map());
   const [stopETAs, setStopETAs] = useState<Record<string, number>>({});
-  const [uiNow, setUiNow] = useState(() => Date.now());
+  const [uiNow, setUiNow] = useState(() => serverNow());
   const routeRef = useRef(route);
   useEffect(() => {
     routeRef.current = route;
@@ -318,7 +319,7 @@ function PassengerMapInner({
     const unsubscribe = subscribeLiveBusesByRoute(route.id, (snapshot) => {
         setLiveReadFailed(false);
         const allData = snapshot as Record<string, unknown> | null;
-        const now = Date.now();
+        const now = serverNow();
         const currentRoute = routeRef.current;
 
         if (!allData) {
@@ -369,7 +370,7 @@ function PassengerMapInner({
 
   // One clock publication; the calculation effect owns arrival labels.
   const updateUI = useCallback(() => {
-    setUiNow(Date.now());
+    setUiNow(serverNow());
   }, []);
 
   useEffect(() => {
@@ -387,7 +388,7 @@ function PassengerMapInner({
     }
 
     const calculateETAs = () => {
-      const now = Date.now();
+      const now = serverNow();
       for (const id of etaMarkerSelections.current.keys()) {
         if (!buses.has(id)) {
           etaMarkerSelections.current.delete(id);

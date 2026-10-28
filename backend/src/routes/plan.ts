@@ -46,22 +46,34 @@ export function invalidatePlanRoute(routeId: string): void {
   routeCache.delete(routeId);
 }
 
+// Stored geometry that cannot be decoded is treated like missing geometry, so
+// the planner answers with the repairable 422 instead of a generic 500.
+const safeDecode = (value: unknown): { lat: number; lng: number }[] => {
+  if (typeof value !== "string" || value.length === 0) return [];
+  try {
+    return decodePolyline(value);
+  } catch {
+    return [];
+  }
+};
+
 async function getCachedRoute(routeId: string) {
   const cached = routeCache.get(routeId);
   if (cached && cached.expiresAt > Date.now()) return cached;
   const document = await db.collection("routes").doc(routeId).get();
   if (!document.exists) return null;
   const route = document.data() as RouteDoc;
-  const forwardPolyline = route.forwardPolyline ?? route.polyline;
-  const forwardCoords = forwardPolyline ? decodePolyline(forwardPolyline) : [];
+  const forwardCoords = safeDecode(route.forwardPolyline ?? route.polyline);
+  const decodedReverse = safeDecode(route.reversePolyline);
   const value = {
     route,
     forwardCoords,
     // Legacy route documents predate directional reverse geometry. Fall back to
     // the reversed forward (A→Z handled as Z→A) polyline so a reverse trip on a
-    // historical route never 422s purely because reversePolyline is absent.
-    reverseCoords: route.reversePolyline
-      ? decodePolyline(route.reversePolyline)
+    // historical route never 422s purely because reversePolyline is absent or
+    // unusable.
+    reverseCoords: decodedReverse.length >= 2
+      ? decodedReverse
       : [...forwardCoords].reverse(),
     expiresAt: Date.now() + ROUTE_CACHE_MS,
   };
@@ -145,12 +157,10 @@ const planSegment = async (res: Response, input: PlanInput) => {
     const startNaturalIndex = stops.indexOf(startStop);
     const endNaturalIndex = stops.indexOf(endStop);
     const direction = startNaturalIndex < endNaturalIndex ? "forward" : "reverse";
-    const fullCoords =
-      direction === "forward"
-        ? forwardCoords
-        : reverseCoords.length >= 2
-          ? reverseCoords
-          : [...forwardCoords].reverse();
+    const fullCoords = direction === "forward" ? forwardCoords : reverseCoords;
+    // The directional geometry is drawn in travel order, so the stops are
+    // projected onto it in that same order and the segment is a forward slice.
+    const travelStops = direction === "forward" ? stops : [...stops].reverse();
     if (fullCoords.length < 2) {
       res.status(422).json({
         error: `Route has no stored ${direction} geometry. Load or re-save the route to repair it.`,
@@ -160,7 +170,7 @@ const planSegment = async (res: Response, input: PlanInput) => {
 
     let segment;
     try {
-      segment = buildRouteSegment(fullCoords, stops, startStop, endStop, viaStop);
+      segment = buildRouteSegment(fullCoords, travelStops, startStop, endStop, viaStop);
     } catch (error) {
       res.status(400).json({
         error: error instanceof Error ? error.message : "Invalid route segment.",

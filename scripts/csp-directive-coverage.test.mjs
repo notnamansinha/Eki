@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 
 const execute = promisify(execFile);
 
-async function runUpdateCsp(policy) {
+async function runUpdateCsp(policy, { envFiles = {}, shell = { NEXT_PUBLIC_BACKEND_URL: 'https://api.example.test' } } = {}) {
   // Same isolated layout as csp-rtdb-transport.test.mjs: the copied script
   // resolves parse5 through the workspace's root node_modules.
   const scratch = fileURLToPath(new URL('../temp/', import.meta.url));
@@ -17,13 +17,15 @@ async function runUpdateCsp(policy) {
   try {
     await mkdir(path.join(root, 'scripts'));
     await mkdir(path.join(root, 'frontend/out'), { recursive: true });
-    for (const file of ['update-csp.mjs', 'csp-backend-origin.mjs', 'rtdb-instance-config.mjs', 'inline-script-hashes.mjs'])
+    for (const file of ['update-csp.mjs', 'csp-backend-origin.mjs', 'rtdb-instance-config.mjs', 'inline-script-hashes.mjs', 'load-frontend-env.mjs'])
       await copyFile(new URL(file, import.meta.url), path.join(root, 'scripts', file));
     await writeFile(path.join(root, 'frontend/out/index.html'), '<html><script>window.fixture=true;</script></html>');
+    for (const [name, contents] of Object.entries(envFiles)) await writeFile(path.join(root, 'frontend', name), contents);
     await writeFile(path.join(root, 'firebase.json'), JSON.stringify({ hosting: { headers: [{ source: '**',
       headers: [{ key: 'Content-Security-Policy', value: policy }] }] } }));
-    const env = { ...process.env, NEXT_PUBLIC_BACKEND_URL: 'https://api.example.test' };
-    delete env.NEXT_PUBLIC_FIREBASE_DATABASE_URL;
+    const env = { ...process.env };
+    for (const name of ['NEXT_PUBLIC_BACKEND_URL', 'NEXT_PUBLIC_FIREBASE_DATABASE_URL', 'NODE_ENV']) delete env[name];
+    Object.assign(env, shell);
     let error = null;
     try { await execute(process.execPath, [path.join(root, 'scripts/update-csp.mjs')], { env }); }
     catch (caught) { error = caught; }
@@ -61,4 +63,18 @@ test('update-csp still rewrites a complete policy and keeps unmanaged directives
   assert.match(policy, /script-src 'self' 'sha256-/);
   assert.match(policy, /connect-src [^;]*https:\/\/api\.example\.test/);
   assert.match(policy, /object-src 'none'$/);
+});
+
+test('update-csp reads backend and RTDB URLs from frontend env files exactly as next build compiles them', async () => {
+  const { error, policy } = await runUpdateCsp(
+    "default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; frame-src 'self'; object-src 'none'",
+    { shell: {}, envFiles: {
+      '.env.local': 'NEXT_PUBLIC_BACKEND_URL=http://localhost:4000\n',
+      '.env.production': 'NEXT_PUBLIC_FIREBASE_DATABASE_URL=https://demo-env-default-rtdb.firebaseio.com\n',
+    } });
+  assert.equal(error, null);
+  const directives = Object.fromEntries(policy.split(';').map(value => value.trim()).filter(Boolean)
+    .map(value => { const [name, ...sources] = value.split(/\s+/); return [name, sources]; }));
+  assert.ok(directives['connect-src'].includes('http://localhost:4000'), 'connect-src must allow the origin the bundle calls');
+  assert.ok(directives['script-src'].includes('https://demo-env-default-rtdb.firebaseio.com/.lp'));
 });

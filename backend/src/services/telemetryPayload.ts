@@ -46,6 +46,12 @@ export interface TelemetryPayload {
   deviceSentAt: number;
   /** GNSS sample capture time; kept as `timestamp` for live-client compatibility. */
   timestamp: number;
+  /**
+   * Unclamped device capture time, present only when the device clock ran
+   * ahead of the server and `timestamp` was clamped to server time. Used only
+   * to order samples within one device boot; never for freshness.
+   */
+  deviceTimestamp?: number;
 }
 
 export type TelemetryParseResult =
@@ -152,6 +158,9 @@ export function parseTelemetryValue(
       // timestamp poisons the engine's newness comparison and the stale sweep
       // (issue #48 L3).
       timestamp: acceptedTimestamp,
+      // Clamping discards capture order between fast-clock samples; keep the
+      // raw capture time so a late-delivered older sample cannot look newer.
+      ...(timestamp > acceptedTimestamp ? { deviceTimestamp: timestamp } : {}),
     },
   };
 }

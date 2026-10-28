@@ -1,6 +1,6 @@
 # Telemetry latency baseline
 
-Last updated: 2026-10-04 14:20 IST (UTC+05:30).
+Last updated: 2026-10-27 12:00 IST (UTC+05:30).
 
 Use this procedure to measure one device from GNSS capture through the first
 painted marker update. It produces correlated, location-free timing records;
@@ -38,8 +38,21 @@ window receive HTTP 400 and never update the live node.
 The browser independently treats timestamps more than 10 seconds in the future
 or older than `NEXT_PUBLIC_BUS_EXPIRY_MS` as non-live. Active rides may keep
 their lifecycle record visible, but stale telemetry still reports signal loss
-and cannot satisfy backend actions that require a fresh fix. Because these
-guards compare different clocks, use the trace's offset and uncertainty when
+and cannot satisfy backend actions that require a fresh fix.
+
+Browser freshness is measured on the server timeline. The freshness timestamp
+is the backend receipt (`backendReceivedAt`, or a catalog receipt), so every
+passenger and admin check compares it with `serverNow()` from
+`frontend/src/lib/serverClock.ts`: the device clock corrected by the RTDB
+`.info/serverTimeOffset` estimate. The live-bus stores and the route catalog
+keep that offset current, and a store replays its cached snapshot when the
+estimate moves by a second or more. A viewer whose clock is slow or fast
+therefore still sees fresh buses, Live Ops counts and route availability.
+Until the first estimate arrives the offset is 0. The passenger store never
+prunes an entry only because it looks future-dated; the normalizers hide it
+until it is within the 10-second allowance, and the store removes it only when
+it is older than the expiry. Because the backend, Firebase and device guards
+still use different clocks, use the trace's offset and uncertainty when
 diagnosing a freshness rejection; do not treat the raw wall-clock difference as
 transport latency.
 

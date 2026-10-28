@@ -38,6 +38,9 @@ constexpr double GNSS_HDOP_MAX = 4.0;
 inline bool gnssHdopIsAcceptable(double hdop) {
   return std::isfinite(hdop) && hdop >= 0.0 && hdop <= GNSS_HDOP_MAX;
 }
+// Mirrors TELEMETRY_MAX_TRANSITION_GAP_MS: beyond this gap the backend moves
+// its anchor only after three coherent fixes, so the device must forward
+// fixes that fit the full-gap travel envelope instead of discarding them.
 constexpr uint32_t GNSS_MAX_TRANSITION_GAP_MS = 60UL * 1000;
 constexpr uint32_t GNSS_REACQUIRE_AFTER_MS = 5UL * 60 * 1000;
 // Telemetry is evaluated from the GNSS owner task at this cadence. Keep the
@@ -208,6 +211,47 @@ inline double headingDelta(double current, double previous) {
   return delta > 180 ? 360 - delta : delta;
 }
 
+// Bounded receiver error plus travel at the faster reported speed over
+// elapsedMs. Mirrors withinTravelEnvelope() in backend telemetryMotion.ts.
+inline bool withinTravelEnvelope(
+  uint32_t elapsedMs,
+  double lat,
+  double lng,
+  double previousLat,
+  double previousLng,
+  double speedKmh,
+  double previousSpeedKmh,
+  bool hdopValid,
+  double hdop,
+  bool previousHdopValid,
+  double previousHdop
+) {
+  const double errorBudget = std::max(
+    adaptiveGnssErrorMeters(
+      previousHdopValid,
+      previousHdop,
+      previousSpeedKmh,
+      speedKmh,
+      elapsedMs
+    ),
+    adaptiveGnssErrorMeters(
+      hdopValid,
+      hdop,
+      speedKmh,
+      previousSpeedKmh,
+      elapsedMs
+    )
+  );
+  const double maximumSpeedKmh = std::min(
+    200.0,
+    std::max({speedKmh, previousSpeedKmh, 0.0})
+  );
+  const double reachableMeters =
+    errorBudget +
+    (maximumSpeedKmh / 3.6) * (static_cast<double>(elapsedMs) / 1000.0);
+  return haversineMeters(previousLat, previousLng, lat, lng) <= reachableMeters;
+}
+
 inline bool locationTransitionIsPlausible(
   bool hasPrevious,
   uint32_t elapsedMs,
@@ -224,32 +268,89 @@ inline bool locationTransitionIsPlausible(
 ) {
   if (!hasPrevious) return true;
   if (elapsedMs > GNSS_REACQUIRE_AFTER_MS) return true;
-  const uint32_t boundedElapsedMs = std::min(
+  // Travel is reachable for the whole gap, matching the backend's
+  // outage-reacquisition envelope for gaps beyond GNSS_MAX_TRANSITION_GAP_MS.
+  // Capping a 1..5 min gap at 60 s of travel discarded every valid fix from
+  // a bus that kept moving until the 5 min reacquisition window expired.
+  return withinTravelEnvelope(
     elapsedMs,
-    GNSS_MAX_TRANSITION_GAP_MS
+    lat,
+    lng,
+    previousLat,
+    previousLng,
+    speedKmh,
+    previousSpeedKmh,
+    hdopValid,
+    hdop,
+    previousHdopValid,
+    previousHdop
   );
-  const double errorBudget = std::max(
-    adaptiveGnssErrorMeters(
-      previousHdopValid,
-      previousHdop,
-      previousSpeedKmh,
-      speedKmh,
-      boundedElapsedMs
-    ),
-    adaptiveGnssErrorMeters(
-      hdopValid,
-      hdop,
-      speedKmh,
-      previousSpeedKmh,
-      boundedElapsedMs
-    )
-  );
-  const double reachableMeters =
-    errorBudget +
-    (std::max(speedKmh, previousSpeedKmh) / 3.6) *
-      (static_cast<double>(boundedElapsedMs) / 1000.0);
-  return haversineMeters(previousLat, previousLng, lat, lng) <= reachableMeters;
 }
+
+/**
+ * Re-anchor the capture reference from corroborated evidence. A rejected but
+ * otherwise valid fix may be correct while the reference is wrong (an outlier
+ * accepted as the first fix after boot or a prolonged outage), or the bus may
+ * have travelled faster during an outage than its reported speeds allow.
+ * Mirroring the backend's outage-reacquisition rule, GNSS_REANCHOR_FIXES
+ * consecutive rejected fixes with acceptable HDOP, each 0.5..5 s after the
+ * previous one and plausible against it, are accepted as the new reference.
+ * A single outlier never re-anchors.
+ */
+constexpr uint8_t GNSS_REANCHOR_FIXES = 3;
+constexpr uint32_t GNSS_REANCHOR_MIN_SPACING_MS = 500;
+constexpr uint32_t GNSS_REANCHOR_MAX_SPACING_MS = 5000;
+
+struct ReacquisitionCandidate {
+  bool has = false;
+  double lat = 0;
+  double lng = 0;
+  double speed = 0;
+  double hdop = 99.0;
+  uint32_t at = 0;
+  uint8_t count = 0;
+
+  void reset() {
+    has = false;
+    count = 0;
+  }
+
+  /** Returns true when this rejected fix completes a coherent chain. */
+  bool observeRejected(
+    uint32_t nowMs,
+    double fixLat,
+    double fixLng,
+    double fixSpeedKmh,
+    bool hdopValid,
+    double fixHdop
+  ) {
+    if (
+      !hdopValid || !gnssHdopIsAcceptable(fixHdop) ||
+      !coordinatesAreValid(fixLat, fixLng) || !speedIsPlausible(fixSpeedKmh)
+    ) {
+      reset();
+      return false;
+    }
+    const uint32_t spacingMs = nowMs - at;
+    const bool coherent = has &&
+      spacingMs >= GNSS_REANCHOR_MIN_SPACING_MS &&
+      spacingMs <= GNSS_REANCHOR_MAX_SPACING_MS &&
+      locationTransitionIsPlausible(
+        true, spacingMs, fixLat, fixLng, lat, lng, fixSpeedKmh, speed,
+        true, fixHdop, true, hdop
+      );
+    count = coherent ? static_cast<uint8_t>(count + 1) : 1;
+    has = true;
+    lat = fixLat;
+    lng = fixLng;
+    speed = fixSpeedKmh;
+    hdop = fixHdop;
+    at = nowMs;
+    if (count < GNSS_REANCHOR_FIXES) return false;
+    reset();
+    return true;
+  }
+};
 
 inline uint32_t retryDelayMs(uint8_t consecutiveFailures, uint32_t jitter) {
   const uint8_t exponent = std::min<uint8_t>(consecutiveFailures, 5);

@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import AdminPanelErrorBoundary from "@/components/admin/AdminPanelErrorBoundary";
 import WorkspaceLink from "@/components/shared/WorkspaceLink";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { hasUnsavedChanges } from "@/lib/unsavedChanges";
@@ -125,7 +126,10 @@ export default function AdminPage() {
         aria-labelledby={`admin-tab-${activeTab}`}
         className="flex-1 min-h-0 overflow-y-auto bg-brand-dark/20"
       >
-        {renderPanel(activeTab)}
+        {/* Keyed by tab so switching sections clears a contained crash. */}
+        <AdminPanelErrorBoundary key={activeTab}>
+          {renderPanel(activeTab)}
+        </AdminPanelErrorBoundary>
       </div>
 
       <ConfirmModal

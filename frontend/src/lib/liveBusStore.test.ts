@@ -20,17 +20,27 @@ describe("live bus snapshot expiry", () => {
     expect(pruneExpiredLiveBuses(snapshot, now)).toBe(snapshot);
   });
 
-  it("removes expired, malformed, and far-future entries", () => {
+  it("removes expired and malformed entries", () => {
     const snapshot: LiveBusSnapshot = {
       fresh: { timestamp: now - recentAgeMs },
       expired: { timestamp: now - BUS_EXPIRY_MS },
       missing: {},
-      future: { timestamp: now + 10_001 },
     };
 
     expect(pruneExpiredLiveBuses(snapshot, now)).toEqual({
       fresh: { timestamp: now - recentAgeMs },
     });
+  });
+
+  it("keeps a future-looking entry and schedules no immediate prune for it", () => {
+    // A lagging viewer clock makes a fresh server receipt look like the
+    // future; the passenger normalizers hide it, but the store must not
+    // delete it 1 ms after every delivery.
+    const snapshot: LiveBusSnapshot = { future: { timestamp: now + 15_000 } };
+
+    expect(pruneExpiredLiveBuses(snapshot, now)).toBe(snapshot);
+    expect(millisecondsUntilNextPrune(snapshot, now)).toBe(15_000 + BUS_EXPIRY_MS);
+    expect(pruneExpiredLiveBuses(snapshot, now + 15_000 + BUS_EXPIRY_MS)).toEqual({});
   });
 
   it("expires a stale active ride with its telemetry, like an offline device", () => {

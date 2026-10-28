@@ -3,12 +3,24 @@
 const link = (path, name, semantics) => ({ path, name, semantics, level: 'L1' });
 export const criticalSourceTestMap = [{
   caseId: 'TRIP26',
-  scope: 'Mocked destination fencing rejects revoked worker generations before writes and after dependency completion; replica/crash acceptance remains separate.',
-  sourcePaths: ['backend/src/lib/workerFence.ts'],
+  scope: 'Mocked destination fencing rejects revoked worker generations before writes and after dependency completion; queued durable restores keep their own caller fence; replica/crash acceptance remains separate.',
+  sourcePaths: ['backend/src/lib/workerFence.ts', 'backend/src/services/durableRideRecovery.ts'],
   tests: [link('backend/src/lib/workerFence.test.ts', 'worker destination fencing > rechecks local authority after a dispatched dependency settles',
     'Revoking the captured fence during a transaction rejects its late result.'),
   link('backend/src/lib/workerFence.test.ts', 'worker destination fencing > prevents an old RTDB callback from dispatching another write on SDK retry',
-    'An SDK retry after revocation cannot invoke the mutation again.')],
+    'An SDK retry after revocation cannot invoke the mutation again.'),
+  link('backend/src/services/durableRideRecovery.workerFence.test.ts', "durable restore queue keeps each caller's worker fence > a fenced-out worker restore queued behind HTTP restores must not write unfenced",
+    'A revoked worker restore drained by another caller still runs under its own revoked fence and writes nothing.'),
+  link('backend/src/services/durableRideRecovery.workerFence.test.ts', "durable restore queue keeps each caller's worker fence > an HTTP restore queued behind a revoked worker's restores still succeeds",
+    "An unfenced HTTP restore drained after a revoked worker's restores is not rejected by that worker's fence.")],
+}, {
+  caseId: 'TRIP25',
+  scope: 'Mocked Firestore transactions order a route edit against a manual ride start; deployed multi-replica acceptance remains separate.',
+  sourcePaths: ['backend/src/services/rideSessionStart.ts'],
+  tests: [link('backend/src/services/routeEditRideStart.test.ts', 'route edit vs manual ride start (TOCTOU) > fails the start when an edit commits after the ride read the route but before it claimed the bus',
+    'A start whose route snapshot is superseded before the bus claim is rejected instead of running on stale geometry.'),
+  link('backend/src/services/routeEditRideStart.test.ts', 'route edit vs manual ride start (TOCTOU) > refuses an edit that lands after the bus lock is claimed but before active_rides is written',
+    'A route save that sees a claimed bus lock without an active ride record is refused, so the starting ride keeps its route.')],
 }, {
   caseId: 'FLEET12',
   scope: 'Pure reconciliation cache coalesces reads and preserves newer mirror state against a late load; durable job acceptance remains separate.',
@@ -120,5 +132,7 @@ export const criticalSourceTestMap = [{
   tests: [link('frontend/src/lib/passengerLiveBus.test.ts', 'passenger live-bus normalization > does not advertise a fresh powered device as passenger service',
     'Fresh sessionless/pending hardware does not become an active boardable service.'),
   link('frontend/src/lib/passengerAvailability.test.ts', 'new passenger bus selections > accepts stationary fresh GPS without requiring movement or a direction',
-    'A new route selection requires live online telemetry; stationary fixes remain selectable without inventing movement or direction.')],
+    'A new route selection requires live online telemetry; stationary fixes remain selectable without inventing movement or direction.'),
+  link('frontend/src/lib/liveBusStoreServerClock.test.ts', 'live bus store on a skewed viewer clock > keeps a future-looking bus until the offset arrives, then replays it as visible',
+    'Passenger normalization judges freshness against the server-clock offset, so a skewed device clock does not hide a fresh service.')],
 }];

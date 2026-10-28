@@ -1,6 +1,6 @@
 # Worker leadership and fencing
 
-Last updated: 2026-10-05 (Asia/Kolkata).
+Last updated: 2026-10-27 03:40 IST (UTC+05:30).
 
 The coordinator owns `_worker_leases/trip-state-worker`. The lease lasts 45
 seconds and renews every 15 seconds. `WORKER_INSTANCE_ID` is a diagnostic label;
@@ -15,6 +15,11 @@ revokes leadership. Admission also checks `performance.now()`, so a suspended
 event loop cannot admit work before the overdue timer runs. Slow or late lease
 responses cannot activate or revive a revoked acquisition. There is at most one
 unsettled renewal and one coordinator fleet reconciliation per process.
+Work queues shared by fenced and unfenced callers (for example durable ride
+restores, used by both device ingest and the trip engine) start each queued item
+in its requester's captured context and deduplicate in-flight work only within
+the same worker generation. A revoked leader's queued restore rejects without
+writing, and device ingest never inherits a leader's fence.
 
 ## Clock and admission contract
 

@@ -19,6 +19,22 @@ export interface RideStopRecord {
   stopId: string;
   stopName: string;
   timestamp: TimestampValue;
+  /**
+   * How the backend learned of this stop (see FIREBASE_DATA_MODEL.md). A
+   * `skipped_gnss_gap` stop was never observed and a `recovered_checkpoint`
+   * timestamp is the repair time, not the arrival. Legacy records omit it.
+   */
+  evidence?: "gnss_progress" | "recovered_checkpoint" | "skipped_gnss_gap" | (string & {});
+}
+
+/** True when the stop's timestamp is a GNSS-observed arrival time. */
+export function isObservedArrival(stop: Pick<RideStopRecord, "evidence">): boolean {
+  return stop.evidence === undefined || stop.evidence === "gnss_progress";
+}
+
+/** Firestore history is unvalidated; keep only object-shaped entries. */
+export function isRecordObject<T extends object>(value: unknown): value is T {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export interface StopNameRecord {
@@ -120,12 +136,16 @@ export function mergeRideHistorySessions<T extends RideHistorySortable>(
 
 /**
  * Legacy sessions may contain the same stop more than once under different
- * array/object keys. Prefer the earliest record with a valid timestamp. Route
- * index is authoritative because a route may revisit a stop ID;
- * stop ID is only a fallback for malformed records without a valid index.
+ * array/object keys. Prefer an observed arrival over a skipped or recovered
+ * one, then the earliest record with a valid timestamp. Route index is
+ * authoritative because a route may revisit a stop ID; stop ID is only a
+ * fallback for malformed records without a valid index. Non-object entries
+ * (for example array holes) are dropped.
  */
 export function dedupeStopRecords(stops: RideStopRecord[]): RideStopRecord[] {
-  const chronological = [...stops].sort((left, right) => {
+  const chronological = stops.filter(isRecordObject<RideStopRecord>).sort((left, right) => {
+    const leftObserved = isObservedArrival(left);
+    if (leftObserved !== isObservedArrival(right)) return leftObserved ? -1 : 1;
     const leftTime = timestampMillis(left.timestamp) ?? Number.POSITIVE_INFINITY;
     const rightTime = timestampMillis(right.timestamp) ?? Number.POSITIVE_INFINITY;
     return leftTime - rightTime;
@@ -169,7 +189,9 @@ export function destinationReachedAt(
   const destination = stops.find(
     (stop) => typeof stop.stopId === "string" && stop.stopId === destinationStopId,
   );
-  const destinationTime = timestampMillis(destination?.timestamp);
+  // A skipped or repaired stop has no observed arrival time to report.
+  if (!destination || !isObservedArrival(destination)) return null;
+  const destinationTime = timestampMillis(destination.timestamp);
   return destinationTime !== null && destinationTime >= passengerTime
     ? destinationTime
     : null;

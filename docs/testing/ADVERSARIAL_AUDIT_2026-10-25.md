@@ -1,6 +1,6 @@
 # Adversarial component audit — 25 October 2026
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+Last updated: 2026-10-27 12:00 IST (UTC+05:30).
 
 Branch: `fix/audit-tdd-2026-10-25`, based on `6e8604f77dbf7cc5fbaf34dd262cbfbde576206d`
 and ending at `8fc7ef068c848f75d6429a4a2c3d135a235e9bfe` before this documentation
@@ -336,11 +336,18 @@ None of these is fixed on this branch. Severity is the audit's estimate.
   crossing segment can be lost. The attempted fix was reverted (see above); a
   correct one needs a separate pending-previous slot and must still reduce the
   same-timestamp resolved delivery.
-- **Passengers whose device clock is more than 10 s slow see no active rides
-  (frontend-passenger).** Server-clamped timestamps look future-dated, the store's
-  ±10 s skew allowance drops every bus at once, and `passengerLiveBuses` would
-  still keep them, so the layers disagree. Needs a decision such as using a server
-  time offset or keeping future-dated active rides with a bounded timer.
+- **Resolved 2026-10-27: passengers whose device clock is more than 10 s slow
+  saw no active rides (frontend-passenger).** Server-clamped timestamps looked
+  future-dated and the store's ±10 s skew allowance dropped every bus at once. A
+  clock more than about 60 s fast also emptied the route catalog, and on admin
+  Live Ops a clock 10 s slow or 90 s fast marked every ride "Service paused" and
+  zeroed the In Service, Awaiting Start and Direction Pending counts. Freshness
+  now uses `serverNow()` (`frontend/src/lib/serverClock.ts`, corrected by RTDB
+  `.info/serverTimeOffset`), and the store no longer prunes future-looking
+  entries. Regression tests: `serverClock.test.ts`,
+  `liveBusStoreServerClock.test.ts`, the "viewer clock skew" cases in
+  `liveBusFreshness.test.ts`, `liveBusStore.test.ts` and
+  `useLiveRouteCatalog.test.tsx`.
 - **An admin can strip another admin's privileges by registering their UID as an
   operator (admin-api).** `PUT /api/fleet/drivers/:id` with an admin's `authUid`
   publishes `role: driver` and removes the admin claim, including for the caller.

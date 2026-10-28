@@ -566,6 +566,130 @@ void test_adaptive_gnss_error_budget_is_bounded() {
   ));
 }
 
+// Mirrors the plausibility gate in shouldCapture() (src/main.cpp): a rejected
+// valid fix is offered to the re-anchor candidate, and any accepted fix becomes
+// the new reference and clears the candidate.
+struct CaptureGateSimulation {
+  bool hasReference = false;
+  double lat = 0;
+  double lng = 0;
+  double speed = 0;
+  double hdop = 99.0;
+  uint32_t at = 0;
+  ReacquisitionCandidate candidate;
+
+  void anchor(uint32_t now, double fixLat, double fixLng, double fixSpeed, double fixHdop) {
+    hasReference = true;
+    lat = fixLat;
+    lng = fixLng;
+    speed = fixSpeed;
+    hdop = fixHdop;
+    at = now;
+    candidate.reset();
+  }
+
+  bool offer(uint32_t now, double fixLat, double fixLng, double fixSpeed, double fixHdop) {
+    bool accepted = locationTransitionIsPlausible(
+      hasReference, now - at, fixLat, fixLng, lat, lng, fixSpeed, speed,
+      true, fixHdop, hdop <= GNSS_HDOP_MAX, hdop
+    );
+    if (!accepted) {
+      accepted = candidate.observeRejected(now, fixLat, fixLng, fixSpeed, true, fixHdop);
+    }
+    if (accepted) anchor(now, fixLat, fixLng, fixSpeed, fixHdop);
+    return accepted;
+  }
+};
+
+constexpr double METERS_PER_DEGREE_LAT = 111195.0;
+
+void test_location_transition_allows_travel_through_one_to_five_minute_gap() {
+  // Steady 30 km/h through a GNSS outage between the 60 s short-gap cap and
+  // the 5 min reacquisition window: the full gap of travel is reachable.
+  const double speedKmh = 30.0;
+  int rejected = 0;
+  for (uint32_t gapS = 61; gapS <= 300; ++gapS) {
+    const double lat = 23.0 + (speedKmh / 3.6 * gapS) / METERS_PER_DEGREE_LAT;
+    if (!locationTransitionIsPlausible(
+      true, gapS * 1000, lat, 72.5, 23.0, 72.5, speedKmh, speedKmh, true, 1.0, true, 1.0
+    )) ++rejected;
+  }
+  TEST_ASSERT_EQUAL_INT(0, rejected);
+
+  // The envelope still follows reported speed: a bus stopped before and after
+  // a 3-minute gap cannot single-fix relocate 1.5 km.
+  TEST_ASSERT_FALSE(locationTransitionIsPlausible(
+    true, 180000, 23.0 + 1500.0 / METERS_PER_DEGREE_LAT, 72.5, 23.0, 72.5, 0, 0, true, 1.0, true, 1.0
+  ));
+
+  // The device-side gate captures the first post-outage fix, well within
+  // three fixes of reacquisition.
+  CaptureGateSimulation gate;
+  gate.anchor(0, 23.0, 72.5, speedKmh, 1.0);
+  int firstAcceptedFix = -1;
+  for (int fix = 0; fix < 3 && firstAcceptedFix < 0; ++fix) {
+    const uint32_t gapS = 180 + fix;
+    const double lat = 23.0 + (speedKmh / 3.6 * gapS) / METERS_PER_DEGREE_LAT;
+    if (gate.offer(gapS * 1000, lat, 72.5, speedKmh, 1.0)) firstAcceptedFix = fix;
+  }
+  TEST_ASSERT_EQUAL_INT(0, firstAcceptedFix);
+}
+
+void test_coherent_fixes_reanchor_after_outlier_reference() {
+  // The first fix after boot is accepted without a reference. If it is a
+  // 300 m multipath outlier, correct fixes from the stopped bus must re-anchor
+  // within three seconds instead of being discarded for five minutes.
+  const double goodLat = 23.0 + 300.0 / METERS_PER_DEGREE_LAT;
+  CaptureGateSimulation gate;
+  TEST_ASSERT_TRUE(gate.offer(0, 23.0, 72.5, 0, 3.9));
+  uint32_t firstAcceptedAt = 0;
+  int rejectedAfterAnchor = 0;
+  for (uint32_t s = 1; s <= 300; ++s) {
+    const bool accepted = gate.offer(s * 1000, goodLat, 72.5, 0, 1.0);
+    if (accepted && firstAcceptedAt == 0) firstAcceptedAt = s;
+    else if (!accepted && firstAcceptedAt != 0) ++rejectedAfterAnchor;
+  }
+  TEST_ASSERT_TRUE(firstAcceptedAt >= 1);
+  TEST_ASSERT_TRUE(firstAcceptedAt <= 3);
+  TEST_ASSERT_EQUAL_INT(0, rejectedAfterAnchor);
+  TEST_ASSERT_FLOAT_WITHIN(1e-9f, static_cast<float>(goodLat), static_cast<float>(gate.lat));
+}
+
+void test_isolated_outliers_never_reanchor() {
+  const double outlierLat = 23.0 + 300.0 / METERS_PER_DEGREE_LAT;
+  const double otherOutlierLat = 23.0 - 300.0 / METERS_PER_DEGREE_LAT;
+
+  // One outlier after a short gap is rejected and does not move the anchor;
+  // the next correct fix is still captured.
+  CaptureGateSimulation gate;
+  gate.anchor(0, 23.0, 72.5, 0, 1.0);
+  TEST_ASSERT_FALSE(gate.offer(10000, outlierLat, 72.5, 0, 1.0));
+  TEST_ASSERT_TRUE(gate.offer(11000, 23.0, 72.5, 0, 1.0));
+  TEST_ASSERT_FALSE(gate.offer(12000, outlierLat, 72.5, 0, 1.0));
+  TEST_ASSERT_TRUE(gate.offer(13000, 23.0, 72.5, 0, 1.0));
+  TEST_ASSERT_FALSE(gate.candidate.has);
+
+  // Outliers that disagree with each other never build a coherent chain.
+  gate.anchor(20000, 23.0, 72.5, 0, 1.0);
+  for (uint32_t s = 21; s <= 60; ++s) {
+    TEST_ASSERT_FALSE(gate.offer(s * 1000, (s % 2) ? outlierLat : otherOutlierLat, 72.5, 0, 1.0));
+  }
+
+  // Agreeing outliers spaced beyond the corroboration window restart the count.
+  gate.anchor(100000, 23.0, 72.5, 0, 1.0);
+  for (uint32_t s = 0; s < 10; ++s) {
+    TEST_ASSERT_FALSE(gate.offer(106000 + s * (GNSS_REANCHOR_MAX_SPACING_MS + 1), outlierLat, 72.5, 0, 1.0));
+  }
+
+  // Fixes with poor or missing HDOP are not corroborating evidence.
+  ReacquisitionCandidate candidate;
+  for (uint32_t s = 1; s <= 10; ++s) {
+    TEST_ASSERT_FALSE(candidate.observeRejected(s * 1000, outlierLat, 72.5, 0, true, 4.5));
+    TEST_ASSERT_FALSE(candidate.observeRejected(s * 1000 + 500, outlierLat, 72.5, 0, false, 1.0));
+  }
+  TEST_ASSERT_FALSE(candidate.has);
+}
+
 void test_queue_delivers_newest_first_and_retains_failed_samples() {
   NewestFirstTelemetryQueue<QueuedSample, 4> queue;
   queue.reset(42);
@@ -737,6 +861,9 @@ int main(int, char **) {
   RUN_TEST(test_publish_policy_handles_floor_changes_and_heartbeats);
   RUN_TEST(test_location_transition_rejects_teleportation);
   RUN_TEST(test_adaptive_gnss_error_budget_is_bounded);
+  RUN_TEST(test_location_transition_allows_travel_through_one_to_five_minute_gap);
+  RUN_TEST(test_coherent_fixes_reanchor_after_outlier_reference);
+  RUN_TEST(test_isolated_outliers_never_reanchor);
   RUN_TEST(test_queue_delivers_newest_first_and_retains_failed_samples);
   RUN_TEST(test_queue_acknowledgement_discards_superseded_samples);
   RUN_TEST(test_queue_rejects_corrupted_rtc_state);

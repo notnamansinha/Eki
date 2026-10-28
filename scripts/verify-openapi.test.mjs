@@ -3,10 +3,42 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { registeredOperations, verifyOpenApi } from "./verify-openapi.mjs";
+import { documentedOperations, missingBaselineStatuses, registeredOperations, verifyApiReference, verifyOpenApi } from "./verify-openapi.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const spec = JSON.parse(readFileSync(resolve(root, "backend/openapi.json"), "utf8"));
+const apiReference = readFileSync(resolve(root, "backend/API.md"), "utf8");
+
+test("every /api operation declares the statuses shared middleware can emit", async () => {
+  for (const [path, item] of Object.entries(spec.paths)) {
+    for (const [method, operation] of Object.entries(item)) {
+      if (typeof operation !== "object" || !operation.responses) continue;
+      assert.deepEqual(missingBaselineStatuses(path, operation), [], `${method.toUpperCase()} ${path}`);
+    }
+  }
+  // GET bodies are parsed too: the global JSON parser runs before every handler.
+  const missing = structuredClone(spec);
+  delete missing.paths["/api/v2/feedback"].get.responses["415"];
+  await assert.rejects(verifyOpenApi(missing), /GET \/api\/v2\/feedback: missing middleware statuses 415/);
+  const bearer = structuredClone(spec);
+  delete bearer.paths["/api/v2/ride-sessions/{sessionId}"].get.responses["503"];
+  await assert.rejects(verifyOpenApi(bearer), /GET \/api\/v2\/ride-sessions\/\{sessionId\}: missing middleware statuses 503/);
+  // Public probes outside /api have no parser/admission baseline.
+  assert.deepEqual(missingBaselineStatuses("/health", { responses: { 200: {} }, security: [] }), []);
+});
+
+test("backend/API.md documents every operation with OpenAPI path parameter names", () => {
+  verifyApiReference(spec, apiReference);
+  assert.ok(documentedOperations("Use `PATCH /api/requests/:id`.").has("PATCH /api/requests/{id}"));
+  assert.throws(
+    () => verifyApiReference(spec, apiReference.replaceAll("firmware/installation", "firmware/install")),
+    /Undocumented: POST \/api\/devices\/\{deviceId\}\/firmware\/installation.*unknown: POST \/api\/devices\/\{deviceId\}\/firmware\/install/,
+  );
+  assert.throws(
+    () => verifyApiReference(spec, `${apiReference}\n\n### \`DELETE /api/requests/:uid\`\n`),
+    /unknown: DELETE \/api\/requests\/\{uid\}/,
+  );
+});
 
 test("validates the published contract against mounted Express routers", async () => {
   const count = await verifyOpenApi(spec);

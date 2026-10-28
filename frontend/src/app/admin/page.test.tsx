@@ -15,10 +15,14 @@ vi.mock("@/components/admin/RouteManagementPanel", () => ({ default: function Ro
   return <><p>Routes content</p><button type="button" onClick={() => setDirty(true)}>Start draft</button></>;
 } }));
 vi.mock("@/components/admin/FleetManagementPanel", () => ({ default: () => <p>Fleet content</p> }));
-vi.mock("@/components/admin/RideHistoryPanel", () => ({ default: () => <p>History content</p> }));
+const crash = vi.hoisted(() => ({ history: false }));
+vi.mock("@/components/admin/RideHistoryPanel", () => ({ default: () => {
+  if (crash.history) throw new Error("malformed ride_sessions document");
+  return <p>History content</p>;
+} }));
 vi.mock("@/components/admin/FeedbackPanel", () => ({ default: () => <p>Feedback content</p> }));
 vi.mock("@/components/admin/SettingsPanel", () => ({ default: () => <p>Settings content</p> }));
-afterEach(cleanup);
+afterEach(() => { cleanup(); crash.history = false; vi.restoreAllMocks(); });
 describe("all administration sections", () => {
   it("ends the sliding section row with the passenger panel link, outside the tab list", () => {
     render(<AdminPage />);
@@ -71,5 +75,32 @@ describe("all administration sections", () => {
     expect(await screen.findByText("History content")).toBeTruthy();
     const later = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(later);
     expect(later.defaultPrevented).toBe(false);
+  });
+  it("contains a panel crash so the tab bar and other sections keep working", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    crash.history = true;
+    render(<AdminPage />); const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: "History" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/could not be displayed/);
+    expect(screen.getByRole("tablist")).toBeTruthy();
+    await user.click(screen.getByRole("tab", { name: "Fleet & People" }));
+    expect(await screen.findByText("Fleet content")).toBeTruthy();
+    crash.history = false;
+    await user.click(screen.getByRole("tab", { name: "History" }));
+    expect(await screen.findByText("History content")).toBeTruthy();
+    crash.history = true;
+    await user.click(screen.getByRole("tab", { name: "Live Ops" }));
+    await screen.findByText("Operations content");
+  });
+  it("retries a crashed panel in place", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    crash.history = true;
+    render(<AdminPage />); const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: "History" }));
+    await screen.findByRole("alert");
+    crash.history = false;
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("History content")).toBeTruthy();
   });
 });

@@ -1,6 +1,6 @@
 # Low-level design (LLD)
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+Last updated: 2026-10-27 12:00 IST (UTC+05:30).
 
 This document maps runtime behavior to source modules. Tests beside a module exercise its pure/security-sensitive behavior.
 
@@ -16,7 +16,7 @@ This document maps runtime behavior to source modules. Tests beside a module exe
 | `lib/geo.ts` | Geographic distance/segment calculations used by geofences |
 | `lib/googleMaps.ts` | Server-key Routes and Places requests, response validation/timeouts |
 | `lib/polylineUtils.ts` | Google encoded-polyline encode/decode and nearest index |
-| `lib/routeSegment.ts` | Direction-safe stored-polyline slicing, via constraint and travel-order stops |
+| `lib/routeSegment.ts` | Direction-safe stored-polyline slicing: stops are projected in travel order with non-decreasing vertex indices (loop/out-and-back safe), via constraint, travel-order stops |
 | `middleware/requireAuth.ts` | Bearer extraction, revocation-aware token verification, request claims |
 | `middleware/requireAdmin.ts` | Admin custom-claim enforcement |
 | `middleware/verifiedRequest.ts` | Private request/token-scoped verification reuse; later requests still follow revocation policy |
@@ -76,7 +76,7 @@ Metrics retain only the latest 512 in-memory samples. Restart resets counters; m
 
 Normalized live data is processed serially per RTDB child. Routes are cached from a Firestore snapshot listener; missing IDs have a 60-second negative cache and listener reconnect uses 1–30 second backoff. `processedTelemetry` accepts only increasing timestamps.
 
-The reducer receives current/previous points, next stop, motion state and existing lifecycle. Only the next expected stop can advance, and the reducer skips ahead only after a GNSS gap (over 10 s without a fix, an untrusted fix, or a segment over 250 m): while that persisted `gnssGap` is open, a reliably observed later stop credits the unobserved stops before it as `skipped_gnss_gap`, and observing any stop closes the gap; several closely spaced stops crossed by one bounded segment are consumed in travel order. Departure needs a moving fix beyond the origin radius (`min(150 m, max(10 m, half the first leg))`) or, when stop 1 lies inside that radius, a moving crossing of stop 1. Intermediate stops crossed by the departure segment are consumed in the same update; the terminal stop still requires a later confirmed fix. Lifecycle writes are fingerprinted and serialized per bus/ride. Completion uses a Firestore transaction to write history and delete only recovery/lock documents matching the completing session; RTDB writes also compare session ID. When a new session loses the RTDB claim, marking it failed and releasing its matching bus lock commit in one transaction, so a failed session never keeps the lock. The abandoned-ride reconciler skips and reports sessions whose bus/route IDs cannot address a document or node instead of failing the page. The stale sweeper discards a scheduled wait longer than its own bound, so a backwards wall-clock step cannot postpone presence cleanup. Terminal live nodes remain briefly for UI observation and then become offline.
+The reducer receives current/previous points, next stop, motion state and existing lifecycle. Only the next expected stop can advance, and the reducer skips ahead only after a GNSS gap (over 10 s without a fix, an untrusted fix, or a segment over 250 m): while that persisted `gnssGap` is open, a reliably observed later stop credits the unobserved stops before it as `skipped_gnss_gap`, and observing any stop closes the gap. A later stop whose location coincides with a stop already passed (out-and-back or loop routes) is never credited after a gap, and no stop is credited while the fix is still at a passed stop's location, so the gap stays open instead; several closely spaced stops crossed by one bounded segment are consumed in travel order. Departure needs a moving fix beyond the origin radius (`min(150 m, max(10 m, half the first leg))`) or, when stop 1 lies inside that radius, a moving crossing of stop 1. Intermediate stops crossed by the departure segment are consumed in the same update; the terminal stop still requires a later confirmed fix. Lifecycle writes are fingerprinted and serialized per bus/ride. Completion uses a Firestore transaction to write history and delete only recovery/lock documents matching the completing session; RTDB writes also compare session ID. When a new session loses the RTDB claim, marking it failed and releasing its matching bus lock commit in one transaction, so a failed session never keeps the lock. The abandoned-ride reconciler skips and reports sessions whose bus/route IDs cannot address a document or node instead of failing the page. The stale sweeper discards a scheduled wait longer than its own bound, so a backwards wall-clock step cannot postpone presence cleanup. Terminal live nodes remain briefly for UI observation and then become offline.
 
 The coordinator stores `_worker_leases/trip-state-worker` with a unique process owner, persistent generation and expiry. A separate monotonic cutoff revokes the context even if renewal stalls; late responses cannot revive it. Worker Firestore transactions/batches validate that lease in their read set, while RTDB retries check local expiry and surviving projections reject older `_workerGeneration` values. Auth calls and recursive deletion already dispatched cannot be recalled; fleet reconciliation retains its durable lock until settlement. Shutdown stops intake before cleanup and does not wait for a hung renewal. Clock skew is limited to 2 seconds. See [worker leadership](../operations/WORKER_LEADERSHIP.md) for the cross-store and live-acceptance boundaries.
 
@@ -117,7 +117,8 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 | `lib/firebaseAuthDomain.ts` | Normalizes primary project Hosting domains; custom/secondary domains require explicit auth-helper configuration |
 | `lib/authState.ts` | Tracks verified auth readiness and generations before protected listeners attach |
 | `lib/liveBusStore.ts` | Shared initial RTDB snapshot followed by child deltas, route-scoped subscriptions and freshness pruning |
-| `lib/liveBusFreshness.ts`, `liveBusSnapshot.ts` | Coordinate/timestamp/signal validity and expiry; ride retention requires a non-empty `sessionId` |
+| `lib/liveBusFreshness.ts`, `liveBusSnapshot.ts` | Coordinate/timestamp/signal validity and expiry, measured on the server timeline; ride retention requires a non-empty `sessionId` |
+| `lib/serverClock.ts`, `serverClockSync.ts` | `serverNow()`: device clock corrected by RTDB `.info/serverTimeOffset`, kept current by the live-bus stores and route catalog |
 | `lib/polyline.ts`, `polylineDistance.ts`, `snapToPolyline.ts`, `mapUtils.ts` | Pure map math, distance index, snapping/interpolation |
 | `lib/liveBusMarkerPosition.ts`, `markerHeading.ts` | Client-side jump hold/reacquisition and wrap-safe marker heading presentation |
 | `lib/rideHistory.ts`, `rideFeedbackEligibility.ts` | Pure historical normalization/eligibility |
@@ -126,7 +127,7 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 | `config/maps.ts`, `config/passenger.ts`, `etaConstants.ts` | Central public/runtime tuning |
 
 Passenger ETAs project stops once per route geometry, version, direction and ordered stop set. A changed path reference or stop coordinate forces reprojection even before a version update arrives. The map holds at most 16 stop-projection entries and discards them with the route view. Exact same-point continuity reuse is safe; moved or ambiguous positions use the full polyline search. See [R18 synthetic evidence](../testing/PASSENGER_MAP_PER_BUS_WORK.md) for counters and the remaining live boundary.
-| `sw.js` | Precache static export; cache public maps/fonts/images; network-only Firebase/auth/backend/unknown; activation deletes the previous deployment's navigation HTML cache |
+| `sw.js` | Precache static export; cache same-origin images/chunks and readable (status 200) fonts; navigation HTML keyed per path without query string, capped at 10 entries/7 days; network-only Google Maps (opaque responses hide upstream errors), Firebase/auth/backend/unknown; activation deletes the previous deployment's navigation HTML and legacy `eki-google-maps` caches |
 
 Tests beside pure frontend libraries exercise freshness, RTDB sharing, route distance/snapping, resume state, history and feedback eligibility.
 
@@ -169,8 +170,8 @@ radio, TLS, Secure Boot and OTA acceptance require the hardware runbooks.
 ## Configuration/build files
 
 - Root `package.json` is the npm workspace orchestrator. `package-lock.json` is the reproducible dependency graph.
-- `scripts/build-production.mjs` enables strict public-variable validation. `generate-sw.mjs` injects the Workbox manifest. `update-csp.mjs` hashes emitted inline scripts and injects connect/frame directives into `firebase.json`; it matches each managed directive anywhere in the policy, including the last one, and fails the build when one is missing.
-- `scripts/verify-web-backend-contract.mjs` verifies the backend origin and Firebase Auth same-origin frame helper (`frame-src 'self'`) in CSP.
+- `scripts/build-production.mjs` enables strict public-variable validation. `generate-sw.mjs` injects the Workbox manifest. `update-csp.mjs` hashes emitted inline scripts and injects connect/frame directives into `firebase.json`; it matches each managed directive anywhere in the policy, including the last one, and fails the build when one is missing. `script-src` lists only hosts the app loads scripts from and never a callback-reflecting JSONP host such as `www.google.com`; RTDB script sources (wildcards and the configured instance) are scoped to the `/.lp` long-poll path, because the bare RTDB origin also serves REST `?callback=` JSONP.
+- `scripts/verify-web-backend-contract.mjs` verifies the backend origin and Firebase Auth same-origin frame helper (`frame-src 'self'`) in CSP. Both scripts load `frontend/.env*` through `scripts/load-frontend-env.mjs` (`@next/env`, as `next build` does), so they check the URL the bundle was compiled with, not only the shell's.
 - `scripts/rtdb-instance-config.mjs` verifies matching RTDB instances and expected region configuration (`verify:rtdb-instance`).
 - `firebase.json`, `.firebaserc`, rules and indexes define Hosting/Firebase deployment. Generated CSP changes after builds are intentional and must be committed with the output-producing code.
 - GitHub workflows install, test/build, run emulators where configured, and audit runtime and development dependencies. CI also runs the synthetic admin browser suite and legacy journal firmware build.

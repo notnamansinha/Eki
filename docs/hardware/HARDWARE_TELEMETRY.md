@@ -1,6 +1,6 @@
 # Hardware telemetry, latency and failure design
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+Last updated: 2026-10-27 12:00 IST (UTC+05:30).
 
 Setup boundary: use [the hardware setup guide](README.md) before reading this
 design. It is the source for required `backend/.env`, frontend environment
@@ -102,8 +102,9 @@ Follow [cold-power recovery](COLD_POWER_RECOVERY.md), including the legacy-board
 |---|---:|---|
 | Evaluation period | 1 s | Consume current GNSS state |
 | GNSS age maximum | 5 s | Reject stale parser fixes |
-| Short-gap jump margin | Adaptive 15–50 m receiver error plus reported-speed reach | Reject fragmented/cached fixes after brief signal loss |
+| Jump margin | Adaptive 15–50 m receiver error plus reach at the faster reported speed over the whole gap (up to 5 min) | Reject fragmented/cached fixes after brief signal loss without discarding a bus that kept moving through a 1–5 min outage; mirrors the backend travel envelope in `telemetryMotion.ts` |
 | Position reacquisition | after 5 min without an accepted anchor | Permit legitimate relocation after a prolonged outage |
+| Re-anchor on coherent rejected fixes | `GNSS_REANCHOR_FIXES` = 3 consecutive rejected fixes with HDOP 0..4, each 0.5–5 s apart and plausible against the previous one | An outlier reference (for example the unchecked first fix after boot) or an outage the bus outran clears in about 3 s instead of 5 min; a single outlier never re-anchors, matching the backend three-coherent-fix rule |
 | HDOP maximum | 4.0 | Reject poor horizontal geometry |
 | Fix field envelope | lat -90..90, lng -180..180, finite HDOP 0..4 | TinyGPS++ commits checksummed but out-of-range digits; such a sample is no fix instead of a backend 400 that pauses delivery for 30 s |
 | Receiver silence | last RMC fix latched invalid after 2 s | A silent receiver cannot replay its last fix after a 32-bit `millis()` rollover |

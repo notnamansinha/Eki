@@ -1,3 +1,4 @@
+import { serverNow } from "./serverClock";
 import {
   devicePresence,
   isActiveBusEntry,
@@ -27,7 +28,7 @@ function busIdFromNodeKey(key: string, routeId: string): string | null {
 export function normalizePassengerBusAvailability(
   key: string,
   value: unknown,
-  now = Date.now(),
+  now = serverNow(),
 ): PassengerBusAvailability | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Record<string, unknown>;
@@ -61,7 +62,7 @@ export function normalizePassengerBusAvailability(
 
 export function passengerBusAvailabilities(
   snapshot: Record<string, unknown> | null | undefined,
-  now = Date.now(),
+  now = serverNow(),
 ): PassengerBusAvailability[] {
   if (!snapshot) return [];
   return Object.entries(snapshot).flatMap(([key, value]) => {

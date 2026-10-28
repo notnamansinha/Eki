@@ -5,6 +5,8 @@ import { rtdb } from "@/lib/firebaseDatabase";
 import { getAuthVerificationGeneration, waitForAuth } from "@/lib/authState";
 import { liveBusRetryDelayMs } from "@/lib/liveBusRetry";
 import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
+import { serverNow } from "@/lib/serverClock";
+import { attachServerClock } from "@/lib/serverClockSync";
 import { useAuth } from "./useAuth";
 export interface LiveRouteAvailability { active: number; available: number; freshestAt: number; activeReceipts?: number[]; availableReceipts?: number[] }
 export function useLiveRouteCatalog(recoveryKey = "") {
@@ -12,7 +14,7 @@ export function useLiveRouteCatalog(recoveryKey = "") {
   const generation = getAuthVerificationGeneration();
   const [state, setState] = useState({ catalog: {} as Record<string, LiveRouteAvailability>, projectionReady: false, catalogReady: false, error: null as string | null, generation, recoveryKey });
   const [revision, setRevision] = useState(0);
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => serverNow());
   useEffect(() => {
     let alive = true, epoch = 0, attempt = 0;
     let disposals: Array<() => void> = [], timer: ReturnType<typeof setTimeout> | undefined;
@@ -27,6 +29,8 @@ export function useLiveRouteCatalog(recoveryKey = "") {
       try {
         await waitForAuth();
         if (!current(expected) || !user || loading || roleError) return;
+        // Receipts are server times; judge them on the server timeline.
+        disposals.push(attachServerClock(() => { if (current(expected)) setNow(serverNow()); }));
         disposals.push(onValue(ref(rtdb, "clientProjectionStatus/public"), snapshot => {
           if (!current(expected)) return;
           const value = snapshot.val();
@@ -52,7 +56,7 @@ export function useLiveRouteCatalog(recoveryKey = "") {
           });
           catalog = Object.fromEntries(entries); catalogReady = true; catalogError = null;
           if (projectionReady && !markerError) attempt = 0;
-          publish(); setNow(Date.now());
+          publish(); setNow(serverNow());
         }, () => fail(expected, "catalog")));
       } catch { if (current(expected)) fail(expected, "marker"); }
     };
@@ -65,7 +69,7 @@ export function useLiveRouteCatalog(recoveryKey = "") {
     };
     queueMicrotask(() => { if (alive) { catalog = {}; projectionReady = false; catalogReady = false; publish(); } });
     void attach();
-    const expiry = setInterval(() => { if (alive) setNow(Date.now()); }, 1000);
+    const expiry = setInterval(() => { if (alive) setNow(serverNow()); }, 1000);
     return () => { alive = false; detach(); if (timer) clearTimeout(timer); clearInterval(expiry); };
   }, [generation, user, loading, roleError, revision, recoveryKey]);
   const compatible = state.generation === generation && state.recoveryKey === recoveryKey;

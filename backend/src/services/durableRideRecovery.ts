@@ -1,4 +1,5 @@
-import { workerTransaction, workerRtdbTransaction } from "../lib/workerFence";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { assertWorkerLeadership, workerGeneration, workerTransaction, workerRtdbTransaction } from "../lib/workerFence";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import type { DeviceAssignment } from "./deviceTelemetryService";
@@ -18,17 +19,25 @@ let activeRestores = 0;
 /** Restore lock-owned active service or verified, unconsumed terminal intent. */
 export function restoreDurableRide(assignment: DeviceAssignment, sample?: TelemetryPayload, claimId: string | null = null, recoverTerminal = true): Promise<boolean> {
   const nodeKey = `${assignment.busId}_${assignment.routeId}`;
-  const pending = restores.get(nodeKey);
+  // Share in-flight work only within one worker authority (0 = unfenced device ingest),
+  // so a superseded leader's restore never decides another caller's outcome.
+  const restoreKey = `${workerGeneration()}:${nodeKey}`;
+  const pending = restores.get(restoreKey);
   if (pending) return pending;
   const miss = misses.get(nodeKey);
   if (miss && miss.claimId === claimId && miss.recoverTerminal === recoverTerminal && miss.expiresAt > performance.now()) return Promise.resolve(false);
   if (queuedRestores.length >= MAX_QUEUED_RESTORES) {
     return Promise.reject(new Error("Durable ride recovery queue is full."));
   }
+  // Queued work is started from another restore's settlement; keep the requester's worker fence.
+  const runInCallerContext = AsyncLocalStorage.snapshot();
   const restore = new Promise<boolean>((resolve, reject) => {
     const start = () => {
       activeRestores++;
-      void performDurableRideRestore(assignment, sample, claimId, nodeKey, recoverTerminal)
+      void runInCallerContext(async () => {
+        assertWorkerLeadership();
+        return performDurableRideRestore(assignment, sample, claimId, nodeKey, recoverTerminal);
+      })
         .then(resolve, reject)
         .finally(() => {
           activeRestores--;
@@ -37,8 +46,8 @@ export function restoreDurableRide(assignment: DeviceAssignment, sample?: Teleme
     };
     if (activeRestores < MAX_ACTIVE_RESTORES) start();
     else queuedRestores.push(start);
-  }).finally(() => { if (restores.get(nodeKey) === restore) restores.delete(nodeKey); });
-  restores.set(nodeKey, restore);
+  }).finally(() => { if (restores.get(restoreKey) === restore) restores.delete(restoreKey); });
+  restores.set(restoreKey, restore);
   return restore;
 }
 

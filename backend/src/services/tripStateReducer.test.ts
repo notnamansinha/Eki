@@ -459,3 +459,66 @@ describe("stops missed during a GNSS gap", () => {
     expect(result).toEqual({ tripState: "in_service", currentStopIndex: 1, hasDepartedOrigin: true });
   });
 });
+
+describe("GNSS gap on routes that revisit a stop location", () => {
+  const north = (meters: number, east = 0) => ({
+    lat: 23 + meters / 6_371_000 * 180 / Math.PI,
+    lng: 72 + east / (6_371_000 * Math.cos(23 * Math.PI / 180)) * 180 / Math.PI,
+  });
+  // Out-and-back route with shared physical stops: A -> B -> C -> B -> A.
+  const outAndBack = [north(0), north(300), north(600), north(300), north(0)];
+  const dwellAtB = { ...north(300), motionState: "stopped" as const, gpsHdop: 1, speed: 0 };
+  // Outbound B (stop 1) was observed; the next expected stop is C (index 2).
+  const afterB = { currentTripState: "in_service" as const, currentStopIndex: 2, hasDepartedOrigin: true, stops: outAndBack };
+
+  it("does not credit later stops after an untrusted fix while dwelling at an already passed shared stop", () => {
+    const uncertain = reduceTripState({ ...afterB, ...north(300), motionState: "uncertain", gpsHdop: 1, speed: 0,
+      previousPosition: { ...dwellAtB, timestamp: 1_999_000 }, timestamp: 2_000_000, now: 2_000_000 });
+    expect(uncertain).toMatchObject({ currentStopIndex: 2, gnssGapSince: 1_999_000 });
+    const next = reduceTripState({ ...afterB, ...dwellAtB, gnssGapSince: uncertain.gnssGapSince,
+      previousPosition: { ...north(300), motionState: "uncertain", gpsHdop: 1, timestamp: 2_000_000 },
+      timestamp: 2_001_000, now: 2_001_000 });
+    expect(next).toEqual({ tripState: "in_service", currentStopIndex: 2, hasDepartedOrigin: true, gnssGapSince: 1_999_000 });
+  });
+
+  it("does not credit later stops when a restart seeds a gap while the bus dwells at a passed shared stop", () => {
+    const next = reduceTripState({ ...afterB, ...dwellAtB, gnssGapSince: 3_000_000, timestamp: 3_000_000, now: 3_000_000 });
+    expect(next).toEqual({ tripState: "in_service", currentStopIndex: 2, hasDepartedOrigin: true, gnssGapSince: 3_000_000 });
+  });
+
+  it("does not credit later stops after an 11 s outage while the bus dwells at a passed shared stop", () => {
+    const next = reduceTripState({ ...afterB, ...dwellAtB, previousPosition: { ...dwellAtB, timestamp: 3_989_000 },
+      timestamp: 4_000_000, now: 4_000_000 });
+    expect(next).toEqual({ tripState: "in_service", currentStopIndex: 2, hasDepartedOrigin: true, gnssGapSince: 3_989_000 });
+  });
+
+  it("does not complete a loop route when the bus stops back at the origin after a gap", () => {
+    const loop = [north(0), north(0, 300), north(300, 300), north(0)];
+    const atOrigin = { ...north(0), motionState: "stopped" as const, gpsHdop: 1, speed: 0 };
+    const first = reduceTripState({ currentTripState: "in_service", currentStopIndex: 1, hasDepartedOrigin: true, stops: loop,
+      ...atOrigin, previousPosition: { ...north(160), motionState: "moving", gpsHdop: 1, timestamp: 4_989_000 },
+      timestamp: 5_000_000, now: 5_000_000 });
+    expect(first).toEqual({ tripState: "in_service", currentStopIndex: 1, hasDepartedOrigin: true, gnssGapSince: 4_989_000 });
+    const second = reduceTripState({ currentTripState: first.tripState, currentStopIndex: first.currentStopIndex,
+      hasDepartedOrigin: first.hasDepartedOrigin, stops: loop, ...atOrigin, terminalArrival: first.terminalArrival,
+      gnssGapSince: first.gnssGapSince, previousPosition: { ...atOrigin, timestamp: 5_000_000 },
+      timestamp: 5_002_000, now: 5_002_000 });
+    expect(second).toMatchObject({ tripState: "in_service", currentStopIndex: 1 });
+    expect(second.skippedStopIndices).toBeUndefined();
+  });
+
+  it("does not credit a later stop whose location coincides with a passed stop on a segment crossing it", () => {
+    // Gap, then a reliable segment running from past B back through B: only the return copy of B matches.
+    const next = reduceTripState({ ...afterB, ...north(250), motionState: "moving", gpsHdop: 1, speed: 20,
+      gnssGapSince: 5_000_000, previousPosition: { ...north(350), timestamp: 5_009_000 },
+      timestamp: 5_010_000, now: 5_010_000 });
+    expect(next).toEqual({ tripState: "in_service", currentStopIndex: 2, hasDepartedOrigin: true, gnssGapSince: 5_000_000 });
+  });
+
+  it("still credits stops skipped during a gap once the bus is observed at a unique later stop", () => {
+    // GNSS lost after departure, before outbound B; the bus is next seen at C.
+    const atC = reduceTripState({ ...afterB, currentStopIndex: 1, ...north(600), motionState: "moving", gpsHdop: 1,
+      speed: 20, previousPosition: { ...north(100), timestamp: 6_000_000 }, timestamp: 6_060_000, now: 6_060_000 });
+    expect(atC).toEqual({ tripState: "in_service", currentStopIndex: 3, hasDepartedOrigin: true, skippedStopIndices: [1] });
+  });
+});

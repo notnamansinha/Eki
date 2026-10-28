@@ -1,5 +1,7 @@
 # Google sign-in recovery (#356)
 
+Last updated: 2026-10-27 12:00 IST (UTC+05:30).
+
 ## Production incident, 21 October 2026
 
 The merged OAuth lifecycle tests in #358 mock Firebase. They do not cover the
@@ -88,6 +90,24 @@ verification as the Auth observer, coalescing pending work and reusing completed
 verification. This also handles a delayed observer in an existing app runtime.
 Sign-out and account changes continue to invalidate stale verification.
 
+No recovery path may end at a disabled sign-in button with no explanation:
+
+- Closing the Google popup (`auth/popup-closed-by-user` or
+  `auth/cancelled-popup-request`) is a cancellation, not a failure. It clears
+  the "taking longer than usual" notice and the full-page fallback, whether it
+  happens before or after the 8 s slow-popup timer.
+- Pressing Back on Google's page after starting a full-page sign-in can restore
+  the frozen page from the browser's back/forward cache. A `pageshow` event with
+  `persisted: true` ends that attempt, clears the tab's pending-redirect marker
+  and re-enables the button.
+- Until Firebase reports its first auth state (or settles the redirect result),
+  a null current user means "unknown", not "signed out". "Try again" and
+  "Sign out" on the restoration-timeout screen keep the reload guidance
+  ("Sign-in is still restoring…") instead of publishing a signed-out state; a
+  queued sign-out still completes once Firebase finishes restoring.
+- If the landing page's sign-in button stays unavailable for 10 s with no other
+  message, it shows "Sign-in is still loading." with a Reload button.
+
 ## Automated coverage
 
 Run from the repository root:
@@ -99,7 +119,9 @@ npm exec --workspace=frontend -- vitest run src/hooks/useAuth.test.tsx src/lib/g
 Coverage uses mocked Firebase OAuth and claims: mobile/PWA flow selection,
 logout followed by login, repeated desktop login with the same/different
 accounts, delayed observer delivery, redirect/refresh restoration, missing
-sessions, errors, popup fallback, and role-gated dashboard routing. It does not
+sessions, errors, popup fallback, popup cancellation after the slow-popup
+timer, back/forward-cache restoration, retry/sign-out before restoration
+finishes, and role-gated dashboard routing. It does not
 certify live Google OAuth or physical Android/iOS behavior.
 
 ## Deployment acceptance

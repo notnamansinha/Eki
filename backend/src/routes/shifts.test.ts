@@ -112,6 +112,9 @@ vi.mock("../lib/firebaseAdmin", () => {
                 harness.session ?? undefined,
               );
             }
+            if (typedRef.collectionName === "routes") {
+              return snapshot(true, { stops: harness.routeStops });
+            }
             return snapshot(harness.lock !== null, harness.lock ?? undefined);
           },
           set: (ref, data) => {

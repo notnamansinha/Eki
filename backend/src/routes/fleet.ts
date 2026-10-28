@@ -7,6 +7,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { auth, db, rtdb } from "../lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 import { singleRouteParam } from "../lib/requestParams";
+import { isSafeDocumentId } from "../lib/documentId";
 import { OPERATION_ID, OperationConflict, OperationRecoveryConflict, readFleetLock, recoverFleetLock, readOperation, submitOperation, type OperationExecutionContext } from "../services/httpOperations";
 import { BoundedKeyedExecutor } from "../lib/boundedKeyedExecutor";
 import { reconciliationPage, reconciliationPages, forEachBounded, settleTogether } from "../lib/reconciliationPages";
@@ -17,11 +18,8 @@ export { withFleetLock, FleetReconciliationBusy } from "../services/fleetMutatio
 
 const router = Router();
 export const fleetReconciliationJobsRouter = Router();
-const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
-
-function validId(value: unknown): value is string {
-  return typeof value === "string" && SAFE_ID.test(value);
-}
+/** Fleet IDs become Firestore document IDs, so reserved __…__ IDs are invalid too. */
+const validId = isSafeDocumentId;
 
 class InvalidBusAssignmentError extends Error {}
 

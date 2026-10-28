@@ -1,6 +1,6 @@
 # Environment and configuration reference
 
-Last updated: 2026-10-25 22:40 IST (UTC+05:30).
+Last updated: 2026-10-27 12:00 IST (UTC+05:30).
 
 This page documents configuration names and safe handling rules. Values below
 are placeholders. Use separate files and projects for local, staging and
@@ -38,11 +38,14 @@ runtime secret/configuration system.
 | `PORT` | No | HTTP listener port; defaults to `4000` in local use | Expose through the managed HTTPS runtime in production |
 | `NODE_ENV` | Recommended | Set `production` to enable production guards | Production refuses to start without `CORS_ORIGIN` |
 | `CORS_ORIGIN` | Production | Comma-separated exact frontend origins | Never use `*` for this credential-free API; do not include paths |
+| `TRUST_PROXY` | No | Which reverse proxy may supply `X-Forwarded-For` for pre-auth IP rate-limit buckets: unset = one hop in production and none elsewhere; `false`; `loopback`; or a hop count `0`–`10` | Use `loopback` when a local ngrok agent fronts a development backend, otherwise every tunnelled client shares one bucket. `true`/`all` and any other value refuse startup, so callers cannot choose their own bucket |
 | `FIREBASE_SERVICE_ACCOUNT` | Conditional | Server-side Firebase Admin JSON | Prefer Workload Identity/ADC or Secret Manager; never commit or log it |
 | `FIREBASE_DATABASE_URL` | Yes for RTDB | Firebase RTDB URL | Use the environment’s URL; no code fallback exists |
 | `GOOGLE_MAPS_API_KEY` | Route/places features | Server-side Routes/Places key | Restrict by runtime identity/IP and enabled APIs; keep it different from the browser key |
 | `BUS_STALE_MS` | No | Live bus staleness threshold; minimum `90000`, default `300000` | Align the alert/runbook threshold with the deployed value |
-| `AUTOMATIC_TURNAROUND_DWELL_MS` | No | Delay after confirmed completion before arming the return; default `30000` ms, minimum `0` | A fresh stopped terminal fix is still required. This wait is separate from terminal-arrival confirmation |
+| `AUTOMATIC_TURNAROUND_DWELL_MS` | No | Delay after confirmed completion before arming the return; default `30000` ms, minimum `0` | A fresh stopped terminal fix is still required. This wait is separate from terminal-arrival confirmation (`TERMINAL_ARRIVAL_CONFIRMATION_MS`) |
+| `TERMINAL_ARRIVAL_CONFIRMATION_MS` | No | How long reliable stopped final-stop fixes must span before a ride completes; default `2000` ms | Values below `1000` or non-numeric fall back to `2000` (they are not clamped); fractions are floored; there is no upper bound, so a large value delays every completion |
+| `LIVE_DEPARTURE_ROUTES_ENABLED` | No | Enables the billable departure-time Google Routes traffic calculation (one at arming, reused at departure for five minutes); default enabled | Boolean flag (see below); `false`/`0`/`no`/`off` disables it |
 | `HTTPS_DEVICE_RATE_PER_MINUTE` | No | Shared accepted device requests per device per minute; default `90` | Supports 1 Hz moving telemetry with retry headroom across replicas; add an edge/WAF limit |
 | `HTTPS_DEVICE_RATE_LIMIT_MODE` | No | Authenticated device limiter mode; defaults to `distributed` | Use `local` only for an explicitly single-instance deployment with `RATE_LIMIT_SHARD_FACTOR=1` |
 | `HTTPS_DEVICE_RATE_LIMIT_LEASE_SIZE` | No | Tokens reserved per shared RTDB transaction in distributed mode; default `5`, capped at the minute limit | Larger values reduce transactions but can temporarily strand unused capacity after replica loss |
@@ -55,7 +58,7 @@ runtime secret/configuration system.
 | `RATE_LIMIT_SHARD_FACTOR` | No | Expected backend replica count used to divide in-process budgets; default `1` only when unset | Set to the deployed replica count; malformed and over-budget values reject startup |
 | `AUTH_REVOCATION_CACHE_MS` | No | Short cache for ordinary passenger Firebase Auth revocation checks; `0` disables it, maximum `60000` | Privileged admin/driver claims receive a fresh check for each HTTP request; admission and route middleware reuse that request's verified token |
 | `AUTH_MAX_PENDING_VERIFICATIONS` | No | Maximum distinct Firebase Auth verifications in flight per backend process; default `256`, maximum `2000` | Size for expected concurrency; overflow fails with retryable HTTP 503 instead of growing memory without bound |
-| `WORKER_ENABLED` | No | Enables the Firestore-lease background worker; default `true` | Keep enabled for lifecycle recovery, abandonment and retention jobs |
+| `WORKER_ENABLED` | No | Enables the Firestore-lease background worker; default `true` | Boolean flag (see below). Keep enabled for lifecycle recovery, abandonment and retention jobs; `false`/`0`/`no`/`off` on a replica stops it competing for the lease |
 | `WORKER_INSTANCE_ID` | No | Stable diagnostic identity for a runtime instance | Do not use credentials or personal data |
 | `ABANDONED_RIDE_THRESHOLD_HOURS` | No | Inactivity before conservative abandoned-ride reconciliation; minimum `1`, default `12`. Undeparted automatic returns receive at least `24` hours for overnight recovery | The hourly sweep protects recent/unknown activity and releases expired sessions' matching locks |
 | `RETENTION_SWEEPER_ENABLED` | Required in production | Explicit `true` after trimming/case normalization; development/test remain disabled when omitted | Production refuses to start until the retention schedule is explicitly enforced |
@@ -70,11 +73,21 @@ runtime secret/configuration system.
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | Optional | Template uses `http/protobuf` | Match the receiving Collector |
 | `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES` | Optional | Service identity and bounded environment/version attributes | Do not include user/device secrets or personal identifiers |
 | `OTEL_SDK_DISABLED` | Optional | `true` disables instrumentation | Use as an exporter kill switch |
+| `OTEL_TRACES_SAMPLER` / `OTEL_TRACES_SAMPLER_ARG` | Optional | Trace head sampling; when the sampler is unset the backend uses `parentbased_traceidratio` with `0.1` (10% of new root traces, parent decisions respected) | An explicit standard sampler is respected; use `parentbased_always_on` only for short diagnostic sessions. Head sampling cannot guarantee retaining every error trace |
 | `LOG_LEVEL` | Optional | Structured application logging level; template `info` | `debug`, `info`, `warn` or `error` |
 
 The exact defaults and comments are maintained in [`backend/.env.example`](../backend/.env.example).
 Configuration is loaded before Firebase initialization; changing it requires a
-backend restart.
+backend restart. `backend/src/envDocumentation.test.ts` fails when a template
+variable is missing from the table above.
+
+Boolean flags `WORKER_ENABLED` and `LIVE_DEPARTURE_ROUTES_ENABLED` are trimmed
+and case-insensitive: `true`/`1`/`yes`/`on` enable, `false`/`0`/`no`/`off`
+disable, and unset or blank uses the default. Any other value refuses startup
+with an error naming the variable, so a typo cannot silently leave a feature
+on. `RETENTION_SWEEPER_ENABLED` keeps its stricter rule (only `true` enables
+destructive cleanup) and `LEGACY_RTDB_RETIRED` still requires the exact value
+`true`.
 
 The `*_RETENTION_DAYS` values must be whole numbers of at least `1`; missing,
 blank, fractional or nonpositive values use the default (`180`, or `90` for
@@ -108,7 +121,12 @@ into the browser and should be treated as public identifiers.
 
 The complete tracked template is [`frontend/env.production.example`](../frontend/env.production.example).
 The strict production build fails when mandatory values are missing or when the
-backend URL is local/non-HTTPS.
+backend URL is local/non-HTTPS. The root build's `scripts/update-csp.mjs` and
+`scripts/verify-web-backend-contract.mjs` load `frontend/.env*` with
+`@next/env` exactly as `next build` does (production mode, shell values win),
+so the Hosting CSP `connect-src` always names the backend origin compiled into
+the bundle. The contract check is skipped only when neither the shell nor any
+`frontend/.env*` file sets `NEXT_PUBLIC_BACKEND_URL`.
 
 Before an RTDB migration or release, expose the backend and frontend database
 URLs only as environment variables and run `npm run verify:rtdb-instance`.
@@ -261,4 +279,4 @@ Privacy queue software bounds are fixed: twenty-record pages every minute, one r
 
 The telemetry route catalog uses fixed 1000-entry LRU data/generation bounds and five-minute monotonic positive/negative freshness. Pending directions share per-route fills; watcher failure invalidates data, with existing 1–30 second reconnect backoff. No new environment variable/provider policy is introduced. See [route catalog](operations/ROUTE_CATALOG.md).
 
-Passenger geometry reads are cached and read-only; explicit versioned admin saves perform legacy repair through bounded computation. See [geometry read/repair contract](../operations/ROUTE_GEOMETRY_READS.md) for fixed bounds, independent quotas and staging limits.
+Passenger geometry reads are cached and read-only; explicit versioned admin saves perform legacy repair through bounded computation. See [geometry read/repair contract](operations/ROUTE_GEOMETRY_READS.md) for fixed bounds, independent quotas and staging limits.

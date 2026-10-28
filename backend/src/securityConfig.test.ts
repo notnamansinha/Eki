@@ -91,6 +91,14 @@ describe("production security configuration", () => {
     expect(drainIndex).toBeGreaterThanOrEqual(0);
     expect(backstopIndex).toBeLessThan(drainIndex);
     expect(server).not.toContain("process.exit(0)");
+    // Clearing the backstop must not leave the process alive on a stray SDK
+    // retry timer: a forced exit with the computed status follows the drains.
+    const exitCodeIndex = server.indexOf("process.exitCode = failures.length");
+    const backstopClearIndex = server.indexOf("clearTimeout(shutdownBackstop)");
+    const forcedExitIndex = server.indexOf("process.exit(process.exitCode)", exitCodeIndex);
+    expect(exitCodeIndex).toBeGreaterThan(backstopClearIndex);
+    expect(forcedExitIndex).toBeGreaterThan(exitCodeIndex);
+    expect(server.slice(forcedExitIndex)).toMatch(/^process\.exit\(process\.exitCode\), SHUTDOWN_FLUSH_MS\)\.unref\(\)/);
     expect(server).toContain("httpServer.closeIdleConnections()");
     expect(server).toContain("httpServer.closeAllConnections()");
     expect(engine).toContain("drainDynamicPromises");
@@ -926,6 +934,15 @@ describe("production security configuration", () => {
     for (const source of ["https://*.firebaseio.com/.lp", "https://*.firebasedatabase.app/.lp"]) {
       expect(directives.get("script-src")).toContain(source);
       expect(directives.get("script-src")).not.toContain(source.replace("/.lp", ""));
+    }
+    // JSONP endpoints bypass the inline-script hashes: www.google.com reflects
+    // an attacker-chosen callback and argument, and RTDB REST answers
+    // ?callback=. RTDB script sources must stay scoped to the /.lp transport.
+    expect(directives.get("script-src")).not.toContain("https://www.google.com");
+    for (const source of directives.get("script-src") ?? []) {
+      if (/firebaseio\.com|firebasedatabase\.app/.test(source)) {
+        expect(source).toMatch(/\/\.lp$/);
+      }
     }
     expect(directives.get("connect-src")).not.toContain("https://www.google.com/recaptcha/");
     expect(directives.get("connect-src")).toContain("https://*.gstatic.com");

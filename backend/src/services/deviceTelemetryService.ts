@@ -8,8 +8,8 @@ import {
 import { promisify } from "node:util";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { createConcurrencyLimiter } from "../lib/concurrency";
-import { createBoundedSingleFlight, SingleFlightDeadlineError } from "../lib/boundedSingleFlight";
-import { BoundedKeyedExecutor } from "../lib/boundedKeyedExecutor";
+import { createBoundedSingleFlight, SingleFlightCapacityError, SingleFlightDeadlineError } from "../lib/boundedSingleFlight";
+import { BoundedKeyedExecutor, WorkCapacityError } from "../lib/boundedKeyedExecutor";
 import { ExecutionDeadline, TelemetryExecutionFailure, currentExecutionDeadline } from "../lib/executionDeadline";
 import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
 import { evaluateOutageReacquisition, isPlausibleTelemetryTransition } from "../lib/telemetryMotion";
@@ -37,6 +37,9 @@ const scryptAsync = promisify(scrypt);
 // cache misses cannot exhaust CPU/ memory on the request path (issue #48 L1).
 const SCRYPT_MAX_CONCURRENT = 4;
 const scryptLimiter = createConcurrencyLimiter(SCRYPT_MAX_CONCURRENT);
+// Refills of previously verified credentials get their own small KDF lane so
+// unauthenticated cache misses can never queue ahead of the fleet.
+const verifiedScryptLimiter = createConcurrencyLimiter(2, { maxPending: 8 });
 const ingestionExecution = new BoundedKeyedExecutor<string>({ maxConcurrent: 8, maxPending: 32, maxPendingPerKey: 1, maxQueueAgeMs: 2_000 });
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 // Firestore rejects __*__ document IDs as reserved (INVALID_ARGUMENT). Such an
@@ -44,6 +47,9 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 // letting the registry read fail as a retryable dependency outage.
 const RESERVED_DOCUMENT_ID = /^__.*__$/;
 const CREDENTIAL_CACHE_MS = 60_000;
+// When a verified credential's reserved refill lane is saturated, keep serving
+// it for at most this long past expiry. Explicit invalidation still deletes it.
+const CREDENTIAL_STALE_GRACE_MS = 10 * 60_000;
 const NEGATIVE_CACHE_MS = 5_000;
 const MAX_CREDENTIAL_CACHE_ENTRIES = 1_000;
 const DEVICE_RATE_LIMIT_PATH = "_deviceRateLimits";
@@ -135,6 +141,12 @@ const credentialCache = new Map<string, CredentialCacheEntry>();
 const rejectedCredentialCache = new Map<string, CredentialCacheEntry>();
 const credentialFills = createBoundedSingleFlight<DeviceCredentialResult>({
   maxFills: 16, maxWaitersPerFill: 64, responseMs: 5_000,
+});
+// Reserved for re-verifying a deviceId+secret pair that already verified. An
+// unauthenticated caller cannot produce such a key, so a flood of unknown IDs
+// or guessed secrets cannot occupy these slots.
+const verifiedCredentialFills = createBoundedSingleFlight<DeviceCredentialResult>({
+  maxFills: 8, maxWaitersPerFill: 64, responseMs: 5_000,
 });
 const durableRideRestores = new Map<string, Promise<void>>();
 const durableRideRestoreLatest = new Map<string, { assignment: DeviceAssignment; sample: TelemetryPayload; allowAdmission: boolean }>();
@@ -234,14 +246,30 @@ export function summarizeLatencySamples(samples: readonly number[]): LatencySumm
 export function telemetrySampleIsNewer(
   existingTimestamp: unknown,
   existingSequence: unknown,
-  candidate: Pick<TelemetryPayload, "timestamp" | "seq">,
+  candidate: Pick<TelemetryPayload, "timestamp" | "seq" | "deviceTimestamp">,
+  existingDeviceTimestamp?: unknown,
 ): boolean {
   const timestamp = Number(existingTimestamp);
   if (!Number.isFinite(timestamp)) return true;
+  const sequence = Number(existingSequence);
+  const hasSequence = Number.isSafeInteger(sequence);
+  // Future timestamps are clamped to server time, so two samples from a fast
+  // device clock compare by arrival. A candidate whose raw capture time AND
+  // sequence both precede the stored fix is a late-delivered older sample.
+  // Requiring both keeps a reboot (seq restarts) or a clock correction (raw
+  // time goes back) from rejecting legitimate fixes.
+  const storedCapture = existingDeviceTimestamp === undefined || existingDeviceTimestamp === null
+    ? timestamp
+    : Number(existingDeviceTimestamp);
+  if (
+    hasSequence &&
+    Number.isFinite(storedCapture) &&
+    candidate.seq < sequence &&
+    (candidate.deviceTimestamp ?? candidate.timestamp) < storedCapture
+  ) return false;
   if (candidate.timestamp !== timestamp) return candidate.timestamp > timestamp;
 
-  const sequence = Number(existingSequence);
-  return Number.isSafeInteger(sequence) && candidate.seq > sequence;
+  return hasSequence && candidate.seq > sequence;
 }
 
 function digestSecret(secret: string): Buffer {
@@ -261,8 +289,9 @@ function cacheCredential(
   value: CredentialCacheEntry,
 ): void {
   // Verified and rejected entries are bounded separately so a flood of guessed
-  // device IDs or secrets cannot evict verified fleet credentials and force
-  // every legitimate device back through the shared KDF limiter.
+  // device IDs or secrets cannot evict verified fleet credentials. Expired
+  // verified entries stay as proof that a deviceId+secret pair verified
+  // before, which routes its refill through the reserved lane.
   const target = value.assignment ? credentialCache : rejectedCredentialCache;
   (target === credentialCache ? rejectedCredentialCache : credentialCache).delete(cacheKey);
   if (
@@ -289,6 +318,7 @@ function ensureDeviceCredentialInvalidationListener(): void {
     credentialCache.clear();
     rejectedCredentialCache.clear();
     credentialFills.invalidate();
+    verifiedCredentialFills.invalidate();
     versions.off("child_added", invalidate);
     versions.off("child_changed", invalidate);
     console.error("[Devices] Credential invalidation listener failed:", error);
@@ -324,6 +354,15 @@ export async function verifyDeviceSecretHash(
   encodedHash: unknown,
   mayDispatch: () => boolean = () => true,
 ): Promise<boolean> {
+  return verifySecretHashWith(scryptLimiter, secret, encodedHash, mayDispatch);
+}
+
+async function verifySecretHashWith(
+  limiter: typeof scryptLimiter,
+  secret: string,
+  encodedHash: unknown,
+  mayDispatch: () => boolean,
+): Promise<boolean> {
   let salt = DUMMY_SALT;
   let storedKey = DUMMY_HASH;
   let storedHashIsValid = false;
@@ -340,7 +379,7 @@ export async function verifyDeviceSecretHash(
     }
   }
   const deadline = currentExecutionDeadline();
-  const derived = (await scryptLimiter.run(() => {
+  const derived = (await limiter.run(() => {
     deadline?.assert();
     if (!mayDispatch()) throw new SingleFlightDeadlineError();
     return scryptAsync(secret, salt, 64);
@@ -371,7 +410,42 @@ export async function checkDeviceCredentials(
   }
 
   credentialCacheMisses += 1;
-  return credentialFills.run(cacheKey, deviceId, async isCurrent => {
+  const previouslyVerified = credentialCache.get(cacheKey);
+  const reserved = Boolean(
+    previouslyVerified?.assignment &&
+    previouslyVerified.secretDigest &&
+    safeBufferEqual(suppliedDigest, previouslyVerified.secretDigest),
+  );
+  try {
+    return await fillDeviceCredentials(deviceId, secret, now, suppliedDigest, cacheKey, reserved);
+  } catch (error) {
+    // Only a pair that verified before, was never invalidated, and cannot get
+    // a reserved refill slot may keep its assignment, for a bounded grace.
+    if (
+      reserved &&
+      previouslyVerified?.assignment &&
+      credentialCache.get(cacheKey) === previouslyVerified &&
+      (error instanceof SingleFlightCapacityError || error instanceof WorkCapacityError) &&
+      previouslyVerified.expiresAt + CREDENTIAL_STALE_GRACE_MS > now &&
+      previouslyVerified.expiresMonotonicAt + CREDENTIAL_STALE_GRACE_MS > performance.now()
+    ) {
+      return { status: "assigned", assignment: previouslyVerified.assignment };
+    }
+    throw error;
+  }
+}
+
+function fillDeviceCredentials(
+  deviceId: string,
+  secret: string,
+  now: number,
+  suppliedDigest: Buffer,
+  cacheKey: string,
+  reserved: boolean,
+): Promise<DeviceCredentialResult> {
+  const fills = reserved ? verifiedCredentialFills : credentialFills;
+  const kdf = reserved ? verifiedScryptLimiter : scryptLimiter;
+  return fills.run(cacheKey, deviceId, async isCurrent => {
     if (!isCurrent()) throw new SingleFlightDeadlineError();
     const assertCurrent = () => {
       // An initial version snapshot or concurrent credential update invalidates
@@ -389,7 +463,7 @@ export async function checkDeviceCredentials(
     assertCurrent();
     const device = deviceDoc.data() as Record<string, unknown> | undefined;
     const assignment = deviceDoc.exists ? assignmentFromDevice(device) : null;
-    const secretMatches = await verifyDeviceSecretHash(secret, device?.secretHash, isCurrent);
+    const secretMatches = await verifySecretHashWith(kdf, secret, device?.secretHash, isCurrent);
     assertCurrent();
     if (!assignment || !secretMatches) {
       const unassigned = secretMatches && device?.enabled !== false;
@@ -585,6 +659,7 @@ export function nextTelemetryValue(
     existingTimestamp,
     current?.seq,
     sample,
+    current?.deviceTimestamp,
   )) {
     return undefined;
   }
@@ -637,6 +712,7 @@ export function nextTelemetryValue(
   delete currentState.activeRoutePolyline; // Geometry lives in the versioned sibling store.
   delete currentState.plausibilityReacquisition;
   delete currentState.retiredAssignmentRevision;
+  delete currentState.deviceTimestamp; // Present only while the accepted sample was clamped.
 
   return {
     // Device presence is not a ride. Lifecycle fields are introduced only by
@@ -826,6 +902,7 @@ export function recordTelemetryRejection(now = Date.now()): void {
 export function invalidateDeviceCredentialCache(deviceId: string): void {
   invalidateAutomaticServiceAdmission(deviceId);
   credentialFills.invalidate(deviceId);
+  verifiedCredentialFills.invalidate(deviceId);
   const prefix = `${deviceId}:`;
   for (const cache of [credentialCache, rejectedCredentialCache]) {
     for (const key of cache.keys()) {

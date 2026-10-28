@@ -5,6 +5,7 @@ import {
   canDeleteRideHistory,
   dedupeStopRecords,
   destinationReachedAt,
+  isObservedArrival,
   mergeRideHistorySessions,
   resolveArrivalStopName,
   rideHistoryDeletionTransition,
@@ -130,6 +131,30 @@ describe("ride history stop records", () => {
     expect(destinationReachedAt("campus", 9_000, stops)).toBe(10_000_000);
     expect(destinationReachedAt("campus", 11_000, stops)).toBeNull();
     expect(destinationReachedAt(null, 9_000, stops)).toBeNull();
+  });
+
+  it("reports a destination time only for an observed arrival, treating legacy records as observed", () => {
+    const at = (evidence?: string): RideStopRecord[] => [{ ...stop(2, "campus", 10_000), evidence }];
+
+    expect(destinationReachedAt("campus", 9_000, at(undefined))).toBe(10_000_000);
+    expect(destinationReachedAt("campus", 9_000, at("gnss_progress"))).toBe(10_000_000);
+    expect(destinationReachedAt("campus", 9_000, at("skipped_gnss_gap"))).toBeNull();
+    expect(destinationReachedAt("campus", 9_000, at("recovered_checkpoint"))).toBeNull();
+    expect(isObservedArrival({ evidence: "unknown_future_value" })).toBe(false);
+  });
+
+  it("prefers an observed record over a skipped or recovered one for the same stop index", () => {
+    const skipped = { ...stop(1, "central", 2_000), evidence: "skipped_gnss_gap" };
+    const observed = { ...stop(1, "central", 3_000), evidence: "gnss_progress" };
+
+    expect(dedupeStopRecords([skipped, observed])).toEqual([observed]);
+  });
+
+  it("drops non-object stop records from malformed documents", () => {
+    const valid = stop(1, "central", 2_000);
+
+    expect(dedupeStopRecords([null, 5, "x", valid] as unknown as RideStopRecord[]))
+      .toEqual([valid]);
   });
 
   it("prefers the historical arrival-stop name over the current route catalog", () => {

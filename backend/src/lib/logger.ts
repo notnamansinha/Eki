@@ -19,14 +19,30 @@ function sanitizeString(value: string): string {
     : redacted;
 }
 
+const UNREADABLE = "[UNREADABLE]";
+
+/** Reads a property without letting a throwing getter escape the logger. */
+function readProperty(value: object, key: string): unknown {
+  try {
+    return (value as Record<string, unknown>)[key];
+  } catch {
+    return UNREADABLE;
+  }
+}
+
 function sanitize(value: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
   if (typeof value === "string") return sanitizeString(value);
+  // JSON.stringify throws on bigint; symbols and functions would be dropped silently.
+  if (typeof value === "bigint") return value.toString();
+  if (typeof value === "symbol") return value.toString();
+  if (typeof value === "function") return "[Function]";
   if (value === null || typeof value !== "object") return value;
   if (value instanceof Error) {
+    const stack = readProperty(value, "stack");
     return {
-      type: value.name,
-      message: sanitizeString(value.message),
-      stack: value.stack ? sanitizeString(value.stack) : undefined,
+      type: sanitizeString(String(readProperty(value, "name"))),
+      message: sanitizeString(String(readProperty(value, "message"))),
+      stack: typeof stack === "string" ? sanitizeString(stack) : undefined,
     };
   }
   if (depth >= MAX_DEPTH || seen.has(value)) return "[TRUNCATED]";
@@ -35,8 +51,10 @@ function sanitize(value: unknown, depth = 0, seen = new WeakSet<object>()): unkn
     return value.slice(0, MAX_ARRAY_ITEMS).map(item => sanitize(item, depth + 1, seen));
   }
   const output: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value)) {
-    output[key] = SENSITIVE_KEY.test(key) ? REDACTED : sanitize(item, depth + 1, seen);
+  for (const key of Object.keys(value)) {
+    output[key] = SENSITIVE_KEY.test(key)
+      ? REDACTED
+      : sanitize(readProperty(value, key), depth + 1, seen);
   }
   return output;
 }
@@ -58,14 +76,7 @@ const severityNumbers: Record<LogLevel, SeverityNumber> = {
   error: SeverityNumber.ERROR,
 };
 
-function write(level: LogLevel, args: unknown[]): void {
-  const messages: string[] = [];
-  const details: unknown[] = [];
-  for (const argument of args) {
-    if (typeof argument === "string") messages.push(sanitizeString(argument));
-    else details.push(sanitize(argument));
-  }
-  const message = messages.join(" ") || "Application log";
+function emit(level: LogLevel, message: string, details: unknown[]): void {
   otelLogger.emit({
     severityNumber: severityNumbers[level],
     severityText: level.toUpperCase(),
@@ -75,6 +86,25 @@ function write(level: LogLevel, args: unknown[]): void {
   });
   if (details.length > 0) destination[level]({ details }, message);
   else destination[level](message);
+}
+
+/** Logging must never throw back into the caller (often a catch block of a background task). */
+function write(level: LogLevel, args: unknown[]): void {
+  let message = "Application log";
+  try {
+    const messages = args.filter((argument): argument is string => typeof argument === "string");
+    message = messages.map(sanitizeString).join(" ") || message;
+    const details = args
+      .filter(argument => typeof argument !== "string")
+      .map(argument => sanitize(argument));
+    emit(level, message, details);
+  } catch {
+    try {
+      emit(level, message, ["[UNSERIALIZABLE]"]);
+    } catch {
+      // Drop the record rather than crash the process.
+    }
+  }
 }
 
 let installed = false;

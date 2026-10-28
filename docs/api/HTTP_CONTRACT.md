@@ -1,6 +1,6 @@
 # HTTP contract and compatibility checks
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+Last updated: 2026-10-27 04:10 IST (UTC+05:30).
 
 The machine-readable contract is [`backend/openapi.json`](../../backend/openapi.json),
 in OpenAPI 3.1.1 JSON format. [`backend/API.md`](../../backend/API.md) remains the
@@ -24,7 +24,12 @@ The production verification workflow runs the contract check explicitly, and
 mount prefixes, and compares method/path pairs in both directions. It never
 boots the server, starts workers, or reads Firebase. New routes, stale spec
 entries, duplicate registrations, broken references, missing path parameters,
-and missing policy metadata fail the gate. Dynamic paths/mounts, mountless
+and missing policy metadata fail the gate. Every `/api` operation must also
+declare the statuses shared middleware can emit before its handler (400, 413,
+415 and 429 from the global JSON parser and admission; 401 and 503 as well for
+`FirebaseBearer` operations), and `backend/API.md` must mention every operation
+as `METHOD /path` with OpenAPI's path parameter names (`:id` matches `{id}`)
+and no operation the contract lacks. Dynamic paths/mounts, mountless
 middleware chains, `router.route()`, `router.all()` and a router built by a
 factory call imported from `backend/src/routes` (`app.use("/x", buildRouter())`)
 fail until the inventory supports them explicitly; middleware factories from
@@ -111,6 +116,10 @@ and bounded single-flight capacity: 16 unsettled fills, 64 waiting callers per
 digest. Timeout preserves the underlying slot until actual settlement, and
 expired/invalidation-fenced fills cannot publish authorization. Positive/negative
 TTLs are at most 60s/5s from fill start and are never extended by cache access.
+A previously verified, non-invalidated device ID and secret digest refreshes
+through a reserved lane (8 fills, separate 2-slot KDF) that unauthenticated
+cache misses cannot occupy; if that lane is saturated, the prior assignment is
+served for at most 10 minutes past expiry.
 Capacity/deadline failures are transient 503; this budget does not yet bound
 every subsequent ingestion dependency (R03). See the device operation policies.
 

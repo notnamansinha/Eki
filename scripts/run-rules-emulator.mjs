@@ -4,6 +4,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { writeEmulatorRuleset } from "./rules-for-emulator.mjs";
 import { safetyPreflight } from "./qa/safety-preflight.mjs";
+import {
+  assertEmulatorPortsFree,
+  killProcessTree,
+  reapOrphanedEmulators,
+  resolveJavaHome,
+  withJdkFirstOnPath,
+} from "./qa/emulator-process.mjs";
 
 /**
  * Runs the Firebase emulator rules-integration suite against isolated copies
@@ -30,6 +37,13 @@ writeFileSync(path.join(evidenceDirectory, `${prefix}-report.json`), JSON.string
   node: process.version, platform: process.platform, firebaseTools: '15.14.0',
 }, null, 2) + '\n');
 safetyPreflight(process.env); // Reject inherited provider/cloud credentials before tooling starts.
+// Fail fast (naming port and owner) when a previous run's emulators still hold a port.
+try {
+  await assertEmulatorPortsFree();
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
 const { configPath, firestorePath, databasePath } = await writeEmulatorRuleset();
 
 const emulatorArgs = [
@@ -46,8 +60,14 @@ const emulatorArgs = [
 ];
 
 function spawnNpx() {
+  // Windows: put the real JDK first on PATH so firebase-tools spawns java.exe
+  // itself rather than Oracle's javapath launcher stub; otherwise its SIGINT
+  // only terminates the stub and the emulator JVMs keep their ports open.
+  const baseEnv = process.platform === "win32"
+    ? withJdkFirstOnPath(process.env, resolveJavaHome(process.env))
+    : process.env;
   const env = {
-    ...process.env,
+    ...baseEnv,
     FIREBASE_RULES_TEST: "1",
     FIRESTORE_RULES_PATH: firestorePath,
     DATABASE_RULES_PATH: databasePath,
@@ -85,14 +105,21 @@ function spawnNpx() {
 }
 
 const child = spawnNpx();
-const deadline = setTimeout(() => { console.error('Emulator runner deadline exceeded; dependent tests BLOCKED.'); child.kill('SIGTERM'); }, (browser ? 8 : 6) * 60_000);
+// Deadline: kill the whole tree (Windows: taskkill /T), not just the npx process.
+const deadline = setTimeout(() => { console.error('Emulator runner deadline exceeded; dependent tests BLOCKED.'); killProcessTree(child); }, (browser ? 8 : 6) * 60_000);
+
+function finish(code) {
+  clearTimeout(deadline);
+  // Windows: emulator JVMs are spawned detached, outside the job object, and
+  // can outlive the runner. The port preflight proved the ports were free at
+  // start, so any java.exe still listening on them was orphaned by this run.
+  const reaped = reapOrphanedEmulators();
+  if (reaped.length) console.error(`Stopped orphaned emulator JVM(s): ${reaped.join(", ")}`);
+  process.exit(code);
+}
 
 child.on("error", (err) => {
-  clearTimeout(deadline);
   console.error("Failed to start emulator runner:", err);
-  process.exit(1);
+  finish(1);
 });
-child.on("exit", (code) => {
-  clearTimeout(deadline);
-  process.exit(code ?? 1);
-});
+child.on("exit", (code) => finish(code ?? 1));

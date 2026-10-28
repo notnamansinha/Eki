@@ -28,7 +28,7 @@ export default function PassengerLoadingShell() {
       </picture>
       <div className="pointer-events-none absolute inset-0 z-0 bg-black/40" />
 
-      <div className="absolute inset-0 z-10 flex flex-col pt-safe">
+      <div data-passenger-loading-placeholder className="absolute inset-0 z-10 flex flex-col pt-safe">
         <div
           className="shrink-0"
           style={passengerTopSpacerStyle}
@@ -36,7 +36,6 @@ export default function PassengerLoadingShell() {
         />
 
         <div
-          data-passenger-shell-status
           className={passengerPanelClassName}
           style={passengerPanelStyle}
         >
@@ -64,7 +63,7 @@ export default function PassengerLoadingShell() {
       </div>
 
       <div
-        data-passenger-shell-status
+        data-passenger-loading-placeholder
         className={`${passengerNavFrameClassName} z-20`}
         style={passengerNavFrameStyle}
         aria-hidden="true"

@@ -49,6 +49,7 @@ import {
   telemetryUpdateGapMs,
   verifyDeviceSecretHash,
 } from "./deviceTelemetryService";
+import { parseTelemetryValue, type TelemetryPayload } from "./telemetryPayload";
 
 describe("durable ride restoration direction", () => {
   const activeRide = {
@@ -411,6 +412,41 @@ describe("live telemetry ordering", () => {
 
   it("does not let an equal-time candidate overwrite a legacy sample without a sequence", () => {
     expect(telemetrySampleIsNewer(4_000, undefined, { timestamp: 4_000, seq: 1 })).toBe(false);
+  });
+
+  describe("with a device clock ahead of the server", () => {
+    const assignment = { busId: "bus_1", routeId: "route_1", deviceId: "device_1" };
+    const serverNow = 1_800_000_000_000;
+    const fix = (capturedAt: number, seq: number, lat: number, receivedAt: number) => {
+      const parsed = parseTelemetryValue({ deviceSentAt: capturedAt, gpsHdop: 1, heading: 0, lat, lng: 72,
+        motionState: "moving", seq, speed: 5, timestamp: capturedAt }, receivedAt);
+      if (!parsed.ok) throw new Error(parsed.reason);
+      return parsed.value;
+    };
+    const store = (sample: TelemetryPayload, receivedAt: number, current: Record<string, unknown> | null = null) =>
+      JSON.parse(JSON.stringify(nextTelemetryValue(current, assignment, sample, receivedAt))) as Record<string, unknown>;
+
+    it("rejects a late-delivered older sample whose clamped time looks newer", () => {
+      const newer = store(fix(serverNow + 9_000, 2, 23.00002, serverNow + 1_500), serverNow + 1_500);
+      expect(newer).toMatchObject({ seq: 2, timestamp: serverNow + 1_500, deviceTimestamp: serverNow + 9_000 });
+      const older = fix(serverNow + 8_000, 1, 23, serverNow + 3_000);
+      expect(older.timestamp).toBe(serverNow + 3_000);
+      expect(nextTelemetryValue(newer, assignment, older, serverNow + 3_000)).toBeUndefined();
+    });
+
+    it("accepts a rebooted device whose sequence restarts while capture time advances", () => {
+      const beforeReboot = store(fix(serverNow + 9_000, 500, 23, serverNow + 1_500), serverNow + 1_500);
+      const afterReboot = nextTelemetryValue(beforeReboot, assignment, fix(serverNow + 9_500, 1, 23.00001, serverNow + 3_000), serverNow + 3_000);
+      expect(afterReboot).toMatchObject({ seq: 1, timestamp: serverNow + 3_000, deviceTimestamp: serverNow + 9_500 });
+    });
+
+    it("accepts a corrected clock whose capture time goes back while the sequence still rises", () => {
+      const fast = store(fix(serverNow + 9_000, 2, 23, serverNow + 1_500), serverNow + 1_500);
+      const corrected = nextTelemetryValue(fast, assignment, fix(serverNow + 3_000, 3, 23.00001, serverNow + 3_000), serverNow + 3_000);
+      expect(corrected).toMatchObject({ seq: 3, timestamp: serverNow + 3_000 });
+      // An unclamped sample retires the previous raw capture time.
+      expect(corrected).not.toHaveProperty("deviceTimestamp");
+    });
   });
 
   it("preserves lifecycle and matched state while atomically advancing raw telemetry", () => {

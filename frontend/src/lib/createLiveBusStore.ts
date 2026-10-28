@@ -6,6 +6,7 @@ import { rtdb } from "./firebaseDatabase";
 import { millisecondsUntilNextPrune, pruneExpiredLiveBuses, type LiveBusSnapshot } from "./liveBusSnapshot";
 import type { LiveBusDeliverySource } from "./liveBusDelivery";
 import { liveBusRetryDelayMs } from "./liveBusRetry";
+import { attachServerClock } from "./serverClockSync";
 import {
   recordTelemetryListenerDelivery,
   recordRealtimePayload,
@@ -13,6 +14,9 @@ import {
   setTelemetryServerTimeOffset,
   telemetryTraceEnabled,
 } from "./telemetryTrace";
+
+/** Offset moves smaller than this do not change any freshness decision. */
+const SERVER_CLOCK_REPLAY_MS = 1_000;
 
 type Subscriber = {
   next: (value: LiveBusSnapshot | null, source: LiveBusDeliverySource) => void;
@@ -92,6 +96,15 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
       notifyChangeSubscribers({ type: "remove", key, source: "listener" });
     }
     notifySnapshotSubscribers("listener");
+    scheduleExpiry();
+  }
+
+  // Freshness is judged on the server timeline; when its estimate moves,
+  // let subscribers re-evaluate the cached snapshot without a new event.
+  function replayCacheForClockChange(): void {
+    if (!cached || subscriberCount() === 0) return;
+    notifySnapshotSubscribers("cache");
+    notifyChangeSubscribers({ type: "reset", snapshot: cached, source: "cache" });
     scheduleExpiry();
   }
 
@@ -214,12 +227,6 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
         onChildRemoved(busesRef, (snapshot) => receive("remove", snapshot), failure),
       ];
       recordRealtimeWatch("active_buses", true);
-      if (telemetryTraceEnabled()) {
-        unsubscribes.push(onValue(
-          ref(rtdb, ".info/serverTimeOffset"),
-          (snapshot) => { if (current()) setTelemetryServerTimeOffset(snapshot.val()); },
-        ));
-      }
       unsubscribes.push(onValue(busesRef, (snapshot) => {
         if (!current()) return;
         retryAttempt = 0;
@@ -246,6 +253,11 @@ export function createLiveBusStore(path: string, fleet = false, onIdle = () => {
         notifyChangeSubscribers({ type: "reset", snapshot: cached, source: "listener" });
         scheduleExpiry();
       }, failure, { onlyOnce: true }));
+      unsubscribes.push(attachServerClock((offsetMs, previousOffsetMs) => {
+        if (!current()) return;
+        if (telemetryTraceEnabled()) setTelemetryServerTimeOffset(offsetMs);
+        if (Math.abs(offsetMs - previousOffsetMs) >= SERVER_CLOCK_REPLAY_MS) replayCacheForClockChange();
+      }));
     } catch (error) {
       if (attempt !== epoch) return;
       const listenerError = error instanceof Error ? error : new Error("Live bus listener failed.");

@@ -155,14 +155,14 @@ describe("parseTelemetryPayload", () => {
       timestamp: now + 5_000,
       deviceSentAt: now + 5_000,
     }), now);
-    expect(future).toEqual({ ok: true, value: { ...valid, timestamp: now, deviceSentAt: now } });
+    expect(future).toEqual({ ok: true, value: { ...valid, timestamp: now, deviceSentAt: now, deviceTimestamp: now + 5_000 } });
 
     const boundary = parseTelemetryValue({
       ...valid,
       timestamp: now + 10_000,
       deviceSentAt: now + 10_000,
     }, now);
-    expect(boundary).toEqual({ ok: true, value: { ...valid, timestamp: now, deviceSentAt: now } });
+    expect(boundary).toEqual({ ok: true, value: { ...valid, timestamp: now, deviceSentAt: now, deviceTimestamp: now + 10_000 } });
 
     const beyond = parseTelemetryValue({ ...valid, timestamp: now + 10_001 }, now);
     expect(beyond).toEqual({ ok: false, reason: "stale_or_invalid_timestamp" });

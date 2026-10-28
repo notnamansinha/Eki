@@ -9,6 +9,7 @@ import { startPrivacyDeletionWorker } from "./privacyDeletionWorker";
 import { startAbandonedRideReconciler } from "./abandonedRideReconciler";
 import { recordWorkerRun, setWorkerLeadership } from "../lib/metrics";
 import { WorkerFence, workerTransaction, WORKER_CLOCK_SKEW_MS, WORKER_LEASE_ID } from "../lib/workerFence";
+import { readBooleanEnv } from "../lib/booleanEnv";
 
 const LEASE_ID = WORKER_LEASE_ID;
 const LEASE_DURATION_MS = 45_000;
@@ -16,7 +17,7 @@ const RENEW_INTERVAL_MS = 15_000;
 
 /** Coordinates singleton background work under a renewable Firestore lease. */
 export function startWorkerCoordinator(): () => Promise<void> {
-  if (process.env.WORKER_ENABLED === "false") {
+  if (!readBooleanEnv("WORKER_ENABLED", true)) {
     setWorkerLeadership(false);
     console.log("[Worker] Disabled by WORKER_ENABLED=false.");
     return async () => undefined;

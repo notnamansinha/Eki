@@ -10,6 +10,8 @@ import {
   canDeleteRideHistory,
   dedupeStopRecords,
   destinationReachedAt,
+  isObservedArrival,
+  isRecordObject,
   mergeRideHistorySessions,
   resolveArrivalStopName,
   rideHistoryDeletionTransition,
@@ -58,8 +60,11 @@ interface RideSession {
   lastSignalLostAt?: TimestampValue;
   firstTelemetryAt?: TimestampValue;
   firstKnownLocation?: { lat: number; lng: number; sampledAt: TimestampValue };
-  connectionEvents?: Record<string, { type: string; observedAt: TimestampValue; location?: { lat: number; lng: number } }>;
+  connectionEvents?: Record<string, ConnectionEvent>;
 }
+
+interface RecordedLocation { lat: number; lng: number }
+interface ConnectionEvent { type: string; observedAt: TimestampValue; location?: RecordedLocation }
 
 const SERVICE_TIME_ZONE =
   process.env.NEXT_PUBLIC_SERVICE_TIME_ZONE || "Asia/Kolkata";
@@ -84,14 +89,39 @@ function interruptionMessage(reason: RideSession["interruptionReason"]): string 
     : "The interruption reason was not recorded.";
 }
 
+// Firestore history is read without schema validation, so legacy or
+// hand-edited documents may hold nulls or non-objects; skip those entries.
+function recordValues<T extends object>(records: T[] | Record<string, T> | null | undefined): T[] {
+  if (!isRecordObject<object>(records) && !Array.isArray(records)) return [];
+  return (Array.isArray(records) ? records : Object.values(records)).filter(isRecordObject<T>);
+}
+
 function passengerRecords(passengers: RideSession["passengers"]): PassengerRecord[] {
-  if (!passengers) return [];
-  return Array.isArray(passengers) ? passengers : Object.values(passengers);
+  return recordValues(passengers);
 }
 
 function stopRecords(stops: RideSession["stopsReached"]): RideStopRecord[] {
-  if (!stops) return [];
-  return dedupeStopRecords(Array.isArray(stops) ? stops : Object.values(stops));
+  return dedupeStopRecords(recordValues(stops));
+}
+
+function formatCoordinates(location: Partial<RecordedLocation> | null | undefined): string {
+  const lat = location?.lat, lng = location?.lng;
+  return typeof lat === "number" && Number.isFinite(lat) && typeof lng === "number" && Number.isFinite(lng)
+    ? `${lat.toFixed(6)}, ${lng.toFixed(6)}`
+    : "Not recorded";
+}
+
+function displayText(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+
+/** Route Log time: only GNSS-observed arrivals are shown as plain arrival times. */
+function stopLogTime(stop: RideStopRecord): string {
+  if (stop.evidence === "skipped_gnss_gap") return "Skipped (GNSS gap)";
+  if (stop.evidence === "recovered_checkpoint") return `Recovered ${formatServiceTime(stop.timestamp)}`;
+  return isObservedArrival(stop)
+    ? formatServiceTime(stop.timestamp)
+    : `Not observed ${formatServiceTime(stop.timestamp)}`;
 }
 
 function formatServiceDate(value: TimestampValue): string {
@@ -408,10 +438,12 @@ export default function RideHistoryPanel() {
                   <div className="mb-4 space-y-1 text-xs text-white/60">
                     <p>Service armed: {formatServiceTime(session.armedAt)}</p>
                     <p>Journey started: {formatServiceTime(session.startTime)}</p>
-                    {session.firstKnownLocation && <p>First received GNSS: {session.firstKnownLocation.lat.toFixed(6)}, {session.firstKnownLocation.lng.toFixed(6)} · {formatServiceTime(session.firstKnownLocation.sampledAt)}</p>}
-                    {session.lastKnownLocation && <p>Last received GNSS: {session.lastKnownLocation.lat.toFixed(6)}, {session.lastKnownLocation.lng.toFixed(6)} · {formatServiceTime(session.lastKnownLocation.sampledAt)}</p>}
-                    {Object.entries(session.connectionEvents ?? {}).map(([id, event]) => <p key={id}>
-                      Signal lost: {formatServiceTime(event.observedAt)}{event.location ? ` · ${event.location.lat.toFixed(6)}, ${event.location.lng.toFixed(6)}` : ""}
+                    {isRecordObject<{ sampledAt?: TimestampValue }>(session.firstKnownLocation) && <p>First received GNSS: {formatCoordinates(session.firstKnownLocation)} · {formatServiceTime(session.firstKnownLocation.sampledAt)}</p>}
+                    {isRecordObject<{ sampledAt?: TimestampValue }>(session.lastKnownLocation) && <p>Last received GNSS: {formatCoordinates(session.lastKnownLocation)} · {formatServiceTime(session.lastKnownLocation.sampledAt)}</p>}
+                    {Object.entries(isRecordObject<Record<string, unknown>>(session.connectionEvents) ? session.connectionEvents : {})
+                      .filter((entry): entry is [string, ConnectionEvent] => isRecordObject(entry[1]))
+                      .map(([id, event]) => <p key={id}>
+                      Signal lost: {formatServiceTime(event.observedAt)}{event.location ? ` · ${formatCoordinates(event.location)}` : ""}
                     </p>)}
                   </div>
                   <h4 className="mb-3 text-xs font-semibold uppercase text-white/50">
@@ -443,7 +475,7 @@ export default function RideHistoryPanel() {
                             className="flex flex-col gap-2 rounded border border-white/5 bg-white/5 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
                           >
                             <span className="truncate font-medium text-white/90">
-                              {passenger.userName || "Unknown passenger"}
+                              {displayText(passenger.userName, "Unknown passenger")}
                             </span>
                             <div className="flex flex-col text-xs text-white/60 tabular-nums sm:items-end">
                               <span>
@@ -487,15 +519,15 @@ export default function RideHistoryPanel() {
                             className="group relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse"
                           >
                             <div className="z-10 ml-7 flex size-6 shrink-0 items-center justify-center rounded-full border border-white/20 bg-brand-dark text-brand-accent shadow md:order-1 md:ml-0 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2">
-                              <div className="size-2 rounded-full bg-brand-accent" />
+                              <div className={`size-2 rounded-full ${isObservedArrival(stop) ? "bg-brand-accent" : "bg-white/30"}`} />
                             </div>
                             <div className="w-[calc(100%-4rem)] rounded border border-white/10 bg-white/5 p-3 md:w-[calc(50%-2.5rem)]">
                               <div className="mb-1 flex items-center justify-between gap-2">
                                 <span className="truncate text-sm font-bold text-white">
-                                  {stop.stopName || "Unnamed stop"}
+                                  {displayText(stop.stopName, "Unnamed stop")}
                                 </span>
-                                <span className="shrink-0 text-xs text-brand-accent tabular-nums">
-                                  {formatServiceTime(stop.timestamp)}
+                                <span className={`shrink-0 text-xs tabular-nums ${isObservedArrival(stop) ? "text-brand-accent" : "text-white/50"}`}>
+                                  {stopLogTime(stop)}
                                 </span>
                               </div>
                               <p className="text-xs text-white/50 tabular-nums">Stop {stop.stopIndex + 1}</p>

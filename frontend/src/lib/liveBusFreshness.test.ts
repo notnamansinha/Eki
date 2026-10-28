@@ -1,5 +1,6 @@
 import { liveBusFreshnessTimestamp } from "./liveBusFreshness";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { setServerTimeOffset } from "./serverClock";
 import {
   BUS_EXPIRY_MS,
   SIGNAL_LOST_MS,
@@ -38,4 +39,22 @@ it("uses receipt time for accepted clock skew without refreshing genuinely old s
   expect(liveBusFreshnessTimestamp({ timestamp: 91000, backendReceivedAt: 100000 })).toBe(100000);
   expect(liveBusFreshnessTimestamp({ timestamp: 1000, backendReceivedAt: 100000 })).toBe(1000);
   expect(liveBusFreshnessTimestamp({ timestamp: 100000 })).toBe(100000);
+});
+
+describe("viewer clock skew", () => {
+  const serverTime = Date.parse("2026-10-27T06:00:00Z");
+  // A fix the backend received this very second (server clock).
+  const fresh = { timestamp: serverTime - 1_000, backendReceivedAt: serverTime };
+  afterEach(() => { setServerTimeOffset(0); vi.useRealTimers(); });
+
+  it.each([
+    ["15 s slow", -15_000],
+    ["2 min fast", 120_000],
+  ])("keeps a just-received fix live on the server timeline when the viewer clock is %s", (_label, skew) => {
+    vi.useFakeTimers(); vi.setSystemTime(serverTime + skew);
+    setServerTimeOffset(-skew);
+    // Admin Live Ops: servicePresentation and liveEntries use these defaults.
+    expect(isLiveBusTimestamp(liveBusFreshnessTimestamp(fresh))).toBe(true);
+    expect(isLiveBusSignalLost(liveBusFreshnessTimestamp(fresh))).toBe(false);
+  });
 });

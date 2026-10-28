@@ -7,6 +7,7 @@ import AlertModal from "@/components/ui/AlertModal";
 import { errorMessage } from "@/lib/errors";
 import { validateSettingsInput } from "@/lib/adminValidation";
 import { useUnsavedChanges } from "@/lib/unsavedChanges";
+import { formatNoBusesSubMessage } from "@/lib/serviceMessages";
 
 function Field({
   label,
@@ -179,7 +180,7 @@ export default function SettingsPanel() {
             <span>
               Preview:{" "}
               <strong>
-                {draft.noBusesSubMessage.replace("{time}", draft.serviceStartTime)}
+                {formatNoBusesSubMessage(draft.noBusesSubMessage, draft.serviceStartTime)}
               </strong>
             </span>
           </div>

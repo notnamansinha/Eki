@@ -32,6 +32,8 @@ vi.mock("firebase/database", () => ({
 
 vi.mock("./authState", () => ({ waitForAuth: vi.fn(() => listenerState.authGate ?? Promise.resolve()), getAuthVerificationGeneration: () => listenerState.generation, onAuthVerificationStarted: () => () => {} }));
 vi.mock("./firebaseDatabase", () => ({ rtdb: {} }));
+// Bus-listener counts only; the server-clock listener has its own suite.
+vi.mock("./serverClockSync", () => ({ attachServerClock: () => () => {} }));
 
 async function flushPromises() {
   await Promise.resolve();

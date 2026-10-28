@@ -130,6 +130,54 @@ describe("ride-history controls", () => {
     await userEvent.setup().click(screen.getByRole("button", { expanded: false }));
     expect(screen.queryByRole("button", { name: "Delete ride history" })).toBeNull();
   });
+  it("labels stops skipped during a GNSS gap and repaired checkpoints instead of showing them as observed arrivals", async () => {
+    const original = state.sessions;
+    try {
+      const t0 = 1_750_000_000_000;
+      state.sessions = [{ ...original[0], passengers: [
+        { userId: "skipped-rider", userName: "Skipped Rider", boardingStopId: "origin", alightingStopId: "middle", joinedAt: t0 + 30_000 },
+        { userId: "repaired-rider", userName: "Repaired Rider", boardingStopId: "origin", alightingStopId: "destination", joinedAt: t0 + 30_000 },
+      ], stopsReached: {
+        0: { stopIndex: 0, stopId: "origin", stopName: "Origin", timestamp: t0 + 60_000, evidence: "gnss_progress" },
+        1: { stopIndex: 1, stopId: "middle", stopName: "Middle", timestamp: t0 + 1_800_000, evidence: "skipped_gnss_gap" },
+        2: { stopIndex: 2, stopId: "destination", stopName: "Destination", timestamp: t0 + 1_900_000, evidence: "recovered_checkpoint" },
+      } }] as unknown as typeof original;
+      render(<RideHistoryPanel />);
+      fireEvent.click(screen.getByRole("button", { expanded: false }));
+      expect(screen.queryByText("Destination reached")).toBeNull();
+      expect(screen.getAllByText("Destination time not recorded")).toHaveLength(2);
+      expect(screen.getByText("Skipped (GNSS gap)")).toBeTruthy();
+      expect(screen.getByText(/^Recovered \d/)).toBeTruthy();
+    } finally { state.sessions = original; }
+  });
+  it("skips malformed stop and passenger records instead of crashing the history list", () => {
+    const original = state.sessions;
+    try {
+      state.sessions = [{ ...original[0],
+        passengers: [null, { userId: "rider", userName: "Rider", boardingStopId: "origin", alightingStopId: "destination", joinedAt: 1_750_000_010_000 }],
+        stopsReached: [null, 7, { stopIndex: 1, stopId: "destination", stopName: "Destination", timestamp: 1_750_000_020_000 }],
+      }] as unknown as typeof original;
+      render(<RideHistoryPanel />);
+      fireEvent.click(screen.getByRole("button", { expanded: false }));
+      expect(screen.getByText("Rider")).toBeTruthy();
+      expect(screen.getByText("Stop 2")).toBeTruthy();
+    } finally { state.sessions = original; }
+  });
+  it("shows non-numeric recorded coordinates as not recorded instead of crashing on expand", () => {
+    const original = state.sessions;
+    try {
+      state.sessions = [{ ...original[0],
+        firstKnownLocation: { lat: "23.0", lng: "72.5", sampledAt: 1_750_000_001_000 },
+        lastKnownLocation: { lat: null, lng: 72.5, sampledAt: 1_750_000_002_000 },
+        connectionEvents: { bad: null, odd: { type: "signal_lost", observedAt: 1_750_000_003_000, location: { lat: {}, lng: 1 } } },
+      }] as unknown as typeof original;
+      render(<RideHistoryPanel />);
+      fireEvent.click(screen.getByRole("button", { expanded: false }));
+      expect(screen.getByText(/^First received GNSS: Not recorded/)).toBeTruthy();
+      expect(screen.getByText(/^Last received GNSS: Not recorded/)).toBeTruthy();
+      expect(screen.getByText(/^Signal lost: .* · Not recorded$/)).toBeTruthy();
+    } finally { state.sessions = original; }
+  });
   it("exposes a read failure and retries both bounded history queries", async () => {
     state.error = "History unavailable"; render(<RideHistoryPanel />);
     await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));

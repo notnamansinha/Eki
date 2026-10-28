@@ -20,6 +20,7 @@ import {
 } from "@/lib/liveBusFreshness";
 import { MAP_OPTIONS, MAPS_MAP_ID, DEFAULT_CENTER } from "@/config/maps";
 import { errorMessage } from "@/lib/errors";
+import { serverNow } from "@/lib/serverClock";
 import {
   Activity, Navigation2, Clock, AlertTriangle,
   TrendingUp, X, ChevronDown, ChevronUp,
@@ -79,7 +80,7 @@ function servicePresentation(entry: ActiveBusEntry) {
 }
 function timeSince(t?: string | number): string {
   if (!t) return "—";
-  const ms = typeof t === "number" ? Date.now() - t : Date.now() - new Date(t).getTime();
+  const ms = typeof t === "number" ? serverNow() - t : serverNow() - new Date(t).getTime();
   if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
   if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
   return `${Math.floor(ms / 3_600_000)}h ago`;
@@ -670,7 +671,7 @@ export default function DashboardPanel() {
   }, [activeEntries, routes, dynamicGeometries]);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
-  const [, setFreshnessNow] = useState(() => Date.now());
+  const [, setFreshnessNow] = useState(() => serverNow());
   const [armStatus, setArmStatus] = useState("");
   const [resumePending, setResumePending] = useState(false);
   const resumeInFlight = useRef(false);
@@ -683,7 +684,7 @@ export default function DashboardPanel() {
   const [endRidePending, setEndRidePending] = useState(false);
 
   useEffect(() => {
-    const interval = window.setInterval(() => setFreshnessNow(Date.now()), 15_000);
+    const interval = window.setInterval(() => setFreshnessNow(serverNow()), 15_000);
     return () => window.clearInterval(interval);
   }, []);
 

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { backendOriginFromUrl } from "./csp-backend-origin.mjs";
+import { loadFrontendEnv } from "./load-frontend-env.mjs";
 
 export function connectSourcesFromCsp(csp) {
   const directive = csp
@@ -15,7 +16,9 @@ export function assertWebBackendContract(firebase, backendUrl, strict = false) {
   const origin = backendOriginFromUrl(backendUrl);
   if (!origin) {
     if (strict) {
-      throw new Error("NEXT_PUBLIC_BACKEND_URL is required for a production web build.");
+      throw new Error(
+        "NEXT_PUBLIC_BACKEND_URL is required for a production web build (shell or frontend/.env* files).",
+      );
     }
     return { checked: false, origin: null };
   }
@@ -71,6 +74,8 @@ export async function verifyBackendAvailability(origin, frontendOrigin, fetchImp
 
 async function run() {
   const root = path.resolve(import.meta.dirname, "..");
+  // Check the URL `next build` compiled into the bundle, not only the shell's.
+  loadFrontendEnv(root);
   const firebase = JSON.parse(await readFile(path.join(root, "firebase.json"), "utf8"));
   const result = assertWebBackendContract(
     firebase,
@@ -78,7 +83,9 @@ async function run() {
     process.env.EKI_STRICT_PRODUCTION_BUILD === "true",
   );
   if (!result.checked) {
-    console.log("Web/backend contract skipped: no backend URL configured for this local build.");
+    console.log(
+      "Web/backend contract skipped: no NEXT_PUBLIC_BACKEND_URL in the shell or frontend/.env* files.",
+    );
     return;
   }
   if (process.env.EKI_RUNTIME_SMOKE === "1") {

@@ -32,12 +32,22 @@ const trimToWordLimit = (value: string) => {
 };
 
 const formatCooldown = (ms: number) => {
-  const totalHours = Math.floor(ms / (60 * 60 * 1000));
-  const totalMinutes = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));
-  if (totalHours > 0) {
-    return `${totalHours}h ${totalMinutes}m`;
+  // Round up so the final minute reads "1m" instead of an impossible "0m" wait.
+  const totalMinutes = Math.max(1, Math.ceil(ms / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+};
+
+const readStoredCooldownUntil = (storageKey: string) => {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const lastSubmittedAt = raw ? Number(raw) : Number.NaN;
+    // A stamp from a clock that was ahead must not lock feedback beyond one day.
+    return Number.isFinite(lastSubmittedAt) ? Math.min(Date.now(), lastSubmittedAt) + ONE_DAY_MS : 0;
+  } catch {
+    return 0;
   }
-  return `${totalMinutes}m`;
 };
 
 export default function FeedbackModal({ userId, busId, driverId, sessionId, draft, onDraftChange, onClose }: Props) {
@@ -51,6 +61,8 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, draf
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  // Cooldown end set by this modal; kept even when localStorage is unavailable.
+  const [cooldownDeadline, setCooldownDeadline] = useState({ storageKey: "", until: 0 });
   const [error, setError] = useState("");
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingFeedbackRef = useRef<{ fingerprint: string; requestId: string } | null>(null);
@@ -65,28 +77,20 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, draf
   const cooldownStorageKey = `feedbackCooldown:${userId}`;
   const wordCount = countWords(comment);
 
+  const localDeadline = cooldownDeadline.storageKey === cooldownStorageKey ? cooldownDeadline.until : 0;
   useEffect(() => {
+    let timerId: number | undefined;
     const updateCooldown = () => {
-      try {
-        const raw = localStorage.getItem(cooldownStorageKey);
-        if (!raw) {
-          setCooldownRemaining(0);
-          return;
-        }
-        const lastSubmittedAt = Number(raw);
-        const now = Date.now();
-        // A stamp from a clock that was ahead must not lock feedback beyond one day.
-        const remaining = Math.min(ONE_DAY_MS, ONE_DAY_MS - (now - lastSubmittedAt));
-        setCooldownRemaining(Number.isFinite(lastSubmittedAt) && remaining > 0 ? remaining : 0);
-      } catch {
-        setCooldownRemaining(0);
-      }
+      const until = Math.max(localDeadline, readStoredCooldownUntil(cooldownStorageKey));
+      const remaining = Math.max(0, until - Date.now());
+      setCooldownRemaining(remaining);
+      // Refresh the label each minute and re-check exactly when the cooldown ends.
+      if (remaining > 0) timerId = window.setTimeout(updateCooldown, Math.min(remaining, 60_000));
     };
 
     updateCooldown();
-    const intervalId = window.setInterval(updateCooldown, 60_000);
-    return () => window.clearInterval(intervalId);
-  }, [cooldownStorageKey]);
+    return () => window.clearTimeout(timerId);
+  }, [cooldownStorageKey, localDeadline]);
 
   useEffect(() => {
     return () => {
@@ -139,8 +143,9 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, draf
 
       try {
         const now = Date.now();
-        localStorage.setItem(`feedbackCooldown:${currentUser.uid}`, String(now));
         setCooldownRemaining(ONE_DAY_MS);
+        setCooldownDeadline({ storageKey: cooldownStorageKey, until: now + ONE_DAY_MS });
+        localStorage.setItem(cooldownStorageKey, String(now));
       } catch {}
       
       onDraftChange?.("");
@@ -155,13 +160,17 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, draf
         : 0;
       if (status === 409) pendingFeedbackRef.current = null;
       if (err instanceof Error && "retryAfterMs" in err && typeof (err as { retryAfterMs?: number }).retryAfterMs === "number") {
-        const remaining = (err as { retryAfterMs?: number }).retryAfterMs ?? 0;
+        const remaining = Math.min(ONE_DAY_MS, Math.max(0, (err as { retryAfterMs?: number }).retryAfterMs ?? 0));
         setCooldownRemaining(remaining);
+        setCooldownDeadline({ storageKey: cooldownStorageKey, until: Date.now() + remaining });
         // Persist the server cooldown so the minute refresh and a reopen keep it.
         try {
           localStorage.setItem(cooldownStorageKey, String(Date.now() - (ONE_DAY_MS - remaining)));
         } catch {}
         setError(`Limit reached. Please try again in ${formatCooldown(remaining)}.`);
+      } else if (status === 429) {
+        // The rules denied a cooldown the device clock could not measure; nothing reliable to store.
+        setError("Feedback limit reached. You can send feedback once every 24 hours.");
       } else {
         setError(feedbackErrorMessage(err, "Failed to send. Please try again."));
       }

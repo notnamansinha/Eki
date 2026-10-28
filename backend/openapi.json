@@ -2993,7 +2993,7 @@
           "Routes"
         ],
         "summary": "Save a versioned route with durable operation reconciliation",
-        "description": "create requires expectedVersion=0; edit requires current configVersion. Unique ordered stop IDs and active-ride checks rechecked at commit. Metadata-only edits reuse valid geometry; configVersion advances every edit and geometryVersion only for geometry changes. 202 is processing, never confirmed success.",
+        "description": "create requires expectedVersion=0; edit requires current configVersion. Unique ordered stop IDs and active-ride/session bus-lock checks rechecked at commit. Firestore-reserved __\u2026__ route or save IDs return 400. Route saves use a 64 KiB JSON body limit (other operations keep 16 KiB) so 100 maximum-length stops fit. Metadata-only edits reuse valid geometry; configVersion advances every edit and geometryVersion only for geometry changes. 202 is processing, never confirmed success.",
         "security": [
           {
             "FirebaseBearer": []
@@ -3194,7 +3194,7 @@
           }
         },
         "x-auth-class": "admin",
-        "x-body-limit-bytes": 16384,
+        "x-body-limit-bytes": 65536,
         "x-rate-limit": "Pre-auth browser ingress: 1000 requests/normalized IP/minute. CORS/preflight runs first. Verified UID mutation budget: 30/minute; GET/HEAD uses the separate 200/minute read budget. Process budgets divided by RATE_LIMIT_SHARD_FACTOR; edge WAF/LB enforces the fleet cap. Route computation mutations: 10/verified UID/minute divided by shard factor; read-only geometry GET/HEAD and operation polls skip this budget and retain their independent read quota.",
         "x-cache-policy": "Cache-Control: no-store",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes. Each Google Routes chunk has a 10000 ms deadline. Up to 100 ordered points are chunked into forward and reverse routing calls; no whole-handler deadline. Browser save/reconciliation budget is 30000 ms; durable save lease is 30000 ms. Admin geometry pool: two raw directional pipelines, eight waiting, two-second queue age; up to four chunks per pipeline. Actual settlement retains raw permits.",
@@ -3575,7 +3575,7 @@
           "Planning"
         ],
         "summary": "Slice a stored route segment",
-        "description": "Safe read despite legacy POST. Reads five-minute bounded route cache then slices stored directional geometry; no Google API call. Distinct endpoints and via-stop ordering required.",
+        "description": "Safe read despite legacy POST. Reads five-minute bounded route cache then slices stored directional geometry; no Google API call. Stops are projected onto that geometry in travel order, so loop and out-and-back routes return the forward slice between the requested visits. Distinct endpoints and via-stop ordering required. Missing or undecodable stored forward geometry returns 422; an undecodable reverse polyline falls back to the reversed forward geometry.",
         "security": [
           {
             "FirebaseBearer": []
@@ -3719,7 +3719,7 @@
           "Planning"
         ],
         "summary": "Read a bounded directional route segment",
-        "description": "Same planner as legacy POST; from/to replace startStopId/endStopId. Rejects unknown/repeated/object query values. Both directions preserve stop order and via must lie between endpoints. Server route cache: 5 minutes, 250 entries; no Google API call.",
+        "description": "Same planner as legacy POST; from/to replace startStopId/endStopId. Rejects unknown/repeated/object query values. Both directions preserve stop order (stops are projected onto the directional geometry in travel order, so loop and out-and-back routes slice the correct visit) and via must lie between endpoints. Missing or undecodable stored forward geometry returns 422. Server route cache: 5 minutes, 250 entries; no Google API call.",
         "security": [
           {
             "FirebaseBearer": []
@@ -6006,6 +6006,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid identifiers, payload, query, or JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Missing, invalid, expired, revoked, disabled, or malformed credential.",
             "content": {
@@ -6018,6 +6028,26 @@
           },
           "403": {
             "description": "Authenticated caller lacks the required admin role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Raw JSON request exceeds the configured body limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported request body charset or Content-Encoding.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7969,6 +7999,26 @@
               }
             }
           },
+          "413": {
+            "description": "Raw JSON request exceeds the configured body limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported request body charset or Content-Encoding.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limit exceeded; obey Retry-After when supplied.",
             "content": {
@@ -7989,6 +8039,16 @@
           },
           "500": {
             "description": "Internal operation failure; details are redacted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable, busy authentication verifier, or missing safe server configuration.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8644,7 +8704,7 @@
           "Routes"
         ],
         "summary": "Save a versioned route with durable operation reconciliation",
-        "description": "create requires expectedVersion=0; edit requires current configVersion. Unique ordered stop IDs and active-ride checks rechecked at commit. Metadata-only edits reuse valid geometry; configVersion advances every edit and geometryVersion only for geometry changes. 202 is processing, never confirmed success.",
+        "description": "create requires expectedVersion=0; edit requires current configVersion. Unique ordered stop IDs and active-ride/session bus-lock checks rechecked at commit. Firestore-reserved __\u2026__ route or save IDs return 400. Route saves use a 64 KiB JSON body limit (other operations keep 16 KiB) so 100 maximum-length stops fit. Metadata-only edits reuse valid geometry; configVersion advances every edit and geometryVersion only for geometry changes. 202 is processing, never confirmed success.",
         "security": [
           {
             "FirebaseBearer": []
@@ -8845,7 +8905,7 @@
           }
         },
         "x-auth-class": "admin",
-        "x-body-limit-bytes": 16384,
+        "x-body-limit-bytes": 65536,
         "x-rate-limit": "Pre-auth browser ingress: 1000 requests/normalized IP/minute. CORS/preflight runs first. Verified UID mutation budget: 30/minute; GET/HEAD uses the separate 200/minute read budget. Process budgets divided by RATE_LIMIT_SHARD_FACTOR; edge WAF/LB enforces the fleet cap. Route computation mutations: 10/verified UID/minute divided by shard factor; read-only geometry GET/HEAD and operation polls skip this budget and retain their independent read quota.",
         "x-cache-policy": "Cache-Control: no-store",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes. Each Google Routes chunk has a 10000 ms deadline. Up to 100 ordered points are chunked into forward and reverse routing calls; no whole-handler deadline. Browser save/reconciliation budget is 30000 ms; durable save lease is 30000 ms. Admin geometry pool: two raw directional pipelines, eight waiting, two-second queue age; up to four chunks per pipeline. Actual settlement retains raw permits.",
