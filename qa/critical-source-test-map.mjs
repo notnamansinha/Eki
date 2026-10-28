@@ -102,7 +102,9 @@ export const criticalSourceTestMap = [{
   tests: [link('frontend/src/lib/liveBusStore.test.ts', 'live bus snapshot expiry > uses accepted server receipt for pruning and its exact expiry deadline',
     'Receipt-paired timestamps set the exact pruning deadline instead of prematurely expiring an accepted delayed sample.'),
   link('frontend/src/lib/createLiveBusStore.acceptance.test.ts', 'scoped live store acceptance > retains a delayed accepted preview through the paired receipt window, then expires without an event',
-    'Fake time advances the real store to expiry without another snapshot, emitting null with expiry provenance.')],
+    'Fake time advances the real store to expiry without another snapshot, emitting null with expiry provenance.'),
+  link('frontend/src/lib/liveBusStoreServerClock.test.ts', 'live bus store on a skewed viewer clock > does not spin the expiry timer when a corrupt viewer clock makes a bus look a year in the future',
+    'A bus a year ahead of a rejected clock offset arms fewer than three timers in a second and is never expired.')],
 }, {
   caseId: 'AUTH16',
   scope: 'Actual Auth initialization with mocked Firebase chooses consistent persistence at restoration; real multi-tab OAuth/storage acceptance remains separate.',

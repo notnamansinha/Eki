@@ -65,6 +65,9 @@ const MAX_TELEMETRY_SEGMENT_M = 250;
 // Hardware publishes at 1 Hz. Ten missing heartbeats, an untrusted fix or a
 // segment too long to check can hide a passed stop: that opens a GNSS gap.
 export const GNSS_GAP_MS = 10_000;
+// No bus covers the route faster than this (90 km/h). A shorter gap cannot
+// hide a drive round to a stop location the ride has already passed.
+const MAX_REVISIT_SPEED_MPS = 25;
 // Two one-second hardware heartbeats must span this interval. This is arrival
 // confirmation, independent of the post-completion turnaround wait.
 const configuredConfirmationMs = Number(process.env.TERMINAL_ARRIVAL_CONFIRMATION_MS);
@@ -115,6 +118,40 @@ function wasStopReached(
     distanceToSegmentMeters(stop, previousPosition, position) <=
     STOP_GEOFENCE_M
   );
+}
+
+/**
+ * Which pass through a location shared by stops[earlier] and stops[later] the
+ * bus is on, from the side it arrived from (the previous fix) or leaves toward
+ * (this fix). Only a fix clear of the shared location shows a direction, so
+ * this is undefined while the bus sits on it.
+ */
+function sharedStopPass(
+  stops: TripRouteStop[],
+  earlier: number,
+  later: number,
+  position: TripRouteStop,
+  segmentStart: TripPosition | undefined,
+): "earlier" | "later" | undefined {
+  const shared = stops[earlier];
+  const sideOf = (point: TripRouteStop, arriving: boolean) => {
+    const leg = (index: number) => arriving
+      ? distanceToSegmentMeters(point, stops[index - 1], stops[index])
+      : index < stops.length - 1 ? distanceToSegmentMeters(point, stops[index], stops[index + 1]) : Infinity;
+    const [toEarlier, toLater] = [leg(earlier), leg(later)];
+    if (toEarlier + STOP_GEOFENCE_M < toLater) return "earlier";
+    return toLater + STOP_GEOFENCE_M < toEarlier ? "later" : undefined;
+  };
+  const evidence = [
+    ...(segmentStart && !unreliableTripFix(segmentStart) ? [{ point: segmentStart, arriving: true }] : []),
+    { point: position, arriving: false },
+  ].filter(({ point }) => haversineMeters(point, shared) > STOP_GEOFENCE_M)
+    .sort((a, b) => haversineMeters(b.point, shared) - haversineMeters(a.point, shared));
+  for (const { point, arriving } of evidence) {
+    const pass = sideOf(point, arriving);
+    if (pass) return pass;
+  }
+  return undefined;
 }
 
 /** Sample time before the gap this update opens, or undefined when nothing was missed. */
@@ -175,6 +212,12 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
   }
 
   const position = { lat, lng };
+  // The segment from the previous fix shows which stops were passed only when
+  // the two fixes are close in time. Across a longer gap the bus may have taken
+  // any path, so a straight chord that happens to touch a stop is no evidence.
+  const previous = input.previousPosition;
+  const segmentStart = previous && !(Number.isFinite(previous.timestamp) && Number.isFinite(input.timestamp) &&
+    input.timestamp! - previous.timestamp! > GNSS_GAP_MS) ? previous : undefined;
   const firstStop = stops[0];
   const departureRadius = stops.length > 1
     ? Math.min(ORIGIN_DEPARTURE_M, Math.max(MIN_ORIGIN_DEPARTURE_M, haversineMeters(firstStop, stops[1]) / 2))
@@ -183,7 +226,7 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
   // radius is cleared. Moving through it is departure evidence, or the later
   // departure segment would no longer touch it and strand the ride at stop 1.
   const crossedFirstStop = motionState === "moving" && stops.length > 1 &&
-    wasStopReached(stops[1], position, input.previousPosition);
+    wasStopReached(stops[1], position, segmentStart);
   const hasDepartedOrigin =
     input.hasDepartedOrigin ||
     (currentTripState === "in_service" &&
@@ -227,38 +270,81 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
     // after a GNSS gap: a reliably observed later stop then credits the
     // unobserved stops before it as skipped instead of stranding the ride.
     // A later stop sharing the location of a stop already passed (out-and-back
-    // or loop routes) is ambiguous: the bus may still be at the passed copy, so
-    // it is never credited and the gap stays open.
+    // or loop routes) is ambiguous: the bus may still be at the passed copy.
+    // It is credited only when the gap has lasted long enough to drive the
+    // route from the last passed stop round to it. A fix still within the
+    // minimum departure distance before then means the bus has not left, so
+    // the gap is re-anchored there (at most every half revisit time, to bound
+    // writes) and a long dwell can never age into a revisit.
+    // Conversely a reached stop may share its location with a later one, the
+    // far side of an out-and-back. Once the gap is long enough to have hidden
+    // the drive between them, the direction the bus passes through decides
+    // which copy it is at; until a fix shows one, neither is credited and the
+    // gap stays open. A terminal copy has no far side, so time decides there.
     let nextIndex = safeCurrentIndex;
     let skippedStopIndices: number[] | undefined;
+    let reanchoredGap: number | undefined;
+    let awaitingDirection = false;
     const passedStops = stops.slice(0, nextIndex);
     const atPassedStopLocation = (point: TripRouteStop) =>
       passedStops.some(stop => haversineMeters(point, stop) <= STOP_GEOFENCE_M);
-    if (gnssGap !== undefined && nextIndex > 0 &&
-      !wasStopReached(stops[nextIndex], position, input.previousPosition) && !atPassedStopLocation(position)) {
-      const lastSkippable = leavingOrigin ? lastIndex - 1 : lastIndex;
-      for (let index = nextIndex + 1; index <= lastSkippable; index += 1) {
-        if (atPassedStopLocation(stops[index]) ||
-          !wasStopReached(stops[index], position, input.previousPosition)) continue;
+    const gapElapsedMs = gnssGap !== undefined && Number.isFinite(input.timestamp) ? input.timestamp! - gnssGap : 0;
+    const lastSkippable = leavingOrigin ? lastIndex - 1 : lastIndex;
+    const resolveSharedStop = (index: number): number | undefined => {
+      let pathMeters = 0;
+      for (let copy = index + 1; copy <= lastSkippable; copy += 1) {
+        pathMeters += haversineMeters(stops[copy - 1], stops[copy]);
+        if (copy === index + 1 || haversineMeters(stops[copy], stops[index]) > STOP_GEOFENCE_M) continue;
+        if (gapElapsedMs < Math.max(GNSS_GAP_MS, pathMeters / MAX_REVISIT_SPEED_MPS * 1000)) return index;
+        const pass = sharedStopPass(stops, index, copy, position, segmentStart) ?? (copy === lastIndex ? "later" : undefined);
+        return pass === undefined ? undefined : pass === "later" ? copy : index;
+      }
+      return index;
+    };
+    const creditThrough = (index: number | undefined) => {
+      if (index === undefined) awaitingDirection = true;
+      else if (index !== nextIndex) {
         skippedStopIndices = Array.from({ length: index - nextIndex }, (_, offset) => nextIndex + offset);
         nextIndex = index;
+      }
+    };
+    if (gnssGap !== undefined && nextIndex > 0 &&
+      !wasStopReached(stops[nextIndex], position, segmentStart)) {
+      let revisitPathMeters = haversineMeters(stops[nextIndex - 1], stops[nextIndex]);
+      for (let index = nextIndex + 1; index <= lastSkippable; index += 1) {
+        revisitPathMeters += haversineMeters(stops[index - 1], stops[index]);
+        if (atPassedStopLocation(stops[index])) {
+          const minimumMs = Math.max(GNSS_GAP_MS, revisitPathMeters / MAX_REVISIT_SPEED_MPS * 1000);
+          if (gapElapsedMs < minimumMs) {
+            if (gapElapsedMs >= minimumMs / 2 &&
+              haversineMeters(position, stops[index]) <= MIN_ORIGIN_DEPARTURE_M) reanchoredGap = input.timestamp;
+            continue;
+          }
+        }
+        if (!wasStopReached(stops[index], position, segmentStart)) continue;
+        creditThrough(resolveSharedStop(index));
         break;
       }
+    } else if (gnssGap !== undefined && nextIndex > 0) {
+      creditThrough(resolveSharedStop(nextIndex));
+    }
+    if (awaitingDirection) {
+      return { tripState: "in_service", currentStopIndex: safeCurrentIndex,
+        hasDepartedOrigin: hasDepartedOrigin || leavingOrigin, gnssGapSince: reanchoredGap ?? gnssGap! };
     }
     const skipped = skippedStopIndices ? { skippedStopIndices } : {};
     let lastCrossing = -Infinity;
     let observedStop = false;
     while (nextIndex > 0 && !(leavingOrigin && nextIndex === lastIndex) &&
-      wasStopReached(stops[nextIndex], position, input.previousPosition)) {
+      wasStopReached(stops[nextIndex], position, segmentStart)) {
       observedStop = true;
       // Multiple closely spaced stops may be crossed in one accepted segment.
       // Consume them only in travel order, never by nearest-stop lookup.
-      const previous = input.previousPosition;
-      const dx = previous ? position.lng - previous.lng : 0;
-      const dy = previous ? position.lat - previous.lat : 0;
+      const dx = segmentStart ? position.lng - segmentStart.lng : 0;
+      const dy = segmentStart ? position.lat - segmentStart.lat : 0;
       const lengthSquared = dx * dx + dy * dy;
-      const crossing = previous && lengthSquared > 0
-        ? ((stops[nextIndex].lng - previous.lng) * dx + (stops[nextIndex].lat - previous.lat) * dy) / lengthSquared
+      const crossing = segmentStart && lengthSquared > 0
+        ? ((stops[nextIndex].lng - segmentStart.lng) * dx + (stops[nextIndex].lat - segmentStart.lat) * dy) / lengthSquared
         : 1;
       if (crossing < lastCrossing) break;
       lastCrossing = crossing;
@@ -282,8 +368,9 @@ export function reduceTripState(input: TripStateInput): TripStateResult {
       nextIndex += 1;
     }
     // Observing any stop closes the gap; until then it stays open.
+    const openGap = !skippedStopIndices && reanchoredGap !== undefined ? reanchoredGap : gnssGap;
     return { tripState: "in_service", currentStopIndex: nextIndex, hasDepartedOrigin: hasDepartedOrigin || leavingOrigin,
-      ...(!observedStop && gnssGap !== undefined ? { gnssGapSince: gnssGap } : {}), ...skipped };
+      ...(!observedStop && openGap !== undefined ? { gnssGapSince: openGap } : {}), ...skipped };
   }
 
   const openGap = gnssGap !== undefined ? { gnssGapSince: gnssGap } : {};

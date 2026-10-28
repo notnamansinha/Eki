@@ -167,4 +167,59 @@ describe("reduceTripState invariants under seeded random fix sequences", () => {
     }
     expect(violations.slice(0, 10)).toEqual([]);
   });
+  it("drives whose GNSS blacks out over random stretches of loop and out-and-back routes still complete", () => {
+    const failures: string[] = [];
+    for (let seed = 1; seed <= 400; seed += 1) {
+      const r = rng(seed * 104_729);
+      let stops = randomRoute(r);
+      const outAndBack = r() < 0.4 && stops.length >= 3 && dist(stops[0], stops.at(-1)!) > 0;
+      if (outAndBack) stops = [...stops, ...stops.slice(0, -1).reverse()]; // shared stops on the way back
+      const fixes = idealDrive(stops, r);
+      // Drop a contiguous run of moving fixes (at least 11 s, so a real gap opens) once the bus has
+      // been seen clear of the origin, ending while it is still seen driving into the terminal.
+      const departed = fixes.findIndex(fix => dist(fix.p, stops[0]) > 160);
+      const lastMoving = fixes.length - 7 - 5;
+      if (departed < 0) continue;
+      const span = Math.min(lastMoving - departed - 1, 11 + Math.floor(r() * 120));
+      if (span < 11) continue;
+      const start = departed + 1 + Math.floor(r() * (lastMoving - departed - span));
+      const kept = [...fixes.slice(0, start), ...fixes.slice(start + span)];
+      const end = simulate(stops, kept);
+      if (end.tripState !== "completed") failures.push(`seed ${seed} stops=${stops.length} hidden=${start}+${span} -> ${JSON.stringify(end)}`);
+    }
+    expect(failures.slice(0, 10)).toEqual([]);
+  });
+
+  it("a bus dwelling at a passed stop that the route revisits never advances, whatever the gap and jitter", () => {
+    const violations: string[] = [];
+    for (let seed = 1; seed <= 300; seed += 1) {
+      const r = rng(seed * 15_485_863);
+      const out = randomRoute(r).filter((_, i, all) => i === 0 || all[i].x !== all[0].x || all[i].y !== all[0].y);
+      if (out.length < 3) continue;
+      const stops = [...out, ...out.slice(0, -1).reverse()];
+      const passed = 1 + Math.floor(r() * (out.length - 2)); // dwelling at stops[passed], next expected passed + 1
+      const at = stops[passed];
+      let state: SimState = { tripState: "in_service", currentStopIndex: passed + 1, hasDepartedOrigin: true,
+        terminalArrival: null, gnssGapSince: 1_000_000 };
+      let prev: Fix | undefined = r() < 0.5 ? undefined : { p: at, t: 1_000_000, motion: "stopped", hdop: 1, speed: 0 };
+      const amplitude = r() * 6;
+      for (let i = 1; i <= 900; i += 1) {
+        const roll = r();
+        const fix: Fix = { p: { x: at.x + (r() - 0.5) * 2 * amplitude, y: at.y + (r() - 0.5) * 2 * amplitude },
+          t: 1_000_000 + i * 1000, motion: roll < 0.05 ? "uncertain" : "stopped", hdop: roll > 0.97 ? 9 : 1, speed: 0 };
+        const stopsLL = stops.map(s => toLL(s.x, s.y));
+        const result = reduceTripState({ ...toLL(fix.p.x, fix.p.y), motionState: fix.motion, gpsHdop: fix.hdop, speed: 0,
+          previousPosition: prev && { ...toLL(prev.p.x, prev.p.y), motionState: prev.motion, gpsHdop: prev.hdop, timestamp: prev.t },
+          currentTripState: state.tripState, currentStopIndex: state.currentStopIndex, stops: stopsLL,
+          hasDepartedOrigin: true, terminalArrival: state.terminalArrival, gnssGapSince: state.gnssGapSince, timestamp: fix.t, now: fix.t });
+        if (result.currentStopIndex !== passed + 1 || result.tripState !== "in_service") {
+          violations.push(`seed ${seed} passed=${passed} t=${fix.t} -> ${JSON.stringify(result)}`);
+          break;
+        }
+        state = { ...state, terminalArrival: result.terminalArrival ?? null, gnssGapSince: result.gnssGapSince ?? null };
+        prev = fix;
+      }
+    }
+    expect(violations.slice(0, 10)).toEqual([]);
+  });
 });

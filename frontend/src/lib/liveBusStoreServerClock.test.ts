@@ -91,4 +91,18 @@ describe("live bus store on a skewed viewer clock", () => {
     expect(fx.traceOffset).toHaveBeenLastCalledWith(400);
     dispose();
   });
+  it("does not spin the expiry timer when a corrupt viewer clock makes a bus look a year in the future", async () => {
+    const { subscribeLiveBusChangesByRoute } = await import("./liveBusStore");
+    vi.setSystemTime(NOW - 400 * 86_400_000);
+    const changes: Array<{ source: string }> = [];
+    const dispose = subscribeLiveBusChangesByRoute("A", (change) => changes.push(change));
+    await flush();
+    emit(OFFSET_PATH, 400 * 86_400_000); // beyond the plausible range, so rejected
+    emit(ROUTE_PATH, { "node:b1_A": bus });
+    const timeouts = vi.spyOn(globalThis, "setTimeout");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(timeouts.mock.calls.length).toBeLessThan(3);
+    expect(changes.some(change => change.source === "expiry")).toBe(false);
+    dispose();
+  });
 });

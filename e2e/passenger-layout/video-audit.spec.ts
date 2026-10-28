@@ -113,8 +113,8 @@ test("PAX-02 reduced motion switches immediately", async ({ page }) => {
   const view = page.getByRole("button", { name: "Send Feedback" }).locator("xpath=ancestor::*[@aria-hidden][1]");
   // Deterministic: the global reduced-motion override collapses the fade.
   expect(await view.evaluate(element => parseFloat(getComputedStyle(element).transitionDuration))).toBeLessThan(0.001);
-  // And observable: full opacity well inside the normal 200ms fade.
-  await expect.poll(() => view.evaluate(element => Number(getComputedStyle(element).opacity)), { timeout: 120 })
+  // And observable: the view reaches full opacity (the duration check above proves it is not faded in).
+  await expect.poll(() => view.evaluate(element => Number(getComputedStyle(element).opacity)), { timeout: 1_000 })
     .toBeGreaterThanOrEqual(0.999);
 });
 

@@ -74,7 +74,16 @@ test('port probe detects a held port and fails fast naming port and owner', asyn
     await new Promise(resolve => server.close(resolve));
   }
   assert.equal(await isPortFree(port), true);
-  await assertEmulatorPortsFree({ ports: [port], platform: 'win32', exec: () => assert.fail('no lookup when free') });
+  await assertEmulatorPortsFree({ ports: [port], platform: 'win32',
+    exec: (file) => file === 'netstat' ? '' : assert.fail('no owner lookup when free') });
+});
+
+test('a port held on another address counts as busy, so the reaper never inherits it', async () => {
+  const exec = (file) => file === 'netstat'
+    ? '  TCP    [::]:9150              [::]:0                 LISTENING       4242\r\n'
+    : '"java.exe","4242","Console","1","512,000 K"\r\n';
+  await assert.rejects(assertEmulatorPortsFree({ ports: [8085, 9150], platform: 'win32', exec, probe: async () => true }),
+    /port\(s\) already in use: 9150 \(pid 4242 java\.exe\)/);
 });
 
 test('parses netstat listeners, ignoring established and UDP rows', () => {

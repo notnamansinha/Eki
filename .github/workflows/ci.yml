@@ -196,11 +196,8 @@ jobs:
       # Slow-3G/Offline browser acceptance remains a manual deployment gate;
       # see docs/operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md.
       - run: npm audit --omit=dev --omit=optional
-      # Runtime dependencies (above) must have zero findings. Development
-      # tooling gates at moderate+: low findings with no published fix, such as
-      # deepmerge GHSA-gcqx-w48m-w2h4 under workbox-build, cannot block CI.
       - name: Audit development tooling as well as runtime dependencies
-        run: npm audit --audit-level=moderate
+        run: npm audit
       - name: Generate production dependency SBOM
         run: |
           npm sbom --omit=dev --sbom-format cyclonedx --sbom-type application --package-lock-only > sbom.cdx.json

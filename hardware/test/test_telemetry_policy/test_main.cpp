@@ -594,7 +594,9 @@ struct CaptureGateSimulation {
       true, fixHdop, hdop <= GNSS_HDOP_MAX, hdop
     );
     if (!accepted) {
-      accepted = candidate.observeRejected(now, fixLat, fixLng, fixSpeed, true, fixHdop);
+      accepted = candidate.observeRejected(
+        now, fixLat, fixLng, fixSpeed, true, fixHdop, hasReference, now - at, lat, lng
+      );
     }
     if (accepted) anchor(now, fixLat, fixLng, fixSpeed, fixHdop);
     return accepted;
@@ -638,7 +640,8 @@ void test_location_transition_allows_travel_through_one_to_five_minute_gap() {
 void test_coherent_fixes_reanchor_after_outlier_reference() {
   // The first fix after boot is accepted without a reference. If it is a
   // 300 m multipath outlier, correct fixes from the stopped bus must re-anchor
-  // within three seconds instead of being discarded for five minutes.
+  // within seconds instead of being discarded for five minutes. A 300 m move
+  // must first be reachable at 200 km/h, so it takes about five seconds.
   const double goodLat = 23.0 + 300.0 / METERS_PER_DEGREE_LAT;
   CaptureGateSimulation gate;
   TEST_ASSERT_TRUE(gate.offer(0, 23.0, 72.5, 0, 3.9));
@@ -649,8 +652,8 @@ void test_coherent_fixes_reanchor_after_outlier_reference() {
     if (accepted && firstAcceptedAt == 0) firstAcceptedAt = s;
     else if (!accepted && firstAcceptedAt != 0) ++rejectedAfterAnchor;
   }
-  TEST_ASSERT_TRUE(firstAcceptedAt >= 1);
-  TEST_ASSERT_TRUE(firstAcceptedAt <= 3);
+  TEST_ASSERT_TRUE(firstAcceptedAt >= 3);
+  TEST_ASSERT_TRUE(firstAcceptedAt <= 7);
   TEST_ASSERT_EQUAL_INT(0, rejectedAfterAnchor);
   TEST_ASSERT_FLOAT_WITHIN(1e-9f, static_cast<float>(goodLat), static_cast<float>(gate.lat));
 }
@@ -688,6 +691,46 @@ void test_isolated_outliers_never_reanchor() {
     TEST_ASSERT_FALSE(candidate.observeRejected(s * 1000 + 500, outlierLat, 72.5, 0, false, 1.0));
   }
   TEST_ASSERT_FALSE(candidate.has);
+}
+
+void test_brief_multipath_cluster_never_captures_reference() {
+  // A stopped bus with a good reference sees a steady 300 m multipath cluster
+  // for three seconds: coherent among itself, but not reachable from the
+  // reference that quickly. The reference stays put and the bus's real fixes
+  // are captured as soon as the cluster clears.
+  const double clusterLat = 23.0 + 300.0 / METERS_PER_DEGREE_LAT;
+  CaptureGateSimulation gate;
+  gate.anchor(0, 23.0, 72.5, 0, 1.0);
+  for (uint32_t s = 1; s <= 3; ++s) TEST_ASSERT_FALSE(gate.offer(s * 1000, clusterLat, 72.5, 0, 1.0));
+  TEST_ASSERT_FLOAT_WITHIN(1e-9f, 23.0f, static_cast<float>(gate.lat));
+  TEST_ASSERT_TRUE(gate.offer(4000, 23.0, 72.5, 0, 1.0));
+
+  // A cluster 1 km away needs about 17 s of agreement before it may move the
+  // reference, and the reference never jumps before then.
+  const double farLat = 23.0 + 1000.0 / METERS_PER_DEGREE_LAT;
+  gate.anchor(10000, 23.0, 72.5, 0, 1.0);
+  uint32_t movedAt = 0;
+  for (uint32_t s = 1; s <= 40 && movedAt == 0; ++s) {
+    if (gate.offer(10000 + s * 1000, farLat, 72.5, 0, 1.0)) movedAt = s;
+  }
+  TEST_ASSERT_TRUE(movedAt >= 16);
+  TEST_ASSERT_TRUE(movedAt <= 20);
+}
+
+void test_one_receiver_sentence_counts_once_toward_reanchoring() {
+  // The loop evaluates the latest RMC sentence every second and the sentence
+  // stays usable for two, so one fix can be seen twice. Re-evaluating it must
+  // not stand in for a second corroborating fix.
+  const double lat = 23.0 + 100.0 / METERS_PER_DEGREE_LAT;
+  ReacquisitionCandidate candidate;
+  TEST_ASSERT_FALSE(candidate.observeRejected(10000, lat, 72.5, 0, true, 1.0, true, 10000, 23.0, 72.5));
+  TEST_ASSERT_FALSE(candidate.observeRejected(10000, lat, 72.5, 0, true, 1.0, true, 11000, 23.0, 72.5));
+  TEST_ASSERT_FALSE(candidate.observeRejected(11000, lat, 72.5, 0, true, 1.0, true, 12000, 23.0, 72.5));
+  TEST_ASSERT_EQUAL_UINT8(2, candidate.count);
+  // A repeat inside a chain neither counts nor breaks it.
+  TEST_ASSERT_FALSE(candidate.observeRejected(11000, lat, 72.5, 0, true, 1.0, true, 13000, 23.0, 72.5));
+  TEST_ASSERT_EQUAL_UINT8(2, candidate.count);
+  TEST_ASSERT_TRUE(candidate.observeRejected(12000, lat, 72.5, 0, true, 1.0, true, 14000, 23.0, 72.5));
 }
 
 void test_queue_delivers_newest_first_and_retains_failed_samples() {
@@ -864,6 +907,8 @@ int main(int, char **) {
   RUN_TEST(test_location_transition_allows_travel_through_one_to_five_minute_gap);
   RUN_TEST(test_coherent_fixes_reanchor_after_outlier_reference);
   RUN_TEST(test_isolated_outliers_never_reanchor);
+  RUN_TEST(test_brief_multipath_cluster_never_captures_reference);
+  RUN_TEST(test_one_receiver_sentence_counts_once_toward_reanchoring);
   RUN_TEST(test_queue_delivers_newest_first_and_retains_failed_samples);
   RUN_TEST(test_queue_acknowledgement_discards_superseded_samples);
   RUN_TEST(test_queue_rejects_corrupted_rtc_state);

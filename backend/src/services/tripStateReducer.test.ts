@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ORIGIN_DEPARTURE_M, reduceTripState } from "./tripStateReducer";
+import { ORIGIN_DEPARTURE_M, reduceTripState, type TripStateResult } from "./tripStateReducer";
 
 const origin = { lat: 23.012441, lng: 72.458011 };
 const about200mNorth = { lat: origin.lat + 0.0018, lng: origin.lng };
@@ -520,5 +520,147 @@ describe("GNSS gap on routes that revisit a stop location", () => {
     const atC = reduceTripState({ ...afterB, currentStopIndex: 1, ...north(600), motionState: "moving", gpsHdop: 1,
       speed: 20, previousPosition: { ...north(100), timestamp: 6_000_000 }, timestamp: 6_060_000, now: 6_060_000 });
     expect(atC).toEqual({ tripState: "in_service", currentStopIndex: 3, hasDepartedOrigin: true, skippedStopIndices: [1] });
+  });
+});
+
+describe("GNSS gap that really hid a drive round to a revisited stop location", () => {
+  const at = (north: number, east = 0) => ({
+    lat: 23 + north / 6_371_000 * 180 / Math.PI,
+    lng: 72 + east / (6_371_000 * Math.cos(23 * Math.PI / 180)) * 180 / Math.PI,
+  });
+  type Ride = Pick<TripStateResult, "tripState" | "currentStopIndex" | "hasDepartedOrigin" | "terminalArrival" | "gnssGapSince"> &
+    { skipped: number[] };
+  type Fix = { p: { lat: number; lng: number }; t: number; motion?: "moving" | "stopped" | "uncertain"; hdop?: number; speed?: number };
+  /** Feeds fixes the way the trip engine carries reducer state forward. */
+  function drive(stops: { lat: number; lng: number }[], ride: Ride, previous: Fix | undefined, fixes: Fix[]) {
+    for (const fix of fixes) {
+      if (ride.tripState === "completed") break;
+      const motion = fix.motion ?? "stopped";
+      const result = reduceTripState({ ...fix.p, motionState: motion, gpsHdop: fix.hdop ?? 1,
+        speed: fix.speed ?? (motion === "moving" ? 20 : 0), timestamp: fix.t, now: fix.t, stops,
+        currentTripState: ride.tripState as "in_service", currentStopIndex: ride.currentStopIndex,
+        hasDepartedOrigin: ride.hasDepartedOrigin, terminalArrival: ride.terminalArrival, gnssGapSince: ride.gnssGapSince,
+        previousPosition: previous && { ...previous.p, motionState: previous.motion ?? "stopped",
+          gpsHdop: previous.hdop ?? 1, timestamp: previous.t } });
+      ride = { ...result, skipped: [...ride.skipped, ...(result.skippedStopIndices ?? [])] };
+      previous = fix;
+    }
+    return ride;
+  }
+  const parked = (p: { lat: number; lng: number }, from: number, seconds: number, extra: Partial<Fix> = {}) =>
+    Array.from({ length: seconds }, (_, i): Fix => ({ p, t: from + i * 1000, ...extra }));
+  const inService = (currentStopIndex: number, gnssGapSince?: number): Ride =>
+    ({ tripState: "in_service", currentStopIndex, hasDepartedOrigin: true, skipped: [], gnssGapSince });
+
+  // Loop O -> S1 -> S2 -> O (about 300 m + 300 m + 424 m).
+  const loop = [at(0), at(0, 300), at(300, 300), at(0)];
+
+  it("completes a loop ride when a long gap hid the last stop and the bus then parks at the terminal", () => {
+    const beforeGap: Fix = { p: at(0, 300), t: 1_000_000, motion: "moving" }; // just past S1
+    const approach: Fix[] = [{ p: at(40), t: 1_090_000, motion: "moving" }, { p: at(10), t: 1_091_000, motion: "moving" }];
+    const end = drive(loop, inService(2), beforeGap, [...approach, ...parked(at(0), 1_092_000, 5)]);
+    expect(end).toMatchObject({ tripState: "completed", skipped: [2] });
+  });
+
+  it("completes when the bus creeps into the terminal so slowly that its last approach fixes read stopped", () => {
+    const beforeGap: Fix = { p: at(0, 300), t: 1_000_000, motion: "moving" };
+    const creep: Fix[] = [{ p: at(8), t: 1_090_000, motion: "stopped", speed: 1 },
+      { p: at(4), t: 1_091_000, motion: "stopped", speed: 1 }];
+    const end = drive(loop, inService(2), beforeGap, [...creep, ...parked(at(0), 1_092_000, 5)]);
+    expect(end).toMatchObject({ tripState: "completed", skipped: [2] });
+  });
+
+  it("completes when the bus is already parked at the terminal when GNSS returns with untrusted fixes first", () => {
+    const beforeGap: Fix = { p: at(0, 300), t: 1_000_000, motion: "moving" };
+    const end = drive(loop, inService(2), beforeGap, [
+      ...parked(at(0), 1_120_000, 3, { motion: "uncertain" }),
+      ...parked(at(0), 1_123_000, 3, { hdop: 9 }),
+      ...parked(at(0), 1_126_000, 5),
+    ]);
+    expect(end).toMatchObject({ tripState: "completed", skipped: [2] });
+  });
+
+  it("completes an out-and-back ride whose turnaround stop was hidden by a gap", () => {
+    // A -> B -> C -> B -> A with B and A shared; the gap hides C.
+    const route = [at(0), at(300), at(600), at(300), at(0)];
+    const beforeGap: Fix = { p: at(320), t: 2_000_000, motion: "moving" }; // just past outbound B
+    const back: Fix[] = [{ p: at(320), t: 2_050_000, motion: "moving" }, { p: at(300), t: 2_051_000, motion: "moving" }];
+    const home = Array.from({ length: 30 }, (_, i): Fix => ({ p: at(290 - i * 10), t: 2_052_000 + i * 1000, motion: "moving" }));
+    const end = drive(route, inService(2), beforeGap, [...back, ...home, ...parked(at(0), 2_082_000, 5)]);
+    expect(end).toMatchObject({ tripState: "completed", skipped: [2] });
+  });
+
+  it("never ages a long dwell at a passed shared stop into a revisit, even with a few metres of GNSS jitter", () => {
+    const route = [at(0), at(300), at(600), at(300), at(0)];
+    const jitter = [0, 1.5, -2, 4, -4, 2.2, 0.5, -1, 3, -3];
+    const dwell = Array.from({ length: 600 }, (_, i): Fix => ({ p: at(300 + jitter[i % jitter.length], jitter[(i + 3) % 10] / 2),
+      t: 3_001_000 + i * 1000 }));
+    const end = drive(route, inService(2, 3_000_000), { p: at(300), t: 3_000_000 }, dwell);
+    expect(end).toMatchObject({ tripState: "in_service", currentStopIndex: 2, skipped: [] });
+    expect(end.gnssGapSince).toBeGreaterThan(3_500_000);
+  });
+
+  it("does not credit a return to the origin faster than the loop could be driven", () => {
+    const beforeGap: Fix = { p: at(150), t: 4_000_000, motion: "moving" };
+    const end = drive(loop, inService(1), beforeGap, parked(at(0), 4_030_000, 120));
+    expect(end).toMatchObject({ tripState: "in_service", currentStopIndex: 1, skipped: [] });
+  });
+
+  /** Moving 1 Hz fixes every 10 m from one point to another, endpoints excluded. */
+  const along = (from: [number, number], to: [number, number], t0: number) => {
+    const steps = Math.ceil(Math.hypot(to[0] - from[0], to[1] - from[1]) / 10);
+    return Array.from({ length: steps - 1 }, (_, i): Fix => ({ t: t0 + i * 1000, motion: "moving",
+      p: at(from[0] + (to[0] - from[0]) * (i + 1) / steps, from[1] + (to[1] - from[1]) * (i + 1) / steps) }));
+  };
+
+  it("does not let a straight chord across a long blackout observe a stop and close the gap", () => {
+    // The bus was heading for stop 1 when GNSS went dark for 65 s; it passed
+    // stops 1-3 unseen and came back. The straight 180 m line between the
+    // fixes on either side passes straight through stop 1.
+    const route = [at(0), at(-211, -10), at(-426, 188), at(-440, 179), at(-318, -73)];
+    const beforeGap: Fix = { p: at(-160, -8), t: 1_044_000, motion: "moving" };
+    const reappears: Fix = { p: at(-340, -15), t: 1_109_000, motion: "moving" };
+    expect(drive(route, inService(1), beforeGap, [reappears]))
+      .toMatchObject({ tripState: "in_service", currentStopIndex: 1, gnssGapSince: 1_044_000, skipped: [] });
+    const end = drive(route, inService(1), beforeGap,
+      [reappears, ...along([-340, -15], [-318, -73], 1_110_000), ...parked(at(-318, -73), 1_117_000, 5)]);
+    expect(end).toMatchObject({ tripState: "completed", skipped: [1, 2, 3] });
+  });
+
+  // Out-and-back A, B, C, D, C', B', A' on one road; the shared copies
+  // coincide. The bus was seen past B (next stop C) when GNSS went dark.
+  const outAndBack = [at(0), at(200), at(400), at(600), at(400), at(200), at(0)];
+  const pastB: Fix = { p: at(250), t: 5_000_000, motion: "moving" };
+  const homeFrom = (north: number, t0: number) =>
+    [...along([north, 0], [0, 0], t0), ...parked(at(0), t0 + north * 100, 5)];
+
+  it("credits the return copy, not the outbound stop, when a blackout hid the turnaround", () => {
+    const end = drive(outAndBack, inService(2), pastB,
+      [{ p: at(450), t: 5_060_000, motion: "moving" }, ...homeFrom(450, 5_061_000)]);
+    expect(end).toMatchObject({ tripState: "completed", skipped: [2, 3] });
+  });
+
+  it("waits for a direction when the bus reappears sitting on a shared stop after the turnaround", () => {
+    const sitting = parked(at(400), 5_060_000, 5);
+    expect(drive(outAndBack, inService(2), pastB, sitting))
+      .toMatchObject({ tripState: "in_service", currentStopIndex: 2, gnssGapSince: 5_000_000, skipped: [] });
+    const end = drive(outAndBack, inService(2), pastB, [...sitting, ...homeFrom(400, 5_065_000)]);
+    expect(end).toMatchObject({ tripState: "completed", skipped: [2, 3] });
+  });
+
+  it("credits the outbound stop without skipping when the bus dwells there after a gap and drives on", () => {
+    // Long outage, then seen dwelling at outbound C: it may not skip the turnaround.
+    const sitting = parked(at(400), 5_060_000, 30);
+    const onward = [...along([400, 0], [600, 0], 5_090_000), ...parked(at(600), 5_109_000, 3)];
+    const atTurnaround = drive(outAndBack, inService(2), pastB, [...sitting, ...onward]);
+    expect(atTurnaround).toMatchObject({ tripState: "in_service", currentStopIndex: 4, skipped: [] });
+    expect(atTurnaround.gnssGapSince).toBeUndefined();
+  });
+
+  it("completes when a blackout hides the stops before a terminal that shares an earlier stop's location", () => {
+    // A, B, C, D, C (terminal): the bus parks at the terminal with no fix to show its direction.
+    const lollipop = [at(0), at(200), at(400), at(500, 100), at(400)];
+    const end = drive(lollipop, inService(2), pastB, parked(at(400), 5_090_000, 6));
+    expect(end).toMatchObject({ tripState: "completed", skipped: [2, 3] });
   });
 });
