@@ -100,8 +100,12 @@ function windowsImageName(pid, exec) {
 export async function assertEmulatorPortsFree({ ports = EMULATOR_PORTS, platform = process.platform, exec = execFileSync, probe = isPortFree } = {}) {
   const busy = [];
   for (const port of ports) if (!(await probe(port))) busy.push(port);
-  if (!busy.length) return;
+  // The probe binds 127.0.0.1 only. On Windows also count listeners on any
+  // other address (0.0.0.0, [::], [::1]): the reaper relies on these ports
+  // being free everywhere, or it could kill another project's emulator.
   const listeners = platform === 'win32' ? windowsListeners(exec) : [];
+  for (const { port } of listeners) if (ports.includes(port) && !busy.includes(port)) busy.push(port);
+  if (!busy.length) return;
   const owners = busy.map((port) => {
     const pid = listeners.find(entry => entry.port === port)?.pid;
     if (!pid) return `${port}`;
