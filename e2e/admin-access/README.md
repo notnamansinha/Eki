@@ -1,6 +1,6 @@
 # Admin access browser regression checks
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+Last updated: 2026-10-28 13:30 IST (UTC+05:30).
 
 Run `npx playwright test --config playwright.admin-access.config.ts` from the repository root. Install the matching Chromium with `npx playwright install chromium` if necessary.
 
@@ -12,7 +12,7 @@ The `?resume` scenario additionally runs the actual RTDB resume hook,
 active-bus hook and shared fleet store using synthetic SDK transport and
 controlled browser time/visibility. A healthy short tab switch retains fleet
 data and read/handshake counts; a 31-second suspension produces one delayed
-handshake and a fresh snapshot. The complete suite has 42 mobile/desktop cases,
+handshake and a fresh snapshot. The complete suite has 54 mobile/desktop cases,
 including the 10 in `resilience.spec.ts`: feedback status writes and slow reads
 held across sign-out and account switches never reach the next account, a
 dropped read recovers through Retry, and offline/online flapping settles on one
@@ -32,3 +32,17 @@ synthetic map surface and fleet transport. At 390 × 844 and desktop sizes,
 Details must remain reachable below the service form, open its dialog and close
 back to a visible fleet control. This guards mobile scroll clipping; it does
 not certify Google Maps rendering, which was checked separately in live Chrome.
+
+The `?restoreHang` scenario (`cold-open.spec.ts`) models a cold open whose
+persisted session is still restoring: the synthetic first auth-state callback,
+`auth.authStateReady()` and `getRedirectResult` stay pending until "Finish
+restoration as signed out / passenger / admin" is clicked. `?landing` mounts the
+actual landing page (`next/image` is stubbed). Virtual time crosses the 8 s and
+10 s marks: sign-in must stay usable, a "Still checking your sign-in" status
+(landing) or "Still signing you in" (RoleGuard) replaces any access failure, no
+protected content mounts early, and the page recovers in place once restoration
+finishes. `window.qaAuthCalls` records OAuth SDK calls and whether they received
+the shared `popupRedirectResolver`; `window.qaRouterReplacements` records
+navigations. Set `EKI_ADMIN_ACCESS_SRC` to another checkout's `frontend/src`
+(with `node_modules` reachable from it) to run the same checks against a
+committed revision for an A/B baseline.

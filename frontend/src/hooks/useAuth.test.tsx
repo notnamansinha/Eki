@@ -5,13 +5,14 @@ import { AuthProvider, useAuth } from "./useAuth";
 import { beginAuthVerification, waitForAuth } from "@/lib/authState";
 import { markGoogleRedirectPending, consumeGoogleRedirectPending } from "@/lib/googleSignInFlow";
 type TestUser = { uid: string; getIdToken?: () => Promise<string>; getIdTokenResult: (forceRefresh?: boolean) => Promise<{ claims: { role: string; admin?: boolean } }> };
+const RESOLVER = vi.hoisted(() => ({ resolver: "browserPopupRedirectResolver" }));
 const mocks = vi.hoisted(() => ({
   callback: null as null | ((user: TestUser | null) => Promise<void>),
-  auth: { currentUser: null as TestUser | null, config: { authDomain: "" } }, claims: vi.fn(), observe: vi.fn(), signOut: vi.fn(),
+  auth: { currentUser: null as TestUser | null, config: { authDomain: "" }, authStateReady: vi.fn() }, claims: vi.fn(), observe: vi.fn(), signOut: vi.fn(),
   popup: vi.fn(), redirect: vi.fn(), redirectResult: vi.fn(),
   profile: vi.fn(), bootstrap: vi.fn(),
 }));
-vi.mock("@/lib/firebaseAuth", () => ({ auth: mocks.auth, googleProvider: {} }));
+vi.mock("@/lib/firebaseAuth", () => ({ auth: mocks.auth, googleProvider: {}, popupRedirectResolver: RESOLVER }));
 vi.mock("@/lib/apiClient", () => ({ apiRequest: mocks.bootstrap }));
 vi.mock("@/lib/firebaseCore", () => ({ firebaseApp: {} }));
 vi.mock("firebase/firestore", () => ({ getFirestore: () => ({}), doc: vi.fn(), getDoc: mocks.profile }));
@@ -34,6 +35,7 @@ beforeEach(() => {
   mocks.redirect.mockReset().mockReturnValue(new Promise(() => {}));
   mocks.redirectResult.mockReset().mockResolvedValue(null);
   mocks.signOut.mockReset().mockResolvedValue(undefined);
+  mocks.auth.authStateReady.mockReset().mockResolvedValue(undefined);
   mocks.claims.mockResolvedValue(undefined); mocks.observe.mockImplementation((_auth, callback) => { mocks.callback = callback; return () => {}; });
   mocks.profile.mockResolvedValue({ exists: () => false }); mocks.bootstrap.mockResolvedValue({ role: "passenger" });
   localStorage.clear(); sessionStorage.clear(); vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -51,7 +53,7 @@ describe("Google sign-in lifecycle", () => {
       await act(async () => { await hook.result.current.logout(); });
       expect(hook.result.current.user).toBeNull();
       await act(async () => { void hook.result.current.loginWithGoogle(); });
-      expect(mocks.redirect).toHaveBeenCalledExactlyOnceWith(mocks.auth, {});
+      expect(mocks.redirect).toHaveBeenCalledExactlyOnceWith(mocks.auth, {}, RESOLVER);
       expect(mocks.popup).not.toHaveBeenCalled();
       expect(hook.result.current.loginLoading).toBe(true);
       expect(consumeGoogleRedirectPending()).toBe(true);
@@ -88,6 +90,7 @@ describe("Google sign-in lifecycle", () => {
     const getIdTokenResult = vi.fn(async () => { await claims.promise; return { claims: { role: "passenger" } }; });
     const account = { uid: "oauth-result", getIdTokenResult };
     const result = deferred();
+    if (flow === "redirect") markGoogleRedirectPending();
     mocks.redirectResult.mockImplementation(async () => {
       if (flow === "popup") return null;
       await result.promise; return { user: account };
@@ -407,11 +410,12 @@ describe("verified auth publication", () => {
     await act(async () => { await mocks.callback!(second); old.resolve(); await pending; });
     expect(hook.result.current.user?.uid).toBe("second");
   });
-  it("does not mark an auth restoration timeout ready", async () => {
+  it("does not mark a slow auth restoration ready or report it as an access error", async () => {
     vi.useFakeTimers(); const hook = renderHook(() => useAuth(), { wrapper: AuthProvider });
     const opened = vi.fn(); void waitForAuth().then(opened);
     await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
-    expect(hook.result.current.roleError).toContain("timed out"); expect(opened).not.toHaveBeenCalled();
+    expect(hook.result.current.restoreSlow).toBe(true); expect(hook.result.current.roleError).toBeNull();
+    expect(hook.result.current.loading).toBe(true); expect(opened).not.toHaveBeenCalled();
   });
 });
 describe("hostile browser storage and legacy profiles", () => {
@@ -503,27 +507,31 @@ describe("sign-in recovery dead ends", () => {
     expect(removed).toHaveBeenCalledWith("pageshow", expect.any(Function));
   });
 
-  it("keeps restoration guidance when 'Try again' runs before Firebase has restored the session", async () => {
+  it("waits for restoration when 'Try again' runs before Firebase has restored the session", async () => {
     // Firebase is still completing a pending redirect: neither the observer
     // nor getRedirectResult has settled.
+    markGoogleRedirectPending();
     mocks.redirectResult.mockReturnValue(new Promise(() => {}));
+    mocks.auth.authStateReady.mockReturnValue(new Promise(() => {}));
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const hook = await mount();
     const opened = vi.fn(); void waitForAuth().then(opened);
     await act(async () => { await vi.advanceTimersByTimeAsync(8_100); });
-    expect(hook.result.current.roleError).toContain("timed out");
-    await act(async () => { await hook.result.current.refreshAccess(); });
-    expect(hook.result.current.loading).toBe(false);
-    expect(hook.result.current.roleError).toContain("still restoring");
+    expect(hook.result.current.restoreSlow).toBe(true);
+    await act(async () => { void hook.result.current.refreshAccess(); });
+    expect(hook.result.current.loading).toBe(true);
+    expect(hook.result.current.roleError).toBeNull();
     // An unknown session is never published as a confirmed sign-out.
     expect(opened).not.toHaveBeenCalled();
     // Once Firebase reports the restored state, the normal path resumes.
     await act(async () => { await mocks.callback!(null); });
     expect(hook.result.current.roleError).toBeNull();
+    expect(hook.result.current.restoreSlow).toBe(false);
     expect(opened).toHaveBeenCalledOnce();
   });
 
   it("keeps restoration guidance when sign-out is queued behind Firebase restoration", async () => {
+    markGoogleRedirectPending();
     mocks.redirectResult.mockReturnValue(new Promise(() => {}));
     const signOut = deferred(); mocks.signOut.mockReturnValue(signOut.promise);
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -538,5 +546,85 @@ describe("sign-in recovery dead ends", () => {
     expect(hook.result.current.roleError).toBeNull();
     expect(hook.result.current.loading).toBe(false);
     expect(hook.result.current.user).toBeNull();
+  });
+});
+
+describe("cold open on a slow or offline network", () => {
+  it("enables sign-in for a signed-out visitor before Firebase reports its first state", async () => {
+    const hook = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+    expect(mocks.callback).not.toBeNull();
+    expect(hook.result.current.loading).toBe(true);
+    // No redirect is pending, so nothing waits on Google's redirect machinery.
+    expect(mocks.redirectResult).not.toHaveBeenCalled();
+  });
+  it("still completes a pending Google redirect before enabling sign-in", async () => {
+    markGoogleRedirectPending();
+    const returned = deferred(); mocks.redirectResult.mockImplementation(async () => { await returned.promise; return null; });
+    const hook = await mount();
+    expect(hook.result.current.loginReady).toBe(false);
+    await act(async () => { returned.resolve(); });
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+    expect(mocks.redirectResult).toHaveBeenCalledExactlyOnceWith(mocks.auth, RESOLVER);
+  });
+  it("passes the popup/redirect resolver to desktop popup sign-in", async () => {
+    mocks.auth.config.authDomain = "auth.example.test";
+    const hook = await mount();
+    await act(async () => { await hook.result.current.loginWithGoogle(); });
+    expect(mocks.popup).toHaveBeenCalledExactlyOnceWith(mocks.auth, {}, RESOLVER);
+  });
+  it("on a phone, a tap before restoration finishes verifies a restored account instead of starting Google again", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)");
+    const ready = deferred(); mocks.auth.authStateReady.mockReturnValue(ready.promise);
+    const hook = await mount();
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+    let tapping!: Promise<void>;
+    await act(async () => { tapping = hook.result.current.loginWithGoogle(); });
+    expect(hook.result.current.loginLoading).toBe(true);
+    const account = { uid: "restored", getIdTokenResult: vi.fn(async () => ({ claims: { role: "passenger" } })) };
+    mocks.auth.currentUser = account;
+    await act(async () => { const verifying = mocks.callback!(account); ready.resolve(); await verifying; await tapping; });
+    expect(mocks.redirect).not.toHaveBeenCalled();
+    expect(hook.result.current.user?.uid).toBe("restored");
+    expect(hook.result.current.loginLoading).toBe(false);
+  });
+  it("on a phone, a tap before restoration finishes starts Google once a signed-out state is known", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Linux; Android 14)");
+    const ready = deferred(); mocks.auth.authStateReady.mockReturnValue(ready.promise);
+    const hook = await mount();
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+    await act(async () => { void hook.result.current.loginWithGoogle(); });
+    expect(mocks.redirect).not.toHaveBeenCalled();
+    await act(async () => { await mocks.callback!(null); ready.resolve(); await Promise.resolve(); });
+    await waitFor(() => expect(mocks.redirect).toHaveBeenCalledExactlyOnceWith(mocks.auth, {}, RESOLVER));
+  });
+  it("clears the slow-restoration flag when Firebase finally reports a signed-in account", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const hook = await mount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(8_100); });
+    expect(hook.result.current.restoreSlow).toBe(true);
+    const account = { uid: "late", getIdTokenResult: vi.fn(async () => ({ claims: { role: "passenger" } })) };
+    mocks.auth.currentUser = account;
+    await act(async () => { await mocks.callback!(account); });
+    expect(hook.result.current.restoreSlow).toBe(false);
+    expect(hook.result.current.user?.uid).toBe("late");
+  });
+  it("keeps a transient verification failure steady while it retries automatically", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const offline = Object.assign(new Error("offline"), { code: "auth/network-request-failed" });
+    const retry = deferred();
+    mocks.claims.mockRejectedValueOnce(offline).mockReturnValueOnce(retry.promise);
+    const hook = await mount();
+    const account = user("flaky"); mocks.auth.currentUser = account;
+    await act(async () => { await mocks.callback!(account); });
+    expect(hook.result.current.roleError).toContain("retrying automatically");
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_100); });
+    // The automatic retry is in flight: the screen must not flash back to loading.
+    expect(mocks.claims).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.loading).toBe(false);
+    expect(hook.result.current.roleError).toContain("retrying automatically");
+    await act(async () => { retry.resolve(); await vi.advanceTimersByTimeAsync(10); });
+    expect(hook.result.current.roleError).toBeNull();
+    expect(hook.result.current.user?.uid).toBe("flaky");
   });
 });

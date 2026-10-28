@@ -13,11 +13,20 @@ import {
 import { beginAuthVerification, getAuthVerificationGeneration, notifyAuthReady } from "@/lib/authState";
 import { withTimeout } from "@/lib/promiseTimeout";
 import { apiRequest } from "@/lib/apiClient";
-import { consumeGoogleRedirectPending, markGoogleRedirectPending, prefersGoogleRedirect } from "@/lib/googleSignInFlow";
+import {
+  consumeGoogleRedirectPending,
+  isGoogleRedirectPending,
+  markGoogleRedirectPending,
+  prefersGoogleRedirect,
+} from "@/lib/googleSignInFlow";
 
 const ROLE_VERIFICATION_TIMEOUT_MS = 10_000;
+// Past this, restoration is reported as slow. It is never an access error:
+// the landing page and sign-in stay usable and Firebase may still finish.
+const AUTH_RESTORE_SLOW_MS = 8_000;
 const AUTH_STILL_RESTORING_MESSAGE = "Sign-in is still restoring. Reload the page to try again.";
 const ACCESS_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
+const AUTH_LOAD_RETRY_DELAYS_MS = [2_000, 5_000, 10_000, 20_000, 30_000];
 
 function transientAccessFailure(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
@@ -50,6 +59,8 @@ interface AppUser {
 interface AuthContextValue {
   user: AppUser | null;
   loading: boolean;
+  /** Firebase has not reported the first auth state within AUTH_RESTORE_SLOW_MS. */
+  restoreSlow: boolean;
   roleError: string | null;
   loginReady: boolean;
   loginError: string | null;
@@ -67,6 +78,7 @@ type FirebaseLoginDependencies = {
   getRedirectResult: typeof import("firebase/auth").getRedirectResult;
   auth: typeof import("@/lib/firebaseAuth").auth;
   googleProvider: typeof import("@/lib/firebaseAuth").googleProvider;
+  resolver: typeof import("@/lib/firebaseAuth").popupRedirectResolver;
 };
 
 function authErrorCode(error: unknown): string | undefined {
@@ -101,6 +113,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 function useAuthState(): AuthContextValue {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [restoreSlow, setRestoreSlow] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
   const [loginReady, setLoginReady] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -114,6 +127,7 @@ function useAuthState(): AuthContextValue {
   const invalidateLoginAttempt = useCallback(() => { loginAttempt.current++; }, []);
   const loginDependencies = useRef<FirebaseLoginDependencies | null>(null);
   const refreshVerification = useRef<null | ((onlyIfNeeded?: boolean) => Promise<void>)>(null);
+  const retryAuthLoad = useRef<null | (() => void)>(null);
 
   useEffect(() => {
     let generation = 0;
@@ -123,7 +137,14 @@ function useAuthState(): AuthContextValue {
     let retryAttempt = 0;
     let verifiedUser: import("firebase/auth").User | null = null;
     let verifiedGeneration = -1;
-    let recoverAccess: (() => void) | null = null;
+    let recoverAccess: ((automatic?: boolean) => void) | null = null;
+    // A background timer retry keeps the current error on screen until it
+    // settles instead of flashing back to loading; a retry the user can see
+    // coming (network back, tab shown, Try again) shows loading as feedback.
+    let recovering = false;
+    let loadAttempt = 0;
+    let loadRetryTimer: ReturnType<typeof setTimeout> | undefined;
+    let authLoaded = false;
     authInitialized.current = false;
     const clearRecovery = () => {
       clearTimeout(retryTimer);
@@ -155,18 +176,24 @@ function useAuthState(): AuthContextValue {
       }
     };
     window.addEventListener("pageshow", resumeFromHistory);
+    // Slow restoration is reported, never treated as denied access: the state
+    // stays "unknown" (loading) so nothing is published as signed out.
     const authTimeout = window.setTimeout(() => {
       if (!disposed) {
-        console.warn("Firebase auth restoration timed out.");
-        setRoleError("Sign-in restoration timed out. Reload the page to try again.");
-        setLoading(false);
+        console.warn("Firebase auth restoration is taking longer than expected.");
+        setRestoreSlow(true);
       }
-    }, 8000);
+    }, AUTH_RESTORE_SLOW_MS);
+    const retryLoadWhenOnline = () => { if (!authLoaded) retryAuthLoad.current?.(); };
+    window.addEventListener("online", retryLoadWhenOnline);
 
-    void Promise.all([import("firebase/auth"), import("@/lib/firebaseAuth")])
+    const loadAuth = () => Promise.all([import("firebase/auth"), import("@/lib/firebaseAuth")])
       .then(async (dependencies) => {
-        const [authModule, { auth, googleProvider }] = dependencies;
+        const [authModule, { auth, googleProvider, popupRedirectResolver }] = dependencies;
         if (disposed) return;
+        authLoaded = true;
+        clearTimeout(loadRetryTimer);
+        setLoginError(null);
 
         // Cache these before enabling login so the click handler can open the
         // popup synchronously within the browser's user activation.
@@ -176,6 +203,7 @@ function useAuthState(): AuthContextValue {
           getRedirectResult: authModule.getRedirectResult,
           auth,
           googleProvider,
+          resolver: popupRedirectResolver,
         };
 
         // firebaseAuth chooses persistent storage before restoring the account.
@@ -186,13 +214,16 @@ function useAuthState(): AuthContextValue {
         const verifyUser = async (firebaseUser: import("firebase/auth").User | null) => {
           clearRecovery();
           clearTimeout(authTimeout);
+          setRestoreSlow(false);
+          const steady = recovering;
+          recovering = false;
           const currentGen = ++generation;
           beginAuthVerification();
           const verificationGeneration = getAuthVerificationGeneration();
           setUser(null);
 
           if (firebaseUser) {
-            setLoading(true);
+            if (!steady) setLoading(true);
             setLoginLoading(false);
             setLoginError(null);
             setLoginFallbackAvailable(false);
@@ -202,7 +233,7 @@ function useAuthState(): AuthContextValue {
               currentGen === generation &&
               verificationGeneration === getAuthVerificationGeneration() &&
               auth.currentUser?.uid === firebaseUser.uid;
-            setRoleError(null);
+            if (!steady) setRoleError(null);
 
             try {
               // Refresh persisted tokens so newly synchronized admin claims and
@@ -225,6 +256,7 @@ function useAuthState(): AuthContextValue {
               ) {
                 if (!isCurrentAuth()) return;
                 writeStorage(`eki:role:${firebaseUser.uid}`, claimedRole);
+                setRoleError(null);
                 setUser({
                   uid: firebaseUser.uid,
                   email: firebaseUser.email,
@@ -328,21 +360,28 @@ function useAuthState(): AuthContextValue {
                 console.error("Firebase role verification failed:", err);
               }
               if (!isCurrentAuth()) return;
+              let retryingAutomatically = false;
               if (transientAccessFailure(err)) {
-                recoverAccess = () => {
+                recoverAccess = (automatic = false) => {
                   if (!isCurrentAuth() || navigator.onLine === false || document.visibilityState === "hidden") return;
+                  recovering = automatic;
                   void runVerification(firebaseUser);
                 };
                 const delay = ACCESS_RETRY_DELAYS_MS[retryAttempt++];
                 // A bounded retry burst also bounds outstanding SDK work after
                 // timeouts (the Firebase promises themselves are not cancelable).
                 // Online/visible or an explicit retry starts a fresh burst.
-                if (delay !== undefined) retryTimer = setTimeout(() => recoverAccess?.(), delay);
+                if (delay !== undefined) {
+                  retryTimer = setTimeout(() => recoverAccess?.(true), delay);
+                  retryingAutomatically = true;
+                }
               }
               setRoleError(
                 code === "permission-denied"
                   ? "Your account is not permitted to verify this workspace."
-                  : "We could not verify your access. Check your connection and try again.",
+                  : retryingAutomatically
+                    ? "We could not verify your access. Check your connection; retrying automatically."
+                    : "We could not verify your access. Check your connection and try again.",
               );
               setUser(null);
             } finally {
@@ -371,13 +410,14 @@ function useAuthState(): AuthContextValue {
               verifiedGeneration === getAuthVerificationGeneration()) return Promise.resolve();
           if (!authInitialized.current) {
             // Never publish a null currentUser as a confirmed sign-out while
-            // Firebase is still restoring (e.g. a pending redirect). The first
-            // observer callback will verify the real state.
-            if (!onlyIfNeeded) {
-              setRoleError(AUTH_STILL_RESTORING_MESSAGE);
-              setLoading(false);
-            }
-            return Promise.resolve();
+            // Firebase is still restoring (e.g. a pending redirect). Wait for
+            // the first auth state, then verify whatever it is.
+            if (onlyIfNeeded) return Promise.resolve();
+            setRoleError(null);
+            setLoading(true);
+            return auth.authStateReady().then(() => {
+              if (!disposed) return runVerification(auth.currentUser);
+            });
           }
           retryAttempt = 0;
           return runVerification(auth.currentUser);
@@ -387,10 +427,18 @@ function useAuthState(): AuthContextValue {
           retryAttempt = 0;
           return runVerification(firebaseUser);
         });
+        // Without a Google redirect in progress there is nothing to complete,
+        // so sign-in is usable now; Firebase queues it behind restoration.
+        if (!isGoogleRedirectPending()) {
+          setLoginReady(true);
+          // authStateReady settles only after Firebase initialization.
+          void auth.authStateReady().then(() => { if (!disposed) authInitialized.current = true; }, () => {});
+          return;
+        }
         // Complete mobile/PWA sign-in or a desktop full-page fallback.
         // Do not start another OAuth request while Firebase is restoring the
         // redirect session. Both paths share the observer's trusted role checks.
-        void authModule.getRedirectResult(auth).then(async (result) => {
+        void authModule.getRedirectResult(auth, popupRedirectResolver).then(async (result) => {
           if (disposed) return;
           // getRedirectResult settles only after Firebase initialization.
           authInitialized.current = true;
@@ -419,19 +467,30 @@ function useAuthState(): AuthContextValue {
       .catch((error) => {
         const code = authErrorCode(error);
         console.error("[Auth] Firebase auth initialization failed.", code);
-        clearTimeout(authTimeout);
-        if (!disposed) {
-          loginDependencies.current = null;
-          setLoginReady(false);
-          setLoginError("Google sign-in could not initialize. Reload the page and try again.");
-          setLoading(false);
-        }
+        if (disposed) return;
+        loginDependencies.current = null;
+        setLoginReady(false);
+        // Usually the sign-in code could not download (offline or a flaky
+        // network). Keep the state unknown and retry, rather than dead-ending.
+        const delay = AUTH_LOAD_RETRY_DELAYS_MS[Math.min(loadAttempt++, AUTH_LOAD_RETRY_DELAYS_MS.length - 1)];
+        clearTimeout(loadRetryTimer);
+        loadRetryTimer = setTimeout(() => retryAuthLoad.current?.(), delay);
+        setLoginError("Sign-in could not load. Check your connection; retrying automatically.");
       });
+    retryAuthLoad.current = () => {
+      if (disposed || authLoaded || navigator.onLine === false) return;
+      clearTimeout(loadRetryTimer);
+      void loadAuth();
+    };
+    void loadAuth();
 
     return () => {
       disposed = true;
       invalidateLoginAttempt();
       loginDependencies.current = null;
+      retryAuthLoad.current = null;
+      clearTimeout(loadRetryTimer);
+      window.removeEventListener("online", retryLoadWhenOnline);
       clearRecovery();
       window.removeEventListener("online", resumeAccess);
       document.removeEventListener("visibilitychange", resumeAccess);
@@ -444,7 +503,8 @@ function useAuthState(): AuthContextValue {
 
   const refreshAccess = useCallback((): Promise<void> => {
     if (!refreshVerification.current) {
-      setRoleError("Sign-in has not initialized. Reload the page and try again.");
+      // The sign-in code has not loaded yet: try loading it again now.
+      retryAuthLoad.current?.();
       return Promise.resolve();
     }
     return refreshVerification.current();
@@ -461,9 +521,20 @@ function useAuthState(): AuthContextValue {
     setLoginFallbackAvailable(false);
     setLoginLoading(true);
     const attempt = ++loginAttempt.current;
-    markGoogleRedirectPending();
     try {
-      await dependencies.signInWithRedirect(dependencies.auth, dependencies.googleProvider);
+      // A tap during restoration must not send an already signed-in account
+      // back through Google: wait for the restored state first.
+      if (!authInitialized.current) {
+        await dependencies.auth.authStateReady();
+        if (attempt !== loginAttempt.current || signingOut.current) return;
+        if (dependencies.auth.currentUser) {
+          await refreshVerification.current?.(true);
+          if (attempt === loginAttempt.current) setLoginLoading(false);
+          return;
+        }
+      }
+      markGoogleRedirectPending();
+      await dependencies.signInWithRedirect(dependencies.auth, dependencies.googleProvider, dependencies.resolver);
     } catch (error: unknown) {
       if (attempt !== loginAttempt.current) return;
       consumeGoogleRedirectPending();
@@ -501,10 +572,12 @@ function useAuthState(): AuthContextValue {
     try {
       // Do not await module loading before this call: browsers may block a
       // popup that is no longer directly associated with the user's click.
-      const result = await dependencies.signInWithPopup(dependencies.auth, dependencies.googleProvider);
+      const result = await dependencies.signInWithPopup(dependencies.auth, dependencies.googleProvider, dependencies.resolver);
       if (attempt !== loginAttempt.current) return;
-      // A successful OAuth result must also reach the shared role verifier,
-      // including when an existing runtime misses an auth observer update.
+      // A completed popup implies Firebase finished initializing. A successful
+      // OAuth result must also reach the shared role verifier, including when
+      // an existing runtime misses an auth observer update.
+      authInitialized.current = true;
       if (result?.user && dependencies.auth.currentUser?.uid === result.user.uid) {
         await refreshVerification.current?.(true);
       }
@@ -598,6 +671,7 @@ function useAuthState(): AuthContextValue {
   return {
     user,
     loading,
+    restoreSlow,
     roleError,
     loginReady,
     loginError,
