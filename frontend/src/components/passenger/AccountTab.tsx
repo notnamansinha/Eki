@@ -8,6 +8,7 @@ import FeedbackModal from "@/components/shared/FeedbackModal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { auth } from "@/lib/firebaseAuth";
 import { apiRequest } from "@/lib/apiClient";
+import { PASSENGER_NAV_HEIGHT_PX } from "./passengerFrame";
 
 function ProfilePhoto({ photoURL }: { photoURL?: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -30,6 +31,8 @@ export default function AccountTab() {
     logout,
   } = useAuth();
   const [showFeedback, setShowFeedback] = useState(false);
+  // Unsent feedback survives closing the dialog, but only for the account that wrote it.
+  const [feedbackDraft, setFeedbackDraft] = useState({ uid: "", comment: "" });
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showDeletionAccepted, setShowDeletionAccepted] = useState(false);
@@ -68,8 +71,12 @@ export default function AccountTab() {
     void logout();
   };
   return (
-    <div className="flex-1 overflow-y-auto flex flex-col pt-safe px-5" style={{ background: "var(--surface-0)" }}>
-      <div className="w-full max-w-lg mx-auto space-y-6 mt-10 pb-32">
+    <div className="flex-1 overflow-y-auto overscroll-contain flex flex-col pt-safe px-5" style={{ background: "var(--surface-0)" }}>
+      {/* Scroll past the navigation and its safe area, plus the previous 47px breathing room. */}
+      <div
+        className="w-full max-w-lg mx-auto space-y-6 mt-10"
+        style={{ paddingBottom: `calc(${PASSENGER_NAV_HEIGHT_PX + 47}px + var(--safe-area-bottom))` }}
+      >
         
         {/* Profile Header */}
         <div className="p-6 rounded-2xl relative overflow-hidden" 
@@ -239,6 +246,8 @@ export default function AccountTab() {
         {showFeedback && user && (
           <FeedbackModal
             userId={user.uid}
+            draft={feedbackDraft.uid === user.uid ? feedbackDraft.comment : ""}
+            onDraftChange={comment => setFeedbackDraft({ uid: user.uid, comment })}
             onClose={() => setShowFeedback(false)}
           />
         )}

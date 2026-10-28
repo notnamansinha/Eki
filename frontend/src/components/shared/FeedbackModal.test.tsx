@@ -98,3 +98,45 @@ describe("passenger feedback workflow", () => {
     expect(close).toHaveBeenCalledTimes(2); expect(store.submitFeedback).not.toHaveBeenCalled();
   });
 });
+describe("feedback dialog layering and drafts", () => {
+  it("portals the form and its confirmation above every workspace layer", async () => {
+    const host = document.body.appendChild(Object.assign(document.createElement("div"), { style: "position: relative; z-index: 30" }));
+    try {
+      const user = userEvent.setup();
+      render(<FeedbackModal userId="qa-passenger" onClose={vi.fn()} />, { container: host });
+      expect(host.contains(screen.getByRole("dialog"))).toBe(false);
+      expect(screen.getByRole("dialog").parentElement?.parentElement).toBe(document.body);
+      await user.type(screen.getByRole("textbox"), "Layering check");
+      await user.click(screen.getByRole("button", { name: "Submit Feedback" }));
+      expect(await screen.findByText("Thank you!")).toBeTruthy();
+      expect(host.contains(screen.getByRole("dialog"))).toBe(false);
+    } finally { host.remove(); }
+  });
+  it("starts from a saved draft and reports each edit", async () => {
+    const onDraftChange = vi.fn();
+    render(<FeedbackModal userId="qa-passenger" draft="Half-written" onDraftChange={onDraftChange} onClose={vi.fn()} />);
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("Half-written");
+    await userEvent.setup().type(screen.getByRole("textbox"), "!");
+    expect(onDraftChange).toHaveBeenLastCalledWith("Half-written!");
+  });
+  it("reports the trimmed text when an edit exceeds the word limit", () => {
+    const onDraftChange = vi.fn();
+    render(<FeedbackModal userId="qa-passenger" onDraftChange={onDraftChange} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: Array.from({ length: 400 }, (_, i) => `w${i}`).join(" ") } });
+    const reported = onDraftChange.mock.lastCall?.[0] as string;
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe(reported);
+    expect(reported.split(/\s+/).length).toBeLessThan(400);
+  });
+  it("clears the saved draft after a successful submission only", async () => {
+    const onDraftChange = vi.fn();
+    store.submitFeedback.mockRejectedValueOnce(new Error("offline"));
+    const user = userEvent.setup();
+    render(<FeedbackModal userId="qa-passenger" draft="Keep me" onDraftChange={onDraftChange} onClose={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Submit Feedback" }));
+    await screen.findByText(/Failed to send|offline/);
+    expect(onDraftChange).not.toHaveBeenCalledWith("");
+    await user.click(screen.getByRole("button", { name: "Submit Feedback" }));
+    expect(await screen.findByText("Thank you!")).toBeTruthy();
+    expect(onDraftChange).toHaveBeenLastCalledWith("");
+  });
+});

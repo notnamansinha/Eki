@@ -1,5 +1,6 @@
 import React, { ReactNode, useEffect, useId, useRef } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
+import { passengerNavClearance } from '../passengerFrame';
 
 interface BottomSheetProps {
   isOpen: boolean;
@@ -53,8 +54,7 @@ export default function BottomSheet({
           isOpen ? "translate-y-0" : "translate-y-[calc(100%_-_56px)]"
         }`}
         style={{
-          // Navigation is 60px controls + 20px padding + 1px border.
-          bottom: "calc(81px + env(safe-area-inset-bottom, 0px))",
+          bottom: passengerNavClearance,
           background: "var(--surface-1)",
           borderTop: "1px solid var(--border-default)",
           boxShadow: "0 -8px 32px rgba(0, 0, 0, 0.4)",

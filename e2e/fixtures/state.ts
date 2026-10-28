@@ -37,8 +37,11 @@ export function subscribeLiveBusChanges(fn: (change: unknown) => void) {
   fn({ type: "reset", snapshot, source: "listener" });
   return () => { liveSubscribers.delete(fn); };
 }
-const qaUser = { uid: "qa-passenger", displayName: "QA Passenger", role: "passenger" };
-export function useAuth() { return { user: qaUser, logout: async () => {} }; }
+const fixtureRole = typeof location === "undefined" ? null : new URLSearchParams(location.search).get("role");
+export const qaUser = fixtureRole === "admin"
+  ? { uid: "qa-admin", displayName: "QA Admin", role: "admin" }
+  : { uid: "qa-passenger", displayName: "QA Passenger", role: "passenger" };
+export function useAuth() { return { user: qaUser, loading: false, roleError: null, loginReady: true, loginLoading: false, loginError: null, loginFallbackAvailable: false, loginWithGoogle: async () => {}, loginWithGoogleRedirect: async () => {}, logout: async () => {} }; }
 export function useRoutes() { useScenario(); return { routes: scenario === "two-routes" ? [route, { ...route, id: "qa-route-2", name: "QA route B", color: "#F59E0B" }] : [route], error: null, retry: () => {} }; }
 let settings = { noBusesMessage: "No buses running", noBusesSubMessage: "Service starts at {time}", serviceStartTime: "8:00 am", announcementActive: false, announcementText: "" };
 export function useSettings() {

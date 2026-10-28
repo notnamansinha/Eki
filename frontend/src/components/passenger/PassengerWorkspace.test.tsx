@@ -211,3 +211,39 @@ describe("selected bus identity during service start", () => {
     expect(screen.queryByText("Boarding qa-session")).toBeNull();
   });
 });
+describe("passenger tab switching and footer", () => {
+  it("mounts Profile on first visit and keeps it (inert) afterwards so leaving never blanks the view", async () => {
+    render(<PassengerWorkspace />); const user = userEvent.setup();
+    expect(screen.queryByText("QA account control")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Profile" }));
+    const account = await screen.findByText("QA account control");
+    await user.click(screen.getByRole("button", { name: "Routes" }));
+    expect(account.isConnected).toBe(true);
+    expect(account.closest("[inert]")).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Profile" }));
+    expect(screen.getByText("QA account control")).toBe(account);
+    expect(account.closest("[inert]")).toBeNull();
+  });
+  it("marks the selected section immediately and survives rapid switching", async () => {
+    render(<PassengerWorkspace />); const user = userEvent.setup();
+    const routes = screen.getByRole("button", { name: "Routes" }); const profile = screen.getByRole("button", { name: "Profile" });
+    expect(routes.getAttribute("aria-current")).toBe("page");
+    for (let i = 0; i < 9; i++) await user.click(i % 2 ? routes : profile);
+    expect(profile.getAttribute("aria-current")).toBe("page");
+    expect(routes.getAttribute("aria-current")).toBeNull();
+    await user.click(routes);
+    expect(routes.getAttribute("aria-current")).toBe("page");
+    expect(screen.getByText("QA account control").closest("[inert]")).not.toBeNull();
+  });
+  it("does not use the half-second view fade", () => {
+    const { container } = render(<PassengerWorkspace />);
+    expect(container.querySelector('[class*="duration-500"]')).toBeNull();
+  });
+  it("paints the navigation surface through the safe-area padding", () => {
+    render(<PassengerWorkspace />);
+    const nav = screen.getByRole("navigation", { name: "Passenger sections" });
+    const frame = nav.closest(".pb-safe") as HTMLElement;
+    expect(frame).not.toBeNull();
+    expect(frame.style.background).toContain("rgba(22, 22, 26");
+  });
+});

@@ -22,6 +22,10 @@ import {
 import { useRTDBResume } from "@/hooks/useRTDBResume";
 import { isPassengerBusSelectable } from "@/lib/passengerAvailability";
 import {
+  passengerNavClassName,
+  passengerNavClearance,
+  passengerNavFrameClassName,
+  passengerNavFrameStyle,
   passengerPanelClassName,
   passengerPanelStyle,
   passengerTopSpacerStyle,
@@ -83,6 +87,9 @@ export default function PassengerWorkspace() {
   const { user } = useAuth();
   const { settings } = useSettings();
   const [currentView, setCurrentView] = useState<ViewState>("home");
+  // Profile mounts on first visit and then stays mounted (inert while hidden),
+  // so leaving it neither blanks the fading view nor discards its local state.
+  const [profileMounted, setProfileMounted] = useState(false);
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const { catalog: routeCatalog, projectionReady, catalogReady, error: catalogError, retry: retryCatalog } = useLiveRouteCatalog(`${connectionGeneration}:${resumeGeneration}`);
   const [selectedRouteId, setSelectedRouteId] = useState("");
@@ -475,7 +482,7 @@ export default function PassengerWorkspace() {
       <div className="relative min-h-0 flex-1 overflow-clip">
 
         {/* ── HOME VIEW ── */}
-        <div inert={visibleView !== "home"} aria-hidden={visibleView !== "home"} className={`absolute inset-0 z-20 flex flex-col pt-safe transition-[opacity,transform] duration-500 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8 pointer-events-none"}`}>
+        <div inert={visibleView !== "home"} aria-hidden={visibleView !== "home"} className={`absolute inset-0 z-20 flex flex-col pt-safe transition-[opacity,transform] duration-200 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"}`}>
 
           {/* Top spacer to frame the bus illustration near the top of the screen */}
           <div className="shrink-0" style={passengerTopSpacerStyle} aria-hidden="true" />
@@ -496,7 +503,7 @@ export default function PassengerWorkspace() {
 
             {/* Status / Routes Section - Scrollable */}
             <div
-              className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth hide-scrollbar px-4 pb-32"
+              className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth hide-scrollbar px-4 pb-32"
               style={{ scrollBehavior: 'smooth', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
               {displayRoutes.length > 0 ? (
@@ -550,7 +557,7 @@ export default function PassengerWorkspace() {
         </div>
 
         {/* ── TRACKING VIEW ── */}
-        <div data-passenger-tracking inert={visibleView !== "tracking"} aria-hidden={visibleView !== "tracking"} className={`absolute inset-0 z-20 flex flex-col pointer-events-none transition-opacity duration-500 ${visibleView === "tracking" ? "opacity-100 bg-zinc-950" : "opacity-0"}`}>
+        <div data-passenger-tracking inert={visibleView !== "tracking"} aria-hidden={visibleView !== "tracking"} className={`absolute inset-0 z-20 flex flex-col pointer-events-none transition-opacity duration-200 ${visibleView === "tracking" ? "opacity-100 bg-zinc-950" : "opacity-0"}`}>
           {!endedMessage && mapRoute && targetStop ? (
             <>
               {/* Top bar: back + route info */}
@@ -724,7 +731,7 @@ export default function PassengerWorkspace() {
 
               {/* Messaging Overlay */}
               {visibleView === "tracking" && busSelectable && activeSessionId && isMessagingOpen && isLiveChatDeviceOnline(activeBusOnRoute) && (
-                <div className="absolute inset-x-0 top-16 bottom-[80px] z-50 animate-slide-up flex flex-col pointer-events-auto">
+                <div className="absolute inset-x-0 top-16 z-50 animate-slide-up flex flex-col pointer-events-auto" style={{ bottom: passengerNavClearance }}>
                    <MessagingPanel
                     key={activeSessionId || "online-no-session"}
                      sessionId={activeSessionId || ""}
@@ -772,8 +779,8 @@ export default function PassengerWorkspace() {
         </div>
 
         {/* ── PROFILE VIEW ── */}
-        <div inert={visibleView !== "profile"} aria-hidden={visibleView !== "profile"} className={`absolute inset-0 z-30 flex flex-col transition-[opacity,transform] duration-500 ${visibleView === "profile" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-8 pointer-events-none"}`}>
-          {visibleView === "profile" && <AccountTab />}
+        <div inert={visibleView !== "profile"} aria-hidden={visibleView !== "profile"} className={`absolute inset-0 z-30 flex flex-col transition-[opacity,transform] duration-200 ${visibleView === "profile" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"}`}>
+          {profileMounted && <AccountTab />}
         </div>
       </div>
 
@@ -788,18 +795,16 @@ export default function PassengerWorkspace() {
       )}
 
       {/* Bottom Navigation — Fixed Transit Tab Bar */}
-      <div className="absolute bottom-0 inset-x-0 z-[100] pb-safe pointer-events-none flex justify-center">
-        <nav className="w-full pointer-events-auto flex items-center justify-around px-2 py-2.5 rounded-t-[24px]"
-          style={{
-            background: "rgba(22, 22, 26, 0.98)",
-            borderTop: "1px solid rgba(255, 255, 255, 0.15)",
-          }}>
+      <div className={`${passengerNavFrameClassName} z-[100]`} style={passengerNavFrameStyle}>
+        <nav aria-label="Passenger sections" className={passengerNavClassName}>
           <button
+            type="button"
+            aria-current={visibleView === "home" || visibleView === "tracking" ? "page" : undefined}
             onClick={() => {
               setIsMessagingOpen(false);
               setCurrentView("home");
             }}
-            className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-all duration-300 relative group active:scale-95 gap-1.5"
+            className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-[background-color,transform] duration-150 relative group active:scale-95 gap-1.5"
             style={{
               background: (visibleView === "home" || visibleView === "tracking") ? "rgba(255,255,255,0.08)" : "transparent"
             }}
@@ -815,8 +820,13 @@ export default function PassengerWorkspace() {
           </button>
 
           <button
-            onClick={() => setCurrentView("profile")}
-            className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-all duration-300 relative group active:scale-95 gap-1.5"
+            type="button"
+            aria-current={visibleView === "profile" ? "page" : undefined}
+            onClick={() => {
+              setProfileMounted(true);
+              setCurrentView("profile");
+            }}
+            className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-[background-color,transform] duration-150 relative group active:scale-95 gap-1.5"
             style={{
               background: visibleView === "profile" ? "rgba(255,255,255,0.08)" : "transparent"
             }}

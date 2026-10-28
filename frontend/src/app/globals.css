@@ -560,13 +560,33 @@ body {
   outline-offset: 2px;
 }
 
-/* Safe area utilities */
+/* Safe area utilities. Layout math reads the same variables, so clearance
+   above fixed bars can never drift from the padding those bars receive. */
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 .pt-safe {
-  padding-top: env(safe-area-inset-top);
+  padding-top: var(--safe-area-top);
 }
 
 .pb-safe {
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: var(--safe-area-bottom);
+}
+
+/* Passenger surface: the permanent shell keeps its illustration as the
+   backdrop, but its initialization copy must not show through view fades
+   once the live workspace has mounted. */
+[data-passenger-layout]:has([data-passenger-workspace]) [data-passenger-shell-status] {
+  visibility: hidden;
+}
+
+/* The passenger frame is a fixed 100dvh app shell; elastic document
+   overscroll only drags it (and the bottom navigation) off screen. */
+html:has([data-passenger-layout]),
+html:has([data-passenger-layout]) body {
+  overscroll-behavior-y: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

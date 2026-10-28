@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Star, HeartHandshake, X, Send, Check } from "lucide-react";
 import { auth } from "@/lib/firebaseAuth";
 import { FEEDBACK_WORD_LIMIT } from "@/config/passenger";
@@ -14,6 +15,8 @@ interface Props {
   busId?: string; // If provided, this is a ride feedback. Otherwise, general suggestion.
   driverId?: string; // Links precise operational data to specific admins
   sessionId?: string; // Required for Firestore ride/passenger eligibility checks
+  draft?: string; // Unsent comment kept by the opener across close/reopen
+  onDraftChange?: (comment: string) => void;
   onClose: () => void;
 }
 
@@ -37,10 +40,14 @@ const formatCooldown = (ms: number) => {
   return `${totalMinutes}m`;
 };
 
-export default function FeedbackModal({ userId, busId, driverId, sessionId, onClose }: Props) {
+export default function FeedbackModal({ userId, busId, driverId, sessionId, draft, onDraftChange, onClose }: Props) {
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
-  const [comment, setComment] = useState("");
+  const [comment, setCommentState] = useState(draft ?? "");
+  const setComment = (next: string) => {
+    setCommentState(next);
+    onDraftChange?.(next);
+  };
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
@@ -136,6 +143,7 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, onCl
         setCooldownRemaining(ONE_DAY_MS);
       } catch {}
       
+      onDraftChange?.("");
       setSubmitted(true);
       closeTimerRef.current = setTimeout(() => {
         onClose();
@@ -162,8 +170,10 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, onCl
     }
   };
 
+  // Portal to the document so no workspace stacking context (such as the
+  // passenger Profile view) can leave its navigation above this backdrop.
   if (submitted) {
-    return (
+    return createPortal(
       <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 animate-fade-in"
         style={{ background: "rgba(0, 0, 0, 0.7)", backdropFilter: "blur(4px)" }}>
         <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} className="rounded-3xl p-8 max-w-sm w-full flex flex-col items-center text-center animate-scale-up relative overflow-hidden"
@@ -179,14 +189,15 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, onCl
             Your feedback helps us improve the experience for everyone.
           </p>
         </div>
-      </div>
+      </div>,
+      document.body,
     );
   }
 
-  return (
-    <div className="fixed inset-0 z-[999] flex items-end sm:items-center justify-center pb-24 sm:pb-0 sm:p-4 animate-fade-in"
+  return createPortal(
+    <div className="fixed inset-0 z-[999] flex items-end sm:items-center justify-center sm:p-4 animate-fade-in"
       style={{ background: "rgba(0, 0, 0, 0.7)", backdropFilter: "blur(4px)" }}>
-      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl flex flex-col animate-slide-up relative overflow-hidden shadow-2xl"
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-h-full sm:max-w-md rounded-t-3xl sm:rounded-3xl flex flex-col animate-slide-up relative overflow-y-auto overscroll-contain shadow-2xl"
         style={{ background: "var(--surface-1)", border: "1px solid rgba(255,255,255,0.08)" }}>
         
         {/* Subtle top gradient glow */}
@@ -220,7 +231,7 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, onCl
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-5">
+        <form onSubmit={handleSubmit} className="p-5 pb-[calc(1.25rem_+_var(--safe-area-bottom))] sm:pb-5 flex flex-col gap-5">
           {/* Star Rating */}
           {busId && (
             <div className="flex flex-col items-center gap-2.5">
@@ -325,6 +336,7 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, onCl
           </button>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

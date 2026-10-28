@@ -20,11 +20,17 @@ vi.mock("@/components/admin/FeedbackPanel", () => ({ default: () => <p>Feedback 
 vi.mock("@/components/admin/SettingsPanel", () => ({ default: () => <p>Settings content</p> }));
 afterEach(cleanup);
 describe("all administration sections", () => {
-  it("links to the passenger panel outside the administration tab list", () => {
+  it("ends the sliding section row with the passenger panel link, outside the tab list", () => {
     render(<AdminPage />);
     const link = screen.getByRole("link", { name: "Passenger Panel" });
+    const tablist = screen.getByRole("tablist");
     expect(link.getAttribute("href")).toBe("/passenger");
-    expect(screen.getByRole("tablist").contains(link)).toBe(false);
+    expect(tablist.contains(link)).toBe(false);
+    // The link scrolls with the tabs instead of pinning beside them.
+    const row = tablist.parentElement!;
+    expect(row.className).toContain("overflow-x-auto");
+    expect(row.lastElementChild).toBe(link);
+    expect(tablist.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
   it.each([
     ["Live Ops", "Operations"], ["Routes", "Routes"], ["Fleet & People", "Fleet"],

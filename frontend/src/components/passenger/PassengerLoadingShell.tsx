@@ -1,4 +1,7 @@
 import {
+  passengerNavClassName,
+  passengerNavFrameClassName,
+  passengerNavFrameStyle,
   passengerPanelClassName,
   passengerPanelStyle,
   passengerTopSpacerStyle,
@@ -33,6 +36,7 @@ export default function PassengerLoadingShell() {
         />
 
         <div
+          data-passenger-shell-status
           className={passengerPanelClassName}
           style={passengerPanelStyle}
         >
@@ -59,11 +63,13 @@ export default function PassengerLoadingShell() {
         </div>
       </div>
 
-      <div className="absolute inset-x-0 bottom-0 z-20 flex justify-center pb-safe" aria-hidden="true">
-        <div
-          className="flex w-full items-center justify-around rounded-t-[24px] border-t border-white/15 px-2 py-2.5"
-          style={{ background: "rgba(22, 22, 26, 0.98)" }}
-        >
+      <div
+        data-passenger-shell-status
+        className={`${passengerNavFrameClassName} z-20`}
+        style={passengerNavFrameStyle}
+        aria-hidden="true"
+      >
+        <div className={passengerNavClassName}>
           <div className="h-[60px] w-[140px] rounded-[20px] bg-white/[0.08]" />
           <div className="h-[60px] w-[140px] rounded-[20px]" />
         </div>

@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function PassengerLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative overflow-hidden" style={{ height: "100dvh" }}>
+    <div data-passenger-layout className="relative overflow-hidden" style={{ height: "100dvh" }}>
       <PassengerLoadingShell />
       <div className="absolute inset-0 z-30">
         <RoleGuard

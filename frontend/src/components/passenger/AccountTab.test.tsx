@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({ logout: vi.fn(),
   auth: { currentUser: { uid: "qa-passenger", getIdToken: vi.fn(async () => "test-token") } },
 }));
 vi.mock("@/lib/firebaseAuth", () => ({ auth: mocks.auth }));
+vi.mock("@/lib/feedbackStore", () => ({ submitFeedback: vi.fn(async () => undefined), feedbackErrorMessage: (_e: unknown, fallback: string) => fallback }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: mocks.user, logout: mocks.logout }) }));
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev"); mocks.logout.mockClear();
@@ -135,5 +136,26 @@ describe("account confirmations", () => {
     expect(mocks.logout).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Delete Account" }));
     expect(screen.getByRole("dialog", { name: "Delete Account?" })).toBeTruthy();
+  });
+});
+describe("profile feedback drafts", () => {
+  it("keeps an unsent draft after the dialog is closed and reopened", async () => {
+    render(<AccountTab />); const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Send Feedback" }));
+    await user.type(screen.getByRole("textbox"), "Seats were wet");
+    await user.click(screen.getByRole("button", { name: "Close feedback" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Send Feedback" }));
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("Seats were wet");
+  });
+  it("never offers one account's draft to another account", async () => {
+    const view = render(<AccountTab />); const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Send Feedback" }));
+    await user.type(screen.getByRole("textbox"), "Private note");
+    await user.click(screen.getByRole("button", { name: "Close feedback" }));
+    mocks.user = { uid: "another-passenger", displayName: "Other", role: "passenger", photoURL: "" };
+    view.rerender(<AccountTab />);
+    await user.click(screen.getByRole("button", { name: "Send Feedback" }));
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
   });
 });
