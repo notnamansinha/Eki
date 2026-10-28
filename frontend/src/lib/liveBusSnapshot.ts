@@ -3,6 +3,9 @@ import { serverNow } from "./serverClock";
 
 export type LiveBusSnapshot = Record<string, Record<string, unknown>>;
 
+// setTimeout's largest delay, less the store's one-millisecond margin.
+const MAX_PRUNE_DELAY_MS = 2_147_483_647 - 1;
+
 export function isActiveRideSnapshot(
   bus: Record<string, unknown>,
 ): boolean {
@@ -51,7 +54,9 @@ export function millisecondsUntilNextPrune(
     const timestamp = liveBusFreshnessTimestamp(bus) as number;
     nextDelay = Math.min(nextDelay, timestamp + BUS_EXPIRY_MS - now);
   }
+  // A far-future entry would overflow setTimeout, which then fires at once
+  // and re-arms forever; re-checking it a timer's span later is enough.
   return Number.isFinite(nextDelay)
-    ? Math.max(0, Math.ceil(nextDelay))
+    ? Math.min(MAX_PRUNE_DELAY_MS, Math.max(0, Math.ceil(nextDelay)))
     : null;
 }
