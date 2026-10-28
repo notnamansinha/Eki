@@ -44,6 +44,10 @@ export function useDialogFocus<T extends HTMLElement>(
     const focusFirst = () => {
       const dialog = dialogRef.current;
       if (!dialog) return;
+      // The user may already be typing in a field; moving focus now would send
+      // their next key (a space presses a button) to the wrong control.
+      const active = document.activeElement;
+      if (active && active !== dialog && dialog.contains(active)) return;
       const preferred = dialog.querySelector<HTMLElement>("[data-autofocus]");
       const first = preferred ?? dialog.querySelector<HTMLElement>(FOCUSABLE);
       (first ?? dialog).focus();
