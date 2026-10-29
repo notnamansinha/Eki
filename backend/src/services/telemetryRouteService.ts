@@ -17,6 +17,7 @@ import {
   stopsInRideDirection,
 } from "../lib/rideDirection";
 import { inferRideDirectionFromTelemetry } from "../lib/automaticRideDirection";
+import { haversineMeters } from "../lib/geo";
 import { departureSamples, inferDepartureDirection } from "./departureDirection";
 import {
   adaptiveGnssErrorMeters,
@@ -44,6 +45,7 @@ import {
   ROUTE_MATCH_DISTANCE_M,
   trajectoryHeading,
   plausibleProgressBound,
+  PLAUSIBLE_PROGRESS_MAX_ANCHOR_AGE_MS,
   type PreviousRouteMatch,
   type RouteAdherenceState,
   type RouteMatch,
@@ -308,6 +310,12 @@ export function previousMatch(
       }
     : null;
 }
+
+/**
+ * Readings this far apart along the route but this close in space are two legs
+ * (either side of a turnaround or loop), not one leg read twice.
+ */
+const COMPETING_LEG_EXTRA_M = 10;
 
 /** Speed recorded with the previous match; 0 for a record written before speeds were kept. */
 export function previousMatchSpeedKmh(value: unknown): number {
@@ -818,7 +826,8 @@ async function activateReroute(
       ...(match && !match.isAmbiguous && match.matchConfidence >= MATCHED_POSITION_CONFIDENCE && telemetryIsCurrent(live, sample)
         ? {
             matchedLocation: matchedLocation(match, sample, routeVersion),
-            routeMatchAnchor: matchedLocation(match, sample, routeVersion),
+            // A GNSS-loss packet is shown, but never anchors progress on the new route.
+            routeMatchAnchor: sample.motionState === "uncertain" ? null : matchedLocation(match, sample, routeVersion),
             matchConfidence: match.matchConfidence,
             distanceToActiveRoute: Number(match.distanceToRouteM.toFixed(1)),
           }
@@ -1102,9 +1111,11 @@ async function processTelemetryRoute(
   const anchorTimestamp = Number(anchor?.timestamp);
   const requiresReacquisition = Number.isFinite(anchorTimestamp) &&
     sample.timestamp - anchorTimestamp > TELEMETRY_REACQUIRE_AFTER_MS;
+  // The anchor is the last trustworthy match; a GNSS-loss packet never replaces it.
+  const progressAnchor = live?.routeMatchAnchor ?? live?.matchedLocation;
   const prior = matchingContextChanged || requiresReacquisition
     ? null
-    : previousMatch(live?.matchedLocation ?? live?.routeMatchAnchor, routeVersion, sample.timestamp);
+    : previousMatch(progressAnchor, routeVersion, sample.timestamp);
   const acceptedPoint = {
     lat: Number(live?.lat),
     lng: Number(live?.lng),
@@ -1133,7 +1144,7 @@ async function processTelemetryRoute(
     live?.routeMatchHistory,
     acceptedSample.timestamp,
   );
-  const priorSampledAt = Number((live?.matchedLocation ?? live?.routeMatchAnchor as any)?.sampledAt);
+  const priorSampledAt = Number((progressAnchor as Partial<LiveMatchedLocation> | undefined)?.sampledAt);
   const progressElapsedMs = prior && Number.isFinite(priorSampledAt)
     ? sample.timestamp - priorSampledAt : elapsedMs;
   const positionUncertaintyM = adaptiveGnssErrorMeters(
@@ -1143,9 +1154,9 @@ async function processTelemetryRoute(
     elapsedMs,
   );
   // A bus can brake hard between fixes: bound progress by the faster of the two ends.
-  const progressSpeedKmh = Math.max(acceptedSample.speed, Number(live?.speed) || 0,
-    previousMatchSpeedKmh(live?.matchedLocation ?? live?.routeMatchAnchor));
-  const match = matchRoutePosition(
+  const currentSpeedKmh = Math.max(acceptedSample.speed, Number(live?.speed) || 0);
+  const anchorSpeedKmh = previousMatchSpeedKmh(progressAnchor);
+  const matchWithin = (speedKmh: number) => matchRoutePosition(
     acceptedPoint,
     geometry.path,
     acceptedSample.speed >= 3 && acceptedSample.motionState === "moving"
@@ -1154,10 +1165,23 @@ async function processTelemetryRoute(
     prior,
     positionUncertaintyM,
     progressElapsedMs > 0 && progressElapsedMs <= 60_000
-      ? (progressSpeedKmh + 15) / 3.6 * progressElapsedMs / 1000 + 2 * positionUncertaintyM
+      ? (speedKmh + 15) / 3.6 * progressElapsedMs / 1000 + 2 * positionUncertaintyM
       : undefined,
-    prior ? plausibleProgressBound(progressElapsedMs, progressSpeedKmh, positionUncertaintyM) : undefined,
+    prior ? plausibleProgressBound(progressElapsedMs, speedKmh, positionUncertaintyM) : undefined,
   );
+  let match = matchWithin(Math.max(currentSpeedKmh, anchorSpeedKmh));
+  // Past the fresh-anchor age there is no progress penalty, so the faster old
+  // speed only widens the window. If the current speed alone admits another leg
+  // (the near side of a turnaround), both readings are possible: ambiguous.
+  if (match && !match.isAmbiguous && prior && anchorSpeedKmh > currentSpeedKmh &&
+      progressElapsedMs > PLAUSIBLE_PROGRESS_MAX_ANCHOR_AGE_MS) {
+    const nearer = matchWithin(currentSpeedKmh);
+    if (nearer && Math.abs(nearer.alongRouteDistanceM - match.alongRouteDistanceM) >
+        haversineMeters(nearer.point, match.point) + COMPETING_LEG_EXTRA_M) {
+      // Same confidence discount the matcher applies to its own ambiguous matches.
+      match = { ...match, isAmbiguous: true, matchConfidence: Number((match.matchConfidence * 0.55).toFixed(3)) };
+    }
+  }
   const adherence = evaluateRouteAdherence(
     matchingContextChanged ? undefined : adherencePreviousState(live, Date.now()),
     matchingContextChanged || !Number.isInteger(live?.offRouteSampleCount)
@@ -1201,7 +1225,8 @@ async function processTelemetryRoute(
         ? { rerouteRequestId: null, rerouteError: null, rerouteRetry: null }
         : {}),
       routeMatchHistory: trajectory,
-      routeMatchAnchor: match && !match.isAmbiguous && match.matchConfidence >= MATCHED_POSITION_CONFIDENCE
+      routeMatchAnchor: match && !match.isAmbiguous && match.matchConfidence >= MATCHED_POSITION_CONFIDENCE &&
+        acceptedSample.motionState !== "uncertain"
         ? matchedLocation(match, acceptedSample, routeVersion)
         : matchingContextChanged ? null : live?.routeMatchAnchor ?? live?.matchedLocation ?? null,
       offRouteSampleCount: adherence.offRouteSampleCount,

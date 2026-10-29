@@ -13,8 +13,11 @@ function Fixture() {
   const query = new URLSearchParams(window.location.search);
   // Harness controls sit above the workspace, never over it: wider CI fonts wrap
   // them onto more lines, and an overlay then intercepts clicks on the app header.
-  // The transform makes the workspace's fixed overlays stay inside its own box.
+  // The transform makes the workspace's fixed overlays stay inside its own box,
+  // and this fixture alone fits the workspace (100dvh by default) to that box so
+  // its bottom navigation is not clipped.
   if (query.has("workspace")) return <div style={{ height: "100dvh", display: "flex", flexDirection: "column", background: "#09090b" }}>
+    <style>{"[data-passenger-workspace] { height: 100% !important; }"}</style>
     <div data-harness-controls style={{ flex: "none", display: "flex", flexWrap: "wrap", gap: 4, color: "white" }}>
       <button onClick={publishDeparture}>Replay credible departure</button>
       <button onClick={() => publishArrival(STOP_ARRIVAL_GEOFENCE_M + 0.1)}>Fix outside arrival corridor</button>

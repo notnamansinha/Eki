@@ -37,7 +37,10 @@ defect was fixed and kept as a regression test:
 Review follow-ups on the pull request: the progress bound (and the older
 progress window) now use the faster of the previous match speed and the
 current speed, so a bus that braked to a stop just past a U-turn stays on the
-carriageway it reached (`routeMatchingGapBraking.integration.test.ts`); the
+carriageway it reached (`routeMatchingGapBraking.integration.test.ts`). The
+firmware's GNSS-loss packet is never the progress anchor, and after a gap over
+10 s a turnaround leg admitted only by the old speed is reported as ambiguous
+(raw position shown) instead of a confident match; the
 boarding header is green only while live, amber for delayed or GPS lost, red
 for lost or offline, and never says "Live" without a health reading.
 
