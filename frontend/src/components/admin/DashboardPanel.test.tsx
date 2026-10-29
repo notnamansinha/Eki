@@ -141,6 +141,8 @@ describe("admin service creation", () => {
     expect(within(screen.getByRole("dialog")).getByText("Connected")).toBeTruthy();
   });
   it("tells the operator within 30 s of silence, not 90 s (field ride, 29 Oct 2026)", () => {
+    // A frozen clock keeps a slow render from ageing the 29 s sample past 30 s.
+    vi.useFakeTimers({ toFake: ["Date"] });
     const now = Date.now();
     const aged = (ageMs: number) => [{ ...fixtureBus("forward"), timestamp: now - ageMs, backendReceivedAt: now - ageMs } as ActiveBusEntry];
     state.entries = aged(29_000);

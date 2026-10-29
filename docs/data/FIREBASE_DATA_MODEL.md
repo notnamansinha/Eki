@@ -48,7 +48,7 @@ Backend-only authority, with every browser read/write denied. One latest record 
 | `routeId` | string | Server registry/shift assignment |
 | `lat`, `lng` | number | Latest accepted GNSS coordinate |
 | `rawLocation` | object | Original authenticated `{lat,lng,speed,heading,gpsHdop,motionState,seq,sampledAt}`; never overwritten by snapping |
-| `matchedLocation` | object | Current confident `{lat,lng,segmentIndex,segmentFraction,alongRouteDistanceM,distanceToRouteM,headingDifference,matchConfidence,seq,sampledAt,routeVersion,speed}`. `speed` (km/h) is the matched fix's speed, kept so the next match can bound progress by the faster of the two fixes; it is backend-only and not in the public projection |
+| `matchedLocation` | object | Current confident `{lat,lng,segmentIndex,segmentFraction,alongRouteDistanceM,distanceToRouteM,headingDifference,matchConfidence,seq,sampledAt,routeVersion,speed,uncertain?}`. `uncertain: true` marks a match made from a GNSS-loss fix: it is displayed but never becomes `routeMatchAnchor` or bounds later progress. `speed` (km/h) is the matched fix's speed, kept so the next match can bound progress by the faster of the two fixes; it is backend-only and not in the public projection |
 | `mapMatchSeq`, `mapMatchSampledAt` | number | Sample identity of the latest completed matching pass, including passes that produced no confident match |
 | `matchConfidence`, `distanceToActiveRoute` | number | Latest matcher confidence (0–1) and raw distance in metres |
 | `routeState` | enum | `ON_ROUTE`, `POSSIBLE_OFF_ROUTE`, `OFF_ROUTE`, `REROUTING`, or `ON_NEW_ROUTE` |

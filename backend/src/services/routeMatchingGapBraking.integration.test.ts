@@ -124,3 +124,20 @@ it("after a gap longer than the fresh-anchor age the previous speed does not wid
   // Either leg is possible after 15 s: the return leg is not published as a confident match.
   expect(matchedAlong()).toBeNull();
 });
+
+it("a GNSS-loss match written when no anchor exists never becomes the progress anchor", async () => {
+  useUTurnRoute();
+  const now = Date.now();
+  const base = { deviceSentAt: now };
+  // The first fix of the context is the loss packet: it is shown, but marked uncertain.
+  publish({ ...base, seq: 1, timestamp: now - 8_000, ...at(100, 0), speed: 0, heading: 90, gpsHdop: 99, motionState: "uncertain" });
+  await drainTelemetryRouteProcessing();
+  expect(state.values.get(key)?.matchedLocation).toMatchObject({ seq: 1, uncertain: true });
+  expect(state.values.get(key)?.routeMatchAnchor ?? null).toBeNull();
+  // GPS returns standing 20 m past the turnaround; the loss packet must not bound it.
+  publish({ ...base, seq: 2, timestamp: now, ...at(180, 15), speed: 0, heading: 270, gpsHdop: 1, motionState: "stopped" });
+  await drainTelemetryRouteProcessing();
+  expect(Math.abs(matchedAlong()! - 235)).toBeLessThanOrEqual(2);
+  expect(state.values.get(key)?.routeMatchAnchor).toMatchObject({ seq: 2 });
+  expect(state.values.get(key)?.routeMatchAnchor).not.toHaveProperty("uncertain");
+});

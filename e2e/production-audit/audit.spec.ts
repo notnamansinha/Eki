@@ -36,6 +36,9 @@ test("admin and passenger label 90 to 200 second telemetry gaps and recover with
   await view(page, "passenger");
   await page.getByRole("button", { name: `Track ${routeName}`, exact: true }).click();
   // Passengers are told sooner: updates are delayed after 12 s and tracking is lost after 30 s.
+  await publishAge(page, 12_001);
+  await expect(page.getByText("Updates delayed").first()).toBeVisible();
+  await expect(page.getByText("Live tracking lost")).toHaveCount(0);
   for (const age of [90_001, 120_000, 200_000]) {
     await publishAge(page, age);
     await expect(page.getByText("Live tracking lost").first()).toBeVisible();
