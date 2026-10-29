@@ -71,11 +71,25 @@ async function settle() {
   for (let index = 0; index < 20; index += 1) await new Promise((resolve) => setImmediate(resolve));
 }
 
+// What Cache Storage rejects with under storage pressure or on a restricted
+// iOS profile.
+const storageFailure = () => new DOMException("Unexpected internal error.", "UnknownError");
+
 function loadWorker(t) {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const routes = [];
   const caches = createCacheStorage();
   globalThis.caches = caches;
+  // Reads to make reject: the runtime cache (read through Workbox's
+  // StrategyHandler) and precached URLs.
+  const unreadable = { runtime: false, precache: new Set() };
+  const matchRuntime = caches.match;
+  caches.match = async (...args) => {
+    if (unreadable.runtime) throw storageFailure();
+    return matchRuntime(...args);
+  };
+  // The worker's own timers that have neither fired nor been cleared.
+  const pendingTimers = new Set();
   let respond = () => {};
   globalThis.fetch = () => new Promise((resolve, reject) => { respond = { resolve, reject }; });
   class Stub { constructor(options = {}) { this.options = options; } }
@@ -84,8 +98,18 @@ function loadWorker(t) {
     self: { location: { origin: ORIGIN }, addEventListener() {} },
     caches,
     URL,
-    setTimeout: (...args) => globalThis.setTimeout(...args),
-    clearTimeout: (...args) => globalThis.clearTimeout(...args),
+    setTimeout: (callback, ms, ...args) => {
+      const id = globalThis.setTimeout((...values) => {
+        pendingTimers.delete(id);
+        callback(...values);
+      }, ms, ...args);
+      pendingTimers.add(id);
+      return id;
+    },
+    clearTimeout: (id) => {
+      pendingTimers.delete(id);
+      globalThis.clearTimeout(id);
+    },
     NavigationRoute,
     NetworkFirst: strategies.NetworkFirst,
     StrategyHandler: strategies.StrategyHandler,
@@ -97,13 +121,18 @@ function loadWorker(t) {
     cleanupOutdatedCaches() {},
     precacheAndRoute() {},
     setDefaultHandler() {},
-    matchPrecache: async (url) => (PRECACHE.has(url) ? html(PRECACHE.get(url)) : undefined),
+    matchPrecache: async (url) => {
+      if (unreadable.precache.has(url)) throw storageFailure();
+      return PRECACHE.has(url) ? html(PRECACHE.get(url)) : undefined;
+    },
     registerRoute: (match, strategy) => routes.push({ match, strategy }),
   });
   const route = routes.find(({ match }) => match instanceof NavigationRoute).match;
 
   return {
     caches,
+    unreadable,
+    pendingTimers: () => pendingTimers.size,
     network: () => respond,
     async advance(ms) {
       await settle();
@@ -139,13 +168,99 @@ test("a hanging network is answered with the route's precached shell within 2.5 
   }
 });
 
-test("a hanging network is answered with the runtime-cached copy before the precached shell", async (t) => {
+test("a hanging network is answered with the precached shell before the runtime-cached copy", async (t) => {
+  // Activation empties the runtime cache, so a copy there that differs from
+  // the shell came from a newer deploy whose chunks this worker has not cached.
   const worker = loadWorker(t);
   await (await worker.caches.open(NAVIGATION_CACHE))
     .put(`${ORIGIN}/passenger`, html("<html>runtime copy</html>"));
   const { response } = worker.navigate("/passenger?utm=qr");
   await worker.advance(2500);
   assert.equal(response.done, true, "navigation is still waiting for the network after 2.5 s");
+  assert.equal(await response.value.text(), "<html>passenger shell</html>");
+});
+
+// On a flaky network the first open gets the shell while the late response,
+// from a deploy newer than this worker, is stored unrendered. If a later open
+// served that HTML, its uncached chunks would have to come over the same
+// flaky network (or none at all) and the page would sit unhydrated.
+async function storeNewerDeployLate(worker) {
+  const first = worker.navigate("/passenger?utm=qr");
+  await worker.advance(2500);
+  assert.equal(await first.response.value.text(), "<html>passenger shell</html>");
+  worker.network().resolve(html("<html>newer deploy</html>"));
+  for (let tick = 0; tick < 5; tick += 1) await worker.advance(1);
+  assert.equal(await worker.runtimeCached("/passenger"), "<html>newer deploy</html>");
+}
+
+test("a newer deploy's HTML stored after one slow navigation is not served to the next one", async (t) => {
+  const worker = loadWorker(t);
+  await storeNewerDeployLate(worker);
+  const second = worker.navigate("/passenger");
+  await worker.advance(2500);
+  assert.equal(second.response.done, true, "navigation is still waiting for the network after 2.5 s");
+  assert.equal(await second.response.value.text(), "<html>passenger shell</html>");
+});
+
+test("a newer deploy's HTML stored after one slow navigation is not served when the next fetch fails", async (t) => {
+  // NetworkFirst answers a failed fetch from its runtime cache by itself.
+  const worker = loadWorker(t);
+  await storeNewerDeployLate(worker);
+  const second = worker.navigate("/passenger");
+  await worker.advance(1);
+  worker.network().reject(new TypeError("Failed to fetch"));
+  await worker.advance(1);
+  assert.equal(second.response.done, true, "/passenger must fall back as soon as the network fails");
+  assert.equal(second.response.error, undefined);
+  assert.equal(await second.response.value.text(), "<html>passenger shell</html>");
+});
+
+test("a route with no precached shell is answered with its runtime-cached copy within 2.5 s", async (t) => {
+  const worker = loadWorker(t);
+  await (await worker.caches.open(NAVIGATION_CACHE))
+    .put(`${ORIGIN}/unshelled-route`, html("<html>runtime copy</html>"));
+  const { response } = worker.navigate("/unshelled-route?utm=qr");
+  await worker.advance(2500);
+  assert.equal(response.done, true, "navigation is still waiting for the network after 2.5 s");
+  assert.equal(await response.value.text(), "<html>runtime copy</html>");
+});
+
+test("a route with no precached shell still gets its runtime-cached copy when the fetch fails", async (t) => {
+  const worker = loadWorker(t);
+  await (await worker.caches.open(NAVIGATION_CACHE))
+    .put(`${ORIGIN}/unshelled-route`, html("<html>runtime copy</html>"));
+  const { response } = worker.navigate("/unshelled-route?utm=qr");
+  await worker.advance(1);
+  worker.network().reject(new TypeError("Failed to fetch"));
+  await worker.advance(1);
+  assert.equal(response.done, true, "/unshelled-route must fall back as soon as the network fails");
+  assert.equal(response.error, undefined);
+  assert.equal(await response.value.text(), "<html>runtime copy</html>");
+});
+
+test("an unreadable precached shell falls through to the runtime-cached copy within 2.5 s", async (t) => {
+  const worker = loadWorker(t);
+  worker.unreadable.precache.add("/passenger.html");
+  await (await worker.caches.open(NAVIGATION_CACHE))
+    .put(`${ORIGIN}/passenger`, html("<html>runtime copy</html>"));
+  const { response } = worker.navigate("/passenger?utm=qr");
+  await worker.advance(2500);
+  assert.equal(response.done, true, "navigation is still waiting for the network after 2.5 s");
+  assert.equal(response.error, undefined);
+  assert.equal(await response.value.text(), "<html>runtime copy</html>");
+});
+
+test("an unreadable precached shell keeps the runtime-cached copy when the fetch fails", async (t) => {
+  const worker = loadWorker(t);
+  worker.unreadable.precache.add("/passenger.html");
+  await (await worker.caches.open(NAVIGATION_CACHE))
+    .put(`${ORIGIN}/passenger`, html("<html>runtime copy</html>"));
+  const { response } = worker.navigate("/passenger?utm=qr");
+  await worker.advance(1);
+  worker.network().reject(new TypeError("Failed to fetch"));
+  await worker.advance(1);
+  assert.equal(response.done, true, "/passenger must fall back as soon as the network fails");
+  assert.equal(response.error, undefined);
   assert.equal(await response.value.text(), "<html>runtime copy</html>");
 });
 
@@ -205,4 +320,114 @@ test("with no cached copy of the route, a slow navigation keeps waiting for the 
   assert.equal(response.done, true);
   assert.equal(response.value.status, 404);
   assert.equal(await response.value.text(), "<html>not found</html>");
+});
+
+test("an unreadable cache at the 2.5 s budget is a miss, so the navigation keeps waiting for the network", async (t) => {
+  // The cached copy is only a shortcut: a read that rejects must not fail a
+  // navigation Hosting is still answering.
+  const worker = loadWorker(t);
+  worker.unreadable.runtime = true;
+  worker.unreadable.precache.add("/passenger.html");
+  const { response } = worker.navigate("/passenger?utm=qr");
+  await worker.advance(2500);
+  assert.equal(response.done, false, "an unreadable cache failed the navigation");
+  worker.network().resolve(html("<html>fresh deploy</html>"));
+  await worker.advance(1);
+  assert.equal(response.done, true);
+  assert.equal(response.error, undefined);
+  assert.equal(await response.value.text(), "<html>fresh deploy</html>");
+});
+
+test("an unreadable runtime cache still answers a hanging network with the precached shell", async (t) => {
+  const worker = loadWorker(t);
+  worker.unreadable.runtime = true;
+  const { response } = worker.navigate("/passenger?utm=qr");
+  await worker.advance(2500);
+  assert.equal(response.done, true, "navigation is still waiting for the network after 2.5 s");
+  assert.equal(response.error, undefined);
+  assert.equal(await response.value.text(), "<html>passenger shell</html>");
+});
+
+test("after an unreadable cache at the budget, a network failure still falls back to the precached shell, then the root shell", async (t) => {
+  for (const [path, shell] of [["/passenger", "passenger shell"], ["/no-such-page", "root shell"]]) {
+    const worker = loadWorker(t);
+    worker.unreadable.runtime = true;
+    worker.unreadable.precache.add("/passenger.html");
+    const { response } = worker.navigate(path);
+    await worker.advance(2500);
+    assert.equal(response.done, false, `${path}: an unreadable cache failed the navigation`);
+    // Storage pressure passes; the network then fails.
+    worker.unreadable.runtime = false;
+    worker.unreadable.precache.clear();
+    worker.network().reject(new TypeError("Failed to fetch"));
+    await worker.advance(1);
+    assert.equal(response.done, true, `${path} must fall back as soon as the network fails`);
+    assert.equal(response.error, undefined);
+    assert.equal(await response.value.text(), `<html>${shell}</html>`);
+    t.mock.timers.reset();
+  }
+});
+
+test("a network failure with an unreadable route shell falls back to the root shell", async (t) => {
+  const worker = loadWorker(t);
+  worker.unreadable.precache.add("/passenger.html");
+  const { response } = worker.navigate("/passenger");
+  await worker.advance(1);
+  worker.network().reject(new TypeError("Failed to fetch"));
+  await worker.advance(1);
+  assert.equal(response.done, true, "/passenger must fall back as soon as the network fails");
+  assert.equal(response.error, undefined);
+  assert.equal(await response.value.text(), "<html>root shell</html>");
+});
+
+test("a network failure with no readable shell fails with the network's error, not the storage error", async (t) => {
+  const worker = loadWorker(t);
+  worker.unreadable.precache.add("/passenger.html").add("/index.html");
+  const { response } = worker.navigate("/passenger");
+  await worker.advance(1);
+  worker.network().reject(new TypeError("Failed to fetch"));
+  await worker.advance(1);
+  assert.equal(response.done, true, "/passenger must not hang once the network has failed");
+  // NetworkFirst reports a failed fetch with no runtime copy as "no-response".
+  assert.equal(response.error?.name, "no-response");
+});
+
+test("the 2.5 s budget timer never outlives the navigation", async (t) => {
+  // A pending timer would keep the worker busy after the page has its answer.
+  const paths = [
+    ["network answers inside the budget", async (worker) => {
+      await worker.advance(999);
+      worker.network().resolve(html("<html>fresh deploy</html>"));
+      await worker.advance(1);
+    }],
+    ["network fails inside the budget", async (worker) => {
+      worker.network().reject(new TypeError("Failed to fetch"));
+      await worker.advance(1);
+    }],
+    ["network fails and no shell can be read", async (worker) => {
+      worker.unreadable.precache.add("/passenger.html").add("/index.html");
+      worker.network().reject(new TypeError("Failed to fetch"));
+      await worker.advance(1);
+    }],
+    ["budget expires onto the precached shell", async (worker) => {
+      await worker.advance(2499);
+    }],
+    ["budget expires onto an unreadable cache, then the network answers", async (worker) => {
+      worker.unreadable.runtime = true;
+      worker.unreadable.precache.add("/passenger.html");
+      await worker.advance(2499);
+      worker.network().resolve(html("<html>fresh deploy</html>"));
+      await worker.advance(1);
+    }],
+  ];
+  for (const [label, drive] of paths) {
+    const worker = loadWorker(t);
+    const { response } = worker.navigate("/passenger");
+    await worker.advance(1);
+    assert.equal(worker.pendingTimers(), 1, `${label}: the budget timer was not observed`);
+    await drive(worker);
+    assert.equal(response.done, true, `${label}: the navigation has not settled`);
+    assert.equal(worker.pendingTimers(), 0, `${label}: the budget timer outlives the navigation`);
+    t.mock.timers.reset();
+  }
 });
