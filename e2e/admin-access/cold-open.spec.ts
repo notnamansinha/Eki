@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 // Cold-open auth restoration. `?restoreHang` holds the synthetic SDK's first
 // auth state, authStateReady() and getRedirectResult until a fixture control
 // finishes restoration; page.clock crosses the 8 s / 10 s marks deterministically.
@@ -11,7 +11,8 @@ const IPHONE = {
 };
 const entry = { id: "feedback", userId: "passenger", userName: "Browser Passenger", type: "general", busId: null,
   driverId: null, sessionId: null, rating: null, comment: "Browser verification", timestamp: null, status: "new" };
-type QaWindow = Window & { qaAuthCalls: Array<{ name: string; resolver: boolean }>; qaRouterReplacements: string[]; qaSawAccessError: boolean };
+type QaWindow = Window & { qaAuthCalls: Array<{ name: string; resolver: boolean }>; qaRouterReplacements: string[]; qaSawAccessError: boolean;
+  qaAuthObservers: { registered: number; active: number }; qaVerifications: boolean[]; qaOnlineEvents: number };
 
 const errors: string[] = [];
 test.beforeEach(async ({ page }) => {
@@ -164,6 +165,106 @@ test.describe("on an iPhone", () => {
     await page.getByRole("button", { name: "Approve verification" }).click();
     await expect(page.getByText("Opening your workspace…")).toBeVisible();
     await expect.poll(() => replacements(page)).toEqual(["/passenger"]);
+    expect(await sawAccessError(page)).toBe(false);
+  });
+});
+
+// A slow first download of the sign-in code must not be duplicated by a retry.
+// An `online` event while it is pending (the import-failure backoff and "Try
+// again" share that retry; neither is reachable before a first load fails or a
+// verifier exists) would otherwise start a second load: a second, never
+// unsubscribed auth observer, a second role verification and a second
+// getRedirectResult. `firebase/auth` is served as its own module
+// (firebaseAuthSdk.ts) that only useAuth's dynamic import requests, so holding
+// that response holds the load; the clock stays paused, so no timer interferes.
+test.describe("while the sign-in code is still downloading", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      const verifications: boolean[] = [];
+      Object.assign(window, { qaVerifications: verifications, qaOnlineEvents: 0 });
+      window.addEventListener("qa-verification", event => verifications.push((event as CustomEvent<{ forceRefresh: boolean }>).detail.forceRefresh));
+      window.addEventListener("online", () => { (window as unknown as QaWindow).qaOnlineEvents++; });
+    });
+  });
+  // A failing test may never release the held download.
+  test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
+
+  async function holdSignInCode(page: Page) {
+    const requests: string[] = [];
+    let release!: () => void;
+    const released = new Promise<void>(resolve => { release = resolve; });
+    await page.route("**/firebaseAuthSdk.ts*", async route => { requests.push(route.request().url()); await released; await route.continue(); });
+    return { requests, release };
+  }
+  // The network drops and returns: the browser itself fires `online`.
+  async function reconnect(page: Page, context: BrowserContext) {
+    await context.setOffline(true);
+    await context.setOffline(false);
+    await expect.poll(() => page.evaluate(() => (window as unknown as QaWindow).qaOnlineEvents)).toBe(1);
+  }
+  const observers = (page: Page) => page.evaluate(() => ({ ...(window as unknown as QaWindow).qaAuthObservers }));
+  const verifications = (page: Page) => page.evaluate(() => [...(window as unknown as QaWindow).qaVerifications]);
+  const loaded = (page: Page) => expect.poll(async () => (await observers(page)).registered).toBeGreaterThan(0);
+  const ONE_OBSERVER = { registered: 1, active: 1 };
+
+  test("a reconnect before it arrives loads it once: one auth observer, sign-in enabled, one popup", async ({ page, context }) => {
+    const signInCode = await holdSignInCode(page);
+    await coldOpen(page, "/?landing&restoreHang");
+    await expect.poll(() => signInCode.requests.length).toBe(1);
+    await expect(preparing(page)).toBeDisabled();
+    await reconnect(page, context);
+    signInCode.release();
+    await expect(signIn(page)).toBeEnabled();
+    expect(await observers(page)).toEqual(ONE_OBSERVER);
+    await page.getByRole("button", { name: "Finish restoration as signed out" }).click();
+    await expect(signIn(page)).toBeEnabled();
+    await expect(stillChecking(page)).toHaveCount(0);
+    expect(await authCalls(page)).toEqual([]);
+    await signIn(page).click();
+    await expect.poll(() => authCalls(page)).toEqual([{ name: "signInWithPopup", resolver: true }]);
+    expect(await observers(page)).toEqual(ONE_OBSERVER);
+    expect(signInCode.requests).toHaveLength(1);
+    expect(await sawAccessError(page)).toBe(false);
+  });
+
+  test("online events before it arrives verify a restored admin once and open the protected page once", async ({ page }) => {
+    const reads: string[] = [];
+    await page.route("**/__qa/firestore/feedback**", route => { reads.push(route.request().url()); return route.fulfill({ json: { feedbacks: [entry] } }); });
+    const signInCode = await holdSignInCode(page);
+    await coldOpen(page, "/?restoreHang");
+    await expect.poll(() => signInCode.requests.length).toBe(1);
+    await expect(page.getByText("Signing you in…")).toBeVisible();
+    await page.evaluate(() => { window.dispatchEvent(new Event("online")); window.dispatchEvent(new Event("online")); });
+    signInCode.release();
+    await loaded(page);
+    await page.getByRole("button", { name: "Finish restoration as admin" }).click();
+    await expect(page.getByRole("button", { name: "Approve verification" })).toBeEnabled();
+    expect(await verifications(page)).toEqual([true]);
+    expect(await observers(page)).toEqual(ONE_OBSERVER);
+    await page.getByRole("button", { name: "Approve verification" }).click();
+    await expect(page.getByText("Browser Passenger")).toBeVisible();
+    expect(reads).toHaveLength(1);
+    expect(await verifications(page)).toEqual([true]);
+    expect(await observers(page)).toEqual(ONE_OBSERVER);
+    expect(signInCode.requests).toHaveLength(1);
+    expect(await sawAccessError(page)).toBe(false);
+  });
+
+  test("a reconnect before it arrives completes a pending Google redirect once", async ({ page, context }) => {
+    const signInCode = await holdSignInCode(page);
+    await coldOpen(page, "/?landing&restoreHang", true);
+    await expect.poll(() => signInCode.requests.length).toBe(1);
+    await expect(preparing(page)).toBeDisabled();
+    await reconnect(page, context);
+    signInCode.release();
+    await loaded(page);
+    expect(await authCalls(page)).toEqual([{ name: "getRedirectResult", resolver: true }]);
+    await expect(preparing(page)).toBeDisabled();
+    await page.getByRole("button", { name: "Finish restoration as signed out" }).click();
+    await expect(signIn(page)).toBeEnabled();
+    expect(await authCalls(page)).toEqual([{ name: "getRedirectResult", resolver: true }]);
+    expect(await observers(page)).toEqual(ONE_OBSERVER);
+    expect(signInCode.requests).toHaveLength(1);
     expect(await sawAccessError(page)).toBe(false);
   });
 });

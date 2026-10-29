@@ -145,6 +145,12 @@ function useAuthState(): AuthContextValue {
     let loadAttempt = 0;
     let loadRetryTimer: ReturnType<typeof setTimeout> | undefined;
     let authLoaded = false;
+    // One load of the sign-in code at a time: a second load racing a slow
+    // first one registers a second observer (the first leaks past unmount) and
+    // verifies the account twice. A retry asked for mid-load (network back,
+    // Try again) runs as soon as that load fails instead of after the backoff.
+    let loadInFlight = false;
+    let loadRetryRequested = false;
     authInitialized.current = false;
     const clearRecovery = () => {
       clearTimeout(retryTimer);
@@ -189,7 +195,7 @@ function useAuthState(): AuthContextValue {
 
     const loadAuth = () => Promise.all([import("firebase/auth"), import("@/lib/firebaseAuth")])
       .then(async (dependencies) => {
-        const [authModule, { auth, googleProvider, popupRedirectResolver }] = dependencies;
+        const [authModule, { auth, googleProvider, popupRedirectResolver, resolverInstalledAtStartup }] = dependencies;
         if (disposed) return;
         authLoaded = true;
         clearTimeout(loadRetryTimer);
@@ -395,13 +401,23 @@ function useAuthState(): AuthContextValue {
             notifyAuthReady();
           }
         };
-        let flight: { user: import("firebase/auth").User | null; generation: number; promise: Promise<void> } | null = null;
-        const runVerification = (firebaseUser: import("firebase/auth").User | null): Promise<void> => {
-          if (flight?.user === firebaseUser && flight.generation === getAuthVerificationGeneration()) return flight.promise;
+        let flight: { user: import("firebase/auth").User | null; generation: number; promise: Promise<void>; steady: boolean } | null = null;
+        const runVerification = (firebaseUser: import("firebase/auth").User | null, shown = false): Promise<void> => {
+          if (flight?.user === firebaseUser && flight.generation === getAuthVerificationGeneration()) {
+            // Try again joining a background retry shows it in progress instead
+            // of leaving the old error up; the flight settles both as usual.
+            if (shown && flight.steady) {
+              flight.steady = false;
+              setRoleError(null);
+              setLoading(true);
+            }
+            return flight.promise;
+          }
+          const steady = recovering;
           const promise = verifyUser(firebaseUser).finally(() => {
             if (flight?.promise === promise) flight = null;
           });
-          flight = { user: firebaseUser, generation: getAuthVerificationGeneration(), promise };
+          flight = { user: firebaseUser, generation: getAuthVerificationGeneration(), promise, steady };
           return promise;
         };
         refreshVerification.current = (onlyIfNeeded = false) => {
@@ -420,7 +436,7 @@ function useAuthState(): AuthContextValue {
             });
           }
           retryAttempt = 0;
-          return runVerification(auth.currentUser);
+          return runVerification(auth.currentUser, true);
         };
         unsubscribe = authModule.onAuthStateChanged(auth, firebaseUser => {
           authInitialized.current = true;
@@ -431,6 +447,13 @@ function useAuthState(): AuthContextValue {
         // so sign-in is usable now; Firebase queues it behind restoration.
         if (!isGoogleRedirectPending()) {
           setLoginReady(true);
+          // On popup platforms this loads Google's sign-in iframe in the
+          // background, so the popup can open within the click instead of being
+          // blocked. Any account it returns reaches the observer. Phones skip it:
+          // that iframe is what stalled their cold open.
+          if (resolverInstalledAtStartup) {
+            void authModule.getRedirectResult(auth, popupRedirectResolver).catch(() => {});
+          }
           // authStateReady settles only after Firebase initialization.
           void auth.authStateReady().then(() => { if (!disposed) authInitialized.current = true; }, () => {});
           return;
@@ -470,19 +493,35 @@ function useAuthState(): AuthContextValue {
         if (disposed) return;
         loginDependencies.current = null;
         setLoginReady(false);
+        // Firebase Auth rejected its own setup (auth/invalid-api-key,
+        // auth/already-initialized). Bundlers cache that module error, so
+        // retrying fails the same way: stop and ask for a reload.
+        if (code !== undefined && code !== "auth/network-request-failed") {
+          clearTimeout(authTimeout);
+          setRestoreSlow(false);
+          setLoginError("Google sign-in could not initialize. Reload the page and try again.");
+          setLoading(false);
+          return;
+        }
         // Usually the sign-in code could not download (offline or a flaky
         // network). Keep the state unknown and retry, rather than dead-ending.
-        const delay = AUTH_LOAD_RETRY_DELAYS_MS[Math.min(loadAttempt++, AUTH_LOAD_RETRY_DELAYS_MS.length - 1)];
+        const delay = loadRetryRequested ? 0 : AUTH_LOAD_RETRY_DELAYS_MS[Math.min(loadAttempt++, AUTH_LOAD_RETRY_DELAYS_MS.length - 1)];
         clearTimeout(loadRetryTimer);
         loadRetryTimer = setTimeout(() => retryAuthLoad.current?.(), delay);
         setLoginError("Sign-in could not load. Check your connection; retrying automatically.");
       });
+    const startLoad = () => {
+      loadInFlight = true;
+      loadRetryRequested = false;
+      void loadAuth().finally(() => { loadInFlight = false; });
+    };
     retryAuthLoad.current = () => {
       if (disposed || authLoaded || navigator.onLine === false) return;
+      if (loadInFlight) { loadRetryRequested = true; return; }
       clearTimeout(loadRetryTimer);
-      void loadAuth();
+      startLoad();
     };
-    void loadAuth();
+    startLoad();
 
     return () => {
       disposed = true;

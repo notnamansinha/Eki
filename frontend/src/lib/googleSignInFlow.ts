@@ -1,4 +1,6 @@
 const PENDING_REDIRECT_KEY = "eki:google-redirect-pending";
+// Firebase Auth's own session flag: firebase:pendingRedirect:<apiKey>:<appName>.
+const FIREBASE_PENDING_REDIRECT_PREFIX = "firebase:pendingRedirect:";
 
 /** Mobile/PWA popups can lose their opener when Google returns to the app. */
 export function prefersGoogleRedirect(authDomain: string | undefined): boolean {
@@ -23,7 +25,16 @@ export function markGoogleRedirectPending(): void {
 /** Whether this tab is returning from a Google redirect, without consuming the marker. */
 export function isGoogleRedirectPending(): boolean {
   try {
-    return window.sessionStorage.getItem(PENDING_REDIRECT_KEY) === "true";
+    const storage = window.sessionStorage;
+    if (storage.getItem(PENDING_REDIRECT_KEY) === "true") return true;
+    // Our marker is consumed when Back from Google restores this page, but the
+    // user can still go Forward and finish. Firebase keeps its own flag until
+    // the redirect result is read.
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key?.startsWith(FIREBASE_PENDING_REDIRECT_PREFIX) && storage.getItem(key) === '"true"') return true;
+    }
+    return false;
   } catch {
     return false;
   }

@@ -28,10 +28,15 @@ const authCalls: Array<{ name: string; resolver: boolean }> = [];
 Object.assign(window, { qaAuthCalls: authCalls });
 const recordAuthCall = (name: string, resolver: unknown) => { authCalls.push({ name, resolver: resolver === popupRedirectResolver }); };
 const observers = new Set<(user: User | null) => void>();
+// One sign-in code load registers one auth-state observer; a duplicated load
+// registers another that is never unsubscribed (window.qaAuthObservers).
+const observerCounts = { registered: 0, active: 0 };
+Object.assign(window, { qaAuthObservers: observerCounts });
 export function onAuthStateChanged(_auth: unknown, callback: (user: User | null) => void) {
   observers.add(callback);
+  observerCounts.registered++; observerCounts.active = observers.size;
   if (restoring) heldObservers.add(callback); else queueMicrotask(() => callback(auth.currentUser));
-  return () => { observers.delete(callback); heldObservers.delete(callback); };
+  return () => { observers.delete(callback); heldObservers.delete(callback); observerCounts.active = observers.size; };
 }
 function finishRestoration(user: User | null) {
   if (!restoring) return;

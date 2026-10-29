@@ -42,6 +42,7 @@ describe("Firebase Auth initialization", () => {
     expect(options).toEqual({ persistence: [sdk.browserLocalPersistence, sdk.indexedDBLocalPersistence, sdk.browserSessionPersistence] });
     // Sign-in still receives the resolver per call.
     expect(module.popupRedirectResolver).toBe(sdk.browserPopupRedirectResolver);
+    expect(module.resolverInstalledAtStartup).toBe(false);
   });
   it("installs the resolver at startup while a phone returns from a Google redirect", async () => {
     fixture.app.options.authDomain = window.location.host;
@@ -49,9 +50,17 @@ describe("Firebase Auth initialization", () => {
     const { sdk, options } = await initializeFor(IPHONE);
     expect(options.popupRedirectResolver).toBe(sdk.browserPopupRedirectResolver);
   });
+  it("installs the resolver at startup while Firebase still has a redirect pending without our marker", async () => {
+    fixture.app.options.authDomain = window.location.host;
+    sessionStorage.setItem("firebase:pendingRedirect:synthetic-key:[DEFAULT]", JSON.stringify("true"));
+    const { sdk, module, options } = await initializeFor(IPHONE);
+    expect(options.popupRedirectResolver).toBe(sdk.browserPopupRedirectResolver);
+    expect(module.resolverInstalledAtStartup).toBe(true);
+  });
   it("keeps the resolver at startup on popup platforms so the popup opens within the click", async () => {
     fixture.app.options.authDomain = window.location.host;
-    const { sdk, options } = await initializeFor("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0");
+    const { sdk, module, options } = await initializeFor("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0");
     expect(options.popupRedirectResolver).toBe(sdk.browserPopupRedirectResolver);
+    expect(module.resolverInstalledAtStartup).toBe(true);
   });
 });

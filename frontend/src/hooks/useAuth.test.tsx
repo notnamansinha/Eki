@@ -11,10 +11,15 @@ const mocks = vi.hoisted(() => ({
   auth: { currentUser: null as TestUser | null, config: { authDomain: "" }, authStateReady: vi.fn() }, claims: vi.fn(), observe: vi.fn(), signOut: vi.fn(),
   popup: vi.fn(), redirect: vi.fn(), redirectResult: vi.fn(),
   profile: vi.fn(), bootstrap: vi.fn(),
+  // Popup platforms install Google's popup/redirect resolver at startup; phones signing in by redirect do not.
+  resolverAtStartup: true,
 }));
-vi.mock("@/lib/firebaseAuth", () => ({ auth: mocks.auth, googleProvider: {}, popupRedirectResolver: RESOLVER }));
+vi.mock("@/lib/firebaseAuth", () => ({
+  auth: mocks.auth, googleProvider: {}, popupRedirectResolver: RESOLVER,
+  get resolverInstalledAtStartup() { return mocks.resolverAtStartup; },
+}));
 vi.mock("@/lib/apiClient", () => ({ apiRequest: mocks.bootstrap }));
-vi.mock("@/lib/firebaseCore", () => ({ firebaseApp: {} }));
+vi.mock("@/lib/firebaseCore", () => ({ firebaseApp: { options: {} } }));
 vi.mock("firebase/firestore", () => ({ getFirestore: () => ({}), doc: vi.fn(), getDoc: mocks.profile }));
 vi.mock("@/hooks/useCollection", () => ({ clearCollectionCache: vi.fn() }));
 vi.mock("@/hooks/useSettings", () => ({ clearSettingsCache: vi.fn() }));
@@ -22,6 +27,9 @@ vi.mock("@/lib/liveBusStore", () => ({ invalidateLiveBusCache: vi.fn() }));
 vi.mock("firebase/auth", () => ({
   onAuthStateChanged: mocks.observe, setPersistence: async () => {}, browserLocalPersistence: {},
   getRedirectResult: mocks.redirectResult, signInWithPopup: mocks.popup, signInWithRedirect: mocks.redirect, signOut: mocks.signOut,
+  // Lets the real firebaseAuth module build on these mocks (see the downloading tests below).
+  initializeAuth: () => mocks.auth, indexedDBLocalPersistence: {}, browserSessionPersistence: {},
+  browserPopupRedirectResolver: RESOLVER, GoogleAuthProvider: class {},
 }));
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
 const user = (uid: string): TestUser => ({ uid, getIdTokenResult: async () => { await mocks.claims(); return { claims: { role: "admin", admin: true } }; } });
@@ -30,7 +38,7 @@ beforeEach(() => {
   // Bootstrap scenarios opt in below and keep HTTP transport mocked.
   vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "");
   beginAuthVerification(); vi.clearAllMocks(); mocks.callback = null; mocks.auth.currentUser = null;
-  mocks.auth.config.authDomain = window.location.host;
+  mocks.auth.config.authDomain = window.location.host; mocks.resolverAtStartup = true;
   mocks.popup.mockReset().mockResolvedValue(undefined);
   mocks.redirect.mockReset().mockReturnValue(new Promise(() => {}));
   mocks.redirectResult.mockReset().mockResolvedValue(null);
@@ -551,12 +559,48 @@ describe("sign-in recovery dead ends", () => {
 
 describe("cold open on a slow or offline network", () => {
   it("enables sign-in for a signed-out visitor before Firebase reports its first state", async () => {
+    // No redirect is pending, so nothing waits on Google's redirect machinery,
+    // even when it never answers.
+    mocks.redirectResult.mockReturnValue(new Promise(() => {}));
     const hook = renderHook(() => useAuth(), { wrapper: AuthProvider });
     await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
     expect(mocks.callback).not.toBeNull();
     expect(hook.result.current.loading).toBe(true);
-    // No redirect is pending, so nothing waits on Google's redirect machinery.
+  });
+  it("warms Google's sign-in iframe in the background on popup platforms so a popup opens within the click", async () => {
+    mocks.redirectResult.mockReturnValue(new Promise(() => {}));
+    const hook = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+    expect(mocks.redirectResult).toHaveBeenCalledExactlyOnceWith(mocks.auth, RESOLVER);
+    expect(hook.result.current.loginError).toBeNull();
+  });
+  it("does not load Google's sign-in iframe at startup on phones signing in by redirect", async () => {
+    mocks.resolverAtStartup = false;
+    const hook = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
     expect(mocks.redirectResult).not.toHaveBeenCalled();
+  });
+  it("ignores a failed iframe warm-up: no error is shown and popup sign-in still works", async () => {
+    mocks.redirectResult.mockRejectedValue({ code: "auth/network-request-failed" });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const hook = await mount();
+    expect(mocks.redirectResult).toHaveBeenCalledOnce();
+    await act(async () => { await Promise.resolve(); });
+    expect(hook.result.current.loginReady).toBe(true); expect(hook.result.current.loginError).toBeNull();
+    expect(errors).not.toHaveBeenCalled();
+    await act(async () => { await hook.result.current.loginWithGoogle(); });
+    expect(mocks.popup).toHaveBeenCalledExactlyOnceWith(mocks.auth, {}, RESOLVER);
+    expect(hook.result.current.loginError).toBeNull();
+  });
+  it("lets an iframe warm-up that outlives the app settle without touching it", async () => {
+    let fail!: (error: unknown) => void;
+    mocks.redirectResult.mockReturnValue(new Promise((_resolve, reject) => { fail = reject; }));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const hook = await mount();
+    expect(mocks.redirectResult).toHaveBeenCalledOnce();
+    hook.unmount();
+    await act(async () => { fail({ code: "auth/network-request-failed" }); await Promise.resolve(); });
+    expect(errors).not.toHaveBeenCalled();
   });
   it("still completes a pending Google redirect before enabling sign-in", async () => {
     markGoogleRedirectPending();
@@ -626,5 +670,190 @@ describe("cold open on a slow or offline network", () => {
     await act(async () => { retry.resolve(); await vi.advanceTimersByTimeAsync(10); });
     expect(hook.result.current.roleError).toBeNull();
     expect(hook.result.current.user?.uid).toBe("flaky");
+  });
+  it.each(["succeeds", "fails"])("shows 'Try again' in progress when it joins an automatic retry that then %s", async outcome => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const offline = Object.assign(new Error("offline"), { code: "auth/network-request-failed" });
+    let settle!: (failed: boolean) => void;
+    const retry = new Promise<void>((resolve, reject) => { settle = failed => failed ? reject(offline) : resolve(); });
+    mocks.claims.mockRejectedValueOnce(offline).mockReturnValueOnce(retry);
+    const hook = await mount();
+    const account = user("flaky"); mocks.auth.currentUser = account;
+    await act(async () => { await mocks.callback!(account); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_100); });
+    expect(mocks.claims).toHaveBeenCalledTimes(2); expect(hook.result.current.loading).toBe(false);
+    let manual!: Promise<void>;
+    await act(async () => { manual = hook.result.current.refreshAccess(); });
+    // The tap joins the retry in flight and shows it instead of the old error.
+    expect(hook.result.current.loading).toBe(true); expect(hook.result.current.roleError).toBeNull();
+    expect(mocks.claims).toHaveBeenCalledTimes(2);
+    await act(async () => { settle(outcome === "fails"); await manual; });
+    expect(hook.result.current.loading).toBe(false);
+    if (outcome === "succeeds") {
+      expect(hook.result.current.user?.uid).toBe("flaky"); expect(hook.result.current.roleError).toBeNull();
+    } else {
+      expect(hook.result.current.user).toBeNull(); expect(hook.result.current.roleError).toContain("retrying automatically");
+    }
+  });
+});
+
+describe("cold open while the sign-in code is still downloading", () => {
+  // Each load of the lazily loaded sign-in code waits here until the test
+  // settles it, and Firebase notifies every observer still subscribed. Vitest
+  // serves an import that races a pending mock from the real firebaseAuth
+  // module (built on the mocks above), so a duplicate load completes at once.
+  let loads = 0;
+  let initAttempts = 0;
+  let pending: Array<{ resolve: (signInModule: object) => void; reject: (error: unknown) => void }> = [];
+  const observers = new Set<(user: TestUser | null) => Promise<void>>();
+  const signInCode = () => ({
+    auth: mocks.auth, googleProvider: {}, popupRedirectResolver: RESOLVER, resolverInstalledAtStartup: mocks.resolverAtStartup,
+  });
+  // Stands in for initializeAuth throwing while the module evaluates. Bundlers
+  // cache that failure, so every later import of the module throws it again.
+  const brokenSignInCode = (error: Error) => ({ ...signInCode(), get auth(): never { initAttempts++; throw error; } });
+  const chunkFailure = () => new TypeError("Failed to fetch dynamically imported module");
+  const firebaseError = (code: string) => Object.assign(new Error(`Firebase: Error (${code}).`), { code });
+  // Waits for every racing import, and the load that awaits it, to finish.
+  const importsSettled = () => act(async () => { await vi.dynamicImportSettled(); });
+  async function settleLoads(failure?: Error, signInModule: object = signInCode()) {
+    await act(async () => {
+      for (const load of pending.splice(0)) {
+        if (failure) load.reject(failure); else load.resolve(signInModule);
+      }
+    });
+    await importsSettled();
+  }
+  async function coldOpen() {
+    const hook = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    await waitFor(() => expect(loads).toBe(1));
+    return hook;
+  }
+  beforeEach(() => {
+    loads = 0; initAttempts = 0; pending = []; observers.clear();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.doMock("@/lib/firebaseAuth", () => {
+      loads++;
+      return new Promise((resolve, reject) => { pending.push({ resolve, reject }); });
+    });
+    mocks.observe.mockImplementation((_auth, callback) => {
+      observers.add(callback); mocks.callback = callback;
+      return () => { observers.delete(callback); };
+    });
+  });
+  afterEach(async () => {
+    // A load left pending keeps Vitest serving the real module; register the
+    // plain mock before the next test queues its own.
+    await settleLoads();
+    vi.doMock("@/lib/firebaseAuth", signInCode);
+    await import("@/lib/firebaseAuth");
+  });
+
+  it("observes once when the network returns mid-download, verifies once and unsubscribes on unmount", async () => {
+    const hook = await coldOpen();
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    await importsSettled();
+    await settleLoads();
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+    expect(mocks.observe).toHaveBeenCalledOnce(); expect(observers.size).toBe(1);
+    // A restored account gets one forced token refresh, not one per observer.
+    const account = user("restored"); mocks.auth.currentUser = account;
+    await act(async () => { await Promise.all([...observers].map(observer => observer(account))); });
+    expect(mocks.claims).toHaveBeenCalledOnce(); expect(hook.result.current.user?.uid).toBe("restored");
+    hook.unmount();
+    expect(observers.size).toBe(0);
+  });
+  it("does not load the sign-in code again when 'Try again' runs mid-download", async () => {
+    const hook = await coldOpen();
+    await act(async () => { await hook.result.current.refreshAccess(); });
+    await importsSettled();
+    await settleLoads();
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+    expect(loads).toBe(1);
+    expect(mocks.observe).toHaveBeenCalledOnce(); expect(observers.size).toBe(1);
+  });
+  it("still retries on the next online event after a failed download, then observes once", async () => {
+    const hook = await coldOpen();
+    await settleLoads(chunkFailure());
+    await waitFor(() => expect(hook.result.current.loginError).toContain("could not load"));
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    await waitFor(() => expect(loads).toBe(2));
+    await settleLoads();
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+    expect(hook.result.current.loginError).toBeNull();
+    expect(mocks.observe).toHaveBeenCalledOnce(); expect(observers.size).toBe(1);
+  });
+  it("starts one new download when the backoff timer and the online event both fire after a failure", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const hook = await coldOpen();
+    await settleLoads(chunkFailure());
+    await waitFor(() => expect(hook.result.current.loginError).toContain("could not load"));
+    // The first backoff starts a retry; the network returns while it downloads.
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    await waitFor(() => expect(loads).toBe(2));
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    await importsSettled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    await settleLoads();
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+    expect(loads).toBe(2);
+    expect(mocks.observe).toHaveBeenCalledOnce(); expect(observers.size).toBe(1);
+  });
+  it("retries at once, not after the backoff, when the network returned during a download that then fails", async () => {
+    const hook = await coldOpen();
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    await importsSettled();
+    await settleLoads(chunkFailure());
+    // The first backoff is 2 s; this waits at most 1 s.
+    await waitFor(() => expect(loads).toBe(2), { timeout: 1_000 });
+    await settleLoads();
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+    expect(hook.result.current.loginError).toBeNull();
+    expect(mocks.observe).toHaveBeenCalledOnce(); expect(observers.size).toBe(1);
+  });
+  it.each(["auth/invalid-api-key", "auth/already-initialized"])("stops retrying and asks for a reload when Firebase Auth cannot initialize (%s)", async code => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const hook = await coldOpen();
+    await settleLoads(undefined, brokenSignInCode(firebaseError(code)));
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+    expect(hook.result.current.loginError).toBe("Google sign-in could not initialize. Reload the page and try again.");
+    expect(hook.result.current.loginReady).toBe(false); expect(hook.result.current.user).toBeNull();
+    // No retry timer: the cached module error would fail the same way forever.
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(initAttempts).toBe(1);
+    expect(hook.result.current.loading).toBe(false); expect(hook.result.current.restoreSlow).toBe(false);
+  });
+  it.each([
+    ["an import failure", chunkFailure],
+    ["a Firebase network error", () => firebaseError("auth/network-request-failed")],
+  ])("keeps retrying the sign-in code after %s", async (_kind, failure) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const hook = await coldOpen();
+    await settleLoads(undefined, brokenSignInCode(failure()));
+    await waitFor(() => expect(hook.result.current.loginError).toContain("retrying automatically"));
+    expect(hook.result.current.loading).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    await waitFor(() => expect(initAttempts).toBe(2));
+  });
+  it("leaves no observer behind when the app unmounts before the sign-in code arrives", async () => {
+    const hook = await coldOpen();
+    hook.unmount();
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    await settleLoads();
+    expect(loads).toBe(1);
+    expect(mocks.observe).not.toHaveBeenCalled(); expect(observers.size).toBe(0);
+  });
+  it("completes a pending Google redirect once when the network returns mid-download", async () => {
+    markGoogleRedirectPending();
+    const returned = deferred(); mocks.redirectResult.mockImplementation(async () => { await returned.promise; return null; });
+    const hook = await coldOpen();
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    await importsSettled();
+    await settleLoads();
+    await waitFor(() => expect(mocks.redirectResult).toHaveBeenCalled());
+    await act(async () => { returned.resolve(); });
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+    expect(mocks.redirectResult).toHaveBeenCalledExactlyOnceWith(mocks.auth, RESOLVER);
+    expect(mocks.observe).toHaveBeenCalledOnce(); expect(observers.size).toBe(1);
   });
 });

@@ -23,8 +23,20 @@ export default function RoleGuard({ children, allowedRoles, loadingFallback }: R
     refreshAccess,
   } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  // Verification can outlast the restore notice (slow token and claims
+  // requests), so a long spinner gets the same way out.
+  const [loadingStalled, setLoadingStalled] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+
+  useEffect(() => {
+    if (!loading) return;
+    const timer = window.setTimeout(() => setLoadingStalled(true), 10_000);
+    return () => {
+      window.clearTimeout(timer);
+      setLoadingStalled(false);
+    };
+  }, [loading]);
 
   useEffect(() => {
     if (!loading && !user && !roleError) router.replace("/");
@@ -40,7 +52,7 @@ export default function RoleGuard({ children, allowedRoles, loadingFallback }: R
     }
   }, [allowedRoles, pathname, user]);
 
-  if (loading && restoreSlow) {
+  if (loading && (restoreSlow || loadingStalled)) {
     // Still fail-closed: nothing protected mounts until verification finishes,
     // but a slow network gets an explanation and a way out instead of a spinner.
     return (

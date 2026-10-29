@@ -14,7 +14,7 @@ import { isGoogleRedirectPending, prefersGoogleRedirect } from "./googleSignInFl
 // every reopen even for signed-out visitors. Phones sign in by redirect, which
 // receives the resolver per call; they need it at startup only while returning
 // from Google. Popup platforms keep it so the popup still opens within the click.
-const needsResolverAtStartup = typeof window === "undefined" ||
+export const resolverInstalledAtStartup = typeof window === "undefined" ||
   isGoogleRedirectPending() || !prefersGoogleRedirect(firebaseApp.options.authDomain);
 
 export const popupRedirectResolver = browserPopupRedirectResolver;
@@ -25,6 +25,6 @@ export const popupRedirectResolver = browserPopupRedirectResolver;
 // the other tab's auth record and briefly signs that tab out.
 export const auth = initializeAuth(firebaseApp, {
   persistence: [browserLocalPersistence, indexedDBLocalPersistence, browserSessionPersistence],
-  ...(needsResolverAtStartup ? { popupRedirectResolver } : {}),
+  ...(resolverInstalledAtStartup ? { popupRedirectResolver } : {}),
 });
 export const googleProvider = new GoogleAuthProvider();

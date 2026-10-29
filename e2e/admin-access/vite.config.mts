@@ -5,7 +5,9 @@ const local = (name: string) => fileURLToPath(new URL(name, import.meta.url));
 export default defineConfig({
   root: local("."), server: { host: "127.0.0.1", port: 3105, strictPort: true },
   resolve: { alias: [
-    ...["firebase/auth", "firebase/firestore", "firebase/database", "@/lib/firebaseAuth", "@/lib/firebaseFirestore", "@/lib/firebaseDatabase", "./firebaseDatabase", "./firebaseCore"].map(find => ({ find, replacement: local("firebase.ts") })),
+    // Same adapter instance, but its own URL, so a test can hold the lazy sign-in code download.
+    { find: "firebase/auth", replacement: local("firebaseAuthSdk.ts") },
+    ...["firebase/firestore", "firebase/database", "@/lib/firebaseAuth", "@/lib/firebaseFirestore", "@/lib/firebaseDatabase", "./firebaseDatabase", "./firebaseCore"].map(find => ({ find, replacement: local("firebase.ts") })),
     ...["@/hooks/useBuses", "@/hooks/useDrivers", "@/hooks/useSettings", "next/navigation", "next/link", "@vis.gl/react-google-maps"].map(find => ({ find, replacement: local("adapters.tsx") })),
     { find: "next/image", replacement: local("nextImage.tsx") },
     // EKI_ADMIN_ACCESS_SRC may point at another checkout's frontend/src (for an A/B
