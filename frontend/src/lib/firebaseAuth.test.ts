@@ -16,8 +16,8 @@ async function initializeFor(userAgent?: string) {
   if (userAgent) vi.spyOn(navigator, "userAgent", "get").mockReturnValue(userAgent);
   vi.resetModules();
   const sdk = await import("firebase/auth");
-  const module = await import("./firebaseAuth");
-  return { sdk, module, options: fixture.initialize.mock.lastCall?.[1] as Record<string, unknown> };
+  const authModule = await import("./firebaseAuth");
+  return { sdk, module: authModule, options: fixture.initialize.mock.lastCall?.[1] as Record<string, unknown> };
 }
 beforeEach(() => {
   fixture.initialize.mockClear();
