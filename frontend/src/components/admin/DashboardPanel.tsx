@@ -123,11 +123,14 @@ function LiveDetailsDrawer({
   routeName,
   nextStopIndex,
   onClose,
+  onEndRide,
 }: {
   entry: ActiveBusEntry;
   routeName: string;
   nextStopIndex: number | undefined;
   onClose: () => void;
+  /** Present when this ride can be ended: the drawer is a recovery entry point too. */
+  onEndRide?: () => void;
 }) {
   const directionState = normalizeRideDirection(entry.direction);
   const directionPending = directionState === "pending";
@@ -272,6 +275,12 @@ function LiveDetailsDrawer({
           <button disabled={!entry.sessionId} title={entry.sessionId ? undefined : "Messages are available after service starts"} onClick={() => setShowWipeConfirm(true)} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors">
             <MessageCircle className="w-3.5 h-3.5" /> Clear Messages
           </button>
+          {onEndRide && (
+            <button type="button" onClick={() => { onClose(); onEndRide(); }}
+              className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-red-400/25 bg-red-500/10 text-xs font-bold text-red-300 hover:bg-red-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400">
+              <X className="size-4" aria-hidden="true" /> End ride early
+            </button>
+          )}
         </div>
       </div>
 
@@ -397,8 +406,10 @@ function FleetCard({
   const locationDelayed = entry.deviceState === "offline" || isLiveBusSignalLost(liveBusFreshnessTimestamp(entry));
   // An offline bus keeps its last reported location; its last motion is not live.
   const offline = devicePresence(entry) !== "online";
+  // The ride's own session identity is authoritative for an admin stop; a
+  // projection missing its driver must not hide the recovery action.
   const canEndRide = Boolean(
-    entry.sessionId && entry.driverId && entry.routeId &&
+    entry.sessionId && entry.routeId &&
     (serviceState === "direction_pending" ||
       serviceState === "pre_departure" ||
       serviceState === "in_service"),
@@ -412,10 +423,12 @@ function FleetCard({
           routeName={route?.name ?? entry.routeId ?? "—"}
           nextStopIndex={nextStopIndex}
           onClose={() => setDetailsOpen(false)}
+          onEndRide={canEndRide ? () => onEndRide(entry) : undefined}
         />
       )}
       <div
-        className={`border rounded-xl overflow-hidden transition-all ${
+        data-fleet-card
+        className={`shrink-0 border rounded-xl overflow-hidden transition-all ${
           selected ? "border-brand-accent/40 bg-brand-accent/5" : "border-white/8 bg-white/3 hover:border-white/15"
         }`}
       >
@@ -786,21 +799,23 @@ export default function DashboardPanel() {
 
   const endRideEarly = async () => {
     const entry = endRideEntry;
-    if (!entry?.sessionId || !entry.routeId || !entry.driverId) return;
+    if (!entry?.sessionId || !entry.routeId) return;
     setEndRidePending(true);
     setArmStatus("");
     try {
-      await requestAdmin("/api/shifts/stop", {
+      const result = await requestAdmin<{ alreadyCompleted?: boolean }>("/api/shifts/stop", {
         validateResponse: value => acknowledgedField(value, "stopped"),
         method: "POST",
         body: JSON.stringify({
           busId: entry.busId,
           routeId: entry.routeId,
-          driverId: entry.driverId,
+          ...(entry.driverId ? { driverId: entry.driverId } : {}),
           sessionId: entry.sessionId,
         }),
       });
-      setArmStatus(`Ride ${entry.sessionId} ended early and was saved to history.`);
+      setArmStatus(result?.alreadyCompleted === true
+        ? `Ride ${entry.sessionId} had already completed at its terminal; it was not interrupted.`
+        : `Ride ${entry.sessionId} ended early and was saved to history.`);
       setEndRideEntry(null);
     } catch (error) {
       // Close the confirmation so the reason in the sidebar is visible.
@@ -810,6 +825,17 @@ export default function DashboardPanel() {
       setEndRidePending(false);
     }
   };
+
+  // The End ride confirm keeps the clicked ride's identity, but closes once that
+  // exact ride is no longer endable (completed, or replaced by a new session),
+  // so confirming can never act on, or report about, a ride that has gone.
+  const endRideStillEndable = !endRideEntry || endRidePending || isResuming || liveReadFailed ||
+    activeEntries.some(entry => entry.busId === endRideEntry.busId && entry.routeId === endRideEntry.routeId &&
+      entry.sessionId === endRideEntry.sessionId && ["direction_pending", "pre_departure", "in_service"].includes(rideServiceState(entry)));
+  if (endRideEntry && !endRideStillEndable) {
+    setEndRideEntry(null);
+    setArmStatus(`Ride ${endRideEntry.sessionId} already ended; nothing was interrupted.`);
+  }
 
   // Follow the open chat's receiver live; the clicked entry is only a snapshot.
   const liveChatEntry = chatEntry

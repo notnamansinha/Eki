@@ -701,7 +701,12 @@ export function nextTelemetryValue(
             : sample.heading,
         motionState: "uncertain" as const,
       };
-  const plausibilityAnchor = transitionIsPlausible || !previous
+  // The firmware's GNSS-loss packet repeats the last coordinates at speed 0
+  // with HDOP 99. It is accepted so passengers learn GPS was lost, but it must
+  // not become the anchor: judged against a stationary, untrusted anchor, the
+  // first good fixes after GPS returns would all be held as implausible jumps
+  // and the bus would stay "GPS signal lost" while its receiver has a fix.
+  const plausibilityAnchor = (transitionIsPlausible || !previous) && (sample.motionState !== "uncertain" || !previous)
     ? sample
     : previous;
 

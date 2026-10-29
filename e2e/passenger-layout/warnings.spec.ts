@@ -48,16 +48,19 @@ test("location delay stays below variable ride controls and clears on recovery",
   await page.getByLabel("QA scenario").selectOption("multiple");
   await page.getByText("QA controls (synthetic)", { exact: true }).click();
   await page.getByRole("button", { name: "Track QA route", exact: true }).click();
-  const warning = page.getByText(/Live location updates delayed/);
+  const warning = page.locator("[data-map-notices]").getByText("Live tracking lost", { exact: true });
   await expect(page.getByLabel("Synthetic map", { exact: true })).toBeVisible();
   await expect(warning).toHaveCount(0);
-  await page.clock.runFor(95_001);
+  // Silence alone (no snapshot, no backend) crosses the 30 s threshold.
+  await page.clock.runFor(31_000);
   await expect(warning).toBeVisible();
   // Visibility alone does not establish that another layer leaves text readable.
   const header = page.getByRole("button", { name: "Back to home", exact: true }).locator("..").locator("..");
-  const headerBox = (await header.boundingBox())!;
-  const warningBox = (await warning.boundingBox())!;
-  expect(warningBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
+  // The header grows when tracking is lost; the notice inset follows it on the next layout pass.
+  await expect.poll(async () => {
+    const headerBox = (await header.boundingBox())!;
+    return (await warning.boundingBox())!.y - (headerBox.y + headerBox.height);
+  }).toBeGreaterThanOrEqual(0);
   await fullMap(page);
   expect(await warning.evaluate(element => {
     const box = element.getBoundingClientRect();
@@ -98,11 +101,11 @@ test("one stale bus neither hides another fresh bus nor becomes a picker option"
   await page.goto("/");
   await page.getByRole("button", { name: "Track QA route", exact: true }).click();
   await scenario(page, "multiple-stale");
-  await expect(page.getByText("Live tracking paused", { exact: true })).toBeVisible();
+  await expect(page.getByText("Live tracking lost", { exact: true }).first()).toBeVisible();
   await page.getByRole("combobox", { name: "Live bus", exact: true }).click();
   await expect(page.getByRole("listbox", { name: "Live bus", exact: true }).getByRole("option")).toHaveCount(1);
   await page.getByRole("option", { name: "Bus qa-bus-2 · B → A", exact: true }).click();
-  await expect(page.getByText("Live tracking paused", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Live tracking lost", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Back to home", exact: true }).click();
   await expect(page.getByRole("button", { name: "Track QA route", exact: true })).toBeVisible();
 });
@@ -117,4 +120,27 @@ test("navigation cannot scroll the tracking frame under the viewport", async ({ 
     await page.getByRole("button", { name: "Profile", exact: true }).click();
     await page.getByRole("button", { name: "Routes", exact: true }).click();
   }
+});
+
+test("a GNSS-loss packet is announced at once in the header and map without overlap, and clears on a fresh fix", async ({ page }, info) => {
+  await page.goto("/");
+  await scenario(page, "forward");
+  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  // The boarding card is stubbed here; live chat shows the bus is selectable.
+  await expect(page.getByRole("button", { name: "Open live chat", exact: true })).toBeVisible();
+  await scenario(page, "gnss-lost");
+  const header = page.getByRole("button", { name: "Back to home", exact: true }).locator("..").locator("..");
+  await expect(header.getByText("GPS signal lost", { exact: true })).toBeVisible();
+  const notice = page.locator("[data-map-notices]").getByText("GPS signal lost", { exact: true });
+  await expect(notice).toBeVisible();
+  // Chat needs the connection, not a GPS fix: it stays available through the loss.
+  await expect(page.getByRole("button", { name: "Open live chat", exact: true })).toBeVisible();
+  const headerBox = (await header.boundingBox())!;
+  expect((await notice.boundingBox())!.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
+  await fullMap(page);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+  await page.screenshot({ path: info.outputPath("gnss-lost.png"), fullPage: true });
+  await scenario(page, "forward");
+  await expect(page.getByText("GPS signal lost", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open live chat", exact: true })).toBeVisible();
 });

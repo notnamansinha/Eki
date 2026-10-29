@@ -55,7 +55,7 @@ vi.mock("next/dynamic", () => ({ default: (loader: () => unknown) => {
 import PassengerWorkspace from "./PassengerWorkspace";
 const flush = async () => { for (let step = 0; step < 6; step++) await Promise.resolve(); };
 function bus(sessionId = "old", routeId = "A") { return { busId: "bus", routeId, sessionId, driverId: "driver", lat: 23, lng: 72,
-  timestamp: Date.now(), backendReceivedAt: Date.now(), deviceState: "online", status: "active", tripState: "in_service", direction: "forward", directionState: "resolved" }; }
+  timestamp: Date.now(), backendReceivedAt: Date.now(), deviceState: "online", status: "active", tripState: "in_service", direction: "forward", directionState: "resolved", motionState: "moving" }; }
 function emit(routeId: string, value: BusSnapshot, source: Delivery = "listener") {
   fixture.listeners.filter(listener => listener.active && listener.routeId === routeId).forEach(listener => listener.next({ type: "reset", snapshot: value, source }));
 }

@@ -143,6 +143,10 @@ export type PassengerMapBus = Omit<PassengerLiveBus, "tripState"> & {
 
 function sameField(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;
+  // Small primitive lists (unobserved stop indices) arrive as new arrays on every snapshot.
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
+  }
   if (!left || !right || typeof left !== "object" || typeof right !== "object" ||
       Array.isArray(left) || Array.isArray(right)) return false;
   const a = left as Record<string, unknown>;

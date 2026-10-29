@@ -3,6 +3,7 @@ import { Route as RouteIcon, Footprints } from "lucide-react";
 import { RouteData } from "@/hooks/useRoutes";
 import BottomSheet from "./ui/BottomSheet";
 import { publishedStopIndex } from "@/lib/publishedStopIndex";
+import { isBehindBus, stopProgress, stopVisitLabel } from "@/lib/stopProgress";
 
 interface RouteTimelineSheetProps {
   route: RouteData | null;
@@ -14,6 +15,10 @@ interface RouteTimelineSheetProps {
   walkMinutesToTarget?: number;
   preview?: boolean;
   currentStopIndex?: number; // Authoritative index from driver/ESP32 via RTDB
+  /** Stop the bus is at now, acknowledged on arrival. */
+  atStopIndex?: number;
+  /** Passed stops the bus was never observed at. */
+  unobservedStopIndices?: number[];
   aggregateArrivals?: boolean;
   geometryUnavailable?: boolean;
 }
@@ -25,6 +30,8 @@ export default function RouteTimelineSheet({
   bottomControls,
   walkMinutesToTarget,
   currentStopIndex,
+  atStopIndex,
+  unobservedStopIndices,
   preview = false,
   aggregateArrivals = false,
   geometryUnavailable = false,
@@ -35,6 +42,8 @@ export default function RouteTimelineSheet({
   const routeColor = route.color || "#3b82f6";
   const nextStopIndex = !preview && !aggregateArrivals
     ? publishedStopIndex(currentStopIndex, route.stops.length) : undefined;
+  const progress = nextStopIndex === undefined ? undefined
+    : stopProgress(route.stops.length, { currentStopIndex: nextStopIndex, atStopIndex, unobservedStopIndices });
 
   return (
     <BottomSheet
@@ -69,13 +78,15 @@ export default function RouteTimelineSheet({
 
           const etaMinutes = preview ? undefined : stopETAs[stop.id];
           // Missing geometry or ETA is never evidence that a stop was reached.
-          const isPast = nextStopIndex !== undefined && index < nextStopIndex;
+          const visit = progress?.states[index];
+          const isPast = isBehindBus(visit);
 
           // Dim passed stops. Never dim future stops just because they're after the user's target.
           const isDimmed = isPast;
 
-          // The stop the bus is currently heading towards
-          const isNextStop = index === nextStopIndex;
+          // The stop the bus is at now, or else the one it is heading towards.
+          const isAtStop = visit === "at";
+          const isNextStop = isAtStop || visit === "next";
 
           return (
             <div
@@ -129,7 +140,12 @@ export default function RouteTimelineSheet({
                 {isNextStop && !isDimmed && (
                   <div className="text-[9px] font-bold uppercase tracking-widest mb-1 flex items-center gap-1" style={{ color: "var(--status-live)" }}>
                     <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: "var(--status-live)", animation: "pulse-dot 1.5s infinite" }} />
-                    Next Stop
+                    {isAtStop ? "Bus is here" : "Next Stop"}
+                  </div>
+                )}
+                {visit === "unobserved" && (
+                  <div className="text-[9px] font-semibold uppercase tracking-widest mb-1" style={{ color: "var(--text-tertiary)" }}>
+                    {stopVisitLabel(visit)}
                   </div>
                 )}
                 <p className={`${(isTarget || isNextStop) && !isDimmed ? "font-semibold text-[14px]" : "font-medium text-[13px]"}`}
@@ -170,7 +186,7 @@ export default function RouteTimelineSheet({
               </div>
 
               {/* ETA */}
-              {typeof etaMinutes === "number" && !isPast && (
+              {typeof etaMinutes === "number" && !isPast && !isAtStop && (
                 <div className="ml-auto text-right flex flex-col justify-center pr-1 pt-0.5">
                   <div className="flex items-baseline gap-0.5">
                     <span className={`text-lg font-extrabold tracking-tight`}

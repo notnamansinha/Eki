@@ -23,6 +23,7 @@ import {
 import { serverNow } from "@/lib/serverClock";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
 import { isPassengerBusSelectable } from "@/lib/passengerAvailability";
+import { describeLiveBusHealth, liveBusHealth } from "@/lib/liveBusHealth";
 import {
   passengerNavClassName,
   passengerNavClearance,
@@ -99,6 +100,8 @@ export default function PassengerWorkspace() {
   const [mapEstimates, setMapEstimates] = useState<PassengerStopEstimates>();
   const updateStopEstimates = useCallback((next: PassengerStopEstimates) => {
     setMapEstimates(current => current?.context === next.context && current.nextStopIndex === next.nextStopIndex &&
+      current.atStopIndex === next.atStopIndex &&
+      (current.unobservedStopIndices ?? []).join(",") === (next.unobservedStopIndices ?? []).join(",") &&
       current.unavailable === next.unavailable && Object.keys(current.minutes).length === Object.keys(next.minutes).length &&
       Object.entries(next.minutes).every(([id, minutes]) => current.minutes[id] === minutes) ? current : next);
   }, []);
@@ -334,6 +337,21 @@ export default function PassengerWorkspace() {
   const activeSessionId = activeBusOnRoute?.sessionId;
   const busSelectable = isConnected && !isResuming && !liveDataError && isPassengerBusSelectable(activeBusOnRoute, availabilityNow);
   const selectableBusesOnRoute = busesOnRoute.filter(bus => isConnected && !isResuming && !liveDataError && isPassengerBusSelectable(bus, availabilityNow));
+  // Lifecycle ("in service") is not location freshness: say which one failed.
+  const activeBusHealth = activeBusOnRoute ? liveBusHealth(activeBusOnRoute, availabilityNow) : undefined;
+  const pausedNotice = !isConnected || isResuming || liveDataError
+    ? { title: "Live tracking paused", detail: "This device is reconnecting to live bus data. The last known location is shown; live ETAs and boarding resume when the connection returns." }
+    : activeBusOnRoute?.automaticServicePaused === true
+      ? { title: "Tracking paused", detail: "Service is paused for this bus. Its location is shown, but there is no live ride to board." }
+      : activeBusHealth && activeBusHealth.state !== "live" && activeBusHealth.state !== "delayed"
+        ? describeLiveBusHealth(activeBusHealth)
+        : { title: "Live tracking paused", detail: "Location updates are unavailable. The last known location is shown; live ETAs and boarding resume when tracking returns." };
+  // Chat is between passenger and driver; it needs the connection and a
+  // reporting bus, not a GPS fix. A GNSS blip must not close or reset it.
+  const chatAvailable = isConnected && !isResuming && !liveDataError && activeBusOnRoute?.automaticServicePaused !== true &&
+    (activeBusHealth?.state === "live" || activeBusHealth?.state === "delayed" || activeBusHealth?.state === "gnss_lost");
+  const chatShown = (view: ViewState) => view === "tracking" && isMessagingOpen && chatAvailable && Boolean(activeSessionId) &&
+    isLiveChatDeviceOnline(activeBusOnRoute);
   const directionPending = activeBusOnRoute?.directionState === "pending";
   const normalizedDirection = normalizeRideDirection(activeBusOnRoute?.direction);
   const rideDirectionState = directionPending ? "pending"
@@ -569,15 +587,16 @@ export default function PassengerWorkspace() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (isMessagingOpen) {
+                      if (chatShown(visibleView)) {
                         setIsMessagingOpen(false);
                         return;
                       }
+                      setIsMessagingOpen(false);
                       setCurrentView("home");
                     }}
                     className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 hover:opacity-90 shadow-sm cursor-pointer pointer-events-auto"
                     style={{ backgroundColor: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}
-                    aria-label={isMessagingOpen ? "Close live chat" : "Back to home"}
+                    aria-label={chatShown(visibleView) ? "Close live chat" : "Back to home"}
                     onPointerDown={(e) => (e.currentTarget.style.backgroundColor = "var(--surface-4)")}
                     onPointerUp={(e) => (e.currentTarget.style.backgroundColor = "var(--surface-3)")}
                     onPointerLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--surface-3)")}
@@ -612,20 +631,25 @@ export default function PassengerWorkspace() {
                           }))}
                         />
                       )}
-                      {!busSelectable ? (
-                        <div role="status">
-                          <p className="text-xs font-semibold text-amber-300">Live tracking paused</p>
+                      {!busSelectable && (
+                        <div role="status" aria-live="polite">
+                          <p className={`text-xs font-semibold ${"tone" in pausedNotice && pausedNotice.tone === "danger" ? "text-red-300" : "text-amber-300"}`}>{pausedNotice.title}</p>
                           <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
-                            Location updates are unavailable. The last known location is shown; live ETAs and boarding resume when tracking returns.
+                            {pausedNotice.detail}
                           </p>
                         </div>
-                      ) : !preview && directedRoute && hasSessionId(activeBusOnRoute) ? (
+                      )}
+                      {/* The boarding card stays mounted through a tracking blip so a
+                          chosen stop, an in-flight join and "On board" survive it. */}
+                      {!preview && directedRoute && hasSessionId(activeBusOnRoute) ? (
                         <PassengerBoardingView
                           key={activeBusOnRoute.sessionId}
                           sessionId={activeBusOnRoute.sessionId}
                           route={directedRoute}
                           stopEstimates={stopEstimates}
                           tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
+                          liveHealth={activeBusHealth}
+                          boardingBlockedReason={busSelectable ? undefined : "Boarding resumes when live tracking returns."}
                           destinationStopId={effectiveDestinationStopId}
                           restoredBoarding={restoredBoarding && restoredBoarding.uid === user?.uid && restoredBoarding.sessionId === activeBusOnRoute.sessionId ? restoredBoarding : undefined}
                           onDestinationStopChange={setSelectedDestinationStopId}
@@ -646,7 +670,7 @@ export default function PassengerWorkspace() {
                             setRideRecoveryError(null); setRideRecoveryNotice(null);
                           }}
                         />
-                      ) : (
+                      ) : busSelectable ? (
                         <div>
                           <p className="text-xs font-semibold" style={{ color: "var(--accent)" }}>
                             {hasSessionId(activeBusOnRoute) ? "Direction pending" : "Bus online · service not started"}
@@ -659,11 +683,11 @@ export default function PassengerWorkspace() {
                         <InAppSelect
                           name="destination-station"
                           ariaLabel="Destination station"
-                          placeholder="Choose destination station…"
+                          placeholder="Choose destination stop"
                           value={effectiveDestinationStopId}
                           onChange={setSelectedDestinationStopId}
                           options={[
-                            { value: "", label: "Choose destination station…" },
+                            { value: "", label: "Choose destination stop" },
                             ...(mapRoute.stops ?? []).map((stop, index) => ({
                               value: stop.id,
                               label: stop.name,
@@ -676,7 +700,7 @@ export default function PassengerWorkspace() {
                           }}
                         />
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   ) : (
                     <div className="min-w-0 flex-1 flex flex-col justify-center gap-0.5 rounded-2xl bg-[var(--surface-1)] p-3 shadow-lg pointer-events-auto">
@@ -690,7 +714,7 @@ export default function PassengerWorkspace() {
                   )}
                 </div>
                 {/* Keep chat in header flow, below the variable-height boarding card. */}
-                {busSelectable && activeSessionId && isLiveChatDeviceOnline(activeBusOnRoute) && !isMessagingOpen && (
+                {chatAvailable && activeSessionId && isLiveChatDeviceOnline(activeBusOnRoute) && !chatShown(visibleView) && (
                   <div className="mt-2 flex justify-end max-w-lg mx-auto animate-scale-in pointer-events-none">
                     <button
                       onClick={handleOpenMessaging}
@@ -732,7 +756,7 @@ export default function PassengerWorkspace() {
               </div>
 
               {/* Messaging Overlay */}
-              {visibleView === "tracking" && busSelectable && activeSessionId && isMessagingOpen && isLiveChatDeviceOnline(activeBusOnRoute) && (
+              {chatShown(visibleView) && activeSessionId && (
                 <div className="absolute inset-x-0 top-16 z-50 animate-slide-up flex flex-col pointer-events-auto" style={{ bottom: passengerNavClearance }}>
                    <MessagingPanel
                     key={activeSessionId || "online-no-session"}

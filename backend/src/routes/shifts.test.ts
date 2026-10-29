@@ -15,6 +15,8 @@ const harness = vi.hoisted(() => ({
   eventLog: [] as string[],
   afterRtdbTransaction: null as (() => void) | null,
   failActiveRidesWrite: false,
+  authorizationCurrent: true,
+  coldLiveTransaction: false,
   routeStops: [
     { id: "stop_1", name: "Stop 1", lat: 23.0, lng: 72.5 },
     { id: "stop_2", name: "Stop 2", lat: 23.2, lng: 72.7 },
@@ -28,6 +30,10 @@ const harness = vi.hoisted(() => ({
   } as Record<string, unknown>,
 }));
 
+vi.mock("../services/userAuthorization", async importOriginal => ({
+  ...await importOriginal<typeof import("../services/userAuthorization")>(),
+  authorizationIsCurrent: vi.fn(async () => harness.authorizationCurrent),
+}));
 vi.mock("../middleware/requireAuth", () => ({
   requireAuth: (
     req: { user?: Record<string, unknown> },
@@ -174,6 +180,12 @@ vi.mock("../lib/firebaseAdmin", () => {
           harness.rtdbUpdates.push(data);
         },
         transaction: async (callback: (value: unknown) => unknown) => {
+          if (harness.coldLiveTransaction) {
+            harness.coldLiveTransaction = false;
+            // Firebase first runs against an empty local cache: undefined aborts
+            // locally; null sends a compare-and-set and re-runs on server data.
+            if (callback(null) === undefined) return { committed: false, snapshot: { val: () => harness.liveNode } };
+          }
           const result = callback(harness.liveNode);
           if (result === undefined) {
             return {
@@ -219,7 +231,7 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  harness.assignmentReads = 0; harness.driverBus = "bus_1";
+  harness.assignmentReads = 0; harness.driverBus = "bus_1"; harness.authorizationCurrent = true; harness.coldLiveTransaction = false;
   harness.docSets = [];
   harness.batchSets = [];
   harness.rtdbUpdates = [];
@@ -367,6 +379,71 @@ describe("manual shift termination", () => {
 
     expect(response.status).toBe(200);
     expect(harness.liveNode.sessionId).toBe("replacement_session");
+  });
+
+  const CURRENT_ADMIN = { uid: "admin_uid", role: "admin", admin: true, authorizationVersion: "v1" };
+  it("lets a current administrator end a ride after its operator was reassigned, by the ride's own identity", async () => {
+    harness.user = CURRENT_ADMIN;
+    harness.driverBus = "bus_9";
+    const response = await stopShift();
+    expect(response.status).toBe(200);
+    expect(harness.session).toMatchObject({ status: "interrupted", interruptedBy: "admin_uid" });
+    expect(harness.assignmentReads).toBe(0);
+  });
+
+  it("lets a current administrator end a ride whose live projection lacks the driver", async () => {
+    harness.user = CURRENT_ADMIN;
+    const response = await contractFetch(`${baseUrl}/api/shifts/stop`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ busId: "bus_1", routeId: "route_1", sessionId: "session_live" }),
+    });
+    expect(response.status).toBe(200);
+    expect(harness.session).toMatchObject({ status: "interrupted" });
+  });
+
+  it("still requires an administrator's stop to name the ride's own bus, route and driver", async () => {
+    harness.user = CURRENT_ADMIN;
+    for (const body of [
+      { busId: "bus_2", routeId: "route_1", driverId: "driver_1", sessionId: "session_live" },
+      { busId: "bus_1", routeId: "route_1", driverId: "driver_2", sessionId: "session_live" },
+      { busId: "bus/1", routeId: "route_1", sessionId: "session_live" },
+      { busId: "bus_1", routeId: "route_1", driverId: 7, sessionId: "session_live" },
+    ]) {
+      const response = await contractFetch(`${baseUrl}/api/shifts/stop`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      expect([403, 404]).toContain(response.status);
+    }
+    expect(harness.session).toMatchObject({ status: "active" });
+  });
+
+  it.each([
+    ["a passenger token with a stray admin flag", { uid: "p", role: "passenger", admin: true, authorizationVersion: "v1" }, true],
+    ["a driver token with a stray admin flag", { uid: "d", role: "driver", admin: true, driverId: "driver_9", assignedBusId: "bus_9", authorizationVersion: "v1" }, true],
+    ["a legacy admin token without an authorization version", { uid: "a", role: "admin", admin: true }, true],
+    ["a revoked admin authorization", CURRENT_ADMIN, false],
+  ])("does not give %s the reassignment bypass", async (_name, user, current) => {
+    harness.user = user;
+    harness.authorizationCurrent = current as boolean;
+    harness.driverBus = "bus_9";
+    const response = await stopShift();
+    expect(response.status).toBe(403);
+    expect(harness.session).toMatchObject({ status: "active" });
+  });
+
+  it("still refuses a driver who has been reassigned away from the bus", async () => {
+    harness.driverBus = "bus_9";
+    const response = await stopShift();
+    expect(response.status).toBe(403);
+    expect(harness.session).toMatchObject({ status: "active" });
+  });
+
+  it("retires the live ride even when the RTDB cache is cold, so passengers stop seeing it", async () => {
+    harness.coldLiveTransaction = true;
+    const response = await stopShift();
+    expect(response.status).toBe(200);
+    expect(harness.liveNode).toMatchObject({ status: "offline", automaticServicePaused: true });
+    expect(harness.liveNode).not.toHaveProperty("sessionId");
   });
 
   it("keeps natural completion terminal and idempotent", async () => {

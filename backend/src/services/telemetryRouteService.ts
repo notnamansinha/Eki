@@ -43,6 +43,7 @@ import {
   matchRoutePosition,
   ROUTE_MATCH_DISTANCE_M,
   trajectoryHeading,
+  plausibleProgressBound,
   type PreviousRouteMatch,
   type RouteAdherenceState,
   type RouteMatch,
@@ -1144,6 +1145,8 @@ async function processTelemetryRoute(
     progressElapsedMs > 0 && progressElapsedMs <= 60_000
       ? (Math.max(acceptedSample.speed, Number(live?.speed) || 0) + 15) / 3.6 * progressElapsedMs / 1000 + 2 * positionUncertaintyM
       : undefined,
+    prior ? plausibleProgressBound(progressElapsedMs, Math.max(acceptedSample.speed, Number(live?.speed) || 0),
+      positionUncertaintyM) : undefined,
   );
   const adherence = evaluateRouteAdherence(
     matchingContextChanged ? undefined : adherencePreviousState(live, Date.now()),

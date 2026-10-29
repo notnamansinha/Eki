@@ -32,6 +32,11 @@ describe("durable stop history", () => {
     expect(Object.values(additions).map(stop => stop.evidence)).toEqual(["skipped_gnss_gap", "skipped_gnss_gap", "gnss_progress"]);
   });
 
+  it("labels stops passed outside their corridor with telemetry running as unobserved, not as gap skips", () => {
+    const additions = missingStopHistory(natural, "in_service", 4, { 0: { timestamp: 10 } }, 50, 1, [], [1, 2]);
+    expect(Object.values(additions).map(stop => stop.evidence)).toEqual(["passed_unobserved", "passed_unobserved", "gnss_progress"]);
+  });
+
   it.each(["pre_departure", "unknown"])("does not invent arrivals for %s", state => {
     expect(missingStopHistory(natural, state, 0, {}, 100)).toEqual({});
   });

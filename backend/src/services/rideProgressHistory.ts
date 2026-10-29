@@ -17,6 +17,7 @@ export function missingStopHistory(
   observedAt: unknown,
   previousStopIndex = currentStopIndex,
   skippedStopIndices: readonly number[] = [],
+  unobservedStopIndices: readonly number[] = [],
 ): Record<string, Record<string, unknown>> {
   if (
     stops.length === 0 ||
@@ -41,8 +42,10 @@ export function missingStopHistory(
       stopName: stops[index].name,
       timestamp: observedAt,
       // Recovery time is not the original arrival time, and a stop skipped
-      // during a GNSS gap was never observed. Keep both distinctions visible.
+      // during a GNSS gap, or passed outside its corridor with telemetry
+      // running, was never observed. Keep every distinction visible.
       evidence: skippedStopIndices.includes(index) ? "skipped_gnss_gap"
+        : unobservedStopIndices.includes(index) ? "passed_unobserved"
         : index < previousStopIndex ? "recovered_checkpoint" : "gnss_progress",
     };
   }

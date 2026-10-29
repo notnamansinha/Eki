@@ -21,10 +21,11 @@ export interface RideStopRecord {
   timestamp: TimestampValue;
   /**
    * How the backend learned of this stop (see FIREBASE_DATA_MODEL.md). A
-   * `skipped_gnss_gap` stop was never observed and a `recovered_checkpoint`
-   * timestamp is the repair time, not the arrival. Legacy records omit it.
+   * `skipped_gnss_gap` or `passed_unobserved` stop was never observed and a
+   * `recovered_checkpoint` timestamp is the repair time, not the arrival.
+   * Legacy records omit it.
    */
-  evidence?: "gnss_progress" | "recovered_checkpoint" | "skipped_gnss_gap" | (string & {});
+  evidence?: "gnss_progress" | "recovered_checkpoint" | "skipped_gnss_gap" | "passed_unobserved" | (string & {});
 }
 
 /** True when the stop's timestamp is a GNSS-observed arrival time. */

@@ -100,6 +100,7 @@ import { drainTelemetryRouteProcessing } from "./telemetryRouteService";
 import { publicLiveBus } from "./liveBusProjection";
 import { runAbandonedRideReconciliation } from "./abandonedRideReconciler";
 import type { TelemetryPayload } from "./telemetryPayload";
+import { STOP_ARRIVAL_GEOFENCE_M } from "./tripStateReducer";
 
 let stop: (() => Promise<void>) | undefined;
 let fixtureId = 0;
@@ -163,7 +164,8 @@ describe("routing lifecycle through actual ingestion and listeners", () => {
     await f.send(23, 0, "stopped"); await f.send(23.001, 15_000);
     await f.send(f.stops[1].lat, 30_000, "moving", 10);
     expect(f.live().currentStopIndex).toBe(1);
-    await f.send(f.stops[1].lat + 0.0001, 35_000);
+    // About 33 m past the stop: only the segment from the poor fix touches it.
+    await f.send(f.stops[1].lat + 0.0003, 35_000);
     expect(f.live().currentStopIndex).toBe(1);
     await f.send(f.stops[1].lat, 40_000);
     expect(f.live().currentStopIndex).toBe(2);
@@ -187,16 +189,16 @@ describe("routing lifecycle through actual ingestion and listeners", () => {
     expect(Object.values(state.docs.get(`ride_sessions/${f.sessionId}`).stopsReached)
       .filter((record: any) => record.stopId === f.stops[1].id)).toHaveLength(1);
   });
-  it("publishes the next stop and its history only after entering the 2.5m arrival circle", async () => {
+  it("publishes the next stop and its history only after entering the arrival corridor", async () => {
     const f = await fixture();
     await f.send(23, 0, "stopped");
     await f.send(23.001, 15_000);
     const middle = f.stops[1];
-    await f.send(middle.lat - 2.6 / 6_371_000 * 180 / Math.PI, 30_000);
+    await f.send(middle.lat - (STOP_ARRIVAL_GEOFENCE_M + 0.1) / 6_371_000 * 180 / Math.PI, 30_000);
     expect(f.live().currentStopIndex).toBe(1);
     expect(Object.values(state.docs.get(`ride_sessions/${f.sessionId}`).stopsReached)
       .some((record: any) => record.stopId === middle.id)).toBe(false);
-    await f.send(middle.lat - 2.4 / 6_371_000 * 180 / Math.PI, 35_000);
+    await f.send(middle.lat - (STOP_ARRIVAL_GEOFENCE_M - 0.1) / 6_371_000 * 180 / Math.PI, 35_000);
     expect(f.live().currentStopIndex).toBe(2);
     const reached = Object.values(state.docs.get(`ride_sessions/${f.sessionId}`).stopsReached);
     expect(reached.filter((record: any) => record.stopId === middle.id)).toHaveLength(1);
@@ -205,6 +207,30 @@ describe("routing lifecycle through actual ingestion and listeners", () => {
     expect(Object.values(state.docs.get(`ride_sessions/${f.sessionId}`).stopsReached)
       .filter((record: any) => record.stopId === middle.id)).toHaveLength(1);
     expect(state.docs.get(`ride_sessions/${f.sessionId}`).status).toBe("active");
+  });
+
+  it("publishes each arrival as it happens and a stop missed off-road as unobserved, end to end", async () => {
+    const f = await fixture(false, 4);
+    const metersNorth = (meters: number) => 23 + meters / 6_371_000 * 180 / Math.PI;
+    // Stop 2 is pinned 30 m east of the road the bus drives (field ride, 29 Oct 2026).
+    const route = state.docs.get(`routes/${f.routeId}`);
+    route.stops = route.stops.map((point: typeof f.stops[number], index: number) => index === 2
+      ? { ...point, lng: 72 + 30 / (6_371_000 * Math.cos(23 * Math.PI / 180)) * 180 / Math.PI } : point);
+    stop = startTripStateEngine();
+    await f.send(23, 0, "stopped");
+    expect(publicLiveBus(f.live())).toMatchObject({ currentStopIndex: 0, atStopIndex: 0 });
+    let t = 0;
+    for (let meters = 10; meters <= 210; meters += 10) await f.send(metersNorth(meters), t += 1000);
+    // Arriving at stop 1 marks it at once and says the bus is there.
+    await f.send(f.stops[1].lat, t += 1000, "stopped");
+    expect(publicLiveBus(f.live())).toMatchObject({ currentStopIndex: 2, atStopIndex: 1 });
+    for (let meters = 232; meters <= 662; meters += 10) await f.send(metersNorth(meters), t += 1000);
+    // Stop 2 was never within its corridor; reaching stop 3 credits it as unobserved, not arrived.
+    const published = publicLiveBus(f.live());
+    expect(published).toMatchObject({ currentStopIndex: 3, unobservedStopIndices: [2] });
+    const reached = state.docs.get(`ride_sessions/${f.sessionId}`).stopsReached;
+    expect(Object.values(reached).find((record: any) => record.stopId === "s2")).toMatchObject({ evidence: "passed_unobserved" });
+    expect(Object.values(reached).find((record: any) => record.stopId === "s1")).toMatchObject({ evidence: "gnss_progress" });
   });
 
   it.each([2, 26])("retains all %i ordered stop records, passenger and chat identity across completion and reboot", async count => {

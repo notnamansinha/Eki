@@ -4,7 +4,8 @@ import PassengerMap from "@/components/maps/PassengerMap";
 import PassengerBoardingView from "@/components/passenger/PassengerBoardingView";
 import PassengerWorkspace from "@/components/passenger/PassengerWorkspace";
 import type { PassengerStopEstimates } from "@/lib/passengerStopEstimates";
-import { publish, publishArrival, publishDeparture, publishDetour, publishUncertainFix, route } from "./state";
+import { publish, publishArrival, publishArrivalAtNextStop, publishAtOrigin, publishDeparture, publishDetour, publishGnssLoss, publishUncertainFix, route } from "./state";
+import { STOP_ARRIVAL_GEOFENCE_M } from "../../backend/src/services/tripStateReducer";
 import "../../frontend/src/app/globals.css";
 
 function Fixture() {
@@ -13,8 +14,12 @@ function Fixture() {
   if (query.has("workspace")) return <>
     <div style={{ position: "fixed", top: 0, left: 0, zIndex: 100, background: "#09090b", color: "white" }}>
       <button onClick={publishDeparture}>Replay credible departure</button>
-      <button onClick={() => publishArrival(2.6)}>Fix outside arrival circle</button>
-      <button onClick={() => publishArrival(2.4)}>Fix inside arrival circle</button>
+      <button onClick={() => publishArrival(STOP_ARRIVAL_GEOFENCE_M + 0.1)}>Fix outside arrival corridor</button>
+      <button onClick={() => publishArrival(STOP_ARRIVAL_GEOFENCE_M - 0.1)}>Fix inside arrival corridor</button>
+      <button onClick={publishAtOrigin}>Publish at origin</button>
+      <button onClick={publishArrivalAtNextStop}>Arrive at next stop</button>
+      <button onClick={publishGnssLoss}>Publish GNSS loss</button>
+      <button onClick={() => publish(2)}>Publish fresh fix</button>
     </div>
     <PassengerWorkspace />
   </>;

@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import PassengerMap from "./PassengerMap";
 import { StopProjectionCache } from "@/lib/busEta";
 import { routeInRideDirection } from "@/lib/rideDirection";
-import { SIGNAL_LOST_MS } from "@/lib/liveBusFreshness";
+import { LIVE_DELAYED_MS, SIGNAL_LOST_MS } from "@/lib/liveBusFreshness";
 import { route, fixtureBus } from "../../../../e2e/fixtures/state";
 const state = vi.hoisted(() => ({
   geometries: new Map(), snapshot: {} as Record<string, unknown>, listener: undefined as undefined | ((value: Record<string, unknown>) => void),
@@ -135,8 +135,9 @@ describe("published passenger stop progress", () => {
     const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
     expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ minutes: { b: 1 }, nextStopIndex: 1, unavailable: undefined }));
     expect(view.container.querySelector('[aria-label="Alpha — passed"]')).toBeTruthy();
-    await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS + 15_001); });
-    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ minutes: {}, unavailable: "Signal delayed" }));
+    // The deadline clock flips at the threshold itself, not at the next 15 s tick.
+    await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS + 50); });
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ minutes: {}, unavailable: "Live tracking lost" }));
     expect(screen.getByTitle("qa-bus — last known location")).toBeTruthy();
     act(() => state.listener?.({ bus: { ...bus, timestamp: Date.now(), backendReceivedAt: Date.now() } }));
     expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ unavailable: undefined }));
@@ -431,15 +432,57 @@ describe("passenger map device and ride contexts", () => {
     expect(screen.getByRole("alert").textContent).toContain("Live bus updates are unavailable");
     expect(state.arrivals).not.toHaveBeenCalled();
   });
-  it("announces delayed location without diagnosing GNSS loss when an armed bus goes silent", async () => {
+  it("announces delayed then lost location without diagnosing GNSS loss when an armed bus goes silent", async () => {
     vi.useFakeTimers(); state.snapshot = { bus: fixtureBus("forward") };
     await act(async () => { render(<PassengerMap route={directed} targetStop={route.stops[1]} />); });
-    expect(screen.queryByText(/Live location updates delayed/)).toBeNull();
-    await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS + 15_001); });
-    expect(screen.getByText(/Live location updates delayed/)).toBeTruthy();
-    expect(screen.queryByText(/GPS signal lost|reconnecting/)).toBeNull();
+    expect(screen.queryByText(/Updates delayed|Live tracking lost/)).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(LIVE_DELAYED_MS + 50); });
+    expect(screen.getByText("Updates delayed")).toBeTruthy();
+    // The marker must not keep claiming a live motion state while updates are delayed.
+    expect(screen.getByTitle("qa-bus — updates delayed")).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS - LIVE_DELAYED_MS); });
+    expect(screen.getByText("Live tracking lost")).toBeTruthy();
+    expect(screen.queryByText(/GPS signal lost|reconnecting|backend|server/)).toBeNull();
     await act(async () => { state.listener?.({ bus: fixtureBus("forward") }); });
-    expect(screen.queryByText(/Live location updates delayed/)).toBeNull();
+    expect(screen.queryByText(/Updates delayed|Live tracking lost/)).toBeNull();
+  });
+  it("says GPS is lost on the loss packet itself, withholds ETAs and labels the frozen marker (field ride, 29 Oct 2026)", async () => {
+    vi.useFakeTimers();
+    const bus = { ...fixtureBus("forward"), currentStopIndex: 1 };
+    state.snapshot = { bus };
+    const changed = vi.fn();
+    await act(async () => { render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />); });
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ unavailable: undefined }));
+    await act(async () => { state.listener?.({ bus: { ...bus, motionState: "uncertain", signalState: "gnss_lost", timestamp: Date.now(), backendReceivedAt: Date.now() } }); });
+    expect(screen.getByText("GPS signal lost")).toBeTruthy();
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ minutes: {}, unavailable: "GPS signal lost" }));
+    expect(screen.getByTitle("qa-bus — GPS signal lost, last known location")).toBeTruthy();
+    // The silence after the single loss packet keeps its known cause.
+    await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS + 50); });
+    expect(screen.getByText("GPS signal lost")).toBeTruthy();
+  });
+  it("never says the bus is at a stop while its position is not live", async () => {
+    vi.useFakeTimers();
+    const bus = { ...fixtureBus("forward"), currentStopIndex: 0, atStopIndex: 0 };
+    state.snapshot = { bus };
+    const changed = vi.fn();
+    const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
+    expect(view.container.querySelector('[aria-label="Alpha — bus is here"]')).toBeTruthy();
+    await act(async () => { state.listener?.({ bus: { ...bus, motionState: "uncertain", signalState: "gnss_lost", timestamp: Date.now(), backendReceivedAt: Date.now() } }); });
+    expect(view.container.querySelector('[aria-label="Alpha — bus is here"]')).toBeNull();
+    expect(changed.mock.lastCall?.[0]).not.toHaveProperty("atStopIndex");
+    await act(async () => { state.listener?.({ bus: { ...bus, timestamp: Date.now(), backendReceivedAt: Date.now() } }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS + 50); });
+    expect(view.container.querySelector('[aria-label="Alpha — bus is here"]')).toBeNull();
+  });
+  it("marks the stop the bus is at on arrival, before it departs", async () => {
+    state.snapshot = { bus: { ...fixtureBus("forward"), currentStopIndex: 0, atStopIndex: 0 } };
+    const changed = vi.fn();
+    const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
+    expect(view.container.querySelector('[aria-label="Alpha — bus is here"]')).toBeTruthy();
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ nextStopIndex: 0, atStopIndex: 0 }));
+    act(() => state.listener?.({ bus: { ...fixtureBus("forward"), currentStopIndex: 1 } }));
+    expect(view.container.querySelector('[aria-label="Alpha — passed"]')).toBeTruthy();
   });
   it("keeps fresh streamed fixes online between the 15-second clock ticks", async () => {
     vi.useFakeTimers();
@@ -449,7 +492,7 @@ describe("passenger map device and ride contexts", () => {
     // New telemetry arrives before the independent silence timer next fires.
     vi.setSystemTime(start + 12_000);
     await act(async () => { state.listener?.({ bus: fixtureBus("forward") }); });
-    expect(screen.queryByText(/Live location updates delayed/)).toBeNull();
+    expect(screen.queryByText(/Updates delayed|Live tracking lost/)).toBeNull();
   });
   it("clears old ETAs after the selected bus disappears", async () => {
     render(<PassengerMap route={directed} targetStop={route.stops[1]} />);

@@ -18,7 +18,7 @@ test("ETA follows the later itinerary visit at identical coordinates and heading
 });
 
 for (const direction of ["forward", "reverse"]) {
-  test(`workspace shows ETA and authoritative 2.5m stop passage after credible ${direction} departure`, async ({ page }, info) => {
+  test(`workspace shows ETA and authoritative corridor stop passage after credible ${direction} departure`, async ({ page }, info) => {
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(`/?workspace&pending&direction=${direction}`);
@@ -31,16 +31,16 @@ for (const direction of ["forward", "reverse"]) {
     await expect(page.locator('[data-road-color="#71717a"]')).toHaveCount(0);
     await picker.press("Escape");
     await page.getByRole("button", { name: "Replay credible departure", exact: true }).click();
-    await expect(page.getByText("Ride in service", { exact: true })).toBeVisible();
+    await expect(page.getByText(/^Ride in service · Live/)).toBeVisible();
     await picker.click();
     await expect(page.getByRole("option", { name: nextStop, exact: true })).toContainText(/min/);
     await expect(page.getByRole("option", { name: followingStop, exact: true })).toContainText(/min/);
     await picker.press("Escape");
-    await page.getByRole("button", { name: "Fix outside arrival circle", exact: true }).click();
+    await page.getByRole("button", { name: "Fix outside arrival corridor", exact: true }).click();
     await picker.click();
     await expect(page.getByRole("option", { name: nextStop, exact: true })).not.toContainText("Passed");
     await picker.press("Escape");
-    await page.getByRole("button", { name: "Fix inside arrival circle", exact: true }).click();
+    await page.getByRole("button", { name: "Fix inside arrival corridor", exact: true }).click();
     await picker.click();
     await expect(page.getByRole("option", { name: nextStop, exact: true })).toContainText("Passed");
     await expect(page.getByRole("option", { name: followingStop, exact: true })).toContainText(/min/);
@@ -81,13 +81,14 @@ test("destination ETA, passed stops, segmented road and one bus glyph stay consi
   await expect(page.getByLabel("Gamma — passed", { exact: true })).toBeVisible();
   await picker.click();
   await expect(page.getByRole("option", { name: "Gamma" })).toContainText("Passed");
-  await page.clock.runFor(105_001);
-  await expect(page.getByRole("option", { name: "Delta" })).toContainText("Signal delayed");
+  // Lost after 30 s of silence (SIGNAL_LOST_MS), not 90-105 s.
+  await page.clock.runFor(31_000);
+  await expect(page.getByRole("option", { name: "Delta" })).toContainText("Live tracking lost");
   await picker.press("Escape");
   await page.getByRole("button", { name: "Publish fresh fix", exact: true }).click();
   await picker.click();
   await expect(page.getByRole("option", { name: "Gamma" })).toContainText(/min/);
-  await expect(page.getByRole("option", { name: "Delta" })).not.toContainText("Signal delayed");
+  await expect(page.getByRole("option", { name: "Delta" })).not.toContainText("Live tracking lost");
 });
 
 test("a detour replaces the original future road, retains covered road and restores configured tracking on rejoin", async ({ page }, info) => {
@@ -119,4 +120,54 @@ test("a detour replaces the original future road, retains covered road and resto
   await page.screenshot({ path: info.outputPath("detour-blue-with-retained-grey.png"), fullPage: true });
   await page.getByRole("button", { name: "Publish fresh fix", exact: true }).click();
   await expect(page.locator('[data-road-color="#3b82f6"] polyline').first()).toHaveAttribute("points", configured!);
+});
+
+test("field ride 29 Oct 2026: A marked at A, B at B, GNSS loss and silence shown promptly, recovery restores live", async ({ page }, info) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.clock.install();
+  await page.goto("/?workspace&direction=forward");
+  await page.getByRole("button", { name: "Track Synthetic campus route", exact: true }).click();
+  await page.getByRole("button", { name: "Publish at origin", exact: true }).click();
+  const header = page.getByRole("status").filter({ hasText: "Ride in service" });
+  await expect(header).toContainText("Ride in service · Live");
+  await expect(header).toContainText("At Alpha · Next: Beta");
+  await expect(page.getByLabel("Alpha — bus is here", { exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath("at-origin.png"), fullPage: true });
+
+  await page.getByRole("button", { name: "Replay credible departure", exact: true }).click();
+  await expect(page.getByLabel("Alpha — passed", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Arrive at next stop", exact: true }).click();
+  // B is marked while the bus is at B, not when it reaches C.
+  await expect(header).toContainText("At Beta · Next: Gamma");
+  await expect(page.getByLabel("Beta — bus is here", { exact: true })).toBeVisible();
+  const picker = page.getByRole("combobox", { name: "Destination station" });
+  await picker.click();
+  await expect(page.getByRole("option", { name: "Beta", exact: true })).toContainText("Bus is here");
+  await expect(page.getByRole("option", { name: "Alpha", exact: true })).toContainText("Passed");
+  await picker.press("Escape");
+  await page.screenshot({ path: info.outputPath("at-beta.png"), fullPage: true });
+
+  // GNSS disconnected: the single loss packet is reported at once, boarding withheld.
+  await page.getByRole("button", { name: "Publish GNSS loss", exact: true }).click();
+  await expect(page.getByText("GPS signal lost").first()).toBeVisible();
+  // The card stays (a chosen stop or "On board" survives the blip); boarding waits for GPS.
+  await expect(page.getByRole("button", { name: "Board", exact: true })).toBeDisabled();
+  await expect(page.getByText("Boarding resumes when live tracking returns.")).toBeVisible();
+  await expect(page.getByTitle(/GPS signal lost, last known location/)).toBeVisible();
+  await page.screenshot({ path: info.outputPath("gnss-lost.png"), fullPage: true });
+
+  // A fresh fix restores the live ride.
+  await page.getByRole("button", { name: "Publish fresh fix", exact: true }).click();
+  await expect(header).toContainText("Ride in service · Live");
+
+  // Backend or uplink stopped: no snapshot arrives, the client clock degrades the claim.
+  await page.clock.runFor(13_000);
+  await expect(page.getByText("Updates delayed").first()).toBeVisible();
+  await page.clock.runFor(18_000);
+  await expect(page.getByText("Live tracking lost").first()).toBeVisible();
+  await expect(page.getByText(/Ride in service · Live/)).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath("tracking-lost.png"), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+  expect(errors).toEqual([]);
 });

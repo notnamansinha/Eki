@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { reduceTripState, type TripStateResult, type TerminalArrivalEvidence } from "./tripStateReducer";
+import { STOP_ARRIVAL_GEOFENCE_M, reduceTripState, type TripStateResult, type TerminalArrivalEvidence } from "./tripStateReducer";
+
+// Fixes on a corridor boundary must not flip on floating-point rounding.
+const CORRIDOR_M = STOP_ARRIVAL_GEOFENCE_M + 0.1;
 
 // ---- local planar geometry -------------------------------------------------
 const R = 6_371_000;
@@ -131,7 +134,7 @@ describe("reduceTripState invariants under seeded random fix sequences", () => {
     expect(failures).toEqual([]);
   });
 
-  it("perturbed drives preserve monotonic order, gap-only skipping, and GNSS-loss neutrality", () => {
+  it("perturbed drives preserve monotonic order, gap-only skipping, direction-checked unobserved credit, and GNSS-loss neutrality", () => {
     const violations: string[] = [];
     for (let seed = 1; seed <= 400; seed += 1) {
       const r = rng(seed * 7919);
@@ -155,11 +158,16 @@ describe("reduceTripState invariants under seeded random fix sequences", () => {
           after.hasDepartedOrigin !== before.hasDepartedOrigin)) violations.push(`GNSS loss changed ride truth ${ctx}`);
         if (before.tripState === "pre_departure" && after.tripState === "completed") violations.push(`pre_departure->completed ${ctx}`);
         if (before.tripState === "pre_departure" && after.tripState === "in_service" && fix.motion !== "moving") violations.push(`activation without movement ${ctx}`);
-        if (after.tripState === "completed" && dist(fix.p, stops.at(-1)!) > 2.6) violations.push(`completed away from terminal ${ctx}`);
+        if (after.tripState === "completed" && dist(fix.p, stops.at(-1)!) > CORRIDOR_M) violations.push(`completed away from terminal ${ctx}`);
         if (after.skippedStopIndices && before.gnssGapSince === null && prev) violations.push(`skip without gap ${ctx}`);
+        // Unobserved credit is the no-gap recovery: it needs a prior fix to show direction and never invents a gap skip.
+        if (after.unobservedStopIndices && (!prev || before.gnssGapSince !== null || after.skippedStopIndices)) {
+          violations.push(`unobserved credit without continuous direction evidence ${ctx}`);
+        }
         if (!after.skippedStopIndices && after.currentStopIndex > before.currentStopIndex && before.tripState === "in_service") {
           for (let i = Math.max(1, before.currentStopIndex); i < after.currentStopIndex; i += 1) {
-            const reached = dist(fix.p, stops[i]) <= 2.6 || (prev ? segDist(stops[i], prev.p, fix.p) <= 2.6 : false);
+            if (after.unobservedStopIndices?.includes(i)) continue;
+            const reached = dist(fix.p, stops[i]) <= CORRIDOR_M || (prev ? segDist(stops[i], prev.p, fix.p) <= CORRIDOR_M : false);
             if (!reached) violations.push(`stop ${i} consumed without observation ${ctx}`);
           }
         }

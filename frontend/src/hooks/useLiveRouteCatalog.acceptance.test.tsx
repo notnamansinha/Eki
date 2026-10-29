@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SIGNAL_LOST_MS } from "@/lib/liveBusFreshness";
+import { CATALOG_RECEIPT_BUCKET_MS, SIGNAL_LOST_MS as LIVE_SIGNAL_LOST_MS } from "@/lib/liveBusFreshness";
+// Catalog receipts are 30 s leases: one bucket of allowance beyond live signal loss.
+const SIGNAL_LOST_MS = LIVE_SIGNAL_LOST_MS + CATALOG_RECEIPT_BUCKET_MS;
 
 type Listener = { path: string; next: (snapshot: { val: () => unknown }) => void; fail: (error: Error) => void; detach: ReturnType<typeof vi.fn> };
 const fixture = vi.hoisted(() => ({ generation: 1, ready: Promise.resolve(), user: { uid: "passenger", role: "passenger" }, listeners: [] as Listener[] }));

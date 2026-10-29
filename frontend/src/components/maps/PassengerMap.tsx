@@ -7,7 +7,6 @@ import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import BusPositionGlyph from "@/components/maps/BusPositionGlyph";
 import { RouteStop } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
-import { isLiveBusSignalLost, liveBusFreshnessTimestamp } from "@/lib/liveBusFreshness";
 import { serverNow } from "@/lib/serverClock";
 import { subscribeLiveBusesByRoute } from "@/lib/liveBusStore";
 import {
@@ -40,6 +39,9 @@ import { routeDisplayPath } from "@/lib/routeDisplayPath";
 import { publishedStopIndex } from "@/lib/publishedStopIndex";
 import type { LatLng } from "@/lib/polyline";
 import { stopEstimateContext, type PassengerStopEstimates } from "@/lib/passengerStopEstimates";
+import { describeLiveBusHealth, liveBusHealth, type LiveBusHealth } from "@/lib/liveBusHealth";
+import { useLiveHealthClock } from "@/hooks/useLiveHealthClock";
+import { isBehindBus, stopProgress, stopVisitLabel } from "@/lib/stopProgress";
 
 export interface PassengerMapProps {
   targetStop: RouteStop;
@@ -56,6 +58,7 @@ export interface PassengerMapProps {
 type IncomingBusData = PassengerMapBus;
 
 const WALKING_KMH = 5;
+const HEALTH_SEVERITY: Record<LiveBusHealth["state"], number> = { live: 0, delayed: 1, gnss_lost: 2, lost: 3, offline: 4 };
 const WALKING_M_PER_MIN = (WALKING_KMH * 1000) / 60;
 const BUS_MOTION_COLORS: Record<string, string> = {
   moving:    "#2563eb",
@@ -66,9 +69,13 @@ const BUS_MOTION_COLORS: Record<string, string> = {
 const BusMarker = memo(function BusMarker({
   bus,
   signalLost,
+  gnssLost = false,
+  delayed = false,
 }: {
   bus: IncomingBusData;
   signalLost: boolean;
+  gnssLost?: boolean;
+  delayed?: boolean;
 }) {
   const markerSelection = useLiveBusMarkerPosition(bus);
   const markerPoint = useSmoothPosition(markerSelection.position);
@@ -85,7 +92,7 @@ const BusMarker = memo(function BusMarker({
     setDisplayHeading(nextDisplayHeading);
   }, [bus.heading, bus.motionState, bus.speed, bus.deviceState]);
 
-  const color = signalLost || markerSelection.uncertain ? "#b45309"
+  const color = signalLost || delayed || markerSelection.uncertain ? "#b45309"
     : BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
 
   if (!markerPoint) return null;
@@ -93,7 +100,9 @@ const BusMarker = memo(function BusMarker({
     <AdvancedMarker position={markerPoint} anchorLeft="-50%" anchorTop="-50%" zIndex={40}>
       <BusPositionGlyph
         label={
-          signalLost ? `${bus.busId} — last known location`
+          gnssLost ? `${bus.busId} — GPS signal lost, last known location`
+          : signalLost ? `${bus.busId} — last known location`
+          : delayed ? `${bus.busId} — updates delayed`
           : markerSelection.decision === "match_pending"
             ? `${bus.busId} — updating route position`
             : markerSelection.uncertain
@@ -373,6 +382,12 @@ function PassengerMapInner({
     setUiNow(serverNow());
   }, []);
 
+  // Re-estimate as soon as a bus stops (or starts) being trackable, not at the
+  // next 15 s tick: a lost bus must never remain the earliest arrival.
+  const trackableBusKey = [...buses.values()].filter(bus => {
+    const state = liveBusHealth(bus).state;
+    return state === "live" || state === "delayed";
+  }).map(bus => bus.busId).join(",");
   useEffect(() => {
     if (preview || !route.stops || route.stops.length === 0 || buses.size === 0) {
       // No bus to compute arrivals for (route empty or bus gone): clear any
@@ -399,7 +414,9 @@ function PassengerMapInner({
       const newArrivals: Record<string, number> = {};
 
       for (const bus of Array.from(buses.values())) {
-        if (bus.deviceState !== "online" || isLiveBusSignalLost(liveBusFreshnessTimestamp(bus), now)) continue;
+        // Only a live (or briefly delayed) trustworthy fix earns a precise ETA.
+        const health = liveBusHealth(bus, now).state;
+        if (health !== "live" && health !== "delayed") continue;
         const nextStopIndex = publishedStopIndex(bus.currentStopIndex, route.stops.length);
         if (nextStopIndex === undefined) continue;
         const remainingStops = route.stops.slice(nextStopIndex);
@@ -483,6 +500,7 @@ function PassengerMapInner({
     route.stops,
     roadPath,
     dynamicGeometries,
+    trackableBusKey,
   ]);
 
   // ── ETA Smooth Interpolation ───────────────────────────────────────────────
@@ -491,16 +509,24 @@ function PassengerMapInner({
     return () => clearInterval(interval);
   }, [updateUI]);
 
-  // The UI timer triggers renders during silence. Evaluate against the actual
-  // clock on every render: a new fix can be newer than the last timer tick.
-  const signalLostBuses = [...buses.values()].filter(bus =>
-    !liveUpdatesAvailable || bus.deviceState === "offline" || isLiveBusSignalLost(liveBusFreshnessTimestamp(bus)),
-  );
-  const signalLostLastSeen = signalLostBuses.length
-    ? Math.min(...signalLostBuses.map(bus => liveBusFreshnessTimestamp(bus) ?? bus.timestamp)) : null;
-  const signalLostMinutes = signalLostLastSeen
-    ? Math.max(0, Math.round((uiNow - signalLostLastSeen) / 60_000))
-    : null;
+  // The health clock re-renders exactly when a silent bus crosses a threshold,
+  // with no new snapshot and no running backend needed. Evaluate against the
+  // actual clock on every render: a new fix can be newer than the last tick.
+  const busList = useMemo(() => [...buses.values()], [buses]);
+  useLiveHealthClock(busList);
+  const busHealth = new Map(busList.map(bus => [bus.busId, liveBusHealth(bus)] as const));
+  const isTrackable = (bus: IncomingBusData) => {
+    const state = busHealth.get(bus.busId)?.state;
+    return liveUpdatesAvailable !== false && (state === "live" || state === "delayed");
+  };
+  const signalLostBuses = busList.filter(bus => !isTrackable(bus));
+  const worstHealth = busList.map(bus => busHealth.get(bus.busId)!)
+    .reduce<LiveBusHealth | undefined>((worst, health) =>
+      !worst || HEALTH_SEVERITY[health.state] > HEALTH_SEVERITY[worst.state] ? health : worst, undefined);
+  const healthNotice = worstHealth && worstHealth.state !== "live" ? describeLiveBusHealth(worstHealth) : undefined;
+  // "Bus is here" claims a current position: never from a silent or GPS-lost bus.
+  const activeBusProgress = progressBus ? stopProgress(route.stops.length,
+    isTrackable(progressBus) ? progressBus : { ...progressBus, atStopIndex: undefined }) : undefined;
   const rerouteNotice = useMemo(() => {
     return passengerRerouteNotice([...buses.values()].map((bus) => bus.routeState));
   }, [buses]);
@@ -509,7 +535,8 @@ function PassengerMapInner({
   const firstBus = useMemo(() => Array.from(buses.values())[0], [buses]);
   const firstBusMarker = useLiveBusMarkerPosition(firstBus);
   const estimatesUnavailable = liveReadFailed || !liveUpdatesAvailable ? "Updates unavailable"
-    : signalLostBuses.length === buses.size && buses.size > 0 ? "Signal delayed"
+    : signalLostBuses.length === buses.size && buses.size > 0
+      ? busList.every(bus => busHealth.get(bus.busId)?.state === "gnss_lost") ? "GPS signal lost" : "Live tracking lost"
     // Paused automatic service has fresh location but no live ride progress.
     : buses.size > 0 && [...buses.values()].every(bus => bus.automaticServicePaused === true) ? "Tracking paused"
     : preview ? (firstBus?.sessionId ? "Direction pending" : "Service not started")
@@ -517,10 +544,15 @@ function PassengerMapInner({
     : progressBus && activeBusStopIndex === undefined ? "Stop progress unavailable"
     : !anyGeometryAvailable ? "Route unavailable" : undefined;
   const estimateContext = stopEstimateContext(route, selectedBusKey, buses.size === 1 ? firstBus?.routeVersion : undefined);
+  const atStopIndex = activeBusProgress?.atStopIndex;
+  const unobservedKey = activeBusProgress?.states.flatMap((state, index) => state === "unobserved" ? [index] : []).join(",") ?? "";
   useEffect(() => {
+    const unobservedStopIndices = unobservedKey ? unobservedKey.split(",").map(Number) : undefined;
     onStopEstimatesChange?.({ context: estimateContext, minutes: estimatesUnavailable ? {} : stopETAs,
-      nextStopIndex: activeBusStopIndex, unavailable: estimatesUnavailable });
-  }, [onStopEstimatesChange, estimateContext, estimatesUnavailable, stopETAs, activeBusStopIndex]);
+      nextStopIndex: activeBusStopIndex, unavailable: estimatesUnavailable,
+      ...(atStopIndex !== undefined ? { atStopIndex } : {}),
+      ...(unobservedStopIndices ? { unobservedStopIndices } : {}) });
+  }, [onStopEstimatesChange, estimateContext, estimatesUnavailable, stopETAs, activeBusStopIndex, atStopIndex, unobservedKey]);
   const centerTarget = useMemo(() => {
     return firstBusMarker.position ?? mapCenter;
   }, [firstBusMarker.position, mapCenter]);
@@ -539,21 +571,19 @@ function PassengerMapInner({
           Waiting for live location. The configured route remains available.
         </div>
       )}
-      {/* Telemetry silence does not identify a receiver or network failure. */}
-      {!liveReadFailed && liveUpdatesAvailable && signalLostBuses.length > 0 && (
+      {/* Telemetry silence does not identify which component failed. */}
+      {!liveReadFailed && liveUpdatesAvailable && healthNotice && (
         <div role="status" aria-live="polite">
-          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[12px] font-semibold"
-            style={{ 
+          <div className="flex items-start gap-2.5 px-4 py-2.5 rounded-xl text-[12px]"
+            style={{
               background: "var(--surface-2)",
-              border: "1px solid rgba(251, 191, 36, 0.2)",
-              color: "var(--status-warning)" 
+              border: `1px solid ${healthNotice.tone === "danger" ? "rgba(248, 113, 113, 0.3)" : "rgba(251, 191, 36, 0.2)"}`,
+              color: healthNotice.tone === "danger" ? "var(--status-danger)" : "var(--status-warning)",
             }}>
-            <WifiOff className="w-3.5 h-3.5 shrink-0" />
+            <WifiOff className="mt-0.5 w-3.5 h-3.5 shrink-0" aria-hidden="true" />
             <span>
-              Live location updates delayed
-              {signalLostMinutes !== null && signalLostMinutes > 0
-                ? ` · last update ${signalLostMinutes}m ago`
-                : " · waiting for a fresh update…"}
+              <span className="font-semibold">{healthNotice.title}</span>
+              <span className="block font-medium" style={{ color: "var(--text-secondary)" }}>{healthNotice.summary}</span>
             </span>
           </div>
         </div>
@@ -618,7 +648,7 @@ function PassengerMapInner({
             progressDistanceM={!preview && buses.size === 1 && firstBus && firstBus.routeSource !== "dynamic-reroute" &&
               firstBusMarker.decision === "matched" && !firstBusMarker.uncertain &&
               (firstBus.matchedLocation?.matchConfidence ?? 0) >= 0.7 && firstBus.routeGeometryVersion === route.geometryVersion &&
-              !isLiveBusSignalLost(liveBusFreshnessTimestamp(firstBus))
+              isTrackable(firstBus)
               ? firstBus?.matchedLocation?.alongRouteDistanceM : undefined}
             completedStopIndex={progressBus?.routeSource === "dynamic-reroute" ? activeBusStopIndex : undefined}
             hideRemaining={progressBus?.routeSource === "dynamic-reroute"}
@@ -641,30 +671,36 @@ function PassengerMapInner({
               firstStopIndex={geometry.firstStopIndex ?? -1}
               progressDistanceM={buses.size === 1 && firstBusMarker.decision === "matched" && !firstBusMarker.uncertain &&
                 (bus.matchedLocation?.matchConfidence ?? 0) >= 0.7 &&
-                !isLiveBusSignalLost(liveBusFreshnessTimestamp(bus)) ? bus.matchedLocation?.alongRouteDistanceM : undefined}
+                isTrackable(bus) ? bus.matchedLocation?.alongRouteDistanceM : undefined}
               direction={route.rideDirection}
             />;
           })}
 
           {/* Bus markers */}
           {Array.from(buses.values()).map(bus => (
-            <BusMarker key={bus.busId} bus={bus} signalLost={!liveUpdatesAvailable || bus.deviceState !== "online" || isLiveBusSignalLost(liveBusFreshnessTimestamp(bus))} />
+            <BusMarker key={bus.busId} bus={bus} signalLost={!isTrackable(bus)} gnssLost={busHealth.get(bus.busId)?.state === "gnss_lost"}
+              delayed={busHealth.get(bus.busId)?.state === "delayed"} />
           ))}
 
           {/* Ordinary stops stay compact; labels are reserved for the current selection. */}
           {route.stops?.map((stop, i) => {
             const isTarget = stop.id === selectedDestinationStopId;
-            const isPast = activeBusStopIndex !== undefined && i < activeBusStopIndex;
-            const showLabel = isTarget || i === activeBusStopIndex || stop.id === inspectedStopId;
-            return <AdvancedMarker key={`stop-${stop.id || i}`} position={{lat:stop.lat,lng:stop.lng}} anchorLeft="-50%" anchorTop="-50%">
-              <button type="button" aria-label={`Show stop ${stop.name}`} title={`${stop.name}${isPast ? " — passed" : ""}`}
+            const visit = activeBusProgress?.states[i];
+            const isPast = isBehindBus(visit);
+            const isAt = visit === "at";
+            const visitLabel = stopVisitLabel(visit)?.toLowerCase();
+            const showLabel = isTarget || isAt || i === activeBusProgress?.nextStopIndex || stop.id === inspectedStopId;
+            return <AdvancedMarker key={`stop-${stop.id || i}`} position={{lat:stop.lat,lng:stop.lng}} anchorLeft="-50%" anchorTop="-50%" zIndex={isAt ? 30 : undefined}>
+              <button type="button" aria-label={`Show stop ${stop.name}`} title={`${stop.name}${visitLabel ? ` — ${visitLabel}` : ""}`}
                 onClick={() => setInspectedStopId(stop.id)} onFocus={() => setInspectedStopId(stop.id)}
                 // Inspecting a stop is not a manual pan; keep following the bus.
                 onPointerDown={event => event.stopPropagation()} onTouchStart={event => event.stopPropagation()}
                 className="relative flex size-11 items-center justify-center" style={{opacity:isPast ? 0.6 : 1}}>
-                <span aria-label={isPast ? `${stop.name} — passed` : undefined} className="flex size-5 items-center justify-center rounded-full border-2 border-white text-[10px] font-bold text-white shadow-sm"
-                  style={{background:isPast ? "#71717a" : "var(--accent)",outline:isTarget ? "2px solid #18181b" : undefined}}>{stopLabel(i)}</span>
-                {showLabel && <span className="absolute top-10 max-w-40 truncate rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold text-zinc-900 shadow-sm">{stop.shortName || stop.name}</span>}
+                <span aria-label={visitLabel ? `${stop.name} — ${visitLabel}` : undefined} className="flex size-5 items-center justify-center rounded-full border-2 text-[10px] font-bold text-white shadow-sm"
+                  style={{background:isAt ? "var(--status-live)" : isPast ? "#71717a" : "var(--accent)",
+                    borderColor: "white", borderStyle: visit === "unobserved" ? "dashed" : "solid",
+                    outline:isTarget ? "2px solid #18181b" : undefined}}>{stopLabel(i)}</span>
+                {showLabel && <span className="absolute top-10 max-w-40 truncate rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold text-zinc-900 shadow-sm">{isAt ? `At ${stop.shortName || stop.name}` : stop.shortName || stop.name}</span>}
               </button>
             </AdvancedMarker>;
           })}
@@ -702,6 +738,8 @@ function PassengerMapInner({
         stopETAs={estimatesUnavailable ? {} : stopETAs}
         walkMinutesToTarget={walkMinutesToTarget}
         currentStopIndex={activeBusStopIndex}
+        atStopIndex={activeBusProgress?.atStopIndex}
+        unobservedStopIndices={unobservedKey ? unobservedKey.split(",").map(Number) : undefined}
         aggregateArrivals={aggregateArrivals}
         geometryUnavailable={geometryUnavailable}
       />

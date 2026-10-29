@@ -214,6 +214,62 @@ describe("admin service creation", () => {
     expect(await screen.findByText("Ride session changed.")).toBeTruthy();
     expect(screen.queryByRole("dialog", { name: "End ride early?" })).toBeNull();
   });
+  it("offers End ride from the live details drawer as well as the expanded card (desktop retest, 29 Oct 2026)", async () => {
+    state.entries = [{ ...fixtureBus("forward") } as ActiveBusEntry];
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"stopped":true,"interrupted":true}'));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup(); render(<DashboardPanel />);
+    await user.click(screen.getByRole("button", { name: "Open live details for qa-bus" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Live details for qa-bus" })).getByRole("button", { name: "End ride early" }));
+    expect(screen.queryByRole("dialog", { name: "Live details for qa-bus" })).toBeNull();
+    await user.click(within(screen.getByRole("dialog", { name: "End ride early?" })).getByRole("button", { name: "End ride" }));
+    expect(await screen.findByText(/ended early and was saved to history/)).toBeTruthy();
+    expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body)).toMatchObject({ busId: "qa-bus", sessionId: "qa-session", driverId: "qa-driver" });
+  });
+  it("still offers End ride when the live projection lacks the driver, and lets the server use the ride's own identity", async () => {
+    state.entries = [{ ...fixtureBus("forward"), driverId: undefined } as ActiveBusEntry];
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"stopped":true,"interrupted":true}'));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup(); render(<DashboardPanel />);
+    await user.click(screen.getByRole("button", { expanded: false }));
+    await user.click(screen.getByRole("button", { name: "End ride early" }));
+    await user.click(within(screen.getByRole("dialog", { name: "End ride early?" })).getByRole("button", { name: "End ride" }));
+    await screen.findByText(/ended early and was saved to history/);
+    expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body)).not.toHaveProperty("driverId");
+  });
+  it("does not report a ride that had already completed as ended early", async () => {
+    state.entries = [{ ...fixtureBus("forward") } as ActiveBusEntry];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response('{"stopped":true,"alreadyCompleted":true}')));
+    const user = userEvent.setup(); render(<DashboardPanel />);
+    await user.click(screen.getByRole("button", { expanded: false }));
+    await user.click(screen.getByRole("button", { name: "End ride early" }));
+    await user.click(within(screen.getByRole("dialog", { name: "End ride early?" })).getByRole("button", { name: "End ride" }));
+    expect(await screen.findByText(/had already completed at its terminal; it was not interrupted/)).toBeTruthy();
+    expect(screen.queryByText(/ended early and was saved/)).toBeNull();
+  });
+  it.each([
+    ["completes", { tripState: "completed" }],
+    ["is replaced by a new session", { sessionId: "qa-session-NEW" }],
+  ])("closes the open End ride confirm when its ride %s, without sending a stop", async (_name, change) => {
+    state.entries = [{ ...fixtureBus("forward") } as ActiveBusEntry];
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup(); const view = render(<DashboardPanel />);
+    await user.click(screen.getByRole("button", { expanded: false }));
+    await user.click(screen.getByRole("button", { name: "End ride early" }));
+    expect(screen.getByRole("dialog", { name: "End ride early?" })).toBeTruthy();
+    state.entries = [{ ...fixtureBus("forward"), ...change } as ActiveBusEntry];
+    view.rerender(<DashboardPanel />);
+    await vi.waitFor(() => expect(screen.queryByRole("dialog", { name: "End ride early?" })).toBeNull());
+    expect(screen.getByText("Ride qa-session already ended; nothing was interrupted.")).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it("never lets the desktop fleet list squash a card and clip its End ride row", () => {
+    state.entries = [{ ...fixtureBus("forward") } as ActiveBusEntry, { ...fixtureBus("reverse", "qa-session-2", "qa-bus-2") } as ActiveBusEntry];
+    const { container } = render(<DashboardPanel />);
+    const cards = container.querySelectorAll("[data-fleet-card]");
+    expect(cards).toHaveLength(2);
+    cards.forEach(card => expect(card.className.split(/\s+/)).toContain("shrink-0"));
+  });
   it("shows why clearing ride messages failed instead of leaving the reason behind the dialog", async () => {
     state.entries = [{ ...fixtureBus("forward") } as ActiveBusEntry];
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response('{"error":"Messages are locked."}', { status: 409 })));

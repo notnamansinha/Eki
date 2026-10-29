@@ -17,7 +17,7 @@ import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import { SerializedChangeWriter } from "./serializedChangeWriter";
 import { restoreDurableRide } from "./durableRideRecovery";
 import { lifecycleIntakeFingerprint } from "./lifecycleIntake";
-import { reduceTripState, type TerminalArrivalEvidence } from "./tripStateReducer";
+import { reduceTripState, visitedStopIndex, type TerminalArrivalEvidence } from "./tripStateReducer";
 import { missingStopHistory } from "./rideProgressHistory";
 import { journeyLocation, newerJourneyLocation } from "./journeyLocation";
 import {
@@ -625,6 +625,31 @@ function liveGnssGapSince(data: Record<string, unknown>): number | null {
     typeof gap.since === "number" && Number.isFinite(gap.since) ? gap.since : null;
 }
 
+/**
+ * Stops this session passed without observing them (GNSS gap or outside the
+ * arrival corridor). Bounded by the itinerary; never carried into another ride.
+ */
+function liveUnobservedStops(data: Record<string, unknown>, stopCount: number): number[] {
+  const record = data.unobservedStops as { sessionId?: unknown; indices?: unknown } | null | undefined;
+  if (!record || typeof data.sessionId !== "string" || record.sessionId !== data.sessionId) return [];
+  const raw = Array.isArray(record.indices) ? record.indices
+    : record.indices && typeof record.indices === "object" ? Object.values(record.indices) : [];
+  return mergedStopIndices(raw, [], stopCount);
+}
+
+function mergedStopIndices(existing: readonly unknown[], added: readonly number[], stopCount: number): number[] {
+  return [...new Set([...existing, ...added])]
+    .filter((index): index is number => Number.isSafeInteger(index) && Number(index) >= 0 && Number(index) < stopCount)
+    .sort((left, right) => left - right);
+}
+
+/** The stop this session's bus is at; another ride's value never carries over. */
+function liveAtStopIndex(data: Record<string, unknown>): number | null {
+  const record = data.atStop as { sessionId?: unknown; index?: unknown } | null | undefined;
+  return record && typeof data.sessionId === "string" && record.sessionId === data.sessionId &&
+    Number.isSafeInteger(record.index) && Number(record.index) >= 0 ? Number(record.index) : null;
+}
+
 /** Serializes the durable active-ride lifecycle write for one ride. */
 function persistActiveRideLifecycle(
   data: Record<string, unknown>,
@@ -635,6 +660,7 @@ function persistActiveRideLifecycle(
   terminalArrival: TerminalArrivalEvidence | null = null,
   gnssGapSince: number | null = null,
   skippedStopIndices: readonly number[] = [],
+  unobservedStopIndices: readonly number[] = [],
 ): Promise<RideCheckpoint | undefined> {
   const documentId = activeRideDocumentId(data);
   const busId = normalizeIdentifier(data.busId);
@@ -709,7 +735,7 @@ function persistActiveRideLifecycle(
         if (session.exists && ["pending", "armed", "active"].includes(sessionData?.status)) {
           const stopsReached = missingStopHistory(
             stops, checkpoint.tripState, checkpoint.currentStopIndex, sessionData?.stopsReached,
-            FieldValue.serverTimestamp(), Number(data.currentStopIndex), skippedStopIndices,
+            FieldValue.serverTimestamp(), Number(data.currentStopIndex), skippedStopIndices, unobservedStopIndices,
           );
           const activating = checkpoint.tripState === "in_service" && sessionData?.status !== "active";
           const firstLocation = !sessionData?.firstKnownLocation ? journeyLocation(data) : null;
@@ -944,6 +970,7 @@ export function startTripStateEngine(): () => Promise<void> {
       now: Date.now(),
       gpsHdop: data.gpsHdop,
       speed: data.speed,
+      heading: Number.isFinite(data.heading) ? Number(data.heading) : undefined,
       })
       : {
           tripState: data.tripState,
@@ -952,6 +979,7 @@ export function startTripStateEngine(): () => Promise<void> {
           terminalArrival: data.terminalArrival ?? null,
           gnssGapSince: liveGnssGapSince(data) ?? undefined,
           skippedStopIndices: undefined,
+          unobservedStopIndices: undefined,
         };
     let { tripState, currentStopIndex, hasDepartedOrigin, terminalArrival } = reduced;
     const gnssGapSince = reduced.gnssGapSince ?? null;
@@ -960,13 +988,23 @@ export function startTripStateEngine(): () => Promise<void> {
       // Commit lifecycle and all crossed-stop history together before exposing
       // the next index. A failed write leaves the same sample retryable.
       const checkpoint = await persistActiveRideLifecycle(data, tripState, currentStopIndex, hasDepartedOrigin, stops,
-        terminalArrival ?? null, gnssGapSince, reduced.skippedStopIndices);
+        terminalArrival ?? null, gnssGapSince, reduced.skippedStopIndices, reduced.unobservedStopIndices);
       if (checkpoint) ({ tripState, currentStopIndex, hasDepartedOrigin, terminalArrival } = checkpoint);
     }
+    // Passengers see unobserved stops as passed-but-unconfirmed, and the stop
+    // the bus is at as arrived the moment it gets there, not one stop later.
+    const unobservedStops = mergedStopIndices(liveUnobservedStops(data, stops.length),
+      [...reduced.skippedStopIndices ?? [], ...reduced.unobservedStopIndices ?? []], stops.length)
+      .filter(index => index < currentStopIndex);
+    const freshFix = Number.isFinite(telemetryTimestamp) && Math.abs(Date.now() - telemetryTimestamp) <= 60_000;
+    const atStopIndex = freshFix ? visitedStopIndex({ lat: data.lat, lng: data.lng,
+      motionState: data.motionState || "moving", gpsHdop: data.gpsHdop, stops, tripState, currentStopIndex,
+      hasDepartedOrigin, unobservedStopIndices: unobservedStops }) : null;
     const liveStateChanged = tripState !== data.tripState || currentStopIndex !== data.currentStopIndex ||
       hasDepartedOrigin !== (data.hasDepartedOrigin === true) ||
       JSON.stringify(terminalArrival ?? null) !== JSON.stringify(data.terminalArrival ?? null) ||
-      gnssGapSince !== liveGnssGapSince(data);
+      gnssGapSince !== liveGnssGapSince(data) || atStopIndex !== liveAtStopIndex(data) ||
+      unobservedStops.join(",") !== liveUnobservedStops(data, stops.length).join(",");
     if (liveStateChanged && tripState !== "completed") {
       try {
         // Guarded write: the plain update() could recreate a node the stale
@@ -998,6 +1036,10 @@ export function startTripStateEngine(): () => Promise<void> {
             terminalArrival: terminalArrival ?? null,
             gnssGap: gnssGapSince !== null && typeof data.sessionId === "string"
               ? { sessionId: data.sessionId, since: gnssGapSince } : null,
+            atStop: atStopIndex !== null && typeof data.sessionId === "string"
+              ? { sessionId: data.sessionId, index: atStopIndex } : null,
+            unobservedStops: unobservedStops.length > 0 && typeof data.sessionId === "string"
+              ? { sessionId: data.sessionId, indices: unobservedStops } : null,
           };
         });
       } catch (error) {

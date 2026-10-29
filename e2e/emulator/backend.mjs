@@ -167,7 +167,8 @@ const control = createServer(async (req, res) => {
       // Real authenticated device HTTP ingestion; no direct completion writes.
       const samples = ['/telemetry/middle-outside', '/telemetry/middle-inside'].includes(req.url)
         ? [{ seq: req.url.endsWith('outside') ? 2 : 3,
-          lat: 23.0018 - (req.url.endsWith('outside') ? 2.6 : 2.4) / 6371000 * 180 / Math.PI,
+          // Either side of the 15 m arrival corridor (STOP_ARRIVAL_GEOFENCE_M).
+          lat: 23.0018 - (req.url.endsWith('outside') ? 15.1 : 14.9) / 6371000 * 180 / Math.PI,
           speed: 45, motionState: 'moving' }]
         : req.url === '/telemetry/middle'
         ? [{ seq: 2, lat: 23.0018, speed: 45, motionState: 'moving' },

@@ -67,7 +67,9 @@ Backend-only authority, with every browser read/write denied. One latest record 
 | `plausibilityAnchor` | object | Last physically accepted `{lat,lng,speed,gpsHdop,timestamp}`; held outliers do not advance its timestamp |
 | `plausibilityReacquisition` | optional object | Temporary `{count,startedAt}` for three coherent, good-quality fixes after a 60–300 second accepted-position gap. Uses existing `rawLocation` as the preceding candidate, requires 0.5–5 second spacing and the full bounded travel envelope. Clears on acceptance or an ineligible fix; it is not ride progress/history. |
 | `deviceState` | `online` / `offline` | Ingestion/worker connectivity projection; `online` is trusted by clients only while `timestamp` is fresh |
-| `signalState` | `connected` / `gnss_lost` / `lost` | Derived signal explanation |
+| `signalState` | `connected` / `gnss_lost` / `lost` | Derived signal explanation. Passengers treat `gnss_lost` (or `motionState: uncertain`) as "GPS signal lost" at once, even though the packet itself is fresh |
+| `atStop` | `{sessionId, index}` / null | Backend-only. Stop the bus is at now: the origin while inside its corridor before departure, the stop just reached while a reliable fix stays inside its arrival corridor, or the terminal while completion is confirmed. Null for untrusted or stale fixes and for stops credited unobserved. Projected to passengers as `atStopIndex` only for the matching session |
+| `unobservedStops` | `{sessionId, indices}` / null | Backend-only. Stops this session passed without being observed (GNSS gap or passed outside the corridor with telemetry running). Projected to passengers as `unobservedStopIndices` only for the matching session |
 | `status` | `active` / `offline` | Ride lifecycle ownership, not hardware power; initial device-only nodes are `offline` |
 | `sessionId` | string | Firestore ride-session link when armed/active |
 | `driverId` | string | Authorized driver link |
@@ -201,7 +203,7 @@ Durable ride record and parent of messages.
 | `boardingCode` | eight-character string | Driver-visible session proof; never projected into RTDB |
 | `boardingCodeIssuedAt` | Firestore Timestamp | Server issuance time |
 | `stopsReached` | map keyed zero-based index | Ordered server evidence |
-| `stopsReached.{i}` | `{stopIndex,stopId,stopName,timestamp,evidence?}` | Stop evidence; new `evidence` is `gnss_progress`, `recovered_checkpoint` (timestamp denotes repair time rather than original arrival) or `skipped_gnss_gap` (credited because a later stop was observed after a GNSS gap; never observed itself). Admin History shows only `gnss_progress` and legacy records without `evidence` as observed arrivals: skipped stops read "Skipped (GNSS gap)", recovered ones "Recovered HH:MM:SS", and neither yields a passenger "Destination reached" time |
+| `stopsReached.{i}` | `{stopIndex,stopId,stopName,timestamp,evidence?}` | Stop evidence; new `evidence` is `gnss_progress`, `recovered_checkpoint` (timestamp denotes repair time rather than original arrival) `skipped_gnss_gap` (credited because a later stop was observed after a GNSS gap; never observed itself) or `passed_unobserved` (continuous telemetry, but the bus never entered the stop's corridor; credited when one of the next two stops was reached in the direction of travel). Admin History shows only `gnss_progress` and legacy records without `evidence` as observed arrivals: skipped stops read "Skipped (GNSS gap)", recovered ones "Recovered HH:MM:SS", and neither yields a passenger "Destination reached" time |
 | `automaticTurnaround`, `previousSessionId` | boolean / string | Present on an automatically armed opposite-direction session |
 | `path` | legacy map/array | Older history tolerated/read/deleted; no current per-fix writes |
 
