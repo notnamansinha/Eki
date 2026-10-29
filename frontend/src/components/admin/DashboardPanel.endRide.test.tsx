@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import DashboardPanel from "./DashboardPanel";
 import type { ActiveBusEntry } from "@/lib/activeBusEntries";
@@ -38,7 +38,8 @@ describe("End ride early", () => {
     await user.click(screen.getByRole("button", { expanded: false }));
     await user.click(screen.getByRole("button", { name: "End ride early" }));
     const confirm = within(confirmDialog()).getByRole("button", { name: "End ride" });
-    fireEvent.click(confirm); fireEvent.click(confirm);
+    // Both clicks in one task, before React re-renders the disabled button (Chrome retest).
+    act(() => { confirm.click(); confirm.click(); });
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await act(async () => { resolve(new Response('{"stopped":true,"interrupted":true}')); });
     expect(fetchMock).toHaveBeenCalledTimes(1);

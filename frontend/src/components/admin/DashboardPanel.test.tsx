@@ -140,6 +140,18 @@ describe("admin service creation", () => {
     expect(screen.queryByText("Live location updates delayed")).toBeNull();
     expect(within(screen.getByRole("dialog")).getByText("Connected")).toBeTruthy();
   });
+  it("tells the operator within 30 s of silence, not 90 s (field ride, 29 Oct 2026)", () => {
+    const now = Date.now();
+    const aged = (ageMs: number) => [{ ...fixtureBus("forward"), timestamp: now - ageMs, backendReceivedAt: now - ageMs } as ActiveBusEntry];
+    state.entries = aged(29_000);
+    const view = render(<DashboardPanel />);
+    expect(screen.queryByText("Live location updates delayed")).toBeNull();
+    expect(screen.queryByText("Service paused")).toBeNull();
+    state.entries = aged(31_000);
+    view.rerender(<DashboardPanel />);
+    expect(screen.getByText("Live location updates delayed")).toBeTruthy();
+    expect(screen.getByText("Service paused")).toBeTruthy();
+  });
   it("does not infer receiver failure from uncertain motion", () => {
     state.entries = [{ ...fixtureBus("forward"), motionState: "uncertain" } as ActiveBusEntry];
     render(<DashboardPanel />);

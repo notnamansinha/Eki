@@ -50,6 +50,30 @@ stops) found no ride worse than `main`, which failed 1,319 of them, mostly by
 never completing. About 0.6 % of rides still credited a stop early, mostly
 side-road spurs where both directions share one road and identical pins.
 
+## Chrome, A/B and localhost retest (30 Oct 2026)
+
+Driven in a real Chrome session against the production components in the
+synthetic harnesses, with deployed `main` (`c4d47b3`) served beside this
+branch for the same steps:
+
+- A fix 10 m from stop B: `main` never marks B; this branch marks A, then B.
+  Origin to terminal reads At Alpha, At Beta, At Gamma, At Delta in turn.
+- 40 s of real silence: `main` still shows a green "Ride in service" and a
+  moving bus; this branch shows updates delayed at 12 s and live tracking lost
+  at 30 s, also after the tab spent the silence in the background.
+- GNSS loss shows at once (amber), boarding is disabled with its reason, and a
+  fresh fix restores live; pending direction resolves in both directions.
+- Admin End ride is reachable by wheel scrolling three expanded rides on
+  desktop and from the live details drawer. Several clicks in one task sent
+  two stop requests; a ref guard now sends one.
+- Decision: the admin dashboard keeps sharing the passenger signal-lost
+  threshold, so operators see "Live location updates delayed" and
+  "Service paused" after 30 s of silence rather than 90 s.
+
+Localhost (`next dev` and the local backend from this branch, reading the live
+project) loaded the passenger page without console errors; no bus was running,
+so live tracking itself was not exercised there.
+
 ## Not established here
 
 The 15 m corridor, the offside gate and the matcher change are validated on
