@@ -14,6 +14,7 @@ import { beginAuthVerification, getAuthVerificationGeneration, notifyAuthReady }
 import { withTimeout } from "@/lib/promiseTimeout";
 import { apiRequest } from "@/lib/apiClient";
 import {
+  abandonGoogleRedirect,
   consumeGoogleRedirectPending,
   isGoogleRedirectPending,
   markGoogleRedirectPending,
@@ -195,7 +196,7 @@ function useAuthState(): AuthContextValue {
 
     const loadAuth = () => Promise.all([import("firebase/auth"), import("@/lib/firebaseAuth")])
       .then(async (dependencies) => {
-        const [authModule, { auth, googleProvider, popupRedirectResolver, resolverInstalledAtStartup }] = dependencies;
+        const [authModule, { auth, googleProvider, popupRedirectResolver }] = dependencies;
         if (disposed) return;
         authLoaded = true;
         clearTimeout(loadRetryTimer);
@@ -445,15 +446,8 @@ function useAuthState(): AuthContextValue {
         });
         // Without a Google redirect in progress there is nothing to complete,
         // so sign-in is usable now; Firebase queues it behind restoration.
-        if (!isGoogleRedirectPending()) {
+        if (!isGoogleRedirectPending(auth.config.apiKey)) {
           setLoginReady(true);
-          // On popup platforms this loads Google's sign-in iframe in the
-          // background, so the popup can open within the click instead of being
-          // blocked. Any account it returns reaches the observer. Phones skip it:
-          // that iframe is what stalled their cold open.
-          if (resolverInstalledAtStartup) {
-            void authModule.getRedirectResult(auth, popupRedirectResolver).catch(() => {});
-          }
           // authStateReady settles only after Firebase initialization.
           void auth.authStateReady().then(() => { if (!disposed) authInitialized.current = true; }, () => {});
           return;
@@ -576,7 +570,7 @@ function useAuthState(): AuthContextValue {
       await dependencies.signInWithRedirect(dependencies.auth, dependencies.googleProvider, dependencies.resolver);
     } catch (error: unknown) {
       if (attempt !== loginAttempt.current) return;
-      consumeGoogleRedirectPending();
+      abandonGoogleRedirect(dependencies.auth.config.apiKey);
       const code = authErrorCode(error);
       console.error("[Auth] Google full-page sign-in failed.", code);
       setLoginError(loginErrorMessage(code));

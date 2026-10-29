@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ app: { options: { authDomain: undefined as string | undefined } }, auth: {}, initialize: vi.fn() }));
+const fixture = vi.hoisted(() => ({ app: { options: { authDomain: undefined as string | undefined, apiKey: "synthetic-key" } }, auth: {}, initialize: vi.fn() }));
 vi.mock("./firebaseCore", () => ({ firebaseApp: fixture.app }));
 vi.mock("firebase/auth", () => ({
   initializeAuth: fixture.initialize.mockReturnValue(fixture.auth),
@@ -42,7 +42,6 @@ describe("Firebase Auth initialization", () => {
     expect(options).toEqual({ persistence: [sdk.browserLocalPersistence, sdk.indexedDBLocalPersistence, sdk.browserSessionPersistence] });
     // Sign-in still receives the resolver per call.
     expect(module.popupRedirectResolver).toBe(sdk.browserPopupRedirectResolver);
-    expect(module.resolverInstalledAtStartup).toBe(false);
   });
   it("installs the resolver at startup while a phone returns from a Google redirect", async () => {
     fixture.app.options.authDomain = window.location.host;
@@ -53,14 +52,12 @@ describe("Firebase Auth initialization", () => {
   it("installs the resolver at startup while Firebase still has a redirect pending without our marker", async () => {
     fixture.app.options.authDomain = window.location.host;
     sessionStorage.setItem("firebase:pendingRedirect:synthetic-key:[DEFAULT]", JSON.stringify("true"));
-    const { sdk, module, options } = await initializeFor(IPHONE);
+    const { sdk, options } = await initializeFor(IPHONE);
     expect(options.popupRedirectResolver).toBe(sdk.browserPopupRedirectResolver);
-    expect(module.resolverInstalledAtStartup).toBe(true);
   });
   it("keeps the resolver at startup on popup platforms so the popup opens within the click", async () => {
     fixture.app.options.authDomain = window.location.host;
-    const { sdk, module, options } = await initializeFor("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0");
+    const { sdk, options } = await initializeFor("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0");
     expect(options.popupRedirectResolver).toBe(sdk.browserPopupRedirectResolver);
-    expect(module.resolverInstalledAtStartup).toBe(true);
   });
 });

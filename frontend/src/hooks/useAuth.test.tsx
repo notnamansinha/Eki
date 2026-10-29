@@ -8,15 +8,13 @@ type TestUser = { uid: string; getIdToken?: () => Promise<string>; getIdTokenRes
 const RESOLVER = vi.hoisted(() => ({ resolver: "browserPopupRedirectResolver" }));
 const mocks = vi.hoisted(() => ({
   callback: null as null | ((user: TestUser | null) => Promise<void>),
-  auth: { currentUser: null as TestUser | null, config: { authDomain: "" }, authStateReady: vi.fn() }, claims: vi.fn(), observe: vi.fn(), signOut: vi.fn(),
+  auth: { currentUser: null as TestUser | null, config: { authDomain: "", apiKey: "synthetic-key" }, authStateReady: vi.fn() }, claims: vi.fn(), observe: vi.fn(), signOut: vi.fn(),
   popup: vi.fn(), redirect: vi.fn(), redirectResult: vi.fn(),
   profile: vi.fn(), bootstrap: vi.fn(),
   // Popup platforms install Google's popup/redirect resolver at startup; phones signing in by redirect do not.
-  resolverAtStartup: true,
 }));
 vi.mock("@/lib/firebaseAuth", () => ({
   auth: mocks.auth, googleProvider: {}, popupRedirectResolver: RESOLVER,
-  get resolverInstalledAtStartup() { return mocks.resolverAtStartup; },
 }));
 vi.mock("@/lib/apiClient", () => ({ apiRequest: mocks.bootstrap }));
 vi.mock("@/lib/firebaseCore", () => ({ firebaseApp: { options: {} } }));
@@ -38,7 +36,7 @@ beforeEach(() => {
   // Bootstrap scenarios opt in below and keep HTTP transport mocked.
   vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "");
   beginAuthVerification(); vi.clearAllMocks(); mocks.callback = null; mocks.auth.currentUser = null;
-  mocks.auth.config.authDomain = window.location.host; mocks.resolverAtStartup = true;
+  mocks.auth.config.authDomain = window.location.host;
   mocks.popup.mockReset().mockResolvedValue(undefined);
   mocks.redirect.mockReset().mockReturnValue(new Promise(() => {}));
   mocks.redirectResult.mockReset().mockResolvedValue(null);
@@ -164,6 +162,31 @@ describe("Google sign-in lifecycle", () => {
     expect(hook.result.current.loginError).toContain("not authorized");
     expect(hook.result.current.loginLoading).toBe(false);
     expect(consumeGoogleRedirectPending()).toBe(false);
+  });
+
+  it("clears Firebase's pending flag when a full-page sign-in fails before leaving the page", async () => {
+    // Firebase marks the redirect pending before it validates the origin over
+    // the network; a failure there must not slow the next reopen.
+    mocks.redirect.mockImplementation(async () => {
+      sessionStorage.setItem("firebase:pendingRedirect:synthetic-key:[DEFAULT]", JSON.stringify("true"));
+      throw { code: "auth/network-request-failed" };
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const hook = await mount();
+    await act(async () => { await hook.result.current.loginWithGoogleRedirect(); });
+    expect(hook.result.current.loginError).toContain("auth/network-request-failed");
+    expect(sessionStorage.getItem("firebase:pendingRedirect:synthetic-key:[DEFAULT]")).toBeNull();
+    expect(consumeGoogleRedirectPending()).toBe(false);
+  });
+
+  it("completes a redirect Firebase still has pending after Back from Google consumed our marker", async () => {
+    sessionStorage.setItem("firebase:pendingRedirect:synthetic-key:[DEFAULT]", JSON.stringify("true"));
+    const returned = deferred(); mocks.redirectResult.mockImplementation(async () => { await returned.promise; return null; });
+    const hook = await mount();
+    expect(hook.result.current.loginReady).toBe(false);
+    expect(mocks.redirectResult).toHaveBeenCalledExactlyOnceWith(mocks.auth, RESOLVER);
+    await act(async () => { returned.resolve(); });
+    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
   });
 
   it("offers the full-page fallback when a desktop popup is blocked", async () => {
@@ -559,48 +582,12 @@ describe("sign-in recovery dead ends", () => {
 
 describe("cold open on a slow or offline network", () => {
   it("enables sign-in for a signed-out visitor before Firebase reports its first state", async () => {
-    // No redirect is pending, so nothing waits on Google's redirect machinery,
-    // even when it never answers.
-    mocks.redirectResult.mockReturnValue(new Promise(() => {}));
     const hook = renderHook(() => useAuth(), { wrapper: AuthProvider });
     await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
     expect(mocks.callback).not.toBeNull();
     expect(hook.result.current.loading).toBe(true);
-  });
-  it("warms Google's sign-in iframe in the background on popup platforms so a popup opens within the click", async () => {
-    mocks.redirectResult.mockReturnValue(new Promise(() => {}));
-    const hook = renderHook(() => useAuth(), { wrapper: AuthProvider });
-    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
-    expect(mocks.redirectResult).toHaveBeenCalledExactlyOnceWith(mocks.auth, RESOLVER);
-    expect(hook.result.current.loginError).toBeNull();
-  });
-  it("does not load Google's sign-in iframe at startup on phones signing in by redirect", async () => {
-    mocks.resolverAtStartup = false;
-    const hook = renderHook(() => useAuth(), { wrapper: AuthProvider });
-    await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+    // No redirect is pending, so nothing waits on Google's redirect machinery.
     expect(mocks.redirectResult).not.toHaveBeenCalled();
-  });
-  it("ignores a failed iframe warm-up: no error is shown and popup sign-in still works", async () => {
-    mocks.redirectResult.mockRejectedValue({ code: "auth/network-request-failed" });
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-    const hook = await mount();
-    expect(mocks.redirectResult).toHaveBeenCalledOnce();
-    await act(async () => { await Promise.resolve(); });
-    expect(hook.result.current.loginReady).toBe(true); expect(hook.result.current.loginError).toBeNull();
-    expect(errors).not.toHaveBeenCalled();
-    await act(async () => { await hook.result.current.loginWithGoogle(); });
-    expect(mocks.popup).toHaveBeenCalledExactlyOnceWith(mocks.auth, {}, RESOLVER);
-    expect(hook.result.current.loginError).toBeNull();
-  });
-  it("lets an iframe warm-up that outlives the app settle without touching it", async () => {
-    let fail!: (error: unknown) => void;
-    mocks.redirectResult.mockReturnValue(new Promise((_resolve, reject) => { fail = reject; }));
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-    const hook = await mount();
-    expect(mocks.redirectResult).toHaveBeenCalledOnce();
-    hook.unmount();
-    await act(async () => { fail({ code: "auth/network-request-failed" }); await Promise.resolve(); });
-    expect(errors).not.toHaveBeenCalled();
   });
   it("still completes a pending Google redirect before enabling sign-in", async () => {
     markGoogleRedirectPending();
@@ -707,7 +694,7 @@ describe("cold open while the sign-in code is still downloading", () => {
   let pending: Array<{ resolve: (signInModule: object) => void; reject: (error: unknown) => void }> = [];
   const observers = new Set<(user: TestUser | null) => Promise<void>>();
   const signInCode = () => ({
-    auth: mocks.auth, googleProvider: {}, popupRedirectResolver: RESOLVER, resolverInstalledAtStartup: mocks.resolverAtStartup,
+    auth: mocks.auth, googleProvider: {}, popupRedirectResolver: RESOLVER,
   });
   // Stands in for initializeAuth throwing while the module evaluates. Bundlers
   // cache that failure, so every later import of the module throws it again.
