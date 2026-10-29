@@ -34,6 +34,13 @@ defect was fixed and kept as a regression test:
   becoming the plausibility anchor so GPS appeared lost after it returned
   (`PassengerWorkspace.trackingBlip.test.tsx`, `deviceTelemetryOutage.test.ts`).
 
+Review follow-ups on the pull request: the progress bound (and the older
+progress window) now use the faster of the previous match speed and the
+current speed, so a bus that braked to a stop just past a U-turn stays on the
+carriageway it reached (`routeMatchingGapBraking.integration.test.ts`); the
+boarding header is green only while live, amber for delayed or GPS lost, red
+for lost or offline, and never says "Live" without a health reading.
+
 A 1,500-ride ground-truth simulation (pins up to 12 m off the lane, receiver
 noise, GNSS gaps, bad fixes, restarts; divided roads, loops, spurs, dense
 stops) found no ride worse than `main`, which failed 1,319 of them, mostly by

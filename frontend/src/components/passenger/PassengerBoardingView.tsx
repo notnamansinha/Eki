@@ -151,7 +151,11 @@ export default function PassengerBoardingView({
   const progressSummary = [atStop ? `At ${atStop.name}` : undefined, nextStop ? `Next: ${nextStop.name}` : undefined]
     .filter(Boolean).join(" · ");
   const delayed = liveHealth?.state === "delayed";
-  const healthText = liveHealth && liveHealth.state !== "live" ? describeLiveBusHealth(liveHealth).title : "Live";
+  // Never claim "Live" without a health reading. Lost or offline outranks the
+  // pre-departure warning; green only while in service and live.
+  const healthDescription = liveHealth ? describeLiveBusHealth(liveHealth) : undefined;
+  const statusColor = healthDescription?.tone === "danger" ? "var(--status-danger)"
+    : tripState === "in_service" && healthDescription?.tone === "live" ? "var(--status-live)" : "var(--status-warning)";
   const boardHint = joinState === "joining" || joinState === "joined" ? undefined
     : boardingBlockedReason ? boardingBlockedReason
     : !boardingStopId || !alightingStopId ? "Choose your boarding and destination stops to board."
@@ -247,10 +251,10 @@ export default function PassengerBoardingView({
       <div role="status" aria-live="polite">
         <p
           className="text-[10px] font-bold uppercase tracking-wider"
-          style={{ color: tripState === "in_service" && !delayed ? "var(--status-live)" : "var(--status-warning)" }}
+          style={{ color: statusColor }}
         >
           {tripState === "in_service" ? "Ride in service" : "Ride armed · awaiting stop 1"}
-          {` · ${healthText}`}
+          {healthDescription && ` · ${healthDescription.title}`}
           {delayed && ` · ${formatUpdateAge(liveHealth?.ageMs)}`}
         </p>
         {progressSummary && (

@@ -89,6 +89,7 @@ interface LiveMatchedLocation extends LatLng {
   alongRouteDistanceM: number;
   sampledAt: number;
   routeVersion: number;
+  speed?: number;
 }
 
 const routeCache = new LruCache<string, RouteCacheEntry>(1_000);
@@ -306,6 +307,12 @@ export function previousMatch(
         alongRouteDistanceM: Number(match.alongRouteDistanceM),
       }
     : null;
+}
+
+/** Speed recorded with the previous match; 0 for a record written before speeds were kept. */
+export function previousMatchSpeedKmh(value: unknown): number {
+  const speed = Number((value as Partial<LiveMatchedLocation> | null | undefined)?.speed);
+  return Number.isFinite(speed) && speed > 0 ? speed : 0;
 }
 
 export function telemetryIsCurrent(
@@ -675,6 +682,7 @@ function matchedLocation(
     seq: sample.seq,
     sampledAt: sample.timestamp,
     routeVersion,
+    speed: Number.isFinite(sample.speed) ? Math.max(0, sample.speed) : 0,
   };
 }
 
@@ -1134,6 +1142,9 @@ async function processTelemetryRoute(
     Number(live?.speed),
     elapsedMs,
   );
+  // A bus can brake hard between fixes: bound progress by the faster of the two ends.
+  const progressSpeedKmh = Math.max(acceptedSample.speed, Number(live?.speed) || 0,
+    previousMatchSpeedKmh(live?.matchedLocation ?? live?.routeMatchAnchor));
   const match = matchRoutePosition(
     acceptedPoint,
     geometry.path,
@@ -1143,10 +1154,9 @@ async function processTelemetryRoute(
     prior,
     positionUncertaintyM,
     progressElapsedMs > 0 && progressElapsedMs <= 60_000
-      ? (Math.max(acceptedSample.speed, Number(live?.speed) || 0) + 15) / 3.6 * progressElapsedMs / 1000 + 2 * positionUncertaintyM
+      ? (progressSpeedKmh + 15) / 3.6 * progressElapsedMs / 1000 + 2 * positionUncertaintyM
       : undefined,
-    prior ? plausibleProgressBound(progressElapsedMs, Math.max(acceptedSample.speed, Number(live?.speed) || 0),
-      positionUncertaintyM) : undefined,
+    prior ? plausibleProgressBound(progressElapsedMs, progressSpeedKmh, positionUncertaintyM) : undefined,
   );
   const adherence = evaluateRouteAdherence(
     matchingContextChanged ? undefined : adherencePreviousState(live, Date.now()),

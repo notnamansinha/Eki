@@ -166,7 +166,9 @@ test("field ride 29 Oct 2026: A marked at A, B at B, GNSS loss and silence shown
   await expect(page.getByText("Updates delayed").first()).toBeVisible();
   await page.clock.runFor(18_000);
   await expect(page.getByText("Live tracking lost").first()).toBeVisible();
-  await expect(page.getByText(/Ride in service · Live/)).toHaveCount(0);
+  // The header names the lost state; it no longer claims a live ride.
+  await expect(header).toContainText("Ride in service · Live tracking lost");
+  await expect(page.getByText(/^Ride in service · Live$/)).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("tracking-lost.png"), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
   expect(errors).toEqual([]);

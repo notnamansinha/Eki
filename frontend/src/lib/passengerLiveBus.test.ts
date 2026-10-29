@@ -40,6 +40,21 @@ describe("passenger live-bus normalization", () => {
     const rerouted = normalizePassengerMapBus("Bus01_route_1", telemetry({ ...service, rawLocation: raw, routeVersion: 2 }), now)!;
     expect(reusePassengerMapBus(first, rerouted)).toBe(rerouted);
   });
+  it("reuses a bus whose unobserved stop list arrives as an equal new array, and replaces it when the list changes", () => {
+    const raw = { lat: 23.03, lng: 72.47, speed: 20, heading: 70, motionState: "moving", seq: 1, sampledAt: now - 1000 };
+    const base = normalizePassengerMapBus("Bus01_route_1", telemetry({ status: "active", sessionId: "session_1", direction: "forward", rawLocation: raw }), now)!;
+    const first = { ...base, unobservedStopIndices: [1, 3] };
+    expect(reusePassengerMapBus(first, { ...base, unobservedStopIndices: [1, 3] })).toBe(first);
+    for (const changed of [[1], [1, 3, 4], [1, 4], [3, 1], []]) {
+      const next = { ...base, unobservedStopIndices: changed };
+      expect(reusePassengerMapBus(first, next)).toBe(next);
+    }
+    const withoutList = { ...base };
+    expect(reusePassengerMapBus(first, withoutList)).toBe(withoutList);
+    // Equal elements in an array never match an object with the same keys.
+    const objectLike = { ...base, unobservedStopIndices: { 0: 1, 1: 3 } as unknown as number[] };
+    expect(reusePassengerMapBus(first, objectLike)).toBe(objectLike);
+  });
   it.each([-1, 201])("rejects out-of-range speed %s at both passenger boundaries", speed => {
     const service = telemetry({ status: "active", sessionId: "session_1", direction: "forward", speed });
     expect(normalizePassengerLiveBus("Bus01_route_1", service, now)).toBeNull();
