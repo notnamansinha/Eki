@@ -43,7 +43,7 @@ Firebase App Check is not used. The browser sends no `X-Firebase-AppCheck` heade
 
 The `POST /api/users/bootstrap` call creates a missing profile with role `passenger` and repairs only a missing passenger claim. [Privileged database authorization](PRIVILEGED_DATABASE_AUTHORIZATION.md) describes how driver and administrator claims and records are published and revoked.
 
-Driver checks on HTTP routes do not compare `authorizationVersion`. Ride start, delay, stop and the v2 ride read also require the driver registry record, so its reassignment or removal ends the authority there; chat, the legacy boarding code and legacy ride status compare only the token's `driverId` and `assignedBusId` with the session, and rely on the token revocation that every reassignment performs. Operator code paths that also admit administrators (`backend/src/routes/shifts.ts`, `backend/src/routes/sessions.ts`) accept either `role: "admin"` or `admin: true` without the version check, except the administrator ride stop in Section 3.1.
+Driver checks on HTTP routes do not compare `authorizationVersion`. Ride start, delay, stop and the v2 ride read also require the driver registry record, so its reassignment or removal ends the authority there; chat, the legacy boarding code and legacy ride status compare only the token's `driverId` and `assignedBusId` with the session, and rely on the token revocation that every reassignment performs. Operator code paths that also admit administrators (`backend/src/routes/shifts.ts`, `backend/src/routes/sessions.ts`) require the same administrator authority as `requireAdmin`, both claims and a current `authorizationVersion`, through `hasCurrentAdminAuthority` (`backend/src/middleware/adminAuthority.ts`); a token that fails the check is treated as a driver or passenger.
 
 ### 2.3 Errors
 
@@ -52,7 +52,9 @@ Driver checks on HTTP routes do not compare `authorizationVersion`. Ride start, 
 | 401 | Missing, malformed, invalid, expired or revoked token. `requireAdmin` adds `code` `AUTH_REQUIRED` or `AUTH_INVALID` and `phase: "authentication"`. | Refresh the token or sign in again. |
 | 403 | Valid token without the required role, assignment or membership. `requireAdmin` adds `code: "ADMIN_REQUIRED"`. | Do not retry with the same token. |
 | 429 | Rate limit exceeded. The response carries `RateLimit-*` headers. | Wait for the reset time. |
-| 503 with `Retry-After: 1` | Token verification capacity is exhausted, or the authorization records are unreadable. `requireAdmin` adds `code` `AUTH_BUSY` or `AUTH_UNAVAILABLE`. | Retry after the delay; the user is still signed in. |
+| 503 with `Retry-After: 1` | Token verification capacity is exhausted, or `requireAdmin` cannot read the authorization records. `requireAdmin` adds `code` `AUTH_BUSY` or `AUTH_UNAVAILABLE`. | Retry after the delay; the user is still signed in. |
+
+Routes shared with drivers and passengers do not send that signal when they cannot read the authorization records: ride start, delay, End ride early, the v2 ride read, the boarding code and chat return 500, and legacy ride status returns 503 without `Retry-After`.
 
 Unhandled errors return a generic body (`Internal server error.`) without stack traces.
 

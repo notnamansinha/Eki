@@ -10,16 +10,19 @@ vi.mock("../services/userAuthorization", () => ({
   }),
 }));
 
+import { authorizationIsCurrent } from "../services/userAuthorization";
 import { hasCurrentAdminAuthority } from "./adminAuthority";
 
 const request = (user: Record<string, unknown> | undefined) => ({ user }) as unknown as Request;
 const CURRENT_ADMIN = { uid: "admin_uid", role: "admin", admin: true, authorizationVersion: "v1" };
 
-beforeEach(() => { state.current = true; state.error = false; state.reads = 0; });
+beforeEach(() => { vi.mocked(authorizationIsCurrent).mockClear(); state.current = true; state.error = false; state.reads = 0; });
 
 describe("current administrator authority", () => {
   it("accepts both admin claims with a version that is still current", async () => {
     await expect(hasCurrentAdminAuthority(request(CURRENT_ADMIN))).resolves.toBe(true);
+    expect(authorizationIsCurrent).toHaveBeenCalledWith(CURRENT_ADMIN.uid,
+      expect.objectContaining({ authorizationVersion: CURRENT_ADMIN.authorizationVersion }));
   });
 
   it("rejects a version that is no longer current", async () => {

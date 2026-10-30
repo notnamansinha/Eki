@@ -94,7 +94,7 @@ Authentication failures:
 | 401 | `{"error":"Invalid or expired token."}` | Token rejected, revoked, or account disabled or deleted |
 | 403 | `{"error":"Forbidden: Admin access required.","code":"ADMIN_REQUIRED","phase":"authentication"}` | Administrator operation without current administrator authority |
 | 503 | `{"error":"Authentication service is busy. Retry shortly."}`, `Retry-After: 1` | Too many token verifications in progress (`AUTH_MAX_PENDING_VERIFICATIONS`) |
-| 503 | `code: "AUTH_UNAVAILABLE"`, `Retry-After: 1` | Admin authorization records could not be read |
+| 503 | `code: "AUTH_UNAVAILABLE"`, `Retry-After: 1` | Admin authorization records could not be read by `requireAdmin`. Operations shared with operators and passengers return their own error status instead, as stated in each operation. |
 
 Examples for a POSIX shell. `read -rs` takes the secret without echoing it or writing it to the shell history:
 
@@ -343,9 +343,9 @@ A ride session is a `ride_sessions/{sessionId}` document with status `pending`, 
 
 `GET /api/sessions/:sessionId/status`
 
-- Caller: an account with `admin: true`; the operator whose `driverId` and `assignedBusId` claims match the session; or a passenger with a profile and an entry in the manifest.
+- Caller: an administrator (current administrator authority, Section 2.3); the operator whose `driverId` and `assignedBusId` claims match the session; or a passenger with a profile and an entry in the manifest.
 - Success: 200 `{"sessionId","busId","routeId","status"}`. For a passenger it adds `boarding` with the passenger's own `boardingStopId` and `alightingStopId`. The web app calls this to recover a joined ride after its live record disappears.
-- Errors: 400 invalid ID; 403 for both an unknown session and a session the caller cannot see, with the same body; 503 stored session invalid or unreadable.
+- Errors: 400 invalid ID; 403 for both an unknown session and a session the caller cannot see, with the same body; 503 (without `Retry-After`) when the stored session or the administrator authorization records cannot be read.
 
 #### 3.5.4 Report a delay
 
