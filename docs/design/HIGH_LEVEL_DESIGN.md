@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-002 | 1.0 | Current | 2026-10-30 |
+| EKI-ARC-002 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Introduction
 
@@ -22,7 +22,7 @@ Backend paths are relative to `backend/src/`, frontend paths to `frontend/src/`.
 | Ride sessions | Start, resume, stop and delay rides; admit automatic service from a qualified fix; restore live lifecycle fields from Firestore; boarding and ride messages | `services/rideSessionStart.ts`, `services/automaticServiceAdmission.ts`, `services/durableRideRecovery.ts`, `routes/shifts.ts`, `routes/sessions.ts` | Advance stops |
 | Lifecycle worker | Evaluate each fix against the next expected stop, checkpoint progress, complete rides, arm return trips, mark silent buses offline, interrupt abandoned rides | `services/tripStateEngine.ts`, `services/tripStateReducer.ts`, `services/staleBusSweeper.ts`, `services/abandonedRideReconciler.ts` | Run in more than one process at a time |
 | Public projection | Copy an allow-listed subset of each live record into route-scoped browser views and the live route catalog | `services/liveBusProjection.ts` | Expose anchors, claims, histories or device identifiers |
-| Fleet and route administration | Buses, operators, devices, routes and settings; route geometry previews and saves as recoverable operations; fleet authorization reconciliation; place search | `routes/fleet.ts`, `routes/polyline.ts`, `routes/settings.ts`, `routes/places.ts`, `services/httpOperations.ts` | Edit a route while a ride uses it |
+| Fleet and route administration | Buses, operators, devices, routes, settings and passenger route schedules; route geometry previews and saves as recoverable operations; fleet authorization reconciliation; place search | `routes/fleet.ts`, `routes/polyline.ts`, `routes/settings.ts`, `routes/places.ts`, `services/httpOperations.ts` | Edit a route while a ride uses it |
 | Identity and authorization | Verify Firebase ID tokens with revocation checks, publish role claims with a rotating `authorizationVersion`, mirror it for database rules | `middleware/requireAuth.ts`, `middleware/requireAdmin.ts`, `services/authTokenVerifier.ts`, `services/userAuthorization.ts`, `syncRoleClaims.ts`, `firestore.rules`, `database.rules.json` | Accept a role stated by the browser |
 | Data lifecycle | Retention sweeps, account deletion requests, administrator history deletion, each resumable after partial failure | `services/retentionSweeper.ts`, `services/rtdbRetention.ts`, `services/privacyDeletionWorker.ts`, `services/rideHistoryDeletion.ts` | Delete active rides or their locks |
 | Coordination and health | Hold the worker lease and fence stale leaders, expose readiness and metrics, export OpenTelemetry data when configured | `services/workerCoordinator.ts`, `lib/workerFence.ts`, `lib/healthState.ts`, `lib/metrics.ts`, `instrumentation.ts` | Report readiness from a single failed background write |
@@ -71,7 +71,7 @@ Firebase Authentication identifies people; the backend decides what they may do.
 
 | Role | Granted by | May |
 |---|---|---|
-| Passenger | Any Google account; `POST /api/users/bootstrap` creates the profile with role `passenger` | Read routes, buses, settings and route-scoped live views; board a ride near a fresh bus fix; read and send messages in rides they joined; submit feedback on a completed ride they joined, once per 24 h; request account deletion |
+| Passenger | Any Google account; `POST /api/users/bootstrap` creates the profile with role `passenger` | Read routes, buses, settings (including published route schedules) and route-scoped live views; board a ride near a fresh bus fix; read and send messages in rides they joined; submit feedback on a completed ride they joined, once per 24 h; request account deletion |
 | Operator (role `driver`) | An administrator links the user to a `drivers` record and bus through `PUT /api/fleet/drivers/{id}`; the backend publishes `role: driver`, `driverId` and `assignedBusId` | Call the operator API to start, resume, end or delay rides of the assigned bus; read the manifests of sessions they operate. The web app has no operator workspace |
 | Administrator | A project owner sets `role: admin` in the user's Firestore profile and runs `npm run sync-role-claims --workspace=backend`, which publishes `role: admin` and `admin: true` | Every fleet, device, route, settings, ride, feedback, history, privacy and recovery operation; read all public live views |
 | Device | `npm run provision-device --workspace=backend` stores a salted scrypt verifier in `devices/{deviceId}` with the assigned bus and route | Post telemetry and diagnostics and check for firmware releases for its own assignment |
@@ -93,6 +93,7 @@ Both databases deny by default. No client can write RTDB, ride lifecycle, fleet 
 | Routes API slow or failing | 3.5 s timeout; provider circuit open | The ride continues on stored geometry; reroute attempts back off per ride ([reroute retry policy](../operations/REROUTE_RETRY_POLICY.md)) |
 | Work arrives faster than it can be processed | Bounded queues reach their limits or maximum queue age | Older pending samples are replaced by the latest one and expired work is dropped; the lifecycle and projection workers replay from the current live state ([work admission](../operations/WORK_ADMISSION.md)) |
 | Browser loses its connection or is backgrounded | RTDB `.info/connected`, page visibility | Shared listeners resume; liveness labels keep counting from the last fix time. The service worker never serves authenticated data from cache |
+| App reopened on a slow or offline network | Hosting does not answer a navigation within 2.5 s; the sign-in code fails to download; Firebase reports no auth state within 8 s | The service worker serves the page shell precached with the current release. The client retries the sign-in code download with backoff and on `online`, keeps sign-in usable unless a Google redirect is pending, and keeps the user state unknown: no protected view mounts, and the landing page and protected routes show a slow-connection notice with **Reload** instead of an access error ([frontend guide](../../frontend/README.md#8-authentication-flow)) |
 | Device secret leaked or device retired | Administrator disables the device | The registry change invalidates credential caches in every process through `_deviceCredentialVersions`; the tracker stops sending after a credential rejection |
 
 ## 7. Design rationale

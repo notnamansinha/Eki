@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-DAT-002 | 1.0 | Current | 2026-10-30 |
+| EKI-DAT-002 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -37,7 +37,7 @@ The root rule denies everything not listed. Legacy `users` and `messages` trees 
 
 | Group | Collections | Purpose |
 |---|---|---|
-| Configuration | `routes`, `buses`, `drivers`, `settings` | Routes stored once from stop A to stop Z, fleet records, operator to bus assignment, global settings. Signed-in users read routes, buses and settings; operators read their own record |
+| Configuration | `routes`, `buses`, `drivers`, `settings` | Routes stored once from stop A to stop Z, fleet records, operator to bus assignment, global settings (`settings/global`) and passenger route schedules (`settings/passengerRoutes`: the approved route IDs and a time per stop, never a second copy of route names or stops). Signed-in users read routes, buses and settings; operators read their own record |
 | Devices | `devices`, `_device_diagnostics` | Salted scrypt verifier and bus and route assignment per tracker; last diagnostics. Backend only |
 | Identity | `users`, `_userAuthorization` | Profile and role; authorization version mirror read by rules |
 | Ride state | `ride_sessions` with `messages`, `archivedMessages` and `messageRateLimits` | Durable ride record: status, direction, stops reached with evidence, passenger manifest, chat |
@@ -72,6 +72,7 @@ The retention sweep runs on the worker leader at start and every 24 h. Productio
 | Unreferenced `activeRouteGeometry` versions; legacy RTDB trees | 180 days | RTDB retention sweep | `LEGACY_RTDB_RETIRED` for legacy trees |
 | `activeBuses` records without an active ride | Until no fix arrives for `BUS_STALE_MS` (300 s by default) | Stale sweep; a record with an active ride is marked offline instead | `BUS_STALE_MS` |
 | `active_rides`, `_active_bus_locks` | Until the ride completes, ends early or is abandoned | Lifecycle worker, stop endpoint, abandoned-ride reconciler after 12 h without activity; never age-based retention | `ABANDONED_RIDE_THRESHOLD_HOURS` |
+| `settings/passengerRoutes` | Until the next save replaces it. Entries for routes or stops deleted later stay in the document, and browsers skip them, until an administrator saves again | `PUT /api/v2/settings/passenger-routes`, full replacement; never age-based retention | None |
 
 Two deletions are requested by people:
 

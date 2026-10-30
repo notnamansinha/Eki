@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-006 | 1.0 | Current | 2026-10-30 |
+| EKI-GEN-006 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -64,6 +64,7 @@ Terms are sorted alphabetically, ignoring case and backticks.
 | `liveBusHealth` | The passenger-facing answer to "is this location live?", computed in the browser from packet age and signal state: `live`, `delayed` after 12 s, `lost` after 30 s, `gnss_lost` or `offline`. It works even when the backend is down. |
 | `liveRouteCatalog` | The RTDB node that lists which routes have live or available buses. The passenger route list reads it. |
 | Manifest | The `passengers` map in a ride session: each boarded passenger with their boarding and alighting stops. |
+| Map load | One billed use of the Google Maps Dynamic Maps SKU. Eki counts a map load for each `google.maps.Map` the browser constructs; every map sets `reuseMaps`, so a page constructs at most one and later map views on that page reattach it ([EKI-ADR-004](design/GOOGLE_MAP_REUSE_DECISION.md)). |
 | `motionState` | The motion reported with each fix: `moving`, `stopped` or `uncertain`. `uncertain` marks a fix that cannot be trusted. |
 | NEO-M8N | The u-blox GNSS receiver module in each tracker. |
 | ngrok tunnel | A hosted tunnel service that gives the backend on a workstation a fixed public HTTPS address. Trackers and browsers reach the backend through it until managed hosting exists; see [ngrok tunnel](operations/NGROK_TUNNEL.md). |
@@ -82,6 +83,7 @@ Terms are sorted alphabetically, ignoring case and backticks.
 | Retention sweep | The worker's daily deletion of records older than their retention period. It runs only when `RETENTION_SWEEPER_ENABLED=true`. |
 | Ride session | The Firestore document `ride_sessions/<sessionId>` for one trip of one bus on one route in one direction. Statuses: `pending`, `armed`, `active`, `completed`, `interrupted` and `failed`. |
 | Role | `passenger`, `driver` or `admin`, held in claims. A first sign-in creates a `passenger` profile; other roles come only from the backend. |
+| Route schedule | A route that an administrator publishes in the passenger **Routes** tab, with a 24-hour `HH:mm` time for each stop. The approvals and times are stored in `settings/passengerRoutes`; names and stop order come from the route itself. A route schedule is a fixed timetable, unrelated to live tracking or ETAs. |
 | Route state | The route-matching field `routeState` on a live record: `ON_ROUTE`, `POSSIBLE_OFF_ROUTE`, `OFF_ROUTE`, `REROUTING` or `ON_NEW_ROUTE`. |
 | RTDB | Firebase Realtime Database. Eki keeps live records, the passenger projection and authorization mirrors there. |
 | `serviceSetupPending` | An internal marker on a live record while an automatic service start is incomplete. Later fixes finish the setup and clear it. |

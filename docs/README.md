@@ -49,12 +49,12 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-GEN-001 | [Eki Campus Bus Tracking](../README.md) | 1.0 | Current | 2026-10-30 |
+| EKI-GEN-001 | [Eki Campus Bus Tracking](../README.md) | 1.1 | Current | 2026-10-30 |
 | EKI-GEN-002 | [Eki Documentation Index](README.md) | 1.0 | Current | 2026-10-30 |
 | EKI-GEN-003 | [Eki Documentation Standard](DOCUMENTATION_STANDARD.md) | 1.0 | Current | 2026-10-30 |
-| EKI-GEN-004 | [Getting Started with Eki](GETTING_STARTED.md) | 1.0 | Current | 2026-10-30 |
-| EKI-GEN-005 | [Eki Configuration Reference](CONFIGURATION.md) | 1.0 | Current | 2026-10-30 |
-| EKI-GEN-006 | [Eki Glossary](GLOSSARY.md) | 1.0 | Current | 2026-10-30 |
+| EKI-GEN-004 | [Getting Started with Eki](GETTING_STARTED.md) | 2.0 | Current | 2026-10-30 |
+| EKI-GEN-005 | [Eki Configuration Reference](CONFIGURATION.md) | 1.1 | Current | 2026-10-30 |
+| EKI-GEN-006 | [Eki Glossary](GLOSSARY.md) | 2.0 | Current | 2026-10-30 |
 | EKI-GEN-007 | [Contributing to Eki](../CONTRIBUTING.md) | 1.0 | Current | 2026-10-30 |
 | EKI-GEN-008 | [Contributor Covenant Code of Conduct](../CODE_OF_CONDUCT.md) | 1.0 | Current | 2026-10-30 |
 
@@ -62,16 +62,16 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-REQ-001 | [Software Requirements Specification](requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md) | 1.0 | Current | 2026-10-30 |
+| EKI-REQ-001 | [Software Requirements Specification](requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md) | 2.0 | Current | 2026-10-30 |
 
 ### 4.3 Architecture and design (ARC)
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-ARC-001 | [Eki Architecture](design/ARCHITECTURE.md) | 1.0 | Current | 2026-10-30 |
-| EKI-ARC-002 | [Eki High-Level Design](design/HIGH_LEVEL_DESIGN.md) | 1.0 | Current | 2026-10-30 |
-| EKI-ARC-003 | [Low-Level Design](design/LOW_LEVEL_DESIGN.md) | 1.0 | Current | 2026-10-30 |
-| EKI-ARC-004 | [Tracking Algorithms](design/TRACKING_ALGORITHMS.md) | 1.0 | Current | 2026-10-30 |
+| EKI-ARC-001 | [Eki Architecture](design/ARCHITECTURE.md) | 2.0 | Current | 2026-10-30 |
+| EKI-ARC-002 | [Eki High-Level Design](design/HIGH_LEVEL_DESIGN.md) | 2.0 | Current | 2026-10-30 |
+| EKI-ARC-003 | [Low-Level Design](design/LOW_LEVEL_DESIGN.md) | 2.0 | Current | 2026-10-30 |
+| EKI-ARC-004 | [Tracking Algorithms](design/TRACKING_ALGORITHMS.md) | 1.1 | Current | 2026-10-30 |
 
 ### 4.4 Architecture decision records (ADR)
 
@@ -80,37 +80,38 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-ADR-001 | [Realtime Transport Decision](design/REALTIME_TRANSPORT_DECISION.md) | 1.0 | Current | 2026-10-30 |
 | EKI-ADR-002 | [RTDB Region Latency Decision](design/RTDB_REGION_LATENCY_DECISION.md) | 1.0 | Proposed | 2026-10-30 |
 | EKI-ADR-003 | [Telemetry State Partition Decision](design/TELEMETRY_STATE_PARTITION_DECISION.md) | 1.0 | Current | 2026-10-30 |
+| EKI-ADR-004 | [Google Map Reuse Decision](design/GOOGLE_MAP_REUSE_DECISION.md) | 1.0 | Current | 2026-10-30 |
 
 ### 4.5 User interface (UIX)
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-UIX-001 | [Eki UI Design System](design/UI_DESIGN_SYSTEM.md) | 1.0 | Current | 2026-10-30 |
+| EKI-UIX-001 | [Eki UI Design System](design/UI_DESIGN_SYSTEM.md) | 2.0 | Current | 2026-10-30 |
 
 ### 4.6 Interfaces (API)
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-API-001 | [Eki Backend HTTP API](../backend/API.md) | 1.0 | Current | 2026-10-30 |
-| EKI-API-002 | [HTTP Contract](api/HTTP_CONTRACT.md) | 1.0 | Current | 2026-10-30 |
+| EKI-API-001 | [Eki Backend HTTP API](../backend/API.md) | 2.0 | Current | 2026-10-30 |
+| EKI-API-002 | [HTTP Contract](api/HTTP_CONTRACT.md) | 2.0 | Current | 2026-10-30 |
 | EKI-API-003 | [Ride Session Contract](api/RIDE_SESSION_CONTRACT.md) | 1.0 | Current | 2026-10-30 |
 | EKI-API-004 | [Operation Resources](api/OPERATION_RESOURCES.md) | 1.0 | Current | 2026-10-30 |
-| EKI-API-005 | [HTTP Resource Migration](../backend/API_RESOURCE_MIGRATION.md) | 1.0 | Current | 2026-10-30 |
+| EKI-API-005 | [HTTP Resource Migration](../backend/API_RESOURCE_MIGRATION.md) | 2.0 | Current | 2026-10-30 |
 
 ### 4.7 Data (DAT)
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-DAT-001 | [Firebase Data Model](data/FIREBASE_DATA_MODEL.md) | 1.0 | Current | 2026-10-30 |
-| EKI-DAT-002 | [Eki Storage Architecture](data/STORAGE_ARCHITECTURE.md) | 1.0 | Current | 2026-10-30 |
+| EKI-DAT-001 | [Firebase Data Model](data/FIREBASE_DATA_MODEL.md) | 2.0 | Current | 2026-10-30 |
+| EKI-DAT-002 | [Eki Storage Architecture](data/STORAGE_ARCHITECTURE.md) | 2.0 | Current | 2026-10-30 |
 
 ### 4.8 Security (SEC)
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-SEC-001 | [Security Policy](../SECURITY.md) | 1.0 | Current | 2026-10-30 |
-| EKI-SEC-002 | [Security Architecture](security/SECURITY_ARCHITECTURE.md) | 1.0 | Current | 2026-10-30 |
-| EKI-SEC-003 | [Browser API Security](security/BROWSER_API_SECURITY.md) | 1.0 | Current | 2026-10-30 |
+| EKI-SEC-002 | [Security Architecture](security/SECURITY_ARCHITECTURE.md) | 2.0 | Current | 2026-10-30 |
+| EKI-SEC-003 | [Browser API Security](security/BROWSER_API_SECURITY.md) | 2.0 | Current | 2026-10-30 |
 | EKI-SEC-004 | [Privileged Database Authorization](security/PRIVILEGED_DATABASE_AUTHORIZATION.md) | 1.0 | Current | 2026-10-30 |
 | EKI-SEC-005 | [Hardware Security Provisioning](security/HARDWARE_SECURITY_PROVISIONING.md) | 1.0 | Current | 2026-10-30 |
 
@@ -118,7 +119,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-CST-001 | [Eki Cost Model](cost/COST_MODEL.md) | 1.0 | Current | 2026-10-30 |
+| EKI-CST-001 | [Eki Cost Model](cost/COST_MODEL.md) | 2.0 | Current | 2026-10-30 |
 
 ### 4.10 Operations (OPS)
 
@@ -135,16 +136,16 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-OPS-009 | [Automatic GNSS Service](operations/AUTOMATIC_GNSS_SERVICE.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-010 | [Architecture Risk Register](operations/ARCHITECTURE_RISK_REGISTER.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-011 | [Production Readiness Audit](operations/PRODUCTION_READINESS_AUDIT.md) | 1.0 | Historical | 2026-10-04 |
-| EKI-OPS-012 | [API Read Caching and Compatibility Retirement](operations/API_READS_AND_RETIREMENT.md) | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-012 | [API Read Caching and Compatibility Retirement](operations/API_READS_AND_RETIREMENT.md) | 1.1 | Current | 2026-10-30 |
 | EKI-OPS-013 | [Browser Telemetry Trace](operations/BROWSER_TELEMETRY_TRACE.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-014 | [Matching and Stale Presence Scans](operations/MATCHING_AND_LIFECYCLE_SCANS.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-015 | [Passenger Account Deletion](operations/PRIVACY_DELETION.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-016 | [Realtime Transport Measurements](operations/REALTIME_TRANSPORT_MEASUREMENTS.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-017 | [Bounded Reconciliation](operations/RECONCILIATION.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-018 | [Live Reroute Retry Policy](operations/REROUTE_RETRY_POLICY.md) | 1.0 | Current | 2026-10-30 |
-| EKI-OPS-019 | [Telemetry Route Catalog](operations/ROUTE_CATALOG.md) | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-019 | [Telemetry Route Catalog](operations/ROUTE_CATALOG.md) | 1.1 | Current | 2026-10-30 |
 | EKI-OPS-020 | [Route Geometry Reads and Repair](operations/ROUTE_GEOMETRY_READS.md) | 1.0 | Current | 2026-10-30 |
-| EKI-OPS-021 | [Browser Reconnect and Access Recovery](operations/RTDB_RECONNECT_RECOVERY.md) | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-021 | [Browser Reconnect and Access Recovery](operations/RTDB_RECONNECT_RECOVERY.md) | 2.0 | Current | 2026-10-30 |
 | EKI-OPS-022 | [RTDB Retention](operations/RTDB_RETENTION.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-023 | [Telemetry Execution Deadlines](operations/TELEMETRY_DEADLINES.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-024 | [Telemetry Ingestion Load Test](operations/TELEMETRY_INGESTION_LOAD_TEST.md) | 1.0 | Current | 2026-10-30 |
@@ -166,13 +167,13 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-PKG-001 | [Eki Backend](../backend/README.md) | 1.0 | Current | 2026-10-30 |
-| EKI-PKG-002 | [Eki Frontend](../frontend/README.md) | 1.0 | Current | 2026-10-30 |
+| EKI-PKG-002 | [Eki Frontend](../frontend/README.md) | 2.0 | Current | 2026-10-30 |
 | EKI-PKG-003 | [ESP32 GNSS Tracker](../hardware/README.md) | 1.0 | Current | 2026-10-30 |
 | EKI-PKG-004 | [Firmware Headers](../hardware/include/README.md) | 1.0 | Current | 2026-10-30 |
 | EKI-PKG-005 | [Firmware Tests](../hardware/test/README.md) | 1.0 | Current | 2026-10-30 |
 | EKI-PKG-006 | [Fleet Signing Keys](../hardware/keys/README.md) | 1.0 | Current | 2026-10-30 |
-| EKI-PKG-007 | [Admin Access Browser Checks](../e2e/admin-access/README.md) | 1.0 | Current | 2026-10-30 |
-| EKI-PKG-008 | [Passenger UI Fixture](../e2e/fixtures/README.md) | 1.0 | Current | 2026-10-30 |
+| EKI-PKG-007 | [Admin Access Browser Checks](../e2e/admin-access/README.md) | 2.0 | Current | 2026-10-30 |
+| EKI-PKG-008 | [Passenger UI Fixture](../e2e/fixtures/README.md) | 2.0 | Current | 2026-10-30 |
 | EKI-PKG-009 | [Moving-Marker Simulation](../e2e/motion/README.md) | 1.0 | Current | 2026-10-30 |
 | EKI-PKG-010 | [Production Audit Browser Fixture](../e2e/production-audit/README.md) | 1.0 | Current | 2026-10-30 |
 | EKI-PKG-011 | [Live Google Maps Check](../e2e/routing/live-maps/README.md) | 1.0 | Current | 2026-10-30 |
@@ -182,8 +183,8 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-TST-001 | [Eki Testing and Evidence Index](testing/README.md) | 1.0 | Current | 2026-10-30 |
-| EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 1.0 | Current | 2026-10-30 |
+| EKI-TST-001 | [Eki Testing and Evidence Index](testing/README.md) | 1.1 | Current | 2026-10-30 |
+| EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 2.0 | Current | 2026-10-30 |
 | EKI-TST-003 | [Eki QA Programme](../qa/README.md) | 1.0 | Current | 2026-10-30 |
 | EKI-TST-004 | [Disposable Browser Acceptance](../qa/BROWSER_ACCEPTANCE.md) | 1.0 | Current | 2026-10-30 |
 | EKI-TST-005 | [Disposable Emulator Acceptance](../qa/EMULATOR_ACCEPTANCE.md) | 1.0 | Current | 2026-10-30 |

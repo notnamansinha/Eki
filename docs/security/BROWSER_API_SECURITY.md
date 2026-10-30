@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-003 | 1.0 | Current | 2026-10-30 |
+| EKI-SEC-003 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Introduction
 
@@ -12,7 +12,7 @@ This specification defines how a browser client authenticates to the Eki backend
 
 ### 1.2 Access policy
 
-- Any user signed in with a Google account through Firebase Authentication may read live bus positions, routes, buses and global settings. Institutional affiliation is not checked.
+- Any user signed in with a Google account through Firebase Authentication may read live bus positions, routes, buses, global settings and the published passenger route schedules (`settings/passengerRoutes`). Institutional affiliation is not checked. No client may write these settings; only the administrator operations `PATCH /api/v2/settings/global` (or `PUT /api/settings`) and `PUT /api/v2/settings/passenger-routes` change them.
 - Signing in does not make a bus bookable. A passenger can board only a ride whose session is boarding and whose bus has a fresh hardware fix.
 - Driver and administrator authority comes only from custom claims that the backend publishes. Profile edits, browser storage and request bodies cannot grant a role.
 
@@ -39,7 +39,7 @@ Firebase App Check is not used. The browser sends no `X-Firebase-AppCheck` heade
 | Signed-in user | Valid ID token | None | `GET /api/buses`, `GET /api/routes-list`, `POST /api/users/bootstrap` |
 | Passenger | `role` absent or `passenger` | Existing `users/{uid}` profile; own manifest entry for ride-scoped actions | `PUT /api/v2/ride-sessions/{sessionId}/passengers/me`, `POST /api/v2/ride-sessions/{sessionId}/messages`, `POST /api/v2/privacy-deletion-requests` |
 | Driver | `role: "driver"`, `driverId`, `assignedBusId` | `drivers/{driverId}.authUid` equals the UID, the driver's `assignedBusId` matches the bus, and the bus lists the route | `POST /api/v2/ride-sessions`, `PATCH /api/v2/ride-sessions/{sessionId}`, `POST /api/shifts/stop` |
-| Administrator | `role: "admin"`, `admin: true`, `authorizationVersion` | `requireAdmin` reads `_userAuthorization/{uid}` in Firestore and RTDB on every request, without a positive cache, and requires both versions to match the token | `/api/fleet/*`, `PUT /api/devices/{deviceId}`, `PUT /api/settings`, `DELETE /api/v2/ride-sessions/{sessionId}`, `GET /api/health` |
+| Administrator | `role: "admin"`, `admin: true`, `authorizationVersion` | `requireAdmin` reads `_userAuthorization/{uid}` in Firestore and RTDB on every request, without a positive cache, and requires both versions to match the token | `/api/fleet/*`, `PUT /api/devices/{deviceId}`, `PATCH /api/v2/settings/global`, `PUT /api/v2/settings/passenger-routes`, `DELETE /api/v2/ride-sessions/{sessionId}`, `GET /api/health` |
 
 The `POST /api/users/bootstrap` call creates a missing profile with role `passenger` and repairs only a missing passenger claim. [Privileged database authorization](PRIVILEGED_DATABASE_AUTHORIZATION.md) describes how driver and administrator claims and records are published and revoked.
 

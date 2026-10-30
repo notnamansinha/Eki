@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-002 | 1.0 | Current | 2026-10-30 |
+| EKI-API-002 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -93,6 +93,7 @@ The web app reads most live and configuration data through Firebase SDK subscrip
 | RTDB `activeRouteGeometry/{nodeKey}/{version}` | One-time read | Geometry of a live reroute | Backend |
 | RTDB `.info/connected`, `.info/serverTimeOffset` | Listener | Connection state and clock offset | Firebase |
 | Firestore `settings/global` | Listener | Service hours and announcements | `PATCH /api/v2/settings/global` |
+| Firestore `settings/passengerRoutes` | Listener | Passenger route schedules: approved routes and a `HH:mm` time per stop. The browser drops malformed entries and skips routes and stops that no longer exist | `PUT /api/v2/settings/passenger-routes`, full replacement |
 | Firestore `routes`, `buses`, `bus_locations`, `drivers` | Listener | Route catalog and fleet views | Route and fleet HTTP operations; `bus_locations` also by telemetry ingestion |
 | Firestore `users/{uid}` | One-time read | Profile and role | `POST /api/users/bootstrap` |
 | Firestore `ride_sessions` queries and `ride_sessions/{id}/messages`, `archivedMessages` | Listener | Ride history and chat | Ride session and chat HTTP operations |

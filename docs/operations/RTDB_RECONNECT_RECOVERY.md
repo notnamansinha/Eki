@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-021 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-021 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -40,7 +40,9 @@ Browser timer throttling can delay any of these timers. Every callback rechecks 
 
 ### 3.4 Access verification retries
 
-`AuthProvider` verifies the signed-in user's role with fresh token claims, with a 10 s deadline. When verification fails with `auth/network-request-failed`, Firestore `unavailable` or `deadline-exceeded`, or the deadline, the identity and data-readiness gates stay closed and the provider retries after 1, 2, 4, 8, 16 and 30 s: at most six automatic retries per burst. Retries pause while the browser is offline or the tab is hidden. The next `online` or `visibilitychange` event to a visible page starts a fresh burst. A verified session does not reverify on these events. The **Try again** button stays available.
+`AuthProvider` verifies the signed-in user's role with fresh token claims, with a 10 s deadline. When verification fails with `auth/network-request-failed`, Firestore `unavailable` or `deadline-exceeded`, or the deadline, the identity and data-readiness gates stay closed and the provider retries after 1, 2, 4, 8, 16 and 30 s: at most six automatic retries per burst. Retries pause while the browser is offline or the tab is hidden. The next `online` or `visibilitychange` event to a visible page starts a fresh burst. A verified session does not reverify on these events. The **Try again** button stays available. While a timer retry is scheduled, the error stays on screen as "We could not verify your access. Check your connection; retrying automatically." instead of switching back to a spinner; a retry the user can see coming (back online, tab shown, **Try again**) shows the loading state, and **Try again** pressed during a timer retry joins that attempt and shows it in progress.
+
+Before verification can start, the browser must download the sign-in code. A failed download is retried one attempt at a time after 2, 5, 10, 20 and then every 30 s, and at once on an `online` event; a retry requested while a download is in flight runs as soon as that download fails. Slow restoration of a saved session is reported after 8 s as a notice with **Reload**, never as an access error ([frontend guide](../../frontend/README.md#8-authentication-flow)).
 
 Manual and automatic retries share the current verification attempt and always force fresh trusted claims; a cached role, the Firestore profile or the bootstrap response alone never authorizes a driver or administrator. Permission denial, disabled or expired accounts and missing privileged claims are not retried. Account change, sign-out and unmount cancel queued work, and a late result from a timed-out attempt cannot restore an older role. The deadline cannot cancel the underlying Firebase promise; the finite retry burst bounds how many such calls are outstanding.
 
@@ -55,16 +57,20 @@ None of these values is configurable at run time.
 | Handshake cooldown | 5 s | `frontend/src/hooks/useRTDBResume.ts:16` |
 | Retry ceiling start and cap | 1 s, 30 s | `frontend/src/lib/liveBusRetry.ts:1`, `frontend/src/lib/liveBusRetry.ts:2` |
 | Equal jitter | 50 % to 100 % of the ceiling | `frontend/src/lib/liveBusRetry.ts:14` |
-| Role verification deadline | 10 s | `frontend/src/hooks/useAuth.ts:18` |
-| Access retry delays | 1, 2, 4, 8, 16, 30 s | `frontend/src/hooks/useAuth.ts:20` |
-| Transient error codes | `auth/network-request-failed`, `unavailable`, `deadline-exceeded`, deadline | `frontend/src/hooks/useAuth.ts:22` |
+| Role verification deadline | 10 s | `frontend/src/hooks/useAuth.ts:24` |
+| Access retry delays | 1, 2, 4, 8, 16, 30 s | `frontend/src/hooks/useAuth.ts:29` |
+| Transient error codes | `auth/network-request-failed`, `unavailable`, `deadline-exceeded`, deadline | `frontend/src/hooks/useAuth.ts:32` |
+| Sign-in code download retries | 2, 5, 10, 20, then every 30 s; at once on `online` | `frontend/src/hooks/useAuth.ts:30` |
+| Slow restoration notice | 8 s | `frontend/src/hooks/useAuth.ts:27` |
 
 ## 5. Failure modes and recovery
 
 | Symptom | Cause | Action |
 |---|---|---|
 | Live data stays in the recovering state | No authoritative snapshot after reconnect, for example RTDB unreachable or rules denying the read | Check the browser console and network. The SDK keeps retrying; reload the page if the network is healthy. |
-| "We could not verify your access" after an outage | Six automatic retries used up while the network was still down | Select **Try again**, or return to the tab once online. |
+| "We could not verify your access. Check your connection; retrying automatically." | A transient failure; a timer retry is scheduled | Wait, or select **Try again**. |
+| "We could not verify your access. Check your connection and try again." after an outage | Six automatic retries used up while the network was still down | Select **Try again**, or return to the tab once online. |
+| "Sign-in could not load. Check your connection; retrying automatically." | The sign-in code did not download | Wait; the download is retried and runs again when the browser comes online. **Reload** also works. |
 | "Your account is not permitted to verify this workspace" | Permission denied; not retried | Check the account's role and claims with an administrator. |
 
 These are browser recovery bounds, not fleet capacity or latency targets.
