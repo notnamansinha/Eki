@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-003 | 1.0 | Current | 2026-10-30 |
+| EKI-SEC-003 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Introduction
 
@@ -71,7 +71,7 @@ Legacy `/api/...` paths and their `/api/v2/...` resource equivalents pass throug
 
 ### 3.1 Administrator ride stop
 
-`POST /api/shifts/stop` lets an administrator end a ride by its session, bus and route even when its driver was reassigned or the live record has no driver. This path requires `role: "admin"`, `admin: true` and a current `authorizationVersion` in both databases, the same contract as `requireAdmin`. Other callers must pass the driver check in Section 2.2.
+`POST /api/shifts/stop` lets an administrator end a ride by its session, bus and route even when its driver was reassigned or the live record has no driver. This path, and every other administrator branch of a route shared with operators or passengers, requires `role: "admin"`, `admin: true` and a current `authorizationVersion` in both databases through `hasCurrentAdminAuthority` (`backend/src/middleware/adminAuthority.ts`), the same contract as `requireAdmin`. Other callers must pass the driver check in Section 2.2.
 
 ### 3.2 Boarding
 

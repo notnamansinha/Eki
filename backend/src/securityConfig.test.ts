@@ -752,7 +752,9 @@ describe("production security configuration", () => {
     expect(server).toContain('app.use("/api/sessions"');
     expect(sessionsRoute).toContain('router.post("/:sessionId/join", requireAuth');
     expect(sessionsRoute).toContain('router.post("/:sessionId/boarding-code", requireAuth');
-    expect(sessionsRoute).toContain('user?.role === "admin"');
+    // Administrator branches use the requireAdmin policy, never a bare claim.
+    expect(sessionsRoute).toContain("hasCurrentAdminAuthority(req)");
+    expect(sessionsRoute).not.toMatch(/role === "admin"|admin === true|admin !== true/);
     expect(sessionsRoute).toContain("validateLiveBoardingProjection");
     expect(sessionsRoute).toContain("db.runTransaction");
     expect(sessionsRoute).toContain('new FieldPath("passengers", user.uid)');

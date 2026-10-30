@@ -4616,7 +4616,7 @@
           "Shifts"
         ],
         "summary": "End a ride session early",
-        "description": "Interrupts a pending, armed or active session (interruptionReason manual_end_early). An administrator with current authority (role admin, admin true and a current authorizationVersion) ends the session by its own identity: the session's busId and routeId, and its driverId when one is given, must match the request; the operator's current assignment is not checked. Every other caller, including an admin claim without current authority, must pass the operator assignment check for the named operator. Completed is a successful no-op; interrupted retries cleanup; failed conflicts. Never marks a ride completed; normal completion is telemetry-owned.",
+        "description": "Interrupts a pending, armed or active session (interruptionReason manual_end_early). An administrator with current authority (role admin, admin true and a current authorizationVersion) ends the session by its own identity: the session's busId and routeId, and its driverId when one is given, must match the request; the operator's current assignment is not checked. Every other caller, including a token with administrator claims but without current authority, is treated as an operator and must pass the operator assignment check for its own driver identity. Completed is a successful no-op; interrupted retries cleanup; failed conflicts. Never marks a ride completed; normal completion is telemetry-owned.",
         "security": [
           {
             "FirebaseBearer": []
@@ -5047,7 +5047,7 @@
           "Sessions"
         ],
         "summary": "Return the legacy session boarding code",
-        "description": "Legacy code for older clients and Live Ops. Admin claim, or the operator whose driverId and assignedBusId claims match the session; the session must be armed or active (otherwise 403). Creates on the first call, then returns, the same eight-character 40-bit code stored on the session record. It never appears in passenger RTDB. Passenger boarding does not use the code.",
+        "description": "Legacy code for older clients and Live Ops. An administrator with current authority, or the operator whose driverId and assignedBusId claims match the session; the session must be armed or active (otherwise 403). Creates on the first call, then returns, the same eight-character 40-bit code stored on the session record. It never appears in passenger RTDB. Passenger boarding does not use the code.",
         "security": [
           {
             "FirebaseBearer": []
@@ -5191,7 +5191,7 @@
           "Sessions"
         ],
         "summary": "Recover a joined ride lifecycle without exposing passenger manifests.",
-        "description": "Requires exact passenger manifest membership, the assigned operator, or an admin: true claim. Unknown and unauthorized sessions return identical 403 responses. No-store; completed is distinct from interrupted/failed.",
+        "description": "Requires exact passenger manifest membership, the assigned operator, or an administrator with current authority. Unknown and unauthorized sessions return identical 403 responses. No-store; completed is distinct from interrupted/failed.",
         "security": [
           {
             "FirebaseBearer": []
@@ -8377,7 +8377,7 @@
           "Sessions"
         ],
         "summary": "Return the legacy session boarding code",
-        "description": "Legacy code for older clients and Live Ops. Admin claim, or the operator whose driverId and assignedBusId claims match the session; the session must be armed or active (otherwise 403). Creates on the first call, then returns, the same eight-character 40-bit code stored on the session record. It never appears in passenger RTDB. Passenger boarding does not use the code.",
+        "description": "Legacy code for older clients and Live Ops. An administrator with current authority, or the operator whose driverId and assignedBusId claims match the session; the session must be armed or active (otherwise 403). Creates on the first call, then returns, the same eight-character 40-bit code stored on the session record. It never appears in passenger RTDB. Passenger boarding does not use the code.",
         "security": [
           {
             "FirebaseBearer": []

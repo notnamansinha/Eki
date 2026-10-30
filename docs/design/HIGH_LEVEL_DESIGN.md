@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-002 | 1.0 | Current | 2026-10-30 |
+| EKI-ARC-002 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Introduction
 
@@ -67,7 +67,7 @@ Rules that hold in every state:
 
 ## 5. Roles and authorization
 
-Firebase Authentication identifies people; the backend decides what they may do. The backend publishes role claims together with a new `authorizationVersion` and mirrors the version to `_userAuthorization/{uid}` in Firestore and RTDB. `requireAdmin`, the administrator branch of `POST /api/shifts/stop` and the database rules compare the token's version with the mirror, so on those paths a demoted or reassigned account loses access on its next request without waiting for the token to expire. The other ride-operation routes in `backend/src/routes/shifts.ts` and `backend/src/routes/sessions.ts` accept administrator and driver claims without this comparison ([risk SEC-03](../operations/ARCHITECTURE_RISK_REGISTER.md#38-sec-03-ride-operations-accept-stale-administrator-claims)). Trust boundaries are described in the [security architecture](../security/SECURITY_ARCHITECTURE.md).
+Firebase Authentication identifies people; the backend decides what they may do. The backend publishes role claims together with a new `authorizationVersion` and mirrors the version to `_userAuthorization/{uid}` in Firestore and RTDB. `requireAdmin`, every administrator branch of the ride-operation routes (`backend/src/middleware/adminAuthority.ts`) and the database rules compare the token's version with the mirror, so a demoted administrator loses access on its next request without waiting for the token to expire. Driver checks on HTTP routes compare the driver registry or the token's assignment claims instead of the version. Trust boundaries are described in the [security architecture](../security/SECURITY_ARCHITECTURE.md).
 
 | Role | Granted by | May |
 |---|---|---|

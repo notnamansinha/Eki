@@ -16,6 +16,7 @@ const harness = vi.hoisted(() => ({
   afterRtdbTransaction: null as (() => void) | null,
   failActiveRidesWrite: false,
   authorizationCurrent: true,
+  authorizationError: false,
   coldLiveTransaction: false,
   routeStops: [
     { id: "stop_1", name: "Stop 1", lat: 23.0, lng: 72.5 },
@@ -32,7 +33,10 @@ const harness = vi.hoisted(() => ({
 
 vi.mock("../services/userAuthorization", async importOriginal => ({
   ...await importOriginal<typeof import("../services/userAuthorization")>(),
-  authorizationIsCurrent: vi.fn(async () => harness.authorizationCurrent),
+  authorizationIsCurrent: vi.fn(async () => {
+    if (harness.authorizationError) throw new Error("authorization store unavailable");
+    return harness.authorizationCurrent;
+  }),
 }));
 vi.mock("../middleware/requireAuth", () => ({
   requireAuth: (
@@ -231,7 +235,7 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  harness.assignmentReads = 0; harness.driverBus = "bus_1"; harness.authorizationCurrent = true; harness.coldLiveTransaction = false;
+  harness.assignmentReads = 0; harness.driverBus = "bus_1"; harness.authorizationCurrent = true; harness.authorizationError = false; harness.coldLiveTransaction = false;
   harness.docSets = [];
   harness.batchSets = [];
   harness.rtdbUpdates = [];
@@ -431,6 +435,22 @@ describe("manual shift termination", () => {
     expect(harness.session).toMatchObject({ status: "active" });
   });
 
+  it("does not let a revoked administrator stop a ride through the operator assignment check", async () => {
+    harness.user = CURRENT_ADMIN;
+    harness.authorizationCurrent = false;
+    const response = await stopShift();
+    expect(response.status).toBe(403);
+    expect(harness.session).toMatchObject({ status: "active" });
+  });
+
+  it("keeps the ride running when administrator authority cannot be read", async () => {
+    harness.user = CURRENT_ADMIN;
+    harness.authorizationError = true;
+    const response = await stopShift();
+    expect(response.status).toBe(500);
+    expect(harness.session).toMatchObject({ status: "active" });
+  });
+
   it("still refuses a driver who has been reassigned away from the bus", async () => {
     harness.driverBus = "bus_9";
     const response = await stopShift();
@@ -507,10 +527,22 @@ describe("shift delay updates", () => {
   });
 
   it("lets an administrator update the assigned operator's ride", async () => {
-    harness.user = { uid: "admin_uid", role: "admin", admin: true };
+    harness.user = { uid: "admin_uid", role: "admin", admin: true, authorizationVersion: "v1" };
     const response = await setDelay(8, "driver_1");
     expect(response.status).toBe(200);
     expect(harness.liveNode.delayMinutes).toBe(8);
+  });
+
+  it.each([
+    ["a revoked admin authorization", { uid: "admin_uid", role: "admin", admin: true, authorizationVersion: "v1" }, false],
+    ["a legacy admin token without an authorization version", { uid: "admin_uid", role: "admin", admin: true }, true],
+    ["a driver token with a stray admin flag", { uid: "other_uid", role: "driver", admin: true, driverId: "driver_9", assignedBusId: "bus_9" }, true],
+  ])("refuses a delay on another operator's ride from %s", async (_name, user, current) => {
+    harness.user = user;
+    harness.authorizationCurrent = current as boolean;
+    const response = await setDelay(8, "driver_1");
+    expect(response.status).toBe(400);
+    expect(harness.liveNode.delayMinutes).toBe(5);
   });
 
   it("keeps the live delay when the durable write fails", async () => {
@@ -583,7 +615,7 @@ describe("shift start after automatic completion", () => {
     expect(Object.keys(harness.session?.stopsReached ?? {})).toEqual([]);
   });
   it("lets an administrator arm a ride for an assigned operator", async () => {
-    harness.user = { uid: "admin_uid", role: "admin", admin: true };
+    harness.user = { uid: "admin_uid", role: "admin", admin: true, authorizationVersion: "v1" };
     harness.liveNode = {
       busId: "bus_1",
       lat: 23.0,
@@ -596,6 +628,19 @@ describe("shift start after automatic completion", () => {
     const response = await startShift("driver_1");
     expect(response.status).toBe(201);
     expect(harness.liveNode.driverId).toBe("driver_1");
+  });
+
+  it.each([
+    ["a revoked admin authorization", { uid: "admin_uid", role: "admin", admin: true, authorizationVersion: "v1" }, false],
+    ["a legacy admin token without an authorization version", { uid: "admin_uid", role: "admin", admin: true }, true],
+    ["a role-only admin token", { uid: "admin_uid", role: "admin", authorizationVersion: "v1" }, true],
+  ])("refuses to arm a ride for %s even when the operator assignment matches", async (_name, user, current) => {
+    harness.user = user;
+    harness.authorizationCurrent = current as boolean;
+    harness.liveNode = { busId: "bus_1", lat: 23.0, lng: 72.5, timestamp: Date.now(), motionState: "stopped", gpsHdop: 2 };
+    const response = await startShift("driver_1");
+    expect(response.status).toBe(403);
+    expect(harness.liveNode.driverId).toBeUndefined();
   });
 
   it("starts a fresh session instead of resurrecting the completed ride", async () => {
@@ -935,10 +980,16 @@ describe("R20 request-local assignment reuse", () => {
   });
   it.each(["admin", "member"])("avoids irrelevant driver authorization for an already allowed %s", async mode => {
     session();
-    if (mode === "admin") harness.user.admin = true;
+    if (mode === "admin") harness.user = { uid: "admin_uid", role: "admin", admin: true, authorizationVersion: "v1" };
     else harness.session!.passengers = { driver_uid: { userId: "driver_uid" } };
     expect((await contractFetch(`${baseUrl}/api/v2/ride-sessions/session_live`)).status).toBe(200);
     expect(harness.assignmentReads).toBe(0);
+  });
+  it("denies the ride read to an administrator whose authority is no longer current", async () => {
+    session();
+    harness.user = { uid: "admin_uid", role: "admin", admin: true, authorizationVersion: "v1" };
+    harness.authorizationCurrent = false;
+    expect((await contractFetch(`${baseUrl}/api/v2/ride-sessions/session_live`)).status).toBe(403);
   });
   it("shares assignment checks only between the v2 PATCH stages of one request", async () => {
     session(); harness.liveNode = { busId: "bus_1", routeId: "route_1", driverId: "driver_1", sessionId: "session_live", status: "active", tripState: "in_service" };

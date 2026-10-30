@@ -6,6 +6,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 type User = {
   uid: string;
   role?: string;
+  admin?: boolean;
+  authorizationVersion?: string;
   name?: string;
   driverId?: string;
   assignedBusId?: string;
@@ -19,6 +21,11 @@ const harness = vi.hoisted(() => ({
   setKinds: [] as string[],
   user: {} as User,
   profileExists: true,
+  authorizationCurrent: true,
+}));
+
+vi.mock("../services/userAuthorization", () => ({
+  authorizationIsCurrent: async () => harness.authorizationCurrent,
 }));
 
 vi.mock("../middleware/requireAuth", () => ({
@@ -116,7 +123,7 @@ beforeEach(() => {
   harness.messages = new Map();
   harness.archivedMessages = new Map();
   harness.rate = undefined;
-  harness.setKinds = []; harness.profileExists = true;
+  harness.setKinds = []; harness.profileExists = true; harness.authorizationCurrent = true;
   harness.user = { uid: "passenger_1", role: "passenger", name: "Token Name" };
   harness.session = {
     status: "active",
@@ -288,7 +295,7 @@ describe.each([false, true])("session message route v2=%s", mode => {
   });
 
   it("allows an authenticated administrator without trusting client identity fields", async () => {
-    harness.user = { uid: "admin_auth", role: "admin", name: "Campus Admin" };
+    harness.user = { uid: "admin_auth", role: "admin", admin: true, authorizationVersion: "v1", name: "Campus Admin" };
     harness.session.passengers = {};
 
     const response = await send("Service update", "request_admin_12345");
@@ -299,5 +306,19 @@ describe.each([false, true])("session message route v2=%s", mode => {
       senderId: "admin_auth",
       senderName: "Campus Admin",
     });
+  });
+
+  it.each([
+    ["a revoked admin authorization", { uid: "admin_auth", role: "admin", admin: true, authorizationVersion: "v1" }, false],
+    ["a role-only admin token", { uid: "admin_auth", role: "admin" }, true],
+  ])("does not let %s post to a ride it is not part of", async (_name, user, current) => {
+    harness.user = user;
+    harness.authorizationCurrent = current as boolean;
+    harness.session.passengers = {};
+
+    const response = await send("Service update", "request_admin_12345");
+
+    expect(response.status).toBe(403);
+    expect(harness.messages.size).toBe(0);
   });
 });

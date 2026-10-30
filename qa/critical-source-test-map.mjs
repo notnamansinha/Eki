@@ -2,6 +2,22 @@
 // These links do not certify deployed providers or complete feature acceptance.
 const link = (path, name, semantics) => ({ path, name, semantics, level: 'L1' });
 export const criticalSourceTestMap = [{
+  caseId: 'AUTH13',
+  scope: 'Mocked authorization records: operator, chat, boarding-code and ride-status handlers grant administrator authority only under the requireAdmin policy (both claims and a current authorizationVersion); deployed revocation timing remains separate.',
+  sourcePaths: ['backend/src/middleware/adminAuthority.ts', 'backend/src/routes/sessions.ts'],
+  tests: [link('backend/src/middleware/adminAuthority.test.ts', 'current administrator authority > rejects a version that is no longer current',
+    'A token whose authorizationVersion is no longer published in both databases is not an administrator.'),
+  link('backend/src/middleware/adminAuthority.test.ts', 'current administrator authority > rejects %s without reading the authorization records',
+    'Legacy, role-only, stray-flag and string-flag tokens are not administrators and cost no authorization read.'),
+  link('backend/src/routes/sessionsStatus.test.ts', 'joined ride status authorization and closed HTTP response > denies an administrator whose authority is no longer current',
+    'A revoked administrator cannot read another ride\'s status.'),
+  link('backend/src/routes/sessionsMessages.test.ts', 'session message route v2=%s > does not let %s post to a ride it is not part of',
+    'Revoked and role-only administrator tokens cannot post to a ride as an administrator; no message is written.'),
+  link('backend/src/routes/rideSessions.test.ts', 'versioned session identity and lifecycle > withholds the boarding code from an administrator whose authority is no longer current on %s',
+    'A revoked administrator receives 403 for the boarding code on both aliases; a current administrator still receives it.'),
+  link('backend/src/routes/shifts.test.ts', 'manual shift termination > does not let a revoked administrator stop a ride through the operator assignment check',
+    'A revoked administrator cannot end a ride through the operator fallback even when the assignment matches.')],
+}, {
   caseId: 'TRIP26',
   scope: 'Mocked destination fencing rejects revoked worker generations before writes and after dependency completion; queued durable restores keep their own caller fence; replica/crash acceptance remains separate.',
   sourcePaths: ['backend/src/lib/workerFence.ts', 'backend/src/services/durableRideRecovery.ts'],

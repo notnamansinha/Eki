@@ -21,6 +21,12 @@ const state = vi.hoisted(() => ({
   coldLiveTransaction: false,
   failLiveRead: false,
   batchSizes: [] as number[],
+  authorizationCurrent: true,
+}));
+
+vi.mock("../services/userAuthorization", async importOriginal => ({
+  ...await importOriginal<typeof import("../services/userAuthorization")>(),
+  authorizationIsCurrent: async () => state.authorizationCurrent,
 }));
 
 vi.mock("../middleware/requireAuth", () => ({
@@ -142,7 +148,7 @@ afterAll(async () => { await new Promise<void>((resolve, reject) => server.close
 beforeEach(() => {
   state.docs.clear(); state.sequence = 0; state.transactionTail = Promise.resolve();
   state.beforeLiveWrite = null; state.beforeTransactionRead = null; state.afterLiveWrite = null;
-  state.failProjectionOnce = false; state.batchSizes = [];
+  state.failProjectionOnce = false; state.batchSizes = []; state.authorizationCurrent = true;
   state.transactionAttempts = 0; state.transactionFailureAt = 1; state.transactionFailures = [];
   state.onTransactionFailure = null;
   state.coldLiveTransaction = false;
@@ -310,7 +316,7 @@ describe("versioned session identity and lifecycle", () => {
   });
   it("scopes creation keys to the authenticated UID", async () => {
     const original = await (await start()).json(); end();
-    state.user = { uid: "admin_uid", role: "admin", admin: true };
+    state.user = { uid: "admin_uid", role: "admin", admin: true, authorizationVersion: "v1" };
     const next = await start("creation_key_0001", { driverId: "driver_1" });
     expect(next.status).toBe(201);
     expect((await next.json()).sessionId).not.toBe(original.sessionId);
@@ -359,6 +365,15 @@ describe("versioned session identity and lifecycle", () => {
     state.user = { uid: "driver_uid", role: "driver", driverId: "driver_1", assignedBusId: "bus_1" };
     end(); expect((await code()).status).toBe(403);
     expect(state.live).not.toHaveProperty("boardingCode");
+  });
+  it.each(["/api/sessions", "/api/v2/ride-sessions"])("withholds the boarding code from an administrator whose authority is no longer current on %s", async prefix => {
+    const { sessionId } = await (await start()).json();
+    const code = () => contractFetch(`${base}${prefix}/${sessionId}/boarding-code`, { method: "POST" });
+    state.user = { uid: "admin_uid", role: "admin", admin: true, authorizationVersion: "v1" };
+    state.authorizationCurrent = false;
+    expect((await code()).status).toBe(403);
+    state.authorizationCurrent = true;
+    expect((await code()).status).toBe(200);
   });
   it("rejects a session ending between code-free proximity validation and manifest commit", async () => {
     const { sessionId } = await (await start()).json();

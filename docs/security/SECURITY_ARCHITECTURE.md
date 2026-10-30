@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-002 | 1.0 | Current | 2026-10-30 |
+| EKI-SEC-002 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Introduction
 
@@ -145,7 +145,7 @@ Threats are classified with STRIDE (spoofing, tampering, repudiation, informatio
 | STRIDE | Threat | Implemented mitigation | Residual risk |
 |---|---|---|---|
 | S | Forged, expired or revoked ID token | `verifyIdToken(token, true)` checks signature, expiry, disabled account and revocation; tokens with privileged claims are re-verified on every request | Tokens without privileged claims are cached for up to `AUTH_REVOCATION_CACHE_MS` (default 15 000 ms, maximum 60 000 ms). |
-| E | Non-administrator calls an administrator operation | `requireAdmin` requires `role: "admin"`, `admin: true` and a current `authorizationVersion` in both databases | Operator routes accept administrator authority from `role == "admin"` or `admin == true` without the version check, except the administrator ride stop. |
+| E | Non-administrator calls an administrator operation | `requireAdmin`, and `hasCurrentAdminAuthority` on routes shared with operators and passengers, require `role: "admin"`, `admin: true` and a current `authorizationVersion` in both databases | None identified. |
 | E | Remote boarding of a ride | Boarding requires a passenger profile, a boarding ride, a browser fix with accuracy of 100 m or better, and a distance of at most 150 m to a bus fix no older than 60 s | The browser fix is client-supplied; a spoofed position passes. |
 | T | Malformed or oversized bodies | Strict JSON parsers with size caps; per-route validation; `TRACE` and `CONNECT` return 405 | None identified. |
 | R | Administrator denies a change | Fleet mutations record `adminUid`, method and path in `_fleet_operations`; route geometry previews, fleet reconciliation jobs, operation recovery and privacy recovery record the acting administrator; settings record `updatedBy`, ride interruptions `interruptedBy` and feedback review `reviewedBy` | Device registry changes, route saves and deletions, chat clearing and ride-history deletion store no record of the acting administrator. |
@@ -206,7 +206,7 @@ The backend authenticates every `/api` request except tracker endpoints before a
 | `authorizationVersion` | Random UUID | `publishUserAuthorization` |
 | `driverId`, `assignedBusId` | Driver registry ID and bus ID | `publishUserAuthorization` through fleet routes or `sync-role-claims` |
 
-Administrator authority requires all three of `role: "admin"`, `admin: true` and an `authorizationVersion` equal to the version in `_userAuthorization/{uid}` in both Firestore and RTDB. `requireAdmin`, the Firestore rules and the RTDB fleet-root rule apply the same contract. Every role or assignment change writes a new version and revokes refresh tokens, so a saved token loses privilege as soon as the new version is written, including tokens that Firebase revocation alone would still accept. [Privileged database authorization](PRIVILEGED_DATABASE_AUTHORIZATION.md) describes the records, the publication sequence and recovery.
+Administrator authority requires all three of `role: "admin"`, `admin: true` and an `authorizationVersion` equal to the version in `_userAuthorization/{uid}` in both Firestore and RTDB. `requireAdmin`, `hasCurrentAdminAuthority` (`backend/src/middleware/adminAuthority.ts`, for handlers shared with operators and passengers), the Firestore rules and the RTDB fleet-root rule apply the same contract. Every role or assignment change writes a new version and revokes refresh tokens, so a saved token loses privilege as soon as the new version is written, including tokens that Firebase revocation alone would still accept. [Privileged database authorization](PRIVILEGED_DATABASE_AUTHORIZATION.md) describes the records, the publication sequence and recovery.
 
 ### 4.3 Devices
 
@@ -247,7 +247,7 @@ Firebase App Check is not used. The browser initializes no App Check provider an
 | Authenticated user | `requireAuth` (`backend/src/middleware/requireAuth.ts`) | None |
 | Passenger | Handler checks that `role` is absent or `passenger` | Existing `users/{uid}` profile; manifest membership for ride-scoped actions; proximity for first boarding |
 | Driver | `authorizeOperator` in `backend/src/routes/shifts.ts` (ride start, delay, stop, v2 ride read); token comparison in `backend/src/routes/sessions.ts` (chat, boarding code, legacy ride status) | Shift routes: token `driverId` and `assignedBusId`, `drivers/{driverId}.authUid` equals the UID, the driver's bus matches, the bus lists the route. Session routes: token `driverId` and `assignedBusId` equal the session's driver and bus |
-| Administrator | `requireAdmin` (`backend/src/middleware/requireAdmin.ts`) | Fresh reads of both `_userAuthorization/{uid}` records on every request; unavailable records return 503 |
+| Administrator | `requireAdmin` (`backend/src/middleware/requireAdmin.ts`); `hasCurrentAdminAuthority` (`backend/src/middleware/adminAuthority.ts`) on routes shared with operators and passengers | Fresh reads of both `_userAuthorization/{uid}` records on every request (once per request on shared routes); unavailable records return 503 from `requireAdmin` and the handler's own error status elsewhere |
 
 ### 5.2 Firestore rules
 
@@ -426,7 +426,7 @@ The backend returns a firmware release descriptor only when all six `FIRMWARE_RE
 2. HTTP rate limits are per replica and in memory. A global limit needs the edge WAF listed in the [university deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md), which this repository does not configure.
 3. Boarding proximity relies on the browser's reported position. A signed-in user who spoofs a position near a live bus can join that ride and read its chat.
 4. Any signed-in Google account can read live bus positions, including the driver ID and session ID in the public projection.
-5. Driver authorization on HTTP routes never compares the `authorizationVersion`, and chat, the boarding code and legacy ride status do not read the driver registry. The operator code paths in `backend/src/routes/shifts.ts` and `backend/src/routes/sessions.ts` accept administrator authority from either `role == "admin"` or `admin == true`; only `requireAdmin` and the administrator ride stop compare the version. A token whose claims are no longer current, for example after a publication whose activation failed, keeps that authority on these paths until it expires or is revoked.
+5. Driver authorization on HTTP routes never compares the `authorizationVersion`, and chat, the boarding code and legacy ride status do not read the driver registry. A driver token whose claims are no longer current keeps that authority on chat, the boarding code and legacy ride status until it expires or is revoked.
 6. OTA distribution serves one global release, and the signed image embeds the compiled device secret and Wi-Fi password (Section 11). Configure a release only on a backend that serves a single device, and protect the image URL like the device secret.
 7. Revocation of a token without privileged claims takes effect at the backend after at most `AUTH_REVOCATION_CACHE_MS`.
 8. `style-src 'unsafe-inline'` remains in the CSP.
