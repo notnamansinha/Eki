@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import RoleGuard from "./RoleGuard";
-const state = vi.hoisted(() => ({ user: { uid: "qa-user", role: "passenger" } as { uid: string; role: string } | null, loading: false, roleError: null as string | null, replace: vi.fn(), refreshAccess: vi.fn() }));
+const state = vi.hoisted(() => ({ user: { uid: "qa-user", role: "passenger" } as { uid: string; role: string } | null, loading: false, restoreSlow: false, roleError: null as string | null, replace: vi.fn(), refreshAccess: vi.fn() }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ ...state, logout: vi.fn() }) }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/admin", useRouter: () => ({ replace: state.replace }) }));
-beforeEach(() => { state.user = { uid: "qa-user", role: "passenger" }; state.loading = false; state.roleError = null; state.replace.mockClear(); localStorage.clear(); });
+beforeEach(() => { state.user = { uid: "qa-user", role: "passenger" }; state.loading = false; state.restoreSlow = false; state.roleError = null; state.replace.mockClear(); localStorage.clear(); });
 afterEach(cleanup);
 describe("workspace authorization UI", () => {
   it("shows security recovery even when no verified user was published", () => {
@@ -53,5 +53,51 @@ describe("workspace authorization UI", () => {
       state.user!.role = "admin"; render(<RoleGuard allowedRoles={["admin"]}><button>Protected admin control</button></RoleGuard>);
       expect(screen.getByRole("button", { name: "Protected admin control" })).toBeTruthy();
     } finally { setItem.mockRestore(); }
+  });
+});
+
+describe("slow sign-in restoration", () => {
+  it("tells the user it is still signing in and offers Reload, without mounting protected content", () => {
+    // An allowed user, so only the loading state can keep the children hidden.
+    state.user = { uid: "qa-user", role: "admin" }; state.loading = true; state.restoreSlow = true;
+    render(<RoleGuard allowedRoles={["admin"]}><button>Protected admin control</button></RoleGuard>);
+    expect(screen.getByRole("status").textContent).toContain("Still signing you in");
+    expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
+    expect(screen.queryByText("Protected admin control")).toBeNull();
+    expect(state.replace).not.toHaveBeenCalled();
+  });
+  it("shows the slow notice even where the layout supplies a quiet loading fallback", () => {
+    state.user = null; state.loading = true; state.restoreSlow = true;
+    render(<RoleGuard allowedRoles={["passenger"]} loadingFallback={<p>quiet</p>}><p>Passenger content</p></RoleGuard>);
+    expect(screen.getByText(/Still signing you in/)).toBeTruthy();
+    expect(screen.queryByText("Passenger content")).toBeNull();
+  });
+  it("offers Reload once verification has kept the spinner up for ten seconds", () => {
+    vi.useFakeTimers();
+    try {
+      state.user = { uid: "qa-user", role: "admin" }; state.loading = true;
+      const view = render(<RoleGuard allowedRoles={["admin"]} loadingFallback={<p>quiet</p>}><button>Protected admin control</button></RoleGuard>);
+      act(() => { vi.advanceTimersByTime(9_999); });
+      expect(screen.getByText("quiet")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(screen.getByRole("status").textContent).toContain("Still signing you in");
+      expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
+      expect(screen.queryByText("Protected admin control")).toBeNull();
+      // Verification finishing clears the notice and its timer.
+      state.loading = false;
+      view.rerender(<RoleGuard allowedRoles={["admin"]} loadingFallback={<p>quiet</p>}><button>Protected admin control</button></RoleGuard>);
+      expect(screen.getByRole("button", { name: "Protected admin control" })).toBeTruthy();
+      state.loading = true;
+      view.rerender(<RoleGuard allowedRoles={["admin"]} loadingFallback={<p>quiet</p>}><button>Protected admin control</button></RoleGuard>);
+      expect(screen.getByText("quiet")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("offers Reload on the access error screen", () => {
+    state.user = null; state.roleError = "We could not verify your access.";
+    render(<RoleGuard allowedRoles={["admin"]}><p>x</p></RoleGuard>);
+    expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
   });
 });
