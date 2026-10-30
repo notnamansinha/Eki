@@ -831,6 +831,7 @@ export default function DashboardPanel() {
       <div className="flex-1 relative min-h-[300px] lg:min-h-0">
         <GoogleMap
           mapId={MAPS_MAP_ID}
+          reuseMaps
           defaultCenter={DEFAULT_CENTER}
           defaultZoom={12}
           style={{ width: "100%", height: "100%" }}

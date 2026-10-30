@@ -10,9 +10,10 @@ import { MAPS_API_KEY } from "@/config/maps";
  * (~220KB parsed + evaluated) is excluded from the landing page, feedback
  * page, and any other map-free route. This reduces TTI on those pages.
  *
- * One APIProvider per layout ensures the SDK is still loaded only once
- * per session for map-heavy pages (passenger and admin route-planner share
- * the same SDK instance via the React context tree).
+ * Mounted by the admin layout and by each passenger tracking view. Remounting
+ * it does not reload the SDK (the @vis.gl loader is module-global, so the
+ * script loads once per page). Map loads are governed by `reuseMaps` on each
+ * <GoogleMap>; see config/maps.ts.
  */
 export default function MapProviders({ children }: { children: React.ReactNode }) {
   return (

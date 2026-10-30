@@ -1,6 +1,6 @@
 # Test strategy and failure matrix
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+Last updated: 2026-10-29 13:56 IST (UTC+05:30).
 
 ## Quality gates
 
@@ -110,6 +110,7 @@ they are not a claim that a newer head or production deployment passed.
   [browser recovery bounds](../operations/RTDB_RECONNECT_RECOVERY.md).
 - Polyline distance index and snapping choose the correct segment/direction.
 - Passenger map synthetic counters verify that a tick for one bus skips unchanged peers' marker renders and stop projections; route version, direction, path and stop edits invalidate projections, and route switches/unmount clear local cache state. ETA values are compared with the uncached calculation. See [R18 evidence](PASSENGER_MAP_PER_BUS_WORK.md); moving-device render latency and road confidence require separate live acceptance in #245.
+- Map-load counters run the real @vis.gl APIProvider/Map against a fake Maps SDK (`frontend/src/test-support/fakeGoogleMapsSdk.ts`). They prove passenger context changes, tracking close/reopen, route switches and admin tab/editor switches reattach one cached google.maps.Map per page session, and that every `<GoogleMap>` sets `reuseMaps` with the shared map ID and options. They count constructions, not Google billing (OBS07); billing evidence needs the Cloud Console Dynamic Maps metric.
 - Ride feedback eligibility requires completed session/passenger identity.
 - Ride-history timestamp/status/stop normalization handles legacy forms.
 

@@ -591,8 +591,10 @@ function PassengerMapInner({
 
       </div>
       <div className="absolute inset-0 z-0" style={{ background: "var(--surface-0)" }} onPointerDown={() => setIsCentered(false)} onTouchStart={() => setIsCentered(false)}>
+        {/* reuseMaps: a remount (context key change, leaving/reopening tracking) reattaches the cached google.maps.Map instead of a new billable map load. See config/maps.ts. */}
         <GoogleMap
           mapId={MAPS_MAP_ID}
+          reuseMaps
           defaultCenter={centerTarget}
           defaultZoom={15}
           style={{ width: "100%", height: "100%" }}

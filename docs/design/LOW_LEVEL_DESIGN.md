@@ -1,6 +1,6 @@
 # Low-level design (LLD)
 
-Last updated: 2026-10-27 12:00 IST (UTC+05:30).
+Last updated: 2026-10-29 13:56 IST (UTC+05:30).
 
 This document maps runtime behavior to source modules. Tests beside a module exercise its pure/security-sensitive behavior.
 
@@ -95,7 +95,7 @@ The Next.js App Router produces a static export. `layout.tsx` installs global me
 | `app/manifest.ts`, `robots.ts`, `sitemap.ts` | PWA and public-index metadata |
 | `app/globals.css` | Tokens, responsive layout, focus/motion rules; reduced motion disables decoration |
 | `components/Providers.tsx` | Auth/App Check and top-level client providers |
-| `components/MapProviders.tsx` | Single Maps API provider/load per workspace |
+| `components/MapProviders.tsx` | Maps API provider (admin layout, passenger tracking view); SDK script loads once per page. Every `<GoogleMap>` sets `reuseMaps` with the shared map ID/options, so remounts reattach one cached `google.maps.Map` instead of constructing another (Google bills per construction): one map construction per page load, not per open/route/direction/tab change |
 | `components/ServiceWorkerRegistrar.tsx` | SW registration/update check and controlled one-time reload |
 | `components/maps/DirectionsRoute.tsx` | Draw active direction/version stored geometry; missing legacy geometry requires admin repair, and a repaired road fallback is used only until trusted stored geometry exists |
 | `components/maps/PassengerMap.tsx`, `lib/busEta.ts` | RTDB route filtering, matched/raw marker policy, dynamic route overlay and heuristic ETA; unchanged bus objects and marker props retain identity, while per-map stop projections use bounded route/version/direction keys and verify path and stop coordinates before reuse |
