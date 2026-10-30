@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-REQ-001 | 2.0 | Current | 2026-10-30 |
+| EKI-REQ-001 | 3.0 | Current | 2026-10-30 |
 
 ## 1. Introduction
 
@@ -559,7 +559,7 @@ The [security architecture](../security/SECURITY_ARCHITECTURE.md) describes the 
 | ID | Requirement | Source | Method | Status |
 |---|---|---|---|---|
 | NFR-SEC-001 | Every `/api` request except device ingress shall carry a Firebase ID token verified with revocation checking; cached results shall last at most `AUTH_REVOCATION_CACHE_MS` (default 15 s, maximum 60 s) and never apply to administrator or operator tokens; more than 256 pending verifications shall return 503. | `backend/src/lib/browserAdmission.ts:33`, `backend/src/services/authTokenVerifier.ts:5-9,44-50,90-121` | T | Implemented |
-| NFR-SEC-002 | Endpoints guarded by `requireAdmin` shall require `admin` true, role `admin` and an `authorizationVersion` that matches the current record in both Firestore and RTDB `_userAuthorization/{uid}`; an unreadable record shall return 503. The ride-operation routes in `shifts.ts` and `sessions.ts` do not apply the version check yet (risk SEC-03 in the [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md)). | `backend/src/middleware/requireAdmin.ts:55-80`, `backend/src/services/userAuthorization.ts:22-32` | T | Implemented |
+| NFR-SEC-002 | Endpoints guarded by `requireAdmin` shall require `admin` true, role `admin` and an `authorizationVersion` that matches the current record in both Firestore and RTDB `_userAuthorization/{uid}`; an unreadable record shall return 503. Handlers shared with operators and passengers shall grant administrator authority only under the same policy and shall otherwise treat the caller as an operator or passenger. | `backend/src/middleware/requireAdmin.ts:55-80`, `backend/src/services/userAuthorization.ts:22-32`, `backend/src/middleware/adminAuthority.ts:13-22` | T | Implemented |
 | NFR-SEC-003 | A role change shall block the account, revoke refresh tokens, publish claims with a new version and then activate it. | `backend/src/services/userAuthorization.ts:44-83` | T | Implemented |
 | NFR-SEC-004 | Firestore and RTDB rules shall deny by default, define an administrator by the same claims plus the current authorization record, and give clients no access to devices, recovery, locks, leases, operations or diagnostics. | `firestore.rules:12-34,241-305`, `database.rules.json:3-44` | T | Implemented |
 | NFR-SEC-005 | The backend shall limit each IP to 1,000 requests per minute, each verified user to 200 reads and 30 mutations per minute, route computation to 10, route segments to 30 and place search to 20 per user per minute, each divided by `RATE_LIMIT_SHARD_FACTOR`. | `backend/src/lib/browserAdmission.ts:19-37`, `backend/src/lib/routeComputeLimiter.ts:6-15`, `backend/src/server.ts:148-155`, `backend/src/routes/places.ts:19` | T | Implemented |

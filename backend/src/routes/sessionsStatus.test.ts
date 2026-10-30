@@ -9,7 +9,9 @@ const state = vi.hoisted(() => ({
   error: false,
   reads: 0,
   profileExists: true,
+  current: true,
 }));
+vi.mock("../services/userAuthorization", () => ({ authorizationIsCurrent: async () => state.current }));
 vi.mock("../middleware/requireAuth", () => ({ requireAuth: (req: any, res: any, next: () => void) => {
   if (!state.principal) { res.status(401).json({ error: "Authentication required." }); return; }
   req.user = state.principal; next();
@@ -35,7 +37,7 @@ afterAll(async () => { if (server) await new Promise<void>((resolve, reject) => 
 beforeEach(() => {
   state.principal = { uid: "passenger_1", role: "passenger" };
   state.session = { busId: "bus_1", routeId: "route_1", driverId: "driver_1", status: "completed", boardingCode: "PRIVATE", passengers: { passenger_1: { userId: "passenger_1", userName: "Private passenger", originStopId: "private-stop" } }, internal: "PRIVATE" };
-  state.error = false; state.reads = 0; state.profileExists = true;
+  state.error = false; state.reads = 0; state.profileExists = true; state.current = true;
 });
 const request = () => contractFetch(`${origin}/api/sessions/session_1/status`);
 
@@ -50,7 +52,7 @@ describe("joined ride status authorization and closed HTTP response", () => {
     };
     const response = await request(); expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ sessionId: "session_1", busId: "bus_1", routeId: "route_1", status: "completed", boarding: { boardingStopId: "origin", alightingStopId: "destination" } });
-    state.principal = { uid: "admin", role: "admin", admin: true };
+    state.principal = { uid: "admin", role: "admin", admin: true, authorizationVersion: "v1" };
     expect(await (await request()).json()).not.toHaveProperty("boarding");
     state.principal = { uid: "outsider", role: "passenger" }; expect((await request()).status).toBe(403);
   });
@@ -91,8 +93,7 @@ describe("joined ride status authorization and closed HTTP response", () => {
     expect((await request()).status).toBe(403);
   });
   it.each([
-    { uid: "admin", role: "admin", admin: true },
-    { uid: "admin", role: "passenger", admin: true },
+    { uid: "admin", role: "admin", admin: true, authorizationVersion: "v1" },
     { uid: "driver", role: "driver", driverId: "driver_1", assignedBusId: "bus_1" },
   ])("allows an authorized privileged principal %j", async principal => {
     state.principal = principal; expect((await request()).status).toBe(200);
@@ -104,9 +105,16 @@ describe("joined ride status authorization and closed HTTP response", () => {
     { uid: "passenger_1", role: "device" },
     { uid: "admin", role: "admin" },
     { uid: "admin", role: "admin", admin: false },
+    { uid: "admin", role: "admin", admin: true },
+    { uid: "admin", role: "passenger", admin: true, authorizationVersion: "v1" },
     { uid: "admin", role: "passenger", admin: "true" },
   ])("rejects an unauthorized privileged or device principal %j", async principal => {
     state.principal = principal; expect((await request()).status).toBe(403);
+  });
+  it("denies an administrator whose authority is no longer current", async () => {
+    state.principal = { uid: "admin", role: "admin", admin: true, authorizationVersion: "v1" };
+    state.current = false;
+    expect((await request()).status).toBe(403);
   });
   it.each(["pending", "armed", "active", "completed", "interrupted", "failed"]) ("returns the documented durable status %s", async status => {
     state.session!.status = status; const response = await request(); expect(response.status).toBe(200); expect((await response.json()).status).toBe(status);

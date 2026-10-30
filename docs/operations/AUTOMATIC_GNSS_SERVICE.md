@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-009 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-009 | 1.1 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -97,7 +97,7 @@ The 5-minute browser limit is `NEXT_PUBLIC_BUS_EXPIRY_MS` (default `300000`); th
 1. In Live Ops, open the bus card or its live-details drawer and select `End ride early`. Expected: a confirmation dialog `End ride early?` appears.
 2. Select `End ride`. Expected: the ride appears in History as `Ended early`, the bus leaves the passenger views, and the card shows `Tracking paused`.
 
-A current administrator can end the ride even if the operator was reassigned; otherwise the caller must match the ride's current operator assignment ([SEC-03](ARCHITECTURE_RISK_REGISTER.md#38-sec-03-ride-operations-accept-stale-administrator-claims) covers a weakness in that fallback). It releases only the lock that this session holds, and it pauses automatic starts only if that session still owns the bus, so retrying an old stop cannot pause a newer ride. Further fixes show the device online but do not restart the ended ride.
+A current administrator can end the ride even if the operator was reassigned; otherwise the caller must match the ride's current operator assignment. It releases only the lock that this session holds, and it pauses automatic starts only if that session still owns the bus, so retrying an old stop cannot pause a newer ride. Further fixes show the device online but do not restart the ended ride.
 
 A ride that ends without this action (closed by the abandoned-ride reconciler, or a failed return) does not pause the bus: the next qualified fix starts a new service.
 

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-010 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-010 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -10,14 +10,14 @@ This register lists the material risks that remain in Eki, each with the source 
 
 ### 1.1 Summary
 
-Of the ten risks, one is closed, five are open in the repository or its settings, and four have their code-side mitigation in place but wait on deployment, hardware or institutional evidence (status values are defined in Section 2). Five of the nine remaining risks are rated High.
+Of the ten risks, two are closed, four are open in the repository or its settings, and four have their code-side mitigation in place but wait on deployment, hardware or institutional evidence (status values are defined in Section 2). Five of the eight remaining risks are rated High.
 
 | Area | What is unfinished | Risks |
 |---|---|---|
 | Backend hosting | The backend runs as one process on a workstation behind an ngrok tunnel, with no failover, alerting or tested restore. | OPS-01 (High) |
 | Stop tracking | Stop arrival and route matching are validated on simulated rides only; a moving-bus field ride is still needed. | TRK-01 (High) |
 | Tracker firmware | Outage recovery, Secure Boot and signed updates are built but not proven on hardware, and one shared update image would give every tracker the same credentials. | FW-01, FW-02, FW-03 (High) |
-| Access control | A passenger can board by reporting a false location, and ride operations accept administrator claims without the current version check. | SEC-01, SEC-03 (Medium) |
+| Access control | A passenger can board by reporting a false location. | SEC-01 (Medium) |
 | Delivery process | Scheduled QA campaigns run no suites, and a merge to `main` does not require passing checks. | OPS-02, OPS-03 (Medium) |
 
 ## 2. Status values
@@ -39,7 +39,7 @@ Of the ten risks, one is closed, five are open in the repository or its settings
 | OPS-01 | Runtime availability and perimeter controls are not evidenced | High | External gate | Managed backend, failover, edge limits, alerts, backup and restore drill |
 | OPS-02 | Scheduled QA runs no suites | Medium | Open | Scheduled runs resolve `main` and record a green nightly and weekly run |
 | TRK-01 | Stop progress is validated on simulated tracks only | High | External gate | Instrumented ride on the real route, including the divided-road U-turn |
-| SEC-03 | Ride operations accept stale administrator claims | Medium | Open | Every administrator branch checks the current authorization version, with regression tests |
+| SEC-03 | Ride operations accept stale administrator claims | Medium | Closed | Every administrator branch applies the `requireAdmin` policy; regression tests for revoked, legacy and partial tokens on each route |
 | FW-03 | OTA images carry device secrets but the backend serves one release | High | Open | Per-device releases, or credentials kept out of the update image |
 | OPS-03 | The `main` ruleset requires no status checks | Medium | Open | Production verification and CodeQL jobs required before merge |
 
@@ -87,9 +87,9 @@ Of the ten risks, one is closed, five are open in the repository or its settings
 
 ### 3.8 SEC-03: ride operations accept stale administrator claims
 
-- Evidence: `requireAdmin` (`backend/src/middleware/requireAdmin.ts`) admits a token only with `admin: true`, `role: "admin"` and an `authorizationVersion` that `authorizationIsCurrent` matches against `_userAuthorization/{uid}` in Firestore and RTDB. The ride-operation routes use `requireAuth` and decide administrator authority from the token claims alone (`role === "admin" || admin === true`): `readOperatorAssignment` (`backend/src/routes/shifts.ts:95`) for ride start (`POST /api/shifts/start`, `POST /api/v2/ride-sessions`), delay changes and the operator fallback of `POST /api/shifts/stop`; `readSession` (`shifts.ts:536`); and, in `backend/src/routes/sessions.ts`, the legacy boarding code (`:113`), chat messages (`:377`, `:411`) and session status (`:513`). Only the administrator branch of the stop route (`adminStopTarget`, `shifts.ts:278`) checks the current version.
-- Impact: a token that still carries an administrator claim after the role was withdrawn (within the same second as the revocation, inside the `AUTH_REVOCATION_CACHE_MS` window, or a legacy token without a version) can start, delay, end or read any ride and post administrator chat messages.
-- Open gate: route every administrator branch through the `requireAdmin` policy (claims plus `authorizationIsCurrent`), and add regression tests for a stale and a legacy administrator token on each route.
+- Evidence: `requireAdmin` (`backend/src/middleware/requireAdmin.ts`) admits a token only with `admin: true`, `role: "admin"` and an `authorizationVersion` that `authorizationIsCurrent` matches against `_userAuthorization/{uid}` in Firestore and RTDB. Handlers shared with operators and passengers apply the same policy through `hasCurrentAdminAuthority` (`backend/src/middleware/adminAuthority.ts`): ride start, delay and the operator fallback of End ride early (`readOperatorAssignment` in `backend/src/routes/shifts.ts`), the administrator stop (`adminStopTarget`), the v2 ride read, and, in `backend/src/routes/sessions.ts`, the legacy boarding code, chat messages and ride status. On these paths a revoked, legacy or partial administrator token is treated as an operator or passenger.
+- Impact before closure: a token that still carried an administrator claim after the role was withdrawn, or a legacy token without a version, could start, delay, end or read any ride and post administrator chat messages.
+- Closure evidence: `backend/src/middleware/adminAuthority.test.ts`, and the revoked, legacy and role-only administrator cases in `backend/src/routes/shifts.test.ts`, `sessionsStatus.test.ts`, `sessionsMessages.test.ts` and `rideSessions.test.ts`. The fixed-title cases are mapped to acceptance case AUTH13 in `qa/critical-source-test-map.mjs`.
 
 ### 3.9 FW-03: OTA images carry device secrets but the backend serves one release
 
