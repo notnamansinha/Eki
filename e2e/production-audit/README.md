@@ -1,38 +1,41 @@
-# Production audit validation fixtures
+# Production Audit Browser Fixture
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-PKG-010 | 1.0 | Current | 2026-10-30 |
 
-Run `npx playwright test --config playwright.production-audit.config.ts` from the
-repository root. Port 3123 is reserved for this isolated Vite fixture. Chromium
-runs at 360×800, 390×844 and 1280×800, with screenshots and structured measurements
-in `artifacts/production-audit/`. CI retains that directory for seven days.
+## 1. Purpose
 
-The actual admin dashboard, passenger workspace/map/carousel, route editor and history components
-render against synthetic Auth, collection, RTDB, HTTP and Maps boundaries. No
-Firebase service account, provider key, real route mutation or physical GNSS is
-used. The fixture controls and moving updates exist only in this test entrypoint;
-there is no product geofence or authorization bypass.
+This fixture keeps regression tests for defects confirmed in the [production audit claim validation](../../docs/testing/PRODUCTION_AUDIT_VALIDATION_2026_10_20.md) and for hostile browser conditions. It renders the real admin dashboard, passenger workspace, map, carousel, route editor and history components against synthetic Auth, collection, RTDB, HTTP and Maps boundaries. It uses no Firebase service account, provider key, real route change or GNSS hardware. The fixture controls exist only in this test entry point; the product has no geofence or authorization bypass.
 
-Checks cover full long-label rendering and route selection, the waiting-data
-header, blank stop renames with Enter/blur and a valid retry, existing interruption
-reasons and historical fallbacks, the actual empty-search notice backdrop and map
-inspection during updates under four-times Chromium CPU throttling. The map check
-measures DOM accessibility serialization and screenshots; it does not establish
-real Google Maps performance, device battery use or physical display latency.
+## 2. Run
 
-Contrast is derived from the rendered foreground and composed ancestor
-backgrounds, with browser color conversion. It is scoped to this dark fixture,
-not a universal assessment of every provider surface or theme.
+From the repository root:
 
-Additional checks use the production-default 300-second expiry, inject 90.001-,
-120- and 200-second-old telemetry, and verify matching delayed warnings plus fresh
-recovery without reload. A denied passenger detail subscription shows a distinct
-live-data error and clears after a new authoritative delivery.
+```powershell
+npx playwright test --config playwright.production-audit.config.ts
+```
 
-`resilience.spec.ts` (13 cases per viewport) intercepts place search and route
-save/delete HTTP: 4xx/5xx, HTML gateway and malformed bodies, a stale slow
-response, offline search, rate limiting, hostile place names, a dropped save that
-reconciles with the same `saveId`, a double-activated Update that sends one PUT,
-and a failed deletion whose reason is dismissable. Passenger cases cover offline
-toggles, 320–1024 px resizes, two tabs, reload and back/forward. These synthetic
-callbacks do not certify real Firebase reconnects, permissions or GNSS quality.
+The configuration starts the Vite fixture on `http://127.0.0.1:3123` and runs `e2e/production-audit/audit.spec.ts` and `resilience.spec.ts` in three projects: narrow (360 x 800), mobile (390 x 844) and desktop (1280 x 800), with one worker. Screenshots, measurements and `results.json` go to `artifacts/production-audit/`, which CI keeps for seven days.
+
+## 3. Checks
+
+`audit.spec.ts`:
+
+- Telemetry 90 to 200 s old, well past the 30 s threshold in `frontend/src/lib/liveBusFreshness.ts`, shows **Live location updates delayed** to the admin and **Live tracking lost** to the passenger; a fresh delivery clears both without reload.
+- A denied passenger detail subscription shows a live-data error distinct from a telemetry delay, and clears after a new delivery.
+- Long route and endpoint labels render in full and stay selectable; the tracking header keeps the full route name while waiting for data.
+- History shows recorded interruption reasons and labelled fallbacks for legacy records.
+- The empty-search notice contrast is measured from the rendered foreground and the composed ancestor backgrounds. The result applies to this dark fixture only.
+- Map movement stays inspectable under four-times Chromium CPU throttling. This measures accessibility-tree serialisation and screenshot time, not Google Maps performance, battery use or display latency.
+
+`resilience.spec.ts` intercepts place search and route save and delete requests:
+
+- Place search: a 500 response, a non-JSON gateway error, a malformed success body, a stale slow response, offline search, rate limiting and hostile place names rendered as text.
+- Route save: a 500 response with a successful retry, a dropped save reconciled with the same `saveId`, and a double-activated Update that sends one request.
+- Route delete: a failed deletion reports its reason and leaves the route listed.
+- Passenger: offline toggles and window resizes, two tabs, reload, and browser back and forward.
+
+## 4. Limits
+
+Intercepted responses do not certify real Firebase reconnects, permissions, provider behaviour or GNSS quality.

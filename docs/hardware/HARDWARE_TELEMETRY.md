@@ -1,207 +1,346 @@
-# Hardware telemetry, latency and failure design
+# Hardware Telemetry Contract
 
-Last updated: 2026-10-27 12:00 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-HW-001 | 1.0 | Current | 2026-10-30 |
 
-Setup boundary: use [the hardware setup guide](README.md) before reading this
-design. It is the source for required `backend/.env`, frontend environment
-templates, `hardware/include/secrets.h`, signing-key custody, provisioning
-order, route-specific changes, wiring, build selection, and post-flash checks.
-This document is the source for runtime telemetry behavior, timing, failure
-handling, latency and physical acceptance.
+## 1. Introduction
 
-## Electrical and physical setup
+### 1.1 Purpose
 
-| ESP32 | NEO-M8N | Purpose |
+This document is the authoritative device-side contract for tracker telemetry. It states what the firmware captures, what it sends and when, how it authenticates, and how it reacts to each failure. The backend's acceptance rules for the same requests are in the [backend API reference](../../backend/API.md). Hardware, wiring, build environments and flashing are in the [hardware guide](../../hardware/README.md).
+
+### 1.2 Scope
+
+The contract covers the telemetry sample, the GNSS-loss packet and remote diagnostics. The device-side firmware update policy is in the [hardware guide](../../hardware/README.md#9-firmware-updates). The flash checkpoint used after complete power loss is in [cold power recovery](COLD_POWER_RECOVERY.md).
+
+### 1.3 Source files
+
+| Topic | Source |
+|---|---|
+| Tasks, payloads, requests and response handling | [`hardware/src/main.cpp`](../../hardware/src/main.cpp) |
+| Fix quality, motion, capture, retry and status policies | [`hardware/include/telemetry_policy.h`](../../hardware/include/telemetry_policy.h) |
+| Queue ordering, acknowledgement and expiry | [`hardware/include/telemetry_queue.h`](../../hardware/include/telemetry_queue.h) |
+| UTC conversion and clock discipline | [`hardware/include/clock_policy.h`](../../hardware/include/clock_policy.h) |
+| Wi-Fi retry and LED patterns | [`hardware/include/connectivity_policy.h`](../../hardware/include/connectivity_policy.h) |
+| TLS cipher suites and prepared keys | [`hardware/src/tls_profile.cpp`](../../hardware/src/tls_profile.cpp) |
+
+## 2. Conventions
+
+### 2.1 Transport and authentication
+
+The firmware builds each endpoint from `BACKEND_URL` (trailing `/` removed) and `DEVICE_ID`:
+
+| Request | Method and path |
+|---|---|
+| Telemetry sample | `POST /api/devices/<DEVICE_ID>/telemetry` |
+| Remote diagnostics | `POST /api/devices/<DEVICE_ID>/diagnostics` |
+| Firmware release check (fleet builds) | `GET /api/devices/<DEVICE_ID>/firmware?sequence=<n>` |
+| Firmware installation reservation (fleet builds) | `POST /api/devices/<DEVICE_ID>/firmware/installation` |
+
+Every request to the backend carries `Authorization: Device <DEVICE_SECRET>`, and every POST carries `Content-Type: application/json`. Telemetry, diagnostics and the release check also send `Cache-Control: no-store`. The download of a firmware image from the artifact host carries no credential.
+
+Messages are not signed. The firmware adds no per-message signature or MAC. Authenticity rests on two mechanisms:
+
+1. TLS server authentication. The firmware validates the certificate chain against `BACKEND_ROOT_CA` and the hostname from `BACKEND_URL`, and does not follow redirects on telemetry requests.
+2. The shared device secret. The backend compares it with a salted scrypt verifier in the device registry and takes the bus and route from the registry, never from the request body.
+
+The TLS profile in `tls_profile.cpp` offers only `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256` and `TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384` with curve P-256, for every TLS client in the firmware. The backend and the firmware artifact host must therefore present an RSA certificate that chains to `BACKEND_ROOT_CA`. Telemetry and diagnostics prepare a fresh, single-use P-256 key after DNS resolution and before they connect. The TLS handshake timeout is 10 s.
+
+Development builds also accept an `http://` backend. The device secret then crosses the network unencrypted, so use `http://` only on a trusted bench network. Fleet builds reject `http://` at compile time and at boot.
+
+### 2.2 Time and units
+
+| Quantity | Unit |
+|---|---|
+| `timestamp`, `deviceSentAt`, diagnostics `timestamp` | Milliseconds since the Unix epoch, UTC, from the disciplined device clock (Section 4.5) |
+| Coordinates | Decimal degrees, as reported by the receiver |
+| Speed | km/h |
+| Heading | Degrees, course over ground |
+| HDOP | Dimensionless |
+| Durations in diagnostics | Milliseconds |
+
+### 2.3 Schema versions
+
+The firmware sends the nine-field schema in Section 3.1. For staged rollouts the backend also accepts an eight-field schema without `gpsHdop` and a six-field legacy schema without `gpsHdop`, `seq` and `deviceSentAt`. Deploy a backend that accepts the nine-field schema before you flash this firmware.
+
+### 2.4 Response handling
+
+The firmware classifies each telemetry response as follows. A delay is the minimum wait before the next telemetry attempt.
+
+| Response | Action on the sample | Delay before the next attempt |
 |---|---|---|
-| `5V/VIN` | `VCC` | Regulated 5 V supply (confirm module voltage) |
-| `GND` | `GND` | Common reference |
-| `GPIO16 / RX2` | `TX` | NMEA into ESP32 |
-| `GPIO17 / TX2` | `RX` | Optional configuration channel |
+| `200` or `202` | Accept: remove the sample and every older queued sample; reset the retry count; confirm a pending OTA image | None |
+| Transport error (negative HTTPClient code), or `408` | Retry | First failure: 250 to 750 ms. Later failures: 1 to 2 s. |
+| `404` with `Ngrok-Error-Code: ERR_NGROK_3200`, or `502` with `ERR_NGROK_8012` | Treated as `408` (offline tunnel) | As for `408` |
+| `425` or `5xx` | Retry | 1 s doubled per consecutive failure, plus 0 to 1 s jitter, capped at 30 s |
+| `429` | Retry | The `Retry-After` value in seconds (at most 300 s), or 60 s without the header |
+| `403` | Retry; Wi-Fi stays on | 60 s |
+| `401` | Latch a credential fault: stop publishing, disconnect, switch the Wi-Fi radio off, show three LED pulses. The sample stays queued. | No further attempts until the board restarts |
+| `404` | Drop | 60 s |
+| Any other status, for example `400`, `413` or `422` | Drop | 30 s |
+| The firmware cannot serialize a complete payload | Drop | 30 s |
 
-Use a fused automotive-rated 12 V-to-5 V buck converter, strain relief, protected enclosure, stable ground and clear-sky active antenna placement. Do not power an uncertain-voltage GNSS board from 5 V without checking its specification. A separate operator—not the driver—must observe the system while moving.
+A retried sample stays queued only if it will still be fresh after the delay (Section 4.4); otherwise the firmware drops it and the next attempt sends the newest fresh sample. Each attempt always sends the newest fresh sample in the queue, which may be a capture made during the delay. The consecutive-failure count is capped at 6.
 
-## Firmware build contract
+## 3. Operations
 
-- Development: `esp32dev`, Arduino, `partitions_development.csv`; OTA compiled disabled.
-- Fleet: `esp32dev-secure`, Arduino as an ESP-IDF component, Secure Boot V2, release-mode flash encryption, ROM-download lockdown, RAM-only Wi-Fi state, and a bootloader-safe custom partition table.
-- Pinned platform/libraries: Espressif32 7.0.1, TinyGPSPlus 1.1.0, ArduinoJson 7.4.3.
-- Runtime configuration: Wi-Fi, device ID/base64url secret, backend origin, and issuing root CA are compiled from the ignored `hardware/include/secrets.h` and validated before networking starts.
-- There is no local configuration portal or persistent Eki credential store. Configuration replacement requires a new firmware image and physical reflash.
-- Fleet runtime refuses to start networking unless flash encryption and Secure Boot both report active; fleet builds also reject non-HTTPS backend origins.
+### 3.1 Telemetry sample
 
-## Runtime tasks
+`POST <BACKEND_URL>/api/devices/<DEVICE_ID>/telemetry` with a closed JSON object of nine fields. The firmware refuses to send an object that is incomplete or that does not fit its 512-byte buffer; the backend limit is also 512 bytes.
+
+| Field | Type | Unit | Values sent by the firmware | Meaning |
+|---|---|---|---|---|
+| `lat` | number | degrees | -90 to 90 | Latitude |
+| `lng` | number | degrees | -180 to 180 | Longitude |
+| `speed` | number | km/h | 0 to 200; 0 in the GNSS-loss packet | Speed over ground |
+| `heading` | number | degrees | 0 or more, below 360; 0 when the receiver reports no course | Course over ground |
+| `gpsHdop` | number | none | 0 to 4; 99 when the receiver omits HDOP and in the GNSS-loss packet | Horizontal dilution of precision |
+| `motionState` | string | none | `moving`, `stopped` or `uncertain` | Confirmed motion state (Section 4.3) or GNSS loss |
+| `seq` | integer | none | 1 to 4,294,967,295 | Queue sequence number, assigned at capture |
+| `timestamp` | integer | ms | Epoch time | Capture time: the evaluation that accepted the fix |
+| `deviceSentAt` | integer | ms | Epoch time, not earlier than `timestamp` | Device time read just before the request is serialized |
+
+Example with synthetic values:
+
+```json
+{"deviceSentAt":1793333400850,"lat":12.345678,"lng":76.543210,"speed":18.4,"heading":92.5,"gpsHdop":0.9,"motionState":"moving","seq":4182,"timestamp":1793333400610}
+```
+
+`seq` increases by one per capture. It survives warm resets with the RTC queue, is restored from the flash checkpoint after complete power loss, and restarts at 1 when neither survives. The backend orders samples by capture time and uses `seq` to break ties and to reject a late-delivered older sample. The backend accepts `timestamp` from 60 s before to 10 s after its own clock, and `deviceSentAt` up to 10 s after its clock.
+
+A successful response carries `X-Eki-Server-Received-At` and `X-Eki-Server-Responded-At` (epoch milliseconds). Development builds print them in the `device_http` trace for clock-offset estimates (Section 7.1).
+
+### 3.2 GNSS-loss packet
+
+When the evaluated fix becomes invalid (Section 4.2), the firmware queues one GNSS-loss packet if both conditions hold:
+
+- at least one fix was captured since boot, and
+- the clock is trusted (Section 4.5).
+
+| Field | Value |
+|---|---|
+| `lat`, `lng` | Last captured position |
+| `speed` | 0 |
+| `heading` | Last captured heading |
+| `gpsHdop` | 99 |
+| `motionState` | `uncertain` |
+| `timestamp` | Time of the evaluation that found the fix invalid |
+
+The firmware sends one packet per loss episode and then no telemetry until a valid fix returns; the next loss starts a new episode. The packet follows the normal queue and expiry rules, so after 55 s without delivery it is discarded. The firmware never estimates or extrapolates a position.
+
+The backend stores the packet with `signalState` `gnss_lost` so that clients can show the loss, and does not use it as the plausibility anchor for later fixes. Because a stopped bus also stops sending heartbeats during a loss, any backend operation that needs a stopped fix less than 60 s old waits until the fix returns.
+
+### 3.3 Remote diagnostics
+
+`POST <BACKEND_URL>/api/devices/<DEVICE_ID>/diagnostics` with a closed JSON object of 21 fields that fits the firmware's 1,024-byte buffer. The first report is due 30 s after boot and later reports every 5 min. The publisher sends a report only when Wi-Fi is up, the clock is trusted, no credential fault is latched, no earlier report is in flight and no fresh telemetry sample is waiting. A separate `diagnostic-http` task opens a new TLS connection for each report and closes it afterwards, so a diagnostics failure never delays or removes a telemetry sample.
+
+| Field | Meaning |
+|---|---|
+| `firmwareVersion` | `development`, or the signed version (`PROJECT_VER`, for example `s1-gnss-v1`) in fleet builds |
+| `uptimeMs` | Milliseconds since boot |
+| `freeHeapBytes` | Free heap |
+| `rssiDbm` | Wi-Fi signal strength |
+| `queueDepth`, `queueHighWater` | Current and maximum queue occupancy |
+| `queueOverflowDrops`, `queueStaleDrops` | Samples overwritten when the queue was full, and samples discarded as older than 55 s |
+| `acceptedFixes`, `rejectedFixes` | Telemetry samples accepted, and samples dropped or refused, since boot |
+| `nmeaChecksumFailures` | NMEA sentences with a bad checksum since boot |
+| `uartBufferOverflows`, `uartFifoOverflows` | UART receive overflows since boot |
+| `resetTotal` | Resets recorded in RTC memory since the last power loss or configuration change |
+| `fault` | `none` or `credential-rejected` |
+| `flashEncryption`, `secureBoot` | Whether each hardware protection is active |
+| `timestamp` | Device time of the report |
+| `gnssFixAvailable` | Whether the latest evaluated fix is valid |
+| `gnssNoFixMs` | Milliseconds without a valid fix (since boot if no fix yet); 0 while a fix is available |
+| `lastTelemetryResponseCode` | Status of the last telemetry attempt, a negative transport code, or 0 before the first attempt |
+
+Connect and read timeouts are 1.5 s each. A `2xx` response counts as success and confirms a pending OTA image. `401` latches the credential fault. `403` schedules the next report in 60 s. Any other result retries after 5 s, doubled per consecutive failure, plus 0 to 5 s jitter, capped at 60 s. The backend keeps only the latest report; an administrator reads it with `GET /api/devices/<DEVICE_ID>/diagnostics`.
+
+## 4. Capture and delivery
+
+### 4.1 Runtime tasks
+
+| Task | Core | Stack | Watchdog | Owns |
+|---|---|---|---|---|
+| Arduino loop task | 1 (Arduino default) | Arduino default | Yes | UART, NMEA parser, fix evaluation, capture, flash checkpoint writes, status LED |
+| `telemetry-publisher` | 0 | 20,480 bytes | Yes | Wi-Fi, NTP, telemetry HTTPS, diagnostics scheduling, OTA validation deadline |
+| `diagnostic-http` | 0 | 12,288 bytes | No | Diagnostics HTTPS |
+| `firmware-maintenance` (fleet builds only) | 0 | 12,288 bytes | Yes | Release checks, installation reservation, image download |
+
+All four tasks run at priority 1. The loop task and the publisher share only short critical sections around the queue and the health counters. A blocked TLS connection therefore never delays NMEA parsing, and the 8,192-byte UART buffer absorbs scheduling jitter.
 
 ```mermaid
 flowchart LR
-  subgraph CAPTURE["Arduino loop task / core 1"]
-    LOOP["Feed watchdog"] --> UART["Drain all UART bytes"]
-    UART --> UTC{"Fresh, calendar-valid GNSS UTC?"}
-    UTC -->|yes| CLOCK["Discipline system clock with settimeofday"]
+  subgraph CAPTURE["Arduino loop task, core 1"]
+    UART["Drain UART, parse NMEA"] --> UTC{"Fresh valid RMC UTC?"}
+    UTC -->|yes| CLOCK["Discipline clock"]
     UTC -->|no| EVAL{"1 s evaluation due?"}
     CLOCK --> EVAL
-    EVAL --> QUALITY{"Fresh in-range location + HDOP 0..4?"}
-    QUALITY -->|no| LOST["Queue one uncertain sample"]
-    QUALITY -->|yes| TIME{"Trusted GNSS/NTP clock?"}
-    TIME -->|no| LOOP
-    TIME -->|yes| GATE{"Change threshold or heartbeat?"}
-    GATE -->|yes| QUEUE["Push RTC ring; evict oldest if full"]
-    GATE -->|no| LOOP
-    LOST --> QUEUE
-    QUEUE --> LOOP
+    EVAL -->|yes| VALID{"Fix valid?"}
+    VALID -->|no| LOSS["Queue one GNSS-loss packet per episode"]
+    VALID -->|yes| TRUST{"Clock trusted?"}
+    TRUST -->|yes| PLAUS{"Plausible or re-anchored?"}
+    PLAUS -->|yes| PUSH["Push to RTC queue; notify publisher"]
   end
-
-  subgraph DELIVERY["FreeRTOS publisher task / core 0"]
-    WIFI["Bounded Wi-Fi retry + NTP cross-check"] --> FRESH["Drop and count samples older than 55 s"]
-    FRESH --> NEWEST["Peek newest eligible sample"]
-    NEWEST --> SENDTIME{"Sample fresh at exact send clock?"}
-    SENDTIME -->|yes| POST["Certificate-verified HTTPS POST"]
-    SENDTIME -->|no| DROPLOCAL["Drop original sample; no HTTP rejection backoff"]
-    DROPLOCAL --> WIFI
-    POST -->|200/202| ACK["Remove acknowledged sequence"]
-    POST -->|"transport, 408/425/429, 5xx"| RETRY["Keep queued; bounded backoff"]
-    POST -->|"401"| AUTH["Retain sample; latch credential fault"]
-    POST -->|"403 after 60 s"| RETRY
-    POST -->|"other HTTP rejection"| REJECT["Remove rejected sequence"]
-    ACK --> NEWEST
-    RETRY --> WIFI
-    REJECT --> WIFI
-    AUTH --> REFLASH["Wait for corrected credentials and restart"]
+  subgraph DELIVERY["telemetry-publisher task, core 0"]
+    WIFI["Supervise Wi-Fi; schedule NTP"] --> STALE["Drop samples older than 55 s"]
+    STALE --> NEWEST["Take newest sample"]
+    NEWEST --> SEND{"Fresh at send time?"}
+    SEND -->|no| DROP["Drop without HTTP"]
+    SEND -->|yes| POST["HTTPS POST"]
+    POST --> OUTCOME["Accept, retry, drop or latch (Section 2.4)"]
   end
-
-  QUEUE -. "task notification" .-> NEWEST
+  PUSH -. "task notification" .-> NEWEST
 ```
 
-The two tasks share only short critical sections around the fixed-capacity ring and fault counters. TLS can consume its full connect/request timeout without delaying NMEA parsing. The 8,192-byte UART buffer remains as protection against scheduler and diagnostic jitter, while HardwareSerial buffer/FIFO overflow callbacks and TinyGPSPlus checksum failures make any loss observable.
+Figure 1. Capture on the loop task and delivery on the publisher task.
 
-Immediately before preparing each request, the publisher rechecks the original
-sample against the exact `deviceSentAt` value that will enter the payload. The
-existing 55-second freshness policy rejects future or expired samples if clock
-discipline changed after dequeue. Such a sample is removed without sending HTTP
-or scheduling the 30-second invalid-payload rejection delay; the next fresh sample
-uses the normal cadence. Sample/send timestamps are never rewritten to fabricate
-ordering, and backend timestamp validation remains strict. The 20 October capture
-contained one payload whose declared send time preceded its sample by 30 ms;
-replaying it produces `invalid_device_sent_at`. This establishes the invalid
-ordering, not the exact physical cause of the clock adjustment. Native policy
-tests and builds do not establish that new firmware was flashed or field-tested.
+### 4.2 Fix acceptance
 
-Fresh TinyGPSPlus date/time (maximum two-second age, strict calendar/range validation) is converted without timezone-sensitive `mktime` and applied using `settimeofday`. This establishes TLS-valid time before Wi-Fi/NTP is available and corrects drift of at least 1.5 seconds no more than once per minute. Once Wi-Fi connects, SNTP is scheduled as a six-hour cross-check/fallback. GNSS remains the primary discipline source; invalid/stale GNSS time is never applied.
+Each RMC sentence with a valid checksum and status `A` produces a candidate fix. The candidate is valid only if all of these hold at evaluation:
 
-The 100-sample queue occupies 5,648 bytes of RTC no-init memory. At the maximum one capture per second it can hold approximately 100 seconds of captures at the current moving/stopped cadence; only the fresh subset can be replayed. It survives software/watchdog resets, rejects recovery when the device/backend identity or queue layout changes, and drops the oldest entry on overflow. The backend accepts timestamps only within 60 seconds, so recovery sends newest-first and purges entries outside a 55-second safety margin rather than replaying invalid data. A successful newest-fix acknowledgement also compacts every older superseded sample, preventing stale duplicate traffic from consuming the one-second delivery budget.
+| Check | Rule |
+|---|---|
+| Receiver silence | The latest RMC sentence is at most 2 s old. A stale fix stays invalid even after a `millis()` rollover. |
+| Field age | Location at most 5 s old; HDOP, speed and course, when present, at most 5 s old |
+| HDOP | When present, finite and from 0 to 4 |
+| Coordinates | Latitude -90 to 90, longitude -180 to 180 |
+| Speed | Finite and from 0 to 200 km/h |
 
-Full power loss can restore one compatible AES-GCM flash checkpoint with its
-original sequence; warm RTC recovery takes precedence. Checkpoints are scheduled
-on the first captured fix and every ten seconds, so this is bounded recovery
-rather than a full persistent telemetry backlog. Storage collisions fail closed.
-Follow [cold-power recovery](COLD_POWER_RECOVERY.md), including the legacy-board
-`esp32dev-journal` profile when required.
+A valid fix is captured only if it is plausible against the last captured fix. The firmware mirrors the backend rule in `backend/src/lib/telemetryMotion.ts`:
 
-## Fix quality and transmission parameters
+- Travel envelope: the distance must not exceed an error budget plus travel at the faster of the two reported speeds (capped at 200 km/h) over the whole gap. The error budget is 15 m plus 7 m per HDOP unit (50 m when HDOP is unknown), plus 10 m when both speeds are at most 2.5 km/h, plus 1 m per 2 s of gap beyond 10 s (at most 10 m), bounded to 15 to 50 m.
+- Reacquisition: after 5 min without a capture, any valid fix is accepted.
+- Re-anchoring: three consecutive rejected fixes re-anchor the reference (about 3 s). Each must have HDOP from 0 to 4, follow the previous one by 0.5 to 5 s, be plausible against it, and be reachable from the old reference at 200 km/h. A single outlier, or one sentence evaluated twice, never re-anchors.
 
-| Parameter | Value | Purpose |
-|---|---:|---|
-| Evaluation period | 1 s | Consume current GNSS state |
-| GNSS age maximum | 5 s | Reject stale parser fixes |
-| Jump margin | Adaptive 15–50 m receiver error plus reach at the faster reported speed over the whole gap (up to 5 min) | Reject fragmented/cached fixes after brief signal loss without discarding a bus that kept moving through a 1–5 min outage; mirrors the backend travel envelope in `telemetryMotion.ts` |
-| Position reacquisition | after 5 min without an accepted anchor | Permit legitimate relocation after a prolonged outage |
-| Re-anchor on coherent rejected fixes | `GNSS_REANCHOR_FIXES` = 3 consecutive rejected fixes with HDOP 0..4, each 0.5–5 s apart and plausible against the previous one | An outlier reference (for example the unchecked first fix after boot) or an outage the bus outran clears in about 3 s instead of 5 min; a single outlier never re-anchors, matching the backend three-coherent-fix rule |
-| HDOP maximum | 4.0 | Reject poor horizontal geometry |
-| Fix field envelope | lat -90..90, lng -180..180, finite HDOP 0..4 | TinyGPS++ commits checksummed but out-of-range digits; such a sample is no fix instead of a backend 400 that pauses delivery for 30 s |
-| Receiver silence | last RMC fix latched invalid after 2 s | A silent receiver cannot replay its last fix after a 32-bit `millis()` rollover |
-| Moving enter / stopped enter | 2.5 / 1.5 km/h | Hysteresis against jitter |
-| Confirmation readings | 3 consecutive qualifying 1 s evaluations | Stable motion classification; neutral-band noise cannot complete a pending transition |
-| Minimum changed capture | 1 s | Low-latency upper bound on queue/write frequency |
-| Distance change | 5 m | Position materiality |
-| Heading change | 15° | Direction materiality |
-| Speed change | 5 km/h | Velocity materiality |
-| Moving/stopped heartbeat | 1 / 1 s | Live movement plus fresh stopped endpoint state |
-| HTTP connect/request timeout | 1 / 1.5 s | Separate TCP/request bounds; not an end-to-end SLA |
-| HTTPS publisher/diagnostic DNS wait | 1 s | One retained lwIP owner slot; late completion cannot extend caller wait |
-| TLS handshake timeout | 10 s | Independent secure-client safety budget |
-| GNSS UTC maximum age | 2 s | Reject stale date/time sentences |
-| GNSS correction | >=1.5 s, at most once/minute | Primary clock discipline without rapid jumps |
-| NTP cross-check | startup after Wi-Fi, then six-hour schedule | Independent fallback/check; not a publish dependency |
-| Wi-Fi retry | 5-60 s exponential | Bound radio churn while retrying indefinitely |
-| HTTPS retry | 1–30 s + up to 1 s jitter | Recovery without fleet retry storm |
-| RTC queue | 100 samples / 5,648 bytes | Bounded store-and-forward with oldest-drop overflow |
-| Queued-fix discard | >55 s | Stay within backend freshness window |
-| Task watchdog | 25 s, panic/restart | Cover both tasks and bounded connect-plus-request latency |
-| Remote diagnostics | first at 30 s, then every 5 min while no fresh telemetry is queued | Authenticated bounded health without delaying a queued fix or retry recovery |
-| NMEA no-data warning | after 5 s, every 5 s | Wiring/baud diagnosis |
+A rejected fix produces no sample and the serial line `[GNSS] Ignoring implausible position jump (<distance>m from last fix).`
 
-Wi-Fi persistence is disabled before the driver starts, auto-reconnect is enabled, the strongest known AP is selected with fast scan, and modem sleep is disabled because the tracker is vehicle-powered and latency is preferred over battery life. Outages retry indefinitely with bounded exponential delay. Association is checked against the ESP32 driver as well as Arduino's connection status, because a lost hotspot can leave the latter stale; retries issue a fresh connect even when the preliminary disconnect reports an error. The firmware never starts a soft AP or HTTP server. A credential fault disables the station radio and GPIO2 emits three short pulses every two seconds until corrected firmware is flashed. Fleet builds require release-mode flash encryption and Secure Boot, and explicitly disable ESP32 Wi-Fi key-value persistence.
+### 4.3 Capture cadence and motion state
 
-Deterministic UTC conversion/discipline lives in `hardware/include/clock_policy.h`; Wi-Fi retry and LED behavior in `hardware/include/connectivity_policy.h`; compile-time secret validation in `hardware/include/firmware_config.h`; distance, heading, motion hysteresis, HTTP outcomes and capture decisions in `hardware/include/telemetry_policy.h`; and queue ordering/recovery in `hardware/include/telemetry_queue.h`. Pure policies are executed on the host by `platformio test -d hardware -e native`. Radio, UART, antenna, TLS, watchdog and power behavior remain physical acceptance concerns.
+The loop task evaluates the latest fix every 1 s. It captures the fix when the fix is valid, the clock is trusted, the fix is plausible, and at least 1 s has passed since the last capture. A change of at least 5 m, 15° or 5 km/h, or of motion state, also triggers a capture. The heartbeat is 1 s in both motion states, so in practice every evaluation with a valid fix produces a sample. The 1 s stopped heartbeat keeps a parked bus inside the backend's 60 s freshness requirement for endpoint arrival and automatic turnaround.
 
-## Payload and HTTP outcomes
+The motion state changes to `moving` after three consecutive evaluations at 2.5 km/h or more, and to `stopped` after three consecutive evaluations at 1.5 km/h or less. A reading between the two thresholds resets a pending change, so isolated noisy readings cannot complete one.
 
-The body fields and limits are defined in [Firebase data model](../data/FIREBASE_DATA_MODEL.md#activebusesbusid_routeid) and [Backend API](../backend/API.md). Each captured fix includes receiver HDOP so off-route confirmation can reject poor-quality evidence; GNSS fixes above HDOP 4 are already rejected on-device. The device treats only 200/202 as telemetry success. A success removes the acknowledged fix plus older superseded fixes, while preserving any newer fix captured during the request. Transport errors, 408/425/429 and 5xx retain the attempted sample for retry; other permanent HTTP statuses remove only that sample. HTTP 401 retains the rejected sample, latches a credential fault and disables the station radio. HTTP 403 means the authenticated device lacks a usable assignment; it keeps Wi-Fi on and retries after 60 seconds. Normal freshness eviction prevents an old retained sample from violating the backend's timestamp contract. HTTP 429 honors the bounded delta-seconds `Retry-After` value. If a newer fix arrives during a retryable request, it becomes the next recovery candidate. Remote diagnostics is a separate best-effort 1 KiB POST containing only bounded counters/state; its failure never evicts or delays a queued fix.
+### 4.4 Queue, ordering and expiry
 
-## Trace evidence and gap classification
+| Property | Value |
+|---|---|
+| Capacity | 100 samples, about 5.5 KiB. `main.cpp` asserts that the queue and the reset statistics fit in 6 KiB of the 8 KiB RTC slow memory. |
+| Storage | RTC no-init memory. It survives software, panic, watchdog and brownout resets, and is lost on power loss. |
+| Recovery check | Layout identifier, a configuration tag derived from `DEVICE_ID` and `BACKEND_URL`, and a checksum. Any mismatch resets the queue. |
+| Overflow | The oldest sample is overwritten and counted in `queueOverflowDrops`. |
+| Expiry | Before each send the publisher discards samples older than 55 s (`queueStaleDrops`). It also drops a sample whose age at the exact send time is negative or 55 s or more, without sending HTTP. |
+| Order | The publisher always sends the newest sample, so live state recovers first after an outage. |
+| Acknowledgement | `200` or `202` removes the sample and every older sample, and keeps samples captured during the request. |
 
-The configured baseline is a one-second evaluation and moving/stopped heartbeat,
-three consecutive qualifying motion readings, a one-second HTTP connect limit,
-a one-second bounded DNS wait, a 1.5-second HTTP request/read limit and a separate ten-second TLS handshake
-limit. See [DNS ownership and cold-connect limits](DNS_COLD_CONNECT.md), including
-which worker transports it covers. These are separate phase limits, not a total request deadline. Validate
-the budgets with route traces and staging latency measurements. The serial log
-records each accepted request duration, retry number/delay, stale-queue eviction,
-and a periodic `Telemetry Evidence` line containing capture, attempt and retry
-totals, capture/accept ages, queue depth, and remaining retry delay.
+The 55 s margin keeps every delivered sample inside the backend's 60 s acceptance window. At one capture per second the queue holds about 100 s of samples, of which only the newest 55 s are deliverable. After complete power loss the firmware can restore one sample from the flash checkpoint ([cold power recovery](COLD_POWER_RECOVERY.md)).
 
-Treat a gap as intentional only when `captureSeen=1`, `captureAgeMs` is within the selected heartbeat for the confirmed motion state, and the queue/retry indicators are clear. If `captureAgeMs` exceeds that heartbeat, investigate GNSS capture or fix quality first. If capture remains current, a growing `acceptedAgeMs`, non-zero queue, retry delay, stale drop, transport error, or rejected count is a delivery problem. The extra evidence remains serial-only while backend capacity work decides which additional diagnostic fields can be stored without changing the closed authenticated diagnostics schema.
+### 4.5 Clock discipline
 
-| Symptom | Likely cause | Action |
-|---|---|---|
-| No NMEA warning | RX/TX reversed, no GNSS power, wrong baud | Check wiring/LED/serial at 9,600 |
-| Never gets valid fix | Indoor/multipath antenna, HDOP >4 | Move antenna to sky view; inspect GNSS output |
-| Clock not synchronized | Stale/invalid GNSS date-time and NTP blocked | Check NMEA date/time freshness; then Wi-Fi/DNS/UDP |
-| Boot halts on compile-time configuration | Missing/invalid value in `secrets.h` | Correct the named field, rebuild, and reflash |
-| Fleet firmware halts at security gate | Flash encryption or Secure Boot inactive | Quarantine the unit; repeat only the witnessed spare-board procedure, never bypass the gate |
-| Negative HTTPClient/transport failure | DNS/backend unreachable, wrong hostname/CA, expired issuer, bad clock | Use the printed transport string; verify URL chain and NTP; never use insecure mode |
-| HTTP 400 | Firmware/backend contract mismatch or timestamp/range | Compare the deployed schema (nine-field current; eight-field sequenced and six-field legacy compatibility), sequence, and clock |
-| HTTP 401 + three LED pulses | ID/secret missing or mismatched, or device disabled | Inspect registry, correct credentials or enable the device, then restart or reflash as required |
-| HTTP 403 | Authenticated device has no usable assignment | Repair bus/route assignment; device retries without a reflash |
-| HTTP 429 | IP/device limiter | Check publish loop/config and WAF limits |
-| HTTP 503/timeouts | Backend/Firebase/network outage | Inspect `/health`; backoff retains the bounded queue |
-| Repeated watchdog reset | HTTP/network stack longer than 25 s or task fault | Inspect reset reason/serial; verify the separate 1 s connect, 1.5 s request/read and 10 s TLS handshake limits |
-| Non-zero overflow counters | GNSS task starvation, UART pressure or full telemetry queue | Inspect authenticated remote diagnostics; reproduce against network outage and load |
-| `uncertain` on map | One GNSS-loss notification at last trusted point | Fix antenna/sky view; no guessed motion is shown |
+The firmware sends telemetry only while its clock is trusted: no unresolved disagreement between sources, and a time at or after 2023-11-14 (epoch 1,700,000,000,000 ms).
 
-## Latency analysis
+1. GNSS time is the primary source. An RMC date and time at most 2 s old, with a valid calendar date from 2023 to 2099, is converted without time-zone functions. The firmware uses GNSS time only while the last three distinct RMC epochs advance with the monotonic clock: 0.5 to 3 s apart, each within 250 ms of the expected advance.
+2. After the first application, the firmware corrects the system clock from GNSS at most once per minute and only when the difference is 1.5 s or more.
+3. NTP (`pool.ntp.org`, `time.google.com`) starts when Wi-Fi connects and repeats every 6 h. The firmware vets each NTP result before it changes the time.
+4. A correction of more than 10 s against an already trusted clock needs a fresh agreeing peer: an NTP result at most 10 min old, or a GNSS reference. If GNSS and NTP disagree by more than 1.5 s, the firmware pauses new TLS connections and telemetry instead of changing the certificate time, and retries NTP every 60 s.
+5. Sample times come from the latest GNSS reference projected with the monotonic clock while that reference is less than 24 h old, and otherwise from the system clock.
 
-The device serial line is not the normal bottleneck: NMEA parsing continues while HTTPS blocks the publisher task. While moving, designed latency is up to one-second evaluation plus network/TLS/API/RTDB time; the one-second publish floor prevents duplicate bursts without deliberately adding multi-second lag. On recovery the newest eligible state is restored first. Stationary heartbeats arrive every second so endpoint arrival and automatic turnaround do not race the backend's 60-second freshness gate.
+These checks establish consistency between sources, not cryptographic authenticity of GNSS or NTP time.
 
-Admin-authenticated backend `/api/health.telemetry` provides:
+## 5. Timing and limits
 
-- `processingLatencyMs`: API service processing, including credential/RTDB work.
-- `deviceToServerLatencyMs`: server receipt minus device GNSS/NTP-disciplined timestamp; includes sampling gate and network but is trustworthy only with a correct clock.
-- `rtdbWriteLatencyMs`: RTDB transaction duration.
-- `credentialCacheHitRate`, accepted/rejected counters and last times.
+| Parameter | Value |
+|---|---|
+| Fix evaluation | Every 1 s |
+| Moving and stopped heartbeat | 1 s and 1 s |
+| Motion thresholds | Moving at 2.5 km/h or more, stopped at 1.5 km/h or less, 3 consecutive evaluations |
+| Material change | 5 m, 15°, 5 km/h |
+| Receiver silence limit | 2 s |
+| Fix field age limit | 5 s |
+| HDOP limit | 4 |
+| Re-anchoring | 3 fixes, 0.5 to 5 s apart |
+| Reacquisition after gap | 5 min |
+| Queue | 100 samples |
+| Delivery freshness margin | 55 s |
+| DNS caller wait (telemetry and diagnostics) | 1 s ([DNS cold connect](DNS_COLD_CONNECT.md)) |
+| Telemetry TCP connect | 1 s |
+| Telemetry request and read | 1.5 s |
+| Accepted-body drain | 1 s ([HTTPS response reuse](HTTPS_RESPONSE_REUSE.md)) |
+| TLS handshake | 10 s |
+| Diagnostics connect and read | 1.5 s each |
+| Telemetry retry | Section 2.4 |
+| Wi-Fi retry | First attempt at once, then 5, 10, 20, 40 and 60 s, repeating at 60 s |
+| Task watchdog | 25 s, panic and restart |
+| Diagnostics | First at 30 s, then every 5 min |
+| NTP cross-check | At Wi-Fi connection, then every 6 h; every 60 s while sources disagree |
+| GNSS clock correction | 1.5 s or more, at most once per minute |
+| Flash checkpoint | First captured fix after boot, then at most every 10 s |
 
-Each latency is a rolling in-process 512-sample window with average/p50/p95/p99. Measure these on the actual route along with GNSS fix age, cellular RTT, browser display time and RSSI. A server restart intentionally resets metrics.
+`main.cpp` asserts at compile time that the DNS, connect, TLS handshake, request and drain limits together (14.5 s) stay below the 25 s watchdog. These are separate phase limits, not an end-to-end deadline.
 
-## Points of failure and mitigations
+Wi-Fi runs in station mode only, with persistence off, automatic reconnection on, fast scan, strongest access point first and modem sleep off. The firmware treats the link as up only when the Arduino status reports a connection and the ESP32 driver still reports an associated access point, and each retry issues a new connect request. The firmware never starts an access point or an HTTP server.
 
-| Point | Detection | Software behavior | Remaining action |
+## 6. Failure handling
+
+| Failure | Detection | Firmware behaviour | Remaining action |
 |---|---|---|---|
-| Vehicle power/buck/cable | Board resets/no telemetry | Reset reason logged; durable ride retained | Automotive wiring/spares/monitoring |
-| GNSS receiver/antenna/UART | No NMEA, quality rejection, checksum or UART overflow count | Warning; one uncertain sample; 30 s counters | Physical inspection/route survey |
-| Wi-Fi/hotspot | Disconnect/RSSI/timeouts | Exponential retry and RTC queue | Coverage/SIM/hotspot redundancy; reflash if credentials change |
-| Clock | No TLS/invalid timestamp | Fresh GNSS UTC primary; NTP cross-check/fallback; no invalid publish | Validate receiver UTC and NTP paths on target hardware |
-| TLS CA rotation | TLS failure | Fail closed | Controlled physical trust-root reflash before issuer expiry |
-| Signed OTA | Manifest withheld during active ride; candidate pending validation | Idle/stopped local gate, exact size/SHA-256, Secure Boot signature and dual-slot rollback | Prove wrong-key/digest rejection and five-minute rollback on spare boards |
-| Device credential | 401, rejected metric, three-pulse LED | Publishing latches off and station radio stops | Repair credentials, restart or reflash as required |
-| Device assignment | 403, rejected metric | Wi-Fi stays on; retry after 60 seconds | Repair backend bus/route assignment |
-| Hardware security | Boot gate and remote diagnostic booleans | Fleet firmware halts unless both protections are active | Witness first boot and retain spare-board evidence |
-| Backend/Firebase | 503/latency metrics | Bounded queue retained; jitter retry | Regional managed runtime/alerts |
-| Process restart | health/worker lease | Durable active ride and reconnect | Runbook/availability deployment |
-| GNSS gap | uncertain/stale UI | No dead-reckoned authoritative point | Accept interruption or add separately-labelled estimate only after safety review |
+| Vehicle power or cabling | Resets, missing telemetry | Reset reason counted in RTC memory and reported as `resetTotal`; one checkpointed sample can survive power loss | Automotive wiring, spares |
+| Receiver, antenna or UART | `[GNSS] Not connected`, `gnssFixAvailable` `false`, checksum or UART overflow counters | One GNSS-loss packet, then silence until a valid fix | Physical inspection, antenna placement |
+| Wi-Fi or hotspot | `[WiFi]` lines, RSSI, transport errors | Indefinite bounded retry; samples queue and expire after 55 s | Coverage and hotspot redundancy |
+| Clock | `[Clock]` rejection lines | No telemetry or TLS while untrusted | Check receiver time and NTP reachability |
+| Backend or Firebase | `5xx`, transport errors | Exponential retry with jitter; newest sample first on recovery | Backend availability |
+| Device credential | `401`, three LED pulses | Publishing stops and the radio switches off until restart | Repair the registry, reprovision or reflash, then restart |
+| Device assignment | `403` | Wi-Fi stays on; retry every 60 s | Repair the bus and route assignment |
+| Root CA rotation | TLS failure | Fails closed | Reflash with the new root CA before the old issuer expires |
+| Hardware security (fleet) | Four LED pulses, diagnostics booleans | Halts after the `secrets.h` checks and before it starts networking | [Hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md) |
+| Task stall | Watchdog reset, `[Boot] Recovered from ... reset` | Restart; the RTC queue survives | Capture the serial log |
 
-## Security deployment
+## 7. Diagnosis and evidence
 
-The `esp32dev-secure` environment builds a signed Secure Boot V2 image with release-mode flash encryption, ROM-download lockdown, two OTA slots and bootloader rollback. Its first boot irreversibly provisions security eFuses, so repository automation never uploads it. Because credentials are embedded in the application image, configuration must happen only in the approved encrypted signing environment and plaintext/unprotected artifacts must never be archived. Follow the witnessed [fleet security and provisioning procedure](../operations/HARDWARE_SECURITY_PROVISIONING.md) on spare ECO3-or-newer boards, retain first-boot plus signed update/rollback evidence, and only then approve production units.
+### 7.1 Serial traces
 
-## Physical acceptance
+Development builds print traces by default; fleet builds print them only when built with `EKI_ENABLE_FLEET_TRACES=1`. Health lines print in every build.
 
-Bench compile is necessary but insufficient. Test cold/warm GNSS acquisition, stationary drift, urban multipath, tunnel/covered loss, Wi-Fi loss/recovery, backend outage/recovery, power cycling during active ride, CA/credential rejection, long HTTP failure, every route geofence in order, and final completion. Verify Wi-Fi credentials are never recovered after reflashing a different `secrets.h`, no soft AP or port-80 listener appears during outages, 401 drops STA and latches the three-pulse fault, and 403 keeps the radio on for assignment repair. Record p50/p95/p99 display latency, serial reset/failure logs, commit, firmware hash, route/weather and evidence.
+| Line | Content |
+|---|---|
+| `[TelemetryTrace]` `device_capture` (version 2) | Sequence, sample time, receiver UTC, RMC first-byte and checksum times, evaluation and enqueue monotonic times |
+| `[TelemetryTrace]` `device_http` (version 1) | Sample, send and receive device times, server receive and respond times, HTTP duration, status, attempt |
+| `[TelemetryTrace]` `device_http_complete` (version 2) | Send, header and body-drain monotonic times, whether the response completed |
+| `[NetworkTiming]`, `[TlsResources]`, `[AllocationTiming]`, `[GnssTrace]` | DNS and TLS timing, heap and stack headroom, JSON preparation time, per-RMC receiver state |
+| `[Telemetry] Evidence` (every diagnostics cycle) | Captures, attempts, retries, capture age, accepted age, queue depth, remaining retry delay |
+| `[PowerCheckpoint]`, `[FirmwareResources]`, `[HTTPS]`, `[WiFi]`, `[GNSS]`, `[Clock]` | Health and failure lines |
+
+`configuredHandshakeTimeoutMs` in `[NetworkTiming]` is the configured limit, not a measured handshake. The [telemetry latency baseline](../operations/TELEMETRY_LATENCY_BASELINE.md) and [field capture](../operations/FIELD_CAPTURE.md) procedures consume these lines.
+
+### 7.2 Gap classification
+
+Treat a gap in live updates as intentional only when the `[Telemetry] Evidence` line shows `captureSeen=1`, a `captureAgeMs` within the 1 s heartbeat, and no queue or retry delay. A `captureAgeMs` above the heartbeat points to GNSS capture or fix quality. A current capture with a growing `acceptedAgeMs`, a non-zero queue, a retry delay, stale drops, transport errors or rejections points to delivery.
+
+### 7.3 Backend latency metrics
+
+The admin-only `GET /api/health` response contains `telemetry` latency summaries over a rolling window of 512 samples per process; a backend restart resets them.
+
+| Field | Measures |
+|---|---|
+| `deviceQueueLatencyMs` | `deviceSentAt` minus `timestamp`: time a sample spent on the device |
+| `networkLatencyMs` | Server receipt minus `deviceSentAt` |
+| `deviceToServerLatencyMs` | Server receipt minus `timestamp` |
+| `processingLatencyMs`, `rtdbWriteLatencyMs` | Backend processing and Realtime Database transaction time |
+
+The cross-clock values are valid only while the device clock is correct.
+
+### 7.4 Recorded evidence
+
+A capture on 20 October 2026 contained one payload whose `deviceSentAt` preceded its `timestamp` by 30 ms. Replaying that payload produces the backend rejection `invalid_device_sent_at`. The capture establishes the invalid ordering, not the physical cause of the clock adjustment. The send-time check in Section 4.4 drops such a sample before it is sent; the native test `test_send_boundary_rechecks_original_sample_after_clock_rewind` covers the check.
+
+## 8. Physical acceptance
+
+A successful build and native tests do not establish physical behaviour. Before fleet use, test on the target hardware:
+
+- cold and warm GNSS acquisition, stationary drift, urban multipath and covered-road loss;
+- Wi-Fi loss and recovery, backend outage and recovery, and power cycling during an active ride;
+- credential rejection (`401` switches the radio off and shows three pulses) and assignment rejection (`403` keeps the radio on);
+- that no access point or port 80 listener appears during outages, and that a reflash with a different `secrets.h` never reuses old Wi-Fi credentials;
+- every route stop in order and the ride's completion.
+
+Record p50, p95 and p99 display latency, serial reset and failure logs, the source commit, the firmware image hash, route and weather.

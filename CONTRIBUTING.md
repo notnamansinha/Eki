@@ -1,60 +1,85 @@
 # Contributing to Eki
 
-Last updated: 2026-10-04 14:20 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-GEN-007 | 1.0 | Current | 2026-10-30 |
 
-## Create a branch and PR
+## 1. Purpose
 
-1. Fetch the target branch and start from its latest commit. Current integration work targets `testing`; `main` is the controlled release branch.
-2. Use a focused branch (`codex/<task>` for Codex work; `feat/`, `fix/` or `chore/` for other contributions).
-3. Keep changes scoped. Preserve existing uncommitted work; use an isolated worktree when needed.
-4. Commit with a clear Conventional Commit message, such as `docs: refresh onboarding` or `fix: guard stale feedback responses`.
-5. Open the PR against the intended base (`testing` for integration), describe the user-visible result and list actual validation and remaining limits.
-6. Obtain maintainer review and green required checks before merging. UI changes should include appropriate screenshots with sensitive data removed.
+This document states how changes reach Eki: branches, pull requests, commit messages, the checks each kind of change needs, and the rules for documentation and firmware. Set up a working system first with [getting started](docs/GETTING_STARTED.md).
 
-Example from a clean checkout:
+## 2. Branches and pull requests
 
-```powershell
-git fetch origin testing
-git switch -c codex/my-task origin/testing
-npm ci
-```
+1. Start every change from the latest `main` on a short-lived topic branch named after the change type, for example `fix/stop-arrival-corridor` or `docs/configuration-reference`. Branches created by coding agents use the `codex/` or `claude/` prefix.
 
-Follow [getting started](docs/GETTING_STARTED.md) for configuration. Use Node.js 24 to match CI.
+   ```powershell
+   git fetch origin
+   git switch -c fix/<topic> origin/main
+   npm ci
+   ```
 
-## Verify the affected behavior
+2. Keep each pull request to one concern. Open it against `main`.
+3. Write the pull request title as a Conventional Commit subject (Section 3). Maintainers squash-merge, so the title becomes the commit subject on `main`.
+4. In the description, state what changed, why, and how a reviewer can confirm it works. List every check you ran and every check you could not run, with the reason. Add screenshots for user interface changes, with personal data removed.
+5. Request a review from the code owner listed in `.github/CODEOWNERS`. Merge only after the checks pass and the review approves.
 
-- Software changes: run `npm run verify` (lint, tests, builds, packaging and dependency audit).
-- Auth/admin/browser changes: run `npm run test:e2e:admin`; install Chromium with `npx playwright install chromium` if needed.
-- Firebase rules changes: run `npm run test:rules` with Java 21 and the emulator prerequisites.
-- Firmware changes: run native PlatformIO tests and the affected build target. Timing, power, GNSS, TLS and radio claims also need recorded physical evidence.
-- Documentation-only changes: sync mirrors, run the documentation mirror test and check relative links/commands. Record any broader CI result separately.
+Every push and pull request runs the `Production verification` workflow (`.github/workflows/ci.yml`) and CodeQL. A green `Production verification` run on a push to `main` starts the Deploy workflow, which publishes Hosting, rules and indexes to staging. Merging is therefore a staging release; see [CI, deployment and releases](docs/operations/CI_CD_AND_RELEASES.md).
 
-The [test strategy](docs/testing/TEST_STRATEGY.md) states what these checks prove. Report skipped or unavailable checks explicitly. A compile does not establish physical acceptance.
+## 3. Commit messages
 
-## Maintain documentation and configuration
+Use Conventional Commits [1]: `<type>(<optional scope>): <summary>`.
 
-1. Update the authoritative guide in the same change as its behavior. Use the [documentation index](docs/index/README.md) to choose the page.
-2. Put `Last updated: YYYY-MM-DD HH:mm IST (UTC+05:30).` directly below the title. Use the actual edit time. For historical evidence, keep the original run date, commit, measurements and limitations.
-3. Prefer numbered procedures, short bullets and comparison tables. Explain prerequisites before commands and expected outcomes after them.
-4. Update the relevant tracked environment template and [configuration reference](docs/CONFIGURATION.md) when adding/changing variables. Never commit filled `.env`, `secrets.h` or signing material.
-5. Edit root/package source documents, then run `npm run docs:sync`. Their `docs/` copies are required by `backend/src/docsMirror.test.ts`; do not edit a generated mirror independently.
-6. Remove completed plans or scratch notes after moving useful behavior into maintained guides. Keep distinct acceptance evidence and architectural decisions traceable.
+| Type | Use for |
+|---|---|
+| `feat` | New user-visible behaviour |
+| `fix` | A defect correction |
+| `docs` | Documentation only |
+| `test` | Tests only |
+| `ci` | Workflow changes |
+| `chore` | Dependencies, generated files and tooling |
 
-Documentation check from the repository root:
+Write the summary in the imperative and describe the behaviour after the change, for example `fix(trip): credit a revisited stop after a GNSS gap`. Use the body to explain why the change is needed. Describe the result, not the steps you took to reach it.
 
-```powershell
-npm run docs:sync
-npm exec --workspace=backend -- vitest run src/docsMirror.test.ts
-git diff --check
-```
+## 4. Checks by change type
 
-Use placeholders in examples. Keep service-account JSON, device/Wi-Fi credentials, App Check debug tokens, bearer tokens, signing keys and personal/location evidence out of source control and PR output.
+Run the checks for every kind of change your branch contains, from the repository root.
 
-## Firmware contribution rules
+| Change | Checks |
+|---|---|
+| Any code change | `npm run verify`: lint, all unit tests, the production build with service worker and CSP generation, and the production dependency audit |
+| Firestore or RTDB rules, or backend code that the emulator suites cover | `npm run test:rules` (needs Java 21) |
+| Admin, sign-in or feedback screens | `npm run test:e2e:admin`. Run `npx playwright install chromium` once first. |
+| Passenger screens | `npx playwright test --config playwright.passenger-layout.config.ts` and `npx playwright test --config playwright.passenger-progress.config.ts` |
+| Critical source: rules, or `backend/src` and `frontend/src` files whose path contains auth, appcheck, boarding, telemetry, tripstate, workerfence, livebus, ride, session, privacy, retention or fleet (`scripts/qa/coverage-budget.mjs`) | Add or change a test and map it in the `qa/*-test-map.mjs` files, commit, then run `$env:EKI_QA_BASE_SHA = git merge-base origin/main HEAD` and `npm run qa:budget`. CI runs the same gate on pull requests. |
+| A test that a `qa/` map references is renamed or removed | `npm run qa:check` |
+| Firmware | `platformio test --project-dir hardware -e native` and `platformio run --project-dir hardware -e esp32dev`. Use `py -m platformio` on Windows when `platformio` is not on the path. |
+| Environment variable added, renamed or removed | Update the tracked template and the [configuration reference](docs/CONFIGURATION.md) in the same change, then run `npm run docs:check` |
+| Documentation | `npm run docs:sync`, `npm run docs:check` and `git diff --check` |
 
-- Preserve fail-closed TLS, credential rejection and fleet security gates.
-- Document the effect of cadence/threshold changes on writes, freshness and recovery. Do not change policy based solely on a successful build.
-- Record commit/build, board profile, conditions and redacted timing/recovery results for hardware claims.
-- Use the [witnessed fleet procedure](docs/operations/HARDWARE_SECURITY_PROVISIONING.md) for protected fleet artifacts and irreversible provisioning.
+A build regenerates the CSP hashes in `firebase.json`; commit changed hashes and do not edit them by hand. With a filled `frontend/.env.local`, the build also writes your backend origin and RTDB host into the policy: leave those local values out of the commit. The [test strategy](docs/testing/TEST_STRATEGY.md) explains what each suite proves, and the [QA guide](docs/qa/README.md) explains the acceptance maps.
 
-See [security policy](SECURITY.md) for vulnerability reporting and [code of conduct](CODE_OF_CONDUCT.md) for collaboration expectations.
+## 5. Documentation
+
+1. Follow the [documentation standard](docs/DOCUMENTATION_STANDARD.md). Every controlled document starts with a control block; when you change a document, update its `Last updated` cell and, for a correction, increase the minor version. Documents carry no separate "Last updated" line and no change log.
+2. Change the authoritative document in the same pull request as the behaviour it describes. The [documentation index](docs/README.md) shows which document owns each topic.
+3. Edit the source of a mirrored file, such as `backend/API.md` or this file, never its copy under `docs/`. Then run `npm run docs:sync`.
+4. Register a new document in the [documentation index](docs/README.md) with the next free ID in its area.
+5. Do not rewrite Historical evidence. Record a correction or a newer result in a new document that links to the original.
+6. Use placeholders in examples. Never commit service-account JSON, device secrets, Wi-Fi passwords, tokens, signing keys, private hostnames or personal location data.
+
+## 6. Firmware
+
+1. Keep the fail-closed behaviour: TLS verification, credential rejection and the fleet security gates.
+2. When you change a cadence, threshold or retry policy, state its effect on writes, freshness and recovery in the pull request.
+3. A successful build or native test is not physical acceptance. A claim about timing, power, GNSS, TLS or radio behaviour needs a recorded hardware run: commit, build environment, board, conditions, and redacted results. See [hardware telemetry](docs/hardware/HARDWARE_TELEMETRY.md).
+4. Produce signed fleet images and perform irreversible eFuse provisioning only through the witnessed [hardware security provisioning](docs/security/HARDWARE_SECURITY_PROVISIONING.md) procedure.
+
+The [hardware guide](docs/hardware/README.md) covers builds, flashing and post-flash checks.
+
+## 7. Security and conduct
+
+Report vulnerabilities privately as described in the [security policy](SECURITY.md), not in a public issue. All participation is covered by the [code of conduct](CODE_OF_CONDUCT.md).
+
+## 8. References
+
+[1] Conventional Commits, "Conventional Commits 1.0.0," conventionalcommits.org/en/v1.0.0/. Accessed: 2026-10-30.

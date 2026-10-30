@@ -1,5 +1,9 @@
 # R31 moderation and instrumentation profile
 
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-044 | 1.0 | Historical | 2026-10-07 |
+
 Measured 7 October 2026 on Windows x64 using checksum-verified Node **24.21.0**, against testing `41ffbc7`. Chat values are synthetic. No deployment, cloud load or Firebase data access was performed.
 
 ## Method and scope

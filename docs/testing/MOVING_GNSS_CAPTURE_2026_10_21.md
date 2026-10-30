@@ -1,6 +1,8 @@
 # 21 October ride evidence and remaining issue work
 
-Last updated: 2026-10-21 03:19 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-024 | 1.0 | Historical | 2026-10-21 |
 
 The ride has ended and its available evidence is sealed. No complete live or
 production acceptance gate passed. The [requirement ledger](MOVING_GNSS_CAPTURE_2026_10_21.json)

@@ -1,90 +1,49 @@
-# Reviewed unit sub-oracles
+# Reviewed Unit Sub-Oracles
 
-Last updated: 2026-10-21 11:47 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-TST-012 | 1.0 | Current | 2026-10-30 |
 
-`npm run qa:unit:reviewed` executes forty-five reviewed backend/frontend files and
-records exact JSON/JUnit identities, source SHA, dirty state and timestamps. The
-current selection includes 26 backend and 19 frontend files. Use the generated
-report for exact assertion counts. Every assertion
-must pass without skip/block; missing files or workspace reports block the scope.
-The Node socket/DNS guard is preloaded before SDK imports. Unit dependencies are
-pure, mocked, loopback Express or actual React/jsdom components/hooks; real OAuth/Firebase/provider/browser
-behavior is not claimed.
+## 1. Purpose
 
-Explicit feature mappings cover limited sub-oracles for auth cache and
-readiness, legacy operator-code formatting and current boarding accuracy/trusted-fix/order, trip reducer/shutdown,
-privacy queue recovery, passenger ride identity, directional views/cache,
-feedback eligibility and history interaction. Each link was compared with its
-source oracle and assertion body; titles alone do not establish applicability.
-Parameterized observations are retained in the complete counts, while mappings
-use reviewed literal identities. The earlier BOARD07 parameterized MUSE mappings
-remain retained and distinct; this scope uses a new explicit clock/binding test
-rather than guessing dynamic titles.
+`npm run qa:unit:reviewed` is an L1 family of the [QA programme](README.md). It runs a fixed selection of backend and frontend Vitest files whose assertions have been reviewed against specific requirement oracles, and records each observed assertion by file and title. The full backend and frontend suites still run in `npm test`; their results are not linked to requirements.
 
-Vitest can retain a literal `%p` template on every parameter row. The collector
-records each observed row's contiguous array position without inferring parameter
-values. The ledger requires those positions and still rejects ambiguous title
-matches for a case link. Initial hosted runs passed 114 tests but correctly blocked
-aggregation because these repeated template titles were not unique. The positional
-record preserves all observations while leaving unreviewed parameter rows unmapped.
+## 2. Procedure
 
-The component selection adds actual AuthProvider/useAuth, PassengerBoardingView,
-PassengerWorkspace restoration and FeedbackModal. Assertions exercise mounted
-state, selectors, close/Escape, permission denial, late GPS/token/HTTP callbacks,
-sign-out/account transitions, membership verification and stable feedback retry
-IDs. SDK/Auth/App Check, HTTP and GPS are mocked. Workspace map and boarding
-children are replaced; the boarding workflow file separately mounts the real
-selector. The preparation-budget file substitutes a native select and controls
-the clock. These are L1 component sub-oracles, not Chromium, real permissions,
-durable membership or deployed provider acceptance.
-
-The [reviewed HTTP policy selection](HTTP_UNIT_EVIDENCE.md) adds exact feedback,
-settings and chat boundary regressions and scoped bootstrap/membership/privacy
-route checks. Sixty-two case scopes combine all current reviewed-unit links.
-Responses use actual Express handlers with mocked auth/storage; they retain L1
-classification and do not certify real datastore transaction or provider behavior.
-
-New boarding tests establish exact -60000/+10000 millisecond trust boundaries,
-bus/route/session binding, offline/terminal refusal, accuracy 0..100 inclusive
-and approved eight-character code normalization. They do not weaken production
-behavior or replace server-side transactional checks.
-
-The mock Auth verifier tests establish cache/coalescing/expiry/fresh privileged
-verification policy, not deployed Firebase revocation propagation. Mock privacy
-storage establishes bounded scheduling, recovery generations and refusal of
-operator/changed identities, not cloud deletion outcomes. The native-like pure
-trip reducer establishes ordered transitions, not worker persistence or field
-progression. Pure frontend history/eligibility/cache helpers do not establish
-mounted listener cleanup, real PWA/offline behavior or a complete UI control.
-
-The selection joins the current-source ledger as a separate L1 family and the
-nightly matrix as a sixth bounded shard. Existing full backend/frontend tests
-still run in Production verification; their aggregate historical count is not
-silently imported as acceptance for unmapped cases. Successful observations
-remain PARTIAL and keep the remaining complete source oracle visible.
-
-## Reproduce
-
-```sh
+```powershell
 npm ci
 npm run qa:unit:reviewed
 ```
 
-Node 24 and locked dependencies are required; no Java, browser or credentials
-are needed for this narrow selection. Results are under
-`artifacts/qa/reviewedUnit-*`. Each workspace child has a two-minute deadline,
-one worker and no file parallelism. The combined runner refuses a mismatched
-file census or absent assertion evidence.
+Node 24 and locked dependencies are enough; no Java, browser or credential is needed. `scripts/qa/run-reviewed-unit.mjs` accepts no arguments. It runs the backend files, then the frontend files, each as a separate Vitest child with one worker, no file parallelism, the Node network guard preloaded through `NODE_OPTIONS`, and a 2-minute deadline. The nightly campaign allows 300 s for both.
 
-The expanded local changed-checkout run on 12 October 2026 passed 315/315 assertions
-with zero skips/blocks. That run verifies harness configuration and limited
-oracles; a clean hosted commit is needed for current-source acceptance. Software
-release and physical field deployment remain unverified.
+## 3. Selection and mappings
 
-The 21 October promotion review adds direct links for worker fencing,
-retention/CLI/Firebase adapter, fleet cache/mutex, stop history, diagnostic
-counters/SDK wiring, Auth initialization/domain, marker tracing, joined-status
-transport and live-store expiry/recovery/normalization. These remain scoped L1
-checks with SDK/datastore/RAF mocks. The initial changed-checkout selection passed
-547 assertions; the contributor's merged selection records 549 observations.
-Use the final clean hosted results for promotion.
+`qa/reviewed-unit-test-map.mjs` holds the file list for each workspace (`reviewedUnitFiles`) and the case links (`reviewedUnitTestMap`). The runner blocks the family when the set of files Vitest reports differs from that list.
+
+The selected files use pure functions, mocked SDKs and datastores, loopback Express handlers with mocked authentication, or React components mounted in jsdom. Mapped requirements fall in the AUTH, BOARD, TRIP, DATA, PAX, MAP, FEED, HIST, SEC, SET, CHAT, FLEET and OBS categories. Examples:
+
+- authentication token verification, caching and readiness, including `AuthProvider` and `useAuth` mounted in jsdom;
+- boarding policy boundaries and the mounted boarding view, including preparation budgets with a controlled clock;
+- trip reducer transitions, ride progress history and lifecycle shutdown;
+- worker fencing, retention sweeps and privacy deletion queue recovery;
+- feedback, settings and chat HTTP boundaries, described in the [HTTP policy sub-oracles record](HTTP_UNIT_EVIDENCE.md);
+- live bus store expiry, recovery and server clock handling, and passenger availability.
+
+Each link was compared with the requirement oracle and the assertion body; a matching title alone does not qualify. Vitest can repeat a literal `%p` title on every parameter row. The collector records each row by its position without guessing the parameter value, and the ledger refuses an ambiguous title as a case link, so unreviewed parameter rows stay unmapped.
+
+## 4. Evidence
+
+The runner writes `reviewedUnit-backend-vitest.json`, `reviewedUnit-frontend-vitest.json`, the matching JUnit and log files, `reviewedUnit-report.json` and `reviewedUnit-report.md` under `artifacts/qa/`, with the source commit and dirty flag. Every assertion must pass with no skip; a missing file or workspace report blocks the family. Passing assertions give `PARTIAL` status to the linked requirements.
+
+## 5. Limits
+
+Mocks define what these tests cannot prove:
+
+| Area | Proven | Not proven |
+|---|---|---|
+| Authentication | Cache, coalescing, expiry and fresh privileged verification policy | Firebase revocation propagation in a deployment |
+| Privacy | Scheduling bounds, recovery generations, refusal of operator and changed identities | Cloud deletion outcomes |
+| Trip reducer | Ordered state transitions | Worker persistence, field progression |
+| Components | Mounted state, selectors, Escape handling, late callbacks, account transitions | Chromium behaviour, real permissions, durable membership |
+| Frontend helpers | History, eligibility and cache rules | Listener clean-up when mounted, PWA and offline behaviour |

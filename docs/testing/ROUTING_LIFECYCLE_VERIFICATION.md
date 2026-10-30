@@ -1,5 +1,9 @@
 # Routing lifecycle audit and verification
 
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-050 | 1.0 | Historical | 2026-10-18 |
+
 Audit date: 2026-10-17 (Asia/Calcutta). Baseline: `origin/testing` at
 `a523731295d37c9ecaf1a917cebefa4502b34dab`, fetched before the audit.
 Local branch: `codex/routing-lifecycle-audit`, isolated managed worktree.

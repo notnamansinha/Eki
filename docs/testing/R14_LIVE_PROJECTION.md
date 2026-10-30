@@ -1,6 +1,8 @@
 # R14 live projection: evidence and rollout
 
-Last updated: 2026-10-08 08:22 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-043 | 1.0 | Historical | 2026-10-08 |
 
 Date: 8 October 2026. This focused successor is based on testing `fac8b3f`, retaining the externally merged PR #277/#285 projection foundation, verification-start invalidation hook, bounded automatic-return predecessor proof and additional browser/test coverage. It adds the independently reviewed canonical/schema-readiness, durable joined-session status and destination-reconstruction contracts. All externally merged R17/R18/R19/R20/R31/R35 implementations remain unchanged. Our work remains limited to R14 within R01-R15. Software evidence only; moving and cloud rollout acceptance remain in #245/#246. The earlier isolated `clientRoutes` experiment and the verified testing-490 integration are preserved as safety/evidence branches and are not replayed over this foundation.
 

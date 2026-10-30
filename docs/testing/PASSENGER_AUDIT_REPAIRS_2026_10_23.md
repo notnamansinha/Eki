@@ -1,4 +1,8 @@
-# Passenger audit repairs — 23 October 2026
+# Passenger audit repairs: 23 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-029 | 1.0 | Historical | 2026-10-23 |
 
 Scope: follow-up changes on PR #364, `codex/fix-deployment-readiness`, based on
 `75f1333cc47d91e3ce612d3c5099d09eda718302`. The supplied ZIP and two recordings

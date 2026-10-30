@@ -1,4 +1,8 @@
-# Balcony GNSS readiness — 8 October 2026
+# Balcony GNSS readiness: 8 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-007 | 1.0 | Historical | 2026-10-08 |
 
 The stationary setup is ready for a controlled moving-test session with the remaining evidence requirements below. This is a bench-readiness result, not full route acceptance or release approval. One live restart defect was found, repaired locally, regressed and verified against the connected GNSS. Physical movement, complete ride recovery and browser marker latency still require their actual tests.
 

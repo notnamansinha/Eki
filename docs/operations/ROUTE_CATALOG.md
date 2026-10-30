@@ -1,75 +1,73 @@
-# Versioned telemetry route catalog
+# Telemetry Route Catalog
 
-Last updated: 2026-10-05 17:01 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-019 | 1.1 | Current | 2026-10-30 |
 
-Telemetry matching and pending-direction inference use the same read-only route
-catalog on every API replica. The existing Firestore watcher publishes decoded
-forward/reverse geometry, stops and route/geometry versions directly from its
-snapshots. It no longer merely invalidates data and then rereads the document.
-Unchanged pending fixes reuse that data rather than forcing a fresh read per fix.
+## 1. Purpose
 
-## Freshness and invalidation
+Route matching, direction inference and rerouting need each route's stops and directional geometry for every accepted fix. This document describes the read-only, versioned in-memory catalog that supplies that data on every backend replica, and how it stays current when an administrator edits or deletes a route.
 
-The positive/negative catalog and generation tombstones each retain at most 1000
-LRU entries. Freshness uses a five-minute monotonic deadline. Missing/expired
-entries share one in-flight point read per route, including pending directions.
-A fingerprint of configuration/geometry versions, normalized stops and geometry
-also invalidates changed data found by a freshness read when an event was missed.
-Unique process generations prevent an evicted identity from reviving old work.
-In-flight read cleanup compares promise identity before clearing a newer fill.
+## 2. Scope
 
-Observed edits/deletions increment the local generation and immediately publish
-the current snapshot or a negative entry. Stop or watcher failure invalidates
-existing entries/loads. Reconnect retains the existing 1–30 second backoff and
-rejects callbacks from an older subscription; its initial snapshot removes
-catalog entries absent from the current collection. Unavailable watchers require
-fresh reads. The listener still watches the route collection: this change does
-not claim zero snapshot billing or a paginated Firebase watch transport.
+The document covers the catalog cache, the Firestore route watcher, generation fencing and the handling of routes without valid geometry. Passenger geometry reads and admin geometry repair are described in [route geometry reads](ROUTE_GEOMETRY_READS.md). Provider rerouting is described in the [reroute retry policy](REROUTE_RETRY_POLICY.md).
 
-Direction/matching/reroute callbacks recheck their local catalog generation.
-Durable session-direction transactions additionally read the current route in
-their read set and compare its versions/stop signature before writing session
-and lock fields. A definitive refusal resets only the same still-provisional,
-pre-departure RTDB projection, preserving newer telemetry/session/direction.
-An unknown commit exception never triggers that reset: a later fix reconciles
-the committed direction and marks its projection synchronized. Already active
-rides keep their existing direction; this does not re-infer a moving session.
+## 3. Behaviour
 
-RTDB callbacks allow an initially empty local SDK cache to retry against the
-server value, then apply the usual timestamp/session/version predicates. The
-actual emulator reproduced the previous abort-before-server behavior. Reroute
-pointer publication rechecks generation after asynchronous sibling storage, so
-an observed edit cannot publish the obsolete pointer. A discarded sibling can
-remain unreferenced until normal retention; no newer session is overwritten.
+### 3.1 Catalog entries
 
-## Missing legacy geometry
+Every replica starts one Firestore watcher on the `routes` collection. The watcher decodes each changed document and publishes an entry directly from the snapshot: forward and reverse geometry, stops, configuration version, geometry version and a fingerprint of those values. Unchanged fixes, including fixes whose direction is still pending, reuse the entry instead of reading the document again.
 
-Loading configured route data never invokes Google or persists legacy geometry repair. Eligible off-route rerouting retains its separate provider path (R35).
-A route missing valid forward/reverse geometry is negatively cached and leaves
-accepted raw telemetry/lifecycle data intact, with matching/direction unavailable
-until authorized administration repairs it. Existing authenticated route save
-already computes missing directional geometry. Passenger geometry GET is now cached/read-only; see the [bounded admin repair procedure](ROUTE_GEOMETRY_READS.md).
-No provider request that was already dispatched can be recalled.
+An entry is usable only when both directional polylines decode to at least two points and the route has at least two stops. Otherwise the route is cached as unavailable (a negative entry).
 
-## Evidence and live limits
+### 3.2 Freshness
 
-Five baseline regressions reproduced sixty document reads for sixty unchanged
-unresolved fixes, duplicate concurrent reads, unused watcher data, billable legacy
-repair and redundant reads after edits. Fixed regressions also check monotonic
-refresh coalescing, old subscription callbacks, transaction retry fences and
-route editing during reroute sibling publication.
+Each entry expires 5 min after it was stored, measured on the monotonic clock. A missing or expired entry triggers one point read per route; concurrent callers share it. If that read finds a different fingerprint from the cached entry, the route is invalidated, which also covers a watcher event that never arrived. The catalog and the generation table each keep at most 1,000 routes in least-recently-used order.
 
-Actual loopback Firestore/RTDB checks stream a route then process sixty pending
-fixes with zero additional explicit route point reads or Google calls, observe
-edited/deleted endpoints, and persist the same armed session direction/lock with
-current-route transaction checks. Another holds watcher delivery after a real
-edit and verifies obsolete durable direction is refused and its provisional
-projection reset. A third injects acknowledgement loss after a real direction
-commit and verifies recovery without rollback or a second session.
+### 3.3 Edits, deletions and watcher failure
 
-These use synthetic coordinates/provider dependencies, no physical GNSS/ESP32
-and no live project. Watcher delivery latency and cross-store publication are
-not globally atomic across replicas. Suitable staging still must measure edit/
-delete propagation, reconnect/read billing, provider/road correctness, replica
-load and moving-route ordering. Those remain #245/R34 acceptance; source and
-emulator checks do not certify a moving route or production capacity.
+- An observed edit or deletion increments the route's local generation and immediately publishes the new entry or a negative entry. It also clears that route's passenger geometry cache entry and the whole route list cache.
+- Generations are unique within the process, so an evicted route cannot revive work started under an old generation. Cleanup of an in-flight read compares the promise identity before removing a newer fill.
+- When the watcher fails, every entry and in-flight read is invalidated and later fixes use point reads until it reconnects. Reconnection waits 1 s, doubling to 30 s. Callbacks from an older subscription are ignored, and the first snapshot after reconnecting removes entries for routes that no longer exist.
+
+The watcher keeps a listener on the whole collection, so snapshot reads are still billed.
+
+### 3.4 Fencing work in progress
+
+Direction, matching and reroute callbacks recheck the route's local generation before they write. A durable session-direction transaction also reads the current route document and compares its versions and stop signature before writing session and lock fields. When it refuses definitively, it resets only the same still-provisional, pre-departure RTDB projection, so newer telemetry, sessions and directions survive. An unknown commit result never triggers that reset: a later fix reconciles the committed direction. An active ride keeps its direction; a moving session is not re-inferred.
+
+RTDB transactions that first see an empty local cache retry against the server value and then apply the usual timestamp, session and version checks. Reroute publication rechecks the generation after writing the geometry sibling node, so an edit observed meanwhile prevents the old pointer from being published. A sibling written but not published stays unreferenced until [RTDB retention](RTDB_RETENTION.md) removes it.
+
+### 3.5 Routes without valid geometry
+
+Loading the catalog never calls Google and never writes a repair. A route without valid directional geometry is cached as unavailable. Accepted raw telemetry and lifecycle data are still stored, but matching and direction inference are unavailable for that route until an administrator saves it, which computes the missing geometry; see [route geometry reads](ROUTE_GEOMETRY_READS.md).
+
+## 4. Configuration
+
+None of these values is configurable at run time.
+
+| Item | Value | Source |
+|---|---|---|
+| Entry lifetime | 5 min, monotonic | `backend/src/services/telemetryRouteService.ts:54` |
+| Catalog and generation table size | 1,000 routes each, least recently used | `backend/src/services/telemetryRouteService.ts:99`, `backend/src/services/telemetryRouteService.ts:103` |
+| Watcher reconnect delay | 1 s, doubling to 30 s | `backend/src/services/telemetryRouteService.ts:215` |
+| Largest accepted encoded polyline | 500,000 characters | `backend/src/services/telemetryRouteService.ts:57` |
+| Watcher start | Every replica at boot | `backend/src/server.ts:310` |
+
+## 5. Failure modes and recovery
+
+| Condition | Effect | Action |
+|---|---|---|
+| Watcher error | Catalog cleared; point reads for every route until reconnect. | The log shows `Catalog watcher failed; freshness reads are required.` Check Firestore availability; reconnection is automatic. |
+| Replica misses an edit event | Old data is served until the entry expires (at most 5 min) or a freshness read sees a new fingerprint. | None. Edits are not atomic across replicas. |
+| Route lacks valid geometry | Matching and direction inference stop for that route; telemetry is still stored. | Repair the route with an admin save. |
+
+## 6. Verification
+
+| Behaviour | Tests |
+|---|---|
+| Watcher publication, freshness coalescing, old subscription callbacks, transaction retry fences | `backend/src/services/telemetryRouteCatalog.test.ts` |
+| An edit during reroute publication discards the new pointer | `backend/src/services/liveRouting.integration.test.ts` (mocked Firebase) |
+| 60 pending fixes with no extra route reads or Google calls, edit and delete propagation, a held watcher event refused at commit, and a lost commit acknowledgement recovered without rollback, against emulators | `backend/src/telemetryCatalog.integration.test.ts`, run by `npm run test:rules` |
+
+These tests use synthetic coordinates and providers. Edit propagation delay, snapshot billing, replica load and moving-route ordering need staging measurements.

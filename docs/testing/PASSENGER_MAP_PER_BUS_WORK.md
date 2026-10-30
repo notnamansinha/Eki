@@ -1,6 +1,10 @@
 # Passenger map per-bus work (R18)
 
-Last updated: 2026-10-06 (IST). This is synthetic source and browser evidence for [issue #246](https://github.com/notnamansinha/Eki/issues/246) R18 and [PR #282](https://github.com/notnamansinha/Eki/pull/282).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-034 | 1.0 | Historical | 2026-10-06 |
+
+This is synthetic source and browser evidence for [issue #246](https://github.com/notnamansinha/Eki/issues/246) R18 and [PR #282](https://github.com/notnamansinha/Eki/pull/282).
 
 ## Reproduction and measured work
 

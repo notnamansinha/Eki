@@ -1,4 +1,8 @@
-# Issue #246 selected-part software evidence — 4 October 2026
+# Issue #246 selected-part software evidence: 4 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-017 | 1.0 | Historical | 2026-10-04 |
 
 Scope: R24, R26, R27, R28, R29 and R33. The owner deferred R34 to physical
 acceptance, including moving-bus testing planned for 5 October. The stationary

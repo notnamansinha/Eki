@@ -1,89 +1,97 @@
-# RTDB legacy and geometry retention
+# RTDB Retention
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-022 | 1.0 | Current | 2026-10-30 |
 
-Issue [214](https://github.com/notnamansinha/Eki/issues/214). Retention is 180 days.
-The RTDB sweep and resumable Firestore history deletion are implemented on
-`testing`; terminal ride-session retention defaults to 180 days. A configured
-deployment and approved schedule are still required before cleanup.
+## 1. Purpose
 
-## Before enabling legacy retirement
+This document describes how the backend deletes old Realtime Database records: superseded reroute geometry under `activeRouteGeometry`, and, once retired, the legacy `users` and `messages` trees. It also gives the procedure for inventorying and applying the sweep by hand.
 
-Current repository clients use Firestore profiles/messages. RTDB `users` and
-`messages` have no application consumers and default client rules deny access.
-Verify independently deployed older clients or integrations before setting
-`LEGACY_RTDB_RETIRED=true`. The default is false; geometry cleanup still runs.
-This switch declares that the entire legacy trees have been retired. Nested
-groups are deleted only when their newest recorded activity is older than
-180 days. This conservatively retains older children in a recently active
-group; it does not claim message-by-message expiry of unidentified old schemas.
+## 2. Scope
 
-Run from the configured backend directory:
+The RTDB sweep runs at the end of the daily retention sweep, after the Firestore categories. Firestore retention periods (ride sessions, feedback, completed trips and operation records) are defined in the [Firebase data model](../data/FIREBASE_DATA_MODEL.md). The sweep never deletes live bus state, assignments, credential versions, rate-limit windows, current Firestore profiles or ride ownership.
 
-```sh
+## 3. Behaviour
+
+### 3.1 Schedule
+
+When `RETENTION_SWEEPER_ENABLED` is `true`, the [worker leader](WORKER_LEADERSHIP.md) runs the retention sweep when it acquires leadership and every 24 h afterwards. In production (`NODE_ENV=production`) the backend refuses to start unless the variable is `true`; in development and tests the sweep is off by default. The sweep settles every Firestore category before the RTDB sweep starts, so one failing category neither skips RTDB cleanup nor stops the others. Failures are rethrown afterwards (several as an `AggregateError`) and logged.
+
+### 3.2 Age and the observation window
+
+A record is eligible when its newest known activity is more than 180 days old. Known times come from the fields `timestamp`, `createdAt`, `updatedAt`, `sentAt`, `endTime` and `completedAt`, in epoch milliseconds, epoch seconds or ISO 8601 strings; values before the year 2000 are ignored. A record exactly at the cutoff, or dated in the future, is kept.
+
+A record without a usable time is not treated as old. The sweep records when it first saw the record's content and waits a full 180 days from then. Any change to the content restarts that window. A legacy record nested deeper than 32 levels, or with more than 100,000 nodes, is skipped as malformed.
+
+The first-seen times are kept in the server-only Firestore collection `_rtdb_retention_inventory`. Each document is keyed by the SHA-256 hash of the RTDB path and stores the path, a SHA-256 fingerprint of the content and `firstSeenAt`; it stores no copy of the content. Firestore transactions keep one window across replicas. Deletion is an RTDB transaction that removes the record only while its fingerprint is unchanged. A failure leaves the record and its inventory for the next sweep, and inventory for records that no longer exist is removed on later runs. The sweep reads RTDB in key pages of 25, outside telemetry requests.
+
+### 3.3 Geometry
+
+Each reroute publishes a new immutable geometry version under `activeRouteGeometry/{busId}_{routeId}/{version}` with a server `createdAt`. A version key that is an epoch time serves as a fallback age; a version with neither gets the 180-day observation window.
+
+- The version referenced by the live record's `routeVersion` is always kept, even for an offline or completed ride.
+- Any other version is deleted only when it is older than 180 days and has also been seen unreferenced for at least one day. The inventory distinguishes referenced and unreferenced observations, so a version that was current until shortly before a sweep starts a new one-day grace.
+- The only publisher allocates a new version for every publication and refuses, inside its pointer transaction, to publish a version created more than one day earlier. An aged deletion candidate therefore cannot become a current pointer again. Client writes to this tree are denied by the database rules. A new writer, including an Admin SDK script, must follow the same contract.
+
+### 3.4 Legacy trees
+
+The current clients keep profiles and messages in Firestore. RTDB `users` and `messages` have no application readers and the client rules deny access. With `LEGACY_RTDB_RETIRED=true`, each top-level child of these trees is deleted only when the newest activity anywhere inside it is older than 180 days, so older entries in a recently active group are kept.
+
+## 4. Configuration
+
+| Item | Value | Source |
+|---|---|---|
+| Retention period | 180 days | `backend/src/services/rtdbRetention.ts:3` |
+| Unreferenced geometry grace and publisher stall limit | 1 day | `backend/src/services/rtdbRetention.ts:5`, `backend/src/services/telemetryRouteService.ts:807` |
+| Time fields | `timestamp`, `createdAt`, `updatedAt`, `sentAt`, `endTime`, `completedAt` | `backend/src/services/rtdbRetention.ts:7` |
+| Nesting and size bound | 32 levels, 100,000 nodes | `backend/src/services/rtdbRetention.ts:44` |
+| RTDB page size | 25 keys | `backend/src/services/firebaseRtdbRetention.ts:8` |
+| Sweep interval | 24 h | `backend/src/services/retentionSweeper.ts:191` |
+| `RETENTION_SWEEPER_ENABLED` | Must be `true` (trimmed, case-insensitive) in production; off by default elsewhere | `backend/src/services/retentionSweeper.ts:80` |
+| `LEGACY_RTDB_RETIRED` | `false` by default; only the exact value `true` enables legacy deletion | `backend/src/rtdbRetentionCli.ts:12`, `backend/src/services/retentionSweeper.ts:169` |
+
+## 5. Procedures
+
+### 5.1 Inventory with a dry run
+
+Run from `backend/` with credentials for the target project:
+
+```powershell
 npm run retention:rtdb -- --dry-run
 ```
 
-The default is also a dry run. To inventory legacy eligibility without enabling
-it permanently, supply `LEGACY_RTDB_RETIRED=true` only to that dry-run process.
-The report contains counts, never messages, coordinates or account identities.
-Dry runs do not write inventory or delete anything.
+The command without arguments is also a dry run. It prints counts only (`scanned`, `candidates`, `currentGeometry`, `geometryGrace`, `quarantined`, `skippedMalformed`), never paths, messages, coordinates or account identities. A dry run reads the inventory but does not write it and deletes nothing.
 
-After migration verification, review the dry run and use `--apply`, or enable
-the existing `RETENTION_SWEEPER_ENABLED=true` scheduled sweep. Development
-continues to disable scheduled deletion by default. No live cleanup is run
-as part of preparing this change.
+Expected result: a JSON summary with `"dryRun": true` and `"deleted": 0`.
 
-## Age, uncertainty and failure recovery
+To include the legacy trees without enabling them for the deployment, set the variable for this process only:
 
-Known creation/activity times accept epoch milliseconds, seconds and ISO date
-strings. The newest nested activity protects a legacy group. Equality with
-the 180-day cutoff is retained; future timestamps are retained. Undated records
-receive a full 180-day observation window, rather than being treated as old.
-Any change restarts that window. Excessively nested records fail closed.
+```powershell
+$env:LEGACY_RTDB_RETIRED = "true"; npm run retention:rtdb -- --dry-run; Remove-Item Env:LEGACY_RTDB_RETIRED
+```
 
-The server-only Firestore `_rtdb_retention_inventory` collection stores a hashed
-path ID, path, SHA-256 fingerprint and first-seen time. Its fields provide age
-provenance and a conditional-delete guard. No duplicate content is stored.
-Firestore transactions establish the same observation window across replicas.
-An RTDB transaction deletes only the unchanged fingerprint. Failure leaves the
-record/inventory available for the next sweep; missing-record inventory is
-cleaned on subsequent runs. Sweeps page through keys, outside telemetry requests.
+### 5.2 Retire the legacy trees
 
-The scheduled sweep settles every Firestore retention category before this RTDB
-sweep runs, so one failing category cannot skip RTDB cleanup or stop the other
-categories from being observed. Failures are rethrown afterwards (several as an
-`AggregateError`) and logged by the scheduler.
+1. Confirm that no independently deployed older client or integration still reads RTDB `users` or `messages`.
+2. Review a dry run that includes the legacy trees.
+3. Set `LEGACY_RTDB_RETIRED=true` in the backend configuration. The setting declares the whole legacy trees retired; it does not expire individual messages of unknown schemas.
 
-## Geometry lifetime and pointer safety
+### 5.3 Apply once by hand
 
-New immutable geometry has a server `createdAt`. Existing epoch-based version
-keys provide an age fallback; unknown keys receive the same quarantine window.
-Current `activeBuses` pointers are retained even for offline/completed services.
-Old versions, abandoned publications and deleted-fleet geometry expire after
-180 days, giving readers/publications substantially more than a one-day grace.
-An aged version also receives a full day of observed unreferenced grace before
-deletion, including a version that was current until shortly before a sweep.
-Inventory fingerprints distinguish current and unreferenced observations, so
-a pointer transition starts a new grace window.
+After reviewing the dry run, run `npm run retention:rtdb -- --apply` from `backend/`.
 
-The only application publisher allocates a new version and checks inside its
-pointer transaction that publication has not stalled for a day. Thus an aged
-purge candidate cannot subsequently become a newly published pointer. Client
-writes remain denied. Retiring this guard or adding a writer that republishes
-historical versions requires revisiting this invariant. An external Admin SDK
-writer must follow the same contract; arbitrary administrative writes cannot
-be made safe by client security rules.
+Expected result: a summary with `"dryRun": false`. `changedDuringDeletion` counts records that changed between the read and the delete and were therefore kept. A failure prints a message without database contents; check credentials and connectivity, then run again.
 
-The sweep does not delete active bus state, assignments, credential versions,
-rate-limit windows, current Firestore profiles or live ride ownership.
+## 6. Verification
 
-## Validation
+| Behaviour | Tests |
+|---|---|
+| Dry-run immutability, opt-in legacy deletion, cutoff, seconds, ISO and future times, undated quarantine, changed records, current pointers, geometry grace, conditional delete races, nesting bound, stalled publishers | `backend/src/services/rtdbRetention.test.ts` |
+| Firebase adapter: fingerprint recheck on transaction retry, dry-run inventory reads without writes, window restart for changed content | `backend/src/services/firebaseRtdbRetention.test.ts` |
+| Command-line arguments | `backend/src/rtdbRetentionCli.test.ts` |
+| Category isolation and RTDB sweep ordering | `backend/src/services/retentionSweepExecution.test.ts` |
 
-Regression tests cover dry-run immutability, opt-in legacy retirement, exact
-cutoff/seconds/ISO/future times, undated quarantine and changed records, current
-pointers, deleted fleet/aborted publication grace, conditional-delete races,
-partial failure, repeat sweeps/replicas, bounded nesting and stalled publishers.
-Read-only inventory on 3 October 2026 scanned eight legacy records: zero were
-eligible for deletion, zero were undated, and no geometry records were present.
-No live data or inventory was changed.
+No test covers the Firebase adapter's key paging or orphan cleanup.
+
+Dated evidence: a read-only inventory run on 2026-10-03 found eight legacy records, none eligible and none undated, and no geometry records. It changed no data.

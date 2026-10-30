@@ -1,97 +1,72 @@
-# Isolated nightly and weekly reliability
+# Scheduled Reliability Workflows
 
-Last updated: 2026-10-12 17:13 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-TST-013 | 1.0 | Current | 2026-10-30 |
 
-## Installation and source provenance
+## 1. Purpose
 
-The proposed definitions are `.github/workflows/deep-qa.yml` and
-`.github/workflows/weekly-reliability.yml`. They are prepared on the owned
-`codex/qa-nightly-reliability` branch for a real push-triggered dry run. They are
-not installed on `main`, and no schedule is active from this branch. The supplied
-master specification requires separate owner approval for default-branch
-installation and forbids unattended merges.
+Two GitHub Actions workflows repeat the isolated QA harnesses on a schedule: a nightly campaign of the six evidence families, and a weekly mutation and admission baseline. They test software only. They do not monitor live telemetry, deploy anything or call real providers, Firebase projects or model APIs.
 
-After the reviewed QA stack is merged into `testing`, an owner-approved PR can
-install these definitions on `main`. Scheduled and manual runs of that trusted
-definition resolve `testing` once through the GitHub API, validate its full SHA,
-and use that SHA in every checkout. The feature-branch push validation uses its
-own full commit. Missing scripts or reports on the selected source fail closed;
-the workflow never falls back to a different branch or historical artifacts.
+## 2. Source revision
 
-Daily runs are proposed for 20:17 UTC (01:47 IST); weekly runs for Saturday
-20:41 UTC (Sunday 02:11 IST). GitHub may delay scheduled runs. These checks do
-not monitor live telemetry or trigger deployment. Existing `Production
-verification` and deployment approval semantics remain intact.
+Both workflow files are on `main`, so GitHub runs their schedules from the `main` definition. The first job, `resolve`, chooses one immutable commit for the whole run:
 
-## Budgets and evidence
+| Event | Commit tested |
+|---|---|
+| Schedule or manual dispatch (must run from `main`) | The head of the `testing` branch, read once through the GitHub API |
+| Push to an allowed QA branch | The pushed commit |
 
-| Track | Actual executed scope | Limits |
-| --- | --- | --- |
-| Nightly GNSS | Fixed seeds 42 and 0 plus SHA/day-derived unsigned seed; 400 examples/property | Three recorded runs; each child 150 seconds |
-| Nightly emulator | Actual disposable Auth/Firestore/RTDB rules and backend ingestion/lifecycle/projection | Child campaign 390 seconds |
-| Nightly browser | Actual passenger/admin components and backend; synthetic Maps/Places/Routes; Chromium mobile and desktop | One browser worker, zero retries; campaign 480 seconds |
-| Nightly HTTP authorization | Missing/malformed credentials on protected operations and a real emulator passenger token on admin-only operations; minimal public probes | Four named L2 tests with fresh backend processes; campaign 390 seconds |
-| Nightly native firmware | Exact host-only Unity identities and scoped FW oracles; no board execution | Pinned PlatformIO 6.2.0; child 300 seconds, campaign 360 seconds |
-| Nightly reviewed units | Twenty-three reviewed pure/mocked/loopback-HTTP/React-jsdom backend/frontend files with exact case links | Two sequential workspace children, each 120 seconds; campaign 300 seconds |
-| Weekly mutation | Stryker 10.0.0 and Vitest 4.1.11; only pure `telemetryPayload.ts` mutated | Two workers; ten-minute outer deadline; both reviewed test files required in report |
-| Weekly admission | Five separate production-helper processes, each 250,000 submissions against stalled synthetic dependencies; drain, recovery and FIFO | Each process 60 seconds; 1,250,000 submissions total; no fleet/database/provider load |
+Every later job checks out that commit. Missing scripts or reports fail the run; it never falls back to another branch or an earlier artifact. Because scheduled runs test `testing`, a green scheduled run says nothing about `main` unless both branches point at the same commit.
 
-Each workflow caps matrix concurrency at two, has a distinct overlap group,
-uses read-only repository permissions, immutable Action pins, no deployment
-environment and seven-day artifacts. Dependency acquisition is allowed; tests
-do not call model APIs, paid providers or genuine Firebase projects. Existing
-configuration, Node socket/DNS and browser request guards remain required. They
-do not claim an OS sandbox.
+On 2026-10-30 the repository has no `testing` branch and none of the allowed QA branches. Every scheduled run since 2026-10-25 has failed in `resolve` with `Not Found` and executed no suite; the last scheduled runs that executed suites were on 2026-10-24 (UTC). The [risk register](../docs/operations/ARCHITECTURE_RISK_REGISTER.md) tracks this as OPS-02. Until the resolver names an existing branch, run the campaigns locally (Section 6).
 
-Nightly artifacts preserve each GNSS seed's JSON/JUnit/log separately. A
-campaign aggregate verifies matching clean SHA, workflow run, seed set, exact
-assertion identities and case scopes. A partial campaign, red runner, missing
-artifact or subset browser run blocks the required harness scope. The resulting
-399-case ledger still distinguishes PARTIAL, NOT_RUN and NOT_COVERED; suite
-success cannot make complete release acceptance green.
+## 3. Nightly campaign
 
-Weekly artifacts retain mutation HTML/JSON, killed/survived/timeout/no-coverage
-counts and admission measurements. A weekly green job means its bounded
-baseline was observed. It does not close feature, live-provider, physical or
-long-duration acceptance.
+Workflow `Isolated nightly QA` (`.github/workflows/deep-qa.yml`) runs daily at 20:17 UTC (01:47 IST), on manual dispatch, and on pushes to the QA branches listed in the file. GitHub may delay scheduled runs.
 
-## Measured local configuration evidence
+The `suites` job runs one shard per family, two at a time, without fail-fast. Each shard runs `npm ci`, `npm run qa:check`, installs what its family needs (Java 21 and a backend build for `emulator`, `browser` and `api`; Chromium for `browser`; Python 3.12 and PlatformIO 6.2.0 for `native`), then `node scripts/qa/campaign.mjs <suite>`.
 
-These measurements used a changed Windows checkout based on `ed76d93`, Node
-24.19.0, on 12 October 2026. They established configuration budgets; they are
-not clean-current-SHA acceptance records.
+| Shard | Runs | Campaign limit |
+|---|---|---|
+| `gnss` | `qa:gnss` three times: seeds 42, 0 and a seed derived from the commit and the date | 150 s per seed |
+| `reviewedUnit` | `qa:unit:reviewed` | 300 s |
+| `native` | `qa:native` | 360 s |
+| `emulator` | `test:rules` emulator suites | 390 s |
+| `api` | `qa:api` | 390 s |
+| `browser` | `qa:browser`, Chromium mobile and desktop, one worker, no retries | 480 s |
 
-- Initial mutation selection ran 14 tests: 266 mutants, 171 killed, 79 survived,
-  16 uncovered, zero timeouts; 1 minute 45 seconds. An excluded imported fixture
-  caused the GNSS properties to be omitted from related-test discovery.
-- Retaining the imported fixtures and explicitly selecting both files ran 30
-  tests: 254 killed, 12 survived, zero uncovered/timeouts; 2 minutes 7 seconds,
-  95.49%. New independent tests check primitive shape reasons, all motion enum
-  values, delayed send clocks and exact zero/511/512/513-byte bodies.
-- The remaining closed-schema-prefix survivor prompted an additional test for
-  empty objects and missing final timestamps. The other observed survivors
-  remove redundant type checks already enforced by `Number.isFinite`,
-  `Number.isSafeInteger` or enum membership. They remain visible for review;
-  no mutations are suppressed as equivalent by configuration.
-- A 90% mutation floor was selected after this measured baseline, with every
-  surviving candidate retained. This score is a regression budget for one pure
-  module, not a feature completion target.
-- Five admission trials completed 1,250,000 synthetic submissions in about
-  three minutes under concurrent local mutation work. Individual durations were
-  46.2, 35.3, 33.5, 32.3 and 32.4 seconds. The report correctly refused clean-SHA
-  acceptance because the checkout was changed. Hosted measurements must be
-  read from the corresponding run's artifacts.
+`campaign.mjs` refuses a dirty checkout. It accepts a shard only when the family report names the same commit, a clean tree, no physical or provider execution, and as many passed assertions as discovered. Each GNSS seed keeps its own report files.
 
-Stryker adds locked development-only dependencies. Its `typed-rest-client`
-dependency initially brought a vulnerable `qs`; an override selects audited
-6.16.0. The required source-map codec update accompanies the new toolchain.
-Routine `npm audit` remains mandatory.
+The `report` job downloads every shard and runs `scripts/qa/campaign-report.mjs`. It checks the commit, workflow run, seed set, assertion identities and case scopes of every campaign, then builds the [execution ledger](EXECUTION_EVIDENCE.md). A partial campaign, red runner, missing artifact or narrow browser run blocks the result. The artifact `nightly-current-source-ledger` holds the ledger and campaign summary.
 
-## Local reproduction
+## 4. Weekly baseline
 
-Use a clean checkout, locked dependencies, Java 21 and Playwright Chromium with
-its Linux system libraries. Remove genuine provider/Firebase credentials from
-the process environment before running these isolated tests.
+Workflow `Isolated weekly reliability baseline` (`.github/workflows/weekly-reliability.yml`) runs on Saturdays at 20:41 UTC (Sunday 02:11 IST), on manual dispatch, and on pushes to `codex/qa-nightly-reliability`.
+
+| Shard | Command | What it measures |
+|---|---|---|
+| `mutation` | `npm run qa:mutation` | Stryker 10.0.0 mutates only `backend/src/services/telemetryPayload.ts` and runs `telemetryPayload.test.ts` and `qaGnssProperties.test.ts`. `qa/stryker.config.mjs` sets a break threshold of 90 % and keeps every surviving mutant in the report. Outer deadline 10 minutes |
+| `soak` | `npm run qa:soak` | Five separate processes each run `scripts/benchmark-work-admission.mjs`: 250,000 submissions against stalled synthetic dependencies, drain, recovery and FIFO order, with a 60 s limit per process. A trial passes only with FIFO order, five rounds and retained heap growth under 4 MiB |
+
+The `report` job runs `scripts/qa/weekly-report.mjs` and uploads `weekly-current-source-baseline`. The mutation score is a regression budget for one pure module, not a feature completion measure. The admission trials exercise production helper code; they are not a fleet load or duration soak.
+
+## 5. Controls
+
+`npm run qa:check` runs `scripts/qa/workflow-policy.mjs`, which fails if either workflow loses any of these properties:
+
+- read-only `contents` permission, no deployment environment and no job-level permission changes;
+- a dedicated concurrency group that does not cancel a running campaign;
+- only the schedule, manual dispatch and allowed-branch push triggers;
+- the `resolve`, `suites`, `report` job graph, with at most two shards in parallel and no fail-fast;
+- job timeouts of 15 minutes or less;
+- actions pinned to the approved commit SHAs.
+
+Artifacts are kept for seven days. Dependency downloads are allowed; the safety preflight, Node network guard and browser request allowlist still apply to the tests.
+
+## 6. Running locally
+
+Use a clean checkout, Java 21, Chromium with its system libraries and PlatformIO 6.2.0. Remove any real provider or Firebase credential from the environment.
 
 ```sh
 npm ci
@@ -101,12 +76,8 @@ npm run qa:nightly
 npm run qa:weekly
 ```
 
-Individual commands are `npm run qa:mutation`, `npm run qa:soak`, or
-`node scripts/qa/campaign.mjs gnss|emulator|browser|api|native|reviewedUnit` with one literal suite name.
-The integration campaigns require a built backend. Reports are under
-`artifacts/qa/`; missing prerequisites produce blocked/failed output.
+To run one shard, use `node scripts/qa/campaign.mjs <suite>` with one of `gnss`, `emulator`, `browser`, `api`, `native` or `reviewedUnit`; the emulator, browser and API shards need `npm run build --workspace=backend` first. `npm run qa:mutation` and `npm run qa:soak` run the weekly shards. Reports are written under `artifacts/qa/`.
 
-The default browser campaign currently covers Chromium only. Firefox/WebKit,
-full Next production PWA integration, wider security matrices and all remaining
-source/control oracles still need reviewed executable coverage. Actual motion
-truth and compound recovery are tracked in GitHub issue #300 under #245.
+## 7. Limits
+
+The campaigns use Chromium only. Firefox and WebKit, the production Next.js PWA, wider security matrices and the remaining source and control oracles need reviewed executable coverage. Moving-vehicle truth and compound recovery need the [field acceptance package](FIELD_ACCEPTANCE.md).

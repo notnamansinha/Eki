@@ -1,205 +1,77 @@
-# Actual components with disposable browser integration
+# Disposable Browser Acceptance
 
-Last updated: 2026-10-21 15:25 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-TST-004 | 1.0 | Current | 2026-10-30 |
 
-This L3 suite mounts PassengerWorkspace with its actual boarding, profile,
-chat and feedback children, actual AuthProvider/hooks/database SDKs, and the
-actual compiled backend server, middleware and workers. It also mounts the
-actual AdminPage and its six lazy panels. Browser tests inspect HTTP/UI outcomes
-and independently read persistent demo records through a separate fixture
-control listener. No application route is replaced with a success stub.
+## 1. Purpose
 
-## Run
+`npm run qa:browser` is the L3 suite of the [QA programme](README.md). It runs the real passenger workspace (with its boarding, profile, chat and feedback children), the real admin page with all six panels, the real `AuthProvider` and Firebase SDKs, and the compiled backend with its middleware and workers. Data lives in disposable Auth, Firestore and RTDB emulators. Tests check the rendered UI and HTTP outcomes, then read the persisted records independently through a fixture control listener. No application route is replaced with a success stub.
 
-The completed-ride feedback path pauses the real Firestore SDK network before
-an admin status write. While the write is queued locally, both status actions
-are disabled and the independent server record and rendered badge remain `new`.
-Networking is restored in `finally`; separate assertions then wait for the
-durable demo record and rendered badge to become `reviewed`/`resolved`. This
-exercises the direct Firestore transport used by the application. A disabled
-button alone is not treated as a successful write. The browser outbound
-allowlist stays active throughout the test.
+## 2. Prerequisites
 
-Use a clean disposable checkout with Node 24, Java 21 and the locked npm
-dependencies. The frontend/production `.env` files must not be copied here.
+- A clean disposable checkout. The backend fixture (`e2e/emulator/backend.mjs`) refuses to start when `.env`, `backend/.env` or `e2e/emulator/.env` exists.
+- Node 24, Java 21 and locked dependencies.
+- Chromium: `npx playwright install --with-deps chromium`.
+- Free ports: frontend 3115, backend 3116, fixture control 3117, Firestore 8085, RTDB 9005, Auth 9095, hub 4405, logging 4505. Do not run another emulator suite at the same time.
 
-```sh
-npm ci
-npx playwright install --with-deps chromium
-npm run qa:check
-npm run qa:browser
-```
+## 3. Procedure
 
-For a targeted provider-boundary reproduction, `npm run qa:browser:providers`
-runs only the two provider cases in both viewports. Reports explicitly record
-scope `providers` and exclude all other case execution claims. Existing CI
-continues to execute the full thirty-test suite.
-`npm run qa:browser:service` likewise runs only the real delay/interruption/
-fresh-fix/restart case in both viewports and reports scope `service`.
+1. Install dependencies and check the configuration:
 
-The launcher starts Firestore, RTDB and Auth with pinned Firebase CLI 15.14.0,
-validates the running hub, and uses only `demo-eki-qa`. Auth's client endpoints
-select the CLI's default project, so the browser, Admin SDK and seeded Auth
-accounts deliberately share that exact demo project. Each run owns a fresh
-emulator process; it must not share ports or namespaces with another suite.
-Reserved ports: browser 3115, backend 3116, fixture control 3117, Firestore
-8085, RTDB 9005, Auth 9095, hub 4405 and logging 4505.
+   ```powershell
+   npm ci
+   npm run qa:check
+   ```
 
-The backend fixture installs the actual rules copies, creates synthetic
-password accounts and role claims, and initializes the Admin app before
-application bootstrap. Its emulator-only owner credential has no private key.
-The fixture adapts the server's listening address from wildcard to literal
-loopback without changing the application server source. Real environment
-files are rejected before bootstrap, metadata discovery is off, and the
-backend has the preloaded socket/DNS guard. Browser HTTP and WebSocket routes
-deny targets outside the explicitly allowed loopback ports before navigation.
-These are scoped transport guards, not an OS sandbox for arbitrary native code.
+2. Run the suite:
 
-## Assertions and evidence
+   ```powershell
+   npm run qa:browser
+   ```
 
-Fifteen named cases run once in each Chromium mobile/desktop viewport, one worker,
-no retries. They cover successful boarding and reload restoration, code-free
-boarding with one authenticated passenger record, distant-position denial with
-no membership mutation, lost chat response
-after a real commit and idempotent retry/listener delivery, persisted feedback
-and local cooldown, profile sign-out confirmation/cancellation, admin settings
-and role switch, all six tabs with keyboard focus, vehicle creation/edit cancel/
-delete, and route identity/edit cancellation. Additional integrated cases drive
-registered synthetic device HTTP fixes through the real workers to completion,
-one separate automatic reverse ride, the passenger's real ten-second feedback
-timer and persisted ride feedback. Admin history reload/manifest inspection,
-cancelled and confirmed terminal deletion, feedback review/resolution, inactive
-operator creation/edit cancellation/deletion with real Auth claim demotion,
-delay 0→1→0, boarding-code retrieval, interruption and distinct restart are
-checked against independent durable records. The browser uses both native
-selectOption and custom option clicks according to the actual control.
+   The script builds the backend, then `scripts/run-rules-emulator.mjs --browser` starts the emulators for project `demo-eki-qa` and runs `scripts/qa/run-browser-tests.mjs`, which runs Playwright with `playwright.emulator.config.ts`.
 
-The operator case first deliberately selects a vehicle with no routes. The
-backend now rejects that deterministic assignment with 400 before changing
-operator/user records or Auth claims. Previously its late validation returned
-500 after persisting a partially assigned operator. Unit regressions cover both
-missing and route-less buses while preserving the original operator and old
-account authorization; the browser checks rejection, edits the spare vehicle
-to give it a valid route, then retries and observes the actual acknowledgement
-before inspecting claims. This change does not make cross-store Firebase/Auth
-publication atomic or certify deployed multi-replica race recovery.
+3. Read the verdict in `artifacts/qa/browser-report.md`.
 
-The synthetic route is approximately 400 m. Sample times span the previous
-45 seconds, with two intermediate accepted fixes and a final stopped fix.
-The chosen speeds/times satisfy the source's travel envelope; position advances
-are not forced into RTDB. These accelerated timestamps exercise lifecycle
-semantics, not measured driving latency or a 45-second wall-clock soak. Every
-fixture request has a deadline and observes the real worker checkpoint before
-the next dependent fix. A reverse ride may already be active at its origin when
-observed; both armed and active are valid, and it must remain separately owned
-and empty of the original passenger.
-Before an interrupted ride is restarted, its test sends a fresh authenticated
-origin fix; it does not rely on a seed that may legitimately age beyond the
-source's sixty-second service-start policy on a busy machine.
+For a narrow reproduction, `npm run qa:browser:providers` runs only the tests whose titles match `provider quota`, and `npm run qa:browser:service` only those matching `admin live service controls`. Their reports record scope `providers` or `service`. A narrow run cannot satisfy the full L3 scope in the [execution ledger](EXECUTION_EVIDENCE.md).
 
-`browser-playwright.json`, `browser-junit.xml`, `browser-report.json`,
-`browser-report.md`, `browser-run.log`, incremental `browser-progress.json` and failure screenshots are written under
-ignored `artifacts/qa`. Reports record actual source SHA/dirty state, observed
-test results, running emulator targets and browser versions. A visible-control
-census is attached after each test; it is a rendered candidate inventory,
-not evidence that every inventoried control/action/state was exercised.
-Exact limited case links in `browser-test-map.mjs` remain PARTIAL even after
-both viewport assertions pass. Empty, skipped, flaky, timed-out or incomplete
-results cannot promote the execution scope to green. CI uploads failure
-evidence with seven-day retention. Trace recording is off so Auth tokens and
-storage state cannot enter a trace artifact; all identities/coordinates are
-synthetic. The browser launcher has a seven-minute deadline and test child five
-minutes; the L2 launcher remains six minutes. The expanded suite first measured
-3.9 minutes locally; its next run reached the previous four-minute child limit
-after 27 successful executions and produced BLOCKED, not a passing report. The
-bounded browser budget was adjusted for the additional real provider-abort checks.
-The progress reporter records each finished test without headers/storage, so a
-killed runner can retain its actual partial observations. A missing final report
-still leaves the overall verdict BLOCKED; progress cannot make that run green.
+## 4. What the suite exercises
 
-Each test resets only owned demo records and inspects both browser and backend
-transport denials. Playwright closes its contexts and owned web servers;
-the backend's actual shutdown handler drains workers and SDK resources, and
-the Firebase CLI stops emulator processes. Tests must run serially because
-they deliberately share one disposable database.
+Every test runs once in each project: mobile (390 x 844) and desktop (1280 x 800), with one worker and no retries. The browser grants geolocation at a fixed synthetic position.
 
-## Deliberate boundaries and remaining work
+| Area | Checks |
+|---|---|
+| Passenger boarding | Boarding through the real API with one durable membership restored on reload; boarding without a code; a distant position rejected without a manifest change or optimistic success |
+| Chat and feedback | A lost chat acknowledgement reconciles into one durable message; feedback persists and the cooldown holds after the modal reopens |
+| Account | Profile photo and its accessible fallback when the image is denied; profile sign-out cancellation and confirmation; accepted account deletion preserves ride feedback and messages; a failed deletion shows its error and allows a retry |
+| Admin | Settings persist and a passenger cannot open the panel; all six panels mount by pointer and roving keyboard; vehicle create, edit, cancel and delete; operator create, edit and delete with real Auth claim changes |
+| Routes and providers | Route creation recovers from provider quota and a lost acknowledgement, then reuses stored geometry and deletes safely; Places quota and the real abort deadline show recoverable errors; route identity stays immutable; stop rename Escape discards the draft |
+| Live service | Authenticated device telemetry admits a qualified receiver without a manual start request; stop arrival appears in the passenger timeline only inside the 15 m arrival corridor; an off-route fix publishes a versioned detour without skipping a stop; telemetry completes the joined ride and arms a separate return ride; bounded delay, interruption and a distinct restart |
 
-Maps rendering uses the existing deterministic SDK adapter; Next dynamic
-loading and navigation use fixture adapters. This does not verify Google
-roads, map paint performance, production static-export deep links or OAuth
-redirects. App Check is explicitly disabled for isolated development here;
-the separate existing admin regression covers synthetic enforcement behavior.
-Real attestation/provider configuration is a manual gate.
+The fixture sets `AUTOMATIC_TURNAROUND_DWELL_MS=0` so that the return ride arms without waiting. Device fixes use accelerated timestamps that satisfy the travel envelope. They exercise lifecycle rules, not driving latency or a wall-clock soak.
 
-The fixture also wraps the backend's fetch boundary for exactly the Routes
-compute and Places search URLs. It returns owned synthetic responses in memory;
-those recognized requests never reach the underlying fetch or a provider socket.
-Unknown outbound fetch URLs fail closed and Node socket/DNS guards remain active.
-After rejecting all inherited real provider credentials, the fixture installs a
-constant synthetic key in its own backend process so the actual handlers can
-exercise their configured-provider branches. It is neither a usable provider
-credential nor an exception permitting cloud traffic.
+## 5. Isolation
 
-The additional browser cases inject upstream quota responses, the real Places
-five-second abort deadline, successful synthetic search, route creation and a
-lost response after a real route commit. The actual frontend reconciles the
-operation, metadata editing reuses persisted geometry without more provider
-calls, and cancel/confirmed deletion preserves/removes an unassigned route.
-These are L3 boundary-adapter checks, not L4 Google service acceptance. The
-adapter's directional polylines and distance/duration values are synthetic.
-Adapter unit checks demonstrate quota, malformed responses, abort and rejection
-of unknown outbound URLs without forwarding any provider request.
-Every browser test also requires zero denied fetch requests in the adapter, so
-an unexpected outbound attempt cannot be silently ignored by a handler.
+- The backend fixture runs the safety preflight in emulator mode, initialises the Admin SDK against the emulators, creates synthetic password accounts with role claims, and listens on literal loopback. Metadata discovery is off and the Node network guard is preloaded.
+- The browser context allows HTTP only to ports 3115, 3116, 8085, 9005 and 9095 on `127.0.0.1`, and WebSockets only to 3115 and 9005. Every other request is aborted and counted; each test requires zero denied requests.
+- `e2e/emulator/providers.mjs` intercepts only the Routes `computeRoutes` and Places `searchText` URLs and answers them in memory with synthetic responses. Any other outbound fetch throws. The fixture installs a constant synthetic Maps key so the configured-provider code paths run; it is not a usable credential.
+- Maps rendering and Next.js dynamic loading use fixture adapters.
+- Playwright tracing is off so that Auth tokens and storage state never enter an artifact. All identities and coordinates are synthetic.
+- Tests share one disposable database and run serially. Each test resets only its own demo records through `POST http://127.0.0.1:3117/reset`.
 
-The 12 October focused provider run passed four executions in both viewports,
-and a separate service run passed both fresh-fix/restart executions. The new
-progress reporter retained all four provider observations with completed=true.
-These were dirty Linux development runs, not immutable full-suite acceptance.
-The initial full provider run had 29 passed/one failed due to cross-viewport
-Places cache reuse; subsequent runs hit their bounded deadline and are BLOCKED.
-Distinct per-viewport queries and an actual fresh device fix address those
-fixture assumptions. Hosted current-commit full-suite evidence is required.
+These are scoped transport guards, not an operating-system sandbox.
 
-The primary synthetic completion/automatic return chain, inactive operator CRUD,
-service interruption/restart and terminal history deletion are now exercised.
-Remaining software includes broader route-save/Places fault scenarios, reassignment and
-active-operator mutation denial, broader service/history race partitions, all error/control
-partitions, PWA failure modes or other browser engines. Those remain software
-work in the master roadmap, not physical-test waivers. Hardware/live-motion
-requirements remain under GitHub #245/#300. Local development failures and
-setup fixes are retained in logs; exact-commit passing evidence belongs in the
-PR/run artifacts after execution, not in this specification.
+## 6. Evidence
 
-## Harness fault demonstration
+The run writes these files under the ignored `artifacts/qa/` directory: `browser-playwright.json`, `browser-junit.xml`, `browser-report.json`, `browser-report.md`, `browser-run.log`, `browser-progress.json` and failure screenshots in `browser-results/`. Reports record the source commit, the dirty flag, the observed results, the running emulator targets and the browser version. Each test also attaches a census of visible controls; the census is an inventory, not evidence that each control was exercised.
 
-Historical note: the code-rejection demonstration below predates the 25 October removal of passenger boarding codes. Current boarding uses verified identity, ordered stops and live-bus proximity; code-free boarding and distant-position rejection are exercised separately.
+The progress reporter records each finished test, so a killed run keeps its partial observations. The verdict stays BLOCKED without a final report. Empty, skipped, flaky, timed-out or incomplete results also leave it BLOCKED. The ledger requires the exact test file and title and one first-attempt pass in each viewport.
 
-On 11 October, the Linux development run used Node 22.23.2, Java 21.0.12
-and Chromium 153.0.8010.12. All twenty executions passed with zero skipped,
-flaky or retried tests. This was a dirty development checkout, not immutable
-release evidence. A second run deliberately changed the fixture's persisted
-boarding code from `ABCD2345` to `ZZZZ2345`, keeping the browser's valid-code
-input unchanged, and selected the boarding/reload test in both viewports.
-Both executions failed at the missing confirmed On board state; the report
-was RED with zero passed and two failed. The fault was removed before commit.
-This demonstrates that an incorrect persisted boarding precondition is caught;
-it does not claim exhaustive mutation coverage. To reproduce, make those two
-temporary changes in a disposable checkout, run the launcher, retain its
-failure evidence separately, restore the fixture and run the full suite.
+Deadlines: the Playwright child stops after 6 minutes and the emulator launcher after 8 minutes. The nightly campaign allows 480 s. CI uploads the evidence with seven-day retention, including failed runs.
 
-The report classifier separately rejects wrong test files, repeated viewport
-observations, missing viewports and retry-only passes. Exact file, title and
-one first-attempt result from each mobile/desktop project are required.
+Passing tests give `PARTIAL` status to the limited case links in `qa/browser-test-map.mjs`. They never complete a case.
 
-The expanded Linux development run subsequently passed all twenty-six
-executions with zero failed/skipped/flaky/retried tests in 2.4 minutes. Its
-checkout was dirty and records that fact. The completion journey took about
-18 seconds per viewport, including the real ten-second feedback delay. The
-source bug above was reproduced before its fix; missing/empty-route assignment
-now fails without partial state, followed by a successful valid-route retry.
-An existing diagnostics-pool unit test also now freezes only Date.now during
-its HTTP loop so CPU load cannot turn its admission-isolation oracle into an
-accidental window-rollover test. Timers and HTTP remain real; throughput and
-elapsed-time recovery are separate checks.
+## 7. Limits
+
+The suite does not verify Google roads or map paint performance, production static-export deep links, OAuth redirects, real provider configuration, PWA failure modes, or browsers other than Chromium. Cross-store Firebase and Auth updates are not atomic, and multi-replica race recovery is not covered. Physical and live-motion requirements are tracked in [issue #351](https://github.com/notnamansinha/Eki/issues/351).

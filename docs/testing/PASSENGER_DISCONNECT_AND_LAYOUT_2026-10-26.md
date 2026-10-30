@@ -1,5 +1,9 @@
 # Passenger map and disconnect verification
 
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-031 | 1.0 | Historical | 2026-10-26 |
+
 Updated 2026-10-26 (Asia/Calcutta). Branch: `codex/gnss-auto-service`, PR #381.
 
 The reported failures were reproduced in signed-in Chrome against the actual

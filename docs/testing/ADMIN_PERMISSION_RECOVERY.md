@@ -1,6 +1,8 @@
 # Local admin permission recovery evidence
 
-Last updated: 2026-10-06 00:20 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-002 | 1.0 | Historical | 2026-10-06 |
 
 This record extends #204's earlier verified-readiness fix for a second
 administrator using localhost. It documents software recovery, not a witnessed

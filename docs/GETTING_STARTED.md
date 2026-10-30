@@ -1,303 +1,274 @@
-# Eki getting started and operating guide
+# Getting Started with Eki
 
-Last updated: 2026-10-16 00:23 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-GEN-004 | 2.0 | Current | 2026-10-30 |
 
-This is the plain-language entry point for the Eki campus bus-tracking system.
-It explains what the system does, who uses it, how to run it locally, and
-where to find the detailed technical contracts. It intentionally uses
-placeholders for project IDs, domains, credentials, and infrastructure names.
+## 1. Purpose
 
-## What Eki does
+This tutorial takes you from a clean Windows, macOS or Linux machine to a working local Eki system: the frontend on `http://localhost:3000`, the backend on `http://localhost:4000`, a development Firebase project with one route, one bus, one operator and one provisioned tracker, and a live bus on the map. It then walks through the main workflow of each role.
 
-Eki tracks university buses from an ESP32 and GNSS receiver to a browser-based
-passenger and administrator experience:
+Commands are written for PowerShell and run from the repository root unless a step says otherwise. Every setting mentioned here is defined in the [configuration reference](CONFIGURATION.md); terms are defined in the [glossary](GLOSSARY.md).
 
-1. The ESP32 reads a GNSS fix and sends a small, authenticated HTTPS request.
-2. The backend validates the device credential, timestamp, coordinates and
-   movement state. Bus and route assignment always come from the protected
-   device registry, never from the device payload.
-3. The backend publishes the latest live position to Firebase Realtime Database
-   (RTDB), while Firestore stores configuration, recovery state, messages,
-   feedback, and history.
-4. Browsers receive live changes through Firebase listeners. REST requests are
-   used for commands and other deliberate mutations; the live map is not
-   implemented as repeated API polling.
-5. An exclusive Firestore bus lock and durable ride record keep one physical bus
-   from running two sessions and allow a session to recover after interruptions.
+## 2. Prerequisites
 
-The end-to-end architecture is documented in [High-level design](design/HIGH_LEVEL_DESIGN.md).
+### 2.1 Software
 
-## Who uses the system
-
-| Role | What the role can do | How access is granted |
+| Tool | Version | Needed for |
 |---|---|---|
-| Passenger | View configured routes and live buses, join an active ride with the driver-issued boarding code, select boarding/alighting stops, message ride members, submit feedback, and request personal-data deletion | Firebase Authentication account with a passenger role |
-| Driver/operator | Operate the assigned bus and route, arm/resume a ride, issue a boarding code, adjust delay, and message passengers | Admin-managed driver record, assigned bus, trusted role claims, and current session ownership |
-| Administrator | Manage routes, buses, drivers, devices, settings, requests, feedback, ride history, analytics, and reconciliation | Firebase Authentication account with an administrator role and backend admin claim |
-| Deployment/firmware operator | Provision devices, create protected firmware artifacts, perform physical acceptance tests, and rotate device credentials | Controlled operational process; this is not a browser role |
+| Git | Any current release | Cloning the repository |
+| Node.js and npm | Node.js 24, the version CI uses; npm ships with it | Everything in this tutorial |
+| Google Chrome or another Chromium browser | Current release | The app, and DevTools location override in Section 10.1 |
+| Java | 21 | Only `npm run test:rules` and the emulator suites |
+| Python and PlatformIO Core | Python 3.12, PlatformIO 6.2.0 (the versions CI pins) | Only firmware builds and native firmware tests |
 
-Presentation guards improve the user experience but are not authorization
-boundaries. Firestore/RTDB rules and backend middleware enforce access.
+### 2.2 Accounts and cloud resources
 
-## Read the documentation in this order
+Create these before you start. Use a project that holds no production data.
 
-1. [Architecture and lifecycle summary](design/ARCHITECTURE.md)
-2. [This guide](GETTING_STARTED.md)
-3. [Environment and configuration reference](CONFIGURATION.md)
-4. [Low-level design and module catalog](design/LOW_LEVEL_DESIGN.md)
-5. [Firebase data model](data/FIREBASE_DATA_MODEL.md)
-6. [Backend API reference](../backend/API.md)
-7. [Hardware telemetry](hardware/HARDWARE_TELEMETRY.md)
-8. [Test strategy](testing/TEST_STRATEGY.md)
-9. [Deployment and operations documents](operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md)
+1. A Firebase project for development with:
+   - Authentication, with the Google sign-in provider enabled;
+   - a Cloud Firestore default database;
+   - a Realtime Database (RTDB) instance;
+   - a registered web app, whose configuration values you copy in Section 5.
+2. Google Maps Platform enabled on the same Google Cloud project, with billing:
+   - a browser API key for the Maps JavaScript API, restricted to your local and hosted origins, and a map ID;
+   - a server API key for the Routes API and Places API (New).
+3. Credentials for Firebase Admin on your machine: either Application Default Credentials for the development project, or a service-account JSON key for it.
+4. Three Google accounts that you can sign in with: one becomes the administrator, one the operator and one the passenger. One account cannot hold two roles: saving an operator changes that account's role to `driver`, and only a passenger account can board.
 
-The [documentation index](index/README.md) lists every maintained document,
-including the demo, security, DNS, hardware-provisioning, and contribution
-guides.
+<a id="local-development"></a>
 
-## Local development
+## 3. Install the repository
 
-### Prerequisites
-
-- Node.js 24 (matching CI), npm and Git.
-- Java when running Firebase emulator rule tests.
-- PlatformIO for firmware compilation and hardware tests.
-- A Firebase project and backend Firebase Admin credentials for live backend
-  development.
-- Google Maps browser and server credentials if route geometry or maps are used.
-
-### Install and configure
-
-Run these commands from the repository root:
-
-```powershell
-npm ci
-Copy-Item backend/.env.example backend/.env
-Copy-Item frontend/env.production.example frontend/.env.local
-```
-
-Fill the two ignored environment files using [CONFIGURATION.md](CONFIGURATION.md):
-
-1. In `backend/.env`, change the copied template to `NODE_ENV=development`,
-   `PORT=4000` and `CORS_ORIGIN=http://localhost:3000`. Set the development RTDB
-   URL and Firebase Admin credentials. Keep `RETENTION_SWEEPER_ENABLED=false`.
-   The template's production mode requires retention enforcement and will
-   refuse startup with its safe disabled-retention default.
-2. In `frontend/.env.local`, set matching Firebase/Maps values and
-   `NEXT_PUBLIC_BACKEND_URL=http://localhost:4000`.
-3. Configure Firebase Auth and trusted role claims before signing in; see
-   [local Auth setup](CONFIGURATION.md#local-auth-setup). App Check is not used.
-4. Restart services after environment changes. For phones/hardware use
-   [local testing](operations/LOCAL_TESTING.md), which explains reachable HTTPS
-   origins, CORS and reflash requirements.
-Use separate development Firebase data from production. Do not copy service
-account JSON, device secrets, signing keys, or App Check debug tokens into the
-repository.
-
-### Start the application
-
-```powershell
-npm run dev
-```
-
-The development frontend is normally available at `http://localhost:3000` and
-the backend at `http://localhost:4000`. The backend health endpoint is
-`http://localhost:4000/health`; a `503` can be expected when placeholder or
-unreachable Firebase dependencies are used.
-
-For frontend-only or backend-only work:
-
-```powershell
-npm run dev --workspace=frontend
-npm run dev --workspace=backend
-```
-
-### Create initial development data
-
-The usual order is:
-
-1. Configure Firebase Authentication, Firestore, RTDB and Maps for
-   the development project.
-2. Seed the predefined routes when route geometry is needed:
+1. Clone the repository and install the locked dependencies:
 
    ```powershell
-   npm run seed --workspace=backend
+   git clone https://github.com/notnamansinha/Eki.git
+   Set-Location Eki
+   npm ci
    ```
 
-   This calls the server-side Google Routes integration and therefore requires
-   `GOOGLE_MAPS_API_KEY`.
-3. Create or bootstrap user profiles, then assign roles and driver records from
-   the backend/admin process. Run `npm run sync-role-claims --workspace=backend`
-   after changing role or driver assignments so Firebase Auth claims and the
-   RTDB assignment mirror are refreshed.
-4. Create bus records and assign routes to them.
-5. Provision a device only after its bus and route exist:
+   Expected result: `npm ci` finishes without errors and installs the dependencies of the root, `backend` and `frontend` workspaces from `package-lock.json`.
+
+## 4. Configure the backend
+
+1. Copy the backend template:
 
    ```powershell
-   npm run provision-device --workspace=backend -- `
-     --device-id device_01 --bus-id bus_01 --route-id route_01
+   Copy-Item backend/.env.example backend/.env
    ```
 
-   The command prints a randomly generated secret once and stores only a
-   salted verifier. Transfer it only through the controlled firmware-signing
-   process described in [hardware security provisioning](operations/HARDWARE_SECURITY_PROVISIONING.md).
+2. Edit `backend/.env`. The template is a production template; change these values:
 
-The provisioning command is intentionally not a browser endpoint. It prevents
-duplicate device assignment and unsafe changes during an active ride.
+   | Variable | Local value |
+   |---|---|
+   | `NODE_ENV` | `development` |
+   | `PORT` | `4000` |
+   | `CORS_ORIGIN` | `http://localhost:3000` |
+   | `FIREBASE_DATABASE_URL` | Your development RTDB URL |
+   | `GOOGLE_MAPS_API_KEY` | Your server Maps key |
+   | `RETENTION_SWEEPER_ENABLED` | Keep `false` |
 
-For the person physically preparing a tracker, follow the complete [ESP32 +
-NEO-M8N hardware setup guide](../hardware/README.md). It lists every required
-backend/frontend template, all six firmware definitions, wiring, certificate
-requirements, secure signing prerequisites, route-versus-firmware changes, and
-the checks to perform after flashing.
+3. Provide Firebase Admin credentials in one of two ways:
+   - Application Default Credentials [1] for the development project. Leave `FIREBASE_SERVICE_ACCOUNT` unset.
+   - Set `FIREBASE_SERVICE_ACCOUNT` to the complete service-account JSON on one line, in single quotes.
 
-## The ride lifecycle
+   Expected result: `backend/.env` names only development resources. If you leave `NODE_ENV=production`, the backend refuses to start because retention is disabled.
 
-The durable state machine is:
+## 5. Configure the frontend
 
-`armed / pre_departure → active / in_service → completed`
+1. Copy the frontend template:
 
-- Initial arming requires an assigned bus/route and a fresh stopped hardware
-  fix near exactly one route endpoint. Moving, stale, mid-route or ambiguous
-  evidence cannot select a direction. The backend infers forward/reverse.
-- Arming at the inferred origin can enter service immediately. An existing
-  session resumes with its stored direction and progress.
-- Only the next ordered stop advances progress. Visiting a later stop cannot
-  skip the expected stop.
-- Network loss, GNSS loss, browser refresh, device power loss, and backend
-  restart do not by themselves complete or delete a durable ride.
-- The final ordered stop completes the ride and releases its bus lock. Ending
-  early records `interrupted`; it never creates a completed ride.
-- Fresh stopped telemetry at the destination can arm a new opposite-direction
-  session after `AUTOMATIC_TURNAROUND_DWELL_MS` (default 30,000 ms; minimum 0). An interrupted
-  ride is not eligible for this automatic turnaround.
+   ```powershell
+   Copy-Item frontend/env.production.example frontend/.env.local
+   ```
 
-See [the data model](data/FIREBASE_DATA_MODEL.md) for the records and
-[the API reference](../backend/API.md) for command contracts.
+2. Edit `frontend/.env.local`:
+   - Set the seven `NEXT_PUBLIC_FIREBASE_*` values from the Firebase web app configuration. `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` can stay as it is.
+   - Set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` to the browser key and `NEXT_PUBLIC_GOOGLE_MAP_ID` to the map ID.
+   - Set `NEXT_PUBLIC_BACKEND_URL=http://localhost:4000`.
 
-## Common workflows
+   Expected result: `NEXT_PUBLIC_FIREBASE_DATABASE_URL` and the backend's `FIREBASE_DATABASE_URL` name the same RTDB instance.
 
-### Passenger
+## 6. Prepare the Firebase project
 
-1. Sign in through the frontend.
-2. Select a route, bus and destination station. Destination selection is
-   available with live device presence before a service session exists. It
-   follows ride-direction stop order, updates the map/timeline target and falls
-   back to the terminal stop when no valid selection exists. Bus/station
-   dropdowns remain inside the app and support keyboard selection.
-3. When a driver provides a boarding code for an active session, join with the
-   boarding and destination stations. The destination is stored in the ride
-   manifest for administrators. Your preselected destination carries into
-   the boarding form as `alightingStopId`; changing the boarding stop does not
-   change the map destination.
-4. Follow the live bus position and session status. The browser may show a
-   reconnecting or stale state when live data is unavailable; it must not invent
-   an authoritative position.
-5. Use in-session messaging only for operational communication. Messages are
-   scoped to the session and rate-limited.
-6. Submit ride feedback after an eligible completed ride, or request deletion
-   from **Profile → Delete Account**. Confirming sends a deletion request.
-   After server acceptance, dismiss the **Deletion requested** popup to sign
-   out. The account is deleted asynchronously; feedback, passenger ride entries
-   and messages remain unchanged. There is no multi-day waiting period or
-   routine admin approval, but worker availability and errors can delay deletion.
-   See [account deletion and recovery](operations/PRIVACY_DELETION.md).
+The browser reads Firestore and RTDB directly under the repository's security rules, so the development project must run the current rules and indexes.
 
-### Driver/operator
+1. Sign in to the Firebase CLI and deploy rules and indexes to the development project. The repository's `.firebaserc` names a shared project as `default`, so always pass `--project`:
 
-1. Confirm the assigned bus, route, device and current GNSS/network status.
-2. Arm or resume the assigned session from the Operations workspace.
-3. Issue the boarding code to passengers through the approved channel.
-4. Adjust delay when required; the backend validates session ownership and
-   preserves the value durably.
-5. Drive the route in configured stop order. The first stop activates service
-   and the final stop completes it.
-6. Report device, power, GNSS, Wi-Fi or backend faults using the diagnostics and
-   operational runbooks. Do not operate the web app while driving.
+   ```powershell
+   npx --yes firebase-tools@15.14.0 login
+   npx --yes firebase-tools@15.14.0 deploy --project <dev-project-id> --only firestore:rules,firestore:indexes,database:rules
+   ```
 
-### Administrator
+   Expected result: the CLI reports a successful deploy for the three targets. Index builds continue in the background for a few minutes.
 
-1. Configure routes, waypoints and stops before assigning them to buses.
-2. Maintain bus and driver records and reconcile claims/mirrors after bulk
-   changes.
-3. Provision, inspect, disable or reassign devices only when no conflicting
-   active ride or bus lock exists.
-4. Monitor `/health`, telemetry rejection counts, latency percentiles, worker
-   lease health, Firebase usage and Maps usage.
-5. Review feedback from the Admin Feedback tab or `/feedback`. Both use the
-   same admin-authenticated HTTP panel, which loads the latest 200 records and
-   updates status only after an acknowledged PATCH.
-6. Review history using readable bus/route/driver names, labeled timestamps,
-   arrival-stop names and recorded destination evidence. Interrupted rides
-   show as ended early. Terminal history deletion requires a separate in-app
-   confirmation; cancelling sends no request. Active rides cannot be deleted.
-7. Handle requests and retention/privacy according to the approved process.
+2. If App Check enforcement was ever turned on for Firestore or RTDB in this project, turn it off. See [local authentication setup](CONFIGURATION.md#8-local-authentication-setup).
 
-## Verification commands
+## 7. Start the system
 
-| Command | Purpose |
+1. Start the frontend and backend together:
+
+   ```powershell
+   npm run dev
+   ```
+
+   To run one side only, use `npm run dev --workspace=frontend` or `npm run dev --workspace=backend`.
+
+2. In a second terminal, check backend readiness:
+
+   ```powershell
+   Invoke-RestMethod http://localhost:4000/health
+   ```
+
+   Expected result: `status: ok` with HTTP 200, which means the cached Firestore and RTDB probes succeed. HTTP 503 with `status: degraded` means the process runs but cannot reach Firebase; fix the credentials or RTDB URL before you continue. `GET /live` returns `status: alive` whenever the process is up.
+
+3. Open `http://localhost:3000`.
+
+   Expected result: the sign-in page with a **Sign In with Google** button.
+
+<a id="create-initial-development-data"></a>
+
+## 8. Create development data
+
+### 8.1 Create the administrator
+
+1. Sign in at `http://localhost:3000` with the account that will be the administrator.
+
+   Expected result: the passenger workspace opens. The backend has created `users/<uid>` in Firestore with `role: "passenger"`.
+
+2. In the Firebase console, open Firestore, find that `users/<uid>` document, and change `role` to `admin`.
+3. Publish the role as trusted claims:
+
+   ```powershell
+   npm run sync-role-claims --workspace=backend
+   ```
+
+   Expected result: the command ends with `Synchronized <n> users; 0 failed.`
+
+4. Sign out and sign in again.
+
+   Expected result: the app opens `/admin` with the tabs **Live Ops**, **Routes**, **Fleet & People**, **History**, **Feedback** and **Settings**.
+
+5. Sign in once with the operator account and once with the passenger account, in a private window or another browser profile, so that both have Firebase Auth accounts and passenger profiles.
+
+### 8.2 Create a route
+
+Use one of two methods:
+
+- In **Routes**, create a route with a route ID, a display name and at least two stops in travel order, then save it. The backend computes forward and reverse road geometry with the Routes API.
+- Or load the predefined Ahmedabad routes from `frontend/src/lib/predefinedRoutes.ts`:
+
+  ```powershell
+  npm run seed --workspace=backend
+  ```
+
+  Expected result: the command reports the number of routes written to the `routes` collection, for example `route_au_samras`. The seed calls the Routes API for both directions of every route, and running it again updates those route documents.
+
+### 8.3 Create a bus and an operator
+
+1. In **Fleet & People**, register a vehicle: enter a vehicle ID, for example `bus_01`, and a name, and assign the route.
+2. Register an operator: enter an operator ID, a name, the operator account's Auth UID (from Firebase console, Authentication), and assign `bus_01`.
+
+   Expected result: both records appear in the saved lists. The operator account now has `role: "driver"` and trusted claims for `bus_01`, and its existing sessions are revoked, so it must sign in again. Automatic service requires exactly one operator assigned to the bus.
+
+### 8.4 Provision a tracker
+
+Register a device for the bus and route. The route must already be assigned to the bus:
+
+```powershell
+npm run provision-device --workspace=backend -- --device-id device_01 --bus-id bus_01 --route-id <route-id>
+```
+
+Expected result: the command prints `Device provisioned` and a device secret. The secret is shown once and stored only as a salted hash; copy it to a private place. The command refuses a bus and route that already have an active ride or another device.
+
+## 9. Send live telemetry
+
+Choose one source of telemetry.
+
+### 9.1 With an ESP32 tracker
+
+A tracker cannot reach `localhost` on your machine. Expose the backend over HTTPS, fill `hardware/include/secrets.h`, then build and flash by following [local testing](operations/LOCAL_TESTING.md) and the [hardware guide](../hardware/README.md).
+
+### 9.2 Without hardware
+
+Send the backend the same request the firmware sends, once per second, with the bus standing at the route's first stop. Replace the placeholders with the device secret from Section 8.4 and the first stop's coordinates (for `route_au_samras`, `23.0335` and `72.5566`):
+
+```powershell
+$deviceId = "device_01"
+$secret = "<device-secret>"
+for ($seq = 1; $seq -le 120; $seq++) {
+  $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+  $body = @{ lat = <first-stop-lat>; lng = <first-stop-lng>; speed = 0; heading = 0; motionState = "stopped"; gpsHdop = 0.9; seq = $seq; timestamp = $now; deviceSentAt = $now } | ConvertTo-Json -Compress
+  Invoke-RestMethod -Method Post -Uri "http://localhost:4000/api/devices/$deviceId/telemetry" -Headers @{ Authorization = "Device $secret" } -ContentType "application/json" -Body $body | Out-Null
+  Start-Sleep -Seconds 1
+}
+```
+
+Expected result: each request is accepted, `bus_01` appears in **Live Ops**, and the backend starts an automatic service: a ride session in trip state `pre_departure` with a resolved direction. When the loop ends, the passenger view changes to "Updates delayed" after 12 s and to "Live tracking lost" after 30 s.
+
+This loop never moves the bus, so stops do not advance. Stop progress needs a real or recorded drive; see [tracking algorithms](design/TRACKING_ALGORITHMS.md).
+
+## 10. Role walkthroughs
+
+### 10.1 Passenger
+
+1. Sign in with the passenger account. The **Map** tab lists the routes that currently have a live or available bus. The **Routes** tab shows the route schedules that an administrator has published (Section 10.2), whether or not a bus is running.
+2. Select the route, then the bus, then a destination stop. The map shows the bus, the route in travel order and stop estimates when the bus is live.
+3. To board, choose a boarding stop and press **Board**. The backend accepts the request only while the ride is `armed` or `active`, the direction is known, a fresh bus position exists, and the browser's location is within 150 m of the bus. No boarding code is needed. At a desk, set a location near the bus with Chrome DevTools, **Sensors**, **Location**.
+
+   Expected result: the ride card shows the passenger as on board, and the ride chat opens for members of the session.
+
+4. After a completed ride, the app asks for ride feedback. General feedback is available from **Profile**. Feedback is written directly to Firestore under security rules.
+5. **Profile**, **Delete Account** sends an account deletion request; after the confirmation is dismissed, the passenger is signed out and the backend deletes the account asynchronously. See [privacy deletion](operations/PRIVACY_DELETION.md).
+
+### 10.2 Administrator
+
+1. **Live Ops** shows every bus on a map and in a list with its live status and delay. From a bus you can change the delay, open the ride chat, or use **End ride early**, which saves the ride as `interrupted` and pauses automatic service for that bus. **Resume tracking** restarts automatic service after such a pause.
+2. **Routes** creates, edits and deletes routes and their ordered stops. **Fleet & People** manages vehicles and operators.
+3. **History** lists rides, newest first, with their status and stop evidence. **Feedback** shows the latest 200 feedback records and updates their status. **Settings** holds the passenger-facing service start time, the no-bus messages and the announcement text.
+4. To publish a route schedule, open **Settings** and scroll to **Passenger Routes**. Select the routes passengers may browse; they appear to passengers in the order you select them. Enter a time for every stop of each selected route, then press **Save routes**. This section saves separately from the settings above it, and leaving the tab with unsaved changes asks for confirmation.
+
+   Expected result: the button changes to **Saved!** and then **No route changes**, and the passenger **Routes** tab shows each selected route as a timeline of its stops and times. A missing or invalid time marks the stop's field and keeps the schedule unsaved. After you delete a route or change its stops, open this section again and save: the passenger view skips deleted routes and shows "Time not set" for new stops until you do.
+5. **Passenger Panel** opens the passenger workspace; **Profile**, **Admin Panel** returns.
+
+### 10.3 Operator
+
+The operator has no separate workspace. The operator's assignment to a bus authorizes the automatic service, and the tracker in that bus starts, advances and completes rides from its GNSS fixes:
+
+1. The tracker sends a qualified fix (fresh, with an HDOP accuracy figure of at most 4) and the backend creates the session in `pre_departure`.
+2. When the bus leaves the origin, the trip state becomes `in_service`, and each stop is marked as the bus reaches it in route order.
+3. A confirmed stop at the final stop completes the ride. After the turnaround wait, a fresh stopped fix there arms the return direction.
+
+The operator account can sign in to the passenger workspace. It cannot board a ride.
+
+## 11. Troubleshooting
+
+| Symptom | Cause and fix |
 |---|---|
-| `npm run lint` | Lint frontend and backend |
-| `npm test` | Run script, backend, frontend and documentation tests |
-| `npm run docs:sync` | Regenerate required root/package documentation mirrors |
-| `npm run test:e2e:admin` | Mobile/desktop admin, auth and feedback browser regressions with synthetic Firebase data |
-| `npm run test:rules` | Run Firebase rules emulator integration tests; requires Java |
-| `npm run build` | Build backend/frontend, generate the service worker, and regenerate CSP hashes |
-| `npm run build:production` | Run the strict production environment gate and build |
-| `npm run verify:web-backend-contract` | Verify global CSP backend origin and Firebase Auth frame-src policy |
-| `npm run verify:rtdb-instance` | Preflight check verifying RTDB URLs, matching hosts, and target region |
-| `npm run verify` | Run lint, all tests, build and the production dependency audit |
-| `platformio test --project-dir hardware -e native` | Run host-side firmware policy tests |
-| `platformio run --project-dir hardware -e esp32dev` | Build development firmware |
-| `platformio run --project-dir hardware -e esp32dev-secure` | Build a signed fleet artifact in the controlled signing environment |
+| Backend exits at startup naming `RETENTION_SWEEPER_ENABLED`, `CORS_ORIGIN` or `FIREBASE_DATABASE_URL` | `NODE_ENV` is still `production`. Set it to `development` (Section 4). |
+| Backend exits naming a boolean flag, `TRUST_PROXY` or `RATE_LIMIT_SHARD_FACTOR` | The value is outside the accepted set. See [backend variables](CONFIGURATION.md#3-backend-variables). |
+| `/health` returns 503 | Firebase Admin cannot reach Firestore or RTDB. Check the credentials, the project, and `FIREBASE_DATABASE_URL`. |
+| "Access could not be verified" with a message about trusted Auth claim synchronization | The Firestore profile says `admin` or `driver`, but the claims were not published. Run `npm run sync-role-claims --workspace=backend` and sign in again. Editing the profile alone grants nothing. |
+| "Your account is not permitted to verify this workspace" | Firestore rules denied the profile read: the project runs old rules, or the frontend and backend use different projects. Repeat Section 6 and check both configurations. |
+| Firestore or RTDB permission errors in the browser console | The development project runs old rules, or App Check enforcement is on. Repeat Section 6. |
+| Map is grey or shows a Maps error | Check the browser key, its referrer restriction for `http://localhost:3000`, and the map ID. |
+| Telemetry request returns 401 | Wrong device ID or secret, or the device is disabled. Provision again and use the new secret. |
+| Telemetry request returns 400 | A field is missing or out of range, or `timestamp` is more than 60 s old. |
+| Telemetry request returns 403 | The device's bus or route assignment is not usable. Check that the route is assigned to the bus. |
+| The bus is live but no ride session starts | Automatic service needs an enabled device, a bus assigned to the route, exactly one operator on that bus, a valid route and a fix with HDOP at most 4. |
+| **Board** stays disabled or returns "You must be near the bus to board" | The browser's location is more than 150 m from the bus, or tracking is not live. |
+| A changed `NEXT_PUBLIC_*` value has no effect | Restart `npm run dev`; the values are compiled into the bundle. |
 
-Deploy through the approval-gated [Deploy workflow](../.github/workflows/deploy.yml)
-from `main`. It selects the Firebase project explicitly and runs the App Check removal
-and Firestore index gates before publishing Hosting and rules. The backend
-container/runtime, DNS, TLS, WAF, secrets, monitoring and replication are
-separate deployment responsibilities; use the university deployment checklist
-for the full rollout.
+More checks for phones, tunnels and hardware are in [local testing](operations/LOCAL_TESTING.md).
 
-## Troubleshooting guide
+## 12. Next steps
 
-| Symptom | First checks | Reference |
-|---|---|---|
-| Backend will not start in production | `CORS_ORIGIN`, `FIREBASE_DATABASE_URL`, credentials, Maps configuration, and replica shard factor | [Backend README](backend/README.md), [configuration](CONFIGURATION.md) |
-| `/health` returns 503 | Firebase Admin credentials, Firestore/RTDB reachability, and the cached probe timestamp | [API health](../backend/API.md#health) |
-| Browser shows no live bus | Auth, RTDB URL, rules, device health, and whether the fix is fresh | [Hardware telemetry](hardware/HARDWARE_TELEMETRY.md) |
-| Security verification fails or fleet permissions fail after sign-in | Check Firebase Auth role claims and database rules; protected listeners wait for refreshed trusted claims. Disable old Firebase App Check enforcement before deploying this browser. Permission retries refresh access together; timeouts leave access closed | [Local auth setup](CONFIGURATION.md#local-auth-setup) |
-| Feedback cannot load | Check backend reachability and verified admin claims for `GET /api/v2/feedback`; retry from the panel. Do not relax Firestore rules | [Feedback API](../backend/API.md#feedback-profile-and-settings-endpoints) |
-| Sign-out fails | Protected content stays hidden; reload and retry sign-out. Previous verification/results must not reopen access | [Frontend guide](../frontend/README.md) |
-| Device receives 400 | Validate the deployed schema (nine-field current; eight-field sequenced and six-field legacy compatibility), JSON size, ranges, sequence, and capture/send timestamps | [API device endpoints](../backend/API.md#device-endpoints) |
-| Device receives 401 | Device ID, registry status, secret, assignment and certificate/clock; correct by re-provisioning and reflashing | [Security provisioning](operations/HARDWARE_SECURITY_PROVISIONING.md) |
-| Device receives 413 | Telemetry body exceeds the 512-byte limit or diagnostics exceed 1 KiB | [API device endpoints](../backend/API.md#device-endpoints) |
-| Device receives 429/503 | Backoff, per-device/IP/WAF limits, backend health and Firebase availability | [API limits](../backend/API.md#authentication) |
-| Ride does not advance | Fix freshness, route/stop order, next-stop geometry, and session ownership | [Lifecycle design](design/HIGH_LEVEL_DESIGN.md) |
-| Rules test fails locally | Java, Firebase emulator CLI, and the generated temporary rules path | [Test strategy](testing/TEST_STRATEGY.md) |
+- Read the [architecture](design/ARCHITECTURE.md) and the [data model](data/FIREBASE_DATA_MODEL.md).
+- Before you change code, read [contributing](../CONTRIBUTING.md) and the [test strategy](testing/TEST_STRATEGY.md).
+- For phone testing and demonstrations, use [local testing](operations/LOCAL_TESTING.md) and the [live demo runbook](operations/LIVE_DEMO_RUNBOOK.md).
 
-## Public-safe documentation boundary
+## 13. References
 
-These documents describe architecture, interfaces, procedures, limits and
-failure behavior. They must not contain:
-
-- service-account JSON, private signing keys, device secrets, Wi-Fi passwords,
-  App Check debug tokens, bearer tokens, or unredacted production logs;
-- private hostnames, internal IP addresses, tunnel credentials, or secret
-  manager contents;
-- personal passenger/driver records or real location history;
-- unreviewed incident details that could help bypass authentication or physical
-  security.
-
-Browser Firebase and Maps configuration values are public identifiers, but they
-still require hostname/API restrictions. Keep them in environment-specific
-configuration and do not confuse “public” with “unrestricted.”
-
-## Further references
-
-- [Backend API reference](../backend/API.md)
-- [Firebase data model](data/FIREBASE_DATA_MODEL.md)
-- [Storage architecture](data/STORAGE_ARCHITECTURE.md)
-- [Security policy](../SECURITY.md)
-- [Production readiness audit](operations/PRODUCTION_READINESS_AUDIT.md)
-- [Live demo runbook](operations/LIVE_DEMO_RUNBOOK.md)
-- [University deployment checklist](operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md)
+[1] Google, "How Application Default Credentials works," cloud.google.com/docs/authentication/application-default-credentials. Accessed: 2026-10-30.

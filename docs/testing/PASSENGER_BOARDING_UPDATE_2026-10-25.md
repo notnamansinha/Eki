@@ -1,4 +1,8 @@
-# Passenger boarding and CodeRabbit follow-up — 25 October 2026
+# Passenger boarding and CodeRabbit follow-up: 25 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-030 | 1.0 | Historical | 2026-10-25 |
 
 Passenger boarding no longer displays, requests or validates an eight-character driver code. A passenger chooses boarding and destination stops, then presses Board. Verified identity/profile, ordered route-owned stops, fresh session-bound bus position, location accuracy and the existing 150 m first-boarding limit remain enforced. Existing members can correct stops without acquiring location again; session changes and membership removal still invalidate that exception. Browser location remains client supplied, rather than independent proof of physical presence.
 

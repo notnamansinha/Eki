@@ -1,5 +1,9 @@
 # Readiness audit Low findings: 11 October 2026
 
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-004 | 1.0 | Historical | 2026-10-11 |
+
 This is a disposition of the grouped Low list in `eki-testing-prod-readiness-audit (1).md`, section 5. The audit is input to review, not an instruction to change every behavior. "Open" means the observation still needs work or acceptance; "retained" means the present behavior is intentional under the current contract. None of these entries substitutes for the live acceptance list in #245.
 
 ## Backend (30)

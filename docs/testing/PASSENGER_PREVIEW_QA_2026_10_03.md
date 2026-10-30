@@ -1,6 +1,8 @@
-# Passenger preview and operator controls audit — 2026-10-03
+# Passenger preview and operator controls audit: 2026-10-03
 
-Last updated: 2026-10-04 14:20 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-035 | 1.0 | Historical | 2026-10-04 |
 
 > Historical evidence: original run dates, commits, measurements and limits below remain authoritative for that run. This documentation update does not rerun the test. See [current testing gates](README.md).
 

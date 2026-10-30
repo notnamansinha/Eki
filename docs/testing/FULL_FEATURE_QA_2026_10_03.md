@@ -1,6 +1,8 @@
-# Full feature QA — 3 October 2026
+# Full feature QA: 3 October 2026
 
-Last updated: 2026-10-04 14:20 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-012 | 1.0 | Historical | 2026-10-04 |
 
 > Historical evidence: original run dates, commits, measurements and limits below remain authoritative for that run. This documentation update does not rerun the test. See [current testing gates](README.md).
 

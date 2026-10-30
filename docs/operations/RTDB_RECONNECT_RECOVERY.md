@@ -1,98 +1,92 @@
-# RTDB browser reconnect gates and retry jitter
+# Browser Reconnect and Access Recovery
 
-Last updated: 2026-10-21 04:44 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-021 | 2.0 | Current | 2026-10-30 |
 
-R15 controls manual browser recovery without changing telemetry cadence,
-authorization or ride state. The Firebase SDK retains its automatic persistent
-connection/recovery behavior; see the
-[official connection API](https://firebase.google.com/docs/reference/js/database#gooffline).
+## 1. Purpose
 
-## Recovery rules
+This document describes how the web app recovers its live RTDB data after a tab was hidden or the network dropped, how it spaces listener retries, and how it retries role verification after a transient outage. The rules limit forced reconnects without changing telemetry cadence, authorization or ride state.
 
-`useRTDBResume` treats a hidden interval of at least **30 seconds**, measured
-with `performance.now()`, as meaningful suspension. A healthy shorter tab
-switch preserves the fleet cache and subscription generations. An unrelated
-browser `online` notification cannot force a healthy connection to restart.
+## 2. Scope
 
-A true-to-false `.info/connected` transition or browser `offline` event closes
-the data-readiness state and invalidates the fleet once. Initial `.info=false`
-is restoration, so it does not force a handshake or discard another active
-subscriber's cache. Confirmed disconnection or meaningful suspension schedules
-manual recovery only while the page is visible and the browser is online.
+The document covers the `useRTDBResume` hook, live-fleet listener retries in the shared live bus store, and access verification retries in `AuthProvider`. The Firebase SDK keeps its own automatic connection recovery [1]; the manual handshake described here is an addition, not a replacement. How passengers see a silent bus is described in the [browser telemetry trace](BROWSER_TELEMETRY_TRACE.md).
 
-Requests debounce for **1,000–1,500 ms** (500 ms plus first-retry jitter).
-Further recovery events reset that debounce window. Natural SDK recovery
-cancels a pending disconnection handshake. Manual handshakes have a **5-second
-cooldown**, clear the fleet cache, increment the resume generation, and call
-`goOffline`/`goOnline` once. Connection confirmation and an authoritative fleet
-snapshot are both required to clear the recovering state. Hidden/offline
-events cancel queued handshakes; unmount detaches the observer, cancels timers
-and fences late callbacks.
+## 3. Behaviour
 
-Events inside the manual cooldown leave recovery to the SDK; they do not
-queue another forced handshake at cooldown expiry. SDK connection callbacks
-still advance snapshot readiness during that interval. This limits forced
-reconnect churn while retaining the SDK's normal network recovery.
+### 3.1 When a manual reconnect is scheduled
 
-## Retry bounds
+| Event | Effect |
+|---|---|
+| Tab hidden for less than 30 s, connection healthy | Nothing. The fleet cache and subscriptions are kept. |
+| Tab hidden for 30 s or more (measured with `performance.now()`) | A manual reconnect is scheduled when the tab becomes visible. |
+| `.info/connected` changes from `true` to `false`, or the browser fires `offline` | Data readiness closes and the live bus cache is invalidated once. A reconnect is scheduled; after `offline`, it is scheduled when the browser fires `online`. |
+| First `.info/connected` value is `false` | Treated as initial connection, not a failure. Nothing is forced, and other subscribers keep their cache. |
+| Browser fires `online` while the connection is healthy | Nothing. |
 
-Live-fleet listener retries use equal jitter over half of each capped
-exponential window, independently for each attempt/client. They begin at
-**500–1,000 ms** and reach **15,000–30,000 ms** at the cap. Invalid attempt counts
-normalize to the first window. A malformed random sample uses the midpoint or
-clamps into range. Delays never reach zero or exceed 30 seconds. An authoritative
-snapshot resets the attempt count; the final subscriber leaving cancels retry.
+A reconnect is only scheduled while the page is visible and the browser reports online. Hiding the tab or going offline cancels a queued reconnect.
 
-These are browser recovery bounds, not fleet-wide capacity or latency targets.
-Browser timer throttling can delay execution; callbacks recheck visibility,
-online state and whether recovery is still needed before issuing a handshake.
+### 3.2 Manual handshake
 
-## Regression evidence and remaining acceptance
+A scheduled reconnect waits 1,000 to 1,500 ms (500 ms plus a 500 to 1,000 ms jittered delay); each new event restarts that wait. If the SDK reconnects on its own first, a handshake queued after a disconnection is cancelled; one queued after a 30 s suspension still runs. The handshake clears the live bus cache, increments the resume generation and calls `goOffline` then `goOnline` once. A 5 s cooldown follows: events inside the cooldown leave recovery to the SDK and do not queue another handshake for later. SDK connection callbacks still advance readiness during the cooldown.
 
-### Access verification after an outage
+The recovering state clears only when the connection is confirmed and an authoritative fleet snapshot has arrived. On unmount the hook detaches its observer, cancels its timers and ignores late callbacks.
 
-`AuthProvider` separately recovers a signed-in account whose trusted role
-verification failed because of `auth/network-request-failed`, Firestore
-`unavailable`/`deadline-exceeded`, or the ten-second role-verification deadline.
-The failed verification keeps the identity and data-readiness gate closed.
-It retries after 1, 2, 4, 8, 16 and 30 seconds, at most six automatic retries
-per burst. Browser timers can delay these intervals. Retries pause while the
-browser is offline or the document is hidden. A subsequent online or visible
-event resumes a failed transient verification with a fresh retry budget;
-healthy access does not reverify on these events. The explicit **Try again**
-action remains available.
+### 3.3 Listener retry delays
 
-Manual and automatic recovery share the current verification flight. Recovery
-always forces fresh trusted claims; it cannot authorize a driver/admin from a
-cached role, Firestore profile or bootstrap response alone. Permission denial,
-disabled/expired accounts and missing privileged claims do not schedule
-automatic retries. Account changes, sign-out and unmount fence queued and late
-work. A late result from a timed-out request cannot restore an older role.
-The timeout cannot cancel Firebase SDK promises; the finite retry budget
-bounds automatic requests while an underlying operation remains unresolved.
+Live-fleet listener retries use equal jitter: a random delay between half and all of an exponential ceiling that starts at 1 s and is capped at 30 s. The first retry waits 500 to 1,000 ms; from the sixth retry on, 15,000 to 30,000 ms. Each client draws independently. An invalid attempt count is treated as the first attempt, and an invalid random value uses the midpoint or is clamped. A delay is never zero and never above 30 s. An authoritative snapshot resets the attempt count, and the last subscriber leaving cancels the retry.
 
-The mounted Auth suite has 27 passing cases. The 32 mobile/desktop synthetic
-browser cases include a ten-minute virtual-clock offline interval, the actual
-browser offline/online transition, no protected reads before fresh role
-approval, and recovery without navigation or sign-in. Firebase is a synthetic
-adapter in those browser cases; real provider outages, deployed revocation,
-phone suspension and field latency remain separate acceptance requirements.
+Browser timer throttling can delay any of these timers. Every callback rechecks visibility, online state and whether recovery is still needed before acting.
 
-Three failing baseline cases reproduced the healthy short-tab reconnect,
-unnecessary online-event reconnect and immediate un-debounced resume. The
-focused hook/state/retry/store suite passes 25 cases, including natural SDK
-recovery, network flaps, hidden/offline suppression, snapshot readiness and
-cleanup. A deterministic 1,000-client scheduling fixture produces distinct
-bounded delays; it does not measure 1,000 real sockets.
+### 3.4 Access verification retries
 
-The actual resume hook, active-bus hook and shared fleet store also run in the
-mobile/desktop browser suite against synthetic SDK transport. A short tab
-switch keeps visible fleet data with unchanged read/handshake counts. A long
-suspension issues one delayed handshake and receives a fresh fleet snapshot.
-At the original R15 change, all 16 browser cases passed, including admin
-permission recovery; the expanded suite is reported above.
+`AuthProvider` verifies the signed-in user's role with fresh token claims, with a 10 s deadline. When verification fails with `auth/network-request-failed`, Firestore `unavailable` or `deadline-exceeded`, or the deadline, the identity and data-readiness gates stay closed and the provider retries after 1, 2, 4, 8, 16 and 30 s: at most six automatic retries per burst. Retries pause while the browser is offline or the tab is hidden. The next `online` or `visibilitychange` event to a visible page starts a fresh burst. A verified session does not reverify on these events. The **Try again** button stays available. While a timer retry is scheduled, the error stays on screen as "We could not verify your access. Check your connection; retrying automatically." instead of switching back to a spinner; a retry the user can see coming (back online, tab shown, **Try again**) shows the loading state, and **Try again** pressed during a timer retry joins that attempt and shows it in progress.
 
-#245 retains real-network/PWA/long-suspension acceptance and same-window
-connection/byte/latency measurements. Browser checks can be run stationary
-without ESP32/GNSS. Actual GNSS-to-screen latency and moving-route acceptance
-require appropriate live hardware; this software evidence cannot certify them.
+Before verification can start, the browser must download the sign-in code. A failed download is retried one attempt at a time after 2, 5, 10, 20 and then every 30 s, and at once on an `online` event; a retry requested while a download is in flight runs as soon as that download fails. Slow restoration of a saved session is reported after 8 s as a notice with **Reload**, never as an access error ([frontend guide](../../frontend/README.md#8-authentication-flow)).
+
+Manual and automatic retries share the current verification attempt and always force fresh trusted claims; a cached role, the Firestore profile or the bootstrap response alone never authorizes a driver or administrator. Permission denial, disabled or expired accounts and missing privileged claims are not retried. Account change, sign-out and unmount cancel queued work, and a late result from a timed-out attempt cannot restore an older role. The deadline cannot cancel the underlying Firebase promise; the finite retry burst bounds how many such calls are outstanding.
+
+## 4. Configuration
+
+None of these values is configurable at run time.
+
+| Item | Value | Source |
+|---|---|---|
+| Minimum hidden time for a forced reconnect | 30 s | `frontend/src/hooks/useRTDBResume.ts:14` |
+| Reconnect debounce | 500 ms plus the first retry delay | `frontend/src/hooks/useRTDBResume.ts:15`, `frontend/src/hooks/useRTDBResume.ts:73` |
+| Handshake cooldown | 5 s | `frontend/src/hooks/useRTDBResume.ts:16` |
+| Retry ceiling start and cap | 1 s, 30 s | `frontend/src/lib/liveBusRetry.ts:1`, `frontend/src/lib/liveBusRetry.ts:2` |
+| Equal jitter | 50 % to 100 % of the ceiling | `frontend/src/lib/liveBusRetry.ts:14` |
+| Role verification deadline | 10 s | `frontend/src/hooks/useAuth.ts:24` |
+| Access retry delays | 1, 2, 4, 8, 16, 30 s | `frontend/src/hooks/useAuth.ts:29` |
+| Transient error codes | `auth/network-request-failed`, `unavailable`, `deadline-exceeded`, deadline | `frontend/src/hooks/useAuth.ts:32` |
+| Sign-in code download retries | 2, 5, 10, 20, then every 30 s; at once on `online` | `frontend/src/hooks/useAuth.ts:30` |
+| Slow restoration notice | 8 s | `frontend/src/hooks/useAuth.ts:27` |
+
+## 5. Failure modes and recovery
+
+| Symptom | Cause | Action |
+|---|---|---|
+| Live data stays in the recovering state | No authoritative snapshot after reconnect, for example RTDB unreachable or rules denying the read | Check the browser console and network. The SDK keeps retrying; reload the page if the network is healthy. |
+| "We could not verify your access. Check your connection; retrying automatically." | A transient failure; a timer retry is scheduled | Wait, or select **Try again**. |
+| "We could not verify your access. Check your connection and try again." after an outage | Six automatic retries used up while the network was still down | Select **Try again**, or return to the tab once online. |
+| "Sign-in could not load. Check your connection; retrying automatically." | The sign-in code did not download | Wait; the download is retried and runs again when the browser comes online. **Reload** also works. |
+| "Your account is not permitted to verify this workspace" | Permission denied; not retried | Check the account's role and claims with an administrator. |
+
+These are browser recovery bounds, not fleet capacity or latency targets.
+
+## 6. Verification
+
+| Behaviour | Tests |
+|---|---|
+| Suspension threshold, debounce, cooldown, network flaps, hidden and offline suppression, cleanup | `frontend/src/hooks/useRTDBResume.test.tsx`, `frontend/src/hooks/rtdbResumeState.test.ts` |
+| Retry bounds and jitter, including 1,000 simulated clients | `frontend/src/lib/liveBusRetry.test.ts` |
+| Store recovery and snapshot readiness | `frontend/src/lib/liveBusStoreRecovery.test.ts` |
+| Access retries, fencing and fresh claims | `frontend/src/hooks/useAuth.test.tsx` |
+| Long suspension with one debounced handshake, a ten-minute offline access failure recovered on `online` without protected reads or reload, offline and online flapping | `e2e/admin-access.spec.ts`, `e2e/admin-access/resilience.spec.ts` (`npm run test:e2e:admin`) |
+
+The browser suites replace Firebase with a synthetic adapter. Real provider outages, deployed token revocation, phone suspension, installed-app behaviour and same-window connection and byte measurements need field evidence; the procedure is in [realtime transport measurements](REALTIME_TRANSPORT_MEASUREMENTS.md).
+
+## 7. References
+
+[1] Google, "Firebase JavaScript API reference: database, goOffline and goOnline," firebase.google.com/docs/reference/js/database. Accessed: 2026-10-30.

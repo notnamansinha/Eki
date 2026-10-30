@@ -1,177 +1,139 @@
-# Recording a physical GNSS test
+# Field Capture
 
-Last updated: 2026-10-21 04:20 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-008 | 1.0 | Current | 2026-10-30 |
 
-Prepare the recorder before boarding. Device presence, location delivery and an
-armed service are separate checks. A moving location trace without a ride session
-can measure delivery but cannot verify stops, boarding, completion or return.
+## 1. Purpose
 
-## Before an armed ride test
+This procedure records a physical GNSS ride so that device, backend and browser timings can be correlated afterwards. It uses four repository tools:
 
-1. Confirm the intended device/vehicle/route in Admin → Live Ops. In Fleet &
-   People, the operator must have the correct vehicle and its route assignment.
-2. In **Start service**, select the operator, check the automatically filled
-   assigned vehicle, select the route and click **Start service**. Retain the
-   success message and session ID. The card must leave **Ride Not Armed** for
-   **Direction Pending**, **Awaiting Stop 1** or **In Service**. Do not treat an
-   online marker or moving speed alone as a started ride.
-3. Prefer a fresh stopped fix at the configured origin to resolve direction.
-   If that endpoint fix was missed, recovery requires at least three fresh,
-   credible moving fixes spanning 30 metres on one unambiguous first route leg.
-   Ambiguous geometry or a start beyond an unobserved intermediate stop remains
-   pending. Verify the published direction and service activation; do not invent
-   coordinates, force direction or manufacture missed-stop history.
-4. Open the existing authenticated Admin, Passenger and available Driver pages with
-   `?telemetryTrace=1`. Keep the tabs open without refresh. Export each tab's
-   **Download telemetry trace** before and after the run. Browser background
-   suspension can delay animation callbacks; record which view was foreground.
-   The local trace download is available to every authenticated role when opted
-   in; it exports only data already observed in that tab. It does not fetch
-   protected backend health or grant another role's access.
-5. Record source revision and working diff, installed-image identity if verified,
-   local build/toolchain hashes, receiver identity, antenna/sky conditions and an
-   independent reference if available. An ELF/bin hash from the laptop alone is
-   not proof of what is flashed. Missing reference data stays unavailable.
-6. Verify the current backend/tunnel and cloud observers receive fresh fixes.
-   Record a stopped baseline and actual start time. Keep USB, hotspot and laptop
-   awake throughout the intended observation window. Name the person responsible
-   for physical actions; annotate intentional disconnects and stops.
+| Tool | Purpose | Arguments |
+|---|---|---|
+| `scripts/capture-serial.py` | Records the device's serial output without resetting or commanding it | `--port`, `--baud` (default `115200`), `--duration` (seconds; `0` records until the stop file exists), `--out`, `--stop-file` |
+| `scripts/supervise-field-capture.py` | Runs several recorders, restarts any that exit, and stops them all on one stop file | `--config <manifest.json>` |
+| `scripts/analyze-telemetry-trace.mjs` | Correlates device trace lines with a browser trace export | `--device`, `--browser` (repeatable), `--health` (repeatable), `--out` |
+| `scripts/archive-field-evidence.py` | Builds a verified private ZIP of a finished run | `--source`, `--out`, `--exclude` (repeatable) |
 
-## Serial recording
+What a capture can show depends on the ride state. A moving trace without a ride session measures delivery only; stop arrivals, boarding, completion and the return service need a running service.
 
-Install pySerial in the host's Python environment. Run from the repository root
-with the actual serial port and a new output path under ignored `temp/`:
+## 2. Prerequisites
 
-```powershell
-python scripts/capture-serial.py --port COM_PORT --duration 1800 --out temp/field-run/serial.log --stop-file temp/field-run/STOP
-```
+- Python 3 with pySerial (`python -m pip install pyserial`). Do not create a file named `serial.py` next to the scripts; it would shadow pySerial.
+- Node.js and the repository at the commit under test.
+- A device build that prints `[TelemetryTrace]` lines (`esp32dev`; the `esp32dev-quiet` build removes them).
+- Output folders under the ignored `temp/` and `artifacts/` directories, or another private location. Every run uses a new folder.
+- One serial tool per port. Close any PlatformIO monitor before recording.
 
-The recorder sets DTR/RTS inactive before opening and sends no device commands.
-It saves the legacy timestamped text log, exact bytes at `serial.log.raw.bin`,
-and host wall/monotonic chunk offsets/events at `serial.log.events.jsonl`.
-Serial disconnects are recorded and retried within the original deadline;
-partial lines never join across reconnects. Existing files are never truncated.
-Do not rename the recorder script to `serial.py`, which shadows pySerial.
-Control-line settings do not guarantee every USB driver/board is reset-immune.
+## 3. Before the ride
 
-To stop early, create the specified stop file, then wait for capture_end and the
-recorder's process to exit. Keep collection and archive stdout/stderr outside the
-evidence folder while those processes are active. Do not attach two serial tools
-to the same port.
+1. In Live Ops, confirm the device, bus and route. In Fleet & People, confirm the bus's route and its single operator. Expected: the IDs match.
+2. Power the device at the route origin. Expected: the service starts by itself and the Live Ops card changes from `Service setup pending` to `Direction Pending`, `Awaiting Stop 1` or `In Service` ([automatic GNSS service](AUTOMATIC_GNSS_SERVICE.md#2-lifecycle)). Record the session ID. If the card shows `Tracking paused`, use `Resume tracking`. An online marker or a moving speed alone is not a started service.
+3. Let direction resolve from a stopped fix within 10 m of the origin stop. Without one, the backend needs at least three fresh, reliable moving fixes covering 30 m along one unambiguous first leg; until then direction stays pending. Do not force a direction or invent coordinates.
+4. Open the Admin and Passenger views with `?telemetryTrace=1` in the URL and keep each tab open without refreshing. Use `Download telemetry trace` in each tab before and after the run, and note which tab was in the foreground ([browser telemetry trace](BROWSER_TELEMETRY_TRACE.md)).
+5. Record the source commit and any uncommitted diff, the build hashes, the receiver and antenna setup, sky conditions and any independent position reference. A hash computed on the laptop does not prove what is flashed. The identity fields are listed in [field acceptance](../../qa/FIELD_ACCEPTANCE.md).
+6. Confirm that the backend and its tunnel receive fresh fixes. Record a stopped baseline and the start time. Keep the USB connection, hotspot and laptop awake. Name the person responsible for physical actions and note every intentional disconnect or stop.
 
-### Record until END
+## 4. Record the serial log
 
-Use `--duration 0` with an explicit `--stop-file` to remove a fixed deadline.
-Zero without a stop file, negative durations and nonfinite durations are rejected.
-Reconnects retain this mode; they do not create a new deadline. For unattended
-worker supervision, the maintained runner is `scripts/supervise-field-capture.py`.
-It requires a **new** run folder and a private JSON manifest, for example:
+1. Start the recorder from the repository root with the device's port and a new output path:
 
-```json
-{
-  "run": "C:/capture/new-run",
-  "cwd": "C:/path/to/Eki",
-  "workers": {
-    "serial": ["python", "scripts/capture-serial.py", "--port", "COM_PORT", "--duration", "0", "--out", "{segment}/serial.log", "--stop-file", "{stop_file}"]
-  }
-}
-```
+   ```powershell
+   python scripts/capture-serial.py --port COM3 --duration 1800 --out temp/field-run/serial.log --stop-file temp/field-run/STOP
+   ```
 
-```powershell
-python scripts/supervise-field-capture.py --config C:/capture/private-manifest.json
-# When recording is finished, from another terminal:
-New-Item -ItemType File C:/capture/new-run/STOP
-```
+   Expected: the recorder runs silently and creates three files: `serial.log` (each line prefixed with the host time in milliseconds), `serial.log.raw.bin` (exact bytes) and `serial.log.events.jsonl` (start, port open, chunk offsets, serial errors and end).
+2. To record without a deadline, use `--duration 0`; this requires `--stop-file`.
+3. To stop early, create the stop file, for example `New-Item -ItemType File temp/field-run/STOP`. Expected: the recorder writes `capture_end` to the events file and prints a JSON summary with line, byte and serial error counts.
 
-Replace the paths and port while parked. Each worker is an argument array,
-executed without a shell from `cwd`. Add already reviewed cloud, database,
-host and browser collectors to the manifest as needed; **this example records
-only serial**, and does not start Chrome or the backend. Every command must
-observe `{stop_file}` and write its evidence below `{segment}`. Never use this
-runner to supervise the application being measured. Existing temporary ride
-kits are frozen historical artifacts; this maintained runner does not silently
-modify or resume them.
+The recorder sets DTR and RTS inactive before opening the port and sends nothing to the device. Some USB adapters reset the board regardless. After a serial error it retries every second within the original deadline; a partial line is flushed at the disconnect, so lines never join across reconnects. It refuses to overwrite any existing output file.
 
-Exited workers retry with a 2–60 second backoff into numbered segments; earlier
-files are retained. `supervisor-events.jsonl` records exits, restarts, deferred
-status updates and forced termination. `recorder-status.json` is an atomic
-snapshot. A Windows sharing violation retries briefly, then leaves the previous
-snapshot intact and records `status_publish_deferred`; it never stops otherwise
-healthy workers. Readers must check the snapshot timestamp and event log. Other
-storage errors remain fatal. A persistent permission error needs operator
-attention even when capture continues.
+## 5. Supervise several recorders
 
-There is no fixed run deadline. STOP prevents further launches and grants workers
-90 seconds to exit (`graceSeconds` in the manifest); remaining owned children
-are terminated, then killed if necessary, with a failed exit status. Free space
-below 1 GiB (`minimumFreeBytes`) requests a distinct failed storage stop. An END
-with only gracefully stopped final worker segments exits zero; inspect every
-earlier segment for gaps regardless of that final exit code.
+Use the supervisor when a run needs several recorders or must survive recorder crashes.
 
-Before announcing readiness, verify fresh growth in **every required stream**,
-not merely alive PIDs. Verify separate genuine browser roles, app trace exports,
-Network HAR and Performance export round trips, backend log persistence and
-independent GNSS reference availability. Continue checking recorder freshness
-during the run. If exports or reference instruments are absent, record the scope
-as incomplete. The [21 October evidence report](../testing/MOVING_GNSS_CAPTURE_2026_10_21.md)
-documents why a running supervisor and owner-reported Record clicks did not
-establish complete capture.
+1. Write a private manifest. `run` must be a folder that does not exist yet; each worker is an argument array run without a shell from `cwd`, and `{segment}` and `{stop_file}` are replaced at launch:
 
-## Correlation and archive
+   ```json
+   {
+     "run": "C:/capture/new-run",
+     "cwd": "C:/path/to/Eki",
+     "workers": {
+       "serial": ["python", "scripts/capture-serial.py", "--port", "COM3", "--duration", "0", "--out", "{segment}/serial.log", "--stop-file", "{stop_file}"]
+     }
+   }
+   ```
 
-Retain serial, device HTTP attempts/acknowledgements, cloud raw/public samples,
-backend health/diagnostics, browser exports and operator annotations from the
-same window. Avoid saving bearer/device credentials or raw request headers.
-Precise positions and compiled device-specific firmware remain private.
+   Optional keys: `graceSeconds` (default `90`) and `minimumFreeBytes` (default `1073741824`, 1 GiB). Worker names start with a lower-case letter and contain at most 64 lower-case letters, digits, `_` and `-`. Every worker must stop when `{stop_file}` exists and write only below `{segment}`. Do not supervise the application under test with this tool.
+2. Start the supervisor:
 
-Analyze each browser role separately to avoid mixing different tab timings:
+   ```powershell
+   python scripts/supervise-field-capture.py --config C:/capture/private-manifest.json
+   ```
+
+   Expected: `C:/capture/new-run` contains `segments/serial/0001/`, `supervisor-events.jsonl` and `recorder-status.json`.
+3. When recording is finished, create the stop file from another terminal:
+
+   ```powershell
+   New-Item -ItemType File C:/capture/new-run/STOP
+   ```
+
+   Expected: workers exit within `graceSeconds`; any still running are terminated and listed as forced terminations. The supervisor exits `0` only when it stopped on the stop file, nothing was forced, and every worker's last segment exited `0`.
+
+A worker that exits is restarted into the next numbered segment after 2, 4, 8, 16, 32 and then 60 s. Earlier segments are kept. Free space below `minimumFreeBytes` stops the run with reason `CRITICAL_STORAGE`. If Windows blocks the status file, the supervisor records `status_publish_deferred` and keeps the previous `recorder-status.json`; check its `atUtc` timestamp. Other storage errors stop the supervisor.
+
+## 6. Check the recording during the run
+
+1. Before announcing that recording has started, confirm that every required stream grows: serial segment, browser tabs, backend logs and any reference instrument. Expected: each file's size increases within a minute. Running processes alone do not prove capture.
+2. Repeat the check during the run. Record any missing stream as a gap in scope.
+
+The [21 October capture record](../testing/MOVING_GNSS_CAPTURE_2026_10_21.md) shows a run in which a running supervisor did not establish complete capture.
+
+## 7. Analyse the traces
+
+Analyse each browser role separately:
 
 ```powershell
 node scripts/analyze-telemetry-trace.mjs --device temp/field-run/serial.log --browser temp/field-run/passenger.json --out temp/field-run/passenger-report.md
 node scripts/analyze-telemetry-trace.mjs --device temp/field-run/serial.log --browser temp/field-run/admin.json --out temp/field-run/admin-report.md
 ```
 
-The analyzer preserves malformed serial fragments and independently parses
-complete concatenated records. Samples without a recorded session are counted
-explicitly. A React snapshot/marker-target callback is not independently measured
-display paint; clock-adjusted intervals carry the four-timestamp uncertainty.
-Browser cadence uses all unique listener/render samples in the exports, including
-samples missing from serial, measured on each tab's monotonic clock. Overlapping
-exports are deduplicated; tabs, routes, sessions and scenario transitions stay
-separate. Missing monotonic timestamps cannot establish cadence. Background
-suspension or truncated exports can still create apparent browser gaps.
+Add `--health <file>` for each saved administrator `GET /api/health` response. Expected: a Markdown report with latency tables per stage.
 
-The capture and ingress intervals in the latency table are intervals between
-**serial-observed accepted samples**. They do not establish a backend outage:
-successful intervening requests can be absent during a USB recording interruption.
-Correlate the serial recorder's events sidecar, browser cadence and an independent
-cloud stream before assigning an outage to a system stage. Preserve intervals and
-missing coverage as evidence; do not describe an unobserved interval as healthy.
-Do not turn sequence gaps into packet-loss percentages. A device read timeout
-can accompany a backend acceptance; correlate sequence and device-send time
-before interpreting unknown acknowledgements.
+Interpretation rules:
 
-Stop **all recorders** before archiving into a new file outside the source:
+- Capture and ingress intervals are intervals between accepted samples seen on the serial port. A gap there does not prove a backend outage; check the recorder's events file, the browser cadence and an independent cloud record before assigning it to a stage.
+- Browser cadence uses each tab's monotonic clock. Background tabs and truncated exports can create apparent gaps.
+- Do not convert sequence gaps into packet-loss percentages. A device read timeout can coincide with a backend acceptance; compare sequence numbers and device send times.
+- A React snapshot or marker-target callback is not a measured screen paint.
 
-```powershell
-python scripts/archive-field-evidence.py --source temp/field-run --out artifacts/field-run.private.zip
-```
+## 8. Archive the evidence
 
-The tool hashes each original, compresses into a partial archive, checks ZIP CRC
-and every archived SHA-256. It refuses to replace existing ZIPs, partial files
-or checksum sidecars. If a checksum appears during publication, the command
-fails and preserves both the verified ZIP and the existing checksum.
-The embedded `SHA256SUMS.json` lists files and explicit exclusions; a sidecar
-contains the ZIP digest on successful completion. A failure before publication
-retains the partial archive for inspection without marking it verified. Use a
-new output name after investigating a conflict; preserve the earlier evidence.
-Source files and previous ZIPs are never removed. Failed partial archives are
-retained for inspection. If an independent supervisor still owns a log handle,
-stop it or explicitly exclude that relative path with `--exclude`; preserve the
-omitted log separately and disclose the omission. Do not include the archiver's
-own active output log in its source folder. The manifest filename is reserved.
+1. Stop every recorder and supervisor. Expected: no process holds files in the run folder.
+2. Archive to a new path outside the source folder:
 
-A verified local ZIP is not an off-device backup. Publish a redacted report and
-aggregate measurements to issues/PRs, keeping the raw evidence private. The
-[19 October moving record](../testing/MOVING_GNSS_CAPTURE_2026_10_19.md) shows
-the completed measurement scope and gates this short run did not exercise.
+   ```powershell
+   python scripts/archive-field-evidence.py --source temp/field-run --out artifacts/field-run.private.zip
+   ```
+
+   Expected: a JSON summary with `crcVerified: true` and `everyEvidenceSha256Verified: true`, the ZIP, and a `.sha256` file next to it.
+3. If a process still holds a file, stop it, or pass `--exclude <relative-path>` and keep that file separately; the exclusion is listed in the archive manifest.
+
+The archiver hashes every file, writes `<out>.partial`, checks the ZIP CRC and every SHA-256 inside it, then publishes the ZIP. It refuses existing outputs, symbolic links, an empty folder, an output inside the source and a source file named `SHA256SUMS.json` (reserved for the manifest). It never deletes source files. After a failure the partial file stays for inspection; investigate, then use a new output name.
+
+A verified local ZIP is not an off-device backup. Keep raw evidence private; publish only redacted reports and aggregate measurements. Precise positions and device-specific firmware stay private.
+
+## 9. Verify the tools
+
+Run `python scripts/field-capture-checks.py`. Expected: 19 tests pass without pySerial or hardware. The same checks run inside `npm test` through `scripts/field-capture.test.mjs`.
+
+## 10. Troubleshooting
+
+| Symptom | Cause | Action |
+|---|---|---|
+| `FileExistsError` or a refused output | The output path or run folder already exists | Use a new path; never reuse an evidence folder |
+| `Duration zero requires --stop-file` | `--duration 0` without `--stop-file` | Add `--stop-file` |
+| `ModuleNotFoundError: serial` | pySerial missing, or a local `serial.py` shadows it | Install pySerial; rename the local file |
+| Recorder logs `serial_error` repeatedly | Cable, port or another tool holding the port | Reseat the cable; close other serial tools |
+| Analyzer report has no device samples | Device build without `[TelemetryTrace]` lines | Record with an `esp32dev` build |
+| Supervisor exit code `1` after a normal stop | A worker was forced or its last segment failed | Inspect every segment's `stderr.log` and the events file before using the evidence |

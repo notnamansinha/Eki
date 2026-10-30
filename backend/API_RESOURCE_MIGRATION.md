@@ -1,71 +1,61 @@
-# HTTP resource migration for issue #192
+# HTTP Resource Migration
 
-Last updated: 2026-10-29 08:40 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-API-005 | 2.0 | Current | 2026-10-30 |
 
-This is the compatibility contract for the six method/path changes on `testing`.
-The existing handlers remain available. The v2 routes call those same handlers,
-so validation, Firebase authorization, persistence, and response bodies stay
-consistent. Device telemetry, diagnostics, and firmware URLs do not change.
+## 1. Purpose
 
-| Existing endpoint | v2 endpoint | Input | Success response | Handler errors | Authorization and limits |
-| --- | --- | --- | --- | --- | --- |
-| `PUT /api/settings` | `PATCH /api/v2/settings/global` | Non-empty partial JSON object with only `serviceStartTime`, `noBusesMessage`, `noBusesSubMessage`, `announcementText`, `announcementActive` | `200 {"saved":true}` | `400` invalid/unknown fields; `500` save failure | Firebase admin; global 200/min and write 30/min limits |
-| `POST /api/plan` | `GET /api/v2/routes/:routeId/segments?from=<startStopId>&to=<endStopId>&via=<viaStopId>` | Safe route/stop IDs, `via` optional; no other query keys | `200` route metadata, ordered stops, direction, and encoded segment polyline, with the same JSON shape as the old endpoint | `400` bad IDs, stop order or query; `404` missing route/stop; `422` unusable route geometry; `500` internal failure | Firebase user; global 200/min and route planning 30/min limits |
-| `GET /api/routes-list` | `GET /api/v2/routes` | None | `200 {"routes":[...]}`; at most 250 route records, with metadata and stops but no geometry | `500` list failure | Firebase user; global 200/min limit |
-| `POST /api/devices/:deviceId/disable` | `PATCH /api/v2/devices/:deviceId` | Exactly `{"enabled":false}` on v2; no body on legacy | `200 {"disabled":true}` | `400` invalid ID or v2 body; `404` unknown device (no registry entry is created); `500` disable/invalidation failure | Firebase admin; global 200/min and write 30/min limits |
-| `PATCH /api/feedback/:feedbackId/status` | `PATCH /api/v2/feedback/:feedbackId` | Exactly `{"status":"new"|"reviewed"|"resolved"}` | `200 {"updated":boolean,"status":string}` | `400` invalid ID/body; `404` missing feedback; `500` update failure | Firebase admin; global 200/min and write 30/min limits |
-| `POST /api/privacy/deletion-request` | `POST /api/v2/privacy-deletion-requests` | No body on v2; UID comes from the token; resubmission preserves retry history | `202 {"accepted":true}`; request record is keyed by UID | `400` unexpected v2 body; `409` operator/admin account; `503` uncertain/unavailable queue acknowledgement | Firebase passenger; global 200/min and write 30/min limits |
+The backend serves its original command-style paths (for example `POST /api/shifts/start`) and, next to them, resource-style paths under `/api/v2/`. This document maps each original path to its resource-style alias, records which of the two the web app calls today, and states the conditions for removing an original path. Request and response details for every path are in the [API reference](API.md).
 
-All six routes can also return `401` for missing or invalid Firebase credentials,
-`403` for an insufficient role where applicable, `413` for a JSON body above the
-16 KiB server limit, or `429` from the applicable limiter. The v2 planning GET
-uses the same cached Firestore route and stored-polyline slicing as the old POST;
-neither calls Google Routes. The v2 routes and their shared legacy handlers set
-`Cache-Control: no-store` on handled responses. Authenticated route data must
-not be cached by a shared proxy.
+## 2. Rules
 
-`PUT /api/v2/settings/passenger-routes` (admin-approved passenger route
-schedules) is a new v2-only settings resource, not one of the six migrations.
-It has no legacy alias and no retirement plan; see
-[`API.md`](API.md).
+1. An alias and its original path call the same handler. Validation, authorization, persistence and response bodies are identical unless Section 3 lists a difference. The last two rows are the exception: the resource-style path runs the same computation as a durable operation with its own status resource ([operation resources](../docs/api/OPERATION_RESOURCES.md)).
+2. Both paths stay served. No removal date is set.
+3. Device ingestion paths (`/api/devices/:deviceId/telemetry`, `/diagnostics`, `/firmware` and `/firmware/installation`) are compiled into the firmware and have no alias.
+4. Renaming a path changes neither payload size nor server work, so the migration makes no latency claim.
 
-The device PATCH intentionally supports only disabling. Assignment changes
-remain on `PUT /api/devices/:deviceId`, including its existing active-ride and
-bus-lock reassignment checks. Both disable paths invalidate the device credential
-cache. The feedback PATCH can change only review status and retains server audit
-metadata. Privacy requests remain keyed to the authenticated UID and do not
-accept a client-supplied identity.
+## 3. Path mapping
 
-The segment response has `routeId`, `routeName`, and `routeColor` strings;
-`startStop` and `endStop` stop objects; `viaStop` as a stop object or `null`;
-`stopsOnSegment` as ordered stop objects; `polyline` as an encoded string;
-`totalStops` as a number; and `direction` as `forward` or `reverse`. A stop
-contains `id`, `name`, `shortName`, `lat`, and `lng` (and may contain
-`waypointIndex`). The routes collection contains records with only `id`,
-`name`, `color`, and `stops`. Handler errors use `{"error":string}`; limiter
-responses may also include `retryAfterMs` and `Retry-After`.
+| Original path | Resource-style path | Difference | Web app calls |
+|---|---|---|---|
+| `PUT /api/settings` | `PATCH /api/v2/settings/global` | None; both merge a partial object | Resource-style |
+| `POST /api/plan` | `GET /api/v2/routes/:routeId/segments` | Body fields `startStopId`, `endStopId`, `viaStopId` become query `from`, `to`, `via`; other query keys return 400 | Neither |
+| `GET /api/routes-list` | `GET /api/v2/routes` | None | Neither; routes are read from Firestore |
+| `POST /api/devices/:deviceId/disable` | `PATCH /api/v2/devices/:deviceId` | Body must be exactly `{"enabled":false}` | Neither |
+| `PATCH /api/feedback/:feedbackId/status` | `PATCH /api/v2/feedback/:feedbackId` | None | Neither; status is written to Firestore |
+| `POST /api/privacy/deletion-request` | `POST /api/v2/privacy-deletion-requests` | Rejects a non-empty body | Resource-style |
+| `POST /api/shifts/start` | `POST /api/v2/ride-sessions` | Requires `Idempotency-Key`; returns `Location` | Resource-style (Resume tracking) |
+| `PATCH /api/shifts/delay` | `PATCH /api/v2/ride-sessions/:sessionId` | Body is only `delayMinutes`; bus, route and operator come from the session; a failed assignment check returns 403 instead of 400 | Original |
+| `POST /api/sessions/:sessionId/boarding-code` | `POST /api/v2/ride-sessions/:sessionId/boarding-code` | None | Original |
+| `POST /api/sessions/:sessionId/join` | `PUT /api/v2/ride-sessions/:sessionId/passengers/me` | None | Original |
+| `POST /api/sessions/:sessionId/messages` | `POST /api/v2/ride-sessions/:sessionId/messages` | None | Original |
+| `DELETE /api/shifts/:sessionId/messages` | `DELETE /api/v2/ride-sessions/:sessionId/messages` | None | Original |
+| `DELETE /api/shifts/:sessionId/history` | `DELETE /api/v2/ride-sessions/:sessionId` | None | Original |
+| `PUT /api/routes/:routeId` | `PUT /api/v2/routes/:routeId` | `Location` points to the v2 status path | Original |
+| `GET /api/routes/:routeId/save-operations/:saveId` | `GET /api/v2/routes/:routeId/save-operations/:saveId` | v2 always returns a 200 snapshot; the original returns 202 while processing and a stored failure with its original status | Original |
+| `POST /api/routes/compute-polyline` | `POST /api/v2/route-geometry-previews` | v2 is a durable operation with `Idempotency-Key`, 202 and a status resource | Neither |
+| `POST /api/fleet/reconcile` | `POST /api/v2/fleet-reconciliation-jobs` | v2 is a durable operation; the cursor moves from the query to the body | Neither |
 
-## Rollout and retirement
+All resource-style paths set `Cache-Control: no-store`.
 
-1. Deploy the backend with both old and v2 routes. Run authorization, validation,
-   rate-limit, and response-parity checks in staging before changing any caller.
-2. The frontend source now uses v2 for settings (`PATCH`), feedback status
-   (`PATCH`), and privacy deletion requests (`POST`). Deploy this frontend only
-   after the compatible backend passes step 1. Preparing these caller changes
-   does not establish that staging acceptance or frontend deployment is done.
-   The current frontend does not call the HTTP planning and routes-list endpoints.
-3. Keep legacy routes for at least 90 days after the frontend migration and
-   until traffic shows 30 consecutive days without supported clients using them.
-   Record the removal in a separate change with client and deployment evidence.
-   The three firmware endpoints have no migration or retirement in this issue.
+These operations have no alias: `POST /api/shifts/stop` (End ride early), `GET /api/sessions/:sessionId/status`, the health endpoints, live bus reads, device registry and diagnostics administration, route geometry reads and deletion, fleet bus and operator administration, analytics, Places search, passenger requests, profile bootstrap and feedback submission. These operations exist only under `/api/v2/`: `GET /api/v2/ride-sessions/:sessionId`, `GET /api/v2/feedback`, `PUT /api/v2/settings/passenger-routes` (passenger route schedules), privacy deletion monitoring and recovery, and durable operation status and recovery. They have no original path to retire.
 
-Method and path naming by itself changes neither payload size nor server work.
-No latency improvement is claimed. Measure latency only if a later change alters
-response projection, cache behavior, or upstream calls.
+## 4. Current status
 
-Health and bus snapshots, fleet bus/driver operations, route CRUD and geometry,
-passenger request PATCH/DELETE, feedback creation, and user bootstrap already
-have suitable resource or ensure-profile semantics and are unchanged. Device
-telemetry is an authenticated ingestion command; route compute and fleet
-reconcile are server-run operations whose durable status design belongs to
-#194. Ride-session command and lifecycle names belong to #193.
+- Both generations of every pair in Section 3 are implemented and listed in [`openapi.json`](openapi.json).
+- The web app calls three resource-style paths: settings, privacy deletion and ride start. It calls the original path for every other pair it uses. It also calls the v2-only `PUT /api/v2/settings/passenger-routes` from the administrator settings tab.
+- The backend counts requests by generation and result class for every pair except device disable and fleet reconciliation, and also for End ride early and geometry reads (`backend/src/lib/apiCompatibilityTraffic.ts`). The counts are process-local, reset on restart, and appear in `telemetry.apiCompatibility` of `GET /api/health` and in the OpenTelemetry metric `eki.api.compatibility.requests`. They contain no client identifiers.
+
+Caller inventory and read optimizations are recorded in [API reads and retirement](../docs/operations/API_READS_AND_RETIREMENT.md).
+
+## 5. Removing an original path
+
+An original path may be removed only in a separate change that:
+
+1. shows, from persistent metrics rather than process-local counters, at least 30 consecutive days without supported-client traffic on that path;
+2. is made at least 90 days after the web app stopped calling the path;
+3. updates [`openapi.json`](openapi.json), [API.md](API.md), this document and the route tests in the same change;
+4. is announced to the owners of any other clients.
+
+The compatibility rules for changing the contract are in the [HTTP contract](../docs/api/HTTP_CONTRACT.md).

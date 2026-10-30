@@ -1,142 +1,97 @@
-# Passenger deletion queue and recovery
+# Passenger Account Deletion
 
-Last updated: 2026-10-13 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-015 | 1.0 | Current | 2026-10-30 |
 
-`POST /api/v2/privacy-deletion-requests` and the legacy passenger alias derive
-UID from the verified token. Current Auth, profile role and driver membership
-must exclude privileged accounts. A missing role claim alone does not deny a
-passenger. Operator/admin accounts require the existing IT offboarding process.
-A request returns `202 {accepted:true}`; this acknowledges registration,
-including an existing failed request, and does not certify deletion.
+## 1. Purpose
 
-## Passenger experience
+This document describes how a passenger requests account deletion, how the background worker processes the request, and how an administrator monitors and recovers a request that failed or was interrupted.
 
-In Profile, select **Delete Account** and confirm. The confirmation explains
-that feedback, passenger ride entries and messages are retained. Canceling this
-confirmation sends no request and does not sign the passenger out.
+## 2. Scope
 
-After a valid server acknowledgement, the app opens **Deletion requested**.
-Selecting **OK**, pressing Escape or dismissing the backdrop closes the popup
-and signs the passenger out. Invalid acknowledgements and failed requests do
-not show the success popup or trigger sign-out. Errors remain available in the
-account view after the confirmation closes, allowing a visible error and retry.
-Confirmation dialogs render into the document body so the
-profile's scrolling and animated containers cannot clip them.
+Passenger accounts only. Operator and administrator accounts are offboarded by university IT. Account deletion removes account-owned records; it is not a complete personal-data erasure workflow. Feedback, passenger ride entries and messages are retained and remain subject to the retention schedule in the [Firebase data model](../data/FIREBASE_DATA_MODEL.md).
 
-Sign-out does not mean deletion has completed. The worker scans on startup
-and every minute while it holds leadership; there is no multi-day waiting
-period and no routine administrator approval. An available worker can pick up
-a due request on a subsequent scan, but backlog, rate-limit cleanup, lock
-contention or dependency failures can extend processing. There is no guaranteed
-completion deadline. A disabled/offline worker leaves requests queued; failed
-or interrupted processing can require the recovery steps below.
+## 3. Behaviour
 
-Successful account deletion removes Firebase Auth, the profile, feedback
-cooldown, passenger request, message rate limits and the queue record. It
-preserves feedback, passenger ride entries and messages unchanged, including
-stored names and IDs. Separate retention and administrator history-deletion
-flows still apply to those records.
+### 3.1 Request
 
-Retained membership is historical data, not continuing chat authorization.
-Firestore passenger chat reads also require the backend-owned profile to
-exist. Removing that profile therefore denies subsequent reads even when
-the client still presents an unexpired token. Operator/admin history access
-is unchanged. This adds one profile-existence check only to the passenger
-membership branch; unauthenticated and non-member reads remain short-circuited.
+1. In the passenger **Profile** tab the passenger selects **Delete Account** and confirms. The confirmation states that feedback, passenger ride entries and messages are retained. Cancelling sends nothing.
+2. The browser calls `POST /api/v2/privacy-deletion-requests` with no body. The legacy alias `POST /api/privacy/deletion-request` behaves the same way.
+3. The backend takes the UID from the verified token and checks current Auth claims, the `users` profile role and `drivers` membership. A missing role claim alone does not block a passenger. A privileged or operator account receives 409.
+4. A transaction creates `_privacy_deletion_requests/{uid}` with `status: pending`, or updates an existing record. Resubmission keeps the original request time, lifetime attempts and error history. A `failed` request returns to `pending` with a new generation and a fresh failure budget; a request being processed is left alone. The record stores the Auth account creation time, so a UID that is later recreated needs IT review instead of being deleted automatically.
+5. The backend returns `202 {"accepted": true}`. This acknowledges that the request is queued, not that the account is deleted. The browser then shows **Deletion requested**; dismissing it signs the passenger out. A failed or malformed response shows an error in the Profile tab and does not sign out.
 
-Retirement also fences the cached-token API paths: passenger ride-status reads,
-boarding updates, chat messages/replays and feedback/replays require an existing
-profile. Boarding and feedback use the profile read already needed for their
-transaction; passenger chat adds a profile read while privileged chat is unchanged.
-Bootstrap checks the deletion request and current Auth before creating a missing
-profile. Deleted/disabled Auth returns 401, and an outstanding deletion request
-returns 409 without recreating the profile or repairing claims. These checks prevent
-retained history or a still-cached token from recreating account-owned controls.
+### 3.2 Processing
 
-## Admission and resubmission
+The [worker](WORKER_LEADERSHIP.md) scans for due requests when it acquires the lease and every 60 s afterwards. There is no waiting period and no routine approval. There is also no guaranteed completion time: a backlog, contention or dependency failures delay processing, and requests stay queued while no worker runs.
 
-Admission and admin controls each allow eight raw fills and sixteen waiters per
-fill, with a three-second caller deadline. Timed-out dispatched calls retain
-capacity until real settlement. Retry an uncertain admission with the same UID.
-Creation is transactional. Resubmission preserves the original request time,
-lifetime attempts and error history. A failed request returns to pending with a
-fresh generation and failure budget; an active processing claim remains untouched.
-Current Auth creation time is bound
-to the target: a recreated UID requires IT review rather than deleting its new
-account automatically.
+- Each scan reads one page of 20 `pending` requests in document-ID order from the cursor in `_reconciliation_cursors/privacy-deletions`. A completed pass resets the cursor. Requests that are not yet due are skipped without blocking later IDs.
+- One deletion runs at a time per process, with at most 20 waiting (one per UID) and a 2 s limit on undispatched queue age. If the queue is full, the scan keeps its cursor; the work remains durable for a later scan.
+- An execution claims the request (`status: processing`, executor ID, new generation, `deadlineAt`) and has a 30 s monotonic budget. Every write checks the claim and the worker lease in the same transaction.
+- Inside the fleet lock (`_fleet_reconciliation_locks/singleton`) the worker rechecks eligibility, then deletes the account's `messageRateLimits` documents in pages of 200. A full page ends the turn and requeues the request so other requests get a turn.
+- When no rate-limit documents remain, the worker rechecks eligibility, sets `phase: auth_deletion_dispatched`, deletes `users/{uid}`, `feedbackCooldowns/{uid}` and `passenger_requests/{uid}`, deletes the Auth user (an already missing user counts as success) and finally deletes the queue record.
 
-## Bounded and fair processing
+### 3.3 Retry and failure
 
-The leader scans one document-ID ordered page of twenty pending requests every
-minute. `_reconciliation_cursors/privacy-deletions` stores a lease-fenced cursor;
-restart resumes it, and a completed cycle resets it. Backoff records are skipped
-without blocking later document IDs. Saturation retains the scan cursor.
-One raw deletion executes and at most twenty wait, one per UID, with a two-second
-undispatched queue age. Expired queued work remains durable for a future cycle.
-No timeout frees an unsettled dependency's execution permit or fleet mutex.
+| Outcome | Next state | Error code |
+|---|---|---|
+| Fleet lock held by another operation | `pending`, retried after 60 s, no failure counted | `FLEET_BUSY` |
+| Account ineligible or its identity changed | `failed` immediately | `ACCOUNT_INELIGIBLE` |
+| 30 s budget exceeded | `pending` with backoff, or `failed` on the fifth consecutive failure | `DEPENDENCY_DEADLINE` |
+| Any other dependency failure | `pending` with backoff, or `failed` on the fifth consecutive failure | `DEPENDENCY_FAILURE` |
 
-Each execution claims an executor UUID/generation and has a thirty-second
-monotonic dispatch budget. Ordinary progress/deletion transactions validate both
-the claim and worker lease at commit. Account deletion preserves feedback,
-indexed and legacy passenger ride entries, and messages unchanged, including
-stored author and passenger details. Their independent retention policies still
-apply. It drains only account-owned message rate limits in 200-document pages;
-a full page schedules another fair turn. Lifetime attempts count these turns,
-and a successful continuation resets consecutive failures.
+The backoff starts at 1 min, doubles per consecutive failure, adds up to 20 % jitter and is capped at 1 h. Scans skip `failed` requests. Logs omit UIDs, dependency payloads and stack traces; monitoring uses the fixed error codes.
 
-Transient failures use exponential one-minute backoff with jitter, capped at one
-hour. Five consecutive failed executions produce `failed`, which ordinary scans
-exclude. Fleet mutex contention postpones work without consuming a failure.
-Ineligible/currently privileged or changed-account identities fail immediately.
-Error logs omit UIDs, dependency payloads and stack traces; admin monitoring uses
-fixed error codes. Profiles/cooldowns/passenger requests and Auth are retired
-only after account-owned message rate limits are drained. An already absent Auth
-account is an idempotent success. Completed queue records are removed as before.
-This flow deletes the account while retaining its feedback, ride entries and messages; it is not a complete personal-data erasure workflow.
+### 3.4 Access after deletion
 
-## Monitor and recover
+Once the profile is gone, a still-valid ID token cannot recreate account-owned state:
 
-1. As an administrator, use `GET /api/v2/privacy-deletion-requests`. Follow
-   `nextCursor` until null; each page contains at most twenty whitelisted records.
-   Inspect status, attempts/failures, executor/generation, due/deadline times,
-   fixed error code and `cleaning`/`auth_deletion_dispatched` phase. The latter is
-   conservative: Auth may or may not have received/committed the call.
-2. For a `failed` request, diagnose the dependency or account-eligibility problem.
-   Deliberate retry uses `POST /api/v2/privacy-deletion-requests/{uid}/recovery`
-   with `expectedExecutorId` and `expectedGeneration`. This CAS begins a fresh
-   bounded failure cycle, preserving lifetime attempts and error history and
-   recording the recovering admin and time. Eligibility is checked again on work.
-3. For an expired `processing` request, first stop and independently verify
-   termination of its exact executor, then audit uncertain Auth/data effects.
-   Recovery additionally requires `executorStopped:true`. An unexpired claim or
-   any locally unsettled execution is refused, even with that attestation.
-   Expiry alone never authorizes takeover.
-4. If `GET /api/v2/fleet-reconciliation-jobs/lock` exposes `privacyRequestId`,
-   recover that processing request first, then recover the exact stopped-owner
-   lock using the existing fleet lock recovery endpoint. Lock release writes an
-   atomic audit including linked privacy status. Never clear a running mutex.
-5. Inspect durable status after an uncertain recovery acknowledgement. A changed
-   generation rejects a duplicate recovery; passenger resubmission restarts only
-   failed work. With no live process holding the mutex, normal queue turns resume.
+- Firestore rules allow a passenger to read ride chat and to create feedback only while `users/{uid}` exists.
+- Passenger ride-status reads, boarding and chat messages on the backend read the profile and refuse when it is missing.
+- `POST /api/users/bootstrap` returns 409 while a deletion request exists and 401 when the Auth account is deleted or disabled. It never recreates the profile or repairs claims in either case.
 
-All fleet API Auth-changing paths and privacy deletion share the same non-expiring
-mutex. Eligibility is rechecked inside it before cleanup and Auth dispatch. CLI
-role sync, console/other-system changes and account recreation must be quiesced
-operationally during deletion: the mutex cannot fence actors outside this API.
+Operator and administrator access to ride history is unchanged.
 
-## Evidence and acceptance limits
+## 4. Configuration
 
-Regressions reproduce overwritten retry history, first-twenty poison starvation
-and indefinite retries, and check current/claim-less eligibility, large-rate-limit
-fairness, raw stalls, bounded capacity and late-generation fencing. Actual local
-Firestore SDK tests exercise cursor mutation, retained manifests/messages/feedback,
-1001-record feedback preservation and a disposable executor killed during synthetic Auth.
-No live Auth account, hardware, board firmware or production project is touched.
+None of these values is configurable at run time.
 
-Suitable staging still must verify deployed collection-group indexes, actual
-Auth failure/revocation outcomes, supervisor stop attestation, replica/console
-quiescence and delayed authenticated writes. Already-dispatched external effects
-cannot be recalled. Existing cached or in-flight authenticated writes can arrive
-after cleanup; these software checks do not certify universal erasure under
-arbitrary concurrent clients, backup erasure or institutional privacy sign-off.
-Those remain issue #245 acceptance gates.
+| Item | Value | Source |
+|---|---|---|
+| Admission and admin control single flight | 8 fills, 16 waiters per fill, 3 s caller deadline | `backend/src/services/privacyDeletionRequests.ts:9` |
+| Consecutive failures before `failed` | 5 | `backend/src/services/privacyDeletionRequests.ts:7` |
+| Admin list page | 20 records | `backend/src/services/privacyDeletionRequests.ts:68` |
+| Scan interval and page | 60 s, 20 requests | `backend/src/services/privacyDeletionWorker.ts:126`, `backend/src/services/privacyDeletionWorker.ts:95` |
+| Execution queue | 1 active, 20 waiting, 2 s queue age | `backend/src/services/privacyDeletionWorker.ts:10` |
+| Execution budget | 30 s | `backend/src/services/privacyDeletionWorker.ts:20` |
+| Rate-limit deletion page | 200 documents | `backend/src/services/privacyDeletionWorker.ts:9` |
+| Backoff | 1 min doubling, up to 20 % jitter, 1 h cap; 60 s when the lock is busy | `backend/src/services/privacyDeletionWorker.ts:80` |
+
+## 5. Monitoring and recovery
+
+All endpoints below require an administrator token.
+
+1. List requests with `GET /api/v2/privacy-deletion-requests`, then follow `?cursor=<nextCursor>` until `nextCursor` is `null`. Each record shows `status`, `attempts`, `failures`, `generation`, `executorId`, `nextAttemptAt`, `deadlineAt`, `lastErrorCode`, `phase` and `recoveryRequired`.
+   Expected result: `recoveryRequired` is `true` for every `failed` request and for every `processing` request whose deadline has passed.
+2. For a `failed` request, diagnose the dependency or eligibility problem first. Then call `POST /api/v2/privacy-deletion-requests/{uid}/recovery` with `{"expectedExecutorId": "<executorId>", "expectedGeneration": <generation>}`.
+   Expected result: `{"recovered": true}`. The request returns to `pending` with a new generation and failure budget; lifetime attempts, error history, the recovering administrator and the time are recorded. Eligibility is checked again when the worker runs it.
+3. For an expired `processing` request, stop the exact executor process and confirm that it has terminated. If `phase` is `auth_deletion_dispatched`, the Auth deletion may or may not have been committed; audit the account and its records. Then call the recovery endpoint with the same fields plus `"executorStopped": true`.
+   Expected result: `{"recovered": true}`. An unexpired claim, or an execution still running in this process, is refused with 409 even with the attestation. Expiry alone never authorizes a takeover.
+4. If `GET /api/v2/fleet-reconciliation-jobs/lock` shows a `privacyRequestId`, recover that privacy request first (step 3), then release the stopped owner's lock with `POST /api/v2/fleet-reconciliation-jobs/lock/recovery` as described in [operation resources](../api/OPERATION_RESOURCES.md). Never clear a lock whose owner is still running.
+5. If a recovery response is lost, list the request again before retrying. A changed generation makes a duplicate recovery fail with 409.
+
+A 503 response with `Retry-After: 1` from any of these endpoints means the acknowledgement is unknown; read the current state before acting again.
+
+Every fleet endpoint that changes Auth and the privacy worker share the fleet lock, which never expires, and eligibility is rechecked inside it before cleanup and before the Auth call. The lock cannot fence changes made outside this API: pause CLI role sync, Firebase console edits and account recreation for an account while its deletion runs. A dispatched Auth call cannot be recalled, and an authenticated write already in flight can still arrive after cleanup.
+
+## 6. Verification
+
+| Behaviour | Tests |
+|---|---|
+| Request validation, privileged refusal, status codes | `backend/src/routes/privacy.test.ts` |
+| Queue fairness, backoff, failure budget, poison records, claim and lease fencing | `backend/src/services/privacyDeletionQueue.test.ts`, `backend/src/services/qaPrivacyResubmissionEdge.test.ts` |
+| Cursor, retained records, rate-limit pages, an executor killed during Auth deletion | `backend/src/privacyDeletion.integration.test.ts`, run by `npm run test:rules` |
+| Confirmation, acknowledgement and sign-out in the browser | `frontend/src/components/passenger/AccountTab.test.tsx` |
+
+These tests use emulators and synthetic Auth. Deployed collection-group indexes, real Auth failure and revocation outcomes, process supervision, replica and console quiescence, backup erasure and institutional privacy approval need staging evidence and sign-off, tracked in the [university deployment checklist](UNIVERSITY_DEPLOYMENT_CHECKLIST.md).

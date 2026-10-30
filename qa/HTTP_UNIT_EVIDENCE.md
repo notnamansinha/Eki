@@ -1,6 +1,8 @@
 # Reviewed HTTP policy sub-oracles
 
-Last updated: 2026-10-12 17:13 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-TST-010 | 1.0 | Historical | 2026-10-12 |
 
 The reviewed L1 family now includes real loopback Express routes with contract-
 checked HTTP responses, controlled clocks and mocked authentication/datastores.

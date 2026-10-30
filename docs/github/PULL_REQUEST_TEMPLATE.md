@@ -1,34 +1,35 @@
-# Pull Request
+## Summary
 
-<!-- Last updated: 2026-10-04 14:20 IST (UTC+05:30). -->
+<!-- What changed and why. Write the pull request title as a Conventional Commit subject, for example "fix(trip): credit a revisited stop after a GNSS gap". -->
 
-## Describe your changes
-
-Please include a summary of the change and which issue is fixed. Please also
-include relevant motivation and context.
-
-## Issue ticket number and link
-
-Fixes # (issue)
+Fixes #
 
 ## Type of change
 
-Please delete options that are not relevant.
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Breaking change to an API, data model, rule, firmware schema or configuration
+- [ ] Documentation only
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that breaks existing functionality)
-- [ ] This change requires a documentation update
+## How to verify
 
-## Checklist before requesting a review
+<!-- Steps a reviewer can follow to confirm the change works. -->
 
-- [ ] I have performed a self-review of my code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
-- [ ] I have tested this on the physical ESP32 hardware (if needed)
-- [ ] I updated `.env.example`, `secrets.example.h`, rules/indexes, or release
-      documentation when the corresponding contract changed
-- [ ] I checked that examples contain placeholders only and no secrets,
-      personal data, private addresses, tokens, or unredacted logs
-- [ ] I ran `npm run verify` and the relevant rules/PlatformIO checks
+## Checks run
+
+- [ ] `npm run verify`
+- [ ] `npm run test:rules` (rules, or backend code covered by the emulator suites)
+- [ ] `npm run test:e2e:admin` (admin, sign-in or feedback screens)
+- [ ] Passenger Playwright suites (`playwright.passenger-layout.config.ts`, `playwright.passenger-progress.config.ts`)
+- [ ] `npm run qa:budget` with a mapped test (critical source files)
+- [ ] `platformio test --project-dir hardware -e native` and the affected firmware build
+- [ ] `npm run docs:sync`, `npm run docs:check` and `git diff --check` (documentation)
+- [ ] Recorded hardware run (claims about timing, power, GNSS, TLS or radio)
+
+Checks not run, and why:
+
+## Checklist
+
+- [ ] Documents that describe the changed behaviour are updated in this pull request.
+- [ ] Tracked templates (`backend/.env.example`, `frontend/env.production.example`, `hardware/include/secrets.example.h`), rules and indexes are updated where their contract changed.
+- [ ] Examples, logs and screenshots contain placeholders only: no credentials, tokens, personal data, private hostnames or location traces.

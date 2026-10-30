@@ -1,49 +1,42 @@
-# Deterministic GNSS software properties
+# Deterministic GNSS Properties
 
-Last updated: 2026-10-11 18:00 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-TST-008 | 1.0 | Current | 2026-10-30 |
 
-Run `npm run qa:gnss` from the repository root. It uses the existing Vitest
-runtime with one worker and a two-minute process ceiling. No emulator, network
-replay, real provider, live vehicle or model API is invoked. Its JSON/JUnit/
-Markdown/log files are under ignored `artifacts/qa/` and included in PR CI's
-seven-day QA artifact. The ordinary backend test suite also runs these tests.
+## 1. Purpose
 
-The existing generator is now importable without CLI execution. Its twenty
-profile names and offline JSONL format are preserved. A supplied numeric seed
-zero is honored; zero count is rejected instead of silently becoming a default.
-Custom reverse geometry must be supplied already ordered with `moving`.
-The existing opt-in HTTP replay remains a separate, unexecuted path; its
-loopback check alone is not backend isolation proof. Do not use it until the
-emulator integration slice supplies runtime attestation and network isolation.
+`npm run qa:gnss` is an L1 family of the [QA programme](README.md). It checks the telemetry payload validator and the trip reducer with fixed-seed generated inputs and records exact assertion identities. It uses no emulator, network, real provider, vehicle or model API.
 
-## Assertions and evidence limits
+## 2. Procedure
 
-- Exact finite latitude/longitude/speed/heading/HDOP/sequence boundaries,
-  malformed numeric types, six/eight/nine-field rollout schemas, authority
-  fields, case-sensitive motion enum, capture/send clock normalization and
-  binary 511/512/513-byte limits including UTF-8.
-- All twenty profiles are deterministic and their transport rejects are
-  explicitly classified. Teleport is transport-valid but motion-invalid;
-  poor HDOP is transport-valid but cannot corroborate early reacquisition.
-- Independent equatorial metre offsets check inside/outside travel envelopes;
-  antimeridian/pole distance examples avoid sharing the production distance
-  function for the expected value. Stationary/moving and short/prolonged gaps
-  use distinct contract assertions.
-- Four 400-example payload/motion/recovery properties and a 400-walk ordering
-  property use fixed seed 42 by default. The ordering oracle is a separate
-  lexicographic timestamp/sequence model; shuffled duplicates, reset sequences
-  and lifecycle preservation are checked against the production reducer.
-- Compound trace walks observe raw versus accepted anchors, pending two-fix
-  recovery, final third-fix acceptance, assignment retirement and retained ride
-  state. These are L1 reducer observations, not actual database commits.
+Run from the repository root:
 
-`qa/gnss-test-map.mjs` contains exact case/assertion links and limited semantics.
-`gnss-report.json` uses runner assertion identities and observed statuses to
-report **PARTIAL**, FAIL or BLOCKED at case level. A green unit report closes
-zero complete feature cases. `qa-report.json` remains a static definition report.
-Physical/provider gates are never inferred from either file.
+```powershell
+npm run qa:gnss
+```
 
-## Reproduce failures
+`scripts/qa/run-gnss.mjs` runs `backend/src/services/qaGnssProperties.test.ts` and `qaTelemetrySequences.test.ts` with Vitest, one worker and a 2-minute deadline. The ordinary backend test suite runs the same files. Results are written to `artifacts/qa/gnss-vitest.json`, `gnss-junit.xml`, `gnss-report.json`, `gnss-report.md` and `gnss-run.log`, and CI keeps them for seven days.
+
+## 3. Inputs
+
+`docs/testing/simulations/generate-gnss.mjs` generates the fixtures. It defines twenty profiles: `moving`, `reverse`, `stationary`, `jitter`, `stop-start`, `duplicate`, `reorder`, `burst`, `outage45`, `outage120`, `outage301`, `teleport`, `poor-hdop`, `uncertain`, `missing-hdop`, `invalid-speed`, `invalid-heading`, `stale`, `future` and `wrong-fields`. The acceptance catalog fails if this list and the plan's simulation table differ. The generator honours a supplied seed of zero and rejects a count of zero. Custom reverse geometry must already be ordered and use the `moving` profile.
+
+The generator also has an opt-in HTTP replay mode. Do not use it: its loopback check alone does not prove backend isolation.
+
+## 4. Assertions
+
+- Exact boundaries for latitude, longitude, speed, heading, HDOP and sequence; malformed numeric types; the six-, eight- and nine-field payload schemas; the case-sensitive motion enumeration; capture and send clock normalisation; and 511, 512 and 513-byte bodies, including UTF-8.
+- Every profile is deterministic and its transport rejections are classified. `teleport` is transport-valid but motion-invalid; `poor-hdop` is transport-valid but cannot support early reacquisition.
+- Travel-envelope cases use independent equatorial metre offsets, and antimeridian and pole distances are checked without calling the production distance function for the expected value.
+- Four seeded payload, motion and recovery properties and one ordering property each run 400 examples, seed 42 by default. The ordering property compares the production reducer with a separate lexicographic timestamp and sequence model, including shuffled duplicates, reset sequences and lifecycle preservation.
+- Compound trace walks check raw versus accepted anchors, pending two-fix recovery, acceptance on the third fix, assignment retirement and retained ride state. These are reducer observations, not database commits.
+
+`qa/gnss-test-map.mjs` links assertions to requirement IDs. A passing run gives those requirements `PARTIAL` status; it completes no feature case.
+
+## 5. Reproducing a failure
+
+A failing property reports its seed, the generation index (`replayPath`), and the original and reduced input. Replay it:
 
 ```powershell
 $env:EKI_QA_SEED = '42'
@@ -53,33 +46,10 @@ Remove-Item Env:EKI_QA_REPLAY_PATH
 Remove-Item Env:EKI_QA_SEED
 ```
 
-The failure reports seed, generation index (`replayPath`), original and reduced
-synthetic input. Replaying regenerates all preceding inputs without checking
-them, then checks the same index. Array traces shrink to a smaller prefix;
-numeric shrink behavior is independently tested with a deliberately defective
-fixture predicate and passing control. The reducer and payload validator are
-never edited to inject that fixture fault. Inputs without a shrinker retain
-their exact original counterexample; they are not described as minimal.
+`EKI_QA_SEED` must be an integer from 0 to 4294967295 and `EKI_QA_REPLAY_PATH` an integer from 0 to 399; other values block the run before Vitest starts. Replay regenerates every earlier input without checking it, then checks the given index. Array traces shrink to a shorter prefix. Inputs without a shrinker keep their original counterexample and are not described as minimal.
 
-The first development run failed at seed 42/path 5 because a supposedly valid
-recovery generator placed 928 metres of travel inside an 83.15-second 30 km/h
-gap. That exceeds the contract envelope. The valid generator now correlates
-distance with speed/time; excessive travel remains in the negative suite. This
-was a test-fixture defect, not evidence of a production defect.
+The runner deletes stale evidence before it starts. It exits with a non-zero code on a runner error, a skipped test, an empty or inconsistent report, or a missing mapped assertion. A run from a dirty tree records that fact and cannot serve as commit evidence.
 
-The runner deletes stale evidence before launch, blocks empty/inconsistent
-reports, records actual source SHA and dirty state, and exits nonzero for runner
-errors, skips or missing mapped identities. Dirty development runs cannot prove
-an exact committed acceptance result. Failure logs contain synthetic fixtures;
-no genuine credentials or private drives are used.
+## 6. Limits
 
-## Remaining boundaries
-
-Emulator HTTP ingestion/lifecycle/public projection, browser listeners and
-rendered marker/control outcomes still require their own tests. Auth cache,
-replica fencing, credential rotation and backend HTTP middleware have additional
-existing regressions; the new properties do not claim those complete oracles.
-Live-motion truth-reference/drift/compound recovery is tracked as
-[sub-issue #300](https://github.com/notnamansinha/Eki/issues/300) of
-[#245](https://github.com/notnamansinha/Eki/issues/245). Bench RF, power, thermal,
-OTA and controlled OAuth/cloud acceptance retain separate observation gates.
+The family does not cover HTTP ingestion, emulator persistence, browser listeners or rendered markers; those belong to the L2 and L3 families. It does not establish receiver accuracy, drift or compound recovery in a moving vehicle, which need the [field acceptance package](FIELD_ACCEPTANCE.md).

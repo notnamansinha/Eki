@@ -1,76 +1,71 @@
-# Telemetry HTTPS response reuse
+# HTTPS Response Reuse
 
-Last updated: 2026-10-05 (Asia/Kolkata).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-HW-004 | 1.0 | Current | 2026-10-30 |
 
-## Scope
+## 1. Introduction
 
-This change hardens the existing persistent telemetry connection on the current
-`testing` branch. It does not replace the telemetry trace format, DNS/TLS timing,
-retry classification, diagnostic worker, maintenance client or OTA client.
-The later R25 change bounds publisher/diagnostic DNS on new connections; see
-[DNS cold-connect scheduling](DNS_COLD_CONNECT.md). Existing healthy sockets
-still bypass that connection setup and retain this response-boundary guard.
+The telemetry publisher keeps one verified HTTPS connection open between samples, so a sample sent every second normally skips DNS, TCP and TLS setup. This document describes when the firmware reuses that connection and when it closes it. Reuse does not make the first certificate verification faster, and the firmware does not use TLS session tickets. New connections follow the [DNS cold connect](DNS_COLD_CONNECT.md) design. Diagnostics, release checks and firmware downloads open a new connection each time and are outside this design.
 
-The optimization is HTTP connection reuse. It avoids another DNS/TCP/TLS setup
-while the peer keeps a verified socket open. It does not make the first
-certificate-chain verification faster and does not claim TLS ticket resumption.
+## 2. Context
 
-## Version-matched behavior
+`hardware/platformio.ini` pins `espressif32@7.0.1`, which selects Arduino-ESP32 2.0.17. The design depends on these behaviours of that release [1], [2], [3]:
 
-`hardware/platformio.ini` selects `espressif32@7.0.1`, whose manifest selects
-Arduino-ESP32 `~3.20017.0` (core 2.0.17). The implementation follows these
-versioned contracts:
+- A request-local `HTTPClient` closes an externally owned client in its destructor. `end()` keeps the socket only while reuse remains valid.
+- On an already connected client, the request path discards buffered bytes before `sendHeader()` performs the first write.
+- `Client::available`, `write` and `stop` are virtual, so a wrapper can intercept them.
+- `HTTPClient::getSize()` returns `-1` when no length is known, and `getStreamPtr()` can be null after a disconnect.
+- `WiFiClientSecure::flush()` does nothing, reads must follow reported availability, and `setHandshakeTimeout()` takes seconds.
 
-- [`HTTPClient::~HTTPClient`, `end`, `disconnect`, `sendRequest`, `connect` and `sendHeader`](https://github.com/espressif/arduino-esp32/blob/2.0.17/libraries/HTTPClient/src/HTTPClient.cpp): a request-local parser closes its externally owned client in the destructor; `end()` retains the socket only when reuse remains valid; request sends clear collected response-header values; an already connected request path discards buffered bytes before `sendHeader()` performs the first client write.
-- [`Client::available`, `write` and `stop`](https://github.com/espressif/arduino-esp32/blob/2.0.17/cores/esp32/Client.h) are virtual transport operations. The telemetry wrapper uses those public extension points so a reuse transition closes on unexpected buffered data instead of allowing `HTTPClient::connect()` to consume it.
-- [`HTTPClient::getSize` and `getStreamPtr`](https://github.com/espressif/arduino-esp32/blob/2.0.17/libraries/HTTPClient/src/HTTPClient.cpp): the parsed content length is `-1` when no length is available, and the stream pointer can be absent after disconnect.
-- [`WiFiClientSecure::flush`, `available`, `read` and `setHandshakeTimeout`](https://github.com/espressif/arduino-esp32/tree/2.0.17/libraries/WiFiClientSecure/src): secure `flush()` is empty, reads must follow reported availability, and the handshake timeout setter takes seconds.
+## 3. Design
 
-CA, hostname and time validation remain enabled. Redirect following is disabled
-for the credential-bearing telemetry request.
+### 3.1 Connection ownership
 
-## Response boundary
+One publisher-owned, static `HTTPClient` lives for the whole process, so its destructor never closes the socket between samples. It is configured once: 1 s connect timeout, 1.5 s request timeout, reuse on, redirects off, and six collected response headers (`Retry-After`, `X-Eki-Server-Received-At`, `X-Eki-Server-Responded-At`, `Ngrok-Error-Code`, `Content-Length`, `Transfer-Encoding`). Root CA, hostname and clock validation stay on. The backend's keep-alive timeout is 65 s, so the 1 s telemetry cadence keeps the socket warm.
 
-One publisher-owned `HTTPClient` keeps its response-header table for the process
-lifetime. The selected transport is guarded from request entry through the first
-request write. Unexpected buffered data observed by `HTTPClient::connected()`, its
-reuse drain loop, or the final pre-write check closes the transport. Data arriving
-after the first request write remains visible to response parsing instead of being
-silently consumed by the library reuse path.
+### 3.2 Request boundary guard
 
-Only HTTP 200/202 acknowledgements with one exposed decimal `Content-Length`
-from 0 through 1,024 bytes and no `Transfer-Encoding` are eligible for reuse.
-The strict raw value must agree with `HTTPClient::getSize()`. The body is consumed
-through a 128-byte stack buffer under one 1,000 ms monotonic deadline.
-Unknown-length, malformed, chunked, oversized, truncated, stalled, stream-error
-or immediately trailing data closes the socket. The pinned parser exposes only
-one collected value for a repeated header, so this helper is not a replacement
-wire parser. A complete acknowledgement remains accepted even when cleanup
-prevents reuse; there is no hidden POST replay.
+`ReuseGuardedClient` in [`http_response.h`](../../hardware/include/http_response.h) wraps the telemetry client. The publisher arms the guard before each request. From then until the first byte of the request is written, the wrapper closes the transport if it sees buffered data, either from the library's reuse check or from a final availability check before that write. Data that arrives after the first request write stays visible to response parsing; the library's reuse path cannot silently consume it.
 
-## Validation
+### 3.3 Accepted response drain
 
-The focused host suite covers:
+The connection stays open only after a response that meets every condition:
 
-- every accepted body length from 0 through 1,024 bytes;
-- rejected status, missing/malformed/mismatched length, transfer encoding and
-  oversized length;
+1. The status is `200` or `202`.
+2. There is exactly one exposed decimal `Content-Length` from 0 to 1,024, it agrees with `HTTPClient::getSize()`, and there is no `Transfer-Encoding`.
+3. The firmware reads the whole body through a 128-byte stack buffer within one 1,000 ms deadline, and no bytes follow it.
+
+Any other outcome closes the socket: an unknown, malformed, chunked or oversized length, truncation, a slow drip past the deadline, a stream error, or trailing data. The pinned parser keeps only one value for a repeated header, so this check does not replace a full wire parser. A complete acknowledgement still counts as accepted when the cleanup closes the socket; the firmware never replays a POST that the backend accepted.
+
+## 4. Constraints and risks
+
+- Request duration includes backend processing; it is not a measure of certificate work.
+- Physical acceptance still needs cold and warm telemetry, idle expiry, peer close, Wi-Fi loss and recovery, certificate rejection, sustained heap, watchdog and GNSS checks, and connection counts before and after a change.
+
+## 5. Verification
+
+The native suites `test_http_response` and `test_http_reuse_guard` cover:
+
+- every accepted body length from 0 to 1,024 bytes;
+- rejected statuses, missing, malformed or mismatched lengths, transfer encoding and oversized lengths;
 - fragmented reads, peer close after a complete body and trailing bytes;
-- truncation, slow-drip data, final-read deadline boundaries and clock rollover;
+- truncation, slow-drip data, the final-read deadline boundary and clock rollover;
 - read, availability, disconnect and missing-stream failures;
-- buffered bytes during the library reuse check, bytes arriving before the first
-  request write, availability failures, clean guard release and unguarded response
-  visibility.
+- buffered bytes during the library reuse check, bytes arriving before the first request write, availability failures, clean guard release and unguarded response visibility.
 
-Run the repository gates before release:
+Run the repository gates before a release:
 
-```sh
+```powershell
 platformio test --project-dir hardware -e native
 platformio run --project-dir hardware -e esp32dev
 platformio run --project-dir hardware -e esp32dev-secure
 ```
 
-Physical acceptance still requires cold and warm telemetry, idle expiry, peer
-close, Wi-Fi loss/recovery, certificate rejection, sustained heap/watchdog/GNSS
-checks and before/after connection counts. Request duration includes backend work;
-it is not certificate-only latency.
+## 6. References
+
+[1] Espressif Systems, "HTTPClient.cpp," arduino-esp32 release 2.0.17, github.com/espressif/arduino-esp32/blob/2.0.17/libraries/HTTPClient/src/HTTPClient.cpp. Accessed: 2026-10-30.
+
+[2] Espressif Systems, "Client.h," arduino-esp32 release 2.0.17, github.com/espressif/arduino-esp32/blob/2.0.17/cores/esp32/Client.h. Accessed: 2026-10-30.
+
+[3] Espressif Systems, "WiFiClientSecure," arduino-esp32 release 2.0.17, github.com/espressif/arduino-esp32/tree/2.0.17/libraries/WiFiClientSecure/src. Accessed: 2026-10-30.

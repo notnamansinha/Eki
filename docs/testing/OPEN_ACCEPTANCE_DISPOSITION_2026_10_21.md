@@ -1,6 +1,8 @@
 # Open issue disposition after the Downloads evidence review
 
-Last updated: 2026-10-21 04:49 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-028 | 1.0 | Historical | 2026-10-21 |
 
 This review uses integration baseline
 `9b81d826e55d2eae27c3adef0df4beae0caa8189` and the files available in Downloads.

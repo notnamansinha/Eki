@@ -1,6 +1,8 @@
-# Production audit claim validation — 20 October 2026
+# Production audit claim validation: 20 October 2026
 
-Last updated: 2026-10-20 22:04 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-038 | 1.0 | Historical | 2026-10-20 |
 
 The supplied `EKI_PRODUCTION_READINESS_AUDIT.md` names commit
 `a523731295d37c9ecaf1a917cebefa4502b34dab`. The owner's checkout was still at

@@ -1,45 +1,37 @@
 ---
 name: Bug report
-about: Create a report to help us improve the Eki ecosystem
+about: Report a defect in Eki
 title: "[BUG] "
 labels: bug
 assignees: ''
 ---
 
-<!-- Last updated: 2026-10-04 14:20 IST (UTC+05:30). -->
+## Description
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+<!-- What went wrong, in one or two sentences. -->
 
-**To Reproduce**
-Steps to reproduce the behavior:
+## Steps to reproduce
 
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+1.
+2.
+3.
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+## Expected behaviour
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+## Actual behaviour
 
-**Environment (please complete the following information):**
+## Environment
 
-- OS: [e.g. Ubuntu 22.04]
-- Browser (if frontend issue): [e.g. chrome, safari]
-- Node.js version: [e.g. 20.x]
-- Hardware (if ESP32 issue): [e.g. ESP32-WROOM-32U, NEO-M8N]
+- Component (frontend, backend, firmware, rules, CI):
+- Commit or deployment (local, staging, production):
+- Browser and device, for frontend issues:
+- Node.js version, for backend or tooling issues:
+- Board, firmware build environment and test type (native, bench or vehicle), for firmware issues:
 
-**Additional context**
-Add any other context about the problem here.
+## Evidence
 
-**Safety and privacy check**
+<!-- Redacted logs, HTTP status codes, the /health status, serial output, the time it happened with its time zone, and screenshots. -->
 
-- Do not paste credentials, tokens, private keys, Wi-Fi passwords, personal
-  records, exact private addresses, or unredacted logs.
-- Include a redacted request/response, correlation time, route/device ID
-  placeholder, and relevant `/health` or serial symptom when useful.
-- For hardware issues, state whether this was a native test, bench test, or
-  vehicle test; a compile alone is not physical acceptance evidence.
+## Safety and privacy
+
+Do not include credentials, tokens, device secrets, Wi-Fi passwords, private keys, personal records, private addresses, location traces or unredacted logs. Report security vulnerabilities privately as described in `SECURITY.md`, not in an issue.

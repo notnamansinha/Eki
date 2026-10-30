@@ -1,32 +1,32 @@
 ---
 name: Feature request
-about: Suggest an idea for the Eki ecosystem
+about: Suggest a change to Eki
 title: "[FEATURE] "
 labels: enhancement
 assignees: ''
 ---
 
-<!-- Last updated: 2026-10-04 14:20 IST (UTC+05:30). -->
+## Problem
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always
-frustrated when [...]
+<!-- The problem this change solves, and who has it. -->
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+## Proposed change
 
-**Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features
-you've considered.
+## Alternatives considered
 
-**Additional context**
-Add any other context or screenshots about the feature request here.
+## Impact
 
-**Impact checklist**
+Tick everything the change would affect:
 
-- [ ] Does this change an API, Firebase collection/rule/index, environment variable,
-  firmware secret, route/lifecycle rule, privacy behavior, or deployment step?
-- [ ] If yes, describe the required documentation, migration, rollback, testing,
-  and acceptance evidence.
-- [ ] Use placeholders only; do not attach production data, credentials, or private
-  infrastructure details.
+- [ ] HTTP API or OpenAPI schema
+- [ ] Firestore or RTDB data, rules or indexes
+- [ ] Environment variable or firmware definition
+- [ ] Ride lifecycle or tracking rule
+- [ ] Privacy, retention or security behaviour
+- [ ] Deployment or release step
+
+For each ticked item, describe the documentation, migration, rollback and testing the change needs.
+
+## Additional context
+
+<!-- Use placeholders only. Do not attach production data, credentials or private infrastructure details. -->

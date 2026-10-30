@@ -1,5 +1,9 @@
 # PR #323 interaction and retirement review
 
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-040 | 1.0 | Historical | 2026-10-15 |
+
 Reviewed on 14 October 2026, Asia/Kolkata. Original PR head:
 `c5a3c820d87f6c2ddbb64189400d43d75d20df1c`; base/audit revision:
 `454a69631826ba6e371f2b3eca6820dfc91bc774`. Fixes and the testing skill are part
