@@ -115,7 +115,7 @@ The `assets/` folder holds images referenced by these records. `simulations/gene
 
 ## 5. Remaining acceptance gates
 
-No record above establishes release readiness. The execution ledger always reports `softwareRelease: NOT_RELEASE_READY` and `vehicleFieldDeployment: NOT_VERIFIED`; only owner-reviewed field and provider evidence can change that decision.
+No record above establishes release readiness. The execution ledger always reports `softwareRelease: NOT_RELEASE_READY` and `vehicleFieldDeployment: NOT_VERIFIED`; only owner-reviewed field and provider evidence can change that decision. The levels L0 to L5 in the table below are defined in the [test strategy](TEST_STRATEGY.md#2-test-levels).
 
 [Issue #351](https://github.com/notnamansinha/Eki/issues/351) is the working acceptance checklist. It consolidates the requirements of issues #245, #246, #300 and #337, which are closed. Issues #365 to #379 track the Cloud Run migration, including staging acceptance and a rollback rehearsal (#377).
 

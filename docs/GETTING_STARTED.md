@@ -227,14 +227,14 @@ This loop never moves the bus, so stops do not advance. Stop progress needs a re
 
 1. **Live Ops** shows every bus on a map and in a list with its live status and delay. From a bus you can change the delay, open the ride chat, or use **End ride early**, which saves the ride as `interrupted` and pauses automatic service for that bus. **Resume tracking** restarts automatic service after such a pause.
 2. **Routes** creates, edits and deletes routes and their ordered stops. **Fleet & People** manages vehicles and operators.
-3. **History** lists completed and interrupted rides with their stop evidence. **Feedback** shows the latest 200 feedback records and updates their status. **Settings** holds the passenger-facing service start time, the no-bus messages and the announcement text.
+3. **History** lists rides, newest first, with their status and stop evidence. **Feedback** shows the latest 200 feedback records and updates their status. **Settings** holds the passenger-facing service start time, the no-bus messages and the announcement text.
 4. **Passenger Panel** opens the passenger workspace; **Profile**, **Admin Panel** returns.
 
 ### 10.3 Operator
 
 The operator has no separate workspace. The operator's assignment to a bus authorizes the automatic service, and the tracker in that bus starts, advances and completes rides from its GNSS fixes:
 
-1. The tracker sends a qualified fix (fresh, HDOP at most 4) and the backend creates the session in `pre_departure`.
+1. The tracker sends a qualified fix (fresh, with an HDOP accuracy figure of at most 4) and the backend creates the session in `pre_departure`.
 2. When the bus leaves the origin, the trip state becomes `in_service`, and each stop is marked as the bus reaches it in route order.
 3. A confirmed stop at the final stop completes the ride. After the turnaround wait, a fresh stopped fix there arms the return direction.
 

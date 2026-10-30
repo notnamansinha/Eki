@@ -67,7 +67,7 @@ Rules that hold in every state:
 
 ## 5. Roles and authorization
 
-Firebase Authentication identifies people; the backend decides what they may do. The backend publishes role claims together with a new `authorizationVersion` and mirrors the version to `_userAuthorization/{uid}` in Firestore and RTDB. Privileged HTTP handlers and database rules compare the token's version with the mirror, so a demoted or reassigned account loses access on its next request without waiting for the token to expire. Trust boundaries are described in the [security architecture](../security/SECURITY_ARCHITECTURE.md).
+Firebase Authentication identifies people; the backend decides what they may do. The backend publishes role claims together with a new `authorizationVersion` and mirrors the version to `_userAuthorization/{uid}` in Firestore and RTDB. `requireAdmin`, the administrator branch of `POST /api/shifts/stop` and the database rules compare the token's version with the mirror, so on those paths a demoted or reassigned account loses access on its next request without waiting for the token to expire. The other ride-operation routes in `backend/src/routes/shifts.ts` and `backend/src/routes/sessions.ts` accept administrator and driver claims without this comparison ([risk SEC-03](../operations/ARCHITECTURE_RISK_REGISTER.md#38-sec-03-ride-operations-accept-stale-administrator-claims)). Trust boundaries are described in the [security architecture](../security/SECURITY_ARCHITECTURE.md).
 
 | Role | Granted by | May |
 |---|---|---|

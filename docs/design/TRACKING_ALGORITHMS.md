@@ -8,7 +8,7 @@
 
 ### 1.1 Purpose
 
-This document specifies how Eki turns GNSS fixes from a bus into a matched map position, an off-route decision, ride progress, arrival times and a live or degraded status. It gives every threshold with the source line that defines it, so that a reviewer can check a behaviour against the code and a developer can change a value knowingly.
+This document specifies how Eki turns GNSS fixes from a bus into a matched map position, an off-route decision, ride progress, arrival times and a live or degraded status. It gives every threshold with the source line that defines it, so that a reviewer can check a behaviour against the code and a developer can change a value knowingly. It follows the design-description structure of IEEE 1016 [1]. Terms such as fix, HDOP, live record and arrival corridor are defined in the [glossary](../GLOSSARY.md).
 
 ### 1.2 Scope
 
@@ -247,7 +247,7 @@ A reroute is scheduled each time the matching transaction commits a confirmed de
 1. Acquires the process-wide provider circuit (Section 5.4). If it is open, the request is skipped.
 2. Claims the node in an RTDB transaction. The claim requires `routeState: OFF_ROUTE`, the same `routeVersion`, session and direction, `in_service`, and no retry backoff in progress. It sets `routeState: REROUTING`, a new `rerouteRequestId`, `lastRerouteAttemptAt`, and reserves the next backoff in `rerouteRetry` before any billable call.
 3. Builds the itinerary: the remaining stops from `currentStopIndex`, skipping the origin when the index is 0, at most 100 stops (`telemetryRouteService.ts:697`, `telemetryRouteService.ts:1016`).
-4. Calls Google Routes `computeRoutes` from the bus fix to the last remaining stop through the others, with `routingPreference: TRAFFIC_AWARE`, a 3.5 s timeout and the fix heading when `speed >= 3` and moving (`telemetryRouteService.ts:1023`, `backend/src/lib/googleMaps.ts:24`). More than 25 intermediates are split into chained requests (`googleMaps.ts:51`).
+4. Calls Google Routes `computeRoutes` [2] from the bus fix to the last remaining stop through the others, with `routingPreference: TRAFFIC_AWARE`, a 3.5 s timeout and the fix heading when `speed >= 3` and moving (`telemetryRouteService.ts:1023`, `backend/src/lib/googleMaps.ts:24`). More than 25 intermediates are split into chained requests (`googleMaps.ts:51`).
 5. Activates the result (`telemetryRouteService.ts:733`). The polyline must have at least 2 points and the triggering fix must match it within 45 m, or the attempt fails. The geometry is written once to `activeRouteGeometry/{busId}_{routeId}/{version}` with `version = max(previous + 1, now)`. A second transaction then publishes `routeSource: dynamic-reroute`, the new `routeVersion` and `routeState: ON_NEW_ROUTE`, but only if the request ID, version, session, direction and `currentStopIndex` are unchanged and the geometry is less than 24 h old.
 6. On any failure, the node returns to `OFF_ROUTE` with `rerouteError` and `rerouteFailedAt`; the reserved backoff stays (`telemetryRouteService.ts:982`).
 
@@ -564,13 +564,13 @@ Age is measured on the server timeline: `serverNow()` is the device clock correc
 | "Bus is here" (`atStopIndex`) | Shown | Shown | Withheld | Withheld | `PassengerMap.tsx:529` |
 | Marker | Live | Live | Marked GPS lost | Marked signal lost | `PassengerMap.tsx:681` |
 | New boarding (bus selectable) | Allowed | Allowed | Withheld | Withheld | `frontend/src/lib/passengerAvailability.ts:10` |
-| Driver chat | Available | Available | Available | Withheld | `frontend/src/components/passenger/PassengerWorkspace.tsx:351` |
+| Ride chat | Available | Available | Available | Withheld | `frontend/src/components/passenger/PassengerWorkspace.tsx:351` |
 
 Boarding is also withheld while `automaticServicePaused` is `true` or the browser's RTDB connection is down. The map notice shows the worst state among the route's buses (`PassengerMap.tsx:523`). Stop progress from `currentStopIndex` stays visible in every state.
 
 ### 9.4 What the administrator interface withholds
 
-The Live Ops dashboard uses the 30 s threshold only, re-evaluated every 15 s (`frontend/src/components/admin/DashboardPanel.tsx:700`). A ride whose node is `offline` or silent for more than 30 s shows **Service paused** instead of its trip state (`DashboardPanel.tsx:76`) and is left out of the in-service, awaiting-start and direction-pending counts (`DashboardPanel.tsx:705`). End ride stays available for such a ride.
+The Live Ops dashboard uses the 30 s threshold only, re-evaluated every 15 s (`frontend/src/components/admin/DashboardPanel.tsx:700`). A ride whose node is `offline` or silent for more than 30 s shows **Service paused** instead of its trip state (`DashboardPanel.tsx:76`) and is left out of the in-service, awaiting-start and direction-pending counts (`DashboardPanel.tsx:705`). **End ride early** stays available for such a ride.
 
 ### 9.5 Backend staleness
 

@@ -8,9 +8,25 @@
 
 This model lets an operator estimate the monthly cost of running Eki and find the quotas that fail first. It covers Firebase (Realtime Database, Cloud Firestore, Authentication, Hosting), Google Maps Platform, backend hosting (the ngrok tunnel in use today and the proposed Cloud Run service), GitHub Actions and the tracker hardware fitted to each bus.
 
-Every quantity in Sections 3 and 4 is an estimate. Each one is derived from the code at the cited `path:line`, from recorded evidence, or from a stated assumption. Replace the assumptions in Section 4.1 with measured values before you commit to a budget. Section 6.7 describes how to measure.
+### 1.1 Summary
 
-Conventions:
+| Estimate | Pilot | Campus | Large |
+|---|---|---|---|
+| Fleet and riders (Section 4.1) | 3 buses, 2 routes, 300 passengers a day | 10 buses, 5 routes, 2,000 passengers a day | 30 buses, 12 routes, 10,000 passengers a day |
+| Firebase and Google Maps, per month | USD 20 to 27 | USD 280 to 393 | USD 2,249 to 3,253 |
+| Backend through ngrok Pay-as-you-go, per month | USD 60 | USD 163 | USD 477 |
+| Total per month | USD 80 to 87 (INR 7,670 to 8,263) | USD 443 to 556 (INR 42,292 to 53,059) | USD 2,726 to 3,730 (INR 260,018 to 355,766) |
+| Tracker hardware, once per bus (Section 3.10) | INR 1,160 to 2,375, or INR 3,960 to 5,175 with a 4G hotspot | Same | Same |
+
+All figures are estimates from Section 4.3, on the Firebase Blaze (pay-as-you-go) plan and the Google Maps India price list. "Firebase and Google Maps" is the Section 4.3 subtotal plus Firestore overage at `us-central1` prices. Each range runs from the lower to the upper bound of the Realtime Database download model (Section 3.3).
+
+- At campus scale and above, passenger downloads from the Realtime Database and Google Maps map loads make up most of the cost. Both grow with the number of daily passengers.
+- The no-cost Spark plan cannot run the pilot: the pilot exhausts its Realtime Database download quota in 8 to 10 days, and Firebase then turns the product off for the rest of the month (Section 5). The ngrok Free and Hobbyist plans run out within 10 hours of tracker traffic (Section 4.4).
+- Not included: Cloud Run hosting to replace ngrok, whose unit prices were not confirmed (Section 3.7); the cellular data plan, about 1.9 GB per bus per month; and the automotive power converter, fuse holder and enclosure.
+
+### 1.2 Conventions
+
+Every quantity in Sections 3 and 4 is an estimate. Each one is derived from the code at the cited `path:line`, from recorded evidence, or from a stated assumption. Replace the assumptions in Section 4.1 with measured values before you commit to a budget. Section 6.7 describes how to measure.
 
 - Prices are in US dollars (USD) as listed by the vendor. Indian rupee (INR) amounts use the Reserve Bank of India reference rate of INR 95.3688 per USD, published by FBIL for 2026-10-29 at 13:00 and retrieved 2026-10-30 [25].
 - KB, MB and GB are decimal (1 GB = 10^9 bytes). The Firebase pricing pages do not define the unit.
@@ -439,7 +455,7 @@ Repeat this check each month and whenever `B`, `R` or `P` changes:
 4. **Ride activity.** `r_b`, `L` and `c_r` are assumptions. Reroutes depend on driver behaviour and road works.
 5. **Firestore operation counts.** Counts per ride, the fleet reconciliation factor of 4 reads per driver and 1,000 reads per admin day are estimates from code reading, not measurements.
 6. **Prices not confirmed.** Firestore prices for `asia-south2` and for stored data, Cloud Run unit prices, Identity Platform prices above 50,000 MAU and cellular data plans were not confirmed. Section 4.3 marks these.
-7. **Maps price list.** The India list applies only if billing and most usage are in India [17]; otherwise use the global list. Google charges India accounts in INR, so the invoice amount depends on Google's conversion, not on the rate in Section 1.
+7. **Maps price list.** The India list applies only if billing and most usage are in India [17]; otherwise use the global list. Google charges India accounts in INR, so the invoice amount depends on Google's conversion, not on the rate in Section 1.2.
 8. **Plan and location.** The Firebase plan of the deployed project was not checked for this model. The Realtime Database instance is in `us-central1` ([RTDB region decision](../design/RTDB_REGION_LATENCY_DECISION.md)) and the default Firestore database was recorded in `asia-south2` on 2026-10-11 ([non-motion inventory](../testing/LIVE_NON_MOTION_INVENTORY_2026_10_11.md)).
 9. **Hardware prices** are indicative retail listings and change often.
 

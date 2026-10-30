@@ -25,7 +25,9 @@ Detail lives in other documents:
 
 ### 1.2 System summary
 
-An ESP32 tracker in each bus reads a NEO-M8N GNSS receiver and posts a fix over HTTPS about once per second to an Express backend. The backend authenticates the device, writes the fix to Firebase Realtime Database (RTDB) and matches it to the bus route. One leader worker advances the ride through its ordered stops and records lifecycle history in Cloud Firestore. Passengers and administrators use a Next.js progressive web app (PWA) served by Firebase Hosting. The PWA receives live bus state through Firebase SDK listeners and sends commands to the backend over HTTPS.
+An ESP32 tracker in each bus reads a NEO-M8N GNSS (satellite positioning) receiver and posts a fix over HTTPS about once per second to an Express backend. The backend authenticates the device, writes the fix to Firebase Realtime Database (RTDB) and matches it to the bus route. A background worker, which runs in exactly one backend process at a time, advances the ride through its ordered stops and records ride history in Cloud Firestore. Passengers and administrators use a Next.js progressive web app (PWA) served by Firebase Hosting. The PWA receives live bus state through Firebase SDK listeners and sends commands to the backend over HTTPS. Terms are defined in the [glossary](../GLOSSARY.md).
+
+Current state: every green push to `main` deploys the web app and database rules to the staging Firebase project. The backend runs on one workstation behind an ngrok tunnel (Section 5.2), and no production environment exists yet. Stop progress is validated on simulated rides only, and fleet firmware security is not yet proven on hardware. The [cost model](../cost/COST_MODEL.md#11-summary) estimates USD 80 to 87 a month for a three-bus pilot and USD 443 to 556 a month for a ten-bus campus service with today's hosting. The [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md#11-summary) lists what remains open.
 
 ## 2. Stakeholders and concerns
 
@@ -116,10 +118,10 @@ Every backend process serves HTTP and processes the telemetry it receives, inclu
 | Environment | Firebase project | Deployed by | What is deployed | Web origin |
 |---|---|---|---|---|
 | Staging (GitHub environment `staging`) | `bustrack-be165`, also the `.firebaserc` default | `.github/workflows/deploy.yml` after a successful "Production verification" run on a push to `main`, or a manual dispatch from `main` | Hosting, Firestore rules and indexes, RTDB rules | `https://bustrack-be165.web.app` |
-| Production (GitHub environment `production`) | `eki-production` | Manual dispatch from `main` with environment approval | Same as staging | `https://eki-production.web.app` |
+| Production (GitHub environment `production`) | `eki-production`, named in the workflow but not yet provisioned | Manual dispatch from `main`. Approval depends on required reviewers on the `production` environment, which does not exist yet ([CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md#55-repository-settings)) | Same as staging | `https://eki-production.web.app` |
 | Local development | A developer's own Firebase project; emulators for rules and browser suites | `npm run dev` | Frontend on port 3000, backend on port 4000 | `http://localhost:3000` |
 
-The deploy workflow uses Node.js 24 and `firebase-tools@15.14.0`, verifies that the backend and frontend RTDB URLs name the same instance, builds the web app in strict production mode, checks the live backend contract, and turns off App Check enforcement. It then deploys the Firestore indexes, waits for them to build, and deploys Hosting and the rules. It does not deploy the backend. The CI job `backend-image` in `.github/workflows/ci.yml` builds the container image and boot-tests `/live` and `/health`, but no workflow releases it. The repository does not show that `eki-production` holds data or accounts; the recorded field tests use `bustrack-be165` [3].
+The deploy workflow uses Node.js 24 and `firebase-tools@15.14.0`, verifies that the backend and frontend RTDB URLs name the same instance, builds the web app in strict production mode, checks the live backend contract, and turns off App Check enforcement. It then deploys the Firestore indexes, waits for them to build, and deploys Hosting and the rules. It does not deploy the backend. The CI job `backend-image` in `.github/workflows/ci.yml` builds the container image and boot-tests `/live` and `/health`, but no workflow releases it. The recorded field tests use `bustrack-be165` [3].
 
 | Store | Instance | Location | Evidence |
 |---|---|---|---|

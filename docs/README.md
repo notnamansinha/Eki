@@ -15,13 +15,13 @@ Current documents describe the software at the head of the branch that contains 
 | Reader | Read in this order |
 |---|---|
 | New developer | [Project overview](../README.md), [getting started](GETTING_STARTED.md), [configuration](CONFIGURATION.md), [architecture](design/ARCHITECTURE.md), [glossary](GLOSSARY.md), [contributing](../CONTRIBUTING.md) |
-| Evaluator or reviewer | [Software requirements specification](requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md), [architecture](design/ARCHITECTURE.md), [high-level design](design/HIGH_LEVEL_DESIGN.md), [test strategy](testing/TEST_STRATEGY.md), [testing and evidence index](testing/README.md) |
+| Evaluator or reviewer | [Project overview](../README.md), [architecture summary](design/ARCHITECTURE.md#12-system-summary), [cost model summary](cost/COST_MODEL.md#11-summary), [risk register summary](operations/ARCHITECTURE_RISK_REGISTER.md#11-summary), [software requirements specification](requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md), [high-level design](design/HIGH_LEVEL_DESIGN.md), [test strategy](testing/TEST_STRATEGY.md), [testing and evidence index](testing/README.md) |
 | Frontend developer | [Frontend guide](../frontend/README.md), [UI design system](design/UI_DESIGN_SYSTEM.md), [data model](data/FIREBASE_DATA_MODEL.md), [API reference](../backend/API.md) |
 | Backend developer | [Backend guide](../backend/README.md), [API reference](../backend/API.md), [low-level design](design/LOW_LEVEL_DESIGN.md), [tracking algorithms](design/TRACKING_ALGORITHMS.md), [data model](data/FIREBASE_DATA_MODEL.md) |
 | Firmware developer | [Hardware guide](../hardware/README.md), [hardware telemetry](hardware/HARDWARE_TELEMETRY.md), [fleet security provisioning](security/HARDWARE_SECURITY_PROVISIONING.md) |
 | Operator or administrator | [Getting started](GETTING_STARTED.md), [local testing](operations/LOCAL_TESTING.md), [live demo runbook](operations/LIVE_DEMO_RUNBOOK.md), [CI, deployment and releases](operations/CI_CD_AND_RELEASES.md), [deployment checklist](operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) |
 | Security reviewer | [Security policy](../SECURITY.md), [security architecture](security/SECURITY_ARCHITECTURE.md), [browser API security](security/BROWSER_API_SECURITY.md), [privileged database authorization](security/PRIVILEGED_DATABASE_AUTHORIZATION.md) |
-| Budget owner | [Cost model](cost/COST_MODEL.md) |
+| Budget owner | [Cost model](cost/COST_MODEL.md) (Section 1.1 is the summary), [risk register](operations/ARCHITECTURE_RISK_REGISTER.md), [deployment checklist](operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) |
 
 ## 3. Folder layout
 

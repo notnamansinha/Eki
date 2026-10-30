@@ -80,7 +80,7 @@ Open `http://localhost:3000`. The health check returns `status: ok` when the bac
 
 ## 5. Documentation
 
-The [documentation index](../README.md) lists every document with reading paths by role. Start with [getting started](../GETTING_STARTED.md), the [glossary](../GLOSSARY.md) and the [architecture](../design/ARCHITECTURE.md). Package guides: [backend](../backend/README.md), [API reference](../backend/API.md), [frontend](../frontend/README.md) and [hardware](../hardware/README.md).
+The [documentation index](../README.md) lists every document with reading paths by role. Start with [getting started](../GETTING_STARTED.md), the [glossary](../GLOSSARY.md) and the [architecture](../design/ARCHITECTURE.md). Evaluators and budget owners can start with the [architecture summary](../design/ARCHITECTURE.md#12-system-summary), the [cost model summary](../cost/COST_MODEL.md#11-summary) and the [risk register summary](../operations/ARCHITECTURE_RISK_REGISTER.md#11-summary). Package guides: [backend](../backend/README.md), [API reference](../backend/API.md), [frontend](../frontend/README.md) and [hardware](../hardware/README.md).
 
 ## 6. Verify a change
 
@@ -92,7 +92,7 @@ This runs lint, all unit tests, the production build with service worker and CSP
 
 ## 7. Deployment status
 
-A green CI run on a push to `main` deploys Firebase Hosting, Firestore and RTDB rules, and Firestore indexes to the staging project. Production deploys run only by manual dispatch from `main` and need an approving reviewer. No workflow deploys the Express backend: `backend/Dockerfile` builds its container image, which CI only smoke-tests, and bench and demonstration setups run the backend on a workstation behind an [ngrok tunnel](../operations/NGROK_TUNNEL.md). A university production release also needs owned backend hosting, approved retention, monitoring, protected firmware provisioning and field acceptance; see the [deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) and [CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md).
+A green CI run on a push to `main` deploys Firebase Hosting, Firestore and RTDB rules, and Firestore indexes to the staging project. Production deploys run only by manual dispatch from `main`; the approving reviewer depends on a `production` GitHub environment and an `eki-production` Firebase project, neither of which exists yet. No workflow deploys the Express backend: `backend/Dockerfile` builds its container image, which CI only smoke-tests, and bench and demonstration setups run the backend on a workstation behind an [ngrok tunnel](../operations/NGROK_TUNNEL.md). A university production release also needs owned backend hosting, approved retention, monitoring, protected firmware provisioning and field acceptance; see the [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md), the [deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) and [CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md).
 
 Report vulnerabilities as described in the [security policy](SECURITY.md).
 

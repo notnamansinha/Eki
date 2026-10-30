@@ -149,7 +149,7 @@ The service is available only while the workstation, the backend process and the
 
 ### 7.2 Proposed migration to Cloud Run
 
-Status: Proposed. Nothing below is implemented; the draft specification (PR #380) was closed without merging.
+Status: Proposed. Nothing below is implemented.
 
 The proposal runs the existing container on Cloud Run in the same Firebase project and keeps Hosting, Authentication, Firestore and the existing RTDB instance unchanged. Cloud Run needs a Cloud Billing account on the project, which moves a Spark project to the Blaze plan [2].
 

@@ -26,8 +26,9 @@ Terms are sorted alphabetically, ignoring case and backticks.
 | `armed` | Ride-session status while the direction is known and the trip state is `pre_departure`. Passengers can board an `armed` or `active` session. |
 | Arrival corridor | The area within 15 m of a stop. A stop counts as reached, in route order, when a reliable fix, or the segment between two consecutive reliable fixes, enters it. |
 | `atStopIndex` | The index of the stop the bus is at now. The backend publishes it while a fresh fix is inside that stop's arrival corridor, and passengers see "At" that stop. |
-| `authorizationVersion` | A random identifier in a user's claims, mirrored in Firestore and RTDB under `_userAuthorization/<uid>`. Every role or assignment change issues a new value, so a token carrying an older value loses privileged access. |
+| `authorizationVersion` | A random identifier in a user's claims, mirrored in Firestore and RTDB under `_userAuthorization/<uid>`. Every role or assignment change issues a new value, so a token carrying an older value loses privileged access wherever the version is compared: `requireAdmin` and the database rules. Some ride-operation routes do not compare it yet ([risk SEC-03](operations/ARCHITECTURE_RISK_REGISTER.md#38-sec-03-ride-operations-accept-stale-administrator-claims)). |
 | Automatic service | A ride session that the backend starts from a qualified tracker fix, with no action in the browser. It needs an enabled device, a bus assigned to the route, exactly one operator on that bus, a valid route, and a fresh fix with HDOP at most 4. |
+| Blaze plan | The Firebase pay-as-you-go billing plan. It includes the Spark no-cost allowances and bills usage above them; see the [cost model](cost/COST_MODEL.md). |
 | Boarding | A passenger joining a ride session through `POST /api/sessions/<sessionId>/join` with a boarding stop and an alighting stop. The backend requires a passenger profile, stops in travel order, a fresh bus fix and the browser's location within 150 m of the bus. |
 | Boarding code | An eight-character code that Live Ops can show for a session. Boarding does not require it. |
 | Bus | A record in the Firestore `buses` collection with its assigned routes. The user interface calls it a vehicle. |
@@ -65,11 +66,13 @@ Terms are sorted alphabetically, ignoring case and backticks.
 | Manifest | The `passengers` map in a ride session: each boarded passenger with their boarding and alighting stops. |
 | `motionState` | The motion reported with each fix: `moving`, `stopped` or `uncertain`. `uncertain` marks a fix that cannot be trusted. |
 | NEO-M8N | The u-blox GNSS receiver module in each tracker. |
+| ngrok tunnel | A hosted tunnel service that gives the backend on a workstation a fixed public HTTPS address. Trackers and browsers reach the backend through it until managed hosting exists; see [ngrok tunnel](operations/NGROK_TUNNEL.md). |
 | `OFF_ROUTE` | Route state after two consecutive reliable moving samples do not match the route, or after one reliable moving sample at least 120 m from it. It triggers a reroute. |
 | Operator | The person assigned to drive a bus. The record in the `drivers` collection links a Firebase Auth UID to one bus, and the account's role is `driver`. |
 | Origin departure | The point at which a ride leaves `pre_departure`: 50 m from the first stop, or half the distance to the second stop if that is shorter, but at least 10 m. |
 | OTA update | An over-the-air firmware update: a signed image that a fleet device downloads when `GET /api/devices/<deviceId>/firmware` offers a newer release. The six `FIRMWARE_RELEASE_*` variables describe the release; the backend withholds it while the bus has an active ride. |
 | `passed_unobserved` | Stop evidence for a stop the bus missed while telemetry was running. The backend credits it once the bus reaches one of the next two stops in its direction of travel; it never counts as an arrival. |
+| Passenger projection | The passenger-safe copy of live records that the worker writes to `publicRouteBuses`, together with `liveRouteCatalog`. Browsers read the projection, never `activeBuses`. |
 | `pending` | Ride-session status while the session exists but its direction is not yet resolved. |
 | `POSSIBLE_OFF_ROUTE` | Route state for an ambiguous match, for example at a junction, or for a first sample that does not match. Passengers are not warned; only `OFF_ROUTE` and `REROUTING` are shown as deviations. |
 | `pre_departure` | Trip state from session creation until origin departure. |
@@ -84,7 +87,8 @@ Terms are sorted alphabetically, ignoring case and backticks.
 | `serviceSetupPending` | An internal marker on a live record while an automatic service start is incomplete. Later fixes finish the setup and clear it. |
 | `signalState` | Signal state on a live record: `connected`, `gnss_lost`, or `lost` once the worker marks the bus offline. |
 | `skipped_gnss_gap` | Stop evidence for a stop passed during a GNSS gap, credited when the bus is later observed at a following stop. |
-| Staging | The Firebase project `bustrack-be165`, which receives the frontend and rules after every green push to `main`. Production is `eki-production`, deployed only by manual dispatch; see [CI, deployment and releases](operations/CI_CD_AND_RELEASES.md). |
+| Spark plan | The Firebase no-cost plan. When a product exceeds its Spark quota, Firebase turns that product off until the quota resets or the project moves to the Blaze plan. |
+| Staging | The Firebase project `bustrack-be165`, which receives the frontend and rules after every green push to `main`. The Deploy workflow names a production project, `eki-production`, deployed only by manual dispatch, but that project and its GitHub environment are not yet provisioned; see [CI, deployment and releases](operations/CI_CD_AND_RELEASES.md). |
 | Stop evidence | How a passed stop was established, as recorded in ride history: `gnss_progress` (observed arrival), `passed_unobserved`, `skipped_gnss_gap` or `recovered_checkpoint`. |
 | Telemetry | The HTTPS requests a device sends to `POST /api/devices/<deviceId>/telemetry`, each carrying one fix. |
 | Terminal arrival confirmation | The rule that a ride completes only after reliable stopped fixes at the final stop span `TERMINAL_ARRIVAL_CONFIRMATION_MS`. |

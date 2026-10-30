@@ -8,6 +8,18 @@
 
 This register lists the material risks that remain in Eki, each with the source evidence for its status and the condition that closes it. It was re-checked against `main` at `c4d47b3` plus PR #395 on 2026-10-30. Physical and institutional acceptance work is defined in the [test strategy](../testing/TEST_STRATEGY.md) and the [deployment checklist](UNIVERSITY_DEPLOYMENT_CHECKLIST.md); the historical starting point is the [production readiness audit](PRODUCTION_READINESS_AUDIT.md).
 
+### 1.1 Summary
+
+Of the ten risks, one is closed, five are open in the repository or its settings, and four have their code-side mitigation in place but wait on deployment, hardware or institutional evidence (status values are defined in Section 2). Five of the nine remaining risks are rated High.
+
+| Area | What is unfinished | Risks |
+|---|---|---|
+| Backend hosting | The backend runs as one process on a workstation behind an ngrok tunnel, with no failover, alerting or tested restore. | OPS-01 (High) |
+| Stop tracking | Stop arrival and route matching are validated on simulated rides only; a moving-bus field ride is still needed. | TRK-01 (High) |
+| Tracker firmware | Outage recovery, Secure Boot and signed updates are built but not proven on hardware, and one shared update image would give every tracker the same credentials. | FW-01, FW-02, FW-03 (High) |
+| Access control | A passenger can board by reporting a false location, and ride operations accept administrator claims without the current version check. | SEC-01, SEC-03 (Medium) |
+| Delivery process | Scheduled QA campaigns run no suites, and a merge to `main` does not require passing checks. | OPS-02, OPS-03 (Medium) |
+
 ## 2. Status values
 
 | Status | Meaning |
@@ -44,7 +56,7 @@ This register lists the material risks that remain in Eki, each with the source 
 
 ### 3.3 FW-01: store-and-forward needs physical recovery evidence
 
-- Evidence: `hardware/src/main.cpp` runs Wi-Fi, NTP, TLS and HTTPS in a publisher task on core 0 while the Arduino loop drains the GNSS UART. A 100-sample RTC ring survives warm resets; samples older than the backend's acceptance window, with a 55 s margin, are counted and dropped instead of sent. An encrypted flash checkpoint every 10 s restores the latest committed sample after cold power loss; newer uncommitted fixes can be lost. Diagnostics report health and security state every five minutes. Native tests in CI cover queue ordering, retry, overflow, stale compaction and HTTP response policy ([hardware telemetry](../hardware/HARDWARE_TELEMETRY.md), [cold power recovery](../hardware/COLD_POWER_RECOVERY.md)).
+- Evidence: `hardware/src/main.cpp` runs Wi-Fi, NTP, TLS and HTTPS in a publisher task on core 0 while the Arduino loop drains the GNSS UART. A 100-sample RTC ring survives warm resets; samples older than 55 s, which keeps them inside the backend's 60 s acceptance window, are counted and dropped instead of sent. An encrypted flash checkpoint every 10 s restores the latest committed sample after cold power loss; newer uncommitted fixes can be lost. Diagnostics report health and security state every five minutes. Native tests in CI cover queue ordering, retry, overflow, stale compaction and HTTP response policy ([hardware telemetry](../hardware/HARDWARE_TELEMETRY.md), [cold power recovery](../hardware/COLD_POWER_RECOVERY.md)).
 - Impact: a dead zone or backend outage longer than the ring and freshness window loses positions by design; untested radio, power or TLS behaviour could lose more.
 - Open gate: a witnessed dead-zone and backend-outage run on the target board showing no UART or FIFO overflow and acceptable queue high-water and recovery; TLS established with NTP blocked; the credential-fault LED and radio shutdown; device-specific reflash and credential rotation. These remain open as items `245-04`, `245-24` and `300-04` in the [open acceptance disposition](../testing/OPEN_ACCEPTANCE_DISPOSITION_2026_10_21.md).
 
