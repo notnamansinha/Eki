@@ -231,7 +231,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-EVD-029 | [Passenger audit repairs: 23 October 2026](testing/PASSENGER_AUDIT_REPAIRS_2026_10_23.md) | 1.0 | Historical | 2026-10-23 |
 | EKI-EVD-030 | [Passenger boarding and CodeRabbit follow-up: 25 October 2026](testing/PASSENGER_BOARDING_UPDATE_2026-10-25.md) | 1.0 | Historical | 2026-10-25 |
 | EKI-EVD-031 | [Passenger map and disconnect verification](testing/PASSENGER_DISCONNECT_AND_LAYOUT_2026-10-26.md) | 1.0 | Historical | 2026-10-26 |
-| EKI-EVD-032 | [Passenger field ride repairs: 29 October 2026](testing/PASSENGER_FIELD_RIDE_REPAIRS_2026_10_29.md) | 1.0 | Historical | 2026-10-29 |
+| EKI-EVD-032 | [Passenger field ride repairs: 29 October 2026](testing/PASSENGER_FIELD_RIDE_REPAIRS_2026_10_29.md) | 1.0 | Historical | 2026-10-30 |
 | EKI-EVD-033 | [Passenger GPS progress regression](testing/PASSENGER_GPS_PROGRESS.md) | 1.0 | Historical | 2026-10-21 |
 | EKI-EVD-034 | [Passenger map per-bus work (R18)](testing/PASSENGER_MAP_PER_BUS_WORK.md) | 1.0 | Historical | 2026-10-06 |
 | EKI-EVD-035 | [Passenger preview and operator controls audit: 2026-10-03](testing/PASSENGER_PREVIEW_QA_2026_10_03.md) | 1.0 | Historical | 2026-10-04 |

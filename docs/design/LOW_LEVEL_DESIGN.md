@@ -238,8 +238,8 @@ The whole request has an 8 s response deadline and 5 s per dependency stage (`ba
 |---|---|---|---|---|
 | Health probes of Firestore and RTDB | Every replica | 30 s | 5 s per probe; result fresh for 65 s | `server.ts:224`, `backend/src/lib/healthState.ts:39` |
 | Route catalog watcher | Every replica | Firestore listener | Entries cached 5 min, 1,000 routes | `backend/src/services/telemetryRouteService.ts:54` |
-| Matching scheduler | Every replica | Per accepted fix | 1 running and 1 newest waiting per node; 8 running, 256 waiting nodes, 5 s queue age | `telemetryRouteService.ts:1281`, `backend/src/lib/boundedKeyedExecutor.ts:43` |
-| Reroute scheduler | Every replica | On confirmed deviation | 2 running, 64 waiting nodes | `telemetryRouteService.ts:1326` |
+| Matching scheduler | Every replica | Per accepted fix | 1 running and 1 newest waiting per node; 8 running, 256 waiting nodes, 5 s queue age | `telemetryRouteService.ts:1290`, `backend/src/lib/boundedKeyedExecutor.ts:43` |
+| Reroute scheduler | Every replica | On confirmed deviation | 2 running, 64 waiting nodes | `telemetryRouteService.ts:1335` |
 | Automatic start | Every replica | Per eligible fix | 8 running, 128 waiting, 10 s queue age; 30 s retry | `backend/src/services/automaticServiceAdmission.ts:14` |
 | Durable ride recovery | Every replica | On a node without a ride | 16 running, 1,000 queued; a miss is cached 30 s, or 1 s while a turnaround claim exists | `backend/src/services/durableRideRecovery.ts:12`, `durableRideRecovery.ts:95` |
 | Trip-state engine | Leader | `activeBuses` child events | One event at a time per node; durable writes 8 running, 256 waiting, 5 s | `backend/src/services/tripStateEngine.ts:59`, `tripStateEngine.ts:1277` |
@@ -379,7 +379,7 @@ Native tests are described in the [hardware test guide](../../hardware/test/READ
 | Leader writes | Lost lease during a write | The fence aborts the transaction; the job stops | `backend/src/lib/workerFence.ts:83` |
 | Lifecycle persistence | Firestore write fails or lock check fails | The fingerprint is released for retry and a paged replay is requested | `backend/src/services/tripStateEngine.ts:770` |
 | RTDB transactions | Cold local cache returns `null` | The update returns `null` so the SDK retries against the server value | `backend/src/routes/shifts.ts:400` |
-| Reroute | Provider error, bad geometry, lost publication | Node back to `OFF_ROUTE` with persisted backoff; circuit counts provider failures only | `backend/src/services/telemetryRouteService.ts:982` |
+| Reroute | Provider error, bad geometry, lost publication | Node back to `OFF_ROUTE` with persisted backoff; circuit counts provider failures only | `backend/src/services/telemetryRouteService.ts:991` |
 | Browser | RTDB disconnect, listener error | "Live tracking paused" notice, cache invalidation, jittered resubscription | `frontend/src/hooks/useRTDBResume.ts`, `frontend/src/lib/liveBusRetry.ts` |
 | Browser | Admin panel exception | Isolated by `AdminPanelErrorBoundary` | `frontend/src/components/admin/AdminPanelErrorBoundary.tsx` |
 | Firmware | `401` | Credential fault latched; publishing stops until restart | `hardware/include/telemetry_policy.h:403` |

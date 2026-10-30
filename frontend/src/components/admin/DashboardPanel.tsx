@@ -695,6 +695,7 @@ export default function DashboardPanel() {
   const [chatEntry, setChatEntry] = useState<ActiveBusEntry | null>(null);
   const [endRideEntry, setEndRideEntry] = useState<ActiveBusEntry | null>(null);
   const [endRidePending, setEndRidePending] = useState(false);
+  const endRideInFlightRef = useRef(false);
 
   useEffect(() => {
     const interval = window.setInterval(() => setFreshnessNow(serverNow()), 15_000);
@@ -799,7 +800,9 @@ export default function DashboardPanel() {
 
   const endRideEarly = async () => {
     const entry = endRideEntry;
-    if (!entry?.sessionId || !entry.routeId) return;
+    // State updates are batched; a ref closes the same-task double-click gap.
+    if (endRideInFlightRef.current || !entry?.sessionId || !entry.routeId) return;
+    endRideInFlightRef.current = true;
     setEndRidePending(true);
     setArmStatus("");
     try {
@@ -822,6 +825,7 @@ export default function DashboardPanel() {
       setEndRideEntry(null);
       setArmStatus(errorMessage(error));
     } finally {
+      endRideInFlightRef.current = false;
       setEndRidePending(false);
     }
   };

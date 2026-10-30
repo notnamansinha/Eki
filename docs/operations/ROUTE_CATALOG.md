@@ -49,8 +49,8 @@ None of these values is configurable at run time.
 | Item | Value | Source |
 |---|---|---|
 | Entry lifetime | 5 min, monotonic | `backend/src/services/telemetryRouteService.ts:54` |
-| Catalog and generation table size | 1,000 routes each, least recently used | `backend/src/services/telemetryRouteService.ts:97`, `backend/src/services/telemetryRouteService.ts:101` |
-| Watcher reconnect delay | 1 s, doubling to 30 s | `backend/src/services/telemetryRouteService.ts:213` |
+| Catalog and generation table size | 1,000 routes each, least recently used | `backend/src/services/telemetryRouteService.ts:99`, `backend/src/services/telemetryRouteService.ts:103` |
+| Watcher reconnect delay | 1 s, doubling to 30 s | `backend/src/services/telemetryRouteService.ts:215` |
 | Largest accepted encoded polyline | 500,000 characters | `backend/src/services/telemetryRouteService.ts:57` |
 | Watcher start | Every replica at boot | `backend/src/server.ts:307` |
 

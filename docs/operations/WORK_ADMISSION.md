@@ -53,8 +53,8 @@ None of these values is configurable at run time. The defaults of the shared exe
 | scrypt KDF, verified refill lane | 2 | 8 | 1 | 5 s | `backend/src/services/deviceTelemetryService.ts:42` |
 | Durable fleet and active-ride writes | 8 | 256 | 32 | 5 s | `backend/src/services/tripStateEngine.ts:59` |
 | Ordered live lifecycle intake | 8 | 256 | 32 | 5 s | `backend/src/services/tripStateEngine.ts:62` |
-| Route matching, newest position per live record | 8 | 256 records | 1 | 5 s | `backend/src/services/telemetryRouteService.ts:1281` |
-| Rerouting, newest position per live record | 2 | 64 records | 1 | 5 s | `backend/src/services/telemetryRouteService.ts:1326` |
+| Route matching, newest position per live record | 8 | 256 records | 1 | 5 s | `backend/src/services/telemetryRouteService.ts:1290` |
+| Rerouting, newest position per live record | 2 | 64 records | 1 | 5 s | `backend/src/services/telemetryRouteService.ts:1335` |
 | Passenger projection, newest value per live record | 2 | 64 | 1 | 5 s | `backend/src/services/liveBusProjection.ts:198` |
 | Automatic service admission | 8 | 128 | 1 | 10 s | `backend/src/services/automaticServiceAdmission.ts:14` |
 | Lifecycle recovery page | 1 page of 25 | | | | `backend/src/services/pagedLifecycleReplay.ts:8` |

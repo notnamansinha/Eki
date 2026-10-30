@@ -114,18 +114,18 @@ When GNSS is lost, the firmware sends one packet at the last position with HDOP 
 
 ## 4. Map matching
 
-Every committed fix schedules `processTelemetryRoute` (`backend/src/services/telemetryRouteService.ts:1060`) on a latest-pending scheduler: one running and one newest waiting task per live node (`telemetryRouteService.ts:1281`). Matching runs only after the ride direction is resolved (Section 6.4).
+Every committed fix schedules `processTelemetryRoute` (`backend/src/services/telemetryRouteService.ts:1069`) on a latest-pending scheduler: one running and one newest waiting task per live node (`telemetryRouteService.ts:1290`). Matching runs only after the ride direction is resolved (Section 6.4).
 
 ### 4.1 Inputs
 
 | Input | Rule | Source |
 |---|---|---|
-| Geometry | The stored `forwardPolyline` or `reversePolyline` for the direction, or the reroute polyline from `activeRouteGeometry` when `routeSource` is `dynamic-reroute` | `telemetryRouteService.ts:631` |
-| Route context version | `routeVersion` increases when direction, session or `routeGeometryVersion` changes, and when reroute geometry is missing | `telemetryRouteService.ts:1096` |
-| Point | The accepted coordinates on the live node, so a held implausible fix is matched at the held position | `telemetryRouteService.ts:1119` |
-| Heading | Trajectory heading of the last four accepted points when they span at least 8 m, else the receiver heading. Used only when `speed >= 3` and `motionState` is `moving` | `telemetryRouteService.ts:1142`, `backend/src/services/routeMatching.ts:78` |
-| Position uncertainty | The error budget of Section 3.3 for this fix | `telemetryRouteService.ts:1150` |
-| Previous match (anchor) | `routeMatchAnchor`, else `matchedLocation`, if it has the same `routeVersion` and is at most 5 min old. Discarded on a context change or when the plausibility anchor is more than 5 min old | `telemetryRouteService.ts:1112`, `telemetryRouteService.ts:294` |
+| Geometry | The stored `forwardPolyline` or `reversePolyline` for the direction, or the reroute polyline from `activeRouteGeometry` when `routeSource` is `dynamic-reroute` | `telemetryRouteService.ts:633` |
+| Route context version | `routeVersion` increases when direction, session or `routeGeometryVersion` changes, and when reroute geometry is missing | `telemetryRouteService.ts:1105` |
+| Point | The accepted coordinates on the live node, so a held implausible fix is matched at the held position | `telemetryRouteService.ts:1128` |
+| Heading | Trajectory heading of the last four accepted points when they span at least 8 m, else the receiver heading. Used only when `speed >= 3` and `motionState` is `moving` | `telemetryRouteService.ts:1151`, `backend/src/services/routeMatching.ts:78` |
+| Position uncertainty | The error budget of Section 3.3 for this fix | `telemetryRouteService.ts:1159` |
+| Previous match (anchor) | `routeMatchAnchor`, else `matchedLocation` unless it is marked `uncertain`, if it has the same `routeVersion` and is at most 5 min old. Discarded on a context change or when the plausibility anchor is more than 5 min old | `telemetryRouteService.ts:1124`, `telemetryRouteService.ts:701`, `telemetryRouteService.ts:296` |
 
 ### 4.2 Candidates
 
@@ -137,7 +137,7 @@ window = (speed + 15) / 3.6 * elapsed_s + 2 * uncertainty      (only when 0 < el
 keep candidates with |along - anchor.along| <= window
 ```
 
-The window comes from `telemetryRouteService.ts:1167`. Without an anchor, or after a longer gap, every segment is a candidate.
+The window comes from `telemetryRouteService.ts:1176`. Without an anchor, or after a longer gap, every segment is a candidate.
 
 ### 4.3 Candidate score
 
@@ -185,18 +185,18 @@ Source: `routeMatching.ts:314`.
 
 ### 4.5 Turnaround leg after a long gap
 
-When the anchor is older than 10 s and its stored speed is higher than the current speed, the faster old speed only widens the window. The service then matches again with the current speed alone. If that second match lies on another leg (along-route difference greater than straight-line difference plus 10 m), the first match is marked ambiguous and its confidence multiplied by 0.55 (`telemetryRouteService.ts:1176`, `telemetryRouteService.ts:318`).
+When the anchor is older than 10 s and its stored speed is higher than the current speed, the faster old speed only widens the window. The service then matches again with the current speed alone. If that second match lies on another leg (along-route difference greater than straight-line difference plus 10 m), the first match is marked ambiguous and its confidence multiplied by 0.55 (`telemetryRouteService.ts:1185`, `telemetryRouteService.ts:320`).
 
 ### 4.6 Outputs
 
-The match is written in a transaction that aborts when the fix is no longer the newest, the session or direction changed, or a reroute changed `routeVersion` meanwhile (`telemetryRouteService.ts:1195`).
+The match is written in a transaction that aborts when the fix is no longer the newest, the session or direction changed, or a reroute changed `routeVersion` meanwhile (`telemetryRouteService.ts:1204`).
 
 | Field | Written when | Source |
 |---|---|---|
-| `matchedLocation` | Match is not ambiguous and confidence >= 0.45; otherwise `null` | `telemetryRouteService.ts:1239` |
-| `routeMatchAnchor` | Same condition and the fix is not `uncertain`; otherwise the previous anchor is kept | `telemetryRouteService.ts:1228` |
-| `matchConfidence`, `distanceToActiveRoute`, `mapMatchSeq`, `mapMatchSampledAt` | Every pass | `telemetryRouteService.ts:1236` |
-| `routeState`, `offRouteSampleCount` | Every pass (Section 5) | `telemetryRouteService.ts:1223` |
+| `matchedLocation` | Match is not ambiguous and confidence >= 0.45; otherwise `null`. A match made from an `uncertain` fix carries `uncertain: true` and is displayed but never used as the progress anchor | `telemetryRouteService.ts:1248` |
+| `routeMatchAnchor` | Same condition and the fix is not `uncertain`; otherwise the previous anchor is kept | `telemetryRouteService.ts:1237` |
+| `matchConfidence`, `distanceToActiveRoute`, `mapMatchSeq`, `mapMatchSampledAt` | Every pass | `telemetryRouteService.ts:1245` |
+| `routeState`, `offRouteSampleCount` | Every pass (Section 5) | `telemetryRouteService.ts:1232` |
 
 The 0.45 threshold is `MATCHED_POSITION_CONFIDENCE` (`telemetryRouteService.ts:56`). Browsers draw the matched position while it belongs to the current fix, hold the previous match for up to 2 s while matching is pending, and otherwise draw the raw fix marked uncertain (`frontend/src/lib/liveBusMarkerPosition.ts:13`).
 
@@ -234,30 +234,30 @@ Figure 2. Route adherence states of a live node.
 | Reliably moving, match distance >= 120 m | `OFF_ROUTE` (or stays `REROUTING`) | 2 | `routeMatching.ts:390` |
 | Reliably moving, any other deviation, including no match | `POSSIBLE_OFF_ROUTE` at count 1, `OFF_ROUTE` at count 2 | +1, capped at 2 | `routeMatching.ts:393` |
 
-A fix is reliably moving when `motionState` is `moving`, `speed >= 3` and HDOP is a number from 0 to 4 (`telemetryRouteService.ts:1270`). A fix without HDOP (older schemas) can never confirm a deviation. A `REROUTING` state whose `lastRerouteAttemptAt` is more than 60 s old counts as `OFF_ROUTE` (`telemetryRouteService.ts:286`). Constants: `ROUTE_MATCH_DISTANCE_M` 45, `OFF_ROUTE_CONFIRMATION_SAMPLES` 2, `STRONG_OFF_ROUTE_DISTANCE_M` 120 (`routeMatching.ts:8`).
+A fix is reliably moving when `motionState` is `moving`, `speed >= 3` and HDOP is a number from 0 to 4 (`telemetryRouteService.ts:1279`). A fix without HDOP (older schemas) can never confirm a deviation. A `REROUTING` state whose `lastRerouteAttemptAt` is more than 60 s old counts as `OFF_ROUTE` (`telemetryRouteService.ts:288`). Constants: `ROUTE_MATCH_DISTANCE_M` 45, `OFF_ROUTE_CONFIRMATION_SAMPLES` 2, `STRONG_OFF_ROUTE_DISTANCE_M` 120 (`routeMatching.ts:8`).
 
 Passengers are told about a deviation only for `OFF_ROUTE` and `REROUTING`, never for `POSSIBLE_OFF_ROUTE` (`frontend/src/lib/passengerRouteStatus.ts:9`).
 
 ### 5.3 Reroute trigger and request
 
-A reroute is scheduled each time the matching transaction commits a confirmed deviation (`shouldReroute`: sample count 2 and a previous state other than `REROUTING`) on a node with `status: active` and `tripState: in_service` (`telemetryRouteService.ts:1250`). While the node stays `OFF_ROUTE`, every further deviating fix schedules again; the persisted backoff of Section 5.4 decides whether a request is sent. A separate latest-pending scheduler runs at most 2 reroutes at once with 64 waiting nodes (`telemetryRouteService.ts:1319`).
+A reroute is scheduled each time the matching transaction commits a confirmed deviation (`shouldReroute`: sample count 2 and a previous state other than `REROUTING`) on a node with `status: active` and `tripState: in_service` (`telemetryRouteService.ts:1259`). While the node stays `OFF_ROUTE`, every further deviating fix schedules again; the persisted backoff of Section 5.4 decides whether a request is sent. A separate latest-pending scheduler runs at most 2 reroutes at once with 64 waiting nodes (`telemetryRouteService.ts:1328`).
 
-`requestReroute` (`telemetryRouteService.ts:929`):
+`requestReroute` (`telemetryRouteService.ts:938`):
 
 1. Acquires the process-wide provider circuit (Section 5.4). If it is open, the request is skipped.
 2. Claims the node in an RTDB transaction. The claim requires `routeState: OFF_ROUTE`, the same `routeVersion`, session and direction, `in_service`, and no retry backoff in progress. It sets `routeState: REROUTING`, a new `rerouteRequestId`, `lastRerouteAttemptAt`, and reserves the next backoff in `rerouteRetry` before any billable call.
-3. Builds the itinerary: the remaining stops from `currentStopIndex`, skipping the origin when the index is 0, at most 100 stops (`telemetryRouteService.ts:697`, `telemetryRouteService.ts:1016`).
-4. Calls Google Routes `computeRoutes` [2] from the bus fix to the last remaining stop through the others, with `routingPreference: TRAFFIC_AWARE`, a 3.5 s timeout and the fix heading when `speed >= 3` and moving (`telemetryRouteService.ts:1023`, `backend/src/lib/googleMaps.ts:24`). More than 25 intermediates are split into chained requests (`googleMaps.ts:51`).
-5. Activates the result (`telemetryRouteService.ts:733`). The polyline must have at least 2 points and the triggering fix must match it within 45 m, or the attempt fails. The geometry is written once to `activeRouteGeometry/{busId}_{routeId}/{version}` with `version = max(previous + 1, now)`. A second transaction then publishes `routeSource: dynamic-reroute`, the new `routeVersion` and `routeState: ON_NEW_ROUTE`, but only if the request ID, version, session, direction and `currentStopIndex` are unchanged and the geometry is less than 24 h old.
-6. On any failure, the node returns to `OFF_ROUTE` with `rerouteError` and `rerouteFailedAt`; the reserved backoff stays (`telemetryRouteService.ts:982`).
+3. Builds the itinerary: the remaining stops from `currentStopIndex`, skipping the origin when the index is 0, at most 100 stops (`telemetryRouteService.ts:706`, `telemetryRouteService.ts:1025`).
+4. Calls Google Routes `computeRoutes` [2] from the bus fix to the last remaining stop through the others, with `routingPreference: TRAFFIC_AWARE`, a 3.5 s timeout and the fix heading when `speed >= 3` and moving (`telemetryRouteService.ts:1032`, `backend/src/lib/googleMaps.ts:24`). More than 25 intermediates are split into chained requests (`googleMaps.ts:51`).
+5. Activates the result (`telemetryRouteService.ts:742`). The polyline must have at least 2 points and the triggering fix must match it within 45 m, or the attempt fails. The geometry is written once to `activeRouteGeometry/{busId}_{routeId}/{version}` with `version = max(previous + 1, now)`. A second transaction then publishes `routeSource: dynamic-reroute`, the new `routeVersion` and `routeState: ON_NEW_ROUTE`, but only if the request ID, version, session, direction and `currentStopIndex` are unchanged and the geometry is less than 24 h old.
+6. On any failure, the node returns to `OFF_ROUTE` with `rerouteError` and `rerouteFailedAt`; the reserved backoff stays (`telemetryRouteService.ts:991`).
 
 ### 5.4 Retry and provider circuit
 
 | Rule | Value | Source |
 |---|---|---|
 | Per-ride backoff | min(300 s, 10 s * 2^(failures - 1)), times a random factor from 0.5 to 1 | `backend/src/services/rerouteRetry.ts:10` |
-| Failure counter cap | 32 | `telemetryRouteService.ts:974` |
-| Backoff scope | One route context: session, direction, route version, route config version, geometry signature | `telemetryRouteService.ts:943` |
+| Failure counter cap | 32 | `telemetryRouteService.ts:983` |
+| Backoff scope | One route context: session, direction, route version, route config version, geometry signature | `telemetryRouteService.ts:952` |
 | Circuit opens | After 5 consecutive provider failures, or a failed probe | `rerouteRetry.ts:47` |
 | Circuit open time | min(300 s, 60 s * 2^(openings - 1)), times 0.5 to 1 | `rerouteRetry.ts:49` |
 | Half-open | One probe request at a time | `rerouteRetry.ts:33` |
@@ -266,7 +266,7 @@ The full policy and its evidence are in the [reroute retry policy](../operations
 
 ### 5.5 Departure route
 
-Unless `LIVE_DEPARTURE_ROUTES_ENABLED` is `false`, `0`, `no` or `off` (trimmed, case-insensitive; any other value stops the backend at startup, `backend/src/lib/booleanEnv.ts:23`), an active ride with a resolved direction also gets a traffic-aware route through the same scheduler, circuit and activation path (`telemetryRouteService.ts:852`). Before departure the route runs from the origin through every stop; at departure a preview computed within the last 5 min is reused, otherwise the route is computed from the bus position. Both use `TRAFFIC_AWARE_OPTIMAL`. Each context gets at most 3 attempts: a claimed attempt holds off the next for 60 s, and a failed attempt waits the retry backoff of Section 5.4 (`telemetryRouteService.ts:869`, `telemetryRouteService.ts:896`).
+Unless `LIVE_DEPARTURE_ROUTES_ENABLED` is `false`, `0`, `no` or `off` (trimmed, case-insensitive; any other value stops the backend at startup, `backend/src/lib/booleanEnv.ts:23`), an active ride with a resolved direction also gets a traffic-aware route through the same scheduler, circuit and activation path (`telemetryRouteService.ts:861`). Before departure the route runs from the origin through every stop; at departure a preview computed within the last 5 min is reused, otherwise the route is computed from the bus position. Both use `TRAFFIC_AWARE_OPTIMAL`. Each context gets at most 3 attempts: a claimed attempt holds off the next for 60 s, and a failed attempt waits the retry backoff of Section 5.4 (`telemetryRouteService.ts:878`, `telemetryRouteService.ts:905`).
 
 ## 6. Ride lifecycle
 
@@ -325,7 +325,7 @@ The start uses idempotency key `automatic-service-v1` scoped to the device, assi
 
 ### 6.4 Direction selection
 
-A route has forward and reverse directions; reverse visits the stops in the opposite order. Direction is chosen once per ride and never changes after departure (`telemetryRouteService.ts:373`).
+A route has forward and reverse directions; reverse visits the stops in the opposite order. Direction is chosen once per ride and never changes after departure (`telemetryRouteService.ts:375`).
 
 **Endpoint fix** (`backend/src/lib/automaticRideDirection.ts:67`): the fix is `stopped`, HDOP 0 to 4, at most 60 s old and at most 10 s in the future, and lies within 10 m of exactly one endpoint. Within 10 m of the first stop gives `forward`; of the last stop, `reverse`.
 
@@ -333,7 +333,7 @@ A route has forward and reverse directions; reverse visits the stops in the oppo
 
 | Rule | Value | Source |
 |---|---|---|
-| Sample admission | `moving`, HDOP 0 to 4, at most 60 s old, within 15 m of either direction's path, not ambiguous | `telemetryRouteService.ts:510` |
+| Sample admission | `moving`, HDOP 0 to 4, at most 60 s old, within 15 m of either direction's path, not ambiguous | `telemetryRouteService.ts:512` |
 | Sample spacing and retention | At least 2 s apart; at most 8 kept (the first and the latest 7); any fix that fails admission clears the list | `departureDirection.ts:57`, `departureDirection.ts:65` |
 | Minimum evidence | 3 samples spanning at least 2 s, consecutive samples at most 250 m apart | `departureDirection.ts:21` |
 | Trajectory heading | Displacement of at least 30 m | `departureDirection.ts:27` |
@@ -341,7 +341,7 @@ A route has forward and reverse directions; reverse visits the stops in the oppo
 | Progress | Never more than 2.5 m behind the furthest sample; net progress >= 30 m | `departureDirection.ts:7`, `departureDirection.ts:47` |
 | Decision | Exactly one direction qualifies | `departureDirection.ts:49` |
 
-A resolved direction on a session-bound node is written to the session and lock before matching continues. If Firestore refuses it, the provisional live direction is cleared (`telemetryRouteService.ts:1088`).
+A resolved direction on a session-bound node is written to the session and lock before matching continues. If Firestore refuses it, the provisional live direction is cleared (`telemetryRouteService.ts:1097`).
 
 ### 6.5 Automatic turnaround
 
@@ -570,7 +570,7 @@ Boarding is also withheld while `automaticServicePaused` is `true` or the browse
 
 ### 9.4 What the administrator interface withholds
 
-The Live Ops dashboard uses the 30 s threshold only, re-evaluated every 15 s (`frontend/src/components/admin/DashboardPanel.tsx:700`). A ride whose node is `offline` or silent for more than 30 s shows **Service paused** instead of its trip state (`DashboardPanel.tsx:76`) and is left out of the in-service, awaiting-start and direction-pending counts (`DashboardPanel.tsx:705`). **End ride early** stays available for such a ride.
+The Live Ops dashboard uses the 30 s threshold only, re-evaluated every 15 s (`frontend/src/components/admin/DashboardPanel.tsx:701`). A ride whose node is `offline` or silent for more than 30 s shows **Service paused** instead of its trip state (`DashboardPanel.tsx:76`) and is left out of the in-service, awaiting-start and direction-pending counts (`DashboardPanel.tsx:706`). **End ride early** stays available for such a ride.
 
 ### 9.5 Backend staleness
 

@@ -43,7 +43,7 @@ The current clients keep profiles and messages in Firestore. RTDB `users` and `m
 | Item | Value | Source |
 |---|---|---|
 | Retention period | 180 days | `backend/src/services/rtdbRetention.ts:3` |
-| Unreferenced geometry grace and publisher stall limit | 1 day | `backend/src/services/rtdbRetention.ts:5`, `backend/src/services/telemetryRouteService.ts:798` |
+| Unreferenced geometry grace and publisher stall limit | 1 day | `backend/src/services/rtdbRetention.ts:5`, `backend/src/services/telemetryRouteService.ts:807` |
 | Time fields | `timestamp`, `createdAt`, `updatedAt`, `sentAt`, `endTime`, `completedAt` | `backend/src/services/rtdbRetention.ts:7` |
 | Nesting and size bound | 32 levels, 100,000 nodes | `backend/src/services/rtdbRetention.ts:44` |
 | RTDB page size | 25 keys | `backend/src/services/firebaseRtdbRetention.ts:8` |

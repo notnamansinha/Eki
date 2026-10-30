@@ -63,9 +63,9 @@ None of these values is configurable at run time.
 | Equal jitter | 50 % to 100 % of the ceiling | `backend/src/services/rerouteRetry.ts:12` |
 | Failure count cap | 32 | `backend/src/services/rerouteRetry.ts:18` |
 | Circuit threshold and pause | 5 failures; 60 s ceiling doubling to 300 s, 50 % to 100 % jitter | `backend/src/services/rerouteRetry.ts:47`, `backend/src/services/rerouteRetry.ts:49` |
-| Lost claim age | 60 s | `backend/src/services/telemetryRouteService.ts:286` |
+| Lost claim age | 60 s | `backend/src/services/telemetryRouteService.ts:288` |
 | Route match distance for publication | 45 m | `backend/src/services/routeMatching.ts:8` |
-| Reroute queue | 2 active, 64 waiting rides, newest fix per ride | `backend/src/services/telemetryRouteService.ts:1326` |
+| Reroute queue | 2 active, 64 waiting rides, newest fix per ride | `backend/src/services/telemetryRouteService.ts:1335` |
 | Provider timeout per live request | 3.5 s | `backend/src/lib/googleMaps.ts:24` |
 
 ## 5. Failure modes and recovery

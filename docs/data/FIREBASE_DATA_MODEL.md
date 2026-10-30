@@ -147,7 +147,7 @@ The authoritative live node for one device assignment. Telemetry ingestion creat
 | `routeDirection`, `routeSessionId`, `routeGeometryVersion` | string, string, integer | Context the match belongs to; `routeSessionId` is `device-only` without a ride |
 | `routeState` | `ON_ROUTE`, `POSSIBLE_OFF_ROUTE`, `OFF_ROUTE`, `REROUTING`, `ON_NEW_ROUTE` | Route adherence |
 | `offRouteSampleCount` | integer | Deviation count, 0 to 2 |
-| `matchedLocation` | object or null | `{lat, lng, segmentIndex, segmentFraction, alongRouteDistanceM, distanceToRouteM, headingDifference, matchConfidence, seq, sampledAt, routeVersion, speed}`. `speed` (km/h) is not public |
+| `matchedLocation` | object or null | `{lat, lng, segmentIndex, segmentFraction, alongRouteDistanceM, distanceToRouteM, headingDifference, matchConfidence, seq, sampledAt, routeVersion, speed, uncertain?}`. `speed` (km/h) is not public. `uncertain: true` marks a match made from a GNSS-loss fix: it is displayed but never becomes `routeMatchAnchor` (`backend/src/services/telemetryRouteService.ts:700-704`) |
 | `routeMatchAnchor` | object or null | Same shape: the last confident match of a reliable fix, used as the progress anchor |
 | `routeMatchHistory` | array | Up to 4 `{lat, lng, seq, sampledAt}` for the trajectory heading |
 | `matchConfidence`, `distanceToActiveRoute` | number | Latest confidence (0 to 1) and distance to the path in metres |
@@ -174,7 +174,7 @@ Reroute polylines, written once per version so that the live node never carries 
 
 | Item | Value |
 |---|---|
-| Writer | Backend reroute and departure-route activation (`telemetryRouteService.ts:769`) |
+| Writer | Backend reroute and departure-route activation (`telemetryRouteService.ts:778`) |
 | Readers | Backend matcher; browser map when `routeSource` is `dynamic-reroute` (`frontend/src/lib/activeRouteGeometry.ts:73`) |
 | Client rule | Read, signed in (`database.rules.json:13`) |
 | Retention | The leader's retention sweep deletes a version that is not the node's current `routeVersion` when it is older than 180 days and has been seen unreferenced for at least 24 h (`backend/src/services/rtdbRetention.ts:3`, `rtdbRetention.ts:108`). See [RTDB retention](../operations/RTDB_RETENTION.md). |

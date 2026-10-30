@@ -92,6 +92,8 @@ interface LiveMatchedLocation extends LatLng {
   sampledAt: number;
   routeVersion: number;
   speed?: number;
+  /** Written from a GNSS-loss (uncertain) fix: shown, never a progress anchor. */
+  uncertain?: true;
 }
 
 const routeCache = new LruCache<string, RouteCacheEntry>(1_000);
@@ -691,7 +693,14 @@ function matchedLocation(
     sampledAt: sample.timestamp,
     routeVersion,
     speed: Number.isFinite(sample.speed) ? Math.max(0, sample.speed) : 0,
+    ...(sample.motionState === "uncertain" ? { uncertain: true as const } : {}),
   };
+}
+
+/** A previous match that may anchor progress; legacy records carry no marker. */
+function trustworthyMatch(value: unknown): unknown {
+  return value && typeof value === "object" && (value as Partial<LiveMatchedLocation>).uncertain === true
+    ? undefined : value ?? undefined;
 }
 
 export function remainingRerouteStops(
@@ -1112,7 +1121,7 @@ async function processTelemetryRoute(
   const requiresReacquisition = Number.isFinite(anchorTimestamp) &&
     sample.timestamp - anchorTimestamp > TELEMETRY_REACQUIRE_AFTER_MS;
   // The anchor is the last trustworthy match; a GNSS-loss packet never replaces it.
-  const progressAnchor = live?.routeMatchAnchor ?? live?.matchedLocation;
+  const progressAnchor = live?.routeMatchAnchor ?? trustworthyMatch(live?.matchedLocation);
   const prior = matchingContextChanged || requiresReacquisition
     ? null
     : previousMatch(progressAnchor, routeVersion, sample.timestamp);
@@ -1228,7 +1237,7 @@ async function processTelemetryRoute(
       routeMatchAnchor: match && !match.isAmbiguous && match.matchConfidence >= MATCHED_POSITION_CONFIDENCE &&
         acceptedSample.motionState !== "uncertain"
         ? matchedLocation(match, acceptedSample, routeVersion)
-        : matchingContextChanged ? null : live?.routeMatchAnchor ?? live?.matchedLocation ?? null,
+        : matchingContextChanged ? null : live?.routeMatchAnchor ?? trustworthyMatch(live?.matchedLocation) ?? null,
       offRouteSampleCount: adherence.offRouteSampleCount,
       mapMatchUpdatedAt: { ".sv": "timestamp" },
       mapMatchSeq: acceptedSample.seq,

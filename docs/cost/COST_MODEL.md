@@ -244,11 +244,11 @@ The frontend loads the Maps JavaScript API with `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 | SKU | Caller | Trigger | Existing bounds |
 |---|---|---|---|
 | Dynamic Maps | Passenger map (`frontend/src/components/maps/PassengerMap.tsx:624`) | Each time the passenger opens the tracking view; the map unmounts in other views (`frontend/src/components/passenger/PassengerWorkspace.tsx:744-745`) | None |
-| Dynamic Maps | Admin dashboard and route editor maps (`frontend/src/components/admin/DashboardPanel.tsx:858`, `frontend/src/components/admin/RouteManagementPanel.tsx:567`) | Each switch to the operations or routes panel (`frontend/src/app/admin/page.tsx:59-60`) | None |
+| Dynamic Maps | Admin dashboard and route editor maps (`frontend/src/components/admin/DashboardPanel.tsx:862`, `frontend/src/components/admin/RouteManagementPanel.tsx:567`) | Each switch to the operations or routes panel (`frontend/src/app/admin/page.tsx:59-60`) | None |
 | Compute Routes Pro | Route save (`backend/src/routes/polyline.ts:199,288-291`) | Two requests per changed save, one per direction; skipped when the stops are unchanged (`polyline.ts:669-672`) | 10 compute requests per admin per minute (`backend/src/lib/routeComputeLimiter.ts:9`); 2 concurrent and 8 queued (`polyline.ts:46`) |
 | Compute Routes Pro | Route preview and `compute-polyline` (`polyline.ts:361-373,895-906`) | One request per preview | Same as above |
-| Compute Routes Pro | Departure route (`backend/src/services/telemetryRouteService.ts:852-870,908-909`) | One request when a ride enters `pre_departure`; reused at departure for up to 5 min (`telemetryRouteService.ts:54`), otherwise one more; at most three attempts per phase | `LIVE_DEPARTURE_ROUTES_ENABLED` (`backend/.env.example`) |
-| Compute Routes Pro | Off-route reroute (`telemetryRouteService.ts:1023-1029`) | One request per off-route episode | Retry backoff 10 s to 5 min (`backend/src/services/rerouteRetry.ts:1-2`); process-wide circuit opens after 5 failures (`rerouteRetry.ts:23-50`) |
+| Compute Routes Pro | Departure route (`backend/src/services/telemetryRouteService.ts:861-879,917-918`) | One request when a ride enters `pre_departure`; reused at departure for up to 5 min (`telemetryRouteService.ts:54`), otherwise one more; at most three attempts per phase | `LIVE_DEPARTURE_ROUTES_ENABLED` (`backend/.env.example`) |
+| Compute Routes Pro | Off-route reroute (`telemetryRouteService.ts:1032-1038`) | One request per off-route episode | Retry backoff 10 s to 5 min (`backend/src/services/rerouteRetry.ts:1-2`); process-wide circuit opens after 5 failures (`rerouteRetry.ts:23-50`) |
 | Compute Routes Pro | `npm run seed --workspace=backend` (`backend/src/seed.ts:29-30`) | Two requests per seeded route | Manual |
 | Text Search Pro | Admin stop search (`backend/src/routes/places.ts:73-80`) | Typing at least 3 characters, after a 300 ms pause (`frontend/src/components/admin/RouteManagementPanel.tsx:53-58,91`) | 20 searches per admin per minute (`places.ts:19-22`); 5 min cache of 100 queries (`places.ts:8,128-132`) |
 
@@ -404,7 +404,7 @@ Google documents a lower per-day quota as the way to put a hard cap on a Maps AP
 |---|---|---|---|
 | Place search results | 5 min, 100 queries | Repeated searches make no Places call | `backend/src/routes/places.ts:8,128-132` |
 | Stored route geometry | Reused while stops are unchanged | Route saves without stop changes make no Routes call | `backend/src/routes/polyline.ts:669-672` |
-| Departure route preview | Reused for 5 min | One Routes call per ride when departure follows within 5 min | `backend/src/services/telemetryRouteService.ts:54,866-867` |
+| Departure route preview | Reused for 5 min | One Routes call per ride when departure follows within 5 min | `backend/src/services/telemetryRouteService.ts:54,875-876` |
 | Route catalog API | 5 s | Reduces Firestore reads only under bursts | `backend/src/services/apiReadCache.ts:35` |
 | Route geometry document | 60 s | At most one Firestore read per route per minute | `backend/src/services/routeGeometryReads.ts:22-24` |
 | Device credentials | 60 s | 3 Firestore reads per device per minute | `backend/src/services/deviceTelemetryService.ts:49` |
