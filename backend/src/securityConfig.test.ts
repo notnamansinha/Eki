@@ -531,6 +531,12 @@ describe("production security configuration", () => {
     expect(authHook).not.toContain("setDoc(userDocRef");
     expect(settingsHook).toContain("/api/v2/settings/global");
     expect(settingsHook).not.toContain('setDoc(doc(db, "settings"');
+    // Passenger route schedules: read via the settings rule, saved only through the admin endpoint.
+    const passengerRoutesHook = workspaceFile("frontend/src/hooks/usePassengerRouteConfig.ts");
+    expect(settingsRoute).toContain('passengerRoutesSettingsRouter.put("/", requireAdmin');
+    expect(settingsRoute).toContain('doc("passengerRoutes").set({');
+    expect(passengerRoutesHook).toContain("/api/v2/settings/passenger-routes");
+    expect(passengerRoutesHook).not.toMatch(/\b(setDoc|updateDoc|writeBatch|runTransaction)\b/);
   });
 
   it("omits the retired reCAPTCHA CSP surface while keeping Google sign-in frames", () => {

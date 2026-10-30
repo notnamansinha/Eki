@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-012 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-012 | 1.1 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -68,6 +68,7 @@ Admin health (`GET /api/health`) exposes these counters as `telemetry.apiCompati
 | `frontend/src/components/admin/RideHistoryPanel.tsx` | `DELETE /api/shifts/{sessionId}/history` | Legacy |
 | `frontend/src/components/admin/FleetManagementPanel.tsx` | `PUT` and `DELETE` on `/api/fleet/...` | Legacy only |
 | `frontend/src/hooks/useSettings.ts` | `PATCH /api/v2/settings/global` | v2 |
+| `frontend/src/hooks/usePassengerRouteConfig.ts` | `PUT /api/v2/settings/passenger-routes` | v2 only; no original path exists |
 | `frontend/src/components/passenger/AccountTab.tsx` | `POST /api/v2/privacy-deletion-requests` | v2 |
 | `frontend/src/lib/feedbackStore.ts` | None: feedback and its review status are written to Firestore directly | Not applicable |
 | Firmware | `POST /api/devices/{deviceId}/telemetry`, diagnostics and firmware endpoints | Device API, outside the web migration |

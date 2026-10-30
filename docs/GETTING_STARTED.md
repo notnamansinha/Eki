@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-004 | 1.0 | Current | 2026-10-30 |
+| EKI-GEN-004 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -214,7 +214,7 @@ This loop never moves the bus, so stops do not advance. Stop progress needs a re
 
 ### 10.1 Passenger
 
-1. Sign in with the passenger account. The **Routes** tab lists the routes that currently have a live or available bus.
+1. Sign in with the passenger account. The **Map** tab lists the routes that currently have a live or available bus. The **Routes** tab shows the route schedules that an administrator has published (Section 10.2), whether or not a bus is running.
 2. Select the route, then the bus, then a destination stop. The map shows the bus, the route in travel order and stop estimates when the bus is live.
 3. To board, choose a boarding stop and press **Board**. The backend accepts the request only while the ride is `armed` or `active`, the direction is known, a fresh bus position exists, and the browser's location is within 150 m of the bus. No boarding code is needed. At a desk, set a location near the bus with Chrome DevTools, **Sensors**, **Location**.
 
@@ -228,7 +228,10 @@ This loop never moves the bus, so stops do not advance. Stop progress needs a re
 1. **Live Ops** shows every bus on a map and in a list with its live status and delay. From a bus you can change the delay, open the ride chat, or use **End ride early**, which saves the ride as `interrupted` and pauses automatic service for that bus. **Resume tracking** restarts automatic service after such a pause.
 2. **Routes** creates, edits and deletes routes and their ordered stops. **Fleet & People** manages vehicles and operators.
 3. **History** lists rides, newest first, with their status and stop evidence. **Feedback** shows the latest 200 feedback records and updates their status. **Settings** holds the passenger-facing service start time, the no-bus messages and the announcement text.
-4. **Passenger Panel** opens the passenger workspace; **Profile**, **Admin Panel** returns.
+4. To publish a route schedule, open **Settings** and scroll to **Passenger Routes**. Select the routes passengers may browse; they appear to passengers in the order you select them. Enter a time for every stop of each selected route, then press **Save routes**. This section saves separately from the settings above it, and leaving the tab with unsaved changes asks for confirmation.
+
+   Expected result: the button changes to **Saved!** and then **No route changes**, and the passenger **Routes** tab shows each selected route as a timeline of its stops and times. A missing or invalid time marks the stop's field and keeps the schedule unsaved. After you delete a route or change its stops, open this section again and save: the passenger view skips deleted routes and shows "Time not set" for new stops until you do.
+5. **Passenger Panel** opens the passenger workspace; **Profile**, **Admin Panel** returns.
 
 ### 10.3 Operator
 

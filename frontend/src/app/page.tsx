@@ -21,6 +21,7 @@ export default function HomePage() {
   const {
     user,
     loading,
+    restoreSlow,
     roleError,
     loginReady,
     loginError,
@@ -73,6 +74,7 @@ export default function HomePage() {
           <button type="button" className="btn-primary px-5 py-2.5" onClick={() => void refreshAccess()}>Try again</button>
           {/* A revoked, deleted or unsynchronized account must be able to switch accounts. */}
           <button type="button" className="text-sm font-semibold underline underline-offset-4" onClick={() => void logout()}>Sign out</button>
+          <button type="button" className="text-sm font-semibold underline underline-offset-4" onClick={() => window.location.reload()}>Reload</button>
         </div>
       </main>
     );
@@ -157,8 +159,8 @@ export default function HomePage() {
             disabled={loginLoading || !loginReady}
             className="flex items-center justify-center gap-3 px-10 py-5 text-lg font-bold bg-white text-black rounded-full hover:bg-gray-200 active:scale-95 transition-transform disabled:opacity-60 shadow-xl"
           >
-            {loginLoading ? <Loader2 className="size-6 animate-spin" /> : <LogIn className="size-6" />}
-            {loginLoading ? "Opening Google…" : "Sign In with Google"}
+            {loginLoading || !loginReady ? <Loader2 className="size-6 animate-spin" /> : <LogIn className="size-6" />}
+            {loginLoading ? "Opening Google…" : loginReady ? "Sign In with Google" : "Preparing sign-in…"}
           </button>
         </div>
         {loginReady && loginFallbackAvailable && (
@@ -175,9 +177,13 @@ export default function HomePage() {
             <p className="max-w-lg text-sm text-white" role="alert">{loginError}</p>
           </div>
         )}
-        {loginStalled && loginStallVisible && (
+        {!roleError && (restoreSlow || (loginStalled && loginStallVisible)) && (
           <div className="mt-4 flex flex-col items-center gap-2">
-            <p className="max-w-lg text-sm text-white" role="status">Sign-in is still loading.</p>
+            <p className="max-w-lg text-sm text-white" role="status">
+              {restoreSlow
+                ? "Still checking your sign-in. The connection looks slow; this continues on its own."
+                : "Sign-in is still loading."}
+            </p>
             <button type="button" className="text-sm font-semibold text-white underline underline-offset-4" onClick={() => window.location.reload()}>
               Reload
             </button>

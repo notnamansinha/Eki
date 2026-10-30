@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-005 | 1.0 | Current | 2026-10-30 |
+| EKI-GEN-005 | 1.1 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -181,6 +181,7 @@ These variables are set in the shell or by the scripts themselves. None belongs 
 | `JAVA_HOME` | Java installation used by the Firebase emulators. | `scripts/qa/emulator-process.mjs` |
 | `EKI_E2E_BASE_URL` | Base URL for `npm run test:e2e`; default `http://127.0.0.1:3000`. | `playwright.config.ts` |
 | `EKI_E2E_STORAGE_STATE` | Saved admin session for `npm run test:e2e`; the responsive admin test is skipped without it. | `playwright.config.ts`, `e2e/admin-responsive.spec.ts` |
+| `EKI_ADMIN_ACCESS_SRC` | Another checkout's `frontend/src` (with `node_modules` reachable from it) for the admin access fixture, to run the same checks against a committed revision as an A/B baseline; default this checkout's `frontend/src`. | `e2e/admin-access/vite.config.mts` |
 | `EKI_MAPS_ENV_FILE` | Environment file with a real Maps key for the opt-in live Maps replay. | `e2e/routing/live-maps/vite.config.mts` |
 | `EKI_STRICT_PRODUCTION_BUILD` | Set to `true` by `npm run build:production`; turns on the required-variable and HTTPS checks. | `scripts/build-production.mjs`, `frontend/next.config.ts`, `scripts/verify-web-backend-contract.mjs` |
 | `EKI_RUNTIME_SMOKE` | `1` makes `npm run verify:web-backend-contract` probe the live backend. | `scripts/verify-web-backend-contract.mjs` |
@@ -261,6 +262,9 @@ These values are source constants, not environment variables. Changing one is a 
 | Worker lease: 45 s, renewed every 15 s | `LEASE_DURATION_MS`, `RENEW_INTERVAL_MS` | `backend/src/services/workerCoordinator.ts` |
 | Worker clock skew allowance: 2 s | `WORKER_CLOCK_SKEW_MS` | `backend/src/lib/workerFence.ts` |
 | Telemetry body limit: 512 bytes | Inline check | `backend/src/routes/devices.ts` |
+| Passenger route schedules: at most 50 routes, 24-hour `HH:mm` stop times | `MAX_PASSENGER_ROUTES`, `STOP_TIME_PATTERN` | `backend/src/routes/settings.ts`, `frontend/src/lib/passengerRouteSchedule.ts` |
+| Slow sign-in restoration notice: 8 s | `AUTH_RESTORE_SLOW_MS` | `frontend/src/hooks/useAuth.ts` |
+| Navigation wait before the service worker serves cached HTML: 2.5 s | `NAVIGATION_NETWORK_BUDGET_MS` | `frontend/src/sw.js` |
 
 The [tracking algorithms](design/TRACKING_ALGORITHMS.md) document explains the ride thresholds. Queue, deadline and cache bounds are documented in [telemetry deadlines](operations/TELEMETRY_DEADLINES.md), [work admission](operations/WORK_ADMISSION.md), [operation resources](api/OPERATION_RESOURCES.md), [reconciliation](operations/RECONCILIATION.md), [privacy deletion](operations/PRIVACY_DELETION.md), [route catalog](operations/ROUTE_CATALOG.md) and [worker leadership](operations/WORKER_LEADERSHIP.md).
 

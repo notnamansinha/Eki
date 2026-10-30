@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-004 | 1.0 | Current | 2026-10-30 |
+| EKI-ARC-004 | 1.1 | Current | 2026-10-30 |
 
 ## 1. Introduction
 
@@ -562,9 +562,9 @@ Age is measured on the server timeline: `serverNow()` is the device clock correc
 |---|---|---|---|---|---|
 | Arrival estimates | Shown | Shown, with "ETAs may be late" | Withheld | Withheld | `PassengerMap.tsx:419` |
 | "Bus is here" (`atStopIndex`) | Shown | Shown | Withheld | Withheld | `PassengerMap.tsx:529` |
-| Marker | Live | Live | Marked GPS lost | Marked signal lost | `PassengerMap.tsx:681` |
+| Marker | Live | Live | Marked GPS lost | Marked signal lost | `PassengerMap.tsx:683` |
 | New boarding (bus selectable) | Allowed | Allowed | Withheld | Withheld | `frontend/src/lib/passengerAvailability.ts:10` |
-| Ride chat | Available | Available | Available | Withheld | `frontend/src/components/passenger/PassengerWorkspace.tsx:351` |
+| Ride chat | Available | Available | Available | Withheld | `frontend/src/components/passenger/PassengerWorkspace.tsx:354` |
 
 Boarding is also withheld while `automaticServicePaused` is `true` or the browser's RTDB connection is down. The map notice shows the worst state among the route's buses (`PassengerMap.tsx:523`). Stop progress from `currentStopIndex` stays visible in every state.
 

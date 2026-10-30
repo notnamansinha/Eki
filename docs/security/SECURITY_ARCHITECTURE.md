@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-002 | 2.0 | Current | 2026-10-30 |
+| EKI-SEC-002 | 3.0 | Current | 2026-10-30 |
 
 ## 1. Introduction
 
@@ -100,9 +100,9 @@ Figure 1. Eki components and trust boundaries B1 to B8.
 
 | Principal | Identity | Authority |
 |---|---|---|
-| Passenger | Google account; role claim `passenger` or absent | Own profile, live bus reads, boarding, own ride chat, feedback, own deletion request |
+| Passenger | Google account; role claim `passenger` or absent | Own profile, live bus reads, route and settings reads (including published route schedules), boarding, own ride chat, feedback, own deletion request |
 | Driver (operator) | Google account; claims `role: "driver"`, `driverId`, `assignedBusId` | Rides of the assigned bus; session manifests and chat of those rides |
-| Administrator | Google account; claims `role: "admin"`, `admin: true`, current `authorizationVersion` | Fleet, routes, devices, settings, feedback review, ride history |
+| Administrator | Google account; claims `role: "admin"`, `admin: true`, current `authorizationVersion` | Fleet, routes, devices, settings and passenger route schedules, feedback review, ride history |
 | Tracker | Device ID and device secret | Telemetry, diagnostics and firmware checks for its registered bus and route |
 | Backend | Admin SDK service identity | All data; bypasses rules |
 
@@ -135,6 +135,7 @@ Threats are classified with STRIDE (spoofing, tampering, repudiation, informatio
 | STRIDE | Threat | Implemented mitigation | Residual risk |
 |---|---|---|---|
 | E | Client writes roles, rides, manifests or messages | Every client write is denied except feedback creation, the paired feedback cooldown and administrator feedback status updates (Section 5.2) | None identified. |
+| T | Client publishes or alters a passenger route schedule | `settings/{document}` denies every client write, including from administrators; only `PUT /api/v2/settings/passenger-routes` behind `requireAdmin` writes `settings/passengerRoutes`, after checking each route and stop against `routes/{routeId}`; browsers drop malformed entries on read | Any signed-in account can read the published schedules. |
 | I | Reading other passengers' manifests or chat | `ride_sessions` documents are readable by operators only; messages by operators and by manifest passengers whose profile still exists | A manifest passenger who boarded with a spoofed location can read that ride's chat (see B4). |
 | E | A demoted administrator or driver keeps reading with a saved token | Rules compare the token's `authorizationVersion` with `_userAuthorization/{uid}` and check the driver registry | None identified. |
 | T | Forged or flooded feedback | Rules enforce a field allowlist, sizes, author UID, server time, completed-ride membership and a 24 h cooldown | Feedback text is not moderated. |
@@ -147,7 +148,7 @@ Threats are classified with STRIDE (spoofing, tampering, repudiation, informatio
 | S | Forged, expired or revoked ID token | `verifyIdToken(token, true)` checks signature, expiry, disabled account and revocation; tokens with privileged claims are re-verified on every request | Tokens without privileged claims are cached for up to `AUTH_REVOCATION_CACHE_MS` (default 15 000 ms, maximum 60 000 ms). |
 | E | Non-administrator calls an administrator operation | `requireAdmin`, and `hasCurrentAdminAuthority` on routes shared with operators and passengers, require `role: "admin"`, `admin: true` and a current `authorizationVersion` in both databases | None identified. |
 | E | Remote boarding of a ride | Boarding requires a passenger profile, a boarding ride, a browser fix with accuracy of 100 m or better, and a distance of at most 150 m to a bus fix no older than 60 s | The browser fix is client-supplied; a spoofed position passes. |
-| T | Malformed or oversized bodies | Strict JSON parsers with size caps; per-route validation; `TRACE` and `CONNECT` return 405 | None identified. |
+| T | Malformed or oversized bodies | Strict JSON parsers with size caps; per-route validation; `TRACE` and `CONNECT` return 405. The passenger route schedule handler keeps request stop IDs in a `Map` and builds the stored object only from the stop IDs of the stored route, so request keys never become object properties | None identified. |
 | R | Administrator denies a change | Fleet mutations record `adminUid`, method and path in `_fleet_operations`; route geometry previews, fleet reconciliation jobs, operation recovery and privacy recovery record the acting administrator; settings record `updatedBy`, ride interruptions `interruptedBy` and feedback review `reviewedBy` | Device registry changes, route saves and deletions, chat clearing and ride-history deletion store no record of the acting administrator. |
 | I | Leakage through errors or diagnostics | Generic error bodies; public `/health` and `/live` return status only; `/api/health` requires `requireAdmin`; private responses carry `Cache-Control: no-store` | None identified. |
 | D | Request floods | Limits in Section 7 | Limiters are in memory per replica; the global cap depends on an edge WAF that this repository does not configure. |
@@ -191,7 +192,7 @@ Threats are classified with STRIDE (spoofing, tampering, repudiation, informatio
 
 ### 4.1 Browser users
 
-The browser uses Firebase Authentication with the Google provider only (`frontend/src/lib/firebaseAuth.ts`), by popup or redirect. The session persists in local storage, IndexedDB or session storage, in that order of preference.
+The browser uses Firebase Authentication with the Google provider only (`frontend/src/lib/firebaseAuth.ts`), by popup or redirect. The session persists in local storage, IndexedDB or session storage, in that order of preference. Until Firebase reports the restored auth state, the browser treats the user as unknown: it mounts no protected view and publishes no signed-out state, and a slow restoration produces a notice with **Reload**, not an access error ([frontend guide](../../frontend/README.md#8-authentication-flow)).
 
 After sign-in, the browser calls `POST /api/users/bootstrap`. The backend creates `users/{uid}` with role `passenger` if it is missing and sets only the passenger claim; it never grants `driver` or `admin`. For a profile whose role is `driver` or `admin`, the browser forces a token refresh and requires matching claims (`admin: true` for administrators) before it publishes the user to the app.
 
@@ -256,7 +257,7 @@ Firebase App Check is not used. The browser initializes no App Check provider an
 | Collection or path | Client read | Client write |
 |---|---|---|
 | `users/{uid}` | Owner | Denied (backend creates profiles) |
-| `routes/{routeId}`, `buses/{busId}`, `settings/{document}` | Any signed-in user | Denied |
+| `routes/{routeId}`, `buses/{busId}`, `settings/{document}` (`settings/global` and `settings/passengerRoutes`) | Any signed-in user | Denied; the backend writes settings through `PATCH /api/v2/settings/global` and `PUT /api/v2/settings/passenger-routes` |
 | `bus_locations/{busId}`, `completed_trips/{tripId}` | Administrator | Denied |
 | `ride_sessions/{sessionId}` | Administrator or the assigned driver | Denied |
 | `ride_sessions/{id}/messages/{messageId}` | Administrator, assigned driver, or manifest passenger whose profile exists | Denied (backend writes) |
@@ -320,7 +321,7 @@ Scripts allow RTDB hosts only at `/.lp`, the long-polling transport, because the
 
 ### 6.3 Service worker
 
-`frontend/src/sw.js` uses Workbox. It caches HTML navigations (network first, at most 10 entries), hashed `/_next/static/` assets, same-origin images and Google Fonts. These requests are network-only and never cached: Firebase Auth helpers (`apis.google.com`, `www.gstatic.com/firebasejs/`), `identitytoolkit.googleapis.com`, `securetoken.googleapis.com`, every `*.firebaseio.com` and `*.firebasedatabase.app` request, Google Maps, and every request without a matching route, which includes all backend API calls. A cached URL cannot represent the signed-in user, so no account-scoped response is replayed to another account. Navigation handling excludes Firebase Auth helper paths under `/__/`. On activation the worker deletes the obsolete `eki-firebase-sdk`, `eki-navigations` and `eki-google-maps` caches.
+`frontend/src/sw.js` uses Workbox. It caches HTML navigations (network first, at most 10 entries; after 2.5 s without a network answer it serves the route's precached HTML shell or its cached copy), hashed `/_next/static/` assets, same-origin images and Google Fonts. These requests are network-only and never cached: Firebase Auth helpers (`apis.google.com`, `www.gstatic.com/firebasejs/`), `identitytoolkit.googleapis.com`, `securetoken.googleapis.com`, every `*.firebaseio.com` and `*.firebasedatabase.app` request, Google Maps, and every request without a matching route, which includes all backend API calls. A cached URL cannot represent the signed-in user, so no account-scoped response is replayed to another account. Navigation handling excludes Firebase Auth helper paths under `/__/`. On activation the worker deletes the obsolete `eki-firebase-sdk`, `eki-navigations` and `eki-google-maps` caches.
 
 ### 6.4 Backend API headers and CORS
 

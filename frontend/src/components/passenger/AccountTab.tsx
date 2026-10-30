@@ -240,10 +240,10 @@ export default function AccountTab() {
             >
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                  style={{ background: "rgba(59, 130, 246, 0.10)" }}>
-                   <LogIn className="w-4 h-4" style={{ color: "#3B82F6" }} />
+                  style={{ background: "var(--accent-subtle)" }}>
+                   <LogIn className="w-4 h-4" aria-hidden="true" style={{ color: "var(--accent)" }} />
                 </div>
-                <span className="text-[13px] font-semibold" style={{ color: "#3B82F6" }}>
+                <span className="text-[13px] font-semibold" style={{ color: "var(--accent)" }}>
                   Sign in with Google
                 </span>
               </div>

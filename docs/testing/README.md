@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-001 | 1.0 | Current | 2026-10-30 |
+| EKI-TST-001 | 1.1 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -53,7 +53,7 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-001 | 2026-10-04 | [Adaptive GNSS trace validation](ADAPTIVE_GNSS_TRACE_VALIDATION.md) | Synthetic | Blocked: no recorded real-drive traces were available |
 | EKI-EVD-002 | 2026-10-06 | [Local admin permission recovery](ADMIN_PERMISSION_RECOVERY.md) | Synthetic | Software recovery only; App Check statements predate its removal (EVD-052) |
 | EKI-EVD-003 | 2026-10-27 | [Adversarial component audit, 25 October](ADVERSARIAL_AUDIT_2026-10-25.md) | Audit | Sixteen areas attacked with a failing test per defect; open defects needing product decisions |
-| EKI-EVD-004 | 2026-10-11 | [Readiness audit Low findings](AUDIT_LOW_DISPOSITION_2026_10_11.md) | Audit | Disposition of grouped Low findings |
+| EKI-EVD-004 | 2026-10-11 | [Readiness audit Low findings](AUDIT_LOW_DISPOSITION_2026_10_11.md) | Audit | Disposition of grouped Low findings. The 8 s auth restoration error it retains is now a slow-restoration notice (FR-PAS-093 in the [requirements](../requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md)) |
 | EKI-EVD-005 | 2026-10-04 | [Audit fixes and physical-test readiness](AUDIT_STATUS_SUMMARY.md) | Audit | Status as of 2026-09-14; this index replaces it as a status page |
 | EKI-EVD-006 | 2026-10-08 | [GitHub issue inventory, 8 October](BALCONY_ISSUE_INVENTORY_2026_10_08.md) | Audit | Inventory of 115 issues for EVD-007 |
 | EKI-EVD-007 | 2026-10-08 | [Balcony GNSS readiness](BALCONY_READINESS_2026_10_08.md) | Stationary physical | Its uncommitted readiness fix is committed in EVD-026 |
@@ -63,7 +63,7 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-011 | 2026-10-11 | [Delta brief and QA patch review](DELTA_BRIEF_REVIEW_2026_10_11.md) | Audit | |
 | EKI-EVD-012 | 2026-10-04 | [Full feature QA, 3 October](FULL_FEATURE_QA_2026_10_03.md) | Synthetic | Fixture and unit coverage at the recorded baseline, plus Chrome checks against live data |
 | EKI-EVD-013 | 2026-10-25 | [GNSS automatic service verification](GNSS_AUTOMATIC_SERVICE_VERIFICATION_2026_10_25.md) | Synthetic | Automatic ride admission without a manual start request; emulator, native and fixture runs |
-| EKI-EVD-014 | 2026-10-27 | [Google sign-in recovery](GOOGLE_SIGN_IN_RECOVERY.md) | Browser | Production sign-in incident of 2026-10-21 and its repair |
+| EKI-EVD-014 | 2026-10-27 | [Google sign-in recovery](GOOGLE_SIGN_IN_RECOVERY.md) | Browser | Production sign-in incident of 2026-10-21 and its repair. Its restoration-timeout screen was replaced by the cold-open behaviour in FR-PAS-009, FR-PAS-092, FR-PAS-093 and NFR-AVL-005 of the [requirements](../requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md), tested by `e2e/admin-access/cold-open.spec.ts` |
 | EKI-EVD-015 | 2026-10-25 | [Historical movement and passenger tracking audit](HISTORICAL_MOTION_AUDIT_2026-10-25.md) | Audit | PR #381 |
 | EKI-EVD-016 | 2026-10-05 | [Issue #246 priority software verification](ISSUE_246_PRIORITY_PARTS_2026_10_05.md) | Synthetic | R01 to R11 and R25; includes stationary installed-image checks |
 | EKI-EVD-017 | 2026-10-04 | [Issue #246 selected-part software evidence](ISSUE_246_SELECTED_PARTS_2026_10_04.md) | Synthetic | R24, R26 to R29, R33 |

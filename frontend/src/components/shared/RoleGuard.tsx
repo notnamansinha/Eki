@@ -17,13 +17,26 @@ export default function RoleGuard({ children, allowedRoles, loadingFallback }: R
   const {
     user,
     loading,
+    restoreSlow,
     roleError,
     logout,
     refreshAccess,
   } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  // Verification can outlast the restore notice (slow token and claims
+  // requests), so a long spinner gets the same way out.
+  const [loadingStalled, setLoadingStalled] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+
+  useEffect(() => {
+    if (!loading) return;
+    const timer = window.setTimeout(() => setLoadingStalled(true), 10_000);
+    return () => {
+      window.clearTimeout(timer);
+      setLoadingStalled(false);
+    };
+  }, [loading]);
 
   useEffect(() => {
     if (!loading && !user && !roleError) router.replace("/");
@@ -38,6 +51,25 @@ export default function RoleGuard({ children, allowedRoles, loadingFallback }: R
       }
     }
   }, [allowedRoles, pathname, user]);
+
+  if (loading && (restoreSlow || loadingStalled)) {
+    // Still fail-closed: nothing protected mounts until verification finishes,
+    // but a slow network gets an explanation and a way out instead of a spinner.
+    return (
+      <div
+        className="w-full flex flex-col items-center justify-center gap-4 px-6 text-center"
+        style={{ height: "100dvh", background: "var(--surface-0)" }}
+      >
+        <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--text-tertiary)" }} aria-hidden="true" />
+        <p role="status" className="max-w-sm text-sm" style={{ color: "var(--text-secondary)" }}>
+          Still signing you in. The connection looks slow; this continues on its own.
+        </p>
+        <button type="button" className="text-sm font-semibold underline underline-offset-4" style={{ color: "var(--text-primary)" }} onClick={() => window.location.reload()}>
+          Reload
+        </button>
+      </div>
+    );
+  }
 
   if (loading) {
     if (loadingFallback) return <>{loadingFallback}</>;
@@ -87,6 +119,14 @@ export default function RoleGuard({ children, allowedRoles, loadingFallback }: R
             onClick={() => void logout()}
           >
             Sign out
+          </button>
+          <button
+            type="button"
+            className="text-sm font-semibold"
+            style={{ color: "var(--text-secondary)" }}
+            onClick={() => window.location.reload()}
+          >
+            Reload
           </button>
         </div>
       </div>

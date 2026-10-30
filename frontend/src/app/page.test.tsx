@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import HomePage from "./page";
 
 const fixture = vi.hoisted(() => ({
-  auth: { user: null as null | { role: string }, loading: true, loginReady: true,
+  auth: { user: null as null | { role: string }, loading: true, loginReady: true, restoreSlow: false,
     loginFallbackAvailable: false, loginLoading: false, roleError: null as string | null,
     loginError: null, loginWithGoogle: vi.fn(), loginWithGoogleRedirect: vi.fn(), refreshAccess: vi.fn(), logout: vi.fn() },
   replace: vi.fn(),
@@ -12,7 +12,7 @@ const fixture = vi.hoisted(() => ({
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => fixture.auth }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: fixture.replace }) }));
 beforeEach(() => {
-  Object.assign(fixture.auth, { user: null, loading: true, loginReady: true, loginFallbackAvailable: false, roleError: null });
+  Object.assign(fixture.auth, { user: null, loading: true, loginReady: true, restoreSlow: false, loginFallbackAvailable: false, roleError: null });
   fixture.replace.mockClear(); fixture.auth.logout.mockClear();
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -70,7 +70,7 @@ describe("sign-in initialization stall", () => {
     vi.useFakeTimers();
     Object.assign(fixture.auth, { loading: false, loginReady: false, loginError: null, roleError: null });
     render(<HomePage />);
-    expect((screen.getByRole("button", { name: "Sign In with Google" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Preparing sign-in…" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
     expect(screen.getByRole("status").textContent).toContain("still loading");
@@ -82,5 +82,27 @@ describe("sign-in initialization stall", () => {
     render(<HomePage />);
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
     expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
+  });
+});
+
+describe("cold open while sign-in restores", () => {
+  it("explains a sign-in button that is not ready yet instead of showing a dead button", () => {
+    fixture.auth.loginReady = false;
+    render(<HomePage />);
+    const button = screen.getByRole("button", { name: "Preparing sign-in…" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
+  it("keeps the landing page and an enabled sign-in while a slow restoration continues", () => {
+    fixture.auth.restoreSlow = true; fixture.auth.loading = true;
+    render(<HomePage />);
+    expect(screen.queryByText("Access could not be verified")).toBeNull();
+    expect((screen.getByRole("button", { name: "Sign In with Google" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole("status").textContent).toContain("Still checking your sign-in");
+    expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
+  });
+  it("offers Reload alongside Try again and Sign out when access verification fails", () => {
+    fixture.auth.loading = false; fixture.auth.roleError = "We could not verify your access.";
+    render(<HomePage />);
+    for (const name of ["Try again", "Sign out", "Reload"]) expect(screen.getByRole("button", { name })).toBeTruthy();
   });
 });

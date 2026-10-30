@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-003 | 2.0 | Current | 2026-10-30 |
+| EKI-ARC-003 | 3.0 | Current | 2026-10-30 |
 
 ## 1. Introduction
 
@@ -110,7 +110,7 @@ All request budgets are divided by the replica shard factor (`backend/src/lib/ra
 | `feedback.ts` | `/api/feedback`, `/api/v2/feedback` | Legacy feedback endpoints, not called by the browser | `feedbackService` |
 | `requests.ts` | `/api/requests` | Admin update and removal of legacy passenger requests | Firestore |
 | `privacy.ts` | `/api/privacy`, `/api/v2/privacy-deletion-requests` | Passenger deletion request, admin list and recovery | `privacyDeletionRequests` |
-| `settings.ts` | `/api/settings`, `/api/v2/settings/global` | Admin update of `settings/global` | Firestore |
+| `settings.ts` | `/api/settings`, `/api/v2/settings/global`, `/api/v2/settings/passenger-routes` | Admin update of `settings/global`; admin full replacement of `settings/passengerRoutes` after reading every named route in one `getAll` and checking its stop IDs and `HH:mm` times. Request stop times stay in a `Map`, and the stored object is built from the route document's own stop IDs (`backend/src/routes/settings.ts:162`, `settings.ts:192`) | Firestore, `lib/documentId.ts` |
 | `users.ts` | `/api/users` | Profile bootstrap as `passenger` | Firestore |
 | `operationRecovery.ts` | Shared by `fleet.ts` and `polyline.ts` | Recovery and listing handlers for long-running operations | `httpOperations` |
 
@@ -237,7 +237,7 @@ The whole request has an 8 s response deadline and 5 s per dependency stage (`ba
 
 | Work | Runs on | Schedule | Bound | Source |
 |---|---|---|---|---|
-| Health probes of Firestore and RTDB | Every replica | 30 s | 5 s per probe; result fresh for 65 s | `server.ts:224`, `backend/src/lib/healthState.ts:39` |
+| Health probes of Firestore and RTDB | Every replica | 30 s | 5 s per probe; result fresh for 65 s | `server.ts:227`, `backend/src/lib/healthState.ts:39` |
 | Route catalog watcher | Every replica | Firestore listener | Entries cached 5 min, 1,000 routes | `backend/src/services/telemetryRouteService.ts:54` |
 | Matching scheduler | Every replica | Per accepted fix | 1 running and 1 newest waiting per node; 8 running, 256 waiting nodes, 5 s queue age | `telemetryRouteService.ts:1290`, `backend/src/lib/boundedKeyedExecutor.ts:43` |
 | Reroute scheduler | Every replica | On confirmed deviation | 2 running, 64 waiting nodes | `telemetryRouteService.ts:1335` |
@@ -258,7 +258,7 @@ Admission limits and their evidence are in [work admission](../operations/WORK_A
 
 ### 4.4 Shutdown
 
-On `SIGTERM` or `SIGINT`, `server.ts` stops the health timer and the route watcher, closes the HTTP server, and stops the workers and HTTP operations in parallel. It then drains matching, durable recovery, automatic start and telemetry export, and deletes the Firebase app (`server.ts:314`). The engine gives handlers 6 s and lifecycle writes 8 s in total (`tripStateEngine.ts:120`). A 10 s backstop forces exit, and the process exits 500 ms after the drains settle (`server.ts:312`, `server.ts:318`). An orderly shutdown releases the lease and keeps its generation (`workerCoordinator.ts:216`).
+On `SIGTERM` or `SIGINT`, `server.ts` stops the health timer and the route watcher, closes the HTTP server, and stops the workers and HTTP operations in parallel. It then drains matching, durable recovery, automatic start and telemetry export, and deletes the Firebase app (`server.ts:317`). The engine gives handlers 6 s and lifecycle writes 8 s in total (`tripStateEngine.ts:120`). A 10 s backstop forces exit, and the process exits 500 ms after the drains settle (`server.ts:315`, `server.ts:321`). An orderly shutdown releases the lease and keeps its generation (`workerCoordinator.ts:216`).
 
 ## 5. Frontend logical view
 
@@ -269,7 +269,7 @@ The frontend is a Next.js App Router project built as a static export.
 | Module | Responsibility | Collaborators |
 |---|---|---|
 | `layout.tsx`, `globals.css` | Root metadata, service worker registration, providers; design tokens and responsive layout | `components/Providers.tsx`, `ServiceWorkerRegistrar.tsx` |
-| `page.tsx` | Public landing page, Google sign-in and routing to a workspace | `hooks/useAuth.ts`, `lib/googleSignInFlow.ts` |
+| `page.tsx` | Public landing page, Google sign-in and routing to a workspace. The sign-in button reads "Preparing sign-in…" until sign-in is usable; a slow restoration shows "Still checking your sign-in" with **Reload** instead of an access error | `hooks/useAuth.ts`, `lib/googleSignInFlow.ts` |
 | `passenger/` (`layout.tsx`, `loading.tsx`, `page.tsx`) | Passenger workspace behind `RoleGuard` for passenger, driver and admin roles | `components/passenger/PassengerWorkspace.tsx` |
 | `admin/` (`layout.tsx`, `loading.tsx`, `page.tsx`) | Admin shell with tabs: operations, routes, fleet, history, feedback, settings; `RoleGuard` for admin | `components/admin/*` |
 | `feedback/` (`layout.tsx`, `page.tsx`) | Stand-alone admin feedback review | `components/admin/FeedbackPanel.tsx` |
@@ -281,20 +281,20 @@ The frontend is a Next.js App Router project built as a static export.
 
 | Group | Modules | Responsibility |
 |---|---|---|
-| Root | `Providers.tsx`, `MapProviders.tsx`, `ServiceWorkerRegistrar.tsx`, `TelemetryTraceControls.tsx` | Auth provider; one Maps API provider for map pages only; service worker update and one-time reload; opt-in telemetry trace controls |
-| `admin/` | `DashboardPanel.tsx`, `FleetManagementPanel.tsx`, `RouteManagementPanel.tsx`, `RideHistoryPanel.tsx`, `SettingsPanel.tsx`, `FeedbackPanel.tsx`, `AdminPanelErrorBoundary.tsx` | Live Ops map and ride cards (delay, boarding code, chat, End ride in the card and the live-details drawer); bus and driver administration; route editor; ride history with stop evidence; settings; feedback review; per-panel error isolation |
-| `maps/` | `PassengerMap.tsx`, `PassengerTrackingMap.tsx`, `DirectionsRoute.tsx`, `BusPositionGlyph.tsx`, `TrafficLayer.tsx` | Passenger map with live health, arrival estimates and stop progress; route drawing from stored or reroute geometry; bus glyph; traffic layer |
-| `passenger/` | `PassengerWorkspace.tsx`, `PassengerBoardingView.tsx`, `RouteTimelineSheet.tsx`, `AccountTab.tsx`, `PassengerLoadingShell.tsx`, `passengerFrame.ts` | Route selection, boarding, ride card and header, stop timeline, account and deletion request, loading shell, layout frame |
+| Root | `Providers.tsx`, `MapProviders.tsx`, `ServiceWorkerRegistrar.tsx`, `TelemetryTraceControls.tsx` | Auth provider; Maps API provider for the admin layout and the passenger tracking view, whose SDK script loads once per page; service worker update and one-time reload; opt-in telemetry trace controls |
+| `admin/` | `DashboardPanel.tsx`, `FleetManagementPanel.tsx`, `RouteManagementPanel.tsx`, `RideHistoryPanel.tsx`, `SettingsPanel.tsx`, `PassengerRoutesSettings.tsx`, `SettingsSection.tsx`, `FeedbackPanel.tsx`, `AdminPanelErrorBoundary.tsx` | Live Ops map and ride cards (delay, boarding code, chat, End ride in the card and the live-details drawer); bus and driver administration; route editor; ride history with stop evidence; settings; passenger route schedules with their own save button and unsaved-change guard; shared settings field and section header; feedback review; per-panel error isolation |
+| `maps/` | `PassengerMap.tsx`, `PassengerTrackingMap.tsx`, `DirectionsRoute.tsx`, `BusPositionGlyph.tsx`, `TrafficLayer.tsx` | Passenger map with live health, arrival estimates and stop progress; route drawing from stored or reroute geometry; bus glyph; traffic layer. Every `<GoogleMap>` (passenger, Live Ops, route editor) sets `reuseMaps` with the shared map ID and `MAP_OPTIONS`, so a remount reattaches one cached `google.maps.Map`: one map construction per page load, not per tracking open, route, direction, bus, tab or editor change ([EKI-ADR-004](GOOGLE_MAP_REUSE_DECISION.md)) |
+| `passenger/` | `PassengerWorkspace.tsx`, `PassengerBoardingView.tsx`, `RouteTimelineSheet.tsx`, `RoutesTab.tsx`, `AccountTab.tsx`, `PassengerLoadingShell.tsx`, `passengerFrame.ts` | Route selection, boarding, ride card and header, stop timeline, published route schedules (the **Routes** tab), account and deletion request, loading shell, layout frame. The bottom navigation has **Map**, **Routes** and **Profile**; Routes and Profile mount on first visit and stay mounted |
 | `passenger/ui/` | `BottomSheet.tsx`, `RouteCarousel.tsx` | Draggable sheet and route carousel |
-| `shared/` | `RoleGuard.tsx`, `MessagingPanel.tsx`, `FeedbackModal.tsx`, `WorkspaceLink.tsx`, `WorkspaceLoading.tsx`, `WorkspacePrefetch.tsx` | Role-based presentation, ride chat (latest 200 messages), feedback submission, workspace navigation and prefetch |
+| `shared/` | `RoleGuard.tsx`, `MessagingPanel.tsx`, `FeedbackModal.tsx`, `WorkspaceLink.tsx`, `WorkspaceLoading.tsx`, `WorkspacePrefetch.tsx` | Role-based presentation, ride chat (latest 200 messages), feedback submission, workspace navigation and prefetch. `RoleGuard` mounts nothing protected while verification runs, and after a slow restoration or 10 s of loading shows "Still signing you in" with **Reload** |
 | `ui/` | `AlertModal.tsx`, `ConfirmModal.tsx`, `CustomSelect.tsx`, `InAppSelect.tsx` | Accessible dialogs and listboxes |
 
 ### 5.3 Hooks (`frontend/src/hooks`)
 
 | Group | Modules | Responsibility |
 |---|---|---|
-| Authentication | `useAuth.ts` | Sign-in state, role verification (10 s timeout, access retries at 1, 2, 4, 8, 16 and 30 s), profile bootstrap, sign-out cleanup (`frontend/src/hooks/useAuth.ts:18`) |
-| Firestore subscriptions | `useCollection.ts`, `collectionCache.ts`, `useBuses.ts`, `useRoutes.ts`, `useDrivers.ts`, `useSettings.ts`, `useBusLocations.ts` | Shared listeners that start only after authentication is verified |
+| Authentication | `useAuth.ts` | Sign-in state, role verification (10 s timeout, access retries at 1, 2, 4, 8, 16 and 30 s), profile bootstrap, sign-out cleanup (`frontend/src/hooks/useAuth.ts:24`). It loads the sign-in code one attempt at a time and retries a failed load after 2, 5, 10, 20 and then every 30 s, or at once on `online` (`useAuth.ts:30`). It enables sign-in as soon as that code loads unless a Google redirect is pending, and reports `restoreSlow` when Firebase has not reported the first auth state after 8 s, keeping the user state unknown (`useAuth.ts:27`). A sign-in tap during restoration or role verification verifies the restored account instead of starting another Google sign-in |
+| Firestore subscriptions | `useCollection.ts`, `collectionCache.ts`, `useBuses.ts`, `useRoutes.ts`, `useDrivers.ts`, `useSettings.ts`, `usePassengerRouteConfig.ts`, `useBusLocations.ts` | Shared listeners that start only after authentication is verified. `usePassengerRouteConfig` listens to `settings/passengerRoutes` and saves through `PUT /api/v2/settings/passenger-routes` (administrators only) |
 | Live data | `useActiveBuses.ts`, `useLiveRouteCatalog.ts`, `useDynamicRouteGeometries.ts`, `useRTDBResume.ts`, `rtdbResumeState.ts` | Live bus subscriptions, route catalog and readiness, reroute geometry, reconnect after a 30 s suspension or a confirmed disconnect with a 1 to 1.5 s debounce and 5 s cooldown (`frontend/src/hooks/useRTDBResume.ts:14`) |
 | Presentation timing | `useLiveHealthClock.ts`, `useLiveBusMarkerPosition.ts`, `useSmoothPosition.ts` | Live health deadline clock; marker selection; animation frame interpolation, skipped for reduced motion |
 | UI and diagnostics | `useDialogFocus.ts`, `useTelemetryRenderTrace.ts` | Dialog focus trap and restoration; render timing trace |
@@ -303,23 +303,24 @@ The frontend is a Next.js App Router project built as a static export.
 
 | Group | Modules | Responsibility |
 |---|---|---|
-| Firebase and sign-in | `firebaseCore.ts`, `firebaseAuth.ts`, `firebaseDatabase.ts`, `firebaseFirestore.ts`, `firebaseAuthDomain.ts`, `googleSignInFlow.ts`, `authState.ts` | Split SDK initialization; auth domain selection; popup or redirect sign-in; auth readiness generations |
+| Firebase and sign-in | `firebaseCore.ts`, `firebaseAuth.ts`, `firebaseDatabase.ts`, `firebaseFirestore.ts`, `firebaseAuthDomain.ts`, `googleSignInFlow.ts`, `authState.ts` | Split SDK initialization; auth domain selection; popup or redirect sign-in; auth readiness generations. `firebaseAuth.ts` installs the popup and redirect resolver at startup only on popup platforms or while a Google redirect is pending, so a phone reports its first auth state without loading Google's sign-in frame; redirect sign-in passes the resolver per call (`frontend/src/lib/firebaseAuth.ts:17`). `googleSignInFlow.ts` detects a pending redirect from the app's marker or Firebase's `firebase:pendingRedirect:<apiKey>:[DEFAULT]` session flag, and clears both when a redirect fails before leaving the page |
 | HTTP | `apiClient.ts`, `errors.ts`, `promiseTimeout.ts`, `placeSearchErrors.ts` | Backend requests with a 10 s timeout and response validation (`frontend/src/lib/apiClient.ts:1`); error text |
 | Live bus pipeline | `createLiveBusStore.ts`, `liveBusStore.ts`, `liveBusSnapshot.ts`, `liveBusDelivery.ts`, `liveBusRetry.ts`, `activeBusEntries.ts`, `passengerLiveBus.ts`, `passengerBusAvailability.ts`, `serverClock.ts`, `serverClockSync.ts` | One shared RTDB subscription per path with initial snapshot then child deltas; expiry pruning; retry with equal jitter from 1 s to 30 s; server clock offset |
 | Live health | `liveBusFreshness.ts`, `liveBusHealth.ts`, `passengerAvailability.ts` | Freshness thresholds, health states, boarding eligibility ([tracking algorithms](TRACKING_ALGORITHMS.md#9-live-bus-health)) |
 | Map position and geometry | `liveBusMarkerPosition.ts`, `telemetryMarkerPosition.ts`, `markerHeading.ts`, `mapUtils.ts`, `polyline.ts`, `polylineDistance.ts`, `snapToPolyline.ts`, `activeRouteGeometry.ts`, `busRouteGeometry.ts`, `mapRouteGeometry.ts`, `routeDisplayPath.ts`, `routeLegPaths.ts`, `routeProgressPaths.ts` | Matched or raw marker choice with a 2 s hold; heading; path decoding, distance index and snapping; reroute geometry fetch and cache; drawn route and progress paths |
 | Ride progress and estimates | `busEta.ts`, `etaConstants.ts`, `passengerStopEstimates.ts`, `publishedStopIndex.ts`, `stopProgress.ts`, `stopLabel.ts`, `rideDirection.ts`, `passengerRouteStatus.ts`, `joinedRidePointer.ts`, `joinedRideStatus.ts` | Arrival estimates, per-stop states, direction handling, deviation notice, the joined ride kept for 24 h in local storage |
 | History and feedback | `rideHistory.ts`, `rideFeedbackEligibility.ts`, `feedback.ts`, `feedbackStore.ts` | Ride history normalization and observed-arrival test; feedback eligibility; direct Firestore feedback create, list and review |
-| Administration | `adminValidation.ts`, `routeSaveClient.ts`, `routeStopPayload.ts`, `unsavedChanges.ts`, `predefinedRoutes.ts` | Form validation, idempotent route save, unsaved-change guard, seed route definitions |
+| Administration | `adminValidation.ts`, `routeSaveClient.ts`, `routeStopPayload.ts`, `unsavedChanges.ts`, `predefinedRoutes.ts` | Form validation, including the passenger route schedule rules that mirror the backend (at most 50 routes, each existing once, a valid time for every stop); idempotent route save; unsaved-change guard; seed route definitions |
+| Route schedules | `passengerRouteSchedule.ts` | Normalizes the untrusted `settings/passengerRoutes` document, joins approvals with route documents in approval order and the route's stop order, and formats `HH:mm` as "7:05 am" |
 | Site and diagnostics | `siteMetadata.ts`, `serviceMessages.ts`, `telemetryTrace.ts` | Origin and indexing flags, service message text, opt-in browser telemetry trace ([browser telemetry trace](../operations/BROWSER_TELEMETRY_TRACE.md)) |
 
 ### 5.5 Configuration and service worker
 
 | Module | Responsibility |
 |---|---|
-| `config/maps.ts` | Maps API key and map ID from public environment variables, default map center, map options |
+| `config/maps.ts` | Maps API key and map ID from public environment variables, default map center, map options shared by every map, and the map reuse policy |
 | `config/passenger.ts` | Service start time text and the 200-word feedback limit |
-| `sw.js` | Workbox service worker: network-first navigation (10 entries, 7 days), cache-first hashed chunks, network-only Google Maps, Firebase, Auth and backend traffic |
+| `sw.js` | Workbox service worker: network-first navigation (10 entries, 7 days) that waits at most 2.5 s for Hosting and then serves the HTML shell precached by this worker, or else the cached copy (`frontend/src/sw.js:77`); cache-first hashed chunks; network-only Google Maps, Firebase, Auth and backend traffic |
 
 ## 6. Firmware logical view
 
@@ -426,6 +427,9 @@ Environment variables and their defaults are listed in [configuration](../CONFIG
 | Stale node threshold | `BUS_STALE_MS`, 300 s, minimum 90 s | `backend/src/services/tripStateEngine.ts:110` |
 | Reconciliation page size | 100 | `backend/src/lib/reconciliationPages.ts:2` |
 | Browser API timeout | 10 s | `frontend/src/lib/apiClient.ts:1` |
+| Passenger route schedules | At most 50 routes; times match `^([01]\d\|2[0-3]):[0-5]\d$` | `backend/src/routes/settings.ts:100`, `frontend/src/lib/passengerRouteSchedule.ts:12` |
+| Slow sign-in restoration notice | 8 s | `frontend/src/hooks/useAuth.ts:27` |
+| Navigation network budget in the service worker | 2.5 s | `frontend/src/sw.js:77` |
 | Browser live retry | 1 s to 30 s, equal jitter | `frontend/src/lib/liveBusRetry.ts:1` |
 | Firmware fix queue | 100 fixes | `hardware/src/main.cpp:119` |
 | Firmware watchdog | 25 s | `hardware/src/main.cpp:108` |
