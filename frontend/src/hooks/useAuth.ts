@@ -555,16 +555,17 @@ function useAuthState(): AuthContextValue {
     setLoginLoading(true);
     const attempt = ++loginAttempt.current;
     try {
-      // A tap during restoration must not send an already signed-in account
-      // back through Google: wait for the restored state first.
+      // A tap must not send an already signed-in account back through Google,
+      // during restoration or while its role check runs (the button is shown
+      // until the account is verified): finish verifying it instead.
       if (!authInitialized.current) {
         await dependencies.auth.authStateReady();
         if (attempt !== loginAttempt.current || signingOut.current) return;
-        if (dependencies.auth.currentUser) {
-          await refreshVerification.current?.(true);
-          if (attempt === loginAttempt.current) setLoginLoading(false);
-          return;
-        }
+      }
+      if (dependencies.auth.currentUser) {
+        await refreshVerification.current?.(true);
+        if (attempt === loginAttempt.current) setLoginLoading(false);
+        return;
       }
       markGoogleRedirectPending();
       await dependencies.signInWithRedirect(dependencies.auth, dependencies.googleProvider, dependencies.resolver);
@@ -595,6 +596,13 @@ function useAuthState(): AuthContextValue {
     setLoginFallbackAvailable(false);
     setLoginLoading(true);
     const attempt = ++loginAttempt.current;
+    // A restored account still being verified needs no popup. This check does
+    // not wait, so a needed popup still opens within the click.
+    if (authInitialized.current && dependencies.auth.currentUser) {
+      await refreshVerification.current?.(true);
+      if (attempt === loginAttempt.current) setLoginLoading(false);
+      return;
+    }
     let showRedirectFallback = false;
     const fallbackTimer = window.setTimeout(() => {
       if (attempt !== loginAttempt.current) return;

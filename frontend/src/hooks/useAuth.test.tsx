@@ -102,14 +102,15 @@ describe("Google sign-in lifecycle", () => {
       await result.promise; return { user: account };
     });
     const hook = await mount();
-    mocks.auth.currentUser = account;
     let signingIn: Promise<void> | undefined;
     await act(async () => {
       if (flow === "popup") {
-        mocks.popup.mockResolvedValue({ user: account });
+        // Firebase sets currentUser as the popup completes; the observer is late.
+        mocks.popup.mockImplementation(async () => { mocks.auth.currentUser = account; return { user: account }; });
         signingIn = hook.result.current.loginWithGoogle();
-      } else result.resolve();
+      } else { mocks.auth.currentUser = account; result.resolve(); }
     });
+    if (flow === "popup") expect(mocks.popup).toHaveBeenCalledOnce();
     expect(getIdTokenResult).toHaveBeenCalledOnce();
     expect(hook.result.current.user).toBeNull();
     await act(async () => { claims.resolve(); await signingIn; });
@@ -629,6 +630,30 @@ describe("cold open on a slow or offline network", () => {
     await act(async () => { await mocks.callback!(null); ready.resolve(); await Promise.resolve(); });
     await waitFor(() => expect(mocks.redirect).toHaveBeenCalledExactlyOnceWith(mocks.auth, {}, RESOLVER));
   });
+  it.each([["a phone", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"], ["desktop", undefined]])(
+    "on %s, a tap while a restored account is still being verified finishes that check instead of opening Google", async (_platform, userAgent) => {
+      if (userAgent) vi.spyOn(navigator, "userAgent", "get").mockReturnValue(userAgent);
+      const claims = deferred();
+      const account = { uid: "restored", getIdTokenResult: vi.fn(async () => { await claims.promise; return { claims: { role: "passenger" } }; }) };
+      const hook = await mount();
+      await waitFor(() => expect(hook.result.current.loginReady).toBe(true));
+      mocks.auth.currentUser = account;
+      let verifying!: Promise<void>;
+      await act(async () => { verifying = mocks.callback!(account); });
+      expect(hook.result.current.user).toBeNull();
+      let tapping!: Promise<void>;
+      await act(async () => { tapping = hook.result.current.loginWithGoogle(); });
+      expect(hook.result.current.loginLoading).toBe(true);
+      await act(async () => { claims.resolve(); await verifying; });
+      // A started redirect never settles in this document, so check before awaiting the tap.
+      expect(mocks.redirect).not.toHaveBeenCalled(); expect(mocks.popup).not.toHaveBeenCalled();
+      expect(consumeGoogleRedirectPending()).toBe(false);
+      await act(async () => { await tapping; });
+      expect(account.getIdTokenResult).toHaveBeenCalledOnce();
+      expect(hook.result.current.user?.uid).toBe("restored");
+      expect(hook.result.current.loginLoading).toBe(false);
+    },
+  );
   it("clears the slow-restoration flag when Firebase finally reports a signed-in account", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const hook = await mount();
