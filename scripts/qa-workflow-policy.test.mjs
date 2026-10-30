@@ -22,3 +22,16 @@ test('isolated workflow contract catches elevated permissions untrusted refs inf
     }
   }
 });
+
+test('scheduled and manual runs test the default branch, not a retired integration branch', () => {
+  for (const file of ['deep-qa.yml', 'weekly-reliability.yml']) {
+    const workflow = load(readFileSync(resolve(repositoryRoot, '.github/workflows', file), 'utf8'));
+    const resolveStep = workflow.jobs.resolve.steps.find(step => step.uses?.startsWith('actions/github-script@'));
+    assert.match(resolveStep.with.script, /getRef\(\{ \.\.\.context\.repo, ref: 'heads\/main' \}\)/);
+    assert.doesNotMatch(resolveStep.with.script, /heads\/testing/);
+    const retired = structuredClone(workflow);
+    const retiredStep = retired.jobs.resolve.steps.find(step => step.uses?.startsWith('actions/github-script@'));
+    retiredStep.with.script = retiredStep.with.script.replace("ref: 'heads/main'", "ref: 'heads/testing'");
+    assert.throws(() => verifyIsolatedWorkflow(retired), /Trusted revision resolution guard missing/);
+  }
+});

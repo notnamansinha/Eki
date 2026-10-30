@@ -125,16 +125,16 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-OPS-001 | [CI, Deployment and Releases](operations/CI_CD_AND_RELEASES.md) | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-001 | [CI, Deployment and Releases](operations/CI_CD_AND_RELEASES.md) | 2.0 | Current | 2026-10-30 |
 | EKI-OPS-002 | [DNS and Domains](operations/DNS_AND_DOMAINS.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-003 | [ngrok Tunnel for the Backend](operations/NGROK_TUNNEL.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-004 | [Local Web, Phone and Device Testing](operations/LOCAL_TESTING.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-005 | [Live Demo Runbook](operations/LIVE_DEMO_RUNBOOK.md) | 1.0 | Current | 2026-10-30 |
-| EKI-OPS-006 | [University Deployment Checklist](operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) | 1.1 | Current | 2026-10-30 |
+| EKI-OPS-006 | [University Deployment Checklist](operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) | 1.2 | Current | 2026-10-30 |
 | EKI-OPS-007 | [Firestore Index Deployment](operations/FIRESTORE_INDEX_DEPLOYMENT.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-008 | [Field Capture](operations/FIELD_CAPTURE.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-009 | [Automatic GNSS Service](operations/AUTOMATIC_GNSS_SERVICE.md) | 1.1 | Current | 2026-10-30 |
-| EKI-OPS-010 | [Architecture Risk Register](operations/ARCHITECTURE_RISK_REGISTER.md) | 2.0 | Current | 2026-10-30 |
+| EKI-OPS-010 | [Architecture Risk Register](operations/ARCHITECTURE_RISK_REGISTER.md) | 3.0 | Current | 2026-10-30 |
 | EKI-OPS-011 | [Production Readiness Audit](operations/PRODUCTION_READINESS_AUDIT.md) | 1.0 | Historical | 2026-10-04 |
 | EKI-OPS-012 | [API Read Caching and Compatibility Retirement](operations/API_READS_AND_RETIREMENT.md) | 1.1 | Current | 2026-10-30 |
 | EKI-OPS-013 | [Browser Telemetry Trace](operations/BROWSER_TELEMETRY_TRACE.md) | 1.0 | Current | 2026-10-30 |
@@ -184,7 +184,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-TST-001 | [Eki Testing and Evidence Index](testing/README.md) | 1.1 | Current | 2026-10-30 |
-| EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 2.0 | Current | 2026-10-30 |
+| EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 3.0 | Current | 2026-10-30 |
 | EKI-TST-003 | [Eki QA Programme](../qa/README.md) | 1.0 | Current | 2026-10-30 |
 | EKI-TST-004 | [Disposable Browser Acceptance](../qa/BROWSER_ACCEPTANCE.md) | 1.0 | Current | 2026-10-30 |
 | EKI-TST-005 | [Disposable Emulator Acceptance](../qa/EMULATOR_ACCEPTANCE.md) | 1.0 | Current | 2026-10-30 |
@@ -195,7 +195,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-TST-010 | [Reviewed HTTP policy sub-oracles](../qa/HTTP_UNIT_EVIDENCE.md) | 1.0 | Historical | 2026-10-12 |
 | EKI-TST-011 | [Native Firmware Evidence](../qa/NATIVE_EVIDENCE.md) | 1.0 | Current | 2026-10-30 |
 | EKI-TST-012 | [Reviewed Unit Sub-Oracles](../qa/REVIEWED_UNIT_EVIDENCE.md) | 1.0 | Current | 2026-10-30 |
-| EKI-TST-013 | [Scheduled Reliability Workflows](../qa/SCHEDULED_RELIABILITY.md) | 1.0 | Current | 2026-10-30 |
+| EKI-TST-013 | [Scheduled Reliability Workflows](../qa/SCHEDULED_RELIABILITY.md) | 2.0 | Current | 2026-10-30 |
 
 ### 4.14 Evidence records (EVD)
 

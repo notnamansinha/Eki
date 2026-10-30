@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-006 | 1.1 | Current | 2026-10-30 |
+| EKI-OPS-006 | 1.2 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -43,7 +43,7 @@ Each item is complete only when its evidence is recorded in the release evidence
 - [ ] If the production project ID differs from `eki-production`, change the workflow's project and frontend origin through a reviewed pull request.
 - [ ] Add `NEXT_PUBLIC_SITE_URL` (and `NEXT_PUBLIC_SITE_INDEXING` for non-production builds) to the Deploy build step; it is not passed today.
 - [ ] Decide whether the `main` ruleset requires the Production verification jobs as status checks; today it requires reviews only ([OPS-03](ARCHITECTURE_RISK_REGISTER.md#310-ops-03-the-main-ruleset-requires-no-status-checks)).
-- [ ] Point the scheduled QA workflows at `main`; the `testing` branch they read no longer exists, so they run no suites ([OPS-02](ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-runs-no-suites)).
+- [ ] Record a green nightly and a green weekly QA run on `main`, which the scheduled workflows now test ([OPS-02](ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-runs-no-suites)).
 - [ ] Confirm that a green push to `main` deploys to staging and that staging checks (Hosting headers, sign-in, role checks, rules) pass before any production dispatch.
 - [ ] Confirm that the Deploy run's App Check step reports `UNENFORCED` for Firestore and RTDB. The web app does not use App Check; Security Rules and backend authorization carry identity and role checks.
 - [ ] Deploy `firestore.indexes.json` and confirm the readiness gate ([Firestore index deployment](FIRESTORE_INDEX_DEPLOYMENT.md)). Deploy the RTDB `activeBuses` `.indexOn` before relying on indexed stale scans, and run the [matching and lifecycle scan acceptance](MATCHING_AND_LIFECYCLE_SCANS.md).

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-013 | 1.0 | Current | 2026-10-30 |
+| EKI-TST-013 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -14,12 +14,12 @@ Both workflow files are on `main`, so GitHub runs their schedules from the `main
 
 | Event | Commit tested |
 |---|---|
-| Schedule or manual dispatch (must run from `main`) | The head of the `testing` branch, read once through the GitHub API |
+| Schedule or manual dispatch (must run from `main`) | The head of `main`, read once through the GitHub API |
 | Push to an allowed QA branch | The pushed commit |
 
-Every later job checks out that commit. Missing scripts or reports fail the run; it never falls back to another branch or an earlier artifact. Because scheduled runs test `testing`, a green scheduled run says nothing about `main` unless both branches point at the same commit.
+Every later job checks out that commit. Missing scripts or reports fail the run; it never falls back to another branch or an earlier artifact.
 
-On 2026-10-30 the repository has no `testing` branch and none of the allowed QA branches. Every scheduled run since 2026-10-25 has failed in `resolve` with `Not Found` and executed no suite; the last scheduled runs that executed suites were on 2026-10-24 (UTC). The [risk register](../docs/operations/ARCHITECTURE_RISK_REGISTER.md) tracks this as OPS-02. Until the resolver names an existing branch, run the campaigns locally (Section 6).
+The `testing` branch was deleted on 2026-10-25; scheduled runs from then until the resolver was changed to `main` failed in `resolve` with `Not Found` and ran no suite. The last scheduled runs that executed suites were on 2026-10-24 (UTC). None of the allowed QA push branches exists. The [risk register](../docs/operations/ARCHITECTURE_RISK_REGISTER.md) closes OPS-02 once a nightly and a weekly run are green on `main`.
 
 ## 3. Nightly campaign
 
