@@ -1,4 +1,8 @@
-# PR #364 independent audit follow-up — 24 October 2026
+# PR #364 independent audit follow-up: 24 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-037 | 1.0 | Historical | 2026-10-24 |
 
 The supplied `87102ba` audit package is not comprehensive acceptance evidence.
 Its ledger retains 174 unexecuted source candidates, several test/source paths

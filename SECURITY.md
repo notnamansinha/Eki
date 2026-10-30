@@ -1,133 +1,87 @@
 # Security Policy
 
-Last updated: 2026-10-16 00:23 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-SEC-001 | 1.0 | Current | 2026-10-30 |
 
-This document outlines the security models, vulnerability reporting procedures,
-and database rules governing the Eki ecosystem. For the public-safe
-configuration and documentation boundary, also see
-[Environment and configuration](docs/CONFIGURATION.md) and [Getting started](docs/GETTING_STARTED.md).
+## 1. Purpose
 
-## Reporting a Vulnerability
+This policy states which Eki code receives security fixes, how to report a vulnerability, what is in scope, and how contributors handle secrets and personal location data. The controls themselves are described in [Security architecture](docs/security/SECURITY_ARCHITECTURE.md).
 
-If you discover a security vulnerability within Eki, please do not disclose it
-publicly. Instead, contact the repository maintainers directly. Provide a
-detailed summary of the vulnerability, including steps to reproduce.
+## 2. Supported versions
 
-## Security Architecture
+| Component | Supported | Notes |
+|---|---|---|
+| Web app, backend, Firestore and RTDB rules, Hosting configuration | Head of `main` | Staging deploys the commit of each successful push build on `main`. Production deploys only by a manual workflow run from `main`. See [CI/CD and releases](docs/operations/CI_CD_AND_RELEASES.md). |
+| Tracker firmware | Signed builds of the `esp32dev-secure` PlatformIO environment | The `esp32dev`, `esp32dev-quiet` and `esp32dev-journal` environments are development builds without Secure Boot or flash encryption. |
+| Other branches, forks and earlier commits | Not supported | Reproduce a finding on `main` before reporting it. |
 
-### Role-Based Access Control (RBAC) & Custom Claims
+Fixes are made on `main` and reach deployments through the normal release pipeline.
 
-Eki enforces strict RBAC across presentation, API, and database perimeters:
+## 3. Reporting a vulnerability
 
-1. **Server-issued Firebase Custom Claims (`auth.token.role`)**:
-   Role authorization is issued server-side via `npm run sync-role-claims --workspace=backend` or backend endpoints. Clients cannot self-assign roles; RTDB legacy user trees are default-deny.
-2. **Frontend Presentation Guard (`RoleGuard`)**:
-   Controls route rendering based on authenticated claims (`admin`, `driver`, `passenger`).
-3. **Backend API Authorization**:
-   Express endpoints validate Bearer tokens. Admin endpoints enforce `requireAdmin` middleware checking `auth.token.admin === true`.
+### 3.1 How to report
 
-Protected browser reads wait for refreshed Auth tokens and trusted role
-verification. Account changes and sign-out invalidate pending verification and
-old-session requests; failed sign-out leaves protected content hidden.
-App Check is not used by the browser or API. Deployment disables its separate
-Firebase product enforcement while preserving database identity/role rules.
-See [Auth setup](docs/CONFIGURATION.md#local-auth-setup).
+1. Do not describe the vulnerability in a public issue, pull request, discussion or commit.
+2. Send the report privately to the repository owner listed in [`.github/CODEOWNERS`](.github/CODEOWNERS). If you cannot find a private channel, open a public issue that asks for one and contains no vulnerability details.
+3. Include the affected component and commit, the steps to reproduce, the impact you observed, and whether you accessed any data that is not yours.
+4. Use synthetic accounts and data. Do not attach real credentials, ID tokens, device secrets, location traces or unredacted logs.
 
-### Hardware Authentication & Isolation
+### 3.2 Testing rules
 
-ESP32 GNSS units post a closed nine-field payload to
-`/api/devices/{deviceId}/telemetry` over certificate-verified HTTPS:
+- Reproduce against local Firebase emulators where possible; [Local testing](docs/operations/LOCAL_TESTING.md) describes the setup and `npm run test:rules` runs the rules tests.
+- Do not run load tests, denial-of-service tests or credential guessing against deployed staging or production services.
+- Do not read, change or delete other users' data, and stop as soon as a finding is confirmed.
 
-- **Independent device credentials**: Per-device secrets are stored as salted
-  scrypt verifiers and compared with `timingSafeEqual`. The plaintext is shown
-  once by the local provisioning command and is never returned by an API.
-- **Server-side assignment**: Bus and route IDs come from the protected device
-  registry, not from device-controlled JSON.
-- **Bounded ingestion**: Telemetry has a 512-byte parser limit, exact field and
-  numeric validation, timestamp/sequence deduplication, per-IP and per-device limits,
-  and a constant-time credential check.
-- **Bounded migration**: The bounded eight-field sequenced schema (no `gpsHdop`)
-  and the legacy six-field schema (no `seq`/`deviceSentAt`) remain accepted during
-  the backend-first firmware rollout; operators validate the schema their deployed
-  firmware sends. Arbitrary optional fields remain rejected.
-- **No Firebase credential on hardware**: Devices cannot read or write Firebase
-  directly. Only the backend Admin SDK writes the live RTDB projection.
+### 3.3 What to expect
 
-### Firebase Security Rules Perimeter (`database.rules.json`)
+This repository does not define a response time, a disclosure deadline or a bounty. A confirmed vulnerability is fixed through a pull request to `main` and released through the deployment workflow.
 
-- **`/activeBuses`**: Backend-only authoritative state; every client read/write is denied.
-- **`/publicRouteBuses/route:{routeId}/buses`**: Authenticated route-scoped reads of explicit public fields. Only trusted admins can read the fleet root. Every client write is denied.
-- **`/liveRouteCatalog/values`**: Authenticated counts/availability only; revisions and worker generations remain private. Every client write is denied.
-- **`/driverRouteAssignments` and `/messages`**: Client reads and writes are
-  denied; chat is stored under Firestore ride sessions with scoped rules.
-- **`/users`**: Legacy tree with all client reads/writes denied by the root rules.
-- **`/activeRouteGeometry`**: Authenticated reads; all client writes denied.
+## 4. Scope
 
-### Ride Chat Safety
+| In scope | Location |
+|---|---|
+| Browser app | `frontend/` |
+| Backend API and workers | `backend/` |
+| Security rules | `firestore.rules`, `database.rules.json` |
+| Hosting headers and Content Security Policy | `firebase.json`, `scripts/update-csp.mjs` |
+| Tracker firmware and fleet build configuration | `hardware/` |
+| Build, test and deployment automation | `scripts/`, `.github/workflows/` |
 
-- Message creation is backend-only. The server rechecks the live ride state and
-  verifies that the sender is a manifest passenger, assigned operator, or admin.
-- Per-user limits enforce a three-second cooldown, 10 messages per minute, and
-  60 messages per rolling hour; the global authenticated write limiter remains
-  an additional layer.
-- Text and display names are normalized to remove unsafe formatting controls and
-  common English and Hindi/Hinglish profanity evasions are censored before the
-  message is stored. The original uncensored text is not retained.
-- The UI renders message content as text, not HTML. Deterministic moderation
-  reduces common abuse but cannot guarantee detection of every harmful phrase;
-  administrators can clear a ride's message history when needed.
+Out of scope:
 
-### HTTP Security Headers & Infrastructure
+- Vulnerabilities in Firebase, Google Cloud or Google Maps Platform themselves. Report them to Google.
+- Vulnerabilities in third-party packages that do not affect Eki. Report them to the package maintainers.
+- The residual risks listed in [Security architecture](docs/security/SECURITY_ARCHITECTURE.md), unless you show a new way to exploit them.
 
-Firebase Hosting (`firebase.json`) enforces strict production security headers:
-- **`Strict-Transport-Security`**: `max-age=31536000; includeSubDomains` (enforces HTTPS).
-- **`Cross-Origin-Opener-Policy`**: `same-origin-allow-popups` (enables Google OAuth popups while isolating cross-origin windows).
-- **`Content-Security-Policy`**: Restricts script, style, image, font, frame, and WebSocket origins (`wss://*.firebaseio.com`, `wss://*.firebasedatabase.app`). Disables `unsafe-eval`.
-- **`X-Frame-Options`**: `DENY` (prevents clickjacking).
+## 5. Handling secrets
 
-The service worker caches only explicitly public/static resources. Firebase
-Auth/RTDB REST, backend API and all unknown requests are network-only, avoiding
-stale authenticated responses crossing accounts on shared browsers.
+| Secret | Where it belongs |
+|---|---|
+| Firebase Admin service-account JSON | Backend runtime environment (`FIREBASE_SERVICE_ACCOUNT`) or Application Default Credentials |
+| Device secret and Wi-Fi password | Ignored `hardware/include/secrets.h`, only inside the controlled signing environment |
+| Secure Boot signing key | Offline signing environment ([key custody](hardware/keys/README.md)) |
+| Firebase deploy token | GitHub environment secret `FIREBASE_TOKEN` |
+| Server Google Maps key | Backend environment (`GOOGLE_MAPS_API_KEY`) |
 
-### Lifecycle Integrity
+Rules for contributors:
 
-- A deterministic backend-only `_active_bus_locks/{busId}` Firestore document
-  makes active sessions mutually exclusive across every route for one bus.
-- Completion, recovery cleanup, and abandonment compare `sessionId` inside
-  transactions before changing RTDB or deleting `active_rides`/locks. Delayed
-  work from an old session cannot overwrite a newer ride.
-- Retention is fail-safe: production refuses to start unless
-  an explicit normalized `RETENTION_SWEEPER_ENABLED=true`; development and tests remain
-  non-destructive when it is omitted.
+1. Never commit a secret, paste it into an issue, pull request, chat or log, or include it in documentation. Use placeholders such as `<project-id>`.
+2. `NEXT_PUBLIC_*` browser values are public once built. Restrict the browser Firebase and Maps keys by HTTP referrer and API in Google Cloud, and keep the server Maps key separate.
+3. `npm run provision-device --workspace=backend` prints a device secret once. Copy it only into `secrets.h` in the signing environment.
 
-## In-Transit Encryption
+If a secret is exposed:
 
-- Deployed frontend/backend/device origins require HTTPS. Local development
-  may use loopback HTTP; production build and fleet firmware guards reject it.
-- Hardware telemetry uses `WiFiClientSecure` with a configured CA certificate
-  when communicating with the backend API.
+| Secret | Response |
+|---|---|
+| Device secret | Run `npm run provision-device --workspace=backend -- --device-id <id> --bus-id <id> --route-id <id>` to issue a new secret, then build and flash a new signed image. To stop the device first, an administrator calls `POST /api/devices/<deviceId>/disable`. |
+| Firebase Admin credential, deploy token or API key | Revoke it at Google Cloud or Firebase, issue a replacement, and update the store listed above. |
+| Secure Boot signing key | Unset all six `FIRMWARE_RELEASE_*` backend variables to stop OTA distribution, and inform the university security owner who holds the key. Fleet trackers trust the public key digest burned into their eFuses; the repository defines no key replacement procedure. See [Hardware security provisioning](docs/security/HARDWARE_SECURITY_PROVISIONING.md). |
 
-## Browser and Device Secret Handling
+## 6. Handling personal and location data
 
-- Browser Firebase/Maps keys are public configuration, not secrets; restrict
-  them by hostname/API.
-- Device secrets, service-account JSON, App Check debug tokens and ignored
-  environment files must never be committed or logged. Provisioning displays a
-  device secret once and stores only its salted scrypt verifier server-side.
-  Hardware operators transfer the plaintext only inside the controlled signing
-  environment into the ignored `hardware/include/secrets.h`; it is embedded in
-  a device-specific flash-encrypted image and replaced only by reflashing.
-- Production should use Workload Identity/Secret Manager, university WAF/global
-  rate limits, monitored rotation, immutable signed-OTA hosting and metadata,
-  controlled signing-key custody, and the witnessed Secure Boot V2/release-mode
-  flash-encryption/update/rollback procedure. See
-  the deployment checklist for ownership requirements.
+Bus positions identify the vehicle and its driver. Passenger profiles, ride manifests, chat messages and feedback identify passengers and their travel. [Security architecture](docs/security/SECURITY_ARCHITECTURE.md) lists what Eki stores, who can read it and how long it is kept.
 
-### Public documentation boundary
-
-Architecture and API documentation may describe identifiers, routes, limits,
-security controls, failure behavior and placeholder commands. It must not
-contain service-account JSON, private keys, device or Wi-Fi secrets, App Check
-debug tokens, bearer tokens, internal addresses, tunnel credentials, personal
-records, or unredacted logs. Browser configuration identifiers are public but
-must remain restricted by hostname and enabled API.
+1. Never place real location traces, personal records or unredacted logs in issues, pull requests, commits, test fixtures or documentation. Store field evidence in approved private storage.
+2. Use synthetic identities and coordinates in tests and examples.
+3. Passengers delete their account from the app. [Privacy deletion](docs/operations/PRIVACY_DELETION.md) describes what is deleted, what is retained and how to recover a failed request.

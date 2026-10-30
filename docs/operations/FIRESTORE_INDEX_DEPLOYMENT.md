@@ -1,54 +1,80 @@
-# Firestore index deployment (issue #246 R11)
+# Firestore Index Deployment
 
-Last updated: 2026-10-06 15:32 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-007 | 1.0 | Current | 2026-10-30 |
 
-Both jobs in `.github/workflows/deploy.yml` deploy the committed
-`firestore.indexes.json` with `--only firestore:indexes --non-interactive`
-to their explicit project before releasing hosting or rules. Existing branch,
-exact-SHA and protected-environment gates still apply. Project provisioning and
-the existing staging/production target policy are unchanged.
+## 1. Purpose
 
-Index creation is asynchronous. `scripts/verify-firestore-indexes.mjs` then
-runs three read-only REST queries against the target's default database:
+This document describes how the Deploy workflow publishes Firestore indexes and blocks the Hosting and rules release until the queries that background workers depend on can run. It also gives the manual procedure for checking a project.
 
-- Ride retention: terminal status IN completed/failed/interrupted, endTime
-  older than 180 days, ordered by endTime and document ID.
-- Privacy deletion: collection-group messages filtered by senderId.
-- Privacy deletion: collection-group messageRateLimits filtered by userId.
+## 2. What is deployed
 
-Each probe selects only document names and returns at most one record. Privacy
-probes use a synthetic identifier. No writes/deletions occur, and returned
-records and provider error bodies are not logged. These are billed reads;
-the gate does not run a retention sweep or deletion worker.
+| Source | Content | Deployed by |
+|---|---|---|
+| `firestore.indexes.json` | Composite index on `ride_sessions` (`status`, `endTime`, both ascending); collection-group field overrides on `messages.senderId` and `messageRateLimits.userId` | `firebase deploy --only firestore:indexes --non-interactive` (Deploy, step 6) |
+| `database.rules.json` | RTDB `.indexOn` for `activeBuses`: `routeId`, `busId`, `timestamp` | `firebase deploy --only database:rules` (Deploy, step 7) |
 
-The checker retries index-related FAILED_PRECONDITION responses every ten
-seconds for up to thirty minutes, with a fifteen-second per-request timeout.
-Authentication, authorization, other API errors and malformed responses fail
-closed immediately. A failed gate stops the subsequent hosting/rules release;
-already submitted index builds continue. Inspect Firebase index build status
-and rerun the deployment after resolving the failure. Large builds may require
-more than thirty minutes; rerunning does not require changing the index spec.
+Firestore builds indexes as long-running operations that continue after the deploy command returns [1]. The readiness gate below waits for them.
 
-Successful responses must contain valid RFC3339 read times or projected document
-names in the exact selected project, default database and expected collection
-scope. Empty-query read-time-only responses are valid; empty/malformed document
-objects, impossible dates and wrong-project/collection names are rejected even
-when another field appears valid. JSON parse errors are replaced with a safe
-query label so malformed provider bodies cannot leak into deployment logs.
+## 3. Readiness gate
 
-The gate reuses the workflow's FIREBASE_TOKEN exchange and requires permission
-to query Firestore in addition to the CLI's index deployment permissions.
-To verify an explicitly chosen target without deploying:
+After the index deploy, both Deploy jobs run `node scripts/verify-firestore-indexes.mjs --project <project>` with a 32-minute step timeout. The script exchanges `FIREBASE_TOKEN` for an access token and sends seven read-only `runQuery` requests [2] to the project's default database. Each request selects only document names and returns at most one document.
 
-```sh
-node scripts/verify-firestore-indexes.mjs --project <project-id>
-```
+| Probe | Collection | Query shape | Used by |
+|---|---|---|---|
+| Ride-session retention | `ride_sessions` | `status` in `completed`, `failed`, `interrupted`; `endTime` older than 180 days; ordered by `endTime`, then document ID | Retention sweep |
+| Messages privacy deletion | `messages` (collection group) | `senderId` equals a synthetic ID | Privacy deletion |
+| Message rate-limit privacy deletion | `messageRateLimits` (collection group) | `userId` equals a synthetic ID | Privacy deletion |
+| Privacy pending queue | `_privacy_deletion_requests` | `status` equals `pending`, ordered by document ID | Privacy deletion queue |
+| Abandoned ride reconciliation | `ride_sessions` | `status` in `pending`, `armed`, `active`, ordered by document ID | Abandoned-ride reconciler |
+| Route preview recovery | `_route_geometry_previews` | `status` equals `processing`, ordered by document ID | Operation recovery |
+| Fleet job recovery | `_fleet_reconciliation_jobs` | `status` equals `processing`, ordered by document ID | Operation recovery |
 
-Local regression tests use simulated REST responses to cover missing/building
-indexes, eventual readiness, deadline exhaustion, authorization failures and
-both workflow jobs' ordering. Emulator success cannot establish deployed index
-readiness. Fresh-project acceptance is recorded only when the real deployment
-gate succeeds; no live deploy is part of this change's local verification.
+The last four probes rely on automatic single-field indexes, which the index file does not declare. The gate tests the deployed query shapes, so it also catches a project where automatic indexing was changed.
 
-References: [Firebase index management](https://firebase.google.com/docs/firestore/query-data/indexing)
-and [Firestore runQuery API](https://docs.cloud.google.com/firestore/docs/reference/rest/v1/projects.databases.documents/runQuery).
+Gate behaviour:
+
+- A `FAILED_PRECONDITION` response that mentions an index is retried every 10 s until 30 minutes have passed. Each request has its own 15 s timeout.
+- Any other HTTP error, an authentication or permission failure, or a malformed response fails at once.
+- A successful response must contain a valid RFC 3339 read time, or document names inside the selected project, the default database and the expected collection. Empty results are valid.
+- The script never logs response bodies or document names, and it writes and deletes nothing. Each query in each pass is billed as a document read.
+
+A failed gate stops the job before Hosting and rules are deployed. Index builds that were already submitted continue in Firebase.
+
+The gate needs a token that can deploy indexes and run Firestore queries in the project. Emulator runs cannot show that deployed indexes are ready; `scripts/verify-firestore-indexes.test.mjs` covers the gate with simulated responses, including the order of steps in both Deploy jobs.
+
+## 4. Check a project by hand
+
+Prerequisites: a Firebase CLI token for the project in the current shell as `FIREBASE_TOKEN`, taken from the secret store and not typed into shared history.
+
+1. From the repository root, run:
+
+   ```powershell
+   node scripts/verify-firestore-indexes.mjs --project <project-id>
+   ```
+
+   Expected: `Firestore retention, privacy and recovery queries ready for <project-id>.` While indexes build, the script prints `Waiting for Firestore indexes:` with the pending probe names.
+2. If indexes are missing, deploy them, then repeat step 1:
+
+   ```powershell
+   npx --yes firebase-tools@15.14.0 deploy --project <project-id> --only firestore:indexes --non-interactive
+   ```
+
+   Expected: the CLI reports the indexes as deployed; step 1 then succeeds within 30 minutes for a small database.
+3. Remove the token from the shell with `Remove-Item Env:FIREBASE_TOKEN`. Expected: `$env:FIREBASE_TOKEN` is empty.
+
+## 5. Recovery
+
+| Failure | Action |
+|---|---|
+| `Firestore index readiness timed out` | Open the Firestore indexes page in the Firebase console. If a build is still running, wait for it and rerun Deploy; the index file does not need to change. |
+| `failed (HTTP 401)` or `(HTTP 403)` | The token cannot query Firestore in that project. Replace the environment's `FIREBASE_TOKEN` and rerun. |
+| `Invalid Firestore readiness response` | The project or database name is wrong, or the API returned an unexpected body. Check `--project` and the project's default database. |
+| `A valid explicit --project is required.` | Pass `--project <project-id>`. |
+
+## 6. References
+
+[1] Google, "Manage indexes in Cloud Firestore," firebase.google.com/docs/firestore/query-data/indexing. Accessed: 2026-10-30.
+
+[2] Google, "Method: projects.databases.documents.runQuery," docs.cloud.google.com/firestore/docs/reference/rest/v1/projects.databases.documents/runQuery. Accessed: 2026-10-30.

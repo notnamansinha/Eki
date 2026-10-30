@@ -1,6 +1,8 @@
-# Short moving GNSS capture — 19 October 2026
+# Short moving GNSS capture: 19 October 2026
 
-Last updated: 2026-10-20 13:19 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-022 | 1.0 | Historical | 2026-10-20 |
 
 Recording is stopped and the evidence is retained privately. The observed route movement supplies useful latency and transport evidence for issues #245, #246, #300 and #337. No issue was edited or closed during capture. No service was armed, so this run does not validate ordered stops, ride direction, final completion or automatic return.
 

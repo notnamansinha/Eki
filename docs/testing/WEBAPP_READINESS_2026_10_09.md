@@ -1,4 +1,8 @@
-# Webapp readiness — 9 October 2026
+# Webapp readiness: 9 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-059 | 1.0 | Historical | 2026-10-09 |
 
 **The real stationary passenger flow is verified on localhost:3000. Full webapp
 and moving-route acceptance remain open.** Chrome completed the existing

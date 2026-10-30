@@ -1,135 +1,139 @@
-# Eki backend
+# Eki Backend
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-PKG-001 | 1.0 | Current | 2026-10-30 |
 
-The TypeScript/Express backend is the authority for hardware ingestion, fleet/route/device commands and ordered ride lifecycle. It uses Firebase Admin with service-account JSON or Application Default Credentials, writes current data to RTDB and durable state to Firestore, and elects one background worker with a Firestore lease.
+## 1. Purpose
 
-```powershell
-npm ci
-Copy-Item backend/.env.example backend/.env
-```
+The `backend` workspace is the Node.js and Express server of Eki. It authenticates GNSS devices and ingests their telemetry, owns the ride session lifecycle, and executes fleet, route, device and account commands for the web app. It uses the Firebase Admin SDK: live state is written to the Realtime Database (RTDB) and durable state to Firestore. One backend process at a time also runs the background worker, elected through a Firestore lease.
 
-For local use, change the copied values to `NODE_ENV=development`, `PORT=4000`
-and `CORS_ORIGIN=http://localhost:3000`. Fill the development RTDB URL and
-Firebase credentials; keep `RETENTION_SWEEPER_ENABLED=false`. The template
-uses production mode and port `8080`, and production intentionally refuses
-startup while retention is disabled.
+This guide covers building, running and operating the package. The HTTP interface is specified in [API.md](API.md); the design is described in the [architecture](../design/ARCHITECTURE.md) and [low-level design](../design/LOW_LEVEL_DESIGN.md). Environment variables are listed in the [configuration reference](../CONFIGURATION.md) and are not repeated here.
 
-```powershell
-npm run dev --workspace=backend
-```
+## 2. Prerequisites
 
-Important configuration is fully described in `.env.example`: exact CORS origins, `FIREBASE_DATABASE_URL`, server-restricted Maps key, device/auth limits, stale/reconciliation periods, worker identity and mandatory production retention enforcement. Production should prefer Workload Identity/ADC; if `FIREBASE_SERVICE_ACCOUNT` is used, provide the complete JSON through a secret manager.
+- Node.js 24 and npm. CI and the container image both use Node.js 24.
+- Dependencies installed from the repository root with `npm ci` (the backend is an npm workspace).
+- A Firebase project with Firestore and RTDB, and Firebase Admin credentials: either a service-account JSON in `FIREBASE_SERVICE_ACCOUNT` or Application Default Credentials.
+- `backend/.env`, created from `backend/.env.example`. The template targets production (`NODE_ENV=production`, `PORT=8080`). For local work, follow [Getting started](../GETTING_STARTED.md) to switch it to development, port 4000 and the local frontend origin.
+- Java, only for the Firebase emulator suites.
 
-```powershell
-npm run lint --workspace=backend
-npm run test --workspace=backend
-npm run build --workspace=backend
-```
+A production process refuses to start without `CORS_ORIGIN`, without `FIREBASE_DATABASE_URL`, or with the retention sweeper disabled.
 
-Check `http://localhost:4000/health`: `200`/`status: ok` means Firestore and
-RTDB probes are ready; `503`/`status: degraded` means dependency readiness is
-failing. RTDB requires a true `.info/connected` snapshot. Probes run every 30s
-with a 5s response deadline, at most one unsettled call per store, and 65s
-monotonic freshness. Late results cannot restore readiness. `/live` returns
-`200`/`status: alive` independently of Firebase. Docker/container restart probes
-use `/live`; load-balancer traffic readiness uses `/health`. All health responses
-are no-store. The admin-only `/api/health` contains detailed diagnostics.
+## 3. Scripts
 
-## API and jobs
+Run each script from the repository root as `npm run <script> --workspace=backend`.
 
-- `bootstrap.ts` initializes optional instrumentation before the server.
-- Device routes authenticate per-device credentials and preserve current plus
-  previous telemetry schemas during fleet rollout.
-- Browser HTTP routes verify Firebase ID tokens; privileged routes additionally
-  check trusted claims and assignments. Feedback API routes remain available
-  for compatibility, sharing the same Firestore records and 24-hour cooldown.
-  Browser feedback submission and admin review now use Firestore directly
-  and remain available when the backend tunnel is offline.
-- The lease-owned worker advances ordered ride progress and runs recovery,
-  privacy and retention. Terminal deletion is resumable; active ownership and
-  current geometry pointers are protected.
-  [Worker leadership](../operations/WORKER_LEADERSHIP.md) defines independent
-  monotonic expiry, destination fencing, clock tolerance and side-effect limits.
-- `npm run retention:rtdb --workspace=backend -- --dry-run` inventories RTDB
-  retention without mutation. Follow [retention](../operations/RTDB_RETENTION.md)
-  before applying cleanup or enabling legacy-tree retirement.
+| Script | Command | Purpose |
+|---|---|---|
+| `dev` | `tsx watch src/bootstrap.ts` | Start the server with reload on change |
+| `build` | `tsc` | Compile `src/` to `dist/` |
+| `start` | `node dist/bootstrap.js` | Start the compiled server |
+| `lint` | `eslint src --ext .ts` | Lint the sources |
+| `test` | `vitest run src` | Run unit and HTTP tests (no Firebase access) |
+| `test:rules-integration` | `vitest run` on the emulator suites | Firebase emulator integration tests. Run them through `npm run test:rules` from the root, which starts the emulators first. |
+| `seed` | `tsx src/seed.ts` | Write the predefined routes, with Google route geometry, to Firestore |
+| `sync-role-claims` | `tsx src/syncRoleClaims.ts` | Publish Firestore user roles as Firebase Auth custom claims |
+| `provision-device` | `tsx src/provisionDevice.ts` | Register a device and print its one-time secret. Usage: `-- --device-id <id> --bus-id <id> --route-id <id>`. See [hardware provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md). |
+| `measure:rtdb` | `tsx src/measureRtdbLatency.ts` | Measure RTDB read latency (`RTDB_LATENCY_SAMPLES`, 10 to 500) |
+| `retention:rtdb` | `tsx src/rtdbRetentionCli.ts` | RTDB retention sweep: `-- --dry-run` (default) or `-- --apply`. See [RTDB retention](../operations/RTDB_RETENTION.md). |
 
-## OpenTelemetry diagnostics
+The root `npm run verify:openapi` checks [`openapi.json`](openapi.json) against the registered routes and against [API.md](API.md). See the [HTTP contract](../api/HTTP_CONTRACT.md).
 
-The backend enables vendor-neutral traces, metrics, and structured logs when
-`OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set.
-It captures inbound Express requests, supported outbound clients, failed
-request exceptions, correlated application logs, Node.js runtime metrics,
-dependency readiness, authentication outcomes, device-ingestion health, and
-background-worker failures. `/health` and `/live` are excluded from request telemetry to
-keep probe traffic from obscuring real failures.
+## 4. Source layout
 
-Start the local Collector and Jaeger UI, then run the backend with the endpoint
-from `.env.example` enabled:
+| Path | Contents |
+|---|---|
+| `src/bootstrap.ts` | Process entry point: loads `.env`, starts OpenTelemetry, installs the log bridge, then imports `server.ts` |
+| `src/server.ts` | Express application: middleware order, router mounts, health endpoints, worker start and graceful shutdown |
+| `src/routes/` | HTTP routers, one file per resource area |
+| `src/middleware/` | `requireAuth` (any verified Firebase user) and `requireAdmin` (current administrator authority) |
+| `src/services/` | Domain logic: telemetry ingestion, trip state engine, route matching, ride start, durable operations, privacy deletion, retention, worker coordination |
+| `src/lib/` | Shared utilities: rate limiting, admission, request errors, health state, metrics, logging, geometry |
+| `src/instrumentation.ts`, `src/telemetrySdk.ts` | OpenTelemetry start-up and SDK configuration |
+| `src/*.ts` (other) | Command-line tools listed in Section 3 |
+| `openapi.json` | Machine-readable HTTP contract (OpenAPI 3.1.1) |
+| `test-support/`, `test-fixtures/` | Test helpers, including the OpenAPI response validator |
+| `Dockerfile` | Container image (Section 8) |
+
+## 5. Start-up and shutdown
+
+`bootstrap.ts` starts OpenTelemetry before any application module loads, so that HTTP, Express, gRPC and `undici` calls are instrumented. It then imports `server.ts`, which:
+
+1. validates its configuration (for example boolean flags, `TRUST_PROXY`, `RATE_LIMIT_SHARD_FACTOR`, the device rate-limit settings and the production requirements in Section 2) and exits on an invalid value;
+2. builds the middleware chain and mounts the routers (see [API.md](API.md) for the request pipeline);
+3. starts the Firestore and RTDB readiness probes;
+4. listens on `PORT` (default `4000`) on `0.0.0.0` and logs `[Operations] Executor identity: <uuid>`, the identity that durable operation records carry;
+5. starts the route catalog watcher and the worker coordinator.
+
+The worker coordinator competes for the `_worker_leases` lease (45 s lease, renewed every 15 s). The leader runs the trip state engine, the live bus projection, the retention sweeper, the privacy deletion worker, the abandoned-ride reconciler and fleet reconciliation every 10 minutes. `WORKER_ENABLED=false` keeps a process out of the election. Lease fencing and expiry rules are in [worker leadership](../operations/WORKER_LEADERSHIP.md).
+
+HTTP server limits: request receipt timeout 15 s, header timeout 70 s, keep-alive 65 s, at most 100 requests per socket.
+
+On `SIGTERM` or `SIGINT` the process stops accepting connections, stops the workers, drains durable operations, fleet mutations, privacy deletions, route processing and ride recovery, flushes telemetry and closes Firebase. A 10 s backstop forces exit with status 1.
+
+## 6. Health and liveness
+
+| Endpoint | Caller | Response |
+|---|---|---|
+| `GET /live` | Container health check | Always `200 {"status":"alive"}`; never reads Firebase |
+| `GET /health` | Load balancer, release workflow | `200 {"status":"ok"}` when both stores are ready, otherwise `503 {"status":"degraded"}` |
+| `GET /api/health` | Admin | Store status plus process-local telemetry, queue and background-failure counters. See [API.md](API.md). |
+
+All three send `Cache-Control: no-store`. Readiness comes from cached probes, not from a database read per request. Every 30 s the backend runs a one-document query on the Firestore `_health` collection and reads the RTDB `.info/connected` flag; RTDB is ready only when that flag is `true`. Each probe has a 5 s deadline and a result stays valid for 65 s. A probe that completes after its deadline cannot mark the store ready. Background-task failures are reported by `/api/health` but do not affect readiness.
+
+Use `/live` to decide whether to restart the process and `/health` to decide whether to route traffic to it. With placeholder or unreachable Firebase settings, `/health` returns 503 while `/live` returns 200.
+
+## 7. Logging and tracing
+
+The backend writes structured JSON logs to standard output through `pino`, at the level set by `LOG_LEVEL` (default `info`). `console` calls are routed through the same logger. Keys that name credentials, tokens, e-mail addresses, phone numbers or coordinates are replaced with `[REDACTED]`, and bearer values in messages are masked.
+
+OpenTelemetry traces, metrics and logs are exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set and `OTEL_SDK_DISABLED` is not `true`. The default service name is `eki-backend` and 10% of new root traces are sampled unless `OTEL_TRACES_SAMPLER` is set. Span URLs are redacted, and `/health` and `/live` requests are not traced.
+
+To inspect traces locally, start the Collector and Jaeger stack, set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` in `backend/.env`, and start the backend:
 
 ```powershell
 docker compose -f observability/docker-compose.yml up -d
 npm run dev --workspace=backend
 ```
 
-Open `http://localhost:16686`, select `eki-backend`, and search for traces with
-the Error tag. Stop the local stack with:
+Open `http://localhost:16686` and select the `eki-backend` service. Stop the stack with `docker compose -f observability/docker-compose.yml down`. The local stack keeps traces in memory only.
+
+## 8. Container image
+
+Build from the repository root so that npm can use the workspace lockfile:
 
 ```powershell
-docker compose -f observability/docker-compose.yml down
+docker build -f backend/Dockerfile -t eki-backend .
 ```
 
-The included stack is for local diagnosis and uses in-memory trace storage;
-metrics and logs are printed by the local Collector's debug exporter. Point the
-same OTLP variables at Grafana Cloud, Alloy, or another persistent Collector in
-deployed environments. Grafana's complete authorization header belongs in a
-secret manager, never source control. Set `OTEL_SDK_DISABLED=true` to disable
-all three signals immediately.
+| Property | Value |
+|---|---|
+| Base image | `node:24.21.0-alpine3.23`, pinned by digest, for both build and runtime stages |
+| Contents | Compiled `dist/`, production dependencies only; npm and npx are removed from the runtime stage |
+| Environment | `NODE_ENV=production`, `PORT=8080` |
+| Port | `8080` |
+| User | `nodejs` (UID 1001, GID 1001), not root |
+| Health check | `wget -qO- http://127.0.0.1:8080/live` every 30 s, 5 s timeout, 15 s start period, 3 retries |
+| Command | `node dist/bootstrap.js` |
 
-Provision a device only after bus and route records exist:
+`.dockerignore` excludes `.env` files, so supply configuration and credentials at run time. The CI job `backend-image` builds this image on every push, boots it with placeholder settings, expects `/live` to return 200 and `/health` to return 503 with `degraded`, and scans it for critical and high vulnerabilities.
 
-```powershell
-npm run provision-device --workspace=backend -- `
-  --device-id device_01 --bus-id bus_01 --route-id route_01
-```
+## 9. Deployment and exposure
 
-This transaction rejects duplicate assignment/active ride/active bus lock, generates a random secret, stores only its salted scrypt verifier, and prints the plaintext once. Each flag needs its own value; a value starting with `--` is rejected as missing rather than provisioned as an ID.
+No workflow deploys the backend. The deploy workflow publishes the web app to Firebase Hosting and deploys Firestore indexes and the Firestore and RTDB security rules. Before it releases, it runs `npm run verify:web-backend-contract` against the origin in `NEXT_PUBLIC_BACKEND_URL` and stops unless `/health` returns `ok` and the backend accepts the Hosting origin in CORS, including the preflight of an authenticated request. Firebase Hosting has no rewrite to the backend.
 
-See [API reference](API.md), [LLD](../design/LOW_LEVEL_DESIGN.md), [Firebase model](../data/FIREBASE_DATA_MODEL.md), and [test strategy](../testing/TEST_STRATEGY.md).
+For bench tests and demonstrations the backend runs on a workstation and is reached through a stable ngrok domain. Set `TRUST_PROXY=loopback` in that setup so that each tunnelled client gets its own pre-authentication rate-limit bucket. The procedure is in the [ngrok tunnel runbook](../operations/NGROK_TUNNEL.md). The current state and the proposed move to a hosted container are described in [backend hosting](../operations/CI_CD_AND_RELEASES.md#7-backend-hosting). A hosted deployment needs the items in the [university deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md), including an edge rate limit and `RATE_LIMIT_SHARD_FACTOR` equal to the replica count.
 
-For a first-time setup, role/workflow explanation, environment-variable
-reference, troubleshooting, and the boundary between Hosting deployment and
-backend/runtime deployment, read [Getting started](../GETTING_STARTED.md)
-and [configuration](../CONFIGURATION.md).
+## 10. Related documents
 
-Worker/KDF admission has fixed process-local active, waiting and five-second
-queue-age ceilings. Durable FIFO work and replaceable matching use separate
-pools; rejected lifecycle events trigger bounded authoritative-state replay.
-Admin health exposes anonymous queue counters. See
-[work admission](../operations/WORK_ADMISSION.md) for limits, recovery,
-uncertain-commit safety and the synthetic memory acceptance command.
-
-[Telemetry deadlines](../operations/TELEMETRY_DEADLINES.md) define bounded
-service responses/dependency stages, per-device execution and unknown-commit
-retry behavior. A timed-out dispatched SDK call keeps its slot until settlement.
-
-Durable preview/fleet work has bounded admission/execution and persisted progress.
-After an executor crash, use paginated discovery and the audited recovery APIs in
-[operation resources](../api/OPERATION_RESOURCES.md). Verify the previous
-executor stopped; unknown billable/Auth work is never automatically replayed.
-The emulator suite kills a disposable child after a real claim/effect commit.
-
-Reconciliation and per-bus guards/repairs visit all document-ID pages of 100 with bounded pipelines and targeted RTDB reads. Workers persist fenced page checkpoints; all fleet Auth-changing paths share a durable recovery mutex. See [continuation and recovery](../operations/RECONCILIATION.md); actual Auth/replica/latency acceptance remains staged.
-
-Passenger account deletion preserves feedback, passenger ride entries and messages unchanged while removing the profile and Auth account. The worker scans every minute, drains account-owned message rate limits in bounded chunks, preserves resubmission history and exposes admin recovery for failed/interrupted claims. Acceptance is not completion; there is no routine admin approval or multi-day waiting period. See [account deletion](../operations/PRIVACY_DELETION.md); live Auth, staging indexes and concurrent-client quiescence remain acceptance gates.
-
-Live matching and pending directions share a watcher-populated, versioned read-only route catalog, with bounded LRU entries and coalesced monotonic freshness reads. Telemetry never repairs missing configured geometry through Google. See [route catalog](../operations/ROUTE_CATALOG.md) for edit/deletion fences, uncertain direction commits and staging limits.
-
-A pending ride can recover a missed stopped-endpoint fix using at least three credible moving fixes spanning 30 metres on an unambiguous first route leg. Proof is bounded and scoped to bus, session and route configuration; poor-quality fixes clear it. Both independently directed roads are tested, and exactly one must qualify. The normal durable direction/lock transaction and ordered stop engine still own progress. Starts beyond an unobserved intermediate stop, ambiguous loops and insufficient evidence stay pending rather than fabricating service history; return to an endpoint to establish a fresh direction. This does not migrate an already running ride after a route edit or establish physical field acceptance.
-
-Passenger geometry reads are cached and read-only; explicit versioned admin saves perform legacy repair through bounded computation. See [geometry read/repair contract](../operations/ROUTE_GEOMETRY_READS.md) for fixed bounds, independent quotas and staging limits.
-
-Route matching limits warm projections by the existing physical progress window; missing continuity keeps full reacquisition. Stale presence scans use timestamp-indexed pages of 25 and four fenced writes at a time. Cold lifecycle recovery starts explicitly with the existing paginated queue admission. See [matching and lifecycle scan measurements](../operations/MATCHING_AND_LIFECYCLE_SCANS.md) for evidence and the rules-before-backend rollout gate.
-
-Authenticated analytics/catalog/live HTTP reads now coalesce within fixed work and memory budgets. Optional full-count analytics uses idempotent native read-time aggregation; sampled responses and legacy adapters remain supported. See [API reads and retirement](../operations/API_READS_AND_RETIREMENT.md) for paging, cache freshness, assignment revocation, measurements and caller evidence.
+| Topic | Document |
+|---|---|
+| HTTP operations | [API.md](API.md) |
+| Contract validation and compatibility | [HTTP contract](../api/HTTP_CONTRACT.md), [resource migration](API_RESOURCE_MIGRATION.md) |
+| Security design | [Security architecture](../security/SECURITY_ARCHITECTURE.md), [browser API security](../security/BROWSER_API_SECURITY.md) |
+| Data written by the backend | [Firebase data model](../data/FIREBASE_DATA_MODEL.md) |
+| Bounded work queues | [Work admission](../operations/WORK_ADMISSION.md), [telemetry deadlines](../operations/TELEMETRY_DEADLINES.md) |
+| Background jobs | [Reconciliation](../operations/RECONCILIATION.md), [privacy deletion](../operations/PRIVACY_DELETION.md), [RTDB retention](../operations/RTDB_RETENTION.md) |
+| Route reads | [Route catalog](../operations/ROUTE_CATALOG.md), [route geometry reads](../operations/ROUTE_GEOMETRY_READS.md), [API reads](../operations/API_READS_AND_RETIREMENT.md) |
+| Tests | [Test strategy](../testing/TEST_STRATEGY.md) |

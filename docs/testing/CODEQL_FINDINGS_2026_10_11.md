@@ -1,5 +1,9 @@
 # First CodeQL findings review
 
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-009 | 1.0 | Historical | 2026-10-11 |
+
 Reviewed the seven open findings produced by PR #297 at `fcf2507`. A successful
 analysis job means the scan ran; it does not mean there were no findings.
 

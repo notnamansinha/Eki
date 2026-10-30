@@ -1,156 +1,103 @@
-# University handover checklist
+# University Deployment Checklist
 
-Last updated: 2026-10-05 (Asia/Kolkata).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-006 | 1.0 | Current | 2026-10-30 |
 
-This document separates university-owned production work from the student's
-local professor demonstration.
+## 1. Purpose
 
-## Infrastructure and ownership
+This checklist lists what a university release of Eki needs beyond the repository: named owners, infrastructure, release controls, device provisioning, data protection and the witnessed acceptance test. The repository's automated verification is described in [CI, deployment and releases](CI_CD_AND_RELEASES.md); open risks are in the [risk register](ARCHITECTURE_RISK_REGISTER.md). A student demonstration follows the [live demo runbook](LIVE_DEMO_RUNBOOK.md) and does not satisfy this checklist.
 
-- [ ] Name owners for Firebase/GCP billing, backend runtime, DNS/TLS, maps
-  quotas, incident response, privacy, hardware, and driver onboarding.
-- [ ] Provide production Firebase projects, approved regions, budgets, quota
-  alerts, backup/export schedules, and separate staging/production data.
-- [ ] Run at least two backend replicas behind university-managed HTTPS, a
-  load balancer/WAF, edge rate limits, health checks, and restricted
-  administration. Set `RATE_LIMIT_SHARD_FACTOR` on every instance to the
-  deployed replica count so the in-memory rate limiters enforce the same
-  aggregate budget as one instance. The count must not exceed the smallest
-  in-process budget (currently 10/minute); use a shared distributed limiter
-  beyond that scale. The WAF provides the authoritative global cap (issue #28).
-  Configure the load balancer to fail over on non-200
-  `/health` (`/health` returns 200 only while both Firestore and RTDB probes
-  are fresh and pass; RTDB must return a true connected snapshot). Configure
-  container restart/liveness probes on `/live`, which stays 200 while Firebase
-  is degraded. Do not restart healthy processes merely because a dependency
-  is unavailable. The Firestore worker lease keeps lifecycle work single-leader across
-  replicas, so failover must not duplicate lifecycle transitions.
-- [ ] Use Workload Identity or Secret Manager for server credentials; never
-  store service-account JSON or secrets in the repository or firmware build
-  logs.
-- [ ] Set exact `CORS_ORIGIN`, `FIREBASE_DATABASE_URL`,
-  `GOOGLE_MAPS_API_KEY`, `AUTH_REVOCATION_CACHE_MS`, retention values, and
-  worker settings.
-- [ ] For an RTDB migration, set both backend/frontend database URL variables
-  in the controlled shell, set `RTDB_EXPECTED_REGION`, and run
-  `npm run verify:rtdb-instance` before either deployment. Follow the
-  [RTDB region decision and rollback plan](../design/RTDB_REGION_LATENCY_DECISION.md).
-- [ ] Disable App Check enforcement on Firestore and Realtime Database in both
-  projects before publishing this browser. The deploy workflow applies and
-  verifies UNENFORCED mode. Security Rules retain Firebase Authentication
-  identity and role authorization; the Admin SDK backend is unaffected.
+Each item is complete only when its evidence is recorded in the release evidence (see [release evidence](CI_CD_AND_RELEASES.md#11-release-evidence)).
 
-## Staging and deployment pipeline
+## 2. Release ownership
 
-- [ ] Confirm the approved staging Firebase project configured in `.firebaserc`
-  and the deploy workflow. Provision a separate university-owned production project before
-  enabling the manual production deploy job.
-- [ ] Configure the `staging` and `production` GitHub environments with
-  `FIREBASE_TOKEN` plus all `NEXT_PUBLIC_*` build variables listed in
-  `.github/workflows/deploy.yml`.
-- [ ] `.firebaserc` and the staging job target the same explicitly approved
-  staging project. Production deploys remain disabled until a separate
-  production project replaces the placeholder target behind the protected
-  `production` environment. Record actual project IDs only in the private
-  university handover record.
-- [ ] Verify the `Deploy` workflow promotes main to staging automatically after
-  a green `Production verification` run, and that staging smoke checks (rules,
-  hosting headers, Auth and role checks) pass before any production dispatch.
-- [ ] Deploy and monitor the committed `firestore.indexes.json`; retention and
-  privacy deletion depend on those indexes.
-- [ ] Deploy `activeBuses/.indexOn: timestamp` from `database.rules.json`
-  before activating indexed stale scans. Verify the deployed instance and run
-  the [matching/lifecycle scan acceptance](MATCHING_AND_LIFECYCLE_SCANS.md),
-  including timestamp ties, session reuse, leader restart and stale backlogs.
-- [ ] Ensure exactly one healthy worker lease owner processes lifecycle,
-  stale-state, and retention jobs. The Firestore lease is safe at any replica
-  count, so this is about observing the lease, not limiting replicas.
-- [ ] Alert on `/health` readiness, rejected telemetry, credential-cache rate,
-  device-to-server/processing/RTDB-write p95/p99, watchdog reset reports and
-  worker lease churn. Define targets from a real route load test.
+| Area | Owner role | Evidence of completion |
+|---|---|---|
+| Firebase and Google Cloud billing, projects and quotas | Platform owner | Project IDs (recorded privately), budgets and alerts ([cost model](../cost/COST_MODEL.md)) |
+| Backend runtime, DNS and TLS | Platform owner | Runtime manifest, health checks, certificates ([DNS and domains](DNS_AND_DOMAINS.md)) |
+| Release approval | Release manager | Approved `production` environment run |
+| Maps keys and quotas | Platform owner | Key restrictions and quota alerts |
+| Incident response | Operations lead | Contact list and drill record |
+| Privacy and retention | Data protection officer | Written approval |
+| Devices and installation | Hardware owner | Provisioning records, installation records per bus |
+| Operator and driver onboarding | Transport office | Accounts and assignments |
 
-## Identity and device provisioning
+- [ ] Every owner role above is filled by a named person.
 
-- [ ] Maintain approved passenger/admin accounts and immutable role claims;
-  immediately revoke departed or reassigned staff. Keep operator assignments as
-  admin-managed fleet records rather than a separate web workspace.
-- [ ] Create one random device secret per ESP32 and store only its salted
-  verifier in Firestore.
-- [ ] Bind every device to one approved bus and route; document rotation,
-  disablement, lost-device, and reassignment procedures.
-- [ ] Restrict the browser Maps key by HTTPS referrer and API; restrict the
-  server key by runtime identity/IP and Routes/Places APIs.
-- [ ] Complete the witnessed
-  [ESP32 fleet security and provisioning](HARDWARE_SECURITY_PROVISIONING.md)
-  procedure on spare ECO3-or-newer hardware before fleet rollout. Archive
-  first-boot evidence that Secure Boot V2 and release-mode flash encryption are
-  active; these eFuse operations are irreversible.
-- [ ] Confirm every fleet artifact was built with `esp32dev-secure`; development
-  firmware is never installed in a vehicle. Verify the runtime hard gate and
-  remote diagnostic both report flash encryption and Secure Boot active.
-- [ ] Build each device-specific configuration only in the controlled signing
-  environment, protect/delete plaintext `secrets.h` and unencrypted artifacts,
-  and demonstrate independent signed-reflash secret rotation, revocation, and
-  lost-device disablement.
-- [ ] Configure immutable HTTPS signed-firmware hosting and all six backend
-  release fields; prove active-ride withholding, wrong-key/digest rejection,
-  healthy confirmation and five-minute automatic rollback on spare boards.
+## 3. Infrastructure
 
-## Data protection and safety
+- [ ] Provide separate staging and production Firebase projects with approved regions, budgets, quota alerts and scheduled backups or exports. Today only `bustrack-be165` exists; it receives every green push to `main` and serves field tests. `eki-production` is named in the Deploy workflow but not provisioned.
+- [ ] Run the backend on a managed runtime under university HTTPS, not on a workstation behind a tunnel ([proposal](CI_CD_AND_RELEASES.md#72-proposed-migration-to-cloud-run)).
+- [ ] Run at least two backend replicas behind a load balancer with a WAF and edge rate limits, or record acceptance of a single instance. The WAF is the authoritative global rate cap.
+- [ ] Set `RATE_LIMIT_SHARD_FACTOR` on every instance to the replica count, so the in-memory limiters together enforce one instance's budget. The count must not exceed the smallest limiter budget (10 requests per minute, route computation); beyond that, use a shared limiter. Keep `HTTPS_DEVICE_RATE_LIMIT_MODE=distributed`.
+- [ ] Set `TRUST_PROXY` to the number of reverse proxies in front of the backend (unset means one in production), so rate limits key on the real client address.
+- [ ] Point load balancer readiness at `/health`, which returns `200` only while the Firestore and RTDB probes pass. Point restart or liveness probes at `/live`, which stays `200` while the process runs. Do not restart a healthy process because a dependency is down.
+- [ ] Use Workload Identity or Secret Manager for server credentials. Keep service-account JSON out of the repository, images and build logs.
+- [ ] Set the production runtime values: `NODE_ENV=production`, exact `CORS_ORIGIN`, `FIREBASE_DATABASE_URL`, `GOOGLE_MAPS_API_KEY`, `AUTH_REVOCATION_CACHE_MS`, the worker settings and the approved retention values. Production startup fails without `CORS_ORIGIN` and without `RETENTION_SWEEPER_ENABLED=true` ([configuration](../CONFIGURATION.md)).
+- [ ] Before moving RTDB to another instance or region, set both database URL variables and `RTDB_EXPECTED_REGION`, run `npm run verify:rtdb-instance`, and follow the [RTDB region decision](../design/RTDB_REGION_LATENCY_DECISION.md).
 
-- [ ] Obtain privacy/legal approval for location purpose, notice, access,
-  retention, deletion, incident response, and completed-trip reporting.
-- [ ] Verify Firestore/RTDB rules in emulators and production; `devices`,
-  `active_rides`, `_active_bus_locks`, internal worker/privacy collections, and
-  telemetry writes must remain server-only.
-- [ ] Confirm the strict production build (`npm run build:production`) runs in
-  CI with the fail-closed env gate and CSP regeneration (issue #39 D1), and
-  that the API fails closed without `CORS_ORIGIN` in production (issue #39 D6).
-- [ ] Verify the deployed service worker contains no authenticated/default
-  runtime cache and that account switching on a shared device cannot replay
-  the prior account's data.
-- [ ] Monitor rejected device authentication, rate limits, stale devices,
-  worker lease loss, backend errors, Firebase usage, and Maps cost.
-- [ ] Use fused automotive power conversion, safe antenna placement, protected
-  wiring, and maintenance records for each bus.
-- [ ] Prohibit drivers from operating the web app or laptop while the vehicle
-  is moving.
+## 4. Release pipeline
 
-## Acceptance test
+- [ ] Create the GitHub `production` environment with required reviewers and its secrets (`FIREBASE_TOKEN`, `FIREBASE_DATABASE_URL` and the ten `NEXT_PUBLIC_*` values in `.github/workflows/deploy.yml`) before the first production dispatch. On 2026-10-30 the environment does not exist.
+- [ ] If the production project ID differs from `eki-production`, change the workflow's project and frontend origin through a reviewed pull request.
+- [ ] Add `NEXT_PUBLIC_SITE_URL` (and `NEXT_PUBLIC_SITE_INDEXING` for non-production builds) to the Deploy build step; it is not passed today.
+- [ ] Decide whether the `main` ruleset requires the Production verification jobs as status checks; today it requires reviews only.
+- [ ] Point the scheduled QA workflows at the branch that receives merges ([OPS-02](ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-tests-a-stale-branch)).
+- [ ] Confirm that a green push to `main` deploys to staging and that staging checks (Hosting headers, sign-in, role checks, rules) pass before any production dispatch.
+- [ ] Confirm that the Deploy run's App Check step reports `UNENFORCED` for Firestore and RTDB. The web app does not use App Check; Security Rules and backend authorization carry identity and role checks.
+- [ ] Deploy `firestore.indexes.json` and confirm the readiness gate ([Firestore index deployment](FIRESTORE_INDEX_DEPLOYMENT.md)). Deploy the RTDB `activeBuses` `.indexOn` before relying on indexed stale scans, and run the [matching and lifecycle scan acceptance](MATCHING_AND_LIFECYCLE_SCANS.md).
+- [ ] Confirm exactly one worker lease owner runs lifecycle, stale-state and retention work ([worker leadership](WORKER_LEADERSHIP.md)).
+- [ ] Alert on `/health` readiness, rejected telemetry, credential cache rate, device-to-server, processing and RTDB-write p95 and p99, device watchdog resets and lease changes. Set targets from a load test on the real route ([telemetry ingestion load test](TELEMETRY_INGESTION_LOAD_TEST.md)).
 
-University acceptance is complete only after an authorized team observes:
+## 5. Identity and devices
 
-- [ ] Successful execution of `npm run verify` to confirm linting, unit tests, and production bundle generation.
-- [ ] Correct passenger/admin authorization and admin-managed operator assignment.
-- [ ] Fresh GNSS positions appear on all panels at measured acceptable latency.
-- [ ] Stop 1 alone activates a pre-armed ride.
-- [ ] Stops advance strictly in configured order; downstream visits cannot
-  skip an expected stop.
-- [ ] Parallel start requests on two routes for one bus produce exactly one
-  active session/lock; delayed completion from an old session cannot affect a
-  newly armed ride.
-- [ ] ESP power loss, network loss, GNSS loss, browser refresh, and backend
-  restart preserve the active session and recover its stop index.
-- [ ] With browser throttling set to Slow 3G (about 400 ms RTT) and then
-  Offline, passenger and admin views show reconnecting status, clear
-  stale live positions, and recover after connectivity returns.
-- [ ] While a production tab stays open, returning to it triggers a service
-  worker update check; an activated update reloads once onto matching assets.
-- [ ] Only the final ordered stop completes the ride.
-- [ ] Disabled/bad device credentials, malformed/stale payloads, and browser
-  write attempts are rejected.
-- [ ] Alerts, backups, credential rotation, and rollback are demonstrated.
+- [ ] Maintain approved passenger and administrator accounts with backend-published role claims; revoke departed or reassigned staff at once ([privileged database authorization](../security/PRIVILEGED_DATABASE_AUTHORIZATION.md)). Operator assignments are fleet records managed by administrators.
+- [ ] Give each ESP32 its own random secret with `npm run provision-device --workspace=backend`; Firestore stores only its salted verifier.
+- [ ] Bind each device to one bus and route. Document rotation, disablement (`POST /api/devices/<device-id>/disable`), lost-device and reassignment procedures.
+- [ ] Restrict the browser Maps key by HTTPS referrer and API, and the server key by runtime identity or source address and the Routes and Places APIs.
+- [ ] Complete [hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md) on spare ECO3 or newer boards before fleet rollout, with first-boot evidence that Secure Boot V2 and release-mode flash encryption are active. The eFuse operations are irreversible.
+- [ ] Build every vehicle image with `esp32dev-secure` in the controlled signing environment; never install development firmware in a vehicle. Confirm the runtime gate and the remote diagnostic report Secure Boot and flash encryption active.
+- [ ] Protect or delete plaintext `secrets.h` files and unencrypted artifacts; demonstrate secret rotation, revocation and lost-device disablement.
+- [ ] Configure immutable HTTPS hosting for signed firmware and all six `FIRMWARE_RELEASE_*` backend values; prove withholding during an active ride, rejection of a wrong key or digest, healthy confirmation and automatic rollback on spare boards.
 
-Record test date, route, firmware version, application commit, participants,
-measured latency, failures, evidence links, accepted risks, and signatures.
+## 6. Data protection and safety
 
-## Student handover package
+- [ ] Obtain privacy and legal approval for location purpose, notice, access, retention, deletion, incident response and completed-trip reporting. The default retention is 180 days for ride sessions, feedback and completed trips and 90 days for operation logs.
+- [ ] Record the staging evidence that [privacy deletion](PRIVACY_DELETION.md) lists: deployed collection-group indexes, real Auth failure and revocation outcomes, process supervision, replica and console quiescence, and backup erasure.
+- [ ] Decide on the residual boarding risk ([SEC-01](ARCHITECTURE_RISK_REGISTER.md#31-sec-01-passengers-can-join-a-ride-without-proof-of-presence)).
+- [ ] Verify Firestore and RTDB rules in the emulator (CI) and in production: `devices`, `active_rides`, `_active_bus_locks`, internal collections and live telemetry are server-only; `feedbacks` and `feedbackCooldowns` are the only client-written collections.
+- [ ] Verify that the deployed service worker has no authenticated or default runtime cache, and that switching accounts on a shared device does not show the previous account's data.
+- [ ] Monitor rejected device authentication, rate limits, stale devices, lease loss, backend errors, Firebase usage and Maps cost.
+- [ ] Install each device with fused automotive power conversion, safe antenna placement and protected wiring; keep maintenance records per bus.
+- [ ] Prohibit drivers from operating the web app or a laptop while the vehicle moves.
 
-- [ ] Source repository and verified commit identifier.
-- [ ] Build/test/firmware logs and dependency audit results.
-- [ ] Architecture, API, storage, and live-demo documents.
-- [ ] Non-secret bus/route/device inventory and wiring diagram.
-- [ ] Open-risk list. Never request committed `.env`, service-account JSON,
-  signing keys, device secrets, firmware binaries, or App Check debug tokens.
-- [ ] HLD, LLD, exhaustive Firebase dictionary, hardware latency analysis,
-  API reference and test/failure matrix from the documentation index.
+## 7. Acceptance test
+
+University acceptance is complete only when an authorised team observes and records every item below on the release candidate:
+
+- [ ] `npm run verify` passes and the Production verification run for the commit is green.
+- [ ] Passenger and administrator authorization behave as specified, and operator assignment is managed by administrators.
+- [ ] Fresh GNSS positions appear on every view within the measured latency target ([telemetry latency baseline](TELEMETRY_LATENCY_BASELINE.md)).
+- [ ] A qualified fix starts the service with no operator action; the ride enters `In Service` only after the bus leaves stop 1 ([automatic GNSS service](AUTOMATIC_GNSS_SERVICE.md)).
+- [ ] Stops advance in route order. A missed stop shows `Passed · not confirmed`, and stops passed during a GNSS gap are recorded as skipped, never as arrivals.
+- [ ] Stop arrivals on the real route, including the divided-road U-turn, match an independent position reference ([TRK-01](ARCHITECTURE_RISK_REGISTER.md#37-trk-01-stop-progress-is-validated-on-simulated-tracks-only)).
+- [ ] Parallel start requests for one bus produce exactly one session and lock; a delayed completion from an old session cannot affect a newer ride.
+- [ ] Device power loss, network loss, GNSS loss, browser refresh and backend restart keep the session and its stop progress.
+- [ ] With browser throttling at Slow 3G (about 400 ms round-trip time) and then Offline, the passenger and admin views show delayed or lost tracking instead of stale positions as live, and recover when the connection returns.
+- [ ] Returning to an open production tab triggers a service worker update check; an activated update reloads the page once onto matching assets.
+- [ ] Only the final stop completes the ride; the return service starts after the turnaround wait.
+- [ ] `End ride early` records an interrupted ride and pauses the bus; `Resume tracking` restarts it.
+- [ ] Disabled or wrong device credentials, malformed or stale payloads and browser write attempts are rejected.
+- [ ] Alerts, backups, credential rotation and rollback are demonstrated.
+
+Record the date, route, firmware version and image hash, application commit, participants, measured latency, failures, evidence links, accepted risks and signatures.
+
+## 8. Handover package
+
+- [ ] Source repository and the verified commit.
+- [ ] Build, test, firmware and dependency audit outputs, and the SBOM from the release run.
+- [ ] The documentation set listed in the [documentation index](../README.md), including architecture, API, data model, test strategy and these operations documents.
+- [ ] Non-secret inventory of buses, routes and devices, and the wiring diagram.
+- [ ] The current risk register with owner decisions.
+- [ ] Never request or hand over committed `.env` files, service-account JSON, signing keys, device secrets or firmware binaries containing credentials.

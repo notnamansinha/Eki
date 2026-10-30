@@ -1,115 +1,95 @@
-# Telemetry ingestion load test
+# Telemetry Ingestion Load Test
 
-Last updated: 2026-10-04 14:20 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-024 | 1.0 | Current | 2026-10-30 |
 
-Use this staging-only procedure to compare request acknowledgement latency and
-rate-limit transaction contention before and after the token-lease change. The
-load writes valid stopped telemetry into every configured device's live bus
-node, so never point it at production.
+## 1. Purpose
 
-## Contract under test
+This procedure measures telemetry acknowledgement latency and device rate-limit contention on a staging deployment, so that two revisions or two rate-limit lease sizes can be compared. The load writes valid stopped telemetry into the live record of every listed device. Never point it at production.
 
-The pre-auth IP limiter remains process-local and sharded by the configured
-replica count. After device authentication and assignment validation:
+### 1.1 Rate-limit contract under test
 
-- `distributed` mode reserves up to
-  `HTTPS_DEVICE_RATE_LIMIT_LEASE_SIZE` tokens in one RTDB transaction and
-  consumes them locally. The RTDB count is the fleet-wide upper bound across
-  replicas. Lost or unused leases can reduce capacity until the fixed minute
-  ends but cannot increase it.
-- `local` mode performs no rate-limit database operation. Startup accepts it
-  only when both `HTTPS_DEVICE_RATE_LIMIT_MODE=local` and the explicit
-  `RATE_LIMIT_SHARD_FACTOR=1` are present.
-- A 202 acknowledgement follows a committed ordered transaction on
-  `activeBuses/{busId}_{routeId}`. A 200 acknowledgement is a safe duplicate.
-  Route matching and lifecycle repair run after that durable acceptance point.
+After device authentication and assignment checks, each device may make `HTTPS_DEVICE_RATE_PER_MINUTE` accepted requests per fixed minute (default 90).
 
-Raw telemetry and matched-route writers both transact on the same live node.
-The raw writer rejects older capture-time/sequence pairs and spreads current
-lifecycle and match fields into its result. The matcher commits only when the
-raw timestamp and sequence it processed are still current, then spreads the
-latest lifecycle state. Concurrent callbacks therefore retry against current
-state instead of replacing newer telemetry or ride progress.
+- In `distributed` mode (the default) a replica reserves up to `HTTPS_DEVICE_RATE_LIMIT_LEASE_SIZE` tokens (default 5) in one RTDB transaction on `_deviceRateLimits/{deviceId}` and spends them locally. The RTDB count is the fleet-wide ceiling: a lost or unused lease can reduce capacity until the minute ends but never increase it.
+- In `local` mode no database operation is made. The backend starts in this mode only when `HTTPS_DEVICE_RATE_LIMIT_MODE=local` and `RATE_LIMIT_SHARD_FACTOR=1` are both set explicitly.
 
-## Prepare staging
+A 202 acknowledgement follows a committed, ordered transaction on `activeBuses/{busId}_{routeId}`; a 200 means the sample was not newer than the stored one. Route matching and lifecycle repair run after that point. The raw telemetry writer and the matcher both use transactions on the same node: the writer rejects older capture time and sequence pairs, and the matcher commits only while the sample it processed is still current, so concurrent callbacks retry against current state instead of replacing newer data. Request deadlines are described in [telemetry deadlines](TELEMETRY_DEADLINES.md).
 
-Deploy the baseline and candidate to equivalent staging revisions with the
-expected production replica count. Set `RATE_LIMIT_SHARD_FACTOR` correctly on
-every replica. Use `distributed` mode for a replicated deployment. Keep the
-same Firebase region, runtime size, minimum instances, and load-balancer route
-for both revisions.
+## 2. Prerequisites
 
-Create a private JSON file outside the repository with 1–500 staging devices.
-Each device must already have a valid registry assignment and secret:
+- Two equivalent staging revisions (baseline and candidate) with the expected production replica count, the same Firebase region, runtime size, minimum instances and load-balancer route. `RATE_LIMIT_SHARD_FACTOR` equals the replica count on every replica, and replicated deployments use `distributed` mode.
+- The load generator sends from one IP address. Set `HTTPS_INGRESS_DEVICES_PER_IP` on staging to at least the number of load devices; otherwise the per-IP ingress limiter (15 requests per device per 10 s, divided by the shard factor) answers with 429 and the run measures that limiter instead.
+- A private JSON file outside the repository listing 1 to 500 staging devices, each already provisioned with a registry assignment and secret:
 
-```json
-[
-  {
-    "deviceId": "load_device_001",
-    "secret": "replace-with-a-staging-secret",
-    "lat": 23.034,
-    "lng": 72.55
-  }
-]
-```
+  ```json
+  [
+    {
+      "deviceId": "load_device_001",
+      "secret": "<staging-device-secret>",
+      "lat": 23.034,
+      "lng": 72.55
+    }
+  ]
+  ```
 
-Use an ephemeral admin Firebase ID token to capture `/api/health` immediately
-before and after the run. Keep it in the process environment rather than the
-command or report:
+- An ephemeral Firebase ID token for a staging administrator, to capture `GET /api/health` before and after each run. Health counters are per process: pin the health requests to the tested replica, or capture every replica separately when the load balancer has no affinity.
 
-```powershell
-$env:EKI_BENCHMARK_ADMIN_TOKEN = "<ephemeral-staging-admin-token>"
-```
+## 3. Steps
 
-Health counters are process-local. Pin the health requests to the tested
-replica or capture every replica separately when the load balancer does not
-provide affinity.
+1. Store the admin token in the process environment, not in the command line or the report:
 
-## Run the comparison
+   ```powershell
+   $env:EKI_BENCHMARK_ADMIN_TOKEN = "<ephemeral-staging-admin-token>"
+   ```
 
-Use the expected active fleet size and cadence. Repeat each revision at least
-three times after a warm-up run. The explicit flag is a guard against an
-accidental production invocation:
+   Expected result: the variable is set in the current PowerShell session only.
+2. Run one warm-up run against the candidate, then at least three measured runs, using the expected fleet size and cadence. `--confirm-staging` is required:
 
-```powershell
-npm run telemetry:load -- `
-  --confirm-staging `
-  --base-url https://candidate-staging.example.edu `
-  --devices C:\private\eki-load-devices.json `
-  --seconds 60 `
-  --rate-per-device 1 `
-  --out candidate-run-1.json
-```
+   ```powershell
+   npm run telemetry:load -- `
+     --confirm-staging `
+     --base-url https://candidate-staging.example.edu `
+     --devices C:\private\eki-load-devices.json `
+     --seconds 60 `
+     --rate-per-device 1 `
+     --out candidate-run-1.json
+   ```
 
-Run the same command against the baseline revision. Clear the token afterward:
+   `--base-url` must be an HTTPS origin without path, query or credentials (`http://localhost` and `http://127.0.0.1` are also accepted). `--seconds` accepts 1 to 600 and `--rate-per-device` accepts more than 0 and at most 5 requests per second; above 1.5 requests per second a device exceeds the default 90 per minute and receives 429.
+   Expected result: `Wrote candidate-run-1.json`, with mostly 202 responses.
+3. Repeat step 2 against the baseline revision with the same arguments and a different `--out` file.
+   Expected result: one report per run for each revision.
+4. Clear the token:
 
-```powershell
-Remove-Item Env:EKI_BENCHMARK_ADMIN_TOKEN
-```
+   ```powershell
+   Remove-Item Env:EKI_BENCHMARK_ADMIN_TOKEN
+   ```
 
-The report excludes device secrets and coordinates. It includes HTTP status
-counts, acknowledgement latency p50/p95/p99/max, before/after health snapshots,
-and deltas for local decisions, lease hits, shared-store transactions, and
-transaction retries. Archive reports with commit, deployment identity, region,
-replica count, fleet size, cadence, and test time. Never archive the private
-device input file with the report.
+## 4. Analysis
 
-## Acceptance record
+Each report contains status counts, acknowledgement latency (samples, average, p50, p95, p99 and maximum) overall and per status, the before and after health snapshots, and the deltas of the rate-limit counters `localDecisions`, `leaseHits`, `storeTransactions` and `storeTransactionRetries`. It contains no device secrets or coordinates. Read live record write latency from `telemetry.rtdbWriteLatencyMs` in the health snapshots.
+
+Record the results in this table:
 
 | Item | Baseline | Candidate |
 |---|---:|---:|
-| Commit/deployment | | |
+| Commit and deployment | | |
 | Replica count and region | | |
-| Devices × requests/second | | |
+| Devices and requests per second | | |
 | HTTP 202 / 200 / 429 / 5xx | | |
 | Acknowledgement p50 | | |
 | Acknowledgement p95 | | |
 | Acknowledgement p99 | | |
-| Rate-limit store transactions | One per authenticated request | |
+| Rate-limit store transactions | | |
 | Rate-limit transaction retries | | |
-| Live-node write p50/p95/p99 | | |
+| Live record write p50 / p95 / p99 | | |
 
-Investigate any 5xx response, accepted count mismatch, ordering regression, or
-lifecycle rollback before selecting a lease size. Do not tune the lease merely
-to improve the transaction count; availability lost to unused reservations is
-part of the decision.
+Investigate any 5xx response, accepted-count mismatch, ordering regression or lifecycle rollback before choosing a lease size. Do not tune the lease only to reduce the transaction count: capacity lost to unused reservations is part of the decision.
+
+## 5. Cleanup
+
+1. Archive each report with the commit, deployment identity, region, replica count, fleet size, cadence and test time. Never archive the private device file with the reports.
+2. The load leaves stopped telemetry in the staging live records. After `BUS_STALE_MS` without telemetry the [stale presence sweep](MATCHING_AND_LIFECYCLE_SCANS.md) removes them, or marks them offline when a ride is active. End any ride the test started from the admin **Live Ops** tab.
+3. Restore `HTTPS_INGRESS_DEVICES_PER_IP` on staging if it was raised for the test.

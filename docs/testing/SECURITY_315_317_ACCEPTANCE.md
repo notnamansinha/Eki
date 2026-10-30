@@ -1,4 +1,8 @@
-# Security issues #315–#317: testing-branch acceptance
+# Security issues #315-#317: testing-branch acceptance
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-052 | 1.0 | Historical | 2026-10-16 |
 
 Baseline: `f1850b9be2f5fdd9dcc4a751fe305094b86b8fda` on `testing`.
 

@@ -1,328 +1,264 @@
-# ESP32 + NEO-M8N tracker
+# ESP32 GNSS Tracker
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-PKG-003 | 1.0 | Current | 2026-10-30 |
 
-The firmware continuously parses NMEA on UART2, captures trusted GNSS state in
-a bounded RTC-memory queue, and publishes it from a separate FreeRTOS task. It
-has no Firebase credential and cannot choose its bus or route.
-Publisher/diagnostic HTTPS uses a one-second bounded DNS caller wait before
-hostname-validated TLS; see [cold-connect ownership and limits](DNS_COLD_CONNECT.md).
-An authenticated encrypted flash checkpoint can restore one committed fix after
-complete power loss. This does not preserve every fix; see the
-[recovery limits and stationary acceptance procedure](COLD_POWER_RECOVERY.md).
+## 1. Purpose
 
-## Before you start
+This guide describes the tracker hardware, the firmware package in `hardware/`, and the procedure to build, flash and check a development tracker. The tracker is an ESP32 board wired to a u-blox NEO-M8N GNSS receiver. The firmware reads NMEA sentences, timestamps each accepted fix with a disciplined UTC clock and posts it over HTTPS to the backend once per second. It holds no Firebase credential and no route, stop, bus or driver data: the backend device registry maps the device to its bus and route.
 
-The tracker is not self-configuring. Prepare the backend, the device registry,
-the network, and the firmware configuration before connecting power.
+| Topic | Authoritative document |
+|---|---|
+| Payload fields, cadence, queue, retries and failure handling | [Hardware telemetry contract](HARDWARE_TELEMETRY.md) |
+| Fleet signing, Secure Boot, flash encryption and OTA releases | [Hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md) |
+| Flash checkpoint after complete power loss | [Cold power recovery](COLD_POWER_RECOVERY.md) |
+| Header files and host tests | [Firmware headers](include/README.md), [firmware tests](test/README.md) |
+| Signing-key custody | [Fleet signing keys](keys/README.md) |
+| Device endpoints on the backend | [Backend API reference](../../backend/API.md) |
 
-### Required software and files
-
-From the repository root, install Node dependencies and PlatformIO. The
-backend must be configured from [`backend/.env.example`](../../backend/.env.example)
-into the ignored `backend/.env`; the frontend is configured separately from
-[`frontend/env.production.example`](../../frontend/env.production.example) when
-you need the browser workspace. Hardware flashing does not require the
-frontend build, but the backend URL must be reachable by the device.
-Use PlatformIO 6.1.19 or a compatible current release, a data-capable USB
-cable, and a stable power source. The secure fleet path additionally requires
-an ESP32 ECO3-or-newer board and the university-controlled RSA-3072 signing key
-at `hardware/keys/secure_boot_signing_key.pem`; that key must exist only in the
-approved signing environment.
-
-```powershell
-npm ci
-py -m pip install --upgrade platformio
-Copy-Item backend/.env.example backend/.env
-Copy-Item hardware/include/secrets.example.h hardware/include/secrets.h
+```mermaid
+flowchart LR
+  ANT["GNSS antenna"] --> GNSS["NEO-M8N receiver"]
+  GNSS -- "NMEA on UART2, 9,600 baud" --> LOOP["ESP32 loop task: parse NMEA, evaluate every 1 s"]
+  LOOP --> QUEUE["RTC memory queue, 100 samples"]
+  QUEUE --> PUB["Publisher task"]
+  PUB -- "HTTPS POST, Authorization: Device secret" --> API["Backend telemetry endpoint"]
+  API --> RTDB["Realtime Database live bus node"]
 ```
 
-For a laptop test, set backend `NODE_ENV=development`, `PORT=4000`, the frontend
-origins in `CORS_ORIGIN`, and keep `RETENTION_SWEEPER_ENABLED=false`. The copied
-template uses production mode/port and requires an explicit production retention
-override. Follow [local setup](../GETTING_STARTED.md#local-development).
+Figure 1. Data path from the receiver to the backend.
 
-For the backend, set Firebase Admin credentials or ADC,
-`FIREBASE_DATABASE_URL`, and an appropriate `GOOGLE_MAPS_API_KEY` when routes
-will be seeded or edited. Production also requires exact `CORS_ORIGIN` and an
-HTTPS deployment; see [configuration](../CONFIGURATION.md). Never copy
-real service-account JSON into the repository.
+The loop task owns the UART and the NMEA parser. The publisher task owns Wi-Fi, NTP, TLS and HTTP, so a slow network never stops NMEA parsing.
 
-The device cannot reach a backend configured as `localhost` or
-`127.0.0.1`. For a bench/demo device use a reachable LAN hostname or an
-approved HTTPS tunnel; for fleet use a managed HTTPS DNS name. The issuing CA
-in `BACKEND_ROOT_CA` must match that hostname's certificate.
+## 2. Bill of materials
 
-For the firmware, `hardware/include/secrets.h` must define all six values from
-`secrets.example.h`:
+The repository evidences the components below. Prices are in the [cost model](../cost/COST_MODEL.md).
 
-| Definition | What to enter | Validation and when it changes |
+| Item | Model or part | Quantity | Role |
+|---|---|---|---|
+| ESP32 board | Any board supported by the PlatformIO `esp32dev` board definition with 4 MB flash. Fleet units need ESP32 silicon revision ECO3 (v3.0) or newer, which Secure Boot V2 requires. The vendor board model is not specified in the repository. | 1 | Runs the firmware, Wi-Fi station and status LED |
+| GNSS receiver | u-blox NEO-M8N module | 1 | Supplies NMEA RMC and GGA sentences at 9,600 baud |
+| GNSS antenna | Active antenna with a clear view of the sky. Model not specified in the repository. | 1 | Satellite reception |
+| Vehicle power supply | Fused, automotive-rated 12 V to 5 V buck converter. Model and current rating not specified in the repository. Bench and field tests used USB power. | 1 | Powers the board and receiver |
+| Enclosure and cabling | Protected enclosure with strain relief. Model not specified in the repository. | 1 set | Mechanical protection in the vehicle |
+| USB cable | Data-capable cable for the board's USB connector | 1 | Flashing, serial log and bench power |
+| Status LED | LED on GPIO2, active high. Whether the board provides one is not specified in the repository. | 0 or 1 | Fault codes (Section 8) |
+| Wi-Fi network | 2.4 GHz WPA2-PSK access point or phone hotspot with internet access. Model not specified in the repository. | 1 per vehicle | Uplink to the backend |
+
+## 3. Wiring and pin assignments
+
+| ESP32 pin | Connects to | Firmware setting |
 |---|---|---|
-| `WIFI_SSID` | The 2.4 GHz Wi-Fi/hotspot name | 1–32 characters; changing the network requires a reflash |
-| `WIFI_PASS` | Wi-Fi password | 8–63 printable ASCII characters; changing it requires a reflash |
-| `DEVICE_ID` | The exact provisioned device ID | 1–128 letters, digits, `_` or `-`; changing it requires backend reprovisioning and a reflash |
-| `DEVICE_SECRET` | The one-time secret printed by the backend provisioner | 20–128 letters, digits, `_` or `-`; changing it requires backend rotation/reprovisioning and a reflash |
-| `BACKEND_URL` | Reachable backend origin (development may use HTTP or HTTPS; `esp32dev-secure` fleet builds require `https://`), with no `/api` path, query or credentials | Maximum 256 characters; changing host requires a reflash |
-| `BACKEND_ROOT_CA` | PEM certificate chain that issues the backend certificate | Required and validated for HTTPS; CA rotation requires a reflash |
+| GPIO16 (UART2 RX) | Receiver `TX` | `Serial2.begin(9600, SERIAL_8N1, 16, 17)` in `src/main.cpp`; 8,192-byte receive buffer |
+| GPIO17 (UART2 TX) | Receiver `RX` | Used at boot to send UBX `CFG-MSG` commands |
+| `5V/VIN` | Receiver `VCC` | Connect only if the receiver module accepts 5 V; otherwise use the supply voltage its specification allows |
+| `GND` | Receiver `GND` and supply ground | Common reference |
+| GPIO2 | Status LED | `STATUS_LED_PIN = 2`, high means on |
+| USB (UART0) | Host computer | Serial log at 115,200 baud |
 
-Keep the PEM line breaks as `\n` inside the C++ string. Do not put a Firebase
-API key, service-account credential, bearer token, route ID, bus ID, or private
-signing key in `secrets.h`. The ignored file contains device and Wi-Fi secrets;
-never commit, print, upload, or retain it in an unencrypted artifact.
+```mermaid
+flowchart LR
+  BAT["Vehicle 12 V supply"] --> FUSE["Fuse"] --> BUCK["12 V to 5 V converter"]
+  BUCK -- "5 V" --> VIN["ESP32 5V/VIN"]
+  BUCK -- "receiver supply" --> VCC["NEO-M8N VCC"]
+  TX["NEO-M8N TX"] --> RX2["ESP32 GPIO16"]
+  TX2["ESP32 GPIO17"] --> RXR["NEO-M8N RX"]
+  G2["ESP32 GPIO2"] --> LED["Status LED"]
+```
 
-### Backend and route preparation order
+Figure 2. Power and signal connections. All grounds are common.
 
-Complete these steps before building the device image:
+At boot the firmware sends volatile UBX `CFG-MSG` commands [1] that enable GGA and RMC and disable GLL, GSA, GSV and VTG on the receiver's current port. The serial log prints `[GNSS] CFG-MSG ACK` for each acknowledged command, which confirms both UART directions. The firmware does not change the receiver's baud rate, so the receiver must already output NMEA at 9,600 baud.
 
-1. Start the backend with its environment file and verify reachability with
-   `GET /health` (development may use any reachable origin; production/fleet
-   requires HTTPS).
-2. Create the route and its ordered stops. Use `npm run seed --workspace=backend`
-   for the predefined development routes or the admin route editor for a
-   managed route. Route geometry requires the server Maps key.
-3. Create a bus and assign the route to `assignedRoutes`. Create the driver
-   record/Auth assignment if the route will be operated.
-4. Provision the device against that existing bus/route:
+## 4. Firmware configuration
+
+### 4.1 PlatformIO environments
+
+All environments in `platformio.ini` use `espressif32@7.0.1` (Arduino-ESP32 2.0.17; ESP-IDF 4.4 for the mixed Arduino and ESP-IDF builds), TinyGPSPlus 1.1.0, ArduinoJson 7.4.3 and `monitor_speed = 115200`. Board environments link wrappers around `mbedtls_ssl_config_defaults` and `mbedtls_ecdh_make_public`, which apply the TLS profile in `src/tls_profile.cpp`.
+
+| Environment | Framework | Partition table | Distinguishing settings | Use |
+|---|---|---|---|---|
+| `esp32dev` (default) | Arduino | `partitions_development.csv` | `EKI_FLEET_BUILD=0`, `EKI_FIRMWARE_VERSION="development"`, `DISABLE_OTA` | Bench development. Detailed serial traces are on. Never install this image in a vehicle. |
+| `esp32dev-quiet` | Arduino | `partitions_development.csv` | Adds `EKI_ENABLE_FLEET_TRACES=0` | Same runtime with trace output compiled out |
+| `esp32dev-journal` | Arduino and ESP-IDF | Built with `partitions_development.csv`; only the application image is written | Adds `EKI_LEGACY_JOURNAL_BUILD=1`; `sdkconfig.journal.defaults` disables flash core dumps, Secure Boot and flash encryption | App-only checkpoint acceptance on an older development board ([cold power recovery](COLD_POWER_RECOVERY.md)) |
+| `esp32dev-secure` | Arduino and ESP-IDF | `partitions_secure.csv` | `EKI_FLEET_BUILD=1`, `EKI_FIRMWARE_SEQUENCE=1`, signing key `keys/secure_boot_signing_key.pem`, pre-build check `scripts/verify_secure_fleet.py`, `sdkconfig.defaults` | The only environment for fleet artifacts |
+| `native` | Host, Unity | None | `-std=gnu++11`; DNS test stubs on the include path | Host policy tests without a board |
+
+The firmware does not read `DISABLE_OTA`. Development builds contain no OTA code because `EKI_FLEET_BUILD=0`; the fleet pre-build check rejects `DISABLE_OTA`. Detailed traces default to on when `EKI_FLEET_BUILD=0` and off in fleet builds; set `EKI_ENABLE_FLEET_TRACES=1` for a bounded fleet acceptance capture.
+
+### 4.2 Partition tables
+
+| Layout | Table offset | Application | `gps_log` checkpoint journal | Other partitions |
+|---|---|---|---|---|
+| Development, `partitions_development.csv` | `0x8000` | `app0` at `0x10000`, 3 MiB | `0x310000`, 896 KiB | `nvs` 20 KiB, `otadata`, `coredump` 64 KiB at `0x3F0000` |
+| Fleet, `partitions_secure.csv` | `0x10000` | `ota_0` at `0x20000` and `ota_1` at `0x200000`, 1,966,080 bytes each | `0x3E0000`, 128 KiB, encrypted | `nvs` 24 KiB, `otadata`, `phy_init` |
+
+Arduino-ESP32 2.x initializes the `nvs` system partition during startup. Eki never opens it: the firmware calls `WiFi.persistent(false)` before the Wi-Fi driver starts, and fleet builds disable `CONFIG_ESP32_WIFI_NVS_ENABLED`. The fleet table starts at `0x10000` because the Secure Boot bootloader is larger than the default bootloader region.
+
+### 4.3 Compile-time configuration file
+
+The firmware's only configuration source is the ignored file `include/secrets.h`, copied from the tracked template `include/secrets.example.h`. Device credentials are compiled into the image, so every configuration change needs a new build and a reflash. The firmware validates the six definitions at boot, before it starts networking.
+
+| Definition | Content | Boot validation |
+|---|---|---|
+| `WIFI_SSID` | Wi-Fi network name | 1 to 32 bytes |
+| `WIFI_PASS` | WPA2-PSK passphrase | 8 to 63 printable ASCII characters; open networks are not supported |
+| `DEVICE_ID` | Device ID registered by the provisioning command | 1 to 128 characters from `A-Z`, `a-z`, `0-9`, `_`, `-` |
+| `DEVICE_SECRET` | One-time secret printed by the provisioning command (43 base64url characters) | 20 to 128 characters from the same set |
+| `BACKEND_URL` | Backend origin, for example `https://<backend-host>` | `http://` or `https://`, at most 256 characters, printable ASCII, no path, query, fragment or `@`. Fleet builds accept only `https://`, checked at compile time and at boot. |
+| `BACKEND_ROOT_CA` | PEM root certificate that issues the backend certificate, with line breaks written as `\n` | At most 3,072 bytes with `BEGIN CERTIFICATE` and `END CERTIFICATE` markers. Required for `https://`, ignored for `http://`. |
+
+The template's `DEVICE_SECRET` placeholder is shorter than 20 characters. An unedited copy compiles, flashes and then halts at boot with two LED pulses and the serial line `[Boot] Invalid compile-time configuration field DEVICE_SECRET; halted.`
+
+Do not put Firebase keys, service-account credentials, bearer tokens, bus or route IDs, or signing keys in `secrets.h`. Never commit, print, upload or archive `secrets.h` or an unencrypted firmware image built from it.
+
+## 5. Build, flash and check a development tracker
+
+### 5.1 Prerequisites
+
+- PlatformIO Core 6.2.0, the version CI and `npm run qa:native` require: `py -m pip install platformio==6.2.0`.
+- The board's serial port name, written below as `<port>` (for example `COM5` on Windows).
+- A backend that the tracker's Wi-Fi network reaches by hostname. The tracker cannot reach `localhost` or `127.0.0.1` on a laptop. [Getting started](../GETTING_STARTED.md) and [configuration](../CONFIGURATION.md) cover the backend.
+- For an `https://` backend: the issuing root CA in PEM form, and a backend certificate with an RSA key. The firmware's TLS profile offers only ECDHE-RSA cipher suites with AES-GCM on curve P-256; a server that presents an ECDSA certificate fails the handshake.
+- A route with ordered stops, and a bus whose `assignedRoutes` contains that route.
+
+### 5.2 Steps
+
+Run every command from the repository root.
+
+1. Run the host tests.
 
    ```powershell
-   npm run provision-device --workspace=backend -- `
-     --device-id device_01 --bus-id bus_01 --route-id route_01
+   platformio test --project-dir hardware -e native
    ```
 
-   Capture the printed secret once in the controlled signing environment. The
-   backend stores only a salted verifier and rejects conflicting active rides,
-   locks, or duplicate device assignments.
-5. Put the provisioned `DEVICE_ID` and one-time `DEVICE_SECRET` into the
-   ignored `hardware/include/secrets.h`, together with Wi-Fi, backend origin,
-   and issuing root CA.
+   Expected result: every suite reports `PASSED`. The first run downloads Unity and the pinned libraries into `hardware/.pio/`.
 
-### What is route-specific and what must be flashed
+2. Provision the device in the backend registry.
 
-The firmware does **not** contain route geometry, stops, bus IDs, driver IDs,
-service times, delays, or passenger data. It sends only `DEVICE_ID`, position,
-motion, and timestamp. The backend registry supplies the device's current
-`busId` and `routeId`.
+   ```powershell
+   npm run provision-device --workspace=backend -- --device-id <device-id> --bus-id <bus-id> --route-id <route-id>
+   ```
 
-| Change | Backend action | Reflash required? |
+   Expected result: the command prints `Device provisioned. Copy this secret now; it is not stored in plaintext:` followed by the secret. Copy it once, directly into step 3. The command refuses a bus and route that has an active ride, a bus lock or another device. If it reports that cache invalidation failed twice, the printed secret is still valid: restore Realtime Database connectivity before you rely on the device, and do not rerun the command, because a rerun rotates the secret.
+
+3. Create the configuration file and set all six definitions from Section 4.3.
+
+   ```powershell
+   Copy-Item hardware/include/secrets.example.h hardware/include/secrets.h
+   git check-ignore hardware/include/secrets.h
+   ```
+
+   Expected result: `git check-ignore` prints `hardware/include/secrets.h`, which confirms Git ignores the file.
+
+4. Build the development image.
+
+   ```powershell
+   platformio run --project-dir hardware -e esp32dev
+   ```
+
+   Expected result: `SUCCESS` and the image `hardware/.pio/build/esp32dev/firmware.bin`. The build does not check the values in `secrets.h`; the board checks them at boot.
+
+5. Flash the board.
+
+   ```powershell
+   platformio run --project-dir hardware -e esp32dev --target upload --upload-port <port>
+   ```
+
+   Expected result: esptool reports `Hash of data verified.` for each image and resets the board. This upload writes the bootloader, partition table and application.
+
+6. Open the serial monitor.
+
+   ```powershell
+   platformio device monitor --project-dir hardware --port <port>
+   ```
+
+   Expected result, outdoors with Wi-Fi in range: `[PowerCheckpoint] ready=true`, six `[GNSS] CFG-MSG ACK` lines, `[WiFi] Connected.` and `[GNSS] Connected.`. With traces on, each delivered sample prints a `[TelemetryTrace]` line with `"event":"device_http"` and `"httpStatus":202` (or `200` for a duplicate). Successful sends print no `[HTTPS]` line.
+
+### 5.3 Verification
+
+1. At least 30 s after boot, an administrator calls `GET /api/devices/<device-id>/diagnostics`. Expected result: a report whose `lastTelemetryResponseCode` is `202` or `200` and whose `gnssFixAvailable` is `true`.
+2. Every 5 min the serial log prints `[Telemetry] Evidence ... acceptedSeen=1 ... queue=0`, which shows that telemetry is accepted and nothing is waiting.
+3. Disconnect the Wi-Fi network for about 10 s and restore it. Expected result: `[WiFi] Not connected; waiting`, then `[WiFi] Connected.`, and telemetry resumes without a reboot.
+
+To remove credentials from a development board before you reuse or hand it on, erase its flash with `platformio run --project-dir hardware -e esp32dev --target erase --upload-port <port>`. Never run this against a fleet board.
+
+## 6. Changes that require a reflash
+
+| Change | Backend action | Reflash |
 |---|---|---|
-| Add/edit route name, stops, waypoints, color or polyline | Seed or save the route in the backend; validate stop order and walk/drive it | No |
-| Assign the same device to another approved bus/route | Update the device registry/admin assignment while no active ride/lock exists; restart the backend after direct CLI provisioning to clear credential caches | No, if device ID/secret/network/backend/CA stay the same |
-| Change bus/route while the current ride is active | Stop at a safe terminal state and clear the approved lifecycle conflict first | No hardware change, but the backend correctly rejects unsafe reassignment |
-| Change Wi-Fi name/password | Update `WIFI_SSID`/`WIFI_PASS` | Yes |
-| Change device ID | Provision the new ID, update `DEVICE_ID` | Yes |
-| Rotate/replace device secret or disable a lost device | Rotate/disable the backend registry record, update `DEVICE_SECRET` | Yes for the replacement secret; a disabled device remains halted until corrected and restarted |
-| Change backend hostname, TLS certificate issuer/root CA or port/origin | Update the backend and `BACKEND_URL`/`BACKEND_ROOT_CA` | Yes |
-| Change firmware policy, dependency, security mode or telemetry timing | Rebuild the intended PlatformIO environment | Yes |
+| Route name, stops, waypoints, colour or geometry | Save the route in the backend | No |
+| Same device to another bus or route | Update the device assignment while no ride or bus lock exists | No |
+| Bus or route while a ride is active | End the ride first; the backend rejects the reassignment | No |
+| Wi-Fi name or passphrase | None | Yes, with new `WIFI_SSID` and `WIFI_PASS` |
+| Device ID | Provision the new ID | Yes, with new `DEVICE_ID` and `DEVICE_SECRET` |
+| Device secret rotation | Rerun the provisioning command outside an active ride | Yes, with the new `DEVICE_SECRET` |
+| Lost or retired device | Disable it with `POST /api/devices/<device-id>/disable` | Not for the lost unit; a replacement needs its own build |
+| Backend hostname or root CA | Deploy the backend change | Yes, with new `BACKEND_URL` or `BACKEND_ROOT_CA` |
+| Firmware code, timing or security settings | None | Yes, or a signed OTA release for fleet units (Section 9) |
 
-Changing a route in Firestore does not update firmware. Conversely, reflashing
-firmware does not change the backend's bus/route assignment; keep those two
-operations synchronized through the registry and the provisioning record.
+A provisioned fleet board has UART ROM download mode permanently disabled, so a USB reflash no longer works on it. On such a board every change marked "Yes" needs a signed OTA image built with the new configuration.
 
-## Build and flash checklist
+## 7. Runtime summary
 
-Choose exactly one build path:
+The [telemetry contract](HARDWARE_TELEMETRY.md) is authoritative for these values.
 
-| Purpose | Command | Use |
+| Behaviour | Value | Detail |
 |---|---|---|
-| Host policy tests | `platformio test --project-dir hardware -e native` | Safe repeatable tests; no board or secrets required by the native target |
-| Host protocol tests | `python hardware/scripts/test_host_protocols.py` after native tests | Requires gcc/g++; real AES-GCM checkpoint codec, TinyGPSPlus parser and TLS wrapper, with host adapters for radio/tasks/entropy |
-| Bench/development board | `platformio run --project-dir hardware -e esp32dev` then `platformio run --project-dir hardware -e esp32dev --target upload` | Local testing only; never install this image in a production vehicle |
-| Signed fleet board | Follow [fleet security provisioning](../operations/HARDWARE_SECURITY_PROVISIONING.md) and use `esp32dev-secure` | Production-capable artifact; requires the signing key, ECO3+ board, witnessed first boot and physical evidence |
+| Fix evaluation and capture | Every 1 s while the fix is valid, plausible and the clock is trusted, moving or stopped | [Capture](HARDWARE_TELEMETRY.md#43-capture-cadence-and-motion-state) |
+| GNSS loss | One `uncertain` sample at the last captured position, then nothing until the fix returns | [GNSS-loss packet](HARDWARE_TELEMETRY.md#32-gnss-loss-packet) |
+| Queue | 100 samples in RTC memory, newest sent first, oldest dropped when full, samples older than 55 s discarded | [Queue and expiry](HARDWARE_TELEMETRY.md#44-queue-ordering-and-expiry) |
+| Telemetry retry | 250 ms to 2 s after transport errors; 1 s doubling to 30 s after server errors; 60 s after 403, 404 or 429 without `Retry-After`; 30 s after other rejections | [Response handling](HARDWARE_TELEMETRY.md#24-response-handling) |
+| Wi-Fi retry | First attempt at once, then 5 s doubling to 60 s, indefinitely | [Timing and limits](HARDWARE_TELEMETRY.md#5-timing-and-limits) |
+| Task watchdog | 25 s, panic and restart | [Timing and limits](HARDWARE_TELEMETRY.md#5-timing-and-limits) |
+| Remote diagnostics | First at 30 s of uptime, then every 5 min | [Remote diagnostics](HARDWARE_TELEMETRY.md#33-remote-diagnostics) |
+| Flash checkpoint | First captured fix after boot, then at most every 10 s | [Cold power recovery](COLD_POWER_RECOVERY.md) |
 
-Host protocol tests download checksum-pinned upstream Mbed TLS 2.28.7, matching
-the version in the pinned Arduino SDK. They reject checkpoint tampering, recover
-the previous authenticated journal record, test no-fix/checksum/clock-rollover
-NMEA input, and exercise actual cipher configuration and single-use ECDH keys.
-Radio entropy and task ownership are deterministic host adapters; ESP acceleration,
-certificate/hostname behavior through WiFiClientSecure and physical flash writes
-still require board acceptance.
+## 8. Status LED
 
-CI also runs `hardware/scripts/test_signed_image.py` on the compiled signed fleet
-image using its ephemeral CI-only RSA-3072 key. It rejects changed application
-bytes, an altered signature with repaired CRC, truncation, unsigned data and a
-foreign key. Local `--fixture` mode generates disposable data/key material to
-check this harness; it does not certify a fleet artifact, OTA installation,
-rollback or provision a board.
+GPIO2 repeats its pattern every 2 s. Each pulse is 150 ms on and 150 ms off.
 
-After flashing, open the monitor at 115200 baud and verify, without exposing
-credential values:
+| Pattern | Meaning | Serial evidence |
+|---|---|---|
+| Off | No latched fault. Normal operation, including Wi-Fi or GNSS outages. | None |
+| 2 pulses | Boot halted: an invalid `secrets.h` definition, an over-long request string, or a FreeRTOS task, queue or mutex that failed to start | `[Boot] Invalid compile-time configuration field <NAME>; halted.` or another `[Boot] ...` line |
+| 3 pulses | Credential fault latched after HTTP 401 from telemetry, diagnostics or the firmware release check. Publishing stops and the Wi-Fi radio is off until the board restarts. | `[HTTPS] Credential fault latched; ...` |
+| 4 pulses | Fleet build halted: `BACKEND_URL` is not `https://`, or flash encryption or Secure Boot is not active | `[Security] Fleet firmware ...` |
 
-1. Compile-time validation passes for all six configuration definitions.
-2. The board reports the expected firmware environment and connects to the
-   configured Wi-Fi network.
-3. GNSS time/fix becomes valid and the backend receives telemetry with `200` or
-   `202` responses.
-4. The backend's authenticated diagnostics endpoint receives a report. An
-   admin can inspect it at `GET /api/devices/:deviceId/diagnostics`.
-5. Admin-authenticated `/api/health` shows accepted telemetry and no sustained background failures; public `/health` reports readiness only.
-6. A controlled Wi-Fi/backend outage recovers without a recovery portal, stale
-   replay, or a second ride session.
+## 9. Firmware updates
 
-If a boot validation message names `WIFI_SSID`, `WIFI_PASS`, `DEVICE_ID`,
-`DEVICE_SECRET`, `BACKEND_URL`, or `BACKEND_ROOT_CA`, correct that definition in
-the ignored file and rebuild. A 401 means invalid credentials and latches the
-radio off until restart; a 403 means a valid device awaits an assignment and
-retries after one minute. Repair the backend assignment without reflashing when
-the compiled credentials are correct. A TLS error is a hostname, clock, certificate-chain, or root-CA
-problem; do not bypass certificate validation.
+Development images change only by reflashing over USB. Fleet images (`esp32dev-secure`) also accept signed OTA application updates. The release procedure is in [hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md#6-signed-ota-release-and-rollback). The device follows this policy:
 
-## Wiring
+1. A `firmware-maintenance` task first releases any firmware reservation this device may still hold from an interrupted installation.
+2. It checks `GET /api/devices/<device-id>/firmware?sequence=<current-sequence>` once the board has run for 2 min, then 6 h after a check that found no release, or 15 min after a failed check. A check runs only while Wi-Fi is up, the clock is trusted, no credential fault exists, the telemetry queue is empty, the latest fix is valid and stopped (at most 2 s old), and no candidate image awaits validation.
+3. The backend returns `204` when no newer release exists or while the bus has an active ride or bus lock. A release manifest must name a strictly higher sequence, an `https://` URL, a size of at most 1,966,080 bytes and a SHA-256 digest; its version must have the form `s<sequence>-<name>`.
+4. The device reserves the bus through `POST /api/devices/<device-id>/firmware/installation` with `{"action":"acquire"}`. The reservation uses the same bus lock as ride startup and has no timed expiry.
+5. The device downloads the image without its device credential, writes it to the inactive slot and aborts if the bus moves, the fix goes stale or the stream stalls for 15 s. It installs the image only if the size, the SHA-256 digest, and the signed version and sequence all match the manifest, and Secure Boot accepts the signature.
+6. The device releases the reservation and restarts into the candidate image. The candidate becomes permanent after the first accepted telemetry or diagnostics response. If none arrives within 5 min of boot, including time without Wi-Fi coverage, the firmware marks the candidate invalid and restarts into the previous image. A candidate that resets before it is confirmed is rolled back by the bootloader.
 
-| ESP32 | NEO-M8N |
-|---|---|
-| `5V/VIN` | `VCC` (only if the module supports 5 V) |
-| `GND` | `GND` |
-| `GPIO16 (RX2)` | `TX` |
-| `GPIO17 (TX2)` | `RX` |
+OTA never changes the bootloader, the partition table or eFuses. The application image does contain every value compiled from `secrets.h`, so a release installs the Wi-Fi credentials, device ID, device secret, backend origin and root CA of the build that produced it. The [provisioning procedure](../security/HARDWARE_SECURITY_PROVISIONING.md#6-signed-ota-release-and-rollback) states the resulting limitation.
 
-Use fused automotive 12 V-to-5 V conversion, secure cabling/enclosure, and
-clear-sky antenna placement.
+## 10. Troubleshooting
 
-## Configure, build, and flash
+| Symptom | Likely cause | Check | Fix |
+|---|---|---|---|
+| Two LED pulses; `[Boot] Invalid compile-time configuration field <NAME>; halted.` | Placeholder or invalid value in `secrets.h` | Section 4.3 rules for the named definition | Correct the value, rebuild and reflash |
+| Four LED pulses; `[Security] Fleet firmware ...` | Fleet image on a board without active protections, or an `http://` backend | Board identity and eFuse summary | Quarantine the board; follow [hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md). Never bypass the gate. |
+| No `[GNSS] CFG-MSG ACK` lines at boot | Receiver TX and RX swapped, receiver unpowered, or receiver not at 9,600 baud | Wiring in Section 3; receiver power indicator | Correct wiring or receiver baud rate |
+| `[GNSS] Not connected; waiting for valid fix` persists; diagnostics show `gnssFixAvailable` `false` | Antenna without sky view, HDOP above 4, or receiver status not valid | Move the antenna outdoors; watch `[GnssTrace]` lines in development builds | Fix antenna placement; wait for a valid fix |
+| Repeated `[WiFi] Station retry` lines | Wrong SSID or passphrase, 5 GHz-only network, or no coverage | Network settings against `secrets.h` | Correct and reflash, or move into 2.4 GHz coverage |
+| Wi-Fi and GNSS connected, but nothing reaches the backend; `[Clock] GNSS correction rejected` or `[Clock] NTP correction rejected` | GNSS and NTP time disagree by more than 1.5 s | Receiver UTC; UDP access to `pool.ntp.org` and `time.google.com` | Restore a consistent time source. The firmware retries NTP every 60 s while the disagreement lasts. |
+| `[HTTPS] Transport failure <code> (<reason>)` | Backend unreachable, `localhost` URL, wrong root CA, ECDSA server certificate, or wrong clock | Reach the backend `GET /health` from the same network; check the certificate key type and issuer | Fix the network, URL, CA or certificate. Never disable certificate validation. |
+| `[HTTPS] Telemetry rejected (HTTP 400)` | Timestamp outside the backend window or schema mismatch | Clock lines in the serial log; deployed backend version | Restore clock agreement; deploy a backend that accepts the nine-field schema |
+| Three LED pulses; HTTP 401 | Wrong `DEVICE_ID` or `DEVICE_SECRET`, or the device is disabled | Device record in the registry | Reprovision and reflash, or re-enable the device; then restart the board |
+| `[HTTPS] Device assignment unavailable; retrying without disabling Wi-Fi.` (HTTP 403) | Device has no usable bus and route assignment | Device record and the bus's `assignedRoutes` | Repair the assignment. The device retries every 60 s without a reflash. |
+| `[HTTPS] Check BACKEND_URL; the telemetry endpoint was not found.` (HTTP 404) | `BACKEND_URL` points at the wrong host | The URL in `secrets.h` | Correct and reflash |
+| `[HTTPS] Rate limited; server retry delay=<n>s.` (HTTP 429) | Backend ingress or per-device limit reached | `HTTPS_INGRESS_DEVICES_PER_IP` and `HTTPS_DEVICE_RATE_PER_MINUTE` in [configuration](../CONFIGURATION.md) | Raise the limit for the fleet size, or find the extra sender |
+| `[HTTPS] Backend dependency is unavailable; retaining the latest fix.` (HTTP 5xx) | Backend or Firebase outage | Backend `GET /health` | Restore the backend; the device keeps retrying |
+| `[Boot] Recovered from task-wdt reset` repeatedly | A task stalled for more than 25 s | Serial log before the reset; `resetTotal` in diagnostics | Capture the log and report it with the firmware version |
+| `[PowerCheckpoint] ready=false` | Board flashed with an older partition table without `gps_log` | `slots=` value and the board's partition table | Follow [cold power recovery](COLD_POWER_RECOVERY.md) |
 
-Copy `include/secrets.example.h` to the ignored `include/secrets.h`, replace all
-placeholders, then build and flash:
+## 11. References
 
-```powershell
-Copy-Item hardware/include/secrets.example.h hardware/include/secrets.h
-platformio test --project-dir hardware -e native
-platformio run --project-dir hardware -e esp32dev
-platformio run --project-dir hardware -e esp32dev --target upload
-platformio device monitor --project-dir hardware --baud 115200
-```
-
-`secrets.h` is the firmware's only configuration source. Wi-Fi, device ID,
-device secret, backend origin, and root CA are validated at boot. The firmware
-does not contain a recovery portal, recovery password, application key-value
-store, or remotely editable configuration. Configuration and credential changes
-still require a controlled reflash. Signed application-only releases can use
-the secure fleet OTA path described below. Never commit, log, or archive `secrets.h` or an
-unencrypted development firmware image because credentials are embedded in the
-binary.
-
-`esp32dev` is development-only. Fleet artifacts must use `esp32dev-secure`,
-which requires the ignored university RSA-3072 signing key and enables Secure
-Boot V2, release-mode flash encryption, and ROM-download lockdown. Fleet builds
-also require HTTPS and disable Wi-Fi driver persistence. Follow the witnessed
-[fleet security procedure](../operations/HARDWARE_SECURITY_PROVISIONING.md)
-on spare ECO3-or-newer boards before irreversible first boot.
-
-The secure profile has two 1,966,080-byte application slots and bootloader
-rollback enabled. After two minutes of idle, stopped operation with an empty
-telemetry queue, the device asks its configured backend for a newer release by
-using the existing device authorization header. The backend returns no release
-while that device's bus has an active ride. Release metadata must name an exact
-HTTPS object, size, SHA-256 digest, version and strictly increasing sequence.
-The signed application descriptor uses `s<sequence>-<name>` and must exactly
-match both manifest fields, so an older signed image cannot be relabelled as a
-new sequence.
-The artifact request never receives the device credential. The device verifies
-the stream digest before activating the slot, and Secure Boot V2 rejects an
-image not signed by the fleet key. A candidate becomes permanent only after an
-authenticated telemetry or diagnostics response; otherwise the bootloader
-rolls it back after five minutes, including time spent outside Wi-Fi coverage.
-Install at a depot with stable backend access and rehearse the dead-zone case
-on a spare board. The artifact host certificate must chain to
-`BACKEND_ROOT_CA`.
-
-Arduino-ESP32 2.x unconditionally initializes a small framework system
-partition during startup. Eki never opens it or stores configuration there;
-`WiFi.persistent(false)` is selected before driver initialization, and the
-secure build disables ESP32 Wi-Fi key-value persistence. Removing that final
-framework partition requires replacing/forking the Arduino core and cannot be
-done safely while retaining the current Wi-Fi stack.
-
-## Behavior
-
-- Fresh, calendar-valid GNSS UTC establishes and disciplines the system clock.
-  NTP starts after Wi-Fi connects as a six-hour cross-check/fallback.
-- NMEA parsing stays on the Arduino loop task. Wi-Fi, NTP, TLS, and HTTP run in
-  a publisher task on core 0 so network stalls do not block UART consumption.
-- The 8 KiB UART RX buffer and hardware/TinyGPSPlus error counters make parser
-  pressure observable without noisy periodic serial output.
-- A fix requires location age at most five seconds, coordinates within
-  -90..90/-180..180 and a finite HDOP from 0 to 4. An RMC fix older than two
-  seconds is latched invalid, so a silent receiver cannot replay it after a
-  `millis()` rollover. Motion uses three-reading 2.5/1.5 km/h hysteresis.
-- Moving fixes are captured on a one-second cadence; the stopped heartbeat is
-  one second so endpoint and turnaround logic always has margin inside the
-  backend's 60-second freshness gate. A 100-sample RTC ring survives resets, evicts oldest on overflow,
-  sends newest first after outages, compacts acknowledged older fixes, and
-  discards samples outside the backend's 55-second safety margin.
-- On cold boot, one compatible flash checkpoint can restore its original retry
-  sequence. Warm RTC state wins. Checkpoints use a ten-second scheduling interval;
-  newer uncommitted fixes can be lost. Serial `[PowerCheckpoint]` logs expose
-  readiness, recovery, storage slots, interval, commit outcome and write time.
-- Wi-Fi retries indefinitely with bounded 5-60 second exponential backoff,
-  strongest-AP fast scan, auto-reconnect, and modem sleep disabled. A retry
-  also starts when the ESP32 has lost its access-point association even if the
-  Arduino Wi-Fi status still says connected. The retry always issues a new
-  connect attempt after any preceding disconnect error; `[WiFi]` serial lines
-  report state and retry results without printing the SSID or password.
-- HTTP 200/202 succeeds. Transport errors, 408/425/429, and 5xx retain the
-  newest eligible sample with bounded backoff. Other permanent rejection drops
-  that sample. A 401 latches publishing off, disables the station radio, and
-  emits three GPIO2 pulses every two seconds. A 403 keeps Wi-Fi enabled and
-  retries after one minute while waiting for a valid backend assignment.
-- A 25-second watchdog covers both tasks. Authenticated remote diagnostics send
-  bounded health state every five minutes while idle and never send credentials.
-- Fleet OTA discovery runs on its own watched task. Installation requires a
-  fresh, protected stopped-GNSS snapshot and an authenticated transactional
-  reservation of the same bus lock used by ride startup/turnaround. Motion or
-  stale GNSS aborts the candidate before activation. The lock has no timed
-  expiry: failed/rebooted boards release it through the authenticated
-  firmware installation endpoint, including uncertain acquire responses.
-  If a board is lost, an operator must prove flashing has stopped before
-  removing its firmware lock; never delete a live ride lock.
-  Downloaded candidates are size/digest checked, secure-boot verified,
-  installed into the inactive slot and health-confirmed with automatic rollback.
-
-Read [Hardware telemetry](HARDWARE_TELEMETRY.md) for parameters,
-failure points, and physical acceptance cases. A production release still
-requires controlled signing, immutable HTTPS hosting, backend release metadata,
-and spare-board rollout/rollback evidence.
-
-
-Clock discipline requires three distinct GNSS UTC epochs advancing with the
-monotonic clock (500–3000 ms spacing, at most 250 ms cadence error). GNSS-only
-startup remains supported after that corroboration. Once system time exists,
-corrections above 10 seconds require a fresh agreeing peer; a GNSS/NTP
-disagreement above 1.5 seconds pauses new TLS/telemetry instead of changing
-certificate time. NTP candidates are guarded before IDF sets time. Peer NTP
-references expire after ten minutes, and clock faults retry NTP after one minute.
-These checks establish consistency, not cryptographic GNSS/NTP authenticity.
-
-Firmware refuses outbound telemetry/diagnostics when ArduinoJson overflows,
-required fields are missing, or the complete object does not fit the buffer.
-Serial resource evidence reports JSON preparation time, heap before/after,
-minimum heap, largest allocatable block and task stack headroom (bytes in the
-pinned ESP32 port). TLS connection traces include key-preparation headroom.
-Native allocator-exhaustion tests exercise the actual serializer.
-
-Detailed traces default on in development and off in fleet builds; set
-`EKI_ENABLE_FLEET_TRACES=1` for a bounded acceptance capture. The
-`esp32dev-quiet` environment measures the same development runtime with traces
-disabled. Sparse health/resource diagnostics remain enabled. No CA, cipher,
-curve, fresh-key or credential policy changes accompany trace gating.
-
-Diagnostics retain separate short-lived transport: the normal five-minute
-interval exceeds the backend's 65-second keep-alive timeout. A persistent
-socket cannot deliver a warm connection over that idle interval; changing
-cadence or transport requires measured board evidence. Document/pool reuse is
-also deferred until the new allocation/headroom records justify it.
-
-For new latency captures, firmware trace version 2 adds a correlated
-`device_capture` record with receiver UTC, RMC first-byte/checksum arrival and
-evaluation/enqueue monotonic times. `device_http` retains the response-header
-timing used for clock estimation; `device_http_complete` records send, headers
-and completed body drain per attempt. Recovery without receiver evidence stays
-unavailable in the analyzer. The one-second evaluation cadence is unchanged:
-its phase delay is now measured, including time spent before enqueue.
-`configuredHandshakeTimeoutMs` is a configured limit, not a measured handshake.
-
-Live ESP32 verification and TLS compatibility details are recorded in
-`docs/testing/LIVE_ESP32_LATENCY_RESULT.md`. Telemetry retains its HTTPClient
-between samples so its destructor cannot defeat keep-alive. The pinned mbedTLS
-profile requires ECDHE-RSA/AES-GCM with P-256 and prepares a fresh, single-use
-client key before opening TCP. Test backend and OTA hosts for this profile before
-fleet deployment. Keep certificate validation enabled.
+[1] u-blox, "u-blox 8 / u-blox M8 Receiver description including protocol specification," UBX-13003221, content.u-blox.com/sites/default/files/products/documents/u-blox8-M8_ReceiverDescrProtSpec_UBX-13003221.pdf. Accessed: 2026-10-30.

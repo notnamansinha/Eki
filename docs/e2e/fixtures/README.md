@@ -1,27 +1,47 @@
-# Isolated browser QA
+# Passenger UI Fixture
 
-Last updated: 2026-10-20 19:28 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-PKG-008 | 1.0 | Current | 2026-10-30 |
 
-From the repository root, run `npx vite --config e2e/fixtures/vite.config.mts`, then open `http://127.0.0.1:3100/`.
+## 1. Purpose
 
-The fixture renders the actual passenger workspace, route carousel, settings panel and application CSS. Hook inputs and settings persistence are synthetic and exist only in memory. It has no Firebase connection, credentials or backend writes. Settings changes disappear on a server restart.
+This Vite fixture renders the real passenger workspace, route carousel, passenger map logic, timeline, profile, feedback modal and application CSS with synthetic data held in memory. It has no Firebase connection, credentials or backend writes. It serves manual layout checks and the automated passenger layout suite.
 
-Choose pending, forward, reverse, multiple or mixed services and click the route card. Verify Back, Routes and Profile; select the second bus for multiple services. Device opens the configured route and stationary hardware position without pretending a ride has started. Empty and completed expose no selectable service. Inactive panels must be absent from the accessibility tree and must not intercept pointer clicks. Check at desktop size and a 390 × 844 CSS mobile viewport. Set `EKI_QA_PORT` to use another port. Scenario selection refreshes synthetic timestamps; quiet device data intentionally expires.
+## 2. What is real and what is replaced
 
-The passenger map and timeline use their actual application logic with a synthetic Google Maps SDK adapter (labelled on screen). The adapter draws configured stops and positions without requesting Google tiles or road geometry. Boarding, profile, feedback and chat children remain placeholders; their actual components have separate interaction tests. This fixture does not measure real GPS, Google compositor paint or network-to-map latency and does not replace Firebase emulator or hardware acceptance tests.
+`e2e/fixtures/vite.config.mts` swaps these modules:
 
-Run the automated warning layout regression from the repository root:
+| Replaced with synthetic data | Replaced with a placeholder panel |
+|---|---|
+| Auth, routes, live route catalog, settings, RTDB resume, route geometry, live bus store and joined-ride hooks; `firebaseAuth`, `feedbackStore` and `apiClient` | Chat (`MessagingPanel`), the boarding view, and the admin dashboard, route, fleet, history and feedback panels |
+
+`RoleGuard` and `WorkspacePrefetch` pass through. The Google Maps SDK is replaced by a synthetic adapter, labelled on screen, that draws configured stops and positions without tiles or road geometry. Settings changes exist only in memory and disappear on restart.
+
+## 3. Manual check
+
+1. From the repository root, start the fixture:
+
+   ```powershell
+   npx vite --config e2e/fixtures/vite.config.mts
+   ```
+
+   It listens on `http://127.0.0.1:3100/`. Set `EKI_QA_PORT` to use another port.
+
+2. Choose a scenario in the **QA scenario** list, or open `/?scenario=<name>`. The scenarios are `pending`, `reconnecting`, `stale`, `offline`, `forward`, `reverse`, `multiple`, `multiple-stale`, `gnss-lost`, `mixed`, `two-routes`, `projection-unready`, `catalog-denied`, `detail-denied`, `device`, `empty` and `completed`. Choosing a scenario refreshes the synthetic timestamps; quiet device data then expires as it would in the application.
+
+3. Open a route card and check Back, Routes and Profile. With `multiple`, select the second bus. `device` opens the route with a stationary tracker position and no ride. `empty` and `completed` offer no selectable service.
+
+4. Check at desktop size and at 390 x 844. Inactive panels must be absent from the accessibility tree and must not intercept pointer clicks.
+
+## 4. Automated layout suite
 
 ```powershell
 npx playwright test --config playwright.passenger-layout.config.ts
 ```
 
-It starts this isolated fixture, opens a multiple-service tracking view, advances
-the clock through telemetry silence, and checks that the location-delay warning
-is below the complete variable-height ride header and unobscured at its center.
-It also verifies recovery on fresh delivery and horizontal fit at 360, 390 and
-1280 CSS pixels. Screenshots are saved under `artifacts/passenger-layout/` and
-retained by CI. The tracking header occupies document flow above the map, so
-bus-selection, boarding and chat controls cannot cover its warnings. Boarding
-content is still a placeholder in this fixture; genuine role/provider acceptance
-and every real boarding-card state remain separate tests.
+The configuration starts this fixture and runs `e2e/passenger-layout/warnings.spec.ts` and `video-audit.spec.ts` in five projects: narrow 360 x 800, mobile 390 x 844, reported-phone 440 x 956, short-desktop 1280 x 585 and desktop 1280 x 800. The tests check, among other things, that location-delay, reconnecting and GNSS-loss warnings sit below the variable-height ride header without overlap and clear on recovery; that offline and stale buses leave the picker; that the footer, navigation, chat overlay and feedback modal keep their positions on short and landscape screens; and that the passenger frame cannot scroll under the viewport. Screenshots and traces go to `artifacts/passenger-layout/`, which CI keeps for seven days.
+
+## 5. Limits
+
+Boarding and chat are placeholders here; their real components have separate tests, including `npm run qa:browser`. The fixture does not measure real GPS, Google Maps paint or network-to-map latency, and does not replace emulator or hardware acceptance.

@@ -1,160 +1,89 @@
-# Eki Web App DNS & Domain Setup Guide
+# DNS and Domains
 
-Last updated: 2026-10-04 14:20 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-002 | 1.0 | Current | 2026-10-30 |
 
-This document defines the DNS record configurations, custom domain setups, SSL/TLS provisioning, and security integration rules required for deploying the Eki web application and backend API.
+## 1. Purpose
 
-All names, project IDs, IP addresses, TXT values and certificates in this guide
-are placeholders. Use the exact values shown by the university-owned Firebase,
-DNS and certificate consoles; do not publish verification tokens, private
-addresses, or certificate private keys in repository documentation.
+This procedure connects custom domains to the Eki frontend and backend, and lists the settings that must change with a hostname: Firebase Authentication domains, OAuth redirect URIs, CORS, CSP and device trust. Use the exact values that the Firebase, Google Cloud and DNS consoles show. Do not publish verification tokens, private addresses or certificate keys in the repository.
 
----
+## 2. Current origins
 
-## 1. Architecture & Domain Overview
-
-The Eki deployment consists of two primary endpoints:
-
-1. **Frontend Web App (Next.js Static Export)**: Hosted on **Firebase Hosting**.
-2. **Backend API (Node.js/Express)**: Hosted on a managed container platform (e.g., GCP Cloud Run, Compute Engine, or reverse proxy).
-
-### Default vs. Production Custom Domains
-
-Set `NEXT_PUBLIC_SITE_URL` to the canonical frontend HTTPS origin before the
-static build. Metadata, Open Graph URLs/images, robots and sitemap share it.
-Without it the explicit primary-domain fallback remains
-`https://bustrack-be165.web.app`. Set `NEXT_PUBLIC_SITE_INDEXING=false` on
-testing/preview builds; changing either value requires rebuilding the export.
-This does not configure Firebase Auth, App Check, CORS or DNS automatically.
-
-| Component | Default Firebase Origin | Example Custom Domain |
+| Component | Origin | Notes |
 |---|---|---|
-| **Frontend Web App** | `<firebase-project-id>.web.app`<br>`<firebase-project-id>.firebaseapp.com` | `eki.yourdomain.com` or `bus.university.edu` |
-| **Backend REST API** | Localhost / Tunnel / Cloud Run URL | `api.eki.yourdomain.com` or `bus-api.university.edu` |
+| Frontend | `https://bustrack-be165.web.app` (also `https://bustrack-be165.firebaseapp.com`) | Firebase Hosting default domains; no custom domain is configured in the repository |
+| Backend | The ngrok assigned domain | The domain belongs to the ngrok account; there are no DNS records to manage ([ngrok tunnel](NGROK_TUNNEL.md)) |
+| Production frontend (planned) | `https://eki-production.web.app` | Named in `.github/workflows/deploy.yml`; the project is not provisioned |
 
----
+A custom domain changes three build or runtime values, each in a different place:
 
-## 2. Frontend DNS Configuration (Firebase Hosting)
+| Value | Where | Effect |
+|---|---|---|
+| `NEXT_PUBLIC_SITE_URL` | Frontend build | Canonical, Open Graph, robots and sitemap URLs. Unset, it falls back to `https://bustrack-be165.web.app`. |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Frontend build | Host of the Firebase Auth helper (`/__/auth/`) |
+| `CORS_ORIGIN` | Backend `.env` | Comma-separated frontend origins that may call the API |
 
-To map a custom domain (e.g. `eki.yourdomain.com`) to Firebase Hosting:
+`NEXT_PUBLIC_SITE_INDEXING=false` keeps a test or preview build out of search indexes. All three frontend values are compiled into the static export, so a change needs a rebuild and redeploy. Variable details are in [configuration](../CONFIGURATION.md).
 
-### Step A: Add Custom Domain in Firebase Console
+## 3. Connect a custom frontend domain
 
-1. Open the [Firebase Console](https://console.firebase.google.com/).
-2. Navigate to **Hosting** under the approved Firebase project for this environment.
-3. Click **Add Custom Domain** and enter your domain name (e.g. `eki.yourdomain.com`).
+1. In the Firebase console, open Hosting for the project and add the custom domain. Expected: the console lists the DNS records to create.
+2. At the DNS provider, create exactly those records: a TXT record that proves ownership and A records (AAAA as well in advanced setup) that point to Hosting. Remove existing A, AAAA or CNAME records for that name that point elsewhere [1]. Expected: after propagation the console shows the domain as connected and issues a certificate.
+3. Add `NEXT_PUBLIC_SITE_URL: https://<frontend-host>` to the build step of `.github/workflows/deploy.yml` through a pull request; the workflow does not pass it today. Set the `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` secret as described in Section 4. Expected: after the next Deploy run, the page's canonical link uses the custom host.
+4. Add `https://<frontend-host>` to `CORS_ORIGIN` on the backend and restart it. Keep the `web.app` origin as well: the Deploy workflow's backend check sends `Origin: https://bustrack-be165.web.app` and fails without it.
+5. Add the host to the HTTP referrer restrictions of the Firebase browser API key and the Maps JavaScript API key in the Google Cloud console. Expected: maps load on the custom host.
 
-### Step B: Add DNS Records in Domain Registrar / Campus DNS
+## 4. Firebase Authentication domains
 
-Firebase Hosting will provide TXT and A records for domain ownership and SSL certificate provisioning:
+1. In the Firebase console, open Authentication, Settings, Authorized domains, and add the frontend host. Expected: the host is listed. Add the backend host only if it also serves Firebase Auth helper pages; the Eki API does not.
+2. Set `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` to the frontend host. On `<project-id>.web.app` and `<project-id>.firebaseapp.com` the client already uses the current host (`frontend/src/lib/firebaseAuthDomain.ts`); on any other host it uses this value.
+3. In the Google Cloud console, add `https://<frontend-host>/__/auth/handler` to the authorized redirect URIs of the OAuth client that Google sign-in uses [2]. Expected: Google sign-in completes on the custom host without `auth/unauthorized-domain`.
 
-| Record Type | Host / Name | Value / Target | Purpose |
-|---|---|---|---|
-| **TXT** | `_acme-challenge.eki.yourdomain.com` (or `@`) | `<verification-token-from-console>` | Domain ownership verification and SSL issuing |
-| **A** | `eki.yourdomain.com` | `<firebase-hosting-ip-1>` | Firebase edge address supplied by console |
-| **A** | `eki.yourdomain.com` | `<firebase-hosting-ip-2>` | Firebase edge address supplied by console |
-| **CNAME** (Alternative for subdomains) | `eki` | `<firebase-project-id>.web.app.` | Points subdomain to Firebase Hosting |
+Keeping the Auth helper on the frontend's own host prevents browsers that partition third-party storage (Safari, Firefox and privacy-restricted browsers) from losing the sign-in state. A frontend served from a plain Next.js development server does not serve `/__/auth/`; keep its Auth domain on a Firebase Hosting host.
 
-*Note: Exact IP addresses and TXT tokens are provided during the Firebase Console setup flow.*
+## 5. Backend hostname
 
----
+Any backend hostname must serve HTTPS with a certificate chain that ends in the root CA compiled into the device firmware. The frontend and firmware store the origin only, without a path; they append `/api/...` themselves. A production frontend build rejects a backend URL that is not HTTPS or that points at a local host.
 
-## 3. Firebase Auth Authorized Domains
+| Option | DNS work | Frontend and device settings |
+|---|---|---|
+| Current: ngrok domain | None | `NEXT_PUBLIC_BACKEND_URL` and firmware `BACKEND_URL` name the ngrok origin |
+| Proposed: same origin as the frontend through Hosting rewrites ([proposal](CI_CD_AND_RELEASES.md#72-proposed-migration-to-cloud-run)) | None beyond Section 3 | Both settings name the frontend origin; the device trusts the Hosting certificate's root CA |
+| Separate API host, for example `api.<domain>` | Create the records that the Cloud Run domain mapping or load balancer shows | Both settings name the API origin; the strict build adds it to the CSP; backend `CORS_ORIGIN` lists the frontend origins |
 
-When using a custom DNS domain for the frontend web app, Google Sign-In and Firebase Auth redirects **will fail** unless the domain is authorized.
+After any change to `NEXT_PUBLIC_BACKEND_URL`, run the strict build (`npm run build:production` locally, or the Deploy workflow). It writes the backend origin into the CSP `connect-src` in `firebase.json` and fails if the policy would block it. Do not edit the generated CSP by hand. `BACKEND_URL` is a firmware setting, not a backend environment variable.
 
-1. Go to **Firebase Console** -> **Authentication** -> **Settings**.
-2. Under **Authorized Domains**, click **Add Domain**.
-3. Add the frontend hostname, for example `eki.yourdomain.com`. Add the API
-   hostname only if that hostname independently serves Firebase Auth redirects;
-   Eki's normal API is not an Auth redirect origin.
-4. For Firebase Hosting on `*.web.app` or a custom domain, set the Firebase
-   web app's `authDomain` to the same hostname as the frontend. Add
-   `https://<frontend-hostname>/__/auth/handler` to the Google OAuth client's
-   authorized redirect URIs in Google Cloud Console.
+## 6. Device DNS and TLS
 
----
+1. The device resolves the backend hostname with the DNS servers that the Wi-Fi network assigns by DHCP; the firmware sets no resolver of its own. Confirm that the bus hotspot provides working DNS. Each lookup has a bounded time budget ([DNS cold connect](../hardware/DNS_COLD_CONNECT.md)).
+2. If the backend certificate comes from a university or enterprise CA, compile that root CA into `BACKEND_ROOT_CA` in the controlled build environment.
+3. A change of backend scheme, hostname, port or root CA needs a rebuild and reflash of every device ([ngrok tunnel](NGROK_TUNNEL.md#7-when-a-device-must-be-reflashed)).
 
-## 4. Backend API DNS & HTTPS Configuration
+## 7. Verification
 
-The Express backend must sit behind a valid TLS/HTTPS endpoint with public or campus DNS resolution.
+Run from the repository root in PowerShell:
 
-| Record Type | Host / Name | Value / Target | Description |
-|---|---|---|---|
-| **A / AAAA** | `api.eki.yourdomain.com` | `<SERVER_PUBLIC_IP>` | Direct IP pointing to backend/proxy server |
-| **CNAME** | `api` | `<cloud-run-service>.a.run.app.` | CNAME pointing to Cloud Run / ALB endpoint |
+1. `Resolve-DnsName <frontend-host>`. Expected: the A records from the Hosting console.
+2. `curl.exe -sI https://<frontend-host>`. Expected: `HTTP/1.1 200` (or `HTTP/2 200`) with `content-security-policy` and `strict-transport-security` headers.
+3. `Invoke-RestMethod https://<backend-host>/health`. Expected: `status: ok`.
+4. `node scripts/check-stationary-runtime.mjs --frontend https://<frontend-host> --backend https://<backend-host>`. Expected: every check passes, each allowing the frontend origin.
+5. Sign in with Google on the custom host. Expected: no `auth/unauthorized-domain` error.
+6. Watch a device's serial log. Expected: telemetry responses `200` or `202` to the backend host.
 
-### SSL/TLS Requirements
+## 8. Troubleshooting
 
-- Mandatory HTTPS (TLS 1.2+).
-- Managed SSL via Let's Encrypt, Cloudflare, or GCP Managed Certificates.
-- Export the **Root CA certificate** if using internal university enterprise CAs; it must be embedded in the device-specific `secrets.h` for TLS validation.
+| Symptom | Cause | Action |
+|---|---|---|
+| Console never shows the domain as connected | Missing TXT record or conflicting records | Compare the provider's records with the console; remove conflicting records |
+| `auth/unauthorized-domain` | Host missing from Authorized domains | Section 4, step 1 |
+| Google sign-in returns to a blank page or loses state | Auth domain not on the frontend host, or redirect URI missing | Section 4, steps 2 and 3 |
+| Browser blocks API calls with a CSP error | Frontend built with another backend origin | Correct `NEXT_PUBLIC_BACKEND_URL` and redeploy |
+| Browser blocks API calls with a CORS error | Frontend origin missing from `CORS_ORIGIN` | Add it and restart the backend |
+| Device TLS or DNS failure after a hostname change | Device still compiled with the old origin or root | Reflash |
 
----
+## 9. References
 
-## 5. Environment & Security Header Alignment
+[1] Google, "Connect a custom domain," firebase.google.com/docs/hosting/custom-domain. Accessed: 2026-10-30.
 
-### Frontend local file or production build environment
-
-```ini
-NEXT_PUBLIC_BACKEND_URL=https://api.eki.yourdomain.com
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<the-exact-hostname-that-serves-the-frontend>
-```
-
-For the default Firebase Hosting URL, this is normally
-`<firebase-project-id>.web.app`. For a Firebase Hosting custom domain, use that
-custom hostname and authorize `https://<frontend-host>/__/auth/handler` with the
-OAuth provider. Keeping the Auth helper on the frontend origin prevents
-third-party-storage partitioning from breaking popup/redirect state in Safari,
-Firefox and privacy-restricted browsers.
-
-The client automatically uses the matching Firebase Hosting hostname only on
-the project's primary `<project-id>.web.app` and `<project-id>.firebaseapp.com`
-sites. For a secondary Firebase Hosting site or a custom domain, set
-`NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` to the frontend hostname and configure the
-matching Google OAuth redirect URI above.
-
-### Backend `.env`
-
-```ini
-CORS_ORIGIN=https://eki.yourdomain.com
-```
-
-`BACKEND_URL` is not a supported backend environment variable. The backend
-origin is configured in the frontend and firmware; the backend receives its
-browser allowlist through `CORS_ORIGIN`.
-
-### Firebase Hosting CSP (`firebase.json`)
-
-Ensure `firebase.json` headers permit required connections and auth frames:
-
-- `connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebasedatabase.app https://*.firebaseapp.com https://www.google.com/recaptcha/ wss://*.firebaseio.com wss://*.firebasedatabase.app https://api.eki.yourdomain.com`
-- `frame-src 'self' https://accounts.google.com https://*.firebaseapp.com https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/`
-
-Firebase Auth requires `frame-src 'self'` for the same-origin `/__/auth/iframe`
-helper on Firebase Hosting. `scripts/verify-web-backend-contract.mjs` strictly
-validates this policy on build. The repository's CSP generation script adds the
-configured `NEXT_PUBLIC_BACKEND_URL` origin during the production build. Verify
-the generated `firebase.json` value after changing the backend domain instead
-of hand-editing hashes.
-
----
-
-## 6. ESP32 Firmware & Hardware DNS Resolution
-
-The ESP32 tracking hardware connects to the backend API via DNS hostname:
-
-1. The backend origin compiled into the fleet firmware must use `https://api.eki.yourdomain.com`.
-2. Ensure the bus Wi-Fi / cellular hotspot provides working DNS servers (e.g. `8.8.8.8` / `1.1.1.1` or DHCP DNS).
-3. If using an enterprise CA on campus DNS, include the complete root certificate in `hardware/include/secrets.h` inside the controlled signing environment.
-
----
-
-## 7. DNS & Setup Verification Checklist
-
-- [ ] `nslookup eki.yourdomain.com` returns Firebase Hosting IPs / CNAME.
-- [ ] `nslookup api.eki.yourdomain.com` resolves to backend public IP / endpoint.
-- [ ] `curl -v https://eki.yourdomain.com` returns HTTP 200 with CSP and HSTS headers.
-- [ ] `curl -v https://api.eki.yourdomain.com/health` returns HTTP 200.
-- [ ] Firebase Auth sign-in works on `https://eki.yourdomain.com` without `auth/unauthorized-domain` errors.
-- [ ] ESP32 serial logs display successful HTTP 200/202 responses when posting telemetry to `api.eki.yourdomain.com`.
+[2] Google, "Best practices for using signInWithRedirect on browsers that block third-party storage access," firebase.google.com/docs/auth/web/redirect-best-practices. Accessed: 2026-10-30.

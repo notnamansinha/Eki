@@ -1,4 +1,8 @@
-# GNSS automatic service verification — 2026-10-25
+# GNSS automatic service verification: 2026-10-25
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-013 | 1.0 | Historical | 2026-10-25 |
 
 ## Source and scope
 

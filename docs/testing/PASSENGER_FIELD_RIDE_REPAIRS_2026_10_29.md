@@ -1,4 +1,8 @@
-# Passenger field ride repairs — 29 October 2026
+# Passenger field ride repairs: 29 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-032 | 1.0 | Historical | 2026-10-29 |
 
 Scope: defects from the 29 Oct 2026 passenger test ride on deployed `main`
 (`c4d47b3`), recorded in a 9 min 40 s screen capture and the

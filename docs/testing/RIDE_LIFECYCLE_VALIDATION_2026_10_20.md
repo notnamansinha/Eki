@@ -1,6 +1,8 @@
-# Ride lifecycle and telemetry claim validation — 20 October 2026
+# Ride lifecycle and telemetry claim validation: 20 October 2026
 
-Last updated: 2026-10-20 22:46 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-049 | 1.0 | Historical | 2026-10-20 |
 
 This extends PR #344 and the [production audit validation](PRODUCTION_AUDIT_VALIDATION_2026_10_20.md).
 Claims supplied by the owner were checked against `testing` base

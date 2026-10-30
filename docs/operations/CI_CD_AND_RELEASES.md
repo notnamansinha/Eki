@@ -1,171 +1,203 @@
-# CI, deployment, and release guide
+# CI, Deployment and Releases
 
-Last updated: 2026-10-16 00:23 IST (UTC+05:30).
-
-This document explains what the repository automation verifies, what it deploys,
-and which production actions still belong to the university operations team.
-It contains names and placeholders only; environment secrets and project IDs
-belong in GitHub environment settings or the university secret manager.
-
-## Verification workflow
-
-`.github/workflows/ci.yml` runs on every push and pull request as the
-`Production verification` workflow. It uses Node.js 24, Java 21 for Firebase
-emulators, Python 3.12 for PlatformIO, and a Linux runner.
-
-The workflow performs:
-
-1. `npm ci` with the committed lockfile.
-2. Frontend and backend linting.
-3. Root script tests plus backend and frontend Vitest suites.
-4. Firebase Firestore/RTDB rules integration through the emulator. The test
-   helper writes isolated temporary copies; committed rules are never modified.
-   App Check is not used; deployment disables Firestore/RTDB product enforcement.
-5. Strict frontend production build with CI-only placeholder public values,
-   service-worker generation, deterministic CSP regeneration, and
-   web/backend CSP contract assertions (origin and Firebase Auth `frame-src 'self'`).
-6. Runtime dependency audit plus a full development-tooling dependency audit.
-7. Backend Docker image build and smoke boot. A degraded `503 /health` is
-   expected with placeholder Firebase configuration and proves the container
-   starts and exposes the load-balancer contract. The same smoke requires
-   `200 /live` with `status: alive` and checks Docker uses that liveness URL.
-8. Native firmware tests, development and legacy journal ESP32 compilation, and a secure firmware
-   compilation using an ephemeral CI-only signing key. CI must never produce a
-   fleet artifact or handle the university production key.
-
-9. Chromium mobile/desktop admin-access and feedback regressions through
-   `npm run test:e2e:admin`, using real UI modules with synthetic Firebase data.
-10. A CycloneDX production-dependency SBOM retained as a 30-day run artifact.
-11. A fixed-severity Trivy gate on the built backend runtime image. Fixed HIGH
-    and CRITICAL OS/library findings fail the job; unfixed findings remain
-    visible for review.
-
-The separate `.github/workflows/codeql.yml` scans JavaScript/TypeScript and
-Python on pushes and pull requests with GitHub's security-extended queries.
-GitHub secret scanning and push protection are enabled on the public repository.
-CodeQL and Trivy findings require triage; passing scans cannot prove that a
-runtime, firmware image, or external service is free of vulnerabilities.
-
-The Firebase emulator gate includes worker destination fencing alongside client
-authorization rules: valid/superseded Firestore writes, expiry during a dispatched
-read, and RTDB generation rejection. See [worker leadership](WORKER_LEADERSHIP.md).
-
-The workflow proves source/build consistency. It does not prove GNSS reception,
-vehicle power, radio coverage, TLS against the production certificate chain,
-secure eFuse provisioning, route geometry in the field, or safe driver
-operation.
-
-## Deployment workflow
-
-`.github/workflows/deploy.yml` has two paths:
-
-| Path | Trigger | Deploys | Gate |
+| Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| Staging | Successful verification from a push to `main`, or manual staging dispatch from `main` | Firebase Hosting, Firestore rules and RTDB rules for the approved staging project | Exact verified commit SHA for `workflow_run` (manual dispatch deploys the selected `main` ref directly); staging environment secrets |
-| Production | Manual dispatch from `main` with `production` selected | Firebase Hosting, Firestore rules and RTDB rules for the separately approved production project | Protected GitHub environment/reviewer approval, current `main` ref at dispatch time, and production secrets |
+| EKI-OPS-001 | 1.0 | Current | 2026-10-30 |
 
-Staging and production deployments disable App Check enforcement on Firestore and RTDB through
-`scripts/disable-appcheck-enforcement.mjs --project <project-id> --disable` before publishing the app.
-Both workflows require project-scoped credentials and verify the returned
-UNENFORCED mode. Local tests do not change any deployed Firebase configuration.
+## 1. Purpose
 
-Both deployment paths run the RTDB instance preflight, deploy the declared
-Firestore indexes, and wait for the required deployed query shapes to become
-ready before Hosting is released. Name-only, one-record probes cover retention,
-privacy collection-group cleanup, the pending privacy queue, abandoned rides,
-and processing route-preview/fleet-job recovery. They check the actual deployed
-query shapes, including automatic indexes; a declaration count is insufficient.
-The preflight needs the environment-scoped
-backend and frontend database URL secrets to name the same instance.
+This document describes the GitHub Actions workflows in `.github/workflows/`, what each one verifies or deploys, the branch flow they assume, and how to release and roll back. It names secrets and environments only; values belong in GitHub environment secrets or the owner's secret manager.
 
-`testing` is the integration branch: pushes and PRs run verification, but a
-merge into `testing` does not trigger the automatic `main` deployment path.
+Readiness gates that sit outside the repository (infrastructure owners, privacy approval, field acceptance) are listed in the [deployment checklist](UNIVERSITY_DEPLOYMENT_CHECKLIST.md).
 
-The workflow does not deploy the Express backend container, configure DNS/TLS,
-create a WAF, provision Firebase data, flash devices, or change fleet
-assignments. Those actions must be performed and evidenced separately.
+## 2. Branch and release flow
 
-## Required environment secrets
+Pull requests target `main`. Since PR #358 (2026-10-21) pull requests have merged into `main`, not `testing`. The `testing` branch last advanced on 2026-10-21 (PR #355, commit `6b2d8e4`) and is an ancestor of `main`; on 2026-10-30 it is 137 commits behind `origin/main`. Merging into `testing` deploys nothing, but the scheduled QA workflows still test it (Section 6).
 
-Each GitHub environment needs its own values. Store values in GitHub encrypted
-environment secrets or the approved secret manager; never put them in YAML,
-Markdown, logs or screenshots.
+```mermaid
+flowchart LR
+    PR[Pull request to main] --> CI[Production verification<br/>and CodeQL]
+    CI --> Merge[Merge to main]
+    Merge --> CIM[Production verification<br/>on push to main]
+    CIM -->|success| DS[Deploy: staging job]
+    DS --> P1[Firebase project bustrack-be165<br/>Hosting, rules, indexes]
+    Manual[Manual dispatch from main,<br/>environment production] --> DP[Deploy: production job]
+    DP --> P2[Firebase project eki-production<br/>Hosting, rules, indexes]
+    Sched[Nightly and weekly schedules] --> T[Tests the testing branch head]
+```
 
-### Deployment token
+Figure 1. Branch, verification and deployment flow.
 
-- `FIREBASE_TOKEN`: Firebase CLI token for that exact environment/project.
+A green push to `main` releases the frontend and security rules to `bustrack-be165` without further approval. That project is the default in `.firebaserc` and serves `https://bustrack-be165.web.app`, the site that field tests use. No separate staging project exists in the repository configuration. No workflow deploys the backend (Section 7).
 
-### Frontend build values
+| Workflow file | Name | Triggers | Deploys |
+|---|---|---|---|
+| `ci.yml` | Production verification | Every push to any branch; every pull request | Nothing |
+| `codeql.yml` | CodeQL | Every push; every pull request | Nothing |
+| `deploy.yml` | Deploy | Completion of Production verification; manual dispatch | Hosting, Firestore rules, RTDB rules and Firestore indexes |
+| `deep-qa.yml` | Isolated nightly QA | Daily at 20:17 UTC (01:47 IST); manual dispatch; pushes to six `codex/qa-*` branches | Nothing |
+| `weekly-reliability.yml` | Isolated weekly reliability baseline | Saturdays at 20:41 UTC (Sundays 02:11 IST); manual dispatch; pushes to `codex/qa-nightly-reliability` | Nothing |
 
-The deployment workflow passes these `NEXT_PUBLIC_*` values to the strict build:
+## 3. Production verification (`ci.yml`)
 
-- `NEXT_PUBLIC_FIREBASE_API_KEY`
-- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
-- `NEXT_PUBLIC_FIREBASE_DATABASE_URL`
-- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
-- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
-- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
-- `NEXT_PUBLIC_FIREBASE_APP_ID`
-- `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
-- `NEXT_PUBLIC_GOOGLE_MAP_ID`
-- `NEXT_PUBLIC_BACKEND_URL`
+The workflow uses Ubuntu runners, Node.js 24, the runner's Java 21 (for Firebase emulators) and Python 3.12 with PlatformIO 6.2.0. It needs no secrets: every Firebase and Maps value it uses is a placeholder.
 
-Browser values are public identifiers after bundling, but Firebase/Maps keys
-must still be restricted by hostname, project and API. The backend URL must be
-HTTPS and origin-only outside local development.
+| Job | Timeout | Checks |
+|---|---|---|
+| `web` | 30 min | `npm ci`; QA catalog and safety checks (`qa:check`, `qa:catalog`, `qa:gnss`, `qa:unit:reviewed`, and `qa:budget` on pull requests); RTDB instance preflight; OpenAPI route coverage; `npm run lint`; `npm test`; Firestore and RTDB rules in emulators; bounded work admission under stalled dependencies; Playwright suites for admin access, passenger layout, passenger progress and production audit regressions; emulator-backed passenger browser and HTTP authorization suites; strict production build with CSP regeneration; canonical, social and crawler origins in the export; `npm audit` for runtime and for all dependencies; CycloneDX SBOM |
+| `backend-image` | 20 min | Builds `backend/Dockerfile`, boots it with `NODE_ENV=production` and placeholder Firebase settings, requires `503` with `"status":"degraded"` from `/health`, `200` with `"status":"alive"` from `/live`, and a Docker health check on `/live`; Trivy fails on fixed `CRITICAL` or `HIGH` OS and library findings |
+| `firmware` | 15 min | Secure-fleet JTAG configuration test; native firmware tests (`qa:native`); host protocol tests; builds `esp32dev`, `esp32dev-quiet` (trace strings must be absent) and `esp32dev-journal`; links the SNTP guard; builds `esp32dev-secure` with an ephemeral key generated in the job and checks that the signed image rejects modification and foreign keys |
+| `qa-evidence` | 8 min | Runs after `web` and `firmware`, even when they fail; merges their evidence artifacts and runs `qa:report` |
 
-### Backend runtime values
+The firmware job copies `hardware/include/secrets.example.h` to `secrets.h` and inserts a fake secret so that the network code is compiled. CI never handles a fleet signing key or produces a fleet artifact.
 
-Backend `.env` values are not supplied by the Firebase Hosting deploy. Configure
-them in the managed container/runtime using [CONFIGURATION.md](../CONFIGURATION.md),
-prefer Workload Identity/ADC, and keep `FIREBASE_SERVICE_ACCOUNT` out of the
-repository. Production must set exact `CORS_ORIGIN`, `FIREBASE_DATABASE_URL`,
-server Maps configuration, worker settings, rate-limit shard factor and
-approved retention values. Signed device releases additionally require all six
-`FIRMWARE_RELEASE_*` values from the controlled hardware release procedure.
+Artifacts are kept for 7 days, except the SBOM (`production-dependency-sbom`), which is kept for 30 days.
 
-## Release sequence
+CI establishes that the source builds and that the automated suites pass. It does not establish GNSS reception, vehicle power, radio coverage, TLS against the deployed certificate chain, Secure Boot provisioning, stop accuracy on a real route, or the behaviour of the deployed backend. The Slow 3G and Offline browser checks remain manual (see the [deployment checklist](UNIVERSITY_DEPLOYMENT_CHECKLIST.md)).
 
-1. Update code, rules, firmware, configuration templates and all affected docs.
-2. Run `npm run verify` locally. Run `npm run test:rules` when the emulator
-   prerequisites are available, and run the relevant PlatformIO tests/builds.
-3. Open a pull request and wait for every CI job to pass.
-4. Review the generated service worker and CSP changes when frontend behavior or
-   allowed origins change.
-5. Let the verified `main` commit deploy to staging. Check Hosting headers,
-   Auth, rules, `/health`, backend logs, telemetry, and a test route.
-6. Run the staged browser slow-network/offline and physical hardware acceptance
-   matrix. Do not call CI success a field pass.
-7. Dispatch production only after the protected environment approval, privacy/
-   retention approval, backups/restore readiness, monitoring, DNS/TLS, WAF and
-   rollback plan are confirmed.
-8. Deploy or roll the backend runtime separately, then verify the exact frontend
-   backend origin, device telemetry, worker lease and health alerts.
+## 4. CodeQL (`codeql.yml`)
 
-## Rollback and incident response
+The `analyze` job runs CodeQL with the `security-extended` query suite for `javascript-typescript` and `python`, on every push and pull request. It needs `security-events: write` and no secrets. Findings appear in the repository's code scanning alerts and require triage.
 
-- Hosting/rules: redeploy the last known-good verified commit to the affected
-  Firebase project, then recheck rules and headers.
-- Backend: roll the managed runtime to the last known-good image; keep the
-  worker lease and session IDs under observation during recovery.
-- Frontend configuration: rebuild with the previous environment values; do not
-  edit generated CSP hashes by hand.
-- Device credential or CA failure: disable/rotate the registry credential,
-  prepare a corrected device-specific protected image, and reflash under the
-  witnessed hardware procedure. Never place a replacement secret in an issue
-  or deployment log.
-- Firmware: stop distribution by unsetting all six `FIRMWARE_RELEASE_*`
-  values. Healthy candidates self-confirm after backend acceptance; unhealthy
-  candidates remain pending and bootloader rollback restores the prior slot.
-  Never publish an older sequence as a downgrade mechanism.
-- Data/privacy incident: follow the university incident owner and preserve
-  approved evidence; do not run destructive retention or deletion commands as a
-  first response.
+## 5. Deploy (`deploy.yml`)
 
-## Release evidence
+### 5.1 Triggers and conditions
 
-Archive the commit SHA, CI run, deployment environment (not its secrets),
-frontend/backend image identifiers, rules/index version, health output,
-telemetry latency and rejection metrics, firmware artifact hash, physical
-acceptance results, approver, rollback target, and known risks. Redact tokens,
-private keys, device/Wi-Fi credentials, personal records and internal addresses.
+| Job | Runs when | Environment | Firebase project | Checked-out commit |
+|---|---|---|---|---|
+| `deploy-staging` | Production verification completed with `success` for a `push` to `main` in this repository; or manual dispatch from `main` with `environment: staging` | `staging` | `bustrack-be165` | The verified commit (`workflow_run.head_sha`); on dispatch, the head of `main` |
+| `deploy-production` | Manual dispatch from `main` with `environment: production` | `production` | `eki-production` | The head of `main` at dispatch |
+
+Runs for pull requests, forks and other branches are skipped. Runs for the same environment are queued, not cancelled (`concurrency: deploy-<environment>`). The Firebase CLI is pinned to `firebase-tools@15.14.0`.
+
+### 5.2 Steps
+
+Both jobs run the same steps against their own project. A failed step stops the job, so nothing after it is deployed.
+
+1. `npm ci`.
+2. `npm run verify:rtdb-instance`: the backend and frontend database URLs must name the same RTDB instance, and its region must equal `RTDB_EXPECTED_REGION` when that variable is set.
+3. `npm run build:production`: strict build that fails on a missing or local `NEXT_PUBLIC_*` value and regenerates the service worker and the CSP in `firebase.json` with the backend origin.
+4. `npm run verify:web-backend-contract` with `EKI_RUNTIME_SMOKE=1`: the live backend at `NEXT_PUBLIC_BACKEND_URL` must answer `/health` with `status: ok`, allow the frontend origin (`https://bustrack-be165.web.app` or `https://eki-production.web.app`) in CORS, and accept the preflight for `POST /api/users/bootstrap`.
+5. `node scripts/disable-appcheck-enforcement.mjs --project <project> --disable`: sets App Check enforcement for Firestore and RTDB to `UNENFORCED` and verifies the result. The web app does not use App Check.
+6. Deploy `firestore:indexes`, then wait up to 30 minutes for the deployed query shapes ([Firestore index deployment](FIRESTORE_INDEX_DEPLOYMENT.md)).
+7. Deploy `hosting,firestore:rules,database:rules`.
+
+Step 4 makes every Hosting release depend on a running, healthy backend. While the backend runs on a workstation (Section 7.1), a release fails if the workstation or tunnel is down.
+
+### 5.3 Environments, secrets and variables
+
+| Name | Kind | Used by | Purpose |
+|---|---|---|---|
+| `staging`, `production` | GitHub environments | Deploy jobs | Scope the secrets below |
+| `FIREBASE_TOKEN` | Environment secret | Steps 5 to 7 | Firebase CLI token for that project |
+| `FIREBASE_DATABASE_URL` | Environment secret | Step 2 | RTDB URL that the backend uses |
+| `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_DATABASE_URL`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAP_ID`, `NEXT_PUBLIC_BACKEND_URL` | Environment secrets | Steps 2 to 4 | Values compiled into the static frontend |
+| `RTDB_EXPECTED_REGION` | Variable (optional) | Step 2 | Expected RTDB region, for example `asia-southeast1` |
+
+The workflow passes no other build variables. `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_SITE_INDEXING` are therefore unset in deployed builds: canonical and social URLs fall back to `https://bustrack-be165.web.app` and indexing is enabled. A custom domain or a production build needs those two values added to the workflow ([DNS and domains](DNS_AND_DOMAINS.md)). The meaning of each variable is in [configuration](../CONFIGURATION.md).
+
+Browser values become public after bundling. Restrict the Firebase and Maps browser keys by referrer and API.
+
+### 5.4 What is deployed where
+
+| Artifact | Source | Deployed by |
+|---|---|---|
+| Static frontend (`frontend/out`), headers and CSP | `firebase.json` `hosting` | Deploy, step 7 |
+| Firestore security rules | `firestore.rules` | Deploy, step 7 |
+| RTDB security rules and indexes | `database.rules.json` | Deploy, step 7 |
+| Firestore composite index and field overrides | `firestore.indexes.json` | Deploy, step 6 |
+| App Check enforcement mode | Firebase App Check API | Deploy, step 5 |
+| Backend (`backend/Dockerfile`) | Built and smoke-tested by CI only | No workflow |
+| Firmware | `hardware/` | No workflow; flashed by hand ([hardware guide](../../hardware/README.md)) |
+| Firebase data, Auth users, DNS, TLS, WAF | Not in the repository | No workflow |
+
+`firebase.json` has no Hosting rewrites, so Hosting serves only static files.
+
+### 5.5 Repository settings
+
+These GitHub settings are not stored in the repository. They were read through the GitHub API on 2026-10-30:
+
+| Setting | Value | Effect |
+|---|---|---|
+| Ruleset `main` (default and all branches) | Pull request with one approving review and code owner review (`* @notnamansinha`); no deletion or force push; merge or squash; maintainers and administrators may bypass | No status check is required, so reviewers confirm that CI passed before merging. Deploy still runs only after a green verification. |
+| Environments | `staging` and `copilot`; no `production` | A job that names a missing environment creates it, so the first production dispatch would run without reviewers or secrets. Create `production` with required reviewers first. |
+| Secret scanning and push protection | Enabled | Pushes containing recognised secrets are blocked |
+
+## 6. Scheduled QA (`deep-qa.yml`, `weekly-reliability.yml`)
+
+Both workflows start with a `resolve` job that pins one commit. On a schedule or manual dispatch (which must run from `main`) the job reads the head of `testing` through the GitHub API; on a push to one of the listed `codex/qa-*` branches it uses the pushed commit. Neither workflow uses secrets, and both refuse to run outside `notnamansinha/Eki`.
+
+| Workflow | Matrix suites | Report job |
+|---|---|---|
+| Isolated nightly QA | `gnss`, `emulator`, `browser`, `api`, `native`, `reviewedUnit`, each through `node scripts/qa/campaign.mjs <suite>` | `node scripts/qa/campaign-report.mjs` |
+| Isolated weekly reliability baseline | `mutation` (`npm run qa:mutation`) and `soak` (`npm run qa:soak`) | `node scripts/qa/weekly-report.mjs` |
+
+Because `testing` no longer receives merges, scheduled runs exercise the code of 2026-10-21, not `main`. The [risk register](ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-tests-a-stale-branch) tracks this. The campaigns are described in [scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md).
+
+## 7. Backend hosting
+
+### 7.1 Current state
+
+The repository builds and tests a backend container (`backend/Dockerfile`: Node.js 24 on Alpine, non-root user, port `8080`, Docker health check on `/live`), but no workflow publishes or runs it. The backend runs on a workstation and is reached through an ngrok tunnel ([ngrok tunnel](NGROK_TUNNEL.md)). A read-only assessment on 2026-10-21 found:
+
+- The frontend build and the device firmware both use the tunnel origin as the backend URL.
+- The workstation backend runs in development mode on port `4000`, as a single process that also runs the lease-owned workers ([worker leadership](WORKER_LEADERSHIP.md)).
+- Firestore is in `asia-south2`; the configured RTDB instance is in `us-central1`.
+- Cloud Billing and the Cloud Run API were disabled on `bustrack-be165`.
+
+The service is available only while the workstation, the backend process and the ngrok agent are running.
+
+### 7.2 Proposed migration to Cloud Run
+
+Status: Proposed. Nothing below is implemented; the draft specification (PR #380) was closed without merging.
+
+The proposal runs the existing container on Cloud Run in the same Firebase project and keeps Hosting, Authentication, Firestore and the existing RTDB instance unchanged. Cloud Run needs a Cloud Billing account on the project, which moves a Spark project to the Blaze plan [2].
+
+- Prefer one public origin: Hosting rewrites for `/api/**`, `/health` and `/live` to the service. If the extra hop fails device latency acceptance, use a stable API hostname instead ([DNS and domains](DNS_AND_DOMAINS.md)).
+- Run at least one instance with instance-based CPU, because the process runs continuous workers outside request handling.
+- Run the service with `NODE_ENV=production`. Production startup requires `CORS_ORIGIN` and `RETENTION_SWEEPER_ENABLED=true`, which turns on retention deletion; review the retention policy before the first production start ([RTDB retention](RTDB_RETENTION.md), [privacy deletion](PRIVACY_DELETION.md)).
+- Move worker leadership deliberately: stop the workstation coordinator, then confirm that the cloud instance holds the lease.
+- Rebuild the frontend and reflash every device with the new origin and its root CA. Retire the tunnel only after the system works with the workstation disconnected.
+
+The gate to make this current: a billing owner, a reviewed backend release workflow with image digest and rollback, a staging acceptance record, and a rehearsed rollback.
+
+## 8. Release procedure
+
+Prerequisites: the change has a pull request to `main`; the backend at `NEXT_PUBLIC_BACKEND_URL` is running and healthy.
+
+1. Wait for Production verification and CodeQL on the pull request. Expected: all jobs green.
+2. If the change alters an HTTP contract or a backend behaviour that the new frontend needs, update the backend first: on the backend host, stop the backend, check out the merge candidate, run `npm ci`, and start the backend again ([ngrok tunnel](NGROK_TUNNEL.md)). Expected: `/health` returns `status: ok`.
+3. Obtain the approving review and code owner review, then merge. Expected: Production verification runs on the push to `main`.
+4. Watch the Deploy run in the Actions tab. Expected: `deploy-staging` succeeds; `deploy-production` is skipped.
+5. If the release changed firmware, build and flash it separately ([hardware guide](../../hardware/README.md)); vehicles use only the signed procedure in [hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md).
+6. Production: only after the `eki-production` project and a `production` environment with required reviewers exist, dispatch Deploy from `main` with `environment: production`. Expected: the run waits for approval, then succeeds.
+
+## 9. Verification after a release
+
+1. Open the site and confirm that the page loads the new build. Expected: no CSP errors in the browser console.
+2. Run `node scripts/check-stationary-runtime.mjs --frontend https://bustrack-be165.web.app --backend <backend-origin>` from the repository root. Expected: every check passes (frontend `200`, backend health `200`, API preflight `204` and unauthenticated Places request `401`, each allowing the frontend origin).
+3. Sign in as an administrator and open Live Ops. Expected: online devices appear and services start as described in [automatic GNSS service](AUTOMATIC_GNSS_SERVICE.md).
+4. Record the release evidence in Section 11.
+
+## 10. Rollback
+
+| Component | Fast rollback | Complete rollback |
+|---|---|---|
+| Hosting | Firebase console, Hosting, Release history, Roll back on the previous release [1] | Revert the change on `main` through a pull request; the automatic Deploy run redeploys Hosting, rules and indexes from the reverted commit |
+| Firestore and RTDB rules | None (a Hosting rollback leaves rules unchanged) | Revert on `main`, as above |
+| Backend (workstation) | Check out the last known-good commit on the host and restart the backend | Same |
+| Frontend configuration | Correct the environment secret and rerun Deploy by dispatch from `main` | Same; do not edit generated CSP hashes by hand |
+| Firmware over the air | Unset all six `FIRMWARE_RELEASE_*` backend values to stop distribution | Bootloader rollback restores the previous slot for an unhealthy candidate; never publish an older sequence as a downgrade |
+| Device credential or CA | Disable the device with `POST /api/devices/<device-id>/disable` (administrator) or rotate its secret with `npm run provision-device --workspace=backend` (refused during an active ride) | Reflash a corrected device image |
+
+The manual production dispatch always deploys the head of `main`, so a production rollback also goes through a revert on `main`.
+
+## 11. Release evidence
+
+For each release, record the commit SHA, the Production verification and Deploy run URLs, the environment name (not its secrets), the backend commit and host, the result of Section 9, any firmware image hash and flashed devices, the approver, the rollback target and known risks. Keep tokens, keys, device and Wi-Fi credentials, personal records and precise location traces out of the record.
+
+## 12. References
+
+[1] Google, "Manage live and preview channels, releases, and versions for your site," firebase.google.com/docs/hosting/manage-hosting-resources. Accessed: 2026-10-30.
+
+[2] Google, "Serve dynamic content and host microservices with Cloud Run," firebase.google.com/docs/hosting/cloud-run. Accessed: 2026-10-30.

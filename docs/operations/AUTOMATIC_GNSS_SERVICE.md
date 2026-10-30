@@ -1,41 +1,130 @@
-# Automatic GNSS service lifecycle
+# Automatic GNSS Service
 
-A qualified authenticated receiver fix automatically establishes its protected service. Routine service startup does not require an open admin tab or a Start service action. The existing ride-session API remains available for compatible clients and explicit recovery from an intentionally paused service.
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-009 | 1.0 | Current | 2026-10-30 |
 
-## Admission and authorization
+## 1. Purpose
 
-The receiver must have an enabled canonical device assignment, an active bus assigned to the route, exactly one eligible operator assigned to that bus, a valid ordered route, and a fresh fix with known HDOP no greater than 4. Uncertain or stale fixes do not create a new session. Every creation transaction checks the current assignment revision and canonical configuration again.
+This document explains, for operators and administrators, how a ride session starts, progresses, survives outages, ends and resumes. The backend starts the service from the device's own GNSS fixes: no open admin tab and no start action are needed. The authenticated ride-session API remains for compatible clients and for `Resume tracking`.
 
-Device admission calls the same internal session operation as the authenticated operator API. It does not impersonate an administrator. Stable idempotency bindings and the durable per-bus lock prevent duplicate sessions across retries and backend instances. A bounded per-bus executor keeps startup reads and writes outside the telemetry acknowledgement path. Blocked configuration retries have a bounded cache; credential invalidation releases the relevant block after a repair.
+The matching and stop algorithms are specified in [tracking algorithms](../design/TRACKING_ALGORITHMS.md); the session API in [ride-session contract](../api/RIDE_SESSION_CONTRACT.md).
 
-Presence can arrive before the protected-session transaction completes. Public readiness/catalog and route-detail subscriptions remain distinct from the receiver's ingress acknowledgement. Compare matching sequence numbers when investigating delivery timing; an HTTP 200 page response alone does not establish live rendering.
+## 2. Lifecycle
 
-## Direction, progress and recovery
+```mermaid
+stateDiagram-v2
+    [*] --> NoSession: device online
+    NoSession --> Blocked: admission check fails
+    Blocked --> NoSession: records repaired
+    NoSession --> Pending: qualified fix
+    Pending --> InService: bus leaves stop 1
+    InService --> Completed: confirmed stop at the final stop
+    Completed --> Pending: turnaround wait, then stopped fix at the final stop (return service)
+    InService --> Paused: End ride early
+    Pending --> Paused: End ride early
+    Paused --> Pending: Resume tracking
+```
 
-A stationary qualified fix can make the bus live before direction is known. Endpoint evidence or the existing conservative first-leg departure history resolves direction. A midpoint boot must not claim unobserved stops were served. Direction-dependent ETA and progress remain gated until their required evidence exists.
+Figure 1. Service lifecycle. `NoSession` is `Service setup pending`, `Blocked` is `Assignment required` or `Awaiting return service`, and `Pending` covers `Direction Pending` and `Awaiting Stop 1`.
 
-Stop arrivals use a 15 m arrival corridor (a reliable fix, or the segment between two consecutive reliable fixes, within 15 m of the stop) with the existing quality/ordering/dwell checks. The former 2.5 m circle was not attainable in the 29 Oct 2026 field ride: stops pinned a few metres off the lane plus receiver error meant B was never observed. A stop is marked when the bus reaches it and published as `atStopIndex` while the bus is there; the origin counts as visited until departure (50 m). Outside a GNSS gap the next expected stop advances; if it was missed with telemetry running, reaching one of the next two stops in the route's direction of travel credits it as `passed_unobserved`, never as an arrival. After a gap (more than 10 s without a fix, an untrusted fix, or a segment longer than 250 m), a reliably observed later stop credits the stops in between as `skipped_gnss_gap` instead of leaving the ride stuck before them; the terminal still needs its confirmed stopped arrival. Turnaround retains the completion and return-dwell policy. Session creation must not substitute for these observations.
+| Live Ops label | Meaning |
+|---|---|
+| `Service setup pending` | The device is online and no ride session exists yet (Fleet & People shows `Ride Not Armed`) |
+| `Assignment required` | Device, bus, route or operator records do not satisfy Section 3 |
+| `Direction Pending` | A session exists; the backend has not yet decided the direction of travel |
+| `Awaiting Stop 1` | Direction known; the bus has not left stop 1 (trip state `pre_departure`) |
+| `In Service` | The bus has left stop 1 (trip state `in_service`) |
+| `Service paused` | A session exists but no location update arrived for 30 s, or the device is offline (Section 5) |
+| `Completed` | The bus confirmed its stop at the final stop |
+| `Awaiting return service` | The outbound ride completed; the return service has not started yet |
+| `Tracking paused` | An administrator ended the ride early; no new service starts until `Resume tracking` |
+| `Offline` | No session and no fresh location from the device |
 
-The service survives temporary GPS, tunnel and backend outages. UI status distinguishes retained lifecycle from current telemetry: an offline/delayed session is paused rather than counted as a live service. Passengers see an offline ride exactly like an offline device: it leaves the map and route list once its telemetry expires and is not counted as an active route service, and it returns if the receiver reconnects while the session is retained. Live Ops keeps every bus at its last reported location while it is offline, including after its ride ended; once the server removes the live presence record, the last accepted fix from `bus_locations` keeps the bus on the map as Offline with its last-seen time. Default frontend expiry is five minutes in both development and production, matching the backend's five-minute default; passengers see "Updates delayed" after 12 seconds without a packet, "Live tracking lost" after 30 seconds, and "GPS signal lost" immediately on the firmware's loss packet. These are driven by the viewer's own clock, so they also appear when the backend is stopped. Explicit environment overrides remain supported and must be kept consistent by the deployment operator. The backend's 90-second value is its minimum configurable stale interval, not its development default.
+## 3. Admission conditions
 
-An incomplete automatic setup carries a server-owned `serviceSetupPending` marker. Later accepted fixes repair the same session and durable projections, then clear the marker. A queued newer fix is retained while a startup attempt settles. Configuration backoff must not suppress recovery after a session-projection conflict. `serviceSetupPending` is internal and is not in the public projection allowlist.
+The backend starts a service when an accepted fix meets every condition below. It re-reads the records inside the session-creation transaction, so a change made while a start is in progress is honoured.
 
-## Deliberate stop and resume
+| Condition | Record |
+|---|---|
+| The device exists, is enabled, and is assigned to this bus and route at the current assignment revision | `devices/{deviceId}` |
+| The bus exists, is not inactive, lists the route, and does not have `automaticServiceEnabled: false` | `buses/{busId}` |
+| Exactly one operator record has `assignedBusId` equal to the bus, and it is neither disabled nor inactive | `drivers` |
+| The route has a valid ordered stop list | `routes/{routeId}` |
+| The bus is not paused and has no unfinished return journey | `bus_locations/{busId}` |
+| The fix is at most 60 s old and at most 10 s in the future, has HDOP between 0 and 4, and is not marked `uncertain` | Telemetry |
 
-End ride early remains an authenticated operator action. It records interrupted history, releases only the matching lock, and persists an automatic-start pause only while that session still owns the bus. Retrying an old stop cannot pause a replacement session. Further telemetry can show an online device but cannot recreate the ended ride. A ride cut short without that operator action, such as one closed by abandoned-ride cleanup or a failed return, does not pause the bus: the next qualified fix starts a fresh automatic service under a new start key and never revives the ended ride. The new start key is opened by a compare-and-swap on the epoch (and, for a failed return, on the marker being released), so replicas that handle the same bus at once produce one epoch bump and one ride; a replica that loses the swap re-reads the bus, at most twice per attempt, instead of reporting it paused. A pause set meanwhile still refuses the swap. Live Ops exposes Resume tracking for intentionally paused receivers. This authorized action uses the protected session API and a stable retry key, starts in pre-departure, and does not claim an unobserved origin arrival. Provisioning and driver/bus/route authorization remain necessary.
+Admission runs in a bounded per-bus queue outside the telemetry acknowledgement, so the device's request is answered without waiting for the session. A blocked bus is retried after 30 s; a failed attempt after 2 s. The backend uses the same session operation as the authenticated API, with a fixed idempotency key and the durable per-bus lock, so retries and several backend instances create one session. If a start is interrupted, the session carries `serviceSetupPending` and the next accepted fix completes it.
 
-A failed consumed return requires explicit recovery rather than waiting forever for that ended session. An unconsumed completion intent still follows normal turnaround recovery and dwell; it does not expose a shortcut that bypasses the return policy.
+## 4. Direction and stop progress
 
-## Passenger map
+The table lists the rules an operator needs when placing stops and reading Live Ops. The full rules are in [tracking algorithms](../design/TRACKING_ALGORITHMS.md#64-direction-selection) (direction) and [stop progression](../design/TRACKING_ALGORITHMS.md#7-stop-progression).
 
-Reconnect and failure messages reserve layout space above tracking controls. In-map notices leave a separate column for map controls. Preview defaults to route overview so a distant bus cannot shrink the configured route to an unreadable cluster. Center on bus and Show route overview allow explicit camera changes. Map fitting measures the visible sheet inset. Ordinary stop names appear on selection/focus; next-stop and destination labels take priority. The shared upright bus marker has a separate heading cue and an uncertain appearance.
+| Rule | Value |
+|---|---|
+| Direction from an endpoint | A stopped fix within 10 m of exactly one route endpoint |
+| Direction from departure | At least three fresh reliable moving fixes, 30 m of net travel along one unambiguous first leg |
+| Leaving stop 1 | 50 m from stop 1; between 10 m and half the distance to stop 2 when stop 2 is closer than 100 m |
+| Stop arrival | A reliable fix, or the segment between two consecutive reliable fixes, within 15 m of the stop, in route order |
+| Wrong side of a divided road | A stop more than 6 m to the right of a moving bus is not credited (traffic keeps left) |
+| Stop missed with telemetry running | Credited `passed_unobserved` (`Passed · not confirmed`) when the bus reaches one of the next two stops in its direction of travel; never an arrival |
+| GNSS gap | More than 10 s without a fix, an untrusted fix, or a segment longer than 250 m |
+| After a gap | A reliably observed later stop credits the stops in between as `skipped_gnss_gap`, if the bus could have covered the distance at 25 m/s or less |
+| Final stop | Speed of 2.5 km/h or less within 15 m, confirmed by fixes spanning 2 s (`TERMINAL_ARRIVAL_CONFIRMATION_MS`) |
+| Return service | After a 30 s wait (`AUTOMATIC_TURNAROUND_DWELL_MS`), a fresh stopped fix at the final stop starts a new session in the opposite direction |
 
-## Fleet reconciliation lock
+While the bus is at a stop, the live record publishes `atStopIndex`, and passengers see `At <stop>`. A device that boots mid-route does not claim the stops before its first observation. These rules have been validated on simulated tracks only ([risk TRK-01](ARCHITECTURE_RISK_REGISTER.md#37-trk-01-stop-progress-is-validated-on-simulated-tracks-only)).
 
-The fleet-authorization mutex is independent of normal telemetry projection. Restarting npm does not clear it, and age alone does not establish that its owner stopped. Follow [the guarded recovery procedure](../api/OPERATION_RESOURCES.md) to inspect the lock and establish executor shutdown before exact-owner recovery. Automatic expiry or direct document deletion can overlap unfinished Auth mutations and is not a repair strategy. This change does not clear an existing live lock.
+## 5. Outages and liveness
 
-## Verification
+The session survives GNSS, network, tunnel and backend outages. The passenger and admin views time the silence on the viewer's own clock, so they change state even when the backend is stopped. Live Ops re-checks every 15 s, so its states can lag the passenger view by up to 15 s. The state rules are specified in [live bus health](../design/TRACKING_ALGORITHMS.md#9-live-bus-health).
 
-Run the root unit/script/lint/build checks, Firebase integration/rules suite, emulator-backed browser acceptance, passenger layout/progress tests, and the opt-in real Maps replay. The real Maps replay uses simulated input and cached route geometry; it must not be described as physical GNSS movement acceptance. Its map resource allowlist includes `mapsresources-pa.googleapis.com` from [Google's Maps domain documentation](https://developers.google.com/maps/domains).
+| Condition | Passenger view | Live Ops |
+|---|---|---|
+| Firmware sends its GNSS-loss packet | `GPS signal lost` at once | Marker drawn orange (uncertain fix) |
+| No location update for 12 s | `Updates delayed` | No change |
+| No location update for 30 s | `Live tracking lost`; ETAs, boarding and `Bus is here` are held back | `Service paused` and `Live location updates delayed` |
+| No location update for 5 min | The ride leaves the map and the route list; it returns if the device reconnects while the session exists | `Last seen <time>`; the bus stays on the map at its last accepted position |
+| Device reconnects | Same session and stop progress | Same session |
+| No ride activity for 12 h | Session closed by the abandoned-ride reconciler; the next qualified fix starts a new service | Same |
 
-Keep test accounts and destructive lifecycle scenarios on the disposable emulator project. A stationary physical smoke test can confirm freshness and connectivity. Physical stop-radius, moving-route color progression and ETA accuracy still require a moving receiver run.
+The 5-minute browser limit is `NEXT_PUBLIC_BUS_EXPIRY_MS` (default `300000`); the backend's stale limit is `BUS_STALE_MS` (default `300000`, minimum `90000`); the 12-hour limit is `ABANDONED_RIDE_THRESHOLD_HOURS`. Keep the browser and backend values equal when overriding them ([configuration](../CONFIGURATION.md)).
+
+## 6. Ending, pausing and resuming a service
+
+### 6.1 End a ride early
+
+1. In Live Ops, open the bus card or its live-details drawer and select `End ride early`. Expected: a confirmation dialog `End ride early?` appears.
+2. Select `End ride`. Expected: the ride appears in History as `Ended early`, the bus leaves the passenger views, and the card shows `Tracking paused`.
+
+The action requires a current administrator. It works even if the operator was reassigned. It releases only the lock that this session holds, and it pauses automatic starts only if that session still owns the bus, so retrying an old stop cannot pause a newer ride. Further fixes show the device online but do not restart the ended ride.
+
+A ride that ends without this action (closed by the abandoned-ride reconciler, or a failed return) does not pause the bus: the next qualified fix starts a new service.
+
+### 6.2 Resume tracking
+
+1. Confirm that the bus has exactly one assigned operator and the device is online. Expected: Live Ops shows `Resume tracking · <bus-id>` under Automatic service.
+2. Select it. Expected: `Automatic tracking resumed for <bus-id>.`, and the card shows `Direction Pending` or `Awaiting Stop 1`.
+
+Resume uses the protected ride-session API with a stable retry key. It starts in `pre_departure` and never credits an origin arrival that was not observed.
+
+## 7. Troubleshooting
+
+| Symptom | Check | Action |
+|---|---|---|
+| Device online, no service, no label | Fix age and HDOP in the serial log | Move to open sky; wait for HDOP of 4 or less |
+| `Assignment required` | Device registry, bus route list, operators assigned to the bus | Correct the records in Fleet & People; the next fix after 30 s retries |
+| `Tracking paused` but no Resume button | Device offline, or not exactly one operator | Power the device; fix the operator assignment |
+| `Direction Pending` for a long time | Bus started away from an endpoint, or the endpoint pin is more than 10 m from where the bus parks | Stop within 10 m of an endpoint, or drive the first leg from stop 1; move the pin if needed |
+| A stop never marks | Pin more than 15 m from the lane, or on the far side of a divided road | Move the pin to the near kerb in the Routes tab |
+| Fleet changes fail with a reconciliation lock error | The fleet-authorization lock is held | Follow the guarded recovery in [operation resources](../api/OPERATION_RESOURCES.md); do not delete the lock document |
+
+## 8. Verification
+
+The automated suites cover admission, lifecycle, stop progress and liveness: backend unit and emulator tests, passenger layout and progress Playwright suites, and the emulator-backed browser acceptance (see [CI, deployment and releases](CI_CD_AND_RELEASES.md#3-production-verification-ciyml)). The optional real Maps replay feeds simulated positions over cached route geometry; it is not physical movement acceptance. Its resource allowlist includes `mapsresources-pa.googleapis.com` [1].
+
+Run destructive lifecycle scenarios only against the emulator or a disposable project. A stationary device can confirm freshness and connectivity. Stop accuracy, the divided-road behaviour and ETA accuracy need a moving device on the real route ([field capture](FIELD_CAPTURE.md)). The latest recorded field ride is in [passenger field ride repairs](../testing/PASSENGER_FIELD_RIDE_REPAIRS_2026_10_29.md).
+
+## 9. References
+
+[1] Google, "Google Maps Platform domains," developers.google.com/maps/domains. Accessed: 2026-10-30.

@@ -1,6 +1,8 @@
-# Armed moving capture — 20 October 2026
+# Armed moving capture: 20 October 2026
 
-Last updated: 2026-10-20 18:56 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-023 | 1.0 | Historical | 2026-10-20 |
 
 Recording has ended. This report allocates the retained observations to all 64
 unchecked requirements in issues #245, #246, #300 and #337. There is one native

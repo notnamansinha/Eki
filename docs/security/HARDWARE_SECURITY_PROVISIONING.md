@@ -1,38 +1,71 @@
-# ESP32 fleet security and provisioning
+# Hardware Security Provisioning
 
-Last updated: 2026-10-04 14:20 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-SEC-005 | 1.0 | Current | 2026-10-30 |
 
-This is the mandatory physical acceptance procedure for production trackers.
-Secure Boot V2 and release-mode flash encryption burn irreversible ESP32
-eFuses. Run it first on clearly labelled spare ECO3-or-newer boards, with two
-authorized operators present. Never run fleet upload commands against an
-unidentified serial port.
+## 1. Purpose
 
-## Roles and key custody
+This procedure provisions a production tracker with the `esp32dev-secure` firmware environment, and releases signed application updates to provisioned trackers. Secure Boot V2 and release-mode flash encryption burn ESP32 eFuses that cannot be reset. Run the procedure first on clearly labelled spare boards, with two authorized operators present. Never run a fleet upload against an unidentified serial port.
 
-- The university security owner generates and retains the RSA-3072 Secure Boot
-  V2 signing key in an offline or HSM-backed signing environment.
-- The hardware operator receives signed release artifacts, records each board's
-  serial/MAC/device ID, and performs the witnessed flash and acceptance steps.
-- CI may generate a disposable signing key only to prove that the secure build
-  compiles. A CI artifact is never a fleet artifact.
-- The flash-encryption key is generated uniquely on-device by the ESP-IDF
-  bootloader. Do not export or reuse it.
+The fleet build enforces these protections:
 
-## Preflight on a spare board
+| Protection | Enforced by |
+|---|---|
+| Secure Boot V2 with an RSA-3072 signing key; signed bootloader and application | `sdkconfig.defaults`, compile-time checks in `src/main.cpp`, pre-build check `scripts/verify_secure_fleet.py` |
+| Release-mode flash encryption with a key generated on the device | `sdkconfig.defaults`; the `gps_log` journal partition is marked `encrypted` |
+| UART ROM download mode permanently disabled after first boot | `CONFIG_SECURE_DISABLE_ROM_DL_MODE=y` |
+| JTAG left disabled by the bootloader during secure provisioning | `CONFIG_SECURE_BOOT_ALLOW_JTAG` not set; the pre-build check rejects enabling it in the defaults or the effective configuration |
+| Two OTA application slots with bootloader rollback | `partitions_secure.csv`, `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y` |
+| Wi-Fi driver state kept in RAM | `CONFIG_ESP32_WIFI_NVS_ENABLED` not set; `WiFi.persistent(false)` before the driver starts |
+| HTTPS backend only | Compile-time check and boot check of `BACKEND_URL` |
+| Runtime gate | At boot the firmware halts with four LED pulses, before it reads credentials or starts networking, unless flash encryption and Secure Boot both report active |
 
-1. Confirm the exact serial port, board label, power source, and ESP32 revision.
-   Secure Boot V2 requires ESP32 ECO3 or newer.
-2. Save `espefuse.py summary` output before any write. Both operators must
-   confirm that the board is unused and that the expected security eFuses are
-   not already in a conflicting state. Include the JTAG-disable eFuse in this
-   review; Secure Boot and flash encryption do not by themselves establish
-   that a live debug port cannot read credentials from RAM.
+Hardware, build environments and the development flashing procedure are in the [hardware guide](../../hardware/README.md). Telemetry behaviour is in the [hardware telemetry contract](../hardware/HARDWARE_TELEMETRY.md).
+
+## 2. Roles and key custody
+
+| Role | Responsibility |
+|---|---|
+| University security owner | Generates and keeps the RSA-3072 Secure Boot V2 signing key in an offline or HSM-backed signing environment; approves releases |
+| Hardware operator | Receives signed artifacts, records each board's revision, MAC address and device ID, and performs the witnessed flash and acceptance steps |
+| Second operator | Witnesses every irreversible step and signs the acceptance record |
+
+The [fleet signing keys](../../hardware/keys/README.md) guide states the key custody rules. CI generates a disposable key on every run only to prove that the secure build compiles and that signature checks reject tampering; a CI artifact is never a fleet artifact. The flash-encryption key is generated on each device by the bootloader and is never exported or reused.
+
+## 3. Prerequisites
+
+- An ESP32 board of silicon revision ECO3 (v3.0) or newer. Secure Boot V2 requires it, and `CONFIG_ESP32_REV_MIN_3=y` builds images that require it.
+- The approved signing environment, with PlatformIO Core 6.2.0, the repository at the reviewed commit, and the signing key at `hardware/keys/secure_boot_signing_key.pem`.
+- A device provisioned in the backend registry and its one-time secret ([hardware guide, step 2](../../hardware/README.md#52-steps)).
+- A backend reachable over `https://` with an RSA certificate that chains to the root CA you compile into `BACKEND_ROOT_CA`.
+- A stable power supply for the board throughout flashing and first boot.
+
+## 4. Preflight on a spare board
+
+1. Confirm the serial port, the board label, the power source and the ESP32 revision.
+
+   Expected result: both operators agree on which board is connected to `<port>`.
+
+2. Save the eFuse summary before any write.
+
+   ```powershell
+   platformio pkg exec --package tool-esptoolpy -- espefuse.py --port <port> summary
+   ```
+
+   Expected result: both operators confirm that the board is unused and that `ABS_DONE_1`, `FLASH_CRYPT_CNT`, `UART_DOWNLOAD_DIS` and `JTAG_DISABLE` are in their unprogrammed state. Keep the output: after first boot, ROM download mode is disabled and `espefuse.py` can no longer read this board.
+
 3. Confirm the signing-key fingerprint against the university release record.
-   Place the private key at
-   `hardware/keys/secure_boot_signing_key.pem` only inside the approved signing
-   environment.
-4. Run the native tests and both firmware builds:
+
+   ```powershell
+   platformio pkg exec --package tool-esptoolpy -- espsecure.py digest_sbv2_public_key --keyfile hardware/keys/secure_boot_signing_key.pem --output <digest-file>
+   ```
+
+   Expected result: the digest matches the recorded value. This is the public-key digest that Secure Boot V2 burns into the board.
+
+4. Create the device-specific `hardware/include/secrets.h` from the template with the six definitions in the [hardware guide](../../hardware/README.md#43-compile-time-configuration-file). Never print the file or pass its values as command-line build flags.
+
+5. Run the native tests and both firmware builds.
 
    ```powershell
    platformio test --project-dir hardware -e native
@@ -40,133 +73,121 @@ unidentified serial port.
    platformio run --project-dir hardware -e esp32dev-secure
    ```
 
-5. Archive the secure bootloader, signed application, partition table, hashes,
-   source commit, PlatformIO version, and signing-key fingerprint. Do not
-   archive the private key.
+   Expected result: all tests pass and both builds report `SUCCESS`. The secure build produces `hardware/.pio/build/esp32dev-secure/firmware-signed.bin`. The pre-build check stops the build if a security option, the release sequence, `PROJECT_VER`, the partition layout or one of the six `secrets.h` definitions is wrong.
 
-## Irreversible first boot
+6. Record the SHA-256 hashes of the signed bootloader, the signed application and the partition table, together with the source commit, the PlatformIO version and the key digest. Keep the signed application only in the approved encrypted signing environment: it contains the Wi-Fi passphrase and device secret in plaintext until the device encrypts its flash.
 
-The `esp32dev-secure` environment is the only fleet environment. Its committed
-configuration enables Secure Boot V2, signed binaries, release-mode flash
-encryption, ROM-download lockdown, RAM-only Wi-Fi driver state, and a larger
-bootloader-safe partition offset. The firmware refuses fleet operation unless
-both hardware protections report active and the backend origin is HTTPS.
+## 5. Irreversible first boot
 
-With both operators watching the selected spare-board port, upload the secure
-application/partition images first, then the signed bootloader through
-PlatformIO's explicit secure-boot target. Secure Boot intentionally excludes
-the bootloader from the ordinary upload command, and the Arduino/ESP-IDF 4.4
-combination does not retain the newer automatic-bootloader sdkconfig switch.
-Keep uninterrupted power throughout both transfers and the first boot:
+Secure Boot excludes the bootloader from the ordinary upload, so the bootloader is written in a second transfer. In `espressif32@7.0.1` the `bootloader` target selects the signed bootloader image for the `upload` target that follows it; the platform has no `upload-bootloader` target. Both uploads skip the automatic reset, so neither image starts between the transfers.
 
-```powershell
-platformio run --project-dir hardware -e esp32dev-secure --target upload
-platformio run --project-dir hardware -e esp32dev-secure --target sign --target upload-bootloader
-# Only after both commands succeed, power-cycle the selected spare board.
-platformio device monitor --project-dir hardware --baud 115200
-```
+1. Write the signed application and the partition table.
 
-Both upload targets suppress their automatic reset so neither image can start
-between transfers. Capture the complete first-boot log. Power loss during
-first-boot encryption or eFuse provisioning is an acceptance failure;
-quarantine the board for review.
-The application must report `fleet-build=yes`, `flash-encryption=enabled`, and
-`secure-boot=enabled`. Any other combination halts before credentials are read
-or networking starts.
-Before the unit is accepted for fleet use, both operators must verify from the
-post-provisioning eFuse summary that JTAG is permanently disabled and record
-the board-specific eFuse name/value. Quarantine any board where that cannot be
-proved. The development board is not security-provisioning evidence.
-The fleet defaults explicitly leave `CONFIG_SECURE_BOOT_ALLOW_JTAG` disabled,
-and the build verifier rejects enabling it in either defaults or effective
-configuration. ESP-IDF's bootloader disables JTAG during secure provisioning;
-this configuration check does not prove that an individual board was provisioned.
+   ```powershell
+   platformio run --project-dir hardware -e esp32dev-secure --target upload --upload-port <port>
+   ```
 
-## Compile-time configuration and rotation
+   Expected result: esptool verifies each written image, and PlatformIO prints `Warning! The target won't be reset after uploading the binary in the Secure Boot mode!`.
 
-There is no local configuration or recovery service. Each device's Wi-Fi,
-device ID/secret, HTTPS backend origin, and issuing root CA are compiled into
-its signed, flash-encrypted application image.
+2. Write the signed bootloader.
 
-The only firmware configuration file is the ignored
-`hardware/include/secrets.h`, copied from `secrets.example.h`. It must contain
-all six definitions: `WIFI_SSID`, `WIFI_PASS`, `DEVICE_ID`, `DEVICE_SECRET`,
-`BACKEND_URL`, and `BACKEND_ROOT_CA`. The backend `.env` and frontend
-`env.production.example` are separate application configuration; neither is
-copied into firmware. Route geometry, ordered stops, bus/route assignment,
-driver identity, delay and passenger data remain backend records and do not
-belong in `secrets.h`.
+   ```powershell
+   platformio run --project-dir hardware -e esp32dev-secure --target bootloader --target upload --upload-port <port>
+   ```
 
-1. Provision the backend registry with `npm run provision-device --workspace=backend -- --device-id ... --bus-id ... --route-id ...`. Capture the one-time device secret without putting it in shell history, tickets, screenshots, or source control.
-2. In the approved signing environment, copy
-   `hardware/include/secrets.example.h` to the ignored
-   `hardware/include/secrets.h` and set the device-specific values. Never print
-   the file or pass values as command-line build flags.
-3. Build the `esp32dev-secure` artifact. The build gate verifies required
-   definitions, HTTPS-only fleet configuration, Secure Boot/flash-encryption
-   settings, and the absence of NVS/Preferences-backed configuration and
-   recovery code. The RTC no-init telemetry queue remains intentionally present.
-4. Flash the selected device using the witnessed secure procedure, then remove
-   the plaintext `secrets.h` and any unencrypted intermediate artifact from the
-   signing workspace according to university key-handling policy.
-5. Verify HTTPS telemetry and authenticated diagnostics. Confirm both reported
-   hardware-security booleans are `true`.
-6. For secret or device-ID rotation, create the new backend value outside an
-   active ride, rebuild the complete device-specific image, physically reflash
-   it, and restart the device. If the compiled ID and secret remain correct but
-   a credential was disabled or its backend registry/assignment is wrong,
-   repair the backend record and restart the device without reflashing. A
-   401 latches publishing off and disables the station radio until the
-   applicable repair is followed by a restart. A valid but unassigned device
-   receives 403 and retries after one minute without disabling the radio.
+   Expected result: esptool writes and verifies the bootloader image; the board is not reset.
 
-## Signed OTA release and rollback
+3. Start the serial capture, then reset the board once. Keep power uninterrupted until the application has started.
 
-OTA changes only the signed application slot; it never changes Wi-Fi, device
-credentials, backend origin, root CA, bootloader, partition table, secure-boot
-key or eFuses. Those changes retain the witnessed physical procedure above.
+   ```powershell
+   platformio device monitor --project-dir hardware --port <port>
+   ```
 
-1. Increment `EKI_FIRMWARE_SEQUENCE` and set `PROJECT_VER` to the matching
-   `s<sequence>-<name>` value. The build gate requires them to agree. Never
-   reuse a sequence, signed version or release URL.
-2. Build with the university-controlled RSA-3072 key. Verify that the signed
-   application is no larger than 1,966,080 bytes, then calculate its exact byte
-   size and SHA-256 digest in the controlled signing environment.
-3. Publish the exact signed binary at an immutable HTTPS URL whose certificate
-   chains to `BACKEND_ROOT_CA`. Do not put credentials in that URL.
-4. Configure all six backend `FIRMWARE_RELEASE_*` values together. A partial or
-   malformed descriptor fails closed; leaving all six unset disables OTA.
-5. Prove on a spare board that an active ride receives no update, a modified or
-   wrong-key image is rejected, a healthy candidate confirms after backend
-   telemetry/diagnostics, and a candidate unable to reach the backend rolls
-   back within five minutes. The validation timer runs even without Wi-Fi: a
-   healthy candidate installed just before a coverage dead zone can roll back.
-   Install in a depot with stable backend access and record a deliberate
-   post-update outage trial before fleet rollout.
-6. Roll out in controlled cohorts and retain old signed artifacts and metadata.
-   To stop distribution, unset all six backend values; do not delete rollback
-   evidence or reuse the sequence.
+   Expected result: the complete first-boot log, including the bootloader's Secure Boot and flash-encryption steps, followed by application start with no four-pulse halt. Power loss during this boot is an acceptance failure: quarantine the board for review.
 
-Changing only route geometry or assigning the unchanged device credential to a
-different approved bus/route does not require a reflash. Changing Wi-Fi,
-`DEVICE_ID`, `DEVICE_SECRET`, `BACKEND_URL`, or `BACKEND_ROOT_CA` does require a
-new device-specific build and flash. Never change backend assignment while an
-active ride or bus lock exists.
+4. Verify the protections from the running application. At least 30 s after boot, an administrator calls `GET /api/devices/<device-id>/diagnostics`.
 
-## Acceptance evidence
+   Expected result: `flashEncryption` and `secureBoot` are both `true`, and `lastTelemetryResponseCode` is `202` or `200`.
 
-For each spare-board rehearsal and production unit, retain:
+5. Remove the plaintext `secrets.h` and any unencrypted intermediate artifact from the signing workspace according to the university key-handling policy.
 
-- board revision, MAC/serial, assigned device ID, source commit, artifact hashes,
-  and signing-key fingerprint;
-- witnessed preflight summary and complete first-boot serial log;
-- cold-boot evidence that only the signed image runs and both protections remain
-  active;
-- successful device-specific configuration build, telemetry, remote
-  diagnostics, signed credential reflash/revocation, and lost-device disablement;
-- failure evidence for a wrong secret, malformed configuration, and an artifact
-  signed by an untrusted test key;
-- operator names, date, anomalies, quarantined boards, and approval signatures.
+JTAG evidence has a gap. ESP-IDF's bootloader disables JTAG during secure provisioning, and the fleet configuration keeps `CONFIG_SECURE_BOOT_ALLOW_JTAG` unset, but this configuration does not prove that an individual board was provisioned. After first boot, ROM download mode is disabled, so the procedure has no tool path to read `JTAG_DISABLE`. Record the first-boot bootloader log as the available evidence and note this limitation in the acceptance record. A development board is never security-provisioning evidence.
 
-No checklist item or GitHub hardware-security issue is closed from a compile or
-emulator result alone. Physical spare-board evidence is required.
+## 6. Signed OTA release and rollback
+
+The device-side update policy (check schedule, installation gates, reservation and five-minute rollback) is in the [hardware guide](../../hardware/README.md#9-firmware-updates).
+
+Limitation: the signed application image contains every value compiled from `secrets.h`, including the Wi-Fi passphrase, device ID and device secret. The backend serves one release descriptor to every device that checks for updates. A release therefore installs the configuration of the build that produced it on every device that accepts it. Flash encryption protects the image only once it is on a device, so anyone who can download the published file can read those credentials. Do not configure a release on a backend that serves more than one device, and protect the published file as you would the device secret.
+
+1. Increment `EKI_FIRMWARE_SEQUENCE` in `[env:esp32dev-secure]` of `hardware/platformio.ini`, and set `PROJECT_VER` in `hardware/CMakeLists.txt` to `s<sequence>-<name>`. The backend accepts a name of 1 to 19 characters from `A-Z`, `a-z`, `0-9`, `.`, `_` and `-` that starts with a letter or digit. The pre-build check requires the two values to agree. Never reuse a sequence, a version or a release URL.
+
+   Expected result: the secure build succeeds; a mismatch stops it with `PROJECT_VER must use s<sequence>-<name> and match EKI_FIRMWARE_SEQUENCE.`
+
+2. Build with the university key, then measure the signed application.
+
+   ```powershell
+   platformio run --project-dir hardware -e esp32dev-secure
+   (Get-Item hardware/.pio/build/esp32dev-secure/firmware-signed.bin).Length
+   Get-FileHash -Algorithm SHA256 hardware/.pio/build/esp32dev-secure/firmware-signed.bin
+   ```
+
+   Expected result: a size of at most 1,966,080 bytes and a SHA-256 digest.
+
+3. Publish the exact signed file at an immutable `https://` URL. The host must present an RSA certificate that chains to `BACKEND_ROOT_CA`. Do not put credentials in the URL.
+
+4. Set all six backend values together: `FIRMWARE_RELEASE_VERSION`, `FIRMWARE_RELEASE_SEQUENCE`, `FIRMWARE_RELEASE_URL`, `FIRMWARE_RELEASE_ALLOWED_ORIGIN`, `FIRMWARE_RELEASE_SHA256` and `FIRMWARE_RELEASE_SIZE` ([configuration](../CONFIGURATION.md)).
+
+   Expected result: release checks return the descriptor. A partial or malformed set makes release checks return `503`; leaving all six unset disables OTA (`204`).
+
+5. Prove on a spare board that:
+   - a bus with an active ride receives `204`;
+   - a modified image or an image signed with another key is rejected;
+   - a healthy candidate is confirmed after accepted telemetry or diagnostics;
+   - a candidate that cannot reach the backend rolls back within 5 min.
+
+   The validation timer runs without Wi-Fi as well, so a healthy candidate installed just before a coverage gap can roll back. Install in a depot with stable backend access, and record a deliberate post-update outage trial.
+
+6. To stop distribution, unset all six values. Keep earlier signed artifacts, descriptors and rollback evidence, and never reuse their sequence numbers.
+
+A firmware reservation (`_active_bus_locks/<bus-id>` with `kind: "firmware"`) has no timed expiry. If a board is lost during an installation, establish that it no longer writes flash before you delete its reservation. Never delete a ride lock.
+
+## 7. Configuration and credential rotation
+
+There is no local configuration or recovery service. Each device's Wi-Fi credentials, device ID and secret, backend origin and root CA are compiled into its signed, flash-encrypted image. The [hardware guide](../../hardware/README.md#6-changes-that-require-a-reflash) lists which changes need a reflash.
+
+1. Rotate the device secret or device ID outside an active ride with `npm run provision-device --workspace=backend -- --device-id <device-id> --bus-id <bus-id> --route-id <route-id>`. Capture the one-time secret without putting it in shell history, tickets, screenshots or source control.
+2. Rebuild the complete device-specific `esp32dev-secure` image in the signing environment (Section 4, steps 4 to 6).
+3. Reflash a provisioned board only through a path its security state allows. With ROM download mode disabled, the USB upload in Section 5 no longer works on that board; the OTA path in Section 6 carries the new configuration, subject to its limitation.
+4. Restart the device and confirm accepted telemetry.
+
+If the compiled ID and secret are correct but the backend record is disabled or mis-assigned, repair the record and restart the device without reflashing. A `401` latches publishing off and switches the radio off until the board restarts. A valid but unassigned device receives `403` and retries every 60 s with Wi-Fi on.
+
+## 8. Acceptance evidence
+
+For each spare-board rehearsal and each production unit, keep:
+
+- board revision, MAC address, device ID, source commit, artifact hashes and signing-key digest;
+- the preflight eFuse summary and the complete first-boot serial log;
+- cold-boot evidence that only the signed image runs and both protections stay active;
+- a successful device-specific build, accepted telemetry, remote diagnostics, credential rotation and lost-device disablement;
+- failure evidence for a wrong secret, a malformed configuration and an artifact signed by an untrusted key;
+- operator names, date, anomalies, quarantined boards and approval signatures.
+
+A compile, emulator or native test result never closes a checklist item or a hardware security issue. Physical spare-board evidence is required.
+
+## 9. Troubleshooting
+
+| Symptom | Likely cause | Action |
+|---|---|---|
+| Build stops: `Secure Boot Signing Key ... does not exist. Generate using:` | The key is not in the signing environment | Install the approved key. Do not follow ESP-IDF's suggestion to generate one ([fleet signing keys](../../hardware/keys/README.md)). |
+| Build stops with `Fleet build security options are missing ...` or `... must be disabled ...` | `sdkconfig.defaults` or the generated `hardware/sdkconfig.esp32dev-secure` was changed | Restore the committed `sdkconfig.defaults`; if the generated file still differs, delete it so the build regenerates it |
+| Build stops with `include/secrets.h is missing required definitions` | Incomplete `secrets.h` | Add all six definitions |
+| Upload cannot connect to a provisioned board | ROM download mode is disabled after first boot | Expected. Use the OTA path, or quarantine the board. |
+| Four LED pulses after first boot | Flash encryption or Secure Boot is not active, or `BACKEND_URL` is not `https://` | Quarantine the board and review the first-boot log. Never bypass the gate. |
+| Candidate image rolls back | No accepted telemetry or diagnostics within 5 min of boot | Check backend reachability, the artifact host certificate and the device credential; retry from a depot |
+
+## 10. References
+
+[1] Espressif Systems, "Secure Boot v2," ESP-IDF Programming Guide v4.4, docs.espressif.com/projects/esp-idf/en/v4.4/esp32/security/secure-boot-v2.html. Accessed: 2026-10-30.
+
+[2] Espressif Systems, "Flash Encryption," ESP-IDF Programming Guide v4.4, docs.espressif.com/projects/esp-idf/en/v4.4/esp32/security/flash-encryption.html. Accessed: 2026-10-30.

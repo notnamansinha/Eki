@@ -1,38 +1,77 @@
-# Browser telemetry context
+# Browser Telemetry Trace
 
-Last updated: 2026-10-20 19:28 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-013 | 1.0 | Current | 2026-10-30 |
 
-Open an authenticated Eki view with `?telemetryTrace=1` before recording. Keep
-each role/tab's export separate and use **Download telemetry trace** before and
-after the observation window. The [physical capture guide](FIELD_CAPTURE.md)
-describes the serial/cloud evidence to retain alongside browser observations.
+## 1. Purpose
 
-Every trace event includes the browser visibility state (`visible`, `hidden` or
-`unknown`), its online hint and reduced-motion preference. Unavailable APIs remain
-`unknown`/`null`. Events retain wall time and timing events retain the tab's
-monotonic time. Visibility changes, online/offline transitions and pagehide/pageshow
-are recorded as `browser_lifecycle` events; the page lifecycle events include the
-browser's `persisted` flag for back/forward-cache context. Clearing the trace starts
-a new run without adding another set of observers. Tracing remains opt-in and the
-existing 25,000-event cap still applies.
+The browser telemetry trace is an opt-in, in-memory record of what one browser tab received and rendered. This document describes how to enable and export it, what each record contains, and how to read the passenger and admin liveness states that appear during a capture.
 
-Use this context to investigate listener, React snapshot and marker-target
-intervals. An online hint does not prove that Firebase, the backend or Maps is
-reachable. A lifecycle event is not independent proof of OS suspension or display
-paint. A long interval still requires recording-coverage, clock and foreground
-context; a missing event cannot be treated as zero delay. Older exports lack these
-fields and cannot acquire this evidence retrospectively.
+## 2. Scope
 
-The passenger silence banner says **Live location updates delayed** and clears
-when a fresh update arrives. An old fix or an offline device projection alone
-does not identify a GNSS receiver failure, Wi-Fi failure or an active reconnect.
-This wording does not change expiry thresholds, boarding eligibility or ride state.
-The tracking header reserves its actual height above the map. Map warnings appear
-below the ride controls, including the variable-height bus selector/boarding/chat
-area. [Isolated layout checks](../../e2e/fixtures/README.md) retain viewport and
-occlusion evidence separately from live-provider acceptance.
+The trace is used by the [telemetry latency baseline](TELEMETRY_LATENCY_BASELINE.md) and the [realtime transport measurements](REALTIME_TRANSPORT_MEASUREMENTS.md); those procedures say when to start, label and export it. Serial and cloud evidence for a physical capture is described in the [field capture guide](FIELD_CAPTURE.md).
 
-Browser traces are application evidence. They do not replace Chrome Network HAR
-or Performance traces, independent position/timing instruments, genuine role
-accounts or the required live provider/field acceptance. Keep precise positions,
-message content and credentials private when handling supporting evidence.
+## 3. Behaviour
+
+### 3.1 Enabling and exporting
+
+Open any signed-in Eki page with `?telemetryTrace=1` in the URL. Once the tab has seen the flag, tracing stays on for that tab until the page is reloaded without it, so an in-app navigation cannot truncate a capture. A signed-in user with a role then sees a **Download telemetry trace** button.
+
+The trace also installs a console API on `window.__ekiTelemetryTrace`:
+
+| Function | Effect |
+|---|---|
+| `clear()` | Starts a new run with a new `runId` and an empty buffer. The last server time offset is kept and no extra observers are added. |
+| `setScenario(name)` | Labels every later record with `name` (1 to 40 characters of `a-z`, `0-9`, `_` or `-`) and records a `browser_scenario` event. |
+| `snapshot()` | Returns the current export object. |
+| `download(filename?)` | Saves the export as JSON. The default name is `eki-telemetry-<runId>.json`. |
+| `downloadHealth(filename?)` | Saves the response of `GET /api/health`. The signed-in user must be an administrator. |
+
+### 3.2 Record contents
+
+Every record carries `version`, `eventId`, `runId`, `scenario`, `browserWallAtMs`, the visibility state (`visible`, `hidden` or `unknown`), the `navigator.onLine` hint and the reduced-motion preference. A value the browser cannot supply is `unknown` or `null`. Timing events also carry `browserMonotonicAtMs`.
+
+| Event | Recorded when |
+|---|---|
+| `browser_listener` | An RTDB live bus listener delivers a value. Carries device, bus, route and session identifiers, sequence numbers and the device, backend and RTDB timestamps, plus the server time offset. |
+| `browser_render`, `browser_marker_settled` | A marker is drawn in the first animation frame after the React commit, and when it settles within 0.05 m of its target. |
+| `browser_lifecycle` | A `visibilitychange`, `online`, `offline`, `pagehide` or `pageshow` event. Page events include the browser's `persisted` flag (back/forward cache). |
+| `realtime_watch`, `realtime_payload`, `realtime_connection` | A logical `active_buses` or `messages` watch attaches or detaches, a snapshot arrives (UTF-8 JSON size only), or `.info/connected` changes. |
+| `message_attempt`, `message_write`, `message_listener` | A chat message is sent, its HTTP response arrives, and the message appears in the listener. |
+
+The export never contains coordinates, message text or credentials. It does contain device, bus, route, session and message identifiers and timing, so treat it as restricted evidence.
+
+### 3.3 Buffer
+
+A tab keeps at most 25,000 records. When the buffer is full the oldest record is dropped. Export before that point: a truncated run cannot prove complete watch counts or correlation coverage.
+
+### 3.4 Liveness states during a capture
+
+The screens a trace records show the live bus health states specified in [tracking algorithms](../design/TRACKING_ALGORITHMS.md#9-live-bus-health). In short: passengers see **GPS signal lost** as soon as a packet reports GNSS loss, **Updates delayed** after 12 s without a backend receipt and **Live tracking lost** after 30 s. ETAs and boarding stay available while updates are only delayed and are withheld in the other two states. The admin dashboard uses only the 30 s threshold, re-evaluated every 15 s, and then shows **Live location updates delayed** and, for an active ride, **Service paused**. Client-side timers apply these thresholds, so the states change even when no data and no backend are reachable. The trace records deliveries and renders, not the state changes. Silence alone does not identify whether the GNSS receiver, Wi-Fi, the backend or the browser failed.
+
+## 4. Configuration
+
+| Constant | Value | Source |
+|---|---|---|
+| Query parameter | `telemetryTrace=1` | `frontend/src/lib/telemetryTrace.ts:5` |
+| Buffer size | 25,000 records | `frontend/src/lib/telemetryTrace.ts:6` |
+| Scenario name rule | `^[a-z0-9_-]{1,40}$` | `frontend/src/lib/telemetryTrace.ts:117` |
+| Marker settled tolerance | 0.05 m | `frontend/src/hooks/useTelemetryRenderTrace.ts:50` |
+
+## 5. Limits of the evidence
+
+- The `navigator.onLine` hint does not prove that Firebase, the backend or Google Maps is reachable.
+- A lifecycle event is not proof of operating-system suspension or of a display paint.
+- A long interval between records needs recording coverage, clock and foreground context before it is called a delay. A missing event is not a zero delay.
+- Exports made before the lifecycle and visibility fields existed cannot be given them afterwards.
+- The trace does not replace a Chrome network (HAR) or performance trace, an independent position or timing instrument, genuine role accounts, or live provider and field acceptance.
+
+## 6. Verification
+
+| Behaviour | Tests |
+|---|---|
+| Trace enablement, buffer, lifecycle records and export | `frontend/src/lib/telemetryTrace.test.ts` |
+| Render and marker-settled records | `frontend/src/hooks/useTelemetryRenderTrace.test.tsx` |
+| Realtime records consumed by the analyzer | `scripts/analyze-realtime-trace.test.mjs` |
+| Listener and render records consumed by the analyzer | `scripts/analyze-telemetry-trace.test.mjs` |

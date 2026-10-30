@@ -1,142 +1,112 @@
-# Witnessed motion and hardware evidence package
+# Witnessed Field Acceptance Package
 
-Last updated: 2026-10-12 16:06 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-TST-007 | 1.0 | Current | 2026-10-30 |
 
-Status: **UNEXECUTED — physical field deployment NOT_VERIFIED.** This package
-prepares capture and review. It performs no drive, flash, provisioning, RF
-transmission, cloud mutation or provider experiment. Current automated software
-reports remain separate from witnessed L5 evidence.
+## 1. Purpose
 
-The live-motion work is consolidated in [#300](https://github.com/notnamansinha/Eki/issues/300),
-a verified subissue of [#245](https://github.com/notnamansinha/Eki/issues/245).
-Bench hardware and production ownership/rollout gates remain in #245 and
-[#246](https://github.com/notnamansinha/Eki/issues/246). A checkmark in a software
-PR or this document does not close those issues.
+This package defines how to prepare, capture and review witnessed L5 evidence: a tracker in a moving vehicle or on a bench, observed against an independent reference. It performs no drive, flash, provisioning, RF transmission, cloud change or provider experiment by itself. Automated reports from the [QA programme](README.md) never ingest this form or promote it to software acceptance.
 
-## Capture identity before a run
+[Issue #351](https://github.com/notnamansinha/Eki/issues/351) is the working acceptance checklist. It consolidates the original requirements of issues #245, #246, #300 (GNSS truth and compound recovery during motion) and #337. A checkmark in a software pull request or in this document does not close a field requirement. The [field capture procedure](../docs/operations/FIELD_CAPTURE.md) describes the serial recording and archive steps for a ride.
+
+## 2. Capture identity before a run
 
 Record these facts in a private evidence directory before collecting samples:
 
 | Field | Required observation |
-| --- | --- |
-| Software | Full backend/frontend source commits, deployed image digest, browser and OS versions, route config/geometry versions |
-| Tracker | Flashed image SHA-256 and build profile, board identity pseudonym, receiver MON-VER, antenna/power configuration |
-| Session | Pseudonymous bus/device/session identifiers, current assignment and direction, original and replacement ride identities |
-| Conditions | UTC start/end, location/environment category, temperature/power where measured, sky/antenna conditions, network phase |
-| Witnesses | Named responsible owner, safe vehicle operator and observing tester; driver does not operate the test UI while driving |
-| Reference | Independent position/time instrument, calibration/setup, sampling rate and measured uncertainty |
-| Clock domains | Device sample/send, backend ingress/response, datastore observation, browser listener/message/paint; synchronization method and offset uncertainty |
-| Limits | Named owner-approved accuracy, freshness, ordering, latency and recovery limits before evaluating results |
+|---|---|
+| Software | Full backend and frontend commits, deployed image digest, browser and OS versions, route configuration and geometry versions |
+| Tracker | Flashed image SHA-256 and build environment, board pseudonym, receiver MON-VER, antenna and power configuration |
+| Session | Pseudonymous bus, device and session identifiers; current assignment and direction; original and replacement ride identities |
+| Conditions | UTC start and end, environment category, temperature and power where measured, sky and antenna conditions, network phase |
+| Witnesses | Named responsible owner, safe vehicle operator and observing tester; the driver does not operate the test UI while driving |
+| Reference | Independent position and time instrument, its calibration, sampling rate and measured uncertainty |
+| Clock domains | Device sample and send, backend ingress and response, datastore observation, browser listener, message and paint; synchronisation method and offset uncertainty |
+| Limits | Owner-approved accuracy, freshness, ordering, latency and recovery limits, fixed before results are evaluated |
 
-Missing identity, instruments, approved setup or measured uncertainty is a
-BLOCKED gate. A software restart does not establish a GNSS cold start. Record
-the actual receiver-state setup required by its installed firmware/manual for
-cold, warm and hot acquisition; do not invent UBX commands from memory.
+A missing identity, instrument, approved setup or measured uncertainty makes the gate BLOCKED. A software restart is not a GNSS cold start: record the receiver-state setup that the installed receiver firmware and manual require for cold, warm and hot acquisition.
 
-Keep exact private captures for review and publish redacted summaries only.
-Exclude bearer/App Check tokens, credentials, boarding codes, passenger identity
-and precise personal coordinates from public GitHub logs. Hash private capture
-files and reference their controlled location in the result record.
+Keep exact captures private and publish redacted summaries only. Exclude bearer tokens, device secrets, credentials, passenger identity and precise personal coordinates from public GitHub logs. Hash private capture files and record their controlled location in the result.
 
-## Motion matrix
+## 3. Motion matrix
 
 | Run | Observation and independent oracle | Evidence required |
-| --- | --- | --- |
-| Normal forward and reverse | Reference trajectory, ordered/close stops, origin departure, endpoint completion and distinct empty return session | Correlated receiver/device/backend/projection/browser samples and durable original/replacement ride records |
-| Endpoint direction and turnaround | Pending/resolved direction, zero and approved nonzero dwell, U-turn/wrong-turn behavior | Actual source constants/configuration plus timestamped direction/stop/dwell observations |
-| Plausible drift and ambiguity | Gradual bias, adjacent/parallel-road ambiguity and multipath can remain inside single-step jump limits | Independent along/cross-track errors and raw/accepted/matched traces; no false boarding, progression, completion or direction flip |
-| Acquisition and quality recovery | Correct cold/warm/hot setup; first valid and first usable fix distinguished | Receiver-state/setup witness, quality fields, fix age, reference uncertainty and measured time to recovery |
-| GNSS plus network loss | Safe representative loss/reconnect phases; unknown acknowledgement distinguished from definite rejection | Queue identity, original sample/send times, retries/drops, credentials/cache and last accepted projection |
-| Reboot plus queued replay | Approved spare/device restart with retained samples; original assignment and ride cannot be resurrected incorrectly | Flashed source identity, reset reason, queue/sequence context, stale/duplicate rejection and final authoritative session |
-| Backend replica recovery | Owner-approved restart/partition, lease expiry/renewal and delayed writes/results | Exact image/source, leader/lease generation, lock ownership and no duplicate return or replacement-ride overwrite |
-| Real mobile suspension/update | Passenger/operator/admin suspend/resume and approved PWA update during an active ride | Actual browser visibility/network/cache state, restored identity/boarding/chat/history and observed marker freshness |
+|---|---|---|
+| Normal forward and reverse | Reference trajectory, ordered and closely spaced stops, origin departure, endpoint completion and a separate empty return ride | Correlated receiver, device, backend, projection and browser samples; durable original and return ride records |
+| Stop arrival corridor | Arrival inside the 15 m corridor, the offside gate on a divided road, and stops credited as passed without confirmation | Reference positions of the bus and each stop pin, with the published stop index and passed state at each stop |
+| Endpoint direction and turnaround | Pending and resolved direction, zero and approved non-zero dwell, U-turn and wrong-turn behaviour | Source constants and configuration, plus timestamped direction, stop and dwell observations |
+| Plausible drift and ambiguity | Gradual bias, adjacent or parallel roads and multipath inside single-step jump limits | Independent along-track and cross-track errors; raw, accepted and matched traces; no false boarding, progress, completion or direction change |
+| Acquisition and quality recovery | Correct cold, warm and hot setup; first valid fix distinguished from first usable fix | Receiver-state witness, quality fields, fix age, reference uncertainty and measured recovery time |
+| GNSS plus network loss | Representative loss and reconnect phases; unknown acknowledgement distinguished from definite rejection | Queue identity, original sample and send times, retries and drops, last accepted projection |
+| Reboot with queued replay | Approved device restart with retained samples; the original assignment and ride are not wrongly resurrected | Flashed source identity, reset reason, queue sequence, stale and duplicate rejection, final ride |
+| Backend replica recovery | Owner-approved restart or partition, lease expiry and renewal, delayed writes and results | Image and source identity, leader and lease generation, lock ownership, no duplicate return or overwritten replacement ride |
+| Mobile suspension and update | Passenger and admin suspend and resume, and an approved PWA update during an active ride | Browser visibility, network and cache state; restored identity, boarding, chat and history; observed marker freshness and live-health state |
 
-Use safe owner-controlled drives with prearranged observers, bounded duration
-and explicit stop/abort responsibilities. Do not deliberately create traffic
-hazards, alter live fleet accounts or transmit RF interference. Specialized
-receiver vulnerability work belongs in an approved contained bench facility.
+Use safe, owner-controlled drives with prearranged observers, a bounded duration and explicit stop and abort responsibilities. Do not create traffic hazards, change live fleet accounts or transmit RF interference. Receiver vulnerability work belongs in an approved contained bench facility [1], [2].
 
-## Timing and contention evidence
+## 4. Timing and contention evidence
 
-Issue #300 retains the parent requirement for at least **100 accepted moving
-latency samples** and **1,000 moving contention samples**, across normal,
-degraded-network and reconnect phases. Rejected/stale/dropped/duplicate samples
-must also be counted, not removed to improve percentiles.
+The field gate requires at least 100 accepted moving latency samples and 1,000 moving contention samples, across normal, degraded-network and reconnect phases. Count rejected, stale, dropped and duplicate samples too; do not remove them to improve percentiles.
 
 For each correlation identity retain:
 
 ```text
-capture identity; source/image/firmware hashes; session/assignment revision
+capture identity; source, image and firmware hashes; session and assignment revision
 GNSS sample time; device send time; backend ingress and response time
-datastore observation/version; browser listener/message/paint time
-raw/accepted/matched position reference; quality and direction/state
-network/visibility phase; queue/retry/drop/duplicate outcome
+datastore observation and version; browser listener, message and paint time
+raw, accepted and matched position; reference position; quality, direction and state
+network and visibility phase; queue, retry, drop and duplicate outcome
 clock-domain offsets and measured uncertainty; evidence file references
 ```
 
-Compute p50/p95/p99 only from defined comparable boundaries. Report raw counts,
-measurement resolution, clock uncertainty and missing observations alongside
-each statistic. Do not subtract unsynchronized wall clocks and label the result
-transport latency. A virtual timestamp, emulator completion or synthetic marker
-animation is not a measured moving-device latency sample.
+Compute p50, p95 and p99 only between defined, comparable boundaries. Report raw counts, measurement resolution, clock uncertainty and missing observations with each statistic. Do not subtract unsynchronised wall clocks and call the result transport latency. A virtual timestamp, an emulator completion or a synthetic marker animation is not a moving-device latency sample.
 
-Compare baseline/candidate cloud usage only across matched, approved observation
-windows with equivalent fleet conditions. Synthetic admission-helper counts and
-in-memory provider calls are not Firebase/Maps billing observations.
+Compare cloud usage only across matched, approved observation windows with equivalent fleet conditions. Synthetic admission counts and in-memory provider calls are not Firebase or Maps billing observations.
 
-## Bench and provider gates that require their own evidence
+## 5. Bench and provider gates
 
 | Gate | Preparation and witness |
-| --- | --- |
-| Power/thermal/watchdog | Dedicated current-limited spare board, correct supply measurements, measured task/reset behavior and retained queue integrity; FW04/FW07/FW17 hardware portions |
-| Journal and reset recovery | Actual board/profile/storage layout, safe interrupted-write/reset setup, integrity/fallback and measured useful-checkpoint loss window; FW06–FW10 hardware portions |
-| TLS/receiver/network | Correct CA/hostname/clock and receiver firmware/setup; measured connection/fix recovery; FW01/FW02/FW14–FW16 hardware portions |
-| OTA and protected fleet | Witnessed spare-board procedure and signing custody; valid/negative image boot evidence and active-ride deferral; FW19–FW22 hardware portions |
-| Live OAuth/App Check/Maps | Explicit disposable staging access and owner permission, bounded quotas/cost acknowledgement, actual provider/browser evidence; L4 is outside unattended CI |
-| Production rollout | Maintainer review, required checks, environment/retention/security ownership, approved workflow installation and release sign-off |
+|---|---|
+| Power, thermal and watchdog | Dedicated current-limited spare board, supply measurements, measured task and reset behaviour, retained queue integrity |
+| Journal and reset recovery | Actual board, environment and storage layout; safe interrupted-write and reset setup; measured loss window for the last useful checkpoint |
+| TLS, receiver and network | Correct CA, hostname and clock; receiver firmware and setup; measured connection and fix recovery |
+| OTA and protected fleet | Witnessed spare-board procedure and signing-key custody; valid and rejected image boots; active-ride deferral; follow [hardware security provisioning](../docs/security/HARDWARE_SECURITY_PROVISIONING.md) |
+| Live OAuth and Maps | Disposable staging access with owner permission, bounded quotas and cost acknowledgement, actual provider and browser evidence (L4, outside unattended CI) |
+| Production rollout | Maintainer review, required checks, environment, retention and security ownership, release sign-off |
 
-Native policy/cryptography/parser tests and ESP32 builds provide valuable L0/L1
-evidence. They cannot establish actual power, temperature, UART/RF, Wi-Fi,
-protected boot/eFuse, mobile radio or provider behavior. Follow the repository's
-[witnessed fleet procedure](https://github.com/notnamansinha/Eki/blob/testing/docs/operations/HARDWARE_SECURITY_PROVISIONING.md)
-for any future provisioning; this package does not authorize it.
+Native policy tests, host protocol tests and ESP32 builds are L0 and L1 evidence. They cannot establish power, temperature, UART, RF, Wi-Fi, protected boot, eFuse, mobile radio or provider behaviour. This package does not authorise provisioning.
 
-## Unexecuted result form
+## 6. Result form
 
-Copy this form per witnessed run. Leave unknown values unknown; never populate
-it with simulated PASS or assumed measurements.
+Copy this form for each witnessed run. Leave unknown values unknown; never fill it with simulated passes or assumed measurements.
 
 ```text
 Record status: UNEXECUTED / BLOCKED / FAILED / OBSERVED (choose after the run)
 Run identity and scenario:
-UTC start/end and observation timezone:
+UTC start and end, and observation time zone:
 Full source commits, image digest and flashed firmware hash:
-Receiver/board/profile/route/session identity:
+Receiver, board, environment, route and session identity:
 Responsible owner, operator and observing witness:
-Approved setup, duration and stop/abort conditions:
+Approved setup, duration, and stop and abort conditions:
 Independent reference, measured uncertainty and calibration:
-Clock synchronization method, offsets and uncertainty:
-Approved limits and exact applicable source/configuration constants:
-Expected versus observed state/side effects at each boundary:
-Accepted/rejected/stale/dropped/duplicate sample counts:
-Latency/contention sample counts, boundaries and p50/p95/p99:
-Recovery duration, final lock/session identity and residual anomalies:
-Private capture hashes/locations and redacted summary references:
+Clock synchronisation method, offsets and uncertainty:
+Approved limits and the applicable source and configuration constants:
+Expected versus observed state and side effects at each boundary:
+Accepted, rejected, stale, dropped and duplicate sample counts:
+Latency and contention sample counts, boundaries, and p50, p95 and p99:
+Recovery duration, final lock and session identity, residual anomalies:
+Private capture hashes and locations, and redacted summary references:
 Untested or blocked partitions:
 Named owner review and decision, date and reason:
 ```
 
-An OBSERVED result means evidence exists for that run. It is not automatically a
-whole-case or fleet release PASS. Review failures and uncertainty against the
-predefined oracle, retain adverse evidence, and update the corresponding issue
-only after the owner reviews it. Automated L1–L3 reports do not ingest this
-unexecuted form or promote it to current software acceptance.
+An OBSERVED result means evidence exists for that run. It is not a whole-case or fleet release pass. Review failures and uncertainty against the predefined oracle, keep adverse evidence, and update issue #351 only after the owner reviews it. Record the reviewed result as a new evidence record in `docs/testing/` and list it in the [testing index](../docs/testing/README.md).
 
-## Software work remains separate
+Software gaps stay software work. The [execution ledger](EXECUTION_EVIDENCE.md) lists every requirement without a reviewed mapping; do not move a software gap into a field gate.
 
-The current execution ledger still contains software oracles without reviewed
-test mappings and complete adverse-path coverage. Those are engineering work,
-not missing physical instruments. Follow `artifacts/qa/execution-report.json`
-for the selected commit, including every NOT_RUN/NOT_COVERED case, the 163 static
-control candidates and the full API matrix. Do not move a software gap into
-#300 merely to declare everything except motion complete.
+## 7. References
+
+[1] Kognic, "Edge Cases in Autonomous Driving: Detection and Handling Guide," https://www.kognic.com/articles/edge-cases-autonomous-driving. Accessed: 2026-10-30.
+
+[2] Safran Navigation and Timing, "The importance of testing to detect GNSS vulnerabilities in intelligent transportation systems," https://safran-navigation-timing.com/the-importance-of-testing-to-detect-gnss-vulnerabilities-in-intelligent-transportation-systems/.

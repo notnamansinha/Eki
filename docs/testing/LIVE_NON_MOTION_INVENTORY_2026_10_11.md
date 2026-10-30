@@ -1,4 +1,8 @@
-# Live non-motion inventory — 11 October 2026
+# Live non-motion inventory: 11 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-021 | 1.0 | Historical | 2026-10-11 |
 
 Initial read-only checks and the subsequent controlled fault tests below for [#245](https://github.com/notnamansinha/Eki/issues/245) used the owner's existing Firebase project `bustrack-be165` and the connected ESP32 on COM3. The project contains live application data; it is not a disposable staging namespace. The fault tests temporarily changed two registry fields and restored their original values. No data was deleted, cloud service enabled, firmware flashed, fleet key generated, eFuse changed or public release deployed. These scoped results do not complete production rollout.
 
@@ -19,7 +23,7 @@ The repository's deployment checklist requires a separate staging/production bou
 
 Read-only serial enumeration and chip/eFuse inspection found an FTDI USB serial device on COM3 and an ESP32-D0WD-V3, revision 3.1, at 40 MHz. Secure Boot V1/V2 and flash encryption are disabled; JTAG and UART download remain enabled. A 12-second passive serial capture yielded no lines, so the board's current firmware execution and GNSS state were **not** revalidated during this inventory. Earlier stationary receiver-backed and hotspot evidence is in [the capture report](STATIONARY_GNSS_HOTSPOT_2026_10_11.md).
 
-The owner has no approved RSA-3072 fleet signing key or tested replacement/recovery plan and identified this same development board as the hardware target. The existing [provisioning procedure](../operations/HARDWARE_SECURITY_PROVISIONING.md) requires a witnessed spare-board trial, custody and recovery before irreversible Secure Boot/flash-encryption eFuses are burned. There is no secure-fleet acceptance or signed OTA field trial. Firmware source/build hashes cannot be claimed as the currently flashed image without a readback or signed release record.
+The owner has no approved RSA-3072 fleet signing key or tested replacement/recovery plan and identified this same development board as the hardware target. The existing [provisioning procedure](../security/HARDWARE_SECURITY_PROVISIONING.md) requires a witnessed spare-board trial, custody and recovery before irreversible Secure Boot/flash-encryption eFuses are burned. There is no secure-fleet acceptance or signed OTA field trial. Firmware source/build hashes cannot be claimed as the currently flashed image without a readback or signed release record.
 
 ## Subsequent non-motion checks
 

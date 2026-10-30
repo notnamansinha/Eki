@@ -1,4 +1,8 @@
-# GitHub issue inventory — 8 October 2026
+# GitHub issue inventory: 8 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-006 | 1.0 | Historical | 2026-10-08 |
 
 Read-only inventory for the balcony readiness audit. All 115 issues are included below; GitHub state is recorded as returned. This table does not declare every issue field-accepted. Consult [the measured readiness report](BALCONY_READINESS_2026_10_08.md) for evidence and limits. Full issue bodies and 209 returned comments are retained privately in the ignored evidence folder.
 

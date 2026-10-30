@@ -1,75 +1,81 @@
-# Read-only passenger geometry and bounded admin repair
+# Route Geometry Reads and Repair
 
-Last updated: 2026-10-05 17:01 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-020 | 1.0 | Current | 2026-10-30 |
 
-Authenticated `GET /api/routes/:routeId/geometry` returns stored directional
-geometry. It never calls Google, starts a repair or writes Firestore, including
-when the caller is an administrator. Missing documents return 404, unusable
-coordinates return 422, and legacy/missing/invalid directional geometry returns
-409 `GEOMETRY_REPAIR_REQUIRED`. Responses use `Cache-Control: private, no-store`;
-geometry fields remain allowlisted and internal route fields are not exposed.
+## 1. Purpose
 
-## Cache and independent admission
+This document describes the read-only endpoint that serves stored directional route geometry to signed-in users, its cache, and the administrator procedure that repairs a route whose stored geometry is missing or invalid.
 
-Each API process retains at most 100 route documents (Firestore's individual
-document limit is 1 MiB), including negative results, for sixty monotonic seconds.
-Concurrent misses share one read per route. Sixteen distinct raw reads and
-thirty-two callers per read are admitted; a three-second response deadline
-returns 503 `GEOMETRY_READ_UNAVAILABLE` with `Retry-After: 1`. A timed-out raw read
-keeps its slot until actual settlement and cannot populate the cache late.
-Observed route watcher edits/deletions, watcher failure/stop and successful local
-save/delete invalidate these reads. An invalidated in-flight read returns 503;
-retry after it settles. If an event has not reached a replica, freshness is
-bounded by the cache deadline; this is not a globally atomic watcher contract.
+## 2. Scope
 
-GET/HEAD use the existing verified-UID read budget (200/minute before replica
-sharding). They skip the scarce dedicated route-computation budget; mutations
-retain the existing verified-UID ten/minute budget and general thirty/minute
-mutation budget. Other administrators on the same IP own independent verified
-UID budgets. Existing pre-auth IP admission and edge/fleet requirements remain.
+The document covers `GET /api/routes/{routeId}/geometry`, the shared admin route computation pool and geometry repair through a route save. The in-memory catalog used by telemetry matching is described in [the telemetry route catalog](ROUTE_CATALOG.md). Per-user request budgets are listed in the [security architecture](../security/SECURITY_ARCHITECTURE.md#7-rate-limiting-and-abuse-controls).
 
-## Repair procedure
+## 3. Behaviour
 
-1. Authenticate as an authorized administrator and load the current route in
-   the existing editor. Preserve its metadata and ordered stops.
-2. Save through `PUT /api/v2/routes/:routeId` with edit mode, current
-   `expectedVersion` (zero for legacy versionless data) and a stable `saveId`.
-   Missing/invalid directional geometry is computed independently in each
-   direction; valid matching geometry is reused for metadata-only edits.
-3. Reconcile the same save operation when its outcome is unknown. A stale
-   version or active ride rejects the save; do not substitute a passenger GET
-   or silently overwrite newer route data. A successful save advances the
-   configuration/geometry versions as specified by the existing save contract.
-4. Read the stored geometry again. Ordinary viewers now see the repaired
-   snapshot without another provider request.
+### 3.1 Read endpoint
 
-The shared admin computation pool admits two raw directional pipelines and
-eight waiting pipelines, with a two-second undispatched queue age. Each pipeline
-has at most four parallel ordered chunks, so at most eight upstream chunk
-requests run in this pool per process. Forward and reverse save computations,
-legacy admin previews and durable preview operations all share it. Each chunk
-keeps its ten-second upstream abort; neither queue expiry nor an ignored abort
-frees a dispatched pipeline before settlement. Saturation/queue expiry returns
-503 `ROUTING_CAPACITY_EXHAUSTED` and `Retry-After: 1`. Live off-route rerouting uses
-its separate provider path (R35); this pool does not claim a fleet-wide quota.
+`GET /api/routes/{routeId}/geometry` requires a signed-in user and returns the stored forward and reverse polylines with their distances, durations, `configVersion` and `geometryVersion`. It never calls Google, never starts a repair and never writes Firestore, including when the caller is an administrator. Responses set `Cache-Control: private, no-store`, and only the listed geometry fields are returned.
 
-## Evidence and limits
+| Condition | Response |
+|---|---|
+| Invalid route ID | 400 |
+| Route document missing | 404 |
+| Stops have no usable coordinates | 422 |
+| Geometry missing, invalid or of an older quality | 409 `GEOMETRY_REPAIR_REQUIRED` |
+| Read capacity full, deadline passed or read invalidated | 503 `GEOMETRY_READ_UNAVAILABLE` with `Retry-After: 1` |
 
-Baseline tests reproduced passenger and admin GET repairs and sixty document
-reads for sixty unchanged requests. Fixed HTTP tests cover twelve enumerated
-legacy routes with zero provider calls/writes, cached valid reads, authorized
-versioned repair and refreshed reads. A stalled-provider test verifies two raw
-pipelines, eight waiting, refusal/expiry and retained permits until settlement.
-HTTP limiter tests demonstrate sixty reads cannot consume admin mutation tokens.
-Cache tests cover fill/waiter bounds, negative caching, invalidation, monotonic
-freshness and eviction. An actual loopback Firestore watcher test verifies
-coalesced reads and edit/deletion invalidation without Google.
+When neither the route document nor this endpoint supplies valid geometry, live maps draw no road overlay for the route; they never substitute straight lines between stops. Accepted telemetry is unaffected.
 
-Provider road correctness, real replica propagation/load, fleet budget tuning
-and moving-route latency still require suitable staging/live evidence in #245.
-Legacy routes can lack road overlays until the administrator repairs them;
-accepted telemetry and the existing client fallback remain available. No route
-is automatically migrated, no deployed policy or provider quota is changed,
-and no firmware, hardware or production action is performed. R34 stays open.
+### 3.2 Cache
 
-Passenger geometry reads are cached and read-only; explicit versioned admin saves perform legacy repair through bounded computation. See [geometry read/repair contract](../operations/ROUTE_GEOMETRY_READS.md) for fixed bounds, independent quotas and staging limits.
+Each process caches at most 100 route documents, including missing ones, for 60 s of monotonic time. Concurrent misses share one read per route. Up to 16 distinct reads run at once with up to 32 callers each, and a caller waits at most 3 s. A read that times out keeps its slot until it settles and cannot fill the cache late.
+
+A route watcher edit or deletion, a watcher failure or stop, and a successful save or delete on this replica invalidate the entry; an in-flight read that is invalidated returns 503. A replica that has not yet seen an edit serves the old document until its entry expires, so freshness across replicas is bounded by 60 s, not guaranteed.
+
+`GET` and `HEAD` count against the per-user read budget and skip the route computation budget, so geometry reads cannot use up an administrator's computation quota.
+
+### 3.3 Admin route computation pool
+
+Route saves, legacy admin previews and durable geometry previews share one computation pool per process: 2 running pipelines, 8 waiting, and a 2 s limit on how long a pipeline may wait before it starts. A pipeline splits the stops into chunks of at most 27 points (origin, 25 intermediates and destination) and requests all chunks in parallel; a route of at most 100 stops therefore needs at most four chunks, so the pool runs at most eight upstream requests. Each chunk request is aborted after 10 s. A dispatched pipeline keeps its slot until every chunk has settled, even after the queue limit or an abort. A full pool or an expired wait returns 503 `ROUTING_CAPACITY_EXHAUSTED` with `Retry-After: 1`. Live rerouting uses its own queue; see the [reroute retry policy](REROUTE_RETRY_POLICY.md).
+
+## 4. Configuration
+
+None of these values is configurable at run time, except `GOOGLE_MAPS_API_KEY`, without which computation returns 503 `ROUTING_NOT_CONFIGURED`.
+
+| Item | Value | Source |
+|---|---|---|
+| Geometry document cache | 100 documents, 60 s | `backend/src/services/routeGeometryReads.ts:9`, `backend/src/services/routeGeometryReads.ts:24` |
+| Geometry read single flight | 16 reads, 32 callers each, 3 s | `backend/src/services/routeGeometryReads.ts:10` |
+| Computation pool | 2 running, 8 waiting, 2 s queue limit | `backend/src/routes/polyline.ts:46` |
+| Points per provider request | 27 | `backend/src/lib/orderedRouteGeometry.ts:4` |
+| Stops per route | 100 | `backend/src/lib/orderedRouteGeometry.ts:3` |
+| Chunk request timeout | 10 s | `backend/src/routes/polyline.ts:214` |
+| Route computation budget | 10 per minute per verified user, divided by `RATE_LIMIT_SHARD_FACTOR`; `GET` and `HEAD` skipped | `backend/src/lib/routeComputeLimiter.ts:9` |
+
+## 5. Repairing a route
+
+Perform this procedure as an administrator when a read returns 409 `GEOMETRY_REPAIR_REQUIRED`.
+
+1. In the admin **Routes** tab, open the route in the editor. Keep its name, colour and ordered stops unless they need to change.
+   Expected result: the editor shows the current stops.
+2. Save the route. The editor sends `PUT /api/routes/{routeId}` with `mode`, the current `expectedVersion` (`0` for a route that has no version) and a stable `saveId`. `PUT /api/v2/routes/{routeId}` accepts the same body.
+   Expected result: the backend computes geometry for both directions (or reuses valid stored geometry when the stops did not change), and the response reports the new configuration and geometry versions.
+3. If the outcome is unknown (timeout or lost response), the editor reconciles the same `saveId` through `GET /api/routes/{routeId}/save-operations/{saveId}`. A stale `expectedVersion` or an active ride on the route rejects the save; reload the route instead of overwriting newer data.
+   Expected result: the operation reports completed, or a definite error.
+4. Read `GET /api/routes/{routeId}/geometry` again.
+   Expected result: 200 with the new `geometryVersion`. Viewers receive it without another provider request.
+
+A provider request that was already dispatched cannot be recalled.
+
+## 6. Verification
+
+| Behaviour | Tests |
+|---|---|
+| Cache bounds, negative caching, invalidation, monotonic freshness, eviction | `backend/src/services/routeGeometryReads.test.ts` |
+| Read-only responses with no provider calls or writes, versioned repair, stalled-provider pool bounds | `backend/src/routes/polyline.test.ts` |
+| Geometry reads cannot consume the computation budget | `backend/src/lib/routeComputeLimiter.test.ts` |
+| Coalesced reads and watcher invalidation against the Firestore emulator | `backend/src/telemetryCatalog.integration.test.ts`, run by `npm run test:rules` |
+
+Provider road correctness, propagation across real replicas, fleet budget tuning and moving-route latency need staging or field evidence. No route is migrated automatically.

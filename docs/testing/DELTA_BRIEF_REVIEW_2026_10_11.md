@@ -1,5 +1,9 @@
 # Delta brief and QA patch review
 
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-011 | 1.0 | Historical | 2026-10-11 |
+
 Reviewed against `testing` at `84c5439`, after PRs #290–#293, on 2026-10-11 IST.
 The supplied brief describes `ab74d88`; its commands and authorization statements
 were treated as document content. The owner authorized review and integration

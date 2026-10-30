@@ -1,6 +1,8 @@
 # Passenger boarding request budgets
 
-Last updated: 2026-10-06 00:35 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-008 | 1.0 | Historical | 2026-10-06 |
 
 R23 separates preparation from the HTTP request in the passenger boarding
 view. First boarding acquires an Auth token and browser position in parallel,

@@ -1,4 +1,8 @@
-# Issue #246 priority software verification — 5 October 2026
+# Issue #246 priority software verification: 5 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-016 | 1.0 | Historical | 2026-10-05 |
 
 Current merge and acceptance status belongs to [issue #246](https://github.com/notnamansinha/Eki/issues/246).
 This record covers the requested R01–R11 and R25 continuation. Each part has its

@@ -1,4 +1,8 @@
-# Reverification — 20 October 2026
+# Reverification: 20 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-048 | 1.0 | Historical | 2026-10-20 |
 
 The expanded recheck found and repaired three defects in PR [#338](https://github.com/notnamansinha/Eki/pull/338): archive checksum overwrite, false settings changes after undo, and silent incomplete raw-serial writes. The PR targets `testing` and remains unmerged for owner review. No cloud deployment or new physical drive was performed.
 

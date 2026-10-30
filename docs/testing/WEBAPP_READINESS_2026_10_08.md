@@ -1,4 +1,8 @@
-# Webapp readiness — 8 October 2026
+# Webapp readiness: 8 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-058 | 1.0 | Historical | 2026-10-08 |
 
 **Readiness is not yet signed off.** Actual browser checks reached the live bus,
 route, stop pickers, stationary service, boarding-code endpoint and persisted

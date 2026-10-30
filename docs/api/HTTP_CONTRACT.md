@@ -1,219 +1,109 @@
-# HTTP contract and compatibility checks
+# HTTP Contract
 
-Last updated: 2026-10-27 04:10 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-API-002 | 1.0 | Current | 2026-10-30 |
 
-The machine-readable contract is [`backend/openapi.json`](../../backend/openapi.json),
-in OpenAPI 3.1.1 JSON format. [`backend/API.md`](../../backend/API.md) remains the
-human-oriented guide. The contract includes #197 compatibility, #193
-ride-session resources, #194 operation resources and the admin feedback list.
-Use `npm run verify:openapi` for the actual operation count and registered-route
-coverage. These routes are implemented on `testing`; verify deployment before
-migrating an independently deployed client. Endpoint renaming alone does not
-improve latency; measure only changes in response shape, caching, or transport.
+## 1. Purpose
 
-Run from the repository root:
+This document describes how the backend HTTP contract is defined and checked, the rules for changing it without breaking clients, and which data the web app exchanges through Firebase SDKs instead of HTTP. The operations themselves are specified in the [API reference](../../backend/API.md).
 
-```sh
-npm run verify:openapi
-npm test
-```
+## 2. Contract artifacts
 
-The production verification workflow runs the contract check explicitly, and
-`npm test` runs it too. The checker parses TypeScript registrations in
-`backend/src/server.ts`, follows imported default/named routers and their
-mount prefixes, and compares method/path pairs in both directions. It never
-boots the server, starts workers, or reads Firebase. New routes, stale spec
-entries, duplicate registrations, broken references, missing path parameters,
-and missing policy metadata fail the gate. Every `/api` operation must also
-declare the statuses shared middleware can emit before its handler (400, 413,
-415 and 429 from the global JSON parser and admission; 401 and 503 as well for
-`FirebaseBearer` operations), and `backend/API.md` must mention every operation
-as `METHOD /path` with OpenAPI's path parameter names (`:id` matches `{id}`)
-and no operation the contract lacks. Dynamic paths/mounts, mountless
-middleware chains, `router.route()`, `router.all()` and a router built by a
-factory call imported from `backend/src/routes` (`app.use("/x", buildRouter())`)
-fail until the inventory supports them explicitly; middleware factories from
-other modules are unaffected. Automatic
-Express HEAD handling and CORS OPTIONS responses are middleware behavior,
-not separately registered business operations. TRACE/CONNECT are rejected
-with 405; authenticated unknown API routes return 404, while missing or invalid
-browser credentials fail first with 401. Any other unmatched path or method,
-including a wrong method on `/health` or `/live`, returns 404
-`{"error":"Not found."}` rather than an HTML page that echoes the path.
-
-OpenAPI structural validation uses Swagger Parser; response and payload
-conformance uses Ajv's JSON Schema 2020 validator. The parser remains on 12.x
-because the repository pins the 4.x js-yaml API; 13.x requires a different
-js-yaml API. The pinned yaml patch is updated to 4.3.2. Validation resolves only
-internal references and has no network dependency. JSON Schema expresses
-shape/range constraints; database eligibility, normalized string limits,
-relative timestamps, stop order, and cross-field/version checks remain in
-handlers and are documented in operation descriptions.
-
-Each operation declares `security` and these `x-` extensions:
-
-| Extension | Meaning |
+| Artifact | Role |
 |---|---|
-| `x-auth-class` | Public, Firebase user, admin, passenger, assigned operator, or session member policy beyond token validity |
-| `x-body-limit-bytes` | Maximum raw JSON bytes parsed, not the normalized object size |
-| `x-rate-limit` | Global, mount-level, dedicated and durable budgets actually applied |
-| `x-cache-policy` | Actual response headers and private server cache behavior |
-| `x-timeout-policy` | Receipt/upstream/client deadlines; no invented whole-handler SLA |
-| `x-retry-policy` | Retryable failures and reconciliation guidance |
-| `x-idempotency` | Actual replay key or convergent behavior, including repeated side effects |
-| `x-compatibility-alias-of` | Replacement operation for a supported legacy URL |
+| [`backend/openapi.json`](../../backend/openapi.json) | Machine-readable contract in OpenAPI 3.1.1 [1]. Schemas use the default JSON Schema 2020-12 dialect [2]. All references are internal. |
+| [`backend/API.md`](../../backend/API.md) | Human reference. Must name every operation in the contract and no other. |
+| `backend/test-support/openapi.ts` | Test helper that validates real HTTP responses against the contract |
 
-Bearer security identifies a Firebase ID token; it does not imply admin rights.
-Device security is a header API key whose complete value is
-`Authorization: Device <secret>`. Device credentials are never bearer tokens.
-Responses omit credentials and stacks. Typical errors have `error`; route and
-Places errors may additionally carry `code`, `phase`, version/outcome details.
-Parser and authentication failures can precede handler-specific headers/errors.
-App Check is not required. Browser identity/RBAC and device credential
-authentication remain independent; see [the API security boundary](../operations/BROWSER_API_SECURITY.md).
-On detailed health, 503 can be a readiness snapshot or authentication-busy error.
+Each operation in `openapi.json` declares `security` explicitly (`FirebaseBearer`, `DeviceCredential` or none) and carries these extensions:
 
-Public `GET /live` returns `200 {"status":"alive"}` without querying dependencies.
-Docker/container restart probes use it. Load-balancer readiness uses `/health`:
-RTDB must return `snapshot.val() === true` and Firestore must succeed. Cached
-per-store probes run every 30s, have a 5s response deadline and 65s monotonic
-freshness. An unsettled call keeps its single-flight slot after a response
-timeout, preventing repeated probes from accumulating. Late completion cannot
-publish success. All three health endpoints return `Cache-Control: no-store`.
-Admission and route/admin middleware reuse a verified token only within the
-same HTTP request. This avoids duplicate privileged Auth checks; every new
-request still follows the revocation-aware policy. An injected `req.user` or a
-different token cannot establish that request-scoped verification.
+| Extension | Content |
+|---|---|
+| `x-auth-class` | Caller class beyond token validity, for example `admin`, `operator-or-admin` or `passenger` |
+| `x-body-limit-bytes` | Maximum raw request body |
+| `x-rate-limit` | Limiters that apply to the operation |
+| `x-cache-policy` | Response cache headers and server-side caching |
+| `x-timeout-policy` | Receipt, upstream and client deadlines |
+| `x-retry-policy` | Which failures are retryable and how |
+| `x-idempotency` | Replay key or convergent behaviour |
+| `x-compatibility-alias-of` | Optional. The other path of a legacy and resource-style pair |
 
-The server applies strict JSON parsers: 16 KiB generally, telemetry 512 bytes,
-diagnostics 1 KiB. One handler in `backend/src/lib/requestErrors.ts` maps parser
-and router failures: malformed JSON 400 `Invalid JSON body.`, oversized body 413,
-unsupported charset or `Content-Encoding` 415, and a corrupt compressed body or
-undecodable path parameter 400 `Invalid request.`. Only body-parser's exposable
-4xx errors and the router's 400 `URIError` count as client errors; an upstream
-error that merely carries a status remains an opaque, logged 500. A telemetry
-request whose body the JSON parser skipped (missing or non-JSON `Content-Type`)
-reaches payload validation and returns 400, not 413. CORS/preflight precedes the 1,000/normalized-IP/minute browser ingress guard.
-Verified-UID quotas separately allow 200 reads/minute and 30 mutations/minute;
-GET/HEAD polling never consumes mutation tokens. Public GET/HEAD probes and
-exact device ingress paths are exempt from browser ingress; detailed admin
-health stays authenticated and exempt from the user read quota. `/api/routes` applies the 10/UID/minute
-compute budget to mutations including deletion; geometry and save-operation reads skip
-that budget. Segment planning uses 30/verified UID/minute. Places uses a replica-sharded
-20/verified UID/minute limiter. Device ingress has separate pre-auth IP pools and an
-authenticated telemetry budget. Read the per-operation policies before
-designing polling or retries; edge rate protection remains a deployment concern.
+A `FirebaseBearer` requirement means only that a valid ID token is needed; role and assignment rules are in `x-auth-class` and the operation description.
 
-HTTP requestTimeout bounds receipt of a request body, not service execution.
-Places uses a 5-second whole-response upstream deadline. Google Routes chunks
-use 10-second deadlines; route save has a 30-second operation lease and the
-browser reconciles unknown outcomes using the same save ID. Current 202 route
-responses carry `retryAfterMs`, `Location`, and `Retry-After`.
-Fleet audit fingerprints are audit records, not durable HTTP replay guarantees.
+## 3. Validation
 
-Device authentication cache misses have a separate 5s monotonic response budget
-and bounded single-flight capacity: 16 unsettled fills, 64 waiting callers per
-digest. Timeout preserves the underlying slot until actual settlement, and
-expired/invalidation-fenced fills cannot publish authorization. Positive/negative
-TTLs are at most 60s/5s from fill start and are never extended by cache access.
-A previously verified, non-invalidated device ID and secret digest refreshes
-through a reserved lane (8 fills, separate 2-slot KDF) that unauthenticated
-cache misses cannot occupy; if that lane is saturated, the prior assignment is
-served for at most 10 minutes past expiry.
-Capacity/deadline failures are transient 503; this budget does not yet bound
-every subsequent ingestion dependency (R03). See the device operation policies.
+### 3.1 Route inventory check
 
-## Realtime channels are Firebase SDK subscriptions
+`npm run verify:openapi` runs `scripts/verify-openapi.mjs`. It reads the TypeScript sources without starting the server or contacting Firebase:
 
-These channels are deliberately excluded from OpenAPI `paths`. HTTP remains
-the authoritative surface for bounded writes. Authentication, Firebase rules,
-and App Check configuration for SDK reads apply independently of HTTP auth.
+1. It parses `backend/src/server.ts`, follows every router imported from `backend/src/routes` through its mount prefixes, and lists each registered method and path.
+2. It fails when a registered operation is missing from `openapi.json`, when `openapi.json` lists an operation that is not registered, or when an operation is registered twice.
+3. It validates the document structure with Swagger Parser, with external references disabled, and compiles every component schema with Ajv.
+4. For every operation it requires a unique `operationId`, explicit `security`, all seven required extensions, a declaration for each path parameter, a JSON schema for every response except 204, and no body on 204.
+5. It requires every `/api` operation to declare 400, 413, 415 and 429, which the shared body parser and limiters can return before the handler runs, and every `FirebaseBearer` operation to declare 401 and 503 as well.
+6. It checks that every `x-compatibility-alias-of` target exists.
+7. It extracts every `METHOD /path` mention from `backend/API.md`, with `:param` read as `{param}`, and fails on an operation the reference omits or one the contract lacks.
 
-| SDK channel | Data and audience | Recovery |
-|---|---|---|
-| RTDB `publicRouteBuses/route:{routeId}/buses` | Authenticated canonical compact per-route browser view; raw `activeBuses` is backend-only | SDK reconnect, bounded worker replay, compatible schema readiness and receipt-based frontend freshness checks |
-| Firestore `settings/global` | Service configuration and announcements | SDK listener snapshot/reconnect |
-| Firestore `routes` | Route configuration allowed by security rules | SDK listener snapshot/reconnect |
-| Firestore `ride_sessions/{id}/messages` | Authorized session chat | SDK listener reconnect; writes use idempotent HTTP message creation |
-| Firestore ride history queries | User/admin views constrained by query shape and rules | SDK listener reconnect; writes remain backend-authoritative |
+Registration styles the parser cannot resolve fail the check instead of being skipped: computed paths or mount prefixes, `router.route()`, `router.all()`, a middleware chain mounted without a path, and a router created by calling a factory from `backend/src/routes`. Automatic `HEAD` handling and CORS `OPTIONS` responses are not counted as operations.
 
-Admin feedback review uses bounded `GET /api/v2/feedback` HTTP reads, rather
-than a browser Firestore feedback listener. Both feedback views share the same
-panel; old-session reads/writes are aborted or ignored on auth changes.
+`scripts/verify-openapi.test.mjs` tests the checker itself, including new unregistered handlers, removed operations, changed mount prefixes, dynamic paths and missing policy metadata.
 
-No application-owned SSE/WebSocket/GraphQL/webhook interface is introduced.
-Transport decisions and measurements remain #195. Ride-session compatibility
-is specified by #193; operation contracts extend #172 under #194.
+### 3.2 Response conformance tests
 
-## Compatibility and rollout
+The backend route tests send real HTTP requests to the Express application with Firebase and Google replaced by test doubles. They issue requests through `contractFetch` from `backend/test-support/openapi.ts`, which finds the operation template for the URL and fails when the response status is not declared, a JSON body does not match the declared schema, a declared header has an invalid value, or a 204 response has a body. `backend/src/openapiContract.test.ts` also checks that the telemetry schemas accept and reject the same payloads as the firmware payload parser.
 
-| Supported legacy operation | Compatible v2 operation | Mapping |
-|---|---|---|
-| `PUT /api/settings` | `PATCH /api/v2/settings/global` | Same nonempty partial settings object; PUT remains a historical partial merge |
-| `POST /api/plan` | `GET /api/v2/routes/{routeId}/segments` | `startStopId/endStopId/viaStopId` become query `from/to/via` |
-| `GET /api/routes-list` | `GET /api/v2/routes` | Same bounded metadata/stops projection; no geometry |
-| `POST /api/devices/{deviceId}/disable` | `PATCH /api/v2/devices/{deviceId}` | v2 accepts only `{ "enabled": false }` |
-| `PATCH /api/feedback/{feedbackId}/status` | `PATCH /api/v2/feedback/{feedbackId}` | Same status-only object and server audit |
-| `POST /api/privacy/deletion-request` | `POST /api/v2/privacy-deletion-requests` | Token-derived queue entry; v2 accepts absent body or `{}` only |
+JSON Schema covers shape and ranges. Checks that depend on stored data (stop order, version conflicts, time windows relative to the server clock, assignment and membership) stay in the handlers and are described in the operation text. Acknowledgement bodies and firmware payloads use closed schemas; stored projections such as live records allow extra fields.
 
-1. Deploy the compatible backend first, and smoke-test both
-   legacy and v2 paths with their actual role/credential classes.
-2. Only after compatible deployment, move browser callers in the #192 follow-up.
-   Keep legacy paths throughout the documented compatibility window and rollback.
-3. Preserve firmware-called telemetry, diagnostics POST, and firmware GET paths.
-   Firmware keeps the current nine-field and previous eight/six-field schemas
-   until physical fleet diagnostics confirm rollout. Never remove compatibility
-   just because the web frontend migrated.
-4. Retirement requires supported-client traffic evidence, fleet inventory,
-   announced release notes and owner approval. The #197 policy requires at least
-   90 days after frontend migration and 30 consecutive days without supported
-   clients using legacy URLs; no calendar removal date is
-   scheduled here. Add a separate removal change and update the spec and tests.
+These tests do not prove that a deployment is reachable, that real firmware transport works or how fast Firebase and Google respond.
 
-## Contract test boundaries
+### 3.3 Web and backend release check
 
-Existing route suites validate real local HTTP responses against the published
-schemas for telemetry/diagnostics acknowledgements, OTA descriptors and 204s,
-ride boarding and shift lifecycle/delay, route-save replay/processing/conflicts,
-settings partial merge, feedback status, route planning and v2 compatibility.
-Those suites keep their authorization, validation, race, idempotency and
-rate-limit assertions. They use mocked Firebase/upstream services; they do not
-prove deployment, real firmware transport, or Google/Firebase latency.
+`npm run verify:web-backend-contract` runs `scripts/verify-web-backend-contract.mjs`:
 
-Payload conformance tests compare current/previous firmware shapes and bounded
-settings inputs against the actual parsers/handlers. Negative tests demonstrate
-that undocumented statuses, malformed responses and route drift fail. Flexible
-stored Firestore/RTDB projections permit extra fields where existing records
-vary; closed firmware and status/settings request shapes remain strict.
+1. It reads `NEXT_PUBLIC_BACKEND_URL` from the shell or the frontend `.env` files and fails unless its origin is in the `connect-src` directive of the Hosting Content-Security-Policy in `firebase.json`. With `EKI_STRICT_PRODUCTION_BUILD=true` a missing URL is an error; otherwise the check is skipped.
+2. With `EKI_RUNTIME_SMOKE=1` it also calls the live backend: `GET /health` must return 200 with `status: ok` and allow `EKI_FRONTEND_ORIGIN` in CORS, and a CORS preflight for `POST /api/users/bootstrap` must allow that origin, the `POST` method and the `authorization` and `content-type` headers. The preflight creates nothing.
 
-When adding a route, update the spec in the same change, preserve role and
-service semantics, provide a schema-backed route test for risky behavior, and
-update the human guide when client guidance changes. Avoid introducing a runtime
-validator into production just to satisfy this documentation issue.
+### 3.4 Where the checks run
 
-Ride-session lifecycle, creation-key retention and migration decisions are defined
-in [RIDE_SESSION_CONTRACT.md](RIDE_SESSION_CONTRACT.md).
+| Check | Runs in |
+|---|---|
+| `npm run verify:openapi` | CI step "Verify OpenAPI schemas and registered route coverage", and `npm test` |
+| Checker tests and backend route tests | `npm test`, which CI runs on every push and pull request |
+| Static web and backend check | `npm run build` |
+| Runtime web and backend check | Deploy workflow, before each staging and production release |
 
-Operation states, budgets, retention and crash recovery are documented in
-[OPERATION_RESOURCES.md](OPERATION_RESOURCES.md).
+## 4. Compatibility rules
 
-Admin health includes the closed `ExecutionQueueStatus` schema in
-`telemetry.workQueues`, with anonymous KDF/lifecycle/intake counters and the
-25-item recovery status. Public probes retain their existing shapes. Matcher
-and rerouter counters remain in the extensible `routeProcessing` object.
-[Work admission](../operations/WORK_ADMISSION.md) defines process-local ceilings,
-five-second undispatched expiry, retry behavior and real-settlement ordering.
+1. Change the route, `openapi.json`, [API.md](../../backend/API.md) and a contract-validated test in the same change. `npm run verify:openapi` blocks a change that does not.
+2. Deploy the backend before any client sends a new request form. The backend must accept both the old and the new form until no supported client sends the old one.
+3. Do not remove or rename a path, field or status code that a supported client uses. Add a resource-style alias or an optional field instead. Removing an original path follows the conditions in the [resource migration](../../backend/API_RESOURCE_MIGRATION.md).
+4. The backend accepts the current, previous and legacy telemetry schemas. Remove an older firmware schema only after device diagnostics show that no device sends it.
+5. Adding a field to a closed response schema is a contract change: the web app validates acknowledgement bodies and must be checked before such a change ships.
+6. Keep role and assignment checks identical on both paths of an alias pair.
 
-Telemetry 503 responses now use the closed `TelemetryUnavailable` schema:
-`error`, fixed `retryAfterMs: 1000` and `commitState: not_dispatched|unknown`,
-with `Retry-After: 1`. Both telemetry aliases share the execution deadline
-policy; detailed health adds `workQueues.ingestion`. See
-[telemetry deadlines](../operations/TELEMETRY_DEADLINES.md).
+## 5. HTTP and Firebase SDK boundary
 
-Fleet continuation: v2 reconciliation jobs accept optional cursor and return bounded nextCursor/timeBudgetExceeded; each settled page uses a new key. Legacy reconciliation accepts query cursor with CORS-exposed X-Reconciliation-Complete/X-Next-Cursor headers and unchanged aggregate body. Fleet mutations can return retryable 409 while the shared durable mutex is held or 503 on bounded admission/audit failure. See [reconciliation](../operations/RECONCILIATION.md).
+The web app reads most live and configuration data through Firebase SDK subscriptions, which Firebase security rules govern independently of the backend. These channels are not HTTP operations and are not in `openapi.json`. Writes that need server-side validation or authority go through HTTP; feedback is the exception.
 
-Privacy admission has a three-second response budget and per-UID transactional resubmission preserving retry state. Admin GET `/api/v2/privacy-deletion-requests` pages twenty records; POST `/{uid}/recovery` compares executor/generation and audits deliberate retry. Current Auth plus durable membership checks protect claim-less passenger requests. See [privacy recovery](../operations/PRIVACY_DELETION.md).
+| Channel | Access by the web app | Purpose | Writes |
+|---|---|---|---|
+| RTDB `publicRouteBuses` and `publicRouteBuses/route:{routeId}/buses` | Listener | Live bus positions and status | Backend projection from telemetry |
+| RTDB `liveRouteCatalog/values`, `clientProjectionStatus/public` | Listener | Routes with live service; readiness of the public projection | Backend |
+| RTDB `activeRouteGeometry/{nodeKey}/{version}` | One-time read | Geometry of a live reroute | Backend |
+| RTDB `.info/connected`, `.info/serverTimeOffset` | Listener | Connection state and clock offset | Firebase |
+| Firestore `settings/global` | Listener | Service hours and announcements | `PATCH /api/v2/settings/global` |
+| Firestore `routes`, `buses`, `bus_locations`, `drivers` | Listener | Route catalog and fleet views | Route and fleet HTTP operations; `bus_locations` also by telemetry ingestion |
+| Firestore `users/{uid}` | One-time read | Profile and role | `POST /api/users/bootstrap` |
+| Firestore `ride_sessions` queries and `ride_sessions/{id}/messages`, `archivedMessages` | Listener | Ride history and chat | Ride session and chat HTTP operations |
+| Firestore `feedbacks`, `feedbackCooldowns` | Transaction write (passenger), one-time read of the latest 200 and status update (administrator) | Feedback | Web app directly, under security rules |
 
-Stored geometry GET is read-only and private/no-store. Legacy/invalid geometry returns 409 GEOMETRY_REPAIR_REQUIRED; use an authorized versioned admin save. Read/negative caching is bounded to 100 documents/60 monotonic seconds, raw fills 16, waiters 32 and response 3 seconds. Shared admin computations admit two raw pipelines/eight waiting/two-second queue age (up to four ordered chunks per pipeline). Capacity/expiry responds 503 with Retry-After: 1. See [read/repair procedure](../operations/ROUTE_GEOMETRY_READS.md).
+Feedback is written directly so that it works while the backend is unreachable. Firestore rules enforce the same profile requirement, ride eligibility, 24-hour cooldown and admin-only review as `POST /api/feedback`. The backend feedback operations remain for other clients.
 
-R20 adds compact/paged read options and fixed operation/generation traffic evidence while preserving supported aliases. See [API read behavior and caller inventory](../operations/API_READS_AND_RETIREMENT.md); local counter absence does not satisfy the retirement window.
+The application defines no Server-Sent Events, WebSocket, GraphQL or webhook interface. The choice of Firebase subscriptions for live data is recorded in the [realtime transport decision](../design/REALTIME_TRANSPORT_DECISION.md). Stored records are described in the [Firebase data model](../data/FIREBASE_DATA_MODEL.md), and rule design in the [security architecture](../security/SECURITY_ARCHITECTURE.md).
+
+## 6. References
+
+[1] OpenAPI Initiative, "OpenAPI Specification v3.1.1," spec.openapis.org/oas/v3.1.1.html. Accessed: 2026-10-30.
+
+[2] JSON Schema, "Draft 2020-12," json-schema.org/draft/2020-12. Accessed: 2026-10-30.

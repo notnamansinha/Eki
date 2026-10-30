@@ -1,4 +1,8 @@
-# PR #323 CodeRabbit verification — 2026-10-15
+# PR #323 CodeRabbit verification: 2026-10-15
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-039 | 1.0 | Historical | 2026-10-15 |
 
 Reviewed PR head `bb6b7c4d8277027f55bee694105d2e012fdf4ef3` in an isolated
 worktree on `codex/pr-323-coderabbit`. The original checkout's staged,

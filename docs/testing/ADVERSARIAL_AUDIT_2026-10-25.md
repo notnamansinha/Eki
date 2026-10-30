@@ -1,6 +1,8 @@
-# Adversarial component audit — 25 October 2026
+# Adversarial component audit: 25 October 2026
 
-Last updated: 2026-10-27 12:00 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-003 | 1.0 | Historical | 2026-10-27 |
 
 Branch: `fix/audit-tdd-2026-10-25`, based on `6e8604f77dbf7cc5fbaf34dd262cbfbde576206d`
 and ending at `8fc7ef068c848f75d6429a4a2c3d135a235e9bfe` before this documentation

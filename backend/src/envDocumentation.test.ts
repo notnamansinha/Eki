@@ -10,10 +10,11 @@ function templateVariables(): string[] {
   return [...read("backend/.env.example").matchAll(/^#?\s*([A-Z][A-Z0-9_]*)=/gm)].map(match => match[1]);
 }
 
-/** Backticked names in the "Backend variables" table of docs/CONFIGURATION.md. */
+/** Backticked names in the "Backend variables" table of docs/CONFIGURATION.md (the heading may be numbered). */
 function documentedBackendVariables(): Set<string> {
   const doc = read("docs/CONFIGURATION.md");
-  const start = doc.indexOf("## Backend variables");
+  const start = doc.search(/^## (?:\d+\.\s+)?Backend variables\s*$/m);
+  expect(start).toBeGreaterThanOrEqual(0);
   const end = doc.indexOf("\n## ", start + 1);
   const table = doc.slice(start, end).split("\n").filter(line => line.startsWith("| `"));
   return new Set(table.flatMap(line => [...line.split("|")[1].matchAll(/`([A-Z][A-Z0-9_]*)`/g)].map(match => match[1])));

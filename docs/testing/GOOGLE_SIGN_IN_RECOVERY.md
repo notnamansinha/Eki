@@ -1,6 +1,8 @@
 # Google sign-in recovery (#356)
 
-Last updated: 2026-10-27 12:00 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-014 | 1.0 | Historical | 2026-10-27 |
 
 ## Production incident, 21 October 2026
 

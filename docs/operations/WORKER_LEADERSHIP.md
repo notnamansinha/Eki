@@ -1,83 +1,88 @@
-# Worker leadership and fencing
+# Worker Leadership and Fencing
 
-Last updated: 2026-10-27 03:40 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-026 | 1.0 | Current | 2026-10-30 |
 
-The coordinator owns `_worker_leases/trip-state-worker`. The lease lasts 45
-seconds and renews every 15 seconds. `WORKER_INSTANCE_ID` is a diagnostic label;
-every process appends a random UUID, so duplicate labels do not grant shared
-ownership. Acquisitions increment a persistent `generation`. Orderly release
-expires the record without deleting the generation. Do not delete this record
-or reset its generation while workers or their requests can still exist.
+## 1. Purpose
 
-Each acquisition has a revocable context retained by asynchronous tasks and
-explicitly bound to RTDB listeners. A timer independent of the renewal promise
-revokes leadership. Admission also checks `performance.now()`, so a suspended
-event loop cannot admit work before the overdue timer runs. Slow or late lease
-responses cannot activate or revive a revoked acquisition. There is at most one
-unsettled renewal and one coordinator fleet reconciliation per process.
-Work queues shared by fenced and unfenced callers (for example durable ride
-restores, used by both device ingest and the trip engine) start each queued item
-in its requester's captured context and deduplicate in-flight work only within
-the same worker generation. A revoked leader's queued restore rejects without
-writing, and device ingest never inherits a leader's fence.
+Several backend replicas can run at once, but singleton background work must run in one process only. This document describes the Firestore lease that elects that process, how its authority ends, and how each destination store rejects writes from a leader that has lost it.
 
-## Clock and admission contract
+## 2. Scope
 
-Runtime wall clocks must remain within 2 seconds of the reference clock. Monitor
-time synchronization and remove unsynchronized replicas from worker service.
-Local authority ends no later than 41 seconds after the renewal attempt starts
-(45 seconds minus twice the skew allowance), and earlier if the wall-clock
-expiry leaves less time. Another owner waits until the recorded expiry plus 2
-seconds. Firestore transaction callbacks use a fresh wall time on each retry.
-Changing the wall clock backwards cannot extend the local monotonic deadline.
-Arbitrary clock errors beyond this allowance are an infrastructure failure, not
-a guarantee supplied by a client-clock lease.
+The process that holds the lease is the worker leader. It runs the trip state engine (lifecycle listeners, stale presence sweep and lifecycle recovery), the public live projection, the retention sweeper, the privacy deletion worker, the abandoned-session reconciler and the periodic fleet authorization reconciler. HTTP, admin and device requests do not need leadership; they keep their own assignment, ordering and durable operation contracts.
 
-On revocation the coordinator stops listeners/timers before awaiting cleanup.
-Shutdown does not await an unsettled renewal; a dispatched lease write may still
-settle, but its response cannot start workers. Its lease expires naturally.
+## 3. Behaviour
 
-## Destination enforcement
+### 3.1 Lease
 
-- Worker Firestore lifecycle transactions and deletion batches read the exact
-  lease in the same transaction as their writes. Owner, generation, local
-  deadline and wall-clock expiry (with skew margin) are checked before work and
-  after the callback. A concurrent takeover changes the transaction's read set;
-  Firebase must serialize the earlier commit before takeover or retry/abort it.
-  This adds one lease read to each worker write transaction.
-- Worker RTDB lifecycle/retention transactions check local authority on dispatch
-  and on every SDK callback retry. Surviving object projections carry internal
-  `_workerGeneration`; a lower generation cannot overwrite a newer projection.
-  Existing session, timestamp and unchanged-value predicates remain mandatory.
-  Stale-presence cleanup now conditionally checks the timestamp instead of
-  unconditionally updating/removing a snapshot read earlier.
-- Auth and recursive-delete APIs have no destination fencing primitive. Check
-  local authority immediately before each dispatch. Dispatched calls retain
-  uncertain outcomes and can finish after revocation. Fleet Auth reconciliation
-  retains its durable singleton lock until all dispatched calls settle; lease
-  expiry never authorizes lock takeover or blind replay. Durable deletion jobs
-  survive an interrupted cleanup and are removed only under a valid lease.
-- HTTP/admin/device operations outside the leader context keep their existing
-  semantics. They must still enforce their own assignment, ordering and durable
-  operation contracts. Worker expiry is not an HTTP dependency timeout.
+The lease is the document `_worker_leases/trip-state-worker` with `ownerId`, `generation`, `renewedAt` and `expiresAt`. Each process sets its owner ID to `WORKER_INSTANCE_ID` (default `worker`) followed by a random UUID, so two processes with the same label never share ownership.
 
-Firestore and RTDB cannot atomically share a lease. RTDB generation checks apply
-only once a newer generation has reached that destination; deleting a record
-also deletes its generation. Already dispatched requests cannot be recalled.
-These limits must remain visible in acceptance evidence. R07 addresses durable
-executor and stranded-lock recovery; R09/R10 address queue traversal/retries.
+```mermaid
+sequenceDiagram
+    participant P as Backend process
+    participant L as _worker_leases/trip-state-worker
+    loop Every 15 s (one renewal at a time)
+        P->>L: Transaction: read lease
+        alt Free, expired more than 2 s ago, or owned by P
+            P->>L: Write ownerId, generation, expiresAt = now + 45 s
+            P->>P: Local deadline = min(41 s after the attempt began, expiresAt - 2 s)
+        else Held by another process
+            P->>P: Stop leader work
+        end
+    end
+```
+Figure 1. Lease acquisition and renewal.
 
-## Verification and deployment acceptance
+A new acquisition increments `generation`; a renewal by the same live owner keeps it. Orderly shutdown sets `ownerId` to `null` and `expiresAt` to the epoch but keeps `generation`, so generations only increase. Do not delete the lease document or reset its generation while any worker or its requests may still exist.
 
-The baseline regressions reproduce an indefinitely active worker during a hung
-renewal and late activation after expiry. Coordinator/fence tests cover cutoff,
-late replies, timely renewal, backward clock changes, skew allowance, unique
-process ownership, preserved generations, callback context and RTDB retries.
-`npm run test:rules` also runs the actual Firebase emulator worker suite:
-valid/superseded Firestore writes, expiry after a destination read, and RTDB
-generation rejection. It requires both emulators and never targets external
-Firebase. CI runs it on Linux along with the authorization rules suite.
+### 3.2 Local authority
 
-Exact-head CI and merged source evidence belong to issue #246. Issue #245 still
-requires staged replica failover/clock monitoring and observed ride recovery;
-these software tests do not establish live deployment or moving-route acceptance.
+Each acquisition creates a fence that asynchronous work carries in its context and that RTDB listeners are bound to explicitly. Local authority ends at the earlier of two times: 41 s after the renewal attempt started (the 45 s lease minus twice the 2 s clock allowance), and 2 s before the recorded wall-clock expiry. A timer that does not depend on the renewal promise revokes the fence at that moment. Admission also compares `performance.now()` with the deadline, so an event loop that was suspended cannot admit work before the overdue timer runs. A slow or late lease response cannot activate or revive a revoked fence.
+
+A process has at most one renewal in flight and runs at most one fleet reconciliation. On revocation the coordinator stops listeners and timers before waiting for cleanup. Shutdown does not wait for an unsettled renewal; a dispatched lease write may still commit, but its response cannot start workers, and the lease then expires on its own.
+
+A queue shared by fenced and unfenced callers, for example durable ride restores used by both device ingestion and the trip engine, starts each item in its requester's context and deduplicates in-flight work only within one generation. A revoked leader's queued restore is rejected without writing, and device ingestion never inherits a leader's fence.
+
+### 3.3 Destination checks
+
+| Destination | Check |
+|---|---|
+| Firestore lifecycle transactions and deletion batches | The transaction reads the lease and requires the same owner and generation, a valid local deadline and a wall-clock expiry more than 2 s away, before and after the callback. A takeover changes the read set, so Firestore serializes the earlier commit first or retries or aborts it. Each worker write transaction costs one extra lease read. |
+| RTDB lifecycle and retention transactions | Local authority is checked on dispatch and on every SDK callback retry. Written objects carry `_workerGeneration`; a lower generation cannot overwrite a newer projection. Session, timestamp and unchanged-value checks still apply. |
+| Firebase Auth and recursive deletes | No destination fence exists. Local authority is checked immediately before each call; a dispatched call can finish after revocation with an unknown outcome. Fleet Auth reconciliation keeps its durable lock until every dispatched call settles, and lease expiry never authorizes a lock takeover or a blind replay. Durable deletion jobs survive an interrupted cleanup and are removed only under a valid lease. |
+
+Firestore and RTDB cannot share one lease atomically. An RTDB generation check applies only after a newer generation has written to that node, and deleting a node also deletes its generation. Requests already dispatched cannot be recalled.
+
+## 4. Configuration
+
+| Item | Value | Source |
+|---|---|---|
+| Lease document | `_worker_leases/trip-state-worker` | `backend/src/lib/workerFence.ts:5` |
+| Lease duration | 45 s | `backend/src/services/workerCoordinator.ts:15` |
+| Renewal interval | 15 s | `backend/src/services/workerCoordinator.ts:16` |
+| Clock allowance | 2 s | `backend/src/lib/workerFence.ts:6` |
+| Local deadline | `min(45 s - 2 x 2 s - elapsed, expiresAt - now - 2 s)` | `backend/src/services/workerCoordinator.ts:117` |
+| Fleet reconciliation interval | 10 min | `backend/src/services/workerCoordinator.ts:171` |
+| `WORKER_ENABLED` | Default `true`; `false`, `0`, `no` or `off` keeps the process out of the election | `backend/src/services/workerCoordinator.ts:20` |
+| `WORKER_INSTANCE_ID` | Default `worker`; diagnostic label only | `backend/src/services/workerCoordinator.ts:27` |
+
+## 5. Failure modes and recovery
+
+Every runtime clock must stay within 2 s of the reference clock. Monitor time synchronization and take an unsynchronized replica out of worker service by setting `WORKER_ENABLED=false`. A larger clock error is an infrastructure failure that the lease cannot correct; a backward wall-clock change cannot extend the local monotonic deadline.
+
+| Symptom | Meaning | Action |
+|---|---|---|
+| Log `[Worker] Lease renewal failed` followed by `Leadership lost` | Firestore was unreachable or slow; leader work stopped. | None if Firestore recovers: the next renewal reacquires the lease. |
+| No process logs `[Worker] Leadership acquired` | Every replica has `WORKER_ENABLED=false`, or the lease cannot be written. | Enable the worker on at least one replica and check Firestore access. |
+| Leadership moves often between replicas | Renewals take longer than the local deadline allows, or clocks differ. | Check Firestore latency and clock synchronization. |
+
+## 6. Verification
+
+| Behaviour | Tests |
+|---|---|
+| Cutoff, late replies, timely renewal, backward clock changes, clock allowance, unique ownership, preserved generations, a hung renewal | `backend/src/services/workerCoordinator.test.ts` |
+| Context propagation and RTDB callback retries | `backend/src/lib/workerFence.test.ts`, `backend/src/services/durableRideRecovery.workerFence.test.ts` |
+| Valid and superseded Firestore writes, expiry after a destination read, RTDB generation rejection, against the Firebase emulators | `backend/src/workerFence.integration.test.ts` |
+
+`npm run test:rules` runs the emulator suite; it needs the Firestore, Database and Auth emulators and never contacts a real Firebase project. CI runs it on Linux. Failover across real replicas, clock monitoring and ride recovery after a failover need staging evidence.

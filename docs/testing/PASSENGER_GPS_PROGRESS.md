@@ -1,6 +1,8 @@
 # Passenger GPS progress regression
 
-Last updated: 2026-10-21 01:50 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-033 | 1.0 | Historical | 2026-10-21 |
 
 Implementation base: `testing` at `371eb7d9d07c8a2e43c42125a53cbc12115d28a4`.
 

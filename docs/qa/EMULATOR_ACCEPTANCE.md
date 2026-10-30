@@ -1,56 +1,57 @@
-# Disposable emulator acceptance
+# Disposable Emulator Acceptance
 
-Last updated: 2026-10-11 18:18 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-TST-005 | 1.0 | Current | 2026-10-30 |
 
-Run `npm run test:rules` with Node 24 and Java 21. The existing CLI (15.14.0)
-launches Firestore, RTDB and Auth on literal IPv4 loopback ports 8085, 9005
-and 9095, hub 4405 and logging 4505. The generated configuration contains
-copied rules/indexes and no hosting deployment configuration. Production rule
-files are unchanged. Each sequential suite owns a `demo-eki-*` namespace.
+## 1. Purpose
 
-Test setup rejects incomplete demo configuration, real credentials and a missing
-preloaded transport guard before SDK imports. The child verifies the running
-hub targets. A Node socket/DNS guard blocks non-loopback SDK transport; its
-unit fault probe catches sockets, TLS, HTTP/2 and DNS before external traffic,
-while a real loopback connection succeeds. Tooling downloads are dependency
-setup before that guarded child. This is not an OS sandbox for arbitrary native
-code/subprocesses; do not reuse it for arbitrary commands.
+`npm run test:rules` is the L2 emulator family of the [QA programme](README.md). It runs the Firestore and RTDB rules tests and the backend integration suites against disposable Firebase emulators, with real SDK reads, writes and transactions. The [test strategy](../docs/testing/TEST_STRATEGY.md) lists the eleven suites and what each covers.
 
-## Integrated observations
+## 2. Prerequisites
 
-`qaTelemetryChain.integration.test.ts` mounts the actual device router and
-bounded JSON parser on an ephemeral loopback HTTP port. Actual scrypt/registry,
-payload parser, RTDB transaction, route watcher, trip worker, public projection
-and Firestore lifecycle run against real emulator SDK instances. Firebase
-initialization is injected; database operations are real. Google computation
-throws if called; route geometry and identities are synthetic.
+- Node 24, Java 21 and locked dependencies.
+- Free ports: Firestore 8085, RTDB 9005, Auth 9095, hub 4405, logging 4505. The launcher stops with a message naming the port and its owner when a previous run still holds one.
+- No real credentials in the environment. The safety preflight rejects them before any tooling starts.
 
-Assertions cover unauthorized/forged/oversized requests without persistent
-mutation, valid device presence without fabricated passenger service, observed
-response timing headers, duplicates/delayed old samples and durable ride
-identity/activation/public projection. Existing rules, worker, recovery, privacy
-and read suites also run. The fixture does not exercise every global server
-middleware or production bootstrap. Exact L2 links in `emulator-test-map.mjs`
-remain PARTIAL acceptance scopes even when assertions pass; browser/provider/
-field acceptance is separate.
+## 3. Procedure
 
-## Evidence and teardown
+```powershell
+npm run test:rules
+```
 
-Startup initializes `emulator-report.json` as BLOCKED. The child removes stale
-evidence and promotes only its execution scope when all observed assertions
-pass without skips. JSON/JUnit/Markdown/log evidence includes actual source SHA,
-dirty state, counts and running emulator targets; CI retains failed runs too.
-The child has a four-minute ceiling and launcher a six-minute deadline.
+`scripts/run-rules-emulator.mjs` then:
 
-The chain drains route processing, awaits worker stops, closes HTTP connections,
-terminates Firestore and deletes its app. Existing suites retain independently
-owned demo namespaces and sequential scheduling; CLI stops emulator processes.
-No real accounts or shared cloud data are seeded/deleted.
+1. Writes `artifacts/qa/emulator-report.json` with verdict BLOCKED.
+2. Runs the safety preflight and checks that the emulator ports are free.
+3. Writes a temporary Firebase configuration with copies of `firestore.rules` and `database.rules.json`, the existing index file and no hosting section. The committed rule files are never modified.
+4. Runs `npx --yes firebase-tools@15.14.0 emulators:exec --only firestore,database,auth --project demo-eki-qa` with `scripts/qa/run-emulator-tests.mjs` as the child.
+5. The child checks the running hub targets, then runs the backend `test:rules-integration` script with Vitest, one worker, `FIREBASE_RULES_TEST=1` and the Node network guard preloaded.
 
-The local Windows launch on 11 October failed before tests: Java's selector
-pipe reported `SocketException: Invalid argument: connect` during
-UnixDomainSockets initialization. That attempt is BLOCKED, never PASS or an
-excuse to skip tests. Linux CI supplies execution evidence, recorded in the PR
-and artifacts. Unit isolation/transport/rules-copy checks and backend lint/build
-passed independently. No live-motion, OAuth/App Check/domain, actual Maps,
-RF/power/thermal/OTA acceptance is claimed. Field gaps remain in #245/#300.
+Before any SDK import, `backend/src/test-support/emulatorIsolation.ts` refuses to run unless the project is `demo-eki-qa`, every emulator host is the expected loopback port, `EKI_QA_CONFIRM_DISPOSABLE=1` and `EKI_QA_EXTERNAL_PROVIDERS=mock` are set, no real credential variable is present and the network guard is active. Suites use separate `demo-eki-*` namespaces and run sequentially.
+
+Deadlines: the Vitest child stops after 4 minutes and the launcher after 6 minutes. The nightly campaign allows 390 s.
+
+## 4. Telemetry chain suite
+
+`qaTelemetryChain.integration.test.ts` mounts the real device router and bounded JSON parser on an ephemeral loopback port. Device credential checks, payload parsing, the RTDB transaction, route watcher, trip worker, public projection and Firestore lifecycle all run against the emulators. Firebase initialisation is injected; database operations are real. Google route computation throws if called; route geometry and identities are synthetic.
+
+It asserts that unauthorised, forged and oversized requests change nothing; that a valid device fix creates presence without inventing passenger service; that response timing headers are present; that duplicate and delayed old samples are handled; and that ride identity, activation and the public projection are durable. It does not exercise every global middleware or the production bootstrap.
+
+## 5. Evidence
+
+The child writes `emulator-vitest.json`, `emulator-junit.xml`, `emulator-report.json`, `emulator-report.md` and `emulator-run.log` under `artifacts/qa/`, with the source commit, dirty flag, counts and running emulator targets. The verdict changes from BLOCKED only when every observed assertion passes without a skip. CI uploads the files with seven-day retention, including failed runs. Passing tests give `PARTIAL` status to the links in `qa/emulator-test-map.mjs`.
+
+Teardown drains route processing, stops workers, closes HTTP connections and terminates the Firestore client. The Firebase CLI stops the emulators. On Windows the launcher also stops emulator JVMs that outlive the run. No real account or shared cloud data is created or deleted.
+
+## 6. Troubleshooting
+
+| Symptom | Cause and action |
+|---|---|
+| `SocketException: Invalid argument: connect` during Java startup on Windows | The emulator cannot open its Unix domain socket in this environment. The run is BLOCKED, not passed. Use the Linux CI run as evidence |
+| A port is reported as held by another process | A previous run left an emulator running. Stop that process and run again |
+| `npm test` passes but no emulator test ran | The suites are declared with `describe.skip` unless `FIREBASE_RULES_TEST=1`. Run `npm run test:rules` |
+
+## 7. Limits
+
+The network guard covers Node sockets, TLS, HTTP/2 and DNS in the test process; it is not an operating-system sandbox and does not cover native subprocesses. Dependency downloads by `npx` happen before the guarded child starts. The family does not cover browsers, OAuth, Google Maps, deployed configuration or any physical hardware.

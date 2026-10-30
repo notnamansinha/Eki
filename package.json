@@ -12,6 +12,7 @@
     "build": "npm run build --workspace=backend && npm run build --workspace=frontend && node scripts/generate-sw.mjs && node scripts/update-csp.mjs && node scripts/verify-web-backend-contract.mjs",
     "build:production": "node scripts/build-production.mjs",
     "docs:sync": "node scripts/sync-documentation-mirrors.mjs",
+    "docs:check": "node --test scripts/documentation-quality.test.mjs && npm exec --workspace=backend -- vitest run src/docsMirror.test.ts src/envDocumentation.test.ts",
     "lint": "npm run lint --workspace=frontend && npm run lint --workspace=backend",
     "test": "node --test scripts/*.test.mjs && npm run verify:openapi && npm run verify:ui-contracts && npm run test --workspace=backend && npm run test --workspace=frontend",
     "test:e2e": "playwright test",

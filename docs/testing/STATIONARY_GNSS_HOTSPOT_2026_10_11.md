@@ -1,4 +1,8 @@
-# Stationary GNSS and hotspot recovery — 11 October 2026
+# Stationary GNSS and hotspot recovery: 11 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-053 | 1.0 | Historical | 2026-10-11 |
 
 All timestamps below are UTC on 11 October 2026 (add 05:30 for IST). The ESP32
 remained stationary and powered during the three phone-hotspot cycles. No ride was

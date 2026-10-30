@@ -1,5 +1,9 @@
 # MUSE audit verification and boarding coordinate repair
 
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-025 | 1.0 | Historical | 2026-10-12 |
+
 Reviewed on 12 October 2026 against `testing` commit
 `0244ba1268beaaa821cdac90a36e7131abd62340`. The supplied audit was pinned to
 `ab74d88b1337ca07c2aa8cb1b453f216ac9f0da6`; historical results below belong to

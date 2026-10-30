@@ -1,4 +1,8 @@
-# Non-moving webapp readiness — 9 October 2026
+# Non-moving webapp readiness: 9 October 2026
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-026 | 1.0 | Historical | 2026-10-09 |
 
 The current request expands earlier R01–R15 work to remaining webapp software
 and stationary checks, excluding physical moving tests. The change is based
@@ -34,7 +38,7 @@ flashing, account privilege change or destructive cloud-data test is included.
 - R32 adds HTTPS client validation and bounded optional API App Check
   verification, with separate exact device authentication. The owner permits
   authenticated live fleet viewing by any Google account. Deployment enforcement
-  remains staged, as documented in [API security](../operations/BROWSER_API_SECURITY.md).
+  remains staged, as documented in [API security](../security/BROWSER_API_SECURITY.md).
 - Trace controls are explicit opt-in and telemetry correlation normalizes
   device sample/sequence keys without changing authority or freshness policy.
 

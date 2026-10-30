@@ -1,4 +1,8 @@
-# Testing branch CI investigation — 2026-10-16
+# Testing branch CI investigation: 2026-10-16
+
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-056 | 1.0 | Historical | 2026-10-16 |
 
 Investigated the red checks associated with merges #322, #333 and #325.
 Baseline: `testing` at `72259f0012dea83a4d4595688d1339e3c2fbfd55`.

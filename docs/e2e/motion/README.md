@@ -1,38 +1,48 @@
-# Isolated moving-marker simulation
+# Moving-Marker Simulation
 
-Last updated: 2026-10-04 14:20 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-PKG-009 | 1.0 | Current | 2026-10-30 |
 
-Run `node node_modules/vite/bin/vite.js --config e2e/motion/vite.config.mts`, then
-open `http://127.0.0.1:3150/?telemetryTrace=1` and click **Run all 12 scenarios**.
-Keep the tab visible; background-tab animation throttling changes results.
-Each scenario records visibility and requestAnimationFrame gaps to expose
-throttling. A frame-gap p95 near one second cannot support a smoothing-duration
-comparison, even if loopback network delivery is fast.
-If the OS prefers reduced motion, durations are ignored by the real hook.
-The checkbox **Use standard animation in this simulation** can exercise the
-normal-animation branch with a fixture-only media-query override. The actual
-application and OS preferences are unchanged. Both actual and simulated
-preferences are saved in the capture; compare durations only in standard mode.
-Allow roughly three minutes. The loopback-only server saves a JSON capture to
-ignored `temp/motion-captures`. It accepts same-origin captures up to 2 MB.
+## 1. Purpose
 
-The fixture uses the application's actual position-selection, smoothing and
-trace hooks. Its SSE producer supplies twelve synthetic moving samples per
-scenario. Compare 250 ms and 120 ms smoothing across immediate matching,
-500 ms delayed matching, a stalled matcher (the real two-second grace expires),
-80 ms bursts, a 3.5 second delivery interruption, and a new ride context.
-The interruption simulates a delivery gap; it does not exercise Firebase's
-physical connection or the EventSource reconnect protocol.
+This manual fixture measures how the live bus marker selects and animates positions in the browser. It uses the application's real position selection (`useLiveBusMarkerPosition`), smoothing (`useSmoothPosition`) and render trace hooks, fed by a loopback Server-Sent Events producer with synthetic moving samples. No Firebase call, bus write, credential, Google Maps tile or board movement is involved.
 
-Arrival means browser state within 5 cm of the selected current target. Held,
-older-context and superseded targets must not acknowledge a new fix. Coalesced
-sub-meter targets may never produce an arrival because the application skips
-sub-pixel motion. Missing arrivals are reported rather than invented.
+## 2. Run
 
-All coordinates and ride identifiers are fabricated. No Firebase calls, real
-bus writes, credentials, Google Maps tiles or board movement are required.
-Loopback delivery timing uses the same computer's wall clock, while animation
-timing uses browser monotonic time. These measurements do not establish mobile
-network latency, physical GNSS accuracy, Google Maps compositor paint timing,
-or latency on lower-powered devices. Existing real device/network logs remain
-separate from this simulation.
+1. From the repository root, start the fixture:
+
+   ```powershell
+   node node_modules/vite/bin/vite.js --config e2e/motion/vite.config.mts
+   ```
+
+2. Open `http://127.0.0.1:3150/?telemetryTrace=1` and select **Run all 12 scenarios**. Keep the tab visible: background-tab throttling changes the results. A full run takes about three minutes.
+
+3. When the run finishes, the page posts a JSON capture to the fixture server, which writes it to `temp/motion-captures/` (ignored by Git). The server accepts only same-origin captures of up to 2 MB.
+
+## 3. Scenarios
+
+The twelve scenarios are six delivery profiles, each run with 250 ms and 120 ms smoothing. Each profile sends twelve synthetic moving samples.
+
+| Profile | Delivery |
+|---|---|
+| `matched` | Matched position arrives with the fix |
+| `delayed` | Matched position arrives 500 ms later |
+| `stalled` | No matched position; the 2 s match-pending hold (`MATCH_PENDING_HOLD_MS`) expires |
+| `burst` | Samples 80 ms apart |
+| `disconnect` | A 3.5 s delivery gap |
+| `context` | A new ride context |
+
+The `disconnect` gap simulates missing deliveries. It does not exercise the Firebase connection or the EventSource reconnect protocol.
+
+## 4. Reading the capture
+
+An arrival means the browser state came within 5 cm of the current target. Held, older-context and superseded targets must not acknowledge a new fix. Coalesced sub-metre targets may never produce an arrival because the application skips sub-pixel motion; missing arrivals are reported, not invented.
+
+Each scenario records visibility and `requestAnimationFrame` gaps. A frame-gap p95 near one second means the browser throttled animation, and the run cannot support a comparison of smoothing durations.
+
+When the operating system prefers reduced motion, the real hook ignores smoothing durations. The **Use standard animation in this simulation** checkbox overrides the media query inside the fixture only, so the normal animation branch can be measured. The capture records both the real and the simulated preference; compare durations only in standard mode.
+
+## 5. Limits
+
+Delivery timing uses the computer's wall clock and animation timing uses the browser's monotonic clock. The results do not establish mobile network latency, GNSS accuracy, Google Maps compositor paint timing or performance on slower devices.

@@ -1,5 +1,9 @@
 # PR #336 review follow-up
 
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-EVD-041 | 1.0 | Historical | 2026-10-18 |
+
 Reviewed on 18 October 2026 (Asia/Calcutta), against PR head
 `3b5bf3b2311ab1f3ab1fd1ac753b0ff6d8642f44`, on local branch
 `codex/pr-336-review-fixes`.

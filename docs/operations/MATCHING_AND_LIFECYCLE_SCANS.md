@@ -1,131 +1,83 @@
-# Matching and lifecycle scan work (issue #246 R19)
+# Matching and Stale Presence Scans
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+| Document ID | Version | Status | Last updated |
+|---|---|---|---|
+| EKI-OPS-014 | 1.0 | Current | 2026-10-30 |
 
-## Scope and correctness
+## 1. Purpose
 
-This change is isolated from the broader, unmerged PR #272. That PR's cumulative
-progress prefilter and timestamp query were reviewed; this implementation adds
-binary search, bounded pages/writes, race guards, tests and measurements on the
-latest `testing` base (`41ffbc7`). It does not incorporate the other remediation
-items in that PR.
+This document describes how the backend bounds two recurring scans: the segment search that matches each accepted fix to the route, and the sweep that marks or removes live bus nodes whose telemetry has stopped.
 
-The matcher binary-searches cached cumulative distances for every segment whose
-physical interval intersects the existing maximum-progress window. It preserves
-the original projected-point progress rejection, scoring, headings, confidence,
-ambiguity and candidate order. Long segments crossing the window, parallel roads,
-loop legs and repeated vertices remain eligible. Ambiguity requires a competitor
-that is clearly farther along the route than its straight-line distance, so
-repeated or densely sampled vertices of one road do not make a match ambiguous. Missing/expired continuity or
-an absent/non-finite bound performs the original full scan. The first use of a
-geometry still builds cumulative distances in O(N); warm bounded search costs
-O(log N + eligible segments). Route/session/version invalidation remains owned
-by the existing matching pipeline.
+## 2. Scope
 
-The stale sweeper reads one `orderByChild("timestamp")` page per one-second tick,
-with a limit of 25 and at most four in-flight transactions. It freezes the cutoff
-for a cycle and continues after `(timestamp, key)`, including ties even when
-previous terminal records were deleted. Numeric timestamps from zero through
-the cutoff are queried; timestamps exactly at the freshness horizon are not
-mutated. Missing/non-numeric timestamps retain the prior skip behavior. Completed
-cycles pause for `BUS_STALE_MS`; failed pages retain their cursor with bounded
-1–30 second backoff. A scheduled wait longer than its bound is discarded, so a
-backwards wall-clock step cannot postpone cleanup until wall time catches up. Large backlogs take multiple ticks, deliberately trading
-cleanup latency for bounded work.
+The document covers search bounds, page sizes, retry timing, health counters and deployment order. The progress window, candidate scoring, ambiguity, the speed-plausibility penalty and the off-route rules are described in [tracking algorithms](../design/TRACKING_ALGORITHMS.md). Replay of lifecycle work after overload is described in [work admission](WORK_ADMISSION.md).
 
-Transactions recheck timestamp, sequence, server-received time, bus/route/driver,
-session and lifecycle identity before applying the captured decision. Fresh fixes,
-new sessions and terminal/active transitions win. Stale active rides retain their
-presence and checkpoint and become device-offline/signal-lost; stale terminal
-nodes are deleted. Empty SDK caches retry against server authority. Existing
-worker leadership, generation rejection and shutdown fencing remain enforced.
+## 3. Behaviour
 
-Cold lifecycle replay starts explicitly after engine startup, rather than waiting
-for a rejected event or error. It uses the existing 25-record RTDB/document-ID
-pages and queue capacity gate; no unbounded startup Promise.all is introduced.
-A queued live replay re-reads its single current node at serialized dispatch to
-avoid writing the page's older session/lifecycle state. This adds at most one
-point read per admitted live replay record; normal live events do not add reads.
-Durable fleet replay continues to repair missed removals under its existing
-session/lock/presence predicates.
+### 3.1 Bounded segment search
 
-## Reproduce measurements
+The matcher computes cumulative along-route distances once per geometry object and caches them, so the first match on a geometry costs O(N) in the number of vertices. When the caller supplies a previous match and a finite progress window (defined in Section 4.2 of [tracking algorithms](../design/TRACKING_ALGORITHMS.md)), the matcher binary-searches the cumulative distances for the segments whose along-route interval intersects the window, and projects the fix onto those segments only. A warm bounded search costs O(log N) plus the number of eligible segments, and returns the same answer as a full scan.
 
-```sh
-npm ci
+Every segment that intersects the window stays eligible, including long segments that cross it, parallel roads, loop legs and repeated vertices. Without a usable previous match (cold start, expired continuity, a session or geometry change, or an absent or non-finite bound) the matcher scans every segment.
+
+### 3.2 Stale presence sweep
+
+Devices cannot register an RTDB `onDisconnect` handler, so the worker sweeps the live records in `activeBuses` instead.
+
+1. Every second the trip engine starts at most one page read. A cycle freezes its cutoff at `now - BUS_STALE_MS`.
+2. A page holds at most 25 children ordered by `timestamp`, with numeric timestamps from 0 to the cutoff. The next page continues after the last `(timestamp, key)` pair, so ties are not skipped even when earlier records were deleted. Records without a numeric timestamp are never returned.
+3. The sweep runs at most four transactions at a time. Each transaction compares `timestamp`, `seq`, `backendReceivedAt`, `busId`, `routeId`, `driverId`, `sessionId`, `status` and `tripState` with the page value and aborts if any differ, so a fresh fix, a new session or a lifecycle transition wins.
+4. An active ride (`status: active` with `tripState` `pre_departure` or `in_service`) keeps its live record and checkpoint; the record is marked `deviceState: offline` and `signalState: lost`. An active ride that is already offline is skipped. Every other stale live record is deleted. A record whose timestamp equals the cutoff is not changed.
+5. After a short final page the cycle ends and the next cycle waits `BUS_STALE_MS`.
+
+An empty local SDK cache makes the transaction retry against the server value. The transactions run under the worker lease and generation checks described in [worker leadership](WORKER_LEADERSHIP.md).
+
+### 3.3 Health counters
+
+Admin health (`GET /api/health`) exposes:
+
+- `telemetry.routeMatching`: `calls`, `boundedSearches`, `fullSearches`, `segmentProjections` and `skippedSegments`.
+- `telemetry.workQueues.staleSweep`: page reads, records examined, records marked offline or removed, aborted and failed transactions, transaction attempts, completed cycles, the largest page and the most concurrent writes seen, and whether a cycle is still in progress.
+
+Counters are process-local. Compare deltas per fix or per cycle on the current leader; do not sum them across replicas.
+
+## 4. Configuration
+
+| Item | Value | Source |
+|---|---|---|
+| Cumulative distance cache | One array per geometry object | `backend/src/services/routeMatching.ts:144` |
+| Search bound | Binary search of cumulative distances | `backend/src/services/routeMatching.ts:202` |
+| Sweep page size | 25 nodes | `backend/src/services/staleBusSweeper.ts:4` |
+| Concurrent sweep transactions | 4 | `backend/src/services/staleBusSweeper.ts:5` |
+| Retry after a failed page | 1 s, doubling to 30 s | `backend/src/services/staleBusSweeper.ts:18` |
+| Sweep tick | 1 s | `backend/src/services/tripStateEngine.ts:1356` |
+| `BUS_STALE_MS` | Default 300,000 ms, minimum 90,000 ms | `backend/src/services/tripStateEngine.ts:110` |
+| RTDB index | `activeBuses` `.indexOn` includes `timestamp` | `database.rules.json:8` |
+
+## 5. Failure modes and recovery
+
+| Condition | Behaviour | Action |
+|---|---|---|
+| Backlog larger than one page | The sweep needs one tick per 25 nodes. Cleanup latency grows; work per tick stays bounded. | None. Watch `staleSweep.hasMore` and the cycle count. |
+| Page read or transaction fails | The cursor is kept and the page is retried after the backoff. | Inspect `worker.staleSweep` background failures in admin health. |
+| Wall clock steps backwards | A scheduled wait longer than its bound is discarded, so cleanup does not stall until wall time catches up. | None. |
+| Leadership lost during a page | Fenced transactions abort; the next leader starts a new cycle. | None. |
+| `timestamp` index missing on the RTDB instance | Ordered queries are not served from an index. | Deploy `database.rules.json` to the selected RTDB instance before the backend that uses these queries. Leaving the index installed after a backend rollback is safe. |
+
+## 6. Verification
+
+| Behaviour | Tests |
+|---|---|
+| Bounded search equals a full scan, including randomized differential cases and invalid-bound fallback | `backend/src/services/routeMatchingSearch.test.ts`, `backend/src/services/routeMatching.test.ts` |
+| Progress rule after a GNSS gap and near a turnaround | `backend/src/services/routeMatchingGapBraking.integration.test.ts` |
+| Sweep cursor, ties, partial-page failure and stale generations | `backend/src/services/staleBusSweeper.test.ts` |
+| Sweep against a real RTDB emulator | `backend/src/staleBusSweeper.integration.test.ts`, run by `npm run test:rules` |
+
+The search benchmark compares the optimized matcher with a frozen full-scan copy (`backend/src/test-support/routeMatchingBaseline.ts`), asserts equal answers, then times both. Run it from the repository root:
+
+```powershell
 npm run build --workspace=backend
 node scripts/benchmark-route-matching.mjs
-npm test
-npm run test:rules
-npm run lint
 ```
 
-The benchmark compares a frozen full-scan matcher from `41ffbc7` against the
-optimized matcher with exact answer equality before timing. It alternates timing
-order, runs each fixture in a separate process to avoid cross-case JIT
-specialization, warms geometry/JIT, and records 300 fixes per fixture (override with
-`R19_BENCH_SAMPLES`). The no-prior case deliberately retains full scanning; it
-uses warm geometry and is not a claim about uncached startup latency. Wall times
-are machine-dependent; projection counts are the deterministic acceptance gate.
-The unit suite adds 1,500 seeded differential comparisons, dense/long/repeated
-geometry cases and invalid-bound fallback checks. Existing route adherence,
-parallel-road, loop, stop progression, version and session tests still run.
-
-Before tuning, a 10,000-segment dense continuity fixture projected all 10,000
-segments (p50 0.5732 ms, p95 0.9599 ms on local Node 26.8.2). Final paired measurements without competing build processes are stored in
-[raw benchmark JSON](evidence/r19-matching.json):
-
-| Warm fixture | Projections before / after | p50 ms before / after | p95 ms before / after |
-| --- | ---: | ---: | ---: |
-| Dense continuity | 10,000 / 158 | 0.5734 / 0.0145 | 0.7589 / 0.0252 |
-| Sparse continuity | 1,000 / 16 | 0.0581 / 0.0037 | 0.1363 / 0.0060 |
-| Loop continuity | 1,000 / 476 | 0.0736 / 0.0423 | 0.1720 / 0.0858 |
-| No prior | 10,000 / 10,000 | 0.8940 / 0.9033 | 1.3518 / 1.4436 |
-| Reacquisition without bound | 10,000 / 10,000 | 0.9820 / 0.9779 | 1.4387 / 1.4689 |
-| One long segment | 1 / 1 | 0.0027 / 0.0034 | 0.0035 / 0.0040 |
-
-The improvement is in bounded continuity; full-scan fallback and very small
-routes do not have a measured speedup. Keep those fallbacks for correctness.
-
-The actual loopback RTDB test seeds 1,000 fresh records, 52 stale terminal records
-and five stale active rides, each with a four-sample history. A separate reader
-connection receives only timestamp-filtered pages. It measures serialized
-application snapshot JSON, not wire frames or Firebase billed bytes:
-
-| Scan | Returned records | Snapshot JSON bytes | Pages |
-| --- | ---: | ---: | ---: |
-| Original full snapshot | 1,057 | 410,994 | 1 |
-| Indexed stale pages | 57 | 22,216 | 3 |
-
-The returned JSON is 94.6% smaller; all 52 terminal nodes were removed, all five
-rides retained with device-offline state, maximum page size 25 and maximum active
-writes four. SDK transaction callbacks ran twice per candidate on the cold
-reader (114 attempts). Tests also cover timestamp ties, partial-page failures,
-stale generations and same-timestamp replacement sessions. The retained backend
-live fleet subscription still receives live fleet events, so this is not a
-94.6% reduction in total backend network traffic or a billing guarantee.
-
-## Visibility and deployment acceptance
-
-Authenticated detailed health telemetry exposes `routeMatching` (calls,
-bounded/full searches, segment projections, skipped segments) and
-`workQueues.staleSweep` (page reads, candidates, transactions, effects, failures,
-cycle progress and maximum observed bounds). Counters are process-local; sample
-deltas per fix/cycle and watch the leader rather than summing gauges across
-replicas. Cold replay retains `workQueues.recovery` and intake queue metrics.
-
-Deploy the committed `database.rules.json` timestamp `.indexOn` to the explicitly
-selected RTDB instance **before** rolling out backend indexed queries. This index
-is an RTDB rules index, distinct from `firestore.indexes.json`. Emulator evidence
-validates local rules/query behavior; it does not certify a deployed cloud index.
-No cloud rules, backend or production data were deployed by this change.
-
-On staging, record the deployed index and test a realistic long route, parallel
-road/loop ambiguity and stop progression. Seed a stale backlog larger than one
-page with timestamp ties and reused sessions; restart/revoke a leader while
-paging, return a fresh fix during a page, and verify eventual cleanup without
-terminal/session rollback. Observe page/write bounds, matching projection deltas,
-queue age and dependency traffic. Confirm rules deployment completed before
-backend activation and retain the prior backend image for rollback. Roll back
-backend behavior if matching or cleanup correctness regresses; leaving the
-additional timestamp index installed is safe.
+It runs each fixture in a separate process and records 300 fixes per fixture; set `R19_BENCH_SAMPLES` to change the count. Projection counts are the deterministic result; wall times depend on the machine. The run recorded on 2026-10-06 (Node 26.8.2) reduced the dense continuity fixture from 10,000 to 158 projected segments per fix; the full-scan cases did not change. The raw output is in [`evidence/r19-matching.json`](evidence/r19-matching.json). In the emulator run of the sweep, 1,057 seeded nodes produced 57 stale candidates in three pages instead of one 1,057-node snapshot. Neither result is a billing or network-traffic measurement.
