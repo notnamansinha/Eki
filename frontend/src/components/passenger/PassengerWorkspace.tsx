@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
-import { MapPinned as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
+import { MapPinned as MapIcon, CircleUserRound as User, ListOrdered as RoutesIcon, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
 import { subscribeLiveBusChangesByRoute } from "@/lib/liveBusStore";
 import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
 import { getJoinedRideStatus } from "@/lib/joinedRideStatus";
@@ -60,11 +60,12 @@ const PassengerTrackingMap = dynamic(() => import("@/components/maps/PassengerTr
 });
 const RouteCarousel = dynamic(() => import("@/components/passenger/ui/RouteCarousel"), { ssr: false });
 const AccountTab = dynamic(() => import("@/components/passenger/AccountTab"), { ssr: false });
+const RoutesTab = dynamic(() => import("@/components/passenger/RoutesTab"), { ssr: false });
 const MessagingPanel = dynamic(() => import("@/components/shared/MessagingPanel"), { ssr: false });
 const FeedbackModal = dynamic(() => import("@/components/shared/FeedbackModal"), { ssr: false });
 const PassengerBoardingView = dynamic(() => import("@/components/passenger/PassengerBoardingView"), { ssr: false });
 
-type ViewState = "home" | "tracking" | "profile";
+type ViewState = "home" | "tracking" | "routes" | "profile";
 
 const POST_RIDE_FEEDBACK_DELAY_MS = 10_000;
 
@@ -92,6 +93,8 @@ export default function PassengerWorkspace() {
   // Profile mounts on first visit and then stays mounted (inert while hidden),
   // so leaving it neither blanks the fading view nor discards its local state.
   const [profileMounted, setProfileMounted] = useState(false);
+  // The route schedule follows the same mount-once rule as Profile.
+  const [routesMounted, setRoutesMounted] = useState(false);
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const { catalog: routeCatalog, projectionReady, catalogReady, error: catalogError, retry: retryCatalog } = useLiveRouteCatalog(`${connectionGeneration}:${resumeGeneration}`);
   const [selectedRouteId, setSelectedRouteId] = useState("");
@@ -774,10 +777,15 @@ export default function PassengerWorkspace() {
                 className="mt-6 px-6 py-2.5 rounded-xl text-[13px] font-semibold transition-all active:scale-95"
                 style={{ background: "rgba(255,255,255,0.1)", color: "white", border: "1px solid rgba(255,255,255,0.05)" }}
               >
-                Return to Routes
+                Return to Live Routes
               </button>
             </div>
           ) : null}
+        </div>
+
+        {/* ── ROUTES (SCHEDULE) VIEW ── */}
+        <div inert={visibleView !== "routes"} aria-hidden={visibleView !== "routes"} className={`absolute inset-0 z-30 flex flex-col transition-[opacity,transform] duration-200 ${visibleView === "routes" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"}`}>
+          {routesMounted && <RoutesTab />}
         </div>
 
         {/* ── PROFILE VIEW ── */}
@@ -806,7 +814,7 @@ export default function PassengerWorkspace() {
               setIsMessagingOpen(false);
               setCurrentView("home");
             }}
-            className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-[background-color,transform] duration-150 relative group active:scale-95 gap-1.5"
+            className="flex min-w-0 flex-1 max-w-[140px] flex-col items-center justify-center h-[60px] rounded-[20px] transition-[background-color,transform] duration-150 relative group active:scale-95 gap-1.5"
             style={{
               background: (visibleView === "home" || visibleView === "tracking") ? "rgba(255,255,255,0.08)" : "transparent"
             }}
@@ -817,6 +825,29 @@ export default function PassengerWorkspace() {
             <span className="text-[13px] font-bold transition-colors leading-none" style={{
               color: (visibleView === "home" || visibleView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
             }}>
+              Map
+            </span>
+          </button>
+
+          <button
+            type="button"
+            aria-current={visibleView === "routes" ? "page" : undefined}
+            onClick={() => {
+              setIsMessagingOpen(false);
+              setRoutesMounted(true);
+              setCurrentView("routes");
+            }}
+            className="flex min-w-0 flex-1 max-w-[140px] flex-col items-center justify-center h-[60px] rounded-[20px] transition-[background-color,transform] duration-150 relative group active:scale-95 gap-1.5"
+            style={{
+              background: visibleView === "routes" ? "rgba(255,255,255,0.08)" : "transparent"
+            }}
+          >
+            <RoutesIcon className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
+              color: visibleView === "routes" ? "var(--text-primary)" : "var(--text-tertiary)"
+            }} />
+            <span className="text-[13px] font-bold transition-colors leading-none" style={{
+              color: visibleView === "routes" ? "var(--text-primary)" : "var(--text-tertiary)"
+            }}>
               Routes
             </span>
           </button>
@@ -825,10 +856,11 @@ export default function PassengerWorkspace() {
             type="button"
             aria-current={visibleView === "profile" ? "page" : undefined}
             onClick={() => {
+              setIsMessagingOpen(false);
               setProfileMounted(true);
               setCurrentView("profile");
             }}
-            className="flex flex-col items-center justify-center h-[60px] w-[140px] rounded-[20px] transition-[background-color,transform] duration-150 relative group active:scale-95 gap-1.5"
+            className="flex min-w-0 flex-1 max-w-[140px] flex-col items-center justify-center h-[60px] rounded-[20px] transition-[background-color,transform] duration-150 relative group active:scale-95 gap-1.5"
             style={{
               background: visibleView === "profile" ? "rgba(255,255,255,0.08)" : "transparent"
             }}

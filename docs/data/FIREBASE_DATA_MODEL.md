@@ -1,6 +1,6 @@
 # Firebase Firestore and RTDB data model
 
-Last updated: 2026-10-27 12:00 IST (UTC+05:30).
+Last updated: 2026-10-29 08:40 IST (UTC+05:30).
 
 Field ownership and compatibility build on [the field contract audit](../testing/RTDB_FIELD_CONTRACT_AUDIT_2026_10_02.md).
 
@@ -239,6 +239,21 @@ Fields: `userId`, `feedbackId` and `lastSubmittedAt`. One submission per 24 hour
 ### `settings/global`
 
 Fields: `serviceStartTime`, `noBusesMessage`, `noBusesSubMessage`, `announcementText`, `announcementActive`, `updatedAt`, and `updatedBy`. Authenticated users read through one auth-ready shared snapshot listener. All client writes are denied; the admin settings endpoint validates bounded partial updates. Defaults are applied locally when fields/document are absent.
+
+### `settings/passengerRoutes`
+
+The routes an admin has approved for the passenger Routes view, with a time for each stop. It stores only approvals and times; route names, stops and stop order always come from `routes/{routeId}`, so there is no second copy of route data.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `routes[]` | `{routeId, stopTimes}` (≤50) | Approved routes in passenger display order. `routeId` is a unique `routes/{routeId}` document ID |
+| `routes[].stopTimes` | map `stopId → "HH:mm"` | 24-hour time per stop of that route (`^([01]\d\|2[0-3]):[0-5]\d$`). Keys follow the route's stop order at save time |
+| `updatedAt` | server timestamp | Last save |
+| `updatedBy` | string | Admin UID that saved |
+
+- **Write:** only `PUT /api/v2/settings/passenger-routes` (admin, see `backend/API.md`). The backend loads every referenced route in one `getAll` and requires each route to exist and each `stopTimes` to hold exactly the route's current stop IDs with valid times. It then rebuilds the record from validated data and writes it as a full replace, never a merge, so removed routes and stops do not linger. An empty `routes` array unpublishes everything. The shared 16 KiB request cap allows roughly 450 stop times in total with generated stop IDs.
+- **Read:** any authenticated user reads it directly through the `settings/{document}` rule (`usePassengerRouteConfig`), so the schedule works without the backend tunnel. All client writes are denied.
+- **Graceful handling on read:** the document can go stale after a later route edit or deletion, so the browser (`frontend/src/lib/passengerRouteSchedule.ts`) coerces it instead of trusting it. Malformed or duplicate entries are dropped. Approved routes whose route document no longer exists are skipped. Times for deleted stops are ignored. Stops without a valid time (for example, stops added after the last save) are shown as "not set". Routes that are not in `routes[]` are never shown to passengers. A missing document means no route is published.
 
 ## Firestore backend-only collections
 

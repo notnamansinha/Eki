@@ -6667,6 +6667,139 @@
         "x-idempotency": "Partial merge; unspecified fields survive. Repeats refresh server audit metadata."
       }
     },
+    "/api/v2/settings/passenger-routes": {
+      "put": {
+        "operationId": "putPassengerRouteSchedules",
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Replace the admin-approved passenger route schedules",
+        "description": "Full replacement of Firestore settings/passengerRoutes (no merge). Body is exactly { routes }, at most 50 entries in display order; each entry is exactly { routeId, stopTimes }. Every routeId must be a unique safe document ID naming an existing routes/{routeId} document (all loaded in one getAll), and stopTimes must contain exactly that route's current stop IDs, each a 24-hour HH:mm time. A route with no stops uses {}; an empty list unpublishes every route. Validation failures return 400 with a message naming the route/stop. The stored record is rebuilt from validated data in the route document's stop order, with server audit metadata (updatedAt, updatedBy). The shared 16 KiB JSON cap applies (roughly 450 stop times with generated stop IDs). Passengers read the document directly from Firestore.",
+        "security": [
+          {
+            "FirebaseBearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PassengerRouteSchedules"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Saved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid identifiers, payload, query, or JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, revoked, disabled, or malformed credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated caller lacks the required role, assignment, proximity, or membership.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Raw JSON request exceeds the configured body limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported request body charset or Content-Encoding.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded; obey Retry-After when supplied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds before retry when emitted by the rejecting limiter; not supplied by every upstream failure.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal operation failure; details are redacted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable, busy authentication verifier, or missing safe server configuration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-auth-class": "admin",
+        "x-body-limit-bytes": 16384,
+        "x-rate-limit": "Pre-auth browser ingress: 1000 requests/normalized IP/minute. CORS/preflight runs first. Verified UID mutation budget: 30/minute; GET/HEAD uses the separate 200/minute read budget. Process budgets divided by RATE_LIMIT_SHARD_FACTOR; edge WAF/LB enforces the fleet cap.",
+        "x-cache-policy": "Handler emits Cache-Control: no-store. Earlier middleware/parser rejections may occur before that header.",
+        "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
+        "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
+        "x-idempotency": "Full replace; repeating the same body stores the same routes and refreshes server audit metadata."
+      }
+    },
     "/api/requests/{id}": {
       "patch": {
         "operationId": "patchPassengerRequest",
@@ -11947,6 +12080,44 @@
         "required": [],
         "additionalProperties": false,
         "minProperties": 1
+      },
+      "PassengerRouteSchedules": {
+        "type": "object",
+        "properties": {
+          "routes": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "properties": {
+                "routeId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                  "not": {
+                    "pattern": "^__.*__$"
+                  }
+                },
+                "stopTimes": {
+                  "type": "object",
+                  "description": "Exactly the route's current stop IDs mapped to 24-hour HH:mm times.",
+                  "additionalProperties": {
+                    "type": "string",
+                    "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                  }
+                }
+              },
+              "required": [
+                "routeId",
+                "stopTimes"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "routes"
+        ],
+        "additionalProperties": false
       },
       "Feedback": {
         "type": "object",

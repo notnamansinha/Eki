@@ -1,6 +1,6 @@
 # Backend API reference
 
-Last updated: 2026-10-27 04:10 IST (UTC+05:30).
+Last updated: 2026-10-29 08:40 IST (UTC+05:30).
 
 The machine-readable contract is `backend/openapi.json` (OpenAPI 3.1.1).
 See [HTTP contract checks and rollout](../docs/api/HTTP_CONTRACT.md) for schema
@@ -67,7 +67,7 @@ available during the rollout.
 | Boarding and chat | Session boarding-code, join and messages endpoints | Session member/operator/admin as applicable |
 | Passenger/account | Feedback submission, bootstrap, privacy deletion, requests | Authenticated/admin as noted below |
 | Admin feedback | `GET /api/v2/feedback`, `PATCH /api/v2/feedback/:feedbackId` | Admin |
-| Fleet and settings | Fleet, analytics, route, settings (`PUT /api/settings`, `PATCH /api/v2/settings/global`) and places endpoints | Admin unless noted below |
+| Fleet and settings | Fleet, analytics, route, settings (`PUT /api/settings`, `PATCH /api/v2/settings/global`, `PUT /api/v2/settings/passenger-routes`) and places endpoints | Admin unless noted below |
 | Route planning | `POST /api/plan`, `GET /api/v2/routes/:routeId/segments`, `GET /api/routes-list`, `GET /api/v2/routes` | Authenticated |
 
 The v2 aliases share the legacy handlers' validation and side effects:
@@ -399,6 +399,19 @@ Creates a missing `users/{uid}` passenger profile transactionally from verified 
 ### `PUT /api/settings` — admin
 
 Accepts a non-empty partial object containing only `serviceStartTime`, `noBusesMessage`, `noBusesSubMessage`, `announcementText`, and/or boolean `announcementActive`. Values are bounded and stored with server audit metadata.
+
+### `PUT /api/v2/settings/passenger-routes` — admin
+
+Replaces the admin-approved passenger route schedules in Firestore `settings/passengerRoutes`. v2-only; there is no legacy alias.
+
+Body: exactly `{ "routes": [ { "routeId": "route_01", "stopTimes": { "<stopId>": "07:30" } } ] }`. Array order is the passenger display order.
+
+- `routes` holds at most 50 entries. Each entry has exactly `routeId` and `stopTimes`. `routeId` must be a safe document ID (`[A-Za-z0-9_-]`, 1–128 characters, not `__…__`) and appear only once.
+- All referenced `routes/{routeId}` documents are read in one `getAll`. A missing route returns 400 (`Route <id> no longer exists. Reload and try again.`).
+- `stopTimes` must contain exactly the route's current stop IDs, each a 24-hour `HH:mm` time (`^([01]\d|2[0-3]):[0-5]\d$`). Unknown stop IDs, missing stops (`Missing time for stop <stop name> on route <route name>.`) and invalid times all return 400 with a message naming the route and stop. A route without stops uses `{}`.
+- `routes: []` is valid and unpublishes every route.
+
+The handler rebuilds the stored record from validated data, using the route document's stop order, and writes `{ routes, updatedAt, updatedBy }` as a full replace (no merge), so removed routes and stops stay removed. Returns `200 {"saved":true}` with `Cache-Control: no-store`. A persistence failure returns a redacted 500. The shared 16 KiB JSON cap applies; with generated stop IDs (`stop-<ms>-<6 chars>`), that allows roughly 450 stop times across all approved routes before the parser returns 413. Passengers read the document directly through the authenticated-read `settings/{document}` rule; client writes are denied.
 
 ## Fleet/admin endpoints
 

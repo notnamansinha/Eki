@@ -5,7 +5,7 @@ const local = (name: string) => fileURLToPath(new URL(name, import.meta.url));
 export default defineConfig({
   root: local("."), server: { host: "127.0.0.1", port: 3123, strictPort: true },
   resolve: { alias: [
-    ...["@/hooks/useAuth", "@/hooks/useRoutes", "@/hooks/useLiveRouteCatalog", "@/hooks/useSettings", "@/hooks/useRTDBResume", "@/hooks/useDynamicRouteGeometries", "@/lib/liveBusStore", "@/lib/joinedRideStatus", "@/lib/authState", "@/hooks/useBuses", "@/hooks/useDrivers", "@/hooks/useCollection", "@/lib/firebaseAuth"].map(find => ({ find, replacement: local("state.ts") })),
+    ...["@/hooks/useAuth", "@/hooks/useRoutes", "@/hooks/usePassengerRouteConfig", "@/hooks/useLiveRouteCatalog", "@/hooks/useSettings", "@/hooks/useRTDBResume", "@/hooks/useDynamicRouteGeometries", "@/lib/liveBusStore", "@/lib/joinedRideStatus", "@/lib/authState", "@/hooks/useBuses", "@/hooks/useDrivers", "@/hooks/useCollection", "@/lib/firebaseAuth"].map(find => ({ find, replacement: local("state.ts") })),
     ...["@/components/passenger/AccountTab", "@/components/shared/MessagingPanel", "@/components/shared/FeedbackModal", "@/components/passenger/PassengerBoardingView"].map(find => ({ find, replacement: local("../fixtures/panels.tsx") })),
     { find: "@vis.gl/react-google-maps", replacement: local("../fixtures/map-adapter.tsx") },
     { find: "@/components/maps/DirectionsRoute", replacement: local("../fixtures/map-adapter.tsx") },

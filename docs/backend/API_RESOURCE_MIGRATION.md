@@ -1,6 +1,6 @@
 # HTTP resource migration for issue #192
 
-Last updated: 2026-10-26 06:00 IST (UTC+05:30).
+Last updated: 2026-10-29 08:40 IST (UTC+05:30).
 
 This is the compatibility contract for the six method/path changes on `testing`.
 The existing handlers remain available. The v2 routes call those same handlers,
@@ -23,6 +23,11 @@ uses the same cached Firestore route and stored-polyline slicing as the old POST
 neither calls Google Routes. The v2 routes and their shared legacy handlers set
 `Cache-Control: no-store` on handled responses. Authenticated route data must
 not be cached by a shared proxy.
+
+`PUT /api/v2/settings/passenger-routes` (admin-approved passenger route
+schedules) is a new v2-only settings resource, not one of the six migrations.
+It has no legacy alias and no retirement plan; see
+[`API.md`](API.md).
 
 The device PATCH intentionally supports only disabling. Assignment changes
 remain on `PUT /api/devices/:deviceId`, including its existing active-ride and

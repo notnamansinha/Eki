@@ -1,6 +1,6 @@
 # HTTP contract and compatibility checks
 
-Last updated: 2026-10-27 04:10 IST (UTC+05:30).
+Last updated: 2026-10-29 08:40 IST (UTC+05:30).
 
 The machine-readable contract is [`backend/openapi.json`](../../backend/openapi.json),
 in OpenAPI 3.1.1 JSON format. [`backend/API.md`](../../backend/API.md) remains the
@@ -133,6 +133,7 @@ and App Check configuration for SDK reads apply independently of HTTP auth.
 |---|---|---|
 | RTDB `publicRouteBuses/route:{routeId}/buses` | Authenticated canonical compact per-route browser view; raw `activeBuses` is backend-only | SDK reconnect, bounded worker replay, compatible schema readiness and receipt-based frontend freshness checks |
 | Firestore `settings/global` | Service configuration and announcements | SDK listener snapshot/reconnect |
+| Firestore `settings/passengerRoutes` | Admin-approved passenger routes and per-stop `HH:mm` times; written only by `PUT /api/v2/settings/passenger-routes` (full replace) | SDK listener snapshot/reconnect; malformed or stale entries are dropped on read |
 | Firestore `routes` | Route configuration allowed by security rules | SDK listener snapshot/reconnect |
 | Firestore `ride_sessions/{id}/messages` | Authorized session chat | SDK listener reconnect; writes use idempotent HTTP message creation |
 | Firestore ride history queries | User/admin views constrained by query shape and rules | SDK listener reconnect; writes remain backend-authoritative |

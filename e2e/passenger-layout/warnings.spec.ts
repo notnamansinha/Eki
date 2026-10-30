@@ -115,6 +115,6 @@ test("navigation cannot scroll the tracking frame under the viewport", async ({ 
     await fullMap(page);
     await page.getByRole("button", { name: "Back to home", exact: true }).click();
     await page.getByRole("button", { name: "Profile", exact: true }).click();
-    await page.getByRole("button", { name: "Routes", exact: true }).click();
+    await page.getByRole("button", { name: "Map", exact: true }).click();
   }
 });

@@ -42,7 +42,38 @@ export const qaUser = fixtureRole === "admin"
   ? { uid: "qa-admin", displayName: "QA Admin", role: "admin" }
   : { uid: "qa-passenger", displayName: "QA Passenger", role: "passenger" };
 export function useAuth() { return { user: qaUser, loading: false, roleError: null, loginReady: true, loginLoading: false, loginError: null, loginFallbackAvailable: false, loginWithGoogle: async () => {}, loginWithGoogleRedirect: async () => {}, logout: async () => {} }; }
-export function useRoutes() { useScenario(); return { routes: scenario === "two-routes" ? [route, { ...route, id: "qa-route-2", name: "QA route B", color: "#F59E0B" }] : [route], error: null, retry: () => {} }; }
+// A published-schedule-only route: it has no live catalog entry, so it never
+// appears on the live map list, only in the passenger Routes (schedule) tab.
+// Opt-in with `?schedule=demo` so existing route-count assertions are unchanged;
+// without it the Campus Loop approval below points at a missing route and is skipped.
+const scheduleDemo = typeof location !== "undefined" && new URLSearchParams(location.search).get("schedule") === "demo";
+export const scheduleRoute = {
+  id: "qa-campus-loop", name: "Campus Loop", color: "#10B981", duration: "900s", waypoints: [],
+  stops: [
+    { id: "gate", name: "Main Gate", shortName: "GATE", lat: 23, lng: 72 },
+    { id: "library", name: "Central Library", shortName: "LIB", lat: 23.002, lng: 72.002 },
+    { id: "hostel", name: "Girls Hostel Block C (North Wing)", shortName: "HOS", lat: 23.004, lng: 72.004 },
+    { id: "sports", name: "Sports Complex", shortName: "SPT", lat: 23.006, lng: 72.006 },
+    { id: "admin", name: "Administrative Building", shortName: "ADM", lat: 23.008, lng: 72.008 },
+  ],
+};
+export function useRoutes() {
+  useScenario();
+  const routes = scenario === "two-routes" ? [route, { ...route, id: "qa-route-2", name: "QA route B", color: "#F59E0B" }] : [route];
+  return { routes: scheduleDemo ? [...routes, scheduleRoute] : routes, error: null, retry: () => {} };
+}
+// Synthetic `settings/passengerRoutes`: approval order Campus Loop, QA route; QA route B is never approved.
+let passengerRouteConfig = { routes: [
+  { routeId: scheduleRoute.id, stopTimes: { gate: "07:30", library: "07:38", hostel: "07:45", admin: "08:05" } },
+  { routeId: route.id, stopTimes: { a: "12:00", b: "12:15" } },
+] };
+export function usePassengerRouteConfig() {
+  const current = useSyncExternalStore(subscribe, () => passengerRouteConfig);
+  return { config: current, loading: false, error: null, saveConfig: async (next: typeof passengerRouteConfig) => {
+    passengerRouteConfig = next;
+    subscribers.forEach(fn => fn());
+  } };
+}
 let settings = { noBusesMessage: "No buses running", noBusesSubMessage: "Service starts at {time}", serviceStartTime: "8:00 am", announcementActive: false, announcementText: "" };
 export function useSettings() {
   const current = useSyncExternalStore(subscribe, () => settings);

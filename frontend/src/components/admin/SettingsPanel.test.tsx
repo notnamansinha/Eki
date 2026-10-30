@@ -4,11 +4,13 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import SettingsPanel from "./SettingsPanel";
 import { hasUnsavedChanges } from "@/lib/unsavedChanges";
-const mocks = vi.hoisted(() => ({ save: vi.fn(), error: null as string | null, settings: {
+const mocks = vi.hoisted(() => ({ save: vi.fn(), savePassengerRoutes: vi.fn(), passengerConfig: { routes: [] }, passengerRoutes: [{ id: "r1", name: "1A", color: "#2563eb", stops: [{ id: "s1", name: "Main Gate", shortName: "MG" }] }], error: null as string | null, settings: {
   serviceStartTime: "8:00 am", noBusesMessage: "No buses running", noBusesSubMessage: "Service starts at {time}", announcementText: "", announcementActive: false,
 } }));
 vi.mock("@/hooks/useSettings", () => ({ useSettings: () => ({ settings: mocks.settings, loading: false, error: mocks.error, saveSettings: mocks.save }) }));
-beforeEach(() => { mocks.save.mockReset(); mocks.error = null; });
+vi.mock("@/hooks/usePassengerRouteConfig", () => ({ usePassengerRouteConfig: () => ({ config: mocks.passengerConfig, loading: false, error: null, saveConfig: mocks.savePassengerRoutes }) }));
+vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes: mocks.passengerRoutes, loading: false, error: null, retry: vi.fn() }) }));
+beforeEach(() => { mocks.save.mockReset(); mocks.savePassengerRoutes.mockReset(); mocks.error = null; });
 afterEach(cleanup);
 describe("admin settings editing", () => {
   it("returns to unchanged after reverting text and toggling an announcement twice", async () => {
@@ -105,5 +107,19 @@ describe("admin settings editing", () => {
     } finally {
       mocks.settings.serviceStartTime = original;
     }
+  });
+  it("keeps the Passenger Routes section and its separate save apart from the global settings save", async () => {
+    mocks.save.mockResolvedValue(undefined); render(<SettingsPanel />); const user = userEvent.setup();
+    expect(screen.getByText("Passenger Routes")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "No route changes" }) as HTMLButtonElement).disabled).toBe(true);
+    await user.click(screen.getByRole("checkbox", { name: /1A/ }));
+    expect(hasUnsavedChanges()).toBe(true);
+    expect((screen.getByRole("button", { name: "No changes" }) as HTMLButtonElement).disabled).toBe(true);
+    await user.type(screen.getByLabelText("Service Start Time"), "x");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await screen.findByText("Settings saved");
+    expect(mocks.save).toHaveBeenCalledWith({ serviceStartTime: "8:00 amx" });
+    expect(mocks.savePassengerRoutes).not.toHaveBeenCalled();
+    expect(hasUnsavedChanges()).toBe(true);
   });
 });
