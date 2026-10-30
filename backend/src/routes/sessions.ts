@@ -337,6 +337,9 @@ async function joinSession(req: AuthenticatedRequest, res: Response) {
  */
 async function sendMessage(req: AuthenticatedRequest, res: Response) {
   try {
+    // Decided from the token alone, before any request field is read, and
+    // outside the transaction so a retry does not repeat the lookup.
+    const isAdmin = await hasCurrentAdminAuthority(req);
     const sessionId = singleRouteParam(req.params.sessionId);
     const uid = req.user?.uid;
     if (sessionId === null || !SAFE_ID.test(sessionId) || typeof uid !== "string") {
@@ -372,8 +375,6 @@ async function sendMessage(req: AuthenticatedRequest, res: Response) {
       .collection("messages")
       .doc(stableHash(`${uid}\0${requestId}`));
     const requestHash = stableHash(`${uid}\0${requestId}\0${moderatedText.normalized}`);
-    // Read outside the transaction so a retry does not repeat the lookup.
-    const isAdmin = await hasCurrentAdminAuthority(req);
 
     const result = await db.runTransaction(async (transaction) => {
       const [session, rateSnap, existingMessage] = await transaction.getAll(
