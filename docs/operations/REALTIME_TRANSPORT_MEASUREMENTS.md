@@ -71,7 +71,7 @@ Cross-tab recipient latency needs validated clock alignment and separate analysi
 
 ## 5. Archive and cleanup
 
-1. Store raw exports, serial logs, health snapshots, usage captures, operator notes and reports in the restricted operational evidence archive under the approved retention period. Exports contain session, message and device identifiers and timing, though no message text, coordinates or tokens. Do not commit raw captures.
+1. Store raw exports, serial logs, health snapshots, usage captures, operator notes and reports in the restricted operational evidence archive under the approved retention period. Exports contain bus, route, session and message identifiers and timing, though no message text, coordinates or tokens. Do not commit raw captures.
 2. Report counts and percentiles per network and load profile, missing correlations, clock uncertainty, restoration times, fresh paints, Firebase usage, cost assumptions and instrumentation overhead. Leave unmeasured items explicit.
 3. Compare the results with the decision record's targets and update its conclusion. Public reports contain aggregate results and redacted evidence references only.
 4. Sign the test accounts out and remove `?telemetryTrace=1` from any bookmarked URLs.

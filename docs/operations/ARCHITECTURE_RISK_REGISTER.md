@@ -25,8 +25,11 @@ This register lists the material risks that remain in Eki, each with the source 
 | FW-01 | Store-and-forward needs physical recovery evidence | High | External gate | Witnessed outage and recovery run on the target board |
 | FW-02 | Firmware updates and key protection need physical proof | High | External gate | Spare-board Secure Boot trial, key custody, signed update and rollback |
 | OPS-01 | Runtime availability and perimeter controls are not evidenced | High | External gate | Managed backend, failover, edge limits, alerts, backup and restore drill |
-| OPS-02 | Scheduled QA tests a stale branch | Medium | Open | Scheduled runs pinned to the branch that receives merges |
+| OPS-02 | Scheduled QA runs no suites | Medium | Open | Scheduled runs resolve `main` and record a green nightly and weekly run |
 | TRK-01 | Stop progress is validated on simulated tracks only | High | External gate | Instrumented ride on the real route, including the divided-road U-turn |
+| SEC-03 | Ride operations accept stale administrator claims | Medium | Open | Every administrator branch checks the current authorization version, with regression tests |
+| FW-03 | OTA images carry device secrets but the backend serves one release | High | Open | Per-device releases, or credentials kept out of the update image |
+| OPS-03 | The `main` ruleset requires no status checks | Medium | Open | Production verification and CodeQL jobs required before merge |
 
 ### 3.1 SEC-01: passengers can join a ride without proof of presence
 
@@ -58,17 +61,35 @@ This register lists the material risks that remain in Eki, each with the source 
 - Impact: the service stops whenever the workstation, the backend process or the tunnel stops. There is no failover, edge rate limit, WAF, alerting or tested restore.
 - Open gate: a managed backend runtime (the [Cloud Run proposal](CI_CD_AND_RELEASES.md#72-proposed-migration-to-cloud-run) or an equivalent); at least two replicas with health-based failover and no duplicate lifecycle transitions, or a recorded single-instance acceptance; edge and global rate limits with `RATE_LIMIT_SHARD_FACTOR` equal to the replica count; alerts on health, rejections, latency, stale telemetry and lease ownership; an archived backup, restore and incident drill.
 
-### 3.6 OPS-02: scheduled QA tests a stale branch
+### 3.6 OPS-02: scheduled QA runs no suites
 
-- Evidence: the `resolve` jobs in `.github/workflows/deep-qa.yml` and `.github/workflows/weekly-reliability.yml` read the head of `testing` for scheduled and dispatched runs. Pull requests have targeted `main` since 2026-10-21, and on 2026-10-30 `testing` (`6b2d8e4`) is 137 commits behind `main` (`c4d47b3`).
-- Impact: nightly emulator, browser, API, native and GNSS campaigns and the weekly mutation and soak baselines report on the code of 2026-10-21. Regressions on `main` that only these suites would catch go unnoticed, and their reports can be mistaken for current evidence.
-- Open gate: change the resolver to the branch that receives merges (or keep `testing` current), then record one green nightly and one green weekly run on a current `main` commit.
+- Evidence: the `resolve` jobs in `.github/workflows/deep-qa.yml` and `.github/workflows/weekly-reliability.yml` read the head of `testing` through the GitHub API for scheduled and dispatched runs. The `testing` branch was deleted on 2026-10-25. Every scheduled nightly run from 2026-10-25 to 2026-10-29 (UTC) failed in `resolve` with `Not Found` and skipped `suites` and `report`; the last runs that executed suites were on 2026-10-24 (GitHub Actions history, read 2026-10-30).
+- Impact: the nightly emulator, browser, API, native and GNSS campaigns and the weekly mutation and soak baselines do not run at all. Regressions on `main` that only these suites would catch go unnoticed.
+- Open gate: change the resolver to `main`, then record one green nightly and one green weekly run on a current `main` commit.
 
 ### 3.7 TRK-01: stop progress is validated on simulated tracks only
 
 - Evidence: PR #395 widened stop arrival to a 15 m corridor, added the offside gate for divided roads, credited missed stops as `passed_unobserved` and added a speed penalty to the route matcher ([automatic GNSS service](AUTOMATIC_GNSS_SERVICE.md#4-direction-and-stop-progress)). The evidence is 1,500 simulated rides; about 0.6 % still credit a stop early, mostly on spurs where both directions share one road ([passenger field ride repairs](../testing/PASSENGER_FIELD_RIDE_REPAIRS_2026_10_29.md)).
 - Impact: on a real route, receiver error or pin placement can still mark a stop early or late, or match the bus to the wrong carriageway near a U-turn; passengers then see wrong progress and ETAs.
 - Open gate: an instrumented ride on the same route, including the divided-road U-turn, recorded with [field capture](FIELD_CAPTURE.md) and compared with an independent position reference.
+
+### 3.8 SEC-03: ride operations accept stale administrator claims
+
+- Evidence: `requireAdmin` (`backend/src/middleware/requireAdmin.ts`) admits a token only with `admin: true`, `role: "admin"` and an `authorizationVersion` that `authorizationIsCurrent` matches against `_userAuthorization/{uid}` in Firestore and RTDB. The ride-operation routes use `requireAuth` and decide administrator authority from the token claims alone (`role === "admin" || admin === true`): `readOperatorAssignment` (`backend/src/routes/shifts.ts:95`) for ride start (`POST /api/shifts/start`, `POST /api/v2/ride-sessions`), delay changes and the operator fallback of `POST /api/shifts/stop`; `readSession` (`shifts.ts:536`); and, in `backend/src/routes/sessions.ts`, the legacy boarding code (`:113`), chat messages (`:377`, `:411`) and session status (`:513`). Only the administrator branch of the stop route (`adminStopTarget`, `shifts.ts:278`) checks the current version.
+- Impact: a token that still carries an administrator claim after the role was withdrawn (within the same second as the revocation, inside the `AUTH_REVOCATION_CACHE_MS` window, or a legacy token without a version) can start, delay, end or read any ride and post administrator chat messages.
+- Open gate: route every administrator branch through the `requireAdmin` policy (claims plus `authorizationIsCurrent`), and add regression tests for a stale and a legacy administrator token on each route.
+
+### 3.9 FW-03: OTA images carry device secrets but the backend serves one release
+
+- Evidence: the firmware compiles `DEVICE_ID`, `DEVICE_SECRET`, Wi-Fi credentials and the backend origin from `hardware/include/secrets.h` into the application image (`hardware/src/main.cpp:8`, `:618` to `:641`, `:2132` to `:2135`). The backend reads one global release descriptor from the six `FIRMWARE_RELEASE_*` values (`backend/src/services/firmwareRelease.ts:47`) and returns it to every authenticated, assigned device whose sequence is lower (`backend/src/routes/devices.ts:197` to `:222`).
+- Impact: a release built for one device would install that device's identity and secret on every device that updates, so all of them authenticate as one device and the secret is exposed to anyone who obtains the image. Over-the-air updates cannot be used for a fleet as built.
+- Open gate: per-device release descriptors and images, or credentials provisioned outside the update image (for example in encrypted NVS), with a test that one device cannot receive another device's image.
+
+### 3.10 OPS-03: the main ruleset requires no status checks
+
+- Evidence: the only repository ruleset (`main`, applied to the default branch and all branches) requires a pull request with one approving review and code owner review, blocks deletion and force pushes, and has no required status checks; maintainers and administrators may bypass it. The default branch has no classic branch protection (GitHub API, read 2026-10-30).
+- Impact: a pull request can merge while Production verification or CodeQL is failing or still running. Deploy does not release a failed commit, but `main` can carry it and later green commits deploy on top of it.
+- Open gate: add the Production verification jobs (`web`, `backend-image`, `firmware`, `qa-evidence`) and the CodeQL `analyze` jobs as required status checks, and record whether administrators keep bypass rights.
 
 ## 4. Maintenance rule
 

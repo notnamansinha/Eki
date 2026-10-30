@@ -23,7 +23,7 @@ Reduce stale work instead:
 
 These changes add no client listeners, hot-path reads or schema joins.
 
-R14 (6 October 2026) kept this ownership and added a compact per-route browser materialization (`publicRouteBuses`), committed-only server transactions and metadata-only lifecycle admission filtering ([R14 evidence](../testing/R14_LIVE_PROJECTION.md)). Browsers read the materialization and never read `activeBuses`.
+Browsers read a compact per-route materialization (`publicRouteBuses`) and never read `activeBuses`. Server transactions publish committed state only, and the lifecycle worker skips events that change no lifecycle field (evidence in Section 6.2).
 
 ## 3. Status
 

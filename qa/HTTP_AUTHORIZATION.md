@@ -44,4 +44,4 @@ Results are written to `artifacts/qa/api-report.json`, `api-report.md`, `api-jun
 
 ## 5. Limits
 
-The sweep does not cover token expiry, wrong device secrets, resource ownership for every operation, query and body parser partitions, full error and log redaction, private cache behaviour, or proxy and tunnel semantics. Other focused tests may cover parts of these; they need reviewed mappings and current execution evidence.
+The sweep does not cover token expiry, wrong device secrets outside the firmware installation endpoint, resource ownership for every operation, query and body parser partitions, full error and log redaction, private cache behaviour, or proxy and tunnel semantics. Other focused tests may cover parts of these; they need reviewed mappings and current execution evidence.

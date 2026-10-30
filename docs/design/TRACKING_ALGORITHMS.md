@@ -219,6 +219,7 @@ stateDiagram-v2
   REROUTING --> OFF_ROUTE: request failed, or claim older than 60 s
   REROUTING --> ON_ROUTE: confident match on the old geometry
   ON_NEW_ROUTE --> POSSIBLE_OFF_ROUTE: weak, ambiguous or missing match
+  ON_NEW_ROUTE --> OFF_ROUTE: reliable moving fix 120 m or more away
 ```
 
 Figure 2. Route adherence states of a live node.
@@ -265,7 +266,7 @@ The full policy and its evidence are in the [reroute retry policy](../operations
 
 ### 5.5 Departure route
 
-When `LIVE_DEPARTURE_ROUTES_ENABLED` is not `false`, an active ride also gets a traffic-aware route through the same scheduler, circuit and activation path (`telemetryRouteService.ts:852`). Before departure the route runs from the origin through every stop (`TRAFFIC_AWARE_OPTIMAL`). At departure a preview computed within the last 5 min is reused; otherwise the route is computed from the bus position. Each context gets at most 3 attempts, 60 s apart, then the retry backoff of Section 5.4 (`telemetryRouteService.ts:869`, `telemetryRouteService.ts:896`).
+Unless `LIVE_DEPARTURE_ROUTES_ENABLED` is `false`, `0`, `no` or `off` (trimmed, case-insensitive; any other value stops the backend at startup, `backend/src/lib/booleanEnv.ts:23`), an active ride with a resolved direction also gets a traffic-aware route through the same scheduler, circuit and activation path (`telemetryRouteService.ts:852`). Before departure the route runs from the origin through every stop; at departure a preview computed within the last 5 min is reused, otherwise the route is computed from the bus position. Both use `TRAFFIC_AWARE_OPTIMAL`. Each context gets at most 3 attempts: a claimed attempt holds off the next for 60 s, and a failed attempt waits the retry backoff of Section 5.4 (`telemetryRouteService.ts:869`, `telemetryRouteService.ts:896`).
 
 ## 6. Ride lifecycle
 
@@ -276,9 +277,10 @@ A ride has a durable `status` in `ride_sessions` and a live `tripState` on the n
 ```mermaid
 stateDiagram-v2
   [*] --> pending: started, direction unknown
-  [*] --> armed: automatic start or turnaround, direction known
-  [*] --> active: manual start, direction known
+  [*] --> armed: direction known and automatic start, turnaround, or manual start after End ride early
+  [*] --> active: manual start, direction known, node not paused
   pending --> active: direction resolved, then departure
+  pending --> armed: start repeated after the direction is resolved, before departure
   armed --> active: departure from origin
   active --> completed: terminal arrival confirmed
   pending --> interrupted: End ride early or abandoned
@@ -309,15 +311,15 @@ Figure 3. Durable ride status. `pending` and `armed` have `tripState: pre_depart
 
 ### 6.3 Automatic start
 
-A committed fix on a node without a session, or with `serviceSetupPending`, schedules `scheduleAutomaticServiceAdmission` (`backend/src/services/deviceTelemetryService.ts:845`, `backend/src/services/automaticServiceAdmission.ts:125`).
+A committed fix on a node that has no session and is not paused, or that has `serviceSetupPending`, first restores any durable ride and otherwise schedules `scheduleAutomaticServiceAdmission` (`backend/src/services/deviceTelemetryService.ts:845`, `backend/src/services/automaticServiceAdmission.ts:125`).
 
 | Gate | Rule | Source |
 |---|---|---|
 | Fix | At most 60 s old, at most 10 s in the future, HDOP 0 to 4, not `uncertain` | `automaticServiceAdmission.ts:127` |
 | Driver | Exactly one driver has `assignedBusId` equal to the bus | `automaticServiceAdmission.ts:68` |
 | Pause | `bus_locations.automaticServicePaused` is not `true` | `automaticServiceAdmission.ts:71` |
-| Terminal journey | No unconsumed `terminalJourney`. If its return session ended `failed` or `interrupted` without an operator pause, the epoch is incremented and admission retried, at most 2 times | `automaticServiceAdmission.ts:72`, `automaticServiceAdmission.ts:47` |
-| Transaction checks | Device enabled with the same assignment revision, bus assigned the route, driver not disabled, route endpoints and epoch unchanged | `automaticServiceAdmission.ts:87` |
+| Terminal journey | No `terminalJourney` checkpoint on `bus_locations` (a completed ride awaiting its automatic return blocks with `awaiting_return`). If the return session that consumed it ended `failed` or `interrupted` without an operator pause, the epoch is incremented, the checkpoint deleted and admission retried, at most 2 times | `automaticServiceAdmission.ts:72`, `automaticServiceAdmission.ts:47` |
+| Transaction checks | Device enabled with the same assignment revision; bus not inactive, assigned the route and without `automaticServiceEnabled: false`; driver not disabled; route endpoints and epoch unchanged | `automaticServiceAdmission.ts:87` |
 
 The start uses idempotency key `automatic-service-v1` scoped to the device, assignment revision and epoch, so one epoch creates at most one ride. An automatic ride starts in `pre_departure` even when its direction is known. A blocked attempt publishes `automaticServiceState` (`assignment_required`, `paused`, `awaiting_return` or `setup_pending`) on the node and backs off 30 s (`automaticServiceAdmission.ts:138`). The operating procedure is in [automatic GNSS service](../operations/AUTOMATIC_GNSS_SERVICE.md).
 
@@ -332,7 +334,7 @@ A route has forward and reverse directions; reverse visits the stops in the oppo
 | Rule | Value | Source |
 |---|---|---|
 | Sample admission | `moving`, HDOP 0 to 4, at most 60 s old, within 15 m of either direction's path, not ambiguous | `telemetryRouteService.ts:510` |
-| Sample spacing and retention | At least 2 s apart; at most 7 kept (the first and the latest 6) | `departureDirection.ts:65` |
+| Sample spacing and retention | At least 2 s apart; at most 8 kept (the first and the latest 7); any fix that fails admission clears the list | `departureDirection.ts:57`, `departureDirection.ts:65` |
 | Minimum evidence | 3 samples spanning at least 2 s, consecutive samples at most 250 m apart | `departureDirection.ts:21` |
 | Trajectory heading | Displacement of at least 30 m | `departureDirection.ts:27` |
 | Per-direction match | Next stop within 20 m of that path; every sample within 15 m, confidence >= 0.7, heading difference <= 35 degrees, not beyond the next stop plus 10 m | `departureDirection.ts:33` |
@@ -525,6 +527,7 @@ stateDiagram-v2
   lost --> live: packet received
   live --> offline: deviceState offline
   lost --> offline: deviceState offline
+  offline --> live: packet received
 ```
 
 Figure 4. Live health of one bus as seen by a browser.
@@ -571,13 +574,13 @@ The Live Ops dashboard uses the 30 s threshold only, re-evaluated every 15 s (`f
 
 ### 9.5 Backend staleness
 
-The leader's stale sweep runs every second over pages of 25 nodes ordered by `timestamp` (`tripStateEngine.ts:1350`, `staleBusSweeper.ts:4`). A node silent for longer than `BUS_STALE_MS` (default 300 s, minimum 90 s, `tripStateEngine.ts:110`) is marked `deviceState: offline`, `signalState: lost` when it carries an active ride, and removed otherwise. The browser thresholds of Section 9.1 do not depend on this sweep.
+The leader's stale sweep reads one page of 25 nodes ordered by `timestamp` each second until it has covered every node older than the cutoff, then waits `BUS_STALE_MS` before the next pass (`tripStateEngine.ts:1350`, `staleBusSweeper.ts:4`, `staleBusSweeper.ts:79`). A node silent for longer than `BUS_STALE_MS` (default 300 s, minimum 90 s, `tripStateEngine.ts:110`) is marked `deviceState: offline`, `signalState: lost` when it carries an active ride, and removed otherwise. The browser thresholds of Section 9.1 do not depend on this sweep.
 
 ## 10. Design rationale
 
 | Decision | Reason |
 |---|---|
-| 15 m arrival corridor, replacing 2.5 m | Stop pins sit a few metres off the lane and receiver error is several metres, so a 2.5 m circle was never entered in the field ride of 2026-10-29 ([evidence](../testing/PASSENGER_FIELD_RIDE_REPAIRS_2026_10_29.md)). Ordered consumption and the offside gate prevent early or far-kerb credit. |
+| 15 m arrival corridor | Stop pins sit a few metres off the lane and receiver error is several metres. In the field ride of 2026-10-29 a 2.5 m corridor was never entered ([evidence](../testing/PASSENGER_FIELD_RIDE_REPAIRS_2026_10_29.md)). Ordered consumption and the offside gate prevent early or far-kerb credit. |
 | Unobserved credits never count as arrivals | A passenger or report must be able to tell an observed arrival from an inference. |
 | Speed-plausibility penalty limited to shortcut candidates and fresh anchors | A global penalty pulled a braking bus backward after a gap and caused a false reroute; on ordinary roads along-route and straight-line progress agree. |
 | Only `OFF_ROUTE` and `REROUTING` are announced | Ambiguous junction matches produced flapping notices. |

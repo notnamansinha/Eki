@@ -26,7 +26,7 @@ Each entry expires 5 min after it was stored, measured on the monotonic clock. A
 
 ### 3.3 Edits, deletions and watcher failure
 
-- An observed edit or deletion increments the route's local generation and immediately publishes the new entry or a negative entry. It also clears the passenger geometry cache and the route list cache for that route.
+- An observed edit or deletion increments the route's local generation and immediately publishes the new entry or a negative entry. It also clears that route's passenger geometry cache entry and the whole route list cache.
 - Generations are unique within the process, so an evicted route cannot revive work started under an old generation. Cleanup of an in-flight read compares the promise identity before removing a newer fill.
 - When the watcher fails, every entry and in-flight read is invalidated and later fixes use point reads until it reconnects. Reconnection waits 1 s, doubling to 30 s. Callbacks from an older subscription are ignored, and the first snapshot after reconnecting removes entries for routes that no longer exist.
 
@@ -66,7 +66,8 @@ None of these values is configurable at run time.
 
 | Behaviour | Tests |
 |---|---|
-| Watcher publication, freshness coalescing, old subscription callbacks, transaction retry fences, edits during reroute publication | `backend/src/services/telemetryRouteCatalog.test.ts` |
+| Watcher publication, freshness coalescing, old subscription callbacks, transaction retry fences | `backend/src/services/telemetryRouteCatalog.test.ts` |
+| An edit during reroute publication discards the new pointer | `backend/src/services/liveRouting.integration.test.ts` (mocked Firebase) |
 | 60 pending fixes with no extra route reads or Google calls, edit and delete propagation, a held watcher event refused at commit, and a lost commit acknowledgement recovered without rollback, against emulators | `backend/src/telemetryCatalog.integration.test.ts`, run by `npm run test:rules` |
 
 These tests use synthetic coordinates and providers. Edit propagation delay, snapshot billing, replica load and moving-route ordering need staging measurements.

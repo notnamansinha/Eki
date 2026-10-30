@@ -16,7 +16,7 @@ This document describes the modules of the backend, the web frontend and the bus
 |---|---|
 | Backend | `backend/src` and its `lib`, `middleware`, `routes`, `services`, `types` and `test-support` directories |
 | Frontend | `frontend/src` and its `app`, `components`, `config`, `hooks` and `lib` directories |
-| Firmware | `hardware/src` and `hardware/include` |
+| Firmware | `hardware/src`, `hardware/include`, `hardware/scripts`, `hardware/keys`, `hardware/test`, `hardware/test-support` and the build files in `hardware` |
 
 The system context and containers are in the [architecture](ARCHITECTURE.md) and the [high-level design](HIGH_LEVEL_DESIGN.md). Tracking thresholds are specified in [tracking algorithms](TRACKING_ALGORITHMS.md), stored fields in the [Firebase data model](../data/FIREBASE_DATA_MODEL.md), and HTTP endpoints in the [API reference](../../backend/API.md). Environment variables are listed in [configuration](../CONFIGURATION.md).
 
@@ -98,7 +98,7 @@ All request budgets are divided by the replica shard factor (`backend/src/lib/ra
 |---|---|---|---|
 | `devices.ts` | `/api/devices`, `/api/v2/devices` | Device telemetry and diagnostics ingestion, signed firmware manifest and install reservation, admin registry update and disable | `deviceTelemetryService`, `deviceDiagnostics`, `firmwareRelease` |
 | `shifts.ts` | `/api/shifts`, `/api/v2/ride-sessions` | Ride start and resume, delay, End ride early, message clear, terminal history deletion | `rideSessionStart`, `rideHistoryDeletion`, `userAuthorization` |
-| `sessions.ts` | `/api/sessions`, `/api/v2/ride-sessions` | Ride status for members, boarding code issue, passenger boarding, chat messages | `boardingPolicy`, `chatRateLimit` |
+| `sessions.ts` | `/api/sessions`, `/api/v2/ride-sessions` | Ride status for members, boarding code issue for operators, passenger boarding (no code needed; the passenger must be within 150 m of a fresh bus fix), chat messages | `boardingPolicy`, `chatRateLimit` |
 | `fleet.ts` | `/api/fleet`, `/api/v2/fleet-reconciliation-jobs` | Bus and driver administration with Auth claims and RTDB mirrors; fleet reconciliation and lock recovery | `fleetMutationLock`, `httpOperations`, `userAuthorization` |
 | `polyline.ts` | `/api/routes`, `/api/v2/routes`, `/api/v2/route-geometry-previews` | Route save with geometry, deletion, geometry read and preview operations | `lib/googleMaps`, `lib/routeSaveContract`, `routeGeometryReads`, `httpOperations` |
 | `plan.ts` | `/api/plan`, `/api/v2/routes/{routeId}/segments` | Route segment between two stops from stored geometry; no Google call | `lib/routeSegment` |
@@ -201,7 +201,7 @@ All request budgets are divided by the replica shard factor (`backend/src/lib/ra
 
 ### 4.1 Worker leadership
 
-The worker coordinator (`backend/src/services/workerCoordinator.ts:19`) runs on every replica unless `WORKER_ENABLED=false`. It acquires or renews `_worker_leases/trip-state-worker` in a Firestore transaction every 15 s with a 45 s lease (`workerCoordinator.ts:15`). Acquisition increments `generation`; renewal keeps it. The local deadline is the lease end minus twice the 2 s clock-skew allowance (`backend/src/lib/workerFence.ts:6`), measured on the monotonic clock. When renewal fails or the deadline passes, the coordinator revokes the fence and stops every leader job before another replica can take over. Details and limits are in [worker leadership](../operations/WORKER_LEADERSHIP.md).
+The worker coordinator (`backend/src/services/workerCoordinator.ts:19`) runs on every replica unless `WORKER_ENABLED` is `false`, `0`, `no` or `off` (`backend/src/lib/booleanEnv.ts:10`). It acquires or renews `_worker_leases/trip-state-worker` in a Firestore transaction every 15 s with a 45 s lease (`workerCoordinator.ts:15`). Acquisition increments `generation`; renewal keeps it. The local deadline is the lease end minus twice the 2 s clock-skew allowance (`backend/src/lib/workerFence.ts:6`), measured on the monotonic clock. When renewal fails or the deadline passes, the coordinator revokes the fence and stops every leader job before another replica can take over. Details and limits are in [worker leadership](../operations/WORKER_LEADERSHIP.md).
 
 ```mermaid
 flowchart LR
@@ -340,7 +340,7 @@ The fix queue holds 100 entries in RTC memory that survives warm resets (`main.c
 | Module | Responsibility | Key constants |
 |---|---|---|
 | `src/main.cpp` | Tasks, Wi-Fi, clock discipline, HTTPS publishing, OTA validation | Section 6.1 |
-| `src/tls_profile.cpp` | Restricts TLS to ECDHE-RSA with AES-GCM and the P-256 curve by wrapping `mbedtls_ssl_config_defaults` | None |
+| `src/tls_profile.cpp` | Restricts TLS to ECDHE-RSA with AES-GCM and the P-256 curve by wrapping `mbedtls_ssl_config_defaults`; wraps `mbedtls_ecdh_make_public` so each network task can use an ephemeral key prepared before the handshake | 3 key slots |
 | `include/telemetry_policy.h` | Capture thresholds, motion hysteresis, HTTP timeouts and retry policy | 1 s evaluation and heartbeats, 3-reading motion confirmation, 1 s connect and 1.5 s request timeout, 10 s TLS handshake, retry 1 to 30 s, 55 s freshness margin (`hardware/include/telemetry_policy.h:48`) |
 | `include/telemetry_queue.h` | Fixed-capacity ordered ring with newest-first delivery and acknowledgement compaction | Capacity set in `main.cpp` |
 | `include/clock_policy.h` | GNSS and NTP clock discipline | 60 s GNSS refresh, 1.5 s correction threshold |
@@ -353,7 +353,20 @@ The fix queue holds 100 entries in RTC memory that survives warm resets (`main.c
 | `include/reset_stats.h` | Reset counters in RTC memory | None |
 | `include/firmware_config.h`, `include/secrets.example.h` | Compile-time validation of `secrets.h` and its template ([include guide](../../hardware/include/README.md)) | ID and secret at most 128 characters |
 
-Native tests for these headers are described in the [hardware test guide](../../hardware/test/README.md).
+### 6.3 Build, scripts and test support
+
+| Path | Responsibility |
+|---|---|
+| `platformio.ini` | Environments: `esp32dev` (development, OTA disabled), `esp32dev-quiet` (fleet traces off), `esp32dev-journal` (app-only build for boards with the original partition table), `esp32dev-secure` (the only fleet build: Secure Boot V2, flash encryption, signed OTA) and `native` (host unit tests) |
+| `CMakeLists.txt`, `src/CMakeLists.txt`, `sdkconfig.defaults`, `sdkconfig.journal.defaults` | ESP-IDF project and component definitions and SDK configuration for the IDF-based builds |
+| `partitions_development.csv`, `partitions_secure.csv` | Flash partition tables for the development and secure builds |
+| `scripts/verify_secure_fleet.py` | Pre-build check for `esp32dev-secure`: positive `EKI_FIRMWARE_SEQUENCE`, signed OTA enabled, an explicit `PROJECT_VER`, and the required Secure Boot V2 and flash-encryption settings in `sdkconfig.defaults` |
+| `scripts/test_verify_secure_fleet.py`, `scripts/test_signed_image.py`, `scripts/test_host_protocols.py` | Host tests of the fleet verifier, Secure Boot V2 signature checks, and checkpoint cryptography, TLS wrapper and NMEA parsing |
+| `keys/` | Location of the Secure Boot V2 signing key, which is never committed ([fleet signing keys](../../hardware/keys/README.md)) |
+| `test/test_*/test_main.cpp`, `test/test_bounded_dns_resolver/stubs/` | Unity tests for the `include/` policies, run with `platformio test --project-dir hardware -e native`, and stubs for the DNS resolver test |
+| `test-support/crypto`, `test-support/nmea`, `test-support/tls` | Host stand-ins for ESP-IDF, Arduino and FreeRTOS headers used by `scripts/test_host_protocols.py` |
+
+Native tests are described in the [hardware test guide](../../hardware/test/README.md).
 
 ## 7. Error handling
 

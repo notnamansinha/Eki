@@ -43,7 +43,7 @@ Firebase App Check is not used. The browser sends no `X-Firebase-AppCheck` heade
 
 The `POST /api/users/bootstrap` call creates a missing profile with role `passenger` and repairs only a missing passenger claim. [Privileged database authorization](PRIVILEGED_DATABASE_AUTHORIZATION.md) describes how driver and administrator claims and records are published and revoked.
 
-Driver checks on HTTP routes do not compare `authorizationVersion`; reassignment or removal of the driver registry record ends the authority instead. Operator code paths that also admit administrators (`backend/src/routes/shifts.ts`, `backend/src/routes/sessions.ts`) accept either `role: "admin"` or `admin: true` without the version check, except the administrator ride stop in Section 3.1.
+Driver checks on HTTP routes do not compare `authorizationVersion`. Ride start, delay, stop and the v2 ride read also require the driver registry record, so its reassignment or removal ends the authority there; chat, the legacy boarding code and legacy ride status compare only the token's `driverId` and `assignedBusId` with the session, and rely on the token revocation that every reassignment performs. Operator code paths that also admit administrators (`backend/src/routes/shifts.ts`, `backend/src/routes/sessions.ts`) accept either `role: "admin"` or `admin: true` without the version check, except the administrator ride stop in Section 3.1.
 
 ### 2.3 Errors
 

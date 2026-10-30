@@ -180,7 +180,7 @@ For work on this package:
 - The script reads `frontend/.env*` through `@next/env`, as `next build` does, so a backend URL set only in `frontend/.env.local` still reaches the policy.
 - It fails when it finds no inline script or when a managed directive is missing.
 - `scripts/verify-web-backend-contract.mjs` then checks that `connect-src` contains the backend origin. In a production build a missing `NEXT_PUBLIC_BACKEND_URL` fails the build.
-- `npm run build` edits the tracked `firebase.json`. Review that diff and commit it with the change that caused it.
+- `npm run build` edits the tracked `firebase.json`. Commit changed hashes with the change that caused them, but not a local backend origin or RTDB host taken from `frontend/.env.local`; the tracked policy carries neither.
 
 ## 11. Static export and hosting
 

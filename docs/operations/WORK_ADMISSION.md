@@ -20,7 +20,7 @@ All limits apply per backend process; the fleet-wide ceiling is the per-process 
 - A dispatched job keeps its execution slot and its key's ordering until the real promise settles, even after a response deadline or shutdown. Clearing deduplication fingerprints never lets a new write race an older commit whose outcome is unknown.
 - Dispatch rotates fairly between ready keys, so one busy key cannot take every turn.
 - The caller's async context, including the worker generation, is carried into queued work. A queue shared by fenced and unfenced callers starts each item in its own requester's context.
-- Route matching, rerouting and the public projection keep only the newest position per ride: a newer position replaces the waiting one and refreshes its queue age, and a running job may hold one newest follow-up. Durable lifecycle writes use a separate first-in, first-out queue and are never replaced.
+- Route matching, rerouting and the passenger projection keep only the newest position per live record: a newer position replaces the waiting one and refreshes its queue age, and a running job may hold one newest follow-up. Durable lifecycle writes use a separate first-in, first-out queue and are never replaced.
 - The deduplication cache (least recently used, 1,000 fingerprints) only suppresses repeated writes; it does not control execution or capacity.
 - KDF admission failure or expiry is returned to the device as the retryable telemetry 503.
 
@@ -33,6 +33,8 @@ Rejected or expired lifecycle work, and any failed live event, requests a reread
 3. A live record re-enters the ordered intake. At dispatch the record is read again, so an older page value is never written.
 4. A durable `bus_locations` record whose live record is missing is retired only after checking current RTDB presence and the canonical ride and lock ownership. Presence is checked again inside the bus's ordered write, and the Firestore transaction rechecks session ownership, so a replacement route, driver or lock is never retired by an older projection.
 5. Individual item failures do not stop the page; a full queue or a failed item schedules another full pass. A failed page read retries the same cursor.
+
+The passenger projection uses the same pager for its own recovery: it reads a page of 25 each second while a pass is requested and fewer than 32 keys wait, and it requests a full pass every 60 s.
 
 Recovery starts from current state and already committed progress. It cannot reconstruct a movement or event time that was never observed or committed during the overload. Shutdown stops replay intake and waits for its single read within the engine's shutdown budget.
 
@@ -51,23 +53,24 @@ None of these values is configurable at run time. The defaults of the shared exe
 | scrypt KDF, verified refill lane | 2 | 8 | 1 | 5 s | `backend/src/services/deviceTelemetryService.ts:42` |
 | Durable fleet and active-ride writes | 8 | 256 | 32 | 5 s | `backend/src/services/tripStateEngine.ts:59` |
 | Ordered live lifecycle intake | 8 | 256 | 32 | 5 s | `backend/src/services/tripStateEngine.ts:62` |
-| Route matching, newest position per ride | 8 | 256 rides | 1 | 5 s | `backend/src/services/telemetryRouteService.ts:1281` |
-| Rerouting, newest position per ride | 2 | 64 rides | 1 | 5 s | `backend/src/services/telemetryRouteService.ts:1326` |
-| Public live projection, newest value per bus | 2 | 64 | 1 | 5 s | `backend/src/services/liveBusProjection.ts:198` |
+| Route matching, newest position per live record | 8 | 256 records | 1 | 5 s | `backend/src/services/telemetryRouteService.ts:1281` |
+| Rerouting, newest position per live record | 2 | 64 records | 1 | 5 s | `backend/src/services/telemetryRouteService.ts:1326` |
+| Passenger projection, newest value per live record | 2 | 64 | 1 | 5 s | `backend/src/services/liveBusProjection.ts:198` |
 | Automatic service admission | 8 | 128 | 1 | 10 s | `backend/src/services/automaticServiceAdmission.ts:14` |
 | Lifecycle recovery page | 1 page of 25 | | | | `backend/src/services/pagedLifecycleReplay.ts:8` |
 
-The credential check runs before a request takes an ingestion slot, so requests stalled on scrypt for unknown devices cannot take ingestion capacity from known devices, and the verified refill lanes keep known devices from queueing behind them.
+The credential check runs before a request takes an ingestion slot, so requests stalled on scrypt for unknown devices cannot take ingestion capacity from known devices, and the verified refill lanes keep known devices from queueing behind them. A verified pair stays cached for 60 s; when its refill lane is full, the backend keeps using the cached assignment for up to 10 min more unless the credential was invalidated.
 
 ### 4.2 Feature executors
 
 | Work | Limits | Owner |
 |---|---|---|
 | Admin route computation | 2 running, 8 waiting, 2 s | [Route geometry reads](ROUTE_GEOMETRY_READS.md) |
+| Route geometry document reads | 16 fills, 32 waiters, 3 s | [Route geometry reads](ROUTE_GEOMETRY_READS.md) |
 | Legacy fleet mutations | 2 running, 8 waiting, 2 s | [Reconciliation](RECONCILIATION.md) |
 | Durable HTTP operations | 2 running, 8 waiting, 2 s | [Operation resources](../api/OPERATION_RESOURCES.md) |
 | Privacy deletion | 1 running, 20 waiting, 2 s | [Passenger account deletion](PRIVACY_DELETION.md) |
-| Abandoned-session scans | 1 scan running, 1 waiting, 5 s | [Reconciliation](RECONCILIATION.md) |
+| Abandoned-ride scans | 1 scan running, 1 waiting, 5 s | [Reconciliation](RECONCILIATION.md) |
 | API read caches | 8 fills, 32 waiters, 3 s | [API read caching](API_READS_AND_RETIREMENT.md) |
 
 ## 5. Failure modes and recovery

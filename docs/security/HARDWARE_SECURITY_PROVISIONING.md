@@ -19,7 +19,7 @@ The fleet build enforces these protections:
 | Two OTA application slots with bootloader rollback | `partitions_secure.csv`, `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y` |
 | Wi-Fi driver state kept in RAM | `CONFIG_ESP32_WIFI_NVS_ENABLED` not set; `WiFi.persistent(false)` before the driver starts |
 | HTTPS backend only | Compile-time check and boot check of `BACKEND_URL` |
-| Runtime gate | At boot the firmware halts with four LED pulses, before it reads credentials or starts networking, unless flash encryption and Secure Boot both report active |
+| Runtime gate | At boot, after the `secrets.h` checks and before it starts networking, the firmware halts with four LED pulses unless flash encryption and Secure Boot both report active |
 
 Hardware, build environments and the development flashing procedure are in the [hardware guide](../../hardware/README.md). Telemetry behaviour is in the [hardware telemetry contract](../hardware/HARDWARE_TELEMETRY.md).
 

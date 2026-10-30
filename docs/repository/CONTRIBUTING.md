@@ -56,7 +56,7 @@ Run the checks for every kind of change your branch contains, from the repositor
 | Environment variable added, renamed or removed | Update the tracked template and the [configuration reference](../CONFIGURATION.md) in the same change, then run `npm run docs:check` |
 | Documentation | `npm run docs:sync`, `npm run docs:check` and `git diff --check` |
 
-A build regenerates the CSP hashes in `firebase.json`; commit that change and do not edit the hashes by hand. The [test strategy](../testing/TEST_STRATEGY.md) explains what each suite proves, and the [QA guide](../qa/README.md) explains the acceptance maps.
+A build regenerates the CSP hashes in `firebase.json`; commit changed hashes and do not edit them by hand. With a filled `frontend/.env.local`, the build also writes your backend origin and RTDB host into the policy: leave those local values out of the commit. The [test strategy](../testing/TEST_STRATEGY.md) explains what each suite proves, and the [QA guide](../qa/README.md) explains the acceptance maps.
 
 ## 5. Documentation
 

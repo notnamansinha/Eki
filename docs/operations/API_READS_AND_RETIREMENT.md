@@ -48,7 +48,7 @@ Route save and delete, and every change seen by the route watcher, call `invalid
 
 ### 3.5 Compatibility traffic
 
-Middleware counts requests to a fixed list of operations: `catalog`, `route-save`, `route-save-status`, `route-preview`, `boarding`, `boarding-code`, `chat`, `route-geometry`, `plan`, `ride-history-delete`, `ride-messages-delete`, `shift-start`, `shift-delay`, `shift-stop`, `settings`, `feedback-status` and `privacy`. For each operation and generation (`legacy` or `v2`) it records the request count, the successful (2xx) count and the last-seen time.
+Middleware counts requests to a fixed list of operations: `catalog`, `route-save`, `route-save-status`, `route-preview`, `boarding`, `boarding-code`, `chat`, `route-geometry`, `plan`, `ride-history-delete`, `ride-messages-delete`, `shift-start`, `shift-delay`, `shift-stop`, `settings`, `feedback-status` and `privacy`. For each operation and generation (`legacy` or `v2`) it records the request count, the successful (2xx) count and the last-seen time. The device-disable pair (`POST /api/devices/{deviceId}/disable`, `PATCH /api/v2/devices/{deviceId}`) and the fleet reconciliation pair (`POST /api/fleet/reconcile`, `POST /api/v2/fleet-reconciliation-jobs`) are not in the list and are not counted.
 
 Admin health (`GET /api/health`) exposes these counters as `telemetry.apiCompatibility` and the read caches as `telemetry.apiReads`. The OpenTelemetry counter `eki.api.compatibility.requests` carries only the labels `operation`, `generation` and `status_class`. No token, user, route, bus, session or raw URL is recorded. Other endpoints are visible through the HTTP server request metrics.
 
@@ -57,11 +57,13 @@ Admin health (`GET /api/health`) exposes these counters as `telemetry.apiCompati
 | Caller | Endpoints | Generation |
 |---|---|---|
 | `frontend/src/lib/routeSaveClient.ts` | `PUT /api/routes/{routeId}`, `GET /api/routes/{routeId}/save-operations/{saveId}` | Legacy |
-| `frontend/src/components/admin/RouteManagementPanel.tsx` | `DELETE /api/routes/{routeId}`, `GET /api/places/search` | Legacy |
+| `frontend/src/components/admin/RouteManagementPanel.tsx` | `DELETE /api/routes/{routeId}`, `GET /api/places/search` | Legacy only; no v2 form exists |
 | `frontend/src/components/maps/DirectionsRoute.tsx` | `GET /api/routes/{routeId}/geometry` | Legacy only; no v2 form exists |
 | `frontend/src/components/passenger/PassengerBoardingView.tsx` | `POST /api/sessions/{sessionId}/join` | Legacy |
 | `frontend/src/components/shared/MessagingPanel.tsx` | `POST /api/sessions/{sessionId}/messages` | Legacy |
-| `frontend/src/lib/joinedRideStatus.ts` | `GET /api/sessions/{sessionId}/status` | Legacy |
+| `frontend/src/lib/joinedRideStatus.ts` | `GET /api/sessions/{sessionId}/status` | Legacy only; no v2 form exists |
+| `frontend/src/hooks/useAuth.ts` | `POST /api/users/bootstrap` | Legacy only; no v2 form exists |
+| `frontend/src/lib/telemetryTrace.ts` | `GET /api/health` (trace health export) | Not applicable |
 | `frontend/src/components/admin/DashboardPanel.tsx` | `POST /api/v2/ride-sessions`; `PATCH /api/shifts/delay`, `POST /api/shifts/stop`, `POST /api/sessions/{sessionId}/boarding-code`, `DELETE /api/shifts/{sessionId}/messages` | v2 for ride start, legacy for the rest |
 | `frontend/src/components/admin/RideHistoryPanel.tsx` | `DELETE /api/shifts/{sessionId}/history` | Legacy |
 | `frontend/src/components/admin/FleetManagementPanel.tsx` | `PUT` and `DELETE` on `/api/fleet/...` | Legacy only |
@@ -106,7 +108,8 @@ Counters reset when a process restarts and are not summed across replicas. An em
 | Cache bounds, single flight and invalidation races | `backend/src/services/apiReadCache.test.ts`, `backend/src/lib/boundedSingleFlight.test.ts` |
 | Bus paging and lookup | `backend/src/routes/buses.test.ts` |
 | Compatibility counters | `backend/src/lib/apiCompatibilityTraffic.test.ts` |
-| Count aggregation, catalog paging, alias parity, authorization on cache hits, reassignment seen by the next request | `backend/src/apiReads.integration.test.ts`, run against the Firebase emulators by `npm run test:rules` |
+| Operator assignment read on every ride-session request and shared only between the stages of one request | `backend/src/routes/shifts.test.ts` |
+| Count aggregation, catalog paging, alias parity, authorization on cache hits | `backend/src/apiReads.integration.test.ts`, run against the Firebase emulators by `npm run test:rules` |
 
 The emulator suite uses a disposable project and synthetic credentials. It does not measure billed usage or cloud latency. Before relying on these caches in production, compare cache fills and hits, query counts, latency and project usage over the same window.
 

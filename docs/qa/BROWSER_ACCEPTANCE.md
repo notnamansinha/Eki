@@ -44,7 +44,7 @@ Every test runs once in each project: mobile (390 x 844) and desktop (1280 x 800
 |---|---|
 | Passenger boarding | Boarding through the real API with one durable membership restored on reload; boarding without a code; a distant position rejected without a manifest change or optimistic success |
 | Chat and feedback | A lost chat acknowledgement reconciles into one durable message; feedback persists and the cooldown holds after the modal reopens |
-| Account | Profile sign-out cancellation and confirmation; accepted account deletion preserves ride feedback and messages; a failed deletion shows its error and allows a retry |
+| Account | Profile photo and its accessible fallback when the image is denied; profile sign-out cancellation and confirmation; accepted account deletion preserves ride feedback and messages; a failed deletion shows its error and allows a retry |
 | Admin | Settings persist and a passenger cannot open the panel; all six panels mount by pointer and roving keyboard; vehicle create, edit, cancel and delete; operator create, edit and delete with real Auth claim changes |
 | Routes and providers | Route creation recovers from provider quota and a lost acknowledgement, then reuses stored geometry and deletes safely; Places quota and the real abort deadline show recoverable errors; route identity stays immutable; stop rename Escape discards the draft |
 | Live service | Authenticated device telemetry admits a qualified receiver without a manual start request; stop arrival appears in the passenger timeline only inside the 15 m arrival corridor; an off-route fix publishes a versioned detour without skipping a stop; telemetry completes the joined ride and arms a separate return ride; bounded delay, interruption and a distinct restart |

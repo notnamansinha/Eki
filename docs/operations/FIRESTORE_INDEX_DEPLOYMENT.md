@@ -71,7 +71,8 @@ Prerequisites: a Firebase CLI token for the project in the current shell as `FIR
 | `Firestore index readiness timed out` | Open the Firestore indexes page in the Firebase console. If a build is still running, wait for it and rerun Deploy; the index file does not need to change. |
 | `failed (HTTP 401)` or `(HTTP 403)` | The token cannot query Firestore in that project. Replace the environment's `FIREBASE_TOKEN` and rerun. |
 | `Invalid Firestore readiness response` | The project or database name is wrong, or the API returned an unexpected body. Check `--project` and the project's default database. |
-| `A valid explicit --project is required.` | Pass `--project <project-id>`. |
+| `Missing --project.` or `A valid explicit --project is required.` | Pass `--project <project-id>` with a valid project ID. The usage text names `disable-appcheck-enforcement.mjs` because both scripts share the argument parser. |
+| `FIREBASE_TOKEN is required to verify Firestore indexes.` | Set `FIREBASE_TOKEN` in the shell (Section 4) or in the environment's secrets. |
 
 ## 6. References
 

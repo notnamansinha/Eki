@@ -119,7 +119,7 @@ Every backend process serves HTTP and processes the telemetry it receives, inclu
 | Production (GitHub environment `production`) | `eki-production` | Manual dispatch from `main` with environment approval | Same as staging | `https://eki-production.web.app` |
 | Local development | A developer's own Firebase project; emulators for rules and browser suites | `npm run dev` | Frontend on port 3000, backend on port 4000 | `http://localhost:3000` |
 
-The deploy workflow uses Node.js 24 and `firebase-tools@15.14.0`, verifies that the backend and frontend RTDB URLs name the same instance, builds the web app in strict production mode, checks the live backend contract, and turns off App Check enforcement before deploying. It does not deploy the backend. The CI job `backend-image` in `.github/workflows/ci.yml` builds the container image and boot-tests `/live` and `/health`, but no workflow releases it. The repository does not show that `eki-production` holds data or accounts; the recorded field tests use `bustrack-be165` [3].
+The deploy workflow uses Node.js 24 and `firebase-tools@15.14.0`, verifies that the backend and frontend RTDB URLs name the same instance, builds the web app in strict production mode, checks the live backend contract, and turns off App Check enforcement. It then deploys the Firestore indexes, waits for them to build, and deploys Hosting and the rules. It does not deploy the backend. The CI job `backend-image` in `.github/workflows/ci.yml` builds the container image and boot-tests `/live` and `/health`, but no workflow releases it. The repository does not show that `eki-production` holds data or accounts; the recorded field tests use `bustrack-be165` [3].
 
 | Store | Instance | Location | Evidence |
 |---|---|---|---|
@@ -238,7 +238,7 @@ sequenceDiagram
 
 Figure 6. Administrator command.
 
-Ride commands follow this pattern: bearer-token verification, a fresh check of the caller's authority, a Firestore transaction guarded by the session ID, then a guarded RTDB transaction. The pause stops further fixes from starting a new ride until an administrator resumes tracking.
+Ride commands follow this pattern: bearer-token verification, a fresh check of the caller's authority, a Firestore transaction guarded by the session ID, then a guarded RTDB transaction. The pause stops further fixes from starting a new ride until an administrator (Resume tracking) or the assigned operator starts the ride again.
 
 ## 7. Quality attributes
 
@@ -249,7 +249,7 @@ The repository defines no end-to-end service level. The [test strategy](../testi
 | Live position latency | Moving sample to first marker paint: p95 at most 2 s, p99 at most 5 s | [Realtime transport decision](REALTIME_TRANSPORT_DECISION.md) | Preregistered experiment target; not yet measured on a moving bus |
 | Reconnect | Connected and fresh painted sample, each within 5 s of network restoration | Same | Not yet measured |
 | Chat delivery | Send to listener: p95 at most 1 s, p99 at most 3 s | Same | Not yet measured |
-| Honest liveness | "GPS signal lost" on the firmware loss packet; "Updates delayed" after 12 s; "Live tracking lost" after 30 s; bus removed after 300 s by default (`NEXT_PUBLIC_BUS_EXPIRY_MS`) | `frontend/src/lib/liveBusFreshness.ts` | Implemented, driven by the viewer's clock |
+| Liveness | "GPS signal lost" on the firmware loss packet; "Updates delayed" after 12 s; "Live tracking lost" after 30 s; last known point dropped after 300 s by default (`NEXT_PUBLIC_BUS_EXPIRY_MS`) | [Tracking algorithms](TRACKING_ALGORITHMS.md#9-live-bus-health) | Implemented; evaluated in the browser on the server timeline |
 | Device timing | 1 s evaluation and heartbeat; 1 s connect, 1.5 s request and 10 s TLS handshake timeouts; retries from 1 to 30 s with jitter | `hardware/include/telemetry_policy.h` | Implemented; see [telemetry deadlines](../operations/TELEMETRY_DEADLINES.md) |
 | Ingestion bounds | 512 B telemetry body; 8 s response budget; 5 s per dependency | `backend/src/server.ts`, `backend/src/lib/executionDeadline.ts` | Implemented |
 | Worker failover | Lease of 45 s renewed every 15 s; graceful shutdown within 10 s | `backend/src/services/workerCoordinator.ts`, `backend/src/server.ts` | Implemented; see [worker leadership](../operations/WORKER_LEADERSHIP.md) |

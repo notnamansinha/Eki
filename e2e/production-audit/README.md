@@ -22,7 +22,7 @@ The configuration starts the Vite fixture on `http://127.0.0.1:3123` and runs `e
 
 `audit.spec.ts`:
 
-- Telemetry 90 to 200 s old shows **Live location updates delayed** to the admin and **Live tracking lost** to the passenger; a fresh delivery clears both without reload.
+- Telemetry 90 to 200 s old, well past the 30 s threshold in `frontend/src/lib/liveBusFreshness.ts`, shows **Live location updates delayed** to the admin and **Live tracking lost** to the passenger; a fresh delivery clears both without reload.
 - A denied passenger detail subscription shows a live-data error distinct from a telemetry delay, and clears after a new delivery.
 - Long route and endpoint labels render in full and stay selectable; the tracking header keeps the full route name while waiting for data.
 - History shows recorded interruption reasons and labelled fallbacks for legacy records.

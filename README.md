@@ -72,8 +72,8 @@ Open `http://localhost:3000`. The health check returns `status: ok` when the bac
 | `e2e/` | Playwright browser suites with synthetic Firebase and Maps fixtures |
 | `qa/` | Acceptance maps that link requirements to tests, and evidence guides |
 | `scripts/` | Build, CSP, documentation, QA and trace analysis scripts |
-| `tools/` | Local build tooling |
-| `observability/` | Optional local OpenTelemetry Collector and Jaeger stack |
+| `tools/` | `next-lint-glob`, a local replacement for the `fast-glob` dependency of the Next.js ESLint plugin |
+| `observability/` | Optional local OpenTelemetry Collector and Jaeger stack, and a Grafana dashboard |
 | `docs/` | Documentation set, including generated mirrors of Markdown files kept beside the code |
 | `.github/workflows/` | CI, CodeQL, scheduled QA and deployment workflows |
 | `firestore.rules`, `database.rules.json`, `firestore.indexes.json` | Firebase security rules and indexes |

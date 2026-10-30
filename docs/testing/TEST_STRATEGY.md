@@ -152,6 +152,7 @@ The [QA programme](../../qa/README.md) describes the evidence model. Every runne
 | Command | Level | What it runs | Guide |
 |---|---|---|---|
 | `npm run qa:check` | L0 | Safety preflight, catalog check (`--check`, no output files), workflow policy | [QA programme](../../qa/README.md) |
+| `npm run qa:safety` | L0 | Safety preflight alone; `npm run qa:safety -- --emulator` adds the emulator requirements | [QA programme](../../qa/README.md) |
 | `npm run qa:catalog` | L0 | Writes `artifacts/qa/qa-report.*`: static definitions and source census, never execution | [QA programme](../../qa/README.md) |
 | `npm run qa:budget` | L0 | With `EKI_QA_BASE_SHA=<full base SHA>`: changed critical source needs a reviewed mapping and a changed test file | [QA programme](../../qa/README.md) |
 | `npm run qa:test` | L1 | `node --test scripts/qa*.test.mjs`: tests of the QA tooling itself | |
@@ -193,10 +194,10 @@ Run `npm run verify` for every code change, then add the checks for the area cha
 | | | `qa-evidence`: after `web` and `firmware`, even when they fail, runs `qa:report` on their artifacts |
 | CodeQL (`codeql.yml`) | Every push and pull request | `security-extended` queries for JavaScript/TypeScript and Python |
 | Isolated nightly QA (`deep-qa.yml`) | Daily 20:17 UTC, manual dispatch, pushes to named QA branches | Six campaign shards (`gnss`, `emulator`, `browser`, `api`, `native`, `reviewedUnit`), two at a time, then `campaign-report.mjs` |
-| Isolated weekly reliability (`weekly-reliability.yml`) | Saturday 20:41 UTC, manual dispatch | `qa:mutation` and `qa:soak`, then `weekly-report.mjs` |
+| Isolated weekly reliability (`weekly-reliability.yml`) | Saturday 20:41 UTC, manual dispatch, pushes to `codex/qa-nightly-reliability` | `qa:check`, then `qa:mutation` and `qa:soak` shards, then `weekly-report.mjs` |
 | Deploy (`deploy.yml`) | Green Production verification push on `main`; manual dispatch | Staging and approval-gated production releases; see [CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md) |
 
-Scheduled and manually dispatched nightly and weekly runs check out the head of the `testing` branch, not `main`. A green scheduled run therefore says nothing about `main` unless the two branches point at the same commit.
+Scheduled and manually dispatched nightly and weekly runs resolve the head of the `testing` branch, not `main`. On 2026-10-30 the repository has no `testing` branch and none of the listed `codex/qa-*` branches, so every scheduled run fails in its `resolve` job (`Not Found`) and runs no suite; the last scheduled runs that executed suites were on 2026-10-24 (UTC). The [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md) tracks this as OPS-02.
 
 ```mermaid
 flowchart LR
@@ -253,7 +254,7 @@ Use a dedicated test device and project. Do not expose production secrets in pac
 | UART under network stall | GNSS module streaming during a 7 s network stall | NMEA continues; no loss caused by dropped bytes |
 | Cold and warm fix | Power cycle indoors and outdoors | Time to first trusted fix recorded; HDOP gate applied |
 | Motion hysteresis | Replay speeds around the 1.5 km/h stop and 2.5 km/h moving thresholds | Three consecutive readings change state; no flapping |
-| Adaptive rate | Replay stationary and moving paths | One-second moving cadence; stationary heartbeat |
+| Publish cadence | Replay stationary and moving paths | One publish per second while moving and while stopped (`MOVING_HEARTBEAT_MS`, `STOPPED_HEARTBEAT_MS`) |
 | Payload | Capture the backend request in a controlled test | Nine fields, at most 512 bytes, `Device` authorization header, no secrets logged |
 | TLS | Correct and wrong CA, hostname and clock | Correct case succeeds; every wrong case fails closed |
 | GNSS clock | Block NTP with fresh, stale and invalid GNSS UTC | Fresh UTC sets a TLS-valid clock; stale or invalid UTC never changes it |

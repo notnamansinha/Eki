@@ -24,7 +24,7 @@ The document covers `GET /api/routes/{routeId}/geometry`, the shared admin route
 | Route document missing | 404 |
 | Stops have no usable coordinates | 422 |
 | Geometry missing, invalid or of an older quality | 409 `GEOMETRY_REPAIR_REQUIRED` |
-| Read capacity full, deadline passed or read invalidated | 503 `GEOMETRY_READ_UNAVAILABLE` with `Retry-After: 1` |
+| Read capacity full, deadline passed, read invalidated or Firestore read failed | 503 `GEOMETRY_READ_UNAVAILABLE` with `Retry-After: 1` |
 
 When neither the route document nor this endpoint supplies valid geometry, live maps draw no road overlay for the route; they never substitute straight lines between stops. Accepted telemetry is unaffected.
 
@@ -38,7 +38,7 @@ A route watcher edit or deletion, a watcher failure or stop, and a successful sa
 
 ### 3.3 Admin route computation pool
 
-Route saves, legacy admin previews and durable geometry previews share one computation pool per process: 2 running pipelines, 8 waiting, and a 2 s limit on how long a pipeline may wait before it starts. A pipeline splits the stops into chunks of at most 27 points (origin, 25 intermediates and destination) and requests all chunks in parallel; a route of at most 100 stops therefore needs at most four chunks, so the pool runs at most eight upstream requests. Each chunk request is aborted after 10 s. A dispatched pipeline keeps its slot until every chunk has settled, even after the queue limit or an abort. A full pool or an expired wait returns 503 `ROUTING_CAPACITY_EXHAUSTED` with `Retry-After: 1`. Live rerouting uses its own queue; see the [reroute retry policy](REROUTE_RETRY_POLICY.md).
+Route saves, legacy admin previews and durable geometry previews share one computation pool per process: 2 running pipelines, 8 waiting, and a 2 s limit on how long a pipeline may wait before it starts. A preview is one pipeline; a route save runs one pipeline per direction, so a single save can occupy both running slots. A pipeline splits the stops into chunks of at most 27 points (origin, 25 intermediates and destination) and requests all chunks in parallel; a route of at most 100 stops therefore needs at most four chunks, so the pool runs at most eight upstream requests. Each chunk request is aborted after 10 s. A dispatched pipeline keeps its slot until every chunk has settled, even after the queue limit or an abort. A full pool or an expired wait returns 503 `ROUTING_CAPACITY_EXHAUSTED` with `Retry-After: 1`. Live rerouting uses its own queue; see the [reroute retry policy](REROUTE_RETRY_POLICY.md).
 
 ## 4. Configuration
 

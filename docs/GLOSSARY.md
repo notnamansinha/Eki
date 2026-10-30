@@ -17,8 +17,10 @@ Terms are sorted alphabetically, ignoring case and backticks.
 | Abandoned ride | A `pending`, `armed` or `active` ride session with no activity for `ABANDONED_RIDE_THRESHOLD_HOURS` (default 12 h). The worker ends it as `interrupted`. |
 | `active` | Ride-session status while the trip state is `in_service`. The live record uses `status: active` for both `pre_departure` and `in_service`. |
 | Active bus lock | The Firestore document `_active_bus_locks/<busId>`. A ride session holds it while it runs, so one physical bus cannot run two sessions at once. |
+| Active ride | The Firestore document `active_rides/<busId>_<routeId>`: the durable checkpoint of a running ride (session, direction, trip state, stop index, delay). The backend restores live progress from it after a restart and deletes it when the ride ends. |
 | `activeBuses` | The backend-only RTDB node that holds the live records. Browsers cannot read it. |
 | Administrator | A user whose Firebase Auth token carries `role: "admin"`, `admin: true` and a current `authorizationVersion`. Administrators use the `/admin` workspace. |
+| Admission | The checks the backend applies to a request before a route handles it. Browser admission authenticates every browser `/api` request and limits each user to 200 reads and 30 writes per minute, divided across backend replicas (`backend/src/lib/browserAdmission.ts`). Device telemetry has its own credential checks and queues; see [work admission](operations/WORK_ADMISSION.md). |
 | App Check | A Firebase attestation service. Eki does not use it; the Deploy workflow turns its enforcement off for Firestore and RTDB. |
 | Application Default Credentials (ADC) | Google credentials found in the runtime environment. The backend uses them for Firebase Admin when `FIREBASE_SERVICE_ACCOUNT` is unset. |
 | `armed` | Ride-session status while the direction is known and the trip state is `pre_departure`. Passengers can board an `armed` or `active` session. |
@@ -32,6 +34,8 @@ Terms are sorted alphabetically, ignoring case and backticks.
 | Carriageway | One side of a divided road. Traffic keeps left, so the backend does not credit a stop that lies more than 6 m to the right of a moving bus: that stop is on the opposite carriageway. |
 | Claims | Custom fields in a Firebase Auth ID token that only the backend sets: `role`, `admin`, `driverId`, `assignedBusId` and `authorizationVersion`. Security rules and backend middleware trust these, never the Firestore profile. |
 | `completed` | The trip state and ride-session status after the bus reaches the final stop and stopped fixes there span `TERMINAL_ARRIVAL_CONFIRMATION_MS` (default 2 s). |
+| CSP | Content Security Policy: the `Content-Security-Policy` header in `firebase.json` that limits where the web app may load scripts from and connect to. The build regenerates its script hashes (`scripts/update-csp.mjs`). |
+| Deadline | The time budget for one telemetry request: 8 s for the response and 5 s per stage (`backend/src/lib/executionDeadline.ts`). Work not yet dispatched when it expires is dropped and the device receives 503; see [telemetry deadlines](operations/TELEMETRY_DEADLINES.md). |
 | Device | An ESP32 tracker with a NEO-M8N GNSS receiver, identified by its `DEVICE_ID`. |
 | Device registry | The Firestore `devices` collection. Each record maps a device ID to a bus and a route, an enabled flag and a salted hash of the device secret. The backend takes the bus and route from here, never from the telemetry payload. |
 | Device secret | A random credential printed once by `npm run provision-device`. The firmware sends it as `Authorization: Device <secret>`. |
@@ -40,7 +44,9 @@ Terms are sorted alphabetically, ignoring case and backticks.
 | Documentation mirror | A generated copy under `docs/` of a Markdown file kept beside the code, such as `docs/backend/API.md`. `npm run docs:sync` regenerates mirrors. |
 | Driver | The role and code name for an operator: the `driver` role, the `drivers` collection and the `driverId` claim. |
 | Emulator | The Firebase Local Emulator Suite. `npm run test:rules` and the QA suites run it against the disposable project `demo-eki-qa`. |
+| ETA | Estimated time of arrival at a stop, computed in the browser for buses whose `liveBusHealth` is `live` or `delayed` (`frontend/src/lib/busEta.ts`). The formula is in [tracking algorithms](design/TRACKING_ALGORITHMS.md#8-arrival-time-estimates). |
 | `failed` | Terminal ride-session status for a session that could not start, for example after losing a start conflict. |
+| Fence | The in-process token of one worker lease acquisition, carrying the lease generation. Worker writes check it, and worker Firestore transactions read the lease, so a process that lost the lease cannot commit. |
 | Firestore | Cloud Firestore. Eki keeps routes, buses, operators, devices, ride sessions, feedback and internal worker state there. |
 | Fix | One position solution from the GNSS receiver: latitude, longitude, speed, heading, HDOP and capture time. The firmware sends one fix per second, moving or stopped. |
 | Fleet lock | The Firestore document `_fleet_reconciliation_locks/singleton`. It serializes fleet operations that change user authorization. |
@@ -48,6 +54,7 @@ Terms are sorted alphabetically, ignoring case and backticks.
 | GNSS gap | A stretch of a ride with more than 10 s between fixes, an untrusted fix, or a segment longer than 250 m between fixes. |
 | `gnss_lost` | The `signalState` and passenger health state when the latest packet carries no trustworthy fix. The firmware sends one loss packet (last coordinates, HDOP 99, motion `uncertain`) and then stays silent until GNSS returns. |
 | HDOP | Horizontal dilution of precision, reported by the receiver. Lower is better; automatic service and direction inference need 4 or less. |
+| Idempotency key | The `Idempotency-Key` header that `POST /api/v2/ride-sessions`, `POST /api/v2/route-geometry-previews` and `POST /api/v2/fleet-reconciliation-jobs` require. A retry with the same key reaches the same operation instead of starting another. |
 | `in_service` | Trip state after origin departure. Stops advance only in this state. |
 | `interrupted` | Terminal ride-session status for a ride ended before its final stop, by **End ride early** or by abandoned-ride cleanup. It never counts as completed. |
 | Lease | The Firestore document in `_worker_leases` that elects one backend process as the worker. The owner renews it every 15 s; it expires after 45 s. |
@@ -58,26 +65,30 @@ Terms are sorted alphabetically, ignoring case and backticks.
 | Manifest | The `passengers` map in a ride session: each boarded passenger with their boarding and alighting stops. |
 | `motionState` | The motion reported with each fix: `moving`, `stopped` or `uncertain`. `uncertain` marks a fix that cannot be trusted. |
 | NEO-M8N | The u-blox GNSS receiver module in each tracker. |
-| `OFF_ROUTE` | Route state after two consecutive reliable moving samples do not match the route, or after one sample at least 120 m from it. It triggers a reroute. |
+| `OFF_ROUTE` | Route state after two consecutive reliable moving samples do not match the route, or after one reliable moving sample at least 120 m from it. It triggers a reroute. |
 | Operator | The person assigned to drive a bus. The record in the `drivers` collection links a Firebase Auth UID to one bus, and the account's role is `driver`. |
 | Origin departure | The point at which a ride leaves `pre_departure`: 50 m from the first stop, or half the distance to the second stop if that is shorter, but at least 10 m. |
+| OTA update | An over-the-air firmware update: a signed image that a fleet device downloads when `GET /api/devices/<deviceId>/firmware` offers a newer release. The six `FIRMWARE_RELEASE_*` variables describe the release; the backend withholds it while the bus has an active ride. |
 | `passed_unobserved` | Stop evidence for a stop the bus missed while telemetry was running. The backend credits it once the bus reaches one of the next two stops in its direction of travel; it never counts as an arrival. |
 | `pending` | Ride-session status while the session exists but its direction is not yet resolved. |
 | `POSSIBLE_OFF_ROUTE` | Route state for an ambiguous match, for example at a junction, or for a first sample that does not match. Passengers are not warned; only `OFF_ROUTE` and `REROUTING` are shown as deviations. |
 | `pre_departure` | Trip state from session creation until origin departure. |
 | `publicRouteBuses` | The RTDB node, one child per route, that holds the passenger-safe projection of live records. The worker writes it with an allowlist of fields. |
+| PWA | Progressive web app. The frontend is a static export with a web app manifest and a service worker (`frontend/src/sw.js`, prepared by `scripts/generate-sw.mjs`), so it can be installed on a phone. |
 | Reroute | The backend's request to the Google Routes API for a new path from the bus position after `OFF_ROUTE`. The route state is `REROUTING` while it runs and `ON_NEW_ROUTE` once the new path is published. |
 | Retention sweep | The worker's daily deletion of records older than their retention period. It runs only when `RETENTION_SWEEPER_ENABLED=true`. |
 | Ride session | The Firestore document `ride_sessions/<sessionId>` for one trip of one bus on one route in one direction. Statuses: `pending`, `armed`, `active`, `completed`, `interrupted` and `failed`. |
 | Role | `passenger`, `driver` or `admin`, held in claims. A first sign-in creates a `passenger` profile; other roles come only from the backend. |
+| Route state | The route-matching field `routeState` on a live record: `ON_ROUTE`, `POSSIBLE_OFF_ROUTE`, `OFF_ROUTE`, `REROUTING` or `ON_NEW_ROUTE`. |
 | RTDB | Firebase Realtime Database. Eki keeps live records, the passenger projection and authorization mirrors there. |
 | `serviceSetupPending` | An internal marker on a live record while an automatic service start is incomplete. Later fixes finish the setup and clear it. |
 | `signalState` | Signal state on a live record: `connected`, `gnss_lost`, or `lost` once the worker marks the bus offline. |
 | `skipped_gnss_gap` | Stop evidence for a stop passed during a GNSS gap, credited when the bus is later observed at a following stop. |
+| Staging | The Firebase project `bustrack-be165`, which receives the frontend and rules after every green push to `main`. Production is `eki-production`, deployed only by manual dispatch; see [CI, deployment and releases](operations/CI_CD_AND_RELEASES.md). |
 | Stop evidence | How a passed stop was established, as recorded in ride history: `gnss_progress` (observed arrival), `passed_unobserved`, `skipped_gnss_gap` or `recovered_checkpoint`. |
 | Telemetry | The HTTPS requests a device sends to `POST /api/devices/<deviceId>/telemetry`, each carrying one fix. |
 | Terminal arrival confirmation | The rule that a ride completes only after reliable stopped fixes at the final stop span `TERMINAL_ARRIVAL_CONFIRMATION_MS`. |
 | Trip state | The lifecycle field `tripState` on a live record: `pre_departure`, `in_service` or `completed`. |
 | Turnaround | The start of the return trip after a completed ride. After `AUTOMATIC_TURNAROUND_DWELL_MS`, a fresh stopped fix within 75 m of the terminal arms a session in the opposite direction, marked `automaticTurnaround: true`. |
-| Worker | The background work that runs in the one backend process holding the lease: the trip state engine, the passenger projection, stale-bus sweeping, abandoned-ride cleanup, retention and privacy deletion. |
+| Worker | The background work that runs in the one backend process holding the lease: the trip state engine, the passenger projection, stale-bus sweeping, abandoned-ride cleanup, fleet authorization reconciliation, retention and privacy deletion. |
 | Workspace | One of the two browser areas: `/passenger` for every signed-in user and `/admin` for administrators. |

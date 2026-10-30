@@ -45,7 +45,7 @@ Before the rate-limit and commit stages, and on every RTDB transaction callback 
 | 429 | Device rate limit; `Retry-After` and `retryAfterMs` give the wait. | Wait, then send the newest fix. |
 | 503 | Dependency, admission or deadline failure. Always carries `Retry-After: 1`, `retryAfterMs: 1000` and `commitState`. | Retry after 1 s with the same capture timestamp and sequence, or send a newer valid fix. |
 
-`commitState: not_dispatched` means this request never dispatched a telemetry write. `commitState: unknown` means a write was dispatched, or the outcome cannot be established. A 503 never proves that the write failed, so a device must not move timestamps backwards or report success it did not receive. The firmware treats 429 and every 5xx as retryable.
+`commitState: not_dispatched` means this request never dispatched a telemetry write. `commitState: unknown` means a write was dispatched, or the outcome cannot be established. A 503 never proves that the write failed, so a device must not move timestamps backwards or report success it did not receive. The firmware retries 429 and every 5xx, retries 403 after 60 s, and stops publishing after 401 until it restarts; see [hardware telemetry](../hardware/HARDWARE_TELEMETRY.md).
 
 ## 4. Configuration
 

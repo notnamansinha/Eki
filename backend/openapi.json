@@ -835,7 +835,7 @@
         },
         "x-auth-class": "device",
         "x-body-limit-bytes": 512,
-        "x-rate-limit": "Bypasses global/write limiters. Pre-auth IP budget per 10s: telemetry 15 \u00c3\u2014 HTTPS_INGRESS_DEVICES_PER_IP (default 100), diagnostics/firmware separate pools 2 \u00c3\u2014 configured devices; divided by replica shard factor. Telemetry additionally uses authenticated device budget HTTPS_DEVICE_RATE_PER_MINUTE (default 90) via distributed RTDB token leases. Local mode requires one replica.",
+        "x-rate-limit": "Bypasses global/write limiters. Pre-auth IP budget per 10s: telemetry 15 x HTTPS_INGRESS_DEVICES_PER_IP (default 100), diagnostics/firmware separate pools 2 x configured devices; divided by replica shard factor. Telemetry additionally uses authenticated device budget HTTPS_DEVICE_RATE_PER_MINUTE (default 90) via distributed RTDB token leases. Local mode requires one replica.",
         "x-cache-policy": "Handler emits Cache-Control: no-store. Earlier middleware/parser rejections may occur before that header. Server-only credential cache uses device ID plus secret digest: positive TTL at most 60 seconds, negative 5 seconds, anchored to fill start with monotonic expiry. Single-flight invalidation fences all in-flight digests of the device; failed fills clear for retry. Invalidation listener failure clears authorization.",
         "x-timeout-policy": "Request-body receipt is bounded by 15000 ms and headers by 70000 ms. Valid telemetry service admission starts an 8000 ms monotonic response budget; waiting execution age is 2000 ms, each credential/rate-limit/telemetry dependency stage at most 5000 ms within the remaining response budget. Eight dispatched pipelines and 32 waiting jobs per process, at most one dispatched and one waiting per device. Caller expiry does not free unsettled dependency permits. Credential fills retain their independent 16-fill, 64-caller/digest, 5000 ms bounds.",
         "x-retry-policy": "503 includes Retry-After: 1 and commitState not_dispatched or unknown. An unknown response may have committed; preserve sample timestamp/sequence or send a newer valid fix. Retries cannot dispatch another per-device pipeline until the unsettled predecessor finishes. Expired callbacks abort; compare current timestamps/sequences on every SDK retry. Repeated stale samples are idempotent duplicates.",
@@ -978,7 +978,7 @@
         },
         "x-auth-class": "device",
         "x-body-limit-bytes": 1024,
-        "x-rate-limit": "Bypasses global/write limiters. Pre-auth IP budget per 10s: telemetry 15 \u00c3\u2014 HTTPS_INGRESS_DEVICES_PER_IP (default 100), diagnostics/firmware separate pools 2 \u00c3\u2014 configured devices; divided by replica shard factor. Telemetry additionally uses authenticated device budget HTTPS_DEVICE_RATE_PER_MINUTE (default 90) via distributed RTDB token leases. Local mode requires one replica.",
+        "x-rate-limit": "Bypasses global/write limiters. Pre-auth IP budget per 10s: telemetry 15 x HTTPS_INGRESS_DEVICES_PER_IP (default 100), diagnostics/firmware separate pools 2 x configured devices; divided by replica shard factor. Telemetry additionally uses authenticated device budget HTTPS_DEVICE_RATE_PER_MINUTE (default 90) via distributed RTDB token leases. Local mode requires one replica.",
         "x-cache-policy": "Handler emits Cache-Control: no-store. Earlier middleware/parser rejections may occur before that header. Server-only credential cache uses device ID plus secret digest: positive TTL at most 60 seconds, negative 5 seconds, anchored to fill start with monotonic expiry. Single-flight invalidation fences all in-flight digests of the device; failed fills clear for retry. Invalidation listener failure clears authorization.",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes. Credential cache-miss responses have a 5-second monotonic budget, at most 16 unsettled fills and 64 waiting callers per digest. Timed-out fills keep their slots until actual settlement; retries cannot multiply underlying DB/KDF fills.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
@@ -1264,7 +1264,7 @@
         },
         "x-auth-class": "device",
         "x-body-limit-bytes": 16384,
-        "x-rate-limit": "Bypasses global/write limiters. Pre-auth IP budget per 10s: telemetry 15 \u00c3\u2014 HTTPS_INGRESS_DEVICES_PER_IP (default 100), diagnostics/firmware separate pools 2 \u00c3\u2014 configured devices; divided by replica shard factor. Telemetry additionally uses authenticated device budget HTTPS_DEVICE_RATE_PER_MINUTE (default 90) via distributed RTDB token leases. Local mode requires one replica.",
+        "x-rate-limit": "Bypasses global/write limiters. Pre-auth IP budget per 10s: telemetry 15 x HTTPS_INGRESS_DEVICES_PER_IP (default 100), diagnostics/firmware separate pools 2 x configured devices; divided by replica shard factor. Telemetry additionally uses authenticated device budget HTTPS_DEVICE_RATE_PER_MINUTE (default 90) via distributed RTDB token leases. Local mode requires one replica.",
         "x-cache-policy": "Handler emits Cache-Control: no-store. Earlier middleware/parser rejections may occur before that header. Server-only credential cache uses device ID plus secret digest: positive TTL at most 60 seconds, negative 5 seconds, anchored to fill start with monotonic expiry. Single-flight invalidation fences all in-flight digests of the device; failed fills clear for retry. Invalidation listener failure clears authorization.",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes. Credential cache-miss responses have a 5-second monotonic budget, at most 16 unsettled fills and 64 waiting callers per digest. Timed-out fills keep their slots until actual settlement; retries cannot multiply underlying DB/KDF fills.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
@@ -1278,7 +1278,7 @@
           "Devices"
         ],
         "summary": "Update device assignment without rotating its secret",
-        "description": "Bus and route must exist and match an assignment. Bound-device uniqueness and active-ride/lock checks guard reassignment. enabled defaults to true unless exactly false; unknown body fields are ignored. No secret rotation.",
+        "description": "Bus and route must exist and match an assignment. Bound-device uniqueness and active-ride/lock checks guard reassignment. An omitted enabled keeps the existing state (a new entry is enabled); a non-boolean enabled returns 400; other body fields are ignored. No secret rotation.",
         "security": [
           {
             "FirebaseBearer": []
@@ -1728,7 +1728,7 @@
           "Analytics"
         ],
         "summary": "Read bounded fleet analytics",
-        "description": "Reads up to 1000 bus_locations. Passenger count is unavailable and explicitly null.",
+        "description": "By default counts the first 1000 bus_locations and 1000 completed_trips records (statistics.sampled true); scope=all counts every record with Firestore count aggregation. Passenger count is unavailable and explicitly null.",
         "security": [
           {
             "FirebaseBearer": []
@@ -2667,7 +2667,7 @@
           "Routes"
         ],
         "summary": "Compute bounded directional geometry preview",
-        "description": "Billable server-side Google Routes request using field masks; accepts 2\u00e2\u20ac\u201c100 coordinates, retains order, computes both directions. Do not introduce this call into runtime route-segment reads.",
+        "description": "Billable server-side Google Routes request using field masks; accepts 2 to 100 coordinates, retains order, computes one route in the given order. Do not introduce this call into runtime route-segment reads.",
         "security": [
           {
             "FirebaseBearer": []
@@ -3199,7 +3199,8 @@
         "x-cache-policy": "Cache-Control: no-store",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes. Each Google Routes chunk has a 10000 ms deadline. Up to 100 ordered points are chunked into forward and reverse routing calls; no whole-handler deadline. Browser save/reconciliation budget is 30000 ms; durable save lease is 30000 ms. Admin geometry pool: two raw directional pipelines, eight waiting, two-second queue age; up to four chunks per pipeline. Actual settlement retains raw permits.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
-        "x-idempotency": "Stable saveId binds the normalized route ID, mode, expectedVersion, metadata and ordered stops. Same key/payload replays stored result or failure. Changed payload conflicts. Unknown outcome/202: GET the same save-operation resource, then retry the exact same payload/key if appropriate."
+        "x-idempotency": "Stable saveId binds the normalized route ID, mode, expectedVersion, metadata and ordered stops. Same key/payload replays stored result or failure. Changed payload conflicts. Unknown outcome/202: GET the same save-operation resource, then retry the exact same payload/key if appropriate.",
+        "x-compatibility-alias-of": "PUT /api/v2/routes/{routeId}"
       },
       "delete": {
         "operationId": "deleteRoute",
@@ -3360,7 +3361,7 @@
           "Routes"
         ],
         "summary": "Reconcile a route save outcome",
-        "description": "Returns saved result, 202 with retryAfterMs while processing, or recorded structured failure with its HTTP status. 404 means no matching route/save operation. Current handler does not emit Location or Retry-After for 202.",
+        "description": "Returns the stored save result, 202 with retryAfterMs, Location and Retry-After: 1 while processing, or a recorded structured failure with its original HTTP status. 404 means no matching route/save operation.",
         "security": [
           {
             "FirebaseBearer": []
@@ -3565,7 +3566,8 @@
         "x-cache-policy": "Cache-Control: no-store",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
-        "x-idempotency": "Read-only reconciliation. Keep the original saveId; poll using retryAfterMs, not a fresh save key."
+        "x-idempotency": "Read-only reconciliation. Keep the original saveId; poll using retryAfterMs, not a fresh save key.",
+        "x-compatibility-alias-of": "GET /api/v2/routes/{routeId}/save-operations/{saveId}"
       }
     },
     "/api/plan": {
@@ -3889,7 +3891,7 @@
           "Planning"
         ],
         "summary": "Read bounded route metadata",
-        "description": "At most 250 route records with id/name/color/stops; geometry is omitted. No Google API call. Current handler queries Firestore per request. Optional limit/after returns nextCursor. No-query response shape remains supported. Bus routeId filters indexed route ownership.",
+        "description": "At most 250 route records with id/name/color/stops in document-ID order; geometry is omitted. No Google API call. Pages are cached for 5 s per process. Optional limit/after returns nextCursor. No-query response shape remains supported.",
         "security": [
           {
             "FirebaseBearer": []
@@ -4021,7 +4023,7 @@
           "Planning"
         ],
         "summary": "Read bounded route collection projection",
-        "description": "Same bounded Firestore projection as legacy routes-list: at most 250 records and no geometry. It queries Firestore per request. Optional limit/after returns nextCursor. No-query response shape remains supported. Bus routeId filters indexed route ownership.",
+        "description": "Same handler as legacy routes-list: at most 250 records in document-ID order and no geometry. Pages are cached for 5 s per process. Optional limit/after returns nextCursor. No-query response shape remains supported.",
         "security": [
           {
             "FirebaseBearer": []
@@ -4152,7 +4154,7 @@
           "Places"
         ],
         "summary": "Search bounded place candidates using the server key",
-        "description": "Trims query to 3\u00e2\u20ac\u201c200 characters; server-key Places field mask returns at most five normalized candidates. Empty results are valid. Redacted structured errors include code/phase; upstream 429 maps to 503.",
+        "description": "Trims query to 3 to 200 characters; server-key Places field mask returns at most five normalized candidates. Empty results are valid. Redacted structured errors include code/phase; upstream 429 maps to 503.",
         "security": [
           {
             "FirebaseBearer": []
@@ -4306,7 +4308,7 @@
           "Shifts"
         ],
         "summary": "Start or resume an assigned ride",
-        "description": "Admin must provide driverId; operator driverId is token-derived. Auth claim, driver/bus/route assignment, durable bus lock and fresh stopped hardware fix at exactly one endpoint are checked. Direction is inferred server-side; restored pending historical sessions can have null direction. Automatic completion/turnaround remains server-controlled.",
+        "description": "Admin must provide driverId; operator driverId is token-derived. Auth claim, driver/bus/route assignment, durable bus lock and a hardware fix no older than 60 s are checked. Direction is inferred server-side only from a stopped fix at one route endpoint; otherwise the session starts pending with a null direction. Automatic completion/turnaround remains server-controlled.",
         "security": [
           {
             "FirebaseBearer": []
@@ -4459,7 +4461,8 @@
         "x-cache-policy": "No explicit Cache-Control header from this handler. Authenticated clients must not use shared response caches. This does not imply private server-side caches are absent.",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
-        "x-idempotency": "Session ownership and durable bus lock prevent duplicate active rides. Same assigned driver/session resumes and repairs records; no client-supplied generic idempotency key."
+        "x-idempotency": "Session ownership and durable bus lock prevent duplicate active rides. Same assigned driver/session resumes and repairs records; no client-supplied generic idempotency key.",
+        "x-compatibility-alias-of": "POST /api/v2/ride-sessions"
       }
     },
     "/api/shifts/delay": {
@@ -4602,7 +4605,8 @@
         "x-cache-policy": "No explicit Cache-Control header from this handler. Authenticated clients must not use shared response caches. This does not imply private server-side caches are absent.",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
-        "x-idempotency": "Same delay value converges, but each accepted update creates a new delayUpdatedAt revision; no generic replay key."
+        "x-idempotency": "Same delay value converges, but each accepted update creates a new delayUpdatedAt revision; no generic replay key.",
+        "x-compatibility-alias-of": "PATCH /api/v2/ride-sessions/{sessionId}"
       }
     },
     "/api/shifts/stop": {
@@ -4611,8 +4615,8 @@
         "tags": [
           "Shifts"
         ],
-        "summary": "Reconcile or interrupt an eligible legacy shift",
-        "description": "Assigned operator/admin early interruption of pending, armed or active sessions. Completed is a successful no-op; interrupted retries cleanup; failed conflicts. Never marks a ride completed; normal completion is telemetry-owned.",
+        "summary": "End a ride session early",
+        "description": "Interrupts a pending, armed or active session (interruptionReason manual_end_early). An administrator with current authority (role admin, admin true and a current authorizationVersion) ends the session by its own identity: the session's busId and routeId, and its driverId when one is given, must match the request; the operator's current assignment is not checked. Every other caller, including an admin claim without current authority, must pass the operator assignment check for the named operator. Completed is a successful no-op; interrupted retries cleanup; failed conflicts. Never marks a ride completed; normal completion is telemetry-owned.",
         "security": [
           {
             "FirebaseBearer": []
@@ -4888,7 +4892,8 @@
         "x-cache-policy": "No explicit Cache-Control header from this handler. Authenticated clients must not use shared response caches. This does not imply private server-side caches are absent.",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
-        "x-idempotency": "Repeated deletion returns the number removed this time, which can be zero; no replay key."
+        "x-idempotency": "Repeated deletion returns the number removed this time, which can be zero; no replay key.",
+        "x-compatibility-alias-of": "DELETE /api/v2/ride-sessions/{sessionId}/messages"
       }
     },
     "/api/shifts/{sessionId}/history": {
@@ -5031,7 +5036,8 @@
         "x-cache-policy": "No explicit Cache-Control header from this handler. Authenticated clients must not use shared response caches. This does not imply private server-side caches are absent.",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
-        "x-idempotency": "Convergent removal; counts can change on repeated calls. Active/pending/armed sessions remain protected."
+        "x-idempotency": "Convergent removal; counts can change on repeated calls. Active/pending/armed sessions remain protected.",
+        "x-compatibility-alias-of": "DELETE /api/v2/ride-sessions/{sessionId}"
       }
     },
     "/api/sessions/{sessionId}/boarding-code": {
@@ -5040,8 +5046,8 @@
         "tags": [
           "Sessions"
         ],
-        "summary": "Return a protected session boarding code",
-        "description": "Assigned operator or admin only; session must be active. Creates/returns the same eight-character 40-bit code transactionally in the operator-readable session record. It never appears in passenger RTDB.",
+        "summary": "Return the legacy session boarding code",
+        "description": "Legacy code for older clients and Live Ops. Admin claim, or the operator whose driverId and assignedBusId claims match the session; the session must be armed or active (otherwise 403). Creates on the first call, then returns, the same eight-character 40-bit code stored on the session record. It never appears in passenger RTDB. Passenger boarding does not use the code.",
         "security": [
           {
             "FirebaseBearer": []
@@ -5101,16 +5107,6 @@
           },
           "404": {
             "description": "Resource not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Lifecycle, version, assignment, or idempotency conflict; reconcile before retry.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5184,7 +5180,8 @@
         "x-cache-policy": "Handler emits Cache-Control: no-store. Earlier middleware/parser rejections may occur before that header.",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
-        "x-idempotency": "Creates once or returns existing code for this authorized session."
+        "x-idempotency": "Creates once or returns existing code for this authorized session.",
+        "x-compatibility-alias-of": "POST /api/v2/ride-sessions/{sessionId}/boarding-code"
       }
     },
     "/api/sessions/{sessionId}/status": {
@@ -5194,7 +5191,7 @@
           "Sessions"
         ],
         "summary": "Recover a joined ride lifecycle without exposing passenger manifests.",
-        "description": "Requires exact passenger manifest membership, the assigned operator, or a trusted administrator. Unknown and unauthorized sessions return identical403 responses. No-store; completed is distinct from interrupted/failed.",
+        "description": "Requires exact passenger manifest membership, the assigned operator, or an admin: true claim. Unknown and unauthorized sessions return identical 403 responses. No-store; completed is distinct from interrupted/failed.",
         "security": [
           {
             "FirebaseBearer": []
@@ -5488,7 +5485,8 @@
         "x-cache-policy": "No explicit Cache-Control header from this handler. Authenticated clients must not use shared response caches. This does not imply private server-side caches are absent.",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
-        "x-idempotency": "Upserts only the verified UID manifest entry; never accepts body UID or userName as identity. Retries recheck lifecycle and boarding authorization."
+        "x-idempotency": "Upserts only the verified UID manifest entry; never accepts body UID or userName as identity. Retries recheck lifecycle and boarding authorization.",
+        "x-compatibility-alias-of": "PUT /api/v2/ride-sessions/{sessionId}/passengers/me"
       }
     },
     "/api/sessions/{sessionId}/messages": {
@@ -5661,7 +5659,8 @@
         "x-cache-policy": "No explicit Cache-Control header from this handler. Authenticated clients must not use shared response caches. This does not imply private server-side caches are absent.",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
-        "x-idempotency": "UID/requestId binds normalized text. First success 201; identical retry 200; changed content 409. Exact replay can succeed after chat closes; fresh messages cannot."
+        "x-idempotency": "UID/requestId binds normalized text. First success 201; identical retry 200; changed content 409. Exact replay can succeed after chat closes; fresh messages cannot.",
+        "x-compatibility-alias-of": "POST /api/v2/ride-sessions/{sessionId}/messages"
       }
     },
     "/api/feedback": {
@@ -5671,7 +5670,7 @@
           "Feedback"
         ],
         "summary": "Submit authorized feedback with cooldown and replay protection",
-        "description": "General feedback requires nonempty comment; ride feedback requires completed session membership and matching bus/driver, plus rating 1\u00e2\u20ac\u201c5 or nonempty comment. Comments <=200 words and <=2000 trimmed characters. Identity/name derived from token/profile. General feedback ignores rating/ride identifiers after type checks.",
+        "description": "General feedback requires nonempty comment; ride feedback requires completed session membership and matching bus/driver, plus rating 1 to 5 or nonempty comment. Comments <=200 words and <=2000 trimmed characters. Identity/name derived from token/profile. General feedback ignores rating/ride identifiers after type checks.",
         "security": [
           {
             "FirebaseBearer": []
@@ -7376,7 +7375,7 @@
           "Shifts"
         ],
         "summary": "Start or resume an assigned ride",
-        "description": "Admin must provide driverId; operator driverId is token-derived. Auth claim, driver/bus/route assignment, durable bus lock and fresh stopped hardware fix at exactly one endpoint are checked. Direction is inferred server-side; restored pending historical sessions can have null direction. Automatic completion/turnaround remains server-controlled.",
+        "description": "Admin must provide driverId; operator driverId is token-derived. Auth claim, driver/bus/route assignment, durable bus lock and a hardware fix no older than 60 s are checked. Direction is inferred server-side only from a stopped fix at one route endpoint; otherwise the session starts pending with a null direction. Automatic completion/turnaround remains server-controlled.",
         "security": [
           {
             "FirebaseBearer": []
@@ -7889,7 +7888,7 @@
         "tags": [
           "Shifts"
         ],
-        "summary": "Update delay for the assigned active ride",
+        "summary": "Read a ride session snapshot",
         "description": "Minimal session snapshot for assigned operator, admin or manifest member. Never includes boarding code, passenger manifest or messages.",
         "security": [
           {
@@ -8377,8 +8376,8 @@
         "tags": [
           "Sessions"
         ],
-        "summary": "Return a protected session boarding code",
-        "description": "Assigned operator or admin only; session must be active. Creates/returns the same eight-character 40-bit code transactionally in the operator-readable session record. It never appears in passenger RTDB.",
+        "summary": "Return the legacy session boarding code",
+        "description": "Legacy code for older clients and Live Ops. Admin claim, or the operator whose driverId and assignedBusId claims match the session; the session must be armed or active (otherwise 403). Creates on the first call, then returns, the same eight-character 40-bit code stored on the session record. It never appears in passenger RTDB. Passenger boarding does not use the code.",
         "security": [
           {
             "FirebaseBearer": []
@@ -8438,16 +8437,6 @@
           },
           "404": {
             "description": "Resource not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Lifecycle, version, assignment, or idempotency conflict; reconcile before retry.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8910,8 +8899,7 @@
         "x-cache-policy": "Cache-Control: no-store",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes. Each Google Routes chunk has a 10000 ms deadline. Up to 100 ordered points are chunked into forward and reverse routing calls; no whole-handler deadline. Browser save/reconciliation budget is 30000 ms; durable save lease is 30000 ms. Admin geometry pool: two raw directional pipelines, eight waiting, two-second queue age; up to four chunks per pipeline. Actual settlement retains raw permits.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
-        "x-idempotency": "Stable saveId binds the normalized route ID, mode, expectedVersion, metadata and ordered stops. Same key/payload replays stored result or failure. Changed payload conflicts. Unknown outcome/202: GET the same save-operation resource, then retry the exact same payload/key if appropriate.",
-        "x-compatibility-alias-of": "PUT /api/routes/{routeId}"
+        "x-idempotency": "Stable saveId binds the normalized route ID, mode, expectedVersion, metadata and ordered stops. Same key/payload replays stored result or failure. Changed payload conflicts. Unknown outcome/202: GET the same save-operation resource, then retry the exact same payload/key if appropriate."
       }
     },
     "/api/v2/routes/{routeId}/save-operations/{saveId}": {
@@ -8921,7 +8909,7 @@
           "Routes"
         ],
         "summary": "Reconcile a route save outcome",
-        "description": "Returns saved result, 202 with retryAfterMs while processing, or recorded structured failure with its HTTP status. 404 means no matching route/save operation. Current handler does not emit Location or Retry-After for 202.",
+        "description": "Always 200 with a snapshot: operationId, routeId and status, plus result when succeeded, a fixed error when failed, or retryAfterMs (with Retry-After: 1, and outcomeUnknown once the lease expired) while processing. 404 means no matching route/save operation.",
         "security": [
           {
             "FirebaseBearer": []
@@ -9073,7 +9061,7 @@
           "Routes"
         ],
         "summary": "Compute bounded directional geometry preview",
-        "description": "Billable server-side Google Routes request using field masks; accepts 2\u00e2\u20ac\u201c100 coordinates, retains order, computes both directions. Do not introduce this call into runtime route-segment reads.",
+        "description": "Billable server-side Google Routes request using field masks; accepts 2 to 100 coordinates, retains order, computes one route in the given order. Do not introduce this call into runtime route-segment reads.",
         "security": [
           {
             "FirebaseBearer": []
@@ -10830,7 +10818,7 @@
         },
         "x-auth-class": "device",
         "x-body-limit-bytes": 16384,
-        "x-rate-limit": "Bypasses global/write limiters. Pre-auth IP budget per 10s: telemetry 15 \u00c3\u2014 HTTPS_INGRESS_DEVICES_PER_IP (default 100), diagnostics/firmware separate pools 2 \u00c3\u2014 configured devices; divided by replica shard factor. Telemetry additionally uses authenticated device budget HTTPS_DEVICE_RATE_PER_MINUTE (default 90) via distributed RTDB token leases. Local mode requires one replica.",
+        "x-rate-limit": "Bypasses global/write limiters. Pre-auth IP budget per 10s: telemetry 15 x HTTPS_INGRESS_DEVICES_PER_IP (default 100), diagnostics/firmware separate pools 2 x configured devices; divided by replica shard factor. Telemetry additionally uses authenticated device budget HTTPS_DEVICE_RATE_PER_MINUTE (default 90) via distributed RTDB token leases. Local mode requires one replica.",
         "x-cache-policy": "Handler emits Cache-Control: no-store. Earlier middleware/parser rejections may occur before that header. Server-only credential cache uses device ID plus secret digest: positive TTL at most 60 seconds, negative 5 seconds, anchored to fill start with monotonic expiry. Single-flight invalidation fences all in-flight digests of the device; failed fills clear for retry. Invalidation listener failure clears authorization.",
         "x-timeout-policy": "HTTP request-body receipt timeout 15000 ms (not a handler execution deadline); header timeout 70000 ms. No general handler deadline; clients use bounded timeouts and reconcile uncertain writes. Credential cache-miss responses have a 5-second monotonic budget, at most 16 unsettled fills and 64 waiting callers per digest. Timed-out fills keep their slots until actual settlement; retries cannot multiply underlying DB/KDF fills.",
         "x-retry-policy": "Do not blindly retry 400/401/403/409/422. On 429 obey Retry-After when present. Retry transient failures with bounded exponential backoff and jitter only when the operation idempotency policy permits.",
@@ -11406,8 +11394,59 @@
                   },
                   "ingestion": {
                     "$ref": "#/components/schemas/ExecutionQueueStatus"
+                  },
+                  "staleSweep": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "additionalProperties": true,
+                    "description": "Stale-bus sweeper counters on the worker leader; null before the sweeper starts in this process."
+                  },
+                  "filteredLifecycleEvents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Live-record events skipped because their lifecycle fields were unchanged."
+                  },
+                  "publicProjection": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "description": "Public live-bus projection scheduler counters (scheduled, processed, coalesced, failed, rejected)."
                   }
                 }
+              },
+              "routeMatching": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Process-local route-matching work counters."
+              },
+              "apiReads": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object"
+                },
+                "description": "State of each cached API read (live buses, bus lookup, route catalog, fleet analytics)."
+              },
+              "apiCompatibility": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "requests": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "successful": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "lastSeenAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "description": "Requests per original and resource-style path, keyed operation:generation (legacy or v2). Process-local."
               }
             },
             "required": [
@@ -11711,11 +11750,22 @@
           "delayMinutes": {
             "type": "number"
           },
-          "routeName": {
-            "type": "string"
+          "atStopIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 499,
+            "description": "Stop the bus is at, in the same index space as currentStopIndex. Present only when the current session recorded the arrival."
           },
-          "busName": {
-            "type": "string"
+          "unobservedStopIndices": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 499
+            },
+            "uniqueItems": true,
+            "maxItems": 500,
+            "description": "Ascending indices of stops the current session passed without an observed arrival. Omitted when empty."
           }
         },
         "required": [],
@@ -12117,7 +12167,7 @@
               "number",
               "null"
             ],
-            "description": "Ride feedback: integer 1\u00e2\u20ac\u201c5 or null; general feedback: numeric type is checked but value is ignored."
+            "description": "Ride feedback: integer 1 to 5 or null; general feedback: numeric type is checked but value is ignored."
           },
           "sessionId": {
             "type": "string",
@@ -12524,7 +12574,7 @@
             "type": "string",
             "maxLength": 2000,
             "minLength": 1,
-            "description": "Raw input <=2000 UTF-16 code units. After Unicode normalization it must contain 1\u00e2\u20ac\u201c500 Unicode code points; unsafe formatting is removed and profanity censored."
+            "description": "Raw input <=2000 UTF-16 code units. After Unicode normalization it must contain 1 to 500 Unicode code points; unsafe formatting is removed and profanity censored."
           },
           "requestId": {
             "type": "string",

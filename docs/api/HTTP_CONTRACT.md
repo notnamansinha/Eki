@@ -27,7 +27,7 @@ Each operation in `openapi.json` declares `security` explicitly (`FirebaseBearer
 | `x-timeout-policy` | Receipt, upstream and client deadlines |
 | `x-retry-policy` | Which failures are retryable and how |
 | `x-idempotency` | Replay key or convergent behaviour |
-| `x-compatibility-alias-of` | Optional. The other path of a legacy and resource-style pair |
+| `x-compatibility-alias-of` | Optional. On an original path, the resource-style path of the same pair |
 
 A `FirebaseBearer` requirement means only that a valid ID token is needed; role and assignment rules are in `x-auth-class` and the operation description.
 

@@ -20,7 +20,7 @@ The document covers the `useRTDBResume` hook, live-fleet listener retries in the
 |---|---|
 | Tab hidden for less than 30 s, connection healthy | Nothing. The fleet cache and subscriptions are kept. |
 | Tab hidden for 30 s or more (measured with `performance.now()`) | A manual reconnect is scheduled when the tab becomes visible. |
-| `.info/connected` changes from `true` to `false`, or the browser fires `offline` | Data readiness closes and the live bus cache is invalidated once. A reconnect is scheduled. |
+| `.info/connected` changes from `true` to `false`, or the browser fires `offline` | Data readiness closes and the live bus cache is invalidated once. A reconnect is scheduled; after `offline`, it is scheduled when the browser fires `online`. |
 | First `.info/connected` value is `false` | Treated as initial connection, not a failure. Nothing is forced, and other subscribers keep their cache. |
 | Browser fires `online` while the connection is healthy | Nothing. |
 
@@ -28,7 +28,7 @@ A reconnect is only scheduled while the page is visible and the browser reports 
 
 ### 3.2 Manual handshake
 
-A scheduled reconnect waits 1,000 to 1,500 ms (500 ms plus a 500 to 1,000 ms jittered delay); each new event restarts that wait. If the SDK reconnects on its own first, the queued handshake is cancelled. The handshake clears the live bus cache, increments the resume generation and calls `goOffline` then `goOnline` once. A 5 s cooldown follows: events inside the cooldown leave recovery to the SDK and do not queue another handshake for later. SDK connection callbacks still advance readiness during the cooldown.
+A scheduled reconnect waits 1,000 to 1,500 ms (500 ms plus a 500 to 1,000 ms jittered delay); each new event restarts that wait. If the SDK reconnects on its own first, a handshake queued after a disconnection is cancelled; one queued after a 30 s suspension still runs. The handshake clears the live bus cache, increments the resume generation and calls `goOffline` then `goOnline` once. A 5 s cooldown follows: events inside the cooldown leave recovery to the SDK and do not queue another handshake for later. SDK connection callbacks still advance readiness during the cooldown.
 
 The recovering state clears only when the connection is confirmed and an authoritative fleet snapshot has arrived. On unmount the hook detaches its observer, cancels its timers and ignores late callbacks.
 

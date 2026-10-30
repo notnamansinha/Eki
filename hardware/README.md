@@ -222,8 +222,8 @@ GPIO2 repeats its pattern every 2 s. Each pulse is 150 ms on and 150 ms off.
 | Pattern | Meaning | Serial evidence |
 |---|---|---|
 | Off | No latched fault. Normal operation, including Wi-Fi or GNSS outages. | None |
-| 2 pulses | Boot halted: an invalid `secrets.h` definition, an over-long request string, or a FreeRTOS task, queue or mutex that failed to start | `[Boot] Invalid compile-time configuration field <NAME>; halted.` or another `[Boot] ...` line |
-| 3 pulses | Credential fault latched after HTTP 401 from telemetry, diagnostics or the firmware release check. Publishing stops and the Wi-Fi radio is off until the board restarts. | `[HTTPS] Credential fault latched; ...` |
+| 2 pulses | Boot halted: an invalid `secrets.h` definition, an over-long request string, or a FreeRTOS task, queue or mutex that failed to start | `[Boot] Invalid compile-time configuration field <NAME>; halted.` or another `[Boot] ...` line; a mutex failure prints no line |
+| 3 pulses | Credential fault latched after HTTP 401 from telemetry, diagnostics or the firmware release check. Publishing stops and the Wi-Fi radio is off until the board restarts. | `[HTTPS] Credential fault latched; ...`, `[Diagnostics] Credential fault latched; ...` or `[OTA] Credential fault latched during release check.` |
 | 4 pulses | Fleet build halted: `BACKEND_URL` is not `https://`, or flash encryption or Secure Boot is not active | `[Security] Fleet firmware ...` |
 
 ## 9. Firmware updates

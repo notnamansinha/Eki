@@ -20,7 +20,7 @@ A 202 acknowledgement follows a committed, ordered transaction on `activeBuses/{
 ## 2. Prerequisites
 
 - Two equivalent staging revisions (baseline and candidate) with the expected production replica count, the same Firebase region, runtime size, minimum instances and load-balancer route. `RATE_LIMIT_SHARD_FACTOR` equals the replica count on every replica, and replicated deployments use `distributed` mode.
-- The load generator sends from one IP address. Set `HTTPS_INGRESS_DEVICES_PER_IP` on staging to at least the number of load devices; otherwise the per-IP ingress limiter (15 requests per device per 10 s, divided by the shard factor) answers with 429 and the run measures that limiter instead.
+- The load generator sends from one IP address. Set `HTTPS_INGRESS_DEVICES_PER_IP` (default 100) on staging to at least the number of load devices; otherwise the per-IP ingress limiter (15 requests per device per 10 s, divided by the shard factor) answers with 429 and the run measures that limiter instead.
 - A private JSON file outside the repository listing 1 to 500 staging devices, each already provisioned with a registry assignment and secret:
 
   ```json
@@ -45,7 +45,7 @@ A 202 acknowledgement follows a committed, ordered transaction on `activeBuses/{
    ```
 
    Expected result: the variable is set in the current PowerShell session only.
-2. Run one warm-up run against the candidate, then at least three measured runs, using the expected fleet size and cadence. `--confirm-staging` is required:
+2. From the repository root, run one warm-up run against the candidate, then at least three measured runs, using the expected fleet size and cadence. `--confirm-staging` is required:
 
    ```powershell
    npm run telemetry:load -- `
@@ -69,7 +69,7 @@ A 202 acknowledgement follows a committed, ordered transaction on `activeBuses/{
 
 ## 4. Analysis
 
-Each report contains status counts, acknowledgement latency (samples, average, p50, p95, p99 and maximum) overall and per status, the before and after health snapshots, and the deltas of the rate-limit counters `localDecisions`, `leaseHits`, `storeTransactions` and `storeTransactionRetries`. It contains no device secrets or coordinates. Read live record write latency from `telemetry.rtdbWriteLatencyMs` in the health snapshots.
+Each report contains status counts, acknowledgement latency (samples, average, p50, p95, p99 and maximum) overall and per status, the before and after health snapshots, and the deltas of the rate-limit counters `localDecisions`, `leaseHits`, `storeTransactions` and `storeTransactionRetries`. It contains no device secrets or coordinates. A request that fails or takes longer than 15 s is counted under the status `transport-error`. Without `EKI_BENCHMARK_ADMIN_TOKEN` the report has no health snapshots and the counter deltas are `null`. Read live record write latency from `telemetry.rtdbWriteLatencyMs` in the health snapshots.
 
 Record the results in this table:
 

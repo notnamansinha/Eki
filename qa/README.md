@@ -70,7 +70,7 @@ Unmapped does not mean untested. Many requirements have regression tests that no
 
 ### 3.3 Priorities
 
-The catalog assigns P0 to the AUTH, BOARD, GNSS, TRIP, DATA and SEC categories and P1 to the rest, and proposes the levels each kind of requirement needs (feature: L1 to L3; matrix: L0 to L3; experiment: L4). Both are marked `PROPOSED_REVIEW_REQUIRED`; they are not approved waivers.
+The catalog assigns P0 to the AUTH, BOARD, GNSS, TRIP, DATA and SEC categories and P1 to the rest, and proposes the levels each kind of requirement needs (feature: L1 to L3; matrix: L0 to L3; experiment: L4). The proposed levels are marked `PROPOSED_REVIEW_REQUIRED` and the priorities are labelled conservative triage; neither is an approved waiver.
 
 ## 4. Running the static checks
 

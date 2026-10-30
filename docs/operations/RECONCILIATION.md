@@ -36,7 +36,7 @@ The abandoned-session reconciler runs at most one scan and queues at most one mo
 
 ### 3.3 Cross-store safety
 
-Session cleanup rechecks lifecycle activity, session ownership and locks; a session with recent or unknown activity is protected. A session whose bus or route ID cannot address a Firestore document or RTDB node (empty, or containing `/`, `.` or `#`) is skipped and listed in the page summary's `skippedIds`, so it cannot fail the page and pin the cursor.
+Session cleanup rechecks lifecycle activity, session ownership and locks; a session with recent or unknown activity is protected. An armed automatic return that has not departed is kept for at least 24 h of inactivity, so it survives overnight (`backend/src/services/abandonedRideReconciliationLogic.ts:2`). A session whose bus or route ID is not 1 to 128 characters of `A-Z`, `a-z`, `0-9`, `_` or `-` is skipped and listed in the page summary's `skippedIds`, so it cannot fail the page and pin the cursor.
 
 An RTDB transaction can first see an empty local cache. It then returns a no-op so the SDK retries against the server value, and the session and activity checks apply to the real record. Live record cleanup during bus deletion compares the whole captured value and bus identity before removal, so a newer lifecycle survives.
 
@@ -54,9 +54,9 @@ Bus mutations record batch and cursor progress in `_fleet_operations`, and the l
 | Abandoned scan and page executors | 1 active and 1 waiting scan; 1 active and 3 waiting pages; 5 s queue age | `backend/src/services/abandonedRideReconciler.ts:15`, `backend/src/services/abandonedRideReconciler.ts:16` |
 | Abandoned scan interval | 1 h | `backend/src/services/abandonedRideReconciler.ts:18` |
 | Abandoned session concurrency | 4 | `backend/src/services/abandonedRideReconciler.ts:103` |
-| `ABANDONED_RIDE_THRESHOLD_HOURS` | Default 12 h, minimum 1 h | `backend/src/services/abandonedRideReconciliationLogic.ts:1`, `backend/src/services/abandonedRideReconciler.ts:77` |
+| `ABANDONED_RIDE_THRESHOLD_HOURS` | Default 12 h; a value below 1 h or not a number uses the default | `backend/src/services/abandonedRideReconciliationLogic.ts:1`, `backend/src/services/abandonedRideReconciler.ts:77` |
 | Fleet Auth batch size | 10 drivers | `backend/src/routes/fleet.ts:188` |
-| Fleet page budget | 30 s | `backend/src/routes/fleet.ts:176`, `backend/src/services/workerCoordinator.ts:147` |
+| Fleet page budget | 30 s | `backend/src/routes/fleet.ts:177`, `backend/src/services/workerCoordinator.ts:147` |
 | Periodic fleet interval | 10 min | `backend/src/services/workerCoordinator.ts:171` |
 | Fleet mutation admission | 2 active, 8 waiting, 2 s queue age | `backend/src/routes/fleet.ts:222` |
 | Live record cleanup page and concurrency | 100 keys, 4 transactions | `backend/src/routes/fleet.ts:384`, `backend/src/routes/fleet.ts:388` |
@@ -67,7 +67,7 @@ Bus mutations record batch and cursor progress in `_fleet_operations`, and the l
 
 1. Submit `POST /api/v2/fleet-reconciliation-jobs` with a new `Idempotency-Key` header (16 to 128 characters of `A-Z`, `a-z`, `0-9`, `_` or `-`) and the body `{}` for the first page.
    Expected result: 202 with `Retry-After: 1` while processing, or 200 with the result. After a transient or unknown response, poll `GET /api/v2/fleet-reconciliation-jobs/{key}` with the same key.
-2. Read the result's `records` and `nextCursor`. A settled record failure does not hide later pages. `timeBudgetExceeded: true` means later records in the page were not dispatched; `nextCursor` then points after the last settled batch, or is `""` if no batch ran.
+2. Read the result's `records` and `nextCursor`. A settled record failure does not hide later pages. `timeBudgetExceeded: true` means later records in the page were not dispatched; `nextCursor` then points after the last settled batch, or repeats the submitted cursor (`""` for the first page) if no batch ran.
    Expected result: failed records are listed with a code for investigation.
 3. While `nextCursor` is not `null`, submit a new key with `{"cursor": "<nextCursor>"}`. An empty cursor means the first page. Each key identifies one page: reusing a key with a different cursor returns 409 `IDEMPOTENCY_KEY_REUSED`.
    Expected result: the last page returns `nextCursor: null`.

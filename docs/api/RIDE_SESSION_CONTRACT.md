@@ -105,6 +105,6 @@ A retry of End ride early for a session that a newer session has replaced change
 3. The same key with a different bus, route or operator returns 409. If the bound session was deleted, the key returns 410.
 4. Bindings are not deleted with ride history and no retention job removes them.
 
-Automatic start uses the same operation with a fixed key scoped to the device, its assignment revision and the bus's automatic-service epoch, so retries and several backend replicas create one session.
+Automatic start runs the same start logic (`startAssignedService`) without HTTP, with a fixed key scoped to the device, its assignment revision and the bus's automatic-service epoch, so retries and several backend replicas create one session.
 
 `POST /api/shifts/start` takes no key. A repeated request resumes the operator's live session or, when the bus is free again, starts a new one.

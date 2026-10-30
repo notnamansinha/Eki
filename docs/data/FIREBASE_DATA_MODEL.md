@@ -61,14 +61,14 @@ Figure 1. Main entities. `LIVE_NODE` is the RTDB path `activeBuses/{busId}_{rout
 | RTDB | `_deviceRateLimits/{deviceId}`, `_deviceCredentialVersions/{deviceId}` | Backend | None |
 | RTDB | `_health`, legacy `users`, legacy `messages` | None | None |
 | Firestore | `users`, `routes`, `buses`, `drivers`, `settings` | Backend | Read (Section 4) |
-| Firestore | `ride_sessions` and subcollections | Backend | Read by operator or member (Section 4.6) |
+| Firestore | `ride_sessions` and subcollections | Backend | Session read by a current admin or the assigned driver; `messages` also read by members (Section 4.6) |
 | Firestore | `bus_locations`, `completed_trips` | Leader | Read by a current admin |
 | Firestore | `feedbacks`, `feedbackCooldowns` | Browser | Create and read under rules (Section 4.9) |
 | Firestore | Every collection in Section 5 | Backend | None |
 
 ## 3. Realtime Database
 
-The rules deny every path not granted in `database.rules.json` (`database.rules.json:3`).
+The rules deny every path not granted in `database.rules.json` (`database.rules.json:3`) [1].
 
 ### 3.1 `activeBuses/{busId}_{routeId}`
 
@@ -117,14 +117,14 @@ The authoritative live node for one device assignment. Telemetry ingestion creat
 | `directionResolutionSource` | `endpoint_fix`, `departure_trajectory` | How a pending direction was resolved |
 | `directionResolvedAt` | RTDB server time | Resolution time |
 | `directionFirestoreSynced` | boolean | `false` while a telemetry-resolved direction still has to be written to the session |
-| `pendingDeparture` | object or null | `{context, samples[]}` departure evidence, at most 7 samples |
+| `pendingDeparture` | object or null | `{context, samples[]}` departure evidence, at most 8 samples |
 | `originStopId`, `destinationStopId` | string | Endpoints in travel order |
 | `currentStopIndex` | integer | Next expected stop; the terminal once completed |
 | `hasDepartedOrigin` | boolean | Origin left |
 | `terminalArrival` | object or null | `{startedAt, lastSampledAt}` terminal arrival evidence |
 | `gnssGap` | object or null | `{sessionId, since}` open GNSS gap |
-| `atStop` | object or null | `{sessionId, index}` stop the bus is at now. Added by PR #395; backend only, published as `atStopIndex` |
-| `unobservedStops` | object or null | `{sessionId, indices}` stops credited `skipped_gnss_gap` or `passed_unobserved`. Added by PR #395; published as `unobservedStopIndices` |
+| `atStop` | object or null | `{sessionId, index}` stop the bus is at now; published as `atStopIndex` |
+| `unobservedStops` | object or null | `{sessionId, indices}` stops credited `skipped_gnss_gap` or `passed_unobserved`; published as `unobservedStopIndices` |
 | `delayMinutes`, `delayUpdatedAt` | integer, epoch ms | Driver delay of 0 to 1440 min and its monotonic revision |
 | `completedAt`, `terminalArrivalConfirmedAt` | epoch ms | Completion time |
 | `lastCompletedSessionId`, `lastCompletedAt`, `lastCompletedRouteId` | string, epoch ms, string | Last natural completion, kept through an automatic turnaround |
@@ -147,7 +147,7 @@ The authoritative live node for one device assignment. Telemetry ingestion creat
 | `routeDirection`, `routeSessionId`, `routeGeometryVersion` | string, string, integer | Context the match belongs to; `routeSessionId` is `device-only` without a ride |
 | `routeState` | `ON_ROUTE`, `POSSIBLE_OFF_ROUTE`, `OFF_ROUTE`, `REROUTING`, `ON_NEW_ROUTE` | Route adherence |
 | `offRouteSampleCount` | integer | Deviation count, 0 to 2 |
-| `matchedLocation` | object or null | `{lat, lng, segmentIndex, segmentFraction, alongRouteDistanceM, distanceToRouteM, headingDifference, matchConfidence, seq, sampledAt, routeVersion, speed}`. `speed` (km/h) was added by PR #395 and is not public |
+| `matchedLocation` | object or null | `{lat, lng, segmentIndex, segmentFraction, alongRouteDistanceM, distanceToRouteM, headingDifference, matchConfidence, seq, sampledAt, routeVersion, speed}`. `speed` (km/h) is not public |
 | `routeMatchAnchor` | object or null | Same shape: the last confident match of a reliable fix, used as the progress anchor |
 | `routeMatchHistory` | array | Up to 4 `{lat, lng, seq, sampledAt}` for the trajectory heading |
 | `matchConfidence`, `distanceToActiveRoute` | number | Latest confidence (0 to 1) and distance to the path in metres |
@@ -199,8 +199,8 @@ The public view (`liveBusProjection.ts:37`) contains only `busId`, `routeId`, `d
 | `matchedLocation` | Subset without `speed` |
 | `lastCompletedSessionId`, `lastCompletedAt`, `lastCompletedRouteId` | All three valid |
 | `automaticTurnaround`, `previousSessionId` | Automatic return ride |
-| `atStopIndex` | `atStop.sessionId` equals `sessionId` (PR #395) |
-| `unobservedStopIndices` | `unobservedStops.sessionId` equals `sessionId`; sorted, at most 500 (PR #395) |
+| `atStopIndex` | `atStop.sessionId` equals `sessionId` |
+| `unobservedStopIndices` | `unobservedStops.sessionId` equals `sessionId`; sorted, indices below 500 |
 
 A node with `retiredAssignmentRevision`, or with an invalid `busId` or `routeId`, is not published.
 
@@ -298,7 +298,7 @@ The durable record of one ride.
 | `activatedAt`, `updatedAt` | Timestamp | Activation and last update |
 | `passengers.{uid}` | `{userId, userName, boardingStopId, alightingStopId, joinedAt}` | Passenger manifest entry; at most 1,000 entries |
 | `passengerIds` | string array | UIDs in the manifest |
-| `stopsReached.{index}` | `{stopIndex, stopId, stopName, timestamp, evidence?}` | Progress evidence. `evidence` is `gnss_progress`, `recovered_checkpoint`, `skipped_gnss_gap` or `passed_unobserved`; PR #395 added the last (`backend/src/services/rideProgressHistory.ts:47`) |
+| `stopsReached.{index}` | `{stopIndex, stopId, stopName, timestamp, evidence?}` | Progress evidence. `evidence` is `gnss_progress`, `recovered_checkpoint`, `skipped_gnss_gap` or `passed_unobserved` (`backend/src/services/rideProgressHistory.ts:47`) |
 | `firstKnownLocation`, `lastKnownLocation` | `{lat, lng, sampledAt, seq, receivedAt}` | First and last raw fixes of the ride |
 | `firstTelemetryAt`, `lastSignalLostAt` | epoch ms | First fix time and last signal loss |
 | `connectionEvents.lost_{sampledAt}_{seq}` | `{type: signal_lost, observedAt, location}` | Signal loss events |
@@ -307,7 +307,7 @@ The durable record of one ride.
 | `failureReason` | string | `shift_conflict` |
 | `automaticTurnaround`, `previousSessionId`, `directionFirestoreSynced` | boolean, string, boolean | Automatic return ride |
 | `boardingCode`, `boardingCodeIssuedAt` | 8-character string, Timestamp | Issued by `POST /api/sessions/{sessionId}/boarding-code`. Boarding does not check it (`backend/src/routes/sessions.ts:168`) |
-| `path` | legacy | Older per-fix history; tolerated and deleted, never written |
+| `path` | legacy | Declared in the admin history type only; no code writes or reads it |
 
 | Item | Value |
 |---|---|
@@ -385,7 +385,7 @@ Clients cannot read or write any of these collections, by explicit rule or throu
 
 ## 6. Indexes
 
-`firestore.indexes.json` defines one composite index and two collection-group field overrides. Single-field indexes are automatic.
+`firestore.indexes.json` defines one composite index and two collection-group field overrides. Single-field indexes are automatic [2].
 
 | Collection | Scope | Fields | Used by |
 |---|---|---|---|
@@ -400,22 +400,7 @@ The other queries (`feedbacks` by `timestamp`, `completed_trips` by `completedAt
 
 ## 7. Retention and deletion
 
-The leader runs the retention sweep at startup and every 24 h when `RETENTION_SWEEPER_ENABLED=true`; a production backend refuses to start without it (`retentionSweeper.ts:75`, `retentionSweeper.ts:176`). A record is deleted when it is strictly older than the cutoff. Day values are capped at 36,500 (`retentionSweeper.ts:14`).
-
-| Data | Rule | Variable and default | Source |
-|---|---|---|---|
-| Terminal `ride_sessions` and their subcollections | `endTime` older than the cutoff | `RIDE_SESSION_RETENTION_DAYS`, 180 | `retentionSweeper.ts:98` |
-| `feedbacks` | `timestamp` older than the cutoff | `FEEDBACK_RETENTION_DAYS`, 180 | `retentionSweeper.ts:99` |
-| `completed_trips` | `completedAt` older than the cutoff | `COMPLETED_TRIP_RETENTION_DAYS`, 180 | `retentionSweeper.ts:100` |
-| Operation and audit collections | As listed in Section 5 | `OPERATION_LOG_RETENTION_DAYS`, 90 | `retentionSweeper.ts:101` |
-| RTDB reroute geometry and legacy trees | As listed in Section 3 | Fixed 180 days | `rtdbRetention.ts:3` |
-| `activeBuses` nodes | Silence longer than `BUS_STALE_MS` | 300 s, minimum 90 s | `tripStateEngine.ts:110` |
-
-| Event | Effect |
-|---|---|
-| Admin deletes a terminal ride history | Deletes the session with all subcollections and every `completed_trips` document with that `sessionId`; an ongoing ride returns `409` (`backend/src/services/rideHistoryDeletion.ts`) |
-| Passenger account deletion | Deletes `users/{uid}`, `feedbackCooldowns/{uid}`, `passenger_requests/{uid}`, the user's `messageRateLimits` and the Auth account. Feedback, manifest entries and messages are kept and follow their own retention |
-| Route or bus deletion | Refused while an active ride or lock references it; checked in the same transaction as the mutation |
+Retention periods, their settings and the deletions that people request are defined in [storage architecture](STORAGE_ARCHITECTURE.md#6-retention-and-deletion); each collection above states its own rule. The sweep is implemented in `backend/src/services/retentionSweeper.ts` (enablement at line 75, schedule at line 176, defaults at lines 98 to 101) and `rtdbRetention.ts:3`. A record is deleted when it is strictly older than the cutoff, and day values are capped at 36,500 (`retentionSweeper.ts:14`). Admin history deletion of an ongoing ride returns `409` (`backend/src/services/rideHistoryDeletion.ts`). Route and bus deletion is refused while an active ride or lock references it, checked in the same transaction as the mutation.
 
 ## 8. References
 

@@ -12,7 +12,7 @@ Readiness gates that sit outside the repository (infrastructure owners, privacy 
 
 ## 2. Branch and release flow
 
-Pull requests target `main`. Since PR #358 (2026-10-21) pull requests have merged into `main`, not `testing`. The `testing` branch last advanced on 2026-10-21 (PR #355, commit `6b2d8e4`) and is an ancestor of `main`; on 2026-10-30 it is 137 commits behind `origin/main`. Merging into `testing` deploys nothing, but the scheduled QA workflows still test it (Section 6).
+Pull requests target `main`. The `testing` branch no longer exists on GitHub (deleted on 2026-10-25), but the scheduled QA workflows still resolve it and fail before any suite runs (Section 6).
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,7 @@ flowchart LR
     DS --> P1[Firebase project bustrack-be165<br/>Hosting, rules, indexes]
     Manual[Manual dispatch from main,<br/>environment production] --> DP[Deploy: production job]
     DP --> P2[Firebase project eki-production<br/>Hosting, rules, indexes]
-    Sched[Nightly and weekly schedules] --> T[Tests the testing branch head]
+    Sched[Nightly and weekly schedules] --> T[Resolve the deleted testing branch:<br/>fail before any suite]
 ```
 
 Figure 1. Branch, verification and deployment flow.
@@ -68,7 +68,7 @@ The `analyze` job runs CodeQL with the `security-extended` query suite for `java
 | `deploy-staging` | Production verification completed with `success` for a `push` to `main` in this repository; or manual dispatch from `main` with `environment: staging` | `staging` | `bustrack-be165` | The verified commit (`workflow_run.head_sha`); on dispatch, the head of `main` |
 | `deploy-production` | Manual dispatch from `main` with `environment: production` | `production` | `eki-production` | The head of `main` at dispatch |
 
-Runs for pull requests, forks and other branches are skipped. Runs for the same environment are queued, not cancelled (`concurrency: deploy-<environment>`). The Firebase CLI is pinned to `firebase-tools@15.14.0`.
+Runs for pull requests, forks and other branches are skipped. A run waits while another run for the same environment is in progress, and GitHub keeps only the newest waiting run (`concurrency: deploy-<environment>`, `cancel-in-progress: false`). The Firebase CLI is pinned to `firebase-tools@15.14.0`.
 
 ### 5.2 Steps
 
@@ -76,7 +76,7 @@ Both jobs run the same steps against their own project. A failed step stops the 
 
 1. `npm ci`.
 2. `npm run verify:rtdb-instance`: the backend and frontend database URLs must name the same RTDB instance, and its region must equal `RTDB_EXPECTED_REGION` when that variable is set.
-3. `npm run build:production`: strict build that fails on a missing or local `NEXT_PUBLIC_*` value and regenerates the service worker and the CSP in `firebase.json` with the backend origin.
+3. `npm run build:production`: strict build that fails when one of the ten `NEXT_PUBLIC_*` values is missing or when the RTDB or backend URL is not a non-local HTTPS URL (`frontend/next.config.ts`), then regenerates the service worker and the CSP in `firebase.json` with the backend origin.
 4. `npm run verify:web-backend-contract` with `EKI_RUNTIME_SMOKE=1`: the live backend at `NEXT_PUBLIC_BACKEND_URL` must answer `/health` with `status: ok`, allow the frontend origin (`https://bustrack-be165.web.app` or `https://eki-production.web.app`) in CORS, and accept the preflight for `POST /api/users/bootstrap`.
 5. `node scripts/disable-appcheck-enforcement.mjs --project <project> --disable`: sets App Check enforcement for Firestore and RTDB to `UNENFORCED` and verifies the result. The web app does not use App Check.
 6. Deploy `firestore:indexes`, then wait up to 30 minutes for the deployed query shapes ([Firestore index deployment](FIRESTORE_INDEX_DEPLOYMENT.md)).
@@ -92,7 +92,7 @@ Step 4 makes every Hosting release depend on a running, healthy backend. While t
 | `FIREBASE_TOKEN` | Environment secret | Steps 5 to 7 | Firebase CLI token for that project |
 | `FIREBASE_DATABASE_URL` | Environment secret | Step 2 | RTDB URL that the backend uses |
 | `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_DATABASE_URL`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAP_ID`, `NEXT_PUBLIC_BACKEND_URL` | Environment secrets | Steps 2 to 4 | Values compiled into the static frontend |
-| `RTDB_EXPECTED_REGION` | Variable (optional) | Step 2 | Expected RTDB region, for example `asia-southeast1` |
+| `RTDB_EXPECTED_REGION` | Variable (optional) | Step 2 | Expected RTDB region, for example `asia-southeast1`. Not set on 2026-10-30, so step 2 checks only that both URLs name one instance. |
 
 The workflow passes no other build variables. `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_SITE_INDEXING` are therefore unset in deployed builds: canonical and social URLs fall back to `https://bustrack-be165.web.app` and indexing is enabled. A custom domain or a production build needs those two values added to the workflow ([DNS and domains](DNS_AND_DOMAINS.md)). The meaning of each variable is in [configuration](../CONFIGURATION.md).
 
@@ -119,8 +119,8 @@ These GitHub settings are not stored in the repository. They were read through t
 
 | Setting | Value | Effect |
 |---|---|---|
-| Ruleset `main` (default and all branches) | Pull request with one approving review and code owner review (`* @notnamansinha`); no deletion or force push; merge or squash; maintainers and administrators may bypass | No status check is required, so reviewers confirm that CI passed before merging. Deploy still runs only after a green verification. |
-| Environments | `staging` and `copilot`; no `production` | A job that names a missing environment creates it, so the first production dispatch would run without reviewers or secrets. Create `production` with required reviewers first. |
+| Ruleset `main` (default and all branches) | Pull request with one approving review and code owner review (`* @notnamansinha`), stale approvals dismissed on push; no deletion or force push; merge or squash; maintainers and administrators may bypass | No status check is required, so reviewers confirm that CI passed before merging ([OPS-03](ARCHITECTURE_RISK_REGISTER.md#310-ops-03-the-main-ruleset-requires-no-status-checks)). Deploy still runs only after a green verification. |
+| Environments | `staging` (no protection rules; the twelve secrets above plus an unused `NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY`) and `copilot`; no `production` | A job that names a missing environment creates it, so the first production dispatch would run without reviewers or secrets. Create `production` with required reviewers first. |
 | Secret scanning and push protection | Enabled | Pushes containing recognised secrets are blocked |
 
 ## 6. Scheduled QA (`deep-qa.yml`, `weekly-reliability.yml`)
@@ -132,7 +132,7 @@ Both workflows start with a `resolve` job that pins one commit. On a schedule or
 | Isolated nightly QA | `gnss`, `emulator`, `browser`, `api`, `native`, `reviewedUnit`, each through `node scripts/qa/campaign.mjs <suite>` | `node scripts/qa/campaign-report.mjs` |
 | Isolated weekly reliability baseline | `mutation` (`npm run qa:mutation`) and `soak` (`npm run qa:soak`) | `node scripts/qa/weekly-report.mjs` |
 
-Because `testing` no longer receives merges, scheduled runs exercise the code of 2026-10-21, not `main`. The [risk register](ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-tests-a-stale-branch) tracks this. The campaigns are described in [scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md).
+The `testing` branch was deleted on 2026-10-25, so every scheduled or dispatched run since then fails in `resolve` with `Not Found` and runs no suite. The last scheduled runs that executed suites were on 2026-10-24 (UTC). None of the listed `codex/qa-*` branches exists either. The [risk register](ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-runs-no-suites) tracks this. The campaigns are described in [scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md).
 
 ## 7. Backend hosting
 
@@ -188,7 +188,7 @@ Prerequisites: the change has a pull request to `main`; the backend at `NEXT_PUB
 | Backend (workstation) | Check out the last known-good commit on the host and restart the backend | Same |
 | Frontend configuration | Correct the environment secret and rerun Deploy by dispatch from `main` | Same; do not edit generated CSP hashes by hand |
 | Firmware over the air | Unset all six `FIRMWARE_RELEASE_*` backend values to stop distribution | Bootloader rollback restores the previous slot for an unhealthy candidate; never publish an older sequence as a downgrade |
-| Device credential or CA | Disable the device with `POST /api/devices/<device-id>/disable` (administrator) or rotate its secret with `npm run provision-device --workspace=backend` (refused during an active ride) | Reflash a corrected device image |
+| Device credential or CA | Disable the device with `POST /api/devices/<device-id>/disable` (administrator) or rotate its secret with `npm run provision-device --workspace=backend -- --device-id <device-id> --bus-id <bus-id> --route-id <route-id>` (refused during an active ride) | Reflash a corrected device image |
 
 The manual production dispatch always deploys the head of `main`, so a production rollback also goes through a revert on `main`.
 

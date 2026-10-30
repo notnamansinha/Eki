@@ -64,7 +64,7 @@ Use the supervisor when a run needs several recorders or must survive recorder c
    }
    ```
 
-   Optional keys: `graceSeconds` (default `90`) and `minimumFreeBytes` (default `1073741824`, 1 GiB). Worker names are lower-case letters, digits, `_` and `-`. Every worker must stop when `{stop_file}` exists and write only below `{segment}`. Do not supervise the application under test with this tool.
+   Optional keys: `graceSeconds` (default `90`) and `minimumFreeBytes` (default `1073741824`, 1 GiB). Worker names start with a lower-case letter and contain at most 64 lower-case letters, digits, `_` and `-`. Every worker must stop when `{stop_file}` exists and write only below `{segment}`. Do not supervise the application under test with this tool.
 2. Start the supervisor:
 
    ```powershell

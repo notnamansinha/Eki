@@ -33,7 +33,7 @@ Create these before you start. Use a project that holds no production data.
    - a registered web app, whose configuration values you copy in Section 5.
 2. Google Maps Platform enabled on the same Google Cloud project, with billing:
    - a browser API key for the Maps JavaScript API, restricted to your local and hosted origins, and a map ID;
-   - a server API key for the Routes API and Places API.
+   - a server API key for the Routes API and Places API (New).
 3. Credentials for Firebase Admin on your machine: either Application Default Credentials for the development project, or a service-account JSON key for it.
 4. Three Google accounts that you can sign in with: one becomes the administrator, one the operator and one the passenger. One account cannot hold two roles: saving an operator changes that account's role to `driver`, and only a passenger account can board.
 
@@ -145,7 +145,7 @@ The browser reads Firestore and RTDB directly under the repository's security ru
    npm run sync-role-claims --workspace=backend
    ```
 
-   Expected result: the command logs a checkpoint with one or more users updated and none failed.
+   Expected result: the command ends with `Synchronized <n> users; 0 failed.`
 
 4. Sign out and sign in again.
 

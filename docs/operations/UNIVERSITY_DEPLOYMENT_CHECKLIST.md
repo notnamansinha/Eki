@@ -42,8 +42,8 @@ Each item is complete only when its evidence is recorded in the release evidence
 - [ ] Create the GitHub `production` environment with required reviewers and its secrets (`FIREBASE_TOKEN`, `FIREBASE_DATABASE_URL` and the ten `NEXT_PUBLIC_*` values in `.github/workflows/deploy.yml`) before the first production dispatch. On 2026-10-30 the environment does not exist.
 - [ ] If the production project ID differs from `eki-production`, change the workflow's project and frontend origin through a reviewed pull request.
 - [ ] Add `NEXT_PUBLIC_SITE_URL` (and `NEXT_PUBLIC_SITE_INDEXING` for non-production builds) to the Deploy build step; it is not passed today.
-- [ ] Decide whether the `main` ruleset requires the Production verification jobs as status checks; today it requires reviews only.
-- [ ] Point the scheduled QA workflows at the branch that receives merges ([OPS-02](ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-tests-a-stale-branch)).
+- [ ] Decide whether the `main` ruleset requires the Production verification jobs as status checks; today it requires reviews only ([OPS-03](ARCHITECTURE_RISK_REGISTER.md#310-ops-03-the-main-ruleset-requires-no-status-checks)).
+- [ ] Point the scheduled QA workflows at `main`; the `testing` branch they read no longer exists, so they run no suites ([OPS-02](ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-runs-no-suites)).
 - [ ] Confirm that a green push to `main` deploys to staging and that staging checks (Hosting headers, sign-in, role checks, rules) pass before any production dispatch.
 - [ ] Confirm that the Deploy run's App Check step reports `UNENFORCED` for Firestore and RTDB. The web app does not use App Check; Security Rules and backend authorization carry identity and role checks.
 - [ ] Deploy `firestore.indexes.json` and confirm the readiness gate ([Firestore index deployment](FIRESTORE_INDEX_DEPLOYMENT.md)). Deploy the RTDB `activeBuses` `.indexOn` before relying on indexed stale scans, and run the [matching and lifecycle scan acceptance](MATCHING_AND_LIFECYCLE_SCANS.md).
@@ -53,12 +53,14 @@ Each item is complete only when its evidence is recorded in the release evidence
 ## 5. Identity and devices
 
 - [ ] Maintain approved passenger and administrator accounts with backend-published role claims; revoke departed or reassigned staff at once ([privileged database authorization](../security/PRIVILEGED_DATABASE_AUTHORIZATION.md)). Operator assignments are fleet records managed by administrators.
-- [ ] Give each ESP32 its own random secret with `npm run provision-device --workspace=backend`; Firestore stores only its salted verifier.
+- [ ] Resolve or formally accept [SEC-03](ARCHITECTURE_RISK_REGISTER.md#38-sec-03-ride-operations-accept-stale-administrator-claims): ride start, delay, stop and session reads accept an administrator claim without the authorization-version check.
+- [ ] Give each ESP32 its own random secret with `npm run provision-device --workspace=backend -- --device-id <device-id> --bus-id <bus-id> --route-id <route-id>`; Firestore stores only its salted verifier.
 - [ ] Bind each device to one bus and route. Document rotation, disablement (`POST /api/devices/<device-id>/disable`), lost-device and reassignment procedures.
 - [ ] Restrict the browser Maps key by HTTPS referrer and API, and the server key by runtime identity or source address and the Routes and Places APIs.
 - [ ] Complete [hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md) on spare ECO3 or newer boards before fleet rollout, with first-boot evidence that Secure Boot V2 and release-mode flash encryption are active. The eFuse operations are irreversible.
 - [ ] Build every vehicle image with `esp32dev-secure` in the controlled signing environment; never install development firmware in a vehicle. Confirm the runtime gate and the remote diagnostic report Secure Boot and flash encryption active.
 - [ ] Protect or delete plaintext `secrets.h` files and unencrypted artifacts; demonstrate secret rotation, revocation and lost-device disablement.
+- [ ] Resolve [FW-03](ARCHITECTURE_RISK_REGISTER.md#39-fw-03-ota-images-carry-device-secrets-but-the-backend-serves-one-release) before enabling over-the-air updates: every image embeds one device's secret, but the backend offers one release to every device.
 - [ ] Configure immutable HTTPS hosting for signed firmware and all six `FIRMWARE_RELEASE_*` backend values; prove withholding during an active ride, rejection of a wrong key or digest, healthy confirmation and automatic rollback on spare boards.
 
 ## 6. Data protection and safety

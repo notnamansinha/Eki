@@ -67,16 +67,16 @@ Because each version is a fresh random UUID, a demotion followed by a promotion,
 
 | Checker | Administrator rule | Driver rule |
 |---|---|---|
-| Firestore (`firestore.rules`) | `role == 'admin'`, `admin == true`, the token version equals the stored version, stored `role == 'admin'`, and `users/{uid}.role == 'admin'` | `role == 'driver'`, token `driverId` and `assignedBusId` equal the stored record, `drivers/{driverId}.authUid` equals the UID, the registry `assignedBusId` matches, and `users/{uid}.role == 'driver'` |
+| Firestore (`firestore.rules`) | `role == 'admin'`, `admin == true`, the token version equals the stored version, stored `role == 'admin'`, and `users/{uid}.role == 'admin'` | `role == 'driver'`, the token version equals the stored version, stored `role == 'driver'`, token `driverId` and `assignedBusId` equal the stored record, `drivers/{driverId}.authUid` equals the UID, the registry `assignedBusId` matches, and `users/{uid}.role == 'driver'` |
 | RTDB (`database.rules.json`) | Reading the `publicRouteBuses` root requires `admin == true`, `role == 'admin'`, and a stored version and role matching the token | Not used |
 | `requireAdmin` (`backend/src/middleware/requireAdmin.ts`) | `admin === true`, `role === "admin"`, a string `authorizationVersion`, and both stored records equal to the token's version, role, `driverId` and `assignedBusId` | Not used |
 | Administrator ride stop (`backend/src/routes/shifts.ts`) | Same as `requireAdmin` | Driver registry check without the version |
 
-`requireAdmin` reads both records on every request with no positive cache. If either read fails it returns 503 with `Retry-After: 1` (`AUTH_UNAVAILABLE`); a missing or different record returns 403 (`ADMIN_REQUIRED`). A token without `authorizationVersion` is denied by every checker.
+`requireAdmin` reads both records on every request with no positive cache. If either read fails it returns 503 with `Retry-After: 1` (`AUTH_UNAVAILABLE`); a missing or different record returns 403 (`ADMIN_REQUIRED`). A token without `authorizationVersion` fails every administrator check and the Firestore driver rule.
 
 The most expensive driver rule evaluation reads four documents: the ride session, the authorization record, the profile and the driver record. Repeated `get()` calls on one path are evaluated once per request.
 
-Driver authority on other HTTP routes and the RTDB driver assignment mirror do not use the version. Removing or reassigning a driver registry record ends that authority. [Browser API security](BROWSER_API_SECURITY.md) lists these routes.
+Driver authority on other HTTP routes and the RTDB driver assignment mirror do not use the version. [Browser API security](BROWSER_API_SECURITY.md#22-principals) lists which of these routes also check the driver registry.
 
 ### 3.3 Writers
 

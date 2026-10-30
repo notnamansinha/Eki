@@ -22,7 +22,7 @@ When `RETENTION_SWEEPER_ENABLED` is `true`, the [worker leader](WORKER_LEADERSHI
 
 A record is eligible when its newest known activity is more than 180 days old. Known times come from the fields `timestamp`, `createdAt`, `updatedAt`, `sentAt`, `endTime` and `completedAt`, in epoch milliseconds, epoch seconds or ISO 8601 strings; values before the year 2000 are ignored. A record exactly at the cutoff, or dated in the future, is kept.
 
-A record without a usable time is not treated as old. The sweep records when it first saw the record's content and waits a full 180 days from then. Any change to the content restarts that window. A record nested deeper than 32 levels, or with more than 100,000 nodes, is skipped as malformed.
+A record without a usable time is not treated as old. The sweep records when it first saw the record's content and waits a full 180 days from then. Any change to the content restarts that window. A legacy record nested deeper than 32 levels, or with more than 100,000 nodes, is skipped as malformed.
 
 The first-seen times are kept in the server-only Firestore collection `_rtdb_retention_inventory`. Each document is keyed by the SHA-256 hash of the RTDB path and stores the path, a SHA-256 fingerprint of the content and `firstSeenAt`; it stores no copy of the content. Firestore transactions keep one window across replicas. Deletion is an RTDB transaction that removes the record only while its fingerprint is unchanged. A failure leaves the record and its inventory for the next sweep, and inventory for records that no longer exist is removed on later runs. The sweep reads RTDB in key pages of 25, outside telemetry requests.
 
@@ -48,7 +48,7 @@ The current clients keep profiles and messages in Firestore. RTDB `users` and `m
 | Nesting and size bound | 32 levels, 100,000 nodes | `backend/src/services/rtdbRetention.ts:44` |
 | RTDB page size | 25 keys | `backend/src/services/firebaseRtdbRetention.ts:8` |
 | Sweep interval | 24 h | `backend/src/services/retentionSweeper.ts:191` |
-| `RETENTION_SWEEPER_ENABLED` | Must be `true` in production; off by default elsewhere | `backend/src/services/retentionSweeper.ts:80` |
+| `RETENTION_SWEEPER_ENABLED` | Must be `true` (trimmed, case-insensitive) in production; off by default elsewhere | `backend/src/services/retentionSweeper.ts:80` |
 | `LEGACY_RTDB_RETIRED` | `false` by default; only the exact value `true` enables legacy deletion | `backend/src/rtdbRetentionCli.ts:12`, `backend/src/services/retentionSweeper.ts:169` |
 
 ## 5. Procedures
@@ -88,8 +88,10 @@ Expected result: a summary with `"dryRun": false`. `changedDuringDeletion` count
 | Behaviour | Tests |
 |---|---|
 | Dry-run immutability, opt-in legacy deletion, cutoff, seconds, ISO and future times, undated quarantine, changed records, current pointers, geometry grace, conditional delete races, nesting bound, stalled publishers | `backend/src/services/rtdbRetention.test.ts` |
-| Inventory store, paging and orphan cleanup | `backend/src/services/firebaseRtdbRetention.test.ts` |
+| Firebase adapter: fingerprint recheck on transaction retry, dry-run inventory reads without writes, window restart for changed content | `backend/src/services/firebaseRtdbRetention.test.ts` |
 | Command-line arguments | `backend/src/rtdbRetentionCli.test.ts` |
 | Category isolation and RTDB sweep ordering | `backend/src/services/retentionSweepExecution.test.ts` |
 
-A read-only inventory on 2026-10-03 found eight legacy records, none eligible and none undated, and no geometry records.
+No test covers the Firebase adapter's key paging or orphan cleanup.
+
+Dated evidence: a read-only inventory run on 2026-10-03 found eight legacy records, none eligible and none undated, and no geometry records. It changed no data.

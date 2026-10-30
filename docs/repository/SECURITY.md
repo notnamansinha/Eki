@@ -60,6 +60,7 @@ Out of scope:
 |---|---|
 | Firebase Admin service-account JSON | Backend runtime environment (`FIREBASE_SERVICE_ACCOUNT`) or Application Default Credentials |
 | Device secret and Wi-Fi password | Ignored `hardware/include/secrets.h`, only inside the controlled signing environment |
+| Signed firmware image (`firmware-signed.bin`) | Contains the compiled `secrets.h` values. Publish it for OTA only on a backend that serves one device, at a URL protected like the device secret ([hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md#6-signed-ota-release-and-rollback)) |
 | Secure Boot signing key | Offline signing environment ([key custody](hardware/keys/README.md)) |
 | Firebase deploy token | GitHub environment secret `FIREBASE_TOKEN` |
 | Server Google Maps key | Backend environment (`GOOGLE_MAPS_API_KEY`) |

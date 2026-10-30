@@ -521,7 +521,7 @@ Under `prefers-reduced-motion: reduce`, `app/globals.css` sets every animation a
 
 ## 9. PWA manifest and map styling
 
-### 9.1 Manifest and icons
+### 9.1 Web app manifest and icons
 
 | Field | Value (`app/manifest.ts`) |
 |---|---|

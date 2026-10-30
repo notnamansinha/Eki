@@ -62,7 +62,7 @@ Development builds also accept an `http://` backend. The device secret then cros
 
 ### 2.3 Schema versions
 
-The firmware sends the nine-field schema in Section 3.1. For staged rollouts the backend also accepts an eight-field schema without `gpsHdop` and a six-field legacy schema without `seq` and `deviceSentAt`. Deploy a backend that accepts the nine-field schema before you flash this firmware.
+The firmware sends the nine-field schema in Section 3.1. For staged rollouts the backend also accepts an eight-field schema without `gpsHdop` and a six-field legacy schema without `gpsHdop`, `seq` and `deviceSentAt`. Deploy a backend that accepts the nine-field schema before you flash this firmware.
 
 ### 2.4 Response handling
 
@@ -133,7 +133,7 @@ The backend stores the packet with `signalState` `gnss_lost` so that clients can
 
 ### 3.3 Remote diagnostics
 
-`POST <BACKEND_URL>/api/devices/<DEVICE_ID>/diagnostics` with a closed JSON object of 21 fields, at most 1,024 bytes. The first report is due 30 s after boot and later reports every 5 min. The publisher sends a report only when Wi-Fi is up, the clock is trusted, no credential fault is latched, no earlier report is in flight and no fresh telemetry sample is waiting. A separate `diagnostic-http` task opens a new TLS connection for each report and closes it afterwards, so a diagnostics failure never delays or removes a telemetry sample.
+`POST <BACKEND_URL>/api/devices/<DEVICE_ID>/diagnostics` with a closed JSON object of 21 fields that fits the firmware's 1,024-byte buffer. The first report is due 30 s after boot and later reports every 5 min. The publisher sends a report only when Wi-Fi is up, the clock is trusted, no credential fault is latched, no earlier report is in flight and no fresh telemetry sample is waiting. A separate `diagnostic-http` task opens a new TLS connection for each report and closes it afterwards, so a diagnostics failure never delays or removes a telemetry sample.
 
 | Field | Meaning |
 |---|---|
@@ -292,7 +292,7 @@ Wi-Fi runs in station mode only, with persistence off, automatic reconnection on
 | Device credential | `401`, three LED pulses | Publishing stops and the radio switches off until restart | Repair the registry, reprovision or reflash, then restart |
 | Device assignment | `403` | Wi-Fi stays on; retry every 60 s | Repair the bus and route assignment |
 | Root CA rotation | TLS failure | Fails closed | Reflash with the new root CA before the old issuer expires |
-| Hardware security (fleet) | Four LED pulses, diagnostics booleans | Halts before reading credentials or starting networking | [Hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md) |
+| Hardware security (fleet) | Four LED pulses, diagnostics booleans | Halts after the `secrets.h` checks and before it starts networking | [Hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md) |
 | Task stall | Watchdog reset, `[Boot] Recovered from ... reset` | Restart; the RTC queue survives | Capture the serial log |
 
 ## 7. Diagnosis and evidence

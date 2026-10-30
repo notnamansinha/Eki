@@ -68,7 +68,7 @@ The retention sweep runs on the worker leader at start and every 24 h. Productio
 | `ride_sessions` in `completed`, `failed` or `interrupted` status, with all subcollections | 180 days after `endTime` | Retention sweep, recursive and resumable through `_retention_deletion_jobs` | `RIDE_SESSION_RETENTION_DAYS` |
 | `completed_trips` | 180 days after `completedAt` | Retention sweep | `COMPLETED_TRIP_RETENTION_DAYS` |
 | `feedbacks` | 180 days after `timestamp` | Retention sweep | `FEEDBACK_RETENTION_DAYS` |
-| Operation records in `_fleet_operations`, `_route_save_operations`, `_route_geometry_previews`, `_fleet_reconciliation_jobs`, `_fleet_lock_recoveries` | 90 days | Retention sweep | `OPERATION_LOG_RETENTION_DAYS` |
+| Operation records in `_fleet_operations`, `_route_save_operations`, `_route_geometry_previews`, `_fleet_reconciliation_jobs`, `_fleet_lock_recoveries` | 90 days after `createdAt`; after `completedAt` for previews and reconciliation jobs, `recoveredAt` for lock recoveries | Retention sweep | `OPERATION_LOG_RETENTION_DAYS` |
 | Unreferenced `activeRouteGeometry` versions; legacy RTDB trees | 180 days | RTDB retention sweep | `LEGACY_RTDB_RETIRED` for legacy trees |
 | `activeBuses` records without an active ride | Until no fix arrives for `BUS_STALE_MS` (300 s by default) | Stale sweep; a record with an active ride is marked offline instead | `BUS_STALE_MS` |
 | `active_rides`, `_active_bus_locks` | Until the ride completes, ends early or is abandoned | Lifecycle worker, stop endpoint, abandoned-ride reconciler after 12 h without activity; never age-based retention | `ABANDONED_RIDE_THRESHOLD_HOURS` |
@@ -78,7 +78,7 @@ Two deletions are requested by people:
 | Request | Effect | Procedure |
 |---|---|---|
 | Account deletion by a passenger | The worker deletes `users/{uid}`, `feedbackCooldowns/{uid}`, `passenger_requests/{uid}`, the account's `messageRateLimits` entries and the Firebase Authentication account. Feedback, ride manifests and messages stay until retention removes them | [Privacy deletion](../operations/PRIVACY_DELETION.md) |
-| Ride history deletion by an administrator | Deletes a terminal session with its subcollections and its `completed_trips` record; `_ride_history_deletion_jobs` keeps the deletion resumable | [API reference](../../backend/API.md) |
+| Ride history deletion by an administrator | Deletes a terminal session with its subcollections and every `completed_trips` record with its `sessionId`; an ongoing ride is refused; `_ride_history_deletion_jobs` keeps the deletion resumable | [API reference](../../backend/API.md) |
 
 ## 7. Tracker storage
 

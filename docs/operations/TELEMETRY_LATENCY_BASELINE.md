@@ -61,7 +61,7 @@ This procedure measures the latency of one device's samples from GNSS capture to
    await window.__ekiTelemetryTrace.downloadHealth("health-after.json")
    ```
 
-   In the passenger tab, run `download("telemetry-passenger.json")`. Then stop the serial capture.
+   In the passenger tab, run `window.__ekiTelemetryTrace.download("telemetry-passenger.json")`. Then stop the serial capture.
    Expected result: two trace files, two health files and one serial log.
 
 ## 4. Analysis
@@ -89,7 +89,7 @@ The admin health summaries are per process, keep at most 512 values per metric a
 
 ### 4.2 Freshness and clock skew
 
-The firmware does not publish until it has a trusted time from GNSS UTC or its NTP fallback. The backend accepts a capture time only from 60 s behind to 10 s ahead of its own clock at the request boundary, and stores a future time clamped to that boundary, so a fast device clock cannot keep a live record fresh. Other times receive HTTP 400.
+The firmware does not publish until it has a trusted time from GNSS UTC or its NTP fallback. The backend accepts a capture time only from 60 s behind to 10 s ahead of its own clock at the request boundary, and clamps an accepted future time to its own clock, so a fast device clock cannot keep a live record fresh. Other times receive HTTP 400.
 
 The browser judges freshness by the backend receipt time compared with `serverNow()`, the browser clock corrected by the RTDB `.info/serverTimeOffset` estimate (offset 0 until the first estimate arrives). A store replays its cached snapshot when the estimate moves by 1 s or more, so a viewer with a wrong clock still sees correct liveness. The liveness states and their thresholds are specified in [tracking algorithms](../design/TRACKING_ALGORITHMS.md#9-live-bus-health). Because the device, backend, Firebase and browser use different clocks, use the trace's offset and uncertainty to diagnose a freshness rejection; a raw wall-clock difference is not transport latency.
 

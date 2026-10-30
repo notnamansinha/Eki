@@ -19,6 +19,8 @@ Both workflow files are on `main`, so GitHub runs their schedules from the `main
 
 Every later job checks out that commit. Missing scripts or reports fail the run; it never falls back to another branch or an earlier artifact. Because scheduled runs test `testing`, a green scheduled run says nothing about `main` unless both branches point at the same commit.
 
+On 2026-10-30 the repository has no `testing` branch and none of the allowed QA branches. Every scheduled run since 2026-10-25 has failed in `resolve` with `Not Found` and executed no suite; the last scheduled runs that executed suites were on 2026-10-24 (UTC). The [risk register](../docs/operations/ARCHITECTURE_RISK_REGISTER.md) tracks this as OPS-02. Until the resolver names an existing branch, run the campaigns locally (Section 6).
+
 ## 3. Nightly campaign
 
 Workflow `Isolated nightly QA` (`.github/workflows/deep-qa.yml`) runs daily at 20:17 UTC (01:47 IST), on manual dispatch, and on pushes to the QA branches listed in the file. GitHub may delay scheduled runs.

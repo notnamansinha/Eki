@@ -75,7 +75,7 @@ Figure 1 shows that body parsing runs before authentication, so a malformed body
 | Device credential | `Authorization: Device <device-secret>` (secret of 20 to 512 characters) | The four operations in Section 3.2 |
 | None | | `GET /live` and `GET /health` |
 
-A device credential is never sent as `Bearer`. The backend verifies the ID token's signature, expiry, disabled state and revocation. Tokens that carry an admin or operator claim are checked for revocation on every request; other tokens may reuse a verification result for up to `AUTH_REVOCATION_CACHE_MS`. The security design is in the [security architecture](../security/SECURITY_ARCHITECTURE.md) and [browser API security](../security/BROWSER_API_SECURITY.md); App Check is not used.
+A device credential is never sent as `Bearer`. The backend verifies the ID token's signature, expiry, disabled state and revocation. Tokens that carry a privileged claim (`admin: true`, `role` of `admin` or `driver`, `driverId` or `assignedBusId`) are checked for revocation on every request (`backend/src/services/authTokenVerifier.ts:44-50`); other tokens may reuse a verification result for up to `AUTH_REVOCATION_CACHE_MS`. The security design is in the [security architecture](../security/SECURITY_ARCHITECTURE.md) and [browser API security](../security/BROWSER_API_SECURITY.md); App Check is not used.
 
 Authorization levels:
 
@@ -330,7 +330,7 @@ A ride session is a `ride_sessions/{sessionId}` document with status `pending`, 
 - Caller: operator, or admin claim acting for a named operator. Both must pass the operator assignment check.
 - Request: `{"busId","routeId","driverId"}`. `driverId` is required for an administrator; an operator's comes from the token. The v2 path also requires an `Idempotency-Key` header (Section 2.6).
 - Success: 201 for a new session, 200 for a resumed one, with `{"sessionId","resumed","direction","pending"}`. `direction` is `forward`, `reverse` or `null`; `pending: true` means the direction is not yet known. The v2 path adds `Location: /api/v2/ride-sessions/{sessionId}` and `Cache-Control: no-store`.
-- Errors: 403 assignment check failed; 409 the bus has another active ride, the live record has no fix from the last 60 s, the route changed during the start, the earlier session awaits lifecycle or completion recovery, or the key belongs to another assignment; 410 (v2) the key's session was deleted; 422 the route has fewer than two valid stops; 500.
+- Errors: 400 (v2) missing or invalid `Idempotency-Key`; 403 assignment check failed; 409 the bus has another active ride, the live record has no fix from the last 60 s, the route changed during the start, the earlier session awaits lifecycle or completion recovery, or the key belongs to another assignment; 410 (v2) the key's session was deleted; 422 the route has fewer than two valid stops; 500.
 
 #### 3.5.2 Read a ride session
 
@@ -557,7 +557,7 @@ All operations in this section require an administrator. Every `/api/fleet` muta
 
 `PUT /api/fleet/drivers/:id`
 
-- Request: `{"name","authUid","assignedBusId"}`. `name` has 1 to 100 characters; `authUid` must be an existing Firebase Auth account not used by another operator; `assignedBusId` is a bus with at least one route, or `null`.
+- Request: `{"name","authUid","assignedBusId"}`. `name` has 1 to 100 characters; `authUid` must be an existing Firebase Auth account not used by another operator; `assignedBusId` is a bus with at least one route, or `null` or an empty string to unassign.
 - Success: 200 `{"saved":true}`. Demotes a previous account to passenger, sets the profile role to `driver` and publishes the operator's claims, assignment mirror and authorization version, which revokes the account's refresh tokens.
 - Errors: 400 invalid data, unknown account or bus without routes; 409 changing the account or bus during an active ride, or account already used by another operator; 500.
 
@@ -583,7 +583,7 @@ All operations in this section require an administrator. Every `/api/fleet` muta
 `POST /api/users/bootstrap`
 
 - Caller: user. The body is ignored.
-- Success: 201 when `users/{uid}` was created as a passenger profile from the token's e-mail, name and picture; 200 when it already existed. Body `{"role","claimsUpdated"}`, where `role` is the account's current role. For a passenger the backend sets the `role: "passenger"` claim and removes stale privileged claims (`claimsUpdated: true`); it never overwrites a profile or demotes an administrator or operator.
+- Success: 201 when `users/{uid}` was created as a passenger profile from the token's e-mail, name and picture; 200 when it already existed. Body `{"role"}` with the account's current role. For a passenger whose claims were out of date, the backend sets the `role: "passenger"` claim, removes stale privileged claims and adds `"claimsUpdated":true` to the body; it never overwrites a profile or demotes an administrator or operator.
 - Errors: 401 Auth account missing or disabled; 409 account deletion in progress; 500.
 
 #### 3.10.2 Submit feedback

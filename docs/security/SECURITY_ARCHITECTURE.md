@@ -89,7 +89,7 @@ Figure 1. Eki components and trust boundaries B1 to B8.
 | Firebase ID and refresh tokens | Browser storage (local storage, IndexedDB or session storage) | Impersonation of the signed-in user |
 | Role claims and authorization records | Auth custom claims; `_userAuthorization/{uid}` in Firestore and RTDB | Administrator or driver authority |
 | Backend Admin SDK credential | Backend runtime environment | Unrestricted read and write of all Firebase data and Auth accounts |
-| Device secrets | Ignored `hardware/include/secrets.h` and the flash-encrypted firmware image; only a scrypt verifier in `devices/{deviceId}.secretHash` | Forged telemetry for that bus |
+| Device secrets | Ignored `hardware/include/secrets.h`, the flash-encrypted firmware image and any published signed OTA image (Section 11); only a scrypt verifier in `devices/{deviceId}.secretHash` | Forged telemetry for that bus |
 | Secure Boot signing key | Offline signing environment, never in the repository | Arbitrary firmware on fleet trackers |
 | Live bus positions | RTDB `activeBuses`, `publicRouteBuses`; Firestore `bus_locations`, ride session `lastKnownLocation` | Tracking of a vehicle and its operator |
 | Passenger personal data | `users/{uid}`, ride session manifests, chat messages, `feedbacks` | Disclosure of identity and travel |
@@ -148,7 +148,7 @@ Threats are classified with STRIDE (spoofing, tampering, repudiation, informatio
 | E | Non-administrator calls an administrator operation | `requireAdmin` requires `role: "admin"`, `admin: true` and a current `authorizationVersion` in both databases | Operator routes accept administrator authority from `role == "admin"` or `admin == true` without the version check, except the administrator ride stop. |
 | E | Remote boarding of a ride | Boarding requires a passenger profile, a boarding ride, a browser fix with accuracy of 100 m or better, and a distance of at most 150 m to a bus fix no older than 60 s | The browser fix is client-supplied; a spoofed position passes. |
 | T | Malformed or oversized bodies | Strict JSON parsers with size caps; per-route validation; `TRACE` and `CONNECT` return 405 | None identified. |
-| R | Administrator denies a change | Fleet mutations record `adminUid`, method and path in `_fleet_operations`; route saves, operation recovery and privacy recovery record the acting administrator; settings record `updatedBy`, ride interruptions `interruptedBy` and feedback review `reviewedBy` | Device registry changes, chat clearing and ride-history deletion store no record of the acting administrator. |
+| R | Administrator denies a change | Fleet mutations record `adminUid`, method and path in `_fleet_operations`; route geometry previews, fleet reconciliation jobs, operation recovery and privacy recovery record the acting administrator; settings record `updatedBy`, ride interruptions `interruptedBy` and feedback review `reviewedBy` | Device registry changes, route saves and deletions, chat clearing and ride-history deletion store no record of the acting administrator. |
 | I | Leakage through errors or diagnostics | Generic error bodies; public `/health` and `/live` return status only; `/api/health` requires `requireAdmin`; private responses carry `Cache-Control: no-store` | None identified. |
 | D | Request floods | Limits in Section 7 | Limiters are in memory per replica; the global cap depends on an edge WAF that this repository does not configure. |
 
@@ -156,7 +156,7 @@ Threats are classified with STRIDE (spoofing, tampering, repudiation, informatio
 
 | STRIDE | Threat | Implemented mitigation | Residual risk |
 |---|---|---|---|
-| S | Telemetry from an impostor tracker | Device secret verified against a scrypt verifier with a constant-time comparison; disabled devices are rejected | A secret read from a development build, which has no flash encryption, stays valid until the device is re-provisioned. |
+| S | Telemetry from an impostor tracker | Device secret verified against a scrypt verifier with a constant-time comparison; disabled devices are rejected | A secret read from a development build, which has no flash encryption, or from a published OTA image (Section 11) stays valid until the device is re-provisioned. |
 | T | Tracker claims another bus or route | Bus and route come from the device registry; payloads use closed field lists with range checks | None identified. |
 | T | Replayed or reordered fixes | Timestamps older than 60 s or more than 10 s ahead are rejected; device time and sequence order samples; a duplicate is acknowledged with 200 instead of 202 | None identified. |
 | I | Interception of telemetry | TLS with the configured issuing root CA (`BACKEND_ROOT_CA`); fleet firmware halts on a non-HTTPS backend URL | Development firmware may use `http://` for local testing. |
@@ -183,7 +183,7 @@ Threats are classified with STRIDE (spoofing, tampering, repudiation, informatio
 | STRIDE | Threat | Implemented mitigation | Residual risk |
 |---|---|---|---|
 | T | Compromised third-party action | Every `uses:` reference is pinned to a full commit SHA; workflows default to `contents: read` | None identified. |
-| E | Untrusted code reaches staging or production | Staging deploys only the commit of a successful same-repository push build on `main`; production deploys only by manual dispatch from `main` in the `production` environment | Required reviewers for that environment are configured in GitHub, not in this repository. |
+| E | Untrusted code reaches staging or production | Staging deploys only the commit of a successful same-repository push build on `main` or a manual dispatch from `main`; production deploys only by manual dispatch from `main` in the `production` environment | Required reviewers for that environment are configured in GitHub, not in this repository. |
 | I | Secret leakage from CI | Deploy secrets are environment-scoped; the verification build uses placeholders | `FIREBASE_TOKEN` is a long-lived Firebase CLI token. |
 | T | Vulnerable dependency | `npm audit`, CodeQL, Trivy and an SBOM (Section 10) | No automated dependency update configuration exists. |
 
@@ -217,7 +217,7 @@ Four paths accept device credentials and skip browser authentication (`backend/s
 1. Reads the registry record and derives the scrypt key from the supplied secret, using a dummy salt when no valid verifier exists so that unknown IDs cost the same work.
 2. Compares keys with `timingSafeEqual`.
 3. Requires `enabled` not `false`, an existing bus and route, and the route in the bus's assigned routes. A correct secret without a usable assignment returns 403; any other failure returns 401.
-4. Caches a verified pair for 60 s and a rejected pair for 5 s. Rotation and `POST /api/devices/{deviceId}/disable` write `_deviceCredentialVersions/{deviceId}` in RTDB; every replica listens there and drops its cached entry.
+4. Caches a verified pair for 60 s, or up to 10 min longer while the refill lane for known devices is saturated, and a rejected pair for 5 s. Rotation and `POST /api/devices/{deviceId}/disable` write `_deviceCredentialVersions/{deviceId}` in RTDB; every replica listens there and drops its cached entry.
 
 Bus and route identity always come from the registry, never from the request body.
 
@@ -246,7 +246,7 @@ Firebase App Check is not used. The browser initializes no App Check provider an
 |---|---|---|
 | Authenticated user | `requireAuth` (`backend/src/middleware/requireAuth.ts`) | None |
 | Passenger | Handler checks that `role` is absent or `passenger` | Existing `users/{uid}` profile; manifest membership for ride-scoped actions; proximity for first boarding |
-| Driver | `authorizeOperator` in `backend/src/routes/shifts.ts` | Token `driverId` and `assignedBusId`; `drivers/{driverId}.authUid` equals the UID; the driver's bus matches; the bus lists the route |
+| Driver | `authorizeOperator` in `backend/src/routes/shifts.ts` (ride start, delay, stop, v2 ride read); token comparison in `backend/src/routes/sessions.ts` (chat, boarding code, legacy ride status) | Shift routes: token `driverId` and `assignedBusId`, `drivers/{driverId}.authUid` equals the UID, the driver's bus matches, the bus lists the route. Session routes: token `driverId` and `assignedBusId` equal the session's driver and bus |
 | Administrator | `requireAdmin` (`backend/src/middleware/requireAdmin.ts`) | Fresh reads of both `_userAuthorization/{uid}` records on every request; unavailable records return 503 |
 
 ### 5.2 Firestore rules
@@ -333,7 +333,7 @@ Every HTTP limiter keeps its counters in process memory and divides its budget b
 | Control | Scope and key | Limit | Source |
 |---|---|---|---|
 | Browser ingress | All requests except `OPTIONS`, `/health`, `/live` and tracker paths; client IP | 1000 per 60 s | `backend/src/lib/browserAdmission.ts` |
-| Browser admission | `/api`, after authentication; UID | 200 reads and 30 mutations per 60 s | `backend/src/lib/browserAdmission.ts` |
+| Browser admission | `/api` except `GET /api/health`, after authentication; UID | 200 reads and 30 mutations per 60 s | `backend/src/lib/browserAdmission.ts` |
 | Route computation | Non-GET on `/api/routes` and `/api/v2/route-geometry-previews`, and `PUT` on `/api/v2/routes`; UID | 10 per 60 s | `backend/src/lib/routeComputeLimiter.ts` |
 | Route planning | `/api/plan` and route segment reads; UID | 30 per 60 s | `backend/src/server.ts` |
 | Place search | `/api/places/search` (administrator); UID | 20 per 60 s | `backend/src/routes/places.ts` |
@@ -376,7 +376,7 @@ The CI verification build uses placeholder values, and the firmware job builds w
 | Live bus position, speed, heading, timestamps, driver ID, session ID | RTDB `activeBuses` (backend only), `publicRouteBuses` | Any signed-in user (public projection) | Live record; the backend removes a silent bus after `BUS_STALE_MS` (default 300 000 ms) |
 | Last accepted bus fix at signal loss or ride end | `ride_sessions/{id}.lastKnownLocation`, `bus_locations/{busId}.lastKnownLocation` | Administrator; assigned driver for the session copy | With the ride session; the `bus_locations` copy is overwritten by later fixes |
 | Completed trip records | `completed_trips` | Administrator | `COMPLETED_TRIP_RETENTION_DAYS` (default 180) |
-| Operation records with administrator UID | `_fleet_operations`, `_route_save_operations`, `_route_geometry_previews`, `_fleet_reconciliation_jobs` | None | `OPERATION_LOG_RETENTION_DAYS` (default 90) |
+| Operation records; all except route saves carry the administrator UID | `_fleet_operations`, `_route_save_operations`, `_route_geometry_previews`, `_fleet_reconciliation_jobs`, `_fleet_lock_recoveries` | None | `OPERATION_LOG_RETENTION_DAYS` (default 90) |
 | Passenger browser position | Boarding request body only | None | Used for the distance check; not written to the manifest |
 
 ### 9.2 Retention
@@ -411,7 +411,7 @@ Only the PlatformIO environment `esp32dev-secure` (`hardware/platformio.ini`) pr
 
 Device configuration, including the device secret, Wi-Fi credentials, backend URL and root CA, is compiled from `secrets.h`; any change needs a new signed image and a reflash. Fleet firmware halts when the backend URL is not HTTPS (`hardware/src/main.cpp`). TLS verifies the backend against `BACKEND_ROOT_CA` and restricts the client to ECDHE-RSA AES-GCM cipher suites on curve P-256 (`hardware/src/tls_profile.cpp`). A 401 response latches a credential fault and stops authenticated publishing; a 403 keeps Wi-Fi on and retries. Each diagnostics report includes `flashEncryption` and `secureBoot` flags, which administrators read through `GET /api/devices/{deviceId}/diagnostics`.
 
-The backend returns a firmware release descriptor only when all six `FIRMWARE_RELEASE_*` variables are valid, and withholds it while the bus has an active ride. The tracker discards an image whose size, SHA-256 digest, or signed version and sequence differ from the descriptor, and Secure Boot V2 rejects an image without a valid signature. CI builds the secure environment with a disposable key and runs `hardware/scripts/test_signed_image.py` to confirm that a modified image and an image signed with a foreign key are rejected. [Hardware security provisioning](HARDWARE_SECURITY_PROVISIONING.md) defines key custody, first-boot eFuse burning and the OTA release procedure.
+The backend returns a firmware release descriptor only when all six `FIRMWARE_RELEASE_*` variables are valid, and withholds it while the bus has an active ride. It is one global descriptor, read from the environment (`backend/src/services/firmwareRelease.ts`), and every authenticated device with a lower sequence receives the same image URL. The signed image embeds every `secrets.h` value of the build that produced it, including the device ID, device secret and Wi-Fi password, and the tracker downloads it without credentials (`hardware/src/main.cpp`). Anyone who can fetch the published file can read those values, and every device that installs it takes the identity of that build. The tracker discards an image whose size, SHA-256 digest, or signed version and sequence differ from the descriptor, and Secure Boot V2 rejects an image without a valid signature. CI builds the secure environment with a disposable key and runs `hardware/scripts/test_signed_image.py` to confirm that a modified image and an image signed with a foreign key are rejected. [Hardware security provisioning](HARDWARE_SECURITY_PROVISIONING.md) defines key custody, first-boot eFuse burning and the OTA release procedure.
 
 ## 12. Design rationale
 
@@ -426,12 +426,13 @@ The backend returns a firmware release descriptor only when all six `FIRMWARE_RE
 2. HTTP rate limits are per replica and in memory. A global limit needs the edge WAF listed in the [university deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md), which this repository does not configure.
 3. Boarding proximity relies on the browser's reported position. A signed-in user who spoofs a position near a live bus can join that ride and read its chat.
 4. Any signed-in Google account can read live bus positions, including the driver ID and session ID in the public projection.
-5. Driver authorization on HTTP routes checks token claims and the driver registry but not the `authorizationVersion`. The operator code paths in `backend/src/routes/shifts.ts` and `backend/src/routes/sessions.ts` accept administrator authority from either `role == "admin"` or `admin == true`; only `requireAdmin` and the administrator ride stop compare the version.
-6. Revocation of a token without privileged claims takes effect at the backend after at most `AUTH_REVOCATION_CACHE_MS`.
-7. `style-src 'unsafe-inline'` remains in the CSP.
-8. Development firmware builds store secrets in unencrypted flash and may use HTTP.
-9. `FIREBASE_TOKEN` is a long-lived token; its rotation is manual.
-10. Dependency updates are manual; audits detect known vulnerabilities but do not apply fixes.
+5. Driver authorization on HTTP routes never compares the `authorizationVersion`, and chat, the boarding code and legacy ride status do not read the driver registry. The operator code paths in `backend/src/routes/shifts.ts` and `backend/src/routes/sessions.ts` accept administrator authority from either `role == "admin"` or `admin == true`; only `requireAdmin` and the administrator ride stop compare the version. A token whose claims are no longer current, for example after a publication whose activation failed, keeps that authority on these paths until it expires or is revoked.
+6. OTA distribution serves one global release, and the signed image embeds the compiled device secret and Wi-Fi password (Section 11). Configure a release only on a backend that serves a single device, and protect the image URL like the device secret.
+7. Revocation of a token without privileged claims takes effect at the backend after at most `AUTH_REVOCATION_CACHE_MS`.
+8. `style-src 'unsafe-inline'` remains in the CSP.
+9. Development firmware builds store secrets in unencrypted flash and may use HTTP.
+10. `FIREBASE_TOKEN` is a long-lived token; its rotation is manual.
+11. Dependency updates are manual; audits detect known vulnerabilities but do not apply fixes.
 
 ## 14. References
 

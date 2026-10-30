@@ -22,7 +22,7 @@ Firebase already supplies authentication, reconnection and delivery across backe
 
 ## 2. Decision
 
-Keep the Firebase SDK listeners. Before considering another transport, evaluate narrower authorized paths, query bounds, data shape and region placement. Another transport would add token handling, durable replay, buffers and fan-out across replicas without evidence that it removes a bottleneck. The change that recorded this decision added opt-in measurement to the existing listeners, not another feed.
+Keep the Firebase SDK listeners. Before considering another transport, evaluate narrower authorized paths, query bounds, data shape and region placement. Another transport would add token handling, durable replay, buffers and fan-out across replicas without evidence that it removes a bottleneck. Measurement is opt-in tracing on the existing listeners, not another feed.
 
 ## 3. Status
 

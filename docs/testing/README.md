@@ -57,11 +57,11 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-005 | 2026-10-04 | [Audit fixes and physical-test readiness](AUDIT_STATUS_SUMMARY.md) | Audit | Status as of 2026-09-14; this index replaces it as a status page |
 | EKI-EVD-006 | 2026-10-08 | [GitHub issue inventory, 8 October](BALCONY_ISSUE_INVENTORY_2026_10_08.md) | Audit | Inventory of 115 issues for EVD-007 |
 | EKI-EVD-007 | 2026-10-08 | [Balcony GNSS readiness](BALCONY_READINESS_2026_10_08.md) | Stationary physical | Its uncommitted readiness fix is committed in EVD-026 |
-| EKI-EVD-008 | 2026-10-06 | [Passenger boarding request budgets](BOARDING_REQUEST_BUDGETS.md) | Synthetic | Boarding codes were later removed (EVD-030) |
+| EKI-EVD-008 | 2026-10-06 | [Passenger boarding request budgets](BOARDING_REQUEST_BUDGETS.md) | Synthetic | Its code-based boarding is superseded by EVD-030 |
 | EKI-EVD-009 | 2026-10-11 | [First CodeQL findings review](CODEQL_FINDINGS_2026_10_11.md) | Audit | Seven CodeQL alerts |
 | EKI-EVD-010 | 2026-10-04 | [Cold power and moving-marker follow-up](COLD_POWER_MOTION_AUDIT_2026_10_03.md) | Stationary physical | Run 2026-10-03; pending claims superseded by EVD-055 |
 | EKI-EVD-011 | 2026-10-11 | [Delta brief and QA patch review](DELTA_BRIEF_REVIEW_2026_10_11.md) | Audit | |
-| EKI-EVD-012 | 2026-10-04 | [Full feature QA, 3 October](FULL_FEATURE_QA_2026_10_03.md) | Synthetic | Fixture and unit coverage at the recorded baseline |
+| EKI-EVD-012 | 2026-10-04 | [Full feature QA, 3 October](FULL_FEATURE_QA_2026_10_03.md) | Synthetic | Fixture and unit coverage at the recorded baseline, plus Chrome checks against live data |
 | EKI-EVD-013 | 2026-10-25 | [GNSS automatic service verification](GNSS_AUTOMATIC_SERVICE_VERIFICATION_2026_10_25.md) | Synthetic | Automatic ride admission without a manual start request; emulator, native and fixture runs |
 | EKI-EVD-014 | 2026-10-27 | [Google sign-in recovery](GOOGLE_SIGN_IN_RECOVERY.md) | Browser | Production sign-in incident of 2026-10-21 and its repair |
 | EKI-EVD-015 | 2026-10-25 | [Historical movement and passenger tracking audit](HISTORICAL_MOTION_AUDIT_2026-10-25.md) | Audit | PR #381 |
@@ -79,7 +79,7 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-027 | 2026-10-04 | [Non-moving recovery verification](NON_MOVING_RECOVERY_REPORT.md) | Stationary physical | Run 2026-09-14 |
 | EKI-EVD-028 | 2026-10-21 | [Open issue disposition](OPEN_ACCEPTANCE_DISPOSITION_2026_10_21.md) | Audit | The 64 open requirements; tracking moved to issue #351 |
 | EKI-EVD-029 | 2026-10-23 | [Passenger audit repairs](PASSENGER_AUDIT_REPAIRS_2026_10_23.md) | Audit | PR #364 |
-| EKI-EVD-030 | 2026-10-25 | [Passenger boarding and CodeRabbit follow-up](PASSENGER_BOARDING_UPDATE_2026-10-25.md) | Synthetic | Removes boarding codes; supersedes code-based boarding in earlier records |
+| EKI-EVD-030 | 2026-10-25 | [Passenger boarding and CodeRabbit follow-up](PASSENGER_BOARDING_UPDATE_2026-10-25.md) | Synthetic | Boarding without a code; supersedes code-based boarding in earlier records |
 | EKI-EVD-031 | 2026-10-26 | [Passenger map and disconnect verification](PASSENGER_DISCONNECT_AND_LAYOUT_2026-10-26.md) | Browser | Signed-in Chrome on localhost |
 | EKI-EVD-032 | 2026-10-29 | [Passenger field ride repairs](PASSENGER_FIELD_RIDE_REPAIRS_2026_10_29.md) | Moving physical | Observations from a passenger ride on deployed `main`; the 15 m arrival corridor replaces the stop radius in EVD-041 and EVD-050; the repairs are verified on synthetic tracks only |
 | EKI-EVD-033 | 2026-10-21 | [Passenger GPS progress regression](PASSENGER_GPS_PROGRESS.md) | Synthetic | |
@@ -104,14 +104,14 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-052 | 2026-10-16 | [Security issues #315 to #317 acceptance](SECURITY_315_317_ACCEPTANCE.md) | Synthetic | Records the App Check removal policy selected on 2026-10-16 |
 | EKI-EVD-053 | 2026-10-11 | [Stationary GNSS and hotspot recovery](STATIONARY_GNSS_HOTSPOT_2026_10_11.md) | Stationary physical | |
 | EKI-EVD-054 | 2026-10-04 | [Stationary readiness checks](STATIONARY_READINESS_REPORT.md) | Stationary physical | Run 2026-09-13 |
-| EKI-EVD-055 | 2026-10-04 | [Testing acceptance follow-up, 3 October](TESTING_ACCEPTANCE_2026_10_03.md) | Stationary physical | Also browser and a short moving check; supersedes pending claims in earlier October audit records |
+| EKI-EVD-055 | 2026-10-04 | [Testing acceptance follow-up, 3 October](TESTING_ACCEPTANCE_2026_10_03.md) | Stationary physical | Also browser checks and physical power cuts; no moving check; supersedes pending claims in earlier October audit records |
 | EKI-EVD-056 | 2026-10-16 | [Testing branch CI investigation](TESTING_CI_INVESTIGATION_2026-10-16.md) | Audit | |
 | EKI-EVD-057 | 2026-10-10 | [Passenger and admin QA and loading optimisation](WEBAPP_QA_2026_10_10.md) | Browser | Partial live acceptance |
 | EKI-EVD-058 | 2026-10-08 | [Webapp readiness, 8 October](WEBAPP_READINESS_2026_10_08.md) | Browser | Boarding and manifest gaps closed by EVD-059 |
 | EKI-EVD-059 | 2026-10-09 | [Webapp readiness, 9 October](WEBAPP_READINESS_2026_10_09.md) | Browser | Stationary passenger flow on localhost |
 | EKI-EVD-060 | 2026-10-11 | [Deterministic QA baseline](../../qa/BASELINE_2026_10_11.md) | Audit | First QA programme slice; the [QA programme](../../qa/README.md) describes the current state |
 
-The `assets/` folder holds images referenced by these records. `simulations/generate-gnss.mjs` is the GNSS profile generator; `qa:gnss`, the backend property tests and the acceptance catalog import it, so it is current code, not evidence.
+The `assets/` folder holds images referenced by these records. `simulations/generate-gnss.mjs` is the GNSS profile generator: the backend GNSS property tests that `qa:gnss` runs import it and the acceptance catalog reads its profile list, so it is current code, not evidence.
 
 ## 5. Remaining acceptance gates
 
@@ -122,6 +122,7 @@ No record above establishes release readiness. The execution ledger always repor
 | Gate | Level | Evidence needed |
 |---|---|---|
 | Stop arrival and matching on a real route | L5 | An instrumented ride on the reference route, including the divided-road U-turn, that checks the 15 m arrival corridor, the offside gate and the matcher speed penalty (EVD-032) |
+| Turnaround, mobile suspension and weak network | L5 | Endpoint completion, turnaround and the separate return ride; passenger and admin suspend, resume and a PWA update during a ride; Slow 3G and Offline behaviour ([field acceptance](../../qa/FIELD_ACCEPTANCE.md), [deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md#7-acceptance-test)) |
 | Moving latency and contention | L5 | At least 100 accepted moving latency samples and 1,000 moving contention samples across normal, degraded and reconnect phases ([field acceptance](../../qa/FIELD_ACCEPTANCE.md)) |
 | GNSS truth and compound recovery | L5 | Independent position reference, drift, acquisition, GNSS plus network loss, reboot replay and replica recovery runs |
 | Power, thermal, watchdog and journal | L5 | Bench runs on a spare board |

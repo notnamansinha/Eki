@@ -45,7 +45,7 @@ These operations have no alias: `POST /api/shifts/stop` (End ride early), `GET /
 
 - Both generations of every pair in Section 3 are implemented and listed in [`openapi.json`](openapi.json).
 - The web app calls three resource-style paths: settings, privacy deletion and ride start. It calls the original path for every other pair it uses.
-- The backend counts requests for each pair by generation and result class. The counts are process-local, reset on restart, and appear in `telemetry.apiCompatibility` of `GET /api/health` and in the OpenTelemetry metric `eki.api.compatibility.requests`. They contain no client identifiers.
+- The backend counts requests by generation and result class for every pair except device disable and fleet reconciliation, and also for End ride early and geometry reads (`backend/src/lib/apiCompatibilityTraffic.ts`). The counts are process-local, reset on restart, and appear in `telemetry.apiCompatibility` of `GET /api/health` and in the OpenTelemetry metric `eki.api.compatibility.requests`. They contain no client identifiers.
 
 Caller inventory and read optimizations are recorded in [API reads and retirement](../operations/API_READS_AND_RETIREMENT.md).
 

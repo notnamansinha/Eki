@@ -45,32 +45,13 @@ Backend paths are relative to `backend/src/`, frontend paths to `frontend/src/`.
 
 ## 4. Ride lifecycle
 
-A ride session has a durable status in Firestore (`ride_sessions/{sessionId}.status`) and a live trip state in RTDB (`activeBuses/{busId}_{routeId}.tripState`). Figure 1 shows the principal session transitions.
-
-```mermaid
-stateDiagram-v2
-    [*] --> pending: Created, direction unknown
-    [*] --> armed: Created at origin with direction
-    [*] --> active: Operator start at an endpoint
-    [*] --> failed: Live claim lost to another session
-    pending --> active: Direction resolved, bus leaves origin
-    armed --> active: Bus leaves origin
-    active --> completed: Stopped arrival at final stop
-    pending --> interrupted: Ended early or abandoned
-    armed --> interrupted: Ended early or abandoned
-    active --> interrupted: Ended early or abandoned
-    completed --> [*]
-    interrupted --> [*]
-    failed --> [*]
-```
-
-Figure 1. Ride session states.
+A ride session has a durable status in Firestore (`ride_sessions/{sessionId}.status`) and a live trip state in RTDB (`activeBuses/{busId}_{routeId}.tripState`). The table summarises when each status is entered; the transition diagram and exact rules are in [tracking algorithms](TRACKING_ALGORITHMS.md#6-ride-lifecycle).
 
 | Status | Live `tripState` | Entered when |
 |---|---|---|
 | `pending` | `pre_departure` | A qualified fix or an operator creates the session before the fix shows which endpoint the bus is at |
 | `armed` | `pre_departure` | The session is created with a known direction and waits at the origin: automatic start, Resume tracking after a pause, or the automatic return trip |
-| `active` | `in_service` | A reliable moving fix leaves the origin departure radius, or an operator starts the ride at an endpoint |
+| `active` | `in_service` | A reliable moving fix leaves the origin departure radius, or an operator starts the ride at an endpoint of a bus that is not paused |
 | `completed` | `completed` | The worker confirms a stopped arrival at the final stop |
 | `interrupted` | None; an early end removes the ride fields, an abandoned ride has no recent live record | An administrator or the assigned operator ends the ride early (`interruptionReason: manual_end_early`), or the reconciler finds no activity for 12 h (`abandoned_session_timeout`, configurable with `ABANDONED_RIDE_THRESHOLD_HOURS`) |
 | `failed` | Not claimed | The RTDB claim at creation loses to another session (`failureReason: shift_conflict`) |
@@ -102,7 +83,7 @@ Both databases deny by default. No client can write RTDB, ride lifecycle, fleet 
 | Failure | Detection | Response |
 |---|---|---|
 | GNSS fix lost or degraded | Firmware sends a fix with `motionState: uncertain`; the reducer rejects unreliable fixes | The ride keeps its state; passengers see "GPS signal lost". After the gap, a reliably reached later stop credits the stops in between as `skipped_gnss_gap` |
-| Tracker loses network, or the backend is unreachable | Missing fixes; HTTP errors or timeouts on the tracker | The tracker keeps up to 100 samples in RTC memory and retries with jittered backoff from 1 to 30 s, replaying only fresh samples. Passengers see "Updates delayed" after 12 s and "Live tracking lost" after 30 s, timed by their own clock. The stale sweep marks the bus offline after `BUS_STALE_MS` (300 s by default) without ending the ride |
+| Tracker loses network, or the backend is unreachable | Missing fixes; HTTP errors or timeouts on the tracker | The tracker keeps up to 100 samples in RTC memory and retries with jittered backoff from 1 to 30 s, replaying only fresh samples. Passengers see "Updates delayed" after 12 s and "Live tracking lost" after 30 s, timed in the browser on the server timeline. The stale sweep marks the bus offline after `BUS_STALE_MS` (300 s by default) without ending the ride |
 | Tracker loses power | Boot after a cold start | A flash checkpoint written every 10 s restores the last committed fix; samples not yet sent can be lost ([cold power recovery](../hardware/COLD_POWER_RECOVERY.md)) |
 | Backend process stops or crashes | Lease not renewed within 45 s | Another process acquires the lease with a higher generation; fencing rejects writes from the old leader. The new leader replays `activeBuses` and fleet state. Telemetry restores missing live lifecycle fields from `active_rides` ([worker leadership](../operations/WORKER_LEADERSHIP.md)) |
 | Write succeeds in Firestore but not in RTDB | Live record behind the durable checkpoint | Firestore is always written first. The next fix or replay republishes the live state without moving the durable stop index backwards. Ride creation retries reuse a stable creation key and resume the same session |

@@ -54,7 +54,7 @@ The backend starts a service when an accepted fix meets every condition below. I
 | The bus is not paused and has no unfinished return journey | `bus_locations/{busId}` |
 | The fix is at most 60 s old and at most 10 s in the future, has HDOP between 0 and 4, and is not marked `uncertain` | Telemetry |
 
-Admission runs in a bounded per-bus queue outside the telemetry acknowledgement, so the device's request is answered without waiting for the session. A blocked bus is retried after 30 s; a failed attempt after 2 s. The backend uses the same session operation as the authenticated API, with a fixed idempotency key and the durable per-bus lock, so retries and several backend instances create one session. If a start is interrupted, the session carries `serviceSetupPending` and the next accepted fix completes it.
+Admission runs in a bounded per-bus queue outside the telemetry acknowledgement, so the device's request is answered without waiting for the session. A blocked bus is retried after 30 s; a failed attempt after 2 s. The backend uses the same session operation as the authenticated API, with a fixed idempotency key and the durable per-bus lock, so retries and several backend instances create one session. If a start is interrupted, the live record carries `serviceSetupPending` and the next accepted fix completes it. A device registry change clears the 30 s back-off at once.
 
 ## 4. Direction and stop progress
 
@@ -64,14 +64,14 @@ The table lists the rules an operator needs when placing stops and reading Live 
 |---|---|
 | Direction from an endpoint | A stopped fix within 10 m of exactly one route endpoint |
 | Direction from departure | At least three fresh reliable moving fixes, 30 m of net travel along one unambiguous first leg |
-| Leaving stop 1 | 50 m from stop 1; between 10 m and half the distance to stop 2 when stop 2 is closer than 100 m |
+| Leaving stop 1 | 50 m from stop 1; when stop 2 is closer than 100 m, half the distance to stop 2, but at least 10 m |
 | Stop arrival | A reliable fix, or the segment between two consecutive reliable fixes, within 15 m of the stop, in route order |
 | Wrong side of a divided road | A stop more than 6 m to the right of a moving bus is not credited (traffic keeps left) |
 | Stop missed with telemetry running | Credited `passed_unobserved` (`Passed · not confirmed`) when the bus reaches one of the next two stops in its direction of travel; never an arrival |
 | GNSS gap | More than 10 s without a fix, an untrusted fix, or a segment longer than 250 m |
 | After a gap | A reliably observed later stop credits the stops in between as `skipped_gnss_gap`, if the bus could have covered the distance at 25 m/s or less |
 | Final stop | Speed of 2.5 km/h or less within 15 m, confirmed by fixes spanning 2 s (`TERMINAL_ARRIVAL_CONFIRMATION_MS`) |
-| Return service | After a 30 s wait (`AUTOMATIC_TURNAROUND_DWELL_MS`), a fresh stopped fix at the final stop starts a new session in the opposite direction |
+| Return service | After a 30 s wait (`AUTOMATIC_TURNAROUND_DWELL_MS`), a fresh stopped fix within 75 m of the final stop starts a new session in the opposite direction |
 
 While the bus is at a stop, the live record publishes `atStopIndex`, and passengers see `At <stop>`. A device that boots mid-route does not claim the stops before its first observation. These rules have been validated on simulated tracks only ([risk TRK-01](ARCHITECTURE_RISK_REGISTER.md#37-trk-01-stop-progress-is-validated-on-simulated-tracks-only)).
 
@@ -97,13 +97,13 @@ The 5-minute browser limit is `NEXT_PUBLIC_BUS_EXPIRY_MS` (default `300000`); th
 1. In Live Ops, open the bus card or its live-details drawer and select `End ride early`. Expected: a confirmation dialog `End ride early?` appears.
 2. Select `End ride`. Expected: the ride appears in History as `Ended early`, the bus leaves the passenger views, and the card shows `Tracking paused`.
 
-The action requires a current administrator. It works even if the operator was reassigned. It releases only the lock that this session holds, and it pauses automatic starts only if that session still owns the bus, so retrying an old stop cannot pause a newer ride. Further fixes show the device online but do not restart the ended ride.
+A current administrator can end the ride even if the operator was reassigned; otherwise the caller must match the ride's current operator assignment ([SEC-03](ARCHITECTURE_RISK_REGISTER.md#38-sec-03-ride-operations-accept-stale-administrator-claims) covers a weakness in that fallback). It releases only the lock that this session holds, and it pauses automatic starts only if that session still owns the bus, so retrying an old stop cannot pause a newer ride. Further fixes show the device online but do not restart the ended ride.
 
 A ride that ends without this action (closed by the abandoned-ride reconciler, or a failed return) does not pause the bus: the next qualified fix starts a new service.
 
 ### 6.2 Resume tracking
 
-1. Confirm that the bus has exactly one assigned operator and the device is online. Expected: Live Ops shows `Resume tracking · <bus-id>` under Automatic service.
+1. Confirm that the bus has exactly one assigned operator and the device is online. Expected: Live Ops shows `Resume tracking · <bus-id>` under Automatic service; the button appears whenever the paused device is online.
 2. Select it. Expected: `Automatic tracking resumed for <bus-id>.`, and the card shows `Direction Pending` or `Awaiting Stop 1`.
 
 Resume uses the protected ride-session API with a stable retry key. It starts in `pre_departure` and never credits an origin arrival that was not observed.
@@ -114,7 +114,8 @@ Resume uses the protected ride-session API with a stable retry key. It starts in
 |---|---|---|
 | Device online, no service, no label | Fix age and HDOP in the serial log | Move to open sky; wait for HDOP of 4 or less |
 | `Assignment required` | Device registry, bus route list, operators assigned to the bus | Correct the records in Fleet & People; the next fix after 30 s retries |
-| `Tracking paused` but no Resume button | Device offline, or not exactly one operator | Power the device; fix the operator assignment |
+| `Tracking paused` but no Resume button | Device offline | Power the device and wait until Live Ops shows it online |
+| Resume reports `Assign exactly one operator before resuming tracking.` | Operators assigned to the bus | Leave exactly one operator on the bus in Fleet & People, then resume |
 | `Direction Pending` for a long time | Bus started away from an endpoint, or the endpoint pin is more than 10 m from where the bus parks | Stop within 10 m of an endpoint, or drive the first leg from stop 1; move the pin if needed |
 | A stop never marks | Pin more than 15 m from the lane, or on the far side of a divided road | Move the pin to the near kerb in the Routes tab |
 | Fleet changes fail with a reconciliation lock error | The fleet-authorization lock is held | Follow the guarded recovery in [operation resources](../api/OPERATION_RESOURCES.md); do not delete the lock document |

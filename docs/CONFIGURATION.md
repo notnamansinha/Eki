@@ -14,7 +14,7 @@ Values in this document are placeholders. Use a separate Firebase project and se
 
 | File | Created from | Read by | A change takes effect after |
 |---|---|---|---|
-| `backend/.env` | `backend/.env.example` | The backend process. `backend/src/bootstrap.ts` loads `.env` from the working directory with `dotenv`; workspace scripts run in `backend/`. `backend/src/seed.ts` loads `backend/.env` explicitly. | Backend restart |
+| `backend/.env` | `backend/.env.example` | The backend process. `backend/src/bootstrap.ts` loads `.env` from the working directory with `dotenv`; workspace scripts run in `backend/`. `npm run seed` loads `backend/.env` by absolute path (`backend/src/seedEnvironment.ts`), so it also works from the repository root. | Backend restart |
 | `frontend/.env.local` | `frontend/env.production.example` | The Next.js dev server and build, and the build scripts `scripts/update-csp.mjs` and `scripts/verify-web-backend-contract.mjs` through `scripts/load-frontend-env.mjs` | Dev server restart or rebuild. `NEXT_PUBLIC_*` values are compiled into the browser bundle. |
 | `hardware/include/secrets.h` | `hardware/include/secrets.example.h` | The firmware build | Rebuild and reflash |
 | Shell environment | `qa/qa.env.example` for the GNSS property run | QA, test and release scripts | Next command |
@@ -44,7 +44,7 @@ The template is a production template. Copied unchanged, it sets `NODE_ENV=produ
 |---|---|---|---|---|
 | `FIREBASE_SERVICE_ACCOUNT` | No | Unset | Firebase Admin service-account JSON object. When unset, the backend uses Application Default Credentials [1]. Malformed JSON refuses startup. Prefer Workload Identity or a secret manager in production. | `lib/firebaseAdmin.ts` |
 | `FIREBASE_DATABASE_URL` | In production | None | Realtime Database (RTDB) origin for Firebase Admin. Outside production a missing value lets the process start, but every RTDB feature fails. Must name the same instance as `NEXT_PUBLIC_FIREBASE_DATABASE_URL`. | `lib/firebaseAdmin.ts` |
-| `GOOGLE_MAPS_API_KEY` | For route geometry | None | Server key for the Google Routes API (`computeRoutes`) and Places API text search. Without it, route computation and place search fail and `npm run seed` stops. Keep it different from the browser key and restrict it to the server. | `lib/googleMaps.ts`, `routes/polyline.ts`, `routes/places.ts` |
+| `GOOGLE_MAPS_API_KEY` | For route geometry | None | Server key for the Google Routes API (`computeRoutes`: route geometry, reroutes and departure traffic) and Places API (New) Text Search (admin place search). Without it, route computation and place search fail and `npm run seed` stops. Keep it different from the browser key, and restrict it to the server's IP addresses and to these two APIs. | `lib/googleMaps.ts`, `routes/polyline.ts`, `routes/places.ts` |
 
 ### 3.3 Ride lifecycle and live state
 
@@ -141,7 +141,7 @@ All frontend variables are `NEXT_PUBLIC_*` values: Next.js compiles them into th
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Yes | Empty | Browser key for the Maps JavaScript API. Restrict it by HTTP referrer. | `src/config/maps.ts` |
 | `NEXT_PUBLIC_GOOGLE_MAP_ID` | Yes | Empty | Cloud map ID used for map styling and advanced markers. | `src/config/maps.ts` |
 | `NEXT_PUBLIC_BACKEND_URL` | Yes | None | Backend origin for all HTTP commands, without a path or query. HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]`. The build writes this origin into the Hosting CSP `connect-src`. | `src/lib/apiClient.ts` and callers, `scripts/update-csp.mjs` |
-| `NEXT_PUBLIC_SITE_URL` | No | `https://bustrack-be165.web.app` | Canonical origin for metadata, `robots.txt` and the sitemap. Must be an origin without path, query or credentials, using HTTPS except for `localhost` in development. | `src/lib/siteMetadata.ts` |
+| `NEXT_PUBLIC_SITE_URL` | No | `https://bustrack-be165.web.app` | Canonical origin for metadata, `robots.txt` and the sitemap. Must be an origin without path, query, fragment or credentials. HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]` outside production builds. | `src/lib/siteMetadata.ts` |
 | `NEXT_PUBLIC_SITE_INDEXING` | No | Enabled | `false` disables search indexing and sitemap discovery; any other value enables them. Use `false` for preview and staging builds. | `src/lib/siteMetadata.ts` |
 | `NEXT_PUBLIC_SERVICE_TIME_ZONE` | No | `Asia/Kolkata` | IANA time zone for ride history timestamps. | `src/components/admin/RideHistoryPanel.tsx` |
 | `NEXT_PUBLIC_PASSENGER_BUS_START_TIME` | No | `8:00 am` | Service start time shown to passengers when no bus is running and the admin setting is empty. | `src/config/passenger.ts` |
@@ -175,7 +175,9 @@ These variables are set in the shell or by the scripts themselves. None belongs 
 | `EKI_QA_RESEARCH_DIR` | Private snapshot directory for the catalog builder. | `scripts/qa/build_catalog.mjs` |
 | `EKI_QA_BASE_URL` | Loopback backend root checked by the QA safety preflight. | `scripts/qa/safety-preflight.mjs` |
 | `EKI_QA_PORT` | Port of the Vite test fixture server; default `3100`. | `e2e/fixtures/vite.config.mts`, `playwright.passenger-layout.config.ts` |
-| `EKI_QA_BROWSER_SCOPE`, `EKI_QA_CONFIRM_DISPOSABLE`, `EKI_QA_EXTERNAL_PROVIDERS`, `FIREBASE_RULES_TEST`, `GCLOUD_PROJECT`, `FIRESTORE_EMULATOR_HOST`, `FIREBASE_DATABASE_EMULATOR_HOST`, `FIREBASE_AUTH_EMULATOR_HOST`, `FIREBASE_CONFIG` | Set by `scripts/run-rules-emulator.mjs`. Emulator tests refuse to run unless they target the disposable `demo-eki-qa` project on loopback ports with mocked providers. | `scripts/run-rules-emulator.mjs`, `backend/src/test-support/emulatorIsolation.ts`, `scripts/qa/emulator-environment.mjs` |
+| `EKI_QA_BROWSER_SCOPE`, `EKI_QA_CONFIRM_DISPOSABLE`, `EKI_QA_EXTERNAL_PROVIDERS`, `FIREBASE_RULES_TEST`, `FIRESTORE_RULES_PATH`, `DATABASE_RULES_PATH`, `GCLOUD_PROJECT` | Set by `scripts/run-rules-emulator.mjs`. Emulator tests refuse to run unless they target the disposable `demo-eki-qa` project on loopback ports with mocked providers. | `scripts/run-rules-emulator.mjs`, `backend/src/test-support/emulatorIsolation.ts`, `backend/src/rulesIntegration.test.ts` |
+| `FIRESTORE_EMULATOR_HOST`, `FIREBASE_DATABASE_EMULATOR_HOST`, `FIREBASE_AUTH_EMULATOR_HOST`, `FIREBASE_CONFIG` | Set by `firebase emulators:exec`, which `scripts/run-rules-emulator.mjs` starts. The QA runners remove the generated `FIREBASE_CONFIG` before the tests run. | `backend/src/test-support/emulatorIsolation.ts`, `scripts/qa/emulator-environment.mjs` |
+| `PYTHON` | Python interpreter for the script tests that run Python tools; default `python` on Windows and `python3` elsewhere. | `scripts/field-capture.test.mjs`, `scripts/interaction-audit.test.mjs` |
 | `JAVA_HOME` | Java installation used by the Firebase emulators. | `scripts/qa/emulator-process.mjs` |
 | `EKI_E2E_BASE_URL` | Base URL for `npm run test:e2e`; default `http://127.0.0.1:3000`. | `playwright.config.ts` |
 | `EKI_E2E_STORAGE_STATE` | Saved admin session for `npm run test:e2e`; the responsive admin test is skipped without it. | `playwright.config.ts`, `e2e/admin-responsive.spec.ts` |
@@ -251,7 +253,7 @@ These values are source constants, not environment variables. Changing one is a 
 | Value | Constant | Source |
 |---|---|---|
 | Stop arrival corridor: 15 m | `STOP_ARRIVAL_GEOFENCE_M` | `backend/src/services/tripStateReducer.ts` |
-| Origin departure distance: 50 m | `ORIGIN_DEPARTURE_M` | `backend/src/services/tripStateReducer.ts` |
+| Origin departure radius: at most 50 m, shortened on a short first leg ([rule](design/TRACKING_ALGORITHMS.md#73-origin-departure)) | `ORIGIN_DEPARTURE_M`, `MIN_ORIGIN_DEPARTURE_M` | `backend/src/services/tripStateReducer.ts` |
 | GNSS gap: more than 10 s without a fix | `GNSS_GAP_MS` | `backend/src/services/tripStateReducer.ts` |
 | Endpoint radius for direction inference: 10 m | `ENDPOINT_GEOFENCE_M` | `backend/src/lib/automaticRideDirection.ts` |
 | Passenger boarding radius: 150 m | `JOIN_RADIUS_M` | `backend/src/services/boardingPolicy.ts` |

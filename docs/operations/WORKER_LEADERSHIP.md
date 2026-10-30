@@ -10,7 +10,7 @@ Several backend replicas can run at once, but singleton background work must run
 
 ## 2. Scope
 
-The process that holds the lease is the worker leader. It runs the trip state engine (lifecycle listeners, stale presence sweep and lifecycle recovery), the public live projection, the retention sweeper, the privacy deletion worker, the abandoned-session reconciler and the periodic fleet authorization reconciler. HTTP, admin and device requests do not need leadership; they keep their own assignment, ordering and durable operation contracts.
+The process that holds the lease is the worker leader. It runs the trip state engine (lifecycle listeners, stale presence sweep and lifecycle recovery), the passenger projection (`publicRouteBuses`), the retention sweeper, the privacy deletion worker, abandoned-ride cleanup and the periodic fleet authorization reconciler. HTTP, admin and device requests do not need leadership; they keep their own assignment, ordering and durable operation contracts.
 
 ## 3. Behaviour
 
@@ -48,7 +48,7 @@ A queue shared by fenced and unfenced callers, for example durable ride restores
 
 | Destination | Check |
 |---|---|
-| Firestore lifecycle transactions and deletion batches | The transaction reads the lease and requires the same owner and generation, a valid local deadline and a wall-clock expiry more than 2 s away, before and after the callback. A takeover changes the read set, so Firestore serializes the earlier commit first or retries or aborts it. Each worker write transaction costs one extra lease read. |
+| Firestore lifecycle transactions and deletion batches | The transaction reads the lease and requires the same owner and generation and a wall-clock expiry more than 2 s away. The local deadline is checked before and after the callback. A takeover changes the read set, so Firestore serializes the earlier commit first or retries or aborts it. Each worker write transaction costs one extra lease read. |
 | RTDB lifecycle and retention transactions | Local authority is checked on dispatch and on every SDK callback retry. Written objects carry `_workerGeneration`; a lower generation cannot overwrite a newer projection. Session, timestamp and unchanged-value checks still apply. |
 | Firebase Auth and recursive deletes | No destination fence exists. Local authority is checked immediately before each call; a dispatched call can finish after revocation with an unknown outcome. Fleet Auth reconciliation keeps its durable lock until every dispatched call settles, and lease expiry never authorizes a lock takeover or a blind replay. Durable deletion jobs survive an interrupted cleanup and are removed only under a valid lease. |
 
@@ -64,7 +64,7 @@ Firestore and RTDB cannot share one lease atomically. An RTDB generation check a
 | Clock allowance | 2 s | `backend/src/lib/workerFence.ts:6` |
 | Local deadline | `min(45 s - 2 x 2 s - elapsed, expiresAt - now - 2 s)` | `backend/src/services/workerCoordinator.ts:117` |
 | Fleet reconciliation interval | 10 min | `backend/src/services/workerCoordinator.ts:171` |
-| `WORKER_ENABLED` | Default `true`; `false`, `0`, `no` or `off` keeps the process out of the election | `backend/src/services/workerCoordinator.ts:20` |
+| `WORKER_ENABLED` | Default `true`; `false`, `0`, `no` or `off` (trimmed, case-insensitive) keeps the process out of the election; an unrecognized value stops the backend at startup | `backend/src/services/workerCoordinator.ts:20`, `backend/src/lib/booleanEnv.ts:23` |
 | `WORKER_INSTANCE_ID` | Default `worker`; diagnostic label only | `backend/src/services/workerCoordinator.ts:27` |
 
 ## 5. Failure modes and recovery
