@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-001 | 2.0 | Current | 2026-10-30 |
+| EKI-API-001 | 3.0 | Current | 2026-10-30 |
 
 ## 1. Introduction
 
@@ -21,7 +21,7 @@ The machine-readable contract is [`openapi.json`](openapi.json) (OpenAPI 3.1.1 [
 | User | Any signed-in Firebase account |
 | Passenger | Account whose token has no `role` claim or `role: "passenger"` |
 | Operator | Bus operator account: token with `role: "driver"` and `driverId` and `assignedBusId` claims |
-| Administrator | Account with current administrator authority (Section 2.3). Operations shared with operators also accept an admin claim. |
+| Administrator | Account with current administrator authority (Section 2.3), including on operations shared with operators and passengers. |
 
 The web app calls a subset of these operations; the [resource migration](API_RESOURCE_MIGRATION.md) lists which paths it uses. Terms are defined in the [glossary](../docs/GLOSSARY.md).
 
@@ -81,8 +81,7 @@ Authorization levels:
 
 | Level | Requirement | Applied by |
 |---|---|---|
-| Administrator | `role: "admin"`, `admin: true` and an `authorizationVersion` claim equal to the version stored in `_userAuthorization/{uid}` in both Firestore and RTDB ([privileged database authorization](../docs/security/PRIVILEGED_DATABASE_AUTHORIZATION.md)) | Every operation whose caller is "administrator", and End ride early by identity (Section 3.5.5) |
-| Admin claim | `role: "admin"` or `admin: true` | Operations shared with operators, as stated in each operation |
+| Administrator | `role: "admin"`, `admin: true` and an `authorizationVersion` claim equal to the version stored in `_userAuthorization/{uid}` in both Firestore and RTDB ([privileged database authorization](../docs/security/PRIVILEGED_DATABASE_AUTHORIZATION.md)) | Every operation whose caller includes an administrator: `requireAdmin` routes, and `hasCurrentAdminAuthority` (`backend/src/middleware/adminAuthority.ts`) on operations shared with operators and passengers. A token that fails this check is treated as an operator or passenger. |
 | Operator assignment | `drivers/{driverId}` exists with `assignedBusId` equal to the requested bus, and `buses/{busId}` lists the requested route in `assignedRoutes`. For an operator, the record's `authUid` must also equal the caller and the `assignedBusId` claim must equal the requested bus. | Start, delay, End ride early, session read. Re-read on every request. |
 
 An administrator acting through an operator operation names the operator in `driverId`, and that operator must pass the same assignment check.
@@ -95,7 +94,7 @@ Authentication failures:
 | 401 | `{"error":"Invalid or expired token."}` | Token rejected, revoked, or account disabled or deleted |
 | 403 | `{"error":"Forbidden: Admin access required.","code":"ADMIN_REQUIRED","phase":"authentication"}` | Administrator operation without current administrator authority |
 | 503 | `{"error":"Authentication service is busy. Retry shortly."}`, `Retry-After: 1` | Too many token verifications in progress (`AUTH_MAX_PENDING_VERIFICATIONS`) |
-| 503 | `code: "AUTH_UNAVAILABLE"`, `Retry-After: 1` | Admin authorization records could not be read |
+| 503 | `code: "AUTH_UNAVAILABLE"`, `Retry-After: 1` | Admin authorization records could not be read by `requireAdmin`. Operations shared with operators and passengers return their own error status instead, as stated in each operation. |
 
 Examples for a POSIX shell. `read -rs` takes the secret without echoing it or writing it to the shell history:
 
@@ -327,7 +326,7 @@ A ride session is a `ride_sessions/{sessionId}` document with status `pending`, 
 
 `POST /api/shifts/start` and `POST /api/v2/ride-sessions`
 
-- Caller: operator, or admin claim acting for a named operator. Both must pass the operator assignment check.
+- Caller: operator, or an administrator acting for a named operator. Both must pass the operator assignment check.
 - Request: `{"busId","routeId","driverId"}`. `driverId` is required for an administrator; an operator's comes from the token. The v2 path also requires an `Idempotency-Key` header (Section 2.6).
 - Success: 201 for a new session, 200 for a resumed one, with `{"sessionId","resumed","direction","pending"}`. `direction` is `forward`, `reverse` or `null`; `pending: true` means the direction is not yet known. The v2 path adds `Location: /api/v2/ride-sessions/{sessionId}` and `Cache-Control: no-store`.
 - Errors: 400 (v2) missing or invalid `Idempotency-Key`; 403 assignment check failed; 409 the bus has another active ride, the live record has no fix from the last 60 s, the route changed during the start, the earlier session awaits lifecycle or completion recovery, or the key belongs to another assignment; 410 (v2) the key's session was deleted; 422 the route has fewer than two valid stops; 500.
@@ -336,7 +335,7 @@ A ride session is a `ride_sessions/{sessionId}` document with status `pending`, 
 
 `GET /api/v2/ride-sessions/:sessionId`
 
-- Caller: admin claim, a passenger in the session manifest, or the session's operator passing the assignment check.
+- Caller: an administrator, a passenger in the session manifest, or the session's operator passing the assignment check.
 - Success: 200 `{"sessionId","busId","routeId","status","direction"}`. The manifest, chat and other fields are not returned.
 - Errors: 400 invalid ID; 403 not a member; 404 unknown session; 500.
 
@@ -344,15 +343,15 @@ A ride session is a `ride_sessions/{sessionId}` document with status `pending`, 
 
 `GET /api/sessions/:sessionId/status`
 
-- Caller: an account with `admin: true`; the operator whose `driverId` and `assignedBusId` claims match the session; or a passenger with a profile and an entry in the manifest.
+- Caller: an administrator (current administrator authority, Section 2.3); the operator whose `driverId` and `assignedBusId` claims match the session; or a passenger with a profile and an entry in the manifest.
 - Success: 200 `{"sessionId","busId","routeId","status"}`. For a passenger it adds `boarding` with the passenger's own `boardingStopId` and `alightingStopId`. The web app calls this to recover a joined ride after its live record disappears.
-- Errors: 400 invalid ID; 403 for both an unknown session and a session the caller cannot see, with the same body; 503 stored session invalid or unreadable.
+- Errors: 400 invalid ID; 403 for both an unknown session and a session the caller cannot see, with the same body; 503 (without `Retry-After`) when the stored session or the administrator authorization records cannot be read.
 
 #### 3.5.4 Report a delay
 
 `PATCH /api/shifts/delay` and `PATCH /api/v2/ride-sessions/:sessionId`
 
-- Caller: operator, or admin claim acting for a named operator, passing the assignment check.
+- Caller: operator, or an administrator acting for a named operator, passing the assignment check.
 - Request: legacy `{"busId","routeId","driverId","delayMinutes"}` with `driverId` required for an administrator; v2 exactly `{"delayMinutes"}`, taking bus, route and operator from the session. `delayMinutes` is an integer from 0 to 1440.
 - Success: 200 `{"saved":true,"delayMinutes","delayUpdatedAt","durable"}`. The delay is written to the live record, which must hold an active ride in `pre_departure` or `in_service` (and, on v2, the same session). `durable: false` means the copy in `active_rides` was skipped because a newer revision exists, or failed; the live value still applies.
 - Errors: legacy 400 invalid body or failed assignment check; v2 400 other body fields, 403 failed assignment check, 404 unknown session; both 409 no matching active ride or terminal session; 500.
@@ -361,7 +360,7 @@ A ride session is a `ride_sessions/{sessionId}` document with status `pending`, 
 
 `POST /api/shifts/stop`
 
-- Caller: an administrator, the assigned operator, or an admin claim acting for a named operator.
+- Caller: an administrator, or the assigned operator. An administrator may also act for a named operator.
 - Request: `{"busId","routeId","sessionId","driverId"}`; `driverId` is optional for an administrator.
 - Authorization: an administrator (current administrator authority, Section 2.3) ends the session by its own identity. The session's `busId` and `routeId` must equal the request, and its `driverId` too when one is given; the operator's current assignment is not checked, so a reassigned operator or a live record without a driver does not block the action. Every other caller, including a token with an admin claim but without current authority, must pass the operator assignment check for the named operator.
 - Effect: a `pending`, `armed` or `active` session becomes `interrupted` with `interruptionReason: "manual_end_early"`, `interruptedBy` (the caller's UID), `endTime` and the last known location. The session's `active_rides` record and active bus lock are deleted, automatic service is paused for the bus while this session still owned it, and the live record is set offline if it still belongs to the session. The session is never marked `completed`.
@@ -400,7 +399,7 @@ A ride session is a `ride_sessions/{sessionId}` document with status `pending`, 
 
 `POST /api/sessions/:sessionId/boarding-code` and `POST /api/v2/ride-sessions/:sessionId/boarding-code`
 
-- Caller: admin claim, or the operator whose `driverId` and `assignedBusId` claims match the session.
+- Caller: an administrator, or the operator whose `driverId` and `assignedBusId` claims match the session.
 - Success: 200 `{"sessionId","boardingCode"}`, with an 8-character code created on the first call and stored on the session. Boarding (Section 3.6.1) does not use the code; the operation remains for older clients and Live Ops.
 - Errors: 400 invalid ID; 403 not allowed, or session not `armed` or `active`; 404 unknown session; 500.
 
@@ -408,7 +407,7 @@ A ride session is a `ride_sessions/{sessionId}` document with status `pending`, 
 
 `POST /api/sessions/:sessionId/messages` and `POST /api/v2/ride-sessions/:sessionId/messages`
 
-- Caller: a passenger in the manifest with a profile, the operator whose claims match the session, or an admin claim.
+- Caller: a passenger in the manifest with a profile, the operator whose claims match the session, or an administrator.
 - Request: exactly `{"text","requestId"}`. `text` has at most 2,000 characters and, after normalization, 1 to 500 characters. `requestId` is a request ID (Section 2.4).
 - Success: 201 `{"id","sent":true,"moderated"}` for a new message; 200 for a repeat of the same `requestId` and text, even after the ride ended. The backend sets the sender role and name, normalizes the text and censors profanity; only the censored text is stored, and `moderated` reports whether it changed. Clients read messages through a Firestore listener.
 - Errors: 400 invalid ID, body, fields or text; 403 not part of the ride, or passenger without a profile; 404 unknown session; 409 session not `armed` or `active`, or `requestId` reused with other text; 429 `{"error","retryAfterMs"}` with `Retry-After` (Section 4.2); 500.

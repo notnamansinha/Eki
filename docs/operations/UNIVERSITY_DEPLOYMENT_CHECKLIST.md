@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-006 | 1.1 | Current | 2026-10-30 |
+| EKI-OPS-006 | 1.2 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -53,7 +53,6 @@ Each item is complete only when its evidence is recorded in the release evidence
 ## 5. Identity and devices
 
 - [ ] Maintain approved passenger and administrator accounts with backend-published role claims; revoke departed or reassigned staff at once ([privileged database authorization](../security/PRIVILEGED_DATABASE_AUTHORIZATION.md)). Operator assignments are fleet records managed by administrators.
-- [ ] Resolve or formally accept [SEC-03](ARCHITECTURE_RISK_REGISTER.md#38-sec-03-ride-operations-accept-stale-administrator-claims): ride start, delay, stop and session reads accept an administrator claim without the authorization-version check.
 - [ ] Give each ESP32 its own random secret with `npm run provision-device --workspace=backend -- --device-id <device-id> --bus-id <bus-id> --route-id <route-id>`; Firestore stores only its salted verifier.
 - [ ] Bind each device to one bus and route. Document rotation, disablement (`POST /api/devices/<device-id>/disable`), lost-device and reassignment procedures.
 - [ ] Restrict the browser Maps key by HTTPS referrer and API, and the server key by runtime identity or source address and the Routes and Places APIs.

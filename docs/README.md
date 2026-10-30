@@ -62,15 +62,15 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-REQ-001 | [Software Requirements Specification](requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md) | 2.0 | Current | 2026-10-30 |
+| EKI-REQ-001 | [Software Requirements Specification](requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md) | 3.0 | Current | 2026-10-30 |
 
 ### 4.3 Architecture and design (ARC)
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-ARC-001 | [Eki Architecture](design/ARCHITECTURE.md) | 2.0 | Current | 2026-10-30 |
-| EKI-ARC-002 | [Eki High-Level Design](design/HIGH_LEVEL_DESIGN.md) | 2.0 | Current | 2026-10-30 |
-| EKI-ARC-003 | [Low-Level Design](design/LOW_LEVEL_DESIGN.md) | 2.0 | Current | 2026-10-30 |
+| EKI-ARC-002 | [Eki High-Level Design](design/HIGH_LEVEL_DESIGN.md) | 3.0 | Current | 2026-10-30 |
+| EKI-ARC-003 | [Low-Level Design](design/LOW_LEVEL_DESIGN.md) | 3.0 | Current | 2026-10-30 |
 | EKI-ARC-004 | [Tracking Algorithms](design/TRACKING_ALGORITHMS.md) | 1.1 | Current | 2026-10-30 |
 
 ### 4.4 Architecture decision records (ADR)
@@ -92,9 +92,9 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-API-001 | [Eki Backend HTTP API](../backend/API.md) | 2.0 | Current | 2026-10-30 |
+| EKI-API-001 | [Eki Backend HTTP API](../backend/API.md) | 3.0 | Current | 2026-10-30 |
 | EKI-API-002 | [HTTP Contract](api/HTTP_CONTRACT.md) | 2.0 | Current | 2026-10-30 |
-| EKI-API-003 | [Ride Session Contract](api/RIDE_SESSION_CONTRACT.md) | 1.0 | Current | 2026-10-30 |
+| EKI-API-003 | [Ride Session Contract](api/RIDE_SESSION_CONTRACT.md) | 2.0 | Current | 2026-10-30 |
 | EKI-API-004 | [Operation Resources](api/OPERATION_RESOURCES.md) | 1.0 | Current | 2026-10-30 |
 | EKI-API-005 | [HTTP Resource Migration](../backend/API_RESOURCE_MIGRATION.md) | 2.0 | Current | 2026-10-30 |
 
@@ -110,8 +110,8 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-SEC-001 | [Security Policy](../SECURITY.md) | 1.0 | Current | 2026-10-30 |
-| EKI-SEC-002 | [Security Architecture](security/SECURITY_ARCHITECTURE.md) | 2.0 | Current | 2026-10-30 |
-| EKI-SEC-003 | [Browser API Security](security/BROWSER_API_SECURITY.md) | 2.0 | Current | 2026-10-30 |
+| EKI-SEC-002 | [Security Architecture](security/SECURITY_ARCHITECTURE.md) | 3.0 | Current | 2026-10-30 |
+| EKI-SEC-003 | [Browser API Security](security/BROWSER_API_SECURITY.md) | 3.0 | Current | 2026-10-30 |
 | EKI-SEC-004 | [Privileged Database Authorization](security/PRIVILEGED_DATABASE_AUTHORIZATION.md) | 1.0 | Current | 2026-10-30 |
 | EKI-SEC-005 | [Hardware Security Provisioning](security/HARDWARE_SECURITY_PROVISIONING.md) | 1.0 | Current | 2026-10-30 |
 
@@ -130,11 +130,11 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-OPS-003 | [ngrok Tunnel for the Backend](operations/NGROK_TUNNEL.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-004 | [Local Web, Phone and Device Testing](operations/LOCAL_TESTING.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-005 | [Live Demo Runbook](operations/LIVE_DEMO_RUNBOOK.md) | 1.0 | Current | 2026-10-30 |
-| EKI-OPS-006 | [University Deployment Checklist](operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) | 1.1 | Current | 2026-10-30 |
+| EKI-OPS-006 | [University Deployment Checklist](operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) | 1.2 | Current | 2026-10-30 |
 | EKI-OPS-007 | [Firestore Index Deployment](operations/FIRESTORE_INDEX_DEPLOYMENT.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-008 | [Field Capture](operations/FIELD_CAPTURE.md) | 1.0 | Current | 2026-10-30 |
-| EKI-OPS-009 | [Automatic GNSS Service](operations/AUTOMATIC_GNSS_SERVICE.md) | 1.0 | Current | 2026-10-30 |
-| EKI-OPS-010 | [Architecture Risk Register](operations/ARCHITECTURE_RISK_REGISTER.md) | 2.0 | Current | 2026-10-30 |
+| EKI-OPS-009 | [Automatic GNSS Service](operations/AUTOMATIC_GNSS_SERVICE.md) | 1.1 | Current | 2026-10-30 |
+| EKI-OPS-010 | [Architecture Risk Register](operations/ARCHITECTURE_RISK_REGISTER.md) | 3.0 | Current | 2026-10-30 |
 | EKI-OPS-011 | [Production Readiness Audit](operations/PRODUCTION_READINESS_AUDIT.md) | 1.0 | Historical | 2026-10-04 |
 | EKI-OPS-012 | [API Read Caching and Compatibility Retirement](operations/API_READS_AND_RETIREMENT.md) | 1.1 | Current | 2026-10-30 |
 | EKI-OPS-013 | [Browser Telemetry Trace](operations/BROWSER_TELEMETRY_TRACE.md) | 1.0 | Current | 2026-10-30 |

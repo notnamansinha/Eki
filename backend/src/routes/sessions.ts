@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { FieldPath, FieldValue } from "firebase-admin/firestore";
 import { requireAuth } from "../middleware/requireAuth";
+import { hasCurrentAdminAuthority } from "../middleware/adminAuthority";
 import { db, rtdb } from "../lib/firebaseAdmin";
 import { haversineMeters } from "../lib/geo";
 import { singleRouteParam } from "../lib/requestParams";
@@ -110,9 +111,15 @@ function stableHash(value: string): string {
 async function issueBoardingCode(req: AuthenticatedRequest, res: Response) {
   const sessionId = singleRouteParam(req.params.sessionId);
   const user = req.user;
-  const isAdmin = user?.role === "admin" || user?.admin === true;
   if (sessionId === null || !SAFE_ID.test(sessionId)) {
     res.status(400).json({ error: "Invalid session ID." });
+    return;
+  }
+  let isAdmin: boolean;
+  try {
+    isAdmin = await hasCurrentAdminAuthority(req);
+  } catch (error) {
+    sendBoardingError(res, error, "Unable to issue the boarding code.");
     return;
   }
   if (
@@ -330,6 +337,9 @@ async function joinSession(req: AuthenticatedRequest, res: Response) {
  */
 async function sendMessage(req: AuthenticatedRequest, res: Response) {
   try {
+    // Decided from the token alone, before any request field is read, and
+    // outside the transaction so a retry does not repeat the lookup.
+    const isAdmin = await hasCurrentAdminAuthority(req);
     const sessionId = singleRouteParam(req.params.sessionId);
     const uid = req.user?.uid;
     if (sessionId === null || !SAFE_ID.test(sessionId) || typeof uid !== "string") {
@@ -374,7 +384,7 @@ async function sendMessage(req: AuthenticatedRequest, res: Response) {
       );
 
       const sessionData = session.data();
-      const privilegedSender = req.user?.role === "admin" || req.user?.admin === true ||
+      const privilegedSender = isAdmin ||
         (req.user?.role === "driver" && sessionData?.driverId === req.user?.driverId && sessionData?.busId === req.user?.assignedBusId);
       if (!privilegedSender) {
         const profile = await transaction.get(db.collection("users").doc(uid));
@@ -408,7 +418,6 @@ async function sendMessage(req: AuthenticatedRequest, res: Response) {
         userRole === "driver" &&
         data.driverId === req.user?.driverId &&
         data.busId === req.user?.assignedBusId;
-      const isAdmin = userRole === "admin" || req.user?.admin === true;
       if (!isPassenger && !isDriver && !isAdmin) {
         throw new ChatPolicyError(403, "You are not part of this ride.");
       }
@@ -509,20 +518,21 @@ router.get("/:sessionId/status", requireAuth, async (req: AuthenticatedRequest, 
   try {
     const snapshot = await db.collection("ride_sessions").doc(sessionId).get();
     const data = snapshot.data(), user = req.user;
+    const admin = await hasCurrentAdminAuthority(req);
     const entry = user ? passengerManifest(data?.passengers)[user.uid] : null;
-    const allowed = data && user && (user.admin === true ||
+    const allowed = data && user && (admin ||
       (user.role === "driver" && typeof user.driverId === "string" && SAFE_ID.test(user.driverId) && typeof user.assignedBusId === "string" && SAFE_ID.test(user.assignedBusId) && user.driverId === data.driverId && user.assignedBusId === data.busId) ||
       ((user.role === undefined || user.role === "passenger") && hasPassenger(passengerManifest(data.passengers), user.uid) && entry && typeof entry === "object" && !Array.isArray(entry) && entry.userId === user.uid));
     // Identical response for an unknown session and another passenger's ride.
     if (!snapshot.exists || !allowed) { res.status(403).json({ error: "Ride status is unavailable for this account." }); return; }
-    if (user.admin !== true && (user.role === undefined || user.role === "passenger") &&
+    if (!admin && (user.role === undefined || user.role === "passenger") &&
         !(await db.collection("users").doc(user.uid).get()).exists) {
       res.status(403).json({ error: "Ride status is unavailable for this account." }); return;
     }
     if (typeof data.busId !== "string" || !SAFE_ID.test(data.busId) || typeof data.routeId !== "string" || !SAFE_ID.test(data.routeId) || typeof data.status !== "string" || !["pending", "armed", "active", "completed", "interrupted", "failed"].includes(data.status)) {
       res.status(503).json({ error: "Ride status is temporarily unavailable." }); return;
     }
-    const ownBoarding = user.admin !== true && (user.role === undefined || user.role === "passenger") &&
+    const ownBoarding = !admin && (user.role === undefined || user.role === "passenger") &&
       entry && typeof entry === "object" && !Array.isArray(entry) && entry.userId === user.uid &&
       typeof entry.boardingStopId === "string" && SAFE_ID.test(entry.boardingStopId) &&
       (entry.alightingStopId === null || (typeof entry.alightingStopId === "string" && SAFE_ID.test(entry.alightingStopId)))

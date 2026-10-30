@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-003 | 1.0 | Current | 2026-10-30 |
+| EKI-API-003 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -90,7 +90,7 @@ No HTTP operation completes a ride; only telemetry does. There is no resource-st
 `POST /api/shifts/stop` accepts two kinds of caller:
 
 - An administrator (`role: "admin"`, `admin: true` and a current `authorizationVersion`) ends the session by its own identity. The session's `busId` and `routeId` must match the request, and its `driverId` too when the request names one. The operator's current assignment is not checked, so a ride whose operator was reassigned, or whose live record lacks a driver, can still be ended.
-- Any other caller, including a token with an admin claim but without current authority, must pass the operator assignment check for the named operator.
+- Every other caller, including a token with administrator claims but without current authority, is treated as an operator and must pass the operator assignment check for its own driver identity.
 
 In one Firestore transaction the backend marks the session `interrupted` with `endTime`, `interruptedBy` and the latest known location, deletes the session's `active_rides` record and active bus lock, and pauses automatic service for the bus if this session still owned it. It then sets the live record offline and removes its ride fields, but only if the record still carries this session. Telemetry from the device keeps the bus visible as online but cannot recreate the ended ride. An administrator restarts tracking with Resume tracking in Live Ops, which calls `POST /api/v2/ride-sessions` with a stable key. The new session starts before departure (`armed`, or `pending` until the direction is known) and does not claim an arrival at the origin.
 

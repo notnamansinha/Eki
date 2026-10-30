@@ -7,7 +7,7 @@ import { db, rtdb } from "../lib/firebaseAdmin";
 import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import { newerJourneyLocation } from "../services/journeyLocation";
 import { singleRouteParam } from "../lib/requestParams";
-import { authorizationIsCurrent } from "../services/userAuthorization";
+import { hasCurrentAdminAuthority } from "../middleware/adminAuthority";
 import {
   isRideDirection,
 } from "../lib/rideDirection";
@@ -92,7 +92,7 @@ async function readOperatorAssignment(
   requestedDriverId: unknown,
 ) {
   const user = req.user;
-  const isAdmin = user?.role === "admin" || user?.admin === true;
+  const isAdmin = await hasCurrentAdminAuthority(req);
   const driverId = isAdmin ? requestedDriverId : user?.driverId;
   if (
     (!isAdmin && user?.role !== "driver") ||
@@ -274,13 +274,11 @@ async function startShift(req: AuthenticatedRequest, res: Response) {
  * every other principal keeps the full current-assignment check.
  */
 async function adminStopTarget(req: AuthenticatedRequest): Promise<{ driverId?: string; busId: string; routeId: string } | null> {
-  const user = req.user;
-  if (!user || user.role !== "admin" || user.admin !== true || typeof user.authorizationVersion !== "string") return null;
   const { busId, routeId, driverId } = req.body ?? {};
   if (typeof busId !== "string" || !SAFE_ID.test(busId) || typeof routeId !== "string" || !SAFE_ID.test(routeId)) return null;
   if (driverId !== undefined && driverId !== null && (typeof driverId !== "string" || !SAFE_ID.test(driverId))) return null;
   try {
-    if (!(await authorizationIsCurrent(user.uid, user as Record<string, unknown>))) return null;
+    if (!(await hasCurrentAdminAuthority(req))) return null;
   } catch {
     return null;
   }
@@ -533,7 +531,7 @@ async function readSession(req: AuthenticatedRequest, res: Response) {
     }
     const data = session.data()!;
     const user = req.user!;
-    const admin = user.role === "admin" || user.admin === true;
+    const admin = await hasCurrentAdminAuthority(req);
     const member = Object.prototype.hasOwnProperty.call(data.passengers ?? {}, user.uid) &&
       data.passengers[user.uid]?.userId === user.uid;
     const operator = !admin && !member && user.role === "driver" && user.driverId === data.driverId &&

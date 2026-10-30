@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-003 | 2.0 | Current | 2026-10-30 |
+| EKI-ARC-003 | 3.0 | Current | 2026-10-30 |
 
 ## 1. Introduction
 
@@ -90,6 +90,7 @@ All request budgets are divided by the replica shard factor (`backend/src/lib/ra
 |---|---|---|---|
 | `requireAuth.ts` | Reads `Authorization: Bearer`, verifies the Firebase ID token with revocation checks, attaches claims to `req.user` | `requireAuth` | `services/authTokenVerifier.ts` |
 | `requireAdmin.ts` | Requires `admin: true`, `role: admin` and a current `authorizationVersion` | `requireAdmin` | `services/userAuthorization.ts` |
+| `adminAuthority.ts` | Applies the `requireAdmin` policy inside handlers shared with operators and passengers; one authorization read per request | `hasCurrentAdminAuthority` | `services/userAuthorization.ts`, `routes/shifts.ts`, `routes/sessions.ts` |
 | `verifiedRequest.ts` | Reuses one verification per request and token | `verifyRequestToken` | `authTokenVerifier.ts` |
 
 ### 3.4 Routes (`backend/src/routes`)
@@ -159,7 +160,7 @@ All request budgets are divided by the replica shard factor (`backend/src/lib/ra
 | `feedbackService.ts` | Legacy feedback validation and cooldown | `evaluateFeedback` | `routes/feedback.ts` |
 | `routeGeometryReads.ts` | Bounded cached route geometry reads | `readRouteGeometryDocument`, `invalidateRouteGeometryRead` | `routes/polyline.ts`, `telemetryRouteService` |
 | `apiReadCache.ts` | Bounded cache for list endpoints | `createApiReadCache`, `routeListCache` | `routes/routesList.ts` |
-| `userAuthorization.ts` | Authorization version publication and checks in Firestore and RTDB | `publishUserAuthorization`, `authorizationIsCurrent` | `requireAdmin`, `fleet.ts` |
+| `userAuthorization.ts` | Authorization version publication and checks in Firestore and RTDB | `publishUserAuthorization`, `authorizationIsCurrent` | `requireAdmin`, `adminAuthority`, `fleet.ts` |
 | `authTokenVerifier.ts` | Coalesced, cached revocation-aware token verification | `verifyRevocationAwareIdToken` | `requireAuth` |
 | `fleetMutationLock.ts` | Non-expiring mutex for fleet and privacy Auth mutations | `withFleetLock` | `fleet.ts`, privacy worker |
 | `fleetReconciliationCache.ts` | Per-scan cache of bus routes and RTDB mirrors | `FleetReconciliationCache` | `fleet.ts` |
