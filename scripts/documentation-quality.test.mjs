@@ -52,9 +52,18 @@ function proseOnly(text) {
   return text.replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, '').replace(/`[^`\n]*`/g, '');
 }
 
+/** Strips HTML tags until none remain, so nested fragments such as `<scr<x>ipt>` cannot leave a tag behind. */
+function withoutTags(text) {
+  let previous;
+  do {
+    previous = text;
+    text = text.replace(/<[^<>]*>/g, '');
+  } while (text !== previous);
+  return text;
+}
+
 function slug(heading) {
-  return heading.trim().toLowerCase()
-    .replace(/<[^>]+>/g, '')
+  return withoutTags(heading.trim().toLowerCase())
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/[^\p{L}\p{N}\s_-]/gu, '')
     .replace(/\s/g, '-');
