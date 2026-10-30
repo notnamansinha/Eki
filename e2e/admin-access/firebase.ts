@@ -5,18 +5,57 @@ const account = (uid: string) => ({ uid, email: `${uid}@example.test`, displayNa
   getIdTokenResult: (forceRefresh = false) => verifyRole(forceRefresh),
 });
 type User = ReturnType<typeof account>;
-export const auth = { currentUser: account("qa-admin") as User | null };
+// `?restoreHang` models a cold open whose persisted session is still being
+// restored: currentUser is unknown (null), and the first observer callback,
+// authStateReady() and getRedirectResult stay pending until a fixture control
+// finishes restoration. Other scenarios restore the admin immediately.
+const restoreHang = new URLSearchParams(location.search).has("restoreHang");
+let restoring = restoreHang;
+const heldObservers = new Set<(user: User | null) => void>();
+const heldRestoration: Array<() => void> = [];
+const restorationObservers = new Set<() => void>();
+const untilRestored = () => restoring ? new Promise<void>(resolve => { heldRestoration.push(resolve); }) : Promise.resolve();
+export const restorationPending = () => restoring;
+export function subscribeRestoration(callback: () => void) { restorationObservers.add(callback); return () => { restorationObservers.delete(callback); }; }
+// authDomain matches the page host (a same-origin auth helper), so an iPhone
+// user agent takes the production full-page redirect path and desktop the popup.
+export const auth = { currentUser: (restoreHang ? null : account("qa-admin")) as User | null,
+  config: { authDomain: location.host }, authStateReady: untilRestored };
 export const googleProvider = {};
+export const popupRedirectResolver = {};
+// Records each OAuth SDK call and whether it received the shared resolver.
+const authCalls: Array<{ name: string; resolver: boolean }> = [];
+Object.assign(window, { qaAuthCalls: authCalls });
+const recordAuthCall = (name: string, resolver: unknown) => { authCalls.push({ name, resolver: resolver === popupRedirectResolver }); };
 const observers = new Set<(user: User | null) => void>();
+// One sign-in code load registers one auth-state observer; a duplicated load
+// registers another that is never unsubscribed (window.qaAuthObservers).
+const observerCounts = { registered: 0, active: 0 };
+Object.assign(window, { qaAuthObservers: observerCounts });
 export function onAuthStateChanged(_auth: unknown, callback: (user: User | null) => void) {
-  observers.add(callback); queueMicrotask(() => callback(auth.currentUser));
-  return () => { observers.delete(callback); };
+  observers.add(callback);
+  observerCounts.registered++; observerCounts.active = observers.size;
+  if (restoring) heldObservers.add(callback); else queueMicrotask(() => callback(auth.currentUser));
+  return () => { observers.delete(callback); heldObservers.delete(callback); observerCounts.active = observers.size; };
 }
+function finishRestoration(user: User | null) {
+  if (!restoring) return;
+  auth.currentUser = user; restoring = false;
+  heldRestoration.splice(0).forEach(resolve => resolve());
+  const initial = [...heldObservers]; heldObservers.clear();
+  initial.forEach(callback => queueMicrotask(() => { if (observers.has(callback)) callback(auth.currentUser); }));
+  restorationObservers.forEach(callback => callback());
+}
+export const finishRestorationSignedOut = () => finishRestoration(null);
+export const finishRestorationAsPassenger = () => finishRestoration(account("qa-passenger"));
+export const finishRestorationAsAdmin = () => finishRestoration(account("qa-admin"));
 export const browserLocalPersistence = {};
 export async function setPersistence() {}
-export async function getRedirectResult() { return null; }
-export async function signInWithPopup() {}
-export async function signInWithRedirect() {}
+export async function getRedirectResult(_auth?: unknown, resolver?: unknown) {
+  recordAuthCall("getRedirectResult", resolver); await untilRestored(); return null;
+}
+export async function signInWithPopup(_auth?: unknown, _provider?: unknown, resolver?: unknown) { recordAuthCall("signInWithPopup", resolver); }
+export async function signInWithRedirect(_auth?: unknown, _provider?: unknown, resolver?: unknown) { recordAuthCall("signInWithRedirect", resolver); }
 export async function signOut() { auth.currentUser = null; observers.forEach(callback => callback(null)); }
 export function switchAccount() { auth.currentUser = account("qa-second"); observers.forEach(callback => callback(auth.currentUser)); }
 export function reverifyAccount() { observers.forEach(callback => callback(auth.currentUser)); }
@@ -34,7 +73,8 @@ function verifyRole(forceRefresh: boolean) {
 export function approveVerification() {
   const query = new URLSearchParams(location.search);
   const requested = query.get("traceRole");
-  const role = query.has("traceExport") && (requested === "passenger" || requested === "driver") ? requested : "admin";
+  const role = auth.currentUser?.uid === "qa-passenger" ? "passenger"
+    : query.has("traceExport") && (requested === "passenger" || requested === "driver") ? requested : "admin";
   approve?.({ claims: { role, admin: role === "admin" } });
   notifyWaiting(false);
 }

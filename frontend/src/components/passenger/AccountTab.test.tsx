@@ -71,7 +71,9 @@ describe("account confirmations", () => {
     mocks.user = null;
     render(<AccountTab />);
     expect(screen.queryByRole("button", { name: "Send Feedback" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Sign in with Google" })).toBeTruthy();
+    const signIn = screen.getByRole("button", { name: "Sign in with Google" });
+    expect(signIn.innerHTML).toContain("var(--accent)");
+    expect(signIn.innerHTML).not.toMatch(/#3B82F6|59, 130, 246/i);
   });
   it("clears the previous deletion failure when opening a new confirmation", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response('{}')));

@@ -249,6 +249,27 @@ rulesDescribe("Firebase security rules integration", () => {
     await assertSucceeds(getDoc(doc(passenger.firestore(), "users", "passenger_1")));
   });
 
+  it("lets signed-in users read passenger route schedules but denies every client write", async () => {
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "settings", "passengerRoutes"), {
+        routes: [{ routeId: "route_1", stopTimes: {} }],
+        updatedBy: "admin_1",
+      });
+    });
+    const passenger = environment.authenticatedContext("passenger_1", { role: "passenger" });
+    const admin = environment.authenticatedContext("admin_1", { role: "admin", admin: true, authorizationVersion: "current" });
+    const anonymous = environment.unauthenticatedContext();
+    await assertSucceeds(getDoc(doc(passenger.firestore(), "settings", "passengerRoutes")));
+    await assertSucceeds(getDoc(doc(admin.firestore(), "settings", "passengerRoutes")));
+    await assertFails(getDoc(doc(anonymous.firestore(), "settings", "passengerRoutes")));
+    for (const context of [passenger, admin]) {
+      const ref = doc(context.firestore(), "settings", "passengerRoutes");
+      await assertFails(setDoc(ref, { routes: [] }));
+      await assertFails(updateDoc(ref, { routes: [] }));
+      await assertFails(deleteDoc(ref));
+    }
+  });
+
   describe("feedback without the backend tunnel", () => {
     let sequence = 0;
     const passenger = (uid: string) => environment.authenticatedContext(uid, { role: "passenger" }).firestore();

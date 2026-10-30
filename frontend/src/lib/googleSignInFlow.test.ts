@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { consumeGoogleRedirectPending, markGoogleRedirectPending, prefersGoogleRedirect } from "./googleSignInFlow";
+import { abandonGoogleRedirect, consumeGoogleRedirectPending, isGoogleRedirectPending, markGoogleRedirectPending, prefersGoogleRedirect } from "./googleSignInFlow";
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); sessionStorage.clear(); });
 
@@ -27,5 +27,37 @@ describe("Google OAuth flow selection", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
     expect(() => markGoogleRedirectPending()).not.toThrow();
     expect(consumeGoogleRedirectPending()).toBe(false);
+  });
+  it("still sees a Google redirect Firebase has pending after Back from Google consumed our marker", () => {
+    markGoogleRedirectPending();
+    sessionStorage.setItem("firebase:pendingRedirect:synthetic-key:[DEFAULT]", JSON.stringify("true"));
+    expect(consumeGoogleRedirectPending()).toBe(true);
+    expect(isGoogleRedirectPending("synthetic-key")).toBe(true);
+    // Reading the redirect result clears Firebase's flag.
+    sessionStorage.removeItem("firebase:pendingRedirect:synthetic-key:[DEFAULT]");
+    expect(isGoogleRedirectPending("synthetic-key")).toBe(false);
+  });
+  it("ignores a pending flag Firebase left for another API key, which it would never clear", () => {
+    sessionStorage.setItem("firebase:pendingRedirect:rotated-key:[DEFAULT]", JSON.stringify("true"));
+    expect(isGoogleRedirectPending("synthetic-key")).toBe(false);
+    expect(isGoogleRedirectPending(undefined)).toBe(false);
+  });
+  it("abandons a redirect that never left the page: our marker and Firebase's flag both clear", () => {
+    markGoogleRedirectPending();
+    sessionStorage.setItem("firebase:pendingRedirect:synthetic-key:[DEFAULT]", JSON.stringify("true"));
+    abandonGoogleRedirect("synthetic-key");
+    expect(isGoogleRedirectPending("synthetic-key")).toBe(false);
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => { throw new Error("blocked"); });
+    expect(() => abandonGoogleRedirect("synthetic-key")).not.toThrow();
+  });
+  it("peeks at the redirect marker without consuming it and ignores unrelated session keys", () => {
+    sessionStorage.setItem("firebase:authUser:synthetic-key:[DEFAULT]", JSON.stringify("true"));
+    sessionStorage.setItem("firebase:pendingRedirect:synthetic-key:[DEFAULT]", JSON.stringify("false"));
+    expect(isGoogleRedirectPending("synthetic-key")).toBe(false);
+    markGoogleRedirectPending();
+    expect(isGoogleRedirectPending()).toBe(true);
+    expect(isGoogleRedirectPending()).toBe(true);
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    expect(isGoogleRedirectPending()).toBe(false);
   });
 });

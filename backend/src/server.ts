@@ -64,7 +64,7 @@ import shiftsRoutes, { rideSessionsRouter } from "./routes/shifts";
 import sessionsRoutes, { rideSessionBoardingRouter } from "./routes/sessions";
 import feedbackRoutes, { feedbackV2Router } from "./routes/feedback";
 import usersRoutes from "./routes/users";
-import settingsRoutes, { settingsV2Router } from "./routes/settings";
+import settingsRoutes, { passengerRoutesSettingsRouter, settingsV2Router } from "./routes/settings";
 import fleetRoutes, { drainFleetMutations, fleetReconciliationJobsRouter } from "./routes/fleet";
 import privacyRoutes, { privacyDeletionRequestsRouter } from "./routes/privacy";
 import { drainPrivacyDeletions } from "./services/privacyDeletionWorker";
@@ -207,6 +207,9 @@ app.use("/api/v2/feedback", feedbackV2Router);
 app.use("/api/users", usersRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/v2/settings/global", settingsV2Router);
+// Sibling of /global, not nested under it; the /api browser admission above
+// applies the same verified-UID 30/minute mutation budget as settings saves.
+app.use("/api/v2/settings/passenger-routes", passengerRoutesSettingsRouter);
 app.use("/api/fleet", fleetRoutes);
 app.use("/api/privacy", privacyRoutes);
 app.use("/api/v2/privacy-deletion-requests", privacyDeletionRequestsRouter);

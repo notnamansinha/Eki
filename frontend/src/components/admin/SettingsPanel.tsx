@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSettings, GlobalSettings } from "@/hooks/useSettings";
 import { Save, Loader2, Eye, EyeOff, Megaphone, Clock, MessageSquare, Info } from "lucide-react";
 import AlertModal from "@/components/ui/AlertModal";
@@ -8,40 +8,8 @@ import { errorMessage } from "@/lib/errors";
 import { validateSettingsInput } from "@/lib/adminValidation";
 import { useUnsavedChanges } from "@/lib/unsavedChanges";
 import { formatNoBusesSubMessage } from "@/lib/serviceMessages";
-
-function Field({
-  label,
-  hint,
-  controlId,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  controlId: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={controlId} className="text-sm font-semibold text-white/80">{label}</label>
-      {children}
-      {hint && <p className="text-xs text-white/30">{hint}</p>}
-    </div>
-  );
-}
-
-function SectionHeader({ icon: Icon, title, subtitle }: { icon: ComponentType<{ className?: string }>; title: string; subtitle: string }) {
-  return (
-    <div className="flex items-start gap-3 pb-4 border-b border-white/5">
-      <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
-        <Icon className="w-4 h-4 text-white/50" />
-      </div>
-      <div>
-        <p className="font-bold text-white">{title}</p>
-        <p className="text-xs text-white/30 mt-0.5">{subtitle}</p>
-      </div>
-    </div>
-  );
-}
+import { Field, SectionHeader } from "./SettingsSection";
+import PassengerRoutesSettings from "./PassengerRoutesSettings";
 
 export default function SettingsPanel() {
   const { settings, loading, error: loadError, saveSettings } = useSettings();
@@ -232,6 +200,9 @@ export default function SettingsPanel() {
           </div>
         )}
       </div>
+
+      {/* Saved separately: a different document and admin-only endpoint. */}
+      <PassengerRoutesSettings />
 
       <AlertModal
         isOpen={Boolean(alertMessage)}

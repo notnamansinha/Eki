@@ -30,7 +30,7 @@ test("worker updates wait for active tabs without forcing a reload", () => {
 });
 
 test("activating a new worker retires the previous deployment's navigation HTML", async () => {
-  // Offline or slow (>3 s) navigations fall back to the NetworkFirst cache.
+  // Offline or slow (>2.5 s) navigations fall back to the NetworkFirst cache.
   // HTML cached under the previous worker references hashed chunks that the
   // new worker's precache cleanup has already deleted and Hosting no longer
   // serves, so it must not outlive the deployment that produced it.
@@ -78,8 +78,26 @@ async function loadWorkerRoutes() {
   });
   const routeFor = (href, destination = "") => routes.find(({ match }) =>
     typeof match === "function" && match({ url: new URL(href), request: { destination } }));
-  return { routes, strategies, events, deleted, routeFor, NetworkOnly, ExpirationPlugin, CacheableResponsePlugin };
+  const navigation = routes.find(({ match }) => match instanceof NavigationRoute)?.match;
+  return { routes, strategies, events, deleted, routeFor, navigation, NetworkOnly, ExpirationPlugin, CacheableResponsePlugin };
 }
+
+test("Firebase Auth handler pages and token endpoints bypass the navigation route and every cache", async () => {
+  // The navigation handler answers slow navigations from cached HTML; the Auth
+  // redirect handler and its token exchanges must always reach the network.
+  const { navigation, routeFor, NetworkOnly } = await loadWorkerRoutes();
+  assert.ok(navigation, "navigation route must exist");
+  for (const path of ["/__/auth/handler?apiKey=AIzaFAKE&authType=signInViaRedirect", "/__/auth/iframe"]) {
+    assert.ok(navigation.options.denylist.some(pattern => pattern.test(path)), `${path} must be denylisted`);
+  }
+  for (const href of [
+    "https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=AIzaFAKE",
+    "https://securetoken.googleapis.com/v1/token?key=AIzaFAKE",
+    "https://apis.google.com/js/api.js",
+  ]) {
+    assert.ok(routeFor(href, "script")?.strategy instanceof NetworkOnly, `${href} must stay network-only`);
+  }
+});
 
 test("navigation HTML cache is bounded and keyed per app shell, not per query string", async () => {
   // A static export serves the same HTML whatever the query string, so UTM/QR

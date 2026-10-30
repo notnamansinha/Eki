@@ -10,7 +10,7 @@ const boardingSources = ['frontend/src/components/passenger/PassengerBoardingVie
 const feedbackSources = ['frontend/src/components/shared/FeedbackModal.tsx', 'frontend/src/lib/feedbackStore.ts'];
 const rows = [
   ['AUTH07', 'Mounted auth provider keeps readiness closed after the eight-second restoration guard and before mocked role verification resolves; actual ten-second role-fetch/browser recovery remains separate.', authSources, [
-    auth('does not mark an auth restoration timeout ready'), auth('does not publish cached/admin identity or open readiness before trusted role verification')]],
+    auth('does not mark a slow auth restoration ready or report it as an access error'), auth('does not publish cached/admin identity or open readiness before trusted role verification')]],
   ['AUTH08', 'Mounted auth provider rejects an admin role string without the trusted admin bit and exposes mocked role verification failure/recovery; real Firestore permission/malformed/profile partitions remain separate.', authSources, [
     auth('does not publish admin access from a role string without the trusted admin bit'), auth('keeps role verification failures visible and data readiness closed')]],
   ['AUTH11', 'Mounted auth provider suppresses pending verification/sign-out completions and shows sign-out failure recovery; private listener/chat/map cleanup and focus remain separate.', authSources, [

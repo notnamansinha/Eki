@@ -12,7 +12,9 @@ import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
 import { subscribeLiveBusesByRoute } from "@/lib/liveBusStore";
 import { passengerTripStates } from "@/lib/passengerLiveBus";
 import { passengerBusAvailabilities } from "@/lib/passengerBusAvailability";
+import HomePage from "@/app/page";
 import { approveVerification, publishPreview, publishAutomaticReturn, rejectVerification, rejectNetworkVerification, reverifyAccount, switchAccount, signOut, tokenWaiting, subscribeTokenWaiting, socketStats, subscribeSocketStats } from "./firebase";
+import { finishRestorationAsAdmin, finishRestorationAsPassenger, finishRestorationSignedOut, restorationPending, subscribeRestoration } from "./firebase";
 import "../../frontend/src/app/globals.css";
 function Metadata() {
   const buses = useCollection<{ name: string }>("buses");
@@ -50,8 +52,18 @@ function RouteProjection() {
     <output aria-label="Joined session state">{states.get("joined") ?? "unknown"}</output>
   </main>;
 }
+// `?restoreHang`: finish the held cold-open restoration with a chosen outcome.
+function RestorationControls() {
+  const pending = useSyncExternalStore(subscribeRestoration, restorationPending);
+  return <>
+    <button disabled={!pending} onClick={finishRestorationSignedOut}>Finish restoration as signed out</button>{" "}
+    <button disabled={!pending} onClick={finishRestorationAsPassenger}>Finish restoration as passenger</button>{" "}
+    <button disabled={!pending} onClick={finishRestorationAsAdmin}>Finish restoration as admin</button>
+  </>;
+}
 function Fixture() {
   const waiting = useSyncExternalStore(subscribeTokenWaiting, tokenWaiting);
+  const query = new URLSearchParams(location.search);
   return <>
   <aside aria-label="Synthetic verification controls" style={{ position: "fixed", top: 0, zIndex: 2000, background: "white", color: "black", padding: 8 }}>
     <button disabled={!waiting} onClick={approveVerification}>Approve verification</button>{" "}
@@ -60,8 +72,10 @@ function Fixture() {
     <button onClick={switchAccount}>Switch account</button>{" "}
     <button onClick={reverifyAccount}>Reverify account</button>{" "}
     <button onClick={() => void signOut()}>Synthetic sign out</button>
+    {query.has("restoreHang") && <>{" "}<RestorationControls /></>}
   </aside>
-  <AuthProvider><TelemetryTraceControls />{new URLSearchParams(location.search).has("traceExport") ? <main style={{ paddingTop: 65 }}><h1>Local trace fixture</h1></main> : <RoleGuard allowedRoles={["admin"]}><div style={{ paddingTop: new URLSearchParams(location.search).has("recovery") ? 110 : 65, ...(new URLSearchParams(location.search).has("dashboard") ? { height: "100dvh", boxSizing: "border-box" as const } : {}) }}>
+  {/* `?landing` mounts the actual landing page instead of a protected route. */}
+  <AuthProvider><TelemetryTraceControls />{query.has("landing") ? <HomePage /> : new URLSearchParams(location.search).has("traceExport") ? <main style={{ paddingTop: 65 }}><h1>Local trace fixture</h1></main> : <RoleGuard allowedRoles={["admin"]}><div style={{ paddingTop: new URLSearchParams(location.search).has("recovery") ? 110 : 65, ...(new URLSearchParams(location.search).has("dashboard") ? { height: "100dvh", boxSizing: "border-box" as const } : {}) }}>
     {new URLSearchParams(location.search).has("dashboard") ? <DashboardPanel /> : new URLSearchParams(location.search).has("projection") ? <RouteProjection /> : new URLSearchParams(location.search).has("resume") ? <Resume /> : new URLSearchParams(location.search).has("metadata") ? <Metadata /> : <FeedbackPanel embedded={new URLSearchParams(location.search).has("embedded")} />}
   </div></RoleGuard>}</AuthProvider>
 </>;
