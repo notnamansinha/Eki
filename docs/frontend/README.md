@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-002 | 1.0 | Current | 2026-10-30 |
+| EKI-PKG-002 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -73,7 +73,7 @@ Test suites and their viewports are described in the [test strategy](../testing/
 | Route | Source | Access | Content |
 |---|---|---|---|
 | `/` | `src/app/page.tsx` | Public | Landing page and Google sign-in. A signed-in user is redirected to a workspace. |
-| `/passenger` | `src/app/passenger/` | `RoleGuard` roles `passenger`, `driver`, `admin` | Passenger workspace: Routes, live tracking and Profile. |
+| `/passenger` | `src/app/passenger/` | `RoleGuard` roles `passenger`, `driver`, `admin` | Passenger workspace with the bottom tabs Map (live routes and tracking), Routes (published route schedules) and Profile. |
 | `/admin` | `src/app/admin/` | `RoleGuard` role `admin` | Administrator workspace with the tabs Live Ops, Routes, Fleet & People, History, Feedback and Settings. |
 | `/feedback` | `src/app/feedback/` | `RoleGuard` role `admin` | Standalone feedback console. The admin Feedback tab renders the same `FeedbackPanel`. |
 | `/manifest.webmanifest` | `src/app/manifest.ts` | Public | PWA manifest. |
@@ -88,13 +88,13 @@ After sign-in, `/` opens the workspace saved in `localStorage` key `eki:last-wor
 | Path | Contents |
 |---|---|
 | `src/app/` | Routes, root layout, `globals.css`, metadata routes, `icon.png` and `apple-icon.png`. |
-| `src/components/admin/` | Live Ops dashboard, route editor, fleet and personnel, ride history, feedback console, settings and `AdminPanelErrorBoundary`. |
-| `src/components/passenger/` | `PassengerWorkspace`, boarding card, account tab, route timeline, layout constants (`passengerFrame.ts`) and loading shell. `ui/` holds `BottomSheet` and `RouteCarousel`. |
+| `src/components/admin/` | Live Ops dashboard, route editor, fleet and personnel, ride history, feedback console, settings with the passenger route schedule editor (`PassengerRoutesSettings`), and `AdminPanelErrorBoundary`. |
+| `src/components/passenger/` | `PassengerWorkspace`, boarding card, account tab, route schedule tab (`RoutesTab`), route timeline, layout constants (`passengerFrame.ts`) and loading shell. `ui/` holds `BottomSheet` and `RouteCarousel`. |
 | `src/components/maps/` | Passenger map, road polylines (`DirectionsRoute`), bus glyph, traffic layer. |
 | `src/components/shared/` | Components used by both roles: `RoleGuard`, chat (`MessagingPanel`), `FeedbackModal`, workspace links, prefetch and loading. |
 | `src/components/ui/` | `ConfirmModal`, `AlertModal`, `InAppSelect` (listbox) and `CustomSelect` (native select). |
 | `src/components/*.tsx` | `Providers`, `MapProviders`, `ServiceWorkerRegistrar`, `TelemetryTraceControls`. |
-| `src/hooks/` | Auth, Firestore collections, settings, live route catalog, RTDB reconnect, live-health clock, marker smoothing, dialog focus. |
+| `src/hooks/` | Auth, Firestore collections, settings, passenger route schedules, live route catalog, RTDB reconnect, live-health clock, marker smoothing, dialog focus. |
 | `src/lib/` | Code without React: Firebase clients, API client, live bus store, bus health, stop progress, ETAs, route geometry, feedback store. |
 | `src/config/` | `maps.ts` (Maps key, Map ID, default centre, map options) and `passenger.ts` (default service start time, feedback word limit of 200). |
 | `src/sw.js` | Service worker source. |
@@ -118,6 +118,7 @@ The browser reads live and configuration data directly from Firebase and sends e
 | Routes, buses, last known locations, ride sessions | Firestore `routes`, `buses`, `bus_locations`, `ride_sessions` | `onSnapshot` through one shared cache per query. | `hooks/useCollection.ts` |
 | Operators | Firestore `drivers` (administrators: up to 250; others: their own record) | `onSnapshot` | `hooks/useDrivers.ts` |
 | Global settings | Firestore `settings/global` | `onSnapshot` | `hooks/useSettings.ts` |
+| Passenger route schedules | Firestore `settings/passengerRoutes`, joined with `routes` | `onSnapshot`; malformed entries are dropped and deleted routes and stops skipped (`lib/passengerRouteSchedule.ts`) | `hooks/usePassengerRouteConfig.ts` |
 | Chat | Firestore `ride_sessions/<id>/messages` | `onSnapshot` | `components/shared/MessagingPanel.tsx` |
 | Role fallback | Firestore `users/<uid>` | `getDoc` | `hooks/useAuth.ts` |
 
@@ -137,19 +138,21 @@ The browser writes to Firestore only for feedback (`lib/feedbackStore.ts`): a tr
 | Route editor | `PUT /api/routes/<id>`, save-operation polling, `DELETE /api/routes/<id>`, `/api/places/search` |
 | Fleet | `PUT` and `DELETE /api/fleet/buses/<id>` and `/api/fleet/drivers/<id>` |
 | Live Ops | `POST /api/shifts/stop`, `PATCH /api/shifts/delay`, `DELETE /api/shifts/<id>/messages`, `POST /api/v2/ride-sessions`, `POST /api/sessions/<id>/boarding-code` |
-| History and settings | `DELETE /api/shifts/<id>/history`, `PATCH /api/v2/settings/global` |
+| History and settings | `DELETE /api/shifts/<id>/history`, `PATCH /api/v2/settings/global`, `PUT /api/v2/settings/passenger-routes` |
 
 The [HTTP contract](../api/HTTP_CONTRACT.md) and the [API reference](../backend/API.md) define each endpoint.
 
 ## 8. Authentication flow
 
-1. The root layout mounts `AuthProvider` (`hooks/useAuth.ts`). It imports Firebase Auth after first paint. If restoration takes more than 8 s, it shows "Sign-in restoration timed out".
-2. `lib/firebaseAuth.ts` initialises Auth with persistence in this order: local storage, IndexedDB, session storage. On `<project>.web.app` or `<project>.firebaseapp.com`, the auth domain is the current host (`lib/firebaseAuthDomain.ts`); on other hosts it is `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`.
+1. The root layout mounts `AuthProvider` (`hooks/useAuth.ts`). It imports the sign-in code (Firebase Auth) after first paint, one attempt at a time. A failed download is retried after 2, 5, 10, 20 and then every 30 s, or at once when the browser goes `online`; meanwhile the page shows "Sign-in could not load. Check your connection; retrying automatically." A Firebase Auth setup error such as `auth/invalid-api-key` is not retried and asks for a reload.
+2. `lib/firebaseAuth.ts` initialises Auth with persistence in this order: local storage, IndexedDB, session storage. On `<project>.web.app` or `<project>.firebaseapp.com`, the auth domain is the current host (`lib/firebaseAuthDomain.ts`); on other hosts it is `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`. It installs Firebase's popup and redirect resolver at startup only on popup platforms or while the tab returns from a Google redirect, because with the resolver installed Firebase loads Google's sign-in frame before it reports the first auth state. Redirect sign-in passes the resolver per call.
 3. Google is the only provider. Sign-in uses a popup, or a full-page redirect when the auth domain equals the page host and the device is a phone or tablet or the app runs standalone (`lib/googleSignInFlow.ts`). When the popup takes longer than 8 s or fails with an error that permits it, the page offers **Continue with full-page Google sign-in**.
-4. On every Auth state change, `beginAuthVerification()` closes the readiness gate and the client refreshes the ID token (10 s timeout). A `role` claim of `passenger`, `driver` or `admin` is accepted. `role: "admin"` also requires `admin: true`; otherwise the user sees "Your administrator access is not synchronized".
-5. Without a role claim, the client reads `users/<uid>` and calls `POST /api/users/bootstrap`. A driver or admin profile role must then appear in the refreshed claims. An unknown profile role becomes `passenger`.
-6. `notifyAuthReady()` opens the gate, and data hooks start their listeners.
-7. Sign-out closes the gate, removes `eki:role:<uid>` and `eki:last-workspace`, and clears the collection, settings and live bus caches.
+4. **Sign In with Google** becomes usable as soon as the sign-in code loads, while Firebase may still be restoring a saved session. Only while a Google redirect is pending (the app's `eki:google-redirect-pending` marker or Firebase's `firebase:pendingRedirect:<apiKey>:[DEFAULT]` flag in session storage) does the button read "Preparing sign-in…" until the redirect result settles. On a phone, a tap during restoration waits for the restored state. On every platform, a tap while a restored account is being verified finishes that verification instead of opening Google again. A redirect that fails before leaving the page clears both pending flags.
+5. Until Firebase reports its first auth state, the user state is unknown, not signed out: protected views stay closed. After 8 s the landing page shows "Still checking your sign-in. The connection looks slow; this continues on its own." and `RoleGuard` shows "Still signing you in." with the same explanation; both offer **Reload**. `RoleGuard` also shows that screen after 10 s of loading.
+6. On every Auth state change, `beginAuthVerification()` closes the readiness gate and the client refreshes the ID token (10 s timeout). A `role` claim of `passenger`, `driver` or `admin` is accepted. `role: "admin"` also requires `admin: true`; otherwise the user sees "Your administrator access is not synchronized". A transient failure is retried after 1, 2, 4, 8, 16 and 30 s; during these timer retries the error stays on screen with "retrying automatically" ([RTDB reconnect runbook](../operations/RTDB_RECONNECT_RECOVERY.md)).
+7. Without a role claim, the client reads `users/<uid>` and calls `POST /api/users/bootstrap`. A driver or admin profile role must then appear in the refreshed claims. An unknown profile role becomes `passenger`.
+8. `notifyAuthReady()` opens the gate, and data hooks start their listeners.
+9. Sign-out closes the gate, removes `eki:role:<uid>` and `eki:last-workspace`, and clears the collection, settings and live bus caches.
 
 `RoleGuard` only controls presentation and navigation. The backend and the Firebase security rules enforce authorization; see [privileged database authorization](../security/PRIVILEGED_DATABASE_AUTHORIZATION.md).
 
@@ -161,7 +164,7 @@ The [HTTP contract](../api/HTTP_CONTRACT.md) and the [API reference](../backend/
 
 | Requests | Strategy | Cache |
 |---|---|---|
-| Page navigations | Network first, 3 s timeout; one entry per path with the query string removed; at most 10 entries for 7 days. Offline fallback: the precached HTML shell. | `eki-navigations` |
+| Page navigations | Network first. When Hosting has not answered within 2.5 s, the worker serves the HTML shell precached with this worker (whose chunks are precached too), or else the cached copy, while the network response keeps updating the cache; with nothing readable it keeps waiting. When the fetch fails, it serves the route's precached shell or `/index.html`. A cache read that fails counts as a miss. One entry per path with the query string removed; at most 10 entries for 7 days. | `eki-navigations` |
 | Same-origin `/_next/static/` | Cache first, at most 120 entries for 30 days. | `eki-next-static` |
 | Same-origin images | Cache first, at most 100 entries for 30 days. | `eki-images` |
 | Google Fonts CSS and files | Stale-while-revalidate and cache first, readable responses only. The app loads no web fonts today. | `eki-google-fonts-css`, `eki-google-fonts-woff` |
@@ -213,7 +216,7 @@ The installed version is described by its own guides in `node_modules/next/dist/
 | Metadata routes in a static export must be static. | `manifest.ts`, `robots.ts` and `sitemap.ts` export `dynamic = "force-static"`. |
 | Client-only modules load with `next/dynamic` and `ssr: false`. | The passenger workspace, every admin panel, the feedback panel and the passenger map. |
 
-Google Maps loads only where a map renders. The admin layout mounts `MapProviders` for the whole workspace; the passenger workspace mounts it only while a route is tracked. The landing page and `/feedback` never load the Maps SDK.
+Google Maps loads only where a map renders. The admin layout mounts `MapProviders` for the whole workspace; the passenger workspace mounts it only while a route is tracked. The landing page and `/feedback` never load the Maps SDK. The SDK script loads once per page. Every map element sets `reuseMaps` with the shared `MAPS_MAP_ID` and `MAP_OPTIONS` (`src/config/maps.ts`), so leaving and reopening tracking, changing route, direction or bus, and switching admin tabs or the route editor reattach one cached map instead of constructing a new, billed one. Keep per-map options in `MAP_OPTIONS`, never mount two maps at once, and keep `src/config/maps.reuse.test.ts` passing; the decision is [EKI-ADR-004](../design/GOOGLE_MAP_REUSE_DECISION.md).
 
 ## 13. Verification
 
@@ -238,4 +241,5 @@ Expected result: lint and tests pass, `frontend/out/sw.js` exists, and the build
 | `npm run start --workspace=frontend` exits with an error. | `next start` does not support `output: "export"`. | Serve `frontend/out` with Firebase Hosting or another static server. |
 | An administrator sees "Your administrator access is not synchronized". | The ID token has `role: "admin"` without `admin: true`. | Synchronize the claims; see [admin permission recovery](../testing/ADMIN_PERMISSION_RECOVERY.md). |
 | An installed app still shows the previous release. | The new service worker waits until every tab closes. | Close all tabs and windows of the app, then reopen it. |
-| The sign-in button stays disabled. | Firebase Auth has not finished loading. After 10 s the page shows "Sign-in is still loading." with **Reload**. | Reload. If it persists, check the Firebase values in `frontend/.env.local`. |
+| The sign-in button reads "Preparing sign-in…". | The sign-in code has not loaded, or a Google redirect is still being completed. After 10 s without a message the page shows "Sign-in is still loading." with **Reload**; a failed download shows "Sign-in could not load" and retries on its own. | Wait or reload. If it persists, check the network and the Firebase values in `frontend/.env.local`. |
+| "Still checking your sign-in" or "Still signing you in". | Firebase has not restored the saved session within 8 s, usually on a slow network. | Wait; the page recovers in place when restoration finishes. **Reload** starts again. |

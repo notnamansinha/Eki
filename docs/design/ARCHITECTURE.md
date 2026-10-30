@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-001 | 1.0 | Current | 2026-10-30 |
+| EKI-ARC-001 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Introduction
 
@@ -258,7 +258,7 @@ The repository defines no end-to-end service level. The [test strategy](../testi
 | Readiness | Firestore and RTDB probes every 30 s, 5 s timeout, results expire after 65 s | `backend/src/server.ts`, `backend/src/lib/healthState.ts` | Implemented |
 | Region move | Singapore median and p95 at least 30% better than Iowa before cutover | [RTDB region decision](RTDB_REGION_LATENCY_DECISION.md) | Proposed |
 | Retention | Terminal ride sessions, completed trips and feedback 180 days; operation records 90 days | `backend/src/services/retentionSweeper.ts` | Implemented; see [storage architecture](../data/STORAGE_ARCHITECTURE.md) |
-| Cost | No Google Maps call per fix; Firestore written on lifecycle and presence changes, not per fix; ETA computed in the browser | [Cost model](../cost/COST_MODEL.md) | Implemented |
+| Cost | No Google Maps call per fix; at most one Dynamic Maps load per page load that shows a map; Firestore written on lifecycle and presence changes, not per fix; ETA computed in the browser | [Cost model](../cost/COST_MODEL.md), [EKI-ADR-004](GOOGLE_MAP_REUSE_DECISION.md) | Implemented; the billing effect of map reuse is not yet confirmed in the Cloud Console |
 
 ## 8. Technology stack
 
@@ -291,6 +291,7 @@ Declared versions come from the `package.json` files and `hardware/platformio.in
 | Deliver live state through Firebase SDK listeners; add no SSE, WebSocket, GraphQL or webhook interface | Firebase already supplies authentication, reconnection and fan-out; no client needs another transport | [EKI-ADR-001](REALTIME_TRANSPORT_DECISION.md), Accepted |
 | Keep RTDB in `us-central1` until a Singapore instance passes a measured cutover gate | Front-door probes favour Singapore, but database and listener gains are unproven | [EKI-ADR-002](RTDB_REGION_LATENCY_DECISION.md), Proposed |
 | Keep `activeBuses/{busId}_{routeId}` as the single atomic live record; browsers read a projection | No measurement shows single-node transaction contention | [EKI-ADR-003](TELEMETRY_STATE_PARTITION_DECISION.md), Accepted |
+| Reuse one Google map instance per page with `reuseMaps`; keep React keys and mount gates; keep the Google basemap for passengers for now | Each constructed map is a billed Dynamic Maps load; reuse removes the load on every route, direction, bus, tab and editor change without changing per-ride state | [EKI-ADR-004](GOOGLE_MAP_REUSE_DECISION.md), Accepted |
 | Trackers push HTTPS to the backend; no message broker; no Firebase credentials on devices | One observable trust boundary for a small fleet | [High-level design](HIGH_LEVEL_DESIGN.md#7-design-rationale) |
 | One lease-owned worker owns lifecycle and cleanup | Prevents duplicate stop progression and deletion across processes | [Worker leadership](../operations/WORKER_LEADERSHIP.md) |
 | Stored route geometry and browser-side ETA | No routing call per fix | [Tracking algorithms](TRACKING_ALGORITHMS.md) |

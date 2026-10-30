@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-005 | 1.0 | Current | 2026-10-30 |
+| EKI-API-005 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -39,12 +39,12 @@ The backend serves its original command-style paths (for example `POST /api/shif
 
 All resource-style paths set `Cache-Control: no-store`.
 
-These operations have no alias: `POST /api/shifts/stop` (End ride early), `GET /api/sessions/:sessionId/status`, the health endpoints, live bus reads, device registry and diagnostics administration, route geometry reads and deletion, fleet bus and operator administration, analytics, Places search, passenger requests, profile bootstrap and feedback submission. These operations exist only under `/api/v2/`: `GET /api/v2/ride-sessions/:sessionId`, `GET /api/v2/feedback`, privacy deletion monitoring and recovery, and durable operation status and recovery.
+These operations have no alias: `POST /api/shifts/stop` (End ride early), `GET /api/sessions/:sessionId/status`, the health endpoints, live bus reads, device registry and diagnostics administration, route geometry reads and deletion, fleet bus and operator administration, analytics, Places search, passenger requests, profile bootstrap and feedback submission. These operations exist only under `/api/v2/`: `GET /api/v2/ride-sessions/:sessionId`, `GET /api/v2/feedback`, `PUT /api/v2/settings/passenger-routes` (passenger route schedules), privacy deletion monitoring and recovery, and durable operation status and recovery. They have no original path to retire.
 
 ## 4. Current status
 
 - Both generations of every pair in Section 3 are implemented and listed in [`openapi.json`](openapi.json).
-- The web app calls three resource-style paths: settings, privacy deletion and ride start. It calls the original path for every other pair it uses.
+- The web app calls three resource-style paths: settings, privacy deletion and ride start. It calls the original path for every other pair it uses. It also calls the v2-only `PUT /api/v2/settings/passenger-routes` from the administrator settings tab.
 - The backend counts requests by generation and result class for every pair except device disable and fleet reconciliation, and also for End ride early and geometry reads (`backend/src/lib/apiCompatibilityTraffic.ts`). The counts are process-local, reset on restart, and appear in `telemetry.apiCompatibility` of `GET /api/health` and in the OpenTelemetry metric `eki.api.compatibility.requests`. They contain no client identifiers.
 
 Caller inventory and read optimizations are recorded in [API reads and retirement](../docs/operations/API_READS_AND_RETIREMENT.md).

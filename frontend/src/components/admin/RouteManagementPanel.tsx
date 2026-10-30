@@ -564,7 +564,7 @@ function RouteEditor({
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
         {/* Map */}
         <div className="flex-1 relative min-h-[260px]">
-          <GoogleMap mapId={MAPS_MAP_ID} defaultCenter={DEFAULT_CENTER} defaultZoom={13} style={{ width: "100%", height: "100%" }} onClick={handleMapClick} {...MAP_OPTIONS}>
+          <GoogleMap mapId={MAPS_MAP_ID} reuseMaps defaultCenter={DEFAULT_CENTER} defaultZoom={13} style={{ width: "100%", height: "100%" }} onClick={handleMapClick} {...MAP_OPTIONS}>
             <TrafficLayer />
             <MapCenter center={mapCenter} />
             <DirectionsRoute

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-019 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-019 | 1.1 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -52,7 +52,7 @@ None of these values is configurable at run time.
 | Catalog and generation table size | 1,000 routes each, least recently used | `backend/src/services/telemetryRouteService.ts:99`, `backend/src/services/telemetryRouteService.ts:103` |
 | Watcher reconnect delay | 1 s, doubling to 30 s | `backend/src/services/telemetryRouteService.ts:215` |
 | Largest accepted encoded polyline | 500,000 characters | `backend/src/services/telemetryRouteService.ts:57` |
-| Watcher start | Every replica at boot | `backend/src/server.ts:307` |
+| Watcher start | Every replica at boot | `backend/src/server.ts:310` |
 
 ## 5. Failure modes and recovery
 

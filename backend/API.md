@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-001 | 1.0 | Current | 2026-10-30 |
+| EKI-API-001 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Introduction
 
@@ -621,7 +621,17 @@ All operations in this section require an administrator. Every `/api/fleet` muta
 - Success: 200 `{"saved":true}`. Writes `settings/global` with `updatedAt` and `updatedBy`.
 - Errors: 400; 500.
 
-#### 3.10.6 Manage passenger requests
+#### 3.10.6 Replace passenger route schedules
+
+`PUT /api/v2/settings/passenger-routes`
+
+- Caller: administrator. The operation exists only under `/api/v2/` and has no original path.
+- Request: exactly `{"routes":[{"routeId","stopTimes"}, ...]}` with at most 50 entries, in the order passengers see them. Each entry has exactly two fields: `routeId`, a route ID (Section 2.4) that appears only once, and `stopTimes`, an object that maps every current stop ID of `routes/{routeId}`, and no other, to a 24-hour `HH:mm` time (`^([01]\d|2[0-3]):[0-5]\d$`). A route without stops uses `{}`. `{"routes":[]}` unpublishes every route.
+- Behaviour: the backend reads every named route in one `getAll`, builds each entry from the validated times in the route document's stop order, and replaces `settings/passengerRoutes` with `{routes, updatedAt, updatedBy}`. It never merges, so routes and stops removed by the administrator do not remain. Route names and stop order are not stored; browsers read them from `routes/{routeId}` ([data model](../docs/data/FIREBASE_DATA_MODEL.md)).
+- Success: 200 `{"saved":true}` with `Cache-Control: no-store`.
+- Errors: 400 with a message that names the entry, route or stop, for example `Route <id> no longer exists. Reload and try again.`, `Missing time for stop <stop name> on route <route name>.` or `Invalid time for stop <stop name> on route <route name>; use 24-hour HH:mm.`; 413 when the body exceeds 16 KiB, which with generated stop IDs (`stop-<ms>-<6 characters>`) allows roughly 450 stop times across all routes; 500 `Unable to save passenger routes.`
+
+#### 3.10.7 Manage passenger requests
 
 `PATCH /api/requests/:id` and `DELETE /api/requests/:id`
 

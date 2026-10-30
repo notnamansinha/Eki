@@ -8,6 +8,10 @@ export function clearCollectionCache() {}
 export function clearSettingsCache() {}
 export function invalidateLiveBusCache() {}
 export function usePathname() { return "/admin"; }
-export function useRouter() { return { replace: () => {} }; }
+// One stable router like Next's; navigations are recorded, not performed.
+const routerReplacements: string[] = [];
+Object.assign(window, { qaRouterReplacements: routerReplacements });
+const router = { replace: (href: string) => { routerReplacements.push(href); } };
+export function useRouter() { return router; }
 export function useLinkStatus() { return { pending: false }; }
 export default function Link({ children, href }: { children: ReactNode; href: string }) { return <a href={href}>{children}</a>; }

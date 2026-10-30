@@ -6,7 +6,7 @@ export default defineConfig({
   root: local("."),
   server: { host: "127.0.0.1", port: Number(process.env.EKI_QA_PORT || 3100), strictPort: true },
   resolve: { alias: [
-    ...["@/hooks/useAuth", "@/hooks/useRoutes", "@/hooks/useLiveRouteCatalog", "@/hooks/useSettings", "@/hooks/useRTDBResume", "@/hooks/useDynamicRouteGeometries", "@/lib/liveBusStore", "@/lib/joinedRideStatus", "@/lib/authState"].map(find => ({ find, replacement: local("state.ts") })),
+    ...["@/hooks/useAuth", "@/hooks/useRoutes", "@/hooks/usePassengerRouteConfig", "@/hooks/useLiveRouteCatalog", "@/hooks/useSettings", "@/hooks/useRTDBResume", "@/hooks/useDynamicRouteGeometries", "@/lib/liveBusStore", "@/lib/joinedRideStatus", "@/lib/authState"].map(find => ({ find, replacement: local("state.ts") })),
     // Profile and feedback render for real; only their provider boundaries are synthetic.
     ...["@/lib/firebaseAuth", "@/lib/feedbackStore", "@/lib/apiClient"].map(find => ({ find, replacement: local("providers.ts") })),
     ...["@/components/shared/MessagingPanel", "@/components/passenger/PassengerBoardingView",

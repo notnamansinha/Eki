@@ -17,7 +17,7 @@ vi.mock("../lib/firebaseAdmin", () => ({
   }) }) },
 }));
 
-import settingsRouter, { settingsV2Router } from "./settings";
+import settingsRouter, { passengerRoutesSettingsRouter, settingsV2Router } from "./settings";
 
 let server: Server;
 let baseUrl: string;
@@ -27,6 +27,7 @@ beforeAll(async () => {
   app.use(express.json());
   app.use("/api/settings", settingsRouter);
   app.use("/api/v2/settings/global", settingsV2Router);
+  app.use("/api/v2/settings/passenger-routes", passengerRoutesSettingsRouter);
   server = await new Promise<Server>((resolve) => {
     const listener = app.listen(0, "127.0.0.1", () => resolve(listener));
   });
@@ -43,9 +44,10 @@ afterAll(async () => {
 beforeEach(() => { harness.admin = false; harness.writes = 0; });
 
 describe("settings route authorization", () => {
-  for (const [path, method] of [
-    ["/api/settings", "PUT"],
-    ["/api/v2/settings/global", "PATCH"],
+  for (const [path, method, body] of [
+    ["/api/settings", "PUT", { announcementActive: true }],
+    ["/api/v2/settings/global", "PATCH", { announcementActive: true }],
+    ["/api/v2/settings/passenger-routes", "PUT", { routes: [] }],
   ] as const) {
     it(`${method} ${path} enforces the real admin middleware`, async () => {
       const request = (authorization?: string) => fetch(`${baseUrl}${path}`, {
@@ -54,7 +56,7 @@ describe("settings route authorization", () => {
           "Content-Type": "application/json",
           ...(authorization ? { Authorization: authorization } : {}),
         },
-        body: JSON.stringify({ announcementActive: true }),
+        body: JSON.stringify(body),
       });
       expect((await request()).status).toBe(401);
       expect((await request("Bearer passenger-token")).status).toBe(403);

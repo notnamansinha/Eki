@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 1.0 | Current | 2026-10-30 |
+| EKI-UIX-001 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -40,14 +40,14 @@ All tokens are defined in `app/globals.css`.
 | `--text-primary` | `#ECECEF` | Headings and body text; background of `.btn-primary`. |
 | `--text-secondary` | `#94949C` | Supporting text, notice summaries, icons in neutral buttons. |
 | `--text-tertiary` | `#8A8A93` | Inactive bottom navigation items, "Passed · not confirmed" label, metadata. |
-| `--text-ghost` | `#8C8C96` | Timeline badges, timestamps, sheet icons. It is slightly lighter than `--text-tertiary`, so size and weight carry the distinction. |
+| `--text-ghost` | `#8C8C96` | Timeline badges, timestamps, sheet icons, "Time not set" in the Routes tab. It is slightly lighter than `--text-tertiary`, so size and weight carry the distinction. |
 
 ### 2.3 Accent
 
 | Token | Value | Use |
 |---|---|---|
-| `--accent` | `#FA5D29` | Keyboard focus outline, upcoming stop markers, selected route card border, route card action text, own chat bubble, admin active-tab underline (`bg-brand-accent`). |
-| `--accent-subtle` | `rgba(250, 93, 41, 0.12)` | Background of the selected-stop badge. |
+| `--accent` | `#FA5D29` | Keyboard focus outline, upcoming stop markers, selected route card border, route card action text, own chat bubble, admin active-tab underline (`bg-brand-accent`), the line and stop dots of a route schedule timeline, the profile **Sign in with Google** row. |
+| `--accent-subtle` | `rgba(250, 93, 41, 0.12)` | Background of the selected-stop badge and of the icon tile in the profile **Sign in with Google** row. |
 | `--accent-glow` | `rgba(250, 93, 41, 0.25)` | Glow of the selected stop's timeline dot. |
 
 ### 2.4 Borders
@@ -62,7 +62,7 @@ All tokens are defined in `app/globals.css`.
 
 | Token | Value | Use |
 |---|---|---|
-| `--status-live` | `#34D399` | Live and in-service text, **Board** button, At-stop marker, next-stop timeline dot, chat icon, **On board**. |
+| `--status-live` | `#34D399` | Live and in-service text, **Board** button, At-stop marker, next-stop timeline dot, chat icon, **On board**, scheduled stop times in the Routes tab. |
 | `--status-live-bg` | `rgba(52, 211, 153, 0.10)` | "Waiting for next bus" pill. |
 | `--status-warning` | `#FBBF24` | Delayed and GPS-lost states, reroute notice, boarding check in progress, feedback word limit reached. |
 | `--status-warning-bg` | `rgba(251, 191, 36, 0.10)` | Chat-unavailable notice. |
@@ -203,7 +203,8 @@ The dot pulses while an online bus is moving. "Service paused" replaces the trip
 | Element | Colours | Source |
 |---|---|---|
 | Passenger reconnect banner | `text-amber-300`, `border-amber-400/20`, `bg-zinc-950` | `components/passenger/PassengerWorkspace.tsx` |
-| Passenger error banner | `text-red-300` (detail `text-red-300/70`), `border-red-400/20`, `bg-zinc-950`; **Retry** on `bg-white/10` | same |
+| Passenger error banner | `text-red-300` (detail `text-red-300/70`), `border-red-400/20`, `bg-zinc-950`; **Retry** on `bg-white/10` | same; the Routes tab error "Route schedules could not be loaded." uses the same colours (`components/passenger/RoutesTab.tsx`) |
+| Admin Passenger Routes notices | Deleted-route notice `text-amber-300` on `bg-amber-500/10` with `border-amber-500/20`; load errors `text-red-300`; an invalid stop time gives the input a `rgba(248, 113, 113, 0.75)` border and a `text-red-300` message ("Time required" or "Enter a valid time") | `components/admin/PassengerRoutesSettings.tsx` |
 | Reroute notice | `--status-warning` on `--surface-2`, border `rgba(251, 191, 36, 0.2)` | `components/maps/PassengerMap.tsx` |
 | Location notice | `--text-secondary` on `--surface-2`, border `--border-default` | same |
 | Announcement | Text `#fecdd3` on `#4c0519`, border `#881337`, 12 to 13 px uppercase black | `components/passenger/PassengerWorkspace.tsx` |
@@ -230,7 +231,8 @@ The dot pulses while an online bus is moving. "Service paused" replaces the trip
 | `#1a1a1a` on `--accent` | Own chat bubble text | `components/shared/MessagingPanel.tsx` |
 | `var(--danger, #f87171)` | Chat error; `--danger` is not defined, so the fallback applies | same |
 | `#FBBF24`, `#F87171`, `linear-gradient(135deg, #6366f1 0%, #ec4899 100%)` | Filled rating stars, error text, submit button | `components/shared/FeedbackModal.tsx` |
-| `#3B82F6` | Google sign-in link in the profile when signed out | `components/passenger/AccountTab.tsx` |
+| `#94a3b8` | Route colour shown when a route has none, admin Passenger Routes | `components/admin/PassengerRoutesSettings.tsx` |
+| `accent-emerald-500` | Route checkboxes in admin Passenger Routes | same |
 | `#e9bc55`, `#fbd66d`, `#e8ac37`, `#9a5d13` and related | Decorative profile coin | `app/globals.css` (`.profile-coin*`) |
 | `#09090b`, `#0f0f12` | Admin inputs, menus and toolbars (`bg-[#09090b]`, `bg-[#0f0f12]`) | admin panels |
 | `bg-black`, `bg-black/40`, `text-white` | Landing page and its hero overlay | `app/page.tsx` |
@@ -248,6 +250,10 @@ Ratios follow the WCAG 2.2 relative luminance formula [1]. Tailwind palette colo
 | `--text-tertiary` on `--surface-3` | Route card metadata | 4.96 | Pass |
 | `--text-tertiary` on the navigation frame | Inactive navigation label | 5.29 | Pass |
 | `--text-ghost` on `--surface-1` | Timeline badges | 5.75 | Pass |
+| `--text-ghost` on `--surface-2` | Routes tab "Time not set" | 5.42 | Pass |
+| `--text-tertiary` on `--surface-2` | Routes tab stop count | 5.27 | Pass |
+| `--status-live` on `--surface-2` | Routes tab stop time | 9.39 | Pass |
+| `--accent` on `--surface-2` | Profile **Sign in with Google** row | 5.72 | Pass |
 | `--accent` on `--surface-3` | Route card action | 5.38 | Pass |
 | `--status-live` on `--surface-1` | Status line, live | 9.95 | Pass |
 | `--status-warning` on `--surface-1` | Status line, delayed or GPS lost | 11.46 | Pass |
@@ -291,12 +297,14 @@ Tailwind size utilities keep their defaults: `text-xs` 12/16 px, `text-sm` 14/20
 | Role | Size | Weight | Line height | Example |
 |---|---|---|---|---|
 | Landing headline | 60 px, 80 px at `md`, 96 px at `lg` | 900 | 1.05 | "Campus routes and bus tracking" |
-| Screen title | 32 px | 900 | 1 | "Live Routes" |
+| Screen title | 32 px | 900 | 1 | "Live Routes", "Routes" |
+| Route schedule card title | 17 px | 800 | 1.375 | Route name in the Routes tab |
+| Route schedule stop and time | 14 px stop name, 12 px time with `tabular-nums` | 700 / 600 | 1.375 / 1.5 | "Central Library", "7:38 am" |
 | Route card title | 22 px | 900 | 1.5 | Route name |
 | Admin section heading | 18 to 20 px | 700 to 800 | 28 px | "Ride History", "Settings" |
 | Body and descriptions | 13 to 15 px | 500 | 1.5 | Home subtitle |
 | Controls (selects, small buttons) | 12 px | 600 to 700 | 16 px | Stop pickers, **Board** |
-| Bottom navigation label | 13 px | 700 | 1 | "Routes", "Profile" |
+| Bottom navigation label | 13 px | 700 | 1 | "Map", "Routes", "Profile" |
 | Tracking status line | 10 px uppercase, `tracking-wider` | 700 | 1.5 | `Ride in service · Live` |
 | Timeline stop name | 14 px (next or selected), otherwise 13 px | 600 / 500 | 1.5 | Stop name |
 | ETA | 18 px | 800 | 28 px | Minutes, or "Due" |
@@ -358,7 +366,7 @@ Elevation is shown first by surface lightness (`--surface-0` to `--surface-4`) a
 | 0 | Map and hero image | several |
 | 10 | Landing content, in-panel overlays | several |
 | 20 | Passenger home and tracking views | `PassengerWorkspace.tsx` |
-| 30 | Passenger profile view, route-ended screen, passenger app above its loading shell | `PassengerWorkspace.tsx`, `app/passenger/layout.tsx` |
+| 30 | Passenger Routes and Profile views, route-ended screen, passenger app above its loading shell | `PassengerWorkspace.tsx`, `app/passenger/layout.tsx` |
 | 40 | Tracking header, map notices and camera controls, timeline sheet backdrop | `PassengerWorkspace.tsx`, `PassengerMap.tsx`, `BottomSheet.tsx` |
 | 50 | Status banners, chat overlay, timeline sheet, open listbox, route search results | several |
 | 100 | Passenger bottom navigation, feedback console header | `PassengerWorkspace.tsx`, `FeedbackPanel.tsx` |
@@ -401,9 +409,10 @@ Playwright viewports (`playwright*.config.ts` and `e2e/`):
 flowchart TD
   L["/ landing and Google sign-in"] -->|passenger or driver| P["/passenger"]
   L -->|admin| A["/admin"]
-  P --> R["Routes: live route cards"]
+  P --> R["Map: live route cards"]
   R -->|select a route| T["Tracking: map, ride card, timeline sheet"]
   T -->|Back| R
+  P --> S["Routes: published route schedules"]
   P --> PR["Profile"]
   PR -->|Admin Panel, admins only| A
   A --> TABS["Live Ops, Routes, Fleet & People, History, Feedback, Settings"]
@@ -413,23 +422,24 @@ flowchart TD
 
 Figure 1. Navigation between routes and views for each role.
 
-A signed-in user leaves `/` for the saved workspace or the default for the role. In `/passenger`, the bottom navigation switches between Routes (home and tracking) and Profile. Administrators switch between `/admin` and `/passenger` with **Passenger Panel** and **Profile > Admin Panel**.
+A signed-in user leaves `/` for the saved workspace or the default for the role. In `/passenger`, the bottom navigation switches between Map (home and tracking), Routes and Profile. Administrators switch between `/admin` and `/passenger` with **Passenger Panel** and **Profile > Admin Panel**.
 
 ### 7.2 Landing page
 
-`app/page.tsx` shows a full-screen hero image (`/images/hero-background.webp`, JPEG fallback) under a `bg-black/40` overlay, the university logo at the top left, the headline and subtitle, a white pill **Sign In with Google** button and a footer. The full-page sign-in link, a sign-in error (`role="alert"`) and a stalled-loading message with **Reload** appear below the button when relevant. A signed-in user sees a spinner with "Finishing your sign-in…" or "Opening your workspace…". An access error replaces the page with **Try again** and **Sign out**.
+`app/page.tsx` shows a full-screen hero image (`/images/hero-background.webp`, JPEG fallback) under a `bg-black/40` overlay, the university logo at the top left, the headline and subtitle, a white pill **Sign In with Google** button and a footer. Until sign-in is usable the button shows a spinner and "Preparing sign-in…". The full-page sign-in link, a sign-in error (`role="alert"`) and a status line with **Reload** appear below the button when relevant: "Sign-in is still loading." after 10 s without sign-in, or "Still checking your sign-in. The connection looks slow; this continues on its own." when restoring a saved session takes more than 8 s. A signed-in user sees a spinner with "Finishing your sign-in…" or "Opening your workspace…". An access error replaces the page with **Try again**, **Sign out** and **Reload**.
 
 ### 7.3 Passenger workspace
 
-`components/passenger/PassengerWorkspace.tsx` stacks three absolutely positioned views and a fixed bottom navigation. Hidden views are `inert` and `aria-hidden`. Reconnect, ride-recovery and error banners appear above the views.
+`components/passenger/PassengerWorkspace.tsx` stacks four absolutely positioned views and a fixed bottom navigation. Hidden views are `inert` and `aria-hidden`; the Routes and Profile views mount on their first visit and then stay mounted. Reconnect, ride-recovery and error banners appear above the views.
 
 | View | Structure |
 |---|---|
-| Routes (home) | Hero image above a rounded panel titled "Live Routes". The panel scrolls the announcement (when active) and one card per route with an active or available bus: route name, first and last stop, stop count and duration, and an action in `--accent` ("TRACK ROUTE", "VIEW STATUS" or "<n> AVAILABLE"). Without routes it shows the configured no-buses message and service start time. |
+| Map (home) | Hero image above a rounded panel titled "Live Routes". The panel scrolls the announcement (when active) and one card per route with an active or available bus: route name, first and last stop, stop count and duration, and an action in `--accent` ("TRACK ROUTE", "VIEW STATUS" or "<n> AVAILABLE"). Without routes it shows the configured no-buses message and service start time. |
 | Tracking | Full-bleed map. Over it, at the top: a 44 px back button and the ride card (bus picker when several buses are selectable, status and progress lines, boarding and destination pickers, **Board**, hints and results), then the chat button with an unread badge. Map notices sit at the top left and the **Center on bus** and **Show route overview** buttons (48 px) at the top right. The route timeline sheet is collapsed to a 56 px handle above the navigation. Chat opens as an overlay between the header and the navigation. |
-| Route ended | Replaces the tracking view when the tracked ride completes: flag icon, "Route ended", a "Waiting for next bus" pill and **Return to Routes**. After 10 s an eligible passenger sees the feedback modal and the view returns to Routes. |
-| Profile | `components/passenger/AccountTab.tsx`: photo, name and role; an action list with **Admin Panel** (administrators), **Send Feedback**, **Sign Out** and **Delete Account** (passengers). Sign-out and deletion ask for confirmation. |
-| Bottom navigation | Two 140 × 60 px buttons, **Routes** and **Profile**, marked with `aria-current="page"` when active. |
+| Route ended | Replaces the tracking view when the tracked ride completes: flag icon, "Route ended", a "Waiting for next bus" pill and **Return to Live Routes**. After 10 s an eligible passenger sees the feedback modal and the view returns to the live route list. |
+| Routes | `components/passenger/RoutesTab.tsx`: title "Routes" with "Stops and scheduled times for each route.", then one card per published route in the order the administrator selected them. Each card on `--surface-2` with a `--border-subtle` border shows a dot in the route colour, the route name and the stop count, then the stops as a vertical timeline: a 3 px `--accent` line in the middle, a 14 px dot per stop (filled `--accent` at the first and last stop, `--surface-2` with an `--accent` ring otherwise), and the stop names alternating left and right with the time below in `--status-live` ("7:30 am") or "Time not set" in `--text-ghost`. States: "Loading routes…" with a spinner; "No routes published yet" on a dashed `--border-default` card; and the passenger error banner with **Retry**. |
+| Profile | `components/passenger/AccountTab.tsx`: photo, name and role; an action list with **Admin Panel** (administrators), **Send Feedback**, **Sign Out** and **Delete Account** (passengers). Sign-out and deletion ask for confirmation. Signed out, the list offers **Sign in with Google** in `--accent`. |
+| Bottom navigation | Three 60 px high buttons, **Map**, **Routes** and **Profile**, that share the bar width up to 140 px each, so they fit a 320 px screen. The active button is marked with `aria-current="page"`; **Map** stays active during tracking. |
 
 ### 7.4 Administrator workspace
 
@@ -446,7 +456,7 @@ A signed-in user leaves `/` for the saved workspace or the default for the role.
 | Routes | Route list with colour swatches, and an editor with a map, place search, draggable lettered stops, per-stop rename, reorder and remove buttons, and the colour picker. |
 | Fleet & People | "Fleet Vehicles" and "Driver Personnel" lists with add, edit and delete. |
 | History | "Ride History" list with chat history, deletion and **Load older rides**. |
-| Settings | Announcement toggle and text, no-buses message and sub-message, service start time, and a save button that reads **No changes** until something changes. |
+| Settings | Announcement toggle and text, no-buses message and sub-message, service start time, and a save button that reads **No changes** until something changes. Below it, the **Passenger Routes** section ("Choose which routes passengers can browse and set the time at each stop") has its own save button: a checkbox list of every route sorted by name (colour dot, name, stop count), then, for each selected route in selection order, a card with a 4 px left border in the route colour, numbered stop circles in the route colour and a 44 px `<input type="time">` per stop. The button reads **Save routes**, **No route changes**, **Saving…** or **Saved!**. A notice in amber counts previously published routes that were deleted and will be removed on save. |
 
 ### 7.5 Feedback
 
@@ -467,7 +477,7 @@ Paths are relative to `frontend/src/components/`.
 | `AlertModal` | `ui/AlertModal.tsx` | One-button dialog with error, warning and info variants. |
 | `InAppSelect` | `ui/InAppSelect.tsx` | Combobox and listbox with a detail column (ETA) and a completed state for stops behind the bus. |
 | `CustomSelect` | `ui/CustomSelect.tsx` | Styled native `<select>` for admin fleet and feedback filters. |
-| `RoleGuard` | `shared/RoleGuard.tsx` | Loading, access-error and unauthorized screens; redirects signed-out users to `/`. |
+| `RoleGuard` | `shared/RoleGuard.tsx` | Loading, slow sign-in ("Still signing you in", with **Reload**), access-error and unauthorized screens; redirects signed-out users to `/`. |
 | `WorkspaceLink` | `shared/WorkspaceLink.tsx` | Link between workspaces with an **Opening…** state. |
 | `WorkspaceLoading` | `shared/WorkspaceLoading.tsx` | Full-screen loading status. |
 | `WorkspacePrefetch` | `shared/WorkspacePrefetch.tsx` | Downloads the other workspace's code for verified administrators; renders nothing. |
@@ -476,12 +486,13 @@ Paths are relative to `frontend/src/components/`.
 | `PassengerWorkspace` | `passenger/PassengerWorkspace.tsx` | Passenger shell: banners, views and bottom navigation. |
 | `PassengerBoardingView` | `passenger/PassengerBoardingView.tsx` | Ride status, progress, stop pickers and **Board**. |
 | `RouteTimelineSheet` | `passenger/RouteTimelineSheet.tsx` | Stop timeline with ETAs inside `BottomSheet`. |
+| `RoutesTab` | `passenger/RoutesTab.tsx` | Published route schedules as stop timelines. |
 | `AccountTab` | `passenger/AccountTab.tsx` | Profile and account actions. |
 | `PassengerLoadingShell` | `passenger/PassengerLoadingShell.tsx` | Static copy of the home layout shown while the session restores. |
 | `BottomSheet` | `passenger/ui/BottomSheet.tsx` | Collapsible sheet above the bottom navigation. |
 | `RouteCarousel` | `passenger/ui/RouteCarousel.tsx` | List of live route cards. |
 | `PassengerMap` | `maps/PassengerMap.tsx` | Passenger map, bus and stop markers, notices, camera controls. |
-| `PassengerTrackingMap` | `maps/PassengerTrackingMap.tsx` | Mounts the Maps provider only while a route is tracked. |
+| `PassengerTrackingMap` | `maps/PassengerTrackingMap.tsx` | Mounts the Maps provider only while a route is tracked; the map instance itself is reused (Section 9.2). |
 | `DirectionsRoute` | `maps/DirectionsRoute.tsx` | Road polylines from stored geometry. |
 | `BusPositionGlyph` | `maps/BusPositionGlyph.tsx` | Passenger bus glyph with heading pointer. |
 | `TrafficLayer` | `maps/TrafficLayer.tsx` | Google traffic layer for the admin maps. |
@@ -491,6 +502,8 @@ Paths are relative to `frontend/src/components/`.
 | `RideHistoryPanel` | `admin/RideHistoryPanel.tsx` | Ride history and chat archive. |
 | `FeedbackPanel` | `admin/FeedbackPanel.tsx` | Feedback console. |
 | `SettingsPanel` | `admin/SettingsPanel.tsx` | Announcement and service messages. |
+| `PassengerRoutesSettings` | `admin/PassengerRoutesSettings.tsx` | Passenger route schedule editor inside Settings, saved separately. |
+| `Field`, `SectionHeader` | `admin/SettingsSection.tsx` | Labelled control and icon header shared by the Settings sections. |
 | `AdminPanelErrorBoundary` | `admin/AdminPanelErrorBoundary.tsx` | Contains a panel crash and offers **Try again**. |
 | `TelemetryTraceControls` | `TelemetryTraceControls.tsx` | **Download telemetry trace** button when the URL has `telemetryTrace=1`; see [browser telemetry trace](../operations/BROWSER_TELEMETRY_TRACE.md). |
 
@@ -498,7 +511,7 @@ Shared CSS classes in `app/globals.css` that components use: `.btn-primary`, `.b
 
 ### 8.2 Icons
 
-All icons come from `lucide-react` 1.27.0, imported per icon; `next.config.ts` lists the package in `optimizePackageImports`. Examples: `BusFront` (bus glyph), `Navigation` (**Center on bus**), `Route` (route overview, timeline), `WifiOff` (health and reconnect notices), `MapPinned` and `CircleUserRound` (bottom navigation), `MessageCircle` (chat), `Flag` (route ended), `ShieldAlert`, `AlertTriangle` and `Info` (dialog variants), `Loader2` (spinners). Common sizes: 16 px in admin tabs and lists, 20 px in map controls, 22 px with stroke width 2.5 in the bottom navigation.
+All icons come from `lucide-react` 1.27.0, imported per icon; `next.config.ts` lists the package in `optimizePackageImports`. Examples: `BusFront` (bus glyph), `Navigation` (**Center on bus**), `Route` (route overview, timeline, the Passenger Routes settings header), `WifiOff` (health and reconnect notices), `MapPinned`, `ListOrdered` and `CircleUserRound` (bottom navigation), `MessageCircle` (chat), `Flag` (route ended), `ShieldAlert`, `AlertTriangle` and `Info` (dialog variants), `Loader2` (spinners). Common sizes: 16 px in admin tabs and lists, 20 px in map controls, 22 px with stroke width 2.5 in the bottom navigation.
 
 ### 8.3 Motion
 
@@ -509,7 +522,7 @@ All icons come from `lucide-react` 1.27.0, imported per icon; `next.config.ts` l
 | `animate-slide-down` | 300 ms | `ease` | Chat |
 | `animate-scale-in` | 250 ms | `cubic-bezier(0.22, 1, 0.36, 1)` | Chat button |
 | `animate-scale-up` | 400 ms | `cubic-bezier(0.22, 1, 0.36, 1)` | Feedback success card |
-| Passenger view switch | 200 ms, opacity and 8 px rise | Tailwind default `cubic-bezier(0.4, 0, 0.2, 1)` | Routes, tracking and profile views |
+| Passenger view switch | 200 ms, opacity and 8 px rise | Tailwind default `cubic-bezier(0.4, 0, 0.2, 1)` | Home, tracking, Routes and Profile views |
 | Timeline sheet | 500 ms | `cubic-bezier(0.32, 0.72, 0, 1)` | `BottomSheet` |
 | Bus marker movement | 250 ms interpolation, at most one render every 50 ms | Cubic ease-out | `hooks/useSmoothPosition.ts` |
 | Admin marker heading | 250 ms | `ease-out` | `DashboardPanel.tsx` |
@@ -544,6 +557,7 @@ Under `prefers-reduced-motion: reduce`, `app/globals.css` sets every animation a
 | Default centre | 23.0347, 72.5483 (Ahmedabad) | `config/maps.ts` |
 | Markers | `AdvancedMarker` from `@vis.gl/react-google-maps` with HTML content | `PassengerMap.tsx`, `DashboardPanel.tsx`, `RouteManagementPanel.tsx` |
 | Traffic layer | Admin Live Ops and route editor only | `TrafficLayer.tsx` |
+| Instance reuse | Every map sets `reuseMaps` and shares the map ID and options, so the passenger map, Live Ops and the route editor reattach one `google.maps.Map` per page load; overlays detach on unmount ([EKI-ADR-004](GOOGLE_MAP_REUSE_DECISION.md)) | `config/maps.ts`, `config/maps.reuse.test.ts` |
 
 ## 10. Accessibility in code
 

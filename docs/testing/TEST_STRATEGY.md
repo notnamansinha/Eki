@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-002 | 2.0 | Current | 2026-10-30 |
+| EKI-TST-002 | 3.0 | Current | 2026-10-30 |
 
 ## 1. Purpose and scope
 
@@ -178,6 +178,7 @@ Run `npm run verify` for every code change, then add the checks for the area cha
 | Firestore or RTDB rules, transactions, workers | `npm run test:rules` |
 | Authentication, admin, feedback | `npm run test:e2e:admin`; `npm run test:rules` for rules |
 | Passenger UI, map or progress | Passenger layout and passenger progress configurations |
+| A Google map element, `MapProviders` or `config/maps.ts` | The map construction counters in Section 7.6 (in `npm test`); after deploying, the Dynamic Maps metric in the Cloud Console |
 | Admin dashboard, route editor, history | Production audit configuration; `npm run qa:browser` for persisted flows |
 | HTTP routes or OpenAPI | `npm run verify:openapi` (in `npm test`); `npm run qa:api` for authorization |
 | Critical source listed by `scripts/qa/coverage-budget.mjs` | A reviewed mapping and a changed test file, checked by `qa:budget` on pull requests |
@@ -275,6 +276,19 @@ Test every route with the keyboard only: visible focus, tab order, listbox open,
 ### 7.5 Performance and load
 
 Use a staging project near production topology. The [telemetry ingestion load test](../operations/TELEMETRY_INGESTION_LOAD_TEST.md) defines the generator and metrics. Agree acceptance targets with the university owners; do not derive a latency target from local runs.
+
+### 7.6 Map construction counts
+
+The map-load tests run the real `@vis.gl/react-google-maps` `APIProvider` and `Map` against a fake Maps SDK (`frontend/src/test-support/fakeGoogleMapsSdk.ts`) that records each `google.maps.Map` construction, reuse, script load and overlay attachment.
+
+| Test | Proves |
+|---|---|
+| `frontend/src/components/maps/PassengerMap.mapLoads.test.tsx` | The first open builds one map and loads the script once; bus, preview, direction and route changes reattach it; camera refit and follow mode work after reattach; a GPS tick neither constructs nor reattaches |
+| `frontend/src/components/passenger/PassengerWorkspace.mapLoads.test.tsx` | Back and reopen, the Profile and Routes tabs, route switch, direction resolution, a bus disappearing and returning, service start and the bus picker construct no further map |
+| `frontend/src/components/admin/AdminMapLoads.test.tsx` | Live Ops, the route editor and tab switches build one map, and overlays and listeners detach from the cached instance |
+| `frontend/src/config/maps.reuse.test.ts` | Every vis.gl `Map` element sets `reuseMaps`, `mapId={MAPS_MAP_ID}` and `{...MAP_OPTIONS}` |
+
+These tests count constructions, not Google billing (acceptance case OBS07). Billing evidence needs the Dynamic Maps metric in the Cloud Console; see [EKI-ADR-004](../design/GOOGLE_MAP_REUSE_DECISION.md).
 
 ## 8. Completion and evidence
 

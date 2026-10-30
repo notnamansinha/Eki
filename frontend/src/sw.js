@@ -16,7 +16,8 @@
  *      would replay a broken map after the upstream recovers.
  *   6. NetworkOnly – Google Auth helpers and authenticated Firebase/API responses.
  *
- * Navigation requests check Hosting first and use cached HTML when offline.
+ * Navigation requests check Hosting first and use cached HTML when offline or
+ * when Hosting has not answered within 2.5 s.
  */
 
 import { precacheAndRoute, cleanupOutdatedCaches, matchPrecache } from "workbox-precaching";
@@ -30,6 +31,7 @@ import {
   NetworkOnly,
   NetworkFirst,
   StaleWhileRevalidate,
+  StrategyHandler,
 } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
 import { CacheableResponsePlugin } from "workbox-cacheable-response";
@@ -48,7 +50,7 @@ cleanupOutdatedCaches();
 // Also retire navigation HTML cached under the previous worker: it references
 // hashed chunks that this worker's precache cleanup removes and Hosting no
 // longer serves, so an offline or slow-network fallback to it cannot boot.
-// Until a fresh page is cached, the fallback uses this worker's precached shell.
+// Routes with a shell precached by this worker fall back to that shell.
 // Earlier workers cached opaque Google Maps responses, possibly upstream errors;
 // Maps is now network-only, so drop that cache too.
 self.addEventListener("activate", (event) => {
@@ -65,9 +67,28 @@ self.addEventListener("activate", (event) => {
 // The static export's HTML does not depend on the query string (it is read
 // only on the client), so store and look up one bounded entry per path rather
 // than one full HTML copy per UTM/QR/trace query.
+//
+// A navigation waits at most this long for Hosting before showing cached HTML.
+// 2.5 s is the "good" Largest Contentful Paint budget: a reachable Hosting
+// edge returns the HTML document well inside it even on a cold 3G radio,
+// whereas a flaky connection that never delivers would otherwise hold the
+// splash screen indefinitely. The network response keeps updating the
+// runtime cache in the background.
+const NAVIGATION_NETWORK_BUDGET_MS = 2500;
+
+/**
+ * Cached HTML only stands in for the network, so a read that rejects (Cache
+ * Storage under storage pressure or on a restricted iOS profile) is a miss
+ * rather than a failed navigation.
+ */
+const readOrMiss = (read) => read.catch(() => undefined);
+
+// No networkTimeoutSeconds here: Workbox 7 answers early only when this
+// runtime cache already holds the page (it is emptied on every activation)
+// and otherwise keeps waiting for the network. The route below bounds the
+// wait instead and also falls back to the precached shell.
 const navigationStrategy = new NetworkFirst({
   cacheName: "eki-navigations",
-  networkTimeoutSeconds: 3,
   plugins: [
     {
       cacheKeyWillBeUsed: async ({ request }) => {
@@ -76,21 +97,68 @@ const navigationStrategy = new NetworkFirst({
         url.hash = "";
         return url.href;
       },
+      // Activation empties this cache, so its copy of a route this worker has
+      // a shell for is that same HTML or a newer deploy's, often stored late
+      // and unrendered on a slow network. The newer HTML's chunks are not
+      // cached, so it cannot boot offline or on that same network: such routes
+      // use the shell, including when NetworkFirst answers a failed fetch from
+      // this cache. If the shell cannot be read, the copy is still used.
+      cachedResponseWillBeUsed: async ({ request, cachedResponse }) => {
+        const shell = cachedResponse && await readOrMiss(matchPrecache(precachedShellPath(request)));
+        return shell ? null : cachedResponse;
+      },
     },
     new CacheableResponsePlugin({ statuses: [0, 200] }),
     new ExpirationPlugin({ maxEntries: 10, maxAgeSeconds: 7 * 24 * 60 * 60 }),
   ],
 });
+
+/** This worker's precached HTML for a navigation, e.g. /passenger → /passenger.html. */
+function precachedShellPath(request) {
+  const { pathname } = new URL(request.url);
+  if (pathname === "/") return "/index.html";
+  return pathname.endsWith("/") ? `${pathname}index.html` : `${pathname}.html`;
+}
+
+/**
+ * HTML for this route while the network is still pending: the shell precached
+ * with this worker, whose chunks are precached too, else the runtime-cached
+ * copy. Reading through the strategy applies its query-free key, expiry and
+ * preference for the shell.
+ */
+async function cachedNavigation({ request, event }) {
+  const shell = await readOrMiss(matchPrecache(precachedShellPath(request)));
+  if (shell) return shell;
+  const reader = new StrategyHandler(navigationStrategy, { request, event });
+  try {
+    return await readOrMiss(reader.cacheMatch(request));
+  } finally {
+    reader.destroy();
+  }
+}
+
 const navigationHandler = new NavigationRoute(
   async (options) => {
+    // The strategy keeps the fetch event alive until the network response is
+    // stored, even after the page has been answered from cache.
+    const network = navigationStrategy.handle(options);
+    let timer;
+    const budget = new Promise((resolve) => {
+      timer = setTimeout(resolve, NAVIGATION_NETWORK_BUDGET_MS, false);
+    });
+    const networkSettled = await Promise.race([network.then(() => true, () => true), budget]);
+    clearTimeout(timer);
+    if (!networkSettled) {
+      // With nothing readable, keep waiting for the network.
+      const cached = await readOrMiss(cachedNavigation(options));
+      if (cached) return cached;
+    }
     try {
-      return await navigationStrategy.handle(options);
+      return await network;
     } catch (error) {
-      const pathname = new URL(options.request.url).pathname;
-      const shell = pathname === "/"
-        ? "/index.html"
-        : pathname.endsWith("/") ? `${pathname}index.html` : `${pathname}.html`;
-      const cached = await matchPrecache(shell) || await matchPrecache("/index.html");
+      // With no shell readable, report the network's error, not the storage one.
+      const cached = await readOrMiss(matchPrecache(precachedShellPath(options.request))) ||
+        await readOrMiss(matchPrecache("/index.html"));
       if (cached) return cached;
       throw error;
     }

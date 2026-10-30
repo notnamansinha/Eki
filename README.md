@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-001 | 1.0 | Current | 2026-10-30 |
+| EKI-GEN-001 | 1.1 | Current | 2026-10-30 |
 
 Eki tracks university buses in real time. An ESP32 tracker with a NEO-M8N GNSS receiver in each bus sends its position to an Express backend, which runs each ride through its stops in order and publishes live state through Firebase. Passengers follow buses and board rides in a progressive web app; administrators manage routes, the fleet and ride operations.
 
@@ -10,8 +10,8 @@ Eki tracks university buses in real time. An ESP32 tracker with a NEO-M8N GNSS r
 
 | Role | What Eki provides |
 |---|---|
-| Passenger | Routes with live buses, the bus position with live health ("Updates delayed", "GPS signal lost", "Live tracking lost"), stop estimates and progress, boarding by location with no code, ride chat, ride feedback and account deletion |
-| Administrator | **Live Ops** map with delay, chat, **End ride early** and **Resume tracking**; route editor with Google road geometry; vehicles and operators; ride history with stop evidence; feedback review; passenger-facing settings |
+| Passenger | Routes with live buses, the bus position with live health ("Updates delayed", "GPS signal lost", "Live tracking lost"), stop estimates and progress, published route schedules with a time for each stop, boarding by location with no code, ride chat, ride feedback and account deletion |
+| Administrator | **Live Ops** map with delay, chat, **End ride early** and **Resume tracking**; route editor with Google road geometry; vehicles and operators; ride history with stop evidence; feedback review; passenger-facing settings and route schedules |
 | Operator | No browser action needed: the operator's assignment to a bus lets the tracker start, advance and complete rides automatically |
 | Tracker | Authenticated HTTPS telemetry once per second, GNSS loss reporting, signed fleet firmware and signed over-the-air updates |
 

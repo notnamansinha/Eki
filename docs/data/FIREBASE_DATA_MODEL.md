@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-DAT-001 | 1.0 | Current | 2026-10-30 |
+| EKI-DAT-001 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -61,9 +61,9 @@ Figure 1. Main entities. `LIVE_NODE` is the RTDB path `activeBuses/{busId}_{rout
 | RTDB | `_deviceRateLimits/{deviceId}`, `_deviceCredentialVersions/{deviceId}` | Backend | None |
 | RTDB | `_health`, legacy `users`, legacy `messages` | None | None |
 | Firestore | `users`, `routes`, `buses`, `drivers`, `settings` | Backend | Read (Section 4) |
-| Firestore | `ride_sessions` and subcollections | Backend | Session read by a current admin or the assigned driver; `messages` also read by members (Section 4.6) |
+| Firestore | `ride_sessions` and subcollections | Backend | Session read by a current admin or the assigned driver; `messages` also read by members (Section 4.7) |
 | Firestore | `bus_locations`, `completed_trips` | Leader | Read by a current admin |
-| Firestore | `feedbacks`, `feedbackCooldowns` | Browser | Create and read under rules (Section 4.9) |
+| Firestore | `feedbacks`, `feedbackCooldowns` | Browser | Create and read under rules (Section 4.10) |
 | Firestore | Every collection in Section 5 | Backend | None |
 
 ## 3. Realtime Database
@@ -281,9 +281,26 @@ Fields: `id`, `name`, `authUid` and `assignedBusId` (string or null). The browse
 
 ### 4.5 `settings/global`
 
-Fields: `serviceStartTime` (at most 64), `noBusesMessage` (at most 200), `noBusesSubMessage` (at most 300), `announcementText` (at most 500), `announcementActive` (boolean), `updatedAt` (Timestamp) and `updatedBy` (UID) (`backend/src/routes/settings.ts:19`). Writer: admin settings endpoint. Client rule: read, signed in (`firestore.rules:293`). Browsers apply defaults for missing fields.
+Fields: `serviceStartTime` (at most 64), `noBusesMessage` (at most 200), `noBusesSubMessage` (at most 300), `announcementText` (at most 500), `announcementActive` (boolean), `updatedAt` (Timestamp) and `updatedBy` (UID) (`backend/src/routes/settings.ts:20`). Writer: admin settings endpoint. Client rule: read, signed in (`firestore.rules:293`). Browsers apply defaults for missing fields.
 
-### 4.6 `ride_sessions/{sessionId}`
+### 4.6 `settings/passengerRoutes`
+
+The routes that an administrator publishes in the passenger **Routes** tab, with a time for each stop. The document holds only the approvals and the times; route names, stops and stop order always come from `routes/{routeId}`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `routes[]` | `{routeId, stopTimes}`, at most 50 | Approved routes in passenger display order; each `routeId` is a `routes/{routeId}` document ID and appears once |
+| `routes[].stopTimes` | map of stop ID to `"HH:mm"` | 24-hour time for each stop of the route (`^([01]\d\|2[0-3]):[0-5]\d$`), with keys in the route's stop order at save time |
+| `updatedAt` | Timestamp | Last save |
+| `updatedBy` | string | UID of the administrator who saved |
+
+Writer: only `PUT /api/v2/settings/passenger-routes` ([API reference](../../backend/API.md)). The backend reads every referenced route in one `getAll`, requires each route to exist and each `stopTimes` to hold exactly the route's current stop IDs with valid times, rebuilds the record from the validated values and writes it as a full replacement, never a merge (`backend/src/routes/settings.ts:177`, `settings.ts:221`). An empty `routes` array unpublishes every route. The 16 KiB request limit allows roughly 450 stop times in total with generated stop IDs.
+
+Readers: every signed-in browser, through a listener (`frontend/src/hooks/usePassengerRouteConfig.ts:47`). Client rule: read, signed in; every client write denied (`firestore.rules:293`).
+
+A later route edit or deletion does not update this document, so browsers treat it as untrusted input (`frontend/src/lib/passengerRouteSchedule.ts`). They drop malformed and duplicate entries, skip approved routes whose route document no longer exists, ignore times for deleted stops, and show "Time not set" for a stop without a valid time, for example a stop added after the last save. A route that is not in `routes[]` is never shown to passengers, and a missing document publishes nothing. The administrator settings tab removes stale entries on the next save. Retention: replaced by each save; the backend never deletes it.
+
+### 4.7 `ride_sessions/{sessionId}`
 
 The durable record of one ride.
 
@@ -326,7 +343,7 @@ The durable record of one ride.
 
 Browsers read the latest 200 messages (`frontend/src/components/shared/MessagingPanel.tsx:98`).
 
-### 4.7 `bus_locations/{busId}`
+### 4.8 `bus_locations/{busId}`
 
 A per-bus lifecycle projection, written when lifecycle state changes rather than on every fix.
 
@@ -342,11 +359,11 @@ A per-bus lifecycle projection, written when lifecycle state changes rather than
 
 Writers: leader (`tripStateEngine.ts:434`, `tripStateEngine.ts:1165`), ride start and stop. Readers: admin Live Ops (`frontend/src/hooks/useBusLocations.ts:15`), the analytics endpoint and automatic start. Client rule: read by a current admin (`firestore.rules:94`). Retention: kept per bus.
 
-### 4.8 `completed_trips/{sessionId}`
+### 4.9 `completed_trips/{sessionId}`
 
 Fields: `busId`, `driverId`, `routeId`, `direction`, `originStopId`, `destinationStopId`, `completedAt` (ISO string), `automaticTurnaroundEligibleAt` (epoch ms), `stopCount`, `stopNames[]` (travel order) and `sessionId`. Writer: leader at completion (`tripStateEngine.ts:1121`). Readers: the analytics endpoint (forward and reverse counts) and history deletion. Client rule: read by a current admin (`firestore.rules:158`). Retention: 180 days after `completedAt` (`COMPLETED_TRIP_RETENTION_DAYS`), and with admin history deletion.
 
-### 4.9 `feedbacks/{feedbackId}` and `feedbackCooldowns/{uid}`
+### 4.10 `feedbacks/{feedbackId}` and `feedbackCooldowns/{uid}`
 
 Browsers write feedback directly to Firestore, creating both documents in one transaction (`frontend/src/lib/feedbackStore.ts:76`). The feedback ID is the SHA-256 hex of the UID and the client `requestId`.
 
@@ -380,7 +397,7 @@ Clients cannot read or write any of these collections, by explicit rule or throu
 | `_fleet_lock_recoveries/{id}` | Recovered owner, operation, executor, admin UID, `recoveredAt` | Audit of lock recovery | 90 days after `recoveredAt` |
 | `_device_diagnostics/{deviceId}` | Device, bus and route IDs, `firmwareVersion`, uptime, `freeHeapBytes`, `rssiDbm`, counters, `fault`, security state, device time, `receivedAt` | Latest diagnostics report, replaced on each report; read through `GET /api/devices/{deviceId}/diagnostics` | Replaced |
 | `_rtdb_retention_inventory/{hash}` | `path`, `fingerprint`, `firstSeenAt` | First-seen record for RTDB data without a usable time (`backend/src/services/firebaseRtdbRetention.ts:35`) | Removed with the RTDB entry or as an orphan |
-| `_health` | None | Read with `limit(1)` every 30 s by the health probe (`backend/src/server.ts:221`) | Not applicable |
+| `_health` | None | Read with `limit(1)` every 30 s by the health probe (`backend/src/server.ts:224`) | Not applicable |
 | `passenger_requests/{uid}` | `passengerId`, `busId`, `type`, `lat`, `lng`, `status`, `createdAt` | Legacy; nothing creates it. Admin `PATCH` and `DELETE /api/requests/{uid}` change or remove it (`backend/src/routes/requests.ts:33`), and passenger account deletion removes it (`privacyDeletionWorker.ts:66`) | Removed by those two paths |
 
 ## 6. Indexes

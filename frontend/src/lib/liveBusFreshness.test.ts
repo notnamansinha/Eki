@@ -1,11 +1,10 @@
-import { liveBusFreshnessTimestamp } from "./liveBusFreshness";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setServerTimeOffset } from "./serverClock";
 import {
-  BUS_EXPIRY_MS,
   SIGNAL_LOST_MS,
   isLiveBusSignalLost,
   isLiveBusTimestamp,
+  liveBusFreshnessTimestamp,
 } from "./liveBusFreshness";
 
 describe("live bus freshness", () => {
