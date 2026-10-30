@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-001 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-001 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -12,7 +12,7 @@ Readiness gates that sit outside the repository (infrastructure owners, privacy 
 
 ## 2. Branch and release flow
 
-Pull requests target `main`. The `testing` branch no longer exists on GitHub (deleted on 2026-10-25), but the scheduled QA workflows still resolve it and fail before any suite runs (Section 6).
+Pull requests target `main`, and the scheduled QA workflows test the head of `main` (Section 6).
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,7 @@ flowchart LR
     DS --> P1[Firebase project bustrack-be165<br/>Hosting, rules, indexes]
     Manual[Manual dispatch from main,<br/>environment production] --> DP[Deploy: production job]
     DP --> P2[Firebase project eki-production<br/>Hosting, rules, indexes]
-    Sched[Nightly and weekly schedules] --> T[Resolve the deleted testing branch:<br/>fail before any suite]
+    Sched[Nightly and weekly schedules] --> T[Resolve the head of main:<br/>run the isolated suites]
 ```
 
 Figure 1. Branch, verification and deployment flow.
@@ -125,14 +125,14 @@ These GitHub settings are not stored in the repository. They were read through t
 
 ## 6. Scheduled QA (`deep-qa.yml`, `weekly-reliability.yml`)
 
-Both workflows start with a `resolve` job that pins one commit. On a schedule or manual dispatch (which must run from `main`) the job reads the head of `testing` through the GitHub API; on a push to one of the listed `codex/qa-*` branches it uses the pushed commit. Neither workflow uses secrets, and both refuse to run outside `notnamansinha/Eki`.
+Both workflows start with a `resolve` job that pins one commit. On a schedule or manual dispatch (which must run from `main`) the job reads the head of `main` through the GitHub API; on a push to one of the listed `codex/qa-*` branches it uses the pushed commit. Neither workflow uses secrets, and both refuse to run outside `notnamansinha/Eki`.
 
 | Workflow | Matrix suites | Report job |
 |---|---|---|
 | Isolated nightly QA | `gnss`, `emulator`, `browser`, `api`, `native`, `reviewedUnit`, each through `node scripts/qa/campaign.mjs <suite>` | `node scripts/qa/campaign-report.mjs` |
 | Isolated weekly reliability baseline | `mutation` (`npm run qa:mutation`) and `soak` (`npm run qa:soak`) | `node scripts/qa/weekly-report.mjs` |
 
-The `testing` branch was deleted on 2026-10-25, so every scheduled or dispatched run since then fails in `resolve` with `Not Found` and runs no suite. The last scheduled runs that executed suites were on 2026-10-24 (UTC). None of the listed `codex/qa-*` branches exists either. The [risk register](ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-runs-no-suites) tracks this. The campaigns are described in [scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md).
+The `testing` branch was deleted on 2026-10-25; scheduled runs from then until the resolver was changed to `main` failed in `resolve` with `Not Found` and ran no suite. The last scheduled runs that executed suites were on 2026-10-24 (UTC). None of the listed `codex/qa-*` branches exists, so their push triggers never fire. The [risk register](ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-runs-no-suites) closes OPS-02 once a nightly and a weekly run are green on `main`. The campaigns are described in [scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md).
 
 ## 7. Backend hosting
 

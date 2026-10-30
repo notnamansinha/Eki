@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-002 | 1.0 | Current | 2026-10-30 |
+| EKI-TST-002 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose and scope
 
@@ -197,7 +197,7 @@ Run `npm run verify` for every code change, then add the checks for the area cha
 | Isolated weekly reliability (`weekly-reliability.yml`) | Saturday 20:41 UTC, manual dispatch, pushes to `codex/qa-nightly-reliability` | `qa:check`, then `qa:mutation` and `qa:soak` shards, then `weekly-report.mjs` |
 | Deploy (`deploy.yml`) | Green Production verification push on `main`; manual dispatch | Staging and approval-gated production releases; see [CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md) |
 
-Scheduled and manually dispatched nightly and weekly runs resolve the head of the `testing` branch, not `main`. On 2026-10-30 the repository has no `testing` branch and none of the listed `codex/qa-*` branches, so every scheduled run fails in its `resolve` job (`Not Found`) and runs no suite; the last scheduled runs that executed suites were on 2026-10-24 (UTC). The [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md) tracks this as OPS-02.
+Scheduled and manually dispatched nightly and weekly runs resolve the head of `main`. The `testing` branch was deleted on 2026-10-25; scheduled runs from then until the resolver was changed to `main` failed in `resolve` with `Not Found` and ran no suite. The last scheduled runs that executed suites were on 2026-10-24 (UTC). The [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md) tracks the first green runs as OPS-02.
 
 ```mermaid
 flowchart LR

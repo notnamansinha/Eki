@@ -42,7 +42,7 @@ export function verifyIsolatedWorkflow(workflow) {
     }
     if (name === 'resolve') {
       const script = job.steps.find(step => step.uses?.startsWith('actions/github-script@'))?.with?.script ?? '';
-      for (const fragment of ["ref: 'heads/testing'", "context.ref !== 'refs/heads/main'", "context.ref !== 'refs/heads/codex/qa-nightly-reliability'", '/^[a-f0-9]{40}$/'])
+      for (const fragment of ["ref: 'heads/main'", "context.ref !== 'refs/heads/main'", "context.ref !== 'refs/heads/codex/qa-nightly-reliability'", '/^[a-f0-9]{40}$/'])
         if (!script.includes(fragment)) throw Error('Trusted revision resolution guard missing');
     }
   }

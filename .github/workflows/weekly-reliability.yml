@@ -32,7 +32,7 @@ jobs:
               sha = context.sha;
             } else {
               if (context.ref !== 'refs/heads/main') throw new Error('Use the owner-approved default-branch definition');
-              const response = await github.rest.git.getRef({ ...context.repo, ref: 'heads/testing' });
+              const response = await github.rest.git.getRef({ ...context.repo, ref: 'heads/main' });
               sha = response.data.object.sha;
             }
             if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('Invalid immutable revision');

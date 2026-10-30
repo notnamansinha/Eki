@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-010 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-010 | 2.0 | Current | 2026-10-30 |
 
 ## 1. Purpose
 
@@ -10,7 +10,7 @@ This register lists the material risks that remain in Eki, each with the source 
 
 ### 1.1 Summary
 
-Of the ten risks, one is closed, five are open in the repository or its settings, and four have their code-side mitigation in place but wait on deployment, hardware or institutional evidence (status values are defined in Section 2). Five of the nine remaining risks are rated High.
+Of the ten risks, one is closed, four are open in the repository or its settings, and five have their code-side mitigation in place but wait on deployment, hardware or institutional evidence (status values are defined in Section 2). Five of the nine remaining risks are rated High.
 
 | Area | What is unfinished | Risks |
 |---|---|---|
@@ -18,7 +18,7 @@ Of the ten risks, one is closed, five are open in the repository or its settings
 | Stop tracking | Stop arrival and route matching are validated on simulated rides only; a moving-bus field ride is still needed. | TRK-01 (High) |
 | Tracker firmware | Outage recovery, Secure Boot and signed updates are built but not proven on hardware, and one shared update image would give every tracker the same credentials. | FW-01, FW-02, FW-03 (High) |
 | Access control | A passenger can board by reporting a false location, and ride operations accept administrator claims without the current version check. | SEC-01, SEC-03 (Medium) |
-| Delivery process | Scheduled QA campaigns run no suites, and a merge to `main` does not require passing checks. | OPS-02, OPS-03 (Medium) |
+| Delivery process | Scheduled QA campaigns have not yet recorded a green run on `main`, and a merge to `main` does not require passing checks. | OPS-02, OPS-03 (Medium) |
 
 ## 2. Status values
 
@@ -37,7 +37,7 @@ Of the ten risks, one is closed, five are open in the repository or its settings
 | FW-01 | Store-and-forward needs physical recovery evidence | High | External gate | Witnessed outage and recovery run on the target board |
 | FW-02 | Firmware updates and key protection need physical proof | High | External gate | Spare-board Secure Boot trial, key custody, signed update and rollback |
 | OPS-01 | Runtime availability and perimeter controls are not evidenced | High | External gate | Managed backend, failover, edge limits, alerts, backup and restore drill |
-| OPS-02 | Scheduled QA runs no suites | Medium | Open | Scheduled runs resolve `main` and record a green nightly and weekly run |
+| OPS-02 | Scheduled QA runs no suites | Medium | External gate | Scheduled runs resolve `main`; a green nightly and weekly run on `main` remain to be recorded |
 | TRK-01 | Stop progress is validated on simulated tracks only | High | External gate | Instrumented ride on the real route, including the divided-road U-turn |
 | SEC-03 | Ride operations accept stale administrator claims | Medium | Open | Every administrator branch checks the current authorization version, with regression tests |
 | FW-03 | OTA images carry device secrets but the backend serves one release | High | Open | Per-device releases, or credentials kept out of the update image |
@@ -75,9 +75,9 @@ Of the ten risks, one is closed, five are open in the repository or its settings
 
 ### 3.6 OPS-02: scheduled QA runs no suites
 
-- Evidence: the `resolve` jobs in `.github/workflows/deep-qa.yml` and `.github/workflows/weekly-reliability.yml` read the head of `testing` through the GitHub API for scheduled and dispatched runs. The `testing` branch was deleted on 2026-10-25. Every scheduled nightly run from 2026-10-25 to 2026-10-29 (UTC) failed in `resolve` with `Not Found` and skipped `suites` and `report`; the last runs that executed suites were on 2026-10-24 (GitHub Actions history, read 2026-10-30).
-- Impact: the nightly emulator, browser, API, native and GNSS campaigns and the weekly mutation and soak baselines do not run at all. Regressions on `main` that only these suites would catch go unnoticed.
-- Open gate: change the resolver to `main`, then record one green nightly and one green weekly run on a current `main` commit.
+- Evidence: the `resolve` jobs in `.github/workflows/deep-qa.yml` and `.github/workflows/weekly-reliability.yml` read the head of `main` through the GitHub API for scheduled and dispatched runs, and `scripts/qa/workflow-policy.mjs` (tested in `scripts/qa-workflow-policy.test.mjs`) rejects a resolver that names any other branch. Until 2026-10-30 they read `testing`, which was deleted on 2026-10-25: every scheduled nightly run from 2026-10-25 to 2026-10-29 (UTC) failed in `resolve` with `Not Found` and skipped `suites` and `report`, and the last runs that executed suites were on 2026-10-24 (GitHub Actions history, read 2026-10-30).
+- Impact while open: the nightly emulator, browser, API, native and GNSS campaigns and the weekly mutation and soak baselines did not run, so regressions on `main` that only these suites catch went unnoticed.
+- Open gate: record one green nightly and one green weekly run on a current `main` commit, for example by a manual dispatch of each workflow from `main`.
 
 ### 3.7 TRK-01: stop progress is validated on simulated tracks only
 
