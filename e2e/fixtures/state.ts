@@ -19,6 +19,8 @@ export function setScenario(next: string) {
   if (next === "completed") snapshot = { bus: { ...bus, tripState: "completed" } };
   if (next === "stale") snapshot = { bus: { ...bus, timestamp: Date.now() - 120_000, backendReceivedAt: Date.now() - 120_000 } };
   if (next === "offline") snapshot = { bus: { ...bus, deviceState: "offline" } };
+  // Firmware GNSS-loss packet: fresh receipt, last coordinates, untrusted fix.
+  if (next === "gnss-lost") snapshot = { bus: { ...bus, motionState: "uncertain", signalState: "gnss_lost" } };
   if (next === "multiple-stale") snapshot = {
     bus: { ...bus, timestamp: Date.now() - 120_000, backendReceivedAt: Date.now() - 120_000 },
     second: fixtureBus("reverse", "qa-session-2", "qa-bus-2"),

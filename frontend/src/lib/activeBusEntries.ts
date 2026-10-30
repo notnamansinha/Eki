@@ -24,8 +24,14 @@ export interface ActiveBusEntry {
   status?: "active" | "offline";
   deviceState?: "online" | "offline";
   motionState?: "moving" | "stopped" | "uncertain";
+  /** GNSS validity of the latest packet; independent of transport freshness. */
+  signalState?: "connected" | "gnss_lost" | "lost";
   tripState?: "pre_departure" | "in_service" | "completed";
   currentStopIndex?: number;
+  /** Stop the bus is at right now: acknowledged on arrival, before departure. */
+  atStopIndex?: number;
+  /** Stops this ride passed without being observed (GNSS gap or off its corridor). */
+  unobservedStopIndices?: number[];
   delayMinutes?: number;
   sessionId?: string;
   automaticServicePaused?: boolean;

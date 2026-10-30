@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   evaluateRouteAdherence,
   matchRoutePosition,
+  plausibleProgressBound,
   trajectoryHeading,
 } from "./routeMatching";
+import { adaptiveGnssErrorMeters } from "../lib/telemetryMotion";
 
 describe("route matching", () => {
   it("derives heading from a short recent trajectory", () => {
@@ -225,4 +227,67 @@ it("rejects physically unreachable progress regardless of polyline density", () 
     { segmentIndex: 0, alongRouteDistanceM: 10 }, 25, 80)).toBeNull();
   expect(matchRoutePosition({ lat: 23, lng: 72.0003 }, path, 90,
     { segmentIndex: 0, alongRouteDistanceM: 10 }, 25, 80)).not.toBeNull();
+});
+
+describe("carriageway hysteresis at an out-and-back turnaround (field ride, 29 Oct 2026)", () => {
+  // Outbound north along one carriageway, U-turn, return south 20 m east of it.
+  const metersPerLng = 6_371_000 * Math.cos(23 * Math.PI / 180) * Math.PI / 180;
+  const at = (north: number, east: number) => ({ lat: 23 + north / 6_371_000 * 180 / Math.PI, lng: 72 + east / metersPerLng });
+  const path = [at(0, 0), at(250, 0), at(500, 0), at(500, 20), at(250, 20), at(0, 20)];
+  const outboundAt = (north: number) => ({ segmentIndex: north < 250 ? 0 : 1, alongRouteDistanceM: north });
+
+  it("keeps a slow bus in the median on its own carriageway instead of jumping ahead to the return leg", () => {
+    // 15 m before the tip and 12 m east of the outbound lane: the return lane is nearer (8 m), but
+    // reaching it means 51 m of progress in one second for a bus that is barely moving.
+    const match = matchRoutePosition(at(485, 12), path, undefined, outboundAt(484), 25, 54, plausibleProgressBound(1_000, 0, 25));
+    expect(match).toMatchObject({ isAmbiguous: false, segmentIndex: 1 });
+    expect(match!.alongRouteDistanceM).toBeCloseTo(485, 0);
+    expect(match!.matchConfidence).toBeGreaterThanOrEqual(0.45);
+  });
+
+  it("still follows a bus that has really driven round the turnaround", () => {
+    const turned = matchRoutePosition(at(480, 19), path, 180, { segmentIndex: 3, alongRouteDistanceM: 525 }, 25, 54, plausibleProgressBound(1_000, 15, 25));
+    expect(turned).toMatchObject({ segmentIndex: 3, isAmbiguous: false });
+    expect(turned!.alongRouteDistanceM).toBeCloseTo(540, 0);
+  });
+
+  it("without a plausible-progress bound keeps the existing behaviour", () => {
+    const legacy = matchRoutePosition(at(485, 12), path, undefined, outboundAt(484), 25, 54);
+    expect(legacy?.isAmbiguous).toBe(true);
+  });
+});
+
+describe("plausible-progress bound never drags a real bus backwards (break-it review)", () => {
+  const metersPerLng = 6_371_000 * Math.cos(23 * Math.PI / 180) * Math.PI / 180;
+  const at = (north: number, east: number) => ({ lat: 23 + north / 6_371_000 * 180 / Math.PI, lng: 72 + east / metersPerLng });
+  // A straight road with a vertex every 10 m, like a decoded town polyline.
+  const straight = Array.from({ length: 101 }, (_, index) => at(index * 10, 0));
+  const serviceMatch = (raw: { lat: number; lng: number }, speedKmh: number, elapsedMs: number) => {
+    const u = adaptiveGnssErrorMeters(1, speedKmh, speedKmh, elapsedMs);
+    return matchRoutePosition(raw, straight, speedKmh >= 3 ? 0 : undefined, { segmentIndex: 10, alongRouteDistanceM: 100 }, u,
+      (speedKmh + 15) / 3.6 * elapsedMs / 1000 + 2 * u, plausibleProgressBound(elapsedMs, speedKmh, u));
+  };
+
+  it("applies only to a fresh 1 Hz neighbour, never after a gap", () => {
+    expect(plausibleProgressBound(1_000, 0, 25)).toBeCloseTo(15 / 3.6 + 25, 5);
+    expect(plausibleProgressBound(10_001, 30, 25)).toBeUndefined();
+    expect(plausibleProgressBound(0, 30, 25)).toBeUndefined();
+    expect(plausibleProgressBound(Number.NaN, 30, 25)).toBeUndefined();
+  });
+
+  it.each([[15, 30_000, 350], [10, 40_000, 380], [0, 20_000, 220], [10, 8_000, 170], [0, 3_000, 130]])(
+    "keeps a bus now at %i km/h after %i ms on its true position along a straight road", (speed, elapsed, north) => {
+      const match = serviceMatch(at(north, 3), speed, elapsed)!;
+      expect(match.alongRouteDistanceM).toBeCloseTo(north, 0);
+      expect(match.distanceToRouteM).toBeLessThan(10);
+      expect(evaluateRouteAdherence("ON_ROUTE", 0, match, true)).toMatchObject({ routeState: "ON_ROUTE", shouldReroute: false });
+    });
+
+  it("lets a bus that drove round the turnaround during a 20 s gap stay on the return carriageway", () => {
+    const turnaround = [at(0, 0), at(250, 0), at(500, 0), at(500, 20), at(250, 20), at(0, 20)];
+    const u = adaptiveGnssErrorMeters(1, 0, 0, 20_000);
+    const match = matchRoutePosition(at(470, 20), turnaround, undefined, { segmentIndex: 1, alongRouteDistanceM: 450 }, u,
+      15 / 3.6 * 20 + 2 * u, plausibleProgressBound(20_000, 0, u));
+    expect(match).toMatchObject({ segmentIndex: 3 });
+  });
 });

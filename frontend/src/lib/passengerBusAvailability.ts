@@ -56,6 +56,7 @@ export function normalizePassengerBusAvailability(
     seq: candidate.seq,
     deviceState: "online",
     motionState: candidate.motionState,
+    signalState: candidate.signalState,
     rawLocation: candidate.rawLocation,
   };
 }

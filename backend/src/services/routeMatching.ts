@@ -9,6 +9,22 @@ export const ROUTE_MATCH_DISTANCE_M = 45;
 export const OFF_ROUTE_DISTANCE_M = 60;
 export const OFF_ROUTE_CONFIRMATION_SAMPLES = 2;
 export const STRONG_OFF_ROUTE_DISTANCE_M = 120;
+// The previous match only bounds how far the bus can have travelled while it
+// is a fresh 1 Hz neighbour. After a gap its speed says nothing about the
+// distance actually driven, so no plausibility penalty applies.
+export const PLAUSIBLE_PROGRESS_MAX_ANCHOR_AGE_MS = 10_000;
+const PLAUSIBLE_PROGRESS_SLACK_KMH = 15;
+
+/**
+ * Forward progress a bus can have made since a fresh previous match, or
+ * undefined when the anchor is too old to bound it. Speed slack covers
+ * acceleration between fixes; position uncertainty covers receiver error.
+ */
+export function plausibleProgressBound(elapsedMs: number, speedKmh: number, positionUncertaintyM: number): number | undefined {
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0 || elapsedMs > PLAUSIBLE_PROGRESS_MAX_ANCHOR_AGE_MS) return undefined;
+  const speed = Number.isFinite(speedKmh) ? Math.max(0, speedKmh) : 0;
+  return (speed + PLAUSIBLE_PROGRESS_SLACK_KMH) / 3.6 * elapsedMs / 1000 + Math.max(0, positionUncertaintyM);
+}
 
 export type RouteAdherenceState =
   | "ON_ROUTE"
@@ -132,6 +148,17 @@ function segmentsAreContinuous(cumulative: readonly number[], left: number, righ
   return upper - lower <= 1 || cumulative[upper] === cumulative[lower + 1];
 }
 
+/** The point at a given along-route distance (clamped to the path). */
+function pointAlongPath(path: readonly LatLng[], cumulative: readonly number[], distanceM: number): LatLng {
+  const index = Math.min(path.length - 2, Math.max(0, distanceBound(cumulative, distanceM, true) - 1));
+  const length = cumulative[index + 1] - cumulative[index];
+  const fraction = length > 0 ? clamp01((distanceM - cumulative[index]) / length) : 0;
+  return {
+    lat: path[index].lat + (path[index + 1].lat - path[index].lat) * fraction,
+    lng: path[index].lng + (path[index + 1].lng - path[index].lng) * fraction,
+  };
+}
+
 function cumulativeDistances(path: readonly LatLng[]): number[] {
   const cached = distanceCache.get(path);
   if (cached) return cached;
@@ -157,6 +184,13 @@ export function matchRoutePosition(
   previous?: PreviousRouteMatch | null,
   positionUncertaintyM = 25,
   maximumProgressChangeM?: number,
+  /**
+   * Forward progress the bus can have made since a fresh previous match (see
+   * plausibleProgressBound). Near an out-and-back turnaround both carriageways
+   * fall inside the progress window; a fix drifting into the median must not
+   * be read as the bus having already driven round to the far side.
+   */
+  plausibleProgressM?: number,
 ): RouteMatch | null {
   work.calls++;
   if (path.length < 2) return null;
@@ -181,6 +215,16 @@ export function matchRoutePosition(
   }
   work.segmentProjections += endSegment - firstSegment;
   work.skippedSegments += path.length - 1 - (endSegment - firstSegment);
+  const ambiguityWindow = Math.max(
+    6,
+    Math.min(12, Math.max(0, positionUncertaintyM) * 0.25),
+  );
+  // Only a candidate reached by a shortcut (far more route than straight-line
+  // displacement: round a loop or turnaround) can be implausible progress.
+  // On an ordinary road along-route and straight-line progress agree, so a
+  // stale or low speed can never drag the match backwards there.
+  const priorPoint = previous && plausibleProgressM !== undefined && Number.isFinite(plausibleProgressM)
+    ? pointAlongPath(path, cumulative, previous.alongRouteDistanceM) : undefined;
   let best:
     | (RouteMatch & { score: number; segmentLengthM: number })
     | null = null;
@@ -218,10 +262,16 @@ export function matchRoutePosition(
     const segmentJump = previous
       ? Math.max(0, Math.abs(segmentIndex - previous.segmentIndex) - 25)
       : 0;
+    const progressM = previous ? alongRouteDistanceM - previous.alongRouteDistanceM : 0;
+    const unexplainedForwardM = priorPoint
+      ? Math.max(0, Math.min(progressM - Math.max(0, plausibleProgressM!),
+        progressM - haversineMeters(priorPoint, projection.point) - ambiguityWindow))
+      : 0;
     const score =
       projection.distanceM +
       (headingDifference ?? 0) * 0.28 +
       backwardsM * 2 +
+      unexplainedForwardM +
       segmentJump * 3;
 
     candidates.push({ segmentIndex, score, point: projection.point, alongRouteDistanceM });
@@ -243,10 +293,6 @@ export function matchRoutePosition(
   }
 
   if (!best) return null;
-  const ambiguityWindow = Math.max(
-    6,
-    Math.min(12, Math.max(0, positionUncertaintyM) * 0.25),
-  );
   // Adjacent segments are one continuous route leg, including at a sharp
   // turn, and so is a nearby projection reached by about its straight-line
   // distance along the route (densely sampled vertices). Exclude them before

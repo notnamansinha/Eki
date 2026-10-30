@@ -102,3 +102,18 @@ describe("bounded outage reacquisition", () => {
     expect(current).not.toHaveProperty("plausibilityReacquisition");
   });
 });
+
+describe("GNSS-loss packet and the plausibility anchor (break-it review, 29 Oct 2026)", () => {
+  it("keeps the last good fix as the anchor, so GPS recovers while the bus slows into a stop", () => {
+    // Moving at 30 km/h, then the firmware's single loss packet: same coordinates, speed 0, HDOP 99.
+    let current = initial();
+    current = ingest(current, fix(1_001_000, 72.00008, 2));
+    current = ingest(current, fix(1_002_000, 72.00008, 3, { speed: 0, gpsHdop: 99, motionState: "uncertain" }));
+    expect(current).toMatchObject({ motionState: "uncertain", signalState: "gnss_lost" });
+    expect(current.plausibilityAnchor).toMatchObject({ speed: 30, timestamp: 1_001_000 });
+    // GPS returns 40 s later, 330 m on, as the bus brakes to 4 km/h: plausible from the last good fix.
+    current = ingest(current, fix(1_042_000, 72.00332, 4, { speed: 4 }));
+    expect(current).toMatchObject({ motionState: "moving", signalState: "connected" });
+    expect(current.lng).toBeCloseTo(72.00332, 7);
+  });
+});

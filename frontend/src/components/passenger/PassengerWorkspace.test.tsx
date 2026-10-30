@@ -36,7 +36,7 @@ describe("passenger workspace navigation", () => {
     await user.click(await screen.findByRole("button", { name: "Track QA route" }));
     await screen.findByRole("combobox", { name: "Destination station" });
     act(() => setScenario("stale"));
-    await screen.findByText("Live tracking paused");
+    await screen.findByText("Live tracking lost");
     expect(screen.queryByRole("combobox", { name: "Destination station" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Open live chat" })).toBeNull();
     expect(screen.queryByText("QA feedback")).toBeNull();
@@ -45,11 +45,25 @@ describe("passenger workspace navigation", () => {
     act(() => setScenario("pending"));
     expect(await screen.findByRole("button", { name: "Track QA route" })).toBeTruthy();
   });
+  it("says GPS is lost the moment a GNSS-loss packet arrives, keeping the ride card and chat (field ride, 29 Oct 2026)", async () => {
+    render(<PassengerWorkspace />); const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Track QA route" }));
+    await screen.findByRole("combobox", { name: "Destination station" });
+    act(() => setScenario("gnss-lost"));
+    expect(await screen.findByText("GPS signal lost")).toBeTruthy();
+    expect(screen.queryByText("Live tracking paused")).toBeNull();
+    // The boarding card stays mounted (Board is disabled inside it); chat needs no GPS fix.
+    expect(screen.getByText("Boarding qa-session")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open live chat" })).toBeTruthy();
+    act(() => setScenario("forward"));
+    expect(await screen.findByText("Boarding qa-session")).toBeTruthy();
+    expect(screen.queryByText("GPS signal lost")).toBeNull();
+  });
   it("offers only the fresh bus when a selected bus on the same route becomes stale", async () => {
     render(<PassengerWorkspace />); const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Track QA route" }));
     act(() => setScenario("multiple-stale"));
-    await screen.findByText("Live tracking paused");
+    await screen.findByText("Live tracking lost");
     await user.click(screen.getByRole("combobox", { name: "Live bus" }));
     expect(screen.getAllByRole("option")).toHaveLength(1);
     await user.click(screen.getByRole("option", { name: "Bus qa-bus-2 · B → A" }));
@@ -172,7 +186,7 @@ describe("device preview lifecycle", () => {
     await user.click(screen.getByRole("option", { name: "Beta" }));
     expect(map.getAttribute("data-selected")).toBe("b");
     await user.click(screen.getByRole("combobox", { name: "Destination station" }));
-    await user.click(screen.getByRole("option", { name: "Choose destination station…" }));
+    await user.click(screen.getByRole("option", { name: "Choose destination stop" }));
     expect(map.getAttribute("data-selected")).toBe("");
     expect(map.getAttribute("data-target")).toBe("b");
   });

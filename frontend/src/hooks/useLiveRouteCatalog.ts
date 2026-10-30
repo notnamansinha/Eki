@@ -4,7 +4,7 @@ import { onValue, ref } from "firebase/database";
 import { rtdb } from "@/lib/firebaseDatabase";
 import { getAuthVerificationGeneration, waitForAuth } from "@/lib/authState";
 import { liveBusRetryDelayMs } from "@/lib/liveBusRetry";
-import { isLiveBusSignalLost } from "@/lib/liveBusFreshness";
+import { isCatalogReceiptLost } from "@/lib/liveBusFreshness";
 import { serverNow } from "@/lib/serverClock";
 import { attachServerClock } from "@/lib/serverClockSync";
 import { useAuth } from "./useAuth";
@@ -75,7 +75,7 @@ export function useLiveRouteCatalog(recoveryKey = "") {
   const compatible = state.generation === generation && state.recoveryKey === recoveryKey;
   const catalog = compatible && state.projectionReady && state.catalogReady
     ? Object.fromEntries(Object.entries(state.catalog).map(([routeId, value]) => [routeId, { ...value,
-      active: Math.min(value.active, (value.activeReceipts ?? []).filter(at => !isLiveBusSignalLost(at, now)).length),
-      available: (value.availableReceipts ?? []).filter(at => !isLiveBusSignalLost(at, now)).length }])) : {};
+      active: Math.min(value.active, (value.activeReceipts ?? []).filter(at => !isCatalogReceiptLost(at, now)).length),
+      available: (value.availableReceipts ?? []).filter(at => !isCatalogReceiptLost(at, now)).length }])) : {};
   return { catalog, projectionReady: compatible && state.projectionReady, catalogReady: compatible && state.catalogReady, error: compatible ? state.error : null, retry: () => setRevision(value => value + 1) };
 }

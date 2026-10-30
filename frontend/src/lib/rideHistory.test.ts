@@ -185,3 +185,8 @@ describe("ride history stop records", () => {
       .toBe(ARRIVAL_STOP_UNAVAILABLE);
   });
 });
+
+it("never treats a stop passed outside its corridor as an observed arrival", () => {
+  expect(isObservedArrival({ evidence: "passed_unobserved" })).toBe(false);
+  expect(isObservedArrival({ evidence: "gnss_progress" })).toBe(true);
+});

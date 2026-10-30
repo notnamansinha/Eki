@@ -35,12 +35,16 @@ test("admin and passenger label 90 to 200 second telemetry gaps and recover with
   await expect(page.getByText("Live location updates delayed", { exact: true })).toHaveCount(0);
   await view(page, "passenger");
   await page.getByRole("button", { name: `Track ${routeName}`, exact: true }).click();
+  // Passengers are told sooner: updates are delayed after 12 s and tracking is lost after 30 s.
+  await publishAge(page, 12_001);
+  await expect(page.getByText("Updates delayed").first()).toBeVisible();
+  await expect(page.getByText("Live tracking lost")).toHaveCount(0);
   for (const age of [90_001, 120_000, 200_000]) {
     await publishAge(page, age);
-    await expect(page.getByText(/Live location updates delayed/)).toBeVisible();
+    await expect(page.getByText("Live tracking lost").first()).toBeVisible();
   }
   await publishAge(page, 0);
-  await expect(page.getByText(/Live location updates delayed/)).toHaveCount(0);
+  await expect(page.getByText(/Live tracking lost|Updates delayed/)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Back to home" })).toBeVisible();
 });
 test("passenger read denial is distinct from telemetry delay and recovers on a new delivery", async ({ page }) => {
@@ -49,7 +53,7 @@ test("passenger read denial is distinct from telemetry delay and recovers on a n
   await page.getByLabel("QA scenario").selectOption("detail-denied");
   await page.getByText("QA controls", { exact: true }).click();
   await expect(page.getByText("Live bus data unavailable.", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Live location updates delayed/)).toHaveCount(0);
+  await expect(page.getByText(/Live tracking lost|Updates delayed/)).toHaveCount(0);
   await publishAge(page, 0);
   await expect(page.getByText("Live bus data unavailable.", { exact: true })).toHaveCount(0);
 });

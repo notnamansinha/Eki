@@ -9,6 +9,8 @@ import { ApiError, apiRequest } from "@/lib/apiClient";
 import { withTimeout } from "@/lib/promiseTimeout";
 import { getAuthVerificationGeneration } from "@/lib/authState";
 import { stopEstimateLabel, type PassengerStopEstimates } from "@/lib/passengerStopEstimates";
+import { describeLiveBusHealth, formatUpdateAge, type LiveBusHealth } from "@/lib/liveBusHealth";
+import { isBehindBus, stopProgress } from "@/lib/stopProgress";
 
 interface Props {
   sessionId: string;
@@ -17,6 +19,10 @@ interface Props {
   destinationStopId?: string;
   stopEstimates?: PassengerStopEstimates;
   restoredBoarding?: { boardingStopId: string; alightingStopId: string | null };
+  /** Location freshness of this bus; lifecycle alone never means "live". */
+  liveHealth?: LiveBusHealth;
+  /** Boarding needs live tracking; the card stays mounted while it returns. */
+  boardingBlockedReason?: string;
   onDestinationStopChange?: (stopId: string) => void;
   onJoined?: () => void;
 }
@@ -77,6 +83,8 @@ export default function PassengerBoardingView({
   destinationStopId,
   stopEstimates,
   restoredBoarding,
+  liveHealth,
+  boardingBlockedReason,
   onDestinationStopChange,
   onJoined,
 }: Props) {
@@ -127,12 +135,31 @@ export default function PassengerBoardingView({
     return () => { current = false; };
   }, [restoredBoarding, sessionId]);
 
+  const progress = stopProgress(route.stops?.length ?? 0, {
+    currentStopIndex: stopEstimates?.nextStopIndex,
+    atStopIndex: stopEstimates?.atStopIndex,
+    unobservedStopIndices: stopEstimates?.unobservedStopIndices,
+  });
   const stopOptions = (route.stops ?? []).map((stop, index) => ({
     value: stop.id,
     label: formatStopName(stop.name),
     detail: stopEstimateLabel(stopEstimates, stop.id, index),
-    completed: stopEstimates?.nextStopIndex !== undefined && index < stopEstimates.nextStopIndex,
+    completed: isBehindBus(progress?.states[index]),
   }));
+  const atStop = progress?.atStopIndex !== undefined ? route.stops?.[progress.atStopIndex] : undefined;
+  const nextStop = progress?.nextStopIndex !== undefined ? route.stops?.[progress.nextStopIndex] : undefined;
+  const progressSummary = [atStop ? `At ${atStop.name}` : undefined, nextStop ? `Next: ${nextStop.name}` : undefined]
+    .filter(Boolean).join(" · ");
+  const delayed = liveHealth?.state === "delayed";
+  // Never claim "Live" without a health reading. Lost or offline outranks the
+  // pre-departure warning; green only while in service and live.
+  const healthDescription = liveHealth ? describeLiveBusHealth(liveHealth) : undefined;
+  const statusColor = healthDescription?.tone === "danger" ? "var(--status-danger)"
+    : tripState === "in_service" && healthDescription?.tone === "live" ? "var(--status-live)" : "var(--status-warning)";
+  const boardHint = joinState === "joining" || joinState === "joined" ? undefined
+    : boardingBlockedReason ? boardingBlockedReason
+    : !boardingStopId || !alightingStopId ? "Choose your boarding and destination stops to board."
+      : boardingStopId === alightingStopId ? "Choose two different stops." : undefined;
 
   const joinRide = async () => {
     // State updates are batched; a ref closes the same-render double-click gap.
@@ -221,17 +248,23 @@ export default function PassengerBoardingView({
 
   return (
     <div className="flex w-full flex-col gap-2 animate-fade-in pointer-events-auto">
-      <p
-        className="text-[10px] font-bold uppercase tracking-wider"
-        style={{ color: tripState === "in_service" ? "var(--status-live)" : "var(--status-warning)" }}
-        role="status"
-      >
-        {tripState === "in_service" ? "Ride in service" : "Ride armed · awaiting stop 1"}
-      </p>
+      <div role="status" aria-live="polite">
+        <p
+          className="text-[10px] font-bold uppercase tracking-wider"
+          style={{ color: statusColor }}
+        >
+          {tripState === "in_service" ? "Ride in service" : "Ride armed · awaiting stop 1"}
+          {healthDescription && ` · ${healthDescription.title}`}
+          {delayed && ` · ${formatUpdateAge(liveHealth?.ageMs)}`}
+        </p>
+        {progressSummary && (
+          <p className="mt-0.5 truncate text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{progressSummary}</p>
+        )}
+      </div>
       <InAppSelect
         name="boarding-stop"
         ariaLabel="Boarding stop"
-        placeholder="Boarding..."
+        placeholder="Choose boarding stop"
         value={boardingStopId}
         disabled={joinState === "joining"}
         onChange={(value) => {
@@ -242,13 +275,13 @@ export default function PassengerBoardingView({
           }
           selectionChanged();
         }}
-        options={[{ value: "", label: "Boarding..." }, ...stopOptions]}
+        options={[{ value: "", label: "Choose boarding stop" }, ...stopOptions]}
         style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
       />
       <InAppSelect
         name="destination-station"
         ariaLabel="Destination station"
-        placeholder="Choose destination station..."
+        placeholder="Choose destination stop"
         value={alightingStopId}
         disabled={joinState === "joining"}
         onChange={(value) => {
@@ -256,7 +289,7 @@ export default function PassengerBoardingView({
           onDestinationStopChange?.(value);
           selectionChanged();
         }}
-        options={[{ value: "", label: "Choose destination station..." },
+        options={[{ value: "", label: "Choose destination stop" },
           ...stopOptions.filter((stop) => stop.value !== boardingStopId)]}
         style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
       />
@@ -264,12 +297,15 @@ export default function PassengerBoardingView({
         type="button"
         onClick={() => void joinRide()}
         disabled={joinState === "joining" || joinState === "joined" || !boardingStopId || !alightingStopId ||
-          boardingStopId === alightingStopId}
+          boardingStopId === alightingStopId || Boolean(boardingBlockedReason)}
         className="rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-50"
         style={{ background: "var(--status-live)", color: "var(--surface-0)" }}
       >
         {joinState === "joining" ? "Checking…" : joinState === "joined" ? "On board" : "Board"}
       </button>
+      {boardHint && (
+        <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>{boardHint}</p>
+      )}
       {joinState === "joining" && (
         <p className="text-[11px] font-semibold" style={{ color: "var(--status-warning)" }} role="status">
           Verifying your boarding stops and live bus position…

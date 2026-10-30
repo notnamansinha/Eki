@@ -53,6 +53,21 @@ describe("public live projection", () => {
       rawLocation: { lat: 23, secret: "private" }, matchedLocation: { lat: 24, history: [] } })).toEqual({ ...live(), rawLocation: { lat: 23 }, matchedLocation: { lat: 24 } });
     expect(publicLiveBus({ ...live(), routeId: "bad/path" })).toBeNull();
   });
+  it("publishes the visited stop and this session's unobserved stops, bounded and validated", () => {
+    expect(publicLiveBus({ ...live(), atStop: { sessionId: "s1", index: 1 }, unobservedStops: { sessionId: "s1", indices: [3, 2, 2, -1, 1.5, "4", 600] } }))
+      .toMatchObject({ atStopIndex: 1, unobservedStopIndices: [2, 3] });
+    // A stale value from the previous ride (or a bare field) is never published.
+    expect(publicLiveBus({ ...live("s2"), atStop: { sessionId: "s1", index: 1 } })).not.toHaveProperty("atStopIndex");
+    expect(publicLiveBus({ ...live(), atStopIndex: 1 })).not.toHaveProperty("atStopIndex");
+    expect(publicLiveBus({ ...live(), atStop: { sessionId: "s1", index: -1 } })).not.toHaveProperty("atStopIndex");
+    // RTDB may return a sparse array as an object.
+    expect(publicLiveBus({ ...live(), unobservedStops: { sessionId: "s1", indices: { 0: 4, 2: 5 } } }))
+      .toMatchObject({ unobservedStopIndices: [4, 5] });
+    // Another ride's evidence never leaks into this one.
+    expect(publicLiveBus({ ...live("s2"), unobservedStops: { sessionId: "s1", indices: [2] } })).not.toHaveProperty("unobservedStopIndices");
+    expect(publicLiveBus({ ...live(), unobservedStops: { sessionId: "s1", indices: [] } })).not.toHaveProperty("unobservedStopIndices");
+    expect(publicLiveBus({ ...live(), unobservedStops: { sessionId: "s1", indices: [2] } })).not.toHaveProperty("unobservedStops");
+  });
   it("excludes matcher metadata from intake but retains same-fix lifecycle/session changes", () => {
     const input = live(); const fingerprint = lifecycleIntakeFingerprint(input);
     expect(lifecycleIntakeFingerprint({ ...input, recentSamples: [1], mapMatchSeq: 4, _workerGeneration: 2 })).toBe(fingerprint);

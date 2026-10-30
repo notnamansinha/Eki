@@ -331,7 +331,7 @@ Body: `{ "busId":"…", "routeId":"…", "driverId":"…", "delayMinutes":0 }`, 
 
 ### `POST /api/shifts/stop` — assigned operator or admin
 
-Body: `{ "busId":"…", "routeId":"…", "sessionId":"…" }`. Pending, armed and active sessions can be interrupted early; this never marks a ride completed. An already completed session returns `{stopped:true,alreadyCompleted:true}`. Interruptions return `{stopped:true,interrupted:true,alreadyInterrupted:boolean}`. Invalid ownership/resource returns 403/404.
+Body: `{ "busId":"…", "routeId":"…", "sessionId":"…", "driverId"?:"…" }`. Pending, armed and active sessions can be interrupted early; this never marks a ride completed. Drivers must still hold the bus/route assignment. An administrator ends a ride by its durable identity: the session's bus, route and (when given) driver must match, but the operator's current assignment is not re-checked, so a reassigned operator or a live projection missing its driver never hides recovery. An already completed session returns `{stopped:true,alreadyCompleted:true}`. Interruptions return `{stopped:true,interrupted:true,alreadyInterrupted:boolean}`. Invalid ownership/resource returns 403/404.
 
 ### `DELETE /api/shifts/:sessionId/messages` — admin
 

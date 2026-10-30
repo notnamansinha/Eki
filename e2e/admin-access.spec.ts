@@ -258,3 +258,56 @@ test("route projection preserves coalesced return completion and hides it during
   await page.getByRole("button", { name: "Approve verification" }).click();
   await expect(page.getByLabel("Joined session state")).toHaveText("completed");
 });
+
+test("End ride early stays reachable by wheel scrolling an expanded card among several live rides (desktop retest, 29 Oct 2026)", async ({ page }, testInfo) => {
+  const stops: unknown[] = [];
+  await page.route("**/api/shifts/stop", async route => {
+    stops.push(JSON.parse(route.request().postData() ?? "{}"));
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ stopped: true, interrupted: true, alreadyInterrupted: false }) });
+  });
+  await page.goto("/?dashboard&fleet");
+  await page.getByRole("button", { name: "Approve verification" }).click();
+  const cards = page.locator("[data-fleet-card]");
+  await expect(cards).toHaveCount(3);
+  // Expand every card: the list now holds far more than the sidebar height.
+  for (const toggle of await page.locator("[data-fleet-card] button[aria-expanded]").all()) await toggle.click();
+  const endRide = cards.nth(2).getByRole("button", { name: "End ride early", exact: true });
+  // A human scrolls with the wheel; programmatic scrollIntoView would hide clipping.
+  // Point at the visible part of whichever element actually scrolls the fleet
+  // (the list on desktop, the sidebar on phones).
+  const pointer = await cards.first().evaluate(element => {
+    let node = element.parentElement;
+    while (node && !/(auto|scroll)/.test(getComputedStyle(node).overflowY)) node = node.parentElement;
+    const rect = node!.getBoundingClientRect();
+    const top = Math.max(rect.top, 0), bottom = Math.min(rect.bottom, innerHeight);
+    return { x: rect.x + rect.width / 2, y: (top + bottom) / 2 };
+  });
+  await page.mouse.move(pointer.x, pointer.y);
+  for (let attempt = 0; attempt < 30 && !(await endRide.isVisible() && await endRide.evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    const top = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    return top === element || element.contains(top);
+  })); attempt++) await page.mouse.wheel(0, 250);
+  await expect(endRide).toBeInViewport();
+  // Each card keeps its full height; nothing is squashed and clipped.
+  for (const card of await cards.all()) {
+    expect(await card.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
+  }
+  await page.screenshot({ path: testInfo.outputPath("end-ride-reachable.png") });
+  await endRide.click({ trial: false });
+  await page.getByRole("dialog", { name: "End ride early?" }).getByRole("button", { name: "End ride", exact: true }).click();
+  await expect(page.getByText(/ended early and was saved to history/)).toBeVisible();
+  expect(stops).toEqual([expect.objectContaining({ busId: "qa-bus-3", sessionId: "qa-session-3", driverId: "qa-driver-3" })]);
+});
+test("End ride early is offered from the live details drawer too", async ({ page }) => {
+  await page.route("**/api/shifts/stop", route => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify({ stopped: true, interrupted: true, alreadyInterrupted: false }) }));
+  await page.goto("/?dashboard&fleet");
+  await page.getByRole("button", { name: "Approve verification" }).click();
+  await page.getByRole("button", { name: "Open live details for qa-bus-2", exact: true }).click();
+  const drawer = page.getByRole("dialog", { name: "Live details for qa-bus-2", exact: true });
+  await drawer.getByRole("button", { name: "End ride early", exact: true }).click();
+  await expect(drawer).toHaveCount(0);
+  await page.getByRole("dialog", { name: "End ride early?" }).getByRole("button", { name: "End ride", exact: true }).click();
+  await expect(page.getByText(/qa-session-2 ended early/)).toBeVisible();
+});

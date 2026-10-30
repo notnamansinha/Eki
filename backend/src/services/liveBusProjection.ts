@@ -22,6 +22,7 @@ const PUBLIC_FIELDS = [
   "mapMatchSeq", "mapMatchSampledAt", "mapMatchUpdatedAt", "matchConfidence", "distanceToActiveRoute",
 ] as const;
 const RAW_FIELDS = ["lat", "lng", "speed", "heading", "gpsHdop", "motionState", "seq", "sampledAt"];
+const MAX_PUBLIC_STOP_INDEX = 500;
 const MATCH_FIELDS = ["lat", "lng", "segmentIndex", "segmentFraction", "alongRouteDistanceM", "distanceToRouteM",
   "headingDifference", "matchConfidence", "seq", "sampledAt", "routeVersion"];
 function pick(value: Record<string, unknown>, fields: readonly string[]) {
@@ -50,6 +51,22 @@ export function publicLiveBus(value: unknown): Record<string, unknown> | null {
       SAFE_ID.test(live.previousSessionId) && live.previousSessionId !== live.sessionId) {
     output.automaticTurnaround = true;
     output.previousSessionId = live.previousSessionId;
+  }
+  // The stop the bus is at, and the stops this ride passed without observing
+  // them (a bounded list), published only for the session that recorded them.
+  const atStop = live.atStop as { sessionId?: unknown; index?: unknown } | null | undefined;
+  if (atStop && typeof live.sessionId === "string" && atStop.sessionId === live.sessionId &&
+      Number.isSafeInteger(atStop.index) && Number(atStop.index) >= 0 && Number(atStop.index) < MAX_PUBLIC_STOP_INDEX) {
+    output.atStopIndex = Number(atStop.index);
+  }
+  const unobserved = live.unobservedStops as { sessionId?: unknown; indices?: unknown } | null | undefined;
+  if (unobserved && typeof live.sessionId === "string" && unobserved.sessionId === live.sessionId) {
+    const raw = Array.isArray(unobserved.indices) ? unobserved.indices
+      : unobserved.indices && typeof unobserved.indices === "object" ? Object.values(unobserved.indices) : [];
+    const indices = [...new Set(raw.filter((index): index is number =>
+      Number.isSafeInteger(index) && Number(index) >= 0 && Number(index) < MAX_PUBLIC_STOP_INDEX))]
+      .sort((left, right) => left - right).slice(0, MAX_PUBLIC_STOP_INDEX);
+    if (indices.length > 0) output.unobservedStopIndices = indices;
   }
   for (const [field, fields] of [["rawLocation", RAW_FIELDS], ["matchedLocation", MATCH_FIELDS]] as const) {
     const nested = live[field];

@@ -13,7 +13,7 @@ export const productionAuditTestMap = [
     tests: [{ path, name: 'tracking keeps the full route name while waiting for live data', level: 'L3',
       semantics: 'Select an actual rendered route, remove its synthetic live snapshot, then verify the fallback route label remains visible and fully rendered.' },
     { path, name: 'admin and passenger label 90 to 200 second telemetry gaps and recover without reload', level: 'L3',
-      semantics: 'Real admin and passenger components use the same shared receipt-age threshold with 90.001, 120 and 200 second synthetic gaps, then remove the warning on a fresh delivery without navigation refresh.' }],
+      semantics: 'Real admin and passenger components share the 30 s signal-lost receipt threshold and label 90.001, 120 and 200 second synthetic gaps: admin as delayed live location, the passenger as live tracking lost. A 12.001 second gap shows the passenger updates delayed, not lost. Both warnings clear on a fresh delivery without navigation refresh.' }],
   }, {
     caseId: 'ROUTE05',
     scope: 'Mounted Places search clears prior-query suggestions immediately and ignores a cancelled late HTTP response. HTTP/auth are mocked; genuine provider and broader error partitions remain separate.',

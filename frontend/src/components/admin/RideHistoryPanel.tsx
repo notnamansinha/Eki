@@ -118,6 +118,7 @@ function displayText(value: unknown, fallback: string): string {
 /** Route Log time: only GNSS-observed arrivals are shown as plain arrival times. */
 function stopLogTime(stop: RideStopRecord): string {
   if (stop.evidence === "skipped_gnss_gap") return "Skipped (GNSS gap)";
+  if (stop.evidence === "passed_unobserved") return "Passed (not observed at stop)";
   if (stop.evidence === "recovered_checkpoint") return `Recovered ${formatServiceTime(stop.timestamp)}`;
   return isObservedArrival(stop)
     ? formatServiceTime(stop.timestamp)

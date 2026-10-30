@@ -11,7 +11,9 @@ vi.mock("@/lib/firebaseDatabase", () => ({ rtdb: {} }));
 vi.mock("@/lib/authState", () => ({ waitForAuth: async () => {}, getAuthVerificationGeneration: () => state.generation }));
 vi.mock("./useAuth", () => ({ useAuth: () => ({ user: state.user, loading: false, roleError: null }) }));
 import { useLiveRouteCatalog } from "./useLiveRouteCatalog";
-import { SIGNAL_LOST_MS } from "@/lib/liveBusFreshness";
+import { CATALOG_RECEIPT_BUCKET_MS, SIGNAL_LOST_MS as LIVE_SIGNAL_LOST_MS } from "@/lib/liveBusFreshness";
+// Catalog receipts are 30 s leases: one bucket of allowance beyond live signal loss.
+const SIGNAL_LOST_MS = LIVE_SIGNAL_LOST_MS + CATALOG_RECEIPT_BUCKET_MS;
 import { setServerTimeOffset } from "@/lib/serverClock";
 const markerPath = "clientProjectionStatus/public", catalogPath = "liveRouteCatalog/values";
 const flush = async () => { for (let step = 0; step < 4; step++) await Promise.resolve(); };
@@ -67,4 +69,14 @@ describe("route catalog freshness and access", () => {
     expect(result.current.catalog.legacy.active).toBe(0);
     expect(result.current.catalog.bad).toBeUndefined();
   });
+});
+
+it("does not drop a bus that reports every second just because its 30 s lease bucket is about to roll over", async () => {
+  const { isCatalogReceiptLost, SIGNAL_LOST_MS: live } = await import("@/lib/liveBusFreshness");
+  const now = 1_800_000_029_999;
+  const bucket = Math.floor(now / 30_000) * 30_000;
+  expect(now - bucket).toBeGreaterThanOrEqual(live - 1);
+  expect(isCatalogReceiptLost(bucket, now + 2_000)).toBe(false);
+  expect(isCatalogReceiptLost(bucket - 30_000, now)).toBe(false);
+  expect(isCatalogReceiptLost(now - live - CATALOG_RECEIPT_BUCKET_MS - 1, now)).toBe(true);
 });

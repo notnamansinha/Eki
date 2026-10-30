@@ -34,3 +34,21 @@ it("does not apply one bus's index to an aggregate fleet timeline", async () => 
   expect(screen.queryByText("Next Stop")).toBeNull();
   expect(screen.getByText("Alpha").parentElement!.parentElement!.className).toContain("opacity-100");
 });
+
+it("shows the bus at the origin before departure instead of waiting for the next stop (field ride, 29 Oct 2026)", async () => {
+  render(<RouteTimelineSheet route={route} targetStopId="b" currentStopIndex={0} atStopIndex={0} stopETAs={{ a: 0, b: 2 }} />);
+  await userEvent.setup().click(screen.getByRole("button", { name: "Route Timeline" }));
+  expect(screen.getByText("Bus is here").parentElement!.textContent).toContain("Alpha");
+  expect(screen.getByText("Alpha").parentElement!.parentElement!.className).toContain("opacity-100");
+});
+
+it("marks an intermediate stop on arrival and keeps an unobserved pass distinct", async () => {
+  const stops = [...route.stops, { ...route.stops[0], id: "c", name: "Gamma", shortName: "C" },
+    { ...route.stops[0], id: "d", name: "Delta", shortName: "D" }];
+  render(<RouteTimelineSheet route={{ ...route, stops }} targetStopId="d" currentStopIndex={stops.length - 1}
+    atStopIndex={stops.length - 2} unobservedStopIndices={[1]} stopETAs={{}} />);
+  await userEvent.setup().click(screen.getByRole("button", { name: "Route Timeline" }));
+  expect(screen.getByText("Bus is here").parentElement!.textContent).toContain(stops.at(-2)!.name);
+  expect(screen.getByText("Passed · not confirmed").parentElement!.textContent).toContain(stops[1].name);
+  expect(screen.getByText(stops[1].name).parentElement!.parentElement!.className).toContain("opacity-25");
+});

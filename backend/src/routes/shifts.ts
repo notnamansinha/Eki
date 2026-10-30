@@ -7,6 +7,7 @@ import { db, rtdb } from "../lib/firebaseAdmin";
 import { withoutLiveRouteContext } from "../lib/liveRouteContext";
 import { newerJourneyLocation } from "../services/journeyLocation";
 import { singleRouteParam } from "../lib/requestParams";
+import { authorizationIsCurrent } from "../services/userAuthorization";
 import {
   isRideDirection,
 } from "../lib/rideDirection";
@@ -67,6 +68,7 @@ type AuthenticatedRequest = Request & {
     admin?: boolean;
     driverId?: string;
     assignedBusId?: string;
+    authorizationVersion?: string;
   };
 };
 
@@ -263,14 +265,32 @@ async function startShift(req: AuthenticatedRequest, res: Response) {
   }
 }
 
+/**
+ * An admin ends a ride by its durable identity. The operator may have been
+ * reassigned since the ride started, or the live projection may be missing
+ * its driver; neither may hide the recovery action. The session's own bus,
+ * route and (when given) driver must still match. Only current,
+ * backend-published admin authority qualifies (the requireAdmin policy);
+ * every other principal keeps the full current-assignment check.
+ */
+async function adminStopTarget(req: AuthenticatedRequest): Promise<{ driverId?: string; busId: string; routeId: string } | null> {
+  const user = req.user;
+  if (!user || user.role !== "admin" || user.admin !== true || typeof user.authorizationVersion !== "string") return null;
+  const { busId, routeId, driverId } = req.body ?? {};
+  if (typeof busId !== "string" || !SAFE_ID.test(busId) || typeof routeId !== "string" || !SAFE_ID.test(routeId)) return null;
+  if (driverId !== undefined && driverId !== null && (typeof driverId !== "string" || !SAFE_ID.test(driverId))) return null;
+  try {
+    if (!(await authorizationIsCurrent(user.uid, user as Record<string, unknown>))) return null;
+  } catch {
+    return null;
+  }
+  return { busId, routeId, ...(typeof driverId === "string" ? { driverId } : {}) };
+}
+
 router.post("/stop", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const assignment = await authorizeOperator(
-      req,
-      req.body?.busId,
-      req.body?.routeId,
-      req.body?.driverId,
-    );
+    const assignment: { driverId?: string; busId: string; routeId: string } | null =
+      await adminStopTarget(req) ?? await authorizeOperator(req, req.body?.busId, req.body?.routeId, req.body?.driverId);
     const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
     if (!assignment || !SAFE_ID.test(sessionId)) {
       res.status(403).json({ error: "Operator is not authorized to stop this shift." });
@@ -282,7 +302,7 @@ router.post("/stop", requireAuth, async (req: AuthenticatedRequest, res: Respons
     const data = session.data();
     if (
       !session.exists ||
-      data?.driverId !== assignment.driverId ||
+      (assignment.driverId !== undefined && data?.driverId !== assignment.driverId) ||
       data?.busId !== assignment.busId ||
       data?.routeId !== assignment.routeId
     ) {
@@ -316,7 +336,7 @@ router.post("/stop", requireAuth, async (req: AuthenticatedRequest, res: Respons
       const current = currentSession.data();
       if (
         !currentSession.exists ||
-        current?.driverId !== assignment.driverId ||
+        (assignment.driverId !== undefined && current?.driverId !== assignment.driverId) ||
         current?.busId !== assignment.busId ||
         current?.routeId !== assignment.routeId
       ) {
@@ -374,7 +394,11 @@ router.post("/stop", requireAuth, async (req: AuthenticatedRequest, res: Respons
       `activeBuses/${activeRideId(assignment.busId, assignment.routeId)}`,
     );
     await nodeRef.transaction((currentValue) => {
-      if (!currentValue || typeof currentValue !== "object") return;
+      // A cold SDK cache supplies null first; returning null sends the
+      // compare-and-set and retries on server data instead of aborting with
+      // the ride still published as active.
+      if (currentValue === null) return null;
+      if (typeof currentValue !== "object") return;
       const current = currentValue as Record<string, unknown>;
       if (current.sessionId !== sessionId) return;
       return retireRideLifecycle(current);

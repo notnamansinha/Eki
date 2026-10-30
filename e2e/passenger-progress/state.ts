@@ -1,7 +1,7 @@
 import { positionAlongPolyline, preparePolylineDistanceIndex } from "../../frontend/src/lib/polylineDistance";
 import { useSyncExternalStore } from "react";
 import { encodePolyline } from "../../backend/src/lib/polylineUtils";
-import { reduceTripState } from "../../backend/src/services/tripStateReducer";
+import { reduceTripState, visitedStopIndex } from "../../backend/src/services/tripStateReducer";
 import { inferDepartureDirection } from "../../backend/src/services/departureDirection";
 import { routeInRideDirection } from "../../frontend/src/lib/rideDirection";
 import { getDistanceMeters } from "../../frontend/src/lib/mapUtils";
@@ -63,6 +63,29 @@ export function publishArrival(distance: number) {
   const state = reduceTripState({ ...point, stops: route.stops, motionState: "moving", currentTripState: "in_service",
     currentStopIndex: 1, hasDepartedOrigin: true, now: Date.now(), timestamp: Date.now() });
   emit(liveBus(state.currentStopIndex, point));
+}
+/** Field ride, 29 Oct 2026: the bus waits at the origin before departing. */
+export function publishAtOrigin() {
+  const point = { ...route.stops[0] };
+  const atStopIndex = visitedStopIndex({ ...point, motionState: "stopped", gpsHdop: 1, stops: route.stops,
+    tripState: "in_service", currentStopIndex: 0, hasDepartedOrigin: false });
+  emit({ ...liveBus(0, point), motionState: "stopped", speed: 0, atStopIndex });
+}
+/** Arrives just beside the next stop through the production reducer and publishes the stop it is at. */
+export function publishArrivalAtNextStop() {
+  const current = Number((snapshot.bus as { currentStopIndex?: number }).currentStopIndex ?? 1);
+  const target = Math.max(1, current);
+  const point = { lat: route.stops[target].lat + 4 / 111_195, lng: route.stops[target].lng };
+  const state = reduceTripState({ ...point, stops: route.stops, motionState: "stopped", currentTripState: "in_service",
+    currentStopIndex: target, hasDepartedOrigin: true, now: Date.now(), timestamp: Date.now(), gpsHdop: 1, speed: 0 });
+  const atStopIndex = visitedStopIndex({ ...point, motionState: "stopped", gpsHdop: 1, stops: route.stops,
+    tripState: state.tripState, currentStopIndex: state.currentStopIndex, hasDepartedOrigin: true });
+  emit({ ...liveBus(state.currentStopIndex, point), motionState: "stopped", speed: 0, atStopIndex });
+}
+/** The firmware's single GNSS-loss packet: fresh receipt, last coordinates, untrusted fix. */
+export function publishGnssLoss() {
+  const bus = snapshot.bus as Record<string, unknown>;
+  emit({ ...bus, timestamp: Date.now(), backendReceivedAt: Date.now(), motionState: "uncertain", signalState: "gnss_lost", speed: 0 });
 }
 export function publishDeparture() {
   const [start, next] = route.stops;

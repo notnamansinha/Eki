@@ -451,7 +451,7 @@ test('credible off-route authenticated telemetry publishes a versioned detour an
   await page.screenshot({ path: testInfo.outputPath('authenticated-detour-etas.png'), fullPage: true });
 });
 
-test('2.5m stop arrival updates the real passenger timeline only after authenticated telemetry reaches the circle', async ({ page, request }, testInfo) => {
+test('stop arrival updates the real passenger timeline only after authenticated telemetry enters the arrival corridor', async ({ page, request }, testInfo) => {
   await page.goto('/'); await login(page); await board(page);
   const timeline = page.getByRole('button', { name: 'Route Timeline', exact: true });
   await timeline.click();
@@ -466,8 +466,8 @@ test('2.5m stop arrival updates the real passenger timeline only after authentic
   const stored = await evidence(request);
   expect(stored.live.currentStopIndex).toBe(2);
   expect(stored.sessions.find((ride: { id: string }) => ride.id === 'qa_session').status).toBe('active');
-  await page.screenshot({ path: testInfo.outputPath('arrival-2_5m-next-stop.png'), fullPage: true });
-  await testInfo.attach('arrival-boundary', { body: JSON.stringify({ outsideMeters: 2.6, insideMeters: 2.4,
+  await page.screenshot({ path: testInfo.outputPath('arrival-corridor-next-stop.png'), fullPage: true });
+  await testInfo.attach('arrival-boundary', { body: JSON.stringify({ outsideMeters: 15.1, insideMeters: 14.9,
     currentStopIndex: stored.live.currentStopIndex, physicalGnss: false, providers: 'synthetic' }), contentType: 'application/json' });
   // Reuse the fixture immediately, without browser/sign-in delays masking a
   // backwards sample clock in the next journey's telemetry controller.

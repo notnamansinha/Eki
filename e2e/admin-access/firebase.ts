@@ -166,6 +166,15 @@ export function publishAutomaticReturn() {
     automaticTurnaround: true, tripState: "pre_departure", status: "active", timestamp: Date.now() };
   routeChildren.forEach(callback => callback({ key: "node:qa-bus_qa-route", val: () => routeBus }));
 }
+// ?fleet: complete active rides (driver, status, direction) so End ride can render.
+const fleetMode = typeof location !== "undefined" && new URLSearchParams(location.search).has("fleet");
+function fleetRide(index: number) {
+  const now = Date.now();
+  return { busId: `qa-bus-${index}`, routeId: "qa-route", sessionId: `qa-session-${index}`, driverId: `qa-driver-${index}`,
+    status: "active", deviceState: "online", signalState: "connected", tripState: "in_service", direction: "forward",
+    directionState: "resolved", motionState: "moving", speed: 20, heading: 0, currentStopIndex: 1,
+    timestamp: now, backendReceivedAt: now, lat: 12 + index * 0.001, lng: 77 };
+}
 export function onValue(source: { path: string }, success: (snapshot: { val: () => unknown }) => void) {
   window.dispatchEvent(new CustomEvent("qa-rtdb-read", { detail: { path: source.path } }));
   let active = true;
@@ -176,7 +185,9 @@ export function onValue(source: { path: string }, success: (snapshot: { val: () 
     if (!active) return;
     const scoped = source.path === "publicRouteBuses/route:qa-route/buses";
     const catalog = source.path === "liveRouteCatalog/values";
-    success({ val: () => source.path === ".info/connected" ? sdkConnected : source.path === "clientProjectionStatus/public" ? { schemaVersion: 1, ready: true } : scoped ? (routeBus ? { "node:qa-bus_qa-route": routeBus } : {}) : catalog ? { "route:qa-route": { active: 1, available: 0, freshestAt: 0 } } : {
+    success({ val: () => source.path === ".info/connected" ? sdkConnected : source.path === "clientProjectionStatus/public" ? { schemaVersion: 1, ready: true } : scoped ? (routeBus ? { "node:qa-bus_qa-route": routeBus } : {}) : catalog ? { "route:qa-route": { active: 1, available: 0, freshestAt: 0 } } : fleetMode ? {
+      "route:qa-route": { buses: Object.fromEntries([1, 2, 3].map(index => [`node:qa-bus-${index}`, fleetRide(index)])) },
+    } : {
       "route:qa-route": { buses: { "node:qa-bus": { busId: "qa-bus", routeId: "qa-route", sessionId: "qa-session", tripState: "in_service", timestamp: Date.now(), lat: 12, lng: 77 } } },
     } });
   });

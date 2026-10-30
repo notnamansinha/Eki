@@ -31,7 +31,7 @@ vi.mock("@/components/passenger/ui/RouteCarousel", () => ({ default: ({ onClick 
 vi.mock("@/components/passenger/AccountTab", () => ({ default: () => <div>Account</div> }));
 vi.mock("@/components/shared/MessagingPanel", () => ({ default: () => <div>Chat</div> }));
 vi.mock("@/components/shared/FeedbackModal", () => ({ default: ({ sessionId }: { sessionId: string }) => <div>Feedback {sessionId}</div> }));
-const bus = (route = "A", session = "joined") => ({ busId: "bus", routeId: route, sessionId: session, driverId: "driver", deviceState: "online", status: "active", tripState: "in_service", direction: "forward", lat: 23, lng: 72, timestamp: Date.now() });
+const bus = (route = "A", session = "joined") => ({ busId: "bus", routeId: route, sessionId: session, driverId: "driver", deviceState: "online", status: "active", tripState: "in_service", direction: "forward", lat: 23, lng: 72, timestamp: Date.now(), motionState: "moving" });
 const deliver = (route: string, value = bus(route)) => fixture.listeners.get(route)!.next({ type: "reset", snapshot: { [`node:bus_${route}`]: value }, source: "listener" });
 beforeEach(() => { localStorage.clear(); fixture.listeners.clear(); fixture.mark.mockClear(); fixture.invalidate.mockClear(); fixture.generation = 0; });
 afterEach(() => { cleanup(); vi.useRealTimers(); });

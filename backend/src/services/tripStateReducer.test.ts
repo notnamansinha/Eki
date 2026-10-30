@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ORIGIN_DEPARTURE_M, reduceTripState, type TripStateResult } from "./tripStateReducer";
+import { ORIGIN_DEPARTURE_M, STOP_ARRIVAL_GEOFENCE_M, reduceTripState, type TripStateResult } from "./tripStateReducer";
 
 const origin = { lat: 23.012441, lng: 72.458011 };
 const about200mNorth = { lat: origin.lat + 0.0018, lng: origin.lng };
@@ -30,9 +30,10 @@ describe("reduceTripState", () => {
   it("does not join an unreliable prior fix into a seemingly precise stop crossing", () => {
     const stops = [origin, about200mNorth, { ...origin, lat: origin.lat + 0.004 }];
     for (const quality of [{ gpsHdop: 10 }, { motionState: "uncertain" as const }]) {
-      expect(reduceTripState(input({ stops, lat: about200mNorth.lat + 0.0001, currentStopIndex: 1,
+      // Both fixes are about 33 m from the stop; only the chord between them touches it.
+      expect(reduceTripState(input({ stops, lat: about200mNorth.lat + 0.0003, currentStopIndex: 1,
         hasDepartedOrigin: true, motionState: "moving",
-        previousPosition: { lat: about200mNorth.lat - 0.0001, lng: origin.lng, ...quality } })).currentStopIndex).toBe(1);
+        previousPosition: { lat: about200mNorth.lat - 0.0003, lng: origin.lng, ...quality } })).currentStopIndex).toBe(1);
     }
   });
   it.each(["pre_departure", "in_service"] as const)("retains the 10m origin departure minimum for short routes in %s", currentTripState => {
@@ -57,12 +58,13 @@ describe("reduceTripState", () => {
       hasDepartedOrigin: true, ...overrides }));
     expect(result.tripState).toBe("in_service");
   });
-  it("uses a 2.5m arrival circle in both directions without advancing outside it", () => {
+  it("uses the calibrated arrival corridor in both directions without advancing outside it", () => {
     const metersToLatitude = (meters: number) => meters / 6_371_000 * 180 / Math.PI;
     const middle = about200mNorth;
     const terminal = { lat: origin.lat + 0.004, lng: origin.lng };
     for (const stops of [[origin, middle, terminal], [terminal, middle, origin]]) {
-      for (const [distance, expectedIndex] of [[2.6, 1], [9, 1], [2.4, 2], [0, 2]] as const) {
+      for (const [distance, expectedIndex] of [[STOP_ARRIVAL_GEOFENCE_M + 0.1, 1], [25, 1],
+        [STOP_ARRIVAL_GEOFENCE_M - 0.1, 2], [9, 2], [0, 2]] as const) {
         const result = reduceTripState(input({ stops, lat: middle.lat + metersToLatitude(distance),
           currentStopIndex: 1, hasDepartedOrigin: true }));
         expect(result.currentStopIndex).toBe(expectedIndex);
@@ -71,10 +73,10 @@ describe("reduceTripState", () => {
     }
   });
 
-  it("limits between-fix stop crossings to the same 2.5m circle", () => {
+  it("limits between-fix stop crossings to the same arrival corridor", () => {
     const middle = about200mNorth;
     const terminal = { lat: origin.lat + 0.004, lng: origin.lng };
-    for (const [distance, expectedIndex] of [[2.6, 1], [2.4, 2]] as const) {
+    for (const [distance, expectedIndex] of [[STOP_ARRIVAL_GEOFENCE_M + 0.1, 1], [STOP_ARRIVAL_GEOFENCE_M - 0.1, 2]] as const) {
       const lngOffset = distance / (111_320 * Math.cos(middle.lat * Math.PI / 180));
       const result = reduceTripState(input({ stops: [origin, middle, terminal],
         previousPosition: { lat: middle.lat - 0.0003, lng: middle.lng + lngOffset },
@@ -84,9 +86,9 @@ describe("reduceTripState", () => {
     }
   });
 
-  it("clears terminal confirmation outside 2.5m and requires fresh evidence on reentry", () => {
+  it("clears terminal confirmation outside the arrival corridor and requires fresh evidence on reentry", () => {
     const terminal = about200mNorth;
-    const outside = reduceTripState(input({ lat: terminal.lat + 2.6 / 6_371_000 * 180 / Math.PI,
+    const outside = reduceTripState(input({ lat: terminal.lat + (STOP_ARRIVAL_GEOFENCE_M + 0.1) / 6_371_000 * 180 / Math.PI,
       currentStopIndex: 1, hasDepartedOrigin: true }));
     expect(outside.tripState).toBe("in_service");
     expect(outside.terminalArrival).toBeUndefined();
@@ -131,7 +133,7 @@ describe("reduceTripState", () => {
     );
 
     expect(result.hasDepartedOrigin).toBe(true);
-    expect(ORIGIN_DEPARTURE_M).toBe(150);
+    expect(ORIGIN_DEPARTURE_M).toBe(50);
   });
 
   it("does not complete before end-of-route progress", () => {
@@ -422,11 +424,17 @@ describe("stops missed during a GNSS gap", () => {
   });
 
   it.each([
-    ["ten missed heartbeats", { previousPosition: { ...north(890), timestamp: 79_999 } }],
-    ["an untrusted previous fix", { previousPosition: { ...north(890), timestamp: 89_000, motionState: "uncertain" as const } }],
-    ["a segment too long to check", { previousPosition: { ...north(600), timestamp: 89_000 } }],
-  ])("opens a gap from %s", (_name, extra) => {
-    expect(reduceTripState(fix(900, 90_000, extra))).toMatchObject({ currentStopIndex: 4, skippedStopIndices: [1, 2] });
+    ["ten missed heartbeats", { previousPosition: { ...north(890), timestamp: 79_999 } }, 79_999],
+    ["an untrusted previous fix", { previousPosition: { ...north(890), timestamp: 89_000, motionState: "uncertain" as const } }, 89_000],
+    ["a segment too long to check", { previousPosition: { ...north(600), timestamp: 89_000 } }, 89_000],
+  ])("opens a gap from %s without crediting stops the gap was too short to hide", (_name, extra, since) => {
+    // 585 m of route from A to C cannot be driven unseen in 1-10 s (break-it review, D3).
+    expect(reduceTripState(fix(900, 90_000, extra))).toMatchObject({ currentStopIndex: 1, gnssGapSince: since });
+  });
+
+  it("credits stops skipped during a gap long enough to have driven past them", () => {
+    expect(reduceTripState(fix(900, 90_000, { previousPosition: { ...north(250), timestamp: 60_000 } })))
+      .toMatchObject({ currentStopIndex: 4, skippedStopIndices: [1, 2] });
   });
 
   it("opens a gap on an untrusted fix without moving the ride", () => {
@@ -434,9 +442,9 @@ describe("stops missed during a GNSS gap", () => {
       .toEqual({ tripState: "in_service", currentStopIndex: 1, hasDepartedOrigin: true, gnssGapSince: 89_000 });
   });
 
-  it("never skips a stop without a GNSS gap", () => {
-    const result = reduceTripState(fix(900, 90_000, { previousPosition: { ...north(890), timestamp: 89_000 } }));
-    expect(result).toEqual({ tripState: "in_service", currentStopIndex: 1, hasDepartedOrigin: true });
+  it("credits stops missed with continuous telemetry as unobserved, never as GNSS-gap skips", () => {
+    const result = reduceTripState(fix(900, 90_000, { previousPosition: { ...north(890), timestamp: 89_000, motionState: "moving" } }));
+    expect(result).toEqual({ tripState: "in_service", currentStopIndex: 4, hasDepartedOrigin: true, unobservedStopIndices: [1, 2] });
   });
 
   it("closes the gap without skipping when the expected stop is observed", () => {

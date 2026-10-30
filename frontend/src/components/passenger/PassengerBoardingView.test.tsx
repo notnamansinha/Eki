@@ -61,7 +61,7 @@ describe("passenger boarding workflow", () => {
     await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
     await user.click(screen.getByRole("option", { name: "Beta" }));
     expect(screen.getByRole("combobox", { name: "Destination station" }).textContent)
-      .toContain("Choose destination station");
+      .toContain("Choose destination stop");
     expect(screen.getByRole("button", { name: "Board" })).toHaveProperty("disabled", true);
   });
   it("shows verified restored choices without replaying boarding or caching a code", async () => {
@@ -94,6 +94,50 @@ describe("passenger boarding workflow", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body)));
     const { user, joined } = await prepare(); await user.click(screen.getByRole("button", { name: "Board" }));
     expect(await screen.findByRole("alert")).toBeTruthy(); expect(joined).not.toHaveBeenCalled();
+  });
+  it("says whether the location is live, not just that the ride is in service (field ride, 29 Oct 2026)", () => {
+    const props = { sessionId: "qa-session", route, tripState: "in_service" as const };
+    const view = render(<PassengerBoardingView {...props} liveHealth={{ state: "live", ageMs: 1_000 }} />);
+    expect(screen.getByRole("status").textContent).toContain("Ride in service · Live");
+    view.rerender(<PassengerBoardingView {...props} liveHealth={{ state: "delayed", ageMs: 14_000 }} />);
+    expect(screen.getByRole("status").textContent).toContain("Updates delayed · 14 s ago");
+  });
+  it("colours the ride status by live health, never green while tracking is degraded", () => {
+    const props = { sessionId: "qa-session", route };
+    const colour = () => (screen.getByRole("status").firstElementChild as HTMLElement).style.color;
+    const view = render(<PassengerBoardingView {...props} tripState="in_service" liveHealth={{ state: "live", ageMs: 1_000 }} />);
+    expect(colour()).toBe("var(--status-live)");
+    for (const [state, expected] of [["delayed", "warning"], ["gnss_lost", "warning"], ["lost", "danger"], ["offline", "danger"]] as const) {
+      view.rerender(<PassengerBoardingView {...props} tripState="in_service" liveHealth={{ state, ageMs: 40_000 }} />);
+      expect([state, colour()]).toEqual([state, `var(--status-${expected})`]);
+    }
+    view.rerender(<PassengerBoardingView {...props} tripState="pre_departure" liveHealth={{ state: "live", ageMs: 1_000 }} />);
+    expect(colour()).toBe("var(--status-warning)");
+    view.rerender(<PassengerBoardingView {...props} tripState="pre_departure" liveHealth={{ state: "lost", ageMs: 40_000 }} />);
+    expect(colour()).toBe("var(--status-danger)");
+    // Without a health reading it neither claims Live nor shows green.
+    view.rerender(<PassengerBoardingView {...props} tripState="in_service" />);
+    expect(screen.getByRole("status").firstElementChild!.textContent).toBe("Ride in service");
+    expect(colour()).toBe("var(--status-warning)");
+  });
+  it("shows where the bus is without opening the timeline, including at the origin", () => {
+    const props = { sessionId: "qa-session", route, tripState: "in_service" as const };
+    const view = render(<PassengerBoardingView {...props} stopEstimates={{ context: "s", minutes: {}, nextStopIndex: 0, atStopIndex: 0 }} />);
+    expect(screen.getByRole("status").textContent).toContain("At Alpha · Next: Beta");
+    view.rerender(<PassengerBoardingView {...props} stopEstimates={{ context: "s", minutes: {}, nextStopIndex: 1 }} />);
+    expect(screen.getByRole("status").textContent).toContain("Next: Beta");
+    expect(screen.getByRole("status").textContent).not.toContain("At ");
+  });
+  it("explains why Board is disabled instead of leaving a prominent dead button", async () => {
+    render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" />);
+    expect(screen.getByRole("combobox", { name: "Boarding stop" }).textContent).toContain("Choose boarding stop");
+    expect(screen.getByText("Choose your boarding and destination stops to board.")).toBeTruthy();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
+    await user.click(screen.getByRole("option", { name: "Alpha" }));
+    await user.click(screen.getByRole("combobox", { name: "Destination station" }));
+    await user.click(screen.getByRole("option", { name: "Beta" }));
+    expect(screen.queryByText("Choose your boarding and destination stops to board.")).toBeNull();
   });
   it("aborts an in-flight join when the boarding view unmounts", async () => {
     const fetchMock = vi.fn((_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))));
