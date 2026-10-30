@@ -366,14 +366,17 @@ describe("versioned session identity and lifecycle", () => {
     end(); expect((await code()).status).toBe(403);
     expect(state.live).not.toHaveProperty("boardingCode");
   });
-  it.each(["/api/sessions", "/api/v2/ride-sessions"])("withholds the boarding code from an administrator whose authority is no longer current on %s", async prefix => {
+  // One fixed title (not it.each) so the QA catalog can match the executed test by name.
+  it("withholds the boarding code from an administrator whose authority is no longer current", async () => {
     const { sessionId } = await (await start()).json();
-    const code = () => contractFetch(`${base}${prefix}/${sessionId}/boarding-code`, { method: "POST" });
     state.user = { uid: "admin_uid", role: "admin", admin: true, authorizationVersion: "v1" };
-    state.authorizationCurrent = false;
-    expect((await code()).status).toBe(403);
-    state.authorizationCurrent = true;
-    expect((await code()).status).toBe(200);
+    for (const prefix of ["/api/sessions", "/api/v2/ride-sessions"]) {
+      const code = () => contractFetch(`${base}${prefix}/${sessionId}/boarding-code`, { method: "POST" });
+      state.authorizationCurrent = false;
+      expect((await code()).status).toBe(403);
+      state.authorizationCurrent = true;
+      expect((await code()).status).toBe(200);
+    }
   });
   it("rejects a session ending between code-free proximity validation and manifest commit", async () => {
     const { sessionId } = await (await start()).json();
