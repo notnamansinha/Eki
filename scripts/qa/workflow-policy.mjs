@@ -10,7 +10,7 @@ const files = ['.github/workflows/deep-qa.yml', '.github/workflows/weekly-reliab
 const allowedActions = new Set([
   'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
   'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
-  'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
+  'actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0',
   'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd',
   'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
   'actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333',
