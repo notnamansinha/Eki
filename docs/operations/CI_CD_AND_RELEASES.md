@@ -212,6 +212,8 @@ For each release, record the commit SHA, the Production verification and Deploy 
 
 Routine npm releases wait 3 days for patches, 7 for minors and 14 for majors. Other ecosystems wait 7 days. Security updates use GitHub's separate alert-driven process and bypass these routine cooldowns and the version-update schedule. Enable both Dependabot alerts and Dependabot security updates in the repository security settings; committing the configuration alone does not enable security fixes.
 
+Dependabot can propose version updates for SHA-pinned Actions, but GitHub does not generate Actions vulnerability alerts for full SHA references. Monitor [GitHub Actions advisories](https://github.com/advisories?query=ecosystem%3Aactions) separately and update affected pins promptly when fixes are released. Keep the full SHA pins; do not treat a clean alert list as proof that those actions have no known advisories.
+
 Direct manifest dependencies receive version PRs; security updates also cover supported vulnerable transitive dependencies. Related React/Next.js packages, Workbox packages, OpenTelemetry packages, Stryker packages and Tailwind packages are grouped by family so related versions can be reviewed together. Other updates remain separate. Major versions are proposed rather than ignored.
 
 ### 12.2 Review and merge gates
@@ -219,6 +221,8 @@ Direct manifest dependencies receive version PRs; security updates also cover su
 Dependabot creates pull requests and does not approve, merge or deploy them. The existing CODEOWNERS entry requests the repository owner's review. Dependabot PR workflows use restricted tokens and no deployment secrets. A PR or fork run cannot pass the Deploy workflow's same-repository `push` to `main` gate.
 
 The main branch rules require an owner approval and these GitHub Actions checks: `web`, `backend-image`, `firmware`, `qa-evidence`, `Analyze javascript-typescript` and `Analyze python`. The checks must pass against the current base before merging. Existing administrator bypass permissions remain available for explicit recovery; normal dependency updates shall not use a bypass or cancel required checks.
+
+The all-branches ruleset excludes `refs/heads/dependabot/**/*` so the bot can update, rebase and retire its own PR branches. Main retains its owner-review and CI rules; the bot receives no bypass permission on main. Other feature-branch rules are unchanged.
 
 Before approving an update:
 
