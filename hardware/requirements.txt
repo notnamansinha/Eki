@@ -1,0 +1,3 @@
+# Shared CI tool pin; native evidence also checks this version in
+# scripts/qa/run-native.mjs. Review that contract when upgrading PlatformIO.
+platformio==6.2.0

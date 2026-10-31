@@ -81,7 +81,7 @@ jobs:
           python-version: '3.12'
       - name: Install pinned native host test tool
         if: matrix.suite == 'native'
-        run: pip install platformio==6.2.0
+        run: pip install --requirement hardware/requirements.txt
       - name: Execute recorded campaign
         env:
           EKI_QA_CAMPAIGN_DAY: ${{ needs.resolve.outputs.campaign-day }}
