@@ -1,0 +1,44 @@
+
+name: Remove footer
+
+on:
+  issues:
+    types: [opened, edited]
+  pull_request:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  strip-footer:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.issue.user.login == 'suryaraj09' ||
+      github.event.pull_request.user.login == 'suryaraj09'
+    steps:
+      - name: Strip "Generated with Claude Code" footer
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const item = context.payload.issue || context.payload.pull_request;
+            const body = item.body || '';
+            // Matches: 🤖 Generated with [Claude Code](https://claude.com/claude-code)
+            // (also the older claude.ai/code link and plain-text variants)
+            const footer = /^[ \t]*(?:🤖\s*)?Generated with\s+\[?Claude Code\]?(?:\([^)\n]*\))?[ \t]*$/gim;
+            const cleaned = body
+              .replace(footer, '')
+              .replace(/\n{3,}/g, '\n\n')
+              .trimEnd();
+            if (cleaned === body) {
+              core.info('No Claude footer found; nothing to do.');
+              return;
+            }
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: item.number,
+              body: cleaned,
+            });
+            core.info(`Removed footer from #${item.number}.`);
