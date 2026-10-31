@@ -1,44 +1,76 @@
-
 name: Remove footer
 
 on:
   issues:
     types: [opened, edited]
-  pull_request:
+  pull_request_target:
     types: [opened, edited]
 
-permissions:
-  issues: write
-  pull-requests: write
+permissions: {}
+
+concurrency:
+  group: remove-footer-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
 
 jobs:
   strip-footer:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      issues: write
+      pull-requests: write
     if: >-
       github.event.issue.user.login == 'suryaraj09' ||
       github.event.pull_request.user.login == 'suryaraj09'
     steps:
       - name: Strip "Generated with Claude Code" footer
-        uses: actions/github-script@v7
+        # Do not check out or execute PR code in this privileged workflow.
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             const item = context.payload.issue || context.payload.pull_request;
-            const body = item.body || '';
-            // Matches: 🤖 Generated with [Claude Code](https://claude.com/claude-code)
-            // (also the older claude.ai/code link and plain-text variants)
-            const footer = /^[ \t]*(?:🤖\s*)?Generated with\s+\[?Claude Code\]?(?:\([^)\n]*\))?[ \t]*$/gim;
-            const cleaned = body
-              .replace(footer, '')
-              .replace(/\n{3,}/g, '\n\n')
-              .trimEnd();
-            if (cleaned === body) {
-              core.info('No Claude footer found; nothing to do.');
+            const params = { ...context.repo, issue_number: item.number };
+            const stripFooter = body => {
+              const lines = body.split('\n');
+              let last = lines.length - 1;
+              while (last >= 0 && /^[ \t\r]*$/.test(lines[last])) last--;
+              if (last < 0) return body;
+
+              // A terminal attribution inside a fenced or indented code example
+              // is content, not a footer. Preserve all unrelated whitespace.
+              let fence;
+              for (let index = 0; index < last; index++) {
+                const match = lines[index].replace(/\r$/, '').match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+                if (!match) continue;
+                const [, marker, rest] = match;
+                if (!fence) {
+                  if (marker[0] !== '`' || !rest.includes('`')) fence = marker;
+                } else if (marker[0] === fence[0] && marker.length >= fence.length && /^[ \t]*$/.test(rest)) {
+                  fence = undefined;
+                }
+              }
+              const footer = /^ {0,3}(?:🤖[ \t]*)?Generated with[ \t]+(?:Claude Code|\[Claude Code\](?:\([^)\r\n]*\))?)[ \t]*\r?$/i;
+              if (fence || !footer.test(lines[last])) return body;
+              return lines.slice(0, last).join('\n').replace(/(?:\r?\n[ \t]*)+\r?$/, '').replace(/\r$/, '');
+            };
+
+            // Fetch live state rather than writing a possibly queued event's
+            // old body. Re-read before the write and retry if an edit arrived.
+            // GitHub's issue PATCH has no atomic conditional-update support;
+            // serialization and this check narrow, but cannot eliminate, races.
+            for (let attempt = 0; attempt < 3; attempt++) {
+              const { data: current } = await github.rest.issues.get(params);
+              if (current.user.login !== 'suryaraj09') return;
+              const body = current.body || '';
+              const cleaned = stripFooter(body);
+              if (cleaned === body) {
+                core.info('No Claude footer found; nothing to do.');
+                return;
+              }
+              const { data: latest } = await github.rest.issues.get(params);
+              if (latest.body !== current.body || latest.updated_at !== current.updated_at) continue;
+              await github.rest.issues.update({ ...params, body: cleaned });
+              core.info(`Removed footer from #${item.number}.`);
               return;
             }
-            await github.rest.issues.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: item.number,
-              body: cleaned,
-            });
-            core.info(`Removed footer from #${item.number}.`);
+            core.warning('Description kept changing; skipped cleanup to preserve edits.');
