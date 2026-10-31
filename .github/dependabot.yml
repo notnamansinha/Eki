@@ -1,0 +1,100 @@
+version: 2
+
+# Dependabot opens reviewable PRs. Updates are never approved or merged here.
+# CODEOWNERS requests review from the repository owner.
+updates:
+  # One root job owns the shared frontend/backend workspace lockfile.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+      time: "09:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    groups:
+      # Keep peer-dependent framework packages together, including major bumps.
+      react-next:
+        patterns:
+          - next
+          - eslint-config-next
+          - "@next/*"
+          - react
+          - react-dom
+          - "@types/react"
+          - "@types/react-dom"
+      workbox:
+        patterns:
+          - "workbox-*"
+      opentelemetry:
+        patterns:
+          - "@opentelemetry/*"
+      stryker:
+        patterns:
+          - "@stryker-mutator/*"
+      tailwind:
+        patterns:
+          - tailwindcss
+          - "@tailwindcss/*"
+
+  # Local file: dependencies are support files in the root job, not update
+  # targets. Track this package explicitly; review the shared root lockfile too.
+  - package-ecosystem: npm
+    directory: /tools/next-lint-glob
+    schedule:
+      interval: daily
+      time: "09:10"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+    commit-message:
+      prefix: chore(deps-dev)
+
+  # Dependabot preserves full action SHA pins and updates their version comments.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: daily
+      time: "09:20"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(ci)
+
+  # Propose Node/Alpine tag and digest updates; both Docker stages stay pinned.
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: daily
+      time: "09:30"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(deps)
+
+  - package-ecosystem: pip
+    directory: /hardware
+    schedule:
+      interval: daily
+      time: "09:40"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(deps-dev)
