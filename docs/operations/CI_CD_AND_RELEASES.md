@@ -33,7 +33,7 @@ A green push to `main` releases the frontend and security rules to `bustrack-be1
 | Workflow file | Name | Triggers | Deploys |
 |---|---|---|---|
 | `ci.yml` | Production verification | Every push to any branch; every pull request | Nothing |
-| `codeql.yml` | CodeQL | Every push; every pull request | Nothing |
+| `codeql.yml` | CodeQL | Every push except `dependabot/**`; every pull request | Nothing |
 | `deploy.yml` | Deploy | Completion of Production verification; manual dispatch | Hosting, Firestore rules, RTDB rules and Firestore indexes |
 | `deep-qa.yml` | Isolated nightly QA | Daily at 20:17 UTC (01:47 IST); manual dispatch; pushes to six `codex/qa-*` branches | Nothing |
 | `weekly-reliability.yml` | Isolated weekly reliability baseline | Saturdays at 20:41 UTC (Sundays 02:11 IST); manual dispatch; pushes to `codex/qa-nightly-reliability` | Nothing |
@@ -57,7 +57,7 @@ CI establishes that the source builds and that the automated suites pass. It doe
 
 ## 4. CodeQL (`codeql.yml`)
 
-The `analyze` job runs CodeQL with the `security-extended` query suite for `javascript-typescript` and `python`, on every push and pull request. It needs `security-events: write` and no secrets. Findings appear in the repository's code scanning alerts and require triage.
+The `analyze` job runs CodeQL with the `security-extended` query suite for `javascript-typescript` and `python`, on every pull request and on pushes except `dependabot/**`. Dependabot uses the PR upload path because its read-only push token cannot upload SARIF. The job requests `security-events: write` and needs no secrets. Findings appear in the repository's code scanning alerts and require triage.
 
 ## 5. Deploy (`deploy.yml`)
 
@@ -228,7 +228,8 @@ Before approving an update:
 4. For an Actions update, retain full SHA pins and version comments. Updates to actions used by the isolated workflows also require reviewing the explicit allowlist in `scripts/qa/workflow-policy.mjs`; do not weaken that allowlist to make a PR pass.
 5. For the local lint helper, regenerate and commit the shared root lockfile with `npm install --package-lock-only --ignore-scripts`, then verify `npm ci`, lint and the Next lint root-resolution tests. A separate helper update may not regenerate the parent lockfile automatically.
 6. For a PlatformIO update, review the expected version in `scripts/qa/run-native.mjs` together with `hardware/requirements.txt`, and run native, protocol and all affected firmware builds. Hardware or runtime behaviour claims still need the field evidence described in Section 3.
-7. Review staging after the successful merged main build. Production still requires the explicit approval-gated release in Section 5; use Section 10 if a regression appears.
+7. Merge a Dependabot PR with **Create a merge commit**, using the maintainer as the merge author. Squashing a bot-authored commit can give the subsequent main CodeQL run a read-only token, as described in [GitHub's CodeQL permission guidance](https://docs.github.com/en/code-security/reference/code-scanning/troubleshoot-analysis-errors/resource-not-accessible). This does not require automatic merging.
+8. Review staging after the successful merged main build. Production still requires the explicit approval-gated release in Section 5; use Section 10 if a regression appears.
 
 Passing automated checks reduces risk; it cannot prove that a future upstream release has no defects. Do not add an automatic merge or approval workflow for dependency PRs.
 
