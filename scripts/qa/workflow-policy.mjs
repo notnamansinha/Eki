@@ -13,7 +13,7 @@ const allowedActions = new Set([
   'actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0',
   'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd',
   'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
-  'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093',
+  'actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333',
 ]);
 
 export function verifyIsolatedWorkflow(workflow) {
