@@ -2,13 +2,13 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-003 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-003 | 1.1 | Current | 2026-11-01 |
 
 ## 1. Purpose
 
 This procedure publishes a backend that runs on a workstation at a stable HTTPS origin through an ngrok agent. Devices and browsers outside the workstation cannot call `localhost`; the tunnel gives them one reusable origin, so restarting the backend or the agent does not require a firmware rebuild.
 
-No workflow deploys the backend, so the tunnel is the backend origin for the deployed site and for the field devices ([current state](CI_CD_AND_RELEASES.md#71-current-state)). A proposed migration would move the backend to Cloud Run and retire the tunnel once every device and browser uses the new origin ([proposal](CI_CD_AND_RELEASES.md#72-proposed-migration-to-cloud-run)). Until then the service is available only while the workstation, the backend process and the ngrok agent all run.
+No workflow run has deployed the backend, so the tunnel is the backend origin for the deployed site and for the field devices ([current state](CI_CD_AND_RELEASES.md#71-current-state)). A proposed migration would move the backend to Cloud Run and retire the tunnel once every device and browser uses the new origin ([proposal](CI_CD_AND_RELEASES.md#72-proposed-migration-to-cloud-run)). Until then the service is available only while the workstation, the backend process and the ngrok agent all run.
 
 ```mermaid
 flowchart LR

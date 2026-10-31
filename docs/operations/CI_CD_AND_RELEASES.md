@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-001 | 3.0 | Current | 2026-11-01 |
+| EKI-OPS-001 | 3.1 | Current | 2026-11-01 |
 
 ## 1. Purpose
 
@@ -28,7 +28,7 @@ flowchart LR
 
 Figure 1. Branch, verification and deployment flow.
 
-A green push to `main` releases the frontend and security rules to `bustrack-be165` without further approval. That project is the default in `.firebaserc` and serves `https://bustrack-be165.web.app`, the site that field tests use. No separate staging project exists in the repository configuration. No workflow deploys the backend (Section 7).
+A green push to `main` releases the frontend and security rules to `bustrack-be165` without further approval. That project is the default in `.firebaserc` and serves `https://bustrack-be165.web.app`, the site that field tests use. No separate staging project exists in the repository configuration. Only a manual dispatch can deploy the backend, and none has run yet (Section 7).
 
 | Workflow file | Name | Triggers | Deploys |
 |---|---|---|---|
@@ -67,6 +67,9 @@ The `analyze` job runs CodeQL with the `security-extended` query suite for `java
 |---|---|---|---|---|
 | `deploy-staging` | Production verification completed with `success` for a `push` to `main` in this repository; or manual dispatch from `main` with `environment: staging` | `staging` | `bustrack-be165` | The verified commit (`workflow_run.head_sha`); on dispatch, the head of `main` |
 | `deploy-production` | Manual dispatch from `main` with `environment: production` | `production` | `eki-production` | The head of `main` at dispatch |
+| `deploy-backend-staging` | Manual dispatch from `main` with `environment: staging` and `deploy_backend: true`; never automatic | `staging` | `bustrack-be165` | The head of `main` at dispatch |
+
+`deploy-staging` waits for `deploy-backend-staging`. A skipped backend job does not block the release, and a failed one does.
 
 Runs for pull requests, forks and other branches are skipped. A run waits while another run for the same environment is in progress, and GitHub keeps only the newest waiting run (`concurrency: deploy-<environment>`, `cancel-in-progress: false`). The Firebase CLI is pinned to `firebase-tools@15.14.0`.
 
@@ -82,6 +85,16 @@ Both jobs run the same steps against their own project. A failed step stops the 
 6. Deploy `firestore:indexes`, then wait up to 30 minutes for the deployed query shapes ([Firestore index deployment](FIRESTORE_INDEX_DEPLOYMENT.md)).
 7. Deploy `hosting,firestore:rules,database:rules`.
 
+The optional job `deploy-backend-staging` runs before `deploy-staging`:
+
+1. Check that the three Cloud Run variables in Section 5.3 are set.
+2. Authenticate to Google Cloud as the deploy service account through workload identity federation. The workflow stores no key.
+3. Build `backend/Dockerfile` from the repository root, push the image to the Artifact Registry repository `eki` in `CLOUD_RUN_REGION` (the repository shall exist), and record the image digest.
+4. Render `deploy/cloud-run/staging.service.yaml` with the digest and apply it as a new revision. When a revision already serves traffic, the new revision receives none until step 6. On the first deployment no earlier revision exists, so the revision receives all traffic at once and step 6 only reports the result.
+5. Grant `allUsers` the Cloud Run invoker role. Firebase and device authentication remain the gate for every route.
+6. Poll the candidate's `/health` for up to 3 minutes and promote the candidate only when it reports `status: ok`.
+7. Write the image digest, the previous revision and the rollback command to the job summary.
+
 Step 4 makes every Hosting release depend on a running, healthy backend. While the backend runs on a workstation (Section 7.1), a release fails if the workstation or tunnel is down.
 
 ### 5.3 Environments, secrets and variables
@@ -92,6 +105,9 @@ Step 4 makes every Hosting release depend on a running, healthy backend. While t
 | `FIREBASE_TOKEN` | Environment secret | Steps 5 to 7 | Firebase CLI token for that project |
 | `FIREBASE_DATABASE_URL` | Environment secret | Step 2 | RTDB URL that the backend uses |
 | `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_DATABASE_URL`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAP_ID`, `NEXT_PUBLIC_BACKEND_URL` | Environment secrets | Steps 2 to 4 | Values compiled into the static frontend |
+| `CLOUD_RUN_REGION` | Environment variable | Backend job | Region of the Cloud Run service and of the Artifact Registry repository `eki` |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | Environment variable | Backend job | Full resource name of the workload identity provider that trusts this repository |
+| `GCP_DEPLOY_SERVICE_ACCOUNT` | Environment variable | Backend job | Email of the service account that the backend job impersonates |
 | `RTDB_EXPECTED_REGION` | Variable (optional) | Step 2 | Expected RTDB region, for example `asia-southeast1`. Not set on 2026-10-30, so step 2 checks only that both URLs name one instance. |
 
 The workflow passes no other build variables. `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_SITE_INDEXING` are therefore unset in deployed builds: canonical and social URLs fall back to `https://bustrack-be165.web.app` and indexing is enabled. A custom domain or a production build needs those two values added to the workflow ([DNS and domains](DNS_AND_DOMAINS.md)). The meaning of each variable is in [configuration](../CONFIGURATION.md).
@@ -138,18 +154,18 @@ The `testing` branch was deleted on 2026-10-25; scheduled runs from then until t
 
 ### 7.1 Current state
 
-The repository builds and tests a backend container (`backend/Dockerfile`: Node.js 24 on Alpine, non-root user, port `8080`, Docker health check on `/live`), but no workflow publishes or runs it. The backend runs on a workstation and is reached through an ngrok tunnel ([ngrok tunnel](NGROK_TUNNEL.md)). A read-only assessment on 2026-10-21 found:
+The repository builds and tests a backend container (`backend/Dockerfile`: Node.js 24 on Alpine, non-root user, port `8080`, Docker health check on `/live`), and `deploy-backend-staging` can publish and deploy it on manual dispatch. That job has not run, so no Cloud Run service exists. The backend runs on a workstation and is reached through an ngrok tunnel ([ngrok tunnel](NGROK_TUNNEL.md)). A read-only assessment on 2026-10-21 found:
 
 - The frontend build and the device firmware both use the tunnel origin as the backend URL.
 - The workstation backend runs in development mode on port `4000`, as a single process that also runs the lease-owned workers ([worker leadership](WORKER_LEADERSHIP.md)).
 - Firestore is in `asia-south2`; the configured RTDB instance is in `us-central1`.
-- Cloud Billing and the Cloud Run API were disabled on `bustrack-be165`.
+- Cloud Billing is linked to `bustrack-be165` and the Cloud Run API is enabled (checked on 2026-11-01). No Cloud Run service or Artifact Registry repository exists.
 
 The service is available only while the workstation, the backend process and the ngrok agent are running.
 
 ### 7.2 Proposed migration to Cloud Run
 
-Status: Proposed. Nothing below is implemented.
+Status: Proposed. The manual deployment job described in Section 5.2 exists but has not run; the rest is not implemented.
 
 The proposal runs the existing container on Cloud Run in the same Firebase project and keeps Hosting, Authentication, Firestore and the existing RTDB instance unchanged. Cloud Run needs a Cloud Billing account on the project, which moves a Spark project to the Blaze plan [2].
 
@@ -185,6 +201,7 @@ Prerequisites: the change has a pull request to `main`; the backend at `NEXT_PUB
 |---|---|---|
 | Hosting | Firebase console, Hosting, Release history, Roll back on the previous release [1] | Revert the change on `main` through a pull request; the automatic Deploy run redeploys Hosting, rules and indexes from the reverted commit |
 | Firestore and RTDB rules | None (a Hosting rollback leaves rules unchanged) | Revert on `main`, as above |
+| Backend (Cloud Run staging) | Move traffic back with `gcloud run services update-traffic eki-backend-staging --project bustrack-be165 --region <region> --to-revisions <previous-revision>=100`. The job summary of each release prints the previous revision. | Revert the change on `main` and dispatch the backend job again |
 | Backend (workstation) | Check out the last known-good commit on the host and restart the backend | Same |
 | Frontend configuration | Correct the environment secret and rerun Deploy by dispatch from `main` | Same; do not edit generated CSP hashes by hand |
 | Firmware over the air | Unset all six `FIRMWARE_RELEASE_*` backend values to stop distribution | Bootloader rollback restores the previous slot for an unhealthy candidate; never publish an older sequence as a downgrade |
