@@ -16,6 +16,12 @@
 #     NEXT_PUBLIC_FIREBASE_APP_ID, NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
 #     NEXT_PUBLIC_GOOGLE_MAP_ID,
 #     NEXT_PUBLIC_BACKEND_URL
+#
+# Optional backend job (staging, manual dispatch only, issue #371). It needs
+# these environment variables (not secrets) on the staging environment:
+#   - CLOUD_RUN_REGION: region of the Cloud Run service and Artifact Registry
+#   - GCP_WORKLOAD_IDENTITY_PROVIDER: full provider resource name
+#   - GCP_DEPLOY_SERVICE_ACCOUNT: the deploy service account email
 name: Deploy
 
 on:
@@ -32,6 +38,11 @@ on:
         options:
           - staging
           - production
+      deploy_backend:
+        description: Also build and deploy the backend to Cloud Run before the client release (staging only)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -45,27 +56,172 @@ env:
   FIREBASE_CLI: npx --yes firebase-tools@15.14.0
 
 jobs:
+  deploy-backend-staging:
+    # Manual only: dispatch from main with environment=staging and
+    # deploy_backend=true. Automatic runs never start it. The client release
+    # below waits for it, so a failed backend deploy stops the Hosting release.
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.environment == 'staging' &&
+      github.event.inputs.deploy_backend == 'true' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_PROJECT: bustrack-be165
+      SERVICE: eki-backend-staging
+      RUNTIME_SERVICE_ACCOUNT: eki-backend-runtime@bustrack-be165.iam.gserviceaccount.com
+      AR_REPOSITORY: eki
+      REGION: ${{ vars.CLOUD_RUN_REGION }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require the Cloud Run environment variables
+        env:
+          CLOUD_RUN_REGION: ${{ vars.CLOUD_RUN_REGION }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+        run: |
+          missing=0
+          for name in CLOUD_RUN_REGION GCP_WORKLOAD_IDENTITY_PROVIDER GCP_DEPLOY_SERVICE_ACCOUNT; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Set the ${name} variable on the staging environment."
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - name: Build and push the backend image
+        run: |
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          image_tag="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${AR_REPOSITORY}/backend:${GITHUB_SHA}"
+          docker build -f backend/Dockerfile -t "$image_tag" .
+          docker push "$image_tag"
+          digest_ref="$(docker inspect --format '{{index .RepoDigests 0}}' "$image_tag")"
+          echo "IMAGE=${digest_ref}" >> "$GITHUB_ENV"
+          echo "Image: ${digest_ref}"
+      - name: Deploy a candidate revision that receives no traffic
+        run: |
+          # The revision that serves traffic now, not merely the newest one: an
+          # earlier candidate that failed the gate must not become the rollback target.
+          # Only a missing service is a first deployment. Any other describe
+          # failure stops here, because a first deployment skips the gate.
+          if service_json="$(gcloud run services describe "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --format json 2>"$RUNNER_TEMP/describe.err")"; then
+            previous="$(jq -r '[.status.traffic[]? | select((.percent // 0) > 0)] | sort_by(-.percent) | .[0].revisionName // empty' <<< "$service_json")"
+          elif grep -q "Cannot find service" "$RUNNER_TEMP/describe.err"; then
+            previous=""
+          else
+            cat "$RUNNER_TEMP/describe.err" >&2
+            echo "::error::Could not read the service ${SERVICE}. Refusing to deploy without the /health gate."
+            exit 1
+          fi
+          echo "PREVIOUS_REVISION=${previous}" >> "$GITHUB_ENV"
+          if [ -n "$previous" ]; then
+            TRAFFIC="$(printf '    - revisionName: %s\n      percent: 100\n    - latestRevision: true\n      percent: 0\n      tag: candidate' "$previous")"
+          else
+            TRAFFIC="$(printf '    - latestRevision: true\n      percent: 100')"
+          fi
+          export TRAFFIC IMAGE RUNTIME_SERVICE_ACCOUNT
+          envsubst '${IMAGE} ${RUNTIME_SERVICE_ACCOUNT} ${TRAFFIC}' < deploy/cloud-run/staging.service.yaml > "$RUNNER_TEMP/service.yaml"
+          gcloud run services replace "$RUNNER_TEMP/service.yaml" --project "$GCP_PROJECT" --region "$REGION"
+      - name: Allow public invocation (application authentication stays the gate)
+        run: >-
+          gcloud run services add-iam-policy-binding "$SERVICE"
+          --project "$GCP_PROJECT" --region "$REGION"
+          --member allUsers --role roles/run.invoker --quiet
+      - name: Gate on /health before promoting
+        timeout-minutes: 5
+        run: |
+          service_json="$(gcloud run services describe "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --format json)"
+          new_revision="$(jq -r '.status.latestCreatedRevisionName // empty' <<< "$service_json")"
+          if [ -n "$PREVIOUS_REVISION" ]; then
+            url="$(jq -r '[.status.traffic[]? | select(.tag == "candidate")][0].url // empty' <<< "$service_json")"
+            candidate="$(jq -r '[.status.traffic[]? | select(.tag == "candidate")][0].revisionName // empty' <<< "$service_json")"
+          else
+            url="$(jq -r '.status.url // empty' <<< "$service_json")"
+            candidate="$(jq -r '.status.latestReadyRevisionName // empty' <<< "$service_json")"
+          fi
+          # The candidate tag follows the latest ready revision. Gate only when it
+          # is the revision this run created, never the one already serving.
+          if [ -z "$url" ] || [ -z "$new_revision" ] || [ "$candidate" != "$new_revision" ] || [ "$candidate" = "$PREVIOUS_REVISION" ]; then
+            echo "::error::The candidate URL does not serve the new revision ${new_revision:-unknown} (found ${candidate:-none})."
+            exit 1
+          fi
+          echo "CANDIDATE_REVISION=${candidate}" >> "$GITHUB_ENV"
+          # /health stays 503 until the first Firestore and RTDB probes succeed.
+          # The deadline keeps the last attempt (10 s curl, 5 s sleep) inside the step timeout.
+          deadline=$((SECONDS + 180))
+          attempt=0
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            attempt=$((attempt + 1))
+            body="$(curl -fsS --max-time 10 "${url}/health" 2>/dev/null || true)"
+            if [ "$(jq -r '.status' <<< "$body" 2>/dev/null || true)" = "ok" ]; then
+              echo "Candidate ${candidate} is healthy after ${attempt} attempt(s)."
+              exit 0
+            fi
+            sleep 5
+          done
+          if [ -n "$PREVIOUS_REVISION" ]; then
+            echo "::error::The candidate never reported /health status ok within 3 minutes. Traffic stays on ${PREVIOUS_REVISION}."
+          else
+            echo "::error::The first revision never reported /health status ok within 3 minutes. It already serves all traffic."
+          fi
+          exit 1
+      - name: Promote the candidate
+        if: env.PREVIOUS_REVISION != ''
+        run: |
+          gcloud run services update-traffic "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --to-revisions "${CANDIDATE_REVISION}=100"
+          gcloud run services update-traffic "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --remove-tags candidate
+      - name: Record the release and the rollback command
+        if: always()
+        run: |
+          {
+            echo "### Backend release (staging)"
+            echo "- Image: \`${IMAGE:-not built}\`"
+            echo "- Previous revision: \`${PREVIOUS_REVISION:-none}\`"
+            if [ -n "${PREVIOUS_REVISION:-}" ]; then
+              echo "- Roll back with: \`gcloud run services update-traffic ${SERVICE} --project ${GCP_PROJECT} --region ${REGION} --to-revisions ${PREVIOUS_REVISION}=100\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
   deploy-staging:
+    needs: deploy-backend-staging
     # Only deploy from a successful same-repository push run on main (a
     # workflow_run from a PR or fork could carry untrusted code), and only
-    # allow manual dispatches from the main branch (audit #113).
+    # allow manual dispatches from the main branch (audit #113). The backend
+    # job is skipped on every run except a dispatch with deploy_backend=true;
+    # a skipped backend job does not block the release, a failed one does.
     if: >
-      (github.event_name == 'workflow_run' &&
+      !cancelled() &&
+      (needs.deploy-backend-staging.result == 'success' ||
+       needs.deploy-backend-staging.result == 'skipped') &&
+      ((github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_branch == 'main' &&
        github.event.workflow_run.repository.full_name == github.repository) ||
       (github.event_name == 'workflow_dispatch' &&
        github.event.inputs.environment == 'staging' &&
-       github.ref == 'refs/heads/main')
+       github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     environment: staging
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Deploy the exact SHA that produced the green verification run,
-          # not whatever main points at now (audit #113).
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+          # not whatever main points at now (audit #113). On dispatch, use the
+          # dispatched commit, the same one the backend job built, even if main
+          # moves while this job waits for it.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24

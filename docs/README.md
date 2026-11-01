@@ -53,7 +53,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-GEN-002 | [Eki Documentation Index](README.md) | 1.1 | Current | 2026-11-01 |
 | EKI-GEN-003 | [Eki Documentation Standard](DOCUMENTATION_STANDARD.md) | 1.0 | Current | 2026-10-30 |
 | EKI-GEN-004 | [Getting Started with Eki](GETTING_STARTED.md) | 2.0 | Current | 2026-10-30 |
-| EKI-GEN-005 | [Eki Configuration Reference](CONFIGURATION.md) | 1.1 | Current | 2026-10-30 |
+| EKI-GEN-005 | [Eki Configuration Reference](CONFIGURATION.md) | 1.2 | Current | 2026-11-01 |
 | EKI-GEN-006 | [Eki Glossary](GLOSSARY.md) | 2.0 | Current | 2026-10-30 |
 | EKI-GEN-007 | [Contributing to Eki](../CONTRIBUTING.md) | 1.0 | Current | 2026-10-30 |
 | EKI-GEN-008 | [Contributor Covenant Code of Conduct](../CODE_OF_CONDUCT.md) | 1.0 | Current | 2026-10-30 |
@@ -68,7 +68,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-ARC-001 | [Eki Architecture](design/ARCHITECTURE.md) | 2.0 | Current | 2026-10-30 |
+| EKI-ARC-001 | [Eki Architecture](design/ARCHITECTURE.md) | 2.1 | Current | 2026-11-01 |
 | EKI-ARC-002 | [Eki High-Level Design](design/HIGH_LEVEL_DESIGN.md) | 3.0 | Current | 2026-10-30 |
 | EKI-ARC-003 | [Low-Level Design](design/LOW_LEVEL_DESIGN.md) | 3.0 | Current | 2026-10-30 |
 | EKI-ARC-004 | [Tracking Algorithms](design/TRACKING_ALGORITHMS.md) | 1.1 | Current | 2026-10-30 |
@@ -125,9 +125,9 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-OPS-001 | [CI, Deployment and Releases](operations/CI_CD_AND_RELEASES.md) | 3.0 | Current | 2026-11-01 |
+| EKI-OPS-001 | [CI, Deployment and Releases](operations/CI_CD_AND_RELEASES.md) | 3.1 | Current | 2026-11-01 |
 | EKI-OPS-002 | [DNS and Domains](operations/DNS_AND_DOMAINS.md) | 1.0 | Current | 2026-10-30 |
-| EKI-OPS-003 | [ngrok Tunnel for the Backend](operations/NGROK_TUNNEL.md) | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-003 | [ngrok Tunnel for the Backend](operations/NGROK_TUNNEL.md) | 1.1 | Current | 2026-11-01 |
 | EKI-OPS-004 | [Local Web, Phone and Device Testing](operations/LOCAL_TESTING.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-005 | [Live Demo Runbook](operations/LIVE_DEMO_RUNBOOK.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-006 | [University Deployment Checklist](operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) | 1.2 | Current | 2026-10-30 |
@@ -168,7 +168,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-PKG-001 | [Eki Backend](../backend/README.md) | 1.0 | Current | 2026-10-30 |
+| EKI-PKG-001 | [Eki Backend](../backend/README.md) | 1.1 | Current | 2026-11-01 |
 | EKI-PKG-002 | [Eki Frontend](../frontend/README.md) | 2.0 | Current | 2026-10-30 |
 | EKI-PKG-003 | [ESP32 GNSS Tracker](../hardware/README.md) | 1.0 | Current | 2026-10-30 |
 | EKI-PKG-004 | [Firmware Headers](../hardware/include/README.md) | 1.0 | Current | 2026-10-30 |

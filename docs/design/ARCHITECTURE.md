@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-001 | 2.0 | Current | 2026-10-30 |
+| EKI-ARC-001 | 2.1 | Current | 2026-11-01 |
 
 ## 1. Introduction
 
@@ -121,7 +121,7 @@ Every backend process serves HTTP and processes the telemetry it receives, inclu
 | Production (GitHub environment `production`) | `eki-production`, named in the workflow but not yet provisioned | Manual dispatch from `main`. Approval depends on required reviewers on the `production` environment, which does not exist yet ([CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md#55-repository-settings)) | Same as staging | `https://eki-production.web.app` |
 | Local development | A developer's own Firebase project; emulators for rules and browser suites | `npm run dev` | Frontend on port 3000, backend on port 4000 | `http://localhost:3000` |
 
-The deploy workflow uses Node.js 24 and `firebase-tools@15.14.0`, verifies that the backend and frontend RTDB URLs name the same instance, builds the web app in strict production mode, checks the live backend contract, and turns off App Check enforcement. It then deploys the Firestore indexes, waits for them to build, and deploys Hosting and the rules. It does not deploy the backend. The CI job `backend-image` in `.github/workflows/ci.yml` builds the container image and boot-tests `/live` and `/health`, but no workflow releases it. The recorded field tests use `bustrack-be165` [3].
+The deploy workflow uses Node.js 24 and `firebase-tools@15.14.0`, verifies that the backend and frontend RTDB URLs name the same instance, builds the web app in strict production mode, checks the live backend contract, and turns off App Check enforcement. It then deploys the Firestore indexes, waits for them to build, and deploys Hosting and the rules. It deploys the backend only through the optional manual job `deploy-backend-staging`, which has not run. The CI job `backend-image` in `.github/workflows/ci.yml` builds the container image and boot-tests `/live` and `/health`. The recorded field tests use `bustrack-be165` [3].
 
 | Store | Instance | Location | Evidence |
 |---|---|---|---|
