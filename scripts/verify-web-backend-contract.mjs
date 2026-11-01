@@ -59,10 +59,14 @@ export async function verifyBackendAvailability(origin, frontendOrigin, fetchImp
   const deadline = now() + readinessDeadlineMs;
   let response;
   let body;
+  let notReady;
+  const notReadyError = attempts => new Error(`Backend health probe failed with ${notReady} after ${attempts} attempt(s).`);
   for (let attempt = 1; ; attempt += 1) {
-    let notReady;
-    // No request, and no wait, runs past the deadline.
-    const timeoutMs = Math.max(1, Math.min(10_000, deadline - now()));
+    // The deadline bounds the retries: the first request gets the full 10 s, and a
+    // retry starts only before the deadline and may run only until it.
+    const left = deadline - now();
+    if (attempt > 1 && left <= 0) throw notReadyError(attempt - 1);
+    const timeoutMs = attempt === 1 ? 10_000 : Math.min(10_000, left);
     try {
       response = await fetchImpl(`${origin}/health`, {
         headers, redirect: "error", signal: AbortSignal.timeout(timeoutMs),
@@ -79,11 +83,9 @@ export async function verifyBackendAvailability(origin, frontendOrigin, fetchImp
       if (error?.name !== "TimeoutError") throw error;
       notReady = `no complete answer within ${timeoutMs / 1000} s`;
     }
-    const remaining = deadline - now();
-    if (remaining <= 0) {
-      throw new Error(`Backend health probe failed with ${notReady} after ${attempt} attempt(s).`);
-    }
-    const wait = Math.min(2_000 * attempt, 10_000, remaining);
+    const wait = Math.min(2_000 * attempt, 10_000);
+    // Stop when the next wait would reach the deadline, leaving no time to ask again.
+    if (deadline - now() <= wait) throw notReadyError(attempt);
     log(`Backend /health: ${notReady}; the backend may still be starting. Retrying in ${wait / 1000} s.`);
     await sleep(wait);
   }

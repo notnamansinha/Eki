@@ -200,11 +200,11 @@ describe("live backend release preflight", () => {
     let calls = 0;
     await assert.rejects(
       verifyBackendAvailability(origin, frontend, async () => { calls += 1; return new Response("", { status: 503 }); }, { ...clock.options, readinessDeadlineMs: 30_000 }),
-      /HTTP 503 after 6 attempt\(s\)/,
+      /HTTP 503 after 5 attempt\(s\)/,
     );
-    // The last attempt runs at the deadline itself.
-    assert.equal(calls, 6);
-    assert.deepEqual(clock.sleeps, [2_000, 4_000, 6_000, 8_000, 10_000]);
+    // At 20 s the next 10 s wait would reach the deadline, so the check stops there.
+    assert.equal(calls, 5);
+    assert.deepEqual(clock.sleeps, [2_000, 4_000, 6_000, 8_000]);
   });
 
   it("never waits or requests past the readiness deadline", async () => {
@@ -213,11 +213,23 @@ describe("live backend release preflight", () => {
     await assert.rejects(
       verifyBackendAvailability(origin, frontend, async () => { started.push(clock.t); return new Response("", { status: 503 }); },
         { ...clock.options, readinessDeadlineMs: 25_000 }),
-      /HTTP 503 after 6 attempt\(s\)/,
+      /HTTP 503 after 5 attempt\(s\)/,
     );
-    // The fifth wait is cut from 10 s to the 5 s left, and the last request starts at the deadline.
-    assert.deepEqual(clock.sleeps, [2_000, 4_000, 6_000, 8_000, 5_000]);
-    assert.ok(started.every((t) => t <= 25_000), `a request started after the deadline: ${started}`);
+    assert.deepEqual(started, [0, 2_000, 6_000, 12_000, 20_000]);
+    assert.ok(started.every((t) => t < 25_000), `a request started at or after the deadline: ${started}`);
+  });
+
+  it("asks no more once a wait overruns the deadline", async () => {
+    // A real sleep can overrun a little; here the 2 s wait ends 5 ms past a 2.001 s deadline.
+    const clock = fakeClock();
+    clock.options.sleep = async (ms) => { clock.sleeps.push(ms); clock.t += ms + 5; };
+    let calls = 0;
+    await assert.rejects(
+      verifyBackendAvailability(origin, frontend, async () => { calls += 1; return new Response("", { status: 503 }); },
+        { ...clock.options, readinessDeadlineMs: 2_001 }),
+      /HTTP 503 after 1 attempt\(s\)/,
+    );
+    assert.equal(calls, 1);
   });
 
   it("retries a health answer whose body stalls", async () => {
