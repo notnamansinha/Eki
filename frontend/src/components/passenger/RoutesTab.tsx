@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
-import { AlertCircle, Bus, ChevronDown, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { AlertCircle, Bus, ChevronDown, Clock, Flag, Loader2, MapPin, Timer } from "lucide-react";
 import { usePassengerRouteConfig } from "@/hooks/usePassengerRouteConfig";
-import { useRoutes } from "@/hooks/useRoutes";
+import { useRoutes, type RouteStop } from "@/hooks/useRoutes";
+import { getDistanceMeters } from "@/lib/mapUtils";
 import { useBuses, type BusData } from "@/hooks/useBuses";
 import { useRouteUsage } from "@/hooks/useRouteUsage";
 import {
@@ -69,6 +70,7 @@ function RouteSchedules({ onRetry }: { onRetry: () => void }) {
   const { buses, loading: busesLoading, error: busesError } = useBuses();
   // Usage only orders the list; without it routes keep the admin's order.
   const { usage, loading: usageLoading } = useRouteUsage();
+  const position = useGrantedPosition();
   const error = configError || routesError;
 
   if (error) {
@@ -125,11 +127,47 @@ function RouteSchedules({ onRetry }: { onRetry: () => void }) {
           key={schedule.routeId}
           schedule={schedule}
           buses={busesError ? null : busesForRoute(buses, schedule.routeId)}
+          closestStopId={position ? closestStopId(routes.find(route => route.id === schedule.routeId)?.stops, position) : null}
           defaultOpen={schedules.length === 1}
         />
       ))}
     </div>
   );
+}
+
+/** Stops farther than this are not "closest" in any useful sense. */
+const CLOSEST_STOP_MAX_METERS = 1_500;
+
+/**
+ * The passenger's position, read once, only when location access was already
+ * granted elsewhere in the app. The Routes tab never prompts for it.
+ */
+function useGrantedPosition(): { lat: number; lng: number } | null {
+  const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation || !navigator.permissions?.query) return;
+    let alive = true;
+    navigator.permissions.query({ name: "geolocation" }).then(status => {
+      if (!alive || status.state !== "granted") return;
+      navigator.geolocation.getCurrentPosition(
+        fix => { if (alive) setPosition({ lat: fix.coords.latitude, lng: fix.coords.longitude }); },
+        () => {},
+        { maximumAge: 60_000, timeout: 10_000 },
+      );
+    }, () => {});
+    return () => { alive = false; };
+  }, []);
+  return position;
+}
+
+function closestStopId(stops: readonly RouteStop[] | undefined, position: { lat: number; lng: number }): string | null {
+  let best: { id: string; meters: number } | null = null;
+  for (const stop of stops ?? []) {
+    if (!Number.isFinite(stop.lat) || !Number.isFinite(stop.lng)) continue;
+    const meters = getDistanceMeters(position, stop);
+    if (meters <= CLOSEST_STOP_MAX_METERS && (!best || meters < best.meters)) best = { id: stop.id, meters };
+  }
+  return best?.id ?? null;
 }
 
 /** Buses assigned to a route (including the legacy single assignment), by bus number. */
@@ -159,10 +197,12 @@ function serviceWindow(schedule: PassengerRouteSchedule): string | null {
  * summary share one column beside a round chevron, so a collapsed card stays
  * three short lines even at 320 px. The whole header toggles the panel.
  */
-function RouteScheduleCard({ schedule, buses, defaultOpen }: {
+function RouteScheduleCard({ schedule, buses, closestStopId, defaultOpen }: {
   schedule: PassengerRouteSchedule;
   /** null when bus details could not be read. */
   buses: BusData[] | null;
+  /** The stop nearest the passenger, when their location is known. */
+  closestStopId: string | null;
   defaultOpen: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -250,7 +290,7 @@ function RouteScheduleCard({ schedule, buses, defaultOpen }: {
             style={{ color: "var(--routes-accent-text)" }}
           >
             <ChevronDown
-              className={`size-5 transition-transform duration-300 motion-reduce:transition-none ${open ? "rotate-180" : ""}`}
+              className={`size-5 transition-transform duration-300 ${EASE_SMOOTH} motion-reduce:transition-none ${open ? "rotate-180" : ""}`}
               strokeWidth={3}
             />
           </span>
@@ -262,7 +302,7 @@ function RouteScheduleCard({ schedule, buses, defaultOpen }: {
         id={panelId}
         inert={!open}
         aria-hidden={!open}
-        className={`grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+        className={`grid transition-[grid-template-rows] duration-300 ${EASE_SMOOTH} motion-reduce:transition-none ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
       >
         <div className="min-h-0 overflow-hidden">
           <div style={{ borderTop: "1px solid var(--border-subtle)" }}>
@@ -272,57 +312,214 @@ function RouteScheduleCard({ schedule, buses, defaultOpen }: {
                 No stops listed for this route yet
               </p>
             ) : (
-              <ol aria-label={`${schedule.name} stops`} className="pt-1.5 pb-2">
-                {schedule.stops.map((stop, index) => {
-                  const isFirst = index === 0;
-                  const isLast = index === stopCount - 1;
-                  return (
-                    <li key={stop.id} className="flex min-h-12 items-stretch gap-3.5 px-4">
-                      {/* Rail: each row draws the halves of the line that meet its dot,
-                          so the line starts at the first stop and ends at the last. */}
-                      <span aria-hidden="true" data-rail className="relative w-3.5 shrink-0">
-                        {!isFirst && (
-                          <span className="absolute left-1/2 top-0 h-1/2 w-[3px] -translate-x-1/2" style={{ background: "var(--routes-accent)" }} />
-                        )}
-                        {!isLast && (
-                          <span className="absolute left-1/2 bottom-0 h-1/2 w-[3px] -translate-x-1/2" style={{ background: "var(--routes-accent)" }} />
-                        )}
-                        <span
-                          data-rail-dot
-                          className="absolute left-1/2 top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
-                          style={{
-                            background: isFirst || isLast ? "var(--routes-accent)" : "var(--surface-3)",
-                            border: "3px solid var(--routes-accent)",
-                          }}
-                        />
-                      </span>
-                      <div className="flex min-w-0 flex-1 items-center gap-2.5 py-2.5">
-                        <p
-                          className={`min-w-0 flex-1 break-words text-[14.5px] leading-snug ${isFirst || isLast ? "font-black" : "font-bold"}`}
-                          style={{ color: isFirst || isLast ? "var(--text-primary)" : "var(--text-secondary)" }}
-                        >
-                          {stop.name}
-                        </p>
-                        <span className="sr-only">, </span>
-                        {stop.time ? (
-                          <p data-stop-time className="shrink-0 text-[13px] font-black tabular-nums" style={{ color: "var(--status-live)" }}>
-                            {formatStopTime(stop.time)}
-                          </p>
-                        ) : (
-                          <p data-stop-time className="shrink-0 text-[11.5px] font-bold" style={{ color: "var(--text-ghost)" }}>
-                            Time not set
-                          </p>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
+              <StopTimeline schedule={schedule} closestStopId={closestStopId} />
             )}
           </div>
         </div>
       </div>
     </section>
+  );
+}
+
+/** Distance from a row's top to its dot's centre: the middle of the name's first line. */
+const DOT_Y_PX = 26;
+/** Length of the stop open/close animation; a closing stop stays mounted this long. */
+const STOP_DETAILS_MS = 300;
+/** Ease-out with a soft landing, shared by every Routes tab expansion. */
+const EASE_SMOOTH = "ease-[cubic-bezier(0.22,1,0.36,1)]";
+
+/** "07:05" → minutes after midnight. Times are already validated "HH:mm". */
+function minutesOfDay(time: string): number {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+/** Scheduled minutes from one time to a later one, through midnight if needed. */
+function minutesBetween(from: string, to: string): number {
+  return (minutesOfDay(to) - minutesOfDay(from) + 1440) % 1440;
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const rest = minutes % 60;
+  return rest === 0 ? `${minutes / 60} h` : `${Math.floor(minutes / 60)} h ${rest} min`;
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+}
+
+/**
+ * The route's stops on one continuous rail. Tapping a stop opens it in place:
+ * a larger filled dot, the time in a clock pill, and where the stop sits on
+ * the route. The stop nearest the passenger, when known, starts open.
+ */
+function StopTimeline({ schedule, closestStopId }: {
+  schedule: PassengerRouteSchedule;
+  closestStopId: string | null;
+}) {
+  // undefined until the passenger picks (or closes) a stop themselves.
+  const [chosenStopId, setChosenStopId] = useState<string | null>();
+  // The stop that was just closed stays mounted until it has slid shut.
+  const [closingStopId, setClosingStopId] = useState<string | null>(null);
+  const closeTimer = useRef<number | undefined>(undefined);
+  const scrollTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => {
+    window.clearTimeout(closeTimer.current);
+    window.clearTimeout(scrollTimer.current);
+  }, []);
+  const selectedStopId = chosenStopId === undefined ? closestStopId : chosenStopId;
+  const stops = schedule.stops;
+  const first = stops[0];
+  const last = stops[stops.length - 1];
+  const detailsIdOf = (stopId: string) => `passenger-route-${schedule.routeId}-stop-${stopId}`;
+
+  const select = (next: string | null) => {
+    if (selectedStopId && selectedStopId !== next) {
+      setClosingStopId(selectedStopId);
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = window.setTimeout(() => setClosingStopId(null), STOP_DETAILS_MS);
+    }
+    setChosenStopId(next);
+    window.clearTimeout(scrollTimer.current);
+    if (next) {
+      // Once it has opened, bring the whole stop into view above the navigation bar.
+      scrollTimer.current = window.setTimeout(() => {
+        document.getElementById(detailsIdOf(next))?.scrollIntoView?.({
+          block: "nearest",
+          behavior: prefersReducedMotion() ? "auto" : "smooth",
+        });
+      }, STOP_DETAILS_MS);
+    }
+  };
+
+  return (
+    <ol aria-label={`${schedule.name} stops`} className="pt-1 pb-2">
+      {stops.map((stop, index) => {
+        const isFirst = index === 0;
+        const isLast = index === stops.length - 1;
+        const isSelected = stop.id === selectedStopId;
+        const isClosing = !isSelected && stop.id === closingStopId;
+        const isClosest = stop.id === closestStopId;
+        const detailsId = detailsIdOf(stop.id);
+        const sinceFirst = !isFirst && stop.time && first.time ? minutesBetween(first.time, stop.time) : null;
+        const facts = [
+          { icon: MapPin, text: isFirst ? "First stop" : isLast ? "Last stop" : `Stop ${index + 1} of ${stops.length}` },
+          ...(sinceFirst !== null ? [{ icon: Timer, text: `${formatDuration(sinceFirst)} from ${first.name}` }] : []),
+          ...(!isLast && last.time ? [{ icon: Flag, text: `Reaches ${last.name} at ${formatStopTime(last.time)}` }] : []),
+        ];
+        return (
+          <li key={stop.id} data-stop-selected={isSelected || undefined} className="flex items-stretch gap-3.5 px-4">
+            {/* Rail: each row draws the halves of the line that meet its dot,
+                so the line starts at the first stop and ends at the last. */}
+            <span aria-hidden="true" data-rail className="relative w-5 shrink-0">
+              {!isFirst && (
+                <span className="absolute left-1/2 top-0 w-1 -translate-x-1/2" style={{ height: DOT_Y_PX, background: "var(--routes-accent)" }} />
+              )}
+              {!isLast && (
+                <span className="absolute left-1/2 bottom-0 w-1 -translate-x-1/2" style={{ top: DOT_Y_PX, background: "var(--routes-accent)" }} />
+              )}
+              {/* A slight overshoot lets the opened dot settle rather than snap. */}
+              <span
+                data-rail-dot
+                className={`absolute left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full transition-[width,height,box-shadow,background-color,border-color] duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] motion-reduce:transition-none ${isSelected ? "size-5" : "size-3.5"}`}
+                style={{
+                  top: DOT_Y_PX,
+                  background: isSelected || isFirst || isLast ? "var(--routes-accent)" : "var(--surface-3)",
+                  border: `3px solid ${isSelected ? "var(--routes-accent-text)" : "var(--routes-accent)"}`,
+                  boxShadow: isSelected ? "0 0 0 5px rgba(176, 48, 63, 0.3)" : "0 0 0 0 rgba(176, 48, 63, 0)",
+                }}
+              />
+            </span>
+            <div className="min-w-0 flex-1">
+              <button
+                type="button"
+                aria-expanded={isSelected}
+                aria-controls={isSelected ? detailsId : undefined}
+                onClick={() => select(isSelected ? null : stop.id)}
+                className={`-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 rounded-xl px-2 pt-4 text-left transition-[padding,background-color] duration-300 ${EASE_SMOOTH} active:bg-white/[0.04] motion-reduce:transition-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--routes-accent-text)] ${isSelected ? "pb-2" : "pb-4"}`}
+              >
+                <span className="min-w-0 flex-1">
+                  <span
+                    data-stop-name
+                    className={`block break-words leading-5 transition-[font-size,color] duration-300 ${EASE_SMOOTH} motion-reduce:transition-none ${isSelected ? "text-[15.5px] font-black" : isFirst || isLast ? "text-[14.5px] font-black" : "text-[14.5px] font-bold"}`}
+                    style={{ color: isSelected || isFirst || isLast ? "var(--text-primary)" : "var(--text-secondary)" }}
+                  >
+                    {stop.name}
+                  </span>
+                  {isClosest && (
+                    <span data-closest-stop className="mt-0.5 block text-[12px] font-bold" style={{ color: "var(--routes-accent-text)" }}>
+                      <span className="sr-only">, </span>Closest stop
+                    </span>
+                  )}
+                </span>
+                <span className="sr-only">, </span>
+                {/* Every time keeps the pill's box, so opening only fades the
+                    pill in and nothing shifts sideways. */}
+                <span
+                  data-stop-time={isSelected && stop.time ? "pill" : ""}
+                  className={`-my-1 inline-flex shrink-0 items-center rounded-lg border px-2 py-1 leading-5 transition-[background-color,border-color] duration-300 ${EASE_SMOOTH} motion-reduce:transition-none ${stop.time ? "text-[13.5px] font-black tabular-nums" : "text-[11.5px] font-bold"}`}
+                  style={{
+                    color: stop.time ? "var(--status-live)" : "var(--text-ghost)",
+                    background: isSelected && stop.time ? "var(--surface-2)" : "transparent",
+                    borderColor: isSelected && stop.time ? "var(--border-default)" : "transparent",
+                  }}
+                >
+                  {stop.time && (
+                    <span
+                      aria-hidden="true"
+                      className={`inline-flex overflow-hidden transition-[width,margin,opacity] duration-300 ${EASE_SMOOTH} motion-reduce:transition-none ${isSelected ? "mr-1.5 w-3.5 opacity-100" : "mr-0 w-0 opacity-0"}`}
+                    >
+                      <Clock className="size-3.5 shrink-0" strokeWidth={2.75} />
+                    </span>
+                  )}
+                  {stop.time ? formatStopTime(stop.time) : "Time not set"}
+                </span>
+              </button>
+              {(isSelected || isClosing) && (
+                // grid-rows 0fr → 1fr slides the details to their height;
+                // @starting-style gives the opening frame to slide from.
+                <div
+                  id={detailsId}
+                  data-stop-details={isSelected ? "open" : "closing"}
+                  inert={!isSelected}
+                  aria-hidden={isSelected ? undefined : true}
+                  className={`grid transition-[grid-template-rows,opacity] duration-300 ${EASE_SMOOTH} motion-reduce:transition-none starting:grid-rows-[0fr] starting:opacity-0 ${isSelected ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
+                  style={{ scrollMarginBottom: `calc(${PASSENGER_NAV_HEIGHT_PX + 32}px + var(--safe-area-bottom))` }}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <div className="pb-4">
+                      <p className="text-[12.5px] font-bold" style={{ color: "var(--text-secondary)" }}>
+                        {stop.time ? "Scheduled time" : "No time scheduled for this stop yet"}
+                      </p>
+                      <div className="mt-2.5 flex flex-wrap gap-1.5">
+                        {facts.map((fact, factIndex) => (
+                          <StopFact key={fact.text} icon={fact.icon} delayMs={60 + factIndex * 50}>{fact.text}</StopFact>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** A small read-only fact about the open stop, in the tab's maroon tint; fades up just after the stop opens. */
+function StopFact({ icon: Icon, delayMs, children }: { icon: typeof MapPin; delayMs: number; children: ReactNode }) {
+  return (
+    <span
+      data-stop-fact
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold leading-snug transition-[opacity,translate] duration-300 ${EASE_SMOOTH} motion-reduce:transition-none starting:translate-y-1 starting:opacity-0`}
+      style={{ background: "rgba(176, 48, 63, 0.18)", color: "var(--routes-accent-text)", transitionDelay: `${delayMs}ms` }}
+    >
+      <Icon aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2.5} />
+      <span className="min-w-0 break-words">{children}</span>
+    </span>
   );
 }
 

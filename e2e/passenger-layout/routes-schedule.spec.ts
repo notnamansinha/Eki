@@ -39,7 +39,7 @@ async function timelineGeometry(page: Page, list: string) {
             const rect = segment.getBoundingClientRect();
             return { top: rect.top, bottom: rect.bottom, color: getComputedStyle(segment).backgroundColor };
           });
-        const name = item.querySelector("p")!.getBoundingClientRect();
+        const name = item.querySelector("[data-stop-name]")!.getBoundingClientRect();
         const time = item.querySelector("[data-stop-time]")!;
         return {
           dotCenterX: dot.left + dot.width / 2,
@@ -112,6 +112,23 @@ test("Routes tab lists every route by use with buses and a single rail", async (
   expect(items.filter(item => item.timeColor === "rgb(52, 211, 153)")).toHaveLength(4);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
   await page.screenshot({ path: info.outputPath("routes-schedule.png") });
+
+  // Tapping a stop opens it in place: a larger dot on the same rail, the time
+  // in a clock pill, and where the stop sits on the route.
+  const library = stops.nth(1);
+  await library.getByRole("button").click();
+  await expect(library.getByRole("button")).toHaveAttribute("aria-expanded", "true");
+  await expect(library.locator("[data-stop-fact]")).toHaveText([
+    "Stop 2 of 5", "8 min from Main Gate", "Reaches Administrative Building at 8:05 am",
+  ]);
+  await library.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)));
+  const opened = await timelineGeometry(page, "Campus Loop stops");
+  expect(Math.abs(opened.items[1].dotCenterX - opened.items[0].dotCenterX)).toBeLessThan(1);
+  for (let index = 1; index < opened.items.length; index += 1) {
+    expect(Math.abs(opened.items[index].segments[0].top - opened.items[index - 1].segments.at(-1)!.bottom)).toBeLessThan(1);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
+  await page.screenshot({ path: info.outputPath("routes-schedule-stop-open.png") });
 });
 
 test("three navigation tabs fit narrow phones and the schedule scrolls clear of them", async ({ page }, info) => {

@@ -202,6 +202,106 @@ describe("passenger Routes tab", () => {
     expect(direction.textContent).toMatch(/^Main Gate.*to Admin Building$/);
   });
 
+  it("opens one stop at a time in place with its time and where it sits on the route", async () => {
+    const user = userEvent.setup();
+    render(<RoutesTab />);
+    await expand("Campus Loop");
+    const stopButton = (name: RegExp) => within(card("Campus Loop")).getByRole("button", { name });
+    expect(document.querySelector("[data-stop-details]")).toBeNull();
+
+    await user.click(stopButton(/^Central Library/));
+    expect(stopButton(/^Central Library/).getAttribute("aria-expanded")).toBe("true");
+    const library = stopItems("Campus Loop")[1];
+    expect(library.hasAttribute("data-stop-selected")).toBe(true);
+    expect(within(library).getByText("Scheduled time")).toBeTruthy();
+    expect(Array.from(library.querySelectorAll("[data-stop-fact]"), fact => fact.textContent)).toEqual([
+      "Stop 2 of 5", "7 min from Main Gate", "Reaches Admin Building at 12:00 am",
+    ]);
+    expect(library.querySelector("[data-stop-time]")?.getAttribute("data-stop-time")).toBe("pill");
+    expect(stopItems("Campus Loop")[0].querySelector("[data-stop-time]")?.getAttribute("data-stop-time")).toBe("");
+
+    // Opening another stop closes the first; tapping it again closes it too.
+    await user.click(stopButton(/^Sports Complex/));
+    expect(stopButton(/^Central Library/).getAttribute("aria-expanded")).toBe("false");
+    // The closed stop slides shut, unreachable, then leaves the page.
+    const closing = library.querySelector("[data-stop-details]")!;
+    expect(closing.getAttribute("data-stop-details")).toBe("closing");
+    expect(closing.hasAttribute("inert")).toBe(true);
+    expect(closing.getAttribute("aria-hidden")).toBe("true");
+    await vi.waitFor(() => expect(library.querySelector("[data-stop-details]")).toBeNull());
+    const sports = stopItems("Campus Loop")[3];
+    expect(within(sports).getByText("No time scheduled for this stop yet")).toBeTruthy();
+    expect(Array.from(sports.querySelectorAll("[data-stop-fact]"), fact => fact.textContent))
+      .toEqual(["Stop 4 of 5", "Reaches Admin Building at 12:00 am"]);
+    await user.click(stopButton(/^Sports Complex/));
+    expect(document.querySelector('[data-stop-details="open"]')).toBeNull();
+
+    // Through midnight, the duration still counts forward.
+    await user.click(stopButton(/^Admin Building/));
+    expect(Array.from(stopItems("Campus Loop")[4].querySelectorAll("[data-stop-fact]"), fact => fact.textContent))
+      .toEqual(["Last stop", "16 h 55 min from Main Gate"]);
+  });
+
+  it("scrolls an opened stop into view once it has slid open", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      render(<RoutesTab />);
+      await expand("Campus Loop");
+      await userEvent.setup().click(within(card("Campus Loop")).getByRole("button", { name: /^Admin Building/ }));
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", behavior: "smooth" }));
+      expect(scrollIntoView.mock.contexts[0]).toBe(stopItems("Campus Loop")[4].querySelector("[data-stop-details]"));
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
+  });
+
+  describe("closest stop", () => {
+    const originalPermissions = Object.getOwnPropertyDescriptor(navigator, "permissions");
+    const originalGeolocation = Object.getOwnPropertyDescriptor(navigator, "geolocation");
+    function grantLocation(state: PermissionState, lat: number, lng: number) {
+      const getCurrentPosition = vi.fn((success: PositionCallback) =>
+        success({ coords: { latitude: lat, longitude: lng } } as GeolocationPosition));
+      Object.defineProperty(navigator, "permissions", { configurable: true, value: { query: vi.fn(async () => ({ state })) } });
+      Object.defineProperty(navigator, "geolocation", { configurable: true, value: { getCurrentPosition } });
+      return getCurrentPosition;
+    }
+    afterEach(() => {
+      for (const [key, descriptor] of [["permissions", originalPermissions], ["geolocation", originalGeolocation]] as const) {
+        if (descriptor) Object.defineProperty(navigator, key, descriptor);
+        else delete (navigator as unknown as Record<string, unknown>)[key];
+      }
+    });
+
+    it("opens the stop nearest the passenger when location is already allowed", async () => {
+      // Stops sit 0.001° (about 111 m) apart; this is next to the third.
+      grantLocation("granted", 23.0021, 72);
+      render(<RoutesTab />);
+      await expand("Campus Loop");
+      const hostel = await within(card("Campus Loop")).findByText("Closest stop");
+      expect(hostel.closest("li")).toBe(stopItems("Campus Loop")[2]);
+      expect(stopItems("Campus Loop")[2].hasAttribute("data-stop-selected")).toBe(true);
+    });
+
+    it("never asks for location and ignores stops more than 1.5 km away", async () => {
+      const prompt = grantLocation("prompt", 23.002, 72);
+      const { unmount } = render(<RoutesTab />);
+      await expand("Campus Loop");
+      await Promise.resolve();
+      expect(prompt).not.toHaveBeenCalled();
+      expect(document.querySelector("[data-closest-stop]")).toBeNull();
+      unmount();
+
+      const far = grantLocation("granted", 23.1, 72);
+      render(<RoutesTab />);
+      await expand("Campus Loop");
+      await vi.waitFor(() => expect(far).toHaveBeenCalled());
+      expect(document.querySelector("[data-closest-stop]")).toBeNull();
+      expect(document.querySelector("[data-stop-details]")).toBeNull();
+    });
+  });
+
   it("shows only the stop name for a single-stop route", () => {
     state.routes = [{ ...express, stops: express.stops.slice(0, 1) }];
     render(<RoutesTab />);
