@@ -1,0 +1,97 @@
+# Cloud Run service manifest for the staging backend (project bustrack-be165).
+#
+# The deploy-backend-staging job in .github/workflows/deploy.yml renders the
+# ${...} placeholders with envsubst and applies the result with
+# `gcloud run services replace`. Placeholders:
+#   IMAGE                    image reference pinned by digest
+#   RUNTIME_SERVICE_ACCOUNT  runtime identity (eki-backend-runtime)
+#   TRAFFIC                  traffic block, built by the job so that the
+#                            previous revision keeps serving until the new one
+#                            passes the /health gate
+#
+# Values and their reasons: docs/operations/STAGING_RUNTIME_CONFIG.md.
+# Never put a secret value in this file; secrets come from Secret Manager.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: eki-backend-staging
+  labels:
+    app: eki
+    env: staging
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # Scale to zero while workers stay off. Raise minScale to 1 when the
+        # worker handoff moves leadership to Cloud Run.
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "1"
+        # Instance-based CPU: the process runs background work outside requests.
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/startup-cpu-boost: "true"
+    spec:
+      serviceAccountName: ${RUNTIME_SERVICE_ACCOUNT}
+      containerConcurrency: 80
+      # Firebase Hosting proxies requests for at most 60 s.
+      timeoutSeconds: 60
+      containers:
+        - image: ${IMAGE}
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: CORS_ORIGIN
+              value: "https://bustrack-be165.web.app,https://bustrack-be165.firebaseapp.com"
+            - name: FIREBASE_DATABASE_URL
+              value: "https://bustrack-be165-default-rtdb.firebaseio.com"
+            - name: RETENTION_SWEEPER_ENABLED
+              value: "true"
+            - name: LEGACY_RTDB_RETIRED
+              value: "false"
+            - name: RIDE_SESSION_RETENTION_DAYS
+              value: "180"
+            - name: FEEDBACK_RETENTION_DAYS
+              value: "180"
+            - name: COMPLETED_TRIP_RETENTION_DAYS
+              value: "180"
+            - name: OPERATION_LOG_RETENTION_DAYS
+              value: "90"
+            - name: WORKER_ENABLED
+              value: "false"
+            - name: HTTPS_DEVICE_RATE_LIMIT_MODE
+              value: distributed
+            - name: RATE_LIMIT_SHARD_FACTOR
+              value: "1"
+            - name: OTEL_SDK_DISABLED
+              value: "true"
+            - name: LOG_LEVEL
+              value: info
+            - name: GOOGLE_MAPS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: google-maps-server-key
+                  # An explicit version, never "latest".
+                  key: "1"
+          startupProbe:
+            httpGet:
+              path: /live
+              port: 8080
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: 8080
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+  traffic:
+${TRAFFIC}

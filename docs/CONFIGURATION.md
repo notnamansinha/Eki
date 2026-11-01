@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-005 | 1.1 | Current | 2026-10-30 |
+| EKI-GEN-005 | 1.2 | Current | 2026-11-01 |
 
 ## 1. Purpose
 
@@ -213,6 +213,9 @@ These variables are set in the shell or by the scripts themselves. None belongs 
 | `NEXT_PUBLIC_GOOGLE_MAP_ID` | Secret | Strict production build |
 | `NEXT_PUBLIC_BACKEND_URL` | Secret | Strict production build and live backend check |
 | `RTDB_EXPECTED_REGION` | Variable | Optional region check in the RTDB preflight |
+| `CLOUD_RUN_REGION` | Variable | Region of the Cloud Run service and of the Artifact Registry repository `eki`; read only by the manual `deploy-backend-staging` job |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | Variable | Workload identity provider that the `deploy-backend-staging` job authenticates with |
+| `GCP_DEPLOY_SERVICE_ACCOUNT` | Variable | Service account that the `deploy-backend-staging` job impersonates |
 
 The release flow is described in [CI, deployment and releases](operations/CI_CD_AND_RELEASES.md).
 
