@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-001 | 3.1 | Current | 2026-11-01 |
+| EKI-OPS-001 | 3.2 | Current | 2026-11-01 |
 
 ## 1. Purpose
 
@@ -67,7 +67,7 @@ The `analyze` job runs CodeQL with the `security-extended` query suite for `java
 |---|---|---|---|---|
 | `deploy-staging` | Production verification completed with `success` for a `push` to `main` in this repository; or manual dispatch from `main` with `environment: staging` | `staging` | `bustrack-be165` | The verified commit (`workflow_run.head_sha`); on dispatch, the head of `main` at dispatch (`github.sha`), the same commit the backend job builds |
 | `deploy-production` | Manual dispatch from `main` with `environment: production` | `production` | `eki-production` | The head of `main` at dispatch |
-| `deploy-backend-staging` | Manual dispatch from `main` with `environment: staging` and `deploy_backend: true`; never automatic | `staging` | `bustrack-be165` | The head of `main` at dispatch |
+| `deploy-backend-staging` | Manual dispatch from `main` with `environment: staging` and `deploy_backend: true`, in the region chosen by `cloud_run_region`; never automatic | `staging` | `bustrack-be165` | The head of `main` at dispatch |
 
 `deploy-staging` waits for `deploy-backend-staging`. A skipped backend job does not block the release, and a failed one does.
 
@@ -87,13 +87,12 @@ Both jobs run the same steps against their own project. A failed step stops the 
 
 The optional job `deploy-backend-staging` runs before `deploy-staging`:
 
-1. Check that the three Cloud Run variables in Section 5.3 are set.
-2. Authenticate to Google Cloud as the deploy service account through workload identity federation. The workflow stores no key.
-3. Build `backend/Dockerfile` from the repository root, push the image to the Artifact Registry repository `eki` in `CLOUD_RUN_REGION` (the repository shall exist), and record the image digest.
-4. Render `deploy/cloud-run/staging.service.yaml` with the digest and apply it as a new revision. When a revision already serves traffic, the new revision receives none until step 6. Only a missing service counts as a first deployment: there the revision receives all traffic at once and step 6 only reports the result. Any other failure to read the service stops the job.
-5. Grant `allUsers` the Cloud Run invoker role. Firebase and device authentication remain the gate for every route.
-6. Check that the candidate URL serves the revision this run created, then poll its `/health` for up to 3 minutes and promote that revision only when it reports `status: ok`.
-7. Write the image digest, the previous revision and the rollback command to the job summary.
+1. Authenticate to Google Cloud as the deploy service account through workload identity federation. The workflow stores no key, and the job fixes the provider and the account.
+2. Build `backend/Dockerfile` from the repository root, push the image to the Artifact Registry repository `eki` in the region given by the `cloud_run_region` input, and record the image digest. The repository shall exist in that region, and the deploy service account needs `roles/artifactregistry.writer` on it.
+3. Render `deploy/cloud-run/staging.service.yaml` with the digest and apply it as a new revision. When a revision already serves traffic, the new revision receives none until step 5. Only a missing service counts as a first deployment: there the revision receives all traffic at once and step 5 only reports the result. Any other failure to read the service stops the job.
+4. Grant `allUsers` the Cloud Run invoker role. Firebase and device authentication remain the gate for every route.
+5. Check that the candidate URL serves the revision this run created, then poll its `/health` for up to 3 minutes and promote that revision only when it reports `status: ok`.
+6. Write the image digest, the previous revision and the rollback command to the job summary.
 
 Step 4 makes every Hosting release depend on a running, healthy backend. While the backend runs on a workstation (Section 7.1), a release fails if the workstation or tunnel is down.
 
@@ -105,9 +104,6 @@ Step 4 makes every Hosting release depend on a running, healthy backend. While t
 | `FIREBASE_TOKEN` | Environment secret | Steps 5 to 7 | Firebase CLI token for that project |
 | `FIREBASE_DATABASE_URL` | Environment secret | Step 2 | RTDB URL that the backend uses |
 | `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_DATABASE_URL`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAP_ID`, `NEXT_PUBLIC_BACKEND_URL` | Environment secrets | Steps 2 to 4 | Values compiled into the static frontend |
-| `CLOUD_RUN_REGION` | Environment variable | Backend job | Region of the Cloud Run service and of the Artifact Registry repository `eki` |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | Environment variable | Backend job | Full resource name of the workload identity provider that trusts this repository |
-| `GCP_DEPLOY_SERVICE_ACCOUNT` | Environment variable | Backend job | Email of the service account that the backend job impersonates |
 | `RTDB_EXPECTED_REGION` | Variable (optional) | Step 2 | Expected RTDB region, for example `asia-southeast1`. Not set on 2026-10-30, so step 2 checks only that both URLs name one instance. |
 
 The workflow passes no other build variables. `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_SITE_INDEXING` are therefore unset in deployed builds: canonical and social URLs fall back to `https://bustrack-be165.web.app` and indexing is enabled. A custom domain or a production build needs those two values added to the workflow ([DNS and domains](DNS_AND_DOMAINS.md)). The meaning of each variable is in [configuration](../CONFIGURATION.md).
