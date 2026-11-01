@@ -98,6 +98,23 @@ describe("HTTP edge as wired by server.ts", () => {
     expect(allowed.headers.get("access-control-allow-origin")).toBe("https://eki.example");
   });
 
+  it.each([
+    ["no credentials", "/api/health", {}, 401],
+    ["an expired token", "/api/health", { Authorization: "Bearer expired" }, 401],
+    ["the wrong role", "/api/health", { Authorization: "Bearer passenger" }, 403],
+    ["an unknown resource", "/api/no-such-resource", { Authorization: "Bearer passenger" }, 404],
+  ])("marks API responses for %s as not cacheable", async (_label, path, headers, status) => {
+    const response = await request("GET", path, headers);
+    expect(response.status).toBe(status);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("leaves the operational probes outside /api with their own cache header", async () => {
+    for (const path of ["/live", "/health"]) {
+      expect((await request("GET", path)).headers.get("cache-control")).toBe("no-store");
+    }
+  });
+
   it("keeps TRACE rejected and operational health admin-only", async () => {
     expect((await request("TRACE", "/live")).status).toBe(405);
     expect((await request("GET", "/api/health")).status).toBe(401);

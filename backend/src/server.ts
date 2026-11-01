@@ -132,6 +132,14 @@ const CORS_ORIGINS = [...new Set([
   ...(process.env.NODE_ENV === "production" ? [] : ["http://localhost:3000"]),
 ])];
 app.use(cors({ origin: CORS_ORIGINS, credentials: false, exposedHeaders: ["Location", "Retry-After", "X-Reconciliation-Complete", "X-Next-Cursor"] }));
+// Default for every API response, including authentication failures, rate-limit
+// rejections and parse errors that no route handler reaches. Hosting and other
+// shared caches must never store these. A route that needs another policy sets
+// its own header, which replaces this one.
+app.use("/api", (_req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
 app.use(createBrowserIngressLimiter(RATE_LIMIT_SHARD_FACTOR));
 app.use((req, res, next) => {
   if (req.method === "TRACE" || req.method === "CONNECT") {
