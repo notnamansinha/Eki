@@ -17,11 +17,11 @@
 #     NEXT_PUBLIC_GOOGLE_MAP_ID,
 #     NEXT_PUBLIC_BACKEND_URL
 #
-# Optional backend job (staging, manual dispatch only, issue #371). It needs
-# these environment variables (not secrets) on the staging environment:
-#   - CLOUD_RUN_REGION: region of the Cloud Run service and Artifact Registry
-#   - GCP_WORKLOAD_IDENTITY_PROVIDER: full provider resource name
-#   - GCP_DEPLOY_SERVICE_ACCOUNT: the deploy service account email
+# Optional backend job (staging, manual dispatch only, issue #371). It needs no
+# GitHub secrets or variables: the workload identity provider and the deploy
+# service account are fixed in the job, and the region is the cloud_run_region
+# dispatch input. The Artifact Registry repository `eki` shall exist in that
+# region, with roles/artifactregistry.writer granted to the deploy account.
 name: Deploy
 
 on:
@@ -43,6 +43,15 @@ on:
         required: false
         default: false
         type: boolean
+      cloud_run_region:
+        description: Region of the Cloud Run service and Artifact Registry (used only with deploy_backend)
+        required: false
+        default: asia-south2
+        type: choice
+        options:
+          - asia-south2
+          - us-central1
+          - asia-southeast1
 
 permissions:
   contents: read
@@ -76,30 +85,53 @@ jobs:
       SERVICE: eki-backend-staging
       RUNTIME_SERVICE_ACCOUNT: eki-backend-runtime@bustrack-be165.iam.gserviceaccount.com
       AR_REPOSITORY: eki
-      REGION: ${{ vars.CLOUD_RUN_REGION }}
+      WORKLOAD_IDENTITY_PROVIDER: projects/449313371438/locations/global/workloadIdentityPools/github/providers/github-actions
+      DEPLOY_SERVICE_ACCOUNT: eki-github-deployer@bustrack-be165.iam.gserviceaccount.com
+      REGION: ${{ github.event.inputs.cloud_run_region }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Require the Cloud Run environment variables
-        env:
-          CLOUD_RUN_REGION: ${{ vars.CLOUD_RUN_REGION }}
-          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
-        run: |
-          missing=0
-          for name in CLOUD_RUN_REGION GCP_WORKLOAD_IDENTITY_PROVIDER GCP_DEPLOY_SERVICE_ACCOUNT; do
-            if [ -z "${!name}" ]; then
-              echo "::error::Set the ${name} variable on the staging environment."
-              missing=1
-            fi
-          done
-          exit "$missing"
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - name: Refuse a second public regional service
+        run: |
+          # Every regional service is public and keeps its own in-memory rate limits, so a
+          # second region would double the request budget, including the billable Routes
+          # API limiter. Deploy one region at a time and delete the other first.
+          # Query each region on its own and stop if any query fails: a list across all
+          # regions can warn about unreachable regions and still exit 0 with a partial answer.
+          # Keep this list equal to the cloud_run_region options above.
+          services=""
+          known=""
+          for region in asia-south2 us-central1 asia-southeast1; do
+            if [ "$region" = "$REGION" ]; then
+              known=1
+            fi
+            if ! existing="$(gcloud run services list --project "$GCP_PROJECT" --region "$region" --filter "metadata.name=${SERVICE}" --format 'value(metadata.name)')"; then
+              echo "::error::Could not inspect Cloud Run services in ${region}; refusing to deploy."
+              exit 1
+            fi
+            if [ -n "$existing" ]; then
+              services="${services}${region}"$'\n'
+            fi
+          done
+          # The removed variable check also caught an empty region; an unguarded one
+          # would escape the check above.
+          if [ -z "$known" ]; then
+            echo "::error::The region '${REGION}' is not one of the guarded regions; refusing to deploy."
+            exit 1
+          fi
+          others="$(printf '%s\n' "$services" | grep -vx "$REGION" | grep -v '^$' || true)"
+          if [ -n "$others" ]; then
+            while read -r other; do
+              echo "::error::${SERVICE} already exists in ${other}. Delete it first: gcloud run services delete ${SERVICE} --project ${GCP_PROJECT} --region ${other}"
+            done <<< "$others"
+            exit 1
+          fi
       - name: Build and push the backend image
         run: |
           gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
