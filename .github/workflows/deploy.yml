@@ -106,7 +106,11 @@ jobs:
           # regions can warn about unreachable regions and still exit 0 with a partial answer.
           # Keep this list equal to the cloud_run_region options above.
           services=""
+          known=""
           for region in asia-south2 us-central1 asia-southeast1; do
+            if [ "$region" = "$REGION" ]; then
+              known=1
+            fi
             if ! existing="$(gcloud run services list --project "$GCP_PROJECT" --region "$region" --filter "metadata.name=${SERVICE}" --format 'value(metadata.name)')"; then
               echo "::error::Could not inspect Cloud Run services in ${region}; refusing to deploy."
               exit 1
@@ -115,6 +119,12 @@ jobs:
               services="${services}${region}"$'\n'
             fi
           done
+          # The removed variable check also caught an empty region; an unguarded one
+          # would escape the check above.
+          if [ -z "$known" ]; then
+            echo "::error::The region '${REGION}' is not one of the guarded regions; refusing to deploy."
+            exit 1
+          fi
           others="$(printf '%s\n' "$services" | grep -vx "$REGION" | grep -v '^$' || true)"
           if [ -n "$others" ]; then
             while read -r other; do

@@ -95,7 +95,7 @@ The optional job `deploy-backend-staging` runs before `deploy-staging`:
 6. Check that the candidate URL serves the revision this run created, then poll its `/health` for up to 3 minutes and promote that revision only when it reports `status: ok`.
 7. Write the image digest, the previous revision and the rollback command to the job summary.
 
-The job therefore deploys one region at a time. To compare regions, dispatch the first region, measure it, delete its service, then dispatch the next.
+The job therefore deploys one region at a time. To compare regions, dispatch the first region, measure it, delete its service, then dispatch the next. Each region has its own service URL, `https://eki-backend-staging-449313371438.<region>.run.app`. Set the staging secret `NEXT_PUBLIC_BACKEND_URL` to the new URL before the dispatch; otherwise `deploy-staging` in the same run checks the deleted service and fails. A new region is a first deployment (step 4): its first revision serves all traffic before `/health` is checked, and there is no earlier revision to roll back to.
 
 Step 4 makes every Hosting release depend on a running, healthy backend. While the backend runs on a workstation (Section 7.1), a release fails if the workstation or tunnel is down.
 
