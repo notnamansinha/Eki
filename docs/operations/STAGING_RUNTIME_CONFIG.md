@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-029 | 1.0 | Proposed | 2026-10-31 |
+| EKI-OPS-029 | 1.0 | Proposed | 2026-11-01 |
 
 ## 1. Purpose
 
@@ -60,12 +60,12 @@ Each secret grants `roles/secretmanager.secretAccessor` to the runtime account i
 
 | Secret | Variable | Required |
 |---|---|---|
-| `google-maps-server-key` | `GOOGLE_MAPS_API_KEY` | Needed for place search and route polylines. Without it the backend starts, Places returns 503 and the polyline endpoint returns 502 or 503. |
-| `otlp-exporter-headers` | OTLP exporter headers | Optional. Do not mount it until it has a version: Cloud Run rejects a secret with no version. |
+| `google-maps-server-key` | `GOOGLE_MAPS_API_KEY` | Needed for place search and route polylines. Without it the backend starts, and both endpoints return 503 (`PLACES_NOT_CONFIGURED`, `ROUTING_NOT_CONFIGURED`). With the key set, a polyline 502 (`ROUTING_UPSTREAM_FAILURE`) or 503 (`ROUTING_RATE_LIMITED`) comes from the Routes API, not from a missing secret. |
+| `otlp-exporter-headers` | `OTEL_EXPORTER_OTLP_HEADERS` | Optional. Do not mount it until it has a version: Cloud Run rejects a secret with no version. |
 
 ## 5. Retention before enabling the sweeper
 
-Production forces `RETENTION_SWEEPER_ENABLED=true`, and the sweeper deletes data on its first run. Read [RTDB retention](RTDB_RETENTION.md) before the first deployment, then run the inventory described in [Section 5.1 of that document](RTDB_RETENTION.md#51-inventory-with-a-dry-run) against the staging project. The inventory covers the documented RTDB scope only. It is not a Firestore dry run.
+Production forces `RETENTION_SWEEPER_ENABLED=true`, and the sweeper deletes data on its first run. The sweeper runs only in the worker leader, so it first runs when `WORKER_ENABLED` becomes `true` (Section 3). Read [RTDB retention](RTDB_RETENTION.md) before the first deployment, then run the inventory described in [Section 5.1 of that document](RTDB_RETENTION.md#51-inventory-with-a-dry-run) against the staging project. The inventory covers the documented RTDB scope only. It is not a Firestore dry run.
 
 Take a Firestore and RTDB backup before the sweeper first runs against data that must survive.
 
@@ -88,7 +88,7 @@ The correct hop count has not been measured. On the deployed staging service, se
 
 ## 8. Verification
 
-After deployment, `GET /live` returns 200. `GET /health` returns 503 for about the first 10 s while the Firestore and RTDB probes run, then returns 200 and stays there. A startup refusal in the logs names the variable that failed.
+After deployment, `GET /live` returns 200. `GET /health` returns 503 until the first Firestore and RTDB probes both succeed. The probes run concurrently with a 5 s timeout each and repeat every 30 s, so the first 200 can take more than one cycle. `/health` returns 503 again when a later probe fails or no probe has succeeded in the last 65 s. A startup refusal in the logs names the variable that failed.
 
 ## 9. References
 
