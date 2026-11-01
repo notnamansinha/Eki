@@ -77,7 +77,8 @@ async function get(fetchImpl, url, headers = {}) {
 }
 
 const isRedirect = (status) => status >= 300 && status < 400;
-const noStore = (value) => /\bno-store\b/i.test(value);
+// Match the directive exactly: a substring test would also accept `x-no-store`.
+const noStore = (value) => value.split(",").some((directive) => directive.trim().toLowerCase() === "no-store");
 
 /** Each check returns `[ok, detail]`. A thrown error fails the check. */
 const CHECKS = [
@@ -152,6 +153,8 @@ const CHECKS = [
 export async function verifyHostingRewrites({ hosting, direct, samples = 30, requireReady = false,
   maxAddedP95Ms = null, fetchImpl = fetch, now = () => performance.now() }) {
   const ctx = { hosting: originOf(hosting, "--hosting"), fetchImpl, requireReady, unauthenticated: null };
+  // Validate both origins before any request, so a bad argument is never reported as a failed check.
+  const directOrigin = direct ? originOf(direct, "--direct") : null;
   const checks = [];
   for (const [name, run] of CHECKS) {
     try {
@@ -176,8 +179,8 @@ export async function verifyHostingRewrites({ hosting, direct, samples = 30, req
   const latency = { hosting: null, direct: null, addedP50: null, addedP95: null };
   try {
     latency.hosting = await timeRequests(ctx.hosting);
-    if (direct) {
-      latency.direct = await timeRequests(originOf(direct, "--direct"));
+    if (directOrigin) {
+      latency.direct = await timeRequests(directOrigin);
       latency.addedP50 = latency.hosting.p50 - latency.direct.p50;
       latency.addedP95 = latency.hosting.p95 - latency.direct.p95;
     }

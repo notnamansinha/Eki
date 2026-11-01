@@ -66,7 +66,8 @@ const request = (method: string, path: string, headers: Record<string, string> =
     const outgoing = http.request(`${origin}${path}`, { method, headers }, incoming => {
       const chunks: Buffer[] = [];
       incoming.on("data", chunk => chunks.push(chunk));
-      incoming.on("end", () => resolve(new Response(Buffer.concat(chunks), {
+      // A Response with a null-body status (204 for a CORS preflight) cannot carry a body.
+      incoming.on("end", () => resolve(new Response([204, 205, 304].includes(incoming.statusCode ?? 0) ? null : Buffer.concat(chunks), {
         status: incoming.statusCode,
         headers: Object.entries(incoming.headers).flatMap(([name, value]) =>
           value === undefined ? [] : [[name, Array.isArray(value) ? value.join(", ") : value] as [string, string]]),
@@ -106,6 +107,17 @@ describe("HTTP edge as wired by server.ts", () => {
   ])("marks API responses for %s as not cacheable", async (_label, path, headers, status) => {
     const response = await request("GET", path, headers);
     expect(response.status).toBe(status);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("marks the CORS preflight for an API path as not cacheable", async () => {
+    const response = await request("OPTIONS", "/api/health", {
+      Origin: "https://eki.example",
+      "Access-Control-Request-Method": "GET",
+      "Access-Control-Request-Headers": "authorization",
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://eki.example");
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 

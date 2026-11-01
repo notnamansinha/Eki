@@ -115,6 +115,23 @@ describe("Hosting rewrite verification", () => {
     assert.ok(failed(report).includes("API responses are not cacheable"));
   });
 
+  it("matches the no-store directive exactly, not as a substring", async () => {
+    for (const cacheControl of ["public, max-age=60, x-no-store", "no-store-foo", "max-age=60"]) {
+      const report = await run(site({
+        override: (p) => (p === "/api/health" ? json(401, { error: "x" }, { "cache-control": cacheControl }) : undefined),
+      }));
+      assert.ok(failed(report).includes("API responses are not cacheable"), cacheControl);
+    }
+    for (const cacheControl of ["No-Store", "private,no-store", "no-store, max-age=0"]) {
+      const report = await run(site({
+        override: (p, init) => (p === "/api/health" && !new Headers(init.headers).get("authorization")
+          ? json(401, { error: "Missing or malformed Authorization header." }, { "cache-control": cacheControl })
+          : undefined),
+      }));
+      assert.deepEqual(failed(report), [], cacheControl);
+    }
+  });
+
   it("accepts private, no-store as non-cacheable", async () => {
     const report = await run(site({
       override: (p, init) => (p === "/api/health" && !new Headers(init.headers).get("authorization")
@@ -173,6 +190,14 @@ describe("Hosting rewrite verification", () => {
   it("fails when Hosting adds more than the allowed p95 latency", async () => {
     const report = await run(site(), { direct: DIRECT, maxAddedP95Ms: 20 });
     assert.deepEqual(failed(report), ["Added p95 latency through Hosting is at most 20 ms"]);
+  });
+
+  it("rejects an invalid --direct origin before sending any request", async () => {
+    for (const direct of ["http://eki-backend.run.app", "https://eki-backend.run.app/live", "not a url"]) {
+      const s = site();
+      await assert.rejects(() => run(s, { direct }), /--direct/, direct);
+      assert.equal(s.state.requests.length, 0, `requests were sent for ${direct}`);
+    }
   });
 
   it("rejects an origin that is not https or carries a path", async () => {
