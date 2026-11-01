@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-001 | 1.0 | Current | 2026-10-30 |
+| EKI-SEC-001 | 1.1 | Current | 2026-11-02 |
 
 ## 1. Purpose
 
@@ -12,7 +12,7 @@ This policy states which Eki code receives security fixes, how to report a vulne
 
 | Component | Supported | Notes |
 |---|---|---|
-| Web app, backend, Firestore and RTDB rules, Hosting configuration | Head of `main` | Staging deploys the commit of each successful push build on `main`. Production deploys only by a manual workflow run from `main`. See [CI/CD and releases](docs/operations/CI_CD_AND_RELEASES.md). |
+| Web app, backend, Firestore and RTDB rules, Hosting configuration | Head of `main` | Staging deploys the web app and rules from each successful push build on `main`, and only commits that `main` contains. The staging backend runs the head of `main` at the last `deploy-backend-staging` dispatch. Production deploys only by a manual workflow run from `main`. See [CI/CD and releases](docs/operations/CI_CD_AND_RELEASES.md). |
 | Tracker firmware | Signed builds of the `esp32dev-secure` PlatformIO environment | The `esp32dev`, `esp32dev-quiet` and `esp32dev-journal` environments are development builds without Secure Boot or flash encryption. |
 | Other branches, forks and earlier commits | Not supported | Reproduce a finding on `main` before reporting it. |
 
@@ -63,7 +63,7 @@ Out of scope:
 | Signed firmware image (`firmware-signed.bin`) | Contains the compiled `secrets.h` values. Publish it for OTA only on a backend that serves one device, at a URL protected like the device secret ([hardware security provisioning](docs/security/HARDWARE_SECURITY_PROVISIONING.md#6-signed-ota-release-and-rollback)) |
 | Secure Boot signing key | Offline signing environment ([key custody](hardware/keys/README.md)) |
 | Firebase deploy token | GitHub environment secret `FIREBASE_TOKEN` |
-| Server Google Maps key | Backend environment (`GOOGLE_MAPS_API_KEY`) |
+| Server Google Maps key | Backend environment (`GOOGLE_MAPS_API_KEY`); on Cloud Run, Secret Manager secret `google-maps-server-key` |
 
 Rules for contributors:
 

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-002 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-002 | 1.1 | Current | 2026-11-02 |
 
 ## 1. Purpose
 
@@ -13,7 +13,7 @@ This procedure connects custom domains to the Eki frontend and backend, and list
 | Component | Origin | Notes |
 |---|---|---|
 | Frontend | `https://bustrack-be165.web.app` (also `https://bustrack-be165.firebaseapp.com`) | Firebase Hosting default domains; no custom domain is configured in the repository |
-| Backend | The ngrok assigned domain | The domain belongs to the ngrok account; there are no DNS records to manage ([ngrok tunnel](NGROK_TUNNEL.md)) |
+| Backend (staging) | `https://eki-backend-staging-449313371438.asia-south2.run.app` | The Cloud Run service URL; there are no DNS records to manage. Devices flashed earlier may name the offline ngrok domain ([ngrok tunnel](NGROK_TUNNEL.md)). |
 | Production frontend (planned) | `https://eki-production.web.app` | Named in `.github/workflows/deploy.yml`; the project is not provisioned |
 
 A custom domain changes three build or runtime values, each in a different place:
@@ -22,7 +22,7 @@ A custom domain changes three build or runtime values, each in a different place
 |---|---|---|
 | `NEXT_PUBLIC_SITE_URL` | Frontend build | Canonical, Open Graph, robots and sitemap URLs. Unset, it falls back to `https://bustrack-be165.web.app`. |
 | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Frontend build | Host of the Firebase Auth helper (`/__/auth/`) |
-| `CORS_ORIGIN` | Backend `.env` | Comma-separated frontend origins that may call the API |
+| `CORS_ORIGIN` | Backend `.env`, or `deploy/cloud-run/staging.service.yaml` for the staging service | Comma-separated frontend origins that may call the API |
 
 `NEXT_PUBLIC_SITE_INDEXING=false` keeps a test or preview build out of search indexes. All three frontend values are compiled into the static export, so a change needs a rebuild and redeploy. Variable details are in [configuration](../CONFIGURATION.md).
 
@@ -31,7 +31,7 @@ A custom domain changes three build or runtime values, each in a different place
 1. In the Firebase console, open Hosting for the project and add the custom domain. Expected: the console lists the DNS records to create.
 2. At the DNS provider, create exactly those records: a TXT record that proves ownership and A records (AAAA as well in advanced setup) that point to Hosting. Remove existing A, AAAA or CNAME records for that name that point elsewhere [1]. Expected: after propagation the console shows the domain as connected and issues a certificate.
 3. Add `NEXT_PUBLIC_SITE_URL: https://<frontend-host>` to the build step of `.github/workflows/deploy.yml` through a pull request; the workflow does not pass it today. Set the `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` secret as described in Section 4. Expected: after the next Deploy run, the page's canonical link uses the custom host.
-4. Add `https://<frontend-host>` to `CORS_ORIGIN` on the backend and restart it. Keep the `web.app` origin as well: the Deploy workflow's backend check sends `Origin: https://bustrack-be165.web.app` and fails without it.
+4. Add `https://<frontend-host>` to `CORS_ORIGIN` on the backend and restart it. For the staging service, change `deploy/cloud-run/staging.service.yaml` through a pull request, then dispatch Deploy from `main` with `environment: staging` and `deploy_backend: true`. Keep the `web.app` origin as well: the Deploy workflow's backend check sends `Origin: https://bustrack-be165.web.app` and fails without it.
 5. Add the host to the HTTP referrer restrictions of the Firebase browser API key and the Maps JavaScript API key in the Google Cloud console. Expected: maps load on the custom host.
 
 ## 4. Firebase Authentication domains
@@ -48,7 +48,7 @@ Any backend hostname must serve HTTPS with a certificate chain that ends in the 
 
 | Option | DNS work | Frontend and device settings |
 |---|---|---|
-| Current: ngrok domain | None | `NEXT_PUBLIC_BACKEND_URL` and firmware `BACKEND_URL` name the ngrok origin |
+| Current: Cloud Run service URL | None | `NEXT_PUBLIC_BACKEND_URL` names the Cloud Run origin; trackers built with the ngrok origin need a reflash with it |
 | Proposed: same origin as the frontend through Hosting rewrites ([proposal](CI_CD_AND_RELEASES.md#72-proposed-migration-to-cloud-run)) | None beyond Section 3 | Both settings name the frontend origin; the device trusts the Hosting certificate's root CA |
 | Separate API host, for example `api.<domain>` | Create the records that the Cloud Run domain mapping or load balancer shows | Both settings name the API origin; the strict build adds it to the CSP; backend `CORS_ORIGIN` lists the frontend origins |
 

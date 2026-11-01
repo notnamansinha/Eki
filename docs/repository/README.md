@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-001 | 1.1 | Current | 2026-10-30 |
+| EKI-GEN-001 | 1.2 | Current | 2026-11-02 |
 
 Eki tracks university buses in real time. An ESP32 tracker with a NEO-M8N GNSS receiver in each bus sends its position to an Express backend, which runs each ride through its stops in order and publishes live state through Firebase. Passengers follow buses and board rides in a progressive web app; administrators manage routes, the fleet and ride operations.
 
@@ -92,7 +92,7 @@ This runs lint, all unit tests, the production build with service worker and CSP
 
 ## 7. Deployment status
 
-A green CI run on a push to `main` deploys Firebase Hosting, Firestore and RTDB rules, and Firestore indexes to the staging project. Production deploys run only by manual dispatch from `main`; the approving reviewer depends on a `production` GitHub environment and an `eki-production` Firebase project, neither of which exists yet. No workflow deploys the Express backend: `backend/Dockerfile` builds its container image, which CI only smoke-tests, and bench and demonstration setups run the backend on a workstation behind an [ngrok tunnel](../operations/NGROK_TUNNEL.md). A university production release also needs owned backend hosting, approved retention, monitoring, protected firmware provisioning and field acceptance; see the [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md), the [deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) and [CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md).
+A green CI run on a push to `main` deploys Firebase Hosting, Firestore and RTDB rules, and Firestore indexes to the staging project. Production deploys run only by manual dispatch from `main`; the approving reviewer depends on a `production` GitHub environment and an `eki-production` Firebase project, neither of which exists yet. Only the manual job `deploy-backend-staging` deploys the Express backend: on 2026-11-01 it deployed the container built from `backend/Dockerfile` to the Cloud Run staging service in `asia-south2`, which the staging web app uses. Bench and demonstration setups can still run the backend on a workstation behind an [ngrok tunnel](../operations/NGROK_TUNNEL.md). A university production release also needs owned backend hosting, approved retention, monitoring, protected firmware provisioning and field acceptance; see the [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md), the [deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) and [CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md).
 
 Report vulnerabilities as described in the [security policy](SECURITY.md).
 

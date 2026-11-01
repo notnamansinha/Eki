@@ -27,7 +27,7 @@ Detail lives in other documents:
 
 An ESP32 tracker in each bus reads a NEO-M8N GNSS (satellite positioning) receiver and posts a fix over HTTPS about once per second to an Express backend. The backend authenticates the device, writes the fix to Firebase Realtime Database (RTDB) and matches it to the bus route. A background worker, which runs in exactly one backend process at a time, advances the ride through its ordered stops and records ride history in Cloud Firestore. Passengers and administrators use a Next.js progressive web app (PWA) served by Firebase Hosting. The PWA receives live bus state through Firebase SDK listeners and sends commands to the backend over HTTPS. Terms are defined in the [glossary](../GLOSSARY.md).
 
-Current state: every green push to `main` deploys the web app and database rules to the staging Firebase project. The backend runs on one workstation behind an ngrok tunnel (Section 5.2), and no production environment exists yet. Stop progress is validated on simulated rides only, and fleet firmware security is not yet proven on hardware. The [cost model](../cost/COST_MODEL.md#11-summary) estimates USD 80 to 87 a month for a three-bus pilot and USD 443 to 556 a month for a ten-bus campus service with today's hosting. The [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md#11-summary) lists what remains open.
+Current state: every green push to `main` deploys the web app and database rules to the staging Firebase project. The staging backend runs on the Cloud Run service `eki-backend-staging` in `asia-south2`, which scales to zero and runs with workers disabled (Section 5.2), and no production environment exists yet. Stop progress is validated on simulated rides only, and fleet firmware security is not yet proven on hardware. The [cost model](../cost/COST_MODEL.md#11-summary) estimates USD 80 to 87 a month for a three-bus pilot and USD 443 to 556 a month for a ten-bus campus service with today's hosting. The [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md#11-summary) lists what remains open.
 
 ## 2. Stakeholders and concerns
 
@@ -117,7 +117,7 @@ Every backend process serves HTTP and processes the telemetry it receives, inclu
 
 | Environment | Firebase project | Deployed by | What is deployed | Web origin |
 |---|---|---|---|---|
-| Staging (GitHub environment `staging`) | `bustrack-be165`, also the `.firebaserc` default | `.github/workflows/deploy.yml` after a successful "Production verification" run on a push to `main`, or a manual dispatch from `main` | Hosting, Firestore rules and indexes, RTDB rules | `https://bustrack-be165.web.app` |
+| Staging (GitHub environment `staging`) | `bustrack-be165`, also the `.firebaserc` default | `.github/workflows/deploy.yml` after a successful "Production verification" run on a push to `main`, or a manual dispatch from `main` | Hosting, Firestore rules and indexes, RTDB rules; the backend to Cloud Run only by the manual job `deploy-backend-staging` | `https://bustrack-be165.web.app` |
 | Production (GitHub environment `production`) | `eki-production`, named in the workflow but not yet provisioned | Manual dispatch from `main`. Approval depends on required reviewers on the `production` environment, which does not exist yet ([CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md#55-repository-settings)) | Same as staging | `https://eki-production.web.app` |
 | Local development | A developer's own Firebase project; emulators for rules and browser suites | `npm run dev` | Frontend on port 3000, backend on port 4000 | `http://localhost:3000` |
 
@@ -164,7 +164,7 @@ Since 2026-11-01 the staging web app sends its REST commands to the Cloud Run se
 
 ### 5.3 Proposed managed backend
 
-Partly implemented: the staging service exists (Section 5.2); Hosting rewrites, the worker handoff, the tracker reflash and production are not. The target is to run the existing container on Cloud Run in the Google Cloud project behind `bustrack-be165`, reach it through Firebase Hosting rewrites for `/api/**`, `/health` and `/live` or through a stable API domain, and keep the existing Authentication, Firestore and RTDB. The workers run outside request lifetimes, so the service needs CPU allocated outside requests and at least one minimum instance. Cloud Run needs a billing account linked to the Firebase project, which moves it to the Blaze plan [4]. Before the tunnel can be retired, the project needs a backend release workflow with rollback, a staged handoff of the worker lease, and trackers reflashed with the new origin. Production hosting is tracked in [issue #122](https://github.com/notnamansinha/Eki/issues/122).
+Partly implemented: the staging service exists (Section 5.2); Hosting rewrites, the worker handoff, the tracker reflash and production are not. The target is to run the existing container on Cloud Run in the Google Cloud project behind `bustrack-be165`, reach it through Firebase Hosting rewrites for `/api/**`, `/health` and `/live` or through a stable API domain, and keep the existing Authentication, Firestore and RTDB. The workers run outside request lifetimes, so the service needs CPU allocated outside requests and at least one minimum instance. Cloud Run needs a billing account linked to the Firebase project, which moves it to the Blaze plan [4]. The backend release workflow with rollback exists. Before the tunnel can be retired, the project needs a staged handoff of the worker lease, at least one minimum instance after it, and trackers reflashed with the new origin. Production hosting is tracked in [issue #122](https://github.com/notnamansinha/Eki/issues/122).
 
 ## 6. Runtime views
 
@@ -301,7 +301,7 @@ Declared versions come from the `package.json` files and `hardware/platformio.in
 
 ## 10. Constraints and risks
 
-- The backend depends on one workstation and a tunnel (Section 5.2). Production hosting is not in place.
+- The staging backend depends on one Cloud Run instance that scales to zero and runs with workers disabled (Section 5.2). Production hosting is not in place.
 - RTDB is in Iowa while users, trackers and Firestore are in India, which adds a transcontinental hop to every live write and read.
 - The 15 m arrival corridor and the matcher's speed check are validated on synthetic tracks only ([field-ride repairs of 2026-10-29](../testing/PASSENGER_FIELD_RIDE_REPAIRS_2026_10_29.md)). Moving-bus acceptance is open.
 - Retention periods need approval by the university's data owner before production use.

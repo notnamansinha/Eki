@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-006 | 2.0 | Current | 2026-10-30 |
+| EKI-GEN-006 | 2.1 | Current | 2026-11-02 |
 
 ## 1. Purpose
 
@@ -67,7 +67,7 @@ Terms are sorted alphabetically, ignoring case and backticks.
 | Map load | One billed use of the Google Maps Dynamic Maps SKU. Eki counts a map load for each `google.maps.Map` the browser constructs; every map sets `reuseMaps`, so a page constructs at most one and later map views on that page reattach it ([EKI-ADR-004](design/GOOGLE_MAP_REUSE_DECISION.md)). |
 | `motionState` | The motion reported with each fix: `moving`, `stopped` or `uncertain`. `uncertain` marks a fix that cannot be trusted. |
 | NEO-M8N | The u-blox GNSS receiver module in each tracker. |
-| ngrok tunnel | A hosted tunnel service that gives the backend on a workstation a fixed public HTTPS address. Trackers and browsers reach the backend through it until managed hosting exists; see [ngrok tunnel](operations/NGROK_TUNNEL.md). |
+| ngrok tunnel | A hosted tunnel service that gives the backend on a workstation a fixed public HTTPS address. Bench setups and trackers built with the tunnel origin use it; the staging web app uses the Cloud Run service `eki-backend-staging` instead. See [ngrok tunnel](operations/NGROK_TUNNEL.md). |
 | `OFF_ROUTE` | Route state after two consecutive reliable moving samples do not match the route, or after one reliable moving sample at least 120 m from it. It triggers a reroute. |
 | Operator | The person assigned to drive a bus. The record in the `drivers` collection links a Firebase Auth UID to one bus, and the account's role is `driver`. |
 | Origin departure | The point at which a ride leaves `pre_departure`: 50 m from the first stop, or half the distance to the second stop if that is shorter, but at least 10 m. |
@@ -90,7 +90,7 @@ Terms are sorted alphabetically, ignoring case and backticks.
 | `signalState` | Signal state on a live record: `connected`, `gnss_lost`, or `lost` once the worker marks the bus offline. |
 | `skipped_gnss_gap` | Stop evidence for a stop passed during a GNSS gap, credited when the bus is later observed at a following stop. |
 | Spark plan | The Firebase no-cost plan. When a product exceeds its Spark quota, Firebase turns that product off until the quota resets or the project moves to the Blaze plan. |
-| Staging | The Firebase project `bustrack-be165`, which receives the frontend and rules after every green push to `main`. The Deploy workflow names a production project, `eki-production`, deployed only by manual dispatch, but that project and its GitHub environment are not yet provisioned; see [CI, deployment and releases](operations/CI_CD_AND_RELEASES.md). |
+| Staging | The Firebase project `bustrack-be165`, which receives the frontend and rules after every green push to `main`. Its backend is the Cloud Run service `eki-backend-staging`, deployed only by manual dispatch. The Deploy workflow names a production project, `eki-production`, deployed only by manual dispatch, but that project and its GitHub environment are not yet provisioned; see [CI, deployment and releases](operations/CI_CD_AND_RELEASES.md). |
 | Stop evidence | How a passed stop was established, as recorded in ride history: `gnss_progress` (observed arrival), `passed_unobserved`, `skipped_gnss_gap` or `recovered_checkpoint`. |
 | Telemetry | The HTTPS requests a device sends to `POST /api/devices/<deviceId>/telemetry`, each carrying one fix. |
 | Terminal arrival confirmation | The rule that a ride completes only after reliable stopped fixes at the final stop span `TERMINAL_ARRIVAL_CONFIRMATION_MS`. |
