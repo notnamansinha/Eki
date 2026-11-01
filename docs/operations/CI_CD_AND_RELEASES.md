@@ -65,7 +65,7 @@ The `analyze` job runs CodeQL with the `security-extended` query suite for `java
 
 | Job | Runs when | Environment | Firebase project | Checked-out commit |
 |---|---|---|---|---|
-| `deploy-staging` | Production verification completed with `success` for a `push` to `main` in this repository; or manual dispatch from `main` with `environment: staging` | `staging` | `bustrack-be165` | The verified commit (`workflow_run.head_sha`); on dispatch, the head of `main` |
+| `deploy-staging` | Production verification completed with `success` for a `push` to `main` in this repository; or manual dispatch from `main` with `environment: staging` | `staging` | `bustrack-be165` | The verified commit (`workflow_run.head_sha`); on dispatch, the head of `main` at dispatch (`github.sha`), the same commit the backend job builds |
 | `deploy-production` | Manual dispatch from `main` with `environment: production` | `production` | `eki-production` | The head of `main` at dispatch |
 | `deploy-backend-staging` | Manual dispatch from `main` with `environment: staging` and `deploy_backend: true`; never automatic | `staging` | `bustrack-be165` | The head of `main` at dispatch |
 
@@ -90,9 +90,9 @@ The optional job `deploy-backend-staging` runs before `deploy-staging`:
 1. Check that the three Cloud Run variables in Section 5.3 are set.
 2. Authenticate to Google Cloud as the deploy service account through workload identity federation. The workflow stores no key.
 3. Build `backend/Dockerfile` from the repository root, push the image to the Artifact Registry repository `eki` in `CLOUD_RUN_REGION` (the repository shall exist), and record the image digest.
-4. Render `deploy/cloud-run/staging.service.yaml` with the digest and apply it as a new revision. When a revision already serves traffic, the new revision receives none until step 6. On the first deployment no earlier revision exists, so the revision receives all traffic at once and step 6 only reports the result.
+4. Render `deploy/cloud-run/staging.service.yaml` with the digest and apply it as a new revision. When a revision already serves traffic, the new revision receives none until step 6. Only a missing service counts as a first deployment: there the revision receives all traffic at once and step 6 only reports the result. Any other failure to read the service stops the job.
 5. Grant `allUsers` the Cloud Run invoker role. Firebase and device authentication remain the gate for every route.
-6. Poll the candidate's `/health` for up to 3 minutes and promote the candidate only when it reports `status: ok`.
+6. Check that the candidate URL serves the revision this run created, then poll its `/health` for up to 3 minutes and promote that revision only when it reports `status: ok`.
 7. Write the image digest, the previous revision and the rollback command to the job summary.
 
 Step 4 makes every Hosting release depend on a running, healthy backend. While the backend runs on a workstation (Section 7.1), a release fails if the workstation or tunnel is down.

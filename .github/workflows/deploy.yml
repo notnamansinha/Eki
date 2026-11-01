@@ -79,6 +79,8 @@ jobs:
       REGION: ${{ vars.CLOUD_RUN_REGION }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Require the Cloud Run environment variables
         env:
           CLOUD_RUN_REGION: ${{ vars.CLOUD_RUN_REGION }}
@@ -111,8 +113,17 @@ jobs:
         run: |
           # The revision that serves traffic now, not merely the newest one: an
           # earlier candidate that failed the gate must not become the rollback target.
-          previous="$(gcloud run services describe "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --format json 2>/dev/null \
-            | jq -r '[.status.traffic[]? | select((.percent // 0) > 0)] | sort_by(-.percent) | .[0].revisionName // empty' || true)"
+          # Only a missing service is a first deployment. Any other describe
+          # failure stops here, because a first deployment skips the gate.
+          if service_json="$(gcloud run services describe "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --format json 2>"$RUNNER_TEMP/describe.err")"; then
+            previous="$(jq -r '[.status.traffic[]? | select((.percent // 0) > 0)] | sort_by(-.percent) | .[0].revisionName // empty' <<< "$service_json")"
+          elif grep -q "Cannot find service" "$RUNNER_TEMP/describe.err"; then
+            previous=""
+          else
+            cat "$RUNNER_TEMP/describe.err" >&2
+            echo "::error::Could not read the service ${SERVICE}. Refusing to deploy without the /health gate."
+            exit 1
+          fi
           echo "PREVIOUS_REVISION=${previous}" >> "$GITHUB_ENV"
           if [ -n "$previous" ]; then
             TRAFFIC="$(printf '    - revisionName: %s\n      percent: 100\n    - latestRevision: true\n      percent: 0\n      tag: candidate' "$previous")"
@@ -131,32 +142,44 @@ jobs:
         timeout-minutes: 5
         run: |
           service_json="$(gcloud run services describe "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --format json)"
+          new_revision="$(jq -r '.status.latestCreatedRevisionName // empty' <<< "$service_json")"
           if [ -n "$PREVIOUS_REVISION" ]; then
-            url="$(jq -r '.status.traffic[] | select(.tag == "candidate") | .url' <<< "$service_json")"
+            url="$(jq -r '[.status.traffic[]? | select(.tag == "candidate")][0].url // empty' <<< "$service_json")"
+            candidate="$(jq -r '[.status.traffic[]? | select(.tag == "candidate")][0].revisionName // empty' <<< "$service_json")"
           else
-            url="$(jq -r '.status.url' <<< "$service_json")"
+            url="$(jq -r '.status.url // empty' <<< "$service_json")"
+            candidate="$(jq -r '.status.latestReadyRevisionName // empty' <<< "$service_json")"
           fi
-          if [ -z "$url" ] || [ "$url" = "null" ]; then
-            echo "::error::No URL found for the candidate revision."
+          # The candidate tag follows the latest ready revision. Gate only when it
+          # is the revision this run created, never the one already serving.
+          if [ -z "$url" ] || [ -z "$new_revision" ] || [ "$candidate" != "$new_revision" ] || [ "$candidate" = "$PREVIOUS_REVISION" ]; then
+            echo "::error::The candidate URL does not serve the new revision ${new_revision:-unknown} (found ${candidate:-none})."
             exit 1
           fi
-          # /health reports degraded for the first seconds while the Firestore and RTDB probes run.
-          for attempt in $(seq 1 36); do
+          echo "CANDIDATE_REVISION=${candidate}" >> "$GITHUB_ENV"
+          # /health stays 503 until the first Firestore and RTDB probes succeed.
+          # The deadline keeps the last attempt (10 s curl, 5 s sleep) inside the step timeout.
+          deadline=$((SECONDS + 180))
+          attempt=0
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            attempt=$((attempt + 1))
             body="$(curl -fsS --max-time 10 "${url}/health" 2>/dev/null || true)"
             if [ "$(jq -r '.status' <<< "$body" 2>/dev/null || true)" = "ok" ]; then
-              echo "Candidate is healthy after ${attempt} attempt(s)."
+              echo "Candidate ${candidate} is healthy after ${attempt} attempt(s)."
               exit 0
             fi
             sleep 5
           done
-          echo "::error::The candidate never reported /health status ok. Traffic stays on the previous revision."
+          if [ -n "$PREVIOUS_REVISION" ]; then
+            echo "::error::The candidate never reported /health status ok within 3 minutes. Traffic stays on ${PREVIOUS_REVISION}."
+          else
+            echo "::error::The first revision never reported /health status ok within 3 minutes. It already serves all traffic."
+          fi
           exit 1
       - name: Promote the candidate
         if: env.PREVIOUS_REVISION != ''
         run: |
-          candidate="$(gcloud run services describe "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --format json \
-            | jq -r '.status.traffic[] | select(.tag == "candidate") | .revisionName')"
-          gcloud run services update-traffic "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --to-revisions "${candidate}=100"
+          gcloud run services update-traffic "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --to-revisions "${CANDIDATE_REVISION}=100"
           gcloud run services update-traffic "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --remove-tags candidate
       - name: Record the release and the rollback command
         if: always()
@@ -195,8 +218,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Deploy the exact SHA that produced the green verification run,
-          # not whatever main points at now (audit #113).
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+          # not whatever main points at now (audit #113). On dispatch, use the
+          # dispatched commit, the same one the backend job built, even if main
+          # moves while this job waits for it.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
