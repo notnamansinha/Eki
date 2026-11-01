@@ -95,69 +95,45 @@ body {
   display: none;
 }
 
-@keyframes profile-coin-flip {
-  from { transform: rotateY(0); }
-  to { transform: rotateY(180deg); }
+@keyframes profile-logo-reveal {
+  from { opacity: 0; transform: scale(0.72) rotate(-12deg); }
+  to { opacity: 1; transform: scale(1) rotate(0); }
 }
 
-.profile-coin {
-  position: absolute;
-  inset: 1px;
-  border-radius: 50%;
-  transform-style: preserve-3d;
-  animation: profile-coin-flip 1.1s cubic-bezier(0.2, 0.75, 0.25, 1) both;
+.profile-windows-logo {
+  animation: profile-logo-reveal 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-.profile-coin-face {
-  position: absolute;
+@keyframes profile-color-fall {
+  0% { transform: translateY(-90px) rotate(-15deg); opacity: 0; }
+  10% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateY(calc(100dvh + 90px)) rotate(24deg); opacity: 0; }
+}
+
+.profile-color-rain {
+  position: fixed;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 3px solid #e9bc55;
-  background:
-    radial-gradient(ellipse at 28% 18%, #fff9d0 0%, #ffe58b 16%, transparent 48%),
-    repeating-conic-gradient(from 10deg, #ffffff0a 0deg 3deg, #8050100a 3deg 6deg),
-    radial-gradient(circle at 50% 45%, #fbd66d 0%, #e8ac37 65%, #9a5d13 100%);
-  box-shadow:
-    inset 0 0 0 2px #fff0ad,
-    inset 0 0 0 5px #b47a20,
-    inset 0 3px 7px #fff5b080,
-    inset 0 -5px 8px #713d14a6,
-    0 2px 0 #8d5518,
-    0 5px 10px #0009;
-  color: #795015;
-  backface-visibility: hidden;
+  z-index: 100;
+  overflow: hidden;
+  pointer-events: none;
 }
 
-.profile-coin-face::before {
-  content: "";
+.profile-color-drop {
   position: absolute;
-  inset: 7px;
-  border: 1px solid #fff0a8cc;
-  border-radius: 50%;
-  box-shadow: 0 1px 1px #80501a, inset 0 1px 2px #8a581c;
+  top: 0;
+  width: 44px;
+  height: 66px;
+  border-radius: 8px 18px 8px 18px;
+  border: 1px solid #ffffff66;
+  box-shadow: inset 3px 3px 7px #ffffff88, inset -4px -5px 8px #0005, 0 8px 16px #0006;
+  animation: profile-color-fall 1.7s ease-in both;
 }
 
-.profile-coin-front::after {
-  content: "";
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 2px solid #e9b950;
-  box-shadow: inset 0 2px 4px #9d671c, 0 1px 1px #fff2ad;
-}
-
-.profile-coin-back {
-  transform: rotateY(180deg);
-  font-size: 3rem;
-  font-weight: 900;
-  line-height: 1;
-  letter-spacing: -0.08em;
-  text-align: center;
-  text-shadow: 0 1px 1px #fff2aa, 0 -1px 1px #8d581b;
-}
+.profile-color-drop-red { left: 18%; background: linear-gradient(135deg, #ffec57, #f44812 65%, #b5170c); }
+.profile-color-drop-green { left: 39%; background: linear-gradient(135deg, #d9fc75, #5db91c 65%, #2b6c12); animation-delay: 0.1s; }
+.profile-color-drop-blue { left: 61%; background: linear-gradient(135deg, #a8e9ff, #2487c9 65%, #174a9c); animation-delay: 0.2s; }
+.profile-color-drop-yellow { left: 81%; background: linear-gradient(135deg, #fff9a6, #ffba24 65%, #e76b08); animation-delay: 0.3s; }
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar {

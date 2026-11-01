@@ -6,6 +6,7 @@ import {
   formatStopTime,
   isValidStopTime,
   normalizePassengerRouteConfig,
+  normalizeRouteUsage,
 } from "./passengerRouteSchedule";
 
 function route(id: string, stopIds: string[], extra: Partial<RouteData> = {}): RouteData {
@@ -18,30 +19,41 @@ function route(id: string, stopIds: string[], extra: Partial<RouteData> = {}): R
 
 describe("buildPassengerRouteSchedules", () => {
   const routes = [route("a", ["a1", "a2"]), route("b", ["b1"]), route("c", ["c1", "c2", "c3"])];
+  const ids = (schedules: { routeId: string }[]) => schedules.map(schedule => schedule.routeId);
 
-  it("returns only approved routes, skipping approvals for deleted routes", () => {
+  it("returns every route, approved or not, and skips approvals for deleted routes", () => {
     const schedules = buildPassengerRouteSchedules({ routes: [
-      { routeId: "c", stopTimes: {} },
+      { routeId: "c", stopTimes: { c1: "09:00" } },
       { routeId: "deleted", stopTimes: { x: "08:00" } },
     ] }, routes);
-    expect(schedules.map(schedule => schedule.routeId)).toEqual(["c"]);
+    expect(ids(schedules)).toEqual(["c", "a", "b"]);
+    expect(schedules.find(schedule => schedule.routeId === "a")!.stops.map(stop => stop.time)).toEqual([null, null]);
   });
 
-  it("returns nothing when no route is approved", () => {
-    expect(buildPassengerRouteSchedules(EMPTY_PASSENGER_ROUTE_CONFIG, routes)).toEqual([]);
+  it("puts the most-ridden route first", () => {
+    const schedules = buildPassengerRouteSchedules(EMPTY_PASSENGER_ROUTE_CONFIG, routes, { a: 3, b: 40, c: 12 });
+    expect(ids(schedules)).toEqual(["b", "c", "a"]);
+    expect(schedules.map(schedule => schedule.completedRides)).toEqual([40, 12, 3]);
   });
 
-  it("follows approval order, not route collection order", () => {
+  it("breaks ties by approval order, then by name", () => {
+    const named = [route("x", [], { name: "Route 10" }), route("y", [], { name: "Route 9" }), route("z", [], { name: "Night" })];
+    const schedules = buildPassengerRouteSchedules({ routes: [{ routeId: "x", stopTimes: {} }] }, named, { x: 5, y: 5, z: 5 });
+    expect(ids(schedules)).toEqual(["x", "z", "y"]);
+  });
+
+  it("treats a route without a published count as unridden", () => {
     const schedules = buildPassengerRouteSchedules({ routes: [
       { routeId: "c", stopTimes: {} }, { routeId: "a", stopTimes: {} },
-    ] }, routes);
-    expect(schedules.map(schedule => schedule.routeId)).toEqual(["c", "a"]);
+    ] }, routes, { b: 1 });
+    expect(ids(schedules)).toEqual(["b", "c", "a"]);
+    expect(schedules.find(schedule => schedule.routeId === "a")!.completedRides).toBeNull();
   });
 
   it("orders stops by the route document and ignores times for deleted stops", () => {
-    const [schedule] = buildPassengerRouteSchedules({ routes: [
+    const schedule = buildPassengerRouteSchedules({ routes: [
       { routeId: "c", stopTimes: { c3: "09:30", gone: "06:00", c1: "09:00" } },
-    ] }, routes);
+    ] }, routes).find(entry => entry.routeId === "c")!;
     expect(schedule.stops).toEqual([
       { id: "c1", name: "Stop c1", time: "09:00" },
       { id: "c2", name: "Stop c2", time: null },
@@ -50,23 +62,36 @@ describe("buildPassengerRouteSchedules", () => {
   });
 
   it("treats an invalid stored time as unset", () => {
-    const [schedule] = buildPassengerRouteSchedules({ routes: [
+    const schedule = buildPassengerRouteSchedules({ routes: [
       { routeId: "a", stopTimes: { a1: "7:05", a2: "24:00" } },
-    ] }, routes);
+    ] }, routes).find(entry => entry.routeId === "a")!;
     expect(schedule.stops.map(stop => stop.time)).toEqual([null, null]);
   });
 
   it("falls back to the route id and stop short name when names are blank", () => {
     const blank = route("d", ["d1"], { name: "" });
     blank.stops[0].name = "";
-    const [schedule] = buildPassengerRouteSchedules({ routes: [{ routeId: "d", stopTimes: {} }] }, [blank]);
+    const [schedule] = buildPassengerRouteSchedules(EMPTY_PASSENGER_ROUTE_CONFIG, [blank]);
     expect(schedule.name).toBe("d");
     expect(schedule.stops[0].name).toBe("D1");
   });
 
-  it("keeps an approved route that has no stops", () => {
-    const [schedule] = buildPassengerRouteSchedules({ routes: [{ routeId: "e", stopTimes: {} }] }, [route("e", [])]);
+  it("keeps a route that has no stops", () => {
+    const [schedule] = buildPassengerRouteSchedules(EMPTY_PASSENGER_ROUTE_CONFIG, [route("e", [])]);
     expect(schedule.stops).toEqual([]);
+  });
+});
+
+describe("normalizeRouteUsage", () => {
+  it("returns no counts for missing or malformed documents", () => {
+    for (const value of [undefined, null, "x", {}, { completedRides: [] }, { completedRides: "5" }]) {
+      expect(normalizeRouteUsage(value)).toEqual({});
+    }
+  });
+
+  it("keeps only whole, non-negative counts", () => {
+    expect(normalizeRouteUsage({ completedRides: { a: 4, b: 0, c: -1, d: 1.5, e: "7", f: Number.NaN, g: 2 ** 60 } }))
+      .toEqual({ a: 4, b: 0 });
   });
 });
 

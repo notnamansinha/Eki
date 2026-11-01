@@ -304,6 +304,7 @@ describe("passenger tab switching and footer", () => {
     const nav = screen.getByRole("navigation", { name: "Passenger sections" });
     const frame = nav.closest(".pb-safe") as HTMLElement;
     expect(frame).not.toBeNull();
-    expect(frame.style.background).toContain("rgba(22, 22, 26");
+    // Solid, not translucent: content scrolling beneath must not show through.
+    expect(frame.style.background).toBe("rgb(22, 22, 26)");
   });
 });

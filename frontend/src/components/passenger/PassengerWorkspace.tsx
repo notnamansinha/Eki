@@ -807,13 +807,25 @@ export default function PassengerWorkspace() {
           ) : null}
         </div>
 
+        {/* ── PAGE FLOOR ── Routes and Profile are opaque pages that crossfade
+            and slide 8 px. Without this floor the hero image behind the
+            workspace showed through mid-fade (about a fifth at the midpoint).
+            It stays solid while moving between the two, and fades only when
+            entering or leaving them, where the map view's hero should show. */}
+        <div
+          aria-hidden="true"
+          data-passenger-page-floor
+          className={`pointer-events-none absolute inset-0 z-[25] transition-opacity duration-200 ${visibleView === "routes" || visibleView === "profile" ? "opacity-100" : "opacity-0"}`}
+          style={{ background: "var(--surface-0)" }}
+        />
+
         {/* ── ROUTES (SCHEDULE) VIEW ── */}
-        <div inert={visibleView !== "routes"} aria-hidden={visibleView !== "routes"} className={`absolute inset-0 z-30 flex flex-col transition-[opacity,transform] duration-200 ${visibleView === "routes" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"}`}>
+        <div data-passenger-view="routes" inert={visibleView !== "routes"} aria-hidden={visibleView !== "routes"} className={`absolute inset-0 z-30 flex flex-col transition-[opacity,transform] duration-200 ${visibleView === "routes" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"}`}>
           {routesMounted && <RoutesTab />}
         </div>
 
         {/* ── PROFILE VIEW ── */}
-        <div inert={visibleView !== "profile"} aria-hidden={visibleView !== "profile"} className={`absolute inset-0 z-30 flex flex-col transition-[opacity,transform] duration-200 ${visibleView === "profile" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"}`}>
+        <div data-passenger-view="profile" inert={visibleView !== "profile"} aria-hidden={visibleView !== "profile"} className={`absolute inset-0 z-30 flex flex-col transition-[opacity,transform] duration-200 ${visibleView === "profile" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"}`}>
           {profileMounted && <AccountTab />}
         </div>
       </div>

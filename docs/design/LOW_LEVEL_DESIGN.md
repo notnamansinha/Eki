@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-003 | 3.0 | Current | 2026-10-30 |
+| EKI-ARC-003 | 3.0 | Current | 2026-11-01 |
 
 ## 1. Introduction
 
@@ -150,6 +150,7 @@ All request budgets are divided by the replica shard factor (`backend/src/lib/ra
 | `journeyLocation.ts` | Raw fix record for ride history | `journeyLocation`, `newerJourneyLocation` | Leader |
 | `liveBusProjection.ts` | Public projection, route catalog and readiness status | `startLiveBusProjection`, `publicLiveBus` | Leader |
 | `abandonedRideReconciler.ts`, `abandonedRideReconciliationLogic.ts` | Hourly interruption of inactive rides | `startAbandonedRideReconciler`, `reconciliationDecision` | Leader |
+| `routeUsageSummary.ts` | Hourly completed-ride count per route, published to `settings/routeUsage` | `startRouteUsageSummary`, `computeRouteUsage` | Leader |
 
 **Riders, routes and fleet:**
 
@@ -250,6 +251,7 @@ The whole request has an 8 s response deadline and 5 s per dependency stage (`ba
 | Route watcher reconnect | Leader | On listener error | 1 s doubling to 30 s | `tripStateEngine.ts:118` |
 | Public projection readiness and repair | Leader | 1 s and 60 s | One readiness write at a time | `backend/src/services/liveBusProjection.ts:315` |
 | Abandoned-ride reconciliation | Leader | Startup and every hour | Pages of 100 | `backend/src/services/abandonedRideReconciler.ts:18`, `backend/src/lib/reconciliationPages.ts:2` |
+| Route usage summary | Leader | Startup and every hour | At most 200 routes, 8 `count()` aggregations at once; overlapping runs skipped | `backend/src/services/routeUsageSummary.ts` |
 | Fleet authorization reconciliation | Leader | Startup and every 10 min | 30 s budget per page; cursor persisted | `workerCoordinator.ts:147`, `workerCoordinator.ts:171` |
 | Privacy deletion queue | Leader | Startup and every 60 s | Pages of 20 requests | `backend/src/services/privacyDeletionWorker.ts:126` |
 | Retention sweep | Leader | Startup and every 24 h | Batches of 200 | `backend/src/services/retentionSweeper.ts:187` |
@@ -294,7 +296,7 @@ The frontend is a Next.js App Router project built as a static export.
 | Group | Modules | Responsibility |
 |---|---|---|
 | Authentication | `useAuth.ts` | Sign-in state, role verification (10 s timeout, access retries at 1, 2, 4, 8, 16 and 30 s), profile bootstrap, sign-out cleanup (`frontend/src/hooks/useAuth.ts:24`). It loads the sign-in code one attempt at a time and retries a failed load after 2, 5, 10, 20 and then every 30 s, or at once on `online` (`useAuth.ts:30`). It enables sign-in as soon as that code loads unless a Google redirect is pending, and reports `restoreSlow` when Firebase has not reported the first auth state after 8 s, keeping the user state unknown (`useAuth.ts:27`). A sign-in tap during restoration or role verification verifies the restored account instead of starting another Google sign-in |
-| Firestore subscriptions | `useCollection.ts`, `collectionCache.ts`, `useBuses.ts`, `useRoutes.ts`, `useDrivers.ts`, `useSettings.ts`, `usePassengerRouteConfig.ts`, `useBusLocations.ts` | Shared listeners that start only after authentication is verified. `usePassengerRouteConfig` listens to `settings/passengerRoutes` and saves through `PUT /api/v2/settings/passenger-routes` (administrators only) |
+| Firestore subscriptions | `useCollection.ts`, `collectionCache.ts`, `useBuses.ts`, `useRoutes.ts`, `useDrivers.ts`, `useSettings.ts`, `usePassengerRouteConfig.ts`, `useRouteUsage.ts`, `useBusLocations.ts` | Shared listeners that start only after authentication is verified. `usePassengerRouteConfig` listens to `settings/passengerRoutes` and saves through `PUT /api/v2/settings/passenger-routes` (administrators only) |
 | Live data | `useActiveBuses.ts`, `useLiveRouteCatalog.ts`, `useDynamicRouteGeometries.ts`, `useRTDBResume.ts`, `rtdbResumeState.ts` | Live bus subscriptions, route catalog and readiness, reroute geometry, reconnect after a 30 s suspension or a confirmed disconnect with a 1 to 1.5 s debounce and 5 s cooldown (`frontend/src/hooks/useRTDBResume.ts:14`) |
 | Presentation timing | `useLiveHealthClock.ts`, `useLiveBusMarkerPosition.ts`, `useSmoothPosition.ts` | Live health deadline clock; marker selection; animation frame interpolation, skipped for reduced motion |
 | UI and diagnostics | `useDialogFocus.ts`, `useTelemetryRenderTrace.ts` | Dialog focus trap and restoration; render timing trace |
@@ -311,7 +313,7 @@ The frontend is a Next.js App Router project built as a static export.
 | Ride progress and estimates | `busEta.ts`, `etaConstants.ts`, `passengerStopEstimates.ts`, `publishedStopIndex.ts`, `stopProgress.ts`, `stopLabel.ts`, `rideDirection.ts`, `passengerRouteStatus.ts`, `joinedRidePointer.ts`, `joinedRideStatus.ts` | Arrival estimates, per-stop states, direction handling, deviation notice, the joined ride kept for 24 h in local storage |
 | History and feedback | `rideHistory.ts`, `rideFeedbackEligibility.ts`, `feedback.ts`, `feedbackStore.ts` | Ride history normalization and observed-arrival test; feedback eligibility; direct Firestore feedback create, list and review |
 | Administration | `adminValidation.ts`, `routeSaveClient.ts`, `routeStopPayload.ts`, `unsavedChanges.ts`, `predefinedRoutes.ts` | Form validation, including the passenger route schedule rules that mirror the backend (at most 50 routes, each existing once, a valid time for every stop); idempotent route save; unsaved-change guard; seed route definitions |
-| Route schedules | `passengerRouteSchedule.ts` | Normalizes the untrusted `settings/passengerRoutes` document, joins approvals with route documents in approval order and the route's stop order, and formats `HH:mm` as "7:05 am" |
+| Route schedules | `passengerRouteSchedule.ts` | Normalizes the untrusted `settings/passengerRoutes` and `settings/routeUsage` documents, lists every route document with its configured times in the route's stop order, most completed rides first (ties: approval order, then name), and formats `HH:mm` as "7:05 am" |
 | Site and diagnostics | `siteMetadata.ts`, `serviceMessages.ts`, `telemetryTrace.ts` | Origin and indexing flags, service message text, opt-in browser telemetry trace ([browser telemetry trace](../operations/BROWSER_TELEMETRY_TRACE.md)) |
 
 ### 5.5 Configuration and service worker

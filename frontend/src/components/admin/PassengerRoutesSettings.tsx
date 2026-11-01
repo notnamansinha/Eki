@@ -189,7 +189,7 @@ export default function PassengerRoutesSettings() {
       <div className="flex flex-col items-center justify-center py-8 gap-2 text-center text-red-300" role="alert">
         <AlertCircle className="size-6" aria-hidden="true" />
         <span className="text-sm font-semibold">{routesError}</span>
-        <span className="text-xs text-red-300/70">Routes are needed to choose what passengers see.</span>
+        <span className="text-xs text-red-300/70">Routes are needed before you can set stop times.</span>
         <button
           type="button"
           onClick={retryRoutes}
@@ -346,7 +346,7 @@ export default function PassengerRoutesSettings() {
 
   return (
     <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5 min-w-0">
-      <SectionHeader icon={RouteIcon} title="Passenger Routes" subtitle="Choose which routes passengers can browse and set the time at each stop" />
+      <SectionHeader icon={RouteIcon} title="Passenger Routes" subtitle="Set the time at each stop. Passengers see every route, most ridden first; this order breaks ties" />
       {body}
       <AlertModal
         isOpen={Boolean(alertMessage)}

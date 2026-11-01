@@ -3,7 +3,7 @@ import { Timestamp } from "firebase-admin/firestore";
 
 const mocks = vi.hoisted(() => ({
   transaction: vi.fn(), tripStop: vi.fn(async () => undefined),
-  retentionStop: vi.fn(), privacyStop: vi.fn(), rideStop: vi.fn(),
+  retentionStop: vi.fn(), privacyStop: vi.fn(), rideStop: vi.fn(), usageStop: vi.fn(),
   tripStart: vi.fn(), leadership: vi.fn(), fleet: vi.fn(), cursor: undefined as string | undefined, cursorWrites: [] as any[],
 }));
 vi.mock("../lib/firebaseAdmin", () => ({ db: {
@@ -14,6 +14,7 @@ vi.mock("./liveBusProjection", () => ({ startLiveBusProjection: () => async () =
 vi.mock("./retentionSweeper", () => ({ startRetentionSweeper: () => mocks.retentionStop }));
 vi.mock("./privacyDeletionWorker", () => ({ startPrivacyDeletionWorker: () => mocks.privacyStop }));
 vi.mock("./abandonedRideReconciler", () => ({ startAbandonedRideReconciler: () => mocks.rideStop }));
+vi.mock("./routeUsageSummary", () => ({ startRouteUsageSummary: () => mocks.usageStop }));
 vi.mock("../routes/fleet", () => ({ reconcileFleetAuthorization: mocks.fleet }));
 vi.mock("../lib/metrics", () => ({ setWorkerLeadership: mocks.leadership, recordWorkerRun: vi.fn() }));
 vi.mock("../lib/workerFence", async importOriginal => {
@@ -50,6 +51,7 @@ describe("worker leadership expiry", () => {
     expect(mocks.retentionStop).toHaveBeenCalledTimes(1);
     expect(mocks.privacyStop).toHaveBeenCalledTimes(1);
     expect(mocks.rideStop).toHaveBeenCalledTimes(1);
+    expect(mocks.usageStop).toHaveBeenCalledTimes(1);
     expect(mocks.leadership).toHaveBeenLastCalledWith(false);
     await stop();
   });

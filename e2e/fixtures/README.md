@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-008 | 2.0 | Current | 2026-10-30 |
+| EKI-PKG-008 | 2.0 | Current | 2026-11-01 |
 
 ## 1. Purpose
 
@@ -40,7 +40,7 @@ This Vite fixture renders the real passenger workspace, route carousel, passenge
 npx playwright test --config playwright.passenger-layout.config.ts
 ```
 
-The configuration starts this fixture and runs `e2e/passenger-layout/warnings.spec.ts`, `video-audit.spec.ts` and `routes-schedule.spec.ts` in five projects: narrow 360 x 800, mobile 390 x 844, reported-phone 440 x 956, short-desktop 1280 x 585 and desktop 1280 x 800. The tests check, among other things, that location-delay, reconnecting and GNSS-loss warnings sit below the variable-height ride header without overlap and clear on recovery; that offline and stale buses leave the picker; that the footer, navigation, chat overlay and feedback modal keep their positions on short and landscape screens; and that the passenger frame cannot scroll under the viewport. `routes-schedule.spec.ts` opens `/?schedule=demo` and checks that the Routes tab lists the approved schedules on an alternating timeline, that the three navigation tabs fit narrow phones with the schedule scrolling clear of them, and that **Map** returns to the live routes while the hidden schedule cannot intercept taps. Screenshots and traces go to `artifacts/passenger-layout/`, which CI keeps for seven days.
+The configuration starts this fixture and runs `e2e/passenger-layout/warnings.spec.ts`, `video-audit.spec.ts` and `routes-schedule.spec.ts` in five projects: narrow 360 x 800, mobile 390 x 844, reported-phone 440 x 956, short-desktop 1280 x 585 and desktop 1280 x 800. The tests check, among other things, that location-delay, reconnecting and GNSS-loss warnings sit below the variable-height ride header without overlap and clear on recovery; that offline and stale buses leave the picker; that the footer, navigation, chat overlay and feedback modal keep their positions on short and landscape screens; and that the passenger frame cannot scroll under the viewport. `routes-schedule.spec.ts` opens `/?schedule=demo` and checks that the Routes tab lists every route most-ridden first, with a maroon accent, as compact collapsed cards (at most 130 px tall at 320 px) that drop down to a "number - name" line per bus and a single continuous rail with the times at the right, that the three navigation tabs fit narrow phones with the schedule scrolling clear of them, and that **Map** returns to the live routes while the hidden schedule cannot intercept taps. Screenshots and traces go to `artifacts/passenger-layout/`, which CI keeps for seven days.
 
 ## 5. Limits
 

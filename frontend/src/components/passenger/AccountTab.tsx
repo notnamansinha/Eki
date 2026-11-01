@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import WorkspaceLink from "@/components/shared/WorkspaceLink";
 import { CircleUserRound, LogOut, ChevronRight, LogIn, HeartHandshake, Trash2, LayoutDashboard } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -38,25 +39,33 @@ export default function AccountTab() {
   const [showDeletionAccepted, setShowDeletionAccepted] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletionStatus, setDeletionStatus] = useState("");
-  const [showCoin, setShowCoin] = useState(false);
+  const [showWindowsLogo, setShowWindowsLogo] = useState(false);
+  const [showColorDrops, setShowColorDrops] = useState(false);
   const lastPhotoTap = useRef<number | null>(null);
-  const coinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const logoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => {
-    if (coinTimer.current) clearTimeout(coinTimer.current);
+    if (logoTimer.current) clearTimeout(logoTimer.current);
+    if (dropsTimer.current) clearTimeout(dropsTimer.current);
   }, []);
 
   const handlePhotoTap = () => {
     const now = Date.now();
-    if (lastPhotoTap.current !== null && now - lastPhotoTap.current <= 350 && !showCoin) {
-      setShowCoin(true);
+    if (lastPhotoTap.current !== null && now - lastPhotoTap.current <= 350 && !showWindowsLogo) {
+      setShowWindowsLogo(true);
+      setShowColorDrops(true);
       lastPhotoTap.current = null;
-      coinTimer.current = setTimeout(() => {
-        setShowCoin(false);
+      dropsTimer.current = setTimeout(() => {
+        setShowColorDrops(false);
+        dropsTimer.current = null;
+      }, 2_000);
+      logoTimer.current = setTimeout(() => {
+        setShowWindowsLogo(false);
         lastPhotoTap.current = null;
-        coinTimer.current = null;
+        logoTimer.current = null;
       }, 4_000);
-    } else if (!showCoin) {
+    } else if (!showWindowsLogo) {
       lastPhotoTap.current = now;
     }
   };
@@ -93,6 +102,7 @@ export default function AccountTab() {
     void logout();
   };
   return (
+    <>
     <div className="flex-1 overflow-y-auto overscroll-contain flex flex-col pt-safe px-5" style={{ background: "var(--surface-0)" }}>
       {/* Scroll past the navigation and its safe area, plus the previous 47px breathing room. */}
       <div
@@ -111,11 +121,9 @@ export default function AccountTab() {
                 aria-label="Profile photo, double tap for a surprise"
                 className="relative w-full h-full rounded-full flex items-center justify-center overflow-hidden touch-manipulation"
                 style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)", perspective: "500px" }}>
-                {showCoin ? (
-                  <span className="profile-coin" role="img" aria-label="Golden coin: 19">
-                    <span className="profile-coin-face profile-coin-front" aria-hidden="true" />
-                    <span className="profile-coin-face profile-coin-back" aria-hidden="true">19</span>
-                  </span>
+                {showWindowsLogo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src="/images/windows-logo-profile.webp" alt="Windows logo" className="profile-windows-logo h-full w-full object-contain p-1.5" />
                 ) : <ProfilePhoto key={JSON.stringify([user?.uid, user?.photoURL])} photoURL={user?.photoURL} />}
               </button>
             </div>
@@ -324,5 +332,14 @@ export default function AccountTab() {
         onCancel={dismissDeletionAccepted}
       />
     </div>
+    {showColorDrops && createPortal(
+      <div className="profile-color-rain" aria-hidden="true" data-profile-color-rain>
+        {(["red", "green", "blue", "yellow"] as const).map(color => (
+          <span key={color} className={`profile-color-drop profile-color-drop-${color}`} />
+        ))}
+      </div>,
+      document.body,
+    )}
+    </>
   );
 }
