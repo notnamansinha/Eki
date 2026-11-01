@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-002 | 2.1 | Current | 2026-11-01 |
+| EKI-API-002 | 2.2 | Current | 2026-11-02 |
 
 ## 1. Purpose
 
@@ -62,7 +62,7 @@ These tests do not prove that a deployment is reachable, that real firmware tran
 `npm run verify:web-backend-contract` runs `scripts/verify-web-backend-contract.mjs`:
 
 1. It reads `NEXT_PUBLIC_BACKEND_URL` from the shell or the frontend `.env` files and fails unless its origin is in the `connect-src` directive of the Hosting Content-Security-Policy in `firebase.json`. With `EKI_STRICT_PRODUCTION_BUILD=true` a missing URL is an error; otherwise the check is skipped.
-2. With `EKI_RUNTIME_SMOKE=1` it also calls the live backend: `GET /health` must return 200 with `status: ok` and allow `EKI_FRONTEND_ORIGIN` in CORS, and a CORS preflight for `POST /api/users/bootstrap` must allow that origin, the `POST` method and the `authorization` and `content-type` headers. The preflight creates nothing.
+2. With `EKI_RUNTIME_SMOKE=1` it also calls the live backend: `GET /health` must return 200 with `status: ok` and allow `EKI_FRONTEND_ORIGIN` in CORS, and a CORS preflight for `POST /api/users/bootstrap` must allow that origin, the `POST` method and the `authorization` and `content-type` headers. The preflight creates nothing. While `/health` answers 502, 503 or 504, or does not answer within 10 s, the check retries for up to 90 s so that a backend that scaled to zero can start; any other answer fails at once.
 
 ### 3.4 Hosting rewrite check
 

@@ -68,7 +68,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-ARC-001 | [Eki Architecture](design/ARCHITECTURE.md) | 2.1 | Current | 2026-11-01 |
+| EKI-ARC-001 | [Eki Architecture](design/ARCHITECTURE.md) | 2.2 | Current | 2026-11-02 |
 | EKI-ARC-002 | [Eki High-Level Design](design/HIGH_LEVEL_DESIGN.md) | 3.0 | Current | 2026-10-30 |
 | EKI-ARC-003 | [Low-Level Design](design/LOW_LEVEL_DESIGN.md) | 3.0 | Current | 2026-10-30 |
 | EKI-ARC-004 | [Tracking Algorithms](design/TRACKING_ALGORITHMS.md) | 1.1 | Current | 2026-10-30 |
@@ -93,7 +93,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-API-001 | [Eki Backend HTTP API](../backend/API.md) | 3.1 | Current | 2026-11-01 |
-| EKI-API-002 | [HTTP Contract](api/HTTP_CONTRACT.md) | 2.1 | Current | 2026-11-01 |
+| EKI-API-002 | [HTTP Contract](api/HTTP_CONTRACT.md) | 2.2 | Current | 2026-11-02 |
 | EKI-API-003 | [Ride Session Contract](api/RIDE_SESSION_CONTRACT.md) | 2.0 | Current | 2026-10-30 |
 | EKI-API-004 | [Operation Resources](api/OPERATION_RESOURCES.md) | 1.0 | Current | 2026-10-30 |
 | EKI-API-005 | [HTTP Resource Migration](../backend/API_RESOURCE_MIGRATION.md) | 2.0 | Current | 2026-10-30 |
@@ -125,7 +125,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-OPS-001 | [CI, Deployment and Releases](operations/CI_CD_AND_RELEASES.md) | 3.2 | Current | 2026-11-01 |
+| EKI-OPS-001 | [CI, Deployment and Releases](operations/CI_CD_AND_RELEASES.md) | 3.3 | Current | 2026-11-02 |
 | EKI-OPS-002 | [DNS and Domains](operations/DNS_AND_DOMAINS.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-003 | [ngrok Tunnel for the Backend](operations/NGROK_TUNNEL.md) | 1.1 | Current | 2026-11-01 |
 | EKI-OPS-004 | [Local Web, Phone and Device Testing](operations/LOCAL_TESTING.md) | 1.0 | Current | 2026-10-30 |
@@ -168,7 +168,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-PKG-001 | [Eki Backend](../backend/README.md) | 1.1 | Current | 2026-11-01 |
+| EKI-PKG-001 | [Eki Backend](../backend/README.md) | 1.2 | Current | 2026-11-02 |
 | EKI-PKG-002 | [Eki Frontend](../frontend/README.md) | 2.0 | Current | 2026-10-30 |
 | EKI-PKG-003 | [ESP32 GNSS Tracker](../hardware/README.md) | 1.0 | Current | 2026-10-30 |
 | EKI-PKG-004 | [Firmware Headers](../hardware/include/README.md) | 1.0 | Current | 2026-10-30 |

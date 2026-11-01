@@ -171,7 +171,54 @@ describe("live backend release preflight", () => {
       new Response('{"status":"degraded"}', { status: 503 }),
       new Response('{"status":"degraded"}'),
       new Response('<html>Tunnel offline</html>'),
-    ]) await assert.rejects(verifyBackendAvailability(origin, frontend, async () => response));
+    ]) await assert.rejects(verifyBackendAvailability(origin, frontend, async () => response, { readinessDeadlineMs: 0, log: () => {} }));
+  });
+
+  /** A clock that advances only when the check sleeps. */
+  const fakeClock = () => {
+    const clock = { t: 0, sleeps: [] };
+    clock.options = { now: () => clock.t, sleep: async ms => { clock.sleeps.push(ms); clock.t += ms; }, log: () => {} };
+    return clock;
+  };
+
+  it("waits for a backend that is still starting", async () => {
+    const clock = fakeClock();
+    const answers = [
+      () => new Response('{"status":"degraded"}', { status: 503 }),
+      () => { throw new DOMException("The operation timed out.", "TimeoutError"); },
+      () => new Response("Bad Gateway", { status: 502 }),
+      healthy, allowed,
+    ];
+    const urls = [];
+    await verifyBackendAvailability(origin, frontend, async (url) => { urls.push(url); return answers.shift()(); }, clock.options);
+    assert.deepEqual(urls, [...Array(4).fill(`${origin}/health`), `${origin}/api/users/bootstrap`]);
+    assert.deepEqual(clock.sleeps, [2_000, 4_000, 6_000]);
+  });
+
+  it("stops waiting at the readiness deadline", async () => {
+    const clock = fakeClock();
+    let calls = 0;
+    await assert.rejects(
+      verifyBackendAvailability(origin, frontend, async () => { calls += 1; return new Response("", { status: 503 }); }, { ...clock.options, readinessDeadlineMs: 30_000 }),
+      /HTTP 503 after 6 attempt\(s\)/,
+    );
+    // The last attempt runs at the deadline itself.
+    assert.equal(calls, 6);
+    assert.deepEqual(clock.sleeps, [2_000, 4_000, 6_000, 8_000, 10_000]);
+  });
+
+  it("fails at once on a dead tunnel, a redirect or an unreachable host", async () => {
+    for (const answer of [
+      () => new Response("<html>ERR_NGROK_3200</html>", { status: 404 }),
+      () => new Response("", { status: 500 }),
+      () => { throw new TypeError("fetch failed"); },
+    ]) {
+      const clock = fakeClock();
+      let calls = 0;
+      await assert.rejects(verifyBackendAvailability(origin, frontend, async () => { calls += 1; return answer(); }, clock.options));
+      assert.equal(calls, 1);
+      assert.deepEqual(clock.sleeps, []);
+    }
   });
 
   it("rejects healthy APIs that the deployed browser cannot access", async () => {

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-001 | 3.2 | Current | 2026-11-01 |
+| EKI-OPS-001 | 3.3 | Current | 2026-11-02 |
 
 ## 1. Purpose
 
@@ -80,7 +80,7 @@ Both jobs run the same steps against their own project. A failed step stops the 
 1. `npm ci`.
 2. `npm run verify:rtdb-instance`: the backend and frontend database URLs must name the same RTDB instance, and its region must equal `RTDB_EXPECTED_REGION` when that variable is set.
 3. `npm run build:production`: strict build that fails when one of the ten `NEXT_PUBLIC_*` values is missing or when the RTDB or backend URL is not a non-local HTTPS URL (`frontend/next.config.ts`), then regenerates the service worker and the CSP in `firebase.json` with the backend origin.
-4. `npm run verify:web-backend-contract` with `EKI_RUNTIME_SMOKE=1`: the live backend at `NEXT_PUBLIC_BACKEND_URL` must answer `/health` with `status: ok`, allow the frontend origin (`https://bustrack-be165.web.app` or `https://eki-production.web.app`) in CORS, and accept the preflight for `POST /api/users/bootstrap`.
+4. `npm run verify:web-backend-contract` with `EKI_RUNTIME_SMOKE=1`: the live backend at `NEXT_PUBLIC_BACKEND_URL` must answer `/health` with `status: ok`, allow the frontend origin (`https://bustrack-be165.web.app` or `https://eki-production.web.app`) in CORS, and accept the preflight for `POST /api/users/bootstrap`. While `/health` answers 502, 503 or 504, or does not answer within 10 s, the check retries for up to 90 s, because a backend that scaled to zero answers 503 until its first Firestore and RTDB probes succeed. Any other failure stops the release at once.
 5. `node scripts/disable-appcheck-enforcement.mjs --project <project> --disable`: sets App Check enforcement for Firestore and RTDB to `UNENFORCED` and verifies the result. The web app does not use App Check.
 6. Deploy `firestore:indexes`, then wait up to 30 minutes for the deployed query shapes ([Firestore index deployment](FIRESTORE_INDEX_DEPLOYMENT.md)).
 7. Deploy `hosting,firestore:rules,database:rules`.
@@ -97,7 +97,7 @@ The optional job `deploy-backend-staging` runs before `deploy-staging`:
 
 The job therefore deploys one region at a time. To compare regions, dispatch the first region, measure it, delete its service, then dispatch the next. Each region has its own service URL, `https://eki-backend-staging-449313371438.<region>.run.app`. Set the staging secret `NEXT_PUBLIC_BACKEND_URL` to the new URL before the dispatch; otherwise `deploy-staging` in the same run checks the deleted service and fails. A new region is a first deployment (step 4): its first revision serves all traffic before `/health` is checked, and there is no earlier revision to roll back to.
 
-Step 4 makes every Hosting release depend on a running, healthy backend. While the backend runs on a workstation (Section 7.1), a release fails if the workstation or tunnel is down.
+Step 4 makes every Hosting release depend on a running, healthy backend. The staging backend runs on Cloud Run without a minimum instance (Section 7.1), so the first request after an idle period starts an instance. On 2026-11-01 such an instance answered `/health` with 503 about 2 s after the request; the retry in step 4 waits that out.
 
 ### 5.3 Environments, secrets and variables
 
@@ -153,18 +153,18 @@ The `testing` branch was deleted on 2026-10-25; scheduled runs from then until t
 
 ### 7.1 Current state
 
-The repository builds and tests a backend container (`backend/Dockerfile`: Node.js 24 on Alpine, non-root user, port `8080`, Docker health check on `/live`), and `deploy-backend-staging` can publish and deploy it on manual dispatch. That job has not run, so no Cloud Run service exists. The backend runs on a workstation and is reached through an ngrok tunnel ([ngrok tunnel](NGROK_TUNNEL.md)). A read-only assessment on 2026-10-21 found:
+The repository builds and tests a backend container (`backend/Dockerfile`: Node.js 24 on Alpine, non-root user, port `8080`, Docker health check on `/live`), and `deploy-backend-staging` publishes and deploys it on manual dispatch. On 2026-11-01 that job deployed the staging service `eki-backend-staging` in `asia-south2` (`https://eki-backend-staging-449313371438.asia-south2.run.app`), and the staging secret `NEXT_PUBLIC_BACKEND_URL` was changed from the ngrok tunnel to that URL, so the staging web app now uses Cloud Run. The service runs with `WORKER_ENABLED=false` and scales to zero, so no process runs the lease-owned workers until the worker handoff in Section 7.2. Before the change the backend ran on a workstation behind an ngrok tunnel ([ngrok tunnel](NGROK_TUNNEL.md)); the tunnel went offline, and every staging release then failed at step 4 of Section 5.2. A read-only assessment on 2026-10-21 found:
 
-- The frontend build and the device firmware both use the tunnel origin as the backend URL.
+- The frontend build and the device firmware both used the tunnel origin as the backend URL. The staging frontend now uses the Cloud Run origin; devices flashed with the tunnel origin need the new origin.
 - The workstation backend runs in development mode on port `4000`, as a single process that also runs the lease-owned workers ([worker leadership](WORKER_LEADERSHIP.md)).
 - Firestore is in `asia-south2`; the configured RTDB instance is in `us-central1`.
-- Cloud Billing is linked to `bustrack-be165` and the Cloud Run API is enabled (checked on 2026-11-01). No Cloud Run service or Artifact Registry repository exists.
+- Cloud Billing is linked to `bustrack-be165` and the Cloud Run API is enabled (checked on 2026-11-01). The Artifact Registry repository `eki` exists in `asia-south2` and `us-central1`.
 
-The service is available only while the workstation, the backend process and the ngrok agent are running.
+The staging web app no longer depends on the workstation or the tunnel.
 
 ### 7.2 Proposed migration to Cloud Run
 
-Status: Proposed. The manual deployment job described in Section 5.2 exists but has not run; the rest is not implemented.
+Status: Proposed. The manual deployment job described in Section 5.2 deployed the staging service on 2026-11-01. Hosting rewrites, the worker handoff and production are not implemented.
 
 The proposal runs the existing container on Cloud Run in the same Firebase project and keeps Hosting, Authentication, Firestore and the existing RTDB instance unchanged. Cloud Run needs a Cloud Billing account on the project, which moves a Spark project to the Blaze plan [2].
 

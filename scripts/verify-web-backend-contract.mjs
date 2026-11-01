@@ -37,8 +37,18 @@ export function assertWebBackendContract(firebase, backendUrl, strict = false) {
   return { checked: true, origin };
 }
 
+// A backend that scaled to zero starts on the first request and answers 503
+// until its first Firestore and RTDB probes succeed (about 3 s on Cloud Run).
+// These answers mean "not ready yet"; every other failure stops the release at
+// once, so a dead tunnel (404) or an error page is never waited for.
+const STARTING_STATUSES = new Set([502, 503, 504]);
+
+const sleepFor = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 /** Read-only release gate: reject dead tunnels, error pages and blocked CORS. */
-export async function verifyBackendAvailability(origin, frontendOrigin, fetchImpl = fetch) {
+export async function verifyBackendAvailability(origin, frontendOrigin, fetchImpl = fetch, {
+  readinessDeadlineMs = 90_000, sleep = sleepFor, now = () => Date.now(), log = console.log,
+} = {}) {
   if (!frontendOrigin || new URL(frontendOrigin).origin !== frontendOrigin) {
     throw new Error("EKI_FRONTEND_ORIGIN must be the deployed frontend origin.");
   }
@@ -46,9 +56,28 @@ export async function verifyBackendAvailability(origin, frontendOrigin, fetchImp
     .some(suffix => new URL(origin).hostname.endsWith(suffix));
   const headers = { Origin: frontendOrigin, ...(isNgrok ? { "ngrok-skip-browser-warning": "1" } : {}) };
   const requestedHeaders = ["authorization", "content-type", ...(isNgrok ? ["ngrok-skip-browser-warning"] : [])];
-  const response = await fetchImpl(`${origin}/health`, {
-    headers, redirect: "error", signal: AbortSignal.timeout(10_000),
-  });
+  const deadline = now() + readinessDeadlineMs;
+  let response;
+  for (let attempt = 1; ; attempt += 1) {
+    let notReady;
+    try {
+      response = await fetchImpl(`${origin}/health`, {
+        headers, redirect: "error", signal: AbortSignal.timeout(10_000),
+      });
+      if (!STARTING_STATUSES.has(response.status)) break;
+      notReady = `HTTP ${response.status}`;
+      await response.body?.cancel();
+    } catch (error) {
+      if (error?.name !== "TimeoutError") throw error;
+      notReady = "no answer within 10 s";
+    }
+    if (now() >= deadline) {
+      throw new Error(`Backend health probe failed with ${notReady} after ${attempt} attempt(s).`);
+    }
+    const wait = Math.min(2_000 * attempt, 10_000);
+    log(`Backend /health: ${notReady}; the backend may still be starting. Retrying in ${wait / 1000} s.`);
+    await sleep(wait);
+  }
   if (!response.ok) throw new Error(`Backend health probe failed with HTTP ${response.status}.`);
   const body = await response.json();
   if (body?.status !== "ok") throw new Error("Backend did not report healthy readiness.");
