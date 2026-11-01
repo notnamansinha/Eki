@@ -20,6 +20,7 @@
     "test:rules": "node scripts/run-rules-emulator.mjs",
     "verify:rtdb-instance": "node scripts/rtdb-instance-config.mjs",
     "verify:web-backend-contract": "node scripts/verify-web-backend-contract.mjs",
+    "verify:hosting-rewrites": "node scripts/verify-hosting-rewrites.mjs",
     "verify:ui-contracts": "node scripts/verify-ui-contracts.mjs",
     "telemetry:load": "node scripts/benchmark-telemetry-ingestion.mjs",
     "telemetry:analyze": "node scripts/analyze-telemetry-trace.mjs",
