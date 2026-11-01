@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
  * Read-only check of the Firebase Hosting rewrites to the Cloud Run backend
  * (`/api/**`, `/health`, `/live`). It sends GET requests only and never writes
  * data. Run it against a Hosting preview channel before the rewrites reach the
- * live site, and again after release. See docs/operations/STAGING_RUNTIME_CONFIG.md.
+ * live site, and again after release. See docs/api/HTTP_CONTRACT.md, Section 3.4.
  *
  *   node scripts/verify-hosting-rewrites.mjs --hosting <origin> [--direct <origin>]
  *     [--samples 30] [--require-ready] [--max-added-p95-ms 300]
@@ -26,7 +26,8 @@ function originOf(value, flag) {
   } catch {
     throw new Error(`${flag} must be an origin such as https://example.web.app.`);
   }
-  if (url.protocol !== "https:" || url.origin !== value) {
+  // A trailing slash, an upper-case host or the default port still name the same origin.
+  if (url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash || url.username || url.password) {
     throw new Error(`${flag} must be an https origin with no path, got ${value}.`);
   }
   return url.origin;
@@ -113,6 +114,7 @@ const CHECKS = [
     // Without the header the backend says it is missing; with it, the token is rejected.
     // Identical bodies mean the header never arrived.
     const without = ctx.unauthenticated?.json;
+    if (!without) return [false, "no JSON answer without the header to compare with"];
     return [JSON.stringify(r.json) !== JSON.stringify(without), `error "${r.json?.error}"`];
   }],
   ["API responses are not cacheable", async (ctx) => {
@@ -165,22 +167,26 @@ export async function verifyHostingRewrites({ hosting, direct, samples = 30, req
     }
   }
 
-  const timeRequests = async (origin) => {
-    const durations = [];
-    for (let i = 0; i < samples; i += 1) {
-      const start = now();
-      const r = await get(fetchImpl, `${origin}/live`);
-      if (r.status !== 200) throw new Error(`${origin}/live returned HTTP ${r.status} during timing.`);
-      durations.push(now() - start);
-    }
-    return summarize(durations);
+  const timeRequest = async (origin) => {
+    const start = now();
+    const r = await get(fetchImpl, `${origin}/live`);
+    if (r.status !== 200) throw new Error(`${origin}/live returned HTTP ${r.status} during timing.`);
+    return now() - start;
   };
 
   const latency = { hosting: null, direct: null, addedP50: null, addedP95: null };
   try {
-    latency.hosting = await timeRequests(ctx.hosting);
+    // Alternate the two origins, so that network drift or a scale event during
+    // the run affects both samples alike instead of only one of them.
+    const hostingDurations = [];
+    const directDurations = [];
+    for (let i = 0; i < samples; i += 1) {
+      hostingDurations.push(await timeRequest(ctx.hosting));
+      if (directOrigin) directDurations.push(await timeRequest(directOrigin));
+    }
+    latency.hosting = summarize(hostingDurations);
     if (directOrigin) {
-      latency.direct = await timeRequests(directOrigin);
+      latency.direct = summarize(directDurations);
       latency.addedP50 = latency.hosting.p50 - latency.direct.p50;
       latency.addedP95 = latency.hosting.p95 - latency.direct.p95;
     }
@@ -249,5 +255,10 @@ async function run() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  await run();
+  try {
+    await run();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }

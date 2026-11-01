@@ -192,6 +192,33 @@ describe("Hosting rewrite verification", () => {
     assert.deepEqual(failed(report), ["Added p95 latency through Hosting is at most 20 ms"]);
   });
 
+  it("alternates Hosting and direct requests while timing", async () => {
+    const s = site();
+    await run(s, { direct: DIRECT });
+    const timed = s.state.requests.slice(-10).map((r) => new URL(r.url).origin);
+    assert.deepEqual(timed, Array.from({ length: 10 }, (_, i) => (i % 2 === 0 ? HOSTING : DIRECT)));
+  });
+
+  it("fails the header check when the request without the header got no answer", async () => {
+    const report = await run(site({
+      override: (p, init) => {
+        if (p === "/api/health" && !new Headers(init.headers).get("authorization")) throw new TypeError("fetch failed");
+      },
+    }));
+    const header = report.checks.find((c) => c.name === "Authorization header reaches the backend");
+    assert.equal(header.ok, false);
+    assert.match(header.detail, /no JSON answer without the header/);
+  });
+
+  it("accepts an origin with a trailing slash, an upper-case host or the default port", async () => {
+    for (const hosting of ["https://eki.web.app/", "https://EKI.web.app", "https://eki.web.app:443"]) {
+      const s = site();
+      const report = await run(s, { hosting });
+      assert.deepEqual(failed(report), [], hosting);
+      assert.ok(s.state.requests.every((r) => r.url.startsWith(`${HOSTING}/`)), hosting);
+    }
+  });
+
   it("rejects an invalid --direct origin before sending any request", async () => {
     for (const direct of ["http://eki-backend.run.app", "https://eki-backend.run.app/live", "not a url"]) {
       const s = site();

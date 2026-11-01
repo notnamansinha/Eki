@@ -93,7 +93,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-API-001 | [Eki Backend HTTP API](../backend/API.md) | 3.1 | Current | 2026-11-01 |
-| EKI-API-002 | [HTTP Contract](api/HTTP_CONTRACT.md) | 2.0 | Current | 2026-10-30 |
+| EKI-API-002 | [HTTP Contract](api/HTTP_CONTRACT.md) | 2.1 | Current | 2026-11-01 |
 | EKI-API-003 | [Ride Session Contract](api/RIDE_SESSION_CONTRACT.md) | 2.0 | Current | 2026-10-30 |
 | EKI-API-004 | [Operation Resources](api/OPERATION_RESOURCES.md) | 1.0 | Current | 2026-10-30 |
 | EKI-API-005 | [HTTP Resource Migration](../backend/API_RESOURCE_MIGRATION.md) | 2.0 | Current | 2026-10-30 |

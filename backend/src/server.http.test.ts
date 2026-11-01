@@ -61,7 +61,7 @@ afterAll(async () => {
 });
 
 // node:http rather than fetch so methods such as TRACE can be sent.
-const request = (method: string, path: string, headers: Record<string, string> = {}) =>
+const request = (method: string, path: string, headers: Record<string, string> = {}, body?: string) =>
   new Promise<Response>((resolve, reject) => {
     const outgoing = http.request(`${origin}${path}`, { method, headers }, incoming => {
       const chunks: Buffer[] = [];
@@ -74,7 +74,7 @@ const request = (method: string, path: string, headers: Record<string, string> =
       })));
     });
     outgoing.on("error", reject);
-    outgoing.end();
+    outgoing.end(body);
   });
 
 describe("HTTP edge as wired by server.ts", () => {
@@ -106,6 +106,15 @@ describe("HTTP edge as wired by server.ts", () => {
     ["an unknown resource", "/api/no-such-resource", { Authorization: "Bearer passenger" }, 404],
   ])("marks API responses for %s as not cacheable", async (_label, path, headers, status) => {
     const response = await request("GET", path, headers);
+    expect(response.status).toBe(status);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it.each([
+    ["malformed JSON", "{", 400],
+    ["an oversized body", JSON.stringify({ message: "x".repeat(20_000) }), 413],
+  ])("marks the body parser's rejection of %s as not cacheable", async (_label, body, status) => {
+    const response = await request("POST", "/api/feedback", { "Content-Type": "application/json" }, body);
     expect(response.status).toBe(status);
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
