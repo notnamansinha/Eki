@@ -88,11 +88,14 @@ Both jobs run the same steps against their own project. A failed step stops the 
 The optional job `deploy-backend-staging` runs before `deploy-staging`:
 
 1. Authenticate to Google Cloud as the deploy service account through workload identity federation. The workflow stores no key, and the job fixes the provider and the account.
-2. Build `backend/Dockerfile` from the repository root, push the image to the Artifact Registry repository `eki` in the region given by the `cloud_run_region` input, and record the image digest. The repository shall exist in that region, and the deploy service account needs `roles/artifactregistry.writer` on it.
-3. Render `deploy/cloud-run/staging.service.yaml` with the digest and apply it as a new revision. When a revision already serves traffic, the new revision receives none until step 5. Only a missing service counts as a first deployment: there the revision receives all traffic at once and step 5 only reports the result. Any other failure to read the service stops the job.
-4. Grant `allUsers` the Cloud Run invoker role. Firebase and device authentication remain the gate for every route.
-5. Check that the candidate URL serves the revision this run created, then poll its `/health` for up to 3 minutes and promote that revision only when it reports `status: ok`.
-6. Write the image digest, the previous revision and the rollback command to the job summary.
+2. Stop when the service `eki-backend-staging` already exists in another region. Every regional service is public and keeps its own in-memory rate limits, so a second region would double the request budget. The error message gives the `gcloud run services delete` command for the other region.
+3. Build `backend/Dockerfile` from the repository root, push the image to the Artifact Registry repository `eki` in the region given by the `cloud_run_region` input, and record the image digest. The repository shall exist in that region, and the deploy service account needs `roles/artifactregistry.writer` on it.
+4. Render `deploy/cloud-run/staging.service.yaml` with the digest and apply it as a new revision. When a revision already serves traffic, the new revision receives none until step 6. Only a missing service counts as a first deployment: there the revision receives all traffic at once and step 6 only reports the result. Any other failure to read the service stops the job.
+5. Grant `allUsers` the Cloud Run invoker role. Firebase and device authentication remain the gate for every route.
+6. Check that the candidate URL serves the revision this run created, then poll its `/health` for up to 3 minutes and promote that revision only when it reports `status: ok`.
+7. Write the image digest, the previous revision and the rollback command to the job summary.
+
+The job therefore deploys one region at a time. To compare regions, dispatch the first region, measure it, delete its service, then dispatch the next.
 
 Step 4 makes every Hosting release depend on a running, healthy backend. While the backend runs on a workstation (Section 7.1), a release fails if the workstation or tunnel is down.
 
