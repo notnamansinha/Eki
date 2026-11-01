@@ -134,7 +134,10 @@ The deploy workflow uses Node.js 24 and `firebase-tools@15.14.0`, verifies that 
 flowchart LR
     phone["Browser"]
     esp["ESP32 tracker"]
-    subgraph ws["Workstation in India"]
+    subgraph gcp["Google Cloud project behind bustrack-be165"]
+        run["Cloud Run eki-backend-staging<br/>asia-south2, NODE_ENV=production<br/>WORKER_ENABLED=false, scales to zero"]
+    end
+    subgraph ws["Workstation in India (offline)"]
         ngrok["ngrok agent<br/>stable development domain"]
         proc1["Backend process<br/>NODE_ENV=development, port 4000"]
     end
@@ -145,23 +148,23 @@ flowchart LR
         db2[("Firestore<br/>asia-south2")]
     end
     phone -->|"Static app"| host
-    phone -->|"REST commands"| ngrok
-    esp -->|"Telemetry"| ngrok
-    ngrok -->|"Loopback"| proc1
-    proc1 --> authn
-    proc1 --> db1
-    proc1 --> db2
+    phone -->|"REST commands"| run
+    esp -.->|"Telemetry to the tunnel origin"| ngrok
+    ngrok -.->|"Loopback"| proc1
+    run --> authn
+    run --> db1
+    run --> db2
     phone -->|"SDK listeners"| db1
     phone -->|"SDK listeners"| db2
 ```
 
-Figure 3. Current deployment.
+Figure 3. Current deployment. Dashed lines show the tunnel path, which is offline.
 
-The backend runs as one Node.js process on a workstation, reached through an ngrok tunnel with a fixed domain ([ngrok tunnel](../operations/NGROK_TUNNEL.md)). The process trusts forwarded addresses only from loopback (`TRUST_PROXY=loopback`). The backend origin is compiled into both clients: `NEXT_PUBLIC_BACKEND_URL` in the web build and `BACKEND_URL` in the ignored `hardware/include/secrets.h`. Moving the backend therefore requires a web rebuild and a reflash of every tracker. While the workstation or tunnel is down, trackers queue and retry, Firebase listeners keep serving the last published state, and the PWA marks buses as delayed and then lost (Section 7).
+Since 2026-11-01 the staging web app sends its REST commands to the Cloud Run service `eki-backend-staging` in `asia-south2`, deployed by the manual `deploy-backend-staging` job ([CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md)). The service runs the backend container with `NODE_ENV=production`, trusts one forwarded hop (the production default) and scales to zero when idle; Hosting has no rewrite to it yet. It runs with `WORKER_ENABLED=false`, so no process runs the lease-owned workers until the worker handoff. Before the move, the backend ran as one Node.js process on a workstation, reached through an ngrok tunnel with a fixed domain ([ngrok tunnel](../operations/NGROK_TUNNEL.md)); that tunnel is offline. The backend origin is compiled into both clients: `NEXT_PUBLIC_BACKEND_URL` in the web build and `BACKEND_URL` in the ignored `hardware/include/secrets.h`. Moving the backend therefore requires a web rebuild and a reflash of every tracker, and trackers built with the tunnel origin cannot reach the backend until they are reflashed ([issue #376](https://github.com/notnamansinha/Eki/issues/376)). While a tracker cannot reach the backend, it queues and retries, Firebase listeners keep serving the last published state, and the PWA marks buses as delayed and then lost (Section 7).
 
 ### 5.3 Proposed managed backend
 
-Not implemented. The target is to run the existing container on Cloud Run in the Google Cloud project behind `bustrack-be165`, reach it through Firebase Hosting rewrites for `/api/**`, `/health` and `/live` or through a stable API domain, and keep the existing Authentication, Firestore and RTDB. The workers run outside request lifetimes, so the service needs CPU allocated outside requests and at least one minimum instance. Cloud Run needs a billing account linked to the Firebase project, which moves it to the Blaze plan [4]. Before the tunnel can be retired, the project needs a backend release workflow with rollback, a staged handoff of the worker lease, and trackers reflashed with the new origin. Production hosting is tracked in [issue #122](https://github.com/notnamansinha/Eki/issues/122).
+Partly implemented: the staging service exists (Section 5.2); Hosting rewrites, the worker handoff, the tracker reflash and production are not. The target is to run the existing container on Cloud Run in the Google Cloud project behind `bustrack-be165`, reach it through Firebase Hosting rewrites for `/api/**`, `/health` and `/live` or through a stable API domain, and keep the existing Authentication, Firestore and RTDB. The workers run outside request lifetimes, so the service needs CPU allocated outside requests and at least one minimum instance. Cloud Run needs a billing account linked to the Firebase project, which moves it to the Blaze plan [4]. Before the tunnel can be retired, the project needs a backend release workflow with rollback, a staged handoff of the worker lease, and trackers reflashed with the new origin. Production hosting is tracked in [issue #122](https://github.com/notnamansinha/Eki/issues/122).
 
 ## 6. Runtime views
 

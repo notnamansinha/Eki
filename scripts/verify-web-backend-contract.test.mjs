@@ -207,6 +207,28 @@ describe("live backend release preflight", () => {
     assert.deepEqual(clock.sleeps, [2_000, 4_000, 6_000, 8_000, 10_000]);
   });
 
+  it("never waits or requests past the readiness deadline", async () => {
+    const clock = fakeClock();
+    const started = [];
+    await assert.rejects(
+      verifyBackendAvailability(origin, frontend, async () => { started.push(clock.t); return new Response("", { status: 503 }); },
+        { ...clock.options, readinessDeadlineMs: 25_000 }),
+      /HTTP 503 after 6 attempt\(s\)/,
+    );
+    // The fifth wait is cut from 10 s to the 5 s left, and the last request starts at the deadline.
+    assert.deepEqual(clock.sleeps, [2_000, 4_000, 6_000, 8_000, 5_000]);
+    assert.ok(started.every((t) => t <= 25_000), `a request started after the deadline: ${started}`);
+  });
+
+  it("retries a health answer whose body stalls", async () => {
+    const clock = fakeClock();
+    const stalled = { status: 200, ok: true, headers: new Headers({ "access-control-allow-origin": frontend }),
+      body: null, json: async () => { throw new DOMException("The operation timed out.", "TimeoutError"); } };
+    const answers = [() => stalled, healthy, allowed];
+    await verifyBackendAvailability(origin, frontend, async () => answers.shift()(), clock.options);
+    assert.deepEqual(clock.sleeps, [2_000]);
+  });
+
   it("fails at once on a dead tunnel, a redirect or an unreachable host", async () => {
     for (const answer of [
       () => new Response("<html>ERR_NGROK_3200</html>", { status: 404 }),

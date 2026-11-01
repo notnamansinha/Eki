@@ -58,28 +58,36 @@ export async function verifyBackendAvailability(origin, frontendOrigin, fetchImp
   const requestedHeaders = ["authorization", "content-type", ...(isNgrok ? ["ngrok-skip-browser-warning"] : [])];
   const deadline = now() + readinessDeadlineMs;
   let response;
+  let body;
   for (let attempt = 1; ; attempt += 1) {
     let notReady;
+    // No request, and no wait, runs past the deadline.
+    const timeoutMs = Math.max(1, Math.min(10_000, deadline - now()));
     try {
       response = await fetchImpl(`${origin}/health`, {
-        headers, redirect: "error", signal: AbortSignal.timeout(10_000),
+        headers, redirect: "error", signal: AbortSignal.timeout(timeoutMs),
       });
-      if (!STARTING_STATUSES.has(response.status)) break;
+      if (!STARTING_STATUSES.has(response.status)) {
+        // The timeout also covers the body: read it here, so a body that stalls
+        // is retried like a request that stalls.
+        if (response.ok) body = await response.json();
+        break;
+      }
       notReady = `HTTP ${response.status}`;
       await response.body?.cancel();
     } catch (error) {
       if (error?.name !== "TimeoutError") throw error;
-      notReady = "no answer within 10 s";
+      notReady = `no complete answer within ${timeoutMs / 1000} s`;
     }
-    if (now() >= deadline) {
+    const remaining = deadline - now();
+    if (remaining <= 0) {
       throw new Error(`Backend health probe failed with ${notReady} after ${attempt} attempt(s).`);
     }
-    const wait = Math.min(2_000 * attempt, 10_000);
+    const wait = Math.min(2_000 * attempt, 10_000, remaining);
     log(`Backend /health: ${notReady}; the backend may still be starting. Retrying in ${wait / 1000} s.`);
     await sleep(wait);
   }
   if (!response.ok) throw new Error(`Backend health probe failed with HTTP ${response.status}.`);
-  const body = await response.json();
   if (body?.status !== "ok") throw new Error("Backend did not report healthy readiness.");
   const allowsOrigin = response.headers.get("access-control-allow-origin");
   if (allowsOrigin !== frontendOrigin && allowsOrigin !== "*") {
