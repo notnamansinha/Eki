@@ -102,7 +102,19 @@ jobs:
           # Every regional service is public and keeps its own in-memory rate limits, so a
           # second region would double the request budget, including the billable Routes
           # API limiter. Deploy one region at a time and delete the other first.
-          services="$(gcloud run services list --project "$GCP_PROJECT" --filter "metadata.name=${SERVICE}" --format 'value(region)')"
+          # Query each region on its own and stop if any query fails: a list across all
+          # regions can warn about unreachable regions and still exit 0 with a partial answer.
+          # Keep this list equal to the cloud_run_region options above.
+          services=""
+          for region in asia-south2 us-central1 asia-southeast1; do
+            if ! existing="$(gcloud run services list --project "$GCP_PROJECT" --region "$region" --filter "metadata.name=${SERVICE}" --format 'value(metadata.name)')"; then
+              echo "::error::Could not inspect Cloud Run services in ${region}; refusing to deploy."
+              exit 1
+            fi
+            if [ -n "$existing" ]; then
+              services="${services}${region}"$'\n'
+            fi
+          done
           others="$(printf '%s\n' "$services" | grep -vx "$REGION" | grep -v '^$' || true)"
           if [ -n "$others" ]; then
             while read -r other; do
