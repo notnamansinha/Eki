@@ -130,14 +130,30 @@ test("three navigation tabs fit narrow phones and the schedule scrolls clear of 
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size.width);
     await page.screenshot({ path: info.outputPath(`routes-schedule-${size.width}x${size.height}.png`) });
-    // Collapsed cards stay compact: the chevron sits beside the name rather
-    // than on a line of its own, so two cards fit above the navigation.
+    // Collapsed cards stay compact: the chevron sits beside the text column
+    // rather than on a row of its own, the card holds nothing but that column
+    // and its padding, and no summary item overflows. These hold for any
+    // system-ui font; a fixed pixel height did not (Linux CI renders the
+    // fallback font wider than Windows, Android or iOS do).
     for (const card of await page.locator("[data-route-schedule]").all()) {
-      const cardBox = (await card.boundingBox())!;
-      const chevron = (await card.locator("[data-toggle-chevron]").boundingBox())!;
-      expect(cardBox.height, `${size.width}px collapsed card`).toBeLessThanOrEqual(130);
-      expect(chevron.x + chevron.width).toBeLessThanOrEqual(cardBox.x + cardBox.width - 12);
-      expect(chevron.y).toBeLessThan(cardBox.y + cardBox.height / 2);
+      const layout = await card.evaluate(section => {
+        const chevron = section.querySelector("[data-toggle-chevron]")!;
+        const column = chevron.previousElementSibling as HTMLElement;
+        const box = (element: Element) => element.getBoundingClientRect();
+        return {
+          card: box(section), column: box(column), chevron: box(chevron),
+          columnOverflows: column.scrollWidth > column.clientWidth,
+        };
+      });
+      const label = `${size.width}px collapsed card`;
+      expect(layout.chevron.left, label).toBeGreaterThanOrEqual(layout.column.right - 0.5);
+      expect(layout.chevron.right, label).toBeLessThanOrEqual(layout.card.right - 12);
+      const chevronMiddle = (layout.chevron.top + layout.chevron.bottom) / 2;
+      expect(chevronMiddle, label).toBeGreaterThanOrEqual(layout.column.top);
+      expect(chevronMiddle, label).toBeLessThanOrEqual(layout.column.bottom);
+      // 14 px of padding above and below the column, plus the 1 px borders.
+      expect(layout.card.height, label).toBeLessThanOrEqual(layout.column.height + 2 * 14 + 2 + 1);
+      expect(layout.columnOverflows, label).toBe(false);
     }
     await expandRoute(page, "QA route");
     await expandRoute(page, "Campus Loop");
