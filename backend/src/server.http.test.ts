@@ -61,19 +61,20 @@ afterAll(async () => {
 });
 
 // node:http rather than fetch so methods such as TRACE can be sent.
-const request = (method: string, path: string, headers: Record<string, string> = {}) =>
+const request = (method: string, path: string, headers: Record<string, string> = {}, body?: string) =>
   new Promise<Response>((resolve, reject) => {
     const outgoing = http.request(`${origin}${path}`, { method, headers }, incoming => {
       const chunks: Buffer[] = [];
       incoming.on("data", chunk => chunks.push(chunk));
-      incoming.on("end", () => resolve(new Response(Buffer.concat(chunks), {
+      // A Response with a null-body status (204 for a CORS preflight) cannot carry a body.
+      incoming.on("end", () => resolve(new Response([204, 205, 304].includes(incoming.statusCode ?? 0) ? null : Buffer.concat(chunks), {
         status: incoming.statusCode,
         headers: Object.entries(incoming.headers).flatMap(([name, value]) =>
           value === undefined ? [] : [[name, Array.isArray(value) ? value.join(", ") : value] as [string, string]]),
       })));
     });
     outgoing.on("error", reject);
-    outgoing.end();
+    outgoing.end(body);
   });
 
 describe("HTTP edge as wired by server.ts", () => {
@@ -96,6 +97,43 @@ describe("HTTP edge as wired by server.ts", () => {
     }
     const allowed = await request("GET", "/live", { Origin: "https://eki.example" });
     expect(allowed.headers.get("access-control-allow-origin")).toBe("https://eki.example");
+  });
+
+  it.each([
+    ["no credentials", "/api/health", {}, 401],
+    ["an expired token", "/api/health", { Authorization: "Bearer expired" }, 401],
+    ["the wrong role", "/api/health", { Authorization: "Bearer passenger" }, 403],
+    ["an unknown resource", "/api/no-such-resource", { Authorization: "Bearer passenger" }, 404],
+  ])("marks API responses for %s as not cacheable", async (_label, path, headers, status) => {
+    const response = await request("GET", path, headers);
+    expect(response.status).toBe(status);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it.each([
+    ["malformed JSON", "{", 400],
+    ["an oversized body", JSON.stringify({ message: "x".repeat(20_000) }), 413],
+  ])("marks the body parser's rejection of %s as not cacheable", async (_label, body, status) => {
+    const response = await request("POST", "/api/feedback", { "Content-Type": "application/json" }, body);
+    expect(response.status).toBe(status);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("marks the CORS preflight for an API path as not cacheable", async () => {
+    const response = await request("OPTIONS", "/api/health", {
+      Origin: "https://eki.example",
+      "Access-Control-Request-Method": "GET",
+      "Access-Control-Request-Headers": "authorization",
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://eki.example");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("leaves the operational probes outside /api with their own cache header", async () => {
+    for (const path of ["/live", "/health"]) {
+      expect((await request("GET", path)).headers.get("cache-control")).toBe("no-store");
+    }
   });
 
   it("keeps TRACE rejected and operational health admin-only", async () => {
