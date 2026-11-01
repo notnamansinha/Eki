@@ -1,5 +1,6 @@
 /**
- * Passenger route schedules — admin-approved routes with per-stop times.
+ * Passenger route schedules — every route, with the per-stop times an admin
+ * configured and the backend's completed-ride counts for ordering.
  *
  * Stored at Firestore `settings/passengerRoutes` (backend-written via
  * PUT /api/v2/settings/passenger-routes). The document only holds approvals
@@ -33,6 +34,8 @@ export interface PassengerRouteSchedule {
   routeId: string;
   name: string;
   color: string;
+  /** Completed rides counted by the backend; null when no count is published for this route. */
+  completedRides: number | null;
   stops: PassengerScheduleStop[];
 }
 
@@ -64,32 +67,55 @@ export function normalizePassengerRouteConfig(value: unknown): PassengerRouteCon
   return { routes };
 }
 
+/** routeId → completed rides, from the backend-published `settings/routeUsage`. */
+export type RouteUsage = Record<string, number>;
+export const EMPTY_ROUTE_USAGE: RouteUsage = {};
+
+/** Coerce the untrusted usage document; entries that are not whole, non-negative counts are dropped. */
+export function normalizeRouteUsage(value: unknown): RouteUsage {
+  const data = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const counts = data.completedRides;
+  if (!counts || typeof counts !== "object" || Array.isArray(counts)) return EMPTY_ROUTE_USAGE;
+  const usage: RouteUsage = {};
+  for (const [routeId, count] of Object.entries(counts)) {
+    if (routeId && Number.isSafeInteger(count) && (count as number) >= 0) usage[routeId] = count as number;
+  }
+  return usage;
+}
+
 /**
- * Join approvals with live route documents. Only approved routes that still
- * exist are returned, in approval order; stops follow the route's own order,
- * and times for deleted stops are ignored.
+ * Every route document, most completed rides first. Ties (including routes
+ * never ridden, or every route while usage is unknown) keep the admin's
+ * approval order, then the remaining routes by name. Times come only from the
+ * admin's approvals; stops follow the route's own order, and times for
+ * deleted stops are ignored.
  */
 export function buildPassengerRouteSchedules(
   config: PassengerRouteConfig,
   routes: readonly RouteData[],
+  usage: RouteUsage = EMPTY_ROUTE_USAGE,
 ): PassengerRouteSchedule[] {
-  const byId = new Map(routes.map(route => [route.id, route]));
-  const schedules: PassengerRouteSchedule[] = [];
-  for (const approval of config.routes) {
-    const route = byId.get(approval.routeId);
-    if (!route) continue;
-    schedules.push({
+  const approvals = new Map(config.routes.map((approval, index) => [approval.routeId, { approval, index }]));
+  const schedules = routes.map(route => {
+    const stopTimes = approvals.get(route.id)?.approval.stopTimes ?? {};
+    return {
       routeId: route.id,
       name: route.name || route.id,
       color: route.color,
+      completedRides: usage[route.id] ?? null,
       stops: (Array.isArray(route.stops) ? route.stops : []).map(stop => ({
         id: stop.id,
         name: stop.name || stop.shortName || stop.id,
-        time: isValidStopTime(approval.stopTimes[stop.id]) ? approval.stopTimes[stop.id] : null,
+        time: isValidStopTime(stopTimes[stop.id]) ? stopTimes[stop.id] : null,
       })),
-    });
-  }
-  return schedules;
+    };
+  });
+  const approvalRank = (routeId: string) => approvals.get(routeId)?.index ?? Number.POSITIVE_INFINITY;
+  return schedules.sort((left, right) =>
+    (right.completedRides ?? 0) - (left.completedRides ?? 0) ||
+    approvalRank(left.routeId) - approvalRank(right.routeId) ||
+    left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }) ||
+    left.routeId.localeCompare(right.routeId));
 }
 
 /** "07:05" → "7:05 am", matching the lowercase style of the service-start copy. */

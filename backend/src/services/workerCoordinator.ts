@@ -7,6 +7,7 @@ import { startRetentionSweeper } from "./retentionSweeper";
 import { reconcileFleetAuthorization } from "../routes/fleet";
 import { startPrivacyDeletionWorker } from "./privacyDeletionWorker";
 import { startAbandonedRideReconciler } from "./abandonedRideReconciler";
+import { startRouteUsageSummary } from "./routeUsageSummary";
 import { recordWorkerRun, setWorkerLeadership } from "../lib/metrics";
 import { WorkerFence, workerTransaction, WORKER_CLOCK_SKEW_MS, WORKER_LEASE_ID } from "../lib/workerFence";
 import { readBooleanEnv } from "../lib/booleanEnv";
@@ -34,6 +35,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
   let fleetReconcileTimer: NodeJS.Timeout | null = null;
   let stopPrivacyDeletion: (() => void) | null = null;
   let stopRideReconciliation: (() => void) | null = null;
+  let stopRouteUsage: (() => void) | null = null;
   let stopWorkPromise: Promise<void> | null = null;
   let renewInFlight: Promise<void> | null = null;
   let fence: WorkerFence | null = null;
@@ -58,6 +60,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
     const stopRetentionNow = stopRetention;
     const stopPrivacyDeletionNow = stopPrivacyDeletion;
     const stopRideReconciliationNow = stopRideReconciliation;
+    const stopRouteUsageNow = stopRouteUsage;
     if (fleetReconcileTimer) clearInterval(fleetReconcileTimer);
     stopTripEngine = null;
     stopProjection = null;
@@ -65,6 +68,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
     fleetReconcileTimer = null;
     stopPrivacyDeletion = null;
     stopRideReconciliation = null;
+    stopRouteUsage = null;
     const stopping = (async () => {
       const results = await Promise.allSettled([
         stopTripEngineNow?.() ?? Promise.resolve(),
@@ -72,6 +76,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
         Promise.resolve().then(() => stopRetentionNow?.()),
         Promise.resolve().then(() => stopPrivacyDeletionNow?.()),
         Promise.resolve().then(() => stopRideReconciliationNow?.()),
+        Promise.resolve().then(() => stopRouteUsageNow?.()),
       ]);
       for (const result of results) {
         if (result.status === "rejected") {
@@ -135,6 +140,7 @@ export function startWorkerCoordinator(): () => Promise<void> {
           stopRetention = startRetentionSweeper();
           stopPrivacyDeletion = startPrivacyDeletionWorker();
           stopRideReconciliation = startAbandonedRideReconciler();
+          stopRouteUsage = startRouteUsageSummary();
           const runFleetPages = async () => {
             const cursorRef = db.collection("_reconciliation_cursors").doc("fleet-authorizations");
             currentFence.assert();

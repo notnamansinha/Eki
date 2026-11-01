@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-DAT-001 | 2.0 | Current | 2026-10-30 |
+| EKI-DAT-001 | 2.0 | Current | 2026-11-01 |
 
 ## 1. Purpose
 
@@ -285,20 +285,34 @@ Fields: `serviceStartTime` (at most 64), `noBusesMessage` (at most 200), `noBuse
 
 ### 4.6 `settings/passengerRoutes`
 
-The routes that an administrator publishes in the passenger **Routes** tab, with a time for each stop. The document holds only the approvals and the times; route names, stops and stop order always come from `routes/{routeId}`.
+The stop times that an administrator sets for the passenger **Routes** tab. Passengers see every route in `routes`; this document holds only the routes that have times and the times themselves. Route names, stops and stop order always come from `routes/{routeId}`.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `routes[]` | `{routeId, stopTimes}`, at most 50 | Approved routes in passenger display order; each `routeId` is a `routes/{routeId}` document ID and appears once |
+| `routes[]` | `{routeId, stopTimes}`, at most 50 | Routes with times, in the administrator's order, which breaks ties between routes with the same ride count (Section 4.6.1); each `routeId` is a `routes/{routeId}` document ID and appears once |
 | `routes[].stopTimes` | map of stop ID to `"HH:mm"` | 24-hour time for each stop of the route (`^([01]\d\|2[0-3]):[0-5]\d$`), with keys in the route's stop order at save time |
 | `updatedAt` | Timestamp | Last save |
 | `updatedBy` | string | UID of the administrator who saved |
 
-Writer: only `PUT /api/v2/settings/passenger-routes` ([API reference](../../backend/API.md)). The backend reads every referenced route in one `getAll`, requires each route to exist and each `stopTimes` to hold exactly the route's current stop IDs with valid times, rebuilds the record from the validated values and writes it as a full replacement, never a merge (`backend/src/routes/settings.ts:177`, `settings.ts:221`). An empty `routes` array unpublishes every route. The 16 KiB request limit allows roughly 450 stop times in total with generated stop IDs.
+Writer: only `PUT /api/v2/settings/passenger-routes` ([API reference](../../backend/API.md)). The backend reads every referenced route in one `getAll`, requires each route to exist and each `stopTimes` to hold exactly the route's current stop IDs with valid times, rebuilds the record from the validated values and writes it as a full replacement, never a merge (`backend/src/routes/settings.ts:177`, `settings.ts:221`). An empty `routes` array clears every time. The 16 KiB request limit allows roughly 450 stop times in total with generated stop IDs.
 
 Readers: every signed-in browser, through a listener (`frontend/src/hooks/usePassengerRouteConfig.ts:47`). Client rule: read, signed in; every client write denied (`firestore.rules:293`).
 
-A later route edit or deletion does not update this document, so browsers treat it as untrusted input (`frontend/src/lib/passengerRouteSchedule.ts`). They drop malformed and duplicate entries, skip approved routes whose route document no longer exists, ignore times for deleted stops, and show "Time not set" for a stop without a valid time, for example a stop added after the last save. A route that is not in `routes[]` is never shown to passengers, and a missing document publishes nothing. The administrator settings tab removes stale entries on the next save. Retention: replaced by each save; the backend never deletes it.
+### 4.6.1 `settings/routeUsage`
+
+Completed-ride counts per route, used to list the most-ridden route first in the passenger **Routes** tab. Passengers cannot read `completed_trips`, so the backend publishes the counts here.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `completedRides` | map of route ID to integer | Number of `completed_trips` documents with that `routeId`, for every route document that existed at the run; a route never ridden has 0 |
+| `generatedAt` | ISO 8601 string | Time of the run |
+| `truncated` | boolean | True when there were more than 200 routes; only the first 200 by document ID are counted |
+
+Writer: the worker leader, at leadership start and then every hour, as a fenced full replacement (`backend/src/services/routeUsageSummary.ts`). Each route costs one `count()` aggregation on the automatic `routeId` index, so no composite index is needed. The counts cover the trips still retained (180 days after `completedAt` by default, longer when the retention sweeper is disabled); retention and history deletion show up on the next run. A failed run leaves the previous counts in place.
+
+Readers: every signed-in browser, through a listener (`frontend/src/hooks/useRouteUsage.ts`). Browsers keep only whole, non-negative counts and fall back to the administrator's order when the document is missing or unreadable. Client rule: read, signed in; every client write denied (`firestore.rules:293`). Retention: replaced by each run.
+
+A later route edit or deletion does not update this document, so browsers treat it as untrusted input (`frontend/src/lib/passengerRouteSchedule.ts`). They drop malformed and duplicate entries, skip entries whose route document no longer exists, ignore times for deleted stops, and show "Time not set" for a stop without a valid time, for example a stop added after the last save. A route that is not in `routes[]` is still listed, with "Time not set" at every stop, and a missing document sets no times. The administrator settings tab removes stale entries on the next save. Retention: replaced by each save; the backend never deletes it.
 
 ### 4.7 `ride_sessions/{sessionId}`
 
@@ -361,7 +375,7 @@ Writers: leader (`tripStateEngine.ts:434`, `tripStateEngine.ts:1165`), ride star
 
 ### 4.9 `completed_trips/{sessionId}`
 
-Fields: `busId`, `driverId`, `routeId`, `direction`, `originStopId`, `destinationStopId`, `completedAt` (ISO string), `automaticTurnaroundEligibleAt` (epoch ms), `stopCount`, `stopNames[]` (travel order) and `sessionId`. Writer: leader at completion (`tripStateEngine.ts:1121`). Readers: the analytics endpoint (forward and reverse counts) and history deletion. Client rule: read by a current admin (`firestore.rules:158`). Retention: 180 days after `completedAt` (`COMPLETED_TRIP_RETENTION_DAYS`), and with admin history deletion.
+Fields: `busId`, `driverId`, `routeId`, `direction`, `originStopId`, `destinationStopId`, `completedAt` (ISO string), `automaticTurnaroundEligibleAt` (epoch ms), `stopCount`, `stopNames[]` (travel order) and `sessionId`. Writer: leader at completion (`tripStateEngine.ts:1121`). Readers: the analytics endpoint (forward and reverse counts), the hourly route usage summary (Section 4.6.1) and history deletion. Client rule: read by a current admin (`firestore.rules:158`). Retention: 180 days after `completedAt` (`COMPLETED_TRIP_RETENTION_DAYS`), and with admin history deletion.
 
 ### 4.10 `feedbacks/{feedbackId}` and `feedbackCooldowns/{uid}`
 

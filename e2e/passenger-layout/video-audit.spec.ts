@@ -16,7 +16,7 @@ async function paintedNavBottom(page: Page) {
     // The lowest edge painted with the navigation surface colour.
     let bottom = 0;
     for (let node: HTMLElement | null = element as HTMLElement; node && !node.hasAttribute("data-passenger-workspace"); node = node.parentElement) {
-      if (getComputedStyle(node).backgroundColor === "rgba(22, 22, 26, 0.98)") bottom = Math.max(bottom, node.getBoundingClientRect().bottom);
+      if (getComputedStyle(node).backgroundColor === "rgb(22, 22, 26)") bottom = Math.max(bottom, node.getBoundingClientRect().bottom);
     }
     return bottom;
   });

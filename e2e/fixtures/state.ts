@@ -76,6 +76,21 @@ export function usePassengerRouteConfig() {
     subscribers.forEach(fn => fn());
   } };
 }
+// Synthetic `buses`: two on Campus Loop (one shared with QA route), and the live qa-bus on QA route.
+const qaBuses = [
+  { id: "qa-bus", name: "QA Shuttle", assignedRoutes: [route.id] },
+  { id: "bus_12", name: "Green Line Express", assignedRoutes: [scheduleRoute.id] },
+  { id: "bus_03", name: "Campus Hopper", assignedRoutes: [scheduleRoute.id, route.id] },
+];
+export function useBuses() {
+  return { buses: qaBuses, loading: false, error: null, retry: () => {} };
+}
+// Synthetic `settings/routeUsage`: QA route outranks Campus Loop although the
+// admin approved Campus Loop first, so the schedule demo exercises the ranking.
+const routeUsage = { [route.id]: 128, [scheduleRoute.id]: 42 };
+export function useRouteUsage() {
+  return { usage: routeUsage, loading: false, error: null };
+}
 let settings = { noBusesMessage: "No buses running", noBusesSubMessage: "Service starts at {time}", serviceStartTime: "8:00 am", announcementActive: false, announcementText: "" };
 export function useSettings() {
   const current = useSyncExternalStore(subscribe, () => settings);

@@ -16,19 +16,23 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 describe("account confirmations", () => {
-  it("flips the profile photo into a golden coin after two taps, then restores it", () => {
+  it("shows only the Windows logo after two profile photo taps, then restores the photo", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-27T12:00:00Z"));
     try {
       render(<AccountTab />);
       const photo = screen.getByRole("button", { name: "Profile photo, double tap for a surprise" });
       fireEvent.click(photo);
-      expect(screen.queryByRole("img", { name: "Golden coin: 19" })).toBeNull();
+      expect(screen.queryByRole("img", { name: "Windows logo" })).toBeNull();
       fireEvent.click(photo);
-      expect(screen.getByRole("img", { name: "Golden coin: 19" })).toBeTruthy();
-      expect(screen.getAllByText("19")).toHaveLength(1);
-      act(() => vi.advanceTimersByTime(4_000));
-      expect(screen.queryByRole("img", { name: "Golden coin: 19" })).toBeNull();
+      expect(screen.getByRole("img", { name: "Windows logo" }).getAttribute("src")).toBe("/images/windows-logo-profile.webp");
+      expect(screen.queryByRole("img", { name: "Default profile" })).toBeNull();
+      expect(document.querySelectorAll("[data-profile-color-rain] .profile-color-drop")).toHaveLength(4);
+      act(() => vi.advanceTimersByTime(2_000));
+      expect(document.querySelector("[data-profile-color-rain]")).toBeNull();
+      expect(screen.getByRole("img", { name: "Windows logo" })).toBeTruthy();
+      act(() => vi.advanceTimersByTime(2_000));
+      expect(screen.queryByRole("img", { name: "Windows logo" })).toBeNull();
       expect(screen.getByRole("img", { name: "Default profile" })).toBeTruthy();
     } finally {
       vi.useRealTimers();

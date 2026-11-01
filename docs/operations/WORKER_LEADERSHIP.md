@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-026 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-026 | 1.0 | Current | 2026-11-01 |
 
 ## 1. Purpose
 
@@ -10,7 +10,7 @@ Several backend replicas can run at once, but singleton background work must run
 
 ## 2. Scope
 
-The process that holds the lease is the worker leader. It runs the trip state engine (lifecycle listeners, stale presence sweep and lifecycle recovery), the passenger projection (`publicRouteBuses`), the retention sweeper, the privacy deletion worker, abandoned-ride cleanup and the periodic fleet authorization reconciler. HTTP, admin and device requests do not need leadership; they keep their own assignment, ordering and durable operation contracts.
+The process that holds the lease is the worker leader. It runs the trip state engine (lifecycle listeners, stale presence sweep and lifecycle recovery), the passenger projection (`publicRouteBuses`), the retention sweeper, the privacy deletion worker, abandoned-ride cleanup, the hourly route usage summary (`settings/routeUsage`) and the periodic fleet authorization reconciler. HTTP, admin and device requests do not need leadership; they keep their own assignment, ordering and durable operation contracts.
 
 ## 3. Behaviour
 

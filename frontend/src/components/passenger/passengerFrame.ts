@@ -30,7 +30,8 @@ export const passengerNavFrameClassName =
   "absolute inset-x-0 bottom-0 flex justify-center rounded-t-[24px] pb-safe";
 
 export const passengerNavFrameStyle: CSSProperties = {
-  background: "rgba(22, 22, 26, 0.98)",
+  // Fully opaque: nothing scrolling beneath shows through the bar.
+  background: "rgb(22, 22, 26)",
   borderTop: "1px solid rgba(255, 255, 255, 0.15)",
 };
 
