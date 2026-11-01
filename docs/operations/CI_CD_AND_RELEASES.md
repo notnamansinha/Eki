@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-001 | 2.0 | Current | 2026-10-30 |
+| EKI-OPS-001 | 3.0 | Current | 2026-11-01 |
 
 ## 1. Purpose
 
@@ -33,7 +33,7 @@ A green push to `main` releases the frontend and security rules to `bustrack-be1
 | Workflow file | Name | Triggers | Deploys |
 |---|---|---|---|
 | `ci.yml` | Production verification | Every push to any branch; every pull request | Nothing |
-| `codeql.yml` | CodeQL | Every push; every pull request | Nothing |
+| `codeql.yml` | CodeQL | Every push except `dependabot/**`; every pull request | Nothing |
 | `deploy.yml` | Deploy | Completion of Production verification; manual dispatch | Hosting, Firestore rules, RTDB rules and Firestore indexes |
 | `deep-qa.yml` | Isolated nightly QA | Daily at 20:17 UTC (01:47 IST); manual dispatch; pushes to six `codex/qa-*` branches | Nothing |
 | `weekly-reliability.yml` | Isolated weekly reliability baseline | Saturdays at 20:41 UTC (Sundays 02:11 IST); manual dispatch; pushes to `codex/qa-nightly-reliability` | Nothing |
@@ -57,7 +57,7 @@ CI establishes that the source builds and that the automated suites pass. It doe
 
 ## 4. CodeQL (`codeql.yml`)
 
-The `analyze` job runs CodeQL with the `security-extended` query suite for `javascript-typescript` and `python`, on every push and pull request. It needs `security-events: write` and no secrets. Findings appear in the repository's code scanning alerts and require triage.
+The `analyze` job runs CodeQL with the `security-extended` query suite for `javascript-typescript` and `python`, on every pull request and on pushes except `dependabot/**`. Dependabot uses the PR upload path because its read-only push token cannot upload SARIF. The job requests `security-events: write` and needs no secrets. Findings appear in the repository's code scanning alerts and require triage.
 
 ## 5. Deploy (`deploy.yml`)
 
@@ -196,7 +196,56 @@ The manual production dispatch always deploys the head of `main`, so a productio
 
 For each release, record the commit SHA, the Production verification and Deploy run URLs, the environment name (not its secrets), the backend commit and host, the result of Section 9, any firmware image hash and flashed devices, the approver, the rollback target and known risks. Keep tokens, keys, device and Wi-Fi credentials, personal records and precise location traces out of the record.
 
-## 12. References
+## 12. Dependency Updates
+
+### 12.1 Coverage and schedule
+
+[Dependabot configuration](../../.github/dependabot.yml) schedules checks every weekday in `Asia/Kolkata`. The root npm job owns the shared lockfile and discovers the frontend and backend workspaces. The local lint helper needs a separate job because npm path dependencies are support files in the root Dependabot job.
+
+| Ecosystem | Manifest location | Check time (IST) | Maximum open version PRs |
+|---|---|---|---|
+| npm workspaces | Root `package.json`, `package-lock.json`, frontend and backend manifests | 09:00 | 5 |
+| Local lint helper | `tools/next-lint-glob/package.json` | 09:10 | 2 |
+| GitHub Actions | `.github/workflows/` | 09:20 | 3 |
+| Docker | `backend/Dockerfile`, builder and runtime Node/Alpine images | 09:30 | 2 |
+| Python tooling | `hardware/requirements.txt`, used by regular and nightly firmware CI | 09:40 | 2 |
+
+Routine npm releases wait 3 days for patches, 7 for minors and 14 for majors. Other ecosystems wait 7 days. Security updates use GitHub's separate alert-driven process and bypass these routine cooldowns and the version-update schedule. Enable both Dependabot alerts and Dependabot security updates in the repository security settings; committing the configuration alone does not enable security fixes.
+
+Dependabot can propose version updates for SHA-pinned Actions, but GitHub does not generate Actions vulnerability alerts for full SHA references. Monitor [GitHub Actions advisories](https://github.com/advisories?query=ecosystem%3Aactions) separately and update affected pins promptly when fixes are released. Keep the full SHA pins; do not treat a clean alert list as proof that those actions have no known advisories.
+
+Direct manifest dependencies receive version PRs; security updates also cover supported vulnerable transitive dependencies. Related React/Next.js packages, Workbox packages, OpenTelemetry packages, Stryker packages and Tailwind packages are grouped by family so related versions can be reviewed together. Other updates remain separate. Major versions are proposed rather than ignored.
+
+### 12.2 Review and merge gates
+
+Dependabot creates pull requests and does not approve, merge or deploy them. The existing CODEOWNERS entry requests the repository owner's review. Dependabot PR workflows use restricted tokens and no deployment secrets. A PR or fork run cannot pass the Deploy workflow's same-repository `push` to `main` gate.
+
+The main branch rules require an owner approval and these GitHub Actions checks: `web`, `backend-image`, `firmware`, `qa-evidence`, `Analyze javascript-typescript` and `Analyze python`. The checks must pass against the current base before merging. Existing administrator bypass permissions remain available for explicit recovery; normal dependency updates shall not use a bypass or cancel required checks.
+
+The all-branches ruleset excludes `refs/heads/dependabot/**/*` so the bot can update, rebase and retire its own PR branches. Main retains its owner-review and CI rules; the bot receives no bypass permission on main. Other feature-branch rules are unchanged.
+
+Before approving an update:
+
+1. Read upstream release notes and migration instructions, check Node.js 24 support, and inspect the complete manifest and lockfile diff. Review new package sources, install scripts, license changes and unexpected transitive dependencies.
+2. Keep React/React DOM and Next.js/its ESLint configuration compatible. Check OpenTelemetry's stable and experimental release lines together. A major version number alone does not establish compatibility.
+3. Require the complete CI results from Sections 3 and 4, including both audits, the strict build, browser and emulator suites, container smoke boot and Trivy scan, and firmware builds. A failed job is a reason to investigate or close the update.
+4. For an Actions update, retain full SHA pins and version comments. Updates to actions used by the isolated workflows also require reviewing the explicit allowlist in `scripts/qa/workflow-policy.mjs`; do not weaken that allowlist to make a PR pass.
+5. For the local lint helper, regenerate and commit the shared root lockfile with `npm install --package-lock-only --ignore-scripts`, then verify `npm ci`, lint and the Next lint root-resolution tests. A separate helper update may not regenerate the parent lockfile automatically.
+6. For a PlatformIO update, review the expected version in `scripts/qa/run-native.mjs` together with `hardware/requirements.txt`, and run native, protocol and all affected firmware builds. Hardware or runtime behaviour claims still need the field evidence described in Section 3.
+7. Merge a Dependabot PR with **Create a merge commit**, using the maintainer as the merge author. Squashing a bot-authored commit can give the subsequent main CodeQL run a read-only token, as described in [GitHub's CodeQL permission guidance](https://docs.github.com/en/code-security/reference/code-scanning/troubleshoot-analysis-errors/resource-not-accessible). This does not require automatic merging.
+8. Review staging after the successful merged main build. Production still requires the explicit approval-gated release in Section 5; use Section 10 if a regression appears.
+
+Passing automated checks reduces risk; it cannot prove that a future upstream release has no defects. Do not add an automatic merge or approval workflow for dependency PRs.
+
+### 12.3 Limits and maintenance
+
+Dependabot does not support PlatformIO's `hardware/platformio.ini` platform and library pins. It also does not discover Firebase CLI versions embedded in workflow or JavaScript command strings, GitHub runner labels, or Node/Python versions supplied as action inputs. Review those pins manually against upstream releases and use the same verification and release gates. npm `overrides` remain deliberate compatibility and security decisions: review them when an update is blocked rather than removing them automatically.
+
+If an update cannot be resolved, inspect the update job logs under the repository's dependency graph and Dependabot pages. Check registry access, the shared lockfile and local path dependency first. Close an incompatible PR with an explanation, or supply the required migration in that PR. To pause routine PRs for one ecosystem, set its `open-pull-requests-limit` to `0`; security updates have their own separate limit.
+
+The configuration and these procedures follow GitHub's [Dependabot options reference](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference), [supported ecosystems](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories), and [security-update setup](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/configure-security-updates).
+
+## 13. References
 
 [1] Google, "Manage live and preview channels, releases, and versions for your site," firebase.google.com/docs/hosting/manage-hosting-resources. Accessed: 2026-10-30.
 

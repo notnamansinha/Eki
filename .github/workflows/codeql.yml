@@ -2,6 +2,10 @@ name: CodeQL
 
 on:
   push:
+    # Dependabot's read-only push token cannot upload SARIF. Its PR event
+    # remains fully scanned via GitHub's supported pull_request upload path.
+    branches-ignore:
+      - 'dependabot/**'
   pull_request:
 
 permissions:
