@@ -124,6 +124,15 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
+// Default for every API response, including authentication failures, rate-limit
+// rejections, parse errors and CORS preflights that no route handler reaches. Hosting and other
+// shared caches must never store these. A route that needs another policy sets
+// its own header, which replaces this one.
+app.use("/api", (_req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
+
 // ── CORS ──────────────────────────────────────────────────────────────────────
 // Browser origins come exclusively from the CORS_ORIGIN env var (issue #39
 // D6): no hardcoded project-specific defaults. Production fails closed above.

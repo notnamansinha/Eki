@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-002 | 2.0 | Current | 2026-10-30 |
+| EKI-API-002 | 2.1 | Current | 2026-11-01 |
 
 ## 1. Purpose
 
@@ -64,7 +64,19 @@ These tests do not prove that a deployment is reachable, that real firmware tran
 1. It reads `NEXT_PUBLIC_BACKEND_URL` from the shell or the frontend `.env` files and fails unless its origin is in the `connect-src` directive of the Hosting Content-Security-Policy in `firebase.json`. With `EKI_STRICT_PRODUCTION_BUILD=true` a missing URL is an error; otherwise the check is skipped.
 2. With `EKI_RUNTIME_SMOKE=1` it also calls the live backend: `GET /health` must return 200 with `status: ok` and allow `EKI_FRONTEND_ORIGIN` in CORS, and a CORS preflight for `POST /api/users/bootstrap` must allow that origin, the `POST` method and the `authorization` and `content-type` headers. The preflight creates nothing.
 
-### 3.4 Where the checks run
+### 3.4 Hosting rewrite check
+
+`npm run verify:hosting-rewrites -- --hosting <origin> [--direct <origin>]` runs `scripts/verify-hosting-rewrites.mjs` against the Firebase Hosting rewrites to the Cloud Run backend (issue #372). It sends GET requests only:
+
+1. `/live` and `/health` must reach the backend and return JSON without a redirect. With `--require-ready`, `/health` must also report `status: ok`.
+2. An unauthenticated `/api` request must return the backend's JSON 401 with `Cache-Control: no-store`. A request with `Authorization: Bearer invalid` must return a different 401 body, which shows that Hosting forwards the header. The backend logs that request as a failed token verification.
+3. An unknown `/api` path must be answered by the backend as JSON.
+4. `/`, `/passenger`, `/admin`, `/sw.js` and `/__/auth/handler` must still come from Hosting, and a page that does not exist must return the Hosting 404, so the rewrite is not a catch-all.
+5. It reports the p50, p95 and p99 latency of `/live` through Hosting, and with `--direct` against the service URL, alternating the two. `--max-added-p95-ms` fails the run when Hosting adds more than that to the p95.
+
+Hosting has no rewrite to the backend yet, so the check fails against the live site until the rewrites are added. Run it against a Hosting preview channel before the rewrites are released.
+
+### 3.5 Where the checks run
 
 | Check | Runs in |
 |---|---|
@@ -72,6 +84,7 @@ These tests do not prove that a deployment is reachable, that real firmware tran
 | Checker tests and backend route tests | `npm test`, which CI runs on every push and pull request |
 | Static web and backend check | `npm run build` |
 | Runtime web and backend check | Deploy workflow, before each staging and production release |
+| Hosting rewrite check | Manually: against a Hosting preview channel before the rewrites are released, and against the live site after |
 
 ## 4. Compatibility rules
 

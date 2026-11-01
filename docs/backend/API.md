@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-001 | 3.0 | Current | 2026-10-30 |
+| EKI-API-001 | 3.1 | Current | 2026-11-01 |
 
 ## 1. Introduction
 
@@ -153,7 +153,7 @@ These are not repeated under each operation. Operations list their own statuses 
 
 Headers:
 
-- Most handlers set `Cache-Control: no-store`; geometry reads set `private, no-store`. Clients and proxies must not cache API responses.
+- Every response under `/api` carries `Cache-Control: no-store`, including authentication failures, rate-limit rejections and parse errors; geometry reads set `private, no-store`. Clients and proxies must not cache API responses.
 - CORS allows only the origins in `CORS_ORIGIN` (plus `http://localhost:3000` outside production), without credentials, and exposes `Location`, `Retry-After`, `X-Reconciliation-Complete` and `X-Next-Cursor` to browser code.
 
 Retry guidance: do not resend a 400, 401, 403, 404, 409 or 422 unchanged. On 429 and 503, wait for `Retry-After` or `retryAfterMs`. When `outcomeUnknown` is `true`, retry with the same idempotency key, save ID or request ID, or read the status resource, so that the backend can return the original outcome.
