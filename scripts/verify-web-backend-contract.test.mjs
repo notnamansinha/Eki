@@ -171,7 +171,88 @@ describe("live backend release preflight", () => {
       new Response('{"status":"degraded"}', { status: 503 }),
       new Response('{"status":"degraded"}'),
       new Response('<html>Tunnel offline</html>'),
-    ]) await assert.rejects(verifyBackendAvailability(origin, frontend, async () => response));
+    ]) await assert.rejects(verifyBackendAvailability(origin, frontend, async () => response, { readinessDeadlineMs: 0, log: () => {} }));
+  });
+
+  /** A clock that advances only when the check sleeps. */
+  const fakeClock = () => {
+    const clock = { t: 0, sleeps: [] };
+    clock.options = { now: () => clock.t, sleep: async ms => { clock.sleeps.push(ms); clock.t += ms; }, log: () => {} };
+    return clock;
+  };
+
+  it("waits for a backend that is still starting", async () => {
+    const clock = fakeClock();
+    const answers = [
+      () => new Response('{"status":"degraded"}', { status: 503 }),
+      () => { throw new DOMException("The operation timed out.", "TimeoutError"); },
+      () => new Response("Bad Gateway", { status: 502 }),
+      healthy, allowed,
+    ];
+    const urls = [];
+    await verifyBackendAvailability(origin, frontend, async (url) => { urls.push(url); return answers.shift()(); }, clock.options);
+    assert.deepEqual(urls, [...Array(4).fill(`${origin}/health`), `${origin}/api/users/bootstrap`]);
+    assert.deepEqual(clock.sleeps, [2_000, 4_000, 6_000]);
+  });
+
+  it("stops waiting at the readiness deadline", async () => {
+    const clock = fakeClock();
+    let calls = 0;
+    await assert.rejects(
+      verifyBackendAvailability(origin, frontend, async () => { calls += 1; return new Response("", { status: 503 }); }, { ...clock.options, readinessDeadlineMs: 30_000 }),
+      /HTTP 503 after 5 attempt\(s\)/,
+    );
+    // At 20 s the next 10 s wait would reach the deadline, so the check stops there.
+    assert.equal(calls, 5);
+    assert.deepEqual(clock.sleeps, [2_000, 4_000, 6_000, 8_000]);
+  });
+
+  it("never waits or requests past the readiness deadline", async () => {
+    const clock = fakeClock();
+    const started = [];
+    await assert.rejects(
+      verifyBackendAvailability(origin, frontend, async () => { started.push(clock.t); return new Response("", { status: 503 }); },
+        { ...clock.options, readinessDeadlineMs: 25_000 }),
+      /HTTP 503 after 5 attempt\(s\)/,
+    );
+    assert.deepEqual(started, [0, 2_000, 6_000, 12_000, 20_000]);
+    assert.ok(started.every((t) => t < 25_000), `a request started at or after the deadline: ${started}`);
+  });
+
+  it("asks no more once a wait overruns the deadline", async () => {
+    // A real sleep can overrun a little; here the 2 s wait ends 5 ms past a 2.001 s deadline.
+    const clock = fakeClock();
+    clock.options.sleep = async (ms) => { clock.sleeps.push(ms); clock.t += ms + 5; };
+    let calls = 0;
+    await assert.rejects(
+      verifyBackendAvailability(origin, frontend, async () => { calls += 1; return new Response("", { status: 503 }); },
+        { ...clock.options, readinessDeadlineMs: 2_001 }),
+      /HTTP 503 after 1 attempt\(s\)/,
+    );
+    assert.equal(calls, 1);
+  });
+
+  it("retries a health answer whose body stalls", async () => {
+    const clock = fakeClock();
+    const stalled = { status: 200, ok: true, headers: new Headers({ "access-control-allow-origin": frontend }),
+      body: null, json: async () => { throw new DOMException("The operation timed out.", "TimeoutError"); } };
+    const answers = [() => stalled, healthy, allowed];
+    await verifyBackendAvailability(origin, frontend, async () => answers.shift()(), clock.options);
+    assert.deepEqual(clock.sleeps, [2_000]);
+  });
+
+  it("fails at once on a dead tunnel, a redirect or an unreachable host", async () => {
+    for (const answer of [
+      () => new Response("<html>ERR_NGROK_3200</html>", { status: 404 }),
+      () => new Response("", { status: 500 }),
+      () => { throw new TypeError("fetch failed"); },
+    ]) {
+      const clock = fakeClock();
+      let calls = 0;
+      await assert.rejects(verifyBackendAvailability(origin, frontend, async () => { calls += 1; return answer(); }, clock.options));
+      assert.equal(calls, 1);
+      assert.deepEqual(clock.sleeps, []);
+    }
   });
 
   it("rejects healthy APIs that the deployed browser cannot access", async () => {

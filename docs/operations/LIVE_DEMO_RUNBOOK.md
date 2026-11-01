@@ -2,11 +2,11 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-005 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-005 | 1.1 | Current | 2026-11-02 |
 
 ## 1. Purpose
 
-This runbook prepares and runs a live demonstration of Eki on a bus: one device, one route, a laptop-hosted backend reached through ngrok, and the deployed frontend on viewers' phones. Complete every blocking step before passengers board. A demonstration is not university acceptance; that is defined in the [deployment checklist](UNIVERSITY_DEPLOYMENT_CHECKLIST.md).
+This runbook prepares and runs a live demonstration of Eki on a bus: one device, one route, a laptop-hosted backend reached through ngrok, and the deployed frontend on viewers' phones. The deployed staging frontend calls the Cloud Run backend, not a laptop, so Section 4 points it at the tunnel for the demonstration and restores the Cloud Run URL afterwards. Complete every blocking step before passengers board. A demonstration is not university acceptance; that is defined in the [deployment checklist](UNIVERSITY_DEPLOYMENT_CHECKLIST.md).
 
 To measure latency during a rehearsal, also follow the [telemetry latency baseline](TELEMETRY_LATENCY_BASELINE.md). To record evidence, follow [field capture](FIELD_CAPTURE.md).
 
@@ -45,7 +45,7 @@ Record the non-secret values:
 2. Run `py -m platformio run --project-dir hardware -e esp32dev` and keep the RAM and flash report. Expected: the build succeeds.
 3. Keep the defaults `AUTH_REVOCATION_CACHE_MS=15000` and `BUS_STALE_MS=300000` in `backend/.env`. Setting `AUTH_REVOCATION_CACHE_MS=0` adds a Firebase Auth round trip to every protected request.
 4. Start the backend and the tunnel with `TRUST_PROXY=loopback` and the deployed frontend origin in `CORS_ORIGIN` ([ngrok tunnel](NGROK_TUNNEL.md#4-start-the-backend-and-the-tunnel)). Expected: `https://<assigned-domain>/health` returns `status: ok` from a phone on mobile data.
-5. Confirm that the deployed frontend uses this backend origin: run `node scripts/check-stationary-runtime.mjs --frontend https://bustrack-be165.web.app --backend https://<assigned-domain>`. Expected: every check passes. If the frontend was built with another origin, change the `NEXT_PUBLIC_BACKEND_URL` secret and redeploy ([CI, deployment and releases](CI_CD_AND_RELEASES.md#8-release-procedure)).
+5. Point the deployed frontend at this backend origin: the staging secret `NEXT_PUBLIC_BACKEND_URL` names the Cloud Run service, so change it to `https://<assigned-domain>` and redeploy ([CI, deployment and releases](CI_CD_AND_RELEASES.md#8-release-procedure)). Then run `node scripts/check-stationary-runtime.mjs --frontend https://bustrack-be165.web.app --backend https://<assigned-domain>`. Expected: every check passes. The script checks the frontend page, backend health and CORS for the frontend origin; it does not check which backend the frontend calls. After the demonstration, restore the Cloud Run URL in the secret and redeploy.
 6. Connect the laptop charger, disable sleep and automatic restarts for the demonstration window.
 
 Viewers use the deployed frontend. Exposing the laptop frontend needs a second stable domain, a Firebase Auth authorized domain and a `CORS_ORIGIN` entry ([DNS and domains](DNS_AND_DOMAINS.md#4-firebase-authentication-domains)); test sign-in on every intended phone before relying on it.

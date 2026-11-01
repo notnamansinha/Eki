@@ -2,17 +2,17 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-029 | 1.0 | Proposed | 2026-11-01 |
+| EKI-OPS-029 | 1.1 | Current | 2026-11-02 |
 
 ## 1. Purpose
 
-This reference lists the values that run the backend container (`backend/Dockerfile`) as the staging service on Cloud Run in the Firebase project `bustrack-be165`. That project holds test data only. The document becomes Current when the staging service is deployed with these values. Every variable has a full definition in the [configuration reference](../CONFIGURATION.md#3-backend-variables); this document lists only the values that staging sets and the decisions behind them.
+This reference lists the values that run the backend container (`backend/Dockerfile`) as the staging service on Cloud Run in the Firebase project `bustrack-be165`. That project holds test data only. Since 2026-11-01 the staging service runs these values; the manual job `deploy-backend-staging` deploys it from `deploy/cloud-run/staging.service.yaml` ([CI, deployment and releases](CI_CD_AND_RELEASES.md#52-steps)). Every variable has a full definition in the [configuration reference](../CONFIGURATION.md#3-backend-variables); this document lists only the values that staging sets and the decisions behind them.
 
 Never commit real values. Secrets belong in Secret Manager, not in an image, a manifest or a `NEXT_PUBLIC_*` variable.
 
 ## 2. Project facts
 
-These values were read from the live project on 2026-10-31.
+These values were read from the live project on 2026-10-31, and the Cloud Run rows on 2026-11-01.
 
 | Item | Value | How it was read |
 |---|---|---|
@@ -21,6 +21,8 @@ These values were read from the live project on 2026-10-31.
 | RTDB URL | `https://bustrack-be165-default-rtdb.firebaseio.com` | same |
 | Hosting origins | `https://bustrack-be165.web.app` and `https://bustrack-be165.firebaseapp.com` | `firebase hosting:sites:list`, Firebase default domains |
 | Runtime service account | `eki-backend-runtime@bustrack-be165.iam.gserviceaccount.com` | `gcloud iam service-accounts list` |
+| Cloud Run service | `eki-backend-staging`, region `asia-south2`, URL `https://eki-backend-staging-449313371438.asia-south2.run.app` | `deploy-backend-staging` run 41334365954, revision 00001 |
+| Scaling | `minScale` 0, `maxScale` 1 | `deploy/cloud-run/staging.service.yaml` |
 
 `FIREBASE_DATABASE_URL` shall equal the frontend's `NEXT_PUBLIC_FIREBASE_DATABASE_URL`. A mismatch produces empty data or invalid identities instead of an error.
 
@@ -76,7 +78,9 @@ Staging uses two separate keys:
 | Key | Used by | Restriction |
 |---|---|---|
 | `eki-backend-maps-server` | Backend, through `GOOGLE_MAPS_API_KEY` | API restriction to Routes API and Places API (New). No application restriction, because Cloud Run outgoing addresses are not fixed. |
-| Browser key | Frontend, through `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Restrict it to the Hosting origins. |
+| Browser key (project `bustrack-501917`) | Frontend, through `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | HTTP referrers `https://bustrack-be165.web.app/*`, `https://bustrack-be165.firebaseapp.com/*`, `http://localhost:3000/*` and `http://localhost:3001/*`; API restriction to the Maps JavaScript API only. |
+
+A local `backend/.env` also uses the server key, not the browser key.
 
 The backend calls `routes.googleapis.com/directions/v2:computeRoutes` and `places.googleapis.com/v1/places:searchText`. Both APIs are enabled in the project.
 
@@ -89,6 +93,8 @@ The correct hop count has not been measured. On the deployed staging service, se
 ## 8. Verification
 
 After deployment, `GET /live` returns 200. `GET /health` returns 503 until the first Firestore and RTDB probes both succeed. The probes run concurrently with a 5 s timeout each and repeat every 30 s, so the first 200 can take more than one cycle. `/health` returns 503 again when a later probe fails or no probe has succeeded in the last 65 s. A startup refusal in the logs names the variable that failed.
+
+With `minScale` 0, the first request after an idle period starts an instance. On 2026-11-01 a cold instance answered `/health` with 503 for about 2 s. The release check in Deploy retries `/health` for up to 90 s while it answers 502, 503 or 504 ([CI, deployment and releases](CI_CD_AND_RELEASES.md#52-steps)).
 
 ## 9. References
 

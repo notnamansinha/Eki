@@ -247,8 +247,23 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
+      - name: Refuse a commit that main does not contain
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          # A tag push reports the tag name as head_branch, and tags have no ruleset, so
+          # a tag named "main" on an unreviewed commit would satisfy the condition above.
+          # Deploy only a commit that main already contains: compare answers "identical"
+          # or "ahead" for those and "behind", "diverged" or 404 for anything else.
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${SHA}...main" --jq .status)"
+          case "$status" in
+            identical|ahead) echo "${SHA} is on main (${status})." ;;
+            *) echo "::error::${SHA} is not on main (compare status: ${status}); refusing to deploy."; exit 1 ;;
+          esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # Deploy the exact SHA that produced the green verification run,
           # not whatever main points at now (audit #113). On dispatch, use the
           # dispatched commit, the same one the backend job built, even if main
@@ -331,6 +346,8 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
