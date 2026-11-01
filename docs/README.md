@@ -152,7 +152,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-OPS-025 | [Telemetry Latency Baseline](operations/TELEMETRY_LATENCY_BASELINE.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-026 | [Worker Leadership and Fencing](operations/WORKER_LEADERSHIP.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-027 | [Bounded Work Admission](operations/WORK_ADMISSION.md) | 1.0 | Current | 2026-10-30 |
-| EKI-OPS-028 | [ngrok Removal and Managed Firebase Backend Migration](operations/NGROK_REMOVAL_AND_FIREBASE_BACKEND_MIGRATION.md) | 1.0 | Proposed | 2026-10-31 |
+| EKI-OPS-028 | [ngrok Removal and Managed Firebase Backend Migration](operations/NGROK_REMOVAL_AND_FIREBASE_BACKEND_MIGRATION.md) | 1.0 | Proposed | 2026-11-01 |
 
 ### 4.11 Hardware and firmware (HW)
 
