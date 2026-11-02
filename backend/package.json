@@ -43,7 +43,7 @@
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "^12.1.0",
-    "@firebase/rules-unit-testing": "^5.0.1",
+    "@firebase/rules-unit-testing": "^6.0.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",
     "@types/node": "24.10.13",
