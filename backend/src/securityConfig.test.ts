@@ -927,7 +927,7 @@ describe("production security configuration", () => {
     expect(directives.get("script-src")).toContain("https://apis.google.com");
     expect(directives.get("connect-src")).toContain("https://apis.google.com");
     expect(directives.get("script-src")).not.toContain(
-      "https://bustrack-be165-default-rtdb.firebaseio.com",
+      "https://bustrack-be165-asia-rtdb.asia-southeast1.firebasedatabase.app",
     );
     expect(directives.get("connect-src")).not.toContain(
       "https://rigging-everglade-tidal.ngrok-free.dev",

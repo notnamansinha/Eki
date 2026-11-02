@@ -50,7 +50,7 @@ spec:
             - name: CORS_ORIGIN
               value: "https://bustrack-be165.web.app,https://bustrack-be165.firebaseapp.com"
             - name: FIREBASE_DATABASE_URL
-              value: "https://bustrack-be165-default-rtdb.firebaseio.com"
+              value: "https://bustrack-be165-asia-rtdb.asia-southeast1.firebasedatabase.app"
             - name: RETENTION_SWEEPER_ENABLED
               value: "true"
             - name: LEGACY_RTDB_RETIRED
