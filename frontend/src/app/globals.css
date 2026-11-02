@@ -124,10 +124,19 @@ body {
   position: fixed;
 }
 
-.transit-landing-header {
-  margin: max(1.5rem, env(safe-area-inset-top))
-    max(1.5rem, env(safe-area-inset-right)) 0
-    max(1.5rem, env(safe-area-inset-left));
+.transit-landing-content {
+  padding-top: max(clamp(1rem, 4dvh, 3rem), env(safe-area-inset-top));
+  padding-bottom: clamp(1rem, 4dvh, 3rem);
+}
+
+.transit-landing-content h1 {
+  font-size: clamp(2.5rem, 15vw, 3.75rem);
+  margin-bottom: clamp(0.75rem, 3dvh, 1.5rem);
+}
+
+.transit-landing-content > p {
+  font-size: clamp(1rem, 2.5dvh, 1.25rem);
+  margin-bottom: clamp(1.25rem, 4.5dvh, 3rem);
 }
 
 .transit-landing-content,
@@ -137,14 +146,18 @@ body {
 }
 
 .transit-landing-footer {
-  padding-bottom: max(2rem, env(safe-area-inset-bottom));
+  padding-bottom: max(clamp(1rem, 3dvh, 2rem), env(safe-area-inset-bottom));
 }
 
 @media (min-width: 48rem) {
-  .transit-landing-header {
-    margin: max(2rem, env(safe-area-inset-top))
-      max(2rem, env(safe-area-inset-right)) 0
-      max(2rem, env(safe-area-inset-left));
+  /* Desktop width does not imply a tall viewport: browser chrome and OS
+     scaling can leave only 585 CSS pixels on a 1080p display at 100% zoom. */
+  .transit-landing-content h1 {
+    font-size: clamp(3rem, min(7.5vw, 11dvh), 6rem);
+  }
+
+  .transit-landing-content > p {
+    font-size: clamp(1.125rem, min(2.35vw, 3.5dvh), 1.875rem);
   }
 
   .transit-landing-content,
@@ -157,14 +170,6 @@ body {
 /* Landscape phones have tablet-like widths but very little usable height.
    Keep sign-in within reach without applying desktop-sized type and logos. */
 @media (max-height: 32rem) and (min-aspect-ratio: 1/1) {
-  .transit-landing-header {
-    margin-top: max(0.75rem, env(safe-area-inset-top));
-  }
-
-  .transit-landing-header img {
-    height: 3rem;
-  }
-
   .transit-landing-content {
     padding-top: 0.75rem;
     padding-bottom: 0.75rem;

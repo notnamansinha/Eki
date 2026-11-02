@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-002 | 1.0 | Current | 2026-11-02 |
+| EKI-UIX-002 | 1.1 | Current | 2026-11-03 |
 
 ## Source and delivery
 
@@ -60,12 +60,15 @@ width, including when it exceeds the viewport width. Pixel density participates
 in native srcset selection, capped by the actual source resolution. These
 sources do not contain extra 4K detail. There is no animation or video decode cost.
 
-The login background stays fixed to the viewport, while the login document
-can grow and scroll on short landscape screens or with enlarged text. Its
-header participates in layout so the logo and sign-in controls do not overlap.
-Header, content and footer account for browser safe-area insets.
-Short landscape viewports use compact type, logo and button spacing, with
-44px minimum button height, rather than inheriting desktop sizes from their width.
+The login has no AU logo or logo header (owner request, 3 November 2026).
+The headline, description and gaps respond to viewport height as well as width,
+so normal sign-in and the footer fit without scrolling in a 1280x585 CSS
+viewport. That represents a 1080p desktop with 150% system scaling, browser
+chrome and taskbar, at 100% browser zoom. The headline remains capped at 96px.
+Short landscape viewports retain compact type and 44px minimum button height.
+The fixed background fills the viewport; the document can still grow and scroll
+when enlarged text or additional auth notices need more space. Content and
+footer account for browser safe-area insets.
 
 ## Verification
 
@@ -87,6 +90,7 @@ screenshots and results are in `temp/artwork-quality/evidence/` (Git-ignored).
 
 Review screenshots: [login portrait](../design/transit-artwork/qa/login-portrait.jpg),
 [login desktop](../design/transit-artwork/qa/login-desktop.jpg),
+[100% zoom on a scaled desktop](../design/transit-artwork/qa/login-scaled-desktop.jpg),
 [passenger portrait](../design/transit-artwork/qa/passenger-portrait.jpg) and
 [passenger desktop](../design/transit-artwork/qa/passenger-desktop.jpg). The
 passenger views contain synthetic QA data; the login views block external providers.
@@ -112,3 +116,16 @@ test's 5-second timeout under concurrent local browser load (1616 backend tests
 passed, 75 skipped). That file subsequently passed all 28 tests in isolation
 with its existing timeout and no source changes. This does not turn the first
 aggregate run into a pass; the limitation is recorded in the pull request.
+
+The 3 November landing follow-up removed the logo and added explicit checks
+that the entire normal sign-in and footer fit at 1280x585, 1280x720, 1920x878
+and 390x844 without scrolling. The 150%-density desktop case also verifies
+the complete button and footer in the initial viewport at 100% browser zoom.
+The real landing/auth fixture now serves the deployed image files.
+All 28 layout and cold-open browser checks and 12 landing unit tests passed.
+The static production export passed 18 rendering checks across Chromium,
+Firefox and WebKit, including scaled desktop, short desktop, wide desktop,
+portrait and landscape viewports. The root build and regenerated CSP passed;
+the latest service-worker precache is 27 files and 1109 KB. Enlarged text and
+additional auth messages can still expand the document and scroll naturally.
+The earlier full frontend unit run also completed successfully: 1098 tests.

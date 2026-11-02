@@ -8,7 +8,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-## Transit artwork (2026-11-02)
+## Transit artwork and landing layout (2026-11-03)
 
 The login page and persistent passenger shell share
 `src/components/shared/TransitArtwork.tsx`. The two user-approved sources are
@@ -25,3 +25,7 @@ framing. See `docs/context-docs/TRANSIT_ARTWORK.md` at the repository root.
 Archive the PNG masters outside `public/`; deploy only the WebP delivery sizes.
 Run the root build when changing these backgrounds so the generated CSP hashes
 accompany the exported HTML; keep developer-specific origins out of the commit.
+The landing has no AU logo or logo header. Headline, copy and spacing respond
+to viewport height as well as width: normal sign-in and the footer must fit a
+1280x585 CSS viewport at 100% browser zoom, including 150% OS display scaling.
+Keep natural scrolling available for enlarged text and additional auth notices.

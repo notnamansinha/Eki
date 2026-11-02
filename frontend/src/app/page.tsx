@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { Loader2, LogIn } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
@@ -104,22 +103,9 @@ export default function HomePage() {
     <main className="transit-landing relative isolate min-h-dvh w-full flex flex-col bg-black">
       <TransitArtwork />
 
-      <header className="transit-landing-header relative z-20 flex shrink-0 items-center justify-start pointer-events-none">
-        <div className="bg-black/60 backdrop-blur-md border border-white/10 p-1 shadow-md shadow-black/50 flex items-center justify-center overflow-hidden">
-          <Image
-            src="/uni-logo.webp"
-            alt="University Logo"
-            width={490}
-            height={490}
-            className="h-16 md:h-24 w-auto object-contain block"
-            priority
-          />
-        </div>
-      </header>
-
       <section className="transit-landing-content relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 md:px-12 w-full max-w-5xl mx-auto py-6">
         <h1
-          className="text-6xl md:text-[80px] lg:text-[96px] font-black leading-[1.05] text-white mb-6 w-full mx-auto"
+          className="font-black leading-[1.05] text-white w-full mx-auto"
           style={{
             letterSpacing: "0.5px",
             textShadow: "0 2px 8px rgba(0,0,0,0.2)",
@@ -130,7 +116,7 @@ export default function HomePage() {
         </h1>
 
         <p
-          className="text-xl md:text-3xl text-white/90 text-balance max-w-[650px] mx-auto mb-12 font-medium"
+          className="text-white/90 text-balance max-w-[650px] mx-auto font-medium"
           style={{
             letterSpacing: "0.2px",
             textShadow: "0 2px 8px rgba(0,0,0,0.2)",
