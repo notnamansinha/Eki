@@ -23,3 +23,5 @@ recompress a delivery image or upscale it to claim extra detail. Keep the native
 responsive `srcset`, full-size WebP fallback, eager/high-priority loading and shared
 framing. See `docs/context-docs/TRANSIT_ARTWORK.md` at the repository root.
 Archive the PNG masters outside `public/`; deploy only the WebP delivery sizes.
+Run the root build when changing these backgrounds so the generated CSP hashes
+accompany the exported HTML; keep developer-specific origins out of the commit.

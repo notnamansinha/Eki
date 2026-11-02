@@ -97,3 +97,18 @@ worker generator passed with 27 precached files totalling 1126 KB; artwork
 stays runtime cached. All six exported WebPs match their delivery files byte
 for byte, and no source PNG is present in the export. Both archived PNGs were
 checked byte for byte against the user's approved attachments.
+
+PR preparation also passed the complete browser suites: passenger layout 140,
+passenger progress 12 and admin/sign-in 64. The root build passed, including
+backend TypeScript, static export, service-worker generation and web/backend
+CSP verification. Seven generated inline-script hashes were checked against
+the exported HTML and retained while preserving the committed origin directives.
+The runtime dependency audit reported zero vulnerabilities. The QA coverage
+budget passed with no changed critical source files.
+
+The first aggregate `npm run verify` attempt passed lint, 267 script tests and
+the API/UI contract checks, then hit the unchanged backend routing-lifecycle
+test's 5-second timeout under concurrent local browser load (1616 backend tests
+passed, 75 skipped). That file subsequently passed all 28 tests in isolation
+with its existing timeout and no source changes. This does not turn the first
+aggregate run into a pass; the limitation is recorded in the pull request.
