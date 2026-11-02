@@ -17,8 +17,10 @@
 #     NEXT_PUBLIC_GOOGLE_MAP_ID,
 #     NEXT_PUBLIC_BACKEND_URL
 #
-# Optional backend job (staging, manual dispatch only, issue #371). It needs no
-# GitHub secrets or variables: the workload identity provider and the deploy
+# Optional backend job (staging, manual dispatch only, issue #371). It reads one
+# staging secret and one variable, NEXT_PUBLIC_FIREBASE_DATABASE_URL and
+# RTDB_EXPECTED_REGION, to check that the Hosting build targets the RTDB
+# instance in the service manifest. The workload identity provider and the deploy
 # service account are fixed in the job, and the region is the cloud_run_region
 # dispatch input. The Artifact Registry repository `eki` shall exist in that
 # region, with roles/artifactregistry.writer granted to the deploy account.
@@ -343,7 +345,7 @@ jobs:
         run: >-
           $FIREBASE_CLI deploy
           --project bustrack-be165
-          --only hosting,firestore:rules,database:rules
+          --only hosting,firestore:rules,database:rtdb
           --token "$FIREBASE_TOKEN"
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
@@ -422,7 +424,7 @@ jobs:
         run: >-
           $FIREBASE_CLI deploy
           --project eki-production
-          --only hosting,firestore:rules,database:rules
+          --only hosting,firestore:rules,database:rtdb
           --token "$FIREBASE_TOKEN"
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}

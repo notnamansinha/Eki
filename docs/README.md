@@ -52,7 +52,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-GEN-001 | [Eki Campus Bus Tracking](../README.md) | 1.2 | Current | 2026-11-02 |
 | EKI-GEN-002 | [Eki Documentation Index](README.md) | 1.1 | Current | 2026-11-01 |
 | EKI-GEN-003 | [Eki Documentation Standard](DOCUMENTATION_STANDARD.md) | 1.0 | Current | 2026-10-30 |
-| EKI-GEN-004 | [Getting Started with Eki](GETTING_STARTED.md) | 2.0 | Current | 2026-10-30 |
+| EKI-GEN-004 | [Getting Started with Eki](GETTING_STARTED.md) | 2.1 | Current | 2026-11-03 |
 | EKI-GEN-005 | [Eki Configuration Reference](CONFIGURATION.md) | 1.4 | Current | 2026-11-02 |
 | EKI-GEN-006 | [Eki Glossary](GLOSSARY.md) | 2.1 | Current | 2026-11-02 |
 | EKI-GEN-007 | [Contributing to Eki](../CONTRIBUTING.md) | 1.0 | Current | 2026-10-30 |
@@ -125,13 +125,13 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-OPS-001 | [CI, Deployment and Releases](operations/CI_CD_AND_RELEASES.md) | 3.3 | Current | 2026-11-02 |
+| EKI-OPS-001 | [CI, Deployment and Releases](operations/CI_CD_AND_RELEASES.md) | 3.4 | Current | 2026-11-03 |
 | EKI-OPS-002 | [DNS and Domains](operations/DNS_AND_DOMAINS.md) | 1.1 | Current | 2026-11-02 |
 | EKI-OPS-003 | [ngrok Tunnel for the Backend](operations/NGROK_TUNNEL.md) | 1.2 | Current | 2026-11-02 |
 | EKI-OPS-004 | [Local Web, Phone and Device Testing](operations/LOCAL_TESTING.md) | 1.1 | Current | 2026-11-02 |
 | EKI-OPS-005 | [Live Demo Runbook](operations/LIVE_DEMO_RUNBOOK.md) | 1.1 | Current | 2026-11-02 |
 | EKI-OPS-006 | [University Deployment Checklist](operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) | 1.3 | Current | 2026-11-02 |
-| EKI-OPS-007 | [Firestore Index Deployment](operations/FIRESTORE_INDEX_DEPLOYMENT.md) | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-007 | [Firestore Index Deployment](operations/FIRESTORE_INDEX_DEPLOYMENT.md) | 1.1 | Current | 2026-11-03 |
 | EKI-OPS-008 | [Field Capture](operations/FIELD_CAPTURE.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-009 | [Automatic GNSS Service](operations/AUTOMATIC_GNSS_SERVICE.md) | 1.1 | Current | 2026-10-30 |
 | EKI-OPS-010 | [Architecture Risk Register](operations/ARCHITECTURE_RISK_REGISTER.md) | 3.1 | Current | 2026-11-02 |
@@ -263,6 +263,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-EVD-058 | [Webapp readiness: 8 October 2026](testing/WEBAPP_READINESS_2026_10_08.md) | 1.0 | Historical | 2026-10-08 |
 | EKI-EVD-059 | [Webapp readiness: 9 October 2026](testing/WEBAPP_READINESS_2026_10_09.md) | 1.0 | Historical | 2026-10-09 |
 | EKI-EVD-060 | [Deterministic QA baseline and first implementation slice](../qa/BASELINE_2026_10_11.md) | 1.0 | Historical | 2026-10-11 |
+| EKI-EVD-061 | [Cloud Run staging latency: 2 November 2026](testing/CLOUD_RUN_LATENCY_2026_11_02.md) | 1.0 | Historical | 2026-11-03 |
 
 <!-- register:end -->
 
