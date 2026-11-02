@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-029 | 1.1 | Current | 2026-11-02 |
+| EKI-OPS-029 | 1.2 | Current | 2026-11-02 |
 
 ## 1. Purpose
 
@@ -39,7 +39,7 @@ These values were read from the live project on 2026-10-31, and the Cloud Run ro
 | `LEGACY_RTDB_RETIRED` | `false` | Keep `false` until every legacy consumer is retired. |
 | `RIDE_SESSION_RETENTION_DAYS`, `FEEDBACK_RETENTION_DAYS`, `COMPLETED_TRIP_RETENTION_DAYS` | `180` | The `.env.example` values. Deletion starts as soon as the sweeper runs. |
 | `OPERATION_LOG_RETENTION_DAYS` | `90` | The `.env.example` value. |
-| `WORKER_ENABLED` | `false` for the first deployment, `true` after the worker handoff | `false` keeps the instance out of leader election. It does not stop the HTTP server. |
+| `WORKER_ENABLED` | `true` since 2026-11-02 | `false` keeps the instance out of leader election and does not stop the HTTP server. Two Cloud Scheduler jobs set the service-level minimum instances: `eki-workers-up` (every hour from 06:00 to 21:00 IST) sets it to 1 and `eki-workers-down` (22:00 IST) sets it to 0. The workers therefore run in that window. A request that wakes an instance overnight makes it the leader until it idles. |
 | `HTTPS_DEVICE_RATE_LIMIT_MODE` | `distributed` | `local` also requires `RATE_LIMIT_SHARD_FACTOR=1`. |
 | `RATE_LIMIT_SHARD_FACTOR` | `1` with a maximum of one instance | Set it to the maximum instance count if that count grows. |
 | `TRUST_PROXY` | Unset | Unset means one trusted hop in production. Section 7 describes the open question. |

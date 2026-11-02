@@ -135,7 +135,7 @@ flowchart LR
     phone["Browser"]
     esp["ESP32 tracker"]
     subgraph gcp["Google Cloud project behind bustrack-be165"]
-        run["Cloud Run eki-backend-staging<br/>asia-south2, NODE_ENV=production<br/>WORKER_ENABLED=false, scales to zero"]
+        run["Cloud Run eki-backend-staging<br/>asia-south2, NODE_ENV=production<br/>WORKER_ENABLED=true, one instance 06:00 to 22:00 IST, otherwise scales to zero"]
     end
     subgraph ws["Workstation in India (offline)"]
         ngrok["ngrok agent<br/>stable development domain"]
@@ -144,7 +144,7 @@ flowchart LR
     subgraph fb["Firebase project bustrack-be165"]
         host["Hosting"]
         authn["Authentication"]
-        db1[("RTDB<br/>us-central1")]
+        db1[("RTDB<br/>asia-southeast1")]
         db2[("Firestore<br/>asia-south2")]
     end
     phone -->|"Static app"| host
@@ -301,8 +301,8 @@ Declared versions come from the `package.json` files and `hardware/platformio.in
 
 ## 10. Constraints and risks
 
-- The staging backend depends on one Cloud Run instance that scales to zero and runs with workers disabled (Section 5.2). Production hosting is not in place.
-- RTDB is in Iowa while users, trackers and Firestore are in India, which adds a transcontinental hop to every live write and read.
+- The staging backend depends on one Cloud Run instance. Cloud Scheduler keeps it running from 06:00 to 22:00 IST so the lease-owned workers run; outside that window it scales to zero, and a request that wakes it makes it the worker leader until it idles (Section 5.2). Production hosting is not in place.
+- RTDB moved to `bustrack-be165-asia-rtdb` in Singapore (`asia-southeast1`) on 2026-11-02, so the live path no longer crosses to the US. Firestore is in Delhi, so some operations still cross regions. The latency gain is not yet measured (checks in [issue #430](https://github.com/notnamansinha/Eki/issues/430)).
 - The 15 m arrival corridor and the matcher's speed check are validated on synthetic tracks only ([field-ride repairs of 2026-10-29](../testing/PASSENGER_FIELD_RIDE_REPAIRS_2026_10_29.md)). Moving-bus acceptance is open.
 - Retention periods need approval by the university's data owner before production use.
 

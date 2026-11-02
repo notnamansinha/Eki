@@ -162,7 +162,7 @@ The repository builds and tests a backend container (`backend/Dockerfile`: Node.
 
 - The frontend build and the device firmware both used the tunnel origin as the backend URL. The staging frontend now uses the Cloud Run origin; devices flashed with the tunnel origin need the new origin.
 - The workstation backend ran in development mode on port `4000`, as a single process that also ran the lease-owned workers ([worker leadership](WORKER_LEADERSHIP.md)).
-- Firestore is in `asia-south2`; the configured RTDB instance is in `us-central1`.
+- Firestore is in `asia-south2`. The RTDB instance was in `us-central1` and moved to `bustrack-be165-asia-rtdb` in `asia-southeast1` on 2026-11-02; the Iowa instance is empty with deny-all rules, because Firebase cannot delete a default instance.
 - Cloud Billing is linked to `bustrack-be165`, and the Cloud Run API and `sts.googleapis.com` are enabled (checked on 2026-11-01). The Artifact Registry repository `eki` exists in `asia-south2` and `us-central1`.
 
 The staging web app no longer depends on the workstation or the tunnel.

@@ -37,7 +37,7 @@ There is no evidence supporting a promise of zero errors or zero lost GNSS fixes
 | Billing is disabled | Read-only `gcloud billing projects describe bustrack-be165 --format='value(billingEnabled)'` returned `False`. Cloud Run deployment is blocked until billing is linked. |
 | Cloud Run API is disabled | Read-only service listing returned `SERVICE_DISABLED` for `run.googleapis.com`. This did not enumerate services and does not establish that no historical service exists. |
 | Firestore is in Delhi | Read-only `gcloud firestore databases list` returned the default native database in `asia-south2`. |
-| The configured RTDB is in Iowa | The configured instance has the `*.firebaseio.com` URL form, which maps to `us-central1`; the existing region decision records that same instance. Its current location was inferred from the configured URL, not newly enumerated through the Firebase API. |
+| The configured RTDB is in Iowa | The configured instance has the `*.firebaseio.com` URL form, which maps to `us-central1`; the existing region decision records that same instance. Its current location was inferred from the configured URL, not newly enumerated through the Firebase API. Update 2026-11-02: the data moved to `bustrack-be165-asia-rtdb` in `asia-southeast1`. |
 | The frontend still selects ngrok | Both local `.env.local` and `.env.production` set `NEXT_PUBLIC_BACKEND_URL` to the tunnel. GitHub environment secrets were not inspected and remain an independent release check. |
 | The device still selects ngrok | The ignored `hardware/include/secrets.h` compiles the tunnel origin into `BACKEND_URL`. Only the origin setting was inspected; secrets were not reproduced. |
 | The current backend is configured for development | Local backend settings select `NODE_ENV=development` and port 4000. They are not a production runtime manifest. |
@@ -154,7 +154,7 @@ An IP-restricted Maps server key must match the source Google actually observes;
 
 ## 6. Region and performance decision
 
-The present system has three different locations: devices/users in India, Firestore in Delhi, and RTDB in Iowa. Moving the backend to India improves proximity to Firestore/users but retains a transcontinental RTDB hop. Moving it near RTDB shifts latency toward devices and Firestore. Neither choice is proven optimal from metadata alone.
+The system had three different locations at the assessment: devices/users in India, Firestore in Delhi, and RTDB in Iowa. Update 2026-11-02: RTDB moved to Singapore and the backend stays in Delhi. Moving the backend to India improves proximity to Firestore/users but retains a transcontinental RTDB hop. Moving it near RTDB shifts latency toward devices and Firestore. Neither choice is proven optimal from metadata alone.
 
 Measure Cloud Run candidates near Firestore (`asia-south2`), RTDB (`us-central1`), and, if useful, Singapore (`asia-southeast1`) against the **same existing data layout** using isolated test identities and a controlled workload. Include credential-cache cold/warm behavior, RTDB transactions, Firestore operations, route-catalog warmup, concurrency, TLS connection reuse, and public-origin overhead. Retire rejected candidate services after the experiment.
 
