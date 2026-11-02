@@ -49,7 +49,7 @@ Any backend hostname must serve HTTPS with a certificate chain that ends in the 
 | Option | DNS work | Frontend and device settings |
 |---|---|---|
 | Current: Cloud Run service URL | None | `NEXT_PUBLIC_BACKEND_URL` names the Cloud Run origin; trackers built with the ngrok origin need a reflash with it |
-| Proposed: same origin as the frontend through Hosting rewrites ([proposal](CI_CD_AND_RELEASES.md#72-proposed-migration-to-cloud-run)) | None beyond Section 3 | Both settings name the frontend origin; the device trusts the Hosting certificate's root CA |
+| Evaluated and not adopted on 2026-11-02 ([issue #372](https://github.com/notnamansinha/Eki/issues/372)): same origin as the frontend through Hosting rewrites | None beyond Section 3 | Both settings name the frontend origin; the device trusts the Hosting certificate's root CA |
 | Separate API host, for example `api.<domain>` | Create the records that the Cloud Run domain mapping or load balancer shows | Both settings name the API origin; the strict build adds it to the CSP; backend `CORS_ORIGIN` lists the frontend origins |
 
 After any change to `NEXT_PUBLIC_BACKEND_URL`, run the strict build (`npm run build:production` locally, or the Deploy workflow). It writes the backend origin into the CSP `connect-src` in `firebase.json` and fails if the policy would block it. Do not edit the generated CSP by hand. `BACKEND_URL` is a firmware setting, not a backend environment variable.

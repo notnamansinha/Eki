@@ -169,11 +169,11 @@ The staging web app no longer depends on the workstation or the tunnel.
 
 ### 7.2 Proposed migration to Cloud Run
 
-Status: Proposed. The manual deployment job described in Section 5.2 deployed the staging service on 2026-11-01. Hosting rewrites, the worker handoff and production are not implemented.
+Status: Proposed. The manual deployment job described in Section 5.2 deployed the staging service on 2026-11-01. Hosting rewrites were evaluated and not adopted (below); the worker handoff and production are not implemented.
 
 The proposal runs the existing container on Cloud Run in the same Firebase project and keeps Hosting, Authentication, Firestore and the existing RTDB instance unchanged. Cloud Run needs a Cloud Billing account on the project, which moves a Spark project to the Blaze plan [2].
 
-- Prefer one public origin: Hosting rewrites for `/api/**`, `/health` and `/live` to the service. If the extra hop fails device latency acceptance, use a stable API hostname instead ([DNS and domains](DNS_AND_DOMAINS.md)).
+- One public origin through Hosting rewrites for `/api/**`, `/health` and `/live` was evaluated on a preview channel on 2026-11-02 and not adopted ([issue #372](https://github.com/notnamansinha/Eki/issues/372)). Hosting added p50 313 ms and p95 493 ms to `GET /live` over the direct service (p50 55 ms, p95 69 ms), and the backend saw a Google egress pool instead of the caller, which would merge the per-IP rate-limit buckets. Clients call the backend origin directly; a stable API hostname ([DNS and domains](DNS_AND_DOMAINS.md)) remains the option for a fixed origin.
 - Run at least one instance with instance-based CPU, because the process runs continuous workers outside request handling.
 - Run the service with `NODE_ENV=production`. Production startup requires `CORS_ORIGIN` and `RETENTION_SWEEPER_ENABLED=true`, which turns on retention deletion; review the retention policy before the first production start ([RTDB retention](RTDB_RETENTION.md), [privacy deletion](PRIVACY_DELETION.md)).
 - Move worker leadership deliberately: stop the workstation coordinator, then confirm that the cloud instance holds the lease.
