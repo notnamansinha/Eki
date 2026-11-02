@@ -176,7 +176,7 @@ describe("Firestore deployed query readiness", () => {
       const section = workflow.split(`  ${job}:`)[1].split(/\n  deploy-/)[0];
       const deployIndex = section.indexOf("--only firestore:indexes");
       const readiness = section.indexOf(`node scripts/verify-firestore-indexes.mjs --project ${project}`);
-      const hosting = section.indexOf("--only hosting,firestore:rules,database:rules");
+      const hosting = section.indexOf("--only hosting,firestore:rules,database");
       assert.ok(deployIndex > 0 && readiness > deployIndex && hosting > readiness);
       assert.ok(section.slice(0, deployIndex).endsWith(`--project ${project}\n          `) || section.slice(0, deployIndex).endsWith(`--project ${project}\r\n          `));
       assert.ok(section.includes("timeout-minutes: 32"));

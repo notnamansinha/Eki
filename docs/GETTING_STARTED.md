@@ -99,8 +99,11 @@ The browser reads Firestore and RTDB directly under the repository's security ru
 
    ```powershell
    npx --yes firebase-tools@15.14.0 login
-   npx --yes firebase-tools@15.14.0 deploy --project <dev-project-id> --only firestore:rules,firestore:indexes,database:rules
+   npx --yes firebase-tools@15.14.0 target:apply database rtdb <dev-database-instance> --project <dev-project-id>
+   npx --yes firebase-tools@15.14.0 deploy --project <dev-project-id> --only firestore:rules,firestore:indexes,database
    ```
+
+   `firebase.json` selects the RTDB instance through the deploy target `rtdb`, which `.firebaserc` maps only for the shared project. The `target:apply` line maps it to your instance once; the instance name is the part of your database URL before the first dot, for example `<dev-project-id>-default-rtdb`. It writes to `.firebaserc`, so do not commit that change.
 
    Expected result: the CLI reports a successful deploy for the three targets. Index builds continue in the background for a few minutes.
 

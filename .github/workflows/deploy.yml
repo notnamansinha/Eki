@@ -343,7 +343,7 @@ jobs:
         run: >-
           $FIREBASE_CLI deploy
           --project bustrack-be165
-          --only hosting,firestore:rules,database:rules
+          --only hosting,firestore:rules,database
           --token "$FIREBASE_TOKEN"
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
@@ -422,7 +422,7 @@ jobs:
         run: >-
           $FIREBASE_CLI deploy
           --project eki-production
-          --only hosting,firestore:rules,database:rules
+          --only hosting,firestore:rules,database
           --token "$FIREBASE_TOKEN"
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}

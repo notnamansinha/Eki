@@ -88,7 +88,7 @@ Before these steps, `deploy-staging` refuses a commit that `main` does not conta
 4. `npm run verify:web-backend-contract` with `EKI_RUNTIME_SMOKE=1`: the live backend at `NEXT_PUBLIC_BACKEND_URL` must answer `/health` with `status: ok`, allow the frontend origin (`https://bustrack-be165.web.app` or `https://eki-production.web.app`) in CORS, and accept the preflight for `POST /api/users/bootstrap`. While `/health` answers 502, 503 or 504, or does not answer within 10 s, the check retries for up to 90 s, because a backend that scaled to zero answers 503 until its first Firestore and RTDB probes succeed. Any other failure stops the release at once.
 5. `node scripts/disable-appcheck-enforcement.mjs --project <project> --disable`: sets App Check enforcement for Firestore and RTDB to `UNENFORCED` and verifies the result. The web app does not use App Check.
 6. Deploy `firestore:indexes`, then wait up to 30 minutes for the deployed query shapes ([Firestore index deployment](FIRESTORE_INDEX_DEPLOYMENT.md)).
-7. Deploy `hosting,firestore:rules,database:rules`.
+7. Deploy `hosting,firestore:rules,database`. `firebase.json` selects the RTDB instance through the `rtdb` deploy target, so the filter is `database`; `database:rules` would be read as a target named `rules` and fail. `.firebaserc` maps `rtdb` to `bustrack-be165-asia-rtdb` for `bustrack-be165` only, and the production job fails on the missing mapping until a production target exists.
 
 The optional job `deploy-backend-staging` runs before `deploy-staging`:
 
