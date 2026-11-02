@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-007 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-007 | 1.1 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -13,7 +13,7 @@ This document describes how the Deploy workflow publishes Firestore indexes and 
 | Source | Content | Deployed by |
 |---|---|---|
 | `firestore.indexes.json` | Composite index on `ride_sessions` (`status`, `endTime`, both ascending); collection-group field overrides on `messages.senderId` and `messageRateLimits.userId` | `firebase deploy --only firestore:indexes --non-interactive` (Deploy, step 6) |
-| `database.rules.json` | RTDB `.indexOn` for `activeBuses`: `routeId`, `busId`, `timestamp` | `firebase deploy --only database:rules` (Deploy, step 7) |
+| `database.rules.json` | RTDB `.indexOn` for `activeBuses`: `routeId`, `busId`, `timestamp` | `firebase deploy --only database:rtdb` (Deploy, step 7; `rtdb` is the deploy target in `.firebaserc`) |
 
 Firestore builds indexes as long-running operations that continue after the deploy command returns [1]. The readiness gate below waits for them.
 
