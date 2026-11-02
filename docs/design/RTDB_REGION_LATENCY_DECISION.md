@@ -43,7 +43,13 @@ Rollback before any candidate writes is a configuration revert. After candidate 
 
 ## 3. Status
 
-Proposed. Singapore was approved as the candidate on 2026-09-10. No Singapore instance has been cut over: `firebase.json` declares one default database, and no repository change targets a second instance. The decision becomes current when the gate in Section 2.1 passes and the migration in Section 2.2 completes.
+Update 2026-11-02: the project owner directed an early move of the staging project to `bustrack-be165-asia-rtdb` in `asia-southeast1`, and Cloud Run stays in `asia-south2` (Delhi). The instance was created, its rules deployed through the `rtdb` deploy target in `.firebaserc`, and the root copied before the backend, Hosting build and firmware were switched. The Section 2.1 gate was not run first, so the measured improvement is still to be recorded.
+
+The Iowa instance `bustrack-be165-default-rtdb` is the project's default instance, and Firebase does not allow deleting a default instance. It cannot be retired by deletion. Retire it instead by keeping its default-deny rules, removing its data after the observation period in Section 2.2 step 6, and keeping the pre-copy export in approved encrypted storage. Rollback is a restore of that export, or of an export of the Singapore instance if it has taken writes, into Iowa, followed by the matching-instance check for `us-central1` and a revert of the backend and Hosting URLs together.
+
+The production project needs its own `rtdb` target in `.firebaserc` when it is provisioned. Until then the production deploy fails on the missing target instead of releasing rules to the wrong instance.
+
+Original status, before that update: Proposed. Singapore was approved as the candidate on 2026-09-10. No Singapore instance has been cut over: `firebase.json` declares one default database, and no repository change targets a second instance. The decision becomes current when the gate in Section 2.1 passes and the migration in Section 2.2 completes.
 
 ## 4. Consequences
 

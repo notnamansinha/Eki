@@ -17,8 +17,8 @@ These values were read from the live project on 2026-10-31.
 | Item | Value | How it was read |
 |---|---|---|
 | Firebase project | `bustrack-be165` (project number `449313371438`, display name Eki-AhdUni) | `firebase projects:list` |
-| RTDB instance | `bustrack-be165-default-rtdb`, region `us-central1`, the only instance | `firebase database:instances:list --json` |
-| RTDB URL | `https://bustrack-be165-default-rtdb.firebaseio.com` | same |
+| RTDB instance | `bustrack-be165-asia-rtdb`, region `asia-southeast1` (Singapore). It replaced `bustrack-be165-default-rtdb` (`us-central1`) on 2026-11-02 | `firebase database:instances:list --json` |
+| RTDB URL | `https://bustrack-be165-asia-rtdb.asia-southeast1.firebasedatabase.app` | same |
 | Hosting origins | `https://bustrack-be165.web.app` and `https://bustrack-be165.firebaseapp.com` | `firebase hosting:sites:list`, Firebase default domains |
 | Runtime service account | `eki-backend-runtime@bustrack-be165.iam.gserviceaccount.com` | `gcloud iam service-accounts list` |
 
