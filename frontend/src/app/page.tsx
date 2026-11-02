@@ -5,6 +5,7 @@ import { Loader2, LogIn } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import TransitArtwork from "@/components/shared/TransitArtwork";
 
 const WORKSPACES = ["/admin", "/passenger"] as const;
 
@@ -100,24 +101,10 @@ export default function HomePage() {
   }
 
   return (
-    <main className="relative h-dvh w-full overflow-hidden flex flex-col bg-black">
-      {/* Native picture element for format negotiation — next/image can't
-          serve WebP in static export mode (unoptimized:true). WebP saves
-          ~180KB vs the JPG fallback for older browsers. */}
-      <picture className="absolute inset-0 z-0 w-full h-full">
-        <source srcSet="/images/hero-background.webp" type="image/webp" />
-        <img
-          src="/images/hero-background.jpg"
-          alt=""
-          aria-hidden="true"
-          fetchPriority="high"
-          decoding="async"
-          className="object-cover md:object-[center_30%] w-full h-full"
-        />
-      </picture>
-      <div className="absolute inset-0 bg-black/40 z-0 pointer-events-none" />
+    <main className="transit-landing relative isolate min-h-dvh w-full flex flex-col bg-black">
+      <TransitArtwork />
 
-      <header className="absolute top-6 left-6 md:top-8 md:left-8 z-20 flex items-center justify-start pointer-events-none">
+      <header className="transit-landing-header relative z-20 flex shrink-0 items-center justify-start pointer-events-none">
         <div className="bg-black/60 backdrop-blur-md border border-white/10 p-1 shadow-md shadow-black/50 flex items-center justify-center overflow-hidden">
           <Image
             src="/uni-logo.webp"
@@ -130,7 +117,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <section className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 md:px-12 w-full max-w-5xl mx-auto pt-6">
+      <section className="transit-landing-content relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 md:px-12 w-full max-w-5xl mx-auto py-6">
         <h1
           className="text-6xl md:text-[80px] lg:text-[96px] font-black leading-[1.05] text-white mb-6 w-full mx-auto"
           style={{
@@ -191,7 +178,7 @@ export default function HomePage() {
         )}
       </section>
 
-      <footer className="relative z-10 w-full pb-8 px-6 md:px-12 flex justify-between items-center text-white/70">
+      <footer className="transit-landing-footer relative z-10 w-full pb-8 px-6 md:px-12 flex flex-wrap gap-x-4 gap-y-2 justify-between items-center text-white/70">
         <span className="text-xs font-bold drop-shadow-md">© 2026 Eki Transit</span>
         <span className="text-xs font-bold uppercase tracking-widest drop-shadow-md">Ahmedabad, India</span>
       </footer>
