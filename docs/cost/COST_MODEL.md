@@ -2,11 +2,11 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-CST-001 | 2.0 | Current | 2026-10-30 |
+| EKI-CST-001 | 2.1 | Current | 2026-11-02 |
 
 ## 1. Purpose and scope
 
-This model lets an operator estimate the monthly cost of running Eki and find the quotas that fail first. It covers Firebase (Realtime Database, Cloud Firestore, Authentication, Hosting), Google Maps Platform, backend hosting (the ngrok tunnel in use today and the proposed Cloud Run service), GitHub Actions and the tracker hardware fitted to each bus.
+This model lets an operator estimate the monthly cost of running Eki and find the quotas that fail first. It covers Firebase (Realtime Database, Cloud Firestore, Authentication, Hosting), Google Maps Platform, backend hosting (the ngrok tunnel used until 2026-11-01 and the Cloud Run service that has run the staging backend since then), GitHub Actions and the tracker hardware fitted to each bus.
 
 ### 1.1 Summary
 
@@ -14,7 +14,7 @@ This model lets an operator estimate the monthly cost of running Eki and find th
 |---|---|---|---|
 | Fleet and riders (Section 4.1) | 3 buses, 2 routes, 300 passengers a day | 10 buses, 5 routes, 2,000 passengers a day | 30 buses, 12 routes, 10,000 passengers a day |
 | Firebase and Google Maps, per month | USD 20 to 27 | USD 278 to 391 | USD 2,246 to 3,250 |
-| Backend through ngrok Pay-as-you-go, per month | USD 60 | USD 163 | USD 477 |
+| Backend through ngrok Pay-as-you-go (the hosting used until 2026-11-01), per month | USD 60 | USD 163 | USD 477 |
 | Total per month | USD 80 to 87 (INR 7,670 to 8,263) | USD 441 to 554 (INR 42,080 to 52,847) | USD 2,723 to 3,727 (INR 259,711 to 355,459) |
 | Tracker hardware, once per bus (Section 3.10) | INR 1,160 to 2,375, or INR 3,960 to 5,175 with a 4G hotspot | Same | Same |
 
@@ -22,7 +22,8 @@ All figures are estimates from Section 4.3, on the Firebase Blaze (pay-as-you-go
 
 - At campus scale and above, passenger downloads from the Realtime Database and Google Maps map loads make up most of the cost. Both grow with the number of daily passengers.
 - The no-cost Spark plan cannot run the pilot: the pilot exhausts its Realtime Database download quota in 8 to 10 days, and Firebase then turns the product off for the rest of the month (Section 5). The ngrok Free and Hobbyist plans run out within 10 hours of tracker traffic (Section 4.4).
-- Not included: Cloud Run hosting to replace ngrok, whose unit prices were not confirmed (Section 3.7); the cellular data plan, about 1.9 GB per bus per month; and the automotive power converter, fuse holder and enclosure.
+- The backend figures price the ngrok setup used until 2026-11-01. Cloud Run, which has run the staging backend since then, is not included because its cost is not yet confirmed (Section 3.7).
+- Not included: the cellular data plan, about 1.9 GB per bus per month; and the automotive power converter, fuse holder and enclosure.
 
 ### 1.2 Conventions
 
@@ -110,7 +111,7 @@ Figure 1 shows where each billed quantity arises.
 
 ```mermaid
 flowchart LR
-  ESP[ESP32 tracker] -->|"HTTPS POST, 1 per second"| EDGE[ngrok tunnel today, Cloud Run proposed]
+  ESP[ESP32 tracker] -->|"HTTPS POST, 1 per second"| EDGE[Cloud Run staging service, ngrok tunnel until 2026-11-01]
   EDGE --> API[Express backend and workers]
   API -->|"writes, not billed"| RTDB[(Realtime Database)]
   RTDB -->|"downloads, billed"| API
@@ -234,9 +235,9 @@ To measure your own build, run `npm run build` from the repository root, then `d
 
 ### 3.7 Backend hosting
 
-Today the backend runs on a workstation and receives device and browser traffic through an ngrok tunnel ([ngrok tunnel runbook](../operations/NGROK_TUNNEL.md)). Every telemetry request, diagnostic and browser API call counts as one ngrok request. The deploy workflow publishes Hosting and rules only (`.github/workflows/deploy.yml:133,210`); no workflow deploys the backend.
+Until 2026-11-01 the backend ran on a workstation and received device and browser traffic through an ngrok tunnel ([ngrok tunnel runbook](../operations/NGROK_TUNNEL.md)); the ngrok figures in this model price that setup. Every telemetry request, diagnostic and browser API call counts as one ngrok request. Since 2026-11-01 the staging backend runs on the Cloud Run service `eki-backend-staging` in `asia-south2`, deployed only by the manual job `deploy-backend-staging` ([CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md#52-steps)). Its cost is not yet confirmed.
 
-The proposed host is Cloud Run, using the container in `backend/Dockerfile` (port 8080). The process starts the HTTP server and the leader-elected workers together (`backend/src/server.ts:307-311`), and the workers hold Realtime Database listeners and renew a Firestore lease every 15 s ([worker leadership](../operations/WORKER_LEADERSHIP.md)). This work runs outside requests, so the service needs instance-based billing, which charges for the whole instance lifecycle [12], and at least one minimum instance. One always-on instance consumes `vCPU * 2,592,000` vCPU-seconds and `GiB * 2,592,000` GiB-seconds per month. The free tier page lists allowances for request-based billing only [9], and the unit prices were not confirmed [10].
+The Cloud Run service uses the container in `backend/Dockerfile` (port 8080). The process starts the HTTP server and the leader-elected workers together (`backend/src/server.ts:307-311`), and the workers hold Realtime Database listeners and renew a Firestore lease every 15 s ([worker leadership](../operations/WORKER_LEADERSHIP.md)). This work runs outside requests, so the service needs instance-based billing, which charges for the whole instance lifecycle [12], and at least one minimum instance. The staging service runs with `minScale` 0 and `WORKER_ENABLED=false`, so it bills only while an instance runs; after the worker handoff it needs `minScale` 1. One always-on instance consumes `vCPU * 2,592,000` vCPU-seconds and `GiB * 2,592,000` GiB-seconds per month. The free tier page lists allowances for request-based billing only [9], and the unit prices were not confirmed [10].
 
 ### 3.8 Google Maps Platform
 
@@ -336,8 +337,8 @@ Costs assume the Blaze plan, the India Maps price list and the daily Hosting all
 | GitHub Actions | USD 0 | USD 0 | USD 0 |
 | Subtotal, upper bound | USD 26.66 (INR 2,543) | USD 390.62 (INR 37,253) | USD 3,245.26 (INR 309,497) |
 | Subtotal, lower bound | USD 20.44 (INR 1,949) | USD 277.72 (INR 26,486) | USD 2,241.29 (INR 213,749) |
-| Backend today: ngrok Pay-as-you-go | USD 59.98 (INR 5,720) | USD 163.08 (INR 15,553) | USD 477.45 (INR 45,534) |
-| Backend proposed: Cloud Run, instance-based, minimum 1 | Not confirmed | Not confirmed | Not confirmed |
+| Backend until 2026-11-01: ngrok Pay-as-you-go | USD 59.98 (INR 5,720) | USD 163.08 (INR 15,553) | USD 477.45 (INR 45,534) |
+| Backend since 2026-11-01 (staging): Cloud Run, instance-based, minimum 1 after the worker handoff | Not confirmed | Not confirmed | Not confirmed |
 | Tracker cellular data | Not confirmed | Not confirmed | Not confirmed |
 
 The subtotals exclude Firestore overage and backend hosting. Under the global Maps list, the pilot's 18,060 map loads would exceed the 10,000 free loads and cost USD 56.42 (INR 5,381).
@@ -389,9 +390,9 @@ These limits stop service instead of adding to the bill.
 
 | Key | Restrict to |
 |---|---|
-| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | HTTP referrers of the Hosting origins; Maps JavaScript API only (`frontend/env.production.example:14`) |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | HTTP referrers of the Hosting origins; Maps JavaScript API only (`frontend/env.production.example:14`). Applied to the key in project `bustrack-501917` with the referrers `https://bustrack-be165.web.app/*`, `https://bustrack-be165.firebaseapp.com/*`, `http://localhost:3000/*` and `http://localhost:3001/*`. |
 | `NEXT_PUBLIC_FIREBASE_API_KEY` | HTTP referrers of the Hosting origins; Firebase APIs only (`frontend/env.production.example:6`) |
-| `GOOGLE_MAPS_API_KEY` (server) | The backend's egress address; Routes API and Places API (New). The server key calls both (`backend/src/routes/polyline.ts:217`, `backend/src/routes/places.ts:73`). |
+| `GOOGLE_MAPS_API_KEY` (server) | Routes API and Places API (New) only. No application restriction, because Cloud Run egress addresses are not fixed; Cloud Run reads the key from the Secret Manager secret `google-maps-server-key`. The server key calls both (`backend/src/routes/polyline.ts:217`, `backend/src/routes/places.ts:73`). |
 
 Keep the browser and server Maps keys separate, as the comment above `GOOGLE_MAPS_API_KEY` in `backend/.env.example` requires. The [configuration reference](../CONFIGURATION.md) lists both keys. Key restrictions are set in the Google Cloud console, not in this repository.
 
@@ -460,7 +461,7 @@ Repeat this check each month and whenever `B`, `R` or `P` changes:
 6. **Firestore operation counts.** Counts per ride, the fleet reconciliation factor of 4 reads per driver and 1,000 reads per admin day are estimates from code reading, not measurements.
 7. **Prices not confirmed.** Firestore prices for `asia-south2` and for stored data, Cloud Run unit prices, Identity Platform prices above 50,000 MAU and cellular data plans were not confirmed. Section 4.3 marks these.
 8. **Maps price list.** The India list applies only if billing and most usage are in India [17]; otherwise use the global list. Google charges India accounts in INR, so the invoice amount depends on Google's conversion, not on the rate in Section 1.2.
-9. **Plan and location.** The Firebase plan of the deployed project was not checked for this model. The Realtime Database instance is in `us-central1` ([RTDB region decision](../design/RTDB_REGION_LATENCY_DECISION.md)) and the default Firestore database was recorded in `asia-south2` on 2026-10-11 ([non-motion inventory](../testing/LIVE_NON_MOTION_INVENTORY_2026_10_11.md)).
+9. **Plan and location.** Cloud Billing is linked to the deployed project `bustrack-be165` (checked on 2026-11-01), which places it on the Blaze plan [5]. The Realtime Database instance is in `us-central1` ([RTDB region decision](../design/RTDB_REGION_LATENCY_DECISION.md)) and the default Firestore database was recorded in `asia-south2` on 2026-10-11 ([non-motion inventory](../testing/LIVE_NON_MOTION_INVENTORY_2026_10_11.md)).
 10. **Hardware prices** are indicative retail listings and change often.
 
 ## 8. References

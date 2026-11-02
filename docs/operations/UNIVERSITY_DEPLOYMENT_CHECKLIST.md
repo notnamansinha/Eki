@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-006 | 1.2 | Current | 2026-10-30 |
+| EKI-OPS-006 | 1.3 | Current | 2026-11-02 |
 
 ## 1. Purpose
 
@@ -39,10 +39,10 @@ Each item is complete only when its evidence is recorded in the release evidence
 
 ## 4. Release pipeline
 
-- [ ] Create the GitHub `production` environment with required reviewers and its secrets (`FIREBASE_TOKEN`, `FIREBASE_DATABASE_URL` and the ten `NEXT_PUBLIC_*` values in `.github/workflows/deploy.yml`) before the first production dispatch. On 2026-10-30 the environment does not exist.
+- [ ] Create the GitHub `production` environment with required reviewers, deployments from `main` only (as `staging` has), and its secrets (`FIREBASE_TOKEN`, `FIREBASE_DATABASE_URL` and the ten `NEXT_PUBLIC_*` values in `.github/workflows/deploy.yml`) before the first production dispatch. A production backend job needs its own trust binding, because `eki-github-deployer` trusts only the `staging` environment. On 2026-11-02 the environment does not exist.
 - [ ] If the production project ID differs from `eki-production`, change the workflow's project and frontend origin through a reviewed pull request.
 - [ ] Add `NEXT_PUBLIC_SITE_URL` (and `NEXT_PUBLIC_SITE_INDEXING` for non-production builds) to the Deploy build step; it is not passed today.
-- [ ] Decide whether the `main` ruleset requires the Production verification jobs as status checks; today it requires reviews only ([OPS-03](ARCHITECTURE_RISK_REGISTER.md#310-ops-03-the-main-ruleset-requires-no-status-checks)).
+- [x] Require the Production verification jobs as status checks: the ruleset `Require verified changes on main` requires them and both CodeQL jobs, with branches up to date; maintainers and administrators keep bypass rights ([OPS-03](ARCHITECTURE_RISK_REGISTER.md#310-ops-03-the-main-ruleset-requires-no-status-checks), read 2026-11-02).
 - [ ] Record a green nightly and a green weekly QA run on `main`, which the scheduled workflows now test ([OPS-02](ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-runs-no-suites)).
 - [ ] Confirm that a green push to `main` deploys to staging and that staging checks (Hosting headers, sign-in, role checks, rules) pass before any production dispatch.
 - [ ] Confirm that the Deploy run's App Check step reports `UNENFORCED` for Firestore and RTDB. The web app does not use App Check; Security Rules and backend authorization carry identity and role checks.
