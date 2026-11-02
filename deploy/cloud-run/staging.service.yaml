@@ -24,8 +24,11 @@ spec:
   template:
     metadata:
       annotations:
-        # Scale to zero while workers stay off. Raise minScale to 1 when the
-        # worker handoff moves leadership to Cloud Run.
+        # Revision-level minimum stays 0. Two Cloud Scheduler jobs set the
+        # service-level minimum instances to 1 from 06:00 to 22:00 IST so the
+        # lease-owned workers run in that window (issue #374). Overnight the
+        # service scales to zero and a request that wakes an instance makes it
+        # the worker leader until it idles again.
         autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "1"
         # Instance-based CPU: the process runs background work outside requests.
@@ -64,7 +67,7 @@ spec:
             - name: OPERATION_LOG_RETENTION_DAYS
               value: "90"
             - name: WORKER_ENABLED
-              value: "false"
+              value: "true"
             - name: HTTPS_DEVICE_RATE_LIMIT_MODE
               value: distributed
             - name: RATE_LIMIT_SHARD_FACTOR
