@@ -70,7 +70,9 @@ export async function writeEmulatorRuleset() {
     }
   }
   if (config.database) {
-    config.database.rules = databasePath;
+    // Deployable config uses an array with a per-project target. The emulator
+    // has one default instance, so collapse it to a single rules entry.
+    config.database = { rules: databasePath };
   }
   // The generated file is emulator-only: it cannot describe a hosting deploy.
   delete config.hosting;

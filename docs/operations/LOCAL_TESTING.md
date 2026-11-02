@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-004 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-004 | 1.1 | Current | 2026-11-02 |
 
 ## 1. Purpose
 
@@ -46,7 +46,7 @@ A phone or a device cannot reach the workstation's `localhost`.
 1. Start the tunnel as described in [ngrok tunnel](NGROK_TUNNEL.md#4-start-the-backend-and-the-tunnel), with `TRUST_PROXY=loopback` in `backend/.env`. Expected: `https://<assigned-domain>/health` returns `status: ok` from a phone on mobile data.
 2. Point each consumer at the tunnel origin ([ngrok tunnel](NGROK_TUNNEL.md#6-point-the-consumers-at-the-tunnel)). Expected: the phone's frontend reaches the backend without CORS errors.
 
-Prefer the deployed Firebase Hosting frontend for phones. Keep the workstation awake for the whole test.
+The deployed Firebase Hosting frontend calls the staging Cloud Run backend, not this workstation. To exercise the workstation backend from a phone, use a frontend build that names the tunnel origin. Keep the workstation awake for the whole test.
 
 ### 3.3 Prepare a device
 
