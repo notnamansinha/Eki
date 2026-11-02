@@ -1,7 +1,7 @@
 {
   "database": [
     {
-      "instance": "bustrack-be165-asia-rtdb",
+      "target": "rtdb",
       "rules": "database.rules.json"
     }
   ],

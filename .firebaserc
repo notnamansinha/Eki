@@ -1,5 +1,14 @@
 {
   "projects": {
     "default": "bustrack-be165"
+  },
+  "targets": {
+    "bustrack-be165": {
+      "database": {
+        "rtdb": [
+          "bustrack-be165-asia-rtdb"
+        ]
+      }
+    }
   }
 }
