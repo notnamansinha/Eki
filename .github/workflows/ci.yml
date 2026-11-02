@@ -47,7 +47,7 @@ jobs:
         run: npm run qa:unit:reviewed
       - name: Retain source-attributed acceptance catalog
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: static-acceptance-catalog
           path: artifacts/qa/
@@ -91,7 +91,7 @@ jobs:
         run: node scripts/run-rules-emulator.mjs
       - name: Retain observed disposable emulator evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: emulator-acceptance-evidence
           # One artifact root lets the dependent ledger read fixed report paths.
@@ -114,7 +114,7 @@ jobs:
         run: npx playwright test --config playwright.passenger-progress.config.ts
       - name: Retain passenger progress screenshots
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: passenger-progress
           path: artifacts/passenger-progress/
@@ -124,7 +124,7 @@ jobs:
         run: npx playwright test --config playwright.production-audit.config.ts
       - name: Retain audit regression screenshots and measurements
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: production-audit-validation
           path: artifacts/production-audit/
@@ -132,7 +132,7 @@ jobs:
           retention-days: 7
       - name: Retain passenger warning layout screenshots
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: passenger-warning-layout
           path: artifacts/passenger-layout/
@@ -144,7 +144,7 @@ jobs:
         run: node scripts/run-rules-emulator.mjs --api
       - name: Retain actual HTTP authorization observations
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: api-authorization-evidence
           path: artifacts/qa/api-*
@@ -152,7 +152,7 @@ jobs:
           retention-days: 7
       - name: Retain observed browser integration evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-acceptance-evidence
           path: artifacts/qa/browser-*
@@ -203,7 +203,7 @@ jobs:
           npm sbom --omit=dev --sbom-format cyclonedx --sbom-type application --package-lock-only > sbom.cdx.json
           node -e 'const b=require("./sbom.cdx.json"); if(b.bomFormat!=="CycloneDX" || !Array.isArray(b.components) || b.components.length===0) process.exit(1)'
       - name: Retain SBOM for release review
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: production-dependency-sbom
           path: sbom.cdx.json
@@ -279,7 +279,7 @@ jobs:
         run: npm run qa:native
       - name: Retain native host evidence separately from physical acceptance
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-firmware-evidence
           path: artifacts/qa/native-*
@@ -350,7 +350,7 @@ jobs:
         run: npm run qa:report
       - name: Retain current-source execution ledger
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: current-source-execution-evidence
           path: artifacts/qa/execution-report.*
