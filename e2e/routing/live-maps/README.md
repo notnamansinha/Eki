@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-011 | 1.0 | Current | 2026-10-30 |
+| EKI-PKG-011 | 1.1 | Current | 2026-11-02 |
 
 ## 1. Purpose
 
@@ -13,7 +13,7 @@ Each run loads real Google maps and can consume Maps quota. Keep it out of CI an
 ## 2. Prerequisites
 
 - Installed workspace dependencies.
-- A frontend `.env.local` with a browser Maps key (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`) and map ID (`NEXT_PUBLIC_GOOGLE_MAP_ID`). The fixture server refuses to start without both.
+- A frontend `.env.local` with a browser Maps key (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`) and map ID (`NEXT_PUBLIC_GOOGLE_MAP_ID`). The fixture server refuses to start without both. The page is served from `http://127.0.0.1:3163`, so the key must allow the referrer `http://127.0.0.1:3163/*`. The shared browser key (project `bustrack-501917`) allows only the Hosting origins and `http://localhost:3000/*` and `http://localhost:3001/*`; add the referrer to the key you use or use a separate development key.
 - A successful two-direction Routes probe in `artifacts/routing-provider/result.json` (ignored by Git). The file holds public preset geometry, not a live bus assignment. The [routing lifecycle verification record](../../../docs/testing/ROUTING_LIFECYCLE_VERIFICATION.md) documents the original probe.
 
 ## 3. Prepare the route geometry

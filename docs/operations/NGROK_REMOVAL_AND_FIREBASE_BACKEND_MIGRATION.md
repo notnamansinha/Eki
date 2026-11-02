@@ -2,19 +2,20 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-028 | 1.0 | Proposed | 2026-11-01 |
+| EKI-OPS-028 | 1.1 | Proposed | 2026-11-02 |
 
 Assessment date: 2026-10-21, Asia/Kolkata. Source baseline: `testing` at `a523731`, including the existing uncommitted RTDB readiness change in `backend/src/server.ts`.
 
-Status: **analysis complete; migration has not been executed. Do not retire the tunnel yet.** No billing, API enablement, IAM, deployed configuration, device firmware, or application data was changed for this assessment.
+Status: **analysis complete; the staging backend moved to Cloud Run on 2026-11-01. Hosting rewrites were evaluated on 2026-11-02 and not adopted (#372); the worker handoff and the device move are open.** No billing, API enablement, IAM, deployed configuration, device firmware, or application data was changed for this assessment.
 
 ## Repository notes (2026-10-24)
 
 - Line references were re-checked against `main` at `2fdbedd` on 2026-10-31 (earlier against `testing` at `6b2d8e4`, 44 commits past the assessed baseline); the uncommitted RTDB readiness edit mentioned above is not in that checkout.
 - `bustrack-be165` (display name `Eki-AhdUni`, number `449313371438`) is a single Firebase project with two registered web apps. It currently holds test data only and is used as **staging**. Which web app ID the frontend build uses comes from the GitHub environment secret and has not been verified.
 - `eki-production`, the production target in `deploy.yml`, is not visible to the Firebase CLI login used for this work. Treat production as not set up until its owner confirms.
-- Work is tracked in issues #365 to #379. The host decision (Cloud Run versus a VPS) remains open.
+- Work is tracked in issues #365 to #379. On 2026-11-02 the assignee of #372 recorded Cloud Run as the host and did not adopt the Hosting rewrites: on a preview channel Hosting added p50 313 ms and p95 493 ms to `GET /live` over the direct service (p50 55 ms, p95 69 ms), and the backend saw a Google egress pool (`66.249.82.x`) instead of the caller. The repository owner can reopen that decision.
 - On 2026-11-01 Cloud Billing was linked to `bustrack-be165` and the Cloud Run and Artifact Registry APIs were enabled (read-only `gcloud billing projects describe` and `gcloud services list`). The billing and API rows in Section 2 record the state at the assessment date.
+- On 2026-11-01 the manual `deploy-backend-staging` job (run 41334365954) deployed the Cloud Run service `eki-backend-staging` in `asia-south2` (`https://eki-backend-staging-449313371438.asia-south2.run.app`) with `WORKER_ENABLED=false`, `minScale` 0 and `maxScale` 1, and the staging secret `NEXT_PUBLIC_BACKEND_URL` was changed to that URL. The staging web app no longer uses the ngrok tunnel, which is offline. No Hosting rewrites exist, and trackers built with the tunnel origin need a reflash (issue #376).
 
 ## 1. Recommendation (pending owner approval)
 

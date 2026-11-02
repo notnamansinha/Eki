@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-010 | 3.0 | Current | 2026-10-30 |
+| EKI-OPS-010 | 3.1 | Current | 2026-11-02 |
 
 ## 1. Purpose
 
@@ -14,11 +14,11 @@ Of the ten risks, two are closed, three are open in the repository or its settin
 
 | Area | What is unfinished | Risks |
 |---|---|---|
-| Backend hosting | The backend runs as one process on a workstation behind an ngrok tunnel, with no failover, alerting or tested restore. | OPS-01 (High) |
+| Backend hosting | The staging backend runs as one Cloud Run instance that scales to zero, with workers disabled and no failover, alerting or tested restore. | OPS-01 (High) |
 | Stop tracking | Stop arrival and route matching are validated on simulated rides only; a moving-bus field ride is still needed. | TRK-01 (High) |
 | Tracker firmware | Outage recovery, Secure Boot and signed updates are built but not proven on hardware, and one shared update image would give every tracker the same credentials. | FW-01, FW-02, FW-03 (High) |
 | Access control | A passenger can board by reporting a false location. | SEC-01 (Medium) |
-| Delivery process | Scheduled QA campaigns have not yet recorded a green run on `main`, and a merge to `main` does not require passing checks. | OPS-02, OPS-03 (Medium) |
+| Delivery process | Scheduled QA campaigns have not yet recorded a green run on `main`. | OPS-02 (Medium); OPS-03 closed on 2026-11-02 |
 
 ## 2. Status values
 
@@ -41,7 +41,7 @@ Of the ten risks, two are closed, three are open in the repository or its settin
 | TRK-01 | Stop progress is validated on simulated tracks only | High | External gate | Instrumented ride on the real route, including the divided-road U-turn |
 | SEC-03 | Ride operations accept stale administrator claims | Medium | Closed | Every administrator branch applies the `requireAdmin` policy; regression tests for revoked, legacy and partial tokens on each route |
 | FW-03 | OTA images carry device secrets but the backend serves one release | High | Open | Per-device releases, or credentials kept out of the update image |
-| OPS-03 | The `main` ruleset requires no status checks | Medium | Open | Production verification and CodeQL jobs required before merge |
+| OPS-03 | The `main` ruleset requires no status checks | Medium | Closed | Ruleset `Require verified changes on main` requires `web`, `backend-image`, `firmware`, `qa-evidence`, `Analyze javascript-typescript` and `Analyze python`, with branches up to date (GitHub API, read 2026-11-02) |
 
 ### 3.1 SEC-01: passengers can join a ride without proof of presence
 
@@ -69,9 +69,9 @@ Of the ten risks, two are closed, three are open in the repository or its settin
 
 ### 3.5 OPS-01: runtime availability and perimeter controls are not evidenced
 
-- Evidence: the code supports replicated hosting. `RATE_LIMIT_SHARD_FACTOR` divides every in-memory limiter budget by the replica count (`backend/src/lib/rateLimitShard.ts`); `/health` returns `200` only while Firestore and RTDB probes pass, and `/live` stays `200` while the process runs; a Firestore lease with fencing keeps lifecycle work on one leader ([worker leadership](WORKER_LEADERSHIP.md)); CI builds and smoke-boots the container. No workflow deploys the backend. It runs as one process on a workstation behind an ngrok tunnel, and every Hosting release checks that backend live ([CI, deployment and releases](CI_CD_AND_RELEASES.md#71-current-state)).
-- Impact: the service stops whenever the workstation, the backend process or the tunnel stops. There is no failover, edge rate limit, WAF, alerting or tested restore.
-- Open gate: a managed backend runtime (the [Cloud Run proposal](CI_CD_AND_RELEASES.md#72-proposed-migration-to-cloud-run) or an equivalent); at least two replicas with health-based failover and no duplicate lifecycle transitions, or a recorded single-instance acceptance; edge and global rate limits with `RATE_LIMIT_SHARD_FACTOR` equal to the replica count; alerts on health, rejections, latency, stale telemetry and lease ownership; an archived backup, restore and incident drill.
+- Evidence: the code supports replicated hosting. `RATE_LIMIT_SHARD_FACTOR` divides every in-memory limiter budget by the replica count (`backend/src/lib/rateLimitShard.ts`); `/health` returns `200` only while Firestore and RTDB probes pass, and `/live` stays `200` while the process runs; a Firestore lease with fencing keeps lifecycle work on one leader ([worker leadership](WORKER_LEADERSHIP.md)); CI builds and smoke-boots the container. On 2026-11-01 the manual job `deploy-backend-staging` deployed the backend to the Cloud Run service `eki-backend-staging` in `asia-south2`, which runs one instance at most, scales to zero and runs with `WORKER_ENABLED=false`. Every Hosting release checks that backend live and retries `/health` for up to 90 s ([CI, deployment and releases](CI_CD_AND_RELEASES.md#71-current-state)).
+- Impact: one instance serves the backend without failover. No process runs the lease-owned workers until the worker handoff. Devices built with the offline tunnel origin cannot deliver telemetry. There is no edge rate limit, WAF, alerting or tested restore.
+- Open gate: the worker handoff to the managed runtime ([Cloud Run proposal](CI_CD_AND_RELEASES.md#72-proposed-migration-to-cloud-run)); at least two replicas with health-based failover and no duplicate lifecycle transitions, or a recorded single-instance acceptance; edge and global rate limits with `RATE_LIMIT_SHARD_FACTOR` equal to the replica count; alerts on health, rejections, latency, stale telemetry and lease ownership; an archived backup, restore and incident drill.
 
 ### 3.6 OPS-02: scheduled QA runs no suites
 
@@ -102,6 +102,7 @@ Of the ten risks, two are closed, three are open in the repository or its settin
 - Evidence: the only repository ruleset (`main`, applied to the default branch and all branches) requires a pull request with one approving review and code owner review, blocks deletion and force pushes, and has no required status checks; maintainers and administrators may bypass it. The default branch has no classic branch protection (GitHub API, read 2026-10-30).
 - Impact: a pull request can merge while Production verification or CodeQL is failing or still running. Deploy does not release a failed commit, but `main` can carry it and later green commits deploy on top of it.
 - Open gate: add the Production verification jobs (`web`, `backend-image`, `firmware`, `qa-evidence`) and the CodeQL `analyze` jobs as required status checks, and record whether administrators keep bypass rights.
+- Closure (2026-11-02): a second ruleset, `Require verified changes on main` (`refs/heads/main`), requires `web`, `backend-image`, `firmware`, `qa-evidence`, `Analyze javascript-typescript` and `Analyze python`, with branches up to date before merging. Maintainers and administrators keep bypass rights (`bypass_mode: always`) on both rulesets (GitHub API, read 2026-11-02).
 
 ## 4. Maintenance rule
 

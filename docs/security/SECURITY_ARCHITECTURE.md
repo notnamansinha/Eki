@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-002 | 3.0 | Current | 2026-10-30 |
+| EKI-SEC-002 | 3.1 | Current | 2026-11-02 |
 
 ## 1. Introduction
 
@@ -80,7 +80,7 @@ Figure 1. Eki components and trust boundaries B1 to B8.
 | B5 | Tracker and backend API | Per-device secret in `Authorization: Device` |
 | B6 | Backend and Google services | Firebase Admin SDK credential; server Google Maps API key |
 | B7 | Operator workstation and Firebase | Firebase Admin SDK credential |
-| B8 | GitHub Actions and Firebase | Environment-scoped `FIREBASE_TOKEN` |
+| B8 | GitHub Actions and Firebase or Google Cloud | Environment-scoped `FIREBASE_TOKEN`; for the Cloud Run deploy, workload identity federation: the provider accepts only repository ID `1270866720` on `refs/heads/main`, and the account `eki-github-deployer` trusts only the `staging` environment |
 
 ### 2.2 Assets
 
@@ -94,6 +94,7 @@ Figure 1. Eki components and trust boundaries B1 to B8.
 | Live bus positions | RTDB `activeBuses`, `publicRouteBuses`; Firestore `bus_locations`, ride session `lastKnownLocation` | Tracking of a vehicle and its operator |
 | Passenger personal data | `users/{uid}`, ride session manifests, chat messages, `feedbacks` | Disclosure of identity and travel |
 | Deploy token | GitHub environment secret `FIREBASE_TOKEN` | Replacement of the hosted app or security rules |
+| Cloud Run deploy access | No stored key; `deploy-backend-staging` authenticates as `eki-github-deployer` through workload identity federation | Control of Cloud Run services in `bustrack-be165` (project role `roles/run.admin`) |
 | Server Google Maps key | Backend variable `GOOGLE_MAPS_API_KEY` | Billable API use |
 
 ### 2.3 Principals
@@ -184,9 +185,9 @@ Threats are classified with STRIDE (spoofing, tampering, repudiation, informatio
 | STRIDE | Threat | Implemented mitigation | Residual risk |
 |---|---|---|---|
 | T | Compromised third-party action | Every `uses:` reference is pinned to a full commit SHA; workflows default to `contents: read` | None identified. |
-| E | Untrusted code reaches staging or production | Staging deploys only the commit of a successful same-repository push build on `main` or a manual dispatch from `main`; production deploys only by manual dispatch from `main` in the `production` environment | Required reviewers for that environment are configured in GitHub, not in this repository. |
+| E | Untrusted code reaches staging or production | Staging deploys only the commit of a successful same-repository push build on `main` or a manual dispatch from `main`; production deploys only by manual dispatch from `main` in the `production` environment. `deploy-staging` refuses a commit that `main` does not contain, and Google Cloud accepts the backend job's token only from `refs/heads/main` and the `staging` environment | Required reviewers for that environment are configured in GitHub, not in this repository. |
 | I | Secret leakage from CI | Deploy secrets are environment-scoped; the verification build uses placeholders | `FIREBASE_TOKEN` is a long-lived Firebase CLI token. |
-| T | Vulnerable dependency | `npm audit`, CodeQL, Trivy and an SBOM (Section 10) | No automated dependency update configuration exists. |
+| T | Vulnerable dependency | `npm audit`, CodeQL, Trivy, an SBOM (Section 10) and Dependabot updates (`.github/dependabot.yml`, [dependency updates](../operations/CI_CD_AND_RELEASES.md#12-dependency-updates)) | GitHub generates no Actions vulnerability alerts for full SHA pins, so those pins need separate monitoring. |
 
 ## 4. Authentication
 
@@ -354,10 +355,11 @@ The HTTP limiters return 429 with `RateLimit-*` headers; tracker limit responses
 | Secret | Where it is kept | Repository control |
 |---|---|---|
 | Firebase Admin credential | `FIREBASE_SERVICE_ACCOUNT` or Application Default Credentials on the backend host | `.gitignore` excludes `.env` files, `serviceAccountKey.json`, `service-account.json` and `*.json` apart from an allowlist of configuration files; `.dockerignore` excludes `.env` and `.env.*` |
-| Server Google Maps key | `GOOGLE_MAPS_API_KEY` in the backend environment; separate from the browser key | Not committed; `backend/.env.example` holds placeholders |
+| Server Google Maps key | `GOOGLE_MAPS_API_KEY` in the backend environment; separate from the browser key. On Cloud Run, the Secret Manager secret `google-maps-server-key` (key restricted to the Routes and Places APIs) | Not committed; `backend/.env.example` holds placeholders |
 | Device secret and Wi-Fi password | `hardware/include/secrets.h`, created from `secrets.example.h` inside the signing environment | `hardware/.gitignore` excludes `include/secrets.h` |
 | Secure Boot signing key | `hardware/keys/secure_boot_signing_key.pem` inside the offline signing environment only | `*.pem` and `keys/*.pem` are ignored; CI generates a disposable key |
 | Firebase deploy token | GitHub environment secret `FIREBASE_TOKEN` in `staging` and `production` | Referenced only by `deploy.yml` |
+| Cloud Run deploy access | No stored key: `deploy-backend-staging` uses workload identity federation | `deploy.yml` names the provider and the service account only |
 | RTDB origin for the release check | GitHub environment secret `FIREBASE_DATABASE_URL` | Referenced only by `deploy.yml` |
 | Browser configuration | `NEXT_PUBLIC_*` values, stored as environment secrets for the deploy jobs | Public once built into the app; restrict the keys by HTTP referrer and API in Google Cloud |
 | OpenTelemetry export headers | `OTEL_EXPORTER_OTLP_HEADERS` in the backend environment | The structured logger redacts Grafana tokens |
