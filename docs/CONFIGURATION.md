@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-005 | 1.3 | Current | 2026-11-01 |
+| EKI-GEN-005 | 1.4 | Current | 2026-11-02 |
 
 ## 1. Purpose
 
@@ -44,7 +44,7 @@ The template is a production template. Copied unchanged, it sets `NODE_ENV=produ
 |---|---|---|---|---|
 | `FIREBASE_SERVICE_ACCOUNT` | No | Unset | Firebase Admin service-account JSON object. When unset, the backend uses Application Default Credentials [1]. Malformed JSON refuses startup. Prefer Workload Identity or a secret manager in production. | `lib/firebaseAdmin.ts` |
 | `FIREBASE_DATABASE_URL` | In production | None | Realtime Database (RTDB) origin for Firebase Admin. Outside production a missing value lets the process start, but every RTDB feature fails. Must name the same instance as `NEXT_PUBLIC_FIREBASE_DATABASE_URL`. | `lib/firebaseAdmin.ts` |
-| `GOOGLE_MAPS_API_KEY` | For route geometry | None | Server key for the Google Routes API (`computeRoutes`: route geometry, reroutes and departure traffic) and Places API (New) Text Search (admin place search). Without it, route computation and place search fail and `npm run seed` stops. Keep it different from the browser key, and restrict it to the server's IP addresses and to these two APIs. | `lib/googleMaps.ts`, `routes/polyline.ts`, `routes/places.ts` |
+| `GOOGLE_MAPS_API_KEY` | For route geometry | None | Server key for the Google Routes API (`computeRoutes`: route geometry, reroutes and departure traffic) and Places API (New) Text Search (admin place search). Without it, route computation and place search fail and `npm run seed` stops. Use this server key, not the browser key, also in a local `backend/.env`, and restrict it to these two APIs. The staging key has no application restriction, because Cloud Run egress addresses are not fixed; Cloud Run reads it from the Secret Manager secret `google-maps-server-key`. | `lib/googleMaps.ts`, `routes/polyline.ts`, `routes/places.ts` |
 
 ### 3.3 Ride lifecycle and live state
 
@@ -138,7 +138,7 @@ All frontend variables are `NEXT_PUBLIC_*` values: Next.js compiles them into th
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Yes | None | Firebase web app configuration value. | `src/lib/firebaseCore.ts` |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | Yes | None | Firebase web app ID. | `src/lib/firebaseCore.ts` |
 | `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` | No | None | Passed to the Firebase configuration. The app does not load Firebase Analytics, so it has no runtime effect. | `src/lib/firebaseCore.ts` |
-| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Yes | Empty | Browser key for the Maps JavaScript API. Restrict it by HTTP referrer. | `src/config/maps.ts` |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Yes | Empty | Browser key for the Maps JavaScript API. Restrict it by HTTP referrer and to the Maps JavaScript API. The shared key accepts only the two Hosting origins and `http://localhost:3000` and `http://localhost:3001`. | `src/config/maps.ts` |
 | `NEXT_PUBLIC_GOOGLE_MAP_ID` | Yes | Empty | Cloud map ID used for map styling and advanced markers. | `src/config/maps.ts` |
 | `NEXT_PUBLIC_BACKEND_URL` | Yes | None | Backend origin for all HTTP commands, without a path or query. HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]`. The build writes this origin into the Hosting CSP `connect-src`. | `src/lib/apiClient.ts` and callers, `scripts/update-csp.mjs` |
 | `NEXT_PUBLIC_SITE_URL` | No | `https://bustrack-be165.web.app` | Canonical origin for metadata, `robots.txt` and the sitemap. Must be an origin without path, query, fragment or credentials. HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]` outside production builds. | `src/lib/siteMetadata.ts` |
@@ -184,7 +184,7 @@ These variables are set in the shell or by the scripts themselves. None belongs 
 | `EKI_ADMIN_ACCESS_SRC` | Another checkout's `frontend/src` (with `node_modules` reachable from it) for the admin access fixture, to run the same checks against a committed revision as an A/B baseline; default this checkout's `frontend/src`. | `e2e/admin-access/vite.config.mts` |
 | `EKI_MAPS_ENV_FILE` | Environment file with a real Maps key for the opt-in live Maps replay. | `e2e/routing/live-maps/vite.config.mts` |
 | `EKI_STRICT_PRODUCTION_BUILD` | Set to `true` by `npm run build:production`; turns on the required-variable and HTTPS checks. | `scripts/build-production.mjs`, `frontend/next.config.ts`, `scripts/verify-web-backend-contract.mjs` |
-| `EKI_RUNTIME_SMOKE` | `1` makes `npm run verify:web-backend-contract` probe the live backend. | `scripts/verify-web-backend-contract.mjs` |
+| `EKI_RUNTIME_SMOKE` | `1` makes `npm run verify:web-backend-contract` probe the live backend. It retries `/health` for up to 90 s while it answers 502, 503 or 504 or does not answer within the request timeout. | `scripts/verify-web-backend-contract.mjs` |
 | `EKI_FRONTEND_ORIGIN` | Frontend origin used by that probe. | `scripts/verify-web-backend-contract.mjs` |
 | `RTDB_EXPECTED_REGION` | Region that `npm run verify:rtdb-instance` requires. This command reads `FIREBASE_DATABASE_URL` and `NEXT_PUBLIC_FIREBASE_DATABASE_URL` from the shell only, not from `.env` files. | `scripts/rtdb-instance-config.mjs` |
 | `FIREBASE_TOKEN` | Firebase CLI token for the App Check and Firestore index scripts. Secret. | `scripts/disable-appcheck-enforcement.mjs`, `scripts/verify-firestore-indexes.mjs` |
@@ -238,7 +238,7 @@ When sign-in or a protected view fails, check in this order: both apps use the s
 | Concern | Local development | Staging | Production |
 |---|---|---|---|
 | Firebase project | Dedicated development project | Separate non-production project | Separate university-owned project |
-| Backend credentials | Application Default Credentials or `FIREBASE_SERVICE_ACCOUNT` in `backend/.env` | Secret manager | Workload Identity or secret manager |
+| Backend credentials | Application Default Credentials or `FIREBASE_SERVICE_ACCOUNT` in `backend/.env` | Attached runtime service account `eki-backend-runtime` (Application Default Credentials); Maps key from Secret Manager | Workload Identity or secret manager |
 | `NODE_ENV` | `development` | `production` | `production` |
 | `CORS_ORIGIN` | Local frontend origin | Exact staging origins | Exact approved origins |
 | `RETENTION_SWEEPER_ENABLED` | `false` | `true` with an approved test schedule | `true` with approved retention periods |
