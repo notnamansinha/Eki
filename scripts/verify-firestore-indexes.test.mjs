@@ -176,11 +176,29 @@ describe("Firestore deployed query readiness", () => {
       const section = workflow.split(`  ${job}:`)[1].split(/\n  deploy-/)[0];
       const deployIndex = section.indexOf("--only firestore:indexes");
       const readiness = section.indexOf(`node scripts/verify-firestore-indexes.mjs --project ${project}`);
-      const hosting = section.indexOf("--only hosting,firestore:rules,database:rules");
+      const hosting = section.indexOf("--only hosting,firestore:rules,database:rtdb");
       assert.ok(deployIndex > 0 && readiness > deployIndex && hosting > readiness);
       assert.ok(section.slice(0, deployIndex).endsWith(`--project ${project}\n          `) || section.slice(0, deployIndex).endsWith(`--project ${project}\r\n          `));
       assert.ok(section.includes("timeout-minutes: 32"));
       assert.ok(section.includes("--non-interactive"));
+    }
+  });
+
+  it("releases RTDB rules through a deploy target that firebase.json declares and staging maps", () => {
+    // With an array database config the Firebase CLI reads "database:<name>" as a deploy
+    // target, so a filter naming no target (such as "database:rules") fails every release.
+    const workflow = readFileSync(new URL("../.github/workflows/deploy.yml", import.meta.url), "utf8");
+    const firebase = JSON.parse(readFileSync(new URL("../firebase.json", import.meta.url), "utf8"));
+    const firebaserc = JSON.parse(readFileSync(new URL("../.firebaserc", import.meta.url), "utf8"));
+    assert.ok(Array.isArray(firebase.database));
+    const targets = firebase.database.map((entry) => entry.target);
+    const filters = [...workflow.matchAll(/--only (\S+)/g)]
+      .flatMap(([, only]) => only.split(","))
+      .filter((part) => part.startsWith("database:"));
+    assert.equal(filters.length, 2);
+    for (const filter of filters) assert.ok(targets.includes(filter.slice("database:".length)), `${filter} names no target`);
+    for (const target of targets) {
+      assert.ok(firebaserc.targets["bustrack-be165"].database[target]?.length, `${target} is not mapped for staging`);
     }
   });
 });

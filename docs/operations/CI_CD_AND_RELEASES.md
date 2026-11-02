@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-001 | 3.3 | Current | 2026-11-02 |
+| EKI-OPS-001 | 3.4 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -88,7 +88,7 @@ Before these steps, `deploy-staging` refuses a commit that `main` does not conta
 4. `npm run verify:web-backend-contract` with `EKI_RUNTIME_SMOKE=1`: the live backend at `NEXT_PUBLIC_BACKEND_URL` must answer `/health` with `status: ok`, allow the frontend origin (`https://bustrack-be165.web.app` or `https://eki-production.web.app`) in CORS, and accept the preflight for `POST /api/users/bootstrap`. While `/health` answers 502, 503 or 504, or does not answer within 10 s, the check retries for up to 90 s, because a backend that scaled to zero answers 503 until its first Firestore and RTDB probes succeed. Any other failure stops the release at once.
 5. `node scripts/disable-appcheck-enforcement.mjs --project <project> --disable`: sets App Check enforcement for Firestore and RTDB to `UNENFORCED` and verifies the result. The web app does not use App Check.
 6. Deploy `firestore:indexes`, then wait up to 30 minutes for the deployed query shapes ([Firestore index deployment](FIRESTORE_INDEX_DEPLOYMENT.md)).
-7. Deploy `hosting,firestore:rules,database:rules`.
+7. Deploy `hosting,firestore:rules,database:rtdb`. Because `firebase.json` declares the RTDB rules as an array entry with the deploy target `rtdb`, the Firebase CLI reads the text after `database:` as a target name; `.firebaserc` maps `rtdb` to `bustrack-be165-asia-rtdb` for `bustrack-be165`. A project without that mapping, such as `eki-production` today, fails this step before Hosting or any rules are released, but after steps 5 and 6 have run.
 
 The optional job `deploy-backend-staging` runs before `deploy-staging`:
 
@@ -112,7 +112,7 @@ Step 4 makes every Hosting release depend on a running, healthy backend. The sta
 | `FIREBASE_TOKEN` | Environment secret | Steps 5 to 7 | Firebase CLI token for that project |
 | `FIREBASE_DATABASE_URL` | Environment secret | Step 2 | RTDB URL that the backend uses |
 | `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_DATABASE_URL`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAP_ID`, `NEXT_PUBLIC_BACKEND_URL` | Environment secrets | Steps 2 to 4 | Values compiled into the static frontend |
-| `RTDB_EXPECTED_REGION` | Variable (optional) | Step 2 | Expected RTDB region, for example `asia-southeast1`. Not set on 2026-10-30, so step 2 checks only that both URLs name one instance. |
+| `RTDB_EXPECTED_REGION` | Environment variable (optional) | Step 2; the RTDB check in `deploy-backend-staging` | Expected RTDB region. Set to `asia-southeast1` in the `staging` environment on 2026-11-02. When it is unset, the checks compare only the instances, not their region. |
 
 The workflow passes no other build variables. `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_SITE_INDEXING` are therefore unset in deployed builds: canonical and social URLs fall back to `https://bustrack-be165.web.app` and indexing is enabled. A custom domain or a production build needs those two values added to the workflow ([DNS and domains](DNS_AND_DOMAINS.md)). The meaning of each variable is in [configuration](../CONFIGURATION.md).
 
