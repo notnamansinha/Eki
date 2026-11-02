@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-001 | 1.1 | Current | 2026-11-02 |
+| EKI-SEC-001 | 1.2 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -12,7 +12,8 @@ This policy states which Eki code receives security fixes, how to report a vulne
 
 | Component | Supported | Notes |
 |---|---|---|
-| Web app, backend, Firestore and RTDB rules, Hosting configuration | Head of `main` | Staging deploys the web app and rules from each successful push build on `main`, and only commits that `main` contains. The staging backend runs the head of `main` at the last `deploy-backend-staging` dispatch. Production deploys only by a manual workflow run from `main`. See [CI/CD and releases](../operations/CI_CD_AND_RELEASES.md). |
+| Web app, Firestore and RTDB rules, Hosting configuration | Head of `main` | Staging deploys them from each successful push build on `main`, and only commits that `main` contains. Production deploys only by a manual workflow run from `main`. See [CI/CD and releases](../operations/CI_CD_AND_RELEASES.md). |
+| Backend | Head of `main`, and the revision serving the staging Cloud Run service | The manual `deploy-backend-staging` job deploys the backend from `main`, so the serving revision can be older than the head of `main`. A fix reaches staging at the next backend deployment. |
 | Tracker firmware | Signed builds of the `esp32dev-secure` PlatformIO environment | The `esp32dev`, `esp32dev-quiet` and `esp32dev-journal` environments are development builds without Secure Boot or flash encryption. |
 | Other branches, forks and earlier commits | Not supported | Reproduce a finding on `main` before reporting it. |
 

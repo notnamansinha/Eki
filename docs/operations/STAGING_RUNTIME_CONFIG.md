@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-029 | 1.1 | Current | 2026-11-02 |
+| EKI-OPS-029 | 1.2 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -12,7 +12,7 @@ Never commit real values. Secrets belong in Secret Manager, not in an image, a m
 
 ## 2. Project facts
 
-These values were read from the live project on 2026-10-31, and the Cloud Run rows on 2026-11-01.
+These values were read from the live project on 2026-10-31, the Cloud Run service row on 2026-11-01, and the scaling and revision rows on 2026-11-03.
 
 | Item | Value | How it was read |
 |---|---|---|
@@ -22,7 +22,8 @@ These values were read from the live project on 2026-10-31, and the Cloud Run ro
 | Hosting origins | `https://bustrack-be165.web.app` and `https://bustrack-be165.firebaseapp.com` | `firebase hosting:sites:list`, Firebase default domains |
 | Runtime service account | `eki-backend-runtime@bustrack-be165.iam.gserviceaccount.com` | `gcloud iam service-accounts list` |
 | Cloud Run service | `eki-backend-staging`, region `asia-south2`, URL `https://eki-backend-staging-449313371438.asia-south2.run.app` | `deploy-backend-staging` run 41334365954, revision 00001 |
-| Scaling | `minScale` 0, `maxScale` 1 | `deploy/cloud-run/staging.service.yaml` |
+| Scaling | Revision `minScale` 0 and `maxScale` 1. The Cloud Scheduler jobs `eki-workers-up` (`0 6-21 * * *`, Asia/Kolkata) and `eki-workers-down` (`0 22 * * *`) set the service-level minimum instances to 1 and to 0 through the Cloud Run Admin API, so one instance is held from 06:00 to 22:00 IST. On 2026-11-03 both jobs were paused (since 2026-11-02 19:07 UTC) and the service had no minimum. | `deploy/cloud-run/staging.service.yaml`, `gcloud scheduler jobs list --location asia-south2`, `gcloud run services describe` |
+| Serving revision | `eki-backend-staging-00008-lhl`, created on 2026-11-02 at 19:07 UTC with `gcloud` from a user account, not by `deploy-backend-staging`. It runs `WORKER_ENABLED=false`; the manifest on `main` sets `true`, so the next `deploy-backend-staging` run enables the workers. | `gcloud run services describe`, `gcloud run revisions list` |
 
 `FIREBASE_DATABASE_URL` shall equal the frontend's `NEXT_PUBLIC_FIREBASE_DATABASE_URL`. A mismatch produces empty data or invalid identities instead of an error.
 
@@ -39,7 +40,7 @@ These values were read from the live project on 2026-10-31, and the Cloud Run ro
 | `LEGACY_RTDB_RETIRED` | `false` | Keep `false` until every legacy consumer is retired. |
 | `RIDE_SESSION_RETENTION_DAYS`, `FEEDBACK_RETENTION_DAYS`, `COMPLETED_TRIP_RETENTION_DAYS` | `180` | The `.env.example` values. Deletion starts as soon as the sweeper runs. |
 | `OPERATION_LOG_RETENTION_DAYS` | `90` | The `.env.example` value. |
-| `WORKER_ENABLED` | `false` for the first deployment, `true` after the worker handoff | `false` keeps the instance out of leader election. It does not stop the HTTP server. |
+| `WORKER_ENABLED` | `true` (since 2026-11-02) | The instance competes for the worker lease, so the workers run while it is up. The handoff was rehearsed on 2026-11-02 ([issue #374](https://github.com/notnamansinha/Eki/issues/374)). `false` keeps an instance out of leader election; it does not stop the HTTP server. A local backend that uses this project sets `false` so that it cannot take the lease ([worker leadership](WORKER_LEADERSHIP.md)). |
 | `HTTPS_DEVICE_RATE_LIMIT_MODE` | `distributed` | `local` also requires `RATE_LIMIT_SHARD_FACTOR=1`. |
 | `RATE_LIMIT_SHARD_FACTOR` | `1` with a maximum of one instance | Set it to the maximum instance count if that count grows. |
 | `TRUST_PROXY` | Unset | Unset means one trusted hop in production. Section 7 describes the open question. |
@@ -67,9 +68,9 @@ Each secret grants `roles/secretmanager.secretAccessor` to the runtime account i
 
 ## 5. Retention before enabling the sweeper
 
-Production forces `RETENTION_SWEEPER_ENABLED=true`, and the sweeper deletes data on its first run. The sweeper runs only in the worker leader, so it first runs when `WORKER_ENABLED` becomes `true` (Section 3). Read [RTDB retention](RTDB_RETENTION.md) before the first deployment, then run the inventory described in [Section 5.1 of that document](RTDB_RETENTION.md#51-inventory-with-a-dry-run) against the staging project. The inventory covers the documented RTDB scope only. It is not a Firestore dry run.
+Production forces `RETENTION_SWEEPER_ENABLED=true`, and the sweeper deletes data on its first run. The sweeper runs only in the worker leader, and each process that takes the lease runs a full sweep at once and then every 24 hours (`backend/src/services/retentionSweeper.ts`). On staging it first ran during the handoff rehearsal of 2026-11-02 and deleted nothing ([issue #374](https://github.com/notnamansinha/Eki/issues/374)). Read [RTDB retention](RTDB_RETENTION.md) before the first deployment, then run the inventory described in [Section 5.1 of that document](RTDB_RETENTION.md#51-inventory-with-a-dry-run) against the staging project. The inventory covers the documented RTDB scope only. It is not a Firestore dry run.
 
-Take a Firestore and RTDB backup before the sweeper first runs against data that must survive.
+Take a Firestore and RTDB backup before the sweeper first runs against data that must survive. Staging keeps its backups in the private bucket `gs://bustrack-be165-eki-backups` (`asia-south2`), which deletes objects after 30 days, and has a daily managed Firestore backup with 7-day retention ([issue #374](https://github.com/notnamansinha/Eki/issues/374)).
 
 ## 6. Maps keys
 
@@ -84,17 +85,17 @@ A local `backend/.env` also uses the server key, not the browser key.
 
 The backend calls `routes.googleapis.com/directions/v2:computeRoutes` and `places.googleapis.com/v1/places:searchText`. Both APIs are enabled in the project.
 
-## 7. Client IP behind Hosting
+## 7. Client IP
 
-Pre-authentication rate limits key on `req.ip` (`backend/src/lib/rateLimitIdentity.ts`). With `TRUST_PROXY` unset, the backend trusts one proxy hop in production. A request through Firebase Hosting to Cloud Run can cross more than one hop, so `req.ip` might resolve to a shared address and collapse the per-IP limits, including `HTTPS_INGRESS_DEVICES_PER_IP`, into one bucket.
+Pre-authentication rate limits key on `req.ip` (`backend/src/lib/rateLimitIdentity.ts`). With `TRUST_PROXY` unset, the backend trusts one proxy hop in production. Clients call the service origin directly. On a Hosting preview channel with rewrites to this service, the backend saw a Google egress pool instead of the caller, which would collapse the per-IP limits, including `HTTPS_INGRESS_DEVICES_PER_IP`, into shared buckets; the rewrites were not adopted ([issue #372](https://github.com/notnamansinha/Eki/issues/372)). On the direct origin, 1,150 requests with forged `X-Forwarded-For` headers received 1,000 responses of 401 and 150 of 429 on 2026-11-02 (same issue), so a forged header did not open a new rate-limit bucket.
 
-The correct hop count has not been measured. On the deployed staging service, send requests through the Hosting path and through the direct service URL, compare the `req.ip` that the backend sees, and send forged `X-Forwarded-For` headers, before changing `TRUST_PROXY`. The setting accepts `false`, `loopback` or a hop count from 0 to 10. It rejects `true` on purpose, because that would let a caller choose its own rate-limit key.
+Measure again before changing `TRUST_PROXY` or putting a proxy in front of the service: send requests through the new path and through the direct service URL, compare the `req.ip` that the backend sees, and send forged `X-Forwarded-For` headers. The setting accepts `false`, `loopback` or a hop count from 0 to 10. It rejects `true` on purpose, because that would let a caller choose its own rate-limit key.
 
 ## 8. Verification
 
 After deployment, `GET /live` returns 200. `GET /health` returns 503 until the first Firestore and RTDB probes both succeed. The probes run concurrently with a 5 s timeout each and repeat every 30 s, so the first 200 can take more than one cycle. `/health` returns 503 again when a later probe fails or no probe has succeeded in the last 65 s. A startup refusal in the logs names the variable that failed.
 
-With `minScale` 0, the first request after an idle period starts an instance. On 2026-11-01 a cold instance answered `/health` with 503 for about 2 s. The release check in Deploy retries `/health` for up to 90 s while it answers 502, 503 or 504 ([CI, deployment and releases](CI_CD_AND_RELEASES.md#52-steps)).
+Outside the Scheduler window, or whenever the service has no minimum instance, the first request after an idle period starts an instance. On 2026-11-01 a cold instance answered `/health` with 503 for about 2 s. The release check in Deploy retries `/health` for up to 90 s while it answers 502, 503 or 504 ([CI, deployment and releases](CI_CD_AND_RELEASES.md#52-steps)).
 
 ## 9. References
 
