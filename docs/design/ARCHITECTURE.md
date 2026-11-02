@@ -125,7 +125,7 @@ The deploy workflow uses Node.js 24 and `firebase-tools@15.14.0`, verifies that 
 
 | Store | Instance | Location | Evidence |
 |---|---|---|---|
-| RTDB | `bustrack-be165-default-rtdb` | `us-central1` (Iowa) | [RTDB region decision](RTDB_REGION_LATENCY_DECISION.md), instance listing of 2026-09-10 |
+| RTDB | `bustrack-be165-asia-rtdb` | `asia-southeast1` (Singapore) | [RTDB region decision](RTDB_REGION_LATENCY_DECISION.md), cutover of 2026-11-02 |
 | Firestore | Default database | `asia-south2` (Delhi) | [Non-motion inventory of 2026-10-11](../testing/LIVE_NON_MOTION_INVENTORY_2026_10_11.md) |
 
 ### 5.2 Current backend hosting

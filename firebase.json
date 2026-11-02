@@ -1,5 +1,6 @@
 {
   "database": {
+    "instance": "bustrack-be165-asia-rtdb",
     "rules": "database.rules.json"
   },
   "firestore": {
