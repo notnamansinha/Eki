@@ -219,6 +219,30 @@ describe("live backend release preflight", () => {
     assert.ok(started.every((t) => t < 25_000), `a request started at or after the deadline: ${started}`);
   });
 
+  it("caps each retry's timeout to the time left before the deadline", async () => {
+    const clock = fakeClock();
+    const timeouts = [];
+    await assert.rejects(
+      verifyBackendAvailability(origin, frontend, async () => new Response("", { status: 503 }), {
+        ...clock.options,
+        readinessDeadlineMs: 25_000,
+        timeoutSignal: (ms) => { timeouts.push(ms); return AbortSignal.timeout(ms); },
+      }),
+      /HTTP 503 after 5 attempt\(s\)/,
+    );
+    // Requests start at 0, 2, 6, 12 and 20 s: the first keeps 10 s, the last only has 5 s left.
+    assert.deepEqual(timeouts, [10_000, 10_000, 10_000, 10_000, 5_000]);
+  });
+
+  it("releases the body of every not-ready answer before retrying", async () => {
+    const clock = fakeClock();
+    let cancelled = 0;
+    const starting = () => ({ status: 503, ok: false, headers: new Headers(), body: { cancel: async () => { cancelled += 1; } } });
+    const answers = [starting, starting, healthy, allowed];
+    await verifyBackendAvailability(origin, frontend, async () => answers.shift()(), clock.options);
+    assert.equal(cancelled, 2);
+  });
+
   it("asks no more once a wait overruns the deadline", async () => {
     // A real sleep can overrun a little; here the 2 s wait ends 5 ms past a 2.001 s deadline.
     const clock = fakeClock();

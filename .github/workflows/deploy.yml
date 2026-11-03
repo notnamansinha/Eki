@@ -101,9 +101,11 @@ jobs:
           NEXT_PUBLIC_FIREBASE_DATABASE_URL: ${{ secrets.NEXT_PUBLIC_FIREBASE_DATABASE_URL }}
           RTDB_EXPECTED_REGION: ${{ vars.RTDB_EXPECTED_REGION }}
         run: |
-          FIREBASE_DATABASE_URL="$(awk '/name: FIREBASE_DATABASE_URL/{getline; gsub(/.*value: *"?|"? *$/,""); print; exit}' deploy/cloud-run/staging.service.yaml)"
+          # Only the exact env entry counts, and its next line must be a literal value.
+          # A missing entry leaves the URL empty, which the check below rejects.
+          FIREBASE_DATABASE_URL="$(awk '/^[[:space:]]*- name: FIREBASE_DATABASE_URL[[:space:]]*$/ { if ((getline line) <= 0 || line !~ /^[[:space:]]*value: /) exit 2; sub(/^[[:space:]]*value: */, "", line); gsub(/^"|"[[:space:]]*$/, "", line); print line; exit }' deploy/cloud-run/staging.service.yaml)"
           export FIREBASE_DATABASE_URL
-          node scripts/rtdb-instance-config.mjs
+          node scripts/rtdb-instance-config.mjs --require-region
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
@@ -161,21 +163,31 @@ jobs:
           # failure stops here, because a first deployment skips the gate.
           if service_json="$(gcloud run services describe "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --format json 2>"$RUNNER_TEMP/describe.err")"; then
             previous="$(jq -r '[.status.traffic[]? | select((.percent // 0) > 0)] | sort_by(-.percent) | .[0].revisionName // empty' <<< "$service_json")"
+            # Cloud Scheduler owns the service-level minimum (1 from 06:00 to 22:00 IST,
+            # 0 overnight). services replace applies the whole manifest, so carry the
+            # live value into it, or a daytime deploy would turn the workers off.
+            SERVICE_MIN_SCALE="$(jq -r '.metadata.annotations["run.googleapis.com/minScale"] // "0"' <<< "$service_json")"
           elif grep -q "Cannot find service" "$RUNNER_TEMP/describe.err"; then
             previous=""
+            SERVICE_MIN_SCALE=0
           else
             cat "$RUNNER_TEMP/describe.err" >&2
             echo "::error::Could not read the service ${SERVICE}. Refusing to deploy without the /health gate."
             exit 1
           fi
+          if ! [[ "$SERVICE_MIN_SCALE" =~ ^[0-9]+$ ]]; then
+            echo "::error::The service-level minimum instances '${SERVICE_MIN_SCALE}' is not a whole number; refusing to deploy."
+            exit 1
+          fi
+          echo "Service-level minimum instances kept at ${SERVICE_MIN_SCALE}."
           echo "PREVIOUS_REVISION=${previous}" >> "$GITHUB_ENV"
           if [ -n "$previous" ]; then
             TRAFFIC="$(printf '    - revisionName: %s\n      percent: 100\n    - latestRevision: true\n      percent: 0\n      tag: candidate' "$previous")"
           else
             TRAFFIC="$(printf '    - latestRevision: true\n      percent: 100')"
           fi
-          export TRAFFIC IMAGE RUNTIME_SERVICE_ACCOUNT
-          envsubst '${IMAGE} ${RUNTIME_SERVICE_ACCOUNT} ${TRAFFIC}' < deploy/cloud-run/staging.service.yaml > "$RUNNER_TEMP/service.yaml"
+          export TRAFFIC IMAGE RUNTIME_SERVICE_ACCOUNT SERVICE_MIN_SCALE
+          envsubst '${IMAGE} ${RUNTIME_SERVICE_ACCOUNT} ${TRAFFIC} ${SERVICE_MIN_SCALE}' < deploy/cloud-run/staging.service.yaml > "$RUNNER_TEMP/service.yaml"
           gcloud run services replace "$RUNNER_TEMP/service.yaml" --project "$GCP_PROJECT" --region "$REGION"
       - name: Allow public invocation (application authentication stays the gate)
         run: >-
@@ -268,7 +280,8 @@ jobs:
           # a tag named "main" on an unreviewed commit would satisfy the condition above.
           # Deploy only a commit that main already contains: compare answers "identical"
           # or "ahead" for those and "behind", "diverged" or 404 for anything else.
-          status="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${SHA}...main" --jq .status)"
+          # Compare against heads/main, the branch, so a tag named main cannot stand in for it.
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${SHA}...heads/main" --jq .status)"
           case "$status" in
             identical|ahead) echo "${SHA} is on main (${status})." ;;
             *) echo "::error::${SHA} is not on main (compare status: ${status}); refusing to deploy."; exit 1 ;;
@@ -286,8 +299,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Require an RTDB deploy target for bustrack-be165
+        # The rules release at the end resolves database:rtdb through .firebaserc. A
+        # missing mapping would fail only there, after App Check and the index deploy.
+        run: node scripts/verify-rtdb-deploy-target.mjs --project bustrack-be165
       - name: Verify backend/frontend RTDB target before staging release
-        run: npm run verify:rtdb-instance
+        run: npm run verify:rtdb-instance -- --require-region
         env:
           FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
           NEXT_PUBLIC_FIREBASE_DATABASE_URL: ${{ secrets.NEXT_PUBLIC_FIREBASE_DATABASE_URL }}
@@ -365,8 +382,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Require an RTDB deploy target for eki-production
+        # The rules release at the end resolves database:rtdb through .firebaserc. A
+        # missing mapping would fail only there, after App Check and the index deploy.
+        run: node scripts/verify-rtdb-deploy-target.mjs --project eki-production
       - name: Verify backend/frontend RTDB target before production release
-        run: npm run verify:rtdb-instance
+        run: npm run verify:rtdb-instance -- --require-region
         env:
           FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
           NEXT_PUBLIC_FIREBASE_DATABASE_URL: ${{ secrets.NEXT_PUBLIC_FIREBASE_DATABASE_URL }}
