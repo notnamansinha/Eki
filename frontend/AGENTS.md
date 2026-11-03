@@ -35,4 +35,6 @@ The headline and description use soft black text shadows. Option B adds a
 centred 1.3× scale to the landing portrait artwork. Keep the portrait
 `sizes` in step with the CSS scale. The passenger background and landscape
 composition use the base cover fit.
-Keep the landing description free of full stops.
+Lead the landing copy with bus tracking. Qualify bus locations and estimated
+arrivals by live data availability and keep the description free of full stops.
+The secondary Campus Operations link sits below the Google button.

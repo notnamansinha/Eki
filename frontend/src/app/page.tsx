@@ -113,7 +113,7 @@ export default function HomePage() {
             WebkitTextStroke: "1px rgba(255,255,255,0.08)",
           }}
         >
-          Campus routes<br className="hidden md:block" /> and bus tracking
+          Track your<br className="hidden md:block" /> campus bus
         </h1>
 
         <p
@@ -123,7 +123,8 @@ export default function HomePage() {
             textShadow: "0 2px 8px rgba(0,0,0,0.45)",
           }}
         >
-          View campus routes and available bus locations, with arrival estimates based on live service data
+          View University bus routes and available bus locations<br />{" "}
+          Arrival estimates depend on live service data
         </p>
 
         <div className="flex flex-col sm:flex-row w-full sm:w-auto gap-4">
@@ -140,6 +141,17 @@ export default function HomePage() {
             )}
             {loginLoading ? "Opening Google…" : loginReady ? "Continue with Google" : "Preparing sign-in…"}
           </button>
+        </div>
+        <div className="mt-3 text-sm text-white drop-shadow-md">
+          For campus travel information, contact{" "}
+          <a
+            href="https://ahduni.edu.in/academics/schools-centres/office-of-the-dean-of-students/getting-around/"
+            className="font-semibold underline underline-offset-4"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Campus Operations
+          </a>
         </div>
         {loginReady && loginFallbackAvailable && (
           <button

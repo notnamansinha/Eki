@@ -41,7 +41,7 @@ const replacements = (page: Page) => page.evaluate(() => [...new Set((window as 
 const sawAccessError = (page: Page) => page.evaluate(() => (window as unknown as QaWindow).qaSawAccessError);
 const accessError = (page: Page) => page.getByText("Access could not be verified");
 const stillChecking = (page: Page) => page.getByRole("status").filter({ hasText: "Still checking your sign-in" });
-const hero = (page: Page) => page.getByRole("heading", { name: /Campus routes/ });
+const hero = (page: Page) => page.getByRole("heading", { name: "Track your campus bus" });
 const signIn = (page: Page) => page.getByRole("button", { name: "Continue with Google", exact: true });
 const preparing = (page: Page) => page.getByRole("button", { name: /Preparing sign-in/ });
 const reload = (page: Page) => page.getByRole("button", { name: "Reload", exact: true });

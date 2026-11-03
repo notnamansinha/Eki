@@ -16,7 +16,7 @@ for (const viewport of [
     await page.goto("/?landing&restoreHang");
     await page.clock.runFor(1000);
     await page.locator(".transit-artwork img").evaluate(img => (img as HTMLImageElement).decode());
-    const heading = page.getByRole("heading", { name: /Campus routes/ });
+    const heading = page.getByRole("heading", { name: "Track your campus bus" });
     const signIn = page.getByRole("button", { name: "Continue with Google", exact: true });
     await expect(heading).toBeVisible();
     await expect(signIn).toBeEnabled();

@@ -296,7 +296,7 @@ Tailwind size utilities keep their defaults: `text-xs` 12/16 px, `text-sm` 14/20
 
 | Role | Size | Weight | Line height | Example |
 |---|---|---|---|---|
-| Landing headline | 60 px, 80 px at `md`, 96 px at `lg` | 900 | 1.05 | "Campus routes and bus tracking" |
+| Landing headline | 28 to 96 px, sized by viewport width and height | 900 | 1.05 | "Track your campus bus" |
 | Screen title | 32 px | 900 | 1 | "Live Routes", "Routes" |
 | Route schedule card title | 17 px | 800 | 1.375 | Route name in the Routes tab |
 | Route schedule stop and time | 14 px stop name, 12 px time with `tabular-nums` | 700 / 600 | 1.375 / 1.5 | "Central Library", "7:38 am" |

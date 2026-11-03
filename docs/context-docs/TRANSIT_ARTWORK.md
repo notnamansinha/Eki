@@ -144,5 +144,9 @@ label identifies the provider.
 
 The headline and description use a black text shadow with a 2px offset and
 8px blur at 48% and 45% opacity respectively.
-The description reads “View campus routes and available bus locations, with
-arrival estimates based on live service data” without full stops.
+The headline reads “Track your campus bus”. The description introduces
+University bus routes and available bus locations, followed by “Arrival
+estimates depend on live service data” on a separate line. A secondary link
+below the Google button directs riders to Campus Operations for campus
+travel information and opens the University's Getting Around page.
+[Ahmedabad University transport guide](https://ahduni.edu.in/academics/schools-centres/office-of-the-dean-of-students/getting-around/)

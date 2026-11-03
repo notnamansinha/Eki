@@ -173,11 +173,10 @@ body {
   }
 }
 
-/* Landscape phones have tablet-like widths but very little usable height.
-   Keep sign-in within reach without applying desktop-sized type and logos. */
-@media (max-height: 32rem) and (min-aspect-ratio: 1/1) {
+/* Make room for the guide link and footer on short phones in either orientation. */
+@media (max-height: 32rem) {
   .transit-landing-content {
-    padding-top: 0.75rem;
+    padding-top: max(0.75rem, env(safe-area-inset-top));
     padding-bottom: 0.75rem;
   }
 
@@ -192,7 +191,7 @@ body {
 
   .transit-landing-content > p {
     font-size: 1rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.875rem;
   }
 
   .transit-landing-content > div > button {
