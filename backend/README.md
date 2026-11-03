@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-001 | 1.2 | Current | 2026-11-02 |
+| EKI-PKG-001 | 1.3 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -123,7 +123,7 @@ docker build -f backend/Dockerfile -t eki-backend .
 
 The deploy workflow can deploy the backend to Cloud Run only through the optional manual job `deploy-backend-staging`, which deployed the staging service on 2026-11-01. It also publishes the web app to Firebase Hosting and deploys Firestore indexes and the Firestore and RTDB security rules. Before it releases, it runs `npm run verify:web-backend-contract` against the origin in `NEXT_PUBLIC_BACKEND_URL` and stops unless `/health` returns `ok` (retrying for up to 90 s while the backend starts) and the backend accepts the Hosting origin in CORS, including the preflight of an authenticated request. Firebase Hosting has no rewrite to the backend: rewrites were evaluated on 2026-11-02 and not adopted ([issue #372](https://github.com/notnamansinha/Eki/issues/372)), so clients call the backend origin directly.
 
-For bench tests and demonstrations the backend can still run on a workstation and be reached through a stable ngrok domain; the staging web app no longer uses that setup. Set `TRUST_PROXY=loopback` in that setup so that each tunnelled client gets its own pre-authentication rate-limit bucket. The procedure is in the [ngrok tunnel runbook](../docs/operations/NGROK_TUNNEL.md). The staging service and the remaining steps (the worker handoff and the device reflash) are described in [backend hosting](../docs/operations/CI_CD_AND_RELEASES.md#7-backend-hosting). A hosted deployment needs the items in the [university deployment checklist](../docs/operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md), including an edge rate limit and `RATE_LIMIT_SHARD_FACTOR` equal to the replica count.
+For bench tests and demonstrations the backend can still run on a workstation and be reached through a stable ngrok domain; the staging web app no longer uses that setup. Set `TRUST_PROXY=loopback` in that setup so that each tunnelled client gets its own pre-authentication rate-limit bucket. The procedure is in the [ngrok tunnel runbook](../docs/operations/NGROK_TUNNEL.md). The staging service is described in [backend hosting](../docs/operations/CI_CD_AND_RELEASES.md#7-backend-hosting), and its runtime values, including the 06:00 to 22:00 IST worker window, in the [staging runtime configuration](../docs/operations/STAGING_RUNTIME_CONFIG.md). The remaining device checks are in [issue #430](https://github.com/notnamansinha/Eki/issues/430). A hosted deployment needs the items in the [university deployment checklist](../docs/operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md), including an edge rate limit and `RATE_LIMIT_SHARD_FACTOR` equal to the replica count.
 
 ## 10. Related documents
 
