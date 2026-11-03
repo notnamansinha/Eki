@@ -427,6 +427,18 @@ function trackBackgroundTask(
 }
 
 /**
+ * Signal-loss history for one raw fix. An engine restart replays every live
+ * node, so a fix whose loss is already recorded keeps its original time.
+ */
+function signalLossFields(location: NonNullable<ReturnType<typeof journeyLocation>>, recorded: unknown) {
+  const key = `lost_${location.sampledAt}_${location.seq ?? 0}`;
+  if (recorded && typeof recorded === "object" && key in recorded) return {};
+  const observedAt = Date.now();
+  return { lastSignalLostAt: observedAt,
+    connectionEvents: { [key]: { type: "signal_lost", observedAt, location } } };
+}
+
+/**
  * Firestore is the durable fleet-state store, not a second telemetry stream.
  * Persist lifecycle changes and a final raw fix at signal loss/completion;
  * ordinary location heartbeats remain in RTDB.
@@ -460,10 +472,8 @@ function persistFleetState(
         transaction.set(locationRef, { ...state, lastSeen }, { merge: true });
         const lastKnownLocation = newerJourneyLocation(data, session?.data()?.lastKnownLocation);
         if (session?.exists && lastKnownLocation) {
-          transaction.set(sessionRef, { lastKnownLocation, lastSignalLostAt: Date.now(),
-            connectionEvents: { [`lost_${lastKnownLocation.sampledAt}_${lastKnownLocation.seq ?? 0}`]: {
-              type: "signal_lost", observedAt: Date.now(), location: lastKnownLocation,
-            } } }, { merge: true });
+          transaction.set(sessionRef, { lastKnownLocation,
+            ...signalLossFields(lastKnownLocation, session.data()?.connectionEvents) }, { merge: true });
           transaction.set(locationRef, { lastKnownLocation }, { merge: true });
         }
         return true;
@@ -527,12 +537,7 @@ async function persistOfflineFleetState(
           transaction.set(locationRef, { lastKnownLocation }, { merge: true });
           if (sessionRef && session?.exists) transaction.set(sessionRef, {
             lastKnownLocation,
-            ...(recordSignalLoss ? {
-              lastSignalLostAt: Date.now(),
-              connectionEvents: { [`lost_${lastKnownLocation.sampledAt}_${lastKnownLocation.seq ?? 0}`]: {
-                type: "signal_lost", observedAt: Date.now(), location: lastKnownLocation,
-              } },
-            } : {}),
+            ...(recordSignalLoss ? signalLossFields(lastKnownLocation, session.data()?.connectionEvents) : {}),
           }, { merge: true });
         }
         return true;

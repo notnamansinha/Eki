@@ -377,6 +377,20 @@ describe("routing lifecycle through actual ingestion and listeners", () => {
     expect(state.docs.get(`active_rides/${f.key}`)).toMatchObject({ tripState: "in_service", currentStopIndex: 2 });
     expect(state.docs.get(`active_rides/${f.key}`).updatedAt).not.toBe(baseTime + 15_000);
   });
+  it("keeps the original signal-loss time when an engine restart or removal replays a silent ride", async () => {
+    const { f, sweptAt } = await silentRideAfterRestart();
+    const expectOriginalLoss = () => {
+      const history = state.docs.get(`ride_sessions/${f.sessionId}`);
+      expect(history.lastSignalLostAt).toBe(sweptAt);
+      expect(Object.values(history.connectionEvents)).toEqual([expect.objectContaining({ observedAt: sweptAt,
+        location: expect.objectContaining({ lat: 23.001, lng: 72, sampledAt: baseTime + 15_000 }) })]);
+      expect(history.lastKnownLocation).toMatchObject({ sampledAt: baseTime + 15_000 });
+    };
+    expectOriginalLoss();
+    vi.setSystemTime(baseTime + 11 * 60 * 60_000);
+    await rtdb.ref(`activeBuses/${f.key}`).set(null); await settle();
+    expectOriginalLoss();
+  });
   it("does not record an engine retirement as signal loss", async () => {
     const f = await fixture(); await f.arrive();
     await rtdb.ref(`activeBuses/${f.key}`).set({ ...f.live(), deviceState: "offline" }); await settle();

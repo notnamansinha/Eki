@@ -243,10 +243,10 @@ The whole request has an 8 s response deadline and 5 s per dependency stage (`ba
 | Reroute scheduler | Every replica | On confirmed deviation | 2 running, 64 waiting nodes | `telemetryRouteService.ts:1335` |
 | Automatic start | Every replica | Per eligible fix | 8 running, 128 waiting, 10 s queue age; 30 s retry | `backend/src/services/automaticServiceAdmission.ts:14` |
 | Durable ride recovery | Every replica | On a node without a ride | 16 running, 1,000 queued; a miss is cached 30 s, or 1 s while a turnaround claim exists | `backend/src/services/durableRideRecovery.ts:12`, `durableRideRecovery.ts:95` |
-| Trip-state engine | Leader | `activeBuses` child events | One event at a time per node; durable writes 8 running, 256 waiting, 5 s | `backend/src/services/tripStateEngine.ts:59`, `tripStateEngine.ts:1283` |
-| Lifecycle replay | Leader | 1 s tick, on request | Pages of 25 live nodes then `bus_locations` | `tripStateEngine.ts:848` |
-| Stale sweep | Leader | 1 s tick | 25 nodes per page, 4 writes at once, failure backoff up to 30 s | `tripStateEngine.ts:1356`, `backend/src/services/staleBusSweeper.ts:4` |
-| Completed ride retirement | Leader | 30 s after completion | One timer per node | `tripStateEngine.ts:1268` |
+| Trip-state engine | Leader | `activeBuses` child events | One event at a time per node; durable writes 8 running, 256 waiting, 5 s | `backend/src/services/tripStateEngine.ts:59`, `tripStateEngine.ts:1288` |
+| Lifecycle replay | Leader | 1 s tick, on request | Pages of 25 live nodes then `bus_locations` | `tripStateEngine.ts:853` |
+| Stale sweep | Leader | 1 s tick | 25 nodes per page, 4 writes at once, failure backoff up to 30 s | `tripStateEngine.ts:1361`, `backend/src/services/staleBusSweeper.ts:4` |
+| Completed ride retirement | Leader | 30 s after completion | One timer per node | `tripStateEngine.ts:1273` |
 | Route watcher reconnect | Leader | On listener error | 1 s doubling to 30 s | `tripStateEngine.ts:118` |
 | Public projection readiness and repair | Leader | 1 s and 60 s | One readiness write at a time | `backend/src/services/liveBusProjection.ts:315` |
 | Abandoned-ride reconciliation | Leader | Startup and every hour | Pages of 100 | `backend/src/services/abandonedRideReconciler.ts:18`, `backend/src/lib/reconciliationPages.ts:2` |
@@ -379,7 +379,7 @@ Native tests are described in the [hardware test guide](../../hardware/test/READ
 | Telemetry | Dependency failure or deadline | `503`, `Retry-After: 1`, `commitState` `not_dispatched` or `unknown` | `devices.ts:162` |
 | Background work | Matching, rerouting, recovery, admission, projection failures | `recordBackgroundFailure` counts per source and flags sustained failures in `/api/health` without failing readiness | `backend/src/lib/backgroundFailureTracker.ts` |
 | Leader writes | Lost lease during a write | The fence aborts the transaction; the job stops | `backend/src/lib/workerFence.ts:83` |
-| Lifecycle persistence | Firestore write fails or lock check fails | The fingerprint is released for retry and a paged replay is requested | `backend/src/services/tripStateEngine.ts:770` |
+| Lifecycle persistence | Firestore write fails or lock check fails | The fingerprint is released for retry and a paged replay is requested | `backend/src/services/tripStateEngine.ts:775` |
 | RTDB transactions | Cold local cache returns `null` | The update returns `null` so the SDK retries against the server value | `backend/src/routes/shifts.ts:400` |
 | Reroute | Provider error, bad geometry, lost publication | Node back to `OFF_ROUTE` with persisted backoff; circuit counts provider failures only | `backend/src/services/telemetryRouteService.ts:991` |
 | Browser | RTDB disconnect, listener error | "Live tracking paused" notice, cache invalidation, jittered resubscription | `frontend/src/hooks/useRTDBResume.ts`, `frontend/src/lib/liveBusRetry.ts` |
@@ -402,8 +402,8 @@ Native tests are described in the [hardware test guide](../../hardware/test/READ
 | Route save | `saveId` with payload hash and lease in `_route_save_operations`, committed with the route | `backend/src/routes/polyline.ts:700` |
 | Geometry preview, fleet reconciliation | `Idempotency-Key` operation records with executor identity and generation | `backend/src/services/httpOperations.ts:124` |
 | Delay update | `delayUpdatedAt` revision increases monotonically; the durable mirror ignores older revisions | `shifts.ts:187` |
-| Stop progress | `active_rides.currentStopIndex` never decreases; existing `stopsReached` entries are not rewritten | `backend/src/services/tripStateEngine.ts:727`, `backend/src/services/rideProgressHistory.ts:38` |
-| Completion | One transaction writes history and deletes only the lock and recovery record of the completing session | `tripStateEngine.ts:1077` |
+| Stop progress | `active_rides.currentStopIndex` never decreases; existing `stopsReached` entries are not rewritten | `backend/src/services/tripStateEngine.ts:732`, `backend/src/services/rideProgressHistory.ts:38` |
+| Completion | One transaction writes history and deletes only the lock and recovery record of the completing session | `tripStateEngine.ts:1082` |
 | Turnaround | RTDB claim plus a Firestore transaction that checks the lock and `terminalJourney.consumedBy` | `tripStateEngine.ts:213` |
 
 RTDB holds the latest state and Firestore the durable record; no transaction spans both. Each cross-store sequence is ordered so that a retry or the paged replay converges, and session IDs guard every write against a newer ride. Recovery limits across stores are in [reconciliation](../operations/RECONCILIATION.md).

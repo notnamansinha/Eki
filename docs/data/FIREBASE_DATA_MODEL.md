@@ -318,7 +318,7 @@ The durable record of one ride.
 | `stopsReached.{index}` | `{stopIndex, stopId, stopName, timestamp, evidence?}` | Progress evidence. `evidence` is `gnss_progress`, `recovered_checkpoint`, `skipped_gnss_gap` or `passed_unobserved` (`backend/src/services/rideProgressHistory.ts:47`) |
 | `firstKnownLocation`, `lastKnownLocation` | `{lat, lng, sampledAt, seq, receivedAt}` | First and last raw fixes of the ride |
 | `firstTelemetryAt`, `lastSignalLostAt` | epoch ms | First fix time and last signal loss |
-| `connectionEvents.lost_{sampledAt}_{seq}` | `{type: signal_lost, observedAt, location}` | Signal loss events |
+| `connectionEvents.lost_{sampledAt}_{seq}` | `{type: signal_lost, observedAt, location}` | Signal loss events, one per fix. A replay of a recorded fix (engine restart, node removal) keeps its `observedAt` and `lastSignalLostAt` |
 | `terminalArrivalConfirmedAt` | epoch ms | Completion confirmation |
 | `interruptionReason`, `interruptedBy`, `reconciledAt` | string, UID, Timestamp | `manual_end_early` or `abandoned_session_timeout` |
 | `failureReason` | string | `shift_conflict` |
@@ -328,7 +328,7 @@ The durable record of one ride.
 
 | Item | Value |
 |---|---|
-| Writers | Ride start (`rideSessionStart.ts`), boarding (`sessions.ts:299`), trip-state engine progress and completion (`tripStateEngine.ts:654`, `tripStateEngine.ts:1127`), stop endpoint (`shifts.ts:356`), abandoned-ride reconciler |
+| Writers | Ride start (`rideSessionStart.ts`), boarding (`sessions.ts:299`), trip-state engine progress and completion (`tripStateEngine.ts:659`, `tripStateEngine.ts:1132`), stop endpoint (`shifts.ts:356`), abandoned-ride reconciler |
 | Readers | Admin Ride History (`frontend/src/components/admin/RideHistoryPanel.tsx:202`, ordered by `armedAt` and by `startTime`), the assigned driver, feedback rules |
 | Client rule | Read by a current admin or the assigned current driver; no writes (`firestore.rules:111`) |
 | Retention | Terminal sessions are deleted recursively 180 days after `endTime` (`RIDE_SESSION_RETENTION_DAYS`) and on admin history deletion (Section 7) |
@@ -357,11 +357,11 @@ A per-bus lifecycle projection, written when lifecycle state changes rather than
 | `automaticServiceEpoch` | integer | Automatic start generation; one automatic ride per epoch |
 | `terminalJourney` | object | `{busId, routeId, driverId, sessionId, direction, directionEndpointVersion, completedAt, turnaroundEligibleAt, turnaroundSampledAt, consumedBy, currentStopIndex, hasDepartedOrigin, originStopId, destinationStopId}`, the completion checkpoint for the automatic return |
 
-Writers: leader (`tripStateEngine.ts:434`, `tripStateEngine.ts:1171`), ride start and stop. Readers: admin Live Ops (`frontend/src/hooks/useBusLocations.ts:15`), the analytics endpoint and automatic start. Client rule: read by a current admin (`firestore.rules:94`). Retention: kept per bus.
+Writers: leader (`tripStateEngine.ts:446`, `tripStateEngine.ts:1176`), ride start and stop. Readers: admin Live Ops (`frontend/src/hooks/useBusLocations.ts:15`), the analytics endpoint and automatic start. Client rule: read by a current admin (`firestore.rules:94`). Retention: kept per bus.
 
 ### 4.9 `completed_trips/{sessionId}`
 
-Fields: `busId`, `driverId`, `routeId`, `direction`, `originStopId`, `destinationStopId`, `completedAt` (ISO string), `automaticTurnaroundEligibleAt` (epoch ms), `stopCount`, `stopNames[]` (travel order) and `sessionId`. Writer: leader at completion (`tripStateEngine.ts:1127`). Readers: the analytics endpoint (forward and reverse counts) and history deletion. Client rule: read by a current admin (`firestore.rules:158`). Retention: 180 days after `completedAt` (`COMPLETED_TRIP_RETENTION_DAYS`), and with admin history deletion.
+Fields: `busId`, `driverId`, `routeId`, `direction`, `originStopId`, `destinationStopId`, `completedAt` (ISO string), `automaticTurnaroundEligibleAt` (epoch ms), `stopCount`, `stopNames[]` (travel order) and `sessionId`. Writer: leader at completion (`tripStateEngine.ts:1132`). Readers: the analytics endpoint (forward and reverse counts) and history deletion. Client rule: read by a current admin (`firestore.rules:158`). Retention: 180 days after `completedAt` (`COMPLETED_TRIP_RETENTION_DAYS`), and with admin history deletion.
 
 ### 4.10 `feedbacks/{feedbackId}` and `feedbackCooldowns/{uid}`
 
@@ -381,7 +381,7 @@ Clients cannot read or write any of these collections, by explicit rule or throu
 | Collection | Fields | Writer and purpose | Retention |
 |---|---|---|---|
 | `devices/{deviceId}` | `deviceId`, `busId`, `routeId`, `enabled`, `assignmentRevision`, `secretHash` (salt and scrypt key in hex), `credentialRotatedAt`, `updatedAt`, optional `disabledAt` and `pendingAssignmentRetirement` | Provisioning script and admin device endpoints (`backend/src/provisionDevice.ts:80`, `backend/src/routes/devices.ts:427`); one device per bus and route | Admin |
-| `active_rides/{busId}_{routeId}` | `sessionId`, `busId`, `routeId`, `driverId`, `direction`, `originStopId`, `destinationStopId`, `status: active`, `tripState`, `currentStopIndex`, `hasDepartedOrigin`, `terminalArrival`, `gnssGapSince`, `hasTelemetry`, `lastRouteVersion`, `delayMinutes`, `delayUpdatedAt`, `updatedAt`; direction and turnaround fields on automatic rides | Ride start, the leader's progress checkpoint (`tripStateEngine.ts:755`) and the delay endpoint. Recovery source after a restart; `currentStopIndex` never decreases | Deleted at completion, early end or reconciliation |
+| `active_rides/{busId}_{routeId}` | `sessionId`, `busId`, `routeId`, `driverId`, `direction`, `originStopId`, `destinationStopId`, `status: active`, `tripState`, `currentStopIndex`, `hasDepartedOrigin`, `terminalArrival`, `gnssGapSince`, `hasTelemetry`, `lastRouteVersion`, `delayMinutes`, `delayUpdatedAt`, `updatedAt`; direction and turnaround fields on automatic rides | Ride start, the leader's progress checkpoint (`tripStateEngine.ts:760`) and the delay endpoint. Recovery source after a restart; `currentStopIndex` never decreases | Deleted at completion, early end or reconciliation |
 | `_active_bus_locks/{busId}` | `busId`, `routeId`, `driverId`, `sessionId`, `direction`, optional `automaticTurnaround` and direction fields, `createdAt`, `updatedAt` | One non-terminal ride per bus; created in the ride-start transaction (`rideSessionStart.ts:420`) | Deleted with the ride's terminal state |
 | `_ride_session_creation_keys/{hash}` | `driverId`, `busId`, `routeId`, `sessionId`, `createdAt` | Idempotency binding of a ride start; the ID is the SHA-256 of the principal scope and the `Idempotency-Key` (`rideSessionStart.ts:138`) | Kept; survives session deletion |
 | `_userAuthorization/{uid}` | As RTDB Section 3.6 | `publishUserAuthorization`; read by rules (`firestore.rules:21`) | Kept |
