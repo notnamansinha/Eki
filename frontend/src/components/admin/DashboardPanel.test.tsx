@@ -24,6 +24,8 @@ vi.mock("@/lib/firebaseAuth", () => ({ auth: {currentUser: {getIdToken: async ()
 vi.mock("@/components/ui/CustomSelect", () => ({default: ({ariaLabel, value, options, onChange, disabled}: {ariaLabel: string; value: string; options: {value: string; label: string}[]; onChange: (value: string) => void; disabled?: boolean}) => <select aria-label={ariaLabel} value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>}));
 beforeEach(() => { state.entries = []; state.busLocations = []; state.busLocationsError = null; state.retryBusLocations.mockReset(); state.resuming = false; state.driversLoading = false; state.routes = [{ ...route, stops: [] }]; vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test"); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+const cssColour = (hex: string) => { const probe = document.createElement("div"); probe.style.background = hex; return probe.style.background; };
+const markerColour = (busId: string) => (screen.getByTitle(new RegExp(`^${busId} —`)).firstElementChild as HTMLElement).style.background;
 describe("admin service creation", () => {
   it("offers recovery for a terminal automatic intent without reviving the old ride",()=>{
     state.entries=[{...fixtureBus(),sessionId:undefined,status:"offline",automaticServiceState:"paused"} as ActiveBusEntry];
@@ -149,10 +151,12 @@ describe("admin service creation", () => {
     const view = render(<DashboardPanel />);
     expect(screen.queryByText("Live location updates delayed")).toBeNull();
     expect(screen.queryByText("Service paused")).toBeNull();
+    expect(markerColour("qa-bus")).toBe(cssColour("#FBBF24"));
     state.entries = aged(31_000);
     view.rerender(<DashboardPanel />);
     expect(screen.getByText("Live location updates delayed")).toBeTruthy();
     expect(screen.getByText("Service paused")).toBeTruthy();
+    expect(markerColour("qa-bus")).toBe(cssColour("#FB923C"));
   });
   it("does not infer receiver failure from uncertain motion", () => {
     state.entries = [{ ...fixtureBus("forward"), motionState: "uncertain" } as ActiveBusEntry];
@@ -192,6 +196,58 @@ describe("admin service creation", () => {
     expect(screen.getAllByTitle(/^qa-bus(-\d)? —/)).toHaveLength(3);
     expect(screen.getByText("Service paused")).toBeTruthy();
     expect(screen.queryByTestId("road")).toBeNull();
+  });
+  it("keeps a long-offline ride at its last location without treating it as in service", async () => {
+    const stale = Date.now() - 15 * 3_600_000;
+    state.entries = [
+      fixtureBus("forward") as ActiveBusEntry,
+      { ...fixtureBus("forward", "qa-session-2", "qa-bus-2"), lat: 23.004, lng: 72.004, deviceState: "offline", motionState: "moving", timestamp: stale, backendReceivedAt: stale } as ActiveBusEntry,
+    ];
+    const user = userEvent.setup(); render(<DashboardPanel />);
+    // The marker stays at the last known location, however old, in the offline colour.
+    expect(screen.getByTitle(/^qa-bus-2 —/).closest("[data-marker]")?.getAttribute("data-marker")).toBe('{"lat":23.004,"lng":72.004}');
+    expect(screen.getByTitle(/^qa-bus-2 —/).title).toMatch(/^qa-bus-2 — Service paused/);
+    expect(markerColour("qa-bus-2")).toBe(cssColour("#FB923C"));
+    expect(markerColour("qa-bus")).toBe(cssColour("#FBBF24"));
+    expect(screen.getByText("1 device online · 1 service")).toBeTruthy();
+    for (const card of screen.getAllByRole("button", { expanded: false })) await user.click(card);
+    const card = (name: string) => within(screen.getByText(name, { selector: "p" }).closest("[data-fleet-card]") as HTMLElement);
+    const live = card("QA bus"), paused = card("qa-bus-2");
+    expect((live.getByRole("button", { name: "Increase delay by 1 minutes for qa-bus" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((live.getByRole("button", { name: "Boarding code" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(live.queryByText("Delay and boarding code return when the receiver reports again.")).toBeNull();
+    expect((paused.getByRole("button", { name: "Increase delay by 1 minutes for qa-bus-2" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((paused.getByRole("button", { name: "Boarding code" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(paused.getByText("Delay and boarding code return when the receiver reports again.")).toBeTruthy();
+    // Ending the stale ride stays available as the recovery action.
+    expect(paused.getByRole("button", { name: "End ride early" })).toBeTruthy();
+  });
+  it("pauses live controls after 30 s of silence and restores them on the next fix", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const now = Date.now();
+    const at = (ageMs: number) => [{ ...fixtureBus("forward"), timestamp: now - ageMs, backendReceivedAt: now - ageMs } as ActiveBusEntry];
+    state.entries = at(31_000);
+    const user = userEvent.setup(); const view = render(<DashboardPanel />);
+    await user.click(screen.getByText("QA bus").closest("button")!);
+    const delay = () => screen.getByRole("button", { name: "Increase delay by 1 minutes for qa-bus" }) as HTMLButtonElement;
+    const boarding = () => screen.getByRole("button", { name: "Boarding code" }) as HTMLButtonElement;
+    expect([delay().disabled, boarding().disabled]).toEqual([true, true]);
+    expect(screen.getByText("Delay and boarding code return when the receiver reports again.")).toBeTruthy();
+    state.entries = at(0);
+    view.rerender(<DashboardPanel />);
+    expect([delay().disabled, boarding().disabled]).toEqual([false, false]);
+    expect(screen.queryByText("Delay and boarding code return when the receiver reports again.")).toBeNull();
+    expect(markerColour("qa-bus")).toBe(cssColour("#FBBF24"));
+  });
+  it("does not count a ride without confirmed receiver presence as live service", async () => {
+    state.entries = [{ ...fixtureBus("forward"), deviceState: undefined } as unknown as ActiveBusEntry];
+    const user = userEvent.setup(); render(<DashboardPanel />);
+    expect(screen.getByText("0 devices online · 0 services")).toBeTruthy();
+    expect(screen.getByText("Service paused")).toBeTruthy();
+    expect(markerColour("qa-bus")).toBe(cssColour("#FB923C"));
+    await user.click(screen.getByText("QA bus").closest("button")!);
+    expect((screen.getByRole("button", { name: "Increase delay by 1 minutes for qa-bus" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Boarding code" }) as HTMLButtonElement).disabled).toBe(true);
   });
   it("centers the bus glyph on its coordinate while its label stays outside the anchor box", () => {
     state.entries = [{ busId: "qa-bus", routeId: "qa-route", lat: 23, lng: 72, timestamp: Date.now(), deviceState: "online", motionState: "stopped", speed: 0 }];

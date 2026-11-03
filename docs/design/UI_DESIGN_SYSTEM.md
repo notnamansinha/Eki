@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 2.1 | Current | 2026-11-03 |
+| EKI-UIX-001 | 2.2 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -177,10 +177,10 @@ Admin marker (`components/admin/DashboardPanel.tsx`): a 36 px circle with a 3 px
 
 | Condition | Fill |
 |---|---|
-| In service and moving | `#34D399` |
-| In service and not moving | `#FBBF24` |
-| Not in service, device not online or motion uncertain | `#FB923C` |
-| Not in service, otherwise | `#94949C` |
+| In live service and moving | `#34D399` |
+| In live service and not moving | `#FBBF24` |
+| Paused (session kept, receiver offline or silent for more than 30 s), device not online, or motion uncertain | `#FB923C` |
+| Otherwise | `#94949C` |
 
 ### 3.6 Admin ride states
 
@@ -583,7 +583,7 @@ Under `prefers-reduced-motion: reduce`, `app/globals.css` sets every animation a
 | Gap | Location |
 |---|---|
 | Text contrast below AA for stop letters, admin labels at 25 to 40 % white, the `.input-rc` placeholder, the danger dialog button and the feedback submit button (Section 4). | `PassengerMap.tsx`, `DashboardPanel.tsx`, `app/globals.css`, `ConfirmModal.tsx`, `FeedbackModal.tsx` |
-| Controls below the 44 px convention: the fleet card eye button (36 px), delay buttons (36 px minimum), **Boarding code** and **End ride early** in the card (40 px), and the passenger **Board** button (12 px text with 8 px vertical padding, 32 px high). All exceed the 24 px minimum of SC 2.5.8 [1]. | `DashboardPanel.tsx:461`, `:554`, `:566`, `:575`; `PassengerBoardingView.tsx` |
+| Controls below the 44 px convention: the fleet card eye button (36 px), delay buttons (36 px minimum), **Boarding code** and **End ride early** in the card (40 px), and the passenger **Board** button (12 px text with 8 px vertical padding, 32 px high). All exceed the 24 px minimum of SC 2.5.8 [1]. | `DashboardPanel.tsx:475`, `:568`, `:580`, `:589`; `PassengerBoardingView.tsx` |
 | `.input-rc` removes the outline and signals focus only by a border change from 10 % to 30 % white. | `app/globals.css` |
 | `html { scroll-behavior: smooth; }` is not reset under reduced motion. | `app/globals.css` |
 | `animate-in fade-in` on both dialogs produces no CSS, because no plugin defines these classes. | `ConfirmModal.tsx`, `AlertModal.tsx` |
