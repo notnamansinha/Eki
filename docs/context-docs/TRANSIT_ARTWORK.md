@@ -150,3 +150,7 @@ estimates depend on live service data” on a separate line. A secondary link
 below the Google button directs riders to Campus Operations for campus
 travel information and opens the University's Getting Around page.
 [Ahmedabad University transport guide](https://ahduni.edu.in/academics/schools-centres/office-of-the-dean-of-students/getting-around/)
+
+The current login screenshots show the sign-in fixture with synthetic auth
+at 390x844, 1440x900 and 1280x585 CSS pixels. The fixture verified that the
+heading, enabled Google button, Campus Operations link and footer fit.
