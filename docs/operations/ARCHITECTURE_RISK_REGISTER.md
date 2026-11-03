@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-010 | 3.1 | Current | 2026-11-02 |
+| EKI-OPS-010 | 3.2 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -14,7 +14,7 @@ Of the ten risks, two are closed, three are open in the repository or its settin
 
 | Area | What is unfinished | Risks |
 |---|---|---|
-| Backend hosting | The staging backend runs as one Cloud Run instance that scales to zero, with workers disabled and no failover, alerting or tested restore. | OPS-01 (High) |
+| Backend hosting | The staging backend runs as one Cloud Run instance with no failover, edge limits or alerting. Its workers run only while that instance is up, and they were disabled on the serving revision on 2026-11-03. | OPS-01 (High) |
 | Stop tracking | Stop arrival and route matching are validated on simulated rides only; a moving-bus field ride is still needed. | TRK-01 (High) |
 | Tracker firmware | Outage recovery, Secure Boot and signed updates are built but not proven on hardware, and one shared update image would give every tracker the same credentials. | FW-01, FW-02, FW-03 (High) |
 | Access control | A passenger can board by reporting a false location. | SEC-01 (Medium) |
@@ -69,9 +69,9 @@ Of the ten risks, two are closed, three are open in the repository or its settin
 
 ### 3.5 OPS-01: runtime availability and perimeter controls are not evidenced
 
-- Evidence: the code supports replicated hosting. `RATE_LIMIT_SHARD_FACTOR` divides every in-memory limiter budget by the replica count (`backend/src/lib/rateLimitShard.ts`); `/health` returns `200` only while Firestore and RTDB probes pass, and `/live` stays `200` while the process runs; a Firestore lease with fencing keeps lifecycle work on one leader ([worker leadership](WORKER_LEADERSHIP.md)); CI builds and smoke-boots the container. On 2026-11-01 the manual job `deploy-backend-staging` deployed the backend to the Cloud Run service `eki-backend-staging` in `asia-south2`, which runs one instance at most, scales to zero and runs with `WORKER_ENABLED=false`. Every Hosting release checks that backend live and retries `/health` for up to 90 s ([CI, deployment and releases](CI_CD_AND_RELEASES.md#71-current-state)).
-- Impact: one instance serves the backend without failover. No process runs the lease-owned workers until the worker handoff. Devices built with the offline tunnel origin cannot deliver telemetry. There is no edge rate limit, WAF, alerting or tested restore.
-- Open gate: the worker handoff to the managed runtime ([Cloud Run proposal](CI_CD_AND_RELEASES.md#72-proposed-migration-to-cloud-run)); at least two replicas with health-based failover and no duplicate lifecycle transitions, or a recorded single-instance acceptance; edge and global rate limits with `RATE_LIMIT_SHARD_FACTOR` equal to the replica count; alerts on health, rejections, latency, stale telemetry and lease ownership; an archived backup, restore and incident drill.
+- Evidence: the code supports replicated hosting. `RATE_LIMIT_SHARD_FACTOR` divides every in-memory limiter budget by the replica count (`backend/src/lib/rateLimitShard.ts`); `/health` returns `200` only while Firestore and RTDB probes pass, and `/live` stays `200` while the process runs; a Firestore lease with fencing keeps lifecycle work on one leader ([worker leadership](WORKER_LEADERSHIP.md)); CI builds and smoke-boots the container. On 2026-11-01 the manual job `deploy-backend-staging` deployed the backend to the Cloud Run service `eki-backend-staging` in `asia-south2`, which runs one instance at most and scales to zero. On 2026-11-02 the worker handoff was rehearsed on that service, Firestore and RTDB exports restored into scratch databases matched the live data, and the manifest was changed to `WORKER_ENABLED=true`, with Cloud Scheduler holding one instance from 06:00 to 22:00 IST ([issue #374](https://github.com/notnamansinha/Eki/issues/374), [staging runtime configuration](STAGING_RUNTIME_CONFIG.md)). On 2026-11-03 the serving revision ran with `WORKER_ENABLED=false` and both Scheduler jobs were paused. Every Hosting release checks that backend live and retries `/health` for up to 90 s ([CI, deployment and releases](CI_CD_AND_RELEASES.md#71-current-state)).
+- Impact: one instance serves the backend without failover. The lease-owned workers run only while an instance with `WORKER_ENABLED=true` is up, so stop progress and cleanup pause whenever none is. Devices built with the offline tunnel origin cannot deliver telemetry. There is no edge rate limit, WAF or alerting, and no restore of the Authentication export has been verified.
+- Open gate: workers running on the serving revision with the recorded Scheduler window in force ([staging runtime configuration](STAGING_RUNTIME_CONFIG.md)); at least two replicas with health-based failover and no duplicate lifecycle transitions, or a recorded single-instance acceptance; edge and global rate limits with `RATE_LIMIT_SHARD_FACTOR` equal to the replica count; alerts on health, rejections, latency, stale telemetry and lease ownership; a verified Authentication restore and an incident drill.
 
 ### 3.6 OPS-02: scheduled QA runs no suites
 
@@ -102,7 +102,7 @@ Of the ten risks, two are closed, three are open in the repository or its settin
 - Evidence: the only repository ruleset (`main`, applied to the default branch and all branches) requires a pull request with one approving review and code owner review, blocks deletion and force pushes, and has no required status checks; maintainers and administrators may bypass it. The default branch has no classic branch protection (GitHub API, read 2026-10-30).
 - Impact: a pull request can merge while Production verification or CodeQL is failing or still running. Deploy does not release a failed commit, but `main` can carry it and later green commits deploy on top of it.
 - Open gate: add the Production verification jobs (`web`, `backend-image`, `firmware`, `qa-evidence`) and the CodeQL `analyze` jobs as required status checks, and record whether administrators keep bypass rights.
-- Closure (2026-11-02): a second ruleset, `Require verified changes on main` (`refs/heads/main`), requires `web`, `backend-image`, `firmware`, `qa-evidence`, `Analyze javascript-typescript` and `Analyze python`, with branches up to date before merging. Maintainers and administrators keep bypass rights (`bypass_mode: always`) on both rulesets (GitHub API, read 2026-11-02).
+- Closure (2026-11-02): a second ruleset, `Require verified changes on main` (`refs/heads/main`), requires `web`, `backend-image`, `firmware`, `qa-evidence`, `Analyze javascript-typescript` and `Analyze python`, with branches up to date before merging. Correction (2026-11-03): the two rulesets have different bypass lists. Ruleset `main` can be bypassed by the administrator role and the user `suryaraj09`; `Require verified changes on main` by the maintain role, the administrator role and `suryaraj09`, all with `bypass_mode: always` (GitHub API, read 2026-11-03). `suryaraj09` holds the write role, so a write collaborator can merge without an approving review or an up-to-date green run: #418, #426 and #428 merged that way on 2026-11-02, and #426 stopped every staging release until #434. Whether to keep that bypass is the repository owner's decision.
 
 ## 4. Maintenance rule
 
