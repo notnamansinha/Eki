@@ -5,6 +5,10 @@ export const route = {
   id: "qa-route", name: "QA route", color: "#3B82F6", duration: "600s", waypoints: [],
   stops: [{ id: "a", name: "Alpha", shortName: "A", lat: 23, lng: 72 }, { id: "b", name: "Beta", shortName: "B", lat: 23.01, lng: 72.01 }],
 };
+const extraRoutes = Array.from({ length: 7 }, (_, index) => ({
+  ...route, id: `qa-route-${index + 2}`, name: `QA route ${String.fromCharCode(66 + index)}`,
+}));
+
 export function fixtureBus(direction: string | null = null, sessionId = "qa-session", busId = "qa-bus") {
   return { busId, routeId: route.id, sessionId, driverId: "qa-driver", lat: 23, lng: 72, timestamp: Date.now(), backendReceivedAt: Date.now(), seq: 1, deviceState: "online", status: "active", tripState: "in_service", direction, directionState: direction ? "resolved" : "pending", motionState: "stopped", speed: 0 };
 }
@@ -26,6 +30,11 @@ export function setScenario(next: string) {
     second: fixtureBus("reverse", "qa-session-2", "qa-bus-2"),
   };
   if (next === "two-routes") snapshot = { bus, second: { ...fixtureBus("reverse", "qa-session-B", "qa-bus-B"), routeId: "qa-route-2" } };
+  if (next === "many-routes") {
+    snapshot = { bus, ...Object.fromEntries(extraRoutes.map(({ id }) => [
+      id, { ...fixtureBus("forward", `qa-session-${id}`, `qa-bus-${id}`), routeId: id },
+    ])) };
+  }
   if (next === "mixed") snapshot = { bus, second: {
     busId: "qa-bus-2", routeId: route.id, deviceState: "online", timestamp: Date.now(),
     lat: 23.007, lng: 72.007, speed: 0, motionState: "stopped", status: "offline",
@@ -61,7 +70,8 @@ export const scheduleRoute = {
 };
 export function useRoutes() {
   useScenario();
-  const routes = scenario === "two-routes" ? [route, { ...route, id: "qa-route-2", name: "QA route B", color: "#F59E0B" }] : [route];
+  const routes = scenario === "many-routes" ? [route, ...extraRoutes]
+    : scenario === "two-routes" ? [route, { ...extraRoutes[0], color: "#F59E0B" }] : [route];
   return { routes: scheduleDemo ? [...routes, scheduleRoute] : routes, error: null, retry: () => {} };
 }
 // Synthetic `settings/passengerRoutes`: approval order Campus Loop, QA route; QA route B is never approved.
@@ -108,7 +118,7 @@ export function useLiveRouteCatalog() {
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const buses = Object.values(snapshot) as Record<string, unknown>[];
-  return { catalog: Object.fromEntries([route.id, "qa-route-2"].map(routeId => [routeId, { active: buses.filter(bus => bus.routeId === routeId && bus.sessionId && bus.tripState !== "completed" && isPassengerBusSelectable(bus, now)).length,
+  return { catalog: Object.fromEntries([route.id, ...extraRoutes.map(({ id }) => id)].map(routeId => [routeId, { active: buses.filter(bus => bus.routeId === routeId && bus.sessionId && bus.tripState !== "completed" && isPassengerBusSelectable(bus, now)).length,
     available: buses.filter(bus => bus.routeId === routeId && !bus.sessionId && isPassengerBusSelectable(bus, now)).length, freshestAt: Date.now() }])), projectionReady: scenario !== "projection-unready", catalogReady: scenario !== "catalog-denied", error: scenario === "catalog-denied" ? "QA synthetic route catalog PERMISSION_DENIED. Retry after checking permissions." : scenario === "projection-unready" ? "QA synthetic projection unavailable: worker backfill/schema is not ready." : null, retry: () => setScenario("two-routes") };
 }
 export function getJoinedRideStatus(sessionId: string) { return Promise.resolve({ sessionId, busId: "qa-bus", routeId: route.id, status: "completed" }); }

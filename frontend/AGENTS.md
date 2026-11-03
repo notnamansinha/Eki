@@ -38,3 +38,12 @@ composition use the base cover fit.
 Lead the landing copy with bus tracking. Qualify bus locations and estimated
 arrivals by live data availability and keep the description free of full stops.
 The secondary Campus Operations link sits below the Google button.
+
+## Desktop Live Routes (2026-11-03)
+
+Pointer-equipped desktop and laptop windows use the approved centered Live
+Routes panel over the full-width passenger artwork. The panel caps at 42 rem,
+gives the route list a scrollbar, and leaves room above the floating nav.
+The loading shell shares the same desktop geometry. Keep the existing
+touch-only layout. Preserve route selection and restore keyboard focus to the
+route card when returning from tracking.

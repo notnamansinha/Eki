@@ -17,7 +17,7 @@ export default function PassengerLoadingShell() {
     >
       <TransitArtwork />
 
-      <div data-passenger-loading-placeholder className="absolute inset-0 z-10 flex flex-col pt-safe">
+      <div data-passenger-loading-placeholder className="passenger-home absolute inset-0 z-10 flex flex-col pt-safe">
         <div
           className="shrink-0"
           style={passengerTopSpacerStyle}
@@ -28,7 +28,7 @@ export default function PassengerLoadingShell() {
           className={passengerPanelClassName}
           style={passengerPanelStyle}
         >
-          <div className="mx-6 mb-4 shrink-0 pb-6 text-center">
+          <div className="passenger-home-heading mx-6 mb-4 shrink-0 pb-6 text-center">
             <h1
               className="mb-2 text-[32px] font-black leading-none tracking-tight"
               style={{ color: "var(--text-primary)" }}
