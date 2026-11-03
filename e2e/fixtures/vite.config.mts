@@ -5,7 +5,6 @@ const local = (name: string) => fileURLToPath(new URL(name, import.meta.url));
 export default defineConfig({
   root: local("."),
   publicDir: local("../../frontend/public"),
-  publicDir: local("../../frontend/public"),
   server: { host: "127.0.0.1", port: Number(process.env.EKI_QA_PORT || 3100), strictPort: true },
   resolve: { alias: [
     ...["@/hooks/useAuth", "@/hooks/useRoutes", "@/hooks/usePassengerRouteConfig", "@/hooks/useLiveRouteCatalog", "@/hooks/useSettings", "@/hooks/useRTDBResume", "@/hooks/useDynamicRouteGeometries", "@/lib/liveBusStore", "@/lib/joinedRideStatus", "@/lib/authState"].map(find => ({ find, replacement: local("state.ts") })),

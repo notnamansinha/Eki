@@ -432,7 +432,7 @@ A signed-in user leaves `/` for the saved workspace or the default for the role.
 
 `components/passenger/PassengerWorkspace.tsx` stacks four absolutely positioned views and a fixed bottom navigation. Hidden views are `inert` and `aria-hidden`; the Routes and Profile views mount on their first visit and then stay mounted. Reconnect, ride-recovery and error banners appear above the views.
 
-On desktop, the Live Routes panel is centered over the artwork, capped at 42 rem, with a shallow artwork spacer, compact route rows and a visible list scrollbar. A compact dock centers the Map, Routes and Profile tabs beneath the panel. Touch-only windows use the full-width bottom navigation. Keyboard selection moves focus into tracking and Back restores it to the selected route or the list heading if the route has disappeared.
+On desktop, the Live Routes panel is centered over the artwork, capped at 42 rem, with a shallow artwork spacer, compact route rows and a visible list scrollbar. A compact dock centers the Map, Routes and Profile tabs beneath the panel. Touch-only windows use the full-width bottom navigation with outline icons and a gold active marker. The published Routes tab moves the same navigation to a top bar on wide pointer-equipped desktop windows. Keyboard selection moves focus into tracking and Back restores it to the selected route or the list heading if the route has disappeared.
 
 | View | Structure |
 |---|---|
@@ -442,6 +442,8 @@ On desktop, the Live Routes panel is centered over the artwork, capped at 42 rem
 | Routes | `components/passenger/RoutesTab.tsx`: title "Routes" with "Stops and scheduled times for each route.", then one card per published route in the order the administrator selected them. Each card on `--surface-2` with a `--border-subtle` border shows a dot in the route colour, the route name and the stop count, then the stops as a vertical timeline: a 3 px `--accent` line in the middle, a 14 px dot per stop (filled `--accent` at the first and last stop, `--surface-2` with an `--accent` ring otherwise), and the stop names alternating left and right with the time below in `--status-live` ("7:30 am") or "Time not set" in `--text-ghost`. States: "Loading routes…" with a spinner; "No routes published yet" on a dashed `--border-default` card; and the passenger error banner with **Retry**. |
 | Profile | `components/passenger/AccountTab.tsx`: photo, name and role; an action list with **Admin Panel** (administrators), **Send Feedback**, **Sign Out** and **Delete Account** (passengers). Sign-out and deletion ask for confirmation. Signed out, the list offers **Sign in with Google** in `--accent`. |
 | Bottom navigation | Three 60 px high buttons, **Map**, **Routes** and **Profile**, that share the bar width up to 140 px each, so they fit a 320 px screen. The active button is marked with `aria-current="page"`; **Map** stays active during tracking. |
+
+The published timetable uses flat rows with compact bus-front line badges. Search matches the published route label and stop names locally. On wide screens the timetable sits beside the list. On smaller screens a route opens its timetable with Back and focus restoration. Stop labels and scheduled times sit on the right of a single gold line. The page uses the Ahmedabad University palette and the existing app font. It uses the published schedule sources without rendering a map or computing live ETAs.
 
 ### 7.4 Administrator workspace
 

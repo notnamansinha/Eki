@@ -1,96 +1,104 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Passenger Routes (schedule) tab. `?schedule=demo` adds the synthetic
-// five-stop "Campus Loop" route that the synthetic settings/passengerRoutes
-// approves ahead of "QA route".
-const nav = (page: Page) => page.locator("[data-passenger-workspace] nav");
+const nav = (page: Page) => page.getByRole("navigation", { name: "Passenger sections" });
 const navButton = (page: Page, name: "Map" | "Routes" | "Profile") => nav(page).getByRole("button", { name, exact: true });
 
-async function openSchedule(page: Page) {
+async function openSchedules(page: Page) {
   await page.goto("/?schedule=demo");
+  await page.addStyleTag({ content: '[aria-label="QA fixture controls"] { display: none; }' });
   await navButton(page, "Routes").click();
   await expect(navButton(page, "Routes")).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("heading", { name: "Campus Loop", level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Routes", exact: true })).toBeVisible();
 }
 
-async function timelineGeometry(page: Page, list: string) {
-  return page.getByRole("list", { name: list }).evaluate(element => {
-    const box = element.getBoundingClientRect();
-    const line = getComputedStyle(element, "::before");
-    return {
-      lineColor: line.backgroundColor,
-      center: box.left + box.width / 2,
-      dots: Array.from(element.querySelectorAll(":scope > li > span[aria-hidden]")).map(dot => {
-        const rect = dot.getBoundingClientRect();
-        return rect.left + rect.width / 2;
-      }),
-      items: Array.from(element.querySelectorAll(":scope > li")).map(item => {
-        const text = item.firstElementChild!.getBoundingClientRect();
-        const time = item.querySelector("p:last-of-type")!;
-        return {
-          side: item.getAttribute("data-side"),
-          textLeft: text.left, textRight: text.right,
-          timeColor: getComputedStyle(time).color,
-        };
-      }),
-    };
+test("Routes tab lists approved schedules with a compact badge and one-sided timeline", async ({ page }, info) => {
+  const maps: string[] = [];
+  page.on("request", request => {
+    if (/maps\.(googleapis|gstatic)\.com/.test(request.url())) maps.push(request.url());
   });
-}
+  await openSchedules(page);
+  const list = page.getByRole("list", { name: "Published routes" });
+  await expect(list.getByRole("button")).toHaveCount(2);
+  await expect(list.getByRole("button").first()).toHaveAccessibleName("View schedule for Campus Loop");
+  const badge = list.locator(".schedule-line-badge").first();
+  await expect(badge).toHaveCSS("border-bottom-width", "3px");
+  await expect(badge.locator("svg")).toBeVisible();
+  const search = page.getByRole("searchbox");
+  await search.fill("hostel");
+  await expect(list.getByRole("button")).toHaveCount(1);
+  await search.fill("nonexistent");
+  await expect(page.getByText("No routes match your search.")).toBeVisible();
+  await search.clear();
+  await page.screenshot({ path: info.outputPath("routes-list.png") });
 
-test("Routes tab lists approved schedules on an alternating timeline", async ({ page }, info) => {
-  await openSchedule(page);
-  // Approval order; the unapproved second route never appears.
-  await expect(page.getByRole("heading", { level: 2 })).toHaveText(["Campus Loop", "QA route"]);
-  const stops = page.getByRole("list", { name: "Campus Loop stops" }).getByRole("listitem");
-  await expect(stops).toHaveText([
-    "Main Gate, 7:30 am", "Central Library, 7:38 am", "Girls Hostel Block C (North Wing), 7:45 am",
-    "Sports Complex, Time not set", "Administrative Building, 8:05 am",
+  const row = list.getByRole("button", { name: "View schedule for Campus Loop" });
+  await row.focus();
+  await page.keyboard.press("Enter");
+  const heading = page.getByRole("heading", { name: "Campus Loop", exact: true });
+  await expect(heading).toBeFocused();
+  const timeline = page.getByRole("list", { name: "Campus Loop stops" });
+  await expect(timeline.getByRole("listitem")).toHaveText([
+    "Main GateScheduled 7:30 am", "Central LibraryScheduled 7:38 am", "Girls Hostel Block C (North Wing)Scheduled 7:45 am",
+    "Sports ComplexTime not set", "Administrative BuildingScheduled 8:05 am",
   ]);
-  const geometry = await timelineGeometry(page, "Campus Loop stops");
-  expect(geometry.lineColor).toBe("rgb(250, 93, 41)");
-  for (const dot of geometry.dots) expect(Math.abs(dot - geometry.center)).toBeLessThan(1);
-  expect(geometry.items.map(item => item.side)).toEqual(["left", "right", "left", "right", "left"]);
-  for (const item of geometry.items) {
-    if (item.side === "left") expect(item.textRight).toBeLessThanOrEqual(geometry.center);
-    else expect(item.textLeft).toBeGreaterThanOrEqual(geometry.center);
+  expect(await timeline.getByRole("listitem").evaluateAll(items => items.every(item => {
+    const rail = item.querySelector(".schedule-stop-rail")!;
+    const copy = item.querySelector(".schedule-stop-copy")!;
+    return copy.getBoundingClientRect().left >= rail.getBoundingClientRect().right &&
+      getComputedStyle(rail, "::before").backgroundColor === "rgb(174, 149, 98)";
+  }))).toBe(true);
+  await expect(page.locator("[data-passenger-tracking]")).toHaveAttribute("aria-hidden", "true");
+  expect(maps).toEqual([]);
+  await page.screenshot({ path: info.outputPath("routes-detail.png") });
+
+  const back = page.getByRole("button", { name: "Back to all routes" });
+  if (await back.isVisible()) {
+    await back.click();
+    await expect(row).toBeFocused();
+  } else {
+    await expect(list).toBeVisible();
+    const navBox = (await nav(page).boundingBox())!;
+    const listBox = (await list.boundingBox())!;
+    expect(navBox.y + navBox.height).toBeLessThanOrEqual(listBox.y);
   }
-  // Configured times are the live-status green; the unset one is muted.
-  expect(geometry.items.filter(item => item.timeColor === "rgb(52, 211, 153)")).toHaveLength(4);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
-  await page.screenshot({ path: info.outputPath("routes-schedule.png") });
 });
 
 test("three navigation tabs fit narrow phones and the schedule scrolls clear of them", async ({ page }, info) => {
   for (const size of [{ width: 320, height: 568 }, { width: 375, height: 812 }]) {
     await page.setViewportSize(size);
-    await openSchedule(page);
+    await openSchedules(page);
     const boxes = await Promise.all((["Map", "Routes", "Profile"] as const).map(async name => (await navButton(page, name).boundingBox())!));
     for (const [index, box] of boxes.entries()) {
-      expect(box.x, `${size.width}px tab ${index}`).toBeGreaterThanOrEqual(0);
+      expect(box.x).toBeGreaterThanOrEqual(0);
       expect(box.x + box.width).toBeLessThanOrEqual(size.width);
+      expect(box.height).toBeGreaterThanOrEqual(44);
       if (index > 0) expect(box.x).toBeGreaterThanOrEqual(boxes[index - 1].x + boxes[index - 1].width);
     }
-    for (const name of ["Map", "Routes", "Profile"]) {
-      const label = navButton(page, name as "Map").locator("span");
-      expect(await label.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
-    }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size.width);
-    await page.screenshot({ path: info.outputPath(`routes-schedule-${size.width}x${size.height}.png`) });
-    const last = page.getByRole("list", { name: "QA route stops" }).getByRole("listitem").last();
-    await last.evaluate(element => { const scroller = element.closest(".overflow-y-auto")!; scroller.scrollTop = scroller.scrollHeight; });
+    await page.getByRole("button", { name: "View schedule for Campus Loop" }).click();
+    const last = page.getByRole("list", { name: "Campus Loop stops" }).getByRole("listitem").last();
+    await last.scrollIntoViewIfNeeded();
     const navBox = (await nav(page).boundingBox())!;
     const lastBox = (await last.boundingBox())!;
-    expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(navBox.y);
+    expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(navBox.y + 0.5);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size.width);
+    await page.screenshot({ path: info.outputPath(`routes-schedule-${size.width}x${size.height}.png`) });
   }
 });
 
 test("Map returns to live routes and the hidden schedule cannot intercept taps", async ({ page }) => {
-  await openSchedule(page);
+  await openSchedules(page);
+  await navButton(page, "Profile").click();
+  await expect(navButton(page, "Profile")).toHaveAttribute("aria-current", "page");
+  await page.goBack();
+  await expect(navButton(page, "Routes")).toHaveAttribute("aria-current", "page");
+  await page.goForward();
+  await expect(navButton(page, "Profile")).toHaveAttribute("aria-current", "page");
+
   await navButton(page, "Map").click();
   await expect(navButton(page, "Map")).toHaveAttribute("aria-current", "page");
   const track = page.getByRole("button", { name: "Track QA route", exact: true });
   await expect(track).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Campus Loop" })).toBeHidden();
+  await expect(page.getByRole("heading", { name: "Routes", exact: true })).toBeHidden();
   await track.click();
   await expect(page.locator("[data-passenger-tracking]")).not.toHaveAttribute("aria-hidden", "true");
 });

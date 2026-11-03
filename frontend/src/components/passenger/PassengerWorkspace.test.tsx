@@ -28,7 +28,10 @@ vi.mock("@/components/passenger/AccountTab", () => ({ default: () => <button>QA 
 vi.mock("@/components/passenger/RoutesTab", () => ({ default: () => <h2>QA route schedules</h2> }));
 vi.mock("@/components/shared/MessagingPanel", () => ({ default: () => <div>QA chat</div> }));
 vi.mock("@/components/shared/FeedbackModal", () => ({ default: () => <div>QA feedback</div> }));
-beforeEach(() => setScenario("pending"));
+beforeEach(() => {
+  window.history.replaceState(null, "", window.location.pathname);
+  setScenario("pending");
+});
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe("passenger workspace navigation", () => {
   it("retains an open stale ride as paused while removing it from new route choices, then recovers", async () => {
@@ -304,6 +307,6 @@ describe("passenger tab switching and footer", () => {
     const nav = screen.getByRole("navigation", { name: "Passenger sections" });
     const frame = nav.closest(".pb-safe") as HTMLElement;
     expect(frame).not.toBeNull();
-    expect(frame.style.background).toContain("rgba(22, 22, 26");
+    expect(frame.classList.contains("passenger-nav-frame")).toBe(true);
   });
 });

@@ -47,3 +47,12 @@ gives the route list a scrollbar, and leaves room above the floating nav.
 The loading shell shares the same desktop geometry. Keep the existing
 touch-only layout. Preserve route selection and restore keyboard focus to the
 route card when returning from tracking.
+
+## Passenger route schedules (2026-11-03)
+
+The Routes tab shows published schedules in compact rows with line badges.
+Desktop shows a list and independently scrolling timetable beside it. Smaller
+screens open the timetable in place and Back returns focus to the selected row.
+Use the configured stop order and times from the existing route schedule
+sources. The timetable uses the Ahmedabad University palette and the existing
+app typeface. Route schedules must never start a live map or Maps request.

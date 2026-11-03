@@ -29,9 +29,4 @@ export const passengerPanelStyle: CSSProperties = {
 export const passengerNavFrameClassName =
   "passenger-nav-frame absolute inset-x-0 bottom-0 flex justify-center rounded-t-[24px] pb-safe";
 
-export const passengerNavFrameStyle: CSSProperties = {
-  background: "rgba(22, 22, 26, 0.98)",
-  borderTop: "1px solid rgba(255, 255, 255, 0.15)",
-};
-
 export const passengerNavClassName = "passenger-nav-bar flex h-20 w-full items-center justify-around px-2 py-2.5";

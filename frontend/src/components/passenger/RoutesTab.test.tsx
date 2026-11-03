@@ -63,29 +63,54 @@ const stopItems = (routeName: string) =>
 describe("passenger Routes tab", () => {
   it("renders only approved routes, in approval order", () => {
     render(<RoutesTab />);
-    expect(screen.getAllByRole("heading", { level: 2 }).map(heading => heading.textContent)).toEqual(["Express", "Campus Loop"]);
+    expect(within(screen.getByRole("list", { name: "Published routes" })).getAllByRole("button").map(row => row.getAttribute("aria-label")))
+      .toEqual(["View schedule for Express", "View schedule for Campus Loop"]);
     expect(screen.queryByText("Unapproved Route")).toBeNull();
     expect(screen.queryByText("Secret Stop")).toBeNull();
   });
 
-  it("lists stops in route order on alternating sides with their times", () => {
+  it("opens the selected route and lists scheduled stops in source order", async () => {
     render(<RoutesTab />);
-    const items = stopItems("Campus Loop");
-    expect(items.map(item => item.textContent)).toEqual([
-      "Main Gate, 7:05 am",
-      "Central Library, 7:12 am",
-      "Hostel Block C, 7:20 am",
-      "Sports Complex, Time not set",
-      "Admin Building, 12:00 am",
+    const user = userEvent.setup();
+    const row = screen.getByRole("button", { name: "View schedule for Campus Loop" });
+    await user.click(row);
+    expect(stopItems("Campus Loop").map(item => item.textContent)).toEqual([
+      "Main GateScheduled 7:05 am",
+      "Central LibraryScheduled 7:12 am",
+      "Hostel Block CScheduled 7:20 am",
+      "Sports ComplexTime not set",
+      "Admin BuildingScheduled 12:00 am",
     ]);
-    expect(items.map(item => item.getAttribute("data-side"))).toEqual(["left", "right", "left", "right", "left"]);
-    expect(screen.getByText("Campus Loop").closest("section")?.textContent).toContain("5 stops");
+    expect(screen.getByText("Scheduled stops · 5 stops")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Back to all routes" }));
+    expect(document.activeElement).toBe(row);
+  });
+
+  it("matches stop names locally and reports an empty search", async () => {
+    render(<RoutesTab />);
+    const user = userEvent.setup();
+    const search = screen.getByRole("searchbox");
+    await user.type(search, "library");
+    expect(screen.getByRole("button", { name: "View schedule for Campus Loop" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "View schedule for Express" })).toBeNull();
+    await user.type(search, "xx");
+    expect(screen.getByText("No routes match your search.")).toBeTruthy();
+  });
+
+  it("keeps Back usable when the selected schedule is unpublished", async () => {
+    const { rerender } = render(<RoutesTab />);
+    await userEvent.setup().click(screen.getByRole("button", { name: "View schedule for Campus Loop" }));
+    state.routes = [express];
+    rerender(<RoutesTab />);
+    expect(screen.getByText("This route is no longer published. Choose another route.")).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Back to all routes" }));
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Routes" }));
   });
 
   it("shows a missing time as not set", () => {
     render(<RoutesTab />);
     const [north, south] = stopItems("Express");
-    expect(within(north).getByText("12:30 pm")).toBeTruthy();
+    expect(within(north).getByText("Scheduled 12:30 pm")).toBeTruthy();
     expect(within(south).getByText("Time not set")).toBeTruthy();
   });
 
@@ -94,7 +119,7 @@ describe("passenger Routes tab", () => {
     state.config = { routes: [{ routeId: "express", stopTimes: {} }] };
     render(<RoutesTab />);
     expect(screen.getByText("No stops listed for this route yet")).toBeTruthy();
-    expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.queryByRole("list", { name: "Express stops" })).toBeNull();
   });
 
   it("shows the empty state when nothing is published", () => {
@@ -135,7 +160,7 @@ describe("passenger Routes tab", () => {
     expect(state.retry).toHaveBeenCalledTimes(1);
     expect(state.subscriptions).toBe(2);
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(2);
+    expect(within(screen.getByRole("list", { name: "Published routes" })).getAllByRole("button")).toHaveLength(2);
   });
 
   it("reports a routes read failure", () => {

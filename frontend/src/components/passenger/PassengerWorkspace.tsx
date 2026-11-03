@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
-import { MapPinned as MapIcon, CircleUserRound as User, ListOrdered as RoutesIcon, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
+import { MapPin as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
 import { subscribeLiveBusChangesByRoute } from "@/lib/liveBusStore";
 import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
 import { getJoinedRideStatus } from "@/lib/joinedRideStatus";
@@ -28,7 +28,6 @@ import {
   passengerNavClassName,
   passengerNavClearance,
   passengerNavFrameClassName,
-  passengerNavFrameStyle,
   passengerPanelClassName,
   passengerPanelStyle,
   passengerTopSpacerStyle,
@@ -67,6 +66,7 @@ const FeedbackModal = dynamic(() => import("@/components/shared/FeedbackModal"),
 const PassengerBoardingView = dynamic(() => import("@/components/passenger/PassengerBoardingView"), { ssr: false });
 
 type ViewState = "home" | "tracking" | "routes" | "profile";
+type PassengerSection = Exclude<ViewState, "tracking">;
 
 const POST_RIDE_FEEDBACK_DELAY_MS = 10_000;
 
@@ -96,6 +96,35 @@ export default function PassengerWorkspace() {
   const [profileMounted, setProfileMounted] = useState(false);
   // The route schedule follows the same mount-once rule as Profile.
   const [routesMounted, setRoutesMounted] = useState(false);
+  const [isMessagingOpen, setIsMessagingOpen] = useState(false);
+  const showSection = useCallback((section: PassengerSection) => {
+    setIsMessagingOpen(false);
+    if (section === "routes") setRoutesMounted(true);
+    if (section === "profile") setProfileMounted(true);
+    setCurrentView(section);
+  }, []);
+
+  useEffect(() => {
+    const syncSection = () => {
+      const hash = window.location.hash;
+      showSection(hash === "#routes" ? "routes" : hash === "#profile" ? "profile" : "home");
+    };
+    // Leave the default Map view alone so an in-progress ride can restore normally.
+    const initial = window.location.hash ? window.requestAnimationFrame(syncSection) : 0;
+    window.addEventListener("popstate", syncSection);
+    return () => {
+      window.cancelAnimationFrame(initial);
+      window.removeEventListener("popstate", syncSection);
+    };
+  }, [showSection]);
+
+  function navigateSection(section: PassengerSection) {
+    const hash = section === "home" ? "" : "#" + section;
+    const { pathname, search } = window.location;
+    if (window.location.hash !== hash) window.history.pushState(null, "", pathname + search + hash);
+    showSection(section);
+  }
+
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const { catalog: routeCatalog, projectionReady, catalogReady, error: catalogError, retry: retryCatalog } = useLiveRouteCatalog(`${connectionGeneration}:${resumeGeneration}`);
   const [selectedRouteId, setSelectedRouteId] = useState("");
@@ -113,7 +142,6 @@ export default function PassengerWorkspace() {
   const [activeBuses, setActiveBuses] = useState<ActiveBusData[]>([]);
   const [availableBuses, setAvailableBuses] = useState<PassengerBusAvailability[]>([]);
   const [availabilityNow, setAvailabilityNow] = useState(() => serverNow());
-  const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackBusId, setFeedbackBusId] = useState("");
@@ -507,7 +535,7 @@ export default function PassengerWorkspace() {
   };
 
   return (
-    <div data-passenger-workspace className="relative flex flex-col overflow-hidden text-white" style={{ height: "100dvh" }}>
+    <div data-passenger-workspace data-passenger-section={visibleView} className="relative flex flex-col overflow-hidden text-white" style={{ height: "100dvh" }}>
       {(isResuming || rideRecoveryNotice || routesError || liveDataError) && <div className="relative z-50 shrink-0 space-y-2 bg-zinc-950 px-4 pb-2 pt-safe">
       {isResuming && (
         <div
@@ -879,75 +907,32 @@ export default function PassengerWorkspace() {
         />
       )}
 
-      {/* Bottom Navigation — Fixed Transit Tab Bar */}
-      <div className={`${passengerNavFrameClassName} z-[100]`} style={passengerNavFrameStyle}>
+      <div className={passengerNavFrameClassName + " z-[100]"}>
         <nav aria-label="Passenger sections" className={passengerNavClassName}>
-          <button
-            type="button"
+          <button type="button" className="passenger-section-button"
             aria-current={visibleView === "home" || visibleView === "tracking" ? "page" : undefined}
-            onClick={() => {
-              setIsMessagingOpen(false);
-              setCurrentView("home");
-            }}
-            className="flex min-w-0 flex-1 max-w-[140px] flex-col items-center justify-center h-[60px] rounded-[20px] transition-[background-color,transform] duration-150 relative group active:scale-95 gap-1.5"
-            style={{
-              background: (visibleView === "home" || visibleView === "tracking") ? "rgba(255,255,255,0.08)" : "transparent"
-            }}
-          >
-            <MapIcon className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
-              color: (visibleView === "home" || visibleView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
-            }} />
-            <span className="text-[13px] font-bold transition-colors leading-none" style={{
-              color: (visibleView === "home" || visibleView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
-            }}>
-              Map
-            </span>
+            onClick={() => navigateSection("home")}>
+            <MapIcon size={24} strokeWidth={2} aria-hidden="true" />
+            <span>Map</span>
           </button>
 
-          <button
-            type="button"
+          <button type="button" className="passenger-section-button"
             aria-current={visibleView === "routes" ? "page" : undefined}
-            onClick={() => {
-              setIsMessagingOpen(false);
-              setRoutesMounted(true);
-              setCurrentView("routes");
-            }}
-            className="flex min-w-0 flex-1 max-w-[140px] flex-col items-center justify-center h-[60px] rounded-[20px] transition-[background-color,transform] duration-150 relative group active:scale-95 gap-1.5"
-            style={{
-              background: visibleView === "routes" ? "rgba(255,255,255,0.08)" : "transparent"
-            }}
-          >
-            <RoutesIcon className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
-              color: visibleView === "routes" ? "var(--text-primary)" : "var(--text-tertiary)"
-            }} />
-            <span className="text-[13px] font-bold transition-colors leading-none" style={{
-              color: visibleView === "routes" ? "var(--text-primary)" : "var(--text-tertiary)"
-            }}>
-              Routes
-            </span>
+            onClick={() => navigateSection("routes")}>
+            <svg viewBox="0 0 24 24" width={24} height={24} fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path d="M6 12h12" />
+              <circle cx="4" cy="12" r="2" fill="currentColor" />
+              <circle cx="12" cy="12" r="2" fill="currentColor" />
+              <circle cx="20" cy="12" r="2" fill="currentColor" />
+            </svg>
+            <span>Routes</span>
           </button>
 
-          <button
-            type="button"
+          <button type="button" className="passenger-section-button"
             aria-current={visibleView === "profile" ? "page" : undefined}
-            onClick={() => {
-              setIsMessagingOpen(false);
-              setProfileMounted(true);
-              setCurrentView("profile");
-            }}
-            className="flex min-w-0 flex-1 max-w-[140px] flex-col items-center justify-center h-[60px] rounded-[20px] transition-[background-color,transform] duration-150 relative group active:scale-95 gap-1.5"
-            style={{
-              background: visibleView === "profile" ? "rgba(255,255,255,0.08)" : "transparent"
-            }}
-          >
-            <User className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
-              color: visibleView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
-            }} />
-            <span className="text-[13px] font-bold transition-colors leading-none" style={{
-              color: visibleView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
-            }}>
-              Profile
-            </span>
+            onClick={() => navigateSection("profile")}>
+            <User size={24} strokeWidth={2} aria-hidden="true" />
+            <span>Profile</span>
           </button>
         </nav>
       </div>
