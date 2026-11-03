@@ -212,7 +212,7 @@ These variables are set in the shell or by the scripts themselves. None belongs 
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Secret | Strict production build |
 | `NEXT_PUBLIC_GOOGLE_MAP_ID` | Secret | Strict production build |
 | `NEXT_PUBLIC_BACKEND_URL` | Secret | Strict production build and live backend check |
-| `RTDB_EXPECTED_REGION` | Variable | Optional region check in the RTDB preflight |
+| `RTDB_EXPECTED_REGION` | Variable | Expected RTDB region. Every Deploy release requires it (`--require-region`); the CI preflight checks it only when set |
 
 The release flow is described in [CI, deployment and releases](operations/CI_CD_AND_RELEASES.md).
 

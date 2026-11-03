@@ -49,7 +49,7 @@ The Iowa instance `bustrack-be165-default-rtdb` is the project's default instanc
 
 Rollback to Iowa takes these steps in order: stop the producers; export the Singapore instance if it has taken writes; map the `rtdb` deploy target in `.firebaserc` to `bustrack-be165-default-rtdb`, or revert the target change in `firebase.json` and `.firebaserc`, and deploy `database.rules.json` to Iowa, because its deny-all rules would otherwise refuse every browser read; import and validate the export; set `RTDB_EXPECTED_REGION=us-central1` and run the matching-instance check; and only then revert the backend and Hosting URLs together.
 
-The production project needs its own `rtdb` target in `.firebaserc` when it is provisioned. Until then the production deploy fails at its rules release step on the missing target, instead of releasing rules to the wrong instance; its App Check and Firestore index steps run before that step.
+The production project needs its own `rtdb` target in `.firebaserc` when it is provisioned. Until then the production deploy stops at its deploy-target check, before App Check or the Firestore index deploy, instead of releasing rules to the wrong instance ([CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md#52-steps)).
 
 Original status, before that update: Proposed. Singapore was approved as the candidate on 2026-09-10. No Singapore instance has been cut over: `firebase.json` declares one default database, and no repository change targets a second instance. The decision becomes current when the gate in Section 2.1 passes and the migration in Section 2.2 completes.
 
