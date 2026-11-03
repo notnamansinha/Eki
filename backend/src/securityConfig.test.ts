@@ -402,8 +402,9 @@ describe("production security configuration", () => {
 
     expect(directionsRoute).toContain('from "@/lib/polyline"');
     expect(polyline).toContain("export function decodePolyline");
-    expect(operations).toContain("<DirectionsRoute");
-    expect(operations).toContain("routeId={route.routeId}");
+    // Live Ops draws buses only; route lines belong to the passenger map and route editor.
+    expect(operations).not.toContain("DirectionsRoute");
+    expect(operations).not.toContain("useDynamicRouteGeometries");
     expect(passengerMap).toContain("routeId={route.id}");
     expect(directionsRoute).toContain("/geometry");
     expect(routeApi).toContain('router.get("/:routeId/geometry", requireAuth');

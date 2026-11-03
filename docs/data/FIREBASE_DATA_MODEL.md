@@ -328,7 +328,7 @@ The durable record of one ride.
 
 | Item | Value |
 |---|---|
-| Writers | Ride start (`rideSessionStart.ts`), boarding (`sessions.ts:299`), trip-state engine progress and completion (`tripStateEngine.ts:654`, `tripStateEngine.ts:1121`), stop endpoint (`shifts.ts:356`), abandoned-ride reconciler |
+| Writers | Ride start (`rideSessionStart.ts`), boarding (`sessions.ts:299`), trip-state engine progress and completion (`tripStateEngine.ts:654`, `tripStateEngine.ts:1127`), stop endpoint (`shifts.ts:356`), abandoned-ride reconciler |
 | Readers | Admin Ride History (`frontend/src/components/admin/RideHistoryPanel.tsx:202`, ordered by `armedAt` and by `startTime`), the assigned driver, feedback rules |
 | Client rule | Read by a current admin or the assigned current driver; no writes (`firestore.rules:111`) |
 | Retention | Terminal sessions are deleted recursively 180 days after `endTime` (`RIDE_SESSION_RETENTION_DAYS`) and on admin history deletion (Section 7) |
@@ -357,11 +357,11 @@ A per-bus lifecycle projection, written when lifecycle state changes rather than
 | `automaticServiceEpoch` | integer | Automatic start generation; one automatic ride per epoch |
 | `terminalJourney` | object | `{busId, routeId, driverId, sessionId, direction, directionEndpointVersion, completedAt, turnaroundEligibleAt, turnaroundSampledAt, consumedBy, currentStopIndex, hasDepartedOrigin, originStopId, destinationStopId}`, the completion checkpoint for the automatic return |
 
-Writers: leader (`tripStateEngine.ts:434`, `tripStateEngine.ts:1165`), ride start and stop. Readers: admin Live Ops (`frontend/src/hooks/useBusLocations.ts:15`), the analytics endpoint and automatic start. Client rule: read by a current admin (`firestore.rules:94`). Retention: kept per bus.
+Writers: leader (`tripStateEngine.ts:434`, `tripStateEngine.ts:1171`), ride start and stop. Readers: admin Live Ops (`frontend/src/hooks/useBusLocations.ts:15`), the analytics endpoint and automatic start. Client rule: read by a current admin (`firestore.rules:94`). Retention: kept per bus.
 
 ### 4.9 `completed_trips/{sessionId}`
 
-Fields: `busId`, `driverId`, `routeId`, `direction`, `originStopId`, `destinationStopId`, `completedAt` (ISO string), `automaticTurnaroundEligibleAt` (epoch ms), `stopCount`, `stopNames[]` (travel order) and `sessionId`. Writer: leader at completion (`tripStateEngine.ts:1121`). Readers: the analytics endpoint (forward and reverse counts) and history deletion. Client rule: read by a current admin (`firestore.rules:158`). Retention: 180 days after `completedAt` (`COMPLETED_TRIP_RETENTION_DAYS`), and with admin history deletion.
+Fields: `busId`, `driverId`, `routeId`, `direction`, `originStopId`, `destinationStopId`, `completedAt` (ISO string), `automaticTurnaroundEligibleAt` (epoch ms), `stopCount`, `stopNames[]` (travel order) and `sessionId`. Writer: leader at completion (`tripStateEngine.ts:1127`). Readers: the analytics endpoint (forward and reverse counts) and history deletion. Client rule: read by a current admin (`firestore.rules:158`). Retention: 180 days after `completedAt` (`COMPLETED_TRIP_RETENTION_DAYS`), and with admin history deletion.
 
 ### 4.10 `feedbacks/{feedbackId}` and `feedbackCooldowns/{uid}`
 

@@ -988,8 +988,15 @@ export function startTripStateEngine(): () => Promise<void> {
         };
     let { tripState, currentStopIndex, hasDepartedOrigin, terminalArrival } = reduced;
     const gnssGapSince = reduced.gnssGapSince ?? null;
+    const freshFix = Number.isFinite(telemetryTimestamp) && Math.abs(Date.now() - telemetryTimestamp) <= 60_000;
+    // Replaying a swept-offline receiver's old fix (engine restart, leader
+    // handoff) cannot move the ride. Persisting it would refresh
+    // active_rides.updatedAt, which the abandoned-ride reconciler reads as
+    // activity, so a silent ride would never time out. The live write below is
+    // refused for offline nodes too.
+    const offlineReplay = data.deviceState === "offline" && !freshFix;
 
-    if (tripState === "pre_departure" || tripState === "in_service") {
+    if ((tripState === "pre_departure" || tripState === "in_service") && !offlineReplay) {
       // Commit lifecycle and all crossed-stop history together before exposing
       // the next index. A failed write leaves the same sample retryable.
       const checkpoint = await persistActiveRideLifecycle(data, tripState, currentStopIndex, hasDepartedOrigin, stops,
@@ -1001,7 +1008,6 @@ export function startTripStateEngine(): () => Promise<void> {
     const unobservedStops = mergedStopIndices(liveUnobservedStops(data, stops.length),
       [...reduced.skippedStopIndices ?? [], ...reduced.unobservedStopIndices ?? []], stops.length)
       .filter(index => index < currentStopIndex);
-    const freshFix = Number.isFinite(telemetryTimestamp) && Math.abs(Date.now() - telemetryTimestamp) <= 60_000;
     const atStopIndex = freshFix ? visitedStopIndex({ lat: data.lat, lng: data.lng,
       motionState: data.motionState || "moving", gpsHdop: data.gpsHdop, stops, tripState, currentStopIndex,
       hasDepartedOrigin, unobservedStopIndices: unobservedStops }) : null;

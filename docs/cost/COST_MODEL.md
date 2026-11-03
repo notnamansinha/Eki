@@ -143,12 +143,12 @@ The Realtime Database bills stored data and downloaded data, not write operation
 
 | Client | Path | Code | What it downloads |
 |---|---|---|---|
-| Backend, one connection per process | `activeBuses` child events | `backend/src/services/tripStateEngine.ts:791,1338-1340`, `backend/src/services/liveBusProjection.ts:112,291` | Every write to any bus node, about four per fix |
+| Backend, one connection per process | `activeBuses` child events | `backend/src/services/tripStateEngine.ts:791,1344-1346`, `backend/src/services/liveBusProjection.ts:112,291` | Every write to any bus node, about four per fix |
 | Backend | `activeBuses/{busId}_{routeId}`, one read per public publication | `backend/src/services/liveBusProjection.ts:164` | One full bus node |
 | Passenger | `publicRouteBuses/route:{routeId}/buses` for the selected route and any joined ride's route | `frontend/src/lib/liveBusStore.ts:17`, `frontend/src/components/passenger/PassengerWorkspace.tsx:196-198` | Route snapshot, then each public commit on that route |
 | Passenger | `liveRouteCatalog/values` and `clientProjectionStatus/public` | `frontend/src/hooks/useLiveRouteCatalog.ts:34,42` | The whole catalog on each change |
 | Passenger | `activeRouteGeometry/{busId}_{routeId}/{version}`, one read | `frontend/src/lib/activeRouteGeometry.ts:73` | One encoded polyline per new route version |
-| Admin | `publicRouteBuses` (all routes) | `frontend/src/components/admin/DashboardPanel.tsx:609`, `frontend/src/components/admin/FleetManagementPanel.tsx:77` | Each changed route node |
+| Admin | `publicRouteBuses` (all routes) | `frontend/src/components/admin/DashboardPanel.tsx:624`, `frontend/src/components/admin/FleetManagementPanel.tsx:77` | Each changed route node |
 
 Each public commit replaces the whole `publicRouteBuses/route:{routeId}` node in one transaction (`backend/src/services/liveBusProjection.ts:170-178`); the evidence below records two commits per fix. The worker rewrites the whole `liveRouteCatalog` node when a route's availability changes (`backend/src/services/liveBusProjection.ts:137-142`). Each bus's availability receipt moves in 30 s steps and the catalog stores one receipt per bus, so receipt changes add at most two catalog changes per minute per bus (`backend/src/services/liveBusProjection.ts:92-97`).
 
@@ -196,7 +196,7 @@ Usage that scales with the fleet and with passengers:
 | Device credential cache fills: 3 reads per device per 60 s while sending | `180 * H * B` reads per day | `backend/src/services/deviceTelemetryService.ts:49,462,480-483` |
 | Tracker diagnostics: the latest report replaces one `_device_diagnostics` document every 5 min | `12 * H * B` writes per day | `backend/src/services/deviceDiagnostics.ts:120` |
 | Tracker powered without a ride: restore attempt | At most 2 reads per 30 s per bus | `backend/src/services/durableRideRecovery.ts:59-63,95` |
-| Ride start and completion | About 10 reads and 10 writes per ride | `backend/src/services/rideSessionStart.ts:326-430`, `backend/src/services/tripStateEngine.ts:1121-1165` |
+| Ride start and completion | About 10 reads and 10 writes per ride | `backend/src/services/rideSessionStart.ts:326-430`, `backend/src/services/tripStateEngine.ts:1127-1171` |
 | Each lifecycle change (stop reached, activation, delay) | About 4 reads and 3 writes | `backend/src/services/tripStateEngine.ts:453-468,705-757` |
 | Passenger app open: settings listener, user document, route catalog API, stored geometry, and the route schedule listener when the passenger opens the Routes tab | `R + 4` reads (upper bound: the Routes tab opened on every app open) | `frontend/src/hooks/useSettings.ts:68`, `frontend/src/hooks/useAuth.ts:293`, `backend/src/routes/routesList.ts:20-23`, `backend/src/services/routeGeometryReads.ts:22-24`, `frontend/src/hooks/usePassengerRouteConfig.ts:47` |
 | Ride chat opened | Up to 200 reads, then 1 per message | `frontend/src/components/shared/MessagingPanel.tsx:96-101` |
@@ -246,7 +246,7 @@ The frontend loads the Maps JavaScript API with `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 | SKU | Caller | Trigger | Existing bounds |
 |---|---|---|---|
 | Dynamic Maps | Passenger map (`frontend/src/components/maps/PassengerMap.tsx:625-627`) | The first opening of the tracking view in a page load (app launch, reload or new tab). The map unmounts in other views (`frontend/src/components/passenger/PassengerWorkspace.tsx:747-748`), but every later opening, route, direction or bus change in the same page reattaches the cached map | `reuseMaps` on every map (`frontend/src/config/maps.ts:1-15`) |
-| Dynamic Maps | Admin dashboard and route editor maps (`frontend/src/components/admin/DashboardPanel.tsx:862-864`, `frontend/src/components/admin/RouteManagementPanel.tsx:567`) | Each administrator page load, because Live Ops is the default tab (`frontend/src/app/admin/page.tsx:45`). Switching tabs or opening the route editor (`frontend/src/app/admin/page.tsx:59-60`) reattaches the same map | Same as above |
+| Dynamic Maps | Admin dashboard and route editor maps (`frontend/src/components/admin/DashboardPanel.tsx:816-818`, `frontend/src/components/admin/RouteManagementPanel.tsx:567`) | Each administrator page load, because Live Ops is the default tab (`frontend/src/app/admin/page.tsx:45`). Switching tabs or opening the route editor (`frontend/src/app/admin/page.tsx:59-60`) reattaches the same map | Same as above |
 | Compute Routes Pro | Route save (`backend/src/routes/polyline.ts:199,288-291`) | Two requests per changed save, one per direction; skipped when the stops are unchanged (`polyline.ts:669-672`) | 10 compute requests per admin per minute (`backend/src/lib/routeComputeLimiter.ts:9`); 2 concurrent and 8 queued (`polyline.ts:46`) |
 | Compute Routes Pro | Route preview and `compute-polyline` (`polyline.ts:361-373,895-906`) | One request per preview | Same as above |
 | Compute Routes Pro | Departure route (`backend/src/services/telemetryRouteService.ts:861-879,917-918`) | One request when a ride enters `pre_departure`; reused at departure for up to 5 min (`telemetryRouteService.ts:54`), otherwise one more; at most three attempts per phase | `LIVE_DEPARTURE_ROUTES_ENABLED` (`backend/.env.example`) |

@@ -99,6 +99,7 @@ import { drainDurableRideRecovery } from "./durableRideRecovery";
 import { drainTelemetryRouteProcessing } from "./telemetryRouteService";
 import { publicLiveBus } from "./liveBusProjection";
 import { runAbandonedRideReconciliation } from "./abandonedRideReconciler";
+import { createStaleBusSweeper } from "./staleBusSweeper";
 import type { TelemetryPayload } from "./telemetryPayload";
 import { STOP_ARRIVAL_GEOFENCE_M } from "./tripStateReducer";
 
@@ -353,6 +354,53 @@ describe("routing lifecycle through actual ingestion and listeners", () => {
     await f.send(23, now - baseTime + 1000, "stopped");
     expect(f.live().sessionId).toBeUndefined();
     expect(state.docs.has(`_active_bus_locks/${f.busId}`)).toBe(false);
+  });
+  /** An in-service ride whose receiver went silent, swept offline, then an engine restart. */
+  async function silentRideAfterRestart() {
+    const f = await fixture();
+    await f.send(23, 0, "stopped"); await f.send(23.001, 15_000);
+    expect(f.live()).toMatchObject({ tripState: "in_service", sessionId: f.sessionId });
+    // The real stale sweep marks the silent receiver offline and keeps its session.
+    // The adapter's indexed query is a stub, so serve its one page from the live nodes.
+    const sweptAt = baseTime + 15_000 + 5 * 60_000 + 1_000;
+    vi.setSystemTime(sweptAt);
+    const page: any = { once: async () => {
+      const nodes = await Promise.all([...state.nodes.keys()].filter(path => path.startsWith("activeBuses/")).map(path => rtdb.ref(path).once("value")));
+      return { forEach: (visit: (child: any) => void) => nodes.forEach(visit) };
+    } };
+    for (const method of ["orderByChild", "startAt", "startAfter", "endAt", "limitToFirst"]) page[method] = () => page;
+    await createStaleBusSweeper(page, 5 * 60_000, error => { throw error; }).tick();
+    await settle();
+    expect(f.live()).toMatchObject({ deviceState: "offline", signalState: "lost", tripState: "in_service", sessionId: f.sessionId });
+    await stop!(); stop = undefined;
+    // Resolve adapter server timestamps to their committed wall-clock values.
+    state.docs.get(`active_rides/${f.key}`).updatedAt = baseTime + 15_000;
+    state.docs.get(`ride_sessions/${f.sessionId}`).updatedAt = baseTime + 15_000;
+    // A restart (worker window, deploy, crash) replays every live node as child_added.
+    vi.setSystemTime(baseTime + 10 * 60 * 60_000);
+    stop = startTripStateEngine();
+    const node = await rtdb.ref(`activeBuses/${f.key}`).once("value");
+    state.listeners.get("child_added")?.forEach(listener => listener(node));
+    await settle();
+    return { f, sweptAt };
+  }
+  it("lets the abandoned-ride sweep end a silent ride although the engine restarts", async () => {
+    const { f, sweptAt } = await silentRideAfterRestart();
+    expect(state.docs.get(`active_rides/${f.key}`).updatedAt).toBe(baseTime + 15_000);
+    expect(f.live()).toMatchObject({ tripState: "in_service", deviceState: "offline" });
+    await stop!(); stop = undefined;
+    const result = await runAbandonedRideReconciliation({ firestore: db, realtimeDatabase: rtdb,
+      now: sweptAt + 12 * 60 * 60_000 + 60_000 });
+    expect(result.interruptedIds).toContain(f.sessionId);
+    expect(state.docs.get(`ride_sessions/${f.sessionId}`)).toMatchObject({ status: "interrupted", interruptionReason: "abandoned_session_timeout" });
+    expect(f.live()).toBeUndefined();
+  });
+  it("resumes a silent ride after an engine restart once its receiver reports again", async () => {
+    const { f } = await silentRideAfterRestart();
+    await f.send(f.stops[1].lat, 10 * 60 * 60_000 + 1_000);
+    expect(f.live()).toMatchObject({ deviceState: "online", tripState: "in_service", currentStopIndex: 2 });
+    expect(state.docs.get(`active_rides/${f.key}`)).toMatchObject({ tripState: "in_service", currentStopIndex: 2 });
+    expect(state.docs.get(`active_rides/${f.key}`).updatedAt).not.toBe(baseTime + 15_000);
   });
   it("does not record an engine retirement as signal loss", async () => {
     const f = await fixture(); await f.arrive();
