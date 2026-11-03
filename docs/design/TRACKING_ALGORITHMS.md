@@ -570,7 +570,7 @@ Boarding is also withheld while `automaticServicePaused` is `true` or the browse
 
 ### 9.4 What the administrator interface withholds
 
-The Live Ops dashboard uses the 30 s threshold only, re-evaluated every 15 s (`frontend/src/components/admin/DashboardPanel.tsx:701`). A ride whose node is `offline` or silent for more than 30 s shows **Service paused** instead of its trip state (`DashboardPanel.tsx:76`) and is left out of the in-service, awaiting-start and direction-pending counts (`DashboardPanel.tsx:706`). **End ride early** stays available for such a ride.
+The Live Ops dashboard uses the 30 s threshold only, re-evaluated every 15 s (`frontend/src/components/admin/DashboardPanel.tsx:638`). A ride whose node is `offline` or silent for more than 30 s shows **Service paused** instead of its trip state (`DashboardPanel.tsx:74`) and is left out of the in-service, awaiting-start and direction-pending counts (`DashboardPanel.tsx:643`). **End ride early** stays available for such a ride.
 
 ### 9.5 Backend staleness
 
