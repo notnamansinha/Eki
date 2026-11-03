@@ -50,7 +50,9 @@ route card when returning from tracking.
 
 ## Passenger route schedules (2026-11-03)
 
-Passenger navigation labels are Live, Routes and Profile.
+Passenger navigation labels are Live, Routes and Profile. Use Lucide
+MapPinned for Live, connected dots for Routes and Lucide UserRound for Profile.
+The Send Feedback action uses Lucide ClipboardPenLine.
 
 The Routes tab shows published schedules in compact rows with line badges.
 Use the front-facing bus glyph with mirrors and tires in both badge placements.

@@ -164,6 +164,8 @@ The approved desktop Live Routes layout centers a 42 rem maximum-width panel ove
 The Routes tab uses a top navigation at wide desktop widths and the shared
 compact icon bar on smaller screens. The desktop Live tab keeps the centered
 dock and artwork treatment. The shared tabs use a gold active marker and preserve
-browser Back and Forward between Live, Routes and Profile.
+browser Back and Forward between Live, Routes and Profile. The icons are Lucide
+MapPinned for Live, Eki's connected dots for Routes and Lucide UserRound for
+Profile. The Profile feedback action uses Lucide ClipboardPenLine.
 
 Published route badges use a front-facing bus SVG with side mirrors, a destination sign, headlights and tires. The same glyph appears in the route list and timetable header. The timetable uses layered graphite surfaces and warm text. Badge stripes soften the configured route color, while the timeline uses the university gold.

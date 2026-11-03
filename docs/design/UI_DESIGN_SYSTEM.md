@@ -515,7 +515,7 @@ Shared CSS classes in `app/globals.css` that components use: `.btn-primary`, `.b
 
 ### 8.2 Icons
 
-All icons come from `lucide-react` 1.27.0, imported per icon; `next.config.ts` lists the package in `optimizePackageImports`. Examples: `BusFront` (bus glyph), `Navigation` (**Center on bus**), `Route` (route overview, timeline, the Passenger Routes settings header), `WifiOff` (health and reconnect notices), `MapPinned`, `ListOrdered` and `CircleUserRound` (bottom navigation), `MessageCircle` (chat), `Flag` (route ended), `ShieldAlert`, `AlertTriangle` and `Info` (dialog variants), `Loader2` (spinners). Common sizes: 16 px in admin tabs and lists, 20 px in map controls, 22 px with stroke width 2.5 in the bottom navigation.
+Most icons come from `lucide-react` 1.27.0, imported per icon; `next.config.ts` lists the package in `optimizePackageImports`. Examples: `BusFront` (bus glyph), `Navigation` (**Center on bus**), `Route` (route overview, timeline, the Passenger Routes settings header), `WifiOff` (health and reconnect notices), `MapPinned` (Live), `UserRound` (Profile), `ClipboardPenLine` (**Send Feedback**), `MessageCircle` (chat), `Flag` (route ended), `ShieldAlert`, `AlertTriangle` and `Info` (dialog variants), `Loader2` (spinners). Common sizes: 16 px in admin tabs and lists, 20 px in map controls, 24 px with stroke width 2 in the passenger navigation. Routes uses Eki's connected-dots SVG.
 
 ### 8.3 Motion
 

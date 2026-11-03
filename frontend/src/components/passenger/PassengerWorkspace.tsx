@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
-import { MapPin as MapIcon, CircleUserRound as User, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
+import { MapPinned, UserRound, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
 import { subscribeLiveBusChangesByRoute } from "@/lib/liveBusStore";
 import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
 import { getJoinedRideStatus } from "@/lib/joinedRideStatus";
@@ -912,7 +912,7 @@ export default function PassengerWorkspace() {
           <button type="button" className="passenger-section-button"
             aria-current={visibleView === "home" || visibleView === "tracking" ? "page" : undefined}
             onClick={() => navigateSection("home")}>
-            <MapIcon size={24} strokeWidth={2} aria-hidden="true" />
+            <MapPinned size={24} strokeWidth={2} aria-hidden="true" />
             <span>Live</span>
           </button>
 
@@ -931,7 +931,7 @@ export default function PassengerWorkspace() {
           <button type="button" className="passenger-section-button"
             aria-current={visibleView === "profile" ? "page" : undefined}
             onClick={() => navigateSection("profile")}>
-            <User size={24} strokeWidth={2} aria-hidden="true" />
+            <UserRound size={24} strokeWidth={2} aria-hidden="true" />
             <span>Profile</span>
           </button>
         </nav>
