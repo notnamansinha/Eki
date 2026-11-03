@@ -284,31 +284,6 @@ describe("routing lifecycle through actual ingestion and listeners", () => {
     expect(Object.values(history.connectionEvents)).toHaveLength(2);
     expect(state.docs.get(`bus_locations/${f.busId}`).lastKnownLocation).toEqual(history.lastKnownLocation);
   });
-  it("keeps the original signal-loss time when an engine restart or removal replays a silent ride", async () => {
-    const f = await fixture();
-    await f.send(23, 0, "stopped"); await f.send(23.001, 15_000);
-    const lostAt = baseTime + 15_000 + 5 * 60_000;
-    vi.setSystemTime(lostAt);
-    await rtdb.ref(`activeBuses/${f.key}`).set({ ...f.live(), deviceState: "offline", signalState: "lost" }); await settle();
-    expect(state.docs.get(`ride_sessions/${f.sessionId}`).lastSignalLostAt).toBe(lostAt);
-    await stop!(); stop = undefined;
-    // A cold start replays every live node, including this offline one, as child_added.
-    vi.setSystemTime(baseTime + 10 * 60 * 60_000);
-    stop = startTripStateEngine();
-    const node = await rtdb.ref(`activeBuses/${f.key}`).once("value");
-    state.listeners.get("child_added")?.forEach(listener => listener(node));
-    await settle();
-    const expectOriginalLoss = () => {
-      const history = state.docs.get(`ride_sessions/${f.sessionId}`);
-      expect(history.lastSignalLostAt).toBe(lostAt);
-      expect(Object.values(history.connectionEvents)).toEqual([expect.objectContaining({ observedAt: lostAt })]);
-      expect(history.lastKnownLocation).toMatchObject({ sampledAt: baseTime + 15_000 });
-    };
-    expectOriginalLoss();
-    vi.setSystemTime(baseTime + 11 * 60 * 60_000);
-    await rtdb.ref(`activeBuses/${f.key}`).set(null); await settle();
-    expectOriginalLoss();
-  });
   it("keeps the final shutdown fix after completed-terminal heartbeats were deduplicated", async () => {
     const f = await fixture(); await f.arrive();
     await f.send(23.004, 60_000, "stopped"); await f.send(23.004, 70_000, "stopped");
@@ -401,6 +376,20 @@ describe("routing lifecycle through actual ingestion and listeners", () => {
     expect(f.live()).toMatchObject({ deviceState: "online", tripState: "in_service", currentStopIndex: 2 });
     expect(state.docs.get(`active_rides/${f.key}`)).toMatchObject({ tripState: "in_service", currentStopIndex: 2 });
     expect(state.docs.get(`active_rides/${f.key}`).updatedAt).not.toBe(baseTime + 15_000);
+  });
+  it("keeps the original signal-loss time when an engine restart or removal replays a silent ride", async () => {
+    const { f, sweptAt } = await silentRideAfterRestart();
+    const expectOriginalLoss = () => {
+      const history = state.docs.get(`ride_sessions/${f.sessionId}`);
+      expect(history.lastSignalLostAt).toBe(sweptAt);
+      expect(Object.values(history.connectionEvents)).toEqual([expect.objectContaining({ observedAt: sweptAt,
+        location: expect.objectContaining({ lat: 23.001, lng: 72, sampledAt: baseTime + 15_000 }) })]);
+      expect(history.lastKnownLocation).toMatchObject({ sampledAt: baseTime + 15_000 });
+    };
+    expectOriginalLoss();
+    vi.setSystemTime(baseTime + 11 * 60 * 60_000);
+    await rtdb.ref(`activeBuses/${f.key}`).set(null); await settle();
+    expectOriginalLoss();
   });
   it("does not record an engine retirement as signal loss", async () => {
     const f = await fixture(); await f.arrive();
