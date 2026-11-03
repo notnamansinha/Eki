@@ -99,6 +99,7 @@ import { drainDurableRideRecovery } from "./durableRideRecovery";
 import { drainTelemetryRouteProcessing } from "./telemetryRouteService";
 import { publicLiveBus } from "./liveBusProjection";
 import { runAbandonedRideReconciliation } from "./abandonedRideReconciler";
+import { createStaleBusSweeper } from "./staleBusSweeper";
 import type { TelemetryPayload } from "./telemetryPayload";
 import { STOP_ARRIVAL_GEOFENCE_M } from "./tripStateReducer";
 
@@ -334,11 +335,18 @@ describe("routing lifecycle through actual ingestion and listeners", () => {
     const f = await fixture();
     await f.send(23, 0, "stopped"); await f.send(23.001, 15_000);
     expect(f.live()).toMatchObject({ tripState: "in_service", sessionId: f.sessionId });
-    // The stale sweep marks the silent receiver offline and keeps its session.
-    const sweptAt = baseTime + 15_000 + 5 * 60_000;
+    // The real stale sweep marks the silent receiver offline and keeps its session.
+    // The adapter's indexed query is a stub, so serve its one page from the live nodes.
+    const sweptAt = baseTime + 15_000 + 5 * 60_000 + 1_000;
     vi.setSystemTime(sweptAt);
-    await rtdb.ref(`activeBuses/${f.key}`).set({ ...f.live(), deviceState: "offline", signalState: "lost", lifecycleUpdatedAt: sweptAt });
+    const page: any = { once: async () => {
+      const nodes = await Promise.all([...state.nodes.keys()].filter(path => path.startsWith("activeBuses/")).map(path => rtdb.ref(path).once("value")));
+      return { forEach: (visit: (child: any) => void) => nodes.forEach(visit) };
+    } };
+    for (const method of ["orderByChild", "startAt", "startAfter", "endAt", "limitToFirst"]) page[method] = () => page;
+    await createStaleBusSweeper(page, 5 * 60_000, error => { throw error; }).tick();
     await settle();
+    expect(f.live()).toMatchObject({ deviceState: "offline", signalState: "lost", tripState: "in_service", sessionId: f.sessionId });
     await stop!(); stop = undefined;
     // Resolve adapter server timestamps to their committed wall-clock values.
     state.docs.get(`active_rides/${f.key}`).updatedAt = baseTime + 15_000;

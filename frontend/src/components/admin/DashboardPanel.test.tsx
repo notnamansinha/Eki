@@ -201,7 +201,7 @@ describe("admin service creation", () => {
     const stale = Date.now() - 15 * 3_600_000;
     state.entries = [
       fixtureBus("forward") as ActiveBusEntry,
-      { ...fixtureBus("forward", "qa-session-2", "qa-bus-2"), lat: 23.004, lng: 72.004, deviceState: "offline", timestamp: stale, backendReceivedAt: stale } as ActiveBusEntry,
+      { ...fixtureBus("forward", "qa-session-2", "qa-bus-2"), lat: 23.004, lng: 72.004, deviceState: "offline", motionState: "moving", timestamp: stale, backendReceivedAt: stale } as ActiveBusEntry,
     ];
     const user = userEvent.setup(); render(<DashboardPanel />);
     // The marker stays at the last known location, however old, in the offline colour.
@@ -239,12 +239,15 @@ describe("admin service creation", () => {
     expect(screen.queryByText("Delay and boarding code return when the receiver reports again.")).toBeNull();
     expect(markerColour("qa-bus")).toBe(cssColour("#FBBF24"));
   });
-  it("does not count a ride without confirmed receiver presence as live service", () => {
+  it("does not count a ride without confirmed receiver presence as live service", async () => {
     state.entries = [{ ...fixtureBus("forward"), deviceState: undefined } as unknown as ActiveBusEntry];
-    render(<DashboardPanel />);
+    const user = userEvent.setup(); render(<DashboardPanel />);
     expect(screen.getByText("0 devices online · 0 services")).toBeTruthy();
     expect(screen.getByText("Service paused")).toBeTruthy();
     expect(markerColour("qa-bus")).toBe(cssColour("#FB923C"));
+    await user.click(screen.getByText("QA bus").closest("button")!);
+    expect((screen.getByRole("button", { name: "Increase delay by 1 minutes for qa-bus" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Boarding code" }) as HTMLButtonElement).disabled).toBe(true);
   });
   it("centers the bus glyph on its coordinate while its label stays outside the anchor box", () => {
     state.entries = [{ busId: "qa-bus", routeId: "qa-route", lat: 23, lng: 72, timestamp: Date.now(), deviceState: "online", motionState: "stopped", speed: 0 }];

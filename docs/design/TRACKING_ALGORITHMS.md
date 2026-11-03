@@ -373,7 +373,7 @@ A completed session is never interrupted; the stop endpoint reports `alreadyComp
 
 The trip-state engine handles live-node events one at a time per node (`tripStateEngine.ts:1283`). Events that change no lifecycle field are skipped (`backend/src/services/lifecycleIntake.ts:2`). For a node with a resolved direction and a fix newer than the last one processed for the same session and direction, the engine calls the pure reducer `reduceTripState` (`backend/src/services/tripStateReducer.ts:301`) with the previous fix as segment start (`tripStateEngine.ts:952`). It then:
 
-1. writes the result to `active_rides` and missing `stopsReached` entries to the session in one Firestore transaction, guarded by the bus lock (`tripStateEngine.ts:654`). The stop index never moves backward;
+1. unless the node is offline and its fix is more than 60 s from the server time, writes the result to `active_rides` and missing `stopsReached` entries to the session in one Firestore transaction, guarded by the bus lock (`tripStateEngine.ts:654`). The stop index never moves backward;
 2. computes `atStopIndex` and the unobserved stop list (Sections 7.8 and 7.5);
 3. writes `tripState`, `currentStopIndex`, `hasDepartedOrigin`, `terminalArrival`, `gnssGap`, `atStop` and `unobservedStops` to the node in a transaction guarded by session and direction (`tripStateEngine.ts:1021`).
 
