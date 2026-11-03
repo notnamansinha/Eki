@@ -318,7 +318,7 @@ The durable record of one ride.
 | `stopsReached.{index}` | `{stopIndex, stopId, stopName, timestamp, evidence?}` | Progress evidence. `evidence` is `gnss_progress`, `recovered_checkpoint`, `skipped_gnss_gap` or `passed_unobserved` (`backend/src/services/rideProgressHistory.ts:47`) |
 | `firstKnownLocation`, `lastKnownLocation` | `{lat, lng, sampledAt, seq, receivedAt}` | First and last raw fixes of the ride |
 | `firstTelemetryAt`, `lastSignalLostAt` | epoch ms | First fix time and last signal loss |
-| `connectionEvents.lost_{sampledAt}_{seq}` | `{type: signal_lost, observedAt, location}` | Signal loss events |
+| `connectionEvents.lost_{sampledAt}_{seq}` | `{type: signal_lost, observedAt, location}` | Signal loss events, one per fix. A replay of a recorded fix (engine restart, node removal) keeps its `observedAt` and `lastSignalLostAt` |
 | `terminalArrivalConfirmedAt` | epoch ms | Completion confirmation |
 | `interruptionReason`, `interruptedBy`, `reconciledAt` | string, UID, Timestamp | `manual_end_early` or `abandoned_session_timeout` |
 | `failureReason` | string | `shift_conflict` |
