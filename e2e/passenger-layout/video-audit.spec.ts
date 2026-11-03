@@ -257,13 +257,15 @@ test("admin Passenger Panel switch is the last item of the sliding section row",
   await expect(link).toBeInViewport({ ratio: 1 });
 });
 
-test("edge: landscape phone and tiny heights keep the panel above a painted footer", async ({ page }) => {
+test("edge: landscape phone and tiny heights keep the panel above a painted footer", async ({ page }, testInfo) => {
+  // Resizing preserves the input capabilities of the Playwright project.
+  const dockGap = testInfo.project.use.hasTouch ? 0 : 16;
   for (const size of [{ width: 844, height: 390 }, { width: 320, height: 568 }]) {
     await page.setViewportSize(size);
     await page.goto("/");
     await injectInsets(page, 0, 21);
     await expect(nav(page)).toBeVisible();
-    expect(await paintedNavBottom(page)).toBeGreaterThanOrEqual(size.height - 0.5);
+    expect(await paintedNavBottom(page)).toBeCloseTo(size.height - dockGap, 0);
     const panel = (await homePanel(page).boundingBox())!;
     const navBox = (await nav(page).boundingBox())!;
     expect(panel.y + panel.height, `${size.width}x${size.height}`).toBeLessThanOrEqual(navBox.y);
