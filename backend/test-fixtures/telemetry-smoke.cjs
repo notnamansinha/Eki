@@ -54,7 +54,7 @@ async function main() {
       headers: { traceparent: sampledParent },
     }, res => { res.resume(); res.on('end', resolve); }).on('error', reject));
   });
-  const { logs, SeverityNumber } = require('@opentelemetry/api-logs');
+  const { logs, SeverityNumber } = require('@opentelemetry/api');
   logs.getLogger('r31-smoke').emit({ body: 'r31-log', severityNumber: SeverityNumber.INFO });
   const { metrics } = require('@opentelemetry/api');
   metrics.getMeter('r31-smoke').createCounter('r31.counter').add(1);
