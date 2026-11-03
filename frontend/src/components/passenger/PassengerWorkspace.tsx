@@ -913,7 +913,7 @@ export default function PassengerWorkspace() {
             aria-current={visibleView === "home" || visibleView === "tracking" ? "page" : undefined}
             onClick={() => navigateSection("home")}>
             <MapIcon size={24} strokeWidth={2} aria-hidden="true" />
-            <span>Map</span>
+            <span>Live</span>
           </button>
 
           <button type="button" className="passenger-section-button"

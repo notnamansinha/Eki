@@ -304,7 +304,7 @@ Tailwind size utilities keep their defaults: `text-xs` 12/16 px, `text-sm` 14/20
 | Admin section heading | 18 to 20 px | 700 to 800 | 28 px | "Ride History", "Settings" |
 | Body and descriptions | 13 to 15 px | 500 | 1.5 | Home subtitle |
 | Controls (selects, small buttons) | 12 px | 600 to 700 | 16 px | Stop pickers, **Board** |
-| Bottom navigation label | 13 px | 700 | 1 | "Map", "Routes", "Profile" |
+| Bottom navigation label | 13 px | 700 | 1 | "Live", "Routes", "Profile" |
 | Tracking status line | 10 px uppercase, `tracking-wider` | 700 | 1.5 | `Ride in service · Live` |
 | Timeline stop name | 14 px (next or selected), otherwise 13 px | 600 / 500 | 1.5 | Stop name |
 | ETA | 18 px | 800 | 28 px | Minutes, or "Due" |
@@ -422,7 +422,7 @@ flowchart TD
 
 Figure 1. Navigation between routes and views for each role.
 
-A signed-in user leaves `/` for the saved workspace or the default for the role. In `/passenger`, the bottom navigation switches between Map (home and tracking), Routes and Profile. Administrators switch between `/admin` and `/passenger` with **Passenger Panel** and **Profile > Admin Panel**.
+A signed-in user leaves `/` for the saved workspace or the default for the role. In `/passenger`, the bottom navigation switches between Live (home and tracking), Routes and Profile. Administrators switch between `/admin` and `/passenger` with **Passenger Panel** and **Profile > Admin Panel**.
 
 ### 7.2 Landing page
 
@@ -432,16 +432,16 @@ A signed-in user leaves `/` for the saved workspace or the default for the role.
 
 `components/passenger/PassengerWorkspace.tsx` stacks four absolutely positioned views and a fixed bottom navigation. Hidden views are `inert` and `aria-hidden`; the Routes and Profile views mount on their first visit and then stay mounted. Reconnect, ride-recovery and error banners appear above the views.
 
-On desktop, the Live Routes panel is centered over the artwork, capped at 42 rem, with a shallow artwork spacer, compact route rows and a visible list scrollbar. A compact dock centers the Map, Routes and Profile tabs beneath the panel. Touch-only windows use the full-width bottom navigation with outline icons and a gold active marker. The published Routes tab moves the same navigation to a top bar on wide pointer-equipped desktop windows. Keyboard selection moves focus into tracking and Back restores it to the selected route or the list heading if the route has disappeared.
+On desktop, the Live Routes panel is centered over the artwork, capped at 42 rem, with a shallow artwork spacer, compact route rows and a visible list scrollbar. A compact dock centers the Live, Routes and Profile tabs beneath the panel. Touch-only windows use the full-width bottom navigation with outline icons and a gold active marker. The published Routes tab moves the same navigation to a top bar on wide pointer-equipped desktop windows. Keyboard selection moves focus into tracking and Back restores it to the selected route or the list heading if the route has disappeared.
 
 | View | Structure |
 |---|---|
-| Map (home) | Hero image above a rounded panel titled "Live Routes". The panel scrolls the announcement (when active) and one card per route with an active or available bus: route name, first and last stop, stop count and duration, and an action in `--accent` ("TRACK ROUTE", "VIEW STATUS" or "<n> AVAILABLE"). Without routes it shows the configured no-buses message and service start time. |
+| Live (home) | Hero image above a rounded panel titled "Live Routes". The panel scrolls the announcement (when active) and one card per route with an active or available bus: route name, first and last stop, stop count and duration, and an action in `--accent` ("TRACK ROUTE", "VIEW STATUS" or "<n> AVAILABLE"). Without routes it shows the configured no-buses message and service start time. |
 | Tracking | Full-bleed map. Over it, at the top: a 44 px back button and the ride card (bus picker when several buses are selectable, status and progress lines, boarding and destination pickers, **Board**, hints and results), then the chat button with an unread badge. Map notices sit at the top left and the **Center on bus** and **Show route overview** buttons (48 px) at the top right. The route timeline sheet is collapsed to a 56 px handle above the navigation. Chat opens as an overlay between the header and the navigation. |
 | Route ended | Replaces the tracking view when the tracked ride completes: flag icon, "Route ended", a "Waiting for next bus" pill and **Return to Live Routes**. After 10 s an eligible passenger sees the feedback modal and the view returns to the live route list. |
 | Routes | `components/passenger/RoutesTab.tsx`: title "Routes" with "Stops and scheduled times for each route.", then one card per published route in the order the administrator selected them. Each card on `--surface-2` with a `--border-subtle` border shows a dot in the route colour, the route name and the stop count, then the stops as a vertical timeline: a 3 px `--accent` line in the middle, a 14 px dot per stop (filled `--accent` at the first and last stop, `--surface-2` with an `--accent` ring otherwise), and the stop names alternating left and right with the time below in `--status-live` ("7:30 am") or "Time not set" in `--text-ghost`. States: "Loading routes…" with a spinner; "No routes published yet" on a dashed `--border-default` card; and the passenger error banner with **Retry**. |
 | Profile | `components/passenger/AccountTab.tsx`: photo, name and role; an action list with **Admin Panel** (administrators), **Send Feedback**, **Sign Out** and **Delete Account** (passengers). Sign-out and deletion ask for confirmation. Signed out, the list offers **Sign in with Google** in `--accent`. |
-| Bottom navigation | Three 60 px high buttons, **Map**, **Routes** and **Profile**, that share the bar width up to 140 px each, so they fit a 320 px screen. The active button is marked with `aria-current="page"`; **Map** stays active during tracking. |
+| Bottom navigation | Three 60 px high buttons, **Live**, **Routes** and **Profile**, that share the bar width up to 140 px each, so they fit a 320 px screen. The active button is marked with `aria-current="page"`; **Live** stays active during tracking. |
 
 The published timetable uses flat rows with compact bus-front line badges. Search matches the published route label and stop names locally. On wide screens the timetable sits beside the list. On smaller screens a route opens its timetable with Back and focus restoration. Stop labels and scheduled times sit on the right of a single gold line. The page uses the Ahmedabad University palette and the existing app font. It uses the published schedule sources without rendering a map or computing live ETAs.
 

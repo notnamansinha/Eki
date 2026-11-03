@@ -30,7 +30,7 @@ test("the persistent artwork loads a sharp candidate and fills the viewport", as
 
   // The shell retains the very same painting after the interactive panel mounts.
   await page.locator("[data-passenger-workspace] nav").getByRole("button", { name: "Profile", exact: true }).click();
-  await page.locator("[data-passenger-workspace] nav").getByRole("button", { name: "Map", exact: true }).click();
+  await page.locator("[data-passenger-workspace] nav").getByRole("button", { name: "Live", exact: true }).click();
   expect(await image.evaluate(img => (img as HTMLImageElement).currentSrc)).toBe(painting.src);
 });
 

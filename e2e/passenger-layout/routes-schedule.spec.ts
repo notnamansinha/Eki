@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const nav = (page: Page) => page.getByRole("navigation", { name: "Passenger sections" });
-const navButton = (page: Page, name: "Map" | "Routes" | "Profile") => nav(page).getByRole("button", { name, exact: true });
+const navButton = (page: Page, name: "Live" | "Routes" | "Profile") => nav(page).getByRole("button", { name, exact: true });
 
 async function openSchedules(page: Page) {
   await page.goto("/?schedule=demo");
@@ -70,7 +70,7 @@ test("three navigation tabs fit narrow phones and the schedule scrolls clear of 
   for (const size of [{ width: 320, height: 568 }, { width: 375, height: 812 }]) {
     await page.setViewportSize(size);
     await openSchedules(page);
-    const boxes = await Promise.all((["Map", "Routes", "Profile"] as const).map(async name => (await navButton(page, name).boundingBox())!));
+    const boxes = await Promise.all((["Live", "Routes", "Profile"] as const).map(async name => (await navButton(page, name).boundingBox())!));
     for (const [index, box] of boxes.entries()) {
       expect(box.x).toBeGreaterThanOrEqual(0);
       expect(box.x + box.width).toBeLessThanOrEqual(size.width);
@@ -88,7 +88,7 @@ test("three navigation tabs fit narrow phones and the schedule scrolls clear of 
   }
 });
 
-test("Map returns to live routes and the hidden schedule cannot intercept taps", async ({ page }) => {
+test("Live returns to the route list and the hidden schedule cannot intercept taps", async ({ page }) => {
   await openSchedules(page);
   await navButton(page, "Profile").click();
   await expect(navButton(page, "Profile")).toHaveAttribute("aria-current", "page");
@@ -97,8 +97,8 @@ test("Map returns to live routes and the hidden schedule cannot intercept taps",
   await page.goForward();
   await expect(navButton(page, "Profile")).toHaveAttribute("aria-current", "page");
 
-  await navButton(page, "Map").click();
-  await expect(navButton(page, "Map")).toHaveAttribute("aria-current", "page");
+  await navButton(page, "Live").click();
+  await expect(navButton(page, "Live")).toHaveAttribute("aria-current", "page");
   const track = page.getByRole("button", { name: "Track QA route", exact: true });
   await expect(track).toBeVisible();
   await expect(page.getByRole("heading", { name: "Routes", exact: true })).toBeHidden();

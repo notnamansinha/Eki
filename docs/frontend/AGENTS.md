@@ -50,6 +50,8 @@ route card when returning from tracking.
 
 ## Passenger route schedules (2026-11-03)
 
+Passenger navigation labels are Live, Routes and Profile.
+
 The Routes tab shows published schedules in compact rows with line badges.
 Use the front-facing bus glyph with mirrors and tires in both badge placements.
 Desktop shows a list and independently scrolling timetable beside it. Smaller

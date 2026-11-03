@@ -8,7 +8,7 @@ async function injectInsets(page: Page, top = 47, bottom = 34) {
     .pt-safe{padding-top:${top}px!important}.pb-safe{padding-bottom:${bottom}px!important}` });
 }
 const nav = (page: Page) => page.locator("[data-passenger-workspace] nav");
-const navButton = (page: Page, name: "Map" | "Routes" | "Profile") => nav(page).getByRole("button", { name, exact: true });
+const navButton = (page: Page, name: "Live" | "Routes" | "Profile") => nav(page).getByRole("button", { name, exact: true });
 const homePanel = (page: Page) => page.locator("[data-passenger-workspace] .passenger-home-panel");
 
 async function paintedNavBottom(page: Page) {
@@ -56,9 +56,9 @@ test("PAX-02 Profile switches settle quickly without exposing the loading screen
   await page.goto("/");
   await navButton(page, "Profile").click();
   await expect(page.getByRole("button", { name: "Send Feedback" })).toBeVisible();
-  await navButton(page, "Map").click();
+  await navButton(page, "Live").click();
   await page.waitForTimeout(700);
-  for (const destination of ["Profile", "Map", "Profile"] as const) {
+  for (const destination of ["Profile", "Live", "Profile"] as const) {
     const samples = await page.evaluate(async target => {
       const profileView = document.querySelector("[data-passenger-workspace] button")?.ownerDocument
         .evaluate("//button[normalize-space()='Send Feedback']", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)
@@ -93,9 +93,9 @@ test("PAX-02 Profile switches settle quickly without exposing the loading screen
 
 test("PAX-02 rapid switching ends on a coherent destination", async ({ page }) => {
   await page.goto("/");
-  for (let i = 0; i < 12; i++) await navButton(page, i % 2 ? "Map" : "Profile").click({ delay: 0 });
-  await navButton(page, "Map").click();
-  await expect(navButton(page, "Map")).toHaveAttribute("aria-current", "page");
+  for (let i = 0; i < 12; i++) await navButton(page, i % 2 ? "Live" : "Profile").click({ delay: 0 });
+  await navButton(page, "Live").click();
+  await expect(navButton(page, "Live")).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: "Live Routes" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Send Feedback" })).toBeHidden();
   await page.waitForTimeout(400);
@@ -132,7 +132,7 @@ test("PAX-03 feedback covers navigation and pointer taps cannot discard a draft"
   await page.goto("/");
   await injectInsets(page);
   const dialog = await openFeedback(page, "Synthetic unsent draft");
-  for (const name of ["Map", "Routes", "Profile"] as const) {
+  for (const name of ["Live", "Routes", "Profile"] as const) {
     const box = (await navButton(page, name).boundingBox())!;
     const hit = await page.evaluate(({ x, y }) => {
       const element = document.elementFromPoint(x, y);
@@ -158,7 +158,7 @@ test("PAX-03 keyboard focus stays in feedback; Escape keeps the draft and restor
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(page.getByRole("button", { name: "Send Feedback" })).toBeFocused();
-  await navButton(page, "Map").click();
+  await navButton(page, "Live").click();
   await navButton(page, "Profile").click();
   await page.getByRole("button", { name: "Send Feedback" }).click();
   await expect(page.getByRole("dialog").getByRole("textbox")).toHaveValue("Keyboard draft");

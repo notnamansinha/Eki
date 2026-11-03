@@ -162,8 +162,8 @@ The approved desktop Live Routes layout centers a 42 rem maximum-width panel ove
 ## Published schedule navigation
 
 The Routes tab uses a top navigation at wide desktop widths and the shared
-compact icon bar on smaller screens. The desktop Map tab keeps the centered
+compact icon bar on smaller screens. The desktop Live tab keeps the centered
 dock and artwork treatment. The shared tabs use a gold active marker and preserve
-browser Back and Forward between Map, Routes and Profile.
+browser Back and Forward between Live, Routes and Profile.
 
 Published route badges use a front-facing bus SVG with side mirrors, a destination sign, headlights and tires. The same glyph appears in the route list and timetable header. The timetable uses layered graphite surfaces and warm text. Badge stripes soften the configured route color, while the timeline uses the university gold.
