@@ -143,7 +143,7 @@ The Realtime Database bills stored data and downloaded data, not write operation
 
 | Client | Path | Code | What it downloads |
 |---|---|---|---|
-| Backend, one connection per process | `activeBuses` child events | `backend/src/services/tripStateEngine.ts:791,1344-1346`, `backend/src/services/liveBusProjection.ts:112,291` | Every write to any bus node, about four per fix |
+| Backend, one connection per process | `activeBuses` child events | `backend/src/services/tripStateEngine.ts:796,1349-1351`, `backend/src/services/liveBusProjection.ts:112,291` | Every write to any bus node, about four per fix |
 | Backend | `activeBuses/{busId}_{routeId}`, one read per public publication | `backend/src/services/liveBusProjection.ts:164` | One full bus node |
 | Passenger | `publicRouteBuses/route:{routeId}/buses` for the selected route and any joined ride's route | `frontend/src/lib/liveBusStore.ts:17`, `frontend/src/components/passenger/PassengerWorkspace.tsx:196-198` | Route snapshot, then each public commit on that route |
 | Passenger | `liveRouteCatalog/values` and `clientProjectionStatus/public` | `frontend/src/hooks/useLiveRouteCatalog.ts:34,42` | The whole catalog on each change |
@@ -196,8 +196,8 @@ Usage that scales with the fleet and with passengers:
 | Device credential cache fills: 3 reads per device per 60 s while sending | `180 * H * B` reads per day | `backend/src/services/deviceTelemetryService.ts:49,462,480-483` |
 | Tracker diagnostics: the latest report replaces one `_device_diagnostics` document every 5 min | `12 * H * B` writes per day | `backend/src/services/deviceDiagnostics.ts:120` |
 | Tracker powered without a ride: restore attempt | At most 2 reads per 30 s per bus | `backend/src/services/durableRideRecovery.ts:59-63,95` |
-| Ride start and completion | About 10 reads and 10 writes per ride | `backend/src/services/rideSessionStart.ts:326-430`, `backend/src/services/tripStateEngine.ts:1127-1171` |
-| Each lifecycle change (stop reached, activation, delay) | About 4 reads and 3 writes | `backend/src/services/tripStateEngine.ts:453-468,705-757` |
+| Ride start and completion | About 10 reads and 10 writes per ride | `backend/src/services/rideSessionStart.ts:326-430`, `backend/src/services/tripStateEngine.ts:1132-1176` |
+| Each lifecycle change (stop reached, activation, delay) | About 4 reads and 3 writes | `backend/src/services/tripStateEngine.ts:465-478,710-762` |
 | Passenger app open: settings listener, user document, route catalog API, stored geometry, and the route schedule listener when the passenger opens the Routes tab | `R + 4` reads (upper bound: the Routes tab opened on every app open) | `frontend/src/hooks/useSettings.ts:68`, `frontend/src/hooks/useAuth.ts:293`, `backend/src/routes/routesList.ts:20-23`, `backend/src/services/routeGeometryReads.ts:22-24`, `frontend/src/hooks/usePassengerRouteConfig.ts:47` |
 | Ride chat opened | Up to 200 reads, then 1 per message | `frontend/src/components/shared/MessagingPanel.tsx:96-101` |
 | Feedback submitted | 1 write | `frontend/src/lib/feedbackStore.ts:70` |
