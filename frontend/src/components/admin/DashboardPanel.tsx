@@ -6,7 +6,6 @@ import {
 } from "@vis.gl/react-google-maps";
 import { auth } from "@/lib/firebaseAuth";
 import { useBuses } from "@/hooks/useBuses";
-import { useDynamicRouteGeometries } from "@/hooks/useDynamicRouteGeometries";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
@@ -30,7 +29,6 @@ import ConfirmModal from "@/components/ui/ConfirmModal";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { apiRequest, isApiRecord, acknowledgedField, type ApiRequestOptions } from "@/lib/apiClient";
 import MessagingPanel from "@/components/shared/MessagingPanel";
-import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import TrafficLayer from "@/components/maps/TrafficLayer";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { useTelemetryRenderTrace } from "@/hooks/useTelemetryRenderTrace";
@@ -619,69 +617,8 @@ export default function DashboardPanel() {
     [liveFleet, busLocations],
   );
   const { buses, error: busesError, retry: retryBuses } = useBuses();
-  const activeEntriesMap = useMemo(
-    () => new Map(activeEntries.map((entry) => [entry.busId, entry])),
-    [activeEntries],
-  );
-  const dynamicGeometries = useDynamicRouteGeometries(activeEntriesMap);
   const { drivers, error: driversError, retry: retryDrivers, loading: driversLoading } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
-  const activeRouteOverlays = useMemo(() => {
-    const overlays = new Map<string, {
-      key: string;
-      routeId: string;
-      color: string;
-      polyline?: string;
-      polylineQuality?: "HIGH_QUALITY";
-      direction: "forward" | "reverse";
-      stops: Array<{ lat: number; lng: number }>;
-      nextStopIndices: number[];
-      firstStopIndex?: number;
-    }>();
-    for (const entry of activeEntries) {
-      if (!entry.routeId || !isActiveService(entry) || !isRideDirection(entry.direction)) continue;
-      const route = routes.find((candidate) => candidate.id === entry.routeId);
-      if (!route) continue;
-      const direction = entry.direction;
-      const hasDirectionalGeometry = Boolean(
-        route.forwardPolyline && route.reversePolyline,
-      );
-      const geometry =
-        entry.routeSource === "dynamic-reroute"
-          ? dynamicGeometries.get(entry.busId)
-          : undefined;
-      const hasDynamic = Boolean(geometry);
-      const overlayKey = `${route.id}:${direction}`;
-      const existing = overlays.get(overlayKey);
-      const naturalStops = route.stops ?? route.waypoints ?? [];
-      const nextStopIndex = publishedStopIndex(entry.currentStopIndex, naturalStops.length);
-      const indices = nextStopIndex === undefined ? [] : [nextStopIndex];
-      const orderedStops = (direction === "reverse" ? [...naturalStops].reverse() : naturalStops).map(({ lat, lng }) => ({ lat, lng }));
-      if (existing) {
-        if (entry.routeSource !== "dynamic-reroute") existing.nextStopIndices.push(...indices);
-      } else overlays.set(overlayKey, {
-        key: overlayKey,
-        routeId: route.id,
-        color: route.color,
-        polyline: (direction === "reverse"
-              ? route.reversePolyline
-              : route.forwardPolyline ?? route.polyline),
-        polylineQuality: hasDirectionalGeometry
-            ? route.polylineQuality
-            : undefined,
-        direction,
-        stops: orderedStops,
-        nextStopIndices: entry.routeSource === "dynamic-reroute" ? [] : [...indices],
-      });
-      if (hasDynamic && geometry) {
-        const key = `${overlayKey}:${entry.busId}:${entry.routeVersion}`;
-        overlays.set(key, { key, routeId: route.id, color: route.color, polyline: geometry.polyline,
-          polylineQuality: "HIGH_QUALITY", direction, stops: orderedStops,
-          nextStopIndices: indices, firstStopIndex: geometry.firstStopIndex ?? -1 });
-      }
-    }
-    return [...overlays.values()];
-  }, [activeEntries, routes, dynamicGeometries]);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [, setFreshnessNow] = useState(() => serverNow());
@@ -869,20 +806,7 @@ export default function DashboardPanel() {
         >
           <TrafficLayer />
           <MapCenter center={mapCenter} />
-          {activeRouteOverlays.map((route) => (
-            <DirectionsRoute
-              key={route.key}
-              routeId={route.routeId}
-              stops={route.stops}
-              polyline={route.polyline}
-              polylineQuality={route.polylineQuality}
-              color={route.color || "#3b82f6"}
-              hasBuses
-              nextStopIndices={route.nextStopIndices}
-              firstStopIndex={route.firstStopIndex}
-              direction={route.direction}
-            />
-          ))}
+          {/* Live Ops shows buses only; route lines belong to the route editor. */}
           {activeEntries.map(entry => (
             <BusMarker
               key={`${entry.busId}_${entry.routeId}`}
