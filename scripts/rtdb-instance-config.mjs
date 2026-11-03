@@ -32,7 +32,12 @@ export function parseRtdbInstanceUrl(value, label = "RTDB URL") {
   };
 }
 
-export function verifyMatchingRtdbInstances({ backendUrl, frontendUrl, expectedRegion }) {
+export function verifyMatchingRtdbInstances({ backendUrl, frontendUrl, expectedRegion, requireRegion = false }) {
+  // A release names its region: without it a URL for the right instance name in the
+  // wrong region would pass, so the deploy jobs require RTDB_EXPECTED_REGION.
+  if (requireRegion && !expectedRegion) {
+    throw new Error("RTDB_EXPECTED_REGION is required for a release. Set it in the deploy environment.");
+  }
   const backend = parseRtdbInstanceUrl(backendUrl, "FIREBASE_DATABASE_URL");
   const frontend = parseRtdbInstanceUrl(
     frontendUrl,
@@ -56,6 +61,7 @@ if (invokedDirectly) {
     backendUrl: process.env.FIREBASE_DATABASE_URL,
     frontendUrl: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
     expectedRegion: process.env.RTDB_EXPECTED_REGION?.trim() || undefined,
+    requireRegion: process.argv.includes("--require-region"),
   });
   console.log(`RTDB configuration verified: one ${result.region} instance.`);
 }

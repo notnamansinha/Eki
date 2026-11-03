@@ -125,7 +125,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-OPS-001 | [CI, Deployment and Releases](operations/CI_CD_AND_RELEASES.md) | 3.4 | Current | 2026-11-03 |
+| EKI-OPS-001 | [CI, Deployment and Releases](operations/CI_CD_AND_RELEASES.md) | 3.5 | Current | 2026-11-03 |
 | EKI-OPS-002 | [DNS and Domains](operations/DNS_AND_DOMAINS.md) | 1.1 | Current | 2026-11-02 |
 | EKI-OPS-003 | [ngrok Tunnel for the Backend](operations/NGROK_TUNNEL.md) | 1.2 | Current | 2026-11-02 |
 | EKI-OPS-004 | [Local Web, Phone and Device Testing](operations/LOCAL_TESTING.md) | 1.1 | Current | 2026-11-02 |
