@@ -1,6 +1,7 @@
 "use client";
 
-import { Loader2, LogIn } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import Image from "next/image";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -101,14 +102,14 @@ export default function HomePage() {
 
   return (
     <main className="transit-landing relative isolate min-h-dvh w-full flex flex-col bg-black">
-      <TransitArtwork />
+      <TransitArtwork landing />
 
       <section className="transit-landing-content relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 md:px-12 w-full max-w-5xl mx-auto py-6">
         <h1
           className="font-black leading-[1.05] text-white w-full mx-auto"
           style={{
             letterSpacing: "0.5px",
-            textShadow: "0 2px 8px rgba(0,0,0,0.2)",
+            textShadow: "0 2px 8px rgba(0,0,0,0.48)",
             WebkitTextStroke: "1px rgba(255,255,255,0.08)",
           }}
         >
@@ -119,7 +120,7 @@ export default function HomePage() {
           className="text-white/90 text-balance max-w-[650px] mx-auto font-medium"
           style={{
             letterSpacing: "0.2px",
-            textShadow: "0 2px 8px rgba(0,0,0,0.2)",
+            textShadow: "0 2px 8px rgba(0,0,0,0.45)",
           }}
         >
           View campus routes and available bus locations. Arrival estimates depend on live service data.
@@ -132,8 +133,12 @@ export default function HomePage() {
             disabled={loginLoading || !loginReady}
             className="flex items-center justify-center gap-3 px-10 py-5 text-lg font-bold bg-white text-black rounded-full hover:bg-gray-200 active:scale-95 transition-transform disabled:opacity-60 shadow-xl"
           >
-            {loginLoading || !loginReady ? <Loader2 className="size-6 animate-spin" /> : <LogIn className="size-6" />}
-            {loginLoading ? "Opening Google…" : loginReady ? "Sign In with Google" : "Preparing sign-in…"}
+            {loginLoading || !loginReady ? (
+              <Loader2 className="size-6 animate-spin" aria-hidden="true" />
+            ) : (
+              <Image src="/google-g.svg" width={20} height={20} className="shrink-0" alt="" />
+            )}
+            {loginLoading ? "Opening Google…" : loginReady ? "Continue with Google" : "Preparing sign-in…"}
           </button>
         </div>
         {loginReady && loginFallbackAvailable && (

@@ -129,3 +129,18 @@ portrait and landscape viewports. The root build and regenerated CSP passed;
 the latest service-worker precache is 27 files and 1109 KB. Enlarged text and
 additional auth messages can still expand the document and scroll naturally.
 The earlier full frontend unit run also completed successfully: 1098 tests.
+
+## Sign-in refinements (3 November 2026)
+
+The landing uses the approved option B crop, a centred 30% zoom for portrait
+viewports. Its portrait `sizes` accounts for the wider painted image.
+Landscape and the passenger shell use the base cover fit.
+
+The sign-in button uses bold “Continue with Google” and a 20px
+multicoloured G from Google's light web sign-in asset at
+`frontend/public/google-g.svg`. The mark is decorative because the button
+label identifies the provider.
+[Google Identity branding assets](https://developers.google.com/identity/branding-guidelines)
+
+The headline and description use a black text shadow with a 2px offset and
+8px blur at 48% and 45% opacity respectively.

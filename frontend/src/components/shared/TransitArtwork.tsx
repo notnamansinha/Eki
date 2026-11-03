@@ -5,7 +5,7 @@
  * selects a delivery size for its pixel density. PNG masters are archived
  * outside public/ so the deployed app contains only the optimized WebPs.
  */
-export default function TransitArtwork() {
+export default function TransitArtwork({ landing = false }: { landing?: boolean }) {
   return (
     <div className="transit-artwork" aria-hidden="true">
       <picture>
@@ -13,7 +13,9 @@ export default function TransitArtwork() {
           media="(orientation: portrait)"
           type="image/webp"
           srcSet="/images/bus-background-portrait-trees-480.webp 480w, /images/bus-background-portrait-trees-768.webp 768w, /images/bus-background-portrait-trees-841.webp 841w"
-          sizes="(max-aspect-ratio: 841/1870) 44.9733dvh, 100vw"
+          sizes={landing
+            ? "(max-aspect-ratio: 841/1870) 58.4653dvh, 130vw"
+            : "(max-aspect-ratio: 841/1870) 44.9733dvh, 100vw"}
           width={841}
           height={1870}
         />

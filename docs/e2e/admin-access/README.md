@@ -42,7 +42,7 @@ The fixture selects a scenario from the query string.
 
 `?restoreHang` holds the synthetic first auth-state callback and `auth.authStateReady()` until **Finish restoration as signed out**, **Finish restoration as passenger** or **Finish restoration as admin** is clicked. `?landing` mounts the real landing page instead of a protected route; `next/image` is replaced by a stub (`nextImage.tsx`).
 
-- Without a pending Google redirect, `getRedirectResult` is never called and **Sign In with Google** is enabled at once. With one, `getRedirectResult` also stays pending and the button reads "Preparing sign-in…" until restoration finishes.
+- Without a pending Google redirect, `getRedirectResult` is never called and **Continue with Google** is enabled at once. With one, `getRedirectResult` also stays pending and the button reads "Preparing sign-in…" until restoration finishes.
 - Virtual time crosses the 8 s and 10 s marks. Sign-in stays usable, "Still checking your sign-in" (landing page) or "Still signing you in" (`RoleGuard`) replaces any access failure, no protected content mounts early, and the page recovers in place when restoration finishes.
 - `window.qaAuthCalls` records each OAuth SDK call and whether it received the shared `popupRedirectResolver`; `window.qaRouterReplacements` records navigations.
 

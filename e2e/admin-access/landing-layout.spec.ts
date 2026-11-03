@@ -17,9 +17,10 @@ for (const viewport of [
     await page.clock.runFor(1000);
     await page.locator(".transit-artwork img").evaluate(img => (img as HTMLImageElement).decode());
     const heading = page.getByRole("heading", { name: /Campus routes/ });
-    const signIn = page.getByRole("button", { name: "Sign In with Google", exact: true });
+    const signIn = page.getByRole("button", { name: "Continue with Google", exact: true });
     await expect(heading).toBeVisible();
     await expect(signIn).toBeEnabled();
+    await signIn.locator("img").evaluate(img => img.decode());
     await expect(page.locator('img[src*="uni-logo"]')).toHaveCount(0);
     expect(await page.evaluate(() => window.scrollY)).toBe(0);
     const bounds = await page.locator(".transit-landing").evaluate(main => {
@@ -58,7 +59,7 @@ test("100% browser zoom on a 150%-scaled desktop keeps the full sign-in view vis
     await page.goto("/?landing&restoreHang");
     await page.clock.runFor(1000);
     await page.locator(".transit-artwork img").evaluate(img => (img as HTMLImageElement).decode());
-    await expect(page.getByRole("button", { name: "Sign In with Google", exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(page.getByRole("button", { name: "Continue with Google", exact: true })).toBeInViewport({ ratio: 1 });
     await expect(page.locator(".transit-landing footer")).toBeInViewport({ ratio: 1 });
     expect(await page.evaluate(() => devicePixelRatio)).toBe(1.5);
     expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(586);

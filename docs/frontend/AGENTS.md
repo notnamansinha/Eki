@@ -20,8 +20,8 @@ by viewport orientation and fill the screen with proportional `object-fit: cover
 including on rotation and in mobile desktop mode. Generate delivery sizes with
 `node scripts/optimize-transit-artwork.mjs` from the repository root; never
 recompress a delivery image or upscale it to claim extra detail. Keep the native
-responsive `srcset`, full-size WebP fallback, eager/high-priority loading and shared
-framing. See `docs/context-docs/TRANSIT_ARTWORK.md` at the repository root.
+responsive `srcset`, full-size WebP fallback and eager/high-priority loading.
+See `docs/context-docs/TRANSIT_ARTWORK.md` at the repository root.
 Archive the PNG masters outside `public/`; deploy only the WebP delivery sizes.
 Run the root build when changing these backgrounds so the generated CSP hashes
 accompany the exported HTML; keep developer-specific origins out of the commit.
@@ -29,3 +29,9 @@ The landing has no AU logo or logo header. Headline, copy and spacing respond
 to viewport height as well as width: normal sign-in and the footer must fit a
 1280x585 CSS viewport at 100% browser zoom, including 150% OS display scaling.
 Keep natural scrolling available for enlarged text and additional auth notices.
+The landing button uses bold “Continue with Google” with the bundled
+Google mark at `public/google-g.svg`. Keep the loading and redirect states.
+The headline and description use soft black text shadows. Option B adds a
+centred 1.3× scale to the landing portrait artwork. Keep the portrait
+`sizes` in step with the CSS scale. The passenger background and landscape
+composition use the base cover fit.
