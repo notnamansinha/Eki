@@ -14,7 +14,10 @@ async function openSchedules(page: Page) {
 test("Routes tab lists approved schedules with a compact badge and one-sided timeline", async ({ page }, info) => {
   const maps: string[] = [];
   page.on("request", request => {
-    if (/maps\.(googleapis|gstatic)\.com/.test(request.url())) maps.push(request.url());
+    const url = new URL(request.url());
+    if (url.hostname === "maps.googleapis.com" || url.hostname === "maps.gstatic.com") {
+      maps.push(url.href);
+    }
   });
   await openSchedules(page);
   const list = page.getByRole("list", { name: "Published routes" });
