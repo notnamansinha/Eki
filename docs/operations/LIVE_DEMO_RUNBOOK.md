@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-005 | 1.1 | Current | 2026-11-02 |
+| EKI-OPS-005 | 1.2 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -44,7 +44,7 @@ Record the non-secret values:
 1. Run `npm ci`, then `npm run verify`. Expected: lint, tests, build and the runtime dependency audit pass.
 2. Run `py -m platformio run --project-dir hardware -e esp32dev` and keep the RAM and flash report. Expected: the build succeeds.
 3. Keep the defaults `AUTH_REVOCATION_CACHE_MS=15000` and `BUS_STALE_MS=300000` in `backend/.env`. Setting `AUTH_REVOCATION_CACHE_MS=0` adds a Firebase Auth round trip to every protected request.
-4. Start the backend and the tunnel with `TRUST_PROXY=loopback` and the deployed frontend origin in `CORS_ORIGIN` ([ngrok tunnel](NGROK_TUNNEL.md#4-start-the-backend-and-the-tunnel)). Expected: `https://<assigned-domain>/health` returns `status: ok` from a phone on mobile data.
+4. Start the backend and the tunnel with `TRUST_PROXY=loopback` and the deployed frontend origin in `CORS_ORIGIN` ([ngrok tunnel](NGROK_TUNNEL.md#4-start-the-backend-and-the-tunnel)). Expected: `https://<assigned-domain>/health` returns `status: ok` from a phone on mobile data. Set `WORKER_ENABLED=false` in `backend/.env` while the Cloud Run service runs the workers (from 06:00 to 22:00 IST, see the [staging runtime configuration](STAGING_RUNTIME_CONFIG.md)), so that the laptop cannot take the worker lease. Keep `true` only when no Cloud Run instance runs them, and check that exactly one process logs `[Worker] Leadership acquired`.
 5. Point the deployed frontend at this backend origin: the staging secret `NEXT_PUBLIC_BACKEND_URL` names the Cloud Run service, so change it to `https://<assigned-domain>` and redeploy ([CI, deployment and releases](CI_CD_AND_RELEASES.md#8-release-procedure)). Then run `node scripts/check-stationary-runtime.mjs --frontend https://bustrack-be165.web.app --backend https://<assigned-domain>`. Expected: every check passes. The script checks the frontend page, backend health and CORS for the frontend origin; it does not check which backend the frontend calls. After the demonstration, restore the Cloud Run URL in the secret and redeploy.
 6. Connect the laptop charger, disable sleep and automatic restarts for the demonstration window.
 

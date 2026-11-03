@@ -2,11 +2,11 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-028 | 1.1 | Proposed | 2026-11-02 |
+| EKI-OPS-028 | 1.2 | Proposed | 2026-11-03 |
 
 Assessment date: 2026-10-21, Asia/Kolkata. Source baseline: `testing` at `a523731`, including the existing uncommitted RTDB readiness change in `backend/src/server.ts`.
 
-Status: **analysis complete; the staging backend moved to Cloud Run on 2026-11-01. Hosting rewrites were evaluated on 2026-11-02 and not adopted (#372); the worker handoff and the device move are open.** No billing, API enablement, IAM, deployed configuration, device firmware, or application data was changed for this assessment.
+Status: **analysis complete; the staging backend moved to Cloud Run on 2026-11-01. Hosting rewrites were evaluated on 2026-11-02 and not adopted (#372). On 2026-11-02 the RTDB moved to Singapore (#426) and the worker handoff was rehearsed (#374); the device move is open (#430).** No billing, API enablement, IAM, deployed configuration, device firmware, or application data was changed for this assessment.
 
 ## Repository notes (2026-10-24)
 
@@ -16,6 +16,7 @@ Status: **analysis complete; the staging backend moved to Cloud Run on 2026-11-0
 - Work is tracked in issues #365 to #379. On 2026-11-02 the assignee of #372 recorded Cloud Run as the host and did not adopt the Hosting rewrites: on a preview channel Hosting added p50 313 ms and p95 493 ms to `GET /live` over the direct service (p50 55 ms, p95 69 ms), and the backend saw a Google egress pool (`66.249.82.x`) instead of the caller. The repository owner can reopen that decision.
 - On 2026-11-01 Cloud Billing was linked to `bustrack-be165` and the Cloud Run and Artifact Registry APIs were enabled (read-only `gcloud billing projects describe` and `gcloud services list`). The billing and API rows in Section 2 record the state at the assessment date.
 - On 2026-11-01 the manual `deploy-backend-staging` job (run 41334365954) deployed the Cloud Run service `eki-backend-staging` in `asia-south2` (`https://eki-backend-staging-449313371438.asia-south2.run.app`) with `WORKER_ENABLED=false`, `minScale` 0 and `maxScale` 1, and the staging secret `NEXT_PUBLIC_BACKEND_URL` was changed to that URL. The staging web app no longer uses the ngrok tunnel, which is offline. No Hosting rewrites exist, and trackers built with the tunnel origin need a reflash (issue #376).
+- On 2026-11-02 the RTDB moved to `bustrack-be165-asia-rtdb` in `asia-southeast1` (#426, [RTDB region decision](../design/RTDB_REGION_LATENCY_DECISION.md)); the worker handoff was rehearsed on staging and the manifest set `WORKER_ENABLED=true` with one instance held from 06:00 to 22:00 IST (#374, #428, [staging runtime configuration](STAGING_RUNTIME_CONFIG.md)); and one tracker was reflashed with the Cloud Run origin (#427). The Iowa rows in Sections 2 and 6 record the assessment date.
 
 ## 1. Recommendation (pending owner approval)
 
@@ -77,6 +78,8 @@ flowchart LR
 The current app depends on work outside HTTP response lifetimes. Firebase documents that background activity after a function finishes cannot make progress reliably. A thin HTTP Function wrapper around the existing startup code would therefore not complete this migration. [Firebase Functions execution guidance](https://firebase.google.com/docs/functions/tips)
 
 ### Public address choice
+
+Superseded on 2026-11-02: Hosting rewrites were evaluated and not adopted (#372, see the repository notes), and clients call the Cloud Run origin directly. The rest of this subsection is the original recommendation.
 
 Use one durable origin, preferably an institution-owned domain connected to Hosting, or the existing `https://bustrack-be165.web.app` for the same-project move. Both the web build and firmware use the **origin only**, without `/api`; their callers append `/api/...` themselves.
 
@@ -153,6 +156,8 @@ Cloud Run gives a terminating container a ten-second SIGTERM grace period; minim
 An IP-restricted Maps server key must match the source Google actually observes; a workstation allowlist does not establish that cloud requests will work. [Google Maps security guidance](https://developers.google.com/maps/api-security-best-practices)
 
 ## 6. Region and performance decision
+
+Update 2026-11-03: the RTDB moved to Singapore on 2026-11-02 and the backend runs in `asia-south2`, so the backend reaches Firestore in its own region and RTDB in Singapore. First measurements after the move are in [Cloud Run latency, 2 November](../testing/CLOUD_RUN_LATENCY_2026_11_02.md). The rest of this section is the assessment of 2026-10-21.
 
 The present system has three different locations: devices/users in India, Firestore in Delhi, and RTDB in Iowa. Moving the backend to India improves proximity to Firestore/users but retains a transcontinental RTDB hop. Moving it near RTDB shifts latency toward devices and Firestore. Neither choice is proven optimal from metadata alone.
 

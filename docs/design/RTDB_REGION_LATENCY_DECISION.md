@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ADR-002 | 1.0 | Proposed | 2026-10-30 |
+| EKI-ADR-002 | 2.0 | Current | 2026-11-03 |
 
 ## 1. Context
 
@@ -43,17 +43,21 @@ Rollback before any candidate writes is a configuration revert. After candidate 
 
 ## 3. Status
 
-Update 2026-11-02: the project owner directed an early move of the staging project to `bustrack-be165-asia-rtdb` in `asia-southeast1`, and Cloud Run stays in `asia-south2` (Delhi). The instance was created, its rules deployed through the `rtdb` deploy target in `.firebaserc`, and the root copied before the backend, Hosting build and firmware were switched. The Section 2.1 gate was not run first, so the measured improvement is still to be recorded.
+Update 2026-11-02: the project owner directed an early move of the staging project to `bustrack-be165-asia-rtdb` in `asia-southeast1`, and Cloud Run stays in `asia-south2` (Delhi). The instance was created, its rules deployed through the `rtdb` deploy target in `.firebaserc`, and the root copied before the backend, Hosting build and firmware were switched. The Section 2.1 gate was not run first. [Cloud Run latency, 2 November](../testing/CLOUD_RUN_LATENCY_2026_11_02.md) records the first transport measurements after the move (laptop to the Singapore front door 81 ms at the median against 289 ms for Iowa); the gate's authenticated reads, browser timing and moving-device rehearsal are still to be recorded.
 
-The Iowa instance `bustrack-be165-default-rtdb` is the project's default instance, and Firebase does not allow deleting a default instance. It cannot be retired by deletion. Retire it instead by keeping its default-deny rules, removing its data after the observation period in Section 2.2 step 6, and keeping the pre-copy export in approved encrypted storage. Rollback is a restore of that export, or of an export of the Singapore instance if it has taken writes, into Iowa, followed by the matching-instance check for `us-central1` and a revert of the backend and Hosting URLs together.
+The Iowa instance `bustrack-be165-default-rtdb` is the project's default instance, and Firebase does not allow deleting a default instance. Instead of the read-only observation period in Section 2.2 step 6, it was emptied on 2026-11-02 and its rules were replaced with a deny-all ruleset ([issue #427](https://github.com/notnamansinha/Eki/issues/427)). The export taken before it was emptied, `gs://bustrack-be165-eki-backups/rtdb/20261102T153315Z/rtdb-iowa.json`, is in a bucket that deletes objects after 30 days, so it is expected to be gone after about 2026-12-02. The Singapore root was exported at the same time.
 
-The production project needs its own `rtdb` target in `.firebaserc` when it is provisioned. Until then the production deploy fails on the missing target instead of releasing rules to the wrong instance.
+Rollback to Iowa takes these steps in order: stop the producers; export the Singapore instance if it has taken writes; map the `rtdb` deploy target in `.firebaserc` to `bustrack-be165-default-rtdb`, or revert the target change in `firebase.json` and `.firebaserc`, and deploy `database.rules.json` to Iowa, because its deny-all rules would otherwise refuse every browser read; import and validate the export; set `RTDB_EXPECTED_REGION=us-central1` and run the matching-instance check; and only then revert the backend and Hosting URLs together.
+
+The production project needs its own `rtdb` target in `.firebaserc` when it is provisioned. Until then the production deploy stops at its deploy-target check, before App Check or the Firestore index deploy, instead of releasing rules to the wrong instance ([CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md#52-steps)).
 
 Original status, before that update: Proposed. Singapore was approved as the candidate on 2026-09-10. No Singapore instance has been cut over: `firebase.json` declares one default database, and no repository change targets a second instance. The decision becomes current when the gate in Section 2.1 passes and the migration in Section 2.2 completes.
 
+This record is Current because `main` and the staging project now use the Singapore instance, although the gate was not run before the move.
+
 ## 4. Consequences
 
-1. The live path stays transcontinental until cutover. Every tracker write, worker transaction and browser listener for `activeBuses` and its projections goes to Iowa.
+1. Until the cutover on 2026-11-02 the live path was transcontinental: every tracker write, worker transaction and browser listener for `activeBuses` and its projections went to Iowa. They now go to Singapore, and the backend in `asia-south2` crosses to Singapore for each RTDB operation.
 2. Cutover needs a write stop, a complete copy of the RTDB root, a frontend rebuild (the URL is compiled into the static build) and a backend configuration change released together.
 3. A region move cannot fix heartbeat cadence, device retries, RTDB transaction contention, route-processing backlog, stale marker selection or an unstable tunnel. Those remain separate measured controls (#159, #160, #165 to #174).
 
