@@ -342,13 +342,17 @@ export default function PassengerWorkspace() {
   const selectableBusesOnRoute = busesOnRoute.filter(bus => isConnected && !isResuming && !liveDataError && isPassengerBusSelectable(bus, availabilityNow));
   // Lifecycle ("in service") is not location freshness: say which one failed.
   const activeBusHealth = activeBusOnRoute ? liveBusHealth(activeBusOnRoute, availabilityNow) : undefined;
-  const pausedNotice = !isConnected || isResuming || liveDataError
+  // Blame the connection only while the socket is down; a connected client
+  // can still be waiting on the backend projection.
+  const pausedNotice = !isConnected
     ? { title: "Live tracking paused", detail: "This device is reconnecting to live bus data. The last known location is shown; live ETAs and boarding resume when the connection returns." }
-    : activeBusOnRoute?.automaticServicePaused === true
-      ? { title: "Tracking paused", detail: "Service is paused for this bus. Its location is shown, but there is no live ride to board." }
-      : activeBusHealth && activeBusHealth.state !== "live" && activeBusHealth.state !== "delayed"
-        ? describeLiveBusHealth(activeBusHealth)
-        : { title: "Live tracking paused", detail: "Location updates are unavailable. The last known location is shown; live ETAs and boarding resume when tracking returns." };
+    : isResuming || liveDataError
+      ? { title: "Live tracking paused", detail: "Live bus data is not available right now. The last known location is shown; live ETAs and boarding resume when it returns." }
+      : activeBusOnRoute?.automaticServicePaused === true
+        ? { title: "Tracking paused", detail: "Service is paused for this bus. Its location is shown, but there is no live ride to board." }
+        : activeBusHealth && activeBusHealth.state !== "live" && activeBusHealth.state !== "delayed"
+          ? describeLiveBusHealth(activeBusHealth)
+          : { title: "Live tracking paused", detail: "Location updates are unavailable. The last known location is shown; live ETAs and boarding resume when tracking returns." };
   // Chat is between passenger and driver; it needs the connection and a
   // reporting bus, not a GPS fix. A GNSS blip must not close or reset it.
   const chatAvailable = isConnected && !isResuming && !liveDataError && activeBusOnRoute?.automaticServicePaused !== true &&
@@ -470,8 +474,8 @@ export default function PassengerWorkspace() {
 
   return (
     <div data-passenger-workspace className="relative flex flex-col overflow-hidden text-white" style={{ height: "100dvh" }}>
-      {(isResuming || rideRecoveryNotice || routesError || liveDataError) && <div className="relative z-50 shrink-0 space-y-2 bg-zinc-950 px-4 pb-2 pt-safe">
-      {isResuming && (
+      {(!isConnected || rideRecoveryNotice || routesError || liveDataError) && <div className="relative z-50 shrink-0 space-y-2 bg-zinc-950 px-4 pb-2 pt-safe">
+      {!isConnected && (
         <div
           className="flex items-center gap-2 rounded-xl border border-amber-400/20 bg-zinc-950 px-4 py-3 text-sm font-semibold text-amber-300 shadow-lg"
           role="status"
@@ -569,9 +573,11 @@ export default function PassengerWorkspace() {
                     {settings.noBusesMessage || "No buses running"}
                   </p>
                   <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
-                    {isResuming
+                    {!isConnected
                       ? "Unable to reach live data. Check your connection."
-                      : formatNoBusesSubMessage(settings.noBusesSubMessage || "Service starts at {time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
+                      : isResuming || liveDataError
+                        ? "Live bus data is not available right now."
+                        : formatNoBusesSubMessage(settings.noBusesSubMessage || "Service starts at {time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
                   </p>
                 </div>
               )}
