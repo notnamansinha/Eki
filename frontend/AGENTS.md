@@ -51,6 +51,7 @@ route card when returning from tracking.
 ## Passenger route schedules (2026-11-03)
 
 The Routes tab shows published schedules in compact rows with line badges.
+Use the rounded, arched transit-front glyph in the list and timetable badge.
 Desktop shows a list and independently scrolling timetable beside it. Smaller
 screens open the timetable in place and Back returns focus to the selected row.
 Use the configured stop order and times from the existing route schedule

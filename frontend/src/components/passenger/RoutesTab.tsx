@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, BusFront, ChevronRight, Search } from "lucide-react";
+import { ArrowLeft, ChevronRight, Search } from "lucide-react";
 import { usePassengerRouteConfig } from "@/hooks/usePassengerRouteConfig";
 import { useRoutes } from "@/hooks/useRoutes";
 import {
@@ -24,7 +24,23 @@ function LineBadge({ schedule }: { schedule: PassengerRouteSchedule }) {
   const accent = /^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(schedule.color) ? schedule.color : undefined;
   return (
     <span className="schedule-line-badge" style={{ borderBottomColor: accent }}>
-      <BusFront size={14} strokeWidth={2} aria-hidden="true" />
+      <svg
+        width={16}
+        height={16}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M3.1 17.6A10.3 10.3 0 1 1 20.9 17.6" />
+        <path d="M6.2 10.2c0-2.8 2.1-4.3 5.8-4.3s5.8 1.5 5.8 4.3v6.2a2.2 2.2 0 0 1-2.2 2.2H8.4a2.2 2.2 0 0 1-2.2-2.2z" />
+        <path d="M6.2 11.8h11.6M9 18.6l-2.4 3m8.4-3 2.4 3M8 20.1h8" />
+        <circle cx="9.3" cy="15.3" r=".9" fill="currentColor" stroke="none" />
+        <circle cx="14.7" cy="15.3" r=".9" fill="currentColor" stroke="none" />
+      </svg>
       {lineLabel(schedule.name)}
     </span>
   );
