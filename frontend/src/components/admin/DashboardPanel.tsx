@@ -63,6 +63,20 @@ const MOTION_STATE: Record<string, { label: string; color: string }> = {
   stopped:   { label: "Stopped", color: "text-amber-400" },
   uncertain: { label: "Motion uncertain",  color: "text-amber-400" },
 };
+/**
+ * A ride whose receiver is offline or silent past the signal-lost threshold keeps
+ * its session for recovery, but it is paused, not in service, matching the stats,
+ * which count live receivers only. Its marker still shows the last known
+ * location, however old.
+ */
+function isServicePaused(entry: ActiveBusEntry): boolean {
+  return Boolean(entry.sessionId) && entry.tripState !== "completed" &&
+    (entry.deviceState !== "online" || isLiveBusSignalLost(liveBusFreshnessTimestamp(entry)));
+}
+/** Delay and boarding-code changes act on a live ride only. */
+function isLiveService(entry: ActiveBusEntry): boolean {
+  return isActiveService(entry) && !isServicePaused(entry);
+}
 function servicePresentation(entry: ActiveBusEntry) {
   if (!entry.sessionId) {
     const label = entry.automaticServicePaused || entry.automaticServiceState === "paused" ? "Tracking paused"
@@ -71,7 +85,7 @@ function servicePresentation(entry: ActiveBusEntry) {
     if (label) return {label,color:"text-amber-300",bg:"bg-amber-500/10",dot:"bg-amber-300"};
     if (devicePresence(entry) !== "online") return {label:"Offline",color:"text-white/40",bg:"bg-white/5",dot:"bg-white/30"};
   }
-  if (entry.sessionId && entry.tripState !== "completed" && (entry.deviceState === "offline" || isLiveBusSignalLost(liveBusFreshnessTimestamp(entry)))) {
+  if (isServicePaused(entry)) {
     return {label:"Service paused",color:"text-amber-300",bg:"bg-amber-500/10",dot:"bg-amber-300"};
   }
   return TRIP_STATE[rideServiceState(entry)];
@@ -306,11 +320,11 @@ function BusMarker({
   onClick: (position: { lat: number; lng: number }) => void;
 }) {
   const ts = servicePresentation(entry);
-  const serviceState = rideServiceState(entry);
+  const paused = isServicePaused(entry);
   const markerColor =
-    serviceState === "in_service"
+    rideServiceState(entry) === "in_service" && !paused
       ? entry.motionState === "moving" ? "#34D399" : "#FBBF24"
-      : devicePresence(entry) !== "online" || entry.motionState === "uncertain" ? "#FB923C" : "#94949C";
+      : paused || devicePresence(entry) !== "online" || entry.motionState === "uncertain" ? "#FB923C" : "#94949C";
 
   const markerSelection = useLiveBusMarkerPosition(entry);
   const markerPoint = useSmoothPosition(markerSelection.position);
@@ -546,7 +560,7 @@ function FleetCard({
                   type="button"
                   disabled={
                     delayPending ||
-                    !isActiveService(entry) ||
+                    !isLiveService(entry) ||
                     !entry.routeId ||
                     !entry.driverId
                   }
@@ -561,7 +575,7 @@ function FleetCard({
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                disabled={!isActiveService(entry) || !entry.sessionId}
+                disabled={!isLiveService(entry) || !entry.sessionId}
                 onClick={() => onLoadBoardingCode(entry)}
                 className="flex min-h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white disabled:opacity-40"
               >
@@ -579,6 +593,9 @@ function FleetCard({
                 </button>
               )}
             </div>
+            {isActiveService(entry) && isServicePaused(entry) && (
+              <p className="text-[10px] text-amber-300/80">Delay and boarding code return when the receiver reports again.</p>
+            )}
             {hasValidBusCoordinates(entry.lat, entry.lng) && (
               <p className="text-[9px] text-white/20 tabular-nums">
                 {entry.lat!.toFixed(5)}, {entry.lng!.toFixed(5)}
