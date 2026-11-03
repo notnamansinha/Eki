@@ -397,11 +397,14 @@ body {
   --transit-gold: #ae9562;
   --transit-gray: #939598;
   --transit-paper: #f2efec;
-  --schedule-page: #0e0f11;
-  --schedule-surface: #181a1d;
-  --schedule-raised: #222428;
-  --schedule-border: #2c3033;
-  --schedule-muted: #b1b4b6;
+  --schedule-canvas: #111113;
+  --schedule-page: #18181a;
+  --schedule-surface: #202023;
+  --schedule-raised: #2b2b2f;
+  --schedule-border: #343438;
+  --schedule-badge-border: #4c4c52;
+  --schedule-control-border: #777780;
+  --schedule-muted: #b6b5bc;
 }
 
 .passenger-nav-frame {
@@ -463,6 +466,8 @@ body {
   max-width: none;
   margin-inline: 0;
   border-radius: 0;
+  border-color: var(--schedule-border);
+  background: var(--schedule-surface);
 }
 
 [data-passenger-section="routes"] .passenger-nav-bar {
@@ -476,7 +481,7 @@ body {
   min-height: 0;
   padding-top: var(--safe-area-top);
   padding-bottom: calc(69px + var(--safe-area-bottom));
-  background: var(--schedule-page);
+  background: var(--schedule-canvas);
   color: var(--transit-paper);
 }
 
@@ -487,6 +492,7 @@ body {
   min-width: 0;
   min-height: 0;
   margin-inline: auto;
+  background: var(--schedule-page);
 }
 
 .schedule-list,
@@ -531,8 +537,8 @@ body {
   gap: 0.5rem;
   margin-top: 0.875rem;
   padding-inline: 0.75rem;
-  border: 1px solid var(--transit-charcoal);
-  border-radius: 5px;
+  border: 1px solid var(--schedule-control-border);
+  border-radius: 9px;
   background: var(--schedule-raised);
   color: var(--schedule-muted);
 }
@@ -579,8 +585,9 @@ body {
   justify-content: center;
   gap: 4px;
   padding: 2px 3px;
-  border: 1px solid var(--transit-charcoal);
-  border-bottom: 3px solid var(--transit-maroon);
+  border: 1px solid var(--schedule-badge-border);
+  border-bottom: 3px solid var(--route-accent, var(--transit-maroon));
+  border-bottom-color: color-mix(in oklab, var(--route-accent, var(--transit-maroon)) 60%, var(--schedule-muted));
   border-radius: 4px;
   background: var(--schedule-raised);
   color: var(--transit-paper);
@@ -731,8 +738,8 @@ body {
   min-height: 44px;
   margin-top: 0.5rem;
   padding-inline: 0.875rem;
-  border: 1px solid var(--transit-charcoal);
-  border-radius: 4px;
+  border: 1px solid var(--schedule-control-border);
+  border-radius: 8px;
   color: var(--transit-paper);
 }
 

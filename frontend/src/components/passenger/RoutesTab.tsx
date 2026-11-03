@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ArrowLeft, ChevronRight, Search } from "lucide-react";
 import { usePassengerRouteConfig } from "@/hooks/usePassengerRouteConfig";
 import { useRoutes } from "@/hooks/useRoutes";
@@ -23,7 +23,7 @@ function lineLabel(name: string) {
 function LineBadge({ schedule }: { schedule: PassengerRouteSchedule }) {
   const accent = /^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(schedule.color) ? schedule.color : undefined;
   return (
-    <span className="schedule-line-badge" style={{ borderBottomColor: accent }}>
+    <span className="schedule-line-badge" style={{ "--route-accent": accent } as CSSProperties}>
       <svg
         width={16}
         height={16}
@@ -35,11 +35,10 @@ function LineBadge({ schedule }: { schedule: PassengerRouteSchedule }) {
         strokeLinejoin="round"
         aria-hidden="true"
       >
-        <path d="M3.1 17.6A10.3 10.3 0 1 1 20.9 17.6" />
-        <path d="M6.2 10.2c0-2.8 2.1-4.3 5.8-4.3s5.8 1.5 5.8 4.3v6.2a2.2 2.2 0 0 1-2.2 2.2H8.4a2.2 2.2 0 0 1-2.2-2.2z" />
-        <path d="M6.2 11.8h11.6M9 18.6l-2.4 3m8.4-3 2.4 3M8 20.1h8" />
-        <circle cx="9.3" cy="15.3" r=".9" fill="currentColor" stroke="none" />
-        <circle cx="14.7" cy="15.3" r=".9" fill="currentColor" stroke="none" />
+        <rect x="4.5" y="3" width="15" height="16" rx="3" />
+        <path d="M9.5 6h5M4.5 13h15M4.5 8.5h-2v3m17-3h2v3M7 19v2.5m10-2.5v2.5" />
+        <circle cx="8" cy="16" r="1" fill="currentColor" stroke="none" />
+        <circle cx="16" cy="16" r="1" fill="currentColor" stroke="none" />
       </svg>
       {lineLabel(schedule.name)}
     </span>
