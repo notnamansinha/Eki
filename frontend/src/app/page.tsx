@@ -123,7 +123,7 @@ export default function HomePage() {
             textShadow: "0 2px 8px rgba(0,0,0,0.45)",
           }}
         >
-          View campus routes and available bus locations. Arrival estimates depend on live service data.
+          View campus routes and available bus locations, with arrival estimates based on live service data
         </p>
 
         <div className="flex flex-col sm:flex-row w-full sm:w-auto gap-4">

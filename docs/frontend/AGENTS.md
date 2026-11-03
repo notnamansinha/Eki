@@ -35,3 +35,4 @@ The headline and description use soft black text shadows. Option B adds a
 centred 1.3× scale to the landing portrait artwork. Keep the portrait
 `sizes` in step with the CSS scale. The passenger background and landscape
 composition use the base cover fit.
+Keep the landing description free of full stops.

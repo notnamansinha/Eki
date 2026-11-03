@@ -144,3 +144,5 @@ label identifies the provider.
 
 The headline and description use a black text shadow with a 2px offset and
 8px blur at 48% and 45% opacity respectively.
+The description reads “View campus routes and available bus locations, with
+arrival estimates based on live service data” without full stops.

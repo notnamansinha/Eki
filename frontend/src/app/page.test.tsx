@@ -21,7 +21,7 @@ describe("landing sign-in and redirect recovery", () => {
   it("qualifies tracking and arrival estimates by live service availability", () => {
     render(<HomePage />);
     expect(screen.getByRole("heading", { name: /Campus routes.*and bus tracking/ })).toBeTruthy();
-    expect(screen.getByText(/Arrival estimates depend on live service data/)).toBeTruthy();
+    expect(screen.getByText(/arrival estimates based on live service data/)).toBeTruthy();
   });
   it("enables sign-in when ready and shows redirect fallback only after a popup failure", () => {
     const { rerender } = render(<HomePage />);
