@@ -28,7 +28,10 @@ vi.mock("@/components/passenger/AccountTab", () => ({ default: () => <button>QA 
 vi.mock("@/components/passenger/RoutesTab", () => ({ default: () => <h2>QA route schedules</h2> }));
 vi.mock("@/components/shared/MessagingPanel", () => ({ default: () => <div>QA chat</div> }));
 vi.mock("@/components/shared/FeedbackModal", () => ({ default: () => <div>QA feedback</div> }));
-beforeEach(() => setScenario("pending"));
+beforeEach(() => {
+  window.history.replaceState(null, "", window.location.pathname);
+  setScenario("pending");
+});
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe("passenger workspace navigation", () => {
   it("retains an open stale ride as paused while removing it from new route choices, then recovers", async () => {
@@ -141,7 +144,7 @@ describe("passenger workspace navigation", () => {
   it("keeps Routes on the list when tapped repeatedly", async () => {
     render(<PassengerWorkspace />); const user = userEvent.setup();
     await screen.findByRole("button", { name: "Track QA route" });
-    await user.click(screen.getByRole("button", { name: "Map" }));
+    await user.click(screen.getByRole("button", { name: "Live" }));
     expect(screen.getByRole("button", { name: "Track QA route" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Back to home" })).toBeNull();
   });
@@ -189,7 +192,7 @@ describe("passenger workspace navigation", () => {
     render(<PassengerWorkspace />); const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Profile" }));
     expect(await screen.findByRole("button", { name: "QA account control" })).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Map" }));
+    await user.click(screen.getByRole("button", { name: "Live" }));
     expect(await screen.findByRole("button", { name: "Track QA route" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "QA account control" })).toBeNull();
   });
@@ -270,7 +273,7 @@ describe("passenger tab switching and footer", () => {
     expect(screen.queryByText("QA account control")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Profile" }));
     const account = await screen.findByText("QA account control");
-    await user.click(screen.getByRole("button", { name: "Map" }));
+    await user.click(screen.getByRole("button", { name: "Live" }));
     expect(account.isConnected).toBe(true);
     expect(account.closest("[inert]")).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Profile" }));
@@ -279,7 +282,7 @@ describe("passenger tab switching and footer", () => {
   });
   it("marks the selected section immediately and survives rapid switching", async () => {
     render(<PassengerWorkspace />); const user = userEvent.setup();
-    const routes = screen.getByRole("button", { name: "Map" }); const profile = screen.getByRole("button", { name: "Profile" });
+    const routes = screen.getByRole("button", { name: "Live" }); const profile = screen.getByRole("button", { name: "Profile" });
     expect(routes.getAttribute("aria-current")).toBe("page");
     for (let i = 0; i < 9; i++) await user.click(i % 2 ? routes : profile);
     expect(profile.getAttribute("aria-current")).toBe("page");
@@ -290,10 +293,10 @@ describe("passenger tab switching and footer", () => {
   });
   it("opens the Routes schedule tab from the navigation and returns to the map", async () => {
     render(<PassengerWorkspace />); const user = userEvent.setup();
-    const map = screen.getByRole("button", { name: "Map" });
+    const map = screen.getByRole("button", { name: "Live" });
     const routes = screen.getByRole("button", { name: "Routes" });
     const profile = screen.getByRole("button", { name: "Profile" });
-    // Order in the bar: Map, Routes, Profile.
+    // Order in the bar: Live, Routes, Profile.
     expect(screen.getAllByRole("button").filter(button => [map, routes, profile].includes(button))).toEqual([map, routes, profile]);
     expect(screen.queryByText("QA route schedules")).toBeNull();
     await user.click(routes);
@@ -318,7 +321,7 @@ describe("passenger tab switching and footer", () => {
     await user.click(screen.getByRole("button", { name: "Routes" }));
     await screen.findByRole("heading", { name: "QA route schedules" });
     expect(screen.queryByText("QA chat")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Map" }));
+    await user.click(screen.getByRole("button", { name: "Live" }));
     await user.click(await screen.findByRole("button", { name: "Track QA route" }));
     expect(await screen.findByRole("button", { name: "Open live chat" })).toBeTruthy();
     expect(screen.queryByText("QA chat")).toBeNull();
@@ -332,6 +335,6 @@ describe("passenger tab switching and footer", () => {
     const nav = screen.getByRole("navigation", { name: "Passenger sections" });
     const frame = nav.closest(".pb-safe") as HTMLElement;
     expect(frame).not.toBeNull();
-    expect(frame.style.background).toContain("rgba(22, 22, 26");
+    expect(frame.classList.contains("passenger-nav-frame")).toBe(true);
   });
 });
