@@ -97,6 +97,18 @@ describe("passenger Routes tab", () => {
     expect(screen.getByText("No routes match your search.")).toBeTruthy();
   });
 
+  it("keeps an active search clearable after routes are unpublished down to one", async () => {
+    const { rerender } = render(<RoutesTab />);
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("searchbox"), "library");
+    state.routes = [express];
+    rerender(<RoutesTab />);
+    expect(screen.getByText("No routes match your search.")).toBeTruthy();
+    await user.clear(screen.getByRole("searchbox"));
+    expect(screen.getByRole("button", { name: "View schedule for Express" })).toBeTruthy();
+    expect(screen.queryByRole("searchbox")).toBeNull();
+  });
+
   it("keeps Back usable when the selected schedule is unpublished", async () => {
     const { rerender } = render(<RoutesTab />);
     await userEvent.setup().click(screen.getByRole("button", { name: "View schedule for Campus Loop" }));

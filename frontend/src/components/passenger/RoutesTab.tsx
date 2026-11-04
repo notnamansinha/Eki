@@ -99,7 +99,8 @@ function RouteSchedules({ onRetry }: { onRetry: () => void }) {
         <header className="schedule-list-header">
           <h1 id="schedule-list-title" ref={listHeading} tabIndex={-1}>Routes</h1>
           <p>Stops and scheduled times for each route.</p>
-          {!loading && !error && schedules.length > 1 && (
+          {/* Keep a typed filter clearable if routes are unpublished down to one. */}
+          {!loading && !error && (schedules.length > 1 || search !== "") && (
             <label className="schedule-search">
               <Search size={16} aria-hidden="true" />
               <input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search routes or stops" aria-label="Search routes or stops" />
