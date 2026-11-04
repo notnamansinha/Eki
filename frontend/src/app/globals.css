@@ -89,6 +89,122 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* Each orientation has its own approved composition. Cover fills other screen
+   ratios with proportional cropping, without stretching or empty borders. */
+.transit-artwork {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  background: var(--surface-0);
+}
+
+.transit-artwork picture,
+.transit-artwork img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.transit-artwork img {
+  object-fit: cover;
+  object-position: center;
+}
+
+.transit-artwork-shade {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 40%);
+}
+
+/* Keep the painting on the viewport when short landscape screens or zoomed
+   text need a scrollable login page. No JS measurements or motion required. */
+.transit-landing > .transit-artwork {
+  position: fixed;
+}
+
+@media (orientation: portrait) {
+  .transit-landing .transit-artwork img {
+    transform: scale(1.3);
+  }
+}
+
+.transit-landing-content {
+  padding-top: max(clamp(1rem, 4dvh, 3rem), env(safe-area-inset-top));
+  padding-bottom: clamp(1rem, 4dvh, 3rem);
+}
+
+.transit-landing-content h1 {
+  font-size: clamp(2.5rem, 15vw, 3.75rem);
+  margin-bottom: clamp(0.75rem, 3dvh, 1.5rem);
+}
+
+.transit-landing-content > p {
+  font-size: clamp(1rem, 2.5dvh, 1.25rem);
+  margin-bottom: clamp(1.25rem, 4.5dvh, 3rem);
+}
+
+.transit-landing-content,
+.transit-landing-footer {
+  padding-left: max(1.5rem, env(safe-area-inset-left));
+  padding-right: max(1.5rem, env(safe-area-inset-right));
+}
+
+.transit-landing-footer {
+  padding-bottom: max(clamp(1rem, 3dvh, 2rem), env(safe-area-inset-bottom));
+}
+
+@media (min-width: 48rem) {
+  /* Desktop width does not imply a tall viewport: browser chrome and OS
+     scaling can leave only 585 CSS pixels on a 1080p display at 100% zoom. */
+  .transit-landing-content h1 {
+    font-size: clamp(3rem, min(7.5vw, 11dvh), 6rem);
+  }
+
+  .transit-landing-content > p {
+    font-size: clamp(1.125rem, min(2.35vw, 3.5dvh), 1.875rem);
+  }
+
+  .transit-landing-content,
+  .transit-landing-footer {
+    padding-left: max(3rem, env(safe-area-inset-left));
+    padding-right: max(3rem, env(safe-area-inset-right));
+  }
+}
+
+/* Make room for the guide link and footer on short phones in either orientation. */
+@media (max-height: 32rem) {
+  .transit-landing-content {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+    padding-bottom: 0.75rem;
+  }
+
+  .transit-landing-content h1 {
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    margin-bottom: 1rem;
+  }
+
+  .transit-landing-content h1 br {
+    display: none;
+  }
+
+  .transit-landing-content > p {
+    font-size: 1rem;
+    margin-bottom: 0.875rem;
+  }
+
+  .transit-landing-content > div > button {
+    min-height: 44px;
+    padding-block: 0.5rem;
+    font-size: 1rem;
+  }
+
+  .transit-landing-footer {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+}
+
 /* Keep the shared hero image, but remove the loading panel and nav once the
    passenger workspace has mounted above the shell. */
 .passenger-layout:has([data-passenger-workspace]) [data-passenger-loading-placeholder] {

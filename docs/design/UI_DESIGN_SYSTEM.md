@@ -235,7 +235,7 @@ The dot pulses while an online bus is moving. "Service paused" replaces the trip
 | `accent-emerald-500` | Route checkboxes in admin Passenger Routes | same |
 | `#e9bc55`, `#fbd66d`, `#e8ac37`, `#9a5d13` and related | Decorative profile coin | `app/globals.css` (`.profile-coin*`) |
 | `#09090b`, `#0f0f12` | Admin inputs, menus and toolbars (`bg-[#09090b]`, `bg-[#0f0f12]`) | admin panels |
-| `bg-black`, `bg-black/40`, `text-white` | Landing page and its hero overlay | `app/page.tsx` |
+| `bg-black`, `text-white`, 40% black shade | Landing page and shared illustration overlay | `app/page.tsx`, `components/shared/TransitArtwork.tsx`, `app/globals.css` |
 
 ## 4. Contrast
 
@@ -296,7 +296,7 @@ Tailwind size utilities keep their defaults: `text-xs` 12/16 px, `text-sm` 14/20
 
 | Role | Size | Weight | Line height | Example |
 |---|---|---|---|---|
-| Landing headline | 60 px, 80 px at `md`, 96 px at `lg` | 900 | 1.05 | "Campus routes and bus tracking" |
+| Landing headline | 28 to 96 px, sized by viewport width and height | 900 | 1.05 | "Track your campus bus" |
 | Screen title | 32 px | 900 | 1 | "Live Routes", "Routes" |
 | Route schedule card title | 17 px | 800 | 1.375 | Route name in the Routes tab |
 | Route schedule stop and time | 14 px stop name, 12 px time with `tabular-nums` | 700 / 600 | 1.375 / 1.5 | "Central Library", "7:38 am" |
@@ -426,7 +426,7 @@ A signed-in user leaves `/` for the saved workspace or the default for the role.
 
 ### 7.2 Landing page
 
-`app/page.tsx` shows a full-screen hero image (`/images/hero-background.webp`, JPEG fallback) under a `bg-black/40` overlay, the university logo at the top left, the headline and subtitle, a white pill **Sign In with Google** button and a footer. Until sign-in is usable the button shows a spinner and "Preparing sign-in…". The full-page sign-in link, a sign-in error (`role="alert"`) and a status line with **Reload** appear below the button when relevant: "Sign-in is still loading." after 10 s without sign-in, or "Still checking your sign-in. The connection looks slow; this continues on its own." when restoring a saved session takes more than 8 s. A signed-in user sees a spinner with "Finishing your sign-in…" or "Opening your workspace…". An access error replaces the page with **Try again**, **Sign out** and **Reload**.
+`app/page.tsx` and the persistent passenger shell share `components/shared/TransitArtwork.tsx`: a responsive WebP picture using the user's approved tree-view paintings (841x1870 portrait and 1672x941 landscape), with a full-size landscape WebP fallback and the existing 40% black shade. PNG masters are archived outside the deployed app. Viewport orientation selects the composition; `object-fit: cover` fills other ratios with proportional cropping and no empty borders or stretching. The landing has no AU logo or logo header. Headline, description and spacing respond to both viewport width and height so the sign-in button and footer fit at 1280x585 CSS pixels, including a 150%-scaled desktop at 100% browser zoom. Safe-area insets protect the content and footer. The fixed background fills the screen while the document can grow for enlarged text or additional auth notices. Asset provenance and regeneration are in [Transit artwork delivery](../context-docs/TRANSIT_ARTWORK.md). Until sign-in is usable the button shows a spinner and "Preparing sign-in…". The full-page sign-in link, a sign-in error (`role="alert"`) and a status line with **Reload** appear below the button when relevant: "Sign-in is still loading." after 10 s without sign-in, or "Still checking your sign-in. The connection looks slow; this continues on its own." when restoring a saved session takes more than 8 s. A signed-in user sees a spinner with "Finishing your sign-in…" or "Opening your workspace…". An access error replaces the page with **Try again**, **Sign out** and **Reload**.
 
 ### 7.3 Passenger workspace
 
