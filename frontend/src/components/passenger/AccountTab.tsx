@@ -2,13 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import WorkspaceLink from "@/components/shared/WorkspaceLink";
-import { CircleUserRound, LogOut, ChevronRight, LogIn, HeartHandshake, Trash2, LayoutDashboard } from "lucide-react";
+import { CircleUserRound, LogOut, ChevronRight, LogIn, ClipboardPenLine, Trash2, LayoutDashboard } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import FeedbackModal from "@/components/shared/FeedbackModal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { auth } from "@/lib/firebaseAuth";
 import { apiRequest } from "@/lib/apiClient";
-import { PASSENGER_NAV_HEIGHT_PX } from "./passengerFrame";
+import { passengerNavHeight } from "./passengerFrame";
 
 function ProfilePhoto({ photoURL }: { photoURL?: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -97,7 +97,7 @@ export default function AccountTab() {
       {/* Scroll past the navigation and its safe area, plus the previous 47px breathing room. */}
       <div
         className="w-full max-w-lg mx-auto space-y-6 mt-10"
-        style={{ paddingBottom: `calc(${PASSENGER_NAV_HEIGHT_PX + 47}px + var(--safe-area-bottom))` }}
+        style={{ paddingBottom: `calc(${passengerNavHeight} + 47px + var(--safe-area-bottom))` }}
       >
         
         {/* Profile Header */}
@@ -180,7 +180,7 @@ export default function AccountTab() {
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors"
                 style={{ background: "var(--surface-3)" }}>
-                  <HeartHandshake className="w-4 h-4" style={{ color: "var(--text-tertiary)" }} />
+                  <ClipboardPenLine aria-hidden="true" className="w-4 h-4" style={{ color: "var(--text-tertiary)" }} />
               </div>
               <span className="text-[13px] font-semibold" style={{ color: "var(--text-secondary)" }}>
                 Send Feedback
