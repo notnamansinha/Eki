@@ -76,11 +76,37 @@ describe("passenger workspace navigation", () => {
     setScenario("reconnecting"); render(<PassengerWorkspace />);
     expect(screen.queryByRole("button", { name: "Track QA route" })).toBeNull();
     expect(screen.getByText("Reconnecting to live bus data...")).toBeTruthy();
+    expect(screen.getByText("Unable to reach live data. Check your connection.")).toBeTruthy();
   });
   it("labels an initial connection separately from reconnecting", () => {
     const resume=vi.spyOn(fixtures,"useRTDBResume").mockReturnValue({isConnected:false,isResuming:true,resumeGeneration:0,connectionGeneration:0,markSnapshotReceived:()=>{}});
     try { render(<PassengerWorkspace />);expect(screen.getByText("Connecting to live bus data...")).toBeTruthy(); }
     finally {resume.mockRestore();}
+  });
+  it("does not blame the connection while connected but waiting on the live projection", () => {
+    setScenario("projection-unready");
+    const resume = vi.spyOn(fixtures, "useRTDBResume").mockReturnValue({ isConnected: true, isResuming: true,
+      resumeGeneration: 0, connectionGeneration: 1, markSnapshotReceived: () => {} });
+    try {
+      render(<PassengerWorkspace />);
+      expect(screen.getByText("Live bus data unavailable.")).toBeTruthy();
+      expect(screen.getByText("Live bus data is not available right now.")).toBeTruthy();
+      expect(screen.queryByText("Reconnecting to live bus data...")).toBeNull();
+      expect(screen.queryByText("Unable to reach live data. Check your connection.")).toBeNull();
+    } finally { resume.mockRestore(); }
+  });
+  it("pauses tracking without blaming the connection while connected and waiting for a snapshot", async () => {
+    setScenario("forward");
+    const resume = vi.spyOn(fixtures, "useRTDBResume").mockReturnValue({ isConnected: true, isResuming: true,
+      resumeGeneration: 0, connectionGeneration: 1, markSnapshotReceived: () => {} });
+    try {
+      render(<PassengerWorkspace />); const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Track QA route" }));
+      expect((await screen.findAllByText("Live tracking paused")).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/Live bus data is not available right now\./).length).toBeGreaterThan(0);
+      expect(screen.queryByText(/This device is reconnecting/)).toBeNull();
+      expect(screen.queryByText("Reconnecting to live bus data...")).toBeNull();
+    } finally { resume.mockRestore(); }
   });
   it("acknowledges a ready empty catalog without waiting for a nonexistent bus subscription", async () => {
     setScenario("empty");
@@ -89,6 +115,8 @@ describe("passenger workspace navigation", () => {
       resumeGeneration: 0, connectionGeneration: 1, markSnapshotReceived: received });
     try {
       render(<PassengerWorkspace />);
+      // Connected and waiting with no error: the hint must not depend on liveDataError alone.
+      expect(screen.getByText("Live bus data is not available right now.")).toBeTruthy();
       await waitFor(() => expect(received).toHaveBeenCalled());
     } finally { resume.mockRestore(); }
   });
