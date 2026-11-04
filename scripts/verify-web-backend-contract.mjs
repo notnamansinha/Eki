@@ -48,6 +48,7 @@ const sleepFor = ms => new Promise(resolve => setTimeout(resolve, ms));
 /** Read-only release gate: reject dead tunnels, error pages and blocked CORS. */
 export async function verifyBackendAvailability(origin, frontendOrigin, fetchImpl = fetch, {
   readinessDeadlineMs = 90_000, sleep = sleepFor, now = () => Date.now(), log = console.log,
+  timeoutSignal = ms => AbortSignal.timeout(ms),
 } = {}) {
   if (!frontendOrigin || new URL(frontendOrigin).origin !== frontendOrigin) {
     throw new Error("EKI_FRONTEND_ORIGIN must be the deployed frontend origin.");
@@ -69,7 +70,7 @@ export async function verifyBackendAvailability(origin, frontendOrigin, fetchImp
     const timeoutMs = attempt === 1 ? 10_000 : Math.min(10_000, left);
     try {
       response = await fetchImpl(`${origin}/health`, {
-        headers, redirect: "error", signal: AbortSignal.timeout(timeoutMs),
+        headers, redirect: "error", signal: timeoutSignal(timeoutMs),
       });
       if (!STARTING_STATUSES.has(response.status)) {
         // The timeout also covers the body: read it here, so a body that stalls

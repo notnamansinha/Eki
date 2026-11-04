@@ -50,7 +50,7 @@ Counters are process-local. Compare deltas per fix or per cycle on the current l
 | Sweep page size | 25 nodes | `backend/src/services/staleBusSweeper.ts:4` |
 | Concurrent sweep transactions | 4 | `backend/src/services/staleBusSweeper.ts:5` |
 | Retry after a failed page | 1 s, doubling to 30 s | `backend/src/services/staleBusSweeper.ts:18` |
-| Sweep tick | 1 s | `backend/src/services/tripStateEngine.ts:1356` |
+| Sweep tick | 1 s | `backend/src/services/tripStateEngine.ts:1367` |
 | `BUS_STALE_MS` | Default 300,000 ms; a value below 90,000 ms or not a number uses the default | `backend/src/services/tripStateEngine.ts:110` |
 | RTDB index | `activeBuses` `.indexOn` includes `timestamp` | `database.rules.json:8` |
 

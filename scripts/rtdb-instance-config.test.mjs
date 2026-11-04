@@ -53,4 +53,21 @@ describe("RTDB instance configuration", () => {
       expectedRegion: "asia-southeast1",
     }), { region: "asia-southeast1" });
   });
+
+  it("requires the expected region for a release", () => {
+    const singapore = "https://eki-live.asia-southeast1.firebasedatabase.app";
+    for (const expectedRegion of [undefined, ""]) {
+      assert.throws(() => verifyMatchingRtdbInstances({
+        backendUrl: singapore,
+        frontendUrl: singapore,
+        expectedRegion,
+        requireRegion: true,
+      }), /RTDB_EXPECTED_REGION is required/);
+    }
+    assert.deepEqual(verifyMatchingRtdbInstances({
+      backendUrl: singapore,
+      frontendUrl: singapore,
+      requireRegion: false,
+    }), { region: "asia-southeast1" });
+  });
 });
