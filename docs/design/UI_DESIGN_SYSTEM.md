@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 2.2 | Current | 2026-11-03 |
+| EKI-UIX-001 | 2.3 | Current | 2026-11-04 |
 
 ## 1. Purpose
 
@@ -235,7 +235,7 @@ The dot pulses while an online bus is moving. "Service paused" replaces the trip
 | `accent-emerald-500` | Route checkboxes in admin Passenger Routes | same |
 | `#e9bc55`, `#fbd66d`, `#e8ac37`, `#9a5d13` and related | Decorative profile coin | `app/globals.css` (`.profile-coin*`) |
 | `#09090b`, `#0f0f12` | Admin inputs, menus and toolbars (`bg-[#09090b]`, `bg-[#0f0f12]`) | admin panels |
-| `bg-black`, `bg-black/40`, `text-white` | Landing page and its hero overlay | `app/page.tsx` |
+| `bg-black`, `text-white`, 40% black shade | Landing page and shared illustration overlay | `app/page.tsx`, `components/shared/TransitArtwork.tsx`, `app/globals.css` |
 
 ## 4. Contrast
 
@@ -296,7 +296,7 @@ Tailwind size utilities keep their defaults: `text-xs` 12/16 px, `text-sm` 14/20
 
 | Role | Size | Weight | Line height | Example |
 |---|---|---|---|---|
-| Landing headline | 60 px, 80 px at `md`, 96 px at `lg` | 900 | 1.05 | "Campus routes and bus tracking" |
+| Landing headline | 28 to 96 px, sized by viewport width and height | 900 | 1.05 | "Track your campus bus" |
 | Screen title | 32 px | 900 | 1 | "Live Routes", "Routes" |
 | Route schedule card title | 17 px | 800 | 1.375 | Route name in the Routes tab |
 | Route schedule stop and time | 14 px stop name, 12 px time with `tabular-nums` | 700 / 600 | 1.375 / 1.5 | "Central Library", "7:38 am" |
@@ -304,7 +304,7 @@ Tailwind size utilities keep their defaults: `text-xs` 12/16 px, `text-sm` 14/20
 | Admin section heading | 18 to 20 px | 700 to 800 | 28 px | "Ride History", "Settings" |
 | Body and descriptions | 13 to 15 px | 500 | 1.5 | Home subtitle |
 | Controls (selects, small buttons) | 12 px | 600 to 700 | 16 px | Stop pickers, **Board** |
-| Bottom navigation label | 13 px | 700 | 1 | "Map", "Routes", "Profile" |
+| Bottom navigation label | 13 px | 700 | 1 | "Live", "Routes", "Profile" |
 | Tracking status line | 10 px uppercase, `tracking-wider` | 700 | 1.5 | `Ride in service · Live` |
 | Timeline stop name | 14 px (next or selected), otherwise 13 px | 600 / 500 | 1.5 | Stop name |
 | ETA | 18 px | 800 | 28 px | Minutes, or "Due" |
@@ -322,14 +322,16 @@ Spacing uses the Tailwind 4 default unit `--spacing: 0.25rem` (4 px); the projec
 | Constant | Value | Source |
 |---|---|---|
 | `PASSENGER_NAV_HEIGHT_PX` | 81 (1 px border plus an 80 px bar) | `components/passenger/passengerFrame.ts` |
-| `PASSENGER_PANEL_NAV_GAP_PX` | 29 | same |
+| `PASSENGER_PANEL_NAV_GAP_PX` | 29; 12 on short touch screens (`--passenger-panel-nav-gap`) | same |
 | `passengerNavClearance` | `calc(81px + var(--safe-area-bottom))`; bottom of the timeline sheet and chat overlay | same |
-| Home top spacer | `34vh`, at least `min(250px, 20dvh)` | same |
+| Home top spacer | `34vh`, at least `min(250px, 20dvh)`; 1 rem on short touch screens, 0.5 rem at 360 px tall or less | same, and `app/globals.css` |
 | App shell height | `100dvh` for passenger and admin | `app/passenger/layout.tsx`, `app/admin/page.tsx` |
 | Tracking header width | At most 512 px (`max-w-lg`), centred | `components/passenger/PassengerWorkspace.tsx` |
 | Admin tab bar width | At most 1280 px (`max-w-7xl`) | `app/admin/page.tsx` |
 | Map fit padding | Top: the larger of 32 px and header height plus 24 px. Bottom: timeline sheet overlap plus 24 px, at most 65 % of the map height. Sides: 32 px. | `components/maps/PassengerMap.tsx` |
 | Map zoom | Passenger default 15, following a bus 16; admin default 12, 15 when centring a bus | `PassengerMap.tsx`, `DashboardPanel.tsx` |
+
+Short touch screens, at most 480 px tall without a fine pointer (landscape phones), get a compact home in `app/globals.css`. Besides the spacer and gap above, the title drops to 24 px and the subtitle to 13 px, hidden at 360 px tall or less. The route list's bottom padding drops from 128 px to 8 px. Together these leave room in the panel for at least one route card. Pointer-equipped `(any-pointer: fine)` windows keep their own centred desktop layout at every height. On any screen at most 480 px tall, the tracking header (back button, ride card and chat button) is hidden while the route timeline sheet is open, because the open sheet reaches it and the header would cover the sheet's handle.
 
 ### 6.2 Radii
 
@@ -422,24 +424,28 @@ flowchart TD
 
 Figure 1. Navigation between routes and views for each role.
 
-A signed-in user leaves `/` for the saved workspace or the default for the role. In `/passenger`, the bottom navigation switches between Map (home and tracking), Routes and Profile. Administrators switch between `/admin` and `/passenger` with **Passenger Panel** and **Profile > Admin Panel**.
+A signed-in user leaves `/` for the saved workspace or the default for the role. In `/passenger`, the bottom navigation switches between Live (home and tracking), Routes and Profile. Administrators switch between `/admin` and `/passenger` with **Passenger Panel** and **Profile > Admin Panel**.
 
 ### 7.2 Landing page
 
-`app/page.tsx` shows a full-screen hero image (`/images/hero-background.webp`, JPEG fallback) under a `bg-black/40` overlay, the university logo at the top left, the headline and subtitle, a white pill **Sign In with Google** button and a footer. Until sign-in is usable the button shows a spinner and "Preparing sign-in…". The full-page sign-in link, a sign-in error (`role="alert"`) and a status line with **Reload** appear below the button when relevant: "Sign-in is still loading." after 10 s without sign-in, or "Still checking your sign-in. The connection looks slow; this continues on its own." when restoring a saved session takes more than 8 s. A signed-in user sees a spinner with "Finishing your sign-in…" or "Opening your workspace…". An access error replaces the page with **Try again**, **Sign out** and **Reload**.
+`app/page.tsx` and the persistent passenger shell share `components/shared/TransitArtwork.tsx`: a responsive WebP picture using the user's approved tree-view paintings (841x1870 portrait and 1672x941 landscape), with a full-size landscape WebP fallback and the existing 40% black shade. PNG masters are archived outside the deployed app. Viewport orientation selects the composition; `object-fit: cover` fills other ratios with proportional cropping and no empty borders or stretching. The landing has no AU logo or logo header. Headline, description and spacing respond to both viewport width and height so the sign-in button and footer fit at 1280x585 CSS pixels, including a 150%-scaled desktop at 100% browser zoom. Safe-area insets protect the content and footer. The fixed background fills the screen while the document can grow for enlarged text or additional auth notices. Asset provenance and regeneration are in [Transit artwork delivery](../context-docs/TRANSIT_ARTWORK.md). Until sign-in is usable the button shows a spinner and "Preparing sign-in…". The full-page sign-in link, a sign-in error (`role="alert"`) and a status line with **Reload** appear below the button when relevant: "Sign-in is still loading." after 10 s without sign-in, or "Still checking your sign-in. The connection looks slow; this continues on its own." when restoring a saved session takes more than 8 s. A signed-in user sees a spinner with "Finishing your sign-in…" or "Opening your workspace…". An access error replaces the page with **Try again**, **Sign out** and **Reload**.
 
 ### 7.3 Passenger workspace
 
 `components/passenger/PassengerWorkspace.tsx` stacks four absolutely positioned views and a fixed bottom navigation. Hidden views are `inert` and `aria-hidden`; the Routes and Profile views mount on their first visit and then stay mounted. Reconnect, ride-recovery and error banners appear above the views.
 
+On desktop, the Live Routes panel is centered over the artwork, capped at 42 rem, with a shallow artwork spacer, compact route rows and a visible list scrollbar. A compact dock centers the Live, Routes and Profile tabs beneath the panel. Touch-only windows use the full-width bottom navigation with outline icons and a gold active marker. The published Routes tab moves the same navigation to a top bar on wide pointer-equipped desktop windows. Keyboard selection moves focus into tracking and Back restores it to the selected route or the list heading if the route has disappeared.
+
 | View | Structure |
 |---|---|
-| Map (home) | Hero image above a rounded panel titled "Live Routes". The panel scrolls the announcement (when active) and one card per route with an active or available bus: route name, first and last stop, stop count and duration, and an action in `--accent` ("TRACK ROUTE", "VIEW STATUS" or "<n> AVAILABLE"). Without routes it shows the configured no-buses message and service start time. |
+| Live (home) | Hero image above a rounded panel titled "Live Routes". The panel scrolls the announcement (when active) and one card per route with an active or available bus: route name, first and last stop, stop count and duration, and an action in `--accent` ("TRACK ROUTE", "VIEW STATUS" or "<n> AVAILABLE"). Without routes it shows the configured no-buses message and service start time. |
 | Tracking | Full-bleed map. Over it, at the top: a 44 px back button and the ride card (bus picker when several buses are selectable, status and progress lines, boarding and destination pickers, **Board**, hints and results), then the chat button with an unread badge. Map notices sit at the top left and the **Center on bus** and **Show route overview** buttons (48 px) at the top right. The route timeline sheet is collapsed to a 56 px handle above the navigation. Chat opens as an overlay between the header and the navigation. |
 | Route ended | Replaces the tracking view when the tracked ride completes: flag icon, "Route ended", a "Waiting for next bus" pill and **Return to Live Routes**. After 10 s an eligible passenger sees the feedback modal and the view returns to the live route list. |
 | Routes | `components/passenger/RoutesTab.tsx`: title "Routes" with "Stops and scheduled times for each route.", then one card per published route in the order the administrator selected them. Each card on `--surface-2` with a `--border-subtle` border shows a dot in the route colour, the route name and the stop count, then the stops as a vertical timeline: a 3 px `--accent` line in the middle, a 14 px dot per stop (filled `--accent` at the first and last stop, `--surface-2` with an `--accent` ring otherwise), and the stop names alternating left and right with the time below in `--status-live` ("7:30 am") or "Time not set" in `--text-ghost`. States: "Loading routes…" with a spinner; "No routes published yet" on a dashed `--border-default` card; and the passenger error banner with **Retry**. |
 | Profile | `components/passenger/AccountTab.tsx`: photo, name and role; an action list with **Admin Panel** (administrators), **Send Feedback**, **Sign Out** and **Delete Account** (passengers). Sign-out and deletion ask for confirmation. Signed out, the list offers **Sign in with Google** in `--accent`. |
-| Bottom navigation | Three 60 px high buttons, **Map**, **Routes** and **Profile**, that share the bar width up to 140 px each, so they fit a 320 px screen. The active button is marked with `aria-current="page"`; **Map** stays active during tracking. |
+| Bottom navigation | Three 60 px high buttons, **Live**, **Routes** and **Profile**, that share the bar width up to 140 px each, so they fit a 320 px screen. The active button is marked with `aria-current="page"`; **Live** stays active during tracking. |
+
+The published timetable uses flat rows with compact bus-front line badges. Search matches the published route label and stop names locally. On wide screens the timetable sits beside the list. On smaller screens a route opens its timetable with Back and focus restoration. Stop labels and scheduled times sit on the right of a single gold line. The page uses the Ahmedabad University palette and the existing app font. It uses the published schedule sources without rendering a map or computing live ETAs.
 
 ### 7.4 Administrator workspace
 
@@ -511,7 +517,7 @@ Shared CSS classes in `app/globals.css` that components use: `.btn-primary`, `.b
 
 ### 8.2 Icons
 
-All icons come from `lucide-react` 1.27.0, imported per icon; `next.config.ts` lists the package in `optimizePackageImports`. Examples: `BusFront` (bus glyph), `Navigation` (**Center on bus**), `Route` (route overview, timeline, the Passenger Routes settings header), `WifiOff` (health and reconnect notices), `MapPinned`, `ListOrdered` and `CircleUserRound` (bottom navigation), `MessageCircle` (chat), `Flag` (route ended), `ShieldAlert`, `AlertTriangle` and `Info` (dialog variants), `Loader2` (spinners). Common sizes: 16 px in admin tabs and lists, 20 px in map controls, 22 px with stroke width 2.5 in the bottom navigation.
+Most icons come from `lucide-react` 1.27.0, imported per icon; `next.config.ts` lists the package in `optimizePackageImports`. Examples: `BusFront` (bus glyph), `Navigation` (**Center on bus**), `Route` (route overview, timeline, the Passenger Routes settings header), `WifiOff` (health and reconnect notices), `MapPinned` (Live), `UserRound` (Profile), `ClipboardPenLine` (**Send Feedback**), `MessageCircle` (chat), `Flag` (route ended), `ShieldAlert`, `AlertTriangle` and `Info` (dialog variants), `Loader2` (spinners). Common sizes: 16 px in admin tabs and lists, 20 px in map controls, 24 px with stroke width 2 in the passenger navigation. Routes uses Eki's connected-dots SVG.
 
 ### 8.3 Motion
 

@@ -10,9 +10,9 @@ export default defineConfig({
     url: baseURL, reuseExistingServer: false,
   },
   projects: [
-    { name: "narrow", use: { viewport: { width: 360, height: 800 } } },
-    { name: "mobile", use: { viewport: { width: 390, height: 844 } } },
-    { name: "reported-phone", use: { viewport: { width: 440, height: 956 } } },
+    { name: "narrow", use: { viewport: { width: 360, height: 800 }, hasTouch: true } },
+    { name: "mobile", use: { viewport: { width: 390, height: 844 }, hasTouch: true } },
+    { name: "reported-phone", use: { viewport: { width: 440, height: 956 }, hasTouch: true } },
     { name: "short-desktop", use: { viewport: { width: 1280, height: 585 } } },
     { name: "desktop", use: { viewport: { width: 1280, height: 800 } } },
   ],

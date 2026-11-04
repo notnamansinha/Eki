@@ -8,8 +8,8 @@ async function injectInsets(page: Page, top = 47, bottom = 34) {
     .pt-safe{padding-top:${top}px!important}.pb-safe{padding-bottom:${bottom}px!important}` });
 }
 const nav = (page: Page) => page.locator("[data-passenger-workspace] nav");
-const navButton = (page: Page, name: "Map" | "Routes" | "Profile") => nav(page).getByRole("button", { name, exact: true });
-const homePanel = (page: Page) => page.locator("[data-passenger-workspace] h1", { hasText: "Live Routes" }).locator("xpath=../..");
+const navButton = (page: Page, name: "Live" | "Routes" | "Profile") => nav(page).getByRole("button", { name, exact: true });
+const homePanel = (page: Page) => page.locator("[data-passenger-workspace] .passenger-home-panel");
 
 async function paintedNavBottom(page: Page) {
   return nav(page).evaluate(element => {
@@ -23,12 +23,13 @@ async function paintedNavBottom(page: Page) {
 }
 
 for (const bottomInset of [0, 34]) {
-  test(`PAX-01 footer is painted to the screen edge and clears the panel (bottom inset ${bottomInset}px)`, async ({ page }) => {
+  test(`PAX-01 navigation clears the panel and respects the bottom inset (bottom inset ${bottomInset}px)`, async ({ page }) => {
     await page.goto("/");
     await injectInsets(page, bottomInset ? 47 : 0, bottomInset);
     await expect(nav(page)).toBeVisible();
     const viewport = page.viewportSize()!;
-    expect(await paintedNavBottom(page)).toBeGreaterThanOrEqual(viewport.height - 0.5);
+    const desktop = await page.evaluate(() => matchMedia("(any-pointer: fine)").matches);
+    expect(await paintedNavBottom(page)).toBeCloseTo(viewport.height - (desktop ? 16 : 0), 0);
     const panel = (await homePanel(page).boundingBox())!;
     const navBox = (await nav(page).boundingBox())!;
     expect(navBox.y - (panel.y + panel.height)).toBeGreaterThanOrEqual(8);
@@ -55,9 +56,9 @@ test("PAX-02 Profile switches settle quickly without exposing the loading screen
   await page.goto("/");
   await navButton(page, "Profile").click();
   await expect(page.getByRole("button", { name: "Send Feedback" })).toBeVisible();
-  await navButton(page, "Map").click();
+  await navButton(page, "Live").click();
   await page.waitForTimeout(700);
-  for (const destination of ["Profile", "Map", "Profile"] as const) {
+  for (const destination of ["Profile", "Live", "Profile"] as const) {
     const samples = await page.evaluate(async target => {
       const profileView = document.querySelector("[data-passenger-workspace] button")?.ownerDocument
         .evaluate("//button[normalize-space()='Send Feedback']", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)
@@ -92,9 +93,9 @@ test("PAX-02 Profile switches settle quickly without exposing the loading screen
 
 test("PAX-02 rapid switching ends on a coherent destination", async ({ page }) => {
   await page.goto("/");
-  for (let i = 0; i < 12; i++) await navButton(page, i % 2 ? "Map" : "Profile").click({ delay: 0 });
-  await navButton(page, "Map").click();
-  await expect(navButton(page, "Map")).toHaveAttribute("aria-current", "page");
+  for (let i = 0; i < 12; i++) await navButton(page, i % 2 ? "Live" : "Profile").click({ delay: 0 });
+  await navButton(page, "Live").click();
+  await expect(navButton(page, "Live")).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: "Live Routes" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Send Feedback" })).toBeHidden();
   await page.waitForTimeout(400);
@@ -131,7 +132,7 @@ test("PAX-03 feedback covers navigation and pointer taps cannot discard a draft"
   await page.goto("/");
   await injectInsets(page);
   const dialog = await openFeedback(page, "Synthetic unsent draft");
-  for (const name of ["Map", "Routes", "Profile"] as const) {
+  for (const name of ["Live", "Routes", "Profile"] as const) {
     const box = (await navButton(page, name).boundingBox())!;
     const hit = await page.evaluate(({ x, y }) => {
       const element = document.elementFromPoint(x, y);
@@ -157,7 +158,7 @@ test("PAX-03 keyboard focus stays in feedback; Escape keeps the draft and restor
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(page.getByRole("button", { name: "Send Feedback" })).toBeFocused();
-  await navButton(page, "Map").click();
+  await navButton(page, "Live").click();
   await navButton(page, "Profile").click();
   await page.getByRole("button", { name: "Send Feedback" }).click();
   await expect(page.getByRole("dialog").getByRole("textbox")).toHaveValue("Keyboard draft");
@@ -256,17 +257,86 @@ test("admin Passenger Panel switch is the last item of the sliding section row",
   await expect(link).toBeInViewport({ ratio: 1 });
 });
 
-test("edge: landscape phone and tiny heights keep the panel above a painted footer", async ({ page }) => {
-  for (const size of [{ width: 844, height: 390 }, { width: 320, height: 568 }]) {
-    await page.setViewportSize(size);
-    await page.goto("/");
-    await injectInsets(page, 0, 21);
-    await expect(nav(page)).toBeVisible();
-    expect(await paintedNavBottom(page)).toBeGreaterThanOrEqual(size.height - 0.5);
-    const panel = (await homePanel(page).boundingBox())!;
-    const navBox = (await nav(page).boundingBox())!;
-    expect(panel.y + panel.height, `${size.width}x${size.height}`).toBeLessThanOrEqual(navBox.y);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size.width);
+// Every sampled point must land on the element's own subtree, not on a control above it.
+async function hitTestable(page: Page, selector: string, points: { x: number; y: number }[]) {
+  return page.evaluate(({ selector, points }) => {
+    const element = document.querySelector(selector)!;
+    return points.every(({ x, y }) => element.contains(document.elementFromPoint(x, y)));
+  }, { selector, points });
+}
+
+// Landscape phones are touch screens, so they do not get the desktop
+// (any-pointer: fine) layout; the mouse run checks that layout's frame at the same size.
+const shortScreens = [
+  { width: 844, height: 390, hasTouch: true },
+  { width: 568, height: 320, hasTouch: true },
+  { width: 844, height: 390, hasTouch: false },
+  { width: 320, height: 568, hasTouch: true },
+];
+
+test("edge: landscape phone and tiny heights keep the panel above a painted footer", async ({ browser, baseURL }) => {
+  for (const { hasTouch, ...size } of shortScreens) {
+    const label = `${size.width}x${size.height}${hasTouch ? " touch" : " mouse"}`;
+    const context = await browser.newContext({ baseURL, viewport: size, hasTouch });
+    try {
+      const page = await context.newPage();
+      await page.goto("/?scenario=two-routes");
+      await injectInsets(page, 0, 21);
+      await expect(nav(page)).toBeVisible();
+      // Touch screens paint the bar to the edge; the desktop dock floats 16 px above it.
+      expect(await paintedNavBottom(page), label).toBeCloseTo(size.height - (hasTouch ? 0 : 16), 0);
+      const panel = (await homePanel(page).boundingBox())!;
+      const navBox = (await nav(page).boundingBox())!;
+      expect(panel.y + panel.height, label).toBeLessThanOrEqual(navBox.y);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size.width);
+
+      const landscape = size.width > size.height;
+      if (hasTouch && landscape) {
+        // The list stays inside the panel's clipped box, shows most of the first
+        // route card where it takes taps, and scrolls the last card's end into view.
+        const list = homePanel(page).locator("div.overflow-y-auto");
+        const listBox = (await list.boundingBox())!;
+        const listBottom = listBox.y + listBox.height;
+        expect(listBottom, label).toBeLessThanOrEqual(panel.y + panel.height + 0.5);
+        const shownPart = (card: { y: number; height: number }) => Math.min(card.y + card.height, listBottom) - Math.max(card.y, listBox.y);
+        const first = (await page.getByRole("button", { name: "Track QA route", exact: true }).boundingBox())!;
+        expect(shownPart(first), `${label}: first route card`).toBeGreaterThanOrEqual(first.height * 0.75);
+        const center = { x: first.x + first.width / 2, y: Math.max(first.y, listBox.y) + shownPart(first) / 2 };
+        expect(await hitTestable(page, "[aria-label='Track QA route']", [center]), label).toBe(true);
+        await list.evaluate(element => element.scrollTo({ top: element.scrollHeight, behavior: "instant" }));
+        const last = (await page.getByRole("button", { name: "Track QA route B", exact: true }).boundingBox())!;
+        expect(last.y + last.height, `${label}: last route card`).toBeLessThanOrEqual(listBottom + 0.5);
+        expect(shownPart(last), `${label}: last route card`).toBeGreaterThanOrEqual(last.height * 0.75);
+      }
+
+      if (landscape) {
+        // The open timeline's header takes taps across its width, including where
+        // the boarding card and chat button float over the map.
+        await page.goto("/?scenario=forward");
+        await injectInsets(page, 0, 21);
+        await page.addStyleTag({ content: "aside[aria-label='QA fixture controls']{display:none}" });
+        await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+        const chat = page.getByRole("button", { name: "Open live chat", exact: true });
+        await expect(chat).toBeVisible();
+        const chatBox = (await chat.boundingBox())!;
+        const toggle = page.getByRole("button", { name: "Route Timeline", exact: true });
+        await toggle.click();
+        await expect(toggle).toHaveAttribute("aria-expanded", "true");
+        // Sample only once the sheet has finished rising; its closed position is never covered.
+        await page.locator("[data-map-sheet]").evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
+        const box = (await toggle.boundingBox())!;
+        expect(box.y, label).toBeGreaterThanOrEqual(0);
+        const xs = [0.1, 0.3, 0.5, 0.7, 0.9].map(f => box.x + box.width * f).concat(chatBox.x + chatBox.width / 2);
+        const points = xs.flatMap(x => [{ x, y: box.y + 8 }, { x, y: box.y + box.height / 2 }]);
+        expect(await hitTestable(page, "[data-map-sheet] > button[aria-controls]", points), `${label}: timeline header covered`).toBe(true);
+        await page.keyboard.press("Escape");
+        await expect(toggle).toHaveAttribute("aria-expanded", "false");
+        await expect(chat).toBeVisible();
+        expect(await hitTestable(page, "[aria-label='Open live chat']", [{ x: chatBox.x + chatBox.width / 2, y: chatBox.y + chatBox.height / 2 }]), label).toBe(true);
+      }
+    } finally {
+      await context.close();
+    }
   }
 });
 
