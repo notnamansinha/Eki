@@ -445,7 +445,20 @@ body {
   outline-offset: -2px;
 }
 
-@media (not (any-pointer: fine)) {
+/* Distance from the safe area to the top edge of the navigation: the 1px border
+   plus the bar. The floating desktop dock (64px bar, 16px above the edge) also
+   reaches 81px. Sheets, chat and the home panel clear the navigation with it. */
+:root {
+  --passenger-nav-height: 81px;
+}
+
+/* `not all and` rather than `not (...)`, so Safari before 16.4 applies the same
+   compact bar and clearance together. */
+@media not all and (any-pointer: fine) {
+  :root {
+    --passenger-nav-height: 69px;
+  }
+
   .passenger-nav-frame {
     border-radius: 0;
   }

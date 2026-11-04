@@ -8,7 +8,7 @@ import FeedbackModal from "@/components/shared/FeedbackModal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { auth } from "@/lib/firebaseAuth";
 import { apiRequest } from "@/lib/apiClient";
-import { PASSENGER_NAV_HEIGHT_PX } from "./passengerFrame";
+import { passengerNavHeight } from "./passengerFrame";
 
 function ProfilePhoto({ photoURL }: { photoURL?: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -97,7 +97,7 @@ export default function AccountTab() {
       {/* Scroll past the navigation and its safe area, plus the previous 47px breathing room. */}
       <div
         className="w-full max-w-lg mx-auto space-y-6 mt-10"
-        style={{ paddingBottom: `calc(${PASSENGER_NAV_HEIGHT_PX + 47}px + var(--safe-area-bottom))` }}
+        style={{ paddingBottom: `calc(${passengerNavHeight} + 47px + var(--safe-area-bottom))` }}
       >
         
         {/* Profile Header */}
