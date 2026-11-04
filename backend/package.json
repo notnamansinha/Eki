@@ -41,7 +41,7 @@
     "pino": "^10.4.0"
   },
   "devDependencies": {
-    "@apidevtools/swagger-parser": "^12.1.0",
+    "@apidevtools/swagger-parser": "^13.1.0",
     "@firebase/rules-unit-testing": "^6.0.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",
