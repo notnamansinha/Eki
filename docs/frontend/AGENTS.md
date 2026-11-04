@@ -47,3 +47,17 @@ gives the route list a scrollbar, and leaves room above the floating nav.
 The loading shell shares the same desktop geometry. Keep the existing
 touch-only layout. Preserve route selection and restore keyboard focus to the
 route card when returning from tracking.
+
+## Passenger route schedules (2026-11-03)
+
+Passenger navigation labels are Live, Routes and Profile. Use Lucide
+MapPinned for Live, connected dots for Routes and Lucide UserRound for Profile.
+The Send Feedback action uses Lucide ClipboardPenLine.
+
+The Routes tab shows published schedules in compact rows with line badges.
+Use the front-facing bus glyph with mirrors and tires in both badge placements.
+Desktop shows a list and independently scrolling timetable beside it. Smaller
+screens open the timetable in place and Back returns focus to the selected row.
+Use the configured stop order and times from the existing route schedule
+sources. Use layered graphite surfaces, warm text, and muted route accents with
+the Ahmedabad University gold timeline and the existing app typeface. Route schedules must never start a live map or Maps request.

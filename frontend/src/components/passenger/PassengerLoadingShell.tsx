@@ -2,7 +2,6 @@ import TransitArtwork from "@/components/shared/TransitArtwork";
 import {
   passengerNavClassName,
   passengerNavFrameClassName,
-  passengerNavFrameStyle,
   passengerPanelClassName,
   passengerPanelStyle,
   passengerTopSpacerStyle,
@@ -54,7 +53,6 @@ export default function PassengerLoadingShell() {
       <div
         data-passenger-loading-placeholder
         className={`${passengerNavFrameClassName} z-20`}
-        style={passengerNavFrameStyle}
         aria-hidden="true"
       >
         <div className={passengerNavClassName}>
