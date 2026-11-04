@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 2.2 | Current | 2026-11-03 |
+| EKI-UIX-001 | 2.3 | Current | 2026-11-04 |
 
 ## 1. Purpose
 
@@ -322,14 +322,16 @@ Spacing uses the Tailwind 4 default unit `--spacing: 0.25rem` (4 px); the projec
 | Constant | Value | Source |
 |---|---|---|
 | `PASSENGER_NAV_HEIGHT_PX` | 81 (1 px border plus an 80 px bar) | `components/passenger/passengerFrame.ts` |
-| `PASSENGER_PANEL_NAV_GAP_PX` | 29 | same |
+| `PASSENGER_PANEL_NAV_GAP_PX` | 29; 12 on short touch screens (`--passenger-panel-nav-gap`) | same |
 | `passengerNavClearance` | `calc(81px + var(--safe-area-bottom))`; bottom of the timeline sheet and chat overlay | same |
-| Home top spacer | `34vh`, at least `min(250px, 20dvh)` | same |
+| Home top spacer | `34vh`, at least `min(250px, 20dvh)`; 1 rem on short touch screens, 0.5 rem at 360 px tall or less | same, and `app/globals.css` |
 | App shell height | `100dvh` for passenger and admin | `app/passenger/layout.tsx`, `app/admin/page.tsx` |
 | Tracking header width | At most 512 px (`max-w-lg`), centred | `components/passenger/PassengerWorkspace.tsx` |
 | Admin tab bar width | At most 1280 px (`max-w-7xl`) | `app/admin/page.tsx` |
 | Map fit padding | Top: the larger of 32 px and header height plus 24 px. Bottom: timeline sheet overlap plus 24 px, at most 65 % of the map height. Sides: 32 px. | `components/maps/PassengerMap.tsx` |
 | Map zoom | Passenger default 15, following a bus 16; admin default 12, 15 when centring a bus | `PassengerMap.tsx`, `DashboardPanel.tsx` |
+
+Short touch screens, at most 480 px tall without a fine pointer (landscape phones), get a compact home in `app/globals.css`. Besides the spacer and gap above, the title drops to 24 px and the subtitle to 13 px, hidden at 360 px tall or less. The route list's bottom padding drops from 128 px to 8 px. Together these leave room in the panel for at least one route card. Pointer-equipped `(any-pointer: fine)` windows keep their own centred desktop layout at every height. On any screen at most 480 px tall, the tracking header (back button, ride card and chat button) is hidden while the route timeline sheet is open, because the open sheet reaches it and the header would cover the sheet's handle.
 
 ### 6.2 Radii
 

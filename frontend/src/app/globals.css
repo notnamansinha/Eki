@@ -1389,6 +1389,64 @@ html:has(.passenger-layout) body {
   overscroll-behavior-y: none;
 }
 
+/* Landscape phones. The 34vh artwork band, the full heading and the 29px gap
+   above the navigation leave the Live Routes panel almost no height, and the
+   list's 128px bottom padding then keeps the list from shrinking, so it falls
+   out of the panel's clipped box and no route card shows. The panel already
+   sits above the navigation, so that padding is not needed here. This is the
+   complement of the desktop (any-pointer: fine) layout, which it leaves alone. */
+@media (max-height: 480px) and (not (any-pointer: fine)) {
+  :root {
+    --passenger-home-art-height: 1rem;
+    --passenger-home-art-min-height: 0px;
+    --passenger-panel-nav-gap: 12px;
+  }
+
+  .passenger-home-panel {
+    padding-top: 1rem;
+  }
+
+  .passenger-home-heading {
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .passenger-home-heading h1 {
+    margin-bottom: 0;
+    font-size: 24px;
+  }
+
+  .passenger-home-heading p {
+    margin-top: 0.25rem;
+    font-size: 13px;
+  }
+
+  /* The route list keeps its own 1rem of bottom spacing below the last card. */
+  .passenger-live-route-scroll {
+    padding-bottom: 0.5rem;
+  }
+}
+
+@media (max-height: 360px) and (not (any-pointer: fine)) {
+  :root {
+    --passenger-home-art-height: 0.5rem;
+  }
+
+  .passenger-home-heading p {
+    display: none;
+  }
+}
+
+/* Short screens. The open route timeline rises into the floating ride controls
+   (back, boarding card, chat), which sit above it and would take taps meant for
+   its header. The sheet is modal, with its own backdrop, so the controls step
+   aside until it closes. */
+@media (max-height: 480px) {
+  [data-passenger-tracking]:has([data-map-sheet][data-open]) [data-tracking-controls] {
+    visibility: hidden;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    MAP SPECIFIC
    ═══════════════════════════════════════════════════════════════════════════ */

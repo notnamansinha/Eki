@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-008 | 2.0 | Current | 2026-10-30 |
+| EKI-PKG-008 | 2.1 | Current | 2026-11-04 |
 
 ## 1. Purpose
 
@@ -40,7 +40,7 @@ This Vite fixture renders the real passenger workspace, route carousel, passenge
 npx playwright test --config playwright.passenger-layout.config.ts
 ```
 
-The configuration starts this fixture and runs every spec in `e2e/passenger-layout/` (`warnings`, `video-audit`, `routes-schedule`, `transit-artwork` and `desktop-live-routes`) in five projects: touch-enabled narrow 360 x 800, mobile 390 x 844 and reported-phone 440 x 956, short-desktop 1280 x 585 and desktop 1280 x 800. The tests check, among other things, that location-delay, reconnecting and GNSS-loss warnings sit below the variable-height ride header without overlap and clear on recovery; that offline and stale buses leave the picker; that the footer, navigation, chat overlay and feedback modal keep their positions on short and landscape screens; and that the passenger frame cannot scroll under the viewport. `routes-schedule.spec.ts` opens `/?schedule=demo` and checks the compact published-route rows, local search, one-sided scheduled timeline, keyboard focus, navigation at phone and desktop widths, browser history and the return to live routes. Screenshots and traces go to `artifacts/passenger-layout/`, which CI keeps for seven days.
+The configuration starts this fixture and runs every spec in `e2e/passenger-layout/` (`warnings`, `video-audit`, `routes-schedule`, `transit-artwork` and `desktop-live-routes`) in five projects: touch-enabled narrow 360 x 800, mobile 390 x 844 and reported-phone 440 x 956, short-desktop 1280 x 585 and desktop 1280 x 800. The tests check, among other things, that location-delay, reconnecting and GNSS-loss warnings sit below the variable-height ride header without overlap and clear on recovery; that offline and stale buses leave the picker; that the footer, navigation, chat overlay and feedback modal keep their positions on short and landscape screens; that on landscape touch phones (844 x 390 and 568 x 320) a route card shows inside the Live Routes panel and the open route timeline header is not covered by the ride controls; and that the passenger frame cannot scroll under the viewport. `routes-schedule.spec.ts` opens `/?schedule=demo` and checks the compact published-route rows, local search, one-sided scheduled timeline, keyboard focus, navigation at phone and desktop widths, browser history and the return to live routes. Screenshots and traces go to `artifacts/passenger-layout/`, which CI keeps for seven days.
 
 ## 5. Limits
 

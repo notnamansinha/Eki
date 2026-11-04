@@ -53,6 +53,7 @@ export default function BottomSheet({
       {/* Sheet */}
       <div
         data-map-sheet
+        data-open={isOpen || undefined}
         className={`fixed inset-x-0 z-50 rounded-t-2xl transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
           isOpen ? "translate-y-0" : "translate-y-[calc(100%_-_56px)]"
         }`}

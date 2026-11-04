@@ -12,7 +12,7 @@ describe("passenger frame geometry", () => {
   it("derives panel clearance from the navigation height plus the bottom safe area", () => {
     expect(passengerNavHeight).toBe(`var(--passenger-nav-height, ${PASSENGER_NAV_HEIGHT_PX}px)`);
     expect(passengerNavClearance).toBe(`calc(${passengerNavHeight} + var(--safe-area-bottom))`);
-    const mobilePanelBottom = `calc(${passengerNavHeight} + ${PASSENGER_PANEL_NAV_GAP_PX}px + var(--safe-area-bottom))`;
+    const mobilePanelBottom = `calc(${passengerNavHeight} + var(--passenger-panel-nav-gap, ${PASSENGER_PANEL_NAV_GAP_PX}px) + var(--safe-area-bottom))`;
     expect(passengerPanelStyle.marginBottom)
       .toBe(`var(--passenger-home-panel-bottom, ${mobilePanelBottom})`);
     expect(PASSENGER_PANEL_NAV_GAP_PX).toBeGreaterThan(0);
