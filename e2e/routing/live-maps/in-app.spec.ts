@@ -70,23 +70,22 @@ test("real Eki passenger/admin Maps SDK renders directional roads and stable sim
   await expect.poll(async () => {
     if (errors.length) throw new Error(errors.join("; "));
     return (await sdk())?.lines.length ?? 0;
-  }, { timeout: 40_000 }).toBe(6);
+  }, { timeout: 40_000 }).toBe(3);
   const assertDirection = async (direction: "forward" | "reverse") => {
     const expected = decodePolyline(probe.directions.find((item: any) => item.direction === direction).encodedPolyline);
-    await expect.poll(async () => (await sdk()).lines.filter((line: any) => JSON.stringify(line.path) === JSON.stringify(expected)).length).toBe(4);
-    for (const view of ["Eki passenger map", "Eki admin map"]) {
-      await expect.poll(async () => (await sdk()).lines.filter((line: any) => line.view === view && JSON.stringify(line.path) === JSON.stringify(expected)).length).toBe(2);
-      const lines = (await sdk()).lines.filter((line: any) => line.view === view);
-      // Every upcoming leg is blue; gray is reserved for confirmed progress.
-      expect(lines.filter((line: any) => line.color === "#22c55e")).toHaveLength(0);
-      expect(lines.filter((line: any) => line.color === "#71717a")).toHaveLength(0);
-      const blue = lines.filter((line: any) => line.color === "#3b82f6");
-      expect(blue).toHaveLength(2);
-      expect(blue.some((line: any) => JSON.stringify(line.path) === JSON.stringify(expected))).toBe(true);
-      const active = blue.find((line: any) => line.path.length < expected.length);
-      expect(active.path.length).toBeGreaterThanOrEqual(2);
-    }
+    await expect.poll(async () => (await sdk()).lines.filter((line: any) => line.view === "Eki passenger map" && JSON.stringify(line.path) === JSON.stringify(expected)).length).toBe(2);
+    const lines = (await sdk()).lines.filter((line: any) => line.view === "Eki passenger map");
+    // Every upcoming leg is blue; gray is reserved for confirmed progress.
+    expect(lines.filter((line: any) => line.color === "#22c55e")).toHaveLength(0);
+    expect(lines.filter((line: any) => line.color === "#71717a")).toHaveLength(0);
+    const blue = lines.filter((line: any) => line.color === "#3b82f6");
+    expect(blue).toHaveLength(2);
+    expect(blue.some((line: any) => JSON.stringify(line.path) === JSON.stringify(expected))).toBe(true);
+    const active = blue.find((line: any) => line.path.length < expected.length);
+    expect(active.path.length).toBeGreaterThanOrEqual(2);
     await expect.poll(async () => (await sdk()).markers.filter((marker: any) => marker.title.includes("SIMULATED-BUS")).length).toBe(2);
+    // Live Ops shows buses only, never route lines; checked once its marker is up.
+    expect((await sdk()).lines.filter((line: any) => line.view === "Eki admin map")).toHaveLength(0);
   };
   await assertDirection("forward");
   await expect.poll(async () => (await sdk()).maps.filter((map: any) => map.tilesLoaded).length, { timeout: 30_000 }).toBe(2);
@@ -97,18 +96,18 @@ test("real Eki passenger/admin Maps SDK renders directional roads and stable sim
   await page.screenshot({ path: info.outputPath("eki-in-app-forward.png"), fullPage: true });
   // Stop progress is supplied by the backend-style tuple at simulated arrival.
   const firstLeg = (await sdk()).lines.filter((line: any) => line.color === "#3b82f6" && line.zIndex === 23);
+  expect(firstLeg).toHaveLength(1);
   await page.getByRole("button", { name: "Reach next stop", exact: true }).click();
   await expect.poll(async () => {
     const blue = (await sdk()).lines.filter((line: any) => line.color === "#3b82f6" && line.zIndex === 23);
-    return blue.length === 2 && blue.every((line: any, index: number) => JSON.stringify(line.path) !== JSON.stringify(firstLeg[index].path));
+    return blue.length === 1 && JSON.stringify(blue[0].path) !== JSON.stringify(firstLeg[0].path);
   }).toBe(true);
-  const secondLeg = (await sdk()).lines.filter((line: any) => line.color === "#3b82f6" && line.zIndex === 23);
+  const [secondLeg] = (await sdk()).lines.filter((line: any) => line.color === "#3b82f6" && line.zIndex === 23);
   const passedLegs = (await sdk()).lines.filter((line: any) => line.color === "#71717a");
-  expect(passedLegs).toHaveLength(2);
-  expect(passedLegs[0].path).toEqual(passedLegs[1].path);
-  for (let i = 0; i < 2; i++) expect(passedLegs[i].path.at(-1)).toEqual(secondLeg[i].path[0]);
-  expect(secondLeg[0].path).toEqual(secondLeg[1].path);
-  for (let i = 0; i < 2; i++) expect(secondLeg[i].path[0]).toEqual(firstLeg[i].path.at(-1));
+  expect(passedLegs).toHaveLength(1);
+  expect(passedLegs[0].view).toBe("Eki passenger map");
+  expect(passedLegs[0].path.at(-1)).toEqual(secondLeg.path[0]);
+  expect(secondLeg.path[0]).toEqual(firstLeg[0].path.at(-1));
   const adminTileLoads = (await sdk()).maps.find((map: any) => map.view === "Eki admin map").tileLoads;
   await page.getByRole("region", { name: "Eki admin map", exact: true }).getByTitle(/^SIMULATED-BUS —/).click();
   await expect.poll(async () => (await sdk()).maps.find((map: any) => map.view === "Eki admin map")?.zoom).toBe(15);

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-001 | 3.3 | Current | 2026-11-02 |
+| EKI-OPS-001 | 3.5 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -80,29 +80,29 @@ Runs for pull requests, forks and other branches are skipped. A run waits while 
 
 Both jobs run the same steps against their own project. A failed step stops the job, so nothing after it is deployed.
 
-Before these steps, `deploy-staging` refuses a commit that `main` does not contain: the GitHub compare API must answer `identical` or `ahead` for the commit against `main`. Without this check a tag named `main` would satisfy the job condition, because a tag push reports the tag name as `workflow_run.head_branch` and tags have no ruleset. Both jobs check out the commit with `persist-credentials: false`.
+Before these steps, `deploy-staging` refuses a commit that `main` does not contain: the GitHub compare API must answer `identical` or `ahead` for the commit against the branch ref `heads/main`. Without this check a tag named `main` would satisfy the job condition, because a tag push reports the tag name as `workflow_run.head_branch` and tags have no ruleset; naming the branch ref keeps such a tag from standing in for the branch in the comparison too. Every checkout in every workflow uses `persist-credentials: false`, so no job leaves the GitHub token in `.git/config` while `npm ci` runs third-party install scripts.
 
 1. `npm ci`.
-2. `npm run verify:rtdb-instance`: the backend and frontend database URLs must name the same RTDB instance, and its region must equal `RTDB_EXPECTED_REGION` when that variable is set.
+2. `node scripts/verify-rtdb-deploy-target.mjs --project <project>`, then `npm run verify:rtdb-instance -- --require-region`. The first requires `firebase.json` to declare the RTDB rules as deploy targets and `.firebaserc` to map each target to an instance for the project, so a project without the mapping, such as `eki-production` today, stops here, before App Check or the index deploy run. The second requires the backend and frontend database URLs to name the same RTDB instance, in the region that `RTDB_EXPECTED_REGION` names; the release fails when that variable is unset.
 3. `npm run build:production`: strict build that fails when one of the ten `NEXT_PUBLIC_*` values is missing or when the RTDB or backend URL is not a non-local HTTPS URL (`frontend/next.config.ts`), then regenerates the service worker and the CSP in `firebase.json` with the backend origin.
 4. `npm run verify:web-backend-contract` with `EKI_RUNTIME_SMOKE=1`: the live backend at `NEXT_PUBLIC_BACKEND_URL` must answer `/health` with `status: ok`, allow the frontend origin (`https://bustrack-be165.web.app` or `https://eki-production.web.app`) in CORS, and accept the preflight for `POST /api/users/bootstrap`. While `/health` answers 502, 503 or 504, or does not answer within 10 s, the check retries for up to 90 s, because a backend that scaled to zero answers 503 until its first Firestore and RTDB probes succeed. Any other failure stops the release at once.
 5. `node scripts/disable-appcheck-enforcement.mjs --project <project> --disable`: sets App Check enforcement for Firestore and RTDB to `UNENFORCED` and verifies the result. The web app does not use App Check.
 6. Deploy `firestore:indexes`, then wait up to 30 minutes for the deployed query shapes ([Firestore index deployment](FIRESTORE_INDEX_DEPLOYMENT.md)).
-7. Deploy `hosting,firestore:rules,database:rules`.
+7. Deploy `hosting,firestore:rules,database:rtdb`. Because `firebase.json` declares the RTDB rules as an array entry with the deploy target `rtdb`, the Firebase CLI reads the text after `database:` as a target name; `.firebaserc` maps `rtdb` to `bustrack-be165-asia-rtdb` for `bustrack-be165`. Step 2 has already stopped a project without that mapping.
 
-The optional job `deploy-backend-staging` runs before `deploy-staging`:
+The optional job `deploy-backend-staging` runs before `deploy-staging`. Before it authenticates, it reads `FIREBASE_DATABASE_URL` from the exact entry in `deploy/cloud-run/staging.service.yaml` and runs the same instance and region check against the staging secret `NEXT_PUBLIC_FIREBASE_DATABASE_URL`, so a backend and a Hosting build that would use different RTDB instances stop before anything is built. Then:
 
 1. Authenticate to Google Cloud as the deploy service account through workload identity federation. The workflow stores no key, and the job fixes the provider and the account. The provider `github-actions` accepts only tokens with `assertion.repository_id=='1270866720' && assertion.ref=='refs/heads/main'`; the account `eki-github-deployer` (project role `roles/run.admin`) trusts only `attribute.environment/staging`; the `staging` environment accepts deployments from `main` only; and `sts.googleapis.com` is enabled.
 2. Stop when the service `eki-backend-staging` already exists in another region. The job queries each of the three regions on its own and also stops when any query fails, because a list across all regions can return a partial answer without an error. Every regional service is public and keeps its own in-memory rate limits, so a second region would double the request budget. The error message gives the `gcloud run services delete` command for the other region.
 3. Build `backend/Dockerfile` from the repository root, push the image to the Artifact Registry repository `eki` in the region given by the `cloud_run_region` input, and record the image digest. The repository shall exist in that region, and the deploy service account needs `roles/artifactregistry.writer` on it.
-4. Render `deploy/cloud-run/staging.service.yaml` with the digest and apply it as a new revision. When a revision already serves traffic, the new revision receives none until step 6. Only a missing service counts as a first deployment: there the revision receives all traffic at once and step 6 only reports the result. Any other failure to read the service stops the job.
+4. Render `deploy/cloud-run/staging.service.yaml` with the digest and apply it as a new revision. When a revision already serves traffic, the new revision receives none until step 6. Only a missing service counts as a first deployment: there the revision receives all traffic at once and step 6 only reports the result. Any other failure to read the service stops the job. `gcloud run services replace` applies the whole manifest, so the render copies the live service-level minimum instances (`run.googleapis.com/minScale`, which the Cloud Scheduler jobs in Section 7.1 set) into it; a first deployment gets 0, and a value that is not a whole number stops the job.
 5. Grant `allUsers` the Cloud Run invoker role. Firebase and device authentication remain the gate for every route.
-6. Check that the candidate URL serves the revision this run created, then poll its `/health` for up to 3 minutes and promote that revision only when it reports `status: ok`.
+6. Check that the candidate URL serves the revision this run created, then poll its `/health` for up to 3 minutes and promote that revision only when it reports `status: ok`. The candidate runs with `WORKER_ENABLED=true` while the gate calls it. When no serving instance holds the worker lease at that moment, for example overnight, the candidate can take the lease before it passes the gate and keeps it until it idles; lease fencing prevents duplicate work ([worker leadership](WORKER_LEADERSHIP.md)).
 7. Write the image digest, the previous revision and the rollback command to the job summary.
 
 The job therefore deploys one region at a time. To compare regions, dispatch the first region, measure it, delete its service, then dispatch the next. Each region has its own service URL, `https://eki-backend-staging-449313371438.<region>.run.app`. Set the staging secret `NEXT_PUBLIC_BACKEND_URL` to the new URL before the dispatch; otherwise `deploy-staging` in the same run checks the deleted service and fails. A new region is a first deployment (step 4): its first revision serves all traffic before `/health` is checked, and there is no earlier revision to roll back to.
 
-Step 4 makes every Hosting release depend on a running, healthy backend. The staging backend runs on Cloud Run without a minimum instance (Section 7.1), so the first request after an idle period starts an instance. On 2026-11-01 such an instance answered `/health` with 503 about 2 s after the request; the retry in step 4 waits that out.
+Step 4 makes every Hosting release depend on a running, healthy backend. While the Cloud Scheduler jobs run, the staging service keeps one instance from 06:00 to 22:00 IST and scales to zero overnight; while they are paused it scales to zero whenever it is idle (Section 7.1). The first request after an idle period starts an instance. On 2026-11-01 such an instance answered `/health` with 503 about 2 s after the request; the retry in step 4 waits that out.
 
 ### 5.3 Environments, secrets and variables
 
@@ -112,7 +112,7 @@ Step 4 makes every Hosting release depend on a running, healthy backend. The sta
 | `FIREBASE_TOKEN` | Environment secret | Steps 5 to 7 | Firebase CLI token for that project |
 | `FIREBASE_DATABASE_URL` | Environment secret | Step 2 | RTDB URL that the backend uses |
 | `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_DATABASE_URL`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAP_ID`, `NEXT_PUBLIC_BACKEND_URL` | Environment secrets | Steps 2 to 4 | Values compiled into the static frontend |
-| `RTDB_EXPECTED_REGION` | Variable (optional) | Step 2 | Expected RTDB region, for example `asia-southeast1`. Not set on 2026-10-30, so step 2 checks only that both URLs name one instance. |
+| `RTDB_EXPECTED_REGION` | Environment variable | Step 2; the RTDB check in `deploy-backend-staging` | Expected RTDB region. Set to `asia-southeast1` in the `staging` environment on 2026-11-02. Every release fails when it is unset; the CI preflight, which runs without `--require-region`, compares only the instances. |
 
 The workflow passes no other build variables. `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_SITE_INDEXING` are therefore unset in deployed builds: canonical and social URLs fall back to `https://bustrack-be165.web.app` and indexing is enabled. A custom domain or a production build needs those two values added to the workflow ([DNS and domains](DNS_AND_DOMAINS.md)). The meaning of each variable is in [configuration](../CONFIGURATION.md).
 
@@ -158,7 +158,9 @@ The `testing` branch was deleted on 2026-10-25; scheduled runs from then until t
 
 ### 7.1 Current state
 
-The repository builds and tests a backend container (`backend/Dockerfile`: Node.js 24 on Alpine, non-root user, port `8080`, Docker health check on `/live`), and `deploy-backend-staging` publishes and deploys it on manual dispatch. On 2026-11-01 that job deployed the staging service `eki-backend-staging` in `asia-south2` (`https://eki-backend-staging-449313371438.asia-south2.run.app`), and the staging secret `NEXT_PUBLIC_BACKEND_URL` was changed from the ngrok tunnel to that URL, so the staging web app now uses Cloud Run. The service runs with `WORKER_ENABLED=false` and scales to zero, so no process runs the lease-owned workers until the worker handoff in Section 7.2. Before the change the backend ran on a workstation behind an ngrok tunnel ([ngrok tunnel](NGROK_TUNNEL.md)); the tunnel went offline, and every staging release then failed at step 4 of Section 5.2. A read-only assessment on 2026-10-21 found:
+The repository builds and tests a backend container (`backend/Dockerfile`: Node.js 24 on Alpine, non-root user, port `8080`, Docker health check on `/live`), and `deploy-backend-staging` publishes and deploys it on manual dispatch. On 2026-11-01 that job deployed the staging service `eki-backend-staging` in `asia-south2` (`https://eki-backend-staging-449313371438.asia-south2.run.app`), and the staging secret `NEXT_PUBLIC_BACKEND_URL` was changed from the ngrok tunnel to that URL, so the staging web app now uses Cloud Run. Since 2026-11-02 the service runs with `WORKER_ENABLED=true` ([issue #374](https://github.com/notnamansinha/Eki/issues/374)). Two Cloud Scheduler jobs set its service-level minimum instances: `eki-workers-up` to 1, hourly from 06:00 to 21:00 IST, and `eki-workers-down` to 0 at 22:00 IST. The lease-owned workers are therefore meant to run on Cloud Run from 06:00 to 22:00 IST; overnight the service scales to zero, and a request that wakes an instance makes it the worker leader until it idles. Revision-level `minScale` stays 0 and `maxScale` 1. Local backends that use the same project shall run with `WORKER_ENABLED=false`, because the variable defaults to true and an idle lease goes to whichever process asks first.
+
+At 19:07 UTC on 2026-11-02 both Scheduler jobs were paused, and revision `eki-backend-staging-00008-lhl` was deployed with `gcloud`, outside this workflow, with `WORKER_ENABLED=false` and no minimum instance; no worker runs on staging since then (read on 2026-11-03). The manifest still sets `WORKER_ENABLED=true`, so the next `deploy_backend` run turns the workers back on, without the Scheduler window while the jobs stay paused. Agree the intended state with the service owner before that run. Before the change the backend ran on a workstation behind an ngrok tunnel ([ngrok tunnel](NGROK_TUNNEL.md)); the tunnel went offline, and every staging release then failed at step 4 of Section 5.2. A read-only assessment on 2026-10-21 found:
 
 - The frontend build and the device firmware both used the tunnel origin as the backend URL. The staging frontend now uses the Cloud Run origin; devices flashed with the tunnel origin need the new origin.
 - The workstation backend ran in development mode on port `4000`, as a single process that also ran the lease-owned workers ([worker leadership](WORKER_LEADERSHIP.md)).
@@ -169,7 +171,7 @@ The staging web app no longer depends on the workstation or the tunnel.
 
 ### 7.2 Proposed migration to Cloud Run
 
-Status: Proposed. The manual deployment job described in Section 5.2 deployed the staging service on 2026-11-01. Hosting rewrites were evaluated and not adopted (below); the worker handoff and production are not implemented.
+Status: Proposed. The manual deployment job described in Section 5.2 deployed the staging service on 2026-11-01. Hosting rewrites were evaluated and not adopted (below). The worker handoff was rehearsed and switched on on 2026-11-02, then paused the same day (Section 7.1); production is not implemented.
 
 The proposal runs the existing container on Cloud Run in the same Firebase project and keeps Hosting, Authentication, Firestore and the existing RTDB instance unchanged. Cloud Run needs a Cloud Billing account on the project, which moves a Spark project to the Blaze plan [2].
 
@@ -179,7 +181,7 @@ The proposal runs the existing container on Cloud Run in the same Firebase proje
 - Move worker leadership deliberately: stop the workstation coordinator, then confirm that the cloud instance holds the lease.
 - Rebuild the frontend and reflash every device with the new origin and its root CA. Retire the tunnel only after the system works with the workstation disconnected.
 
-The backend release workflow with image digest and rollback exists (Section 5.2). The remaining gate to make this current: a billing owner, a staging acceptance record, a rehearsed rollback, the worker handoff and reflashed devices.
+The backend release workflow with image digest and rollback exists (Section 5.2). The remaining gate to make this current: a billing owner, a staging acceptance record, a rehearsed rollback, the worker handoff in effect and reflashed devices.
 
 ## 8. Release procedure
 

@@ -427,6 +427,18 @@ function trackBackgroundTask(
 }
 
 /**
+ * Signal-loss history for one raw fix. An engine restart replays every live
+ * node, so a fix whose loss is already recorded keeps its original time.
+ */
+function signalLossFields(location: NonNullable<ReturnType<typeof journeyLocation>>, recorded: unknown) {
+  const key = `lost_${location.sampledAt}_${location.seq ?? 0}`;
+  if (recorded && typeof recorded === "object" && key in recorded) return {};
+  const observedAt = Date.now();
+  return { lastSignalLostAt: observedAt,
+    connectionEvents: { [key]: { type: "signal_lost", observedAt, location } } };
+}
+
+/**
  * Firestore is the durable fleet-state store, not a second telemetry stream.
  * Persist lifecycle changes and a final raw fix at signal loss/completion;
  * ordinary location heartbeats remain in RTDB.
@@ -460,10 +472,8 @@ function persistFleetState(
         transaction.set(locationRef, { ...state, lastSeen }, { merge: true });
         const lastKnownLocation = newerJourneyLocation(data, session?.data()?.lastKnownLocation);
         if (session?.exists && lastKnownLocation) {
-          transaction.set(sessionRef, { lastKnownLocation, lastSignalLostAt: Date.now(),
-            connectionEvents: { [`lost_${lastKnownLocation.sampledAt}_${lastKnownLocation.seq ?? 0}`]: {
-              type: "signal_lost", observedAt: Date.now(), location: lastKnownLocation,
-            } } }, { merge: true });
+          transaction.set(sessionRef, { lastKnownLocation,
+            ...signalLossFields(lastKnownLocation, session.data()?.connectionEvents) }, { merge: true });
           transaction.set(locationRef, { lastKnownLocation }, { merge: true });
         }
         return true;
@@ -527,12 +537,7 @@ async function persistOfflineFleetState(
           transaction.set(locationRef, { lastKnownLocation }, { merge: true });
           if (sessionRef && session?.exists) transaction.set(sessionRef, {
             lastKnownLocation,
-            ...(recordSignalLoss ? {
-              lastSignalLostAt: Date.now(),
-              connectionEvents: { [`lost_${lastKnownLocation.sampledAt}_${lastKnownLocation.seq ?? 0}`]: {
-                type: "signal_lost", observedAt: Date.now(), location: lastKnownLocation,
-              } },
-            } : {}),
+            ...(recordSignalLoss ? signalLossFields(lastKnownLocation, session.data()?.connectionEvents) : {}),
           }, { merge: true });
         }
         return true;
@@ -983,8 +988,15 @@ export function startTripStateEngine(): () => Promise<void> {
         };
     let { tripState, currentStopIndex, hasDepartedOrigin, terminalArrival } = reduced;
     const gnssGapSince = reduced.gnssGapSince ?? null;
+    const freshFix = Number.isFinite(telemetryTimestamp) && Math.abs(Date.now() - telemetryTimestamp) <= 60_000;
+    // Replaying a swept-offline receiver's old fix (engine restart, leader
+    // handoff) cannot move the ride. Persisting it would refresh
+    // active_rides.updatedAt, which the abandoned-ride reconciler reads as
+    // activity, so a silent ride would never time out. The live write below is
+    // refused for offline nodes too.
+    const offlineReplay = data.deviceState === "offline" && !freshFix;
 
-    if (tripState === "pre_departure" || tripState === "in_service") {
+    if ((tripState === "pre_departure" || tripState === "in_service") && !offlineReplay) {
       // Commit lifecycle and all crossed-stop history together before exposing
       // the next index. A failed write leaves the same sample retryable.
       const checkpoint = await persistActiveRideLifecycle(data, tripState, currentStopIndex, hasDepartedOrigin, stops,
@@ -996,7 +1008,6 @@ export function startTripStateEngine(): () => Promise<void> {
     const unobservedStops = mergedStopIndices(liveUnobservedStops(data, stops.length),
       [...reduced.skippedStopIndices ?? [], ...reduced.unobservedStopIndices ?? []], stops.length)
       .filter(index => index < currentStopIndex);
-    const freshFix = Number.isFinite(telemetryTimestamp) && Math.abs(Date.now() - telemetryTimestamp) <= 60_000;
     const atStopIndex = freshFix ? visitedStopIndex({ lat: data.lat, lng: data.lng,
       motionState: data.motionState || "moving", gpsHdop: data.gpsHdop, stops, tripState, currentStopIndex,
       hasDepartedOrigin, unobservedStopIndices: unobservedStops }) : null;

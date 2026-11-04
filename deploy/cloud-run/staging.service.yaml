@@ -8,6 +8,8 @@
 #   TRAFFIC                  traffic block, built by the job so that the
 #                            previous revision keeps serving until the new one
 #                            passes the /health gate
+#   SERVICE_MIN_SCALE        the live service-level minimum instances, so a
+#                            deploy keeps the value Cloud Scheduler last set
 #
 # Values and their reasons: docs/operations/STAGING_RUNTIME_CONFIG.md.
 # Never put a secret value in this file; secrets come from Secret Manager.
@@ -20,6 +22,9 @@ metadata:
     env: staging
   annotations:
     run.googleapis.com/ingress: all
+    # Service-level minimum instances. The Cloud Scheduler jobs eki-workers-up and
+    # eki-workers-down own it (issue #374); the deploy job copies the live value.
+    run.googleapis.com/minScale: "${SERVICE_MIN_SCALE}"
 spec:
   template:
     metadata:

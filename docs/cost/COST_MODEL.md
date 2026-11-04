@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-CST-001 | 2.1 | Current | 2026-11-02 |
+| EKI-CST-001 | 2.2 | Current | 2026-11-03 |
 
 ## 1. Purpose and scope
 
@@ -15,14 +15,14 @@ This model lets an operator estimate the monthly cost of running Eki and find th
 | Fleet and riders (Section 4.1) | 3 buses, 2 routes, 300 passengers a day | 10 buses, 5 routes, 2,000 passengers a day | 30 buses, 12 routes, 10,000 passengers a day |
 | Firebase and Google Maps, per month | USD 20 to 27 | USD 278 to 391 | USD 2,246 to 3,250 |
 | Backend through ngrok Pay-as-you-go (the hosting used until 2026-11-01), per month | USD 60 | USD 163 | USD 477 |
-| Total per month | USD 80 to 87 (INR 7,670 to 8,263) | USD 441 to 554 (INR 42,080 to 52,847) | USD 2,723 to 3,727 (INR 259,711 to 355,459) |
+| Total per month with the ngrok backend | USD 80 to 87 (INR 7,670 to 8,263) | USD 441 to 554 (INR 42,080 to 52,847) | USD 2,723 to 3,727 (INR 259,711 to 355,459) |
 | Tracker hardware, once per bus (Section 3.10) | INR 1,160 to 2,375, or INR 3,960 to 5,175 with a 4G hotspot | Same | Same |
 
 All figures are estimates from Section 4.3, on the Firebase Blaze (pay-as-you-go) plan and the Google Maps India price list. "Firebase and Google Maps" is the Section 4.3 subtotal plus Firestore overage at `us-central1` prices. Each range runs from the lower to the upper bound of the Realtime Database download model (Section 3.3).
 
 - At campus scale and above, passenger downloads from the Realtime Database and Google Maps map loads make up most of the cost. Both grow with the number of daily passengers.
 - The no-cost Spark plan cannot run the pilot: the pilot exhausts its Realtime Database download quota in 8 to 10 days, and Firebase then turns the product off for the rest of the month (Section 5). The ngrok Free and Hobbyist plans run out within 10 hours of tracker traffic (Section 4.4).
-- The backend figures price the ngrok setup used until 2026-11-01. Cloud Run, which has run the staging backend since then, is not included because its cost is not yet confirmed (Section 3.7).
+- The backend figures price the ngrok setup used until 2026-11-01. Cloud Run, which has run the staging backend since then, is not included because its cost is not yet confirmed (Section 3.7), so no total is given for the current setup.
 - Not included: the cellular data plan, about 1.9 GB per bus per month; and the automotive power converter, fuse holder and enclosure.
 
 ### 1.2 Conventions
@@ -143,12 +143,12 @@ The Realtime Database bills stored data and downloaded data, not write operation
 
 | Client | Path | Code | What it downloads |
 |---|---|---|---|
-| Backend, one connection per process | `activeBuses` child events | `backend/src/services/tripStateEngine.ts:791,1338-1340`, `backend/src/services/liveBusProjection.ts:112,291` | Every write to any bus node, about four per fix |
+| Backend, one connection per process | `activeBuses` child events | `backend/src/services/tripStateEngine.ts:796,1349-1351`, `backend/src/services/liveBusProjection.ts:112,291` | Every write to any bus node, about four per fix |
 | Backend | `activeBuses/{busId}_{routeId}`, one read per public publication | `backend/src/services/liveBusProjection.ts:164` | One full bus node |
 | Passenger | `publicRouteBuses/route:{routeId}/buses` for the selected route and any joined ride's route | `frontend/src/lib/liveBusStore.ts:17`, `frontend/src/components/passenger/PassengerWorkspace.tsx:196-198` | Route snapshot, then each public commit on that route |
 | Passenger | `liveRouteCatalog/values` and `clientProjectionStatus/public` | `frontend/src/hooks/useLiveRouteCatalog.ts:34,42` | The whole catalog on each change |
 | Passenger | `activeRouteGeometry/{busId}_{routeId}/{version}`, one read | `frontend/src/lib/activeRouteGeometry.ts:73` | One encoded polyline per new route version |
-| Admin | `publicRouteBuses` (all routes) | `frontend/src/components/admin/DashboardPanel.tsx:609`, `frontend/src/components/admin/FleetManagementPanel.tsx:77` | Each changed route node |
+| Admin | `publicRouteBuses` (all routes) | `frontend/src/components/admin/DashboardPanel.tsx:624`, `frontend/src/components/admin/FleetManagementPanel.tsx:77` | Each changed route node |
 
 Each public commit replaces the whole `publicRouteBuses/route:{routeId}` node in one transaction (`backend/src/services/liveBusProjection.ts:170-178`); the evidence below records two commits per fix. The worker rewrites the whole `liveRouteCatalog` node when a route's availability changes (`backend/src/services/liveBusProjection.ts:137-142`). Each bus's availability receipt moves in 30 s steps and the catalog stores one receipt per bus, so receipt changes add at most two catalog changes per minute per bus (`backend/src/services/liveBusProjection.ts:92-97`).
 
@@ -196,8 +196,8 @@ Usage that scales with the fleet and with passengers:
 | Device credential cache fills: 3 reads per device per 60 s while sending | `180 * H * B` reads per day | `backend/src/services/deviceTelemetryService.ts:49,462,480-483` |
 | Tracker diagnostics: the latest report replaces one `_device_diagnostics` document every 5 min | `12 * H * B` writes per day | `backend/src/services/deviceDiagnostics.ts:120` |
 | Tracker powered without a ride: restore attempt | At most 2 reads per 30 s per bus | `backend/src/services/durableRideRecovery.ts:59-63,95` |
-| Ride start and completion | About 10 reads and 10 writes per ride | `backend/src/services/rideSessionStart.ts:326-430`, `backend/src/services/tripStateEngine.ts:1121-1165` |
-| Each lifecycle change (stop reached, activation, delay) | About 4 reads and 3 writes | `backend/src/services/tripStateEngine.ts:453-468,705-757` |
+| Ride start and completion | About 10 reads and 10 writes per ride | `backend/src/services/rideSessionStart.ts:326-430`, `backend/src/services/tripStateEngine.ts:1132-1176` |
+| Each lifecycle change (stop reached, activation, delay) | About 4 reads and 3 writes | `backend/src/services/tripStateEngine.ts:465-478,710-762` |
 | Passenger app open: settings listener, user document, route catalog API, stored geometry, and the route schedule listener when the passenger opens the Routes tab | `R + 4` reads (upper bound: the Routes tab opened on every app open) | `frontend/src/hooks/useSettings.ts:68`, `frontend/src/hooks/useAuth.ts:293`, `backend/src/routes/routesList.ts:20-23`, `backend/src/services/routeGeometryReads.ts:22-24`, `frontend/src/hooks/usePassengerRouteConfig.ts:47` |
 | Ride chat opened | Up to 200 reads, then 1 per message | `frontend/src/components/shared/MessagingPanel.tsx:96-101` |
 | Feedback submitted | 1 write | `frontend/src/lib/feedbackStore.ts:70` |
@@ -237,7 +237,7 @@ To measure your own build, run `npm run build` from the repository root, then `d
 
 Until 2026-11-01 the backend ran on a workstation and received device and browser traffic through an ngrok tunnel ([ngrok tunnel runbook](../operations/NGROK_TUNNEL.md)); the ngrok figures in this model price that setup. Every telemetry request, diagnostic and browser API call counts as one ngrok request. Since 2026-11-01 the staging backend runs on the Cloud Run service `eki-backend-staging` in `asia-south2`, deployed only by the manual job `deploy-backend-staging` ([CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md#52-steps)). Its cost is not yet confirmed.
 
-The Cloud Run service uses the container in `backend/Dockerfile` (port 8080). The process starts the HTTP server and the leader-elected workers together (`backend/src/server.ts:307-311`), and the workers hold Realtime Database listeners and renew a Firestore lease every 15 s ([worker leadership](../operations/WORKER_LEADERSHIP.md)). This work runs outside requests, so the service needs instance-based billing, which charges for the whole instance lifecycle [12], and at least one minimum instance. The staging service runs with `minScale` 0 and `WORKER_ENABLED=false`, so it bills only while an instance runs; after the worker handoff it needs `minScale` 1. One always-on instance consumes `vCPU * 2,592,000` vCPU-seconds and `GiB * 2,592,000` GiB-seconds per month. The free tier page lists allowances for request-based billing only [9], and the unit prices were not confirmed [10].
+The Cloud Run service uses the container in `backend/Dockerfile` (port 8080). The process starts the HTTP server and the leader-elected workers together (`backend/src/server.ts:307-311`), and the workers hold Realtime Database listeners and renew a Firestore lease every 15 s ([worker leadership](../operations/WORKER_LEADERSHIP.md)). This work runs outside requests, so the service needs instance-based billing, which charges for the whole instance lifecycle [12], and at least one minimum instance. Since 2026-11-02 the staging manifest sets `WORKER_ENABLED=true` and keeps the revision `minScale` at 0, and two Cloud Scheduler jobs hold one instance from 06:00 to 22:00 IST ([staging runtime configuration](../operations/STAGING_RUNTIME_CONFIG.md)). While the Scheduler jobs run, the service bills for at least 16 hours a day, plus any overnight period in which a request keeps an instance up. One always-on instance consumes `vCPU * 2,592,000` vCPU-seconds and `GiB * 2,592,000` GiB-seconds in a 30-day month; the 16-hour window consumes `vCPU * 1,728,000` and `GiB * 1,728,000`. [Issue #374](https://github.com/notnamansinha/Eki/issues/374) records the owner's estimate of INR 3,500 to 4,000 a month for an always-on instance and chose the window for about two thirds of that time; neither figure was checked against the price list. The free tier page lists allowances for request-based billing only [9], and the unit prices were not confirmed [10].
 
 ### 3.8 Google Maps Platform
 
@@ -246,7 +246,7 @@ The frontend loads the Maps JavaScript API with `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 | SKU | Caller | Trigger | Existing bounds |
 |---|---|---|---|
 | Dynamic Maps | Passenger map (`frontend/src/components/maps/PassengerMap.tsx:625-627`) | The first opening of the tracking view in a page load (app launch, reload or new tab). The map unmounts in other views (`frontend/src/components/passenger/PassengerWorkspace.tsx:747-748`), but every later opening, route, direction or bus change in the same page reattaches the cached map | `reuseMaps` on every map (`frontend/src/config/maps.ts:1-15`) |
-| Dynamic Maps | Admin dashboard and route editor maps (`frontend/src/components/admin/DashboardPanel.tsx:862-864`, `frontend/src/components/admin/RouteManagementPanel.tsx:567`) | Each administrator page load, because Live Ops is the default tab (`frontend/src/app/admin/page.tsx:45`). Switching tabs or opening the route editor (`frontend/src/app/admin/page.tsx:59-60`) reattaches the same map | Same as above |
+| Dynamic Maps | Admin dashboard and route editor maps (`frontend/src/components/admin/DashboardPanel.tsx:816-818`, `frontend/src/components/admin/RouteManagementPanel.tsx:567`) | Each administrator page load, because Live Ops is the default tab (`frontend/src/app/admin/page.tsx:45`). Switching tabs or opening the route editor (`frontend/src/app/admin/page.tsx:59-60`) reattaches the same map | Same as above |
 | Compute Routes Pro | Route save (`backend/src/routes/polyline.ts:199,288-291`) | Two requests per changed save, one per direction; skipped when the stops are unchanged (`polyline.ts:669-672`) | 10 compute requests per admin per minute (`backend/src/lib/routeComputeLimiter.ts:9`); 2 concurrent and 8 queued (`polyline.ts:46`) |
 | Compute Routes Pro | Route preview and `compute-polyline` (`polyline.ts:361-373,895-906`) | One request per preview | Same as above |
 | Compute Routes Pro | Departure route (`backend/src/services/telemetryRouteService.ts:861-879,917-918`) | One request when a ride enters `pre_departure`; reused at departure for up to 5 min (`telemetryRouteService.ts:54`), otherwise one more; at most three attempts per phase | `LIVE_DEPARTURE_ROUTES_ENABLED` (`backend/.env.example`) |
@@ -338,7 +338,7 @@ Costs assume the Blaze plan, the India Maps price list and the daily Hosting all
 | Subtotal, upper bound | USD 26.66 (INR 2,543) | USD 390.62 (INR 37,253) | USD 3,245.26 (INR 309,497) |
 | Subtotal, lower bound | USD 20.44 (INR 1,949) | USD 277.72 (INR 26,486) | USD 2,241.29 (INR 213,749) |
 | Backend until 2026-11-01: ngrok Pay-as-you-go | USD 59.98 (INR 5,720) | USD 163.08 (INR 15,553) | USD 477.45 (INR 45,534) |
-| Backend since 2026-11-01 (staging): Cloud Run, instance-based, minimum 1 after the worker handoff | Not confirmed | Not confirmed | Not confirmed |
+| Backend since 2026-11-01 (staging): Cloud Run, instance-based, one instance held from 06:00 to 22:00 IST | Not confirmed | Not confirmed | Not confirmed |
 | Tracker cellular data | Not confirmed | Not confirmed | Not confirmed |
 
 The subtotals exclude Firestore overage and backend hosting. Under the global Maps list, the pilot's 18,060 map loads would exceed the 10,000 free loads and cost USD 56.42 (INR 5,381).
@@ -461,7 +461,7 @@ Repeat this check each month and whenever `B`, `R` or `P` changes:
 6. **Firestore operation counts.** Counts per ride, the fleet reconciliation factor of 4 reads per driver and 1,000 reads per admin day are estimates from code reading, not measurements.
 7. **Prices not confirmed.** Firestore prices for `asia-south2` and for stored data, Cloud Run unit prices, Identity Platform prices above 50,000 MAU and cellular data plans were not confirmed. Section 4.3 marks these.
 8. **Maps price list.** The India list applies only if billing and most usage are in India [17]; otherwise use the global list. Google charges India accounts in INR, so the invoice amount depends on Google's conversion, not on the rate in Section 1.2.
-9. **Plan and location.** Cloud Billing is linked to the deployed project `bustrack-be165` (checked on 2026-11-01), which places it on the Blaze plan [5]. The Realtime Database instance is in `us-central1` ([RTDB region decision](../design/RTDB_REGION_LATENCY_DECISION.md)) and the default Firestore database was recorded in `asia-south2` on 2026-10-11 ([non-motion inventory](../testing/LIVE_NON_MOTION_INVENTORY_2026_10_11.md)).
+9. **Plan and location.** Cloud Billing is linked to the deployed project `bustrack-be165` (checked on 2026-11-01), which places it on the Blaze plan [5]. The Realtime Database instance has been `bustrack-be165-asia-rtdb` in `asia-southeast1` since 2026-11-02 ([RTDB region decision](../design/RTDB_REGION_LATENCY_DECISION.md)), and its prices in Section 2.1 were not re-checked for that location. The default Firestore database was recorded in `asia-south2` on 2026-10-11 ([non-motion inventory](../testing/LIVE_NON_MOTION_INVENTORY_2026_10_11.md)).
 10. **Hardware prices** are indicative retail listings and change often.
 
 ## 8. References

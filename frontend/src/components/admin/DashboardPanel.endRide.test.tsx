@@ -9,21 +9,19 @@ import type { RouteData } from "@/hooks/useRoutes";
 import type { BusLocationData } from "@/hooks/useBusLocations";
 import { fixtureBus, route } from "../../../../e2e/fixtures/state";
 // Mocks copied from DashboardPanel.test.tsx.
-const state = vi.hoisted(() => ({ entries: [] as ActiveBusEntry[], geometries: new Map(), routes: [] as RouteData[], resuming: false, driversLoading: false, busLocations: [] as BusLocationData[], busLocationsError: null as string | null, retryBusLocations: vi.fn() }));
+const state = vi.hoisted(() => ({ entries: [] as ActiveBusEntry[], routes: [] as RouteData[], resuming: false, driversLoading: false, busLocations: [] as BusLocationData[], busLocationsError: null as string | null, retryBusLocations: vi.fn() }));
 vi.mock("@vis.gl/react-google-maps", () => ({ Map: ({children}: {children: ReactNode}) => <div>{children}</div>, AdvancedMarker: ({ children }: { children: ReactNode }) => <div>{children}</div>, useMap: () => null }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ role: "admin", user: {uid: "qa-admin"} }) }));
 vi.mock("@/hooks/useActiveBuses", () => ({ useActiveBuses: () => state.entries }));
 vi.mock("@/hooks/useBusLocations", () => ({ useBusLocations: () => ({ busLocations: state.busLocations, error: state.busLocationsError, retry: state.retryBusLocations }) }));
-vi.mock("@/hooks/useDynamicRouteGeometries", () => ({ useDynamicRouteGeometries: () => state.geometries }));
 vi.mock("@/hooks/useRTDBResume", () => ({ useRTDBResume: () => ({ isResuming: state.resuming }) }));
 vi.mock("@/hooks/useBuses", () => ({ useBuses: () => ({ buses: [{id: "qa-bus", name: "QA bus", assignedRoutes: ["qa-route"]}] }) }));
 vi.mock("@/hooks/useDrivers", () => ({ useDrivers: () => ({ drivers: [{id: "qa-driver", name: "QA driver", assignedBusId: "qa-bus"}], loading: false }) }));
 vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes: state.routes }) }));
-vi.mock("@/components/maps/DirectionsRoute", () => ({ default: () => <div /> }));
 vi.mock("@/components/shared/MessagingPanel", () => ({ default: ({ sessionId }: { sessionId: string }) => <p>Chat session {sessionId}</p> }));
 vi.mock("@/lib/firebaseAuth", () => ({ auth: {currentUser: {getIdToken: async () => "synthetic-token"}} }));
 vi.mock("@/components/ui/CustomSelect", () => ({ default: () => <select /> }));
-beforeEach(() => { state.entries = []; state.busLocations = []; state.routes = [{ ...route, stops: [] }]; state.geometries.clear(); vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test"); });
+beforeEach(() => { state.entries = []; state.busLocations = []; state.routes = [{ ...route, stops: [] }]; vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test"); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 const confirmDialog = () => screen.getByRole("dialog", { name: "End ride early?" });

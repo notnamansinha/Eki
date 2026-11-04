@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-001 | 2.2 | Current | 2026-11-02 |
+| EKI-ARC-001 | 2.3 | Current | 2026-11-03 |
 
 ## 1. Introduction
 
@@ -27,7 +27,7 @@ Detail lives in other documents:
 
 An ESP32 tracker in each bus reads a NEO-M8N GNSS (satellite positioning) receiver and posts a fix over HTTPS about once per second to an Express backend. The backend authenticates the device, writes the fix to Firebase Realtime Database (RTDB) and matches it to the bus route. A background worker, which runs in exactly one backend process at a time, advances the ride through its ordered stops and records ride history in Cloud Firestore. Passengers and administrators use a Next.js progressive web app (PWA) served by Firebase Hosting. The PWA receives live bus state through Firebase SDK listeners and sends commands to the backend over HTTPS. Terms are defined in the [glossary](../GLOSSARY.md).
 
-Current state: every green push to `main` deploys the web app and database rules to the staging Firebase project. The staging backend runs on the Cloud Run service `eki-backend-staging` in `asia-south2`, which scales to zero and runs with workers disabled (Section 5.2), and no production environment exists yet. Stop progress is validated on simulated rides only, and fleet firmware security is not yet proven on hardware. The [cost model](../cost/COST_MODEL.md#11-summary) estimates USD 80 to 87 a month for a three-bus pilot and USD 443 to 556 a month for a ten-bus campus service with today's hosting. The [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md#11-summary) lists what remains open.
+Current state: every green push to `main` deploys the web app and database rules to the staging Firebase project. The staging backend runs on the Cloud Run service `eki-backend-staging` in `asia-south2`, which runs one instance at most and whose manifest enables the lease-owned workers (Section 5.2), and no production environment exists yet. Stop progress is validated on simulated rides only, and fleet firmware security is not yet proven on hardware. The [cost model](../cost/COST_MODEL.md#11-summary) estimates USD 80 to 87 a month for a three-bus pilot and USD 441 to 554 a month for a ten-bus campus service. Both totals price the ngrok hosting used until 2026-11-01, because the Cloud Run cost is not yet confirmed. The [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md#11-summary) lists what remains open.
 
 ## 2. Stakeholders and concerns
 
@@ -135,7 +135,7 @@ flowchart LR
     phone["Browser"]
     esp["ESP32 tracker"]
     subgraph gcp["Google Cloud project behind bustrack-be165"]
-        run["Cloud Run eki-backend-staging<br/>asia-south2, NODE_ENV=production<br/>WORKER_ENABLED=false, scales to zero"]
+        run["Cloud Run eki-backend-staging<br/>asia-south2, NODE_ENV=production<br/>one instance at most, lease-owned workers"]
     end
     subgraph ws["Workstation in India (offline)"]
         ngrok["ngrok agent<br/>stable development domain"]
@@ -144,11 +144,12 @@ flowchart LR
     subgraph fb["Firebase project bustrack-be165"]
         host["Hosting"]
         authn["Authentication"]
-        db1[("RTDB<br/>us-central1")]
+        db1[("RTDB<br/>asia-southeast1")]
         db2[("Firestore<br/>asia-south2")]
     end
     phone -->|"Static app"| host
     phone -->|"REST commands"| run
+    esp -->|"Telemetry"| run
     esp -.->|"Telemetry to the tunnel origin"| ngrok
     ngrok -.->|"Loopback"| proc1
     run --> authn
@@ -160,11 +161,11 @@ flowchart LR
 
 Figure 3. Current deployment. Dashed lines show the tunnel path, which is offline.
 
-Since 2026-11-01 the staging web app sends its REST commands to the Cloud Run service `eki-backend-staging` in `asia-south2`, deployed by the manual `deploy-backend-staging` job ([CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md)). The service runs the backend container with `NODE_ENV=production`, trusts one forwarded hop (the production default) and scales to zero when idle. Clients call it on its own origin: Hosting rewrites were evaluated on 2026-11-02 and not adopted ([issue #372](https://github.com/notnamansinha/Eki/issues/372)). It runs with `WORKER_ENABLED=false`, so no process runs the lease-owned workers until the worker handoff. Before the move, the backend ran as one Node.js process on a workstation, reached through an ngrok tunnel with a fixed domain ([ngrok tunnel](../operations/NGROK_TUNNEL.md)); that tunnel is offline. The backend origin is compiled into both clients: `NEXT_PUBLIC_BACKEND_URL` in the web build and `BACKEND_URL` in the ignored `hardware/include/secrets.h`. Moving the backend therefore requires a web rebuild and a reflash of every tracker, and trackers built with the tunnel origin cannot reach the backend until they are reflashed ([issue #376](https://github.com/notnamansinha/Eki/issues/376)). While a tracker cannot reach the backend, it queues and retries, Firebase listeners keep serving the last published state, and the PWA marks buses as delayed and then lost (Section 7).
+Since 2026-11-01 the staging web app sends its REST commands to the Cloud Run service `eki-backend-staging` in `asia-south2`, deployed by the manual `deploy-backend-staging` job ([CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md)). The service runs the backend container with `NODE_ENV=production`, trusts one forwarded hop (the production default) and scales to zero when idle. Clients call it on its own origin: Hosting rewrites were evaluated on 2026-11-02 and not adopted ([issue #372](https://github.com/notnamansinha/Eki/issues/372)). Since 2026-11-02 its manifest sets `WORKER_ENABLED=true`, after a handoff rehearsal on staging ([issue #374](https://github.com/notnamansinha/Eki/issues/374)), and two Cloud Scheduler jobs hold one instance from 06:00 to 22:00 IST so that the lease-owned workers run in that window. Overnight the service scales to zero, and a request that wakes an instance makes it the worker leader until it idles. On 2026-11-03 the serving revision had the workers disabled and both Scheduler jobs were paused ([staging runtime configuration](../operations/STAGING_RUNTIME_CONFIG.md#2-project-facts)). Before the move, the backend ran as one Node.js process on a workstation, reached through an ngrok tunnel with a fixed domain ([ngrok tunnel](../operations/NGROK_TUNNEL.md)); that tunnel is offline. The backend origin is compiled into both clients: `NEXT_PUBLIC_BACKEND_URL` in the web build and `BACKEND_URL` in the ignored `hardware/include/secrets.h`. Moving the backend therefore requires a web rebuild and a reflash of every tracker, and trackers built with the tunnel origin cannot reach the backend until they are reflashed. One tracker was reflashed with the Cloud Run origin on 2026-11-02 ([issue #427](https://github.com/notnamansinha/Eki/issues/427)); the remaining device checks are in [issue #430](https://github.com/notnamansinha/Eki/issues/430). While a tracker cannot reach the backend, it queues and retries, Firebase listeners keep serving the last published state, and the PWA marks buses as delayed and then lost (Section 7).
 
 ### 5.3 Proposed managed backend
 
-Partly implemented: the staging service exists (Section 5.2), and Hosting rewrites were evaluated and not adopted ([issue #372](https://github.com/notnamansinha/Eki/issues/372)); the worker handoff, the tracker reflash and production are not done. The target is to run the existing container on Cloud Run in the Google Cloud project behind `bustrack-be165`, reach it on its own origin or a stable API domain, and keep the existing Authentication, Firestore and RTDB. The workers run outside request lifetimes, so the service needs CPU allocated outside requests and at least one minimum instance. Cloud Run needs a billing account linked to the Firebase project, which moves it to the Blaze plan [4]. The backend release workflow with rollback exists. Before the tunnel can be retired, the project needs a staged handoff of the worker lease, at least one minimum instance after it, and trackers reflashed with the new origin. Production hosting is tracked in [issue #122](https://github.com/notnamansinha/Eki/issues/122).
+Partly implemented: the staging service exists (Section 5.2), and Hosting rewrites were evaluated and not adopted ([issue #372](https://github.com/notnamansinha/Eki/issues/372)); the worker handoff was rehearsed on 2026-11-02 and the manifest enables the workers ([issue #374](https://github.com/notnamansinha/Eki/issues/374)), and one tracker has the new origin; the fleet reflash and production are not done. The target is to run the existing container on Cloud Run in the Google Cloud project behind `bustrack-be165`, reach it on its own origin or a stable API domain, and keep the existing Authentication, Firestore and RTDB. The workers run outside request lifetimes, so the service needs CPU allocated outside requests and at least one minimum instance; staging holds that instance from 06:00 to 22:00 IST only (Section 5.2). Cloud Run needs a billing account linked to the Firebase project, which moves it to the Blaze plan [4]. The backend release workflow with rollback exists. Before the tunnel can be retired, every tracker needs the new origin and the checks in [issue #430](https://github.com/notnamansinha/Eki/issues/430) need to pass ([issue #378](https://github.com/notnamansinha/Eki/issues/378)). Production hosting is tracked in [issue #122](https://github.com/notnamansinha/Eki/issues/122).
 
 ## 6. Runtime views
 
@@ -259,7 +260,7 @@ The repository defines no end-to-end service level. The [test strategy](../testi
 | Ingestion bounds | 512 B telemetry body; 8 s response budget; 5 s per dependency | `backend/src/server.ts`, `backend/src/lib/executionDeadline.ts` | Implemented |
 | Worker failover | Lease of 45 s renewed every 15 s; graceful shutdown within 10 s | `backend/src/services/workerCoordinator.ts`, `backend/src/server.ts` | Implemented; see [worker leadership](../operations/WORKER_LEADERSHIP.md) |
 | Readiness | Firestore and RTDB probes every 30 s, 5 s timeout, results expire after 65 s | `backend/src/server.ts`, `backend/src/lib/healthState.ts` | Implemented |
-| Region move | Singapore median and p95 at least 30% better than Iowa before cutover | [RTDB region decision](RTDB_REGION_LATENCY_DECISION.md) | Proposed |
+| Region move | Singapore median and p95 at least 30% better than Iowa before cutover | [RTDB region decision](RTDB_REGION_LATENCY_DECISION.md) | Staging moved on 2026-11-02 without the gate; transport legs are measured in [Cloud Run latency, 2 November](../testing/CLOUD_RUN_LATENCY_2026_11_02.md) |
 | Retention | Terminal ride sessions, completed trips and feedback 180 days; operation records 90 days | `backend/src/services/retentionSweeper.ts` | Implemented; see [storage architecture](../data/STORAGE_ARCHITECTURE.md) |
 | Cost | No Google Maps call per fix; at most one Dynamic Maps load per page load that shows a map; Firestore written on lifecycle and presence changes, not per fix; ETA computed in the browser | [Cost model](../cost/COST_MODEL.md), [EKI-ADR-004](GOOGLE_MAP_REUSE_DECISION.md) | Implemented; the billing effect of map reuse is not yet confirmed in the Cloud Console |
 
@@ -292,7 +293,7 @@ Declared versions come from the `package.json` files and `hardware/platformio.in
 | Decision | Reason | Record |
 |---|---|---|
 | Deliver live state through Firebase SDK listeners; add no SSE, WebSocket, GraphQL or webhook interface | Firebase already supplies authentication, reconnection and fan-out; no client needs another transport | [EKI-ADR-001](REALTIME_TRANSPORT_DECISION.md), Accepted |
-| Keep RTDB in `us-central1` until a Singapore instance passes a measured cutover gate | Front-door probes favour Singapore, but database and listener gains are unproven | [EKI-ADR-002](RTDB_REGION_LATENCY_DECISION.md), Proposed |
+| Place RTDB in Singapore (`asia-southeast1`); staging moved on 2026-11-02 | Front-door probes favoured Singapore; the cutover gate's database and listener measurements were not run before the move | [EKI-ADR-002](RTDB_REGION_LATENCY_DECISION.md), Current |
 | Keep `activeBuses/{busId}_{routeId}` as the single atomic live record; browsers read a projection | No measurement shows single-node transaction contention | [EKI-ADR-003](TELEMETRY_STATE_PARTITION_DECISION.md), Accepted |
 | Reuse one Google map instance per page with `reuseMaps`; keep React keys and mount gates; keep the Google basemap for passengers for now | Each constructed map is a billed Dynamic Maps load; reuse removes the load on every route, direction, bus, tab and editor change without changing per-ride state | [EKI-ADR-004](GOOGLE_MAP_REUSE_DECISION.md), Accepted |
 | Trackers push HTTPS to the backend; no message broker; no Firebase credentials on devices | One observable trust boundary for a small fleet | [High-level design](HIGH_LEVEL_DESIGN.md#7-design-rationale) |
@@ -301,8 +302,8 @@ Declared versions come from the `package.json` files and `hardware/platformio.in
 
 ## 10. Constraints and risks
 
-- The staging backend depends on one Cloud Run instance that scales to zero and runs with workers disabled (Section 5.2). Production hosting is not in place.
-- RTDB is in Iowa while users, trackers and Firestore are in India, which adds a transcontinental hop to every live write and read.
+- The staging backend depends on one Cloud Run instance without failover, and the workers run only while that instance is up (Section 5.2). Production hosting is not in place.
+- RTDB is in Singapore while the backend and Firestore are in Delhi, so every backend RTDB operation crosses between the two regions. The cutover gate in [EKI-ADR-002](RTDB_REGION_LATENCY_DECISION.md) was not run before the move.
 - The 15 m arrival corridor and the matcher's speed check are validated on synthetic tracks only ([field-ride repairs of 2026-10-29](../testing/PASSENGER_FIELD_RIDE_REPAIRS_2026_10_29.md)). Moving-bus acceptance is open.
 - Retention periods need approval by the university's data owner before production use.
 
