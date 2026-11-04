@@ -205,6 +205,187 @@ body {
   }
 }
 
+/* The mobile home retains its full-width shell. Give the desktop list the height
+   freed by the shallower artwork, with its own scrollbar above the dock. */
+.passenger-home-count,
+.passenger-home-scroll-hint {
+  display: none;
+}
+
+.passenger-live-route-scroll {
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+
+.passenger-live-route-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+@media (any-pointer: fine) {
+  .passenger-home {
+    --passenger-home-panel-bottom: 0px;
+    --passenger-home-art-height: clamp(24px, calc(22dvh - 64px), 144px);
+    --passenger-home-art-min-height: 0px;
+    overflow-y: auto;
+    padding-bottom: calc(97px + var(--safe-area-bottom));
+  }
+
+  .passenger-home-panel {
+    width: min(42rem, calc(100% - 2rem));
+    min-height: 12rem;
+    margin-inline: auto;
+    padding-top: 1rem;
+    border-radius: 24px;
+  }
+
+  .passenger-home-heading {
+    margin: 0 1.25rem 0.75rem;
+    padding: 0;
+    text-align: left;
+  }
+
+  .passenger-home-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    column-gap: 0.75rem;
+  }
+
+  .passenger-home-title h1 {
+    margin-bottom: 0;
+  }
+
+  .passenger-home-count {
+    display: inline;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+
+  .passenger-home-scroll-hint {
+    display: block;
+    flex-shrink: 0;
+    visibility: hidden;
+    padding: 0.25rem 1rem 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    text-align: center;
+  }
+
+  .passenger-home-scroll-hint[data-overflow="true"] {
+    visibility: visible;
+  }
+
+  .passenger-live-route-scroll {
+    min-height: 0;
+    padding-bottom: 0.25rem;
+    scroll-behavior: auto;
+    scroll-padding-block: 0.375rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--text-tertiary) var(--surface-2);
+    scrollbar-gutter: stable;
+  }
+
+  .passenger-live-route-scroll::-webkit-scrollbar {
+    display: block;
+    width: 8px;
+  }
+
+  .passenger-live-route-scroll::-webkit-scrollbar-thumb {
+    background: var(--text-tertiary);
+    border-radius: 8px;
+  }
+
+  .passenger-live-route-list {
+    gap: 0.5rem;
+    padding-bottom: 0;
+  }
+
+  .passenger-live-route-card {
+    min-height: 0;
+    padding: 0.5rem 0.875rem;
+    border-radius: 12px;
+  }
+
+  .passenger-live-route-card-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.125rem 1rem;
+    padding-left: 0;
+  }
+
+  .passenger-live-route-card h3 {
+    font-size: 1.125rem;
+    line-height: 1.25;
+  }
+
+  .passenger-live-route-card h3 + p {
+    margin-top: 0.125rem;
+  }
+
+  .passenger-live-route-details {
+    display: contents;
+  }
+
+  .passenger-live-route-label {
+    grid-row: 1 / span 2;
+  }
+
+  .passenger-live-route-action,
+  .passenger-live-route-meta {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .passenger-live-route-action {
+    grid-row: 1;
+    align-self: end;
+  }
+
+  .passenger-live-route-meta {
+    grid-row: 2;
+    align-self: start;
+  }
+
+  [data-passenger-route]:focus-visible {
+    outline: 2px solid var(--text-primary);
+    outline-offset: -3px;
+    border-radius: 12px;
+  }
+
+  .passenger-nav-frame {
+    inset-inline: 1rem;
+    bottom: 16px;
+    max-width: 28rem;
+    margin-inline: auto;
+    border-radius: 22px;
+  }
+
+  .passenger-nav-bar {
+    height: 64px;
+    padding-block: 0.25rem;
+  }
+
+  .passenger-nav-bar > button {
+    height: 52px;
+  }
+
+  @media (max-width: 36rem) {
+    .passenger-live-route-card-content {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .passenger-live-route-label,
+    .passenger-live-route-action,
+    .passenger-live-route-meta {
+      grid-column: auto;
+      grid-row: auto;
+      justify-self: start;
+    }
+  }
+}
+
 /* Keep the shared hero image, but remove the loading panel and nav once the
    passenger workspace has mounted above the shell. */
 .passenger-layout:has([data-passenger-workspace]) [data-passenger-loading-placeholder] {

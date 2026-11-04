@@ -9,7 +9,7 @@ async function injectInsets(page: Page, top = 47, bottom = 34) {
 }
 const nav = (page: Page) => page.locator("[data-passenger-workspace] nav");
 const navButton = (page: Page, name: "Map" | "Routes" | "Profile") => nav(page).getByRole("button", { name, exact: true });
-const homePanel = (page: Page) => page.locator("[data-passenger-workspace] h1", { hasText: "Live Routes" }).locator("xpath=../..");
+const homePanel = (page: Page) => page.locator("[data-passenger-workspace] .passenger-home-panel");
 
 async function paintedNavBottom(page: Page) {
   return nav(page).evaluate(element => {
@@ -23,12 +23,13 @@ async function paintedNavBottom(page: Page) {
 }
 
 for (const bottomInset of [0, 34]) {
-  test(`PAX-01 footer is painted to the screen edge and clears the panel (bottom inset ${bottomInset}px)`, async ({ page }) => {
+  test(`PAX-01 navigation clears the panel and respects the bottom inset (bottom inset ${bottomInset}px)`, async ({ page }) => {
     await page.goto("/");
     await injectInsets(page, bottomInset ? 47 : 0, bottomInset);
     await expect(nav(page)).toBeVisible();
     const viewport = page.viewportSize()!;
-    expect(await paintedNavBottom(page)).toBeGreaterThanOrEqual(viewport.height - 0.5);
+    const desktop = await page.evaluate(() => matchMedia("(any-pointer: fine)").matches);
+    expect(await paintedNavBottom(page)).toBeCloseTo(viewport.height - (desktop ? 16 : 0), 0);
     const panel = (await homePanel(page).boundingBox())!;
     const navBox = (await nav(page).boundingBox())!;
     expect(navBox.y - (panel.y + panel.height)).toBeGreaterThanOrEqual(8);
@@ -256,13 +257,15 @@ test("admin Passenger Panel switch is the last item of the sliding section row",
   await expect(link).toBeInViewport({ ratio: 1 });
 });
 
-test("edge: landscape phone and tiny heights keep the panel above a painted footer", async ({ page }) => {
+test("edge: landscape phone and tiny heights keep the panel above a painted footer", async ({ page }, testInfo) => {
+  // Resizing preserves the input capabilities of the Playwright project.
+  const dockGap = testInfo.project.use.hasTouch ? 0 : 16;
   for (const size of [{ width: 844, height: 390 }, { width: 320, height: 568 }]) {
     await page.setViewportSize(size);
     await page.goto("/");
     await injectInsets(page, 0, 21);
     await expect(nav(page)).toBeVisible();
-    expect(await paintedNavBottom(page)).toBeGreaterThanOrEqual(size.height - 0.5);
+    expect(await paintedNavBottom(page)).toBeCloseTo(size.height - dockGap, 0);
     const panel = (await homePanel(page).boundingBox())!;
     const navBox = (await nav(page).boundingBox())!;
     expect(panel.y + panel.height, `${size.width}x${size.height}`).toBeLessThanOrEqual(navBox.y);

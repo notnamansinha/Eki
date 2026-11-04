@@ -432,6 +432,8 @@ A signed-in user leaves `/` for the saved workspace or the default for the role.
 
 `components/passenger/PassengerWorkspace.tsx` stacks four absolutely positioned views and a fixed bottom navigation. Hidden views are `inert` and `aria-hidden`; the Routes and Profile views mount on their first visit and then stay mounted. Reconnect, ride-recovery and error banners appear above the views.
 
+On desktop, the Live Routes panel is centered over the artwork, capped at 42 rem, with a shallow artwork spacer, compact route rows and a visible list scrollbar. A compact dock centers the Map, Routes and Profile tabs beneath the panel. Touch-only windows use the full-width bottom navigation. Keyboard selection moves focus into tracking and Back restores it to the selected route or the list heading if the route has disappeared.
+
 | View | Structure |
 |---|---|
 | Map (home) | Hero image above a rounded panel titled "Live Routes". The panel scrolls the announcement (when active) and one card per route with an active or available bus: route name, first and last stop, stop count and duration, and an action in `--accent` ("TRACK ROUTE", "VIEW STATUS" or "<n> AVAILABLE"). Without routes it shows the configured no-buses message and service start time. |

@@ -154,3 +154,7 @@ travel information and opens the University's Getting Around page.
 The current login screenshots show the sign-in fixture with synthetic auth
 at 390x844, 1440x900 and 1280x585 CSS pixels. The fixture verified that the
 heading, enabled Google button, Campus Operations link and footer fit.
+
+## Desktop passenger view
+
+The approved desktop Live Routes layout centers a 42 rem maximum-width panel over the landscape artwork. A shorter top spacer leaves more room for the compact, independently scrolling route list. The centered dock sits below the panel. The workspace and session-loading shell share this geometry for pointer-equipped windows. Touch-only windows retain the original layout. The layout uses the same portrait and landscape artwork sources.
