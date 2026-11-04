@@ -19,15 +19,14 @@ function MapsReady({ children }: { children: ReactNode }) {
     if (!loaded || !maps || !marker) return;
     const lines: google.maps.Polyline[] = [], markers: google.maps.marker.AdvancedMarkerElement[] = [];
     const loadedMaps = new Map<google.maps.Map, { tilesLoaded: boolean; tileLoads: number }>();
-    const OriginalLine = google.maps.Polyline, OriginalMarker = google.maps.marker.AdvancedMarkerElement;
-    google.maps.Polyline = class extends OriginalLine { constructor(options?: google.maps.PolylineOptions) {
-      super(options); lines.push(this);
-      const map = options?.map;
-      if (map instanceof google.maps.Map && !loadedMaps.has(map)) {
-        const state = { tilesLoaded: false, tileLoads: 0 }; loadedMaps.set(map, state);
-        google.maps.event.addListener(map, "tilesloaded", () => { state.tilesLoaded = true; state.tileLoads++; });
-      }
+    const OriginalMap = google.maps.Map, OriginalLine = google.maps.Polyline, OriginalMarker = google.maps.marker.AdvancedMarkerElement;
+    // Watch every constructed map, including Live Ops, which draws no polyline.
+    google.maps.Map = class extends OriginalMap { constructor(div: HTMLElement, options?: google.maps.MapOptions) {
+      super(div, options);
+      const state = { tilesLoaded: false, tileLoads: 0 }; loadedMaps.set(this, state);
+      google.maps.event.addListener(this, "tilesloaded", () => { state.tilesLoaded = true; state.tileLoads++; });
     } };
+    google.maps.Polyline = class extends OriginalLine { constructor(options?: google.maps.PolylineOptions) { super(options); lines.push(this); } };
     // importLibrary returns a frozen exports object. Observe the real marker's
     // public position setter rather than replacing that module's constructor.
     const positionDescriptor = Object.getOwnPropertyDescriptor(OriginalMarker.prototype, "position")!;
@@ -65,7 +64,7 @@ function MapsReady({ children }: { children: ReactNode }) {
       }),
     }) };
     setReady(true);
-    return () => { google.maps.Polyline = OriginalLine; Object.defineProperty(OriginalMarker.prototype, "position", positionDescriptor); };
+    return () => { google.maps.Map = OriginalMap; google.maps.Polyline = OriginalLine; Object.defineProperty(OriginalMarker.prototype, "position", positionDescriptor); };
   }, [loaded, maps, marker]);
   return ready ? children : <p role="status">Loading the real Google Maps JavaScript API…</p>;
 }

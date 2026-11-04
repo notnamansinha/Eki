@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-011 | 1.1 | Current | 2026-11-02 |
+| EKI-PKG-011 | 1.2 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -55,7 +55,7 @@ node_modules/.bin/tsc.cmd --noEmit --project e2e/routing/live-maps/tsconfig.json
 
 The configuration reuses a running fixture server or starts one. `in-app.spec.ts` has two tests:
 
-- At 1920 x 1080, it waits for `tilesloaded` on both maps, compares each map's SDK polyline coordinates with the independently decoded directional paths, and checks advanced-marker movement, the confidence hold and fallback, recovery, and rejection of an older revision.
+- At 1920 x 1080, it waits for `tilesloaded` on both maps, compares the passenger map's SDK polyline coordinates with the independently decoded directional paths, checks that the admin Live Ops map draws no route line, and checks advanced-marker movement, the confidence hold and fallback, recovery, and rejection of an older revision.
 - At 360 x 800 with touch, it checks that the passenger marker and stop controls stay usable.
 
 Requests may reach only the fixture server on port 3163, the Google Maps hosts and the Google Fonts hosts; any Firebase, backend or Routes request fails the test. Screenshots and redacted SDK and network evidence go to `artifacts/routing-in-app-maps/`. Traces and HAR files are off because Maps request URLs contain the API key.

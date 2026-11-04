@@ -156,7 +156,7 @@ Each map marker is a 20 px circle with a 2 px white border and the stop letter (
 | Covered road | `#71717a` | 5 / 3 px | 1 | 22 |
 | Active leg to the next stop | `#3b82f6` | 5 / 3 px | 1 | 23 |
 
-The live view is any map that passes backend stop indices: the passenger map during a ride and the admin Live Ops map. With one bus and a confident match (confidence at least 0.7 on the current geometry version), the active leg is split at the bus, so road behind it is grey and road ahead is blue. A fleet with several buses shows each active leg without a covered section.
+The live view is the passenger map during a ride, which passes backend stop indices; the admin Live Ops map draws no route. With one bus and a confident match (confidence at least 0.7 on the current geometry version), the active leg is split at the bus, so road behind it is grey and road ahead is blue. A fleet with several buses shows each active leg without a covered section.
 
 The route editor offers eight route colours (`components/admin/RouteManagementPanel.tsx`): `#3B82F6`, `#10B981`, `#F59E0B`, `#EF4444`, `#8B5CF6`, `#EC4899`, `#14B8A6`, `#F97316`. New routes start with `#3B82F6`. The route colour appears in the route list swatch, editor stop markers, preview roads and the timeline rail (at 25 % alpha).
 
@@ -177,10 +177,10 @@ Admin marker (`components/admin/DashboardPanel.tsx`): a 36 px circle with a 3 px
 
 | Condition | Fill |
 |---|---|
-| In service and moving | `#34D399` |
-| In service and not moving | `#FBBF24` |
-| Not in service, device not online or motion uncertain | `#FB923C` |
-| Not in service, otherwise | `#94949C` |
+| In live service and moving | `#34D399` |
+| In live service and not moving | `#FBBF24` |
+| Paused (session kept, receiver offline or silent for more than 30 s), device not online, or motion uncertain | `#FB923C` |
+| Otherwise | `#94949C` |
 
 ### 3.6 Admin ride states
 
@@ -450,7 +450,7 @@ On desktop, the Live Routes panel is centered over the artwork, capped at 42 rem
 | Area | Structure |
 |---|---|
 | Tab bar | `role="tablist"` with Live Ops, Routes, Fleet & People, History, Feedback and, after a divider, Settings. The active tab is white with a 2 px `--accent` underline; others are `text-white/50`. **Passenger Panel** follows the tabs; on narrow screens the row scrolls horizontally. |
-| Live Ops: map | Google map with the traffic layer, live route overlays and bus markers. A top-left stack holds data-error, reconnect and "<n> devices online · <m> services" overlays. |
+| Live Ops: map | Google map with the traffic layer and bus markers; it draws no route lines, which appear only in the route editor. A top-left stack holds data-error, reconnect and "<n> devices online · <m> services" overlays. |
 | Live Ops: side column | "Automatic service" explanation with **Resume tracking** buttons for paused buses, a five-column stats row, and the "Live Fleet" list of fleet cards. |
 | Fleet card | Header button (status tile, bus name, state, delay, motion and speed chips) that expands the card, an eye button for live details and a chat button. Expanded: speed, heading, last update and next stop; route progress with next and following stop; driver and route; delay buttons (-2, -1, +1, +2); **Boarding code**; **End ride early**; coordinates. |
 | Live details drawer | Modal dialog: trip state, signal, next stop, delay, route matching, match confidence, route context, distance to route, raw and matched location diagnostics, **Clear Messages** and **End ride early**. |
@@ -585,7 +585,7 @@ Under `prefers-reduced-motion: reduce`, `app/globals.css` sets every animation a
 | Gap | Location |
 |---|---|
 | Text contrast below AA for stop letters, admin labels at 25 to 40 % white, the `.input-rc` placeholder, the danger dialog button and the feedback submit button (Section 4). | `PassengerMap.tsx`, `DashboardPanel.tsx`, `app/globals.css`, `ConfirmModal.tsx`, `FeedbackModal.tsx` |
-| Controls below the 44 px convention: the fleet card eye button (36 px), delay buttons (36 px minimum), **Boarding code** and **End ride early** in the card (40 px), and the passenger **Board** button (12 px text with 8 px vertical padding, 32 px high). All exceed the 24 px minimum of SC 2.5.8 [1]. | `DashboardPanel.tsx:463`, `:556`, `:568`, `:577`; `PassengerBoardingView.tsx` |
+| Controls below the 44 px convention: the fleet card eye button (36 px), delay buttons (36 px minimum), **Boarding code** and **End ride early** in the card (40 px), and the passenger **Board** button (12 px text with 8 px vertical padding, 32 px high). All exceed the 24 px minimum of SC 2.5.8 [1]. | `DashboardPanel.tsx:475`, `:568`, `:580`, `:589`; `PassengerBoardingView.tsx` |
 | `.input-rc` removes the outline and signals focus only by a border change from 10 % to 30 % white. | `app/globals.css` |
 | `html { scroll-behavior: smooth; }` is not reset under reduced motion. | `app/globals.css` |
 | `animate-in fade-in` on both dialogs produces no CSS, because no plugin defines these classes. | `ConfirmModal.tsx`, `AlertModal.tsx` |

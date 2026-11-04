@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -29,13 +29,17 @@ describe("deploy workflow releases only commits on main", () => {
     assert.ok(guard, "guard step missing");
     assert.equal(jobs["deploy-staging"].steps[0].name, guardName);
     assert.match(guard.env.SHA, /workflow_run\.head_sha \|\| github\.sha/);
-    assert.match(guard.run, /compare\/\$\{SHA\}\.\.\.main/);
+    // The branch ref, so a tag named main cannot stand in for the branch.
+    assert.match(guard.run, /compare\/\$\{SHA\}\.\.\.heads\/main"/);
   });
 
-  it("keeps no git credentials in any checkout", () => {
-    for (const [name, job] of Object.entries(jobs)) {
-      for (const step of job.steps.filter((s) => s.uses?.startsWith("actions/checkout@"))) {
-        assert.equal(step.with?.["persist-credentials"], false, `${name} checkout keeps credentials`);
+  it("keeps no git credentials in any checkout of any workflow", () => {
+    const dir = new URL("../.github/workflows/", import.meta.url);
+    for (const file of readdirSync(dir).filter((name) => /\.ya?ml$/.test(name))) {
+      for (const [name, job] of Object.entries(yaml.load(readFileSync(new URL(file, dir), "utf8")).jobs)) {
+        for (const step of (job.steps ?? []).filter((s) => s.uses?.startsWith("actions/checkout@"))) {
+          assert.equal(step.with?.["persist-credentials"], false, `${file} ${name} checkout keeps credentials`);
+        }
       }
     }
   });

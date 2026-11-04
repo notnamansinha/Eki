@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-004 | 1.1 | Current | 2026-10-30 |
+| EKI-ARC-004 | 1.2 | Current | 2026-11-03 |
 
 ## 1. Introduction
 
@@ -362,7 +362,7 @@ The new session is created `armed` with `automaticTurnaround: true` and `previou
 | Cause | Trigger | Effect | Source |
 |---|---|---|---|
 | End ride early | `POST /api/shifts/stop` by the assigned driver, or by an administrator with current authority (`role: admin`, `admin: true`, and an `authorizationVersion` matching `_userAuthorization`) even if the operator was reassigned | Session `interrupted`, `interruptionReason: manual_end_early`, `interruptedBy`; lock and `active_rides` removed; `automaticServicePaused: true`; node retired to `status: offline` without lifecycle fields | `backend/src/routes/shifts.ts:276`, `shifts.ts:290`, `shifts.ts:23` |
-| Abandoned ride | Hourly scan finds a `pending`, `armed` or `active` session with no activity for 12 h (`ABANDONED_RIDE_THRESHOLD_HOURS`); an unused automatic return gets 24 h | Session `interrupted`, `interruptionReason: abandoned_session_timeout` | `backend/src/services/abandonedRideReconciliationLogic.ts:1`, `backend/src/services/abandonedRideReconciler.ts:18` |
+| Abandoned ride | Hourly scan finds a `pending`, `armed` or `active` session with no activity for 12 h (`ABANDONED_RIDE_THRESHOLD_HOURS`); an unused automatic return gets 24 h. An engine restart that replays a swept-offline receiver's old fix does not count as activity | Session `interrupted`, `interruptionReason: abandoned_session_timeout` | `backend/src/services/abandonedRideReconciliationLogic.ts:1`, `backend/src/services/abandonedRideReconciler.ts:18`, `backend/src/services/tripStateEngine.ts:991-999` |
 | Start conflict | Another session won the live claim | Session `failed`, `failureReason: shift_conflict` | `rideSessionStart.ts:557` |
 
 A completed session is never interrupted; the stop endpoint reports `alreadyCompleted`. Resuming automatic service after an early end needs a manual start (Section 6.2).
@@ -371,11 +371,11 @@ A completed session is never interrupted; the stop endpoint reports `alreadyComp
 
 ### 7.1 Processing order
 
-The trip-state engine handles live-node events one at a time per node (`tripStateEngine.ts:1277`). Events that change no lifecycle field are skipped (`backend/src/services/lifecycleIntake.ts:2`). For a node with a resolved direction and a fix newer than the last one processed for the same session and direction, the engine calls the pure reducer `reduceTripState` (`backend/src/services/tripStateReducer.ts:301`) with the previous fix as segment start (`tripStateEngine.ts:952`). It then:
+The trip-state engine handles live-node events one at a time per node (`tripStateEngine.ts:1288`). Events that change no lifecycle field are skipped (`backend/src/services/lifecycleIntake.ts:2`). For a node with a resolved direction and a fix newer than the last one processed for the same session and direction, the engine calls the pure reducer `reduceTripState` (`backend/src/services/tripStateReducer.ts:301`) with the previous fix as segment start (`tripStateEngine.ts:957`). It then:
 
-1. writes the result to `active_rides` and missing `stopsReached` entries to the session in one Firestore transaction, guarded by the bus lock (`tripStateEngine.ts:654`). The stop index never moves backward;
+1. unless the node is offline and its fix is more than 60 s from the server time, writes the result to `active_rides` and missing `stopsReached` entries to the session in one Firestore transaction, guarded by the bus lock (`tripStateEngine.ts:659`). The stop index never moves backward;
 2. computes `atStopIndex` and the unobserved stop list (Sections 7.8 and 7.5);
-3. writes `tripState`, `currentStopIndex`, `hasDepartedOrigin`, `terminalArrival`, `gnssGap`, `atStop` and `unobservedStops` to the node in a transaction guarded by session and direction (`tripStateEngine.ts:1015`).
+3. writes `tripState`, `currentStopIndex`, `hasDepartedOrigin`, `terminalArrival`, `gnssGap`, `atStop` and `unobservedStops` to the node in a transaction guarded by session and direction (`tripStateEngine.ts:1026`).
 
 `currentStopIndex` is the next stop expected while in service and the terminal stop once completed.
 
@@ -414,7 +414,7 @@ With continuous telemetry a bus can still miss a corridor (a detour, or a pin of
 
 ### 7.6 GNSS gaps
 
-A gap opens at the time of the previous fix when this fix or the previous fix is unreliable, the segment is longer than 250 m, or more than 10 s (`GNSS_GAP_MS`, ten missed 1 Hz heartbeats) passed between them (`tripStateReducer.ts:284`). A gap also opens when the engine has no earlier fix for an in-service ride, for example after a restart or leadership change (`tripStateEngine.ts:967`). A fix more than 60 s old or more than 10 s in the future changes nothing and opens no gap (`tripStateReducer.ts:324`). The open gap is stored as `gnssGap: {sessionId, since}` on the node and `gnssGapSince` in `active_rides`.
+A gap opens at the time of the previous fix when this fix or the previous fix is unreliable, the segment is longer than 250 m, or more than 10 s (`GNSS_GAP_MS`, ten missed 1 Hz heartbeats) passed between them (`tripStateReducer.ts:284`). A gap also opens when the engine has no earlier fix for an in-service ride, for example after a restart or leadership change (`tripStateEngine.ts:972`). A fix more than 60 s old or more than 10 s in the future changes nothing and opens no gap (`tripStateReducer.ts:324`). The open gap is stored as `gnssGap: {sessionId, since}` on the node and `gnssGapSince` in `active_rides`.
 
 While a gap is open and the next stop is not reached, the reducer looks at later stops in order and credits the stops before the first one that is (`tripStateReducer.ts:496`):
 
@@ -429,18 +429,18 @@ Credited stops are recorded as `skipped_gnss_gap`. Observing any stop closes the
 
 The terminal stop requires `hasDepartedOrigin`, a `stopped` fix with HDOP 0 to 4, speed at most 2.5 km/h and a position within 15 m (`tripStateReducer.ts:562`). The first such fix starts `terminalArrival: {startedAt, lastSampledAt}`. A later qualifying fix no more than 60 s after the previous one extends it, and completion is confirmed when the evidence spans `TERMINAL_ARRIVAL_CONFIRMATION_MS`, default 2 s, minimum 1 s (`tripStateReducer.ts:121`).
 
-On completion one Firestore transaction (`tripStateEngine.ts:1071`):
+On completion one Firestore transaction (`tripStateEngine.ts:1082`):
 
 - merges `completed_trips/{sessionId}`;
 - sets the session `completed` with `terminalArrivalConfirmedAt`, `endTime` and missing `stopsReached`;
 - deletes the matching `active_rides` document and bus lock;
 - writes the `terminalJourney` checkpoint on `bus_locations/{busId}` for the automatic turnaround.
 
-The node then gets `tripState: completed`, `completedAt`, `turnaroundEligibleAt` and `lastCompleted*`. After 30 s it is retired to `status: offline` (`tripStateEngine.ts:1262`).
+The node then gets `tripState: completed`, `completedAt`, `turnaroundEligibleAt` and `lastCompleted*`. After 30 s it is retired to `status: offline` (`tripStateEngine.ts:1273`).
 
 ### 7.8 Current stop (`atStopIndex`)
 
-`visitedStopIndex` (`tripStateReducer.ts:616`) gives the stop the bus is at now, so passengers see "At B" on arrival rather than at the next stop. It needs a reliable fix at most 60 s from the server time (`tripStateEngine.ts:999`).
+`visitedStopIndex` (`tripStateReducer.ts:616`) gives the stop the bus is at now, so passengers see "At B" on arrival rather than at the next stop. It needs a reliable fix at most 60 s from the server time (`tripStateEngine.ts:991`).
 
 | Ride position | `atStopIndex` |
 |---|---|
@@ -464,7 +464,7 @@ The node stores `atStop: {sessionId, index}`; the public projection exposes `atS
 | `skipped_gnss_gap` | Credited after a GNSS gap; not observed | `Passed · not confirmed` |
 | `passed_unobserved` | Missed with telemetry running; credited by a later stop | `Passed · not confirmed` |
 
-The live node also carries `unobservedStops: {sessionId, indices}` with both unobserved kinds, published as `unobservedStopIndices` (at most 500 entries) (`tripStateEngine.ts:996`, `liveBusProjection.ts:62`). Browsers derive the per-stop state `passed`, `unobserved`, `at`, `next` or `upcoming` from `currentStopIndex`, `atStopIndex` and `unobservedStopIndices` only, never from proximity (`frontend/src/lib/stopProgress.ts:25`).
+The live node also carries `unobservedStops: {sessionId, indices}` with both unobserved kinds, published as `unobservedStopIndices` (at most 500 entries) (`tripStateEngine.ts:1008`, `liveBusProjection.ts:62`). Browsers derive the per-stop state `passed`, `unobserved`, `at`, `next` or `upcoming` from `currentStopIndex`, `atStopIndex` and `unobservedStopIndices` only, never from proximity (`frontend/src/lib/stopProgress.ts:25`).
 
 ### 7.10 Reducer outline
 
@@ -570,11 +570,11 @@ Boarding is also withheld while `automaticServicePaused` is `true` or the browse
 
 ### 9.4 What the administrator interface withholds
 
-The Live Ops dashboard uses the 30 s threshold only, re-evaluated every 15 s (`frontend/src/components/admin/DashboardPanel.tsx:701`). A ride whose node is `offline` or silent for more than 30 s shows **Service paused** instead of its trip state (`DashboardPanel.tsx:76`) and is left out of the in-service, awaiting-start and direction-pending counts (`DashboardPanel.tsx:706`). **End ride early** stays available for such a ride.
+The Live Ops dashboard uses the 30 s threshold only, re-evaluated every 15 s (`frontend/src/components/admin/DashboardPanel.tsx:655`). A ride whose node is `offline` or silent for more than 30 s shows **Service paused** instead of its trip state (`DashboardPanel.tsx:72-75,88-90`) and is left out of the in-service, awaiting-start and direction-pending counts (`DashboardPanel.tsx:660`). Its marker stays at the last known location, however old, in the offline colour, and the delay and boarding-code controls are disabled until the receiver reports again. **End ride early** stays available for such a ride.
 
 ### 9.5 Backend staleness
 
-The leader's stale sweep reads one page of 25 nodes ordered by `timestamp` each second until it has covered every node older than the cutoff, then waits `BUS_STALE_MS` before the next pass (`tripStateEngine.ts:1350`, `staleBusSweeper.ts:4`, `staleBusSweeper.ts:79`). A node silent for longer than `BUS_STALE_MS` (default 300 s, minimum 90 s, `tripStateEngine.ts:110`) is marked `deviceState: offline`, `signalState: lost` when it carries an active ride, and removed otherwise. The browser thresholds of Section 9.1 do not depend on this sweep.
+The leader's stale sweep reads one page of 25 nodes ordered by `timestamp` each second until it has covered every node older than the cutoff, then waits `BUS_STALE_MS` before the next pass (`tripStateEngine.ts:1361`, `staleBusSweeper.ts:4`, `staleBusSweeper.ts:79`). A node silent for longer than `BUS_STALE_MS` (default 300 s, minimum 90 s, `tripStateEngine.ts:110`) is marked `deviceState: offline`, `signalState: lost` when it carries an active ride, and removed otherwise. The browser thresholds of Section 9.1 do not depend on this sweep.
 
 ## 10. Design rationale
 

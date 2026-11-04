@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-005 | 1.4 | Current | 2026-11-02 |
+| EKI-GEN-005 | 1.5 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -72,7 +72,7 @@ The template is a production template. Copied unchanged, it sets `NODE_ENV=produ
 
 | Variable | Required | Default | Effect | Read in |
 |---|---|---|---|---|
-| `WORKER_ENABLED` | No | `true` | Lets this process compete for the worker lease. `false` keeps a replica out of leader election. Boolean flag (Section 3.9). | `services/workerCoordinator.ts`, `lib/booleanEnv.ts` |
+| `WORKER_ENABLED` | No | `true` | Lets this process compete for the worker lease. `false` keeps a replica out of leader election; set it on a local backend that uses the shared staging project, whose Cloud Run service runs the workers. Boolean flag (Section 3.9). | `services/workerCoordinator.ts`, `lib/booleanEnv.ts` |
 | `WORKER_INSTANCE_ID` | No | `worker` | Diagnostic label for the lease owner. The backend always appends a process UUID. Do not put credentials or personal data in it. | `services/workerCoordinator.ts` |
 | `RETENTION_SWEEPER_ENABLED` | In production | Disabled | Only `true` (trimmed, any case) enables the daily destructive retention sweep. In production any other value refuses startup. Keep it disabled locally. | `services/retentionSweeper.ts`, `server.ts` |
 | `LEGACY_RTDB_RETIRED` | No | `false` | Exactly `true` lets the retention sweep and `npm run retention:rtdb` remove the retired RTDB `users` and `messages` trees. See [RTDB retention](operations/RTDB_RETENTION.md) first. | `services/retentionSweeper.ts`, `rtdbRetentionCli.ts` |
@@ -212,7 +212,7 @@ These variables are set in the shell or by the scripts themselves. None belongs 
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Secret | Strict production build |
 | `NEXT_PUBLIC_GOOGLE_MAP_ID` | Secret | Strict production build |
 | `NEXT_PUBLIC_BACKEND_URL` | Secret | Strict production build and live backend check |
-| `RTDB_EXPECTED_REGION` | Variable | Optional region check in the RTDB preflight |
+| `RTDB_EXPECTED_REGION` | Variable | Expected RTDB region. Every Deploy release requires it (`--require-region`); the CI preflight checks it only when set |
 
 The release flow is described in [CI, deployment and releases](operations/CI_CD_AND_RELEASES.md).
 

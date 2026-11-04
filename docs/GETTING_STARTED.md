@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-004 | 2.0 | Current | 2026-10-30 |
+| EKI-GEN-004 | 2.1 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -95,11 +95,12 @@ Create these before you start. Use a project that holds no production data.
 
 The browser reads Firestore and RTDB directly under the repository's security rules, so the development project must run the current rules and indexes.
 
-1. Sign in to the Firebase CLI and deploy rules and indexes to the development project. The repository's `.firebaserc` names a shared project as `default`, so always pass `--project`:
+1. Sign in to the Firebase CLI and deploy rules and indexes to the development project. The repository's `.firebaserc` names a shared project as `default`, so always pass `--project`. `firebase.json` deploys the RTDB rules through the deploy target `rtdb`, which `.firebaserc` maps only for the shared project, so first map it to your instance, the one named in `NEXT_PUBLIC_FIREBASE_DATABASE_URL` (for example `<dev-project-id>-default-rtdb`). `target:apply` adds that mapping to your local `.firebaserc`; do not commit it.
 
    ```powershell
    npx --yes firebase-tools@15.14.0 login
-   npx --yes firebase-tools@15.14.0 deploy --project <dev-project-id> --only firestore:rules,firestore:indexes,database:rules
+   npx --yes firebase-tools@15.14.0 target:apply database rtdb <dev-rtdb-instance> --project <dev-project-id>
+   npx --yes firebase-tools@15.14.0 deploy --project <dev-project-id> --only firestore:rules,firestore:indexes,database:rtdb
    ```
 
    Expected result: the CLI reports a successful deploy for the three targets. Index builds continue in the background for a few minutes.

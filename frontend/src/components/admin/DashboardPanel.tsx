@@ -6,7 +6,6 @@ import {
 } from "@vis.gl/react-google-maps";
 import { auth } from "@/lib/firebaseAuth";
 import { useBuses } from "@/hooks/useBuses";
-import { useDynamicRouteGeometries } from "@/hooks/useDynamicRouteGeometries";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
@@ -30,7 +29,6 @@ import ConfirmModal from "@/components/ui/ConfirmModal";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { apiRequest, isApiRecord, acknowledgedField, type ApiRequestOptions } from "@/lib/apiClient";
 import MessagingPanel from "@/components/shared/MessagingPanel";
-import DirectionsRoute from "@/components/maps/DirectionsRoute";
 import TrafficLayer from "@/components/maps/TrafficLayer";
 import { normalizeHeading, unwrapHeading } from "@/lib/markerHeading";
 import { useTelemetryRenderTrace } from "@/hooks/useTelemetryRenderTrace";
@@ -65,6 +63,20 @@ const MOTION_STATE: Record<string, { label: string; color: string }> = {
   stopped:   { label: "Stopped", color: "text-amber-400" },
   uncertain: { label: "Motion uncertain",  color: "text-amber-400" },
 };
+/**
+ * A ride whose receiver is offline or silent past the signal-lost threshold keeps
+ * its session for recovery, but it is paused, not in service, matching the stats,
+ * which count live receivers only. Its marker still shows the last known
+ * location, however old.
+ */
+function isServicePaused(entry: ActiveBusEntry): boolean {
+  return Boolean(entry.sessionId) && entry.tripState !== "completed" &&
+    (entry.deviceState !== "online" || isLiveBusSignalLost(liveBusFreshnessTimestamp(entry)));
+}
+/** Delay and boarding-code changes act on a live ride only. */
+function isLiveService(entry: ActiveBusEntry): boolean {
+  return isActiveService(entry) && !isServicePaused(entry);
+}
 function servicePresentation(entry: ActiveBusEntry) {
   if (!entry.sessionId) {
     const label = entry.automaticServicePaused || entry.automaticServiceState === "paused" ? "Tracking paused"
@@ -73,7 +85,7 @@ function servicePresentation(entry: ActiveBusEntry) {
     if (label) return {label,color:"text-amber-300",bg:"bg-amber-500/10",dot:"bg-amber-300"};
     if (devicePresence(entry) !== "online") return {label:"Offline",color:"text-white/40",bg:"bg-white/5",dot:"bg-white/30"};
   }
-  if (entry.sessionId && entry.tripState !== "completed" && (entry.deviceState === "offline" || isLiveBusSignalLost(liveBusFreshnessTimestamp(entry)))) {
+  if (isServicePaused(entry)) {
     return {label:"Service paused",color:"text-amber-300",bg:"bg-amber-500/10",dot:"bg-amber-300"};
   }
   return TRIP_STATE[rideServiceState(entry)];
@@ -308,11 +320,11 @@ function BusMarker({
   onClick: (position: { lat: number; lng: number }) => void;
 }) {
   const ts = servicePresentation(entry);
-  const serviceState = rideServiceState(entry);
+  const paused = isServicePaused(entry);
   const markerColor =
-    serviceState === "in_service"
+    rideServiceState(entry) === "in_service" && !paused
       ? entry.motionState === "moving" ? "#34D399" : "#FBBF24"
-      : devicePresence(entry) !== "online" || entry.motionState === "uncertain" ? "#FB923C" : "#94949C";
+      : paused || devicePresence(entry) !== "online" || entry.motionState === "uncertain" ? "#FB923C" : "#94949C";
 
   const markerSelection = useLiveBusMarkerPosition(entry);
   const markerPoint = useSmoothPosition(markerSelection.position);
@@ -548,7 +560,7 @@ function FleetCard({
                   type="button"
                   disabled={
                     delayPending ||
-                    !isActiveService(entry) ||
+                    !isLiveService(entry) ||
                     !entry.routeId ||
                     !entry.driverId
                   }
@@ -563,7 +575,7 @@ function FleetCard({
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                disabled={!isActiveService(entry) || !entry.sessionId}
+                disabled={!isLiveService(entry) || !entry.sessionId}
                 onClick={() => onLoadBoardingCode(entry)}
                 className="flex min-h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white disabled:opacity-40"
               >
@@ -581,6 +593,9 @@ function FleetCard({
                 </button>
               )}
             </div>
+            {isActiveService(entry) && isServicePaused(entry) && (
+              <p className="text-[10px] text-amber-300/80">Delay and boarding code return when the receiver reports again.</p>
+            )}
             {hasValidBusCoordinates(entry.lat, entry.lng) && (
               <p className="text-[9px] text-white/20 tabular-nums">
                 {entry.lat!.toFixed(5)}, {entry.lng!.toFixed(5)}
@@ -619,69 +634,8 @@ export default function DashboardPanel() {
     [liveFleet, busLocations],
   );
   const { buses, error: busesError, retry: retryBuses } = useBuses();
-  const activeEntriesMap = useMemo(
-    () => new Map(activeEntries.map((entry) => [entry.busId, entry])),
-    [activeEntries],
-  );
-  const dynamicGeometries = useDynamicRouteGeometries(activeEntriesMap);
   const { drivers, error: driversError, retry: retryDrivers, loading: driversLoading } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
-  const activeRouteOverlays = useMemo(() => {
-    const overlays = new Map<string, {
-      key: string;
-      routeId: string;
-      color: string;
-      polyline?: string;
-      polylineQuality?: "HIGH_QUALITY";
-      direction: "forward" | "reverse";
-      stops: Array<{ lat: number; lng: number }>;
-      nextStopIndices: number[];
-      firstStopIndex?: number;
-    }>();
-    for (const entry of activeEntries) {
-      if (!entry.routeId || !isActiveService(entry) || !isRideDirection(entry.direction)) continue;
-      const route = routes.find((candidate) => candidate.id === entry.routeId);
-      if (!route) continue;
-      const direction = entry.direction;
-      const hasDirectionalGeometry = Boolean(
-        route.forwardPolyline && route.reversePolyline,
-      );
-      const geometry =
-        entry.routeSource === "dynamic-reroute"
-          ? dynamicGeometries.get(entry.busId)
-          : undefined;
-      const hasDynamic = Boolean(geometry);
-      const overlayKey = `${route.id}:${direction}`;
-      const existing = overlays.get(overlayKey);
-      const naturalStops = route.stops ?? route.waypoints ?? [];
-      const nextStopIndex = publishedStopIndex(entry.currentStopIndex, naturalStops.length);
-      const indices = nextStopIndex === undefined ? [] : [nextStopIndex];
-      const orderedStops = (direction === "reverse" ? [...naturalStops].reverse() : naturalStops).map(({ lat, lng }) => ({ lat, lng }));
-      if (existing) {
-        if (entry.routeSource !== "dynamic-reroute") existing.nextStopIndices.push(...indices);
-      } else overlays.set(overlayKey, {
-        key: overlayKey,
-        routeId: route.id,
-        color: route.color,
-        polyline: (direction === "reverse"
-              ? route.reversePolyline
-              : route.forwardPolyline ?? route.polyline),
-        polylineQuality: hasDirectionalGeometry
-            ? route.polylineQuality
-            : undefined,
-        direction,
-        stops: orderedStops,
-        nextStopIndices: entry.routeSource === "dynamic-reroute" ? [] : [...indices],
-      });
-      if (hasDynamic && geometry) {
-        const key = `${overlayKey}:${entry.busId}:${entry.routeVersion}`;
-        overlays.set(key, { key, routeId: route.id, color: route.color, polyline: geometry.polyline,
-          polylineQuality: "HIGH_QUALITY", direction, stops: orderedStops,
-          nextStopIndices: indices, firstStopIndex: geometry.firstStopIndex ?? -1 });
-      }
-    }
-    return [...overlays.values()];
-  }, [activeEntries, routes, dynamicGeometries]);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [, setFreshnessNow] = useState(() => serverNow());
@@ -869,20 +823,7 @@ export default function DashboardPanel() {
         >
           <TrafficLayer />
           <MapCenter center={mapCenter} />
-          {activeRouteOverlays.map((route) => (
-            <DirectionsRoute
-              key={route.key}
-              routeId={route.routeId}
-              stops={route.stops}
-              polyline={route.polyline}
-              polylineQuality={route.polylineQuality}
-              color={route.color || "#3b82f6"}
-              hasBuses
-              nextStopIndices={route.nextStopIndices}
-              firstStopIndex={route.firstStopIndex}
-              direction={route.direction}
-            />
-          ))}
+          {/* Live Ops shows buses only; route lines belong to the route editor. */}
           {activeEntries.map(entry => (
             <BusMarker
               key={`${entry.busId}_${entry.routeId}`}

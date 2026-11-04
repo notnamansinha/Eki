@@ -52,8 +52,8 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-GEN-001 | [Eki Campus Bus Tracking](../README.md) | 1.2 | Current | 2026-11-02 |
 | EKI-GEN-002 | [Eki Documentation Index](README.md) | 1.3 | Current | 2026-11-03 |
 | EKI-GEN-003 | [Eki Documentation Standard](DOCUMENTATION_STANDARD.md) | 1.0 | Current | 2026-10-30 |
-| EKI-GEN-004 | [Getting Started with Eki](GETTING_STARTED.md) | 2.0 | Current | 2026-10-30 |
-| EKI-GEN-005 | [Eki Configuration Reference](CONFIGURATION.md) | 1.4 | Current | 2026-11-02 |
+| EKI-GEN-004 | [Getting Started with Eki](GETTING_STARTED.md) | 2.1 | Current | 2026-11-03 |
+| EKI-GEN-005 | [Eki Configuration Reference](CONFIGURATION.md) | 1.5 | Current | 2026-11-03 |
 | EKI-GEN-006 | [Eki Glossary](GLOSSARY.md) | 2.1 | Current | 2026-11-02 |
 | EKI-GEN-007 | [Contributing to Eki](../CONTRIBUTING.md) | 1.0 | Current | 2026-10-30 |
 | EKI-GEN-008 | [Contributor Covenant Code of Conduct](../CODE_OF_CONDUCT.md) | 1.0 | Current | 2026-10-30 |
@@ -68,7 +68,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-ARC-001 | [Eki Architecture](design/ARCHITECTURE.md) | 2.2 | Current | 2026-11-02 |
+| EKI-ARC-001 | [Eki Architecture](design/ARCHITECTURE.md) | 2.3 | Current | 2026-11-03 |
 | EKI-ARC-002 | [Eki High-Level Design](design/HIGH_LEVEL_DESIGN.md) | 3.0 | Current | 2026-10-30 |
 | EKI-ARC-003 | [Low-Level Design](design/LOW_LEVEL_DESIGN.md) | 3.0 | Current | 2026-10-30 |
 | EKI-ARC-004 | [Tracking Algorithms](design/TRACKING_ALGORITHMS.md) | 1.1 | Current | 2026-10-30 |
@@ -78,7 +78,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-ADR-001 | [Realtime Transport Decision](design/REALTIME_TRANSPORT_DECISION.md) | 1.0 | Current | 2026-10-30 |
-| EKI-ADR-002 | [RTDB Region Latency Decision](design/RTDB_REGION_LATENCY_DECISION.md) | 1.0 | Proposed | 2026-10-30 |
+| EKI-ADR-002 | [RTDB Region Latency Decision](design/RTDB_REGION_LATENCY_DECISION.md) | 2.0 | Current | 2026-11-03 |
 | EKI-ADR-003 | [Telemetry State Partition Decision](design/TELEMETRY_STATE_PARTITION_DECISION.md) | 1.0 | Current | 2026-10-30 |
 | EKI-ADR-004 | [Google Map Reuse Decision](design/GOOGLE_MAP_REUSE_DECISION.md) | 1.0 | Current | 2026-10-30 |
 
@@ -110,7 +110,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-SEC-001 | [Security Policy](../SECURITY.md) | 1.1 | Current | 2026-11-02 |
+| EKI-SEC-001 | [Security Policy](../SECURITY.md) | 1.2 | Current | 2026-11-03 |
 | EKI-SEC-002 | [Security Architecture](security/SECURITY_ARCHITECTURE.md) | 3.1 | Current | 2026-11-02 |
 | EKI-SEC-003 | [Browser API Security](security/BROWSER_API_SECURITY.md) | 3.0 | Current | 2026-10-30 |
 | EKI-SEC-004 | [Privileged Database Authorization](security/PRIVILEGED_DATABASE_AUTHORIZATION.md) | 1.0 | Current | 2026-10-30 |
@@ -120,22 +120,22 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-CST-001 | [Eki Cost Model](cost/COST_MODEL.md) | 2.1 | Current | 2026-11-02 |
+| EKI-CST-001 | [Eki Cost Model](cost/COST_MODEL.md) | 2.2 | Current | 2026-11-03 |
 
 ### 4.10 Operations (OPS)
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-OPS-001 | [CI, Deployment and Releases](operations/CI_CD_AND_RELEASES.md) | 3.3 | Current | 2026-11-02 |
+| EKI-OPS-001 | [CI, Deployment and Releases](operations/CI_CD_AND_RELEASES.md) | 3.5 | Current | 2026-11-03 |
 | EKI-OPS-002 | [DNS and Domains](operations/DNS_AND_DOMAINS.md) | 1.1 | Current | 2026-11-02 |
 | EKI-OPS-003 | [ngrok Tunnel for the Backend](operations/NGROK_TUNNEL.md) | 1.2 | Current | 2026-11-02 |
-| EKI-OPS-004 | [Local Web, Phone and Device Testing](operations/LOCAL_TESTING.md) | 1.1 | Current | 2026-11-02 |
-| EKI-OPS-005 | [Live Demo Runbook](operations/LIVE_DEMO_RUNBOOK.md) | 1.1 | Current | 2026-11-02 |
+| EKI-OPS-004 | [Local Web, Phone and Device Testing](operations/LOCAL_TESTING.md) | 1.2 | Current | 2026-11-03 |
+| EKI-OPS-005 | [Live Demo Runbook](operations/LIVE_DEMO_RUNBOOK.md) | 1.2 | Current | 2026-11-03 |
 | EKI-OPS-006 | [University Deployment Checklist](operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) | 1.3 | Current | 2026-11-02 |
-| EKI-OPS-007 | [Firestore Index Deployment](operations/FIRESTORE_INDEX_DEPLOYMENT.md) | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-007 | [Firestore Index Deployment](operations/FIRESTORE_INDEX_DEPLOYMENT.md) | 1.1 | Current | 2026-11-03 |
 | EKI-OPS-008 | [Field Capture](operations/FIELD_CAPTURE.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-009 | [Automatic GNSS Service](operations/AUTOMATIC_GNSS_SERVICE.md) | 1.1 | Current | 2026-10-30 |
-| EKI-OPS-010 | [Architecture Risk Register](operations/ARCHITECTURE_RISK_REGISTER.md) | 3.1 | Current | 2026-11-02 |
+| EKI-OPS-010 | [Architecture Risk Register](operations/ARCHITECTURE_RISK_REGISTER.md) | 3.2 | Current | 2026-11-03 |
 | EKI-OPS-011 | [Production Readiness Audit](operations/PRODUCTION_READINESS_AUDIT.md) | 1.0 | Historical | 2026-10-04 |
 | EKI-OPS-012 | [API Read Caching and Compatibility Retirement](operations/API_READS_AND_RETIREMENT.md) | 1.1 | Current | 2026-10-30 |
 | EKI-OPS-013 | [Browser Telemetry Trace](operations/BROWSER_TELEMETRY_TRACE.md) | 1.0 | Current | 2026-10-30 |
@@ -153,8 +153,8 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-OPS-025 | [Telemetry Latency Baseline](operations/TELEMETRY_LATENCY_BASELINE.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-026 | [Worker Leadership and Fencing](operations/WORKER_LEADERSHIP.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-027 | [Bounded Work Admission](operations/WORK_ADMISSION.md) | 1.0 | Current | 2026-10-30 |
-| EKI-OPS-028 | [ngrok Removal and Managed Firebase Backend Migration](operations/NGROK_REMOVAL_AND_FIREBASE_BACKEND_MIGRATION.md) | 1.1 | Proposed | 2026-11-02 |
-| EKI-OPS-029 | [Staging Runtime Configuration](operations/STAGING_RUNTIME_CONFIG.md) | 1.1 | Current | 2026-11-02 |
+| EKI-OPS-028 | [ngrok Removal and Managed Firebase Backend Migration](operations/NGROK_REMOVAL_AND_FIREBASE_BACKEND_MIGRATION.md) | 1.2 | Proposed | 2026-11-03 |
+| EKI-OPS-029 | [Staging Runtime Configuration](operations/STAGING_RUNTIME_CONFIG.md) | 1.2 | Current | 2026-11-03 |
 
 ### 4.11 Hardware and firmware (HW)
 
@@ -169,7 +169,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-PKG-001 | [Eki Backend](../backend/README.md) | 1.2 | Current | 2026-11-02 |
+| EKI-PKG-001 | [Eki Backend](../backend/README.md) | 1.3 | Current | 2026-11-03 |
 | EKI-PKG-002 | [Eki Frontend](../frontend/README.md) | 2.0 | Current | 2026-10-30 |
 | EKI-PKG-003 | [ESP32 GNSS Tracker](../hardware/README.md) | 1.0 | Current | 2026-10-30 |
 | EKI-PKG-004 | [Firmware Headers](../hardware/include/README.md) | 1.0 | Current | 2026-10-30 |
@@ -264,6 +264,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-EVD-058 | [Webapp readiness: 8 October 2026](testing/WEBAPP_READINESS_2026_10_08.md) | 1.0 | Historical | 2026-10-08 |
 | EKI-EVD-059 | [Webapp readiness: 9 October 2026](testing/WEBAPP_READINESS_2026_10_09.md) | 1.0 | Historical | 2026-10-09 |
 | EKI-EVD-060 | [Deterministic QA baseline and first implementation slice](../qa/BASELINE_2026_10_11.md) | 1.0 | Historical | 2026-10-11 |
+| EKI-EVD-061 | [Cloud Run staging latency: 2 November 2026](testing/CLOUD_RUN_LATENCY_2026_11_02.md) | 1.0 | Historical | 2026-11-03 |
 
 <!-- register:end -->
 

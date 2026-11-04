@@ -13,13 +13,15 @@ import {
 } from "@/test-support/fakeGoogleMapsSdk";
 import MapProviders from "@/components/MapProviders";
 import AdminPage from "@/app/admin/page";
-import { route } from "../../../../e2e/fixtures/state";
+import type { ActiveBusEntry } from "@/lib/activeBusEntries";
+import { fixtureBus, route } from "../../../../e2e/fixtures/state";
 
 configure({ asyncUtilTimeout: 5_000 });
 
-// Two stops with stored road geometry; the editor passes no routeId, so
-// DirectionsRoute never requests geometry from the backend.
-const adminRoute = { ...route, polyline: "_ekkC_omvLg^_Xg^od@", polylineQuality: "HIGH_QUALITY" as const, configVersion: 1 };
+// Two stops with stored road geometry in both directions; the editor passes no
+// routeId, so DirectionsRoute never requests geometry from the backend.
+const adminRoute = { ...route, polyline: "_ekkC_omvLg^_Xg^od@", forwardPolyline: "_ekkC_omvLg^_Xg^od@", reversePolyline: "_ekkC_omvLf^~Wf^nd@",
+  polylineQuality: "HIGH_QUALITY" as const, configVersion: 1 };
 
 vi.mock("@vis.gl/react-google-maps", async importOriginal => ({
   ...(await importOriginal<typeof import("@vis.gl/react-google-maps")>()),
@@ -36,9 +38,9 @@ vi.mock("@/components/admin/FeedbackPanel", () => ({ default: () => <p>Feedback 
 vi.mock("@/components/admin/SettingsPanel", () => ({ default: () => <p>Settings content</p> }));
 vi.mock("@/components/shared/MessagingPanel", () => ({ default: () => <p>Chat</p> }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ role: "admin", user: { uid: "qa-admin" } }) }));
-vi.mock("@/hooks/useActiveBuses", () => ({ useActiveBuses: () => [] }));
+const live = vi.hoisted(() => ({ entries: [] as ActiveBusEntry[] }));
+vi.mock("@/hooks/useActiveBuses", () => ({ useActiveBuses: () => live.entries }));
 vi.mock("@/hooks/useBusLocations", () => ({ useBusLocations: () => ({ busLocations: [], error: null, retry: () => {} }) }));
-vi.mock("@/hooks/useDynamicRouteGeometries", () => ({ useDynamicRouteGeometries: () => new Map() }));
 vi.mock("@/hooks/useRTDBResume", () => ({ useRTDBResume: () => ({ isResuming: false }) }));
 vi.mock("@/hooks/useBuses", () => ({ useBuses: () => ({ buses: [] }) }));
 vi.mock("@/hooks/useDrivers", () => ({ useDrivers: () => ({ drivers: [], loading: false }) }));
@@ -148,5 +150,31 @@ describe("admin map loads (real AdminPage + real vis.gl Map, fake SDK)", () => {
     expect(lastMap()).toBe(map);
     expect(map.listeners.size).toBe(0);
     expect(sdkCounters.mapsConstructed).toBe(1);
+  }, 30_000);
+
+  it("Live Ops keeps no route line on the cached map for in-service or long-offline buses", async () => {
+    cleanup();
+    const stale = Date.now() - 15 * 3_600_000;
+    live.entries = [fixtureBus("forward") as ActiveBusEntry,
+      { ...fixtureBus("reverse", "qa-session-2", "qa-bus-2"), deviceState: "offline", timestamp: stale, backendReceivedAt: stale } as ActiveBusEntry];
+    const user = userEvent.setup();
+    render(<MapProviders><AdminPage /></MapProviders>);
+    const map = await waitForMountedMap();
+    const attachedLines = () => allOverlays().filter(overlay => overlay.kind === "Polyline" && overlay.getMap() === map);
+    const busMarkers = () => document.querySelectorAll("[data-fake-marker]");
+    await waitFor(() => expect(busMarkers()).toHaveLength(2));
+    expect(attachedLines()).toHaveLength(0);
+
+    // The route editor draws on the same instance; Live Ops must not inherit its lines.
+    await user.click(screen.getByRole("tab", { name: /Routes/ }));
+    await user.click(await screen.findByRole("button", { name: `Edit route ${adminRoute.name}` }));
+    await waitFor(() => expect(attachedLines().length).toBeGreaterThanOrEqual(2));
+    await user.click(screen.getByRole("button", { name: "Cancel route editing" }));
+    await screen.findByRole("button", { name: "Add Route" });
+    await user.click(screen.getByRole("tab", { name: /Live Ops/ }));
+    await waitFor(() => expect(tabpanel()?.contains(map.getDiv())).toBe(true));
+    await waitFor(() => expect(busMarkers()).toHaveLength(2));
+    expect(attachedLines()).toHaveLength(0);
+    live.entries = [];
   }, 30_000);
 });
