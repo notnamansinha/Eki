@@ -17,8 +17,12 @@ describe("timeline keyboard and hidden content", () => {
     const toggle = screen.getByRole("button", { name: "Configured route" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("button", { name: "Stop details" })).toBeNull();
+    // The floating desktop dock leaves the collapsed body uncovered, so it must not paint.
+    const content = document.getElementById(toggle.getAttribute("aria-controls")!)!;
+    expect(content.classList.contains("opacity-0")).toBe(true);
     toggle.focus(); await user.keyboard("{Enter}");
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(content.classList.contains("opacity-100")).toBe(true);
     await user.click(screen.getByRole("button", { name: "Stop details" }));
     await user.keyboard("{Escape}");
     expect(document.activeElement).toBe(toggle);

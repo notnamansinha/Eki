@@ -205,9 +205,6 @@ body {
   }
 }
 
-/* Keep the shared hero image, but remove the loading panel and nav once the
-   passenger workspace has mounted above the shell. */
-
 /* The mobile home retains its full-width shell. Give the desktop list the height
    freed by the shallower artwork, with its own scrollbar above the dock. */
 .passenger-home-count,
@@ -389,6 +386,8 @@ body {
   }
 }
 
+/* Keep the shared hero image, but remove the loading panel and nav once the
+   passenger workspace has mounted above the shell. */
 .passenger-layout:has([data-passenger-workspace]) [data-passenger-loading-placeholder] {
   display: none;
 }
