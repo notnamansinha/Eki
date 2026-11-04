@@ -7,16 +7,18 @@ export const PASSENGER_PANEL_NAV_GAP_PX = 29;
 /** Distance from the viewport bottom to the navigation's top edge. */
 export const passengerNavClearance = `calc(${PASSENGER_NAV_HEIGHT_PX}px + var(--safe-area-bottom))`;
 
+// The variables let short landscape screens trade the artwork band and the
+// panel's gap above the navigation for route list height (globals.css).
 export const passengerTopSpacerStyle: CSSProperties = {
-  height: "34vh",
-  minHeight: "min(250px, 20dvh)",
+  height: "var(--passenger-home-art-height, 34vh)",
+  minHeight: "var(--passenger-home-art-min-height, min(250px, 20dvh))",
 };
 
 export const passengerPanelClassName =
-  "relative mx-4 flex flex-1 flex-col overflow-hidden rounded-[32px] pt-8 shadow-2xl";
+  "passenger-home-panel relative mx-4 flex flex-1 flex-col overflow-hidden rounded-[32px] pt-8 shadow-2xl";
 
 export const passengerPanelStyle: CSSProperties = {
-  marginBottom: `calc(${PASSENGER_NAV_HEIGHT_PX + PASSENGER_PANEL_NAV_GAP_PX}px + var(--safe-area-bottom))`,
+  marginBottom: `calc(${PASSENGER_NAV_HEIGHT_PX}px + var(--passenger-panel-nav-gap, ${PASSENGER_PANEL_NAV_GAP_PX}px) + var(--safe-area-bottom))`,
   background: "linear-gradient(180deg, #1c1c1e 0%, #151517 100%)",
   borderTop: "1px solid rgba(255, 255, 255, 0.12)",
   borderLeft: "1px solid rgba(255, 255, 255, 0.04)",

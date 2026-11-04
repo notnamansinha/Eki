@@ -11,7 +11,7 @@ describe("passenger frame geometry", () => {
   it("derives panel clearance from the navigation height plus the bottom safe area", () => {
     expect(passengerNavClearance).toBe(`calc(${PASSENGER_NAV_HEIGHT_PX}px + var(--safe-area-bottom))`);
     expect(passengerPanelStyle.marginBottom)
-      .toBe(`calc(${PASSENGER_NAV_HEIGHT_PX + PASSENGER_PANEL_NAV_GAP_PX}px + var(--safe-area-bottom))`);
+      .toBe(`calc(${PASSENGER_NAV_HEIGHT_PX}px + var(--passenger-panel-nav-gap, ${PASSENGER_PANEL_NAV_GAP_PX}px) + var(--safe-area-bottom))`);
     expect(PASSENGER_PANEL_NAV_GAP_PX).toBeGreaterThan(0);
   });
   it("feeds safe-area utilities and clearance from one shared inset value", () => {

@@ -515,7 +515,7 @@ export default function PassengerWorkspace() {
             style={passengerPanelStyle}
           >
             {/* Heading Section - Fixed */}
-            <div className="text-center pb-6 mb-4 mx-6 shrink-0">
+            <div className="passenger-home-heading text-center pb-6 mb-4 mx-6 shrink-0">
               <h1 className="text-[32px] font-black tracking-tight mb-2 leading-none" style={{ color: "var(--text-primary)" }}>
                 Live Routes
               </h1>
@@ -526,7 +526,7 @@ export default function PassengerWorkspace() {
 
             {/* Status / Routes Section - Scrollable */}
             <div
-              className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth hide-scrollbar px-4 pb-32"
+              className="passenger-live-route-scroll flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth hide-scrollbar px-4 pb-32"
               style={{ scrollBehavior: 'smooth', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
               {displayRoutes.length > 0 ? (

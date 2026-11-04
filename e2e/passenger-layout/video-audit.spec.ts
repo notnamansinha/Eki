@@ -256,17 +256,85 @@ test("admin Passenger Panel switch is the last item of the sliding section row",
   await expect(link).toBeInViewport({ ratio: 1 });
 });
 
-test("edge: landscape phone and tiny heights keep the panel above a painted footer", async ({ page }) => {
-  for (const size of [{ width: 844, height: 390 }, { width: 320, height: 568 }]) {
-    await page.setViewportSize(size);
-    await page.goto("/");
-    await injectInsets(page, 0, 21);
-    await expect(nav(page)).toBeVisible();
-    expect(await paintedNavBottom(page)).toBeGreaterThanOrEqual(size.height - 0.5);
-    const panel = (await homePanel(page).boundingBox())!;
-    const navBox = (await nav(page).boundingBox())!;
-    expect(panel.y + panel.height, `${size.width}x${size.height}`).toBeLessThanOrEqual(navBox.y);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size.width);
+// Every sampled point must land on the element's own subtree, not on a control above it.
+async function hitTestable(page: Page, selector: string, points: { x: number; y: number }[]) {
+  return page.evaluate(({ selector, points }) => {
+    const element = document.querySelector(selector)!;
+    return points.every(({ x, y }) => element.contains(document.elementFromPoint(x, y)));
+  }, { selector, points });
+}
+
+// Landscape phones are touch screens, so they do not get the desktop
+// (any-pointer: fine) layout; the mouse run checks that layout's frame at the same size.
+const shortScreens = [
+  { width: 844, height: 390, hasTouch: true },
+  { width: 568, height: 320, hasTouch: true },
+  { width: 844, height: 390, hasTouch: false },
+  { width: 320, height: 568, hasTouch: true },
+];
+
+test("edge: landscape phone and tiny heights keep the panel above a painted footer", async ({ browser, baseURL }) => {
+  for (const { hasTouch, ...size } of shortScreens) {
+    const label = `${size.width}x${size.height}${hasTouch ? " touch" : " mouse"}`;
+    const context = await browser.newContext({ baseURL, viewport: size, hasTouch });
+    try {
+      const page = await context.newPage();
+      await page.goto("/?scenario=two-routes");
+      await injectInsets(page, 0, 21);
+      await expect(nav(page)).toBeVisible();
+      expect(await paintedNavBottom(page), label).toBeGreaterThanOrEqual(size.height - 0.5);
+      const panel = (await homePanel(page).boundingBox())!;
+      const navBox = (await nav(page).boundingBox())!;
+      expect(panel.y + panel.height, label).toBeLessThanOrEqual(navBox.y);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size.width);
+
+      const landscape = size.width > size.height;
+      if (hasTouch && landscape) {
+        // The list stays inside the panel's clipped box, shows most of the first
+        // route card where it takes taps, and scrolls the last card's end into view.
+        const list = homePanel(page).locator("div.overflow-y-auto");
+        const listBox = (await list.boundingBox())!;
+        const listBottom = listBox.y + listBox.height;
+        expect(listBottom, label).toBeLessThanOrEqual(panel.y + panel.height + 0.5);
+        const shownPart = (card: { y: number; height: number }) => Math.min(card.y + card.height, listBottom) - Math.max(card.y, listBox.y);
+        const first = (await page.getByRole("button", { name: "Track QA route", exact: true }).boundingBox())!;
+        expect(shownPart(first), `${label}: first route card`).toBeGreaterThanOrEqual(first.height * 0.75);
+        const center = { x: first.x + first.width / 2, y: Math.max(first.y, listBox.y) + shownPart(first) / 2 };
+        expect(await hitTestable(page, "[aria-label='Track QA route']", [center]), label).toBe(true);
+        await list.evaluate(element => element.scrollTo({ top: element.scrollHeight, behavior: "instant" }));
+        const last = (await page.getByRole("button", { name: "Track QA route B", exact: true }).boundingBox())!;
+        expect(last.y + last.height, `${label}: last route card`).toBeLessThanOrEqual(listBottom + 0.5);
+        expect(shownPart(last), `${label}: last route card`).toBeGreaterThanOrEqual(last.height * 0.75);
+      }
+
+      if (landscape) {
+        // The open timeline's header takes taps across its width, including where
+        // the boarding card and chat button float over the map.
+        await page.goto("/?scenario=forward");
+        await injectInsets(page, 0, 21);
+        await page.addStyleTag({ content: "aside[aria-label='QA fixture controls']{display:none}" });
+        await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+        const chat = page.getByRole("button", { name: "Open live chat", exact: true });
+        await expect(chat).toBeVisible();
+        const chatBox = (await chat.boundingBox())!;
+        const toggle = page.getByRole("button", { name: "Route Timeline", exact: true });
+        await toggle.click();
+        await expect(toggle).toHaveAttribute("aria-expanded", "true");
+        // Sample only once the sheet has finished rising; its closed position is never covered.
+        await page.locator("[data-map-sheet]").evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
+        const box = (await toggle.boundingBox())!;
+        expect(box.y, label).toBeGreaterThanOrEqual(0);
+        const xs = [0.1, 0.3, 0.5, 0.7, 0.9].map(f => box.x + box.width * f).concat(chatBox.x + chatBox.width / 2);
+        const points = xs.flatMap(x => [{ x, y: box.y + 8 }, { x, y: box.y + box.height / 2 }]);
+        expect(await hitTestable(page, "[data-map-sheet] > button[aria-controls]", points), `${label}: timeline header covered`).toBe(true);
+        await page.keyboard.press("Escape");
+        await expect(toggle).toHaveAttribute("aria-expanded", "false");
+        await expect(chat).toBeVisible();
+        expect(await hitTestable(page, "[aria-label='Open live chat']", [{ x: chatBox.x + chatBox.width / 2, y: chatBox.y + chatBox.height / 2 }]), label).toBe(true);
+      }
+    } finally {
+      await context.close();
+    }
   }
 });
 
