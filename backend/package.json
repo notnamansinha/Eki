@@ -18,7 +18,7 @@
     "test:rules-integration": "vitest run src/rulesIntegration.test.ts src/workerFence.integration.test.ts src/httpOperations.integration.test.ts src/reconciliation.integration.test.ts src/privacyDeletion.integration.test.ts src/telemetryCatalog.integration.test.ts src/staleBusSweeper.integration.test.ts src/liveBusProjection.integration.test.ts src/apiReads.integration.test.ts src/liveBusProjection.fences.integration.test.ts src/qaTelemetryChain.integration.test.ts --maxWorkers=1 --no-file-parallelism"
   },
   "dependencies": {
-    "@google-cloud/firestore": "9.3.1",
+    "@google-cloud/firestore": "9.4.0",
     "@opentelemetry/api": "^1.10.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.300.0",
     "@opentelemetry/exporter-metrics-otlp-http": "^0.300.0",
@@ -38,7 +38,7 @@
     "express-rate-limit": "^8.6.0",
     "firebase-admin": "^14.5.0",
     "helmet": "^8.1.0",
-    "pino": "^10.3.1"
+    "pino": "^10.4.0"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "^12.1.0",
