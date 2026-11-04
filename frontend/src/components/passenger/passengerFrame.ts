@@ -7,8 +7,8 @@ export const PASSENGER_PANEL_NAV_GAP_PX = 29;
 /** Distance from the viewport bottom to the navigation's top edge. */
 export const passengerNavClearance = `calc(${PASSENGER_NAV_HEIGHT_PX}px + var(--safe-area-bottom))`;
 
-// The variables let short landscape screens trade the artwork band and the
-// panel's gap above the navigation for route list height (globals.css).
+// The variables let the desktop layout and short landscape touch screens retune
+// the artwork band and the panel's bottom edge (globals.css).
 export const passengerTopSpacerStyle: CSSProperties = {
   height: "var(--passenger-home-art-height, 34vh)",
   minHeight: "var(--passenger-home-art-min-height, min(250px, 20dvh))",
@@ -18,7 +18,7 @@ export const passengerPanelClassName =
   "passenger-home-panel relative mx-4 flex flex-1 flex-col overflow-hidden rounded-[32px] pt-8 shadow-2xl";
 
 export const passengerPanelStyle: CSSProperties = {
-  marginBottom: `calc(${PASSENGER_NAV_HEIGHT_PX}px + var(--passenger-panel-nav-gap, ${PASSENGER_PANEL_NAV_GAP_PX}px) + var(--safe-area-bottom))`,
+  marginBottom: `var(--passenger-home-panel-bottom, calc(${PASSENGER_NAV_HEIGHT_PX}px + var(--passenger-panel-nav-gap, ${PASSENGER_PANEL_NAV_GAP_PX}px) + var(--safe-area-bottom)))`,
   background: "linear-gradient(180deg, #1c1c1e 0%, #151517 100%)",
   borderTop: "1px solid rgba(255, 255, 255, 0.12)",
   borderLeft: "1px solid rgba(255, 255, 255, 0.04)",
@@ -29,11 +29,11 @@ export const passengerPanelStyle: CSSProperties = {
 // The frame owns the surface colour so the safe-area padding beneath the bar
 // is painted too, instead of exposing the illustration behind it.
 export const passengerNavFrameClassName =
-  "absolute inset-x-0 bottom-0 flex justify-center rounded-t-[24px] pb-safe";
+  "passenger-nav-frame absolute inset-x-0 bottom-0 flex justify-center rounded-t-[24px] pb-safe";
 
 export const passengerNavFrameStyle: CSSProperties = {
   background: "rgba(22, 22, 26, 0.98)",
   borderTop: "1px solid rgba(255, 255, 255, 0.15)",
 };
 
-export const passengerNavClassName = "flex h-20 w-full items-center justify-around px-2 py-2.5";
+export const passengerNavClassName = "passenger-nav-bar flex h-20 w-full items-center justify-around px-2 py-2.5";

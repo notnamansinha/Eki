@@ -1,3 +1,4 @@
+import TransitArtwork from "@/components/shared/TransitArtwork";
 import {
   passengerNavClassName,
   passengerNavFrameClassName,
@@ -14,21 +15,9 @@ export default function PassengerLoadingShell() {
       style={{ height: "100dvh", backgroundColor: "var(--surface-0)" }}
       aria-hidden="true"
     >
-      <picture className="pointer-events-none absolute inset-0 block h-full w-full">
-        <source srcSet="/images/hero-background.webp" type="image/webp" />
-        {/* Keep the passenger background on the same full-resolution asset as
-            the login page; a separate 480px source made it look soft on phones. */}
-        <img
-          src="/images/hero-background.jpg"
-          alt=""
-          fetchPriority="high"
-          decoding="async"
-          className="h-full w-full object-cover md:object-[center_30%]"
-        />
-      </picture>
-      <div className="pointer-events-none absolute inset-0 z-0 bg-black/40" />
+      <TransitArtwork />
 
-      <div data-passenger-loading-placeholder className="absolute inset-0 z-10 flex flex-col pt-safe">
+      <div data-passenger-loading-placeholder className="passenger-home absolute inset-0 z-10 flex flex-col pt-safe">
         <div
           className="shrink-0"
           style={passengerTopSpacerStyle}

@@ -29,7 +29,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
   }
 
   return (
-    <div className="w-full flex flex-col gap-4 pb-4">
+    <div className="passenger-live-route-list w-full flex flex-col gap-4 pb-4">
       {liveRoutes.map((route) => {
         const activeCount = getActiveBusesCount(route.id);
         const availableCount = getAvailableBusesCount(route.id);
@@ -47,20 +47,21 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
           <button
             type="button"
             key={route.id}
+            data-passenger-route={route.id}
             className="w-full min-w-0 flex items-stretch text-left transition-all duration-300 ease-out disabled:cursor-default"
             onClick={() => onClick(route.id)}
             aria-label={`Track ${route.name}`}
           >
             <div
-              className="w-full min-w-0 text-left transition-all duration-300 rounded-[20px] p-4 border relative overflow-hidden flex flex-col min-h-[140px]"
+              className="passenger-live-route-card w-full min-w-0 text-left transition-all duration-300 rounded-[20px] p-4 border relative overflow-hidden flex flex-col min-h-[140px]"
               style={{
                 background: "var(--surface-3)",
                 borderColor: route.id === selectedRouteId ? "var(--accent)" : "var(--border-subtle)",
                 boxShadow: "0 4px 12px rgba(0, 0, 0, 0.05)",
               }}
             >
-              <div className="min-w-0 pl-2 flex flex-col h-full justify-between">
-                <div>
+              <div className="passenger-live-route-card-content min-w-0 pl-2 flex flex-col h-full justify-between">
+                <div className="passenger-live-route-label">
                   <h3
                     className="text-balance break-words text-[22px] font-black tracking-tight"
                     style={{ color: "var(--text-primary)" }}
@@ -78,8 +79,8 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
                   )}
                 </div>
 
-                <div className="flex flex-wrap items-baseline w-full mt-4 gap-3">
-                  <div className="flex items-center gap-2">
+                <div className="passenger-live-route-details flex flex-wrap items-baseline w-full mt-4 gap-3">
+                  <div className="passenger-live-route-meta flex items-center gap-2">
 
                     <div className="flex items-baseline gap-1.5 text-[11.5px] font-black whitespace-nowrap" style={{ color: "var(--text-tertiary)" }}>
                       <span>{stops.length ? `${stops.length} stops` : "Stops pending"}</span>
@@ -88,7 +89,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
                     </div>
                   </div>
                   
-                  <div className="flex items-baseline gap-1.5 text-[13px] font-black tracking-wider uppercase transition-opacity shrink-0" style={{ color: "var(--accent)" }}>
+                  <div className="passenger-live-route-action flex items-baseline gap-1.5 text-[13px] font-black tracking-wider uppercase transition-opacity shrink-0" style={{ color: "var(--accent)" }}>
                     {directedRoute ? "TRACK ROUTE" : hasService ? "VIEW STATUS" : `${availableCount} AVAILABLE`}
                     <span className="text-[15px]">&rarr;</span>
                   </div>

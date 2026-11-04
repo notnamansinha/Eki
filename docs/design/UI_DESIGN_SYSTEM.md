@@ -235,7 +235,7 @@ The dot pulses while an online bus is moving. "Service paused" replaces the trip
 | `accent-emerald-500` | Route checkboxes in admin Passenger Routes | same |
 | `#e9bc55`, `#fbd66d`, `#e8ac37`, `#9a5d13` and related | Decorative profile coin | `app/globals.css` (`.profile-coin*`) |
 | `#09090b`, `#0f0f12` | Admin inputs, menus and toolbars (`bg-[#09090b]`, `bg-[#0f0f12]`) | admin panels |
-| `bg-black`, `bg-black/40`, `text-white` | Landing page and its hero overlay | `app/page.tsx` |
+| `bg-black`, `text-white`, 40% black shade | Landing page and shared illustration overlay | `app/page.tsx`, `components/shared/TransitArtwork.tsx`, `app/globals.css` |
 
 ## 4. Contrast
 
@@ -296,7 +296,7 @@ Tailwind size utilities keep their defaults: `text-xs` 12/16 px, `text-sm` 14/20
 
 | Role | Size | Weight | Line height | Example |
 |---|---|---|---|---|
-| Landing headline | 60 px, 80 px at `md`, 96 px at `lg` | 900 | 1.05 | "Campus routes and bus tracking" |
+| Landing headline | 28 to 96 px, sized by viewport width and height | 900 | 1.05 | "Track your campus bus" |
 | Screen title | 32 px | 900 | 1 | "Live Routes", "Routes" |
 | Route schedule card title | 17 px | 800 | 1.375 | Route name in the Routes tab |
 | Route schedule stop and time | 14 px stop name, 12 px time with `tabular-nums` | 700 / 600 | 1.375 / 1.5 | "Central Library", "7:38 am" |
@@ -331,7 +331,7 @@ Spacing uses the Tailwind 4 default unit `--spacing: 0.25rem` (4 px); the projec
 | Map fit padding | Top: the larger of 32 px and header height plus 24 px. Bottom: timeline sheet overlap plus 24 px, at most 65 % of the map height. Sides: 32 px. | `components/maps/PassengerMap.tsx` |
 | Map zoom | Passenger default 15, following a bus 16; admin default 12, 15 when centring a bus | `PassengerMap.tsx`, `DashboardPanel.tsx` |
 
-Short touch screens, at most 480 px tall without a fine pointer (landscape phones), get a compact home in `app/globals.css`. Besides the spacer and gap above, the title drops to 24 px and the subtitle to 13 px, hidden at 360 px tall or less. The route list's bottom padding drops from 128 px to 8 px. Together these leave room in the panel for at least one route card. Desktop `(any-pointer: fine)` screens keep the standard home. On any screen at most 480 px tall, the tracking header (back button, ride card and chat button) is hidden while the route timeline sheet is open, because the open sheet reaches it and the header would cover the sheet's handle.
+Short touch screens, at most 480 px tall without a fine pointer (landscape phones), get a compact home in `app/globals.css`. Besides the spacer and gap above, the title drops to 24 px and the subtitle to 13 px, hidden at 360 px tall or less. The route list's bottom padding drops from 128 px to 8 px. Together these leave room in the panel for at least one route card. Pointer-equipped `(any-pointer: fine)` windows keep their own centred desktop layout at every height. On any screen at most 480 px tall, the tracking header (back button, ride card and chat button) is hidden while the route timeline sheet is open, because the open sheet reaches it and the header would cover the sheet's handle.
 
 ### 6.2 Radii
 
@@ -428,11 +428,13 @@ A signed-in user leaves `/` for the saved workspace or the default for the role.
 
 ### 7.2 Landing page
 
-`app/page.tsx` shows a full-screen hero image (`/images/hero-background.webp`, JPEG fallback) under a `bg-black/40` overlay, the university logo at the top left, the headline and subtitle, a white pill **Sign In with Google** button and a footer. Until sign-in is usable the button shows a spinner and "Preparing sign-in…". The full-page sign-in link, a sign-in error (`role="alert"`) and a status line with **Reload** appear below the button when relevant: "Sign-in is still loading." after 10 s without sign-in, or "Still checking your sign-in. The connection looks slow; this continues on its own." when restoring a saved session takes more than 8 s. A signed-in user sees a spinner with "Finishing your sign-in…" or "Opening your workspace…". An access error replaces the page with **Try again**, **Sign out** and **Reload**.
+`app/page.tsx` and the persistent passenger shell share `components/shared/TransitArtwork.tsx`: a responsive WebP picture using the user's approved tree-view paintings (841x1870 portrait and 1672x941 landscape), with a full-size landscape WebP fallback and the existing 40% black shade. PNG masters are archived outside the deployed app. Viewport orientation selects the composition; `object-fit: cover` fills other ratios with proportional cropping and no empty borders or stretching. The landing has no AU logo or logo header. Headline, description and spacing respond to both viewport width and height so the sign-in button and footer fit at 1280x585 CSS pixels, including a 150%-scaled desktop at 100% browser zoom. Safe-area insets protect the content and footer. The fixed background fills the screen while the document can grow for enlarged text or additional auth notices. Asset provenance and regeneration are in [Transit artwork delivery](../context-docs/TRANSIT_ARTWORK.md). Until sign-in is usable the button shows a spinner and "Preparing sign-in…". The full-page sign-in link, a sign-in error (`role="alert"`) and a status line with **Reload** appear below the button when relevant: "Sign-in is still loading." after 10 s without sign-in, or "Still checking your sign-in. The connection looks slow; this continues on its own." when restoring a saved session takes more than 8 s. A signed-in user sees a spinner with "Finishing your sign-in…" or "Opening your workspace…". An access error replaces the page with **Try again**, **Sign out** and **Reload**.
 
 ### 7.3 Passenger workspace
 
 `components/passenger/PassengerWorkspace.tsx` stacks four absolutely positioned views and a fixed bottom navigation. Hidden views are `inert` and `aria-hidden`; the Routes and Profile views mount on their first visit and then stay mounted. Reconnect, ride-recovery and error banners appear above the views.
+
+On desktop, the Live Routes panel is centered over the artwork, capped at 42 rem, with a shallow artwork spacer, compact route rows and a visible list scrollbar. A compact dock centers the Map, Routes and Profile tabs beneath the panel. Touch-only windows use the full-width bottom navigation. Keyboard selection moves focus into tracking and Back restores it to the selected route or the list heading if the route has disappeared.
 
 | View | Structure |
 |---|---|
