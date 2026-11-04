@@ -73,6 +73,12 @@ updates:
       default-days: 7
     commit-message:
       prefix: chore(ci)
+    groups:
+      # init and analyze must run the same CodeQL Action release, or analyze
+      # fails on a configuration written by a different version.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
 
   # Propose Node/Alpine tag and digest updates; both Docker stages stay pinned.
   - package-ecosystem: docker
