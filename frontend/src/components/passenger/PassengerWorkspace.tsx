@@ -389,6 +389,42 @@ export default function PassengerWorkspace() {
   const endedMessage = completedRide !== null;
 
   const visibleView: ViewState = currentView;
+  const keyboardRouteButton = useRef<HTMLButtonElement | null>(null);
+  const trackingBackButton = useRef<HTMLButtonElement>(null);
+  const liveRoutesHeading = useRef<HTMLHeadingElement>(null);
+  const liveRouteScroller = useRef<HTMLDivElement>(null);
+  const liveRouteContent = useRef<HTMLDivElement>(null);
+  const [hasMoreRoutes, setHasMoreRoutes] = useState(false);
+
+  useEffect(() => {
+    const scroller = liveRouteScroller.current;
+    const content = liveRouteContent.current;
+    if (!scroller || !content || typeof ResizeObserver === "undefined") return;
+    const update = () => {
+      setHasMoreRoutes(scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop > 1);
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(scroller);
+    observer.observe(content);
+    scroller.addEventListener("scroll", update, { passive: true });
+    return () => {
+      observer.disconnect();
+      scroller.removeEventListener("scroll", update);
+    };
+  }, []);
+
+  useEffect(() => {
+    const routeButton = keyboardRouteButton.current;
+    if (!routeButton) return;
+    if (visibleView === "tracking") {
+      trackingBackButton.current?.focus({ preventScroll: true });
+    } else {
+      // Only Back from tracking returns focus to the route; leaving for another
+      // section forgets it, so a later tap on the first tab keeps focus there.
+      keyboardRouteButton.current = null;
+      if (visibleView === "home") (routeButton.isConnected ? routeButton : liveRoutesHeading.current)?.focus();
+    }
+  }, [visibleView]);
 
   useEffect(() => {
     if (completedRide) return;
@@ -463,6 +499,10 @@ export default function PassengerWorkspace() {
   };
 
   const handleRouteSelect = (routeId: string) => {
+    const focused = document.activeElement;
+    keyboardRouteButton.current =
+      focused instanceof HTMLButtonElement && focused.dataset.passengerRoute === routeId && focused.matches(":focus-visible")
+        ? focused : null;
     setSelectedRouteId(routeId);
     setSelectedDestinationStopId("");
     setSelectedLiveBusKey("");
@@ -509,7 +549,7 @@ export default function PassengerWorkspace() {
       <div className="relative min-h-0 flex-1 overflow-clip">
 
         {/* ── HOME VIEW ── */}
-        <div inert={visibleView !== "home"} aria-hidden={visibleView !== "home"} className={`absolute inset-0 z-20 flex flex-col pt-safe transition-[opacity,transform] duration-200 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"}`}>
+        <div inert={visibleView !== "home"} aria-hidden={visibleView !== "home"} className={`passenger-home absolute inset-0 z-20 flex flex-col pt-safe transition-[opacity,transform] duration-200 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"}`}>
 
           {/* Top spacer to frame the bus illustration near the top of the screen */}
           <div className="shrink-0" style={passengerTopSpacerStyle} aria-hidden="true" />
@@ -519,10 +559,15 @@ export default function PassengerWorkspace() {
             style={passengerPanelStyle}
           >
             {/* Heading Section - Fixed */}
-            <div className="text-center pb-6 mb-4 mx-6 shrink-0">
-              <h1 className="text-[32px] font-black tracking-tight mb-2 leading-none" style={{ color: "var(--text-primary)" }}>
-                Live Routes
-              </h1>
+            <div className="passenger-home-heading text-center pb-6 mb-4 mx-6 shrink-0">
+              <div className="passenger-home-title">
+                <h1 ref={liveRoutesHeading} tabIndex={-1} className="text-[32px] font-black tracking-tight mb-2 leading-none" style={{ color: "var(--text-primary)" }}>
+                  Live Routes
+                </h1>
+                <span className="passenger-home-count">
+                  {displayRoutes.length} {displayRoutes.length === 1 ? "route" : "routes"}
+                </span>
+              </div>
               <p className="text-[15px] font-medium mt-2" style={{ color: "var(--text-secondary)" }}>
                 Select a route to view the live bus location.
               </p>
@@ -530,58 +575,65 @@ export default function PassengerWorkspace() {
 
             {/* Status / Routes Section - Scrollable */}
             <div
-              className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth hide-scrollbar px-4 pb-32"
-              style={{ scrollBehavior: 'smooth', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+              ref={liveRouteScroller}
+              className="passenger-live-route-scroll flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-32"
             >
-              {displayRoutes.length > 0 ? (
-                <>
-                  {settings.announcementActive && settings.announcementText && (
-                    <div
-                      className="rounded-2xl p-4 mb-3 mx-1 flex items-center justify-center border text-center"
-                      style={{ background: "#4c0519", borderColor: "#881337" }}
-                    >
-                      <p className="line-clamp-3 break-words min-w-0 text-[13px] font-black tracking-wider uppercase leading-tight text-[#fecdd3]">
-                        {settings.announcementText}
-                      </p>
-                    </div>
-                  )}
-                  <RouteCarousel
-                    routes={displayRoutes}
-                    selectedRouteId={effectiveRouteId}
-                     onClick={handleRouteSelect}
-                     getActiveBusesCount={(routeId) => routeCatalog[routeId]?.active ?? 0}
-                     getAvailableBusesCount={(routeId) => routeCatalog[routeId]?.available ?? 0}
-                     getDirectionState={(routeId) => {
-                       const bus = activeBuses.find((entry) => entry.routeId === routeId && isPassengerBusSelectable(entry, availabilityNow));
-                       if (!bus) return "unknown";
-                       return bus?.directionState === "pending" ? "pending" : normalizeRideDirection(bus?.direction);
-                     }}
-                   />
-                </>
-              ) : (
-                <div className="rounded-xl p-8 text-center mx-1 flex flex-col items-center justify-center gap-2"
-                  style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
-                  {settings.announcementActive && settings.announcementText && (
-                    <div className="inline-flex items-center px-4 py-1.5 rounded-full border mb-1"
-                      style={{ background: "#4c0519", borderColor: "#881337" }}>
-                      <span className="line-clamp-3 break-words min-w-0 text-[12px] font-black tracking-wider uppercase text-[#fecdd3]">
-                        {settings.announcementText}
-                      </span>
-                    </div>
-                  )}
-                  <p className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>
-                    {settings.noBusesMessage || "No buses running"}
-                  </p>
-                  <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
-                    {!isConnected
-                      ? "Unable to reach live data. Check your connection."
-                      : isResuming || liveDataError
-                        ? "Live bus data is not available right now."
-                        : formatNoBusesSubMessage(settings.noBusesSubMessage || "Service starts at {time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
-                  </p>
-                </div>
-              )}
+              <div ref={liveRouteContent}>
+                {displayRoutes.length > 0 ? (
+                  <>
+                    {settings.announcementActive && settings.announcementText && (
+                      <div
+                        className="rounded-2xl p-4 mb-3 mx-1 flex items-center justify-center border text-center"
+                        style={{ background: "#4c0519", borderColor: "#881337" }}
+                      >
+                        <p className="line-clamp-3 break-words min-w-0 text-[13px] font-black tracking-wider uppercase leading-tight text-[#fecdd3]">
+                          {settings.announcementText}
+                        </p>
+                      </div>
+                    )}
+                    <RouteCarousel
+                      routes={displayRoutes}
+                      selectedRouteId={effectiveRouteId}
+                       onClick={handleRouteSelect}
+                       getActiveBusesCount={(routeId) => routeCatalog[routeId]?.active ?? 0}
+                       getAvailableBusesCount={(routeId) => routeCatalog[routeId]?.available ?? 0}
+                       getDirectionState={(routeId) => {
+                         const bus = activeBuses.find((entry) => entry.routeId === routeId && isPassengerBusSelectable(entry, availabilityNow));
+                         if (!bus) return "unknown";
+                         return bus?.directionState === "pending" ? "pending" : normalizeRideDirection(bus?.direction);
+                       }}
+                     />
+                  </>
+                ) : (
+                  <div className="rounded-xl p-8 text-center mx-1 flex flex-col items-center justify-center gap-2"
+                    style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
+                    {settings.announcementActive && settings.announcementText && (
+                      <div className="inline-flex items-center px-4 py-1.5 rounded-full border mb-1"
+                        style={{ background: "#4c0519", borderColor: "#881337" }}>
+                        <span className="line-clamp-3 break-words min-w-0 text-[12px] font-black tracking-wider uppercase text-[#fecdd3]">
+                          {settings.announcementText}
+                        </span>
+                      </div>
+                    )}
+                    <p className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>
+                      {settings.noBusesMessage || "No buses running"}
+                    </p>
+                    <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
+                      {!isConnected
+                        ? "Unable to reach live data. Check your connection."
+                        : isResuming || liveDataError
+                          ? "Live bus data is not available right now."
+                          : formatNoBusesSubMessage(settings.noBusesSubMessage || "Service starts at {time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
+            {displayRoutes.length > 0 && (
+              <p className="passenger-home-scroll-hint" aria-hidden="true" data-overflow={hasMoreRoutes}>
+                Scroll for more routes
+              </p>
+            )}
           </div>
         </div>
 
@@ -594,6 +646,7 @@ export default function PassengerWorkspace() {
                 style={{ background: "linear-gradient(to bottom, rgba(9,9,11,0.92) 0%, transparent 100%)" }}>
                 <div className="flex items-center gap-4 max-w-lg mx-auto pt-4 pointer-events-auto">
                   <button
+                    ref={trackingBackButton}
                     type="button"
                     onClick={() => {
                       if (chatShown(visibleView)) {

@@ -1,10 +1,11 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
 import Image from "next/image";
-import { Loader2, LogIn } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import TransitArtwork from "@/components/shared/TransitArtwork";
 
 const WORKSPACES = ["/admin", "/passenger"] as const;
 
@@ -100,56 +101,30 @@ export default function HomePage() {
   }
 
   return (
-    <main className="relative h-dvh w-full overflow-hidden flex flex-col bg-black">
-      {/* Native picture element for format negotiation — next/image can't
-          serve WebP in static export mode (unoptimized:true). WebP saves
-          ~180KB vs the JPG fallback for older browsers. */}
-      <picture className="absolute inset-0 z-0 w-full h-full">
-        <source srcSet="/images/hero-background.webp" type="image/webp" />
-        <img
-          src="/images/hero-background.jpg"
-          alt=""
-          aria-hidden="true"
-          fetchPriority="high"
-          decoding="async"
-          className="object-cover md:object-[center_30%] w-full h-full"
-        />
-      </picture>
-      <div className="absolute inset-0 bg-black/40 z-0 pointer-events-none" />
+    <main className="transit-landing relative isolate min-h-dvh w-full flex flex-col bg-black">
+      <TransitArtwork landing />
 
-      <header className="absolute top-6 left-6 md:top-8 md:left-8 z-20 flex items-center justify-start pointer-events-none">
-        <div className="bg-black/60 backdrop-blur-md border border-white/10 p-1 shadow-md shadow-black/50 flex items-center justify-center overflow-hidden">
-          <Image
-            src="/uni-logo.webp"
-            alt="University Logo"
-            width={490}
-            height={490}
-            className="h-16 md:h-24 w-auto object-contain block"
-            priority
-          />
-        </div>
-      </header>
-
-      <section className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 md:px-12 w-full max-w-5xl mx-auto pt-6">
+      <section className="transit-landing-content relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 md:px-12 w-full max-w-5xl mx-auto py-6">
         <h1
-          className="text-6xl md:text-[80px] lg:text-[96px] font-black leading-[1.05] text-white mb-6 w-full mx-auto"
+          className="font-black leading-[1.05] text-white w-full mx-auto"
           style={{
             letterSpacing: "0.5px",
-            textShadow: "0 2px 8px rgba(0,0,0,0.2)",
+            textShadow: "0 2px 8px rgba(0,0,0,0.48)",
             WebkitTextStroke: "1px rgba(255,255,255,0.08)",
           }}
         >
-          Campus routes<br className="hidden md:block" /> and bus tracking
+          Track your<br className="hidden md:block" /> campus bus
         </h1>
 
         <p
-          className="text-xl md:text-3xl text-white/90 text-balance max-w-[650px] mx-auto mb-12 font-medium"
+          className="text-white/90 text-balance max-w-[650px] mx-auto font-medium"
           style={{
             letterSpacing: "0.2px",
-            textShadow: "0 2px 8px rgba(0,0,0,0.2)",
+            textShadow: "0 2px 8px rgba(0,0,0,0.45)",
           }}
         >
-          View campus routes and available bus locations. Arrival estimates depend on live service data.
+          View University bus routes and available bus locations<br />{" "}
+          Arrival estimates depend on live service data
         </p>
 
         <div className="flex flex-col sm:flex-row w-full sm:w-auto gap-4">
@@ -159,9 +134,24 @@ export default function HomePage() {
             disabled={loginLoading || !loginReady}
             className="flex items-center justify-center gap-3 px-10 py-5 text-lg font-bold bg-white text-black rounded-full hover:bg-gray-200 active:scale-95 transition-transform disabled:opacity-60 shadow-xl"
           >
-            {loginLoading || !loginReady ? <Loader2 className="size-6 animate-spin" /> : <LogIn className="size-6" />}
-            {loginLoading ? "Opening Google…" : loginReady ? "Sign In with Google" : "Preparing sign-in…"}
+            {loginLoading || !loginReady ? (
+              <Loader2 className="size-6 animate-spin" aria-hidden="true" />
+            ) : (
+              <Image src="/google-g.svg" width={20} height={20} className="shrink-0" alt="" />
+            )}
+            {loginLoading ? "Opening Google…" : loginReady ? "Continue with Google" : "Preparing sign-in…"}
           </button>
+        </div>
+        <div className="mt-3 text-sm text-white drop-shadow-md">
+          For campus travel information, contact{" "}
+          <a
+            href="https://ahduni.edu.in/academics/schools-centres/office-of-the-dean-of-students/getting-around/"
+            className="font-semibold underline underline-offset-4"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Campus Operations
+          </a>
         </div>
         {loginReady && loginFallbackAvailable && (
           <button
@@ -191,7 +181,7 @@ export default function HomePage() {
         )}
       </section>
 
-      <footer className="relative z-10 w-full pb-8 px-6 md:px-12 flex justify-between items-center text-white/70">
+      <footer className="transit-landing-footer relative z-10 w-full pb-8 px-6 md:px-12 flex flex-wrap gap-x-4 gap-y-2 justify-between items-center text-white/70">
         <span className="text-xs font-bold drop-shadow-md">© 2026 Eki Transit</span>
         <span className="text-xs font-bold uppercase tracking-widest drop-shadow-md">Ahmedabad, India</span>
       </footer>
