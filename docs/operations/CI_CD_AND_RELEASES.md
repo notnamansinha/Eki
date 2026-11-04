@@ -237,7 +237,7 @@ Routine npm releases wait 3 days for patches, 7 for minors and 14 for majors. Ot
 
 Dependabot can propose version updates for SHA-pinned Actions, but GitHub does not generate Actions vulnerability alerts for full SHA references. Monitor [GitHub Actions advisories](https://github.com/advisories?query=ecosystem%3Aactions) separately and update affected pins promptly when fixes are released. Keep the full SHA pins; do not treat a clean alert list as proof that those actions have no known advisories.
 
-Direct manifest dependencies receive version PRs; security updates also cover supported vulnerable transitive dependencies. Related React/Next.js packages, Workbox packages, OpenTelemetry packages, Stryker packages and Tailwind packages are grouped by family so related versions can be reviewed together. Other updates remain separate. Major versions are proposed rather than ignored.
+Direct manifest dependencies receive version PRs; security updates also cover supported vulnerable transitive dependencies. Related React/Next.js packages, Workbox packages, OpenTelemetry packages, Stryker packages, Tailwind packages and the CodeQL Action steps (`init` and `analyze` must run the same release) are grouped by family so related versions can be reviewed together. Other updates remain separate. Major versions are proposed rather than ignored.
 
 ### 12.2 Review and merge gates
 
