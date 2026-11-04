@@ -20,12 +20,12 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 describe("landing sign-in and redirect recovery", () => {
   it("qualifies tracking and arrival estimates by live service availability", () => {
     render(<HomePage />);
-    expect(screen.getByRole("heading", { name: /Campus routes.*and bus tracking/ })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Track your campus bus" })).toBeTruthy();
     expect(screen.getByText(/Arrival estimates depend on live service data/)).toBeTruthy();
   });
   it("enables sign-in when ready and shows redirect fallback only after a popup failure", () => {
     const { rerender } = render(<HomePage />);
-    expect((screen.getByRole("button", { name: "Sign In with Google" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Continue with Google" }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.queryByRole("button", { name: /Continue with full-page/ })).toBeNull();
     fixture.auth.loginFallbackAvailable = true;
     rerender(<HomePage />);
@@ -96,7 +96,7 @@ describe("cold open while sign-in restores", () => {
     fixture.auth.restoreSlow = true; fixture.auth.loading = true;
     render(<HomePage />);
     expect(screen.queryByText("Access could not be verified")).toBeNull();
-    expect((screen.getByRole("button", { name: "Sign In with Google" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Continue with Google" }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByRole("status").textContent).toContain("Still checking your sign-in");
     expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
   });
