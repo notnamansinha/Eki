@@ -45,4 +45,14 @@ test("Live Routes adapts the panel and dock to the input device", async ({ page 
   await expect(back).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(last).toBeFocused();
+
+  // Leaving tracking for another section forgets the route, so the first tab keeps focus.
+  await page.keyboard.press("Enter");
+  await expect(back).toBeFocused();
+  const sections = nav.getByRole("button");
+  await sections.last().focus();
+  await page.keyboard.press("Enter");
+  await sections.first().focus();
+  await page.keyboard.press("Enter");
+  await expect(sections.first()).toBeFocused();
 });

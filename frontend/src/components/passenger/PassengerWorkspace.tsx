@@ -442,9 +442,11 @@ export default function PassengerWorkspace() {
     if (!routeButton) return;
     if (visibleView === "tracking") {
       trackingBackButton.current?.focus({ preventScroll: true });
-    } else if (visibleView === "home") {
+    } else {
+      // Only Back from tracking returns focus to the route; leaving for another
+      // section forgets it, so a later tap on the first tab keeps focus there.
       keyboardRouteButton.current = null;
-      (routeButton.isConnected ? routeButton : liveRoutesHeading.current)?.focus();
+      if (visibleView === "home") (routeButton.isConnected ? routeButton : liveRoutesHeading.current)?.focus();
     }
   }, [visibleView]);
 
