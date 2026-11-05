@@ -334,6 +334,11 @@ jobs:
           NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL }}
         run: npm run build:production
       - name: Verify live backend readiness and browser access before staging release
+        # Staging is wake-on-traffic and may be private. Probing /health wakes
+        # the instance (cost) and fails while it is locked, which would block
+        # frontend-only releases. Run it only when this dispatch also deploys
+        # the backend.
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_backend == 'true'
         run: npm run verify:web-backend-contract
         env:
           NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL }}
