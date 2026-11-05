@@ -62,14 +62,14 @@ export default function AlertModal({
       aria-modal="true"
       aria-labelledby={titleId}
       aria-describedby={messageId}
-      className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150"
+      className="eki-alert-backdrop fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="w-full max-w-sm rounded-2xl p-5 shadow-2xl flex flex-col gap-4 border border-white/10"
-        style={{ background: "rgba(18, 20, 29, 0.98)" }}
+        className="eki-alert w-full max-w-sm rounded-2xl p-5 shadow-2xl flex flex-col gap-4 border border-white/10"
+        style={{ background: "var(--alert-surface, rgba(18, 20, 29, 0.98))" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3.5">

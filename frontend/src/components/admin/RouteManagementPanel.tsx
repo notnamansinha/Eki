@@ -107,7 +107,7 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
 
   return (
     <div className="relative flex-1">
-      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none">
+      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-ui-quiet pointer-events-none">
         {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
       </div>
       <input
@@ -128,30 +128,30 @@ function PlacesSearchBox({ onPlaceSelect }: { onPlaceSelect: (p: { name: string;
           : searchNotice
             ? "place-search-notice"
             : undefined}
-        className="w-full h-11 bg-[#09090b] border border-white/10 rounded-xl pl-10 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-medium"
+        className="w-full h-11 bg-ui-paper border border-ui-line rounded-xl pl-10 pr-4 text-sm text-ui-ink focus:outline-none focus:border-ui-control transition-colors placeholder:text-ui-quiet font-medium"
       />
       {searchError && (
-        <p id="place-search-error" className="mt-1 text-xs text-red-400" role="alert">
+        <p id="place-search-error" className="mt-1 text-xs text-ui-danger" role="alert">
           {searchError}
         </p>
       )}
       {searchNotice && !searchError && (
-        <p id="place-search-notice" className="mt-1 text-xs text-white/45" role="status">
+        <p id="place-search-notice" className="mt-1 text-xs text-ui-quiet" role="status">
           {searchNotice}
         </p>
       )}
       {value.length >= 3 && predictions.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-[#0f0f12] border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-ui-paper border border-ui-line rounded-xl overflow-hidden z-50 shadow-2xl">
           {predictions.map((prediction) => (
             <button
               key={`${prediction.lat}-${prediction.lng}-${prediction.name}`}
               type="button"
-              className="w-full text-left p-3 hover:bg-white/5 text-xs text-white border-b border-white/5 last:border-0 transition-colors"
+              className="w-full text-left p-3 hover:bg-ui-soft text-xs text-ui-ink border-b border-ui-line last:border-0 transition-colors"
               onClick={() => handleSelect(prediction)}
             >
               <span className="font-semibold text-pretty">{prediction.name}</span>
               {prediction.address && (
-                <span className="mt-0.5 block text-white/40 text-pretty">{prediction.address}</span>
+                <span className="mt-0.5 block text-ui-quiet text-pretty">{prediction.address}</span>
               )}
             </button>
           ))}
@@ -172,46 +172,46 @@ function MapCenter({ center }: { center: { lat: number; lng: number } | null }) 
 function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () => void; onDelete: (id: string) => void }) {
   const [stopsOpen, setStopsOpen] = useState(false);
   return (
-    <div className="group bg-white/3 border border-white/8 rounded-2xl overflow-hidden hover:border-white/15 transition-all">
+    <div className="group bg-ui-paper border border-ui-line rounded-2xl overflow-hidden hover:border-ui-line transition-all">
       <div className="p-4 flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-3 h-3 rounded-full shrink-0" style={{ background: route.color || "#3B82F6" }} />
           <div className="min-w-0">
-            <p className="font-semibold text-white truncate">{route.name}</p>
-            <p className="text-[10px] text-white/30 tabular-nums tracking-widest">{route.id}</p>
+            <p className="font-semibold text-ui-ink truncate">{route.name}</p>
+            <p className="text-xs text-ui-quiet tabular-nums tracking-widest">{route.id}</p>
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-          <button onClick={onEdit} aria-label={`Edit route ${route.name}`} className="w-11 h-11 rounded-lg text-white/30 hover:text-blue-400 hover:bg-blue-500/10 transition-all" title="Edit route">
+          <button onClick={onEdit} aria-label={`Edit route ${route.name}`} className="w-11 h-11 rounded-lg text-ui-quiet hover:text-brand-accent hover:bg-brand-accent/10 transition-all" title="Edit route">
             <Pencil className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => onDelete(route.id)} aria-label={`Delete route ${route.name}`} className="w-11 h-11 rounded-lg text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete route">
+          <button onClick={() => onDelete(route.id)} aria-label={`Delete route ${route.name}`} className="w-11 h-11 rounded-lg text-ui-quiet hover:text-ui-danger hover:bg-ui-danger/10 transition-all" title="Delete route">
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
       <div className="px-4 pb-3 flex items-center gap-2">
-        <button onClick={() => setStopsOpen(o => !o)} aria-expanded={stopsOpen} className="min-h-11 flex items-center gap-1.5 px-3 rounded-full bg-white/5 text-[9px] font-black tracking-widest text-white/50 uppercase hover:text-white/60 transition-colors">
+        <button onClick={() => setStopsOpen(o => !o)} aria-expanded={stopsOpen} className="min-h-11 flex items-center gap-1.5 px-3 rounded-full bg-ui-soft text-xs font-bold tracking-widest text-ui-muted uppercase hover:text-ui-muted transition-colors">
           <MapPin className="w-2.5 h-2.5" />
           {route.stops?.length ?? 0} Stops
           {stopsOpen ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
         </button>
         {route.distanceMeters && (
-          <span className="text-[9px] text-white/20 tabular-nums">{(route.distanceMeters / 1000).toFixed(1)} km</span>
+          <span className="text-xs text-ui-quiet tabular-nums">{(route.distanceMeters / 1000).toFixed(1)} km</span>
         )}
       </div>
       {stopsOpen && route.stops && route.stops.length > 0 && (
-        <div className="border-t border-white/5 px-4 py-3 flex flex-col gap-0">
+        <div className="border-t border-ui-line px-4 py-3 flex flex-col gap-0">
           {route.stops.map((stop, i) => (
             <div key={stop.id} className="flex items-stretch gap-3">
               <div className="flex flex-col items-center shrink-0">
-                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-black text-[9px] shrink-0">
+                <div className="w-6 h-6 rounded-lg bg-ui-success/20 border border-ui-success/30 flex items-center justify-center text-ui-success font-bold text-xs shrink-0">
                   {stopLabel(i)}
                 </div>
-                {i < route.stops!.length - 1 && <div className="flex-1 w-px my-0.5 bg-white/10 min-h-[12px]" />}
+                {i < route.stops!.length - 1 && <div className="flex-1 w-px my-0.5 bg-ui-hover min-h-[12px]" />}
               </div>
               <div className="pb-2.5 flex flex-col justify-center min-w-0">
-                <span className="text-sm font-medium text-white/80 leading-tight truncate">{stop.name}</span>
+                <span className="text-sm font-medium text-ui-ink leading-tight truncate">{stop.name}</span>
               </div>
             </div>
           ))}
@@ -251,8 +251,8 @@ function StopItem({ stop, index, onRemove, onNameChange, onMoveUp, onMoveDown, c
     setEditing(false);
   };
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] p-1 sm:flex-nowrap">
-      <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 font-black text-[9px] flex items-center justify-center shrink-0">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-ui-line bg-ui-paper p-1 sm:flex-nowrap">
+      <span className="w-6 h-6 rounded-lg bg-ui-success/20 text-ui-success font-bold text-xs flex items-center justify-center shrink-0">
         {stopLabel(index)}
       </span>
       <div className="min-w-0 flex-1">
@@ -273,7 +273,7 @@ function StopItem({ stop, index, onRemove, onNameChange, onMoveUp, onMoveDown, c
             }}
             autoFocus
             aria-label={`Rename stop ${stop.name}`}
-            className="w-full min-w-0 h-11 bg-white/5 border border-white/20 rounded-lg px-2 text-sm text-white focus:outline-none focus:border-white/40"
+            className="w-full min-w-0 h-11 bg-ui-soft border border-ui-control rounded-lg px-2 text-sm text-ui-ink focus:outline-none focus:border-ui-control"
           />
         ) : (
           <button
@@ -283,22 +283,22 @@ function StopItem({ stop, index, onRemove, onNameChange, onMoveUp, onMoveDown, c
             aria-describedby={nameError ? nameErrorId : undefined}
             title="Click to rename"
           >
-            <span className="block truncate text-sm text-white/80 font-medium">{stop.name}</span>
-            <span className="block text-[10px] tabular-nums text-white/35">
+            <span className="block truncate text-sm text-ui-ink font-medium">{stop.name}</span>
+            <span className="block text-xs tabular-nums text-ui-quiet">
               {Number(stop.lat).toFixed(6)}, {Number(stop.lng).toFixed(6)}
             </span>
           </button>
         )}
-        {nameError && <p id={nameErrorId} role="alert" className="mt-1 text-pretty text-xs text-red-300">{nameError}</p>}
+        {nameError && <p id={nameErrorId} role="alert" className="mt-1 text-pretty text-xs text-ui-danger">{nameError}</p>}
       </div>
       <div className="ml-8 flex shrink-0 items-center gap-1 sm:ml-0">
-        <button type="button" onClick={onMoveUp} disabled={!canMoveUp} aria-label={`Move stop ${stop.name} up`} className="size-11 rounded-lg text-white/65 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:text-white/30">
+        <button type="button" onClick={onMoveUp} disabled={!canMoveUp} aria-label={`Move stop ${stop.name} up`} className="size-11 rounded-lg text-ui-muted hover:bg-ui-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ui-success disabled:cursor-not-allowed disabled:text-ui-quiet">
           <ChevronUp className="mx-auto size-4" aria-hidden="true" />
         </button>
-        <button type="button" onClick={onMoveDown} disabled={!canMoveDown} aria-label={`Move stop ${stop.name} down`} className="size-11 rounded-lg text-white/65 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:text-white/30">
+        <button type="button" onClick={onMoveDown} disabled={!canMoveDown} aria-label={`Move stop ${stop.name} down`} className="size-11 rounded-lg text-ui-muted hover:bg-ui-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ui-success disabled:cursor-not-allowed disabled:text-ui-quiet">
           <ChevronDown className="mx-auto size-4" aria-hidden="true" />
         </button>
-        <button type="button" onClick={() => onRemove(index)} aria-label={`Remove stop ${stop.name}`} className="size-11 rounded-lg text-red-300/80 hover:bg-red-500/10 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400">
+        <button type="button" onClick={() => onRemove(index)} aria-label={`Remove stop ${stop.name}`} className="size-11 rounded-lg text-ui-danger hover:bg-ui-danger/10 hover:text-ui-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ui-danger">
           <X className="mx-auto size-4" aria-hidden="true" />
         </button>
       </div>
@@ -490,13 +490,13 @@ function RouteEditor({
   return (
     <div className="h-full flex flex-col w-full overflow-y-auto lg:overflow-hidden animate-slide-up">
       {/* Toolbar */}
-      <div className="shrink-0 border-b border-white/5 bg-[#0f0f12]/90 backdrop-blur-2xl px-4 py-3 flex flex-wrap gap-3 items-end relative z-10 overflow-visible">
-        <button onClick={onCancel} aria-label="Cancel route editing" className="w-11 h-11 rounded-xl bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors shrink-0 self-center">
-          <ArrowLeft className="w-4 h-4 text-white/60" />
+      <div className="shrink-0 border-b border-ui-line bg-ui-paper backdrop-blur-2xl px-4 py-3 flex flex-wrap gap-3 items-end relative z-10 overflow-visible">
+        <button onClick={onCancel} aria-label="Cancel route editing" className="w-11 h-11 rounded-xl bg-ui-soft flex items-center justify-center hover:bg-ui-hover transition-colors shrink-0 self-center">
+          <ArrowLeft className="w-4 h-4 text-ui-muted" />
         </button>
 
         <div className="flex flex-col gap-1 min-w-[110px]">
-          <label htmlFor={`${editorId}-route-id`} className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Route ID</label>
+          <label htmlFor={`${editorId}-route-id`} className="text-xs text-ui-quiet font-bold uppercase tracking-widest px-1">Route ID</label>
           <input
             id={`${editorId}-route-id`}
             value={state.routeId}
@@ -506,17 +506,17 @@ function RouteEditor({
             }}
             disabled={state.mode === "edit"}
             placeholder="Generated from name"
-            className="h-11 bg-[#09090b] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/15 font-medium disabled:opacity-40"
+            className="h-11 bg-ui-paper border border-ui-line rounded-xl px-3 text-sm text-ui-ink focus:outline-none focus:border-ui-control placeholder:text-ui-quiet font-medium disabled:opacity-40"
           />
         </div>
 
         <div className="flex flex-col gap-1 flex-1 min-w-[220px]">
-          <span className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Search Stop</span>
+          <span className="text-xs text-ui-quiet font-bold uppercase tracking-widest px-1">Search Stop</span>
           <PlacesSearchBox onPlaceSelect={handlePlaceSelect} />
         </div>
 
         <div className="flex flex-col gap-1">
-          <span id={`${editorId}-colour`} className="text-[9px] text-white/30 font-black uppercase tracking-widest px-1">Colour</span>
+          <span id={`${editorId}-colour`} className="text-xs text-ui-quiet font-bold uppercase tracking-widest px-1">Colour</span>
           <div role="group" aria-labelledby={`${editorId}-colour`} className="flex items-center gap-1.5 h-11">
             {ROUTE_COLORS.map(c => (
               <button
@@ -544,14 +544,14 @@ function RouteEditor({
                 return next;
               });
             }}
-            className={`h-11 px-4 rounded-xl border font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 ${placingManualStop ? "border-emerald-400 bg-emerald-500/15 text-emerald-300" : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10"}`}
+            className={`h-11 px-4 rounded-xl border font-bold text-xs uppercase tracking-widest transition-all flex items-center gap-2 ${placingManualStop ? "border-ui-success bg-ui-success/15 text-ui-success" : "border-ui-line bg-ui-soft text-ui-muted hover:bg-ui-hover"}`}
           >
             <Crosshair className="w-3.5 h-3.5" /> {placingManualStop ? "Click Map" : "Pick on Map"}
           </button>
           <button
             onClick={handleSave}
             disabled={saving || state.stops.length < 2}
-            className="h-11 px-5 rounded-xl bg-white text-[#09090b] font-black text-xs uppercase tracking-widest transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-white/90 shadow-lg"
+            className="h-11 px-5 rounded-xl bg-brand-accent text-ui-on-accent font-bold text-xs uppercase tracking-widest transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 hover:bg-ui-accent-hover shadow-lg"
           >
             {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</> : <><Save className="w-3.5 h-3.5" /> {state.mode === "edit" ? "Update" : "Deploy"}</>}
           </button>
@@ -588,15 +588,15 @@ function RouteEditor({
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "grab", userSelect: "none", touchAction: "none" }}>
                   <div style={{
                     width: 32, height: 32, borderRadius: 12,
-                    background: state.color, border: "3px solid #09090b",
+                    background: state.color, border: "3px solid var(--surface-1)",
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    color: "white", fontSize: 9, fontWeight: 900,
+                    color: "var(--accent-contrast)", fontSize: 12, fontWeight: 700,
                     boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
                   }}>{stopLabel(i)}</div>
                   <div style={{
-                    marginTop: 3, padding: "2px 6px", background: "rgba(9,9,11,0.9)",
-                    border: "1px solid rgba(255,255,255,0.1)", color: "white",
-                    borderRadius: 5, fontSize: 8, fontWeight: 800,
+                    marginTop: 3, padding: "2px 6px", background: "var(--surface-1)",
+                    border: "1px solid var(--border-subtle)", color: "var(--text-primary)",
+                    borderRadius: 5, fontSize: 12, fontWeight: 800,
                     whiteSpace: "nowrap", letterSpacing: "0.08em",
                   }}>{stop.shortName}</div>
                 </div>
@@ -604,7 +604,7 @@ function RouteEditor({
             ))}
           </GoogleMap>
           <p
-            className="absolute bottom-3 left-3 right-3 rounded-lg border border-white/10 bg-[#09090b]/90 px-3 py-2 text-xs font-medium text-white/70 shadow-lg pointer-events-none"
+            className="absolute bottom-3 left-3 right-3 rounded-lg border border-ui-line bg-ui-paper px-3 py-2 text-xs font-medium text-ui-muted shadow-lg pointer-events-none"
             role="status"
             aria-live="polite"
           >
@@ -613,40 +613,40 @@ function RouteEditor({
         </div>
 
         {/* Stop list sidebar */}
-        <div className="w-full lg:w-[300px] shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-white/5 bg-[#09090b]/40 backdrop-blur-xl">
+        <div className="w-full lg:w-[300px] shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-ui-line bg-ui-paper backdrop-blur-xl">
           {/* Display Name field */}
-          <div className="px-4 pt-4 pb-3 border-b border-white/5">
-            <label htmlFor={`${editorId}-route-name`} className="text-[9px] text-white/30 font-black uppercase tracking-widest block mb-1.5">Display Name</label>
+          <div className="px-4 pt-4 pb-3 border-b border-ui-line">
+            <label htmlFor={`${editorId}-route-name`} className="text-xs text-ui-quiet font-bold uppercase tracking-widest block mb-1.5">Display Name</label>
             <input
               id={`${editorId}-route-name`}
               value={state.name}
               onChange={e => updateRouteName(e.target.value)}
               placeholder="e.g. Shela to LD"
-              className="w-full h-11 bg-[#0f0f12] border border-white/10 rounded-xl px-3 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/15 font-medium"
+              className="w-full h-11 bg-ui-paper border border-ui-line rounded-xl px-3 text-sm text-ui-ink focus:outline-none focus:border-ui-control placeholder:text-ui-quiet font-medium"
             />
           </div>
-          <div className="px-4 py-3 flex items-center justify-between bg-[#0f0f12]/80 backdrop-blur-xl border-b border-white/5">
+          <div className="px-4 py-3 flex items-center justify-between bg-ui-paper backdrop-blur-xl border-b border-ui-line">
             <div className="flex items-center gap-2">
-              <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Stops</span>
+              <MapPin className="w-3.5 h-3.5 text-ui-success" />
+              <span className="text-xs font-bold uppercase tracking-widest text-ui-success">Stops</span>
             </div>
             <div className="flex items-center gap-2">
               {state.stops.length === 2 && (
                 <button
                   type="button"
                   onClick={swapEndpoints}
-                  className="min-h-9 rounded-lg border border-white/10 bg-white/5 px-2.5 text-[9px] font-black uppercase tracking-wider text-white/60 hover:bg-white/10"
+                  className="min-h-9 rounded-lg border border-ui-line bg-ui-soft px-2.5 text-xs font-bold uppercase tracking-wider text-ui-muted hover:bg-ui-hover"
                   title="Swap route origin and destination"
                 >
                   <ArrowLeftRight className="mr-1 inline h-3 w-3" /> Swap A &amp; B
                 </button>
               )}
-              <span className="text-[9px] font-black text-emerald-400/50 bg-emerald-500/10 px-2 py-0.5 rounded-full">{state.stops.length}</span>
+              <span className="text-xs font-bold text-ui-success bg-ui-success/10 px-2 py-0.5 rounded-full">{state.stops.length}</span>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5">
             {state.stops.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center opacity-20 gap-2">
+              <div className="flex flex-col items-center justify-center py-12 text-center text-ui-quiet gap-2">
                 <Search className="w-6 h-6" />
                 <p className="text-xs font-semibold uppercase tracking-widest leading-relaxed">Search to add stops</p>
               </div>
@@ -668,7 +668,7 @@ function RouteEditor({
             )}
           </div>
           {state.stops.length < 2 && (
-            <p className="text-center text-[9px] text-white/20 font-semibold uppercase tracking-widest py-2 border-t border-white/5">
+            <p className="text-center text-xs text-ui-quiet font-semibold uppercase tracking-widest py-2 border-t border-ui-line">
               Min. 2 stops to save
             </p>
           )}
@@ -761,43 +761,43 @@ export default function RouteManagementPanel() {
     <div className="w-full max-w-4xl mx-auto p-4 md:p-6 flex flex-col gap-4 animate-slide-up">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-bold text-xl text-white">Routes</h2>
-          <p className="text-xs text-white/30 mt-0.5">Manage bus routes and stops</p>
+          <h2 className="font-bold text-xl text-ui-ink">Routes</h2>
+          <p className="text-xs text-ui-quiet mt-0.5">Manage bus routes and stops</p>
         </div>
         <button
           onClick={openCreate}
-          className="min-h-11 flex items-center gap-2 px-4 py-3 rounded-xl bg-white text-[#09090b] font-bold text-sm hover:bg-white/90 transition-colors shadow-lg"
+          className="min-h-11 flex items-center gap-2 px-4 py-3 rounded-xl bg-brand-accent text-ui-on-accent font-bold text-sm hover:bg-ui-accent-hover transition-colors shadow-lg"
         >
           <Plus className="w-4 h-4" /> Add Route
         </button>
       </div>
 
       {successMsg && (
-        <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl px-4 py-2.5 text-sm font-semibold animate-slide-up">
+        <div className="flex items-center gap-2 bg-ui-success/10 border border-ui-success/20 text-ui-success rounded-xl px-4 py-2.5 text-sm font-semibold animate-slide-up">
           <CheckCircle className="w-4 h-4 shrink-0" /> {successMsg}
         </div>
       )}
 
       <div className="flex flex-col gap-3">
         {routesError ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/5 py-16 text-center text-red-300" role="alert">
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-ui-danger/20 bg-ui-danger/5 py-16 text-center text-ui-danger" role="alert">
             <span className="text-sm font-semibold">Couldn&apos;t load routes.</span>
-            <span className="mt-1 text-xs text-red-300/70">{routesError}</span>
+            <span className="mt-1 text-xs text-ui-danger">{routesError}</span>
             <button
               type="button"
               onClick={retryRoutes}
-              className="mt-4 rounded-lg bg-white/10 px-4 py-2 text-xs font-semibold text-white"
+              className="mt-4 rounded-lg bg-ui-hover px-4 py-2 text-xs font-semibold text-ui-ink"
             >
               Retry
             </button>
           </div>
         ) : loading ? (
-          <div className="flex flex-col items-center justify-center py-16 text-white/20 gap-3">
+          <div className="flex flex-col items-center justify-center py-16 text-ui-quiet gap-3">
             <Loader2 className="w-6 h-6 animate-spin" />
             <span className="text-xs font-semibold uppercase tracking-widest">Loading routes…</span>
           </div>
         ) : routes.length === 0 ? (
-          <div className="text-center py-16 text-white/20 text-sm font-semibold">No routes yet. Click &ldquo;Add Route&rdquo; to create one.</div>
+          <div className="text-center py-16 text-ui-quiet text-sm font-semibold">No routes yet. Click &ldquo;Add Route&rdquo; to create one.</div>
         ) : (
           routes.map(route => (
             <RouteCard key={route.id} route={route} onEdit={() => openEdit(route)} onDelete={handleDelete} />

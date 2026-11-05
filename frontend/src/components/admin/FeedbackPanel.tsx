@@ -51,7 +51,7 @@ function linkedDetail(
 }
 
 function StarDisplay({ rating }: { rating: number | null }) {
-  if (!rating) return <span className="text-white/20 text-xs font-semibold">No rating</span>;
+  if (!rating) return <span className="text-ui-quiet text-xs font-semibold">No rating</span>;
   return (
     <div className="flex items-center gap-1">
       {[1, 2, 3, 4, 5].map((s) => (
@@ -60,23 +60,23 @@ function StarDisplay({ rating }: { rating: number | null }) {
           className={`w-4 h-4 ${
             s <= rating
               ? "fill-yellow-400 text-yellow-400"
-              : "fill-transparent text-white/10"
+              : "fill-transparent text-ui-quiet"
           }`}
         />
       ))}
-      <span className="text-xs font-black text-yellow-400 ml-1">{rating}/5</span>
+      <span className="text-xs font-bold text-yellow-400 ml-1">{rating}/5</span>
     </div>
   );
 }
 
 function StatusBadge({ status }: { status: FeedbackEntry["status"] }) {
   const cfg = {
-    new: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    reviewed: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-    resolved: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+    new: "bg-brand-accent/20 text-brand-accent border-brand-accent/30",
+    reviewed: "bg-ui-warning/20 text-ui-warning border-ui-warning/30",
+    resolved: "bg-ui-success/20 text-ui-success border-ui-success/30",
   }[status];
   return (
-    <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-widest ${cfg}`}>
+    <span className={`px-2 py-0.5 rounded-full border text-xs font-bold uppercase tracking-widest ${cfg}`}>
       {status}
     </span>
   );
@@ -107,12 +107,12 @@ function FeedbackCard({
 
   return (
     <div
-      className={`border-b border-white/10 ${
+      className={`border-b border-ui-line ${
         entry.status === "new"
-          ? "bg-blue-500/[0.04]"
+          ? "bg-brand-accent/[0.04]"
           : entry.status === "resolved"
           ? "bg-transparent"
-          : "bg-amber-500/[0.03]"
+          : "bg-ui-warning/[0.03]"
       }`}
     >
       {/* Card Header */}
@@ -120,16 +120,16 @@ function FeedbackCard({
         type="button"
         aria-expanded={expanded}
         aria-controls={`feedback-details-${entry.id}`}
-        className="flex min-h-20 w-full cursor-pointer select-none items-start gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/50"
+        className="flex min-h-20 w-full cursor-pointer select-none items-start gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent"
         onClick={() => setExpanded((o) => !o)}
       >
         {/* Main info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2 mb-1">
-            <span className="font-semibold text-white text-sm truncate">{identity.passengerName}</span>
+            <span className="font-semibold text-ui-ink text-sm truncate">{identity.passengerName}</span>
             <StatusBadge status={entry.status} />
           </div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/45">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ui-quiet">
             <StarDisplay rating={entry.rating} />
             <span>{entry.type === "ride" ? "Ride feedback" : "General feedback"}</span>
             <span>{formattedTime}</span>
@@ -137,30 +137,30 @@ function FeedbackCard({
               <span>{identity.busName || "Vehicle unavailable"}{identity.driverName ? ` · ${identity.driverName}` : ""}</span>
             )}
           </div>
-          {entry.comment && <p className="mt-2 truncate text-xs text-white/55">{entry.comment}</p>}
+          {entry.comment && <p className="mt-2 truncate text-xs text-ui-muted">{entry.comment}</p>}
         </div>
 
         {/* Expand chevron */}
-        <div className="mt-1 shrink-0 text-white/50">
+        <div className="mt-1 shrink-0 text-ui-muted">
           {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </div>
       </button>
 
       {/* Expanded body */}
       {expanded && (
-        <div id={`feedback-details-${entry.id}`} className="px-4 pb-4 border-t border-white/5 pt-4 flex flex-col gap-4 animate-slide-up">
+        <div id={`feedback-details-${entry.id}`} className="px-4 pb-4 border-t border-ui-line pt-4 flex flex-col gap-4 animate-slide-up">
           {/* Comment */}
           {entry.comment ? (
             <div>
-              <p className="mb-2 text-xs font-semibold text-white/45">Comment</p>
-              <p className="text-sm text-white/80 leading-relaxed">{entry.comment}</p>
+              <p className="mb-2 text-xs font-semibold text-ui-quiet">Comment</p>
+              <p className="text-sm text-ui-ink leading-relaxed">{entry.comment}</p>
             </div>
           ) : (
-            <p className="text-[11px] text-white/20 italic">No comment provided.</p>
+            <p className="text-xs text-ui-quiet italic">No comment provided.</p>
           )}
 
           {/* Full details grid */}
-          <dl className="grid grid-cols-1 gap-x-5 gap-y-3 border-y border-white/5 py-3 sm:grid-cols-2 lg:grid-cols-4">
+          <dl className="grid grid-cols-1 gap-x-5 gap-y-3 border-y border-ui-line py-3 sm:grid-cols-2 lg:grid-cols-4">
             {(() => {
               const bus = linkedDetail(entry.busId, "Bus", identity.busName, entry.type);
               const driver = linkedDetail(entry.driverId, "Driver", identity.driverName, entry.type);
@@ -185,11 +185,11 @@ function FeedbackCard({
                 key={label}
                 className="min-w-0"
               >
-                <dt className="text-xs font-medium text-white/40">{label}</dt>
-                <dd className="mt-1 truncate text-xs font-semibold text-white/80" title={value}>
+                <dt className="text-xs font-medium text-ui-quiet">{label}</dt>
+                <dd className="mt-1 truncate text-xs font-semibold text-ui-ink" title={value}>
                   {value}
                 </dd>
-                <p className="mt-1 text-[9px] font-medium text-white/35 truncate" title={reference}>
+                <p className="mt-1 text-xs font-medium text-ui-quiet truncate" title={reference}>
                   {reference}
                 </p>
               </div>
@@ -198,7 +198,7 @@ function FeedbackCard({
 
           {/* Status action buttons */}
           <div className="flex items-center gap-2 pt-1">
-            <span className="text-[10px] text-white/20 font-black uppercase tracking-widest mr-1">
+            <span className="text-xs text-ui-quiet font-bold uppercase tracking-widest mr-1">
               Mark as:
             </span>
             {(["reviewed", "resolved"] as FeedbackEntry["status"][]).map((s) => (
@@ -208,8 +208,8 @@ function FeedbackCard({
                 disabled={entry.status === s || updating}
                 className={`min-h-11 px-3 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                   s === "resolved"
-                    ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30"
-                    : "bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30"
+                    ? "bg-ui-success/20 text-ui-success border-ui-success/30 hover:bg-ui-success/30"
+                    : "bg-ui-warning/20 text-ui-warning border-ui-warning/30 hover:bg-ui-warning/30"
                 }`}
               >
                 {s}
@@ -356,27 +356,27 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
       : "—";
 
   return (
-    <main className={embedded ? "w-full bg-brand-dark text-white flex flex-col font-sans" : "min-h-screen bg-brand-dark text-white flex flex-col font-sans"}>
+    <main className={embedded ? "w-full bg-brand-dark text-ui-ink flex flex-col font-sans" : "min-h-screen bg-brand-dark text-ui-ink flex flex-col font-sans"}>
       {/* Header */}
-      {!embedded && <header className="sticky top-0 z-[100] w-full border-b border-white/5 bg-brand-dark/80 backdrop-blur-md">
+      {!embedded && <header className="sticky top-0 z-[100] w-full border-b border-ui-line bg-brand-dark/80 backdrop-blur-md">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-3">
-          <div className="w-7 h-7 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-3.5 h-3.5 text-white/50" />
+          <div className="w-7 h-7 rounded-xl bg-ui-hover flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-3.5 h-3.5 text-ui-muted" />
           </div>
           <div className="flex flex-col">
             <span
-              className="font-black text-sm uppercase tracking-[0.18em] text-white leading-none"
+              className="font-bold text-sm uppercase tracking-[0.18em] text-ui-ink leading-none"
 
             >
               Feedback Console
             </span>
-            <span className="text-[9px] text-white/30 font-semibold uppercase tracking-widest">
+            <span className="text-xs text-ui-quiet font-semibold uppercase tracking-widest">
               Admin Only
             </span>
           </div>
           <a
             href="/admin"
-            className="ml-auto text-[10px] text-white/30 hover:text-white font-black uppercase tracking-widest transition-colors"
+            className="ml-auto text-xs text-ui-quiet hover:text-ui-ink font-bold uppercase tracking-widest transition-colors"
           >
             ← Admin Panel
           </a>
@@ -385,12 +385,12 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
 
       <div className={embedded ? "w-full px-4 sm:px-6 py-6 flex flex-col gap-6" : "max-w-5xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col gap-6"}>
         {statusError && (
-          <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <div role="alert" className="rounded-xl border border-ui-danger/30 bg-ui-danger/10 px-4 py-3 text-sm text-ui-danger">
             {statusError}
           </div>
         )}
         {loadError ? (
-          <div className="flex flex-col items-center justify-center py-20 text-red-400/80 text-center" role="alert">
+          <div className="flex flex-col items-center justify-center py-20 text-ui-danger text-center" role="alert">
             <AlertCircle className="w-10 h-10 mb-4 opacity-60" />
             <p className="text-sm font-semibold uppercase tracking-widest">
               Couldn&apos;t load feedback
@@ -399,7 +399,7 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
             <button
               type="button"
               onClick={retryFeedback}
-              className="mt-4 rounded-lg bg-white/10 px-4 py-2 text-xs font-semibold text-white"
+              className="mt-4 rounded-lg bg-ui-hover px-4 py-2 text-xs font-semibold text-ui-ink"
             >
               Retry
             </button>
@@ -409,12 +409,12 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
         {/* Stats Row */}
         <div className="grid grid-cols-3 gap-3">
           {[
-            { label: "Total", value: total, icon: Inbox, color: "text-white" },
+            { label: "Total", value: total, icon: Inbox, color: "text-ui-ink" },
             {
               label: "Unreviewed",
               value: newCount,
               icon: MessageSquare,
-              color: "text-blue-400",
+              color: "text-brand-accent",
             },
             {
               label: "Avg Rating",
@@ -425,15 +425,15 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
           ].map(({ label, value, icon: Icon, color }) => (
             <div
               key={label}
-              className="bg-white/3 border border-white/5 rounded-2xl p-4 flex flex-col gap-1"
+              className="bg-ui-paper border border-ui-line rounded-2xl p-4 flex flex-col gap-1"
             >
-              <div className="flex items-center gap-2 text-white/30">
+              <div className="flex items-center gap-2 text-ui-quiet">
                 <Icon className={`w-4 h-4 ${color}`} />
-                <span className="text-[9px] font-black uppercase tracking-widest">
+                <span className="text-xs font-bold uppercase tracking-widest">
                   {label}
                 </span>
               </div>
-              <span className={`text-2xl font-black tracking-tight ${color}`}>
+              <span className={`text-2xl font-bold tracking-tight ${color}`}>
                 {value}
               </span>
             </div>
@@ -443,14 +443,14 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20 pointer-events-none" />
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ui-quiet pointer-events-none" />
             <input
               type="text"
               aria-label="Search feedback"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by user, bus, driver, or route…"
-              className="w-full h-11 bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 text-sm text-white focus:outline-none focus:border-white/30 transition-colors placeholder:text-white/20 font-semibold"
+              className="w-full h-11 bg-ui-soft border border-ui-line rounded-xl pl-9 pr-4 text-sm text-ui-ink focus:outline-none focus:border-ui-control transition-colors placeholder:text-ui-quiet font-semibold"
             />
           </div>
           <div className="grid grid-cols-2 gap-2 sm:w-[300px]">
@@ -486,7 +486,7 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
                 setFilterType("all");
                 setFilterStatus("all");
               }}
-              className="h-11 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-semibold text-white/70"
+              className="h-11 rounded-xl border border-ui-line bg-ui-soft px-4 text-xs font-semibold text-ui-muted"
             >
               Reset
             </button>
@@ -494,21 +494,21 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
         </div>
 
         {/* Results count */}
-        <div className="flex items-center gap-2 text-[10px] text-white/30 font-black uppercase tracking-widest -mb-2">
+        <div className="flex items-center gap-2 text-xs text-ui-quiet font-bold uppercase tracking-widest -mb-2">
           <CheckCircle className="w-3.5 h-3.5" />
           {loading ? "Loading…" : loadError ? "Couldn't load" : `${filtered.length} of ${total} entries`}
         </div>
 
         {/* Feedback list */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 text-white/20">
-            <div className="w-8 h-8 border-2 border-white/20 border-t-white/60 rounded-full animate-spin mb-4" />
-            <span className="text-[11px] font-semibold uppercase tracking-widest">
+          <div className="flex flex-col items-center justify-center py-20 text-ui-quiet">
+            <div className="w-8 h-8 border-2 border-ui-control border-t-ui-control rounded-full animate-spin mb-4" />
+            <span className="text-xs font-semibold uppercase tracking-widest">
               Loading feedback…
             </span>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-white/20 text-center">
+          <div className="flex flex-col items-center justify-center py-20 text-ui-quiet text-center">
             <Inbox className="w-10 h-10 mb-4 opacity-30" />
             <p className="text-sm font-semibold uppercase tracking-widest">
               No feedback found

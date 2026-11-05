@@ -1,0 +1,50 @@
+/* Shared Passenger and Admin palette; scoped at the root for portalled dialogs. */
+:root:has(.passenger-layout, .admin-layout) {
+  color-scheme: light;
+
+  /* Surfaces */
+  --surface-0: #f2efec;
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --surface-3: #f8f6f3;
+  --surface-4: #ece8e3;
+
+  /* Brand */
+  --accent: #801214;
+  --accent-hover: #6a0f11;
+  --accent-subtle: #f7e9e9;
+  --accent-glow: rgba(128, 18, 20, 0.18);
+  --accent-contrast: #ffffff;
+  --decor-gold: #ae9562;
+  --announcement-bg: #f4eee2;
+
+  /* Text — no lighter text colour exists */
+  --text-primary: #434747;
+  --text-secondary: #5c6060;
+  --text-tertiary: #626666;
+  --text-ghost: #626666;
+
+  /* Borders */
+  --border-subtle: #e2ddd6;
+  --border-default: #858789;
+  --border-hover: #5c6060;
+  --hairline: rgb(67 71 71 / 0.18);
+
+  /* Status: outside the brand palette, pending Communications sign-off */
+  --status-live: #256b42;
+  --status-live-bg: #e6f2ea;
+  --status-warning: #8c5a0b;
+  --status-warning-bg: #fbf0df;
+  --status-danger: #b42318;
+  --status-danger-bg: #fbe9e7;
+
+  /* Map */
+  --route-color: #801214;
+  --route-passed: #939598;
+
+  --font-ui: var(--font-roboto, "Roboto"), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-heading: var(--font-playfair, "Playfair Display"), Georgia, "Times New Roman", serif;
+
+  /* Shared translucent surface gradient used above maps. */
+  --brand-surface-gradient: linear-gradient(180deg, rgb(242 239 236 / 0.9), rgb(242 239 236 / 0));
+}

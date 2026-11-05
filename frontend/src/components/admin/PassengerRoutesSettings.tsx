@@ -17,7 +17,7 @@ import { useUnsavedChanges } from "@/lib/unsavedChanges";
 import { SectionHeader } from "./SettingsSection";
 
 const FALLBACK_ROUTE_COLOR = "#94a3b8";
-const INVALID_BORDER = "rgba(248, 113, 113, 0.75)";
+const INVALID_BORDER = "var(--status-danger)";
 
 function routeStops(route: RouteData | undefined) {
   return Array.isArray(route?.stops) ? route.stops : [];
@@ -171,7 +171,7 @@ export default function PassengerRoutesSettings() {
   let body: ReactNode;
   if (configLoading || routesLoading) {
     body = (
-      <div className="flex items-center justify-center py-10 gap-3 text-white/30">
+      <div className="flex items-center justify-center py-10 gap-3 text-ui-quiet">
         <Loader2 className="w-5 h-5 animate-spin" />
         <span className="text-sm font-medium">Loading passenger routes…</span>
       </div>
@@ -179,21 +179,21 @@ export default function PassengerRoutesSettings() {
   } else if (configError) {
     // Editing an empty fallback would overwrite the stored approvals on save.
     body = (
-      <div className="flex flex-col items-center justify-center py-8 gap-2 text-center text-red-300" role="alert">
+      <div className="flex flex-col items-center justify-center py-8 gap-2 text-center text-ui-danger" role="alert">
         <span className="text-sm font-semibold">{configError}</span>
-        <span className="text-xs text-red-300/70">Editing is unavailable until the current passenger routes load. Check your connection or admin access.</span>
+        <span className="text-xs text-ui-danger">Editing is unavailable until the current passenger routes load. Check your connection or admin access.</span>
       </div>
     );
   } else if (routesError) {
     body = (
-      <div className="flex flex-col items-center justify-center py-8 gap-2 text-center text-red-300" role="alert">
+      <div className="flex flex-col items-center justify-center py-8 gap-2 text-center text-ui-danger" role="alert">
         <AlertCircle className="size-6" aria-hidden="true" />
         <span className="text-sm font-semibold">{routesError}</span>
-        <span className="text-xs text-red-300/70">Routes are needed to choose what passengers see.</span>
+        <span className="text-xs text-ui-danger">Routes are needed to choose what passengers see.</span>
         <button
           type="button"
           onClick={retryRoutes}
-          className="mt-1 min-h-11 rounded-lg bg-white/10 px-4 py-2 text-xs font-semibold text-white"
+          className="mt-1 min-h-11 rounded-lg bg-ui-hover px-4 py-2 text-xs font-semibold text-ui-ink"
         >
           Retry
         </button>
@@ -204,7 +204,7 @@ export default function PassengerRoutesSettings() {
     body = (
       <>
         {removedRouteCount > 0 && (
-          <div className="flex items-start gap-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-xs text-amber-300" role="note">
+          <div className="flex items-start gap-1.5 bg-ui-warning/10 border border-ui-warning/20 rounded-lg px-3 py-2 text-xs text-ui-warning" role="note">
             <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
             <span>
               {removedRouteCount === 1
@@ -215,11 +215,11 @@ export default function PassengerRoutesSettings() {
         )}
 
         {sortedRoutes.length === 0 ? (
-          <p className="text-sm text-white/40">No routes exist yet. Create a route on the Routes page first.</p>
+          <p className="text-sm text-ui-quiet">No routes exist yet. Create a route on the Routes page first.</p>
         ) : (
           <fieldset className="flex flex-col gap-2 min-w-0" disabled={saving}>
-            <legend className="text-sm font-semibold text-white/80 mb-1.5">Routes shown to passengers</legend>
-            <p className="text-xs text-white/30 -mt-0.5 mb-1">
+            <legend className="text-sm font-semibold text-ui-ink mb-1.5">Routes shown to passengers</legend>
+            <p className="text-xs text-ui-quiet -mt-0.5 mb-1">
               Only selected routes appear in the passenger Routes tab. {current.length} selected.
             </p>
             <ul className="flex flex-col gap-1.5">
@@ -231,7 +231,7 @@ export default function PassengerRoutesSettings() {
                   <li key={route.id}>
                     <label
                       htmlFor={checkboxId}
-                      className={`flex items-center gap-3 min-h-11 px-3 py-2 rounded-xl border cursor-pointer transition-colors ${checked ? "border-white/20 bg-white/5" : "border-white/8 hover:bg-white/3"}`}
+                      className={`flex items-center gap-3 min-h-11 px-3 py-2 rounded-xl border cursor-pointer transition-colors ${checked ? "border-ui-control bg-ui-soft" : "border-ui-line hover:bg-ui-paper"}`}
                     >
                       <input
                         id={checkboxId}
@@ -241,8 +241,8 @@ export default function PassengerRoutesSettings() {
                         className="w-4 h-4 shrink-0 accent-emerald-500"
                       />
                       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: routeColor(route) }} aria-hidden="true" />
-                      <span className="text-sm font-semibold text-white min-w-0 break-words flex-1">{route.name || route.id}</span>
-                      <span className="text-xs text-white/40 shrink-0">{stopCount === 1 ? "1 stop" : `${stopCount} stops`}</span>
+                      <span className="text-sm font-semibold text-ui-ink min-w-0 break-words flex-1">{route.name || route.id}</span>
+                      <span className="text-xs text-ui-quiet shrink-0">{stopCount === 1 ? "1 stop" : `${stopCount} stops`}</span>
                     </label>
                   </li>
                 );
@@ -261,16 +261,16 @@ export default function PassengerRoutesSettings() {
             <section
               key={approval.routeId}
               aria-labelledby={headingId}
-              className="rounded-xl border border-white/8 border-l-4 bg-black/20 p-4 flex flex-col gap-3 min-w-0"
+              className="rounded-xl border border-ui-line border-l-4 bg-ui-soft p-4 flex flex-col gap-3 min-w-0"
               style={{ borderLeftColor: color }}
             >
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} aria-hidden="true" />
-                <h3 id={headingId} className="font-bold text-white text-sm min-w-0 break-words">{routeName}</h3>
-                <span className="text-xs text-white/40 ml-auto shrink-0">Stop times</span>
+                <h3 id={headingId} className="font-bold text-ui-ink text-sm min-w-0 break-words">{routeName}</h3>
+                <span className="text-xs text-ui-quiet ml-auto shrink-0">Stop times</span>
               </div>
               {stops.length === 0 ? (
-                <p className="text-xs text-white/40">This route has no stops yet.</p>
+                <p className="text-xs text-ui-quiet">This route has no stops yet.</p>
               ) : (
                 <ol className="flex flex-col">
                   {stops.map((stop, index) => {
@@ -281,17 +281,17 @@ export default function PassengerRoutesSettings() {
                     return (
                       <li
                         key={stop.id}
-                        className="flex flex-col gap-2 py-2.5 border-t border-white/5 first:border-t-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                        className="flex flex-col gap-2 py-2.5 border-t border-ui-line first:border-t-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
                       >
                         <div className="flex items-center gap-3 min-w-0 sm:min-h-11">
                           <span
-                            className="w-6 h-6 rounded-full text-[11px] font-bold flex items-center justify-center shrink-0 text-white"
+                            className="w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center shrink-0 text-ui-ink"
                             style={{ backgroundColor: color }}
                             aria-hidden="true"
                           >
                             {index + 1}
                           </span>
-                          <span className="text-sm text-white/80 font-medium min-w-0 break-words">{name}</span>
+                          <span className="text-sm text-ui-ink font-medium min-w-0 break-words">{name}</span>
                         </div>
                         <div className="flex flex-col gap-1 pl-9 sm:pl-0 sm:w-40 sm:shrink-0">
                           <input
@@ -307,7 +307,7 @@ export default function PassengerRoutesSettings() {
                             style={problem ? { borderColor: INVALID_BORDER } : undefined}
                           />
                           {problem && (
-                            <p id={errorId} className="text-xs text-red-300">
+                            <p id={errorId} className="text-xs text-ui-danger">
                               {problem === "missing" ? "Time required" : "Enter a valid time"}
                             </p>
                           )}
@@ -327,12 +327,12 @@ export default function PassengerRoutesSettings() {
             onClick={handleSave}
             disabled={saving || !hasChanges}
             aria-describedby="passenger-routes-save-status"
-            className="min-h-11 w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white text-[#09090b] font-bold text-sm hover:bg-white/90 transition-colors shadow-lg disabled:opacity-50"
+            className="min-h-11 w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-brand-accent text-ui-on-accent font-bold text-sm hover:bg-ui-accent-hover transition-colors shadow-lg disabled:opacity-50"
           >
             {saving
               ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
               : saved
-              ? <><span className="text-emerald-600">✓</span> Saved!</>
+              ? <><span className="text-ui-success">✓</span> Saved!</>
               : <><Save className="w-4 h-4" /> {hasChanges ? "Save routes" : "No route changes"}</>
             }
           </button>
@@ -345,7 +345,7 @@ export default function PassengerRoutesSettings() {
   }
 
   return (
-    <div className="bg-white/3 border border-white/8 rounded-2xl p-5 flex flex-col gap-5 min-w-0">
+    <div className="bg-ui-paper border border-ui-line rounded-2xl p-5 flex flex-col gap-5 min-w-0">
       <SectionHeader icon={RouteIcon} title="Passenger Routes" subtitle="Choose which routes passengers can browse and set the time at each stop" />
       {body}
       <AlertModal

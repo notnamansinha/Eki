@@ -17,7 +17,7 @@ import {
 import { useRef, useState } from "react";
 
 const loadingPanel = () => (
-  <div className="h-full grid place-items-center text-white/50" role="status" aria-label="Loading panel">
+  <div className="h-full grid place-items-center text-ui-muted" role="status" aria-label="Loading panel">
     Loading panel…
   </div>
 );
@@ -67,11 +67,11 @@ export default function AdminPage() {
 
   return (
     <main
-      className="bg-brand-dark text-white flex flex-col font-sans"
+      className="bg-brand-dark text-ui-ink flex flex-col font-sans"
       style={{ height: "100dvh", overflow: "hidden" }}
     >
       {/* ── Tab Bar ── */}
-      <div className="shrink-0 w-full border-b border-white/5 bg-brand-surface/30 backdrop-blur-sm">
+      <div className="admin-navigation shrink-0 w-full border-b border-ui-line backdrop-blur-sm">
         {/* One sliding row: on narrow screens the passenger switch is reached
             by scrolling past the last section instead of pinning beside them. */}
         <div className="max-w-7xl mx-auto flex min-w-0 items-center gap-2 overflow-x-auto hide-scrollbar px-4 sm:px-6">
@@ -97,8 +97,8 @@ export default function AdminPage() {
                 aria-controls={`admin-panel-${id}`}
                 onClick={() => selectTab(id)}
                 className={`relative flex items-center gap-2 px-4 py-3.5 text-sm font-semibold transition-all whitespace-nowrap ${
-                  secondary ? "ml-2 border-l border-white/10 pl-5" : ""} ${
-                  activeTab === id ? "text-white" : "text-white/50 hover:text-white/70"
+                  secondary ? "ml-2 border-l border-ui-line pl-5" : ""} ${
+                  activeTab === id ? "bg-ui-accent-soft text-brand-accent" : "text-ui-muted hover:bg-ui-soft hover:text-brand-accent"
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
@@ -111,7 +111,7 @@ export default function AdminPage() {
           </div>
           <WorkspaceLink
             href="/passenger"
-            className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-white/10 px-3 py-2.5 text-sm font-semibold text-white/70 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+            className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-ui-line px-3 py-2.5 text-sm font-semibold text-ui-muted transition-colors hover:bg-ui-soft hover:text-ui-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
           >
             <UsersRound className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span>Passenger Panel</span>

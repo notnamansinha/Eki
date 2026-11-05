@@ -1,0 +1,95 @@
+/* Admin uses the Passenger palette from ../brand-theme.css. */
+:root:has(.admin-layout) {
+  --alert-surface: var(--surface-1);
+}
+
+:root:has(.admin-layout) body,
+.admin-layout,
+.admin-layout .font-sans {
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  letter-spacing: normal;
+}
+
+.admin-layout { background: var(--surface-0); }
+.admin-layout :is(h1, h2, h3),
+:root:has(.admin-layout) .eki-confirm-title {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  letter-spacing: normal;
+}
+
+.admin-navigation {
+  background: var(--brand-surface-gradient), rgb(249 248 246 / 0.94);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+.admin-layout :is(.panel-rc, .eki-panel, .glass-panel) {
+  background: var(--surface-1);
+  border-color: var(--border-subtle);
+  box-shadow: 0 1px 2px rgb(67 71 71 / 0.06), 0 14px 28px -18px rgb(67 71 71 / 0.25);
+}
+
+.admin-layout :is(.input-rc, input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea) {
+  min-height: 44px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+}
+.admin-layout :is(input, textarea)::placeholder { color: var(--text-tertiary); }
+.admin-layout :is(input, select, textarea):focus {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  --tw-ring-color: var(--accent-glow);
+}
+/* CustomSelect's decorative chevron inherits the light UI's muted ink. */
+.admin-layout select + svg { color: var(--text-secondary); }
+
+.admin-layout :is(.btn-primary, .btn-rc-primary) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: none;
+  font-weight: 500;
+}
+.admin-layout :is(.btn-primary, .btn-rc-primary):hover:not(:disabled) { background: var(--accent-hover); }
+.admin-layout .shadow-lg,
+.admin-layout .shadow-xl { box-shadow: 0 8px 24px -12px rgb(67 71 71 / 0.25); }
+
+/* Shared confirmation dialogs are portalled outside the admin layout. */
+:root:has(.admin-layout) :is(.eki-confirm-backdrop, .eki-alert-backdrop) { background: rgb(67 71 71 / 0.4); }
+:root:has(.admin-layout) :is(.eki-confirm, .eki-alert) {
+  background: var(--surface-1);
+  border-color: var(--border-subtle);
+  border-radius: 20px;
+  box-shadow: 0 40px 80px -32px rgb(67 71 71 / 0.6);
+  font-family: var(--font-ui);
+}
+:root:has(.admin-layout) :is(.eki-confirm-title, .eki-alert h3) {
+  color: var(--text-primary);
+  font-size: 1.25rem;
+}
+:root:has(.admin-layout) :is(.eki-confirm-text, .eki-alert p) { color: var(--text-secondary); font-size: 0.875rem; }
+:root:has(.admin-layout) .eki-confirm-icon { border-color: transparent; background: var(--accent); color: var(--accent-contrast); }
+:root:has(.admin-layout) .eki-confirm-icon[data-variant="danger"] { background: var(--status-danger); }
+:root:has(.admin-layout) .eki-confirm-icon svg { color: inherit; }
+:root:has(.admin-layout) :is(.eki-confirm-actions, .eki-alert .border-t) { border-color: var(--border-subtle); }
+:root:has(.admin-layout) :is(.eki-confirm-cancel, .eki-confirm-ok, .eki-alert button) {
+  min-height: 44px;
+  padding-inline: 1.125rem;
+  border-radius: 12px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  box-shadow: none;
+}
+:root:has(.admin-layout) .eki-confirm-cancel { border: 1px solid var(--text-primary); background: var(--surface-1); color: var(--text-primary); }
+:root:has(.admin-layout) .eki-confirm-cancel:hover:not(:disabled) { background: var(--surface-3); }
+:root:has(.admin-layout) :is(.eki-confirm-ok, .eki-alert button) { background: var(--accent); color: var(--accent-contrast); }
+:root:has(.admin-layout) :is(.eki-confirm-ok, .eki-alert button):hover:not(:disabled) { background: var(--accent-hover); }
+:root:has(.admin-layout) .eki-confirm-ok[data-variant="danger"] { background: var(--status-danger); }
+.admin-layout .eki-alert .text-red-400 { color: var(--status-danger); }
+.admin-layout .eki-alert .text-amber-400 { color: var(--status-warning); }
+.admin-layout .eki-alert .text-blue-400 { color: var(--accent); }

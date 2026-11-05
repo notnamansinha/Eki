@@ -52,16 +52,16 @@ import {
 
 /* â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const TRIP_STATE: Record<string, { label: string; color: string; bg: string; dot: string }> = {
-  not_armed:     { label: "Service setup pending", color: "text-white/40", bg: "bg-white/5", dot: "bg-white/20" },
-  direction_pending: { label: "Direction Pending", color: "text-amber-300", bg: "bg-amber-500/10", dot: "bg-amber-300" },
-  pre_departure: { label: "Awaiting Stop 1", color: "text-white/50", bg: "bg-white/5", dot: "bg-white/30" },
-  in_service:    { label: "In Service", color: "text-emerald-400", bg: "bg-emerald-500/10", dot: "bg-emerald-400" },
-  completed:     { label: "Completed",  color: "text-blue-400",    bg: "bg-blue-500/10",    dot: "bg-blue-400" },
+  not_armed:     { label: "Service setup pending", color: "text-ui-quiet", bg: "bg-ui-soft", dot: "bg-ui-hover" },
+  direction_pending: { label: "Direction Pending", color: "text-ui-warning", bg: "bg-ui-warning/10", dot: "bg-ui-warning" },
+  pre_departure: { label: "Awaiting Stop 1", color: "text-ui-muted", bg: "bg-ui-soft", dot: "bg-ui-hover" },
+  in_service:    { label: "In Service", color: "text-ui-success", bg: "bg-ui-success/10", dot: "bg-ui-success" },
+  completed:     { label: "Completed",  color: "text-brand-accent",    bg: "bg-brand-accent/10",    dot: "bg-brand-accent" },
 };
 const MOTION_STATE: Record<string, { label: string; color: string }> = {
-  moving:    { label: "Moving",  color: "text-emerald-400" },
-  stopped:   { label: "Stopped", color: "text-amber-400" },
-  uncertain: { label: "Motion uncertain",  color: "text-amber-400" },
+  moving:    { label: "Moving",  color: "text-ui-success" },
+  stopped:   { label: "Stopped", color: "text-ui-warning" },
+  uncertain: { label: "Motion uncertain",  color: "text-ui-warning" },
 };
 /**
  * A ride whose receiver is offline or silent past the signal-lost threshold keeps
@@ -82,11 +82,11 @@ function servicePresentation(entry: ActiveBusEntry) {
     const label = entry.automaticServicePaused || entry.automaticServiceState === "paused" ? "Tracking paused"
       : entry.automaticServiceState === "assignment_required" ? "Assignment required"
       : entry.automaticServiceState === "awaiting_return" ? "Awaiting return service" : null;
-    if (label) return {label,color:"text-amber-300",bg:"bg-amber-500/10",dot:"bg-amber-300"};
-    if (devicePresence(entry) !== "online") return {label:"Offline",color:"text-white/40",bg:"bg-white/5",dot:"bg-white/30"};
+    if (label) return {label,color:"text-ui-warning",bg:"bg-ui-warning/10",dot:"bg-ui-warning"};
+    if (devicePresence(entry) !== "online") return {label:"Offline",color:"text-ui-quiet",bg:"bg-ui-soft",dot:"bg-ui-hover"};
   }
   if (isServicePaused(entry)) {
-    return {label:"Service paused",color:"text-amber-300",bg:"bg-amber-500/10",dot:"bg-amber-300"};
+    return {label:"Service paused",color:"text-ui-warning",bg:"bg-ui-warning/10",dot:"bg-ui-warning"};
   }
   return TRIP_STATE[rideServiceState(entry)];
 }
@@ -190,27 +190,27 @@ function LiveDetailsDrawer({
 
   return (
     <div role="dialog" aria-modal="true" aria-label={`Live details for ${entry.busId}`} className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={dialogRef} tabIndex={-1} className="w-full max-w-md bg-[#0f0f12] border border-white/10 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/5">
+      <div ref={dialogRef} tabIndex={-1} className="w-full max-w-md bg-ui-paper border border-ui-line rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-ui-line">
           <div>
-            <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Live Details</p>
-            <p className="font-bold text-white">{entry.busId}</p>
-            <p className="text-xs text-white/50">{routeName}</p>
+            <p className="text-xs text-ui-quiet uppercase tracking-widest font-bold">Live Details</p>
+            <p className="font-bold text-ui-ink">{entry.busId}</p>
+            <p className="text-xs text-ui-muted">{routeName}</p>
           </div>
-          <button onClick={onClose} aria-label="Close live details" className="w-11 h-11 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
-            <X className="w-4 h-4 text-white/60" />
+          <button onClick={onClose} aria-label="Close live details" className="w-11 h-11 rounded-full bg-ui-soft flex items-center justify-center hover:bg-ui-hover transition-colors">
+            <X className="w-4 h-4 text-ui-muted" />
           </button>
         </div>
 
         <div className="p-5 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
           <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
-              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Trip state</p>
-              <p className="mt-1 text-sm font-semibold text-white">{servicePresentation(entry).label}</p>
+            <div className="rounded-xl border border-ui-line bg-ui-paper p-3">
+              <p className="text-xs text-ui-quiet uppercase tracking-widest font-bold">Trip state</p>
+              <p className="mt-1 text-sm font-semibold text-ui-ink">{servicePresentation(entry).label}</p>
             </div>
-            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
-              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Signal</p>
-              <p className="mt-1 text-sm font-semibold text-white">
+            <div className="rounded-xl border border-ui-line bg-ui-paper p-3">
+              <p className="text-xs text-ui-quiet uppercase tracking-widest font-bold">Signal</p>
+              <p className="mt-1 text-sm font-semibold text-ui-ink">
                 {presence === "online"
                   ? locationDelayed ? "Live location updates delayed" : "Connected"
                   : presence === "offline"
@@ -218,43 +218,43 @@ function LiveDetailsDrawer({
                     : "Unknown / stale"}
               </p>
             </div>
-            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
-              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Next stop</p>
-              <p className="mt-1 text-sm font-semibold text-white">
+            <div className="rounded-xl border border-ui-line bg-ui-paper p-3">
+              <p className="text-xs text-ui-quiet uppercase tracking-widest font-bold">Next stop</p>
+              <p className="mt-1 text-sm font-semibold text-ui-ink">
                 {nextStopIndex !== undefined
                   ? nextStopIndex + 1
                   : "—"}
               </p>
             </div>
-            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
-              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Delay</p>
-              <p className="mt-1 text-sm font-semibold text-white">{Math.max(0, Number(entry.delayMinutes ?? 0))} min</p>
+            <div className="rounded-xl border border-ui-line bg-ui-paper p-3">
+              <p className="text-xs text-ui-quiet uppercase tracking-widest font-bold">Delay</p>
+              <p className="mt-1 text-sm font-semibold text-ui-ink">{Math.max(0, Number(entry.delayMinutes ?? 0))} min</p>
             </div>
-            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
-              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Route matching</p>
-              <p className="mt-1 text-sm font-semibold text-white">
+            <div className="rounded-xl border border-ui-line bg-ui-paper p-3">
+              <p className="text-xs text-ui-quiet uppercase tracking-widest font-bold">Route matching</p>
+              <p className="mt-1 text-sm font-semibold text-ui-ink">
                 {directionPending ? "Direction pending" : entry.routeState ?? "Pending"}
               </p>
             </div>
-            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
-              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Match confidence</p>
-              <p className="mt-1 text-sm font-semibold text-white">
+            <div className="rounded-xl border border-ui-line bg-ui-paper p-3">
+              <p className="text-xs text-ui-quiet uppercase tracking-widest font-bold">Match confidence</p>
+              <p className="mt-1 text-sm font-semibold text-ui-ink">
                 {directionPending || entry.matchConfidence == null
                   ? "—"
                   : `${Math.round(entry.matchConfidence * 100)}%`}
               </p>
             </div>
-            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
-              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Route context</p>
-              <p className="mt-1 text-sm font-semibold text-white">
+            <div className="rounded-xl border border-ui-line bg-ui-paper p-3">
+              <p className="text-xs text-ui-quiet uppercase tracking-widest font-bold">Route context</p>
+              <p className="mt-1 text-sm font-semibold text-ui-ink">
                 {directionPending
                   ? "Direction pending"
                   : `v${entry.routeVersion ?? "—"} · ${entry.routeSource ?? "configured"}`}
               </p>
             </div>
-            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
-              <p className="text-[10px] text-white/30 uppercase tracking-widest font-black">Distance to route</p>
-              <p className="mt-1 text-sm font-semibold text-white">
+            <div className="rounded-xl border border-ui-line bg-ui-paper p-3">
+              <p className="text-xs text-ui-quiet uppercase tracking-widest font-bold">Distance to route</p>
+              <p className="mt-1 text-sm font-semibold text-ui-ink">
                 {directionPending || entry.distanceToActiveRoute == null
                   ? "—"
                   : `${Math.round(entry.distanceToActiveRoute)} m`}
@@ -262,8 +262,8 @@ function LiveDetailsDrawer({
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3 text-[10px] text-white/50">
-            <p className="font-black uppercase tracking-widest text-white/30">Location diagnostics</p>
+          <div className="rounded-xl border border-ui-line bg-ui-paper p-3 text-xs text-ui-muted">
+            <p className="font-bold uppercase tracking-widest text-ui-quiet">Location diagnostics</p>
             <p className="mt-2 font-mono">
               Raw: {entry.rawLocation
                 ? `${entry.rawLocation.lat.toFixed(6)}, ${entry.rawLocation.lng.toFixed(6)} · seq ${entry.rawLocation.seq} · HDOP ${entry.rawLocation.gpsHdop?.toFixed(1) ?? "legacy"}`
@@ -276,20 +276,20 @@ function LiveDetailsDrawer({
             </p>
           </div>
 
-          {msg && <p className="text-xs text-emerald-400 font-semibold">{msg}</p>}
+          {msg && <p className="text-xs text-ui-success font-semibold">{msg}</p>}
 
-          <p className="text-xs leading-relaxed text-white/45">
+          <p className="text-xs leading-relaxed text-ui-quiet">
             Raw position comes from authenticated GNSS telemetry. A confident,
             current-version route match controls the displayed marker; uncertain
             or rerouting states fall back to the raw fix. Stop progress remains
             independent of route geometry changes.
           </p>
-          <button disabled={!entry.sessionId} title={entry.sessionId ? undefined : "Messages are available after service starts"} onClick={() => setShowWipeConfirm(true)} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition-colors">
+          <button disabled={!entry.sessionId} title={entry.sessionId ? undefined : "Messages are available after service starts"} onClick={() => setShowWipeConfirm(true)} className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-ui-warning/30 bg-ui-warning/10 text-ui-warning text-xs font-bold hover:bg-ui-warning/20 transition-colors">
             <MessageCircle className="w-3.5 h-3.5" /> Clear Messages
           </button>
           {onEndRide && (
             <button type="button" onClick={() => { onClose(); onEndRide(); }}
-              className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-red-400/25 bg-red-500/10 text-xs font-bold text-red-300 hover:bg-red-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400">
+              className="h-11 flex items-center justify-center gap-1.5 rounded-xl border border-ui-danger/25 bg-ui-danger/10 text-xs font-bold text-ui-danger hover:bg-ui-danger/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ui-danger">
               <X className="size-4" aria-hidden="true" /> End ride early
             </button>
           )}
@@ -351,7 +351,7 @@ function BusMarker({
         <div style={{
           width: 36, height: 36, borderRadius: 18,
           background: markerColor,
-          border: "3px solid #09090b",
+          border: "3px solid var(--surface-1)",
           borderStyle: markerSelection.uncertain ? "dashed" : "solid",
           display: "flex", alignItems: "center", justifyContent: "center",
           boxShadow: `0 0 0 2px ${markerColor}40, 0 4px 12px rgba(0,0,0,0.5)`,
@@ -370,8 +370,8 @@ function BusMarker({
         </div>
         <div style={{
           position: "absolute", top: 40, left: "50%", transform: "translateX(-50%)", padding: "2px 6px", borderRadius: 5,
-          background: "rgba(9,9,11,0.9)", border: "1px solid rgba(255,255,255,0.1)",
-          color: "white", fontSize: 9, whiteSpace: "nowrap", fontWeight: 700,
+          background: "var(--surface-1)", border: "1px solid var(--border-subtle)",
+          color: "var(--text-primary)", fontSize: 12, whiteSpace: "nowrap", fontWeight: 700,
           letterSpacing: "0.08em",
         }}>{entry.busId}</div>
       </div>
@@ -441,7 +441,7 @@ function FleetCard({
       <div
         data-fleet-card
         className={`shrink-0 border rounded-xl overflow-hidden transition-all ${
-          selected ? "border-brand-accent/40 bg-brand-accent/5" : "border-white/8 bg-white/3 hover:border-white/15"
+          selected ? "border-brand-accent/40 bg-brand-accent/5" : "border-ui-line bg-ui-paper hover:border-ui-line"
         }`}
       >
         <div className="w-full p-3 flex items-center gap-1">
@@ -456,34 +456,34 @@ function FleetCard({
               <span className={`w-2 h-2 rounded-full ${ts.dot} ${entry.motionState === "moving" && !offline ? "animate-pulse" : ""}`} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-white text-sm truncate">{bus?.name ?? entry.busId}</p>
+              <p className="font-semibold text-ui-ink text-sm truncate">{bus?.name ?? entry.busId}</p>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <span className={`text-[9px] font-black uppercase tracking-wider ${ts.color}`}>{ts.label}</span>
-                {locationDelayed && <span className="text-[9px] font-semibold text-amber-400">{offline ? `Last seen ${timeSince(liveBusFreshnessTimestamp(entry))}` : "Live location updates delayed"}</span>}
-                {!offline && <span className={`text-[9px] font-semibold ${ms.color}`}>{ms.label}</span>}
-                {entry.speed != null && !offline && <span className="text-[9px] text-white/30 tabular-nums">{Math.round(entry.speed)} km/h</span>}
+                <span className={`text-xs font-bold uppercase tracking-wider ${ts.color}`}>{ts.label}</span>
+                {locationDelayed && <span className="text-xs font-semibold text-ui-warning">{offline ? `Last seen ${timeSince(liveBusFreshnessTimestamp(entry))}` : "Live location updates delayed"}</span>}
+                {!offline && <span className={`text-xs font-semibold ${ms.color}`}>{ms.label}</span>}
+                {entry.speed != null && !offline && <span className="text-xs text-ui-quiet tabular-nums">{Math.round(entry.speed)} km/h</span>}
                 {(entry.delayMinutes ?? 0) > 0 && (
-                  <span className="text-[9px] text-amber-400 font-black">+{entry.delayMinutes}m delay</span>
+                  <span className="text-xs text-ui-warning font-bold">+{entry.delayMinutes}m delay</span>
                 )}
               </div>
             </div>
-            {expanded ? <ChevronUp className="w-3.5 h-3.5 text-white/30" /> : <ChevronDown className="w-3.5 h-3.5 text-white/30" />}
+            {expanded ? <ChevronUp className="w-3.5 h-3.5 text-ui-quiet" /> : <ChevronDown className="w-3.5 h-3.5 text-ui-quiet" />}
           </button>
           <button
             type="button"
             onClick={() => setDetailsOpen(true)}
-            className="w-9 h-9 shrink-0 rounded-lg bg-white/5 flex items-center justify-center hover:bg-brand-accent/20 hover:text-brand-accent transition-colors"
+            className="w-9 h-9 shrink-0 rounded-lg bg-ui-soft flex items-center justify-center hover:bg-brand-accent/20 hover:text-brand-accent transition-colors"
             title="Live details"
             aria-label={`Open live details for ${entry.busId}`}
           >
-            <Eye className="w-3.5 h-3.5 text-white/50" />
+            <Eye className="w-3.5 h-3.5 text-ui-muted" />
           </button>
           {isLiveChatDeviceOnline(entry) && (
             <button
               type="button"
               disabled={!canChat}
               onClick={() => onOpenChat(entry)}
-              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-white/5 px-2.5 text-[10px] font-bold text-white transition-colors hover:bg-brand-accent/20 hover:text-brand-accent disabled:opacity-40"
+              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-ui-soft px-2.5 text-xs font-bold text-ui-ink transition-colors hover:bg-brand-accent/20 hover:text-brand-accent disabled:opacity-40"
               title={entry.sessionId ? "Open live chat" : "Device online; chat will unlock when a ride is armed"}
               aria-label={`Open live chat for ${entry.busId}`}
             >
@@ -494,7 +494,7 @@ function FleetCard({
         </div>
 
         {expanded && (
-          <div id={`fleet-details-${entry.busId}-${entry.routeId ?? "route"}`} className="border-t border-white/5 p-3 flex flex-col gap-3">
+          <div id={`fleet-details-${entry.busId}-${entry.routeId ?? "route"}`} className="border-t border-ui-line p-3 flex flex-col gap-3">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
                 { label: "Speed", value: entry.speed != null ? `${Math.round(entry.speed)} km/h` : "—" },
@@ -502,56 +502,56 @@ function FleetCard({
                 { label: "Last Update", value: timeSince(liveBusFreshnessTimestamp(entry)) },
                 { label: "Next stop", value: nextStopIndex !== undefined ? `${nextStopIndex + 1}/${stopCount}` : "—" },
               ].map(({ label, value }) => (
-                <div key={label} className="bg-white/3 border border-white/5 rounded-lg p-2 flex flex-col gap-0.5">
-                  <span className="text-[8px] font-black uppercase tracking-wider text-white/25">{label}</span>
-                  <span className="text-xs font-semibold text-white tabular-nums">{value}</span>
+                <div key={label} className="bg-ui-paper border border-ui-line rounded-lg p-2 flex flex-col gap-0.5">
+                  <span className="text-xs font-bold uppercase tracking-wider text-ui-quiet">{label}</span>
+                  <span className="text-xs font-semibold text-ui-ink tabular-nums">{value}</span>
                 </div>
               ))}
             </div>
             {nextStopIndex !== undefined && rideServiceState(entry) === "in_service" && (
               <div>
                 <div className="flex justify-between mb-1">
-                  <span className="text-[8px] font-black uppercase tracking-wider text-white/25">Route Progress</span>
-                  <span className="text-[9px] text-white/30 tabular-nums">{nextStopIndex}/{stopCount} passed</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-ui-quiet">Route Progress</span>
+                  <span className="text-xs text-ui-quiet tabular-nums">{nextStopIndex}/{stopCount} passed</span>
                 </div>
-                <div className="h-1 bg-white/5 rounded-full">
-                  <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.round((nextStopIndex / stopCount) * 100)}%` }} />
+                <div className="h-1 bg-ui-soft rounded-full">
+                  <div className="h-full bg-ui-success rounded-full transition-all" style={{ width: `${Math.round((nextStopIndex / stopCount) * 100)}%` }} />
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-2">
                   {nextStop && (
                     <div>
-                      <span className="text-[8px] text-white/25 uppercase font-black">Next Stop</span>
-                      <p className="text-[10px] font-semibold text-white truncate">{nextStop.name}</p>
+                      <span className="text-xs text-ui-quiet uppercase font-bold">Next Stop</span>
+                      <p className="text-xs font-semibold text-ui-ink truncate">{nextStop.name}</p>
                     </div>
                   )}
                   {followingStop && (
                     <div>
-                      <span className="text-[8px] text-white/25 uppercase font-black">Following Stop</span>
-                      <p className="text-[10px] font-semibold text-white/60 truncate">{followingStop.name}</p>
+                      <span className="text-xs text-ui-quiet uppercase font-bold">Following Stop</span>
+                      <p className="text-xs font-semibold text-ui-muted truncate">{followingStop.name}</p>
                     </div>
                   )}
                 </div>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
+            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-ui-line">
               <div>
-                <span className="text-[8px] font-black uppercase tracking-wider text-white/25">Driver</span>
-                <p className="text-[10px] font-semibold text-white truncate">{driver?.name ?? entry.driverId ?? "—"}</p>
+                <span className="text-xs font-bold uppercase tracking-wider text-ui-quiet">Driver</span>
+                <p className="text-xs font-semibold text-ui-ink truncate">{driver?.name ?? entry.driverId ?? "—"}</p>
               </div>
               <div>
-                <span className="text-[8px] font-black uppercase tracking-wider text-white/25">Route</span>
-                <p className="text-[10px] font-semibold text-white truncate">{route?.name ?? entry.routeId ?? "—"}</p>
+                <span className="text-xs font-bold uppercase tracking-wider text-ui-quiet">Route</span>
+                <p className="text-xs font-semibold text-ui-ink truncate">{route?.name ?? entry.routeId ?? "—"}</p>
                 {route && isRideDirection(entry.direction) ? (
-                  <p className="text-[9px] text-white/40">
+                  <p className="text-xs text-ui-quiet">
                     {directionLabelState(directionState, route.stops)}
                   </p>
                 ) : route ? (
-                  <p className="text-[9px] text-amber-300/70">Direction pending</p>
+                  <p className="text-xs text-ui-warning">Direction pending</p>
                 ) : null}
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2 border-t border-white/5 pt-3">
-              <span className="mr-1 text-[10px] font-semibold text-white/50">
+            <div className="flex flex-wrap items-center gap-2 border-t border-ui-line pt-3">
+              <span className="mr-1 text-xs font-semibold text-ui-muted">
                 Delay: {Math.max(0, Number(entry.delayMinutes ?? 0))} min
               </span>
               {[-2, -1, 1, 2].map((delta) => (
@@ -565,7 +565,7 @@ function FleetCard({
                     !entry.driverId
                   }
                   onClick={() => onChangeDelay(entry, delta)}
-                  className="min-h-9 min-w-9 rounded-lg border border-white/10 bg-white/5 px-2 text-xs font-bold text-white disabled:opacity-40"
+                  className="min-h-9 min-w-9 rounded-lg border border-ui-line bg-ui-soft px-2 text-xs font-bold text-ui-ink disabled:opacity-40"
                   aria-label={`${delta > 0 ? "Increase" : "Decrease"} delay by ${Math.abs(delta)} minutes for ${entry.busId}`}
                 >
                   {delta > 0 ? `+${delta}` : delta}
@@ -577,7 +577,7 @@ function FleetCard({
                 type="button"
                 disabled={!isLiveService(entry) || !entry.sessionId}
                 onClick={() => onLoadBoardingCode(entry)}
-                className="flex min-h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white disabled:opacity-40"
+                className="flex min-h-10 items-center gap-2 rounded-xl border border-ui-line bg-ui-soft px-3 text-xs font-bold text-ui-ink disabled:opacity-40"
               >
                 <TicketCheck className="size-4" />
                 {boardingCode ? `${boardingCode.slice(0, 4)}-${boardingCode.slice(4)}` : "Boarding code"}
@@ -586,7 +586,7 @@ function FleetCard({
                 <button
                   type="button"
                   onClick={() => onEndRide(entry)}
-                  className="flex min-h-10 items-center gap-2 rounded-xl border border-red-400/25 bg-red-500/10 px-3 text-xs font-bold text-red-300 hover:bg-red-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                  className="flex min-h-10 items-center gap-2 rounded-xl border border-ui-danger/25 bg-ui-danger/10 px-3 text-xs font-bold text-ui-danger hover:bg-ui-danger/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ui-danger"
                 >
                   <X className="size-4" aria-hidden="true" />
                   End ride early
@@ -594,10 +594,10 @@ function FleetCard({
               )}
             </div>
             {isActiveService(entry) && isServicePaused(entry) && (
-              <p className="text-[10px] text-amber-300/80">Delay and boarding code return when the receiver reports again.</p>
+              <p className="text-xs text-ui-warning">Delay and boarding code return when the receiver reports again.</p>
             )}
             {hasValidBusCoordinates(entry.lat, entry.lng) && (
-              <p className="text-[9px] text-white/20 tabular-nums">
+              <p className="text-xs text-ui-quiet tabular-nums">
                 {entry.lat!.toFixed(5)}, {entry.lng!.toFixed(5)}
                 {entry.lastKnownLocationAt !== undefined && ` · last known ${timeSince(entry.lastKnownLocationAt)}`}
               </p>
@@ -836,13 +836,13 @@ export default function DashboardPanel() {
         {/* Map overlay stats */}
         <div className="absolute top-3 left-3 right-3 flex flex-col items-start gap-2 pointer-events-none">
           {liveReadFailed && (
-            <div className="pointer-events-auto w-full max-w-lg rounded-xl border border-amber-400/20 bg-zinc-950/95 px-3 py-2 text-xs text-amber-300 shadow-lg" role="alert">
+            <div className="pointer-events-auto w-full max-w-lg rounded-xl border border-ui-warning/20 bg-ui-paper px-3 py-2 text-xs text-ui-warning shadow-lg" role="alert">
               Live vehicle updates are unavailable. Check your connection and reload to retry.
             </div>
           )}
           {(busesError || routesError || driversError || busLocationsError) && (
             <div
-              className="pointer-events-auto flex w-full max-w-lg items-start gap-2 rounded-xl border border-red-400/20 bg-zinc-950/95 px-3 py-2 text-xs text-red-300 shadow-lg"
+              className="pointer-events-auto flex w-full max-w-lg items-start gap-2 rounded-xl border border-ui-danger/20 bg-ui-paper px-3 py-2 text-xs text-ui-danger shadow-lg"
               role="alert"
             >
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -857,7 +857,7 @@ export default function DashboardPanel() {
             if (driversError) retryDrivers();
                   if (busLocationsError) retryBusLocations();
                 }}
-                className="rounded-md bg-white/10 px-2 py-1 font-semibold text-white"
+                className="rounded-md bg-ui-hover px-2 py-1 font-semibold text-ui-ink"
               >
                 Retry
               </button>
@@ -865,7 +865,7 @@ export default function DashboardPanel() {
           )}
           {isResuming && (
             <div
-              className="flex items-center gap-2 rounded-xl border border-amber-400/20 bg-zinc-950/95 px-3 py-2 text-xs font-semibold text-amber-300 shadow-lg"
+              className="flex items-center gap-2 rounded-xl border border-ui-warning/20 bg-ui-paper px-3 py-2 text-xs font-semibold text-ui-warning shadow-lg"
               role="status"
               aria-live="polite"
             >
@@ -873,9 +873,9 @@ export default function DashboardPanel() {
               <span>Offline / reconnecting to live data...</span>
             </div>
           )}
-          <div className="flex items-center gap-2 bg-[#09090b]/90 backdrop-blur-sm border border-white/10 rounded-xl px-3 py-2">
-            <span className={`w-2 h-2 rounded-full ${!isResuming && devicesOnline > 0 ? "bg-emerald-400 animate-pulse" : "bg-white/20"}`} />
-            <span className="text-[10px] font-black uppercase tracking-widest text-white/70">
+          <div className="flex items-center gap-2 bg-ui-paper backdrop-blur-sm border border-ui-line rounded-xl px-3 py-2">
+            <span className={`w-2 h-2 rounded-full ${!isResuming && devicesOnline > 0 ? "bg-ui-success animate-pulse" : "bg-ui-hover"}`} />
+            <span className="text-xs font-bold uppercase tracking-widest text-ui-muted">
               {isResuming
                 ? "Live data unavailable"
                 : `${devicesOnline} device${devicesOnline === 1 ? "" : "s"} online · ${activeServices} service${activeServices === 1 ? "" : "s"}`}
@@ -885,39 +885,39 @@ export default function DashboardPanel() {
       </div>
 
       {/* â”€â”€ Sidebar â”€â”€ */}
-      <div className="flex max-h-[55%] min-h-0 w-full shrink-0 flex-col overflow-y-auto overscroll-contain border-t border-white/5 lg:max-h-none lg:w-[360px] lg:overflow-hidden lg:border-l lg:border-t-0">
-        <section className="shrink-0 border-b border-white/5 p-4">
-          <h2 className="text-sm font-bold text-white">Automatic service</h2>
-          <p className="mt-2 text-pretty text-xs text-white/60">Services start automatically when an assigned receiver sends a fresh, reliable GPS fix. Direction resolves at an endpoint or after a qualified departure.</p>
-          <p className="mt-2 text-pretty text-xs text-white/45">An offline session is retained for recovery. Movement, stop arrivals and return services follow GNSS evidence.</p>
+      <div className="flex max-h-[55%] min-h-0 w-full shrink-0 flex-col overflow-y-auto overscroll-contain border-t border-ui-line lg:max-h-none lg:w-[360px] lg:overflow-hidden lg:border-l lg:border-t-0">
+        <section className="shrink-0 border-b border-ui-line p-4">
+          <h2 className="text-sm font-bold text-ui-ink">Automatic service</h2>
+          <p className="mt-2 text-pretty text-xs text-ui-muted">Services start automatically when an assigned receiver sends a fresh, reliable GPS fix. Direction resolves at an endpoint or after a qualified departure.</p>
+          <p className="mt-2 text-pretty text-xs text-ui-quiet">An offline session is retained for recovery. Movement, stop arrivals and return services follow GNSS evidence.</p>
           {activeEntries.filter(entry => (entry.automaticServicePaused || entry.automaticServiceState === "paused") && devicePresence(entry) === "online").map(entry => <button key={`${entry.busId}_${entry.routeId}`} type="button"
             aria-label={`Resume automatic tracking for ${entry.busId}`} disabled={resumePending}
             onClick={() => void resumeAutomaticService(entry)}
-            className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-zinc-950 disabled:opacity-50">Resume tracking · {entry.busId}</button>)}
-          {armStatus && <p className="mt-2 text-xs text-white/65" role="status">{armStatus}</p>}
+            className="mt-3 rounded-lg bg-brand-accent px-3 py-2 text-xs font-semibold text-ui-on-accent disabled:opacity-50">Resume tracking · {entry.busId}</button>)}
+          {armStatus && <p className="mt-2 text-xs text-ui-muted" role="status">{armStatus}</p>}
         </section>
         {/* Stats row */}
-        <div className="grid grid-cols-5 border-b border-white/5 shrink-0">
+        <div className="grid grid-cols-5 border-b border-ui-line shrink-0">
           {[
-            { label: "In Service", value: inService,  color: "text-emerald-400", Icon: Activity },
-            { label: "Awaiting Start", value: awaitingStart, color: "text-white/50", Icon: Clock },
-            { label: "Direction Pending", value: directionPending, color: "text-amber-300", Icon: TrendingUp },
-            { label: "Devices Online", value: devicesOnline, color: "text-blue-400", Icon: Wifi },
-            { label: "Offline / Unknown", value: unavailableDevices, color: "text-amber-400", Icon: AlertTriangle },
+            { label: "In Service", value: inService,  color: "text-ui-success", Icon: Activity },
+            { label: "Awaiting Start", value: awaitingStart, color: "text-ui-muted", Icon: Clock },
+            { label: "Direction Pending", value: directionPending, color: "text-ui-warning", Icon: TrendingUp },
+            { label: "Devices Online", value: devicesOnline, color: "text-brand-accent", Icon: Wifi },
+            { label: "Offline / Unknown", value: unavailableDevices, color: "text-ui-warning", Icon: AlertTriangle },
           ].map(({ label, value, color, Icon }) => (
-            <div key={label} className="flex flex-col items-center justify-center gap-0.5 py-3 border-r border-white/5 last:border-0">
+            <div key={label} className="flex flex-col items-center justify-center gap-0.5 py-3 border-r border-ui-line last:border-0">
               <Icon className={`w-3 h-3 ${color}`} />
-              <span className={`text-lg font-black tabular-nums ${color}`}>{value}</span>
-              <span className="text-[8px] font-black uppercase tracking-wide text-white/25">{label}</span>
+              <span className={`text-lg font-bold tabular-nums ${color}`}>{value}</span>
+              <span className="text-xs font-bold uppercase tracking-wide text-ui-quiet">{label}</span>
             </div>
           ))}
         </div>
 
         {/* Fleet list */}
         <div className="flex shrink-0 flex-col gap-2 p-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 px-1">Live Fleet</p>
+          <p className="text-xs font-bold uppercase tracking-[0.25em] text-ui-quiet px-1">Live Fleet</p>
           {activeEntries.length === 0 ? (
-            <div className={`flex flex-col items-center justify-center py-16 text-center gap-2 ${isResuming ? "text-amber-300" : "opacity-30"}`}>
+            <div className={`flex flex-col items-center justify-center py-16 text-center gap-2 ${isResuming ? "text-ui-warning" : "text-ui-quiet"}`}>
               {isResuming ? <WifiOff className="w-8 h-8" /> : <Wifi className="w-8 h-8" />}
               <p className="text-xs font-semibold uppercase tracking-widest">
                 {isResuming ? "Live data unavailable" : "No buses active"}

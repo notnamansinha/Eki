@@ -67,10 +67,12 @@ The passenger panel follows the Ahmedabad University brand rules
 (`AU_RULES_AND_BRAND_GUIDELINES.md`): AU Red `#801214` for actions, links and the
 route line, Dark Grey `#434747` text, Off-white `#F2EFEC` pages and Gold
 `#AE9562` for decoration only. Playfair Display (headings) and Roboto (UI) are
-self-hosted through `next/font` in `src/app/layout.tsx`. All passenger surfaces
-come from `src/app/passenger/theme.css`, scoped with
-`:root:has(.passenger-layout)` so the admin console and landing page keep their
-own theme; components carry semantic `pp-*` classes rather than colours.
+self-hosted through `next/font` in `src/app/layout.tsx`. Passenger and Admin share
+palette, font and gradient tokens in `src/app/brand-theme.css`, scoped with
+`:root:has(.passenger-layout, .admin-layout)` so portalled dialogs inherit them
+and the landing page keeps its theme. Surface rules live in each panel's
+`theme.css`; Passenger uses semantic `pp-*` classes and Admin uses `ui-*` colour
+utilities. Keep actions AU Red and reserve status colours for status indicators.
 Phones use iOS-style grouped lists, sheets with grabbers and one translucent tab
 bar tinted AU Red. Pointer devices keep the centred Live Routes panel with paper
 cards, adding the line code and gold rule only when the window is at least
