@@ -292,9 +292,9 @@ export default function MessagingPanel({
         <div>
           <h3 id={titleId} className="font-semibold text-[15px] flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
             <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: "var(--status-live)" }} />
-            Live Chat
+            Live chat
           </h3>
-          <p className="text-[10px] font-semibold mt-0.5" style={{ color: "var(--text-ghost)" }}>
+          <p className="text-[12px] font-semibold mt-0.5" style={{ color: "var(--text-ghost)" }}>
             {sessionId
               ? `Session ${sessionId.substring(0, 8)} · filtered and rate-limited`
               : "Device online · waiting for ride session"}
@@ -320,17 +320,17 @@ export default function MessagingPanel({
               <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>
                 Live chat is visible
               </p>
-              <p className="text-[11px] mt-1" style={{ color: "var(--text-ghost)" }}>
+              <p className="text-[12px] mt-1" style={{ color: "var(--text-ghost)" }}>
                 {unavailableMessage}
               </p>
             </div>
         ) : chatError && chatError.sessionId === sessionId ? (
             <div className="flex-1 flex flex-col items-center justify-center animate-fade-in">
-              <AlertCircle className="w-8 h-8 mb-3" style={{ color: "var(--danger, #f87171)" }} />
-              <p className="text-[12px] font-semibold text-center" style={{ color: "var(--danger, #f87171)" }}>
+              <AlertCircle className="w-8 h-8 mb-3" style={{ color: "var(--status-danger)" }} />
+              <p className="text-[13px] font-semibold text-center" style={{ color: "var(--status-danger)" }}>
                 Couldn&apos;t load messages
               </p>
-              <p className="text-[11px] mt-1" style={{ color: "var(--text-ghost)" }}>
+              <p className="text-[12px] mt-1" style={{ color: "var(--text-ghost)" }}>
                 Check your connection and try again
               </p>
               <button
@@ -340,7 +340,7 @@ export default function MessagingPanel({
                   setMessagesSource(null);
                   setRetryGeneration((generation) => generation + 1);
                 }}
-                className="mt-4 rounded-lg px-4 py-2 text-[11px] font-semibold"
+                className="mt-4 min-h-11 rounded-lg px-4 py-2 text-[13px] font-semibold"
                 style={{ background: "var(--surface-3)", color: "var(--text-primary)" }}
               >
                 Retry
@@ -352,7 +352,7 @@ export default function MessagingPanel({
               <p className="text-[12px] font-semibold text-center" style={{ color: "var(--text-ghost)" }}>
                 No messages yet
               </p>
-              <p className="text-[11px] mt-1" style={{ color: "var(--text-ghost)" }}>
+              <p className="text-[12px] mt-1" style={{ color: "var(--text-ghost)" }}>
                 Send a message to the {currentUserRole === "admin" ? "passengers" : "administrator"}
               </p>
             </div>
@@ -366,18 +366,18 @@ export default function MessagingPanel({
                 className={`flex flex-col max-w-[80%] animate-slide-up ${isMe ? 'self-end items-end' : 'self-start items-start'}`}
               >
                 <div className={`flex items-baseline gap-1.5 mb-1 px-1 ${isMe ? 'flex-row-reverse' : ''}`}>
-                  <span className="text-[10px] font-semibold" 
+                  <span className="text-[12px] font-semibold"
                     style={{ color: isMe ? "var(--accent)" : "var(--text-ghost)" }}>
                     {isMe ? 'You' : msg.senderName}
                   </span>
                   {msg.from === "admin" && (
-                    <span className="text-[10px] font-semibold" style={{ color: "var(--accent)" }}>Administrator</span>
+                    <span className="text-[12px] font-semibold" style={{ color: "var(--accent)" }}>Administrator</span>
                   )}
                   {msg.from === "driver" && (
-                    <span className="text-[10px] font-semibold" style={{ color: "var(--text-ghost)" }}>Operator</span>
+                    <span className="text-[12px] font-semibold" style={{ color: "var(--text-ghost)" }}>Operator</span>
                   )}
                   {msg.timestamp instanceof Timestamp && (
-                    <span className="text-[9px] font-medium" style={{ color: "var(--text-ghost)" }}>
+                    <span className="text-[12px] font-medium" style={{ color: "var(--text-ghost)" }}>
                       {msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   )}
@@ -387,7 +387,7 @@ export default function MessagingPanel({
                   style={{
                     borderRadius: isMe ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
                     background: isMe ? "var(--accent)" : "var(--surface-3)",
-                    color: isMe ? "#1a1a1a" : "var(--text-primary)",
+                    color: isMe ? "var(--accent-contrast, #1a1a1a)" : "var(--text-primary)",
                     fontWeight: isMe ? 500 : 400,
                   }}
                 >
@@ -403,7 +403,7 @@ export default function MessagingPanel({
       {/* Rate limit toast */}
       {rateLimitMsg && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 animate-slide-down">
-          <div role="status" aria-live="polite" className="px-4 py-2 rounded-lg text-[11px] font-semibold"
+          <div role="status" aria-live="polite" className="px-4 py-2 rounded-lg text-[12px] font-semibold"
             style={{ background: "var(--status-warning-bg)", color: "var(--status-warning)" }}>
             {rateLimitMsg}
           </div>
@@ -433,7 +433,7 @@ export default function MessagingPanel({
             type="submit"
             disabled={sending || Boolean(unavailableMessage) || !newMessage.trim()}
             className="w-11 h-11 rounded-xl flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 transition-all"
-            style={{ background: "var(--accent)", color: "var(--surface-0)" }}
+            style={{ background: "var(--accent)", color: "var(--accent-contrast, var(--surface-0))" }}
             aria-label="Send message"
           >
             <Send className="w-5 h-5 ml-0.5" />

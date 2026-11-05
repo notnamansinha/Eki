@@ -15,7 +15,8 @@ test("Live Routes adapts the panel and dock to the input device", async ({ page 
   expect(panelBox.y + panelBox.height).toBeLessThan(navBox.y);
 
   if (!desktop) {
-    expect(panelBox.width).toBe(viewport.width - 32);
+    // On phones the Live Routes sheet spans the screen and rests on the tab bar.
+    expect(panelBox.width).toBe(viewport.width);
     expect(navBox.width).toBe(viewport.width);
     await expect(list).toHaveCSS("scrollbar-width", "none");
     return;

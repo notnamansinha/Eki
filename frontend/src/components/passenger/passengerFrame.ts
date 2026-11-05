@@ -21,15 +21,11 @@ export const passengerTopSpacerStyle: CSSProperties = {
 };
 
 export const passengerPanelClassName =
-  "passenger-home-panel relative mx-4 flex flex-1 flex-col overflow-hidden rounded-[32px] pt-8 shadow-2xl";
+  "passenger-home-panel relative mx-4 flex flex-1 flex-col overflow-hidden pt-8";
 
+// Surface, border and shadow come from app/passenger/theme.css.
 export const passengerPanelStyle: CSSProperties = {
   marginBottom: `var(--passenger-home-panel-bottom, calc(${passengerNavHeight} + var(--passenger-panel-nav-gap, ${PASSENGER_PANEL_NAV_GAP_PX}px) + var(--safe-area-bottom)))`,
-  background: "linear-gradient(180deg, #1c1c1e 0%, #151517 100%)",
-  borderTop: "1px solid rgba(255, 255, 255, 0.12)",
-  borderLeft: "1px solid rgba(255, 255, 255, 0.04)",
-  borderRight: "1px solid rgba(255, 255, 255, 0.04)",
-  boxShadow: "0 12px 48px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05)",
 };
 
 // The frame owns the surface colour so the safe-area padding beneath the bar

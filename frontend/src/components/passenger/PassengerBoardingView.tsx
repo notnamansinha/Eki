@@ -154,8 +154,8 @@ export default function PassengerBoardingView({
   // Never claim "Live" without a health reading. Lost or offline outranks the
   // pre-departure warning; green only while in service and live.
   const healthDescription = liveHealth ? describeLiveBusHealth(liveHealth) : undefined;
-  const statusColor = healthDescription?.tone === "danger" ? "var(--status-danger)"
-    : tripState === "in_service" && healthDescription?.tone === "live" ? "var(--status-live)" : "var(--status-warning)";
+  const statusTone = healthDescription?.tone === "danger" ? "danger"
+    : tripState === "in_service" && healthDescription?.tone === "live" ? "live" : "warning";
   const boardHint = joinState === "joining" || joinState === "joined" ? undefined
     : boardingBlockedReason ? boardingBlockedReason
     : !boardingStopId || !alightingStopId ? "Choose your boarding and destination stops to board."
@@ -249,16 +249,13 @@ export default function PassengerBoardingView({
   return (
     <div className="flex w-full flex-col gap-2 animate-fade-in pointer-events-auto">
       <div role="status" aria-live="polite">
-        <p
-          className="text-[10px] font-bold uppercase tracking-wider"
-          style={{ color: statusColor }}
-        >
+        <p className="pp-status-title" data-tone={statusTone}>
           {tripState === "in_service" ? "Ride in service" : "Ride armed · awaiting stop 1"}
           {healthDescription && ` · ${healthDescription.title}`}
           {delayed && ` · ${formatUpdateAge(liveHealth?.ageMs)}`}
         </p>
         {progressSummary && (
-          <p className="mt-0.5 truncate text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{progressSummary}</p>
+          <p className="pp-status-detail truncate" style={{ color: "var(--text-primary)" }}>{progressSummary}</p>
         )}
       </div>
       <InAppSelect
@@ -276,7 +273,6 @@ export default function PassengerBoardingView({
           selectionChanged();
         }}
         options={[{ value: "", label: "Choose boarding stop" }, ...stopOptions]}
-        style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
       />
       <InAppSelect
         name="destination-station"
@@ -291,33 +287,34 @@ export default function PassengerBoardingView({
         }}
         options={[{ value: "", label: "Choose destination stop" },
           ...stopOptions.filter((stop) => stop.value !== boardingStopId)]}
-        style={{ background: "var(--surface-2)", color: "var(--text-primary)", border: "1px solid var(--border-subtle)" }}
       />
       <button
         type="button"
         onClick={() => void joinRide()}
         disabled={joinState === "joining" || joinState === "joined" || !boardingStopId || !alightingStopId ||
           boardingStopId === alightingStopId || Boolean(boardingBlockedReason)}
-        className="rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-50"
-        style={{ background: "var(--status-live)", color: "var(--surface-0)" }}
+        className="pp-btn-primary w-full"
       >
         {joinState === "joining" ? "Checking…" : joinState === "joined" ? "On board" : "Board"}
       </button>
       {boardHint && (
-        <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>{boardHint}</p>
+        <p className="pp-status-detail">{boardHint}</p>
+      )}
+      {!hasJoined && joinState !== "joining" && (
+        <p className="pp-status-detail">Boarding shares your location once to check that you are at the stop.</p>
       )}
       {joinState === "joining" && (
-        <p className="text-[11px] font-semibold" style={{ color: "var(--status-warning)" }} role="status">
+        <p className="pp-status-title" data-tone="warning" role="status">
           Verifying your boarding stops and live bus position…
         </p>
       )}
       {joinState === "joined" && (
-        <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--status-live)" }} role="status">
+        <p className="pp-status-title" data-tone="live" role="status">
           On board
         </p>
       )}
       {joinState === "error" && (
-        <p className="text-[11px]" style={{ color: "var(--status-danger)" }} role="alert">
+        <p className="pp-status-detail" data-tone="danger" role="alert">
           {joinError}
         </p>
       )}

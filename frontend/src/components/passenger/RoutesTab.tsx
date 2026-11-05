@@ -9,16 +9,7 @@ import {
   formatStopTime,
   type PassengerRouteSchedule,
 } from "@/lib/passengerRouteSchedule";
-
-function lineLabel(name: string) {
-  const code = /^(?:line[ -]+)?(\d+[a-z]?)$/i.exec(name.trim())?.[1];
-  if (code) return `Line ${code.toUpperCase()}`;
-  const words = name.trim().split(/\s+/);
-  const short = words.length > 1
-    ? words.slice(0, 4).map(word => Array.from(word)[0]).join("")
-    : Array.from(words[0]).slice(0, 6).join("");
-  return short.toUpperCase();
-}
+import { routeLineLabel } from "@/lib/routeLineLabel";
 
 function LineBadge({ schedule }: { schedule: PassengerRouteSchedule }) {
   const accent = /^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(schedule.color) ? schedule.color : undefined;
@@ -40,7 +31,7 @@ function LineBadge({ schedule }: { schedule: PassengerRouteSchedule }) {
         <circle cx="8" cy="16" r="1" fill="currentColor" stroke="none" />
         <circle cx="16" cy="16" r="1" fill="currentColor" stroke="none" />
       </svg>
-      {lineLabel(schedule.name)}
+      {routeLineLabel(schedule.name)}
     </span>
   );
 }
@@ -78,7 +69,7 @@ function RouteSchedules({ onRetry }: { onRetry: () => void }) {
   const schedules = buildPassengerRouteSchedules(config, routes);
   const query = search.trim().toLocaleLowerCase();
   const filtered = schedules.filter(schedule => !query ||
-    [schedule.name, lineLabel(schedule.name), ...schedule.stops.map(stop => stop.name)]
+    [schedule.name, routeLineLabel(schedule.name), ...schedule.stops.map(stop => stop.name)]
       .some(value => value.toLocaleLowerCase().includes(query)));
   const selected = selectedId ? schedules.find(schedule => schedule.routeId === selectedId) : filtered[0];
   const selectedMissing = selectedId !== null && !selected && !loading && !error;

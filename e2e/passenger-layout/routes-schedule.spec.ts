@@ -24,7 +24,7 @@ test("Routes tab lists approved schedules with a compact badge and one-sided tim
   await expect(list.getByRole("button")).toHaveCount(2);
   await expect(list.getByRole("button").first()).toHaveAccessibleName("View schedule for Campus Loop");
   const badge = list.locator(".schedule-line-badge").first();
-  await expect(badge).toHaveCSS("border-bottom-width", "3px");
+  await expect(badge).toHaveCSS("background-color", "rgb(128, 18, 20)");
   await expect(badge.locator("svg")).toBeVisible();
   const search = page.getByRole("searchbox");
   await search.fill("hostel");
@@ -48,7 +48,7 @@ test("Routes tab lists approved schedules with a compact badge and one-sided tim
     const rail = item.querySelector(".schedule-stop-rail")!;
     const copy = item.querySelector(".schedule-stop-copy")!;
     return copy.getBoundingClientRect().left >= rail.getBoundingClientRect().right &&
-      getComputedStyle(rail, "::before").backgroundColor === "rgb(174, 149, 98)";
+      getComputedStyle(rail, "::before").backgroundColor === "rgb(67, 71, 71)";
   }))).toBe(true);
   await expect(page.locator("[data-passenger-tracking]")).toHaveAttribute("aria-hidden", "true");
   expect(maps).toEqual([]);

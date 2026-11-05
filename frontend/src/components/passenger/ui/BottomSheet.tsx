@@ -44,8 +44,7 @@ export default function BottomSheet({
         <button
           type="button"
           aria-label={`Close ${headerTitle}`}
-          className="fixed inset-0 z-40 transition-opacity animate-fade-in"
-          style={{ background: "rgba(0, 0, 0, 0.5)" }}
+          className="pp-sheet-backdrop fixed inset-0 z-40 transition-opacity animate-fade-in"
           onClick={onToggle}
         />
       )}
@@ -54,14 +53,11 @@ export default function BottomSheet({
       <div
         data-map-sheet
         data-open={isOpen || undefined}
-        className={`fixed inset-x-0 z-50 rounded-t-2xl transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        className={`pp-sheet fixed inset-x-0 z-50 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
           isOpen ? "translate-y-0" : "translate-y-[calc(100%_-_56px)]"
         }`}
         style={{
           bottom: passengerNavClearance,
-          background: "var(--surface-1)",
-          borderTop: "1px solid var(--border-default)",
-          boxShadow: "0 -8px 32px rgba(0, 0, 0, 0.4)",
           paddingBottom: "env(safe-area-inset-bottom)",
         }}
       >
@@ -75,17 +71,16 @@ export default function BottomSheet({
           onClick={onToggle}
         >
           {/* Drag handle */}
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full" 
-            style={{ background: "var(--surface-4)" }} />
+          <div className="pp-grabber absolute top-2 left-1/2 -translate-x-1/2 w-9 h-[5px] rounded-full" aria-hidden="true" />
           
           <div className="flex items-center w-full justify-between mt-1">
             <div className="flex items-center gap-2.5">
-              {headerIcon && <div style={{ color: "var(--text-ghost)" }}>{headerIcon}</div>}
-              <span className="text-[12px] font-semibold tracking-wide" style={{ color: "var(--text-secondary)" }}>
+              {headerIcon && <div aria-hidden="true" style={{ color: "var(--accent)" }}>{headerIcon}</div>}
+              <span className="pp-sheet-title">
                 {headerTitle}
               </span>
             </div>
-            <div style={{ color: "var(--text-ghost)" }}>
+            <div aria-hidden="true" style={{ color: "var(--text-secondary)" }}>
               {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
             </div>
           </div>
@@ -98,7 +93,7 @@ export default function BottomSheet({
 
         {/* Bottom Controls */}
         {bottomControls && (
-          <div inert={!isOpen} aria-hidden={!isOpen} className={`p-4 ${bodyVisibility}`} style={{ borderTop: "1px solid var(--border-subtle)", background: "var(--surface-0)" }}>
+          <div inert={!isOpen} aria-hidden={!isOpen} className={`pp-sheet-footer p-4 ${bodyVisibility}`}>
             {bottomControls}
           </div>
         )}

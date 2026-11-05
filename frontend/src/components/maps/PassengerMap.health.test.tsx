@@ -69,7 +69,7 @@ describe("passenger map live health", () => {
       ({ b: now + (busPoint.lat === near.lat ? 60_000 : 600_000) }));
     state.snapshot = { near, far };
     await act(async () => { render(<PassengerMap route={directed} targetStop={route.stops[1]} />); });
-    act(() => { fireEvent.click(screen.getByRole("button", { name: "Route Timeline" })); });
+    act(() => { fireEvent.click(screen.getByRole("button", { name: "Route timeline" })); });
     // 'far' keeps reporting until t=20 s, then the backend dies; 'near' went silent at t=0.
     for (let t = 0; t < 20; t++) {
       await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
@@ -94,7 +94,7 @@ describe("passenger map live health", () => {
       ({ b: now + (busPoint.lat === near.lat ? 60_000 : 600_000) }));
     state.snapshot = { near, far };
     await act(async () => { render(<PassengerMap route={directed} targetStop={route.stops[1]} />); });
-    act(() => { fireEvent.click(screen.getByRole("button", { name: "Route Timeline" })); });
+    act(() => { fireEvent.click(screen.getByRole("button", { name: "Route timeline" })); });
     for (let t = 0; t < 10; t++) {
       await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
       await act(async () => { state.listener?.({ near, far: { ...far, timestamp: Date.now(), backendReceivedAt: Date.now(), seq: t + 2 } }); });
@@ -129,7 +129,7 @@ describe("passenger map live health", () => {
     vi.useFakeTimers();
     state.snapshot = { bus: { ...fixtureBus("forward"), currentStopIndex: 1, atStopIndex: 0 } };
     await act(async () => { render(<PassengerMap route={directed} targetStop={route.stops[1]} />); });
-    act(() => { fireEvent.click(screen.getByRole("button", { name: "Route Timeline" })); });
+    act(() => { fireEvent.click(screen.getByRole("button", { name: "Route timeline" })); });
     expect(screen.getByText("Bus is here")).toBeTruthy();
     await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS + 100); });
     expect(screen.getByText("Live tracking lost")).toBeTruthy();

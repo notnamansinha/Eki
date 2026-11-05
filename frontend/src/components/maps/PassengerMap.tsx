@@ -3,7 +3,7 @@
 import { memo, useEffect, useRef, useState, useMemo, useCallback, type CSSProperties } from "react";
 import { Map as GoogleMap, AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import RouteTimelineSheet from "@/components/passenger/RouteTimelineSheet";
-import DirectionsRoute from "@/components/maps/DirectionsRoute";
+import DirectionsRoute, { type RoutePalette } from "@/components/maps/DirectionsRoute";
 import BusPositionGlyph from "@/components/maps/BusPositionGlyph";
 import { RouteStop } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
@@ -17,7 +17,8 @@ import {
 } from "@/lib/passengerLiveBus";
 import { passengerRerouteNotice } from "@/lib/passengerRouteStatus";
 
-import { WifiOff, Navigation, Route as RouteOverviewIcon } from "lucide-react";
+import { WifiOff, Navigation, MapPin, Route as RouteOverviewIcon } from "lucide-react";
+import { UNIVERSITY_LINKS } from "@/config/university";
 import { MAP_OPTIONS, MAPS_MAP_ID } from "@/config/maps";
 import {
   directionsMatch,
@@ -61,10 +62,22 @@ const WALKING_KMH = 5;
 const HEALTH_SEVERITY: Record<LiveBusHealth["state"], number> = { live: 0, delayed: 1, gnss_lost: 2, lost: 3, offline: 4 };
 const WALKING_M_PER_MIN = (WALKING_KMH * 1000) / 60;
 const BUS_MOTION_COLORS: Record<string, string> = {
-  moving:    "#2563eb",
-  stopped:   "#b45309",
-  uncertain: "#b45309",
+  moving:    "#801214",
+  stopped:   "#8c5a0b",
+  uncertain: "#8c5a0b",
 };
+/** AU Red line on a white casing; passed stretches in AU Grey (brand guidelines, Part 6). */
+const ROUTE_PALETTE: RoutePalette = { casing: "#ffffff", casingOpacity: 0.95, line: "#b04233", active: "#801214", passed: "#939598" };
+const LOCATION_NOTICE_KEY = "eki:location-notice";
+type LocationChoice = "unknown" | "ask" | "allowed" | "declined";
+
+function locationDeclined() {
+  try {
+    return sessionStorage.getItem(LOCATION_NOTICE_KEY) === "declined";
+  } catch {
+    return false;
+  }
+}
 
 const BusMarker = memo(function BusMarker({
   bus,
@@ -92,7 +105,7 @@ const BusMarker = memo(function BusMarker({
     setDisplayHeading(nextDisplayHeading);
   }, [bus.heading, bus.motionState, bus.speed, bus.deviceState]);
 
-  const color = signalLost || delayed || markerSelection.uncertain ? "#b45309"
+  const color = signalLost || delayed || markerSelection.uncertain ? "#8c5a0b"
     : BUS_MOTION_COLORS[bus.motionState] ?? BUS_MOTION_COLORS.uncertain;
 
   if (!markerPoint) return null;
@@ -295,8 +308,30 @@ function PassengerMapInner({
   const activeBusStopIndex = publishedStopIndex(progressBus?.currentStopIndex, route.stops.length);
 
   // ── Passenger geolocation (read-only — ESP32 is sole source for bus GPS) ──
+  // DPDP notice before consent: explain location use before the browser asks.
+  // Tracking keeps working without it; an earlier grant starts immediately.
+  const [locationChoice, setLocationChoice] = useState<LocationChoice>("unknown");
   useEffect(() => {
-    if (!navigator.geolocation) {
+    if (!navigator.geolocation) return;
+    let active = true;
+    const fallback: LocationChoice = locationDeclined() ? "declined" : "ask";
+    Promise.resolve(navigator.permissions?.query({ name: "geolocation" }))
+      .then(status => { if (active) setLocationChoice(status?.state === "granted" ? "allowed" : fallback); })
+      .catch(() => { if (active) setLocationChoice(fallback); });
+    return () => { active = false; };
+  }, []);
+  const declineLocation = () => {
+    try {
+      sessionStorage.setItem(LOCATION_NOTICE_KEY, "declined");
+    } catch {
+      // The notice simply returns next time.
+    }
+    setLocationChoice("declined");
+  };
+  const privacyNotice = UNIVERSITY_LINKS.find(link => link.label === "Privacy notice" && link.href);
+
+  useEffect(() => {
+    if (locationChoice !== "allowed" || !navigator.geolocation) {
       return;
     }
     const watchId = navigator.geolocation.watchPosition(
@@ -314,7 +349,7 @@ function PassengerMapInner({
       { enableHighAccuracy: false, maximumAge: 30_000, timeout: 10_000 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
-  }, []);
+  }, [locationChoice]);
 
   const walkMinutesToTarget = useMemo(() => {
     if (!passengerLocation || selectedDestinationStopId !== targetStop.id) return undefined;
@@ -561,62 +596,60 @@ function PassengerMapInner({
     <div ref={mapRootRef} data-passenger-map className="relative h-full w-full" style={{ "--tracking-controls-inset": `${controlsInset}px` } as CSSProperties}>
       <div data-map-notices className="pointer-events-none absolute left-4 right-20 z-40 flex flex-col gap-2" style={{ top: "calc(var(--tracking-controls-inset, 0px) + 16px)" }}>
       {(liveReadFailed || !liveUpdatesAvailable) && (
-        <div className="rounded-xl px-4 py-2.5 text-[12px] font-semibold"
-          style={{ background: "var(--surface-2)", color: "var(--status-warning)" }} role="alert">
-          Live bus updates are unavailable. Check your connection and reload to retry.
+        <div className="pp-notice" data-tone="warning" role="alert">
+          <WifiOff className="w-4 h-4" aria-hidden="true" />
+          <span>Live bus updates are unavailable. Check your connection and reload to retry.</span>
         </div>
       )}
       {preview && buses.size === 0 && !liveReadFailed && (
-        <div className="rounded-xl bg-zinc-950/90 p-3 text-sm" role="status">
-          Waiting for live location. The configured route remains available.
+        <div className="pp-notice" role="status">
+          <MapPin className="w-4 h-4" aria-hidden="true" />
+          <span>Waiting for live location. The configured route remains available.</span>
         </div>
       )}
       {/* Telemetry silence does not identify which component failed. */}
       {!liveReadFailed && liveUpdatesAvailable && healthNotice && (
         <div role="status" aria-live="polite">
-          <div className="flex items-start gap-2.5 px-4 py-2.5 rounded-xl text-[12px]"
-            style={{
-              background: "var(--surface-2)",
-              border: `1px solid ${healthNotice.tone === "danger" ? "rgba(248, 113, 113, 0.3)" : "rgba(251, 191, 36, 0.2)"}`,
-              color: healthNotice.tone === "danger" ? "var(--status-danger)" : "var(--status-warning)",
-            }}>
-            <WifiOff className="mt-0.5 w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          <div className="pp-notice" data-tone={healthNotice.tone === "danger" ? "danger" : "warning"}>
+            <WifiOff className="w-4 h-4" aria-hidden="true" />
             <span>
-              <span className="font-semibold">{healthNotice.title}</span>
-              <span className="block font-medium" style={{ color: "var(--text-secondary)" }}>{healthNotice.summary}</span>
+              <span className="pp-notice-title">{healthNotice.title}</span>
+              <span className="pp-notice-detail">{healthNotice.summary}</span>
             </span>
           </div>
         </div>
       )}
       {!liveReadFailed && rerouteNotice && signalLostBuses.length === 0 && (
         <div role="status">
-          <div
-            className="flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-[12px] font-semibold"
-            style={{
-              background: "var(--surface-2)",
-              border: "1px solid rgba(251, 191, 36, 0.2)",
-              color: "var(--status-warning)",
-            }}
-          >
-            <Navigation className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span>{rerouteNotice}</span>
+          <div className="pp-notice" data-tone="warning">
+            <Navigation className="h-4 w-4" aria-hidden="true" />
+            <span className="pp-notice-title">{rerouteNotice}</span>
           </div>
         </div>
       )}
       {!liveReadFailed && geolocationNotice && signalLostBuses.length === 0 && !rerouteNotice && (
         <div role="status">
-          <div
-            className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[12px] font-semibold"
-            style={{
-              background: "var(--surface-2)",
-              border: "1px solid var(--border-default)",
-              color: "var(--text-secondary)",
-            }}
-          >
-            <Navigation className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          <div className="pp-notice">
+            <Navigation className="w-4 h-4" aria-hidden="true" />
             <span>{geolocationNotice}</span>
           </div>
         </div>
+      )}
+      {!liveReadFailed && locationChoice === "ask" && (
+        <section className="pp-notice" aria-label="Location">
+          <MapPin className="w-4 h-4" aria-hidden="true" />
+          <span>
+            <span className="pp-notice-title">Show your walking time?</span>
+            <span className="pp-notice-detail">
+              Eki can use your location to estimate the walk to your stop. It stays on this device, and live tracking works without it.
+              {privacyNotice && <> <a className="underline underline-offset-2" href={privacyNotice.href}>Privacy notice</a></>}
+            </span>
+            <span className="pp-notice-actions">
+              <button type="button" className="pp-btn-primary" onClick={() => setLocationChoice("allowed")}>Allow location</button>
+              <button type="button" className="pp-btn-secondary" onClick={declineLocation}>Not now</button>
+            </span>
+          </span>
+        </section>
       )}
 
       </div>
@@ -629,6 +662,7 @@ function PassengerMapInner({
           defaultZoom={15}
           style={{ width: "100%", height: "100%" }}
           {...MAP_OPTIONS}
+          backgroundColor="#f2efec"
         >
           <MapCenterer target={centerTarget} isCentered={isCentered}
             controlsInset={controlsInset}
@@ -640,7 +674,8 @@ function PassengerMapInner({
             stops={routeStops}
             polyline={route.polyline}
             polylineQuality={route.polylineQuality}
-            color={route.color || "#3b82f6"}
+            color={ROUTE_PALETTE.active}
+            palette={ROUTE_PALETTE}
             hasBuses={buses.size > 0}
             direction={route.rideDirection}
             nextStopIndices={preview ? undefined : [...buses.values()].filter(bus => bus.routeSource !== "dynamic-reroute").flatMap(bus => {
@@ -667,7 +702,8 @@ function PassengerMapInner({
               stops={routeStops}
               polyline={geometry.polyline}
               polylineQuality="HIGH_QUALITY"
-              color={route.color || "#3b82f6"}
+              color={ROUTE_PALETTE.active}
+              palette={ROUTE_PALETTE}
               hasBuses
               nextStopIndices={index === undefined ? [] : [index]}
               firstStopIndex={geometry.firstStopIndex ?? -1}
@@ -697,12 +733,12 @@ function PassengerMapInner({
                 onClick={() => setInspectedStopId(stop.id)} onFocus={() => setInspectedStopId(stop.id)}
                 // Inspecting a stop is not a manual pan; keep following the bus.
                 onPointerDown={event => event.stopPropagation()} onTouchStart={event => event.stopPropagation()}
-                className="relative flex size-11 items-center justify-center" style={{opacity:isPast ? 0.6 : 1}}>
-                <span aria-label={visitLabel ? `${stop.name} — ${visitLabel}` : undefined} className="flex size-5 items-center justify-center rounded-full border-2 text-[10px] font-bold text-white shadow-sm"
-                  style={{background:isAt ? "var(--status-live)" : isPast ? "#71717a" : "var(--accent)",
+                className="relative flex size-11 items-center justify-center">
+                <span aria-label={visitLabel ? `${stop.name} — ${visitLabel}` : undefined} className="flex size-6 items-center justify-center rounded-full border-2 text-[12px] font-bold text-white shadow-sm"
+                  style={{background:isAt ? "var(--status-live)" : isPast ? "#626666" : "var(--accent)",
                     borderColor: "white", borderStyle: visit === "unobserved" ? "dashed" : "solid",
-                    outline:isTarget ? "2px solid #18181b" : undefined}}>{stopLabel(i)}</span>
-                {showLabel && <span className="absolute top-10 max-w-40 truncate rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold text-zinc-900 shadow-sm">{isAt ? `At ${stop.shortName || stop.name}` : stop.shortName || stop.name}</span>}
+                    outline:isTarget ? "2px solid var(--text-primary)" : undefined, outlineOffset: 1}}>{stopLabel(i)}</span>
+                {showLabel && <span className="pp-stop-label">{isAt ? `At ${stop.shortName || stop.name}` : isPast ? `${stop.shortName || stop.name} · Passed` : stop.shortName || stop.name}</span>}
               </button>
             </AdvancedMarker>;
           })}
@@ -715,19 +751,16 @@ function PassengerMapInner({
         <button
           disabled={!firstBusMarker.position}
           onClick={() => { setFocusBus(true); setIsCentered(true); }}
-          className="flex size-12 items-center justify-center rounded-xl border shadow-lg disabled:opacity-40"
-          style={{
-            background: isCentered ? "rgba(59, 130, 246, 0.15)" : "var(--surface-2)",
-            borderColor: isCentered ? "rgba(59, 130, 246, 0.3)" : "var(--border-default)",
-            color: isCentered ? "#60A5FA" : "var(--text-secondary)",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
-          }}
+          type="button"
+          className="pp-map-button"
+          data-active={isCentered}
           aria-label="Center on bus"
+          aria-pressed={isCentered}
         >
-          <Navigation className="w-5 h-5" fill={isCentered ? "currentColor" : "none"} />
+          <Navigation className="w-5 h-5" aria-hidden="true" fill={isCentered ? "currentColor" : "none"} />
         </button>
         <button type="button" aria-label="Show route overview" onClick={() => {setFocusBus(false);setIsCentered(true);}}
-          className="flex size-12 items-center justify-center rounded-xl border border-zinc-500 bg-zinc-950 text-white shadow-lg">
+          className="pp-map-button">
           <RouteOverviewIcon className="size-5" aria-hidden="true" />
         </button>
       </div>
