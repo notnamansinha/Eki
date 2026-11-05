@@ -19,6 +19,21 @@ async function openConfirmation() {
 }
 describe("ride-history controls", () => {
   it.each([
+    ["pending", "Not started"],
+    ["armed", "Ready"],
+    ["active", "In progress"],
+    ["completed", "Completed"],
+    ["failed", "Failed"],
+    ["interrupted", "Ended early"],
+  ])("identifies a %s ride with text before its details are expanded", (status, label) => {
+    state.sessions[0].status = status;
+    render(<RideHistoryPanel />);
+    const row = screen.getByRole("button", { expanded: false });
+    expect(within(row).getByText(label)).toBeTruthy();
+    expect(screen.queryByText("Passenger Manifest")).toBeNull();
+  });
+
+  it.each([
     ["manual_end_early", "Manually ended before the final stop."],
     ["abandoned_session_timeout", "Closed after the ride's inactivity limit was reached."],
     [undefined, "The interruption reason was not recorded."],

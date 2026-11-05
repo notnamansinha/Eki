@@ -14,6 +14,22 @@ vi.mock("@/lib/firebaseAuth", () => ({ auth: { currentUser: { getIdToken: async 
 beforeEach(() => { live.entries = []; live.buses = DEFAULT_BUSES.map(bus => ({ ...bus })); vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev"); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 describe("fleet and personnel controls", () => {
+  it("keeps route checkboxes operable when editing a vehicle and discards cancelled selections", async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    render(<FleetManagementPanel />); const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Edit vehicle QA Bus" }));
+    const editor = within(screen.getByText("Editing Vehicle").parentElement!);
+    const route = editor.getByRole("checkbox", { name: "QA route" }) as HTMLInputElement;
+    expect(route.checked).toBe(true);
+    await user.click(route);
+    expect(route.checked).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Cancel editing vehicle" }));
+    await user.click(screen.getByRole("button", { name: "Edit vehicle QA Bus" }));
+    const reopened = within(screen.getByText("Editing Vehicle").parentElement!);
+    expect((reopened.getByRole("checkbox", { name: "QA route" }) as HTMLInputElement).checked).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("announces and focuses operator validation in the operator form", async () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
     render(<FleetManagementPanel />); const user = userEvent.setup();
