@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { detectInstallPlatform } from "@/lib/installPlatform";
 import InstallClient from "./InstallClient";
 
 const IPHONE_SAFARI = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 const IPHONE_CHROME = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0 Mobile/15E148 Safari/604.1";
+const IPHONE_WEBVIEW = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148";
 const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -14,12 +15,13 @@ describe("detectInstallPlatform", () => {
   it("classifies devices", () => {
     expect(detectInstallPlatform({ userAgent: IPHONE_SAFARI }, false)).toBe("ios-safari");
     expect(detectInstallPlatform({ userAgent: IPHONE_CHROME }, false)).toBe("ios-other");
+    expect(detectInstallPlatform({ userAgent: IPHONE_WEBVIEW }, false)).toBe("ios-other");
     expect(detectInstallPlatform({ userAgent: ANDROID }, false)).toBe("android");
     expect(detectInstallPlatform({ userAgent: "Mozilla/5.0 (X11; Linux x86_64)" }, false)).toBe("desktop");
     expect(detectInstallPlatform({ userAgent: ANDROID }, true)).toBe("installed");
   });
   it("treats a touch Mac as an iPad", () => {
-    expect(detectInstallPlatform({ userAgent: "Mozilla/5.0 (Macintosh)", platform: "MacIntel", maxTouchPoints: 5 }, false)).toBe("ios-safari");
+    expect(detectInstallPlatform({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15", platform: "MacIntel", maxTouchPoints: 5 }, false)).toBe("ios-safari");
   });
 });
 
@@ -46,5 +48,21 @@ describe("InstallClient", () => {
       prompt: vi.fn(), userChoice: Promise.resolve({ outcome: "accepted" }),
     }));
     expect(await screen.findByRole("button", { name: "Install Eki" })).toBeTruthy();
+  });
+  it("prompts once, survives a rejected prompt, and only reports installed on appinstalled", async () => {
+    setup(ANDROID);
+    render(<InstallClient />);
+    const promptFn = vi.fn().mockRejectedValue(new Error("InvalidStateError"));
+    window.dispatchEvent(Object.assign(new Event("beforeinstallprompt"), {
+      prompt: promptFn, userChoice: Promise.resolve({ outcome: "accepted" }),
+    }));
+    const btn = await screen.findByRole("button", { name: "Install Eki" });
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Install/ })).toBeNull());
+    expect(promptFn).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/Eki is installed/)).toBeNull();
+    window.dispatchEvent(new Event("appinstalled"));
+    expect(await screen.findByText(/Eki is installed/)).toBeTruthy();
   });
 });

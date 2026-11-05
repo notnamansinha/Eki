@@ -24,6 +24,7 @@ export default function InstallClient() {
   );
   const [prompt, setPrompt] = useState<InstallPromptEvent | null>(null);
   const [done, setDone] = useState(false);
+  const [installing, setInstalling] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -41,11 +42,19 @@ export default function InstallClient() {
   }, []);
 
   async function install() {
-    if (!prompt) return;
-    await prompt.prompt();
-    const { outcome } = await prompt.userChoice;
-    if (outcome === "accepted") setDone(true);
-    setPrompt(null);
+    // prompt() may only be called once per event, so ignore repeat taps.
+    if (!prompt || installing) return;
+    setInstalling(true);
+    try {
+      await prompt.prompt();
+      await prompt.userChoice;
+      // "Installed" is only shown on the browser's appinstalled event.
+    } catch {
+      // A rejected prompt just leaves the manual steps visible.
+    } finally {
+      setPrompt(null);
+      setInstalling(false);
+    }
   }
 
   async function copyLink() {
@@ -77,7 +86,9 @@ export default function InstallClient() {
 
       {platform === "android" && !done && (
         prompt ? (
-          <button type="button" className={button} onClick={install}>Install Eki</button>
+          <button type="button" className={button} onClick={install} disabled={installing}>
+            {installing ? "Installing…" : "Install Eki"}
+          </button>
         ) : (
           <ol className="list-decimal space-y-2 pl-5">
             <li>Open this page in Chrome.</li>
@@ -97,7 +108,10 @@ export default function InstallClient() {
 
       {platform === "ios-other" && (
         <div className="space-y-3">
-          <p>On iPhone, only Safari can add Eki to the home screen. Copy this link and open it in Safari.</p>
+          <p>
+            For the most reliable install on iPhone, open this page in Safari. Copy the link, open it in
+            Safari, then tap Share and Add to Home Screen.
+          </p>
           <button type="button" className={button} onClick={copyLink}>
             {copied ? "Link copied" : "Copy link"}
           </button>
