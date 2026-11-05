@@ -38,4 +38,15 @@ describe("timeline keyboard and hidden content", () => {
     await user.click(screen.getByRole("button", { name: "Close Configured route" }));
     expect(screen.getByRole("button", { name: "Configured route" }).getAttribute("aria-expanded")).toBe("false");
   });
+  it("clips the collapsed sheet, background included, to its 56px header", async () => {
+    render(<Sheet />); const user = userEvent.setup();
+    const toggle = screen.getByRole("button", { name: "Configured route" });
+    const sheet = toggle.closest<HTMLElement>("[data-map-sheet]")!;
+    // The body slides behind the navigation, which the floating desktop dock leaves uncovered.
+    expect(sheet.style.clipPath).toBe("inset(-40px 0 calc(100% - 56px))");
+    await user.click(toggle);
+    expect(sheet.style.clipPath).toBe("inset(-40px 0 0)");
+    // One transition for the slide and the clip keeps the moving edge on the navigation.
+    expect(sheet.classList.contains("transition-[translate,clip-path]")).toBe(true);
+  });
 });

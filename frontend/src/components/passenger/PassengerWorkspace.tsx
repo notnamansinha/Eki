@@ -417,7 +417,7 @@ export default function PassengerWorkspace() {
   const endedMessage = completedRide !== null;
 
   const visibleView: ViewState = currentView;
-  const keyboardRouteButton = useRef<HTMLButtonElement | null>(null);
+  const keyboardRouteId = useRef<string | null>(null);
   const trackingBackButton = useRef<HTMLButtonElement>(null);
   const liveRoutesHeading = useRef<HTMLHeadingElement>(null);
   const liveRouteScroller = useRef<HTMLDivElement>(null);
@@ -442,15 +442,19 @@ export default function PassengerWorkspace() {
   }, []);
 
   useEffect(() => {
-    const routeButton = keyboardRouteButton.current;
-    if (!routeButton) return;
+    const routeId = keyboardRouteId.current;
+    if (!routeId) return;
     if (visibleView === "tracking") {
       trackingBackButton.current?.focus({ preventScroll: true });
     } else {
       // Only Back from tracking returns focus to the route; leaving for another
       // section forgets it, so a later tap on the first tab keeps focus there.
-      keyboardRouteButton.current = null;
-      if (visibleView === "home") (routeButton.isConnected ? routeButton : liveRoutesHeading.current)?.focus();
+      keyboardRouteId.current = null;
+      if (visibleView !== "home") return;
+      // Find the card again: a live-data gap during tracking remounts it.
+      const routeButton = Array.from(liveRouteContent.current?.querySelectorAll<HTMLButtonElement>("button[data-passenger-route]") ?? [])
+        .find(button => button.dataset.passengerRoute === routeId);
+      (routeButton ?? liveRoutesHeading.current)?.focus();
     }
   }, [visibleView]);
 
@@ -528,9 +532,9 @@ export default function PassengerWorkspace() {
 
   const handleRouteSelect = (routeId: string) => {
     const focused = document.activeElement;
-    keyboardRouteButton.current =
+    keyboardRouteId.current =
       focused instanceof HTMLButtonElement && focused.dataset.passengerRoute === routeId && focused.matches(":focus-visible")
-        ? focused : null;
+        ? routeId : null;
     setSelectedRouteId(routeId);
     setSelectedDestinationStopId("");
     setSelectedLiveBusKey("");

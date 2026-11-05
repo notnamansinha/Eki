@@ -340,6 +340,32 @@ test("edge: landscape phone and tiny heights keep the panel above a painted foot
   }
 });
 
+test("edge: the collapsed route timeline paints and takes pointers only on its header", async ({ page }) => {
+  await page.goto("/?scenario=forward");
+  await injectInsets(page, 0, 21);
+  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  const toggle = page.getByRole("button", { name: "Route Timeline", exact: true });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await page.locator("[data-map-sheet]").evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
+  const header = (await toggle.boundingBox())!;
+  const navBox = (await nav(page).boundingBox())!;
+  const { width, height } = page.viewportSize()!;
+  // The body below the header is translated behind the navigation. The touch bar
+  // covers it; the floating desktop dock leaves it bare beside and under the dock.
+  const points = [8, width - 8].flatMap(x => [navBox.y + 8, height - 8].map(y => ({ x, y })));
+  const onSheet = await page.evaluate(points => {
+    const sheet = document.querySelector("[data-map-sheet]")!;
+    return points.filter(({ x, y }) => sheet.contains(document.elementFromPoint(x, y)));
+  }, points);
+  expect(onSheet).toEqual([]);
+  expect(await hitTestable(page, "[data-map-sheet] > button[aria-controls]", [{ x: width / 2, y: header.y + header.height / 2 }])).toBe(true);
+  // The clip would cut an outside focus ring, so the keyboard ring sits inside the toggle.
+  await toggle.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  expect(await toggle.evaluate(element => element.matches(":focus-visible") && getComputedStyle(element).outlineOffset)).toBe("-2px");
+});
+
 test("edge: chat overlay ends at the navigation instead of under it", async ({ page }) => {
   await page.goto("/?scenario=forward");
   await injectInsets(page);

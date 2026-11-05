@@ -54,7 +54,7 @@ export default function BottomSheet({
       <div
         data-map-sheet
         data-open={isOpen || undefined}
-        className={`fixed inset-x-0 z-50 rounded-t-2xl transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        className={`fixed inset-x-0 z-50 rounded-t-2xl transition-[translate,clip-path] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
           isOpen ? "translate-y-0" : "translate-y-[calc(100%_-_56px)]"
         }`}
         style={{
@@ -62,6 +62,11 @@ export default function BottomSheet({
           background: "var(--surface-1)",
           borderTop: "1px solid var(--border-default)",
           boxShadow: "0 -8px 32px rgba(0, 0, 0, 0.4)",
+          // Collapsed, paint and hit-test only the 56px header: the body slides
+          // behind the navigation, which the floating desktop dock leaves bare.
+          // Clip and slide share a transition, so the moving bottom edge stays on
+          // the navigation. -40px keeps the shadow above the header.
+          clipPath: isOpen ? "inset(-40px 0 0)" : "inset(-40px 0 calc(100% - 56px))",
           paddingBottom: "env(safe-area-inset-bottom)",
         }}
       >
@@ -71,7 +76,8 @@ export default function BottomSheet({
           ref={toggleRef}
           aria-expanded={isOpen}
           aria-controls={contentId}
-          className="w-full h-[56px] flex items-center justify-between px-5 cursor-pointer relative"
+          data-map-sheet-toggle
+          className="w-full h-[56px] flex items-center justify-between px-5 cursor-pointer relative rounded-t-2xl"
           onClick={onToggle}
         >
           {/* Drag handle */}
