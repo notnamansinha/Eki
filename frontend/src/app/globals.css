@@ -1367,6 +1367,12 @@ body {
   outline-offset: 2px;
 }
 
+/* The collapsed map sheet clips to its 56px header, which would cut the
+   ring's sides and bottom, so the sheet toggle draws its ring inside. */
+[data-map-sheet-toggle]:focus-visible {
+  outline-offset: -2px;
+}
+
 /* Safe area utilities. Layout math reads the same variables, so clearance
    above fixed bars can never drift from the padding those bars receive. */
 :root {

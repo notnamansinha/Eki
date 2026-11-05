@@ -76,7 +76,8 @@ export default function BottomSheet({
           ref={toggleRef}
           aria-expanded={isOpen}
           aria-controls={contentId}
-          className="w-full h-[56px] flex items-center justify-between px-5 cursor-pointer relative"
+          data-map-sheet-toggle
+          className="w-full h-[56px] flex items-center justify-between px-5 cursor-pointer relative rounded-t-2xl"
           onClick={onToggle}
         >
           {/* Drag handle */}

@@ -359,6 +359,11 @@ test("edge: the collapsed route timeline paints and takes pointers only on its h
   }, points);
   expect(onSheet).toEqual([]);
   expect(await hitTestable(page, "[data-map-sheet] > button[aria-controls]", [{ x: width / 2, y: header.y + header.height / 2 }])).toBe(true);
+  // The clip would cut an outside focus ring, so the keyboard ring sits inside the toggle.
+  await toggle.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  expect(await toggle.evaluate(element => element.matches(":focus-visible") && getComputedStyle(element).outlineOffset)).toBe("-2px");
 });
 
 test("edge: chat overlay ends at the navigation instead of under it", async ({ page }) => {
