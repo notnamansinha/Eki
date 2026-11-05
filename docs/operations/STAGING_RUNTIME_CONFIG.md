@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-029 | 1.2 | Current | 2026-11-03 |
+| EKI-OPS-029 | 1.3 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -22,8 +22,8 @@ These values were read from the live project on 2026-10-31, the Cloud Run servic
 | Hosting origins | `https://bustrack-be165.web.app` and `https://bustrack-be165.firebaseapp.com` | `firebase hosting:sites:list`, Firebase default domains |
 | Runtime service account | `eki-backend-runtime@bustrack-be165.iam.gserviceaccount.com` | `gcloud iam service-accounts list` |
 | Cloud Run service | `eki-backend-staging`, region `asia-south2`, URL `https://eki-backend-staging-449313371438.asia-south2.run.app` | `deploy-backend-staging` run 41334365954, revision 00001 |
-| Scaling | Revision `minScale` 0 and `maxScale` 1. The Cloud Scheduler jobs `eki-workers-up` (`0 6-21 * * *`, Asia/Kolkata) and `eki-workers-down` (`0 22 * * *`) set the service-level minimum instances to 1 and to 0 through the Cloud Run Admin API, so one instance is held from 06:00 to 22:00 IST. On 2026-11-03 both jobs were paused (since 2026-11-02 19:07 UTC) and the service had no minimum. | `deploy/cloud-run/staging.service.yaml`, `gcloud scheduler jobs list --location asia-south2`, `gcloud run services describe` |
-| Serving revision | `eki-backend-staging-00008-lhl`, created on 2026-11-02 at 19:07 UTC with `gcloud` from a user account, not by `deploy-backend-staging`. It runs `WORKER_ENABLED=false`; the manifest on `main` sets `true`, so the next `deploy-backend-staging` run enables the workers. | `gcloud run services describe`, `gcloud run revisions list` |
+| Scaling | Revision `minScale` 0 and `maxScale` 1. The Cloud Scheduler jobs `eki-workers-up` (`0 6-21 * * *`, Asia/Kolkata) and `eki-workers-down` (`0 22 * * *`) set the service-level minimum instances to 1 and to 0 through the Cloud Run Admin API, so one instance is held from 06:00 to 22:00 IST. Both jobs are paused (since 2026-11-02 19:07 UTC) and the service has no minimum, so it runs in wake-on-traffic mode: the tracker is powered by the bus ignition, its first telemetry starts an instance, and the instance closes 15 to 17 minutes after the last request (measured on 2026-11-03). Resume the jobs only if a fixed window is wanted. | `deploy/cloud-run/staging.service.yaml`, `gcloud scheduler jobs list --location asia-south2`, `gcloud run services describe` |
+| Serving revision | `eki-backend-staging-00009-7sh`, created on 2026-11-03 with `gcloud` from a user account, not by `deploy-backend-staging`. It runs `WORKER_ENABLED=true`, the same value as the manifest on `main`. | `gcloud run services describe`, `gcloud run revisions list` |
 
 `FIREBASE_DATABASE_URL` shall equal the frontend's `NEXT_PUBLIC_FIREBASE_DATABASE_URL`. A mismatch produces empty data or invalid identities instead of an error.
 
@@ -40,7 +40,7 @@ These values were read from the live project on 2026-10-31, the Cloud Run servic
 | `LEGACY_RTDB_RETIRED` | `false` | Keep `false` until every legacy consumer is retired. |
 | `RIDE_SESSION_RETENTION_DAYS`, `FEEDBACK_RETENTION_DAYS`, `COMPLETED_TRIP_RETENTION_DAYS` | `180` | The `.env.example` values. Deletion starts as soon as the sweeper runs. |
 | `OPERATION_LOG_RETENTION_DAYS` | `90` | The `.env.example` value. |
-| `WORKER_ENABLED` | `true` in the manifest (since 2026-11-02) | The serving revision `eki-backend-staging-00008-lhl` runs `false`, so no workers run on staging (Section 2). An instance that runs `true` competes for the worker lease, so the workers run while it is up. The handoff was rehearsed on 2026-11-02 ([issue #374](https://github.com/notnamansinha/Eki/issues/374)). `false` keeps an instance out of leader election; it does not stop the HTTP server. A local backend that uses this project sets `false` so that it cannot take the lease ([worker leadership](WORKER_LEADERSHIP.md)). |
+| `WORKER_ENABLED` | `true` in the manifest (since 2026-11-02) | The serving revision `eki-backend-staging-00009-7sh` runs `true`, so the workers run while an instance is up and the instance takes the worker lease within about 5 s of starting (measured on 2026-11-03). The handoff was rehearsed on 2026-11-02 ([issue #374](https://github.com/notnamansinha/Eki/issues/374)). `false` keeps an instance out of leader election; it does not stop the HTTP server. A local backend that uses this project sets `false` so that it cannot take the lease ([worker leadership](WORKER_LEADERSHIP.md)). |
 | `HTTPS_DEVICE_RATE_LIMIT_MODE` | `distributed` | `local` also requires `RATE_LIMIT_SHARD_FACTOR=1`. |
 | `RATE_LIMIT_SHARD_FACTOR` | `1` with a maximum of one instance | Set it to the maximum instance count if that count grows. |
 | `TRUST_PROXY` | Unset | Unset means one trusted hop in production. Section 7 describes the open question. |
@@ -95,7 +95,7 @@ Measure again before changing `TRUST_PROXY` or putting a proxy in front of the s
 
 After deployment, `GET /live` returns 200. `GET /health` returns 503 until the first Firestore and RTDB probes both succeed. The probes run concurrently with a 5 s timeout each and repeat every 30 s, so the first 200 can take more than one cycle. `/health` returns 503 again when a later probe fails or no probe has succeeded in the last 65 s. A startup refusal in the logs names the variable that failed.
 
-Outside the Scheduler window, or whenever the service has no minimum instance, the first request after an idle period starts an instance. On 2026-11-01 a cold instance answered `/health` with 503 for about 2 s. The release check in Deploy retries `/health` for up to 90 s while it answers 502, 503 or 504 ([CI, deployment and releases](CI_CD_AND_RELEASES.md#52-steps)).
+Whenever the service has no minimum instance, the first request after an idle period starts an instance. On 2026-11-03 a cold start took about 4.5 s until the container was ready, and a client with the tracker's 1.5 s request timeout and 1 s retry got its first real answer about 5.7 s after the first request; its first two attempts timed out. On 2026-11-01 a cold instance answered `/health` with 503 for about 2 s. The release check in Deploy retries `/health` for up to 90 s while it answers 502, 503 or 504 ([CI, deployment and releases](CI_CD_AND_RELEASES.md#52-steps)).
 
 ## 9. References
 

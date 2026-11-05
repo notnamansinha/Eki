@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-001 | 3.5 | Current | 2026-11-03 |
+| EKI-OPS-001 | 3.6 | Current | 2026-11-03 |
 
 ## 1. Purpose
 
@@ -102,7 +102,7 @@ The optional job `deploy-backend-staging` runs before `deploy-staging`. Before i
 
 The job therefore deploys one region at a time. To compare regions, dispatch the first region, measure it, delete its service, then dispatch the next. Each region has its own service URL, `https://eki-backend-staging-449313371438.<region>.run.app`. Set the staging secret `NEXT_PUBLIC_BACKEND_URL` to the new URL before the dispatch; otherwise `deploy-staging` in the same run checks the deleted service and fails. A new region is a first deployment (step 4): its first revision serves all traffic before `/health` is checked, and there is no earlier revision to roll back to.
 
-Step 4 makes every Hosting release depend on a running, healthy backend. While the Cloud Scheduler jobs run, the staging service keeps one instance from 06:00 to 22:00 IST and scales to zero overnight; while they are paused it scales to zero whenever it is idle (Section 7.1). The first request after an idle period starts an instance. On 2026-11-01 such an instance answered `/health` with 503 about 2 s after the request; the retry in step 4 waits that out.
+Step 4 makes every Hosting release depend on a running, healthy backend. While the Cloud Scheduler jobs run, the staging service keeps one instance from 06:00 to 22:00 IST and scales to zero overnight; while they are paused, as now, it scales to zero whenever it is idle (Section 7.1). The first request after an idle period starts an instance. On 2026-11-01 such an instance answered `/health` with 503 about 2 s after the request; the retry in step 4 waits that out.
 
 ### 5.3 Environments, secrets and variables
 
@@ -160,7 +160,7 @@ The `testing` branch was deleted on 2026-10-25; scheduled runs from then until t
 
 The repository builds and tests a backend container (`backend/Dockerfile`: Node.js 24 on Alpine, non-root user, port `8080`, Docker health check on `/live`), and `deploy-backend-staging` publishes and deploys it on manual dispatch. On 2026-11-01 that job deployed the staging service `eki-backend-staging` in `asia-south2` (`https://eki-backend-staging-449313371438.asia-south2.run.app`), and the staging secret `NEXT_PUBLIC_BACKEND_URL` was changed from the ngrok tunnel to that URL, so the staging web app now uses Cloud Run. Since 2026-11-02 the service runs with `WORKER_ENABLED=true` ([issue #374](https://github.com/notnamansinha/Eki/issues/374)). Two Cloud Scheduler jobs set its service-level minimum instances: `eki-workers-up` to 1, hourly from 06:00 to 21:00 IST, and `eki-workers-down` to 0 at 22:00 IST. The lease-owned workers are therefore meant to run on Cloud Run from 06:00 to 22:00 IST; overnight the service scales to zero, and a request that wakes an instance makes it the worker leader until it idles. Revision-level `minScale` stays 0 and `maxScale` 1. Local backends that use the same project shall run with `WORKER_ENABLED=false`, because the variable defaults to true and an idle lease goes to whichever process asks first.
 
-At 19:07 UTC on 2026-11-02 both Scheduler jobs were paused, and revision `eki-backend-staging-00008-lhl` was deployed with `gcloud`, outside this workflow, with `WORKER_ENABLED=false` and no minimum instance; no worker runs on staging since then (read on 2026-11-03). The manifest still sets `WORKER_ENABLED=true`, so the next `deploy_backend` run turns the workers back on, without the Scheduler window while the jobs stay paused. Agree the intended state with the service owner before that run. Before the change the backend ran on a workstation behind an ngrok tunnel ([ngrok tunnel](NGROK_TUNNEL.md)); the tunnel went offline, and every staging release then failed at step 4 of Section 5.2. A read-only assessment on 2026-10-21 found:
+At 19:07 UTC on 2026-11-02 both Scheduler jobs were paused. On 2026-11-03 revision `eki-backend-staging-00009-7sh` was deployed with `gcloud`, outside this workflow, with `WORKER_ENABLED=true` and no minimum instance, the same value as the manifest. Staging therefore runs in wake-on-traffic mode: the workers run only while an instance is up, which is while a bus-powered tracker sends and for 15 to 17 minutes afterwards. A `deploy_backend` run keeps this state, because the manifest also sets `WORKER_ENABLED=true` and no minimum. Before the change the backend ran on a workstation behind an ngrok tunnel ([ngrok tunnel](NGROK_TUNNEL.md)); the tunnel went offline, and every staging release then failed at step 4 of Section 5.2. A read-only assessment on 2026-10-21 found:
 
 - The frontend build and the device firmware both used the tunnel origin as the backend URL. The staging frontend now uses the Cloud Run origin; devices flashed with the tunnel origin need the new origin.
 - The workstation backend ran in development mode on port `4000`, as a single process that also ran the lease-owned workers ([worker leadership](WORKER_LEADERSHIP.md)).
