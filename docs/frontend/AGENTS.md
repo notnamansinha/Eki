@@ -59,5 +59,22 @@ Use the front-facing bus glyph with mirrors and tires in both badge placements.
 Desktop shows a list and independently scrolling timetable beside it. Smaller
 screens open the timetable in place and Back returns focus to the selected row.
 Use the configured stop order and times from the existing route schedule
-sources. Use layered graphite surfaces, warm text, and muted route accents with
-the Ahmedabad University gold timeline and the existing app typeface. Route schedules must never start a live map or Maps request.
+sources. Route schedules must never start a live map or Maps request.
+
+## Passenger brand theme (2026-11-05)
+
+The passenger panel follows the Ahmedabad University brand rules
+(`AU_RULES_AND_BRAND_GUIDELINES.md`): AU Red `#801214` for actions, links and the
+route line, Dark Grey `#434747` text, Off-white `#F2EFEC` pages and Gold
+`#AE9562` for decoration only. Playfair Display (headings) and Roboto (UI) are
+self-hosted through `next/font` in `src/app/layout.tsx`. All passenger surfaces
+come from `src/app/passenger/theme.css`, scoped with
+`:root:has(.passenger-layout)` so the admin console and landing page keep their
+own theme; components carry semantic `pp-*` classes rather than colours.
+Phones use iOS-style grouped lists, sheets with grabbers and one translucent tab
+bar tinted AU Red. Pointer devices keep the centred Live Routes panel with paper
+cards, adding the line code and gold rule only when the window is at least
+44rem tall. The Routes tab is a line diagram: AU Red line badges, a Dark Grey
+rail and AU Red terminals. Keep text at 12px or more, touch targets at 44px,
+and pair every colour signal with text or an icon. Show location use in a
+notice before the browser prompt; tracking must work without location.
