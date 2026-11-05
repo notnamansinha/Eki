@@ -204,6 +204,10 @@ test("browser back and forward from tracking keep the app usable", async ({ page
 test("passenger tracking survives offline toggles and window resizes without overflow", async ({ page, context }) => {
   await page.getByRole("button", { name: `Track ${routeName}`, exact: true }).click();
   await expect(page.getByRole("button", { name: "Back to home" })).toBeVisible();
+  // The shell's back button renders before the lazy tracking map loads. This
+  // case tests an established tracking view offline, so wait for that module
+  // to mount before cutting the network used to download it from Vite.
+  await expect(page.getByLabel("Synthetic map", { exact: true })).toBeVisible();
   try {
     await context.setOffline(true);
     await page.evaluate(() => window.dispatchEvent(new Event("offline")));
