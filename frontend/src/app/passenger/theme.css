@@ -757,6 +757,11 @@
 .pp-notice-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.625rem; pointer-events: auto; }
 .pp-notice-actions :is(.pp-btn-primary, .pp-btn-secondary) { padding-inline: 0.875rem; font-size: 0.875rem; }
 
+/* Map stop markers: upcoming in AU Red, the stop the bus is at in live green, passed in grey. */
+.pp-stop-dot { border-color: #fff; background: var(--accent); color: var(--accent-contrast); }
+.pp-stop-dot[data-state="here"] { background: var(--status-live); }
+.pp-stop-dot[data-state="passed"] { background: var(--text-tertiary); }
+
 .pp-stop-label {
   position: absolute;
   top: 2.5rem;

@@ -318,7 +318,11 @@ function PassengerMapInner({
     let active = true;
     const fallback: LocationChoice = locationDeclined() ? "declined" : "ask";
     Promise.resolve(navigator.permissions?.query({ name: "geolocation" }))
-      .then(status => { if (active) setLocationChoice(status?.state === "granted" ? "allowed" : fallback); })
+      // A blocked permission cannot reopen the browser prompt, so do not offer it.
+      .then(status => {
+        if (!active) return;
+        setLocationChoice(status?.state === "granted" ? "allowed" : status?.state === "denied" ? "declined" : fallback);
+      })
       .catch(() => { if (active) setLocationChoice(fallback); });
     return () => { active = false; };
   }, []);
@@ -736,9 +740,9 @@ function PassengerMapInner({
                 // Inspecting a stop is not a manual pan; keep following the bus.
                 onPointerDown={event => event.stopPropagation()} onTouchStart={event => event.stopPropagation()}
                 className="relative flex size-11 items-center justify-center">
-                <span aria-label={visitLabel ? `${stop.name} — ${visitLabel}` : undefined} className="flex size-6 items-center justify-center rounded-full border-2 text-[12px] font-bold text-white shadow-sm"
-                  style={{background:isAt ? "var(--status-live)" : isPast ? "#626666" : "var(--accent)",
-                    borderColor: "white", borderStyle: visit === "unobserved" ? "dashed" : "solid",
+                <span aria-label={visitLabel ? `${stop.name} — ${visitLabel}` : undefined} className="pp-stop-dot flex size-6 items-center justify-center rounded-full border-2 text-[12px] font-bold shadow-sm"
+                  data-state={isAt ? "here" : isPast ? "passed" : "upcoming"}
+                  style={{borderStyle: visit === "unobserved" ? "dashed" : "solid",
                     outline:isTarget ? "2px solid var(--text-primary)" : undefined, outlineOffset: 1}}>{stopLabel(i)}</span>
                 {showLabel && <span className="pp-stop-label">{isAt ? `At ${stop.shortName || stop.name}` : isPast ? `${stop.shortName || stop.name} · Passed` : stop.shortName || stop.name}</span>}
               </button>
