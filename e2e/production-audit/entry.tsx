@@ -6,6 +6,8 @@ import RideHistoryPanel from "@/components/admin/RideHistoryPanel";
 import DashboardPanel from "@/components/admin/DashboardPanel";
 import { advanceMotion, setScenario, setTelemetryAge, useScenario } from "./state";
 import "../../frontend/src/app/globals.css";
+// passenger/layout.tsx loads the passenger theme; it applies inside .passenger-layout.
+import "../../frontend/src/app/passenger/theme.css";
 function Fixture() {
   const [surface, setSurface] = useState("passenger");
   const scenario = useScenario();
@@ -16,6 +18,6 @@ function Fixture() {
     {[0, 12_001, 90_001, 120_000, 200_000].map(age => <button key={age} onClick={() => setTelemetryAge(age)}>Publish age {age}</button>)}
     <button type="button" onClick={advanceMotion}>Publish moving update</button>
     <p>Synthetic boundaries; no cloud, provider or hardware</p>
-  </details></aside>{surface === "passenger" ? <PassengerWorkspace /> : <main className="h-dvh bg-brand-dark">{surface === "routes" ? <RouteManagementPanel /> : surface === "admin" ? <DashboardPanel /> : <RideHistoryPanel />}</main>}</>;
+  </details></aside>{surface === "passenger" ? <div className="passenger-layout relative overflow-hidden" style={{ height: "100dvh" }}><PassengerWorkspace /></div> : <main className="h-dvh bg-brand-dark">{surface === "routes" ? <RouteManagementPanel /> : surface === "admin" ? <DashboardPanel /> : <RideHistoryPanel />}</main>}</>;
 }
 createRoot(document.getElementById("root")!).render(<Fixture />);
