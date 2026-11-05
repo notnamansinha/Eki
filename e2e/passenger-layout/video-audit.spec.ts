@@ -345,7 +345,7 @@ test("edge: the collapsed route timeline paints and takes pointers only on its h
   await page.goto("/?scenario=forward");
   await injectInsets(page, 0, 21);
   await page.getByRole("button", { name: "Track QA route", exact: true }).click();
-  const toggle = page.getByRole("button", { name: "Route Timeline", exact: true });
+  const toggle = page.getByRole("button", { name: "Route timeline", exact: true });
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await page.locator("[data-map-sheet]").evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
   const header = (await toggle.boundingBox())!;
