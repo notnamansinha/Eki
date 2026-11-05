@@ -44,7 +44,7 @@ for (const direction of ["forward", "reverse"]) {
     await picker.click();
     await expect(page.getByRole("option", { name: nextStop, exact: true })).toContainText("Passed");
     await expect(page.getByRole("option", { name: followingStop, exact: true })).toContainText(/min/);
-    await expect(page.getByLabel(`${nextStop} — passed`, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: `Show stop ${nextStop} — passed`, exact: true })).toBeVisible();
     await expect(page.locator('[data-road-color="#939598"]')).toHaveCount(1);
     await expect(page.locator('[role="img"] .lucide-bus-front')).toHaveCount(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
@@ -73,12 +73,12 @@ test("destination ETA, passed stops, segmented road and one bus glyph stay consi
   await expect(page.locator('[data-road-color="#939598"]')).toHaveCount(1);
   await expect(page.locator('[data-road-color="#801214"]')).toHaveCount(2);
   await expect(page.locator('[data-road-color="#22c55e"]')).toHaveCount(0);
-  await expect(page.getByLabel("Beta — passed", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show stop Beta — passed", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
   await page.screenshot({ path: info.outputPath("destination-etas.png"), fullPage: true });
   await picker.press("Escape");
   await page.getByRole("button", { name: "Publish next stop", exact: true }).click();
-  await expect(page.getByLabel("Gamma — passed", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show stop Gamma — passed", exact: true })).toBeVisible();
   await picker.click();
   await expect(page.getByRole("option", { name: "Gamma" })).toContainText("Passed");
   // Lost after 30 s of silence (SIGNAL_LOST_MS), not 90-105 s.
@@ -132,15 +132,15 @@ test("field ride 29 Oct 2026: A marked at A, B at B, GNSS loss and silence shown
   const header = page.getByRole("status").filter({ hasText: "Ride in service" });
   await expect(header).toContainText("Ride in service · Live");
   await expect(header).toContainText("At Alpha · Next: Beta");
-  await expect(page.getByLabel("Alpha — bus is here", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show stop Alpha — bus is here", exact: true })).toBeVisible();
   await page.screenshot({ path: info.outputPath("at-origin.png"), fullPage: true });
 
   await page.getByRole("button", { name: "Replay credible departure", exact: true }).click();
-  await expect(page.getByLabel("Alpha — passed", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show stop Alpha — passed", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Arrive at next stop", exact: true }).click();
   // B is marked while the bus is at B, not when it reaches C.
   await expect(header).toContainText("At Beta · Next: Gamma");
-  await expect(page.getByLabel("Beta — bus is here", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show stop Beta — bus is here", exact: true })).toBeVisible();
   const picker = page.getByRole("combobox", { name: "Destination station" });
   await picker.click();
   await expect(page.getByRole("option", { name: "Beta", exact: true })).toContainText("Bus is here");

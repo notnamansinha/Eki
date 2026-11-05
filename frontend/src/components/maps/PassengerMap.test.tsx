@@ -132,9 +132,9 @@ describe("published passenger stop progress", () => {
     const bus = { ...fixtureBus("forward"), currentStopIndex: 1 };
     state.snapshot = { bus };
     const changed = vi.fn();
-    const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
+    render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
     expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ minutes: { b: 1 }, nextStopIndex: 1, unavailable: undefined }));
-    expect(view.container.querySelector('[aria-label="Alpha — passed"]')).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show stop Alpha — passed" })).toBeTruthy();
     // The deadline clock flips at the threshold itself, not at the next 15 s tick.
     await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS + 50); });
     expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ minutes: {}, unavailable: "Live tracking lost" }));
@@ -182,6 +182,30 @@ describe("published passenger stop progress", () => {
         expect(watchPosition).toHaveBeenCalledTimes(1);
       }
       view.unmount();
+    } finally {
+      delete (navigator as unknown as { geolocation?: unknown }).geolocation;
+      delete (navigator as unknown as { permissions?: unknown }).permissions;
+    }
+  });
+  it("starts location when the passenger allows it in browser settings while the map is open", async () => {
+    const watchPosition = vi.fn(() => 1);
+    let onChange: (() => void) | undefined;
+    const status = {
+      state: "denied" as PermissionState,
+      addEventListener: vi.fn((_type: string, listener: () => void) => { onChange = listener; }),
+      removeEventListener: vi.fn(),
+    };
+    Object.defineProperty(navigator, "geolocation", { configurable: true, value: { watchPosition, clearWatch: vi.fn() } });
+    Object.defineProperty(navigator, "permissions", { configurable: true, value: { query: vi.fn(async () => status) } });
+    try {
+      const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} />);
+      await act(async () => {});
+      expect(watchPosition).not.toHaveBeenCalled();
+      status.state = "granted";
+      act(() => onChange?.());
+      expect(watchPosition).toHaveBeenCalledTimes(1);
+      view.unmount();
+      expect(status.removeEventListener).toHaveBeenCalledWith("change", onChange);
     } finally {
       delete (navigator as unknown as { geolocation?: unknown }).geolocation;
       delete (navigator as unknown as { permissions?: unknown }).permissions;
@@ -502,23 +526,23 @@ describe("passenger map device and ride contexts", () => {
     const bus = { ...fixtureBus("forward"), currentStopIndex: 0, atStopIndex: 0 };
     state.snapshot = { bus };
     const changed = vi.fn();
-    const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
-    expect(view.container.querySelector('[aria-label="Alpha — bus is here"]')).toBeTruthy();
+    render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
+    expect(screen.queryByRole("button", { name: "Show stop Alpha — bus is here" })).toBeTruthy();
     await act(async () => { state.listener?.({ bus: { ...bus, motionState: "uncertain", signalState: "gnss_lost", timestamp: Date.now(), backendReceivedAt: Date.now() } }); });
-    expect(view.container.querySelector('[aria-label="Alpha — bus is here"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show stop Alpha — bus is here" })).toBeNull();
     expect(changed.mock.lastCall?.[0]).not.toHaveProperty("atStopIndex");
     await act(async () => { state.listener?.({ bus: { ...bus, timestamp: Date.now(), backendReceivedAt: Date.now() } }); });
     await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS + 50); });
-    expect(view.container.querySelector('[aria-label="Alpha — bus is here"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show stop Alpha — bus is here" })).toBeNull();
   });
   it("marks the stop the bus is at on arrival, before it departs", async () => {
     state.snapshot = { bus: { ...fixtureBus("forward"), currentStopIndex: 0, atStopIndex: 0 } };
     const changed = vi.fn();
-    const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
-    expect(view.container.querySelector('[aria-label="Alpha — bus is here"]')).toBeTruthy();
+    render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
+    expect(screen.queryByRole("button", { name: "Show stop Alpha — bus is here" })).toBeTruthy();
     expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ nextStopIndex: 0, atStopIndex: 0 }));
     act(() => state.listener?.({ bus: { ...fixtureBus("forward"), currentStopIndex: 1 } }));
-    expect(view.container.querySelector('[aria-label="Alpha — passed"]')).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show stop Alpha — passed" })).toBeTruthy();
   });
   it("keeps fresh streamed fixes online between the 15-second clock ticks", async () => {
     vi.useFakeTimers();

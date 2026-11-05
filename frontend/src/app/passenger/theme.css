@@ -758,9 +758,26 @@
 .pp-notice-actions :is(.pp-btn-primary, .pp-btn-secondary) { padding-inline: 0.875rem; font-size: 0.875rem; }
 
 /* Map stop markers: upcoming in AU Red, the stop the bus is at in live green, passed in grey. */
-.pp-stop-dot { border-color: #fff; background: var(--accent); color: var(--accent-contrast); }
+.pp-stop-dot { position: relative; border-color: #fff; background: var(--accent); color: var(--accent-contrast); }
 .pp-stop-dot[data-state="here"] { background: var(--status-live); }
 .pp-stop-dot[data-state="passed"] { background: var(--text-tertiary); }
+/* A tick, so passed stops are not marked by grey alone; the button's name says "passed". */
+.pp-stop-dot[data-state="passed"]::after {
+  content: "\2713";
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--text-tertiary);
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1;
+}
 
 .pp-stop-label {
   position: absolute;

@@ -31,7 +31,11 @@ function Fixture() {
     <div style={{ height: '100dvh', paddingTop: 45, boxSizing: 'border-box' }}>
       {panel ? <RoleGuard allowedRoles={['admin']}>
         {panel === 'admin' ? <AdminPage /> : panel === 'settings' ? <SettingsPanel /> : panel === 'fleet' ? <FleetManagementPanel /> : panel === 'history' ? <RideHistoryPanel /> : panel === 'routes' ? <RouteManagementPanel /> : panel === 'ops' ? <DashboardPanel /> : <FeedbackPanel />}
-      </RoleGuard> : <div className="passenger-layout relative h-full overflow-hidden"><PassengerWorkspace /></div>}
+      </RoleGuard> : <div className="passenger-layout relative h-full overflow-hidden">
+        {/* The fixture controls take the top 45px; fit the 100dvh workspace to the rest. */}
+        <style>{'[data-passenger-workspace] { height: 100% !important; }'}</style>
+        <PassengerWorkspace />
+      </div>}
     </div>
   </>;
 }
