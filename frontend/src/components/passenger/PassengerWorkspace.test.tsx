@@ -157,6 +157,32 @@ describe("passenger workspace navigation", () => {
     expect(screen.queryByText("QA chat")).toBeNull();
     expect(screen.getByRole("button", { name: "Back to home" })).toBeTruthy();
   });
+  it("returns keyboard focus to the same route after its card remounts during tracking", async () => {
+    // jsdom drops :focus-visible during the click that Enter dispatches; browsers keep it.
+    const matches = Element.prototype.matches;
+    const focusVisible = vi.spyOn(Element.prototype, "matches").mockImplementation(function (this: Element, selector: string) {
+      return selector === ":focus-visible" ? this === document.activeElement : matches.call(this, selector);
+    });
+    try {
+      const { container } = render(<PassengerWorkspace />); const user = userEvent.setup();
+      const card = await screen.findByRole("button", { name: "Track QA route" });
+      await user.tab();
+      expect(document.activeElement).toBe(card);
+      await user.keyboard("{Enter}");
+      const back = await screen.findByRole("button", { name: "Back to home" });
+      expect(document.activeElement).toBe(back);
+      // A connection gap empties the hidden list, so the route comes back as a new card.
+      act(() => setScenario("reconnecting"));
+      expect(card.isConnected).toBe(false);
+      act(() => setScenario("pending"));
+      await waitFor(() => expect(container.querySelector("[data-passenger-route='qa-route']")).not.toBeNull());
+      expect(document.activeElement).toBe(back);
+      await user.keyboard("{Enter}");
+      const returned = await screen.findByRole("button", { name: "Track QA route" });
+      expect(returned).not.toBe(card);
+      expect(document.activeElement).toBe(returned);
+    } finally { focusVisible.mockRestore(); }
+  });
   it("unmounts the chat dialog when leaving tracking so hidden dialog focus handlers cannot remain active", async () => {
     setScenario("forward"); render(<PassengerWorkspace />); const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Track QA route" }));

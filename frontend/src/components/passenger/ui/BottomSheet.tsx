@@ -53,11 +53,17 @@ export default function BottomSheet({
       <div
         data-map-sheet
         data-open={isOpen || undefined}
-        className={`pp-sheet fixed inset-x-0 z-50 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        className={`pp-sheet fixed inset-x-0 z-50 transition-[translate,clip-path] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
           isOpen ? "translate-y-0" : "translate-y-[calc(100%_-_56px)]"
         }`}
         style={{
           bottom: passengerNavClearance,
+          // Surface, border, radius and shadow come from .pp-sheet in theme.css.
+          // Collapsed, paint and hit-test only the 56px header: the body slides
+          // behind the navigation, which the floating desktop dock leaves bare.
+          // Clip and slide share a transition, so the moving bottom edge stays on
+          // the navigation. -40px keeps the shadow above the header.
+          clipPath: isOpen ? "inset(-40px 0 0)" : "inset(-40px 0 calc(100% - 56px))",
           paddingBottom: "env(safe-area-inset-bottom)",
         }}
       >
@@ -67,7 +73,8 @@ export default function BottomSheet({
           ref={toggleRef}
           aria-expanded={isOpen}
           aria-controls={contentId}
-          className="w-full h-[56px] flex items-center justify-between px-5 cursor-pointer relative"
+          data-map-sheet-toggle
+          className="w-full h-[56px] flex items-center justify-between px-5 cursor-pointer relative rounded-t-[var(--pp-sheet-radius)]"
           onClick={onToggle}
         >
           {/* Drag handle */}
