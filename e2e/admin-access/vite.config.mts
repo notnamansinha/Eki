@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/postcss";
 const local = (name: string) => fileURLToPath(new URL(name, import.meta.url));
 export default defineConfig({
   root: local("."), server: { host: "127.0.0.1", port: 3105, strictPort: true },
+  publicDir: local("../../frontend/public"),
   resolve: { alias: [
     // Same adapter instance, but its own URL, so a test can hold the lazy sign-in code download.
     { find: "firebase/auth", replacement: local("firebaseAuthSdk.ts") },

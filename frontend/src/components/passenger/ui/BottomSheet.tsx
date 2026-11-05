@@ -22,6 +22,9 @@ export default function BottomSheet({
   maxHeightClass = "max-h-[50vh]",
 }: BottomSheetProps) {
   const contentId = useId();
+  // Collapsed content is already inert; also stop painting it, because the
+  // desktop dock floats and leaves the translated body visible around it.
+  const bodyVisibility = `transition-opacity duration-200 ${isOpen ? "opacity-100" : "opacity-0"}`;
   const toggleRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!isOpen) return;
@@ -50,6 +53,7 @@ export default function BottomSheet({
       {/* Sheet */}
       <div
         data-map-sheet
+        data-open={isOpen || undefined}
         className={`fixed inset-x-0 z-50 rounded-t-2xl transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
           isOpen ? "translate-y-0" : "translate-y-[calc(100%_-_56px)]"
         }`}
@@ -88,13 +92,13 @@ export default function BottomSheet({
         </button>
 
         {/* Content */}
-        <div id={contentId} inert={!isOpen} aria-hidden={!isOpen} className={`px-5 pb-5 pt-1 overflow-y-auto ${maxHeightClass}`}>
+        <div id={contentId} inert={!isOpen} aria-hidden={!isOpen} className={`px-5 pb-5 pt-1 overflow-y-auto ${maxHeightClass} ${bodyVisibility}`}>
           {children}
         </div>
 
         {/* Bottom Controls */}
         {bottomControls && (
-          <div inert={!isOpen} aria-hidden={!isOpen} className="p-4" style={{ borderTop: "1px solid var(--border-subtle)", background: "var(--surface-0)" }}>
+          <div inert={!isOpen} aria-hidden={!isOpen} className={`p-4 ${bodyVisibility}`} style={{ borderTop: "1px solid var(--border-subtle)", background: "var(--surface-0)" }}>
             {bottomControls}
           </div>
         )}

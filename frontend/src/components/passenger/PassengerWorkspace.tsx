@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
-import { MapPinned as MapIcon, CircleUserRound as User, ListOrdered as RoutesIcon, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
+import { MapPinned, UserRound, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
 import { subscribeLiveBusChangesByRoute } from "@/lib/liveBusStore";
 import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
 import { getJoinedRideStatus } from "@/lib/joinedRideStatus";
@@ -28,7 +28,6 @@ import {
   passengerNavClassName,
   passengerNavClearance,
   passengerNavFrameClassName,
-  passengerNavFrameStyle,
   passengerPanelClassName,
   passengerPanelStyle,
   passengerTopSpacerStyle,
@@ -67,6 +66,7 @@ const FeedbackModal = dynamic(() => import("@/components/shared/FeedbackModal"),
 const PassengerBoardingView = dynamic(() => import("@/components/passenger/PassengerBoardingView"), { ssr: false });
 
 type ViewState = "home" | "tracking" | "routes" | "profile";
+type PassengerSection = Exclude<ViewState, "tracking">;
 
 const POST_RIDE_FEEDBACK_DELAY_MS = 10_000;
 
@@ -96,6 +96,35 @@ export default function PassengerWorkspace() {
   const [profileMounted, setProfileMounted] = useState(false);
   // The route schedule follows the same mount-once rule as Profile.
   const [routesMounted, setRoutesMounted] = useState(false);
+  const [isMessagingOpen, setIsMessagingOpen] = useState(false);
+  const showSection = useCallback((section: PassengerSection) => {
+    setIsMessagingOpen(false);
+    if (section === "routes") setRoutesMounted(true);
+    if (section === "profile") setProfileMounted(true);
+    setCurrentView(section);
+  }, []);
+
+  useEffect(() => {
+    const syncSection = () => {
+      const hash = window.location.hash;
+      showSection(hash === "#routes" ? "routes" : hash === "#profile" ? "profile" : "home");
+    };
+    // Leave the default Map view alone so an in-progress ride can restore normally.
+    const initial = window.location.hash ? window.requestAnimationFrame(syncSection) : 0;
+    window.addEventListener("popstate", syncSection);
+    return () => {
+      window.cancelAnimationFrame(initial);
+      window.removeEventListener("popstate", syncSection);
+    };
+  }, [showSection]);
+
+  function navigateSection(section: PassengerSection) {
+    const hash = section === "home" ? "" : "#" + section;
+    const { pathname, search } = window.location;
+    if (window.location.hash !== hash) window.history.pushState(null, "", pathname + search + hash);
+    showSection(section);
+  }
+
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
   const { catalog: routeCatalog, projectionReady, catalogReady, error: catalogError, retry: retryCatalog } = useLiveRouteCatalog(`${connectionGeneration}:${resumeGeneration}`);
   const [selectedRouteId, setSelectedRouteId] = useState("");
@@ -113,7 +142,6 @@ export default function PassengerWorkspace() {
   const [activeBuses, setActiveBuses] = useState<ActiveBusData[]>([]);
   const [availableBuses, setAvailableBuses] = useState<PassengerBusAvailability[]>([]);
   const [availabilityNow, setAvailabilityNow] = useState(() => serverNow());
-  const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackBusId, setFeedbackBusId] = useState("");
@@ -342,13 +370,17 @@ export default function PassengerWorkspace() {
   const selectableBusesOnRoute = busesOnRoute.filter(bus => isConnected && !isResuming && !liveDataError && isPassengerBusSelectable(bus, availabilityNow));
   // Lifecycle ("in service") is not location freshness: say which one failed.
   const activeBusHealth = activeBusOnRoute ? liveBusHealth(activeBusOnRoute, availabilityNow) : undefined;
-  const pausedNotice = !isConnected || isResuming || liveDataError
+  // Blame the connection only while the socket is down; a connected client
+  // can still be waiting on the backend projection.
+  const pausedNotice = !isConnected
     ? { title: "Live tracking paused", detail: "This device is reconnecting to live bus data. The last known location is shown; live ETAs and boarding resume when the connection returns." }
-    : activeBusOnRoute?.automaticServicePaused === true
-      ? { title: "Tracking paused", detail: "Service is paused for this bus. Its location is shown, but there is no live ride to board." }
-      : activeBusHealth && activeBusHealth.state !== "live" && activeBusHealth.state !== "delayed"
-        ? describeLiveBusHealth(activeBusHealth)
-        : { title: "Live tracking paused", detail: "Location updates are unavailable. The last known location is shown; live ETAs and boarding resume when tracking returns." };
+    : isResuming || liveDataError
+      ? { title: "Live tracking paused", detail: "Live bus data is not available right now. The last known location is shown; live ETAs and boarding resume when it returns." }
+      : activeBusOnRoute?.automaticServicePaused === true
+        ? { title: "Tracking paused", detail: "Service is paused for this bus. Its location is shown, but there is no live ride to board." }
+        : activeBusHealth && activeBusHealth.state !== "live" && activeBusHealth.state !== "delayed"
+          ? describeLiveBusHealth(activeBusHealth)
+          : { title: "Live tracking paused", detail: "Location updates are unavailable. The last known location is shown; live ETAs and boarding resume when tracking returns." };
   // Chat is between passenger and driver; it needs the connection and a
   // reporting bus, not a GPS fix. A GNSS blip must not close or reset it.
   const chatAvailable = isConnected && !isResuming && !liveDataError && activeBusOnRoute?.automaticServicePaused !== true &&
@@ -385,6 +417,42 @@ export default function PassengerWorkspace() {
   const endedMessage = completedRide !== null;
 
   const visibleView: ViewState = currentView;
+  const keyboardRouteButton = useRef<HTMLButtonElement | null>(null);
+  const trackingBackButton = useRef<HTMLButtonElement>(null);
+  const liveRoutesHeading = useRef<HTMLHeadingElement>(null);
+  const liveRouteScroller = useRef<HTMLDivElement>(null);
+  const liveRouteContent = useRef<HTMLDivElement>(null);
+  const [hasMoreRoutes, setHasMoreRoutes] = useState(false);
+
+  useEffect(() => {
+    const scroller = liveRouteScroller.current;
+    const content = liveRouteContent.current;
+    if (!scroller || !content || typeof ResizeObserver === "undefined") return;
+    const update = () => {
+      setHasMoreRoutes(scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop > 1);
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(scroller);
+    observer.observe(content);
+    scroller.addEventListener("scroll", update, { passive: true });
+    return () => {
+      observer.disconnect();
+      scroller.removeEventListener("scroll", update);
+    };
+  }, []);
+
+  useEffect(() => {
+    const routeButton = keyboardRouteButton.current;
+    if (!routeButton) return;
+    if (visibleView === "tracking") {
+      trackingBackButton.current?.focus({ preventScroll: true });
+    } else {
+      // Only Back from tracking returns focus to the route; leaving for another
+      // section forgets it, so a later tap on the first tab keeps focus there.
+      keyboardRouteButton.current = null;
+      if (visibleView === "home") (routeButton.isConnected ? routeButton : liveRoutesHeading.current)?.focus();
+    }
+  }, [visibleView]);
 
   useEffect(() => {
     if (completedRide) return;
@@ -459,6 +527,10 @@ export default function PassengerWorkspace() {
   };
 
   const handleRouteSelect = (routeId: string) => {
+    const focused = document.activeElement;
+    keyboardRouteButton.current =
+      focused instanceof HTMLButtonElement && focused.dataset.passengerRoute === routeId && focused.matches(":focus-visible")
+        ? focused : null;
     setSelectedRouteId(routeId);
     setSelectedDestinationStopId("");
     setSelectedLiveBusKey("");
@@ -469,9 +541,9 @@ export default function PassengerWorkspace() {
   };
 
   return (
-    <div data-passenger-workspace className="relative flex flex-col overflow-hidden text-white" style={{ height: "100dvh" }}>
-      {(isResuming || rideRecoveryNotice || routesError || liveDataError) && <div className="relative z-50 shrink-0 space-y-2 bg-zinc-950 px-4 pb-2 pt-safe">
-      {isResuming && (
+    <div data-passenger-workspace data-passenger-section={visibleView} className="relative flex flex-col overflow-hidden text-white" style={{ height: "100dvh" }}>
+      {(!isConnected || rideRecoveryNotice || routesError || liveDataError) && <div className="relative z-50 shrink-0 space-y-2 bg-zinc-950 px-4 pb-2 pt-safe">
+      {!isConnected && (
         <div
           className="flex items-center gap-2 rounded-xl border border-amber-400/20 bg-zinc-950 px-4 py-3 text-sm font-semibold text-amber-300 shadow-lg"
           role="status"
@@ -505,7 +577,7 @@ export default function PassengerWorkspace() {
       <div className="relative min-h-0 flex-1 overflow-clip">
 
         {/* ── HOME VIEW ── */}
-        <div inert={visibleView !== "home"} aria-hidden={visibleView !== "home"} className={`absolute inset-0 z-20 flex flex-col pt-safe transition-[opacity,transform] duration-200 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"}`}>
+        <div inert={visibleView !== "home"} aria-hidden={visibleView !== "home"} className={`passenger-home absolute inset-0 z-20 flex flex-col pt-safe transition-[opacity,transform] duration-200 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"}`}>
 
           {/* Top spacer to frame the bus illustration near the top of the screen */}
           <div className="shrink-0" style={passengerTopSpacerStyle} aria-hidden="true" />
@@ -515,10 +587,15 @@ export default function PassengerWorkspace() {
             style={passengerPanelStyle}
           >
             {/* Heading Section - Fixed */}
-            <div className="text-center pb-6 mb-4 mx-6 shrink-0">
-              <h1 className="text-[32px] font-black tracking-tight mb-2 leading-none" style={{ color: "var(--text-primary)" }}>
-                Live Routes
-              </h1>
+            <div className="passenger-home-heading text-center pb-6 mb-4 mx-6 shrink-0">
+              <div className="passenger-home-title">
+                <h1 ref={liveRoutesHeading} tabIndex={-1} className="text-[32px] font-black tracking-tight mb-2 leading-none" style={{ color: "var(--text-primary)" }}>
+                  Live Routes
+                </h1>
+                <span className="passenger-home-count">
+                  {displayRoutes.length} {displayRoutes.length === 1 ? "route" : "routes"}
+                </span>
+              </div>
               <p className="text-[15px] font-medium mt-2" style={{ color: "var(--text-secondary)" }}>
                 Select a route to view the live bus location.
               </p>
@@ -526,56 +603,65 @@ export default function PassengerWorkspace() {
 
             {/* Status / Routes Section - Scrollable */}
             <div
-              className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth hide-scrollbar px-4 pb-32"
-              style={{ scrollBehavior: 'smooth', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+              ref={liveRouteScroller}
+              className="passenger-live-route-scroll flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-32"
             >
-              {displayRoutes.length > 0 ? (
-                <>
-                  {settings.announcementActive && settings.announcementText && (
-                    <div
-                      className="rounded-2xl p-4 mb-3 mx-1 flex items-center justify-center border text-center"
-                      style={{ background: "#4c0519", borderColor: "#881337" }}
-                    >
-                      <p className="line-clamp-3 break-words min-w-0 text-[13px] font-black tracking-wider uppercase leading-tight text-[#fecdd3]">
-                        {settings.announcementText}
-                      </p>
-                    </div>
-                  )}
-                  <RouteCarousel
-                    routes={displayRoutes}
-                    selectedRouteId={effectiveRouteId}
-                     onClick={handleRouteSelect}
-                     getActiveBusesCount={(routeId) => routeCatalog[routeId]?.active ?? 0}
-                     getAvailableBusesCount={(routeId) => routeCatalog[routeId]?.available ?? 0}
-                     getDirectionState={(routeId) => {
-                       const bus = activeBuses.find((entry) => entry.routeId === routeId && isPassengerBusSelectable(entry, availabilityNow));
-                       if (!bus) return "unknown";
-                       return bus?.directionState === "pending" ? "pending" : normalizeRideDirection(bus?.direction);
-                     }}
-                   />
-                </>
-              ) : (
-                <div className="rounded-xl p-8 text-center mx-1 flex flex-col items-center justify-center gap-2"
-                  style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
-                  {settings.announcementActive && settings.announcementText && (
-                    <div className="inline-flex items-center px-4 py-1.5 rounded-full border mb-1"
-                      style={{ background: "#4c0519", borderColor: "#881337" }}>
-                      <span className="line-clamp-3 break-words min-w-0 text-[12px] font-black tracking-wider uppercase text-[#fecdd3]">
-                        {settings.announcementText}
-                      </span>
-                    </div>
-                  )}
-                  <p className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>
-                    {settings.noBusesMessage || "No buses running"}
-                  </p>
-                  <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
-                    {isResuming
-                      ? "Unable to reach live data. Check your connection."
-                      : formatNoBusesSubMessage(settings.noBusesSubMessage || "Service starts at {time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
-                  </p>
-                </div>
-              )}
+              <div ref={liveRouteContent}>
+                {displayRoutes.length > 0 ? (
+                  <>
+                    {settings.announcementActive && settings.announcementText && (
+                      <div
+                        className="rounded-2xl p-4 mb-3 mx-1 flex items-center justify-center border text-center"
+                        style={{ background: "#4c0519", borderColor: "#881337" }}
+                      >
+                        <p className="line-clamp-3 break-words min-w-0 text-[13px] font-black tracking-wider uppercase leading-tight text-[#fecdd3]">
+                          {settings.announcementText}
+                        </p>
+                      </div>
+                    )}
+                    <RouteCarousel
+                      routes={displayRoutes}
+                      selectedRouteId={effectiveRouteId}
+                       onClick={handleRouteSelect}
+                       getActiveBusesCount={(routeId) => routeCatalog[routeId]?.active ?? 0}
+                       getAvailableBusesCount={(routeId) => routeCatalog[routeId]?.available ?? 0}
+                       getDirectionState={(routeId) => {
+                         const bus = activeBuses.find((entry) => entry.routeId === routeId && isPassengerBusSelectable(entry, availabilityNow));
+                         if (!bus) return "unknown";
+                         return bus?.directionState === "pending" ? "pending" : normalizeRideDirection(bus?.direction);
+                       }}
+                     />
+                  </>
+                ) : (
+                  <div className="rounded-xl p-8 text-center mx-1 flex flex-col items-center justify-center gap-2"
+                    style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
+                    {settings.announcementActive && settings.announcementText && (
+                      <div className="inline-flex items-center px-4 py-1.5 rounded-full border mb-1"
+                        style={{ background: "#4c0519", borderColor: "#881337" }}>
+                        <span className="line-clamp-3 break-words min-w-0 text-[12px] font-black tracking-wider uppercase text-[#fecdd3]">
+                          {settings.announcementText}
+                        </span>
+                      </div>
+                    )}
+                    <p className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>
+                      {settings.noBusesMessage || "No buses running"}
+                    </p>
+                    <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
+                      {!isConnected
+                        ? "Unable to reach live data. Check your connection."
+                        : isResuming || liveDataError
+                          ? "Live bus data is not available right now."
+                          : formatNoBusesSubMessage(settings.noBusesSubMessage || "Service starts at {time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
+            {displayRoutes.length > 0 && (
+              <p className="passenger-home-scroll-hint" aria-hidden="true" data-overflow={hasMoreRoutes}>
+                Scroll for more routes
+              </p>
+            )}
           </div>
         </div>
 
@@ -588,6 +674,7 @@ export default function PassengerWorkspace() {
                 style={{ background: "linear-gradient(to bottom, rgba(9,9,11,0.92) 0%, transparent 100%)" }}>
                 <div className="flex items-center gap-4 max-w-lg mx-auto pt-4 pointer-events-auto">
                   <button
+                    ref={trackingBackButton}
                     type="button"
                     onClick={() => {
                       if (chatShown(visibleView)) {
@@ -828,75 +915,32 @@ export default function PassengerWorkspace() {
         />
       )}
 
-      {/* Bottom Navigation — Fixed Transit Tab Bar */}
-      <div className={`${passengerNavFrameClassName} z-[100]`} style={passengerNavFrameStyle}>
+      <div className={passengerNavFrameClassName + " z-[100]"}>
         <nav aria-label="Passenger sections" className={passengerNavClassName}>
-          <button
-            type="button"
+          <button type="button" className="passenger-section-button"
             aria-current={visibleView === "home" || visibleView === "tracking" ? "page" : undefined}
-            onClick={() => {
-              setIsMessagingOpen(false);
-              setCurrentView("home");
-            }}
-            className="flex min-w-0 flex-1 max-w-[140px] flex-col items-center justify-center h-[60px] rounded-[20px] transition-[background-color,transform] duration-150 relative group active:scale-95 gap-1.5"
-            style={{
-              background: (visibleView === "home" || visibleView === "tracking") ? "rgba(255,255,255,0.08)" : "transparent"
-            }}
-          >
-            <MapIcon className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
-              color: (visibleView === "home" || visibleView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
-            }} />
-            <span className="text-[13px] font-bold transition-colors leading-none" style={{
-              color: (visibleView === "home" || visibleView === "tracking") ? "var(--text-primary)" : "var(--text-tertiary)"
-            }}>
-              Map
-            </span>
+            onClick={() => navigateSection("home")}>
+            <MapPinned size={24} strokeWidth={2} aria-hidden="true" />
+            <span>Live</span>
           </button>
 
-          <button
-            type="button"
+          <button type="button" className="passenger-section-button"
             aria-current={visibleView === "routes" ? "page" : undefined}
-            onClick={() => {
-              setIsMessagingOpen(false);
-              setRoutesMounted(true);
-              setCurrentView("routes");
-            }}
-            className="flex min-w-0 flex-1 max-w-[140px] flex-col items-center justify-center h-[60px] rounded-[20px] transition-[background-color,transform] duration-150 relative group active:scale-95 gap-1.5"
-            style={{
-              background: visibleView === "routes" ? "rgba(255,255,255,0.08)" : "transparent"
-            }}
-          >
-            <RoutesIcon className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
-              color: visibleView === "routes" ? "var(--text-primary)" : "var(--text-tertiary)"
-            }} />
-            <span className="text-[13px] font-bold transition-colors leading-none" style={{
-              color: visibleView === "routes" ? "var(--text-primary)" : "var(--text-tertiary)"
-            }}>
-              Routes
-            </span>
+            onClick={() => navigateSection("routes")}>
+            <svg viewBox="0 0 24 24" width={24} height={24} fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path d="M6 12h12" />
+              <circle cx="4" cy="12" r="2" fill="currentColor" />
+              <circle cx="12" cy="12" r="2" fill="currentColor" />
+              <circle cx="20" cy="12" r="2" fill="currentColor" />
+            </svg>
+            <span>Routes</span>
           </button>
 
-          <button
-            type="button"
+          <button type="button" className="passenger-section-button"
             aria-current={visibleView === "profile" ? "page" : undefined}
-            onClick={() => {
-              setIsMessagingOpen(false);
-              setProfileMounted(true);
-              setCurrentView("profile");
-            }}
-            className="flex min-w-0 flex-1 max-w-[140px] flex-col items-center justify-center h-[60px] rounded-[20px] transition-[background-color,transform] duration-150 relative group active:scale-95 gap-1.5"
-            style={{
-              background: visibleView === "profile" ? "rgba(255,255,255,0.08)" : "transparent"
-            }}
-          >
-            <User className="w-[22px] h-[22px] transition-colors" strokeWidth={2.5} style={{
-              color: visibleView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
-            }} />
-            <span className="text-[13px] font-bold transition-colors leading-none" style={{
-              color: visibleView === "profile" ? "var(--text-primary)" : "var(--text-tertiary)"
-            }}>
-              Profile
-            </span>
+            onClick={() => navigateSection("profile")}>
+            <UserRound size={24} strokeWidth={2} aria-hidden="true" />
+            <span>Profile</span>
           </button>
         </nav>
       </div>

@@ -404,7 +404,7 @@ The backend logger (`backend/src/lib/logger.ts`) replaces the value of any key t
 | Container image | CI builds `backend/Dockerfile` on every push, smoke-boots it and fails on fixable `CRITICAL` or `HIGH` findings from Trivy; both stages use a digest-pinned `node:24.21.0-alpine3.23` image |
 | Pinned actions and tools | Every GitHub Action is pinned to a commit SHA; the Firebase CLI is pinned as `firebase-tools@15.14.0`; PlatformIO 6.2.0, `espressif32@7.0.1` and firmware libraries are pinned |
 | Lockfile | `package-lock.json` is committed and CI installs with `npm ci` |
-| Dependency overrides | Root `package.json` `overrides` pin transitive versions of `qs`, `fast-glob`, `@fastify/busboy`, `@grpc/grpc-js`, `postcss`, `nanoid`, `js-yaml`, `uuid`, `glob`, `minimatch`, `sharp` and `deepmerge` |
+| Dependency overrides | Root `package.json` `overrides` pin transitive versions of `qs`, `fast-glob`, `@fastify/busboy`, `@grpc/grpc-js`, `postcss`, `nanoid`, `js-yaml`, `uuid`, `glob`, `minimatch`, `sharp` and `deepmerge`. `js-yaml` is held at the patched 4.x line (`^4.3.2`) except under the development-only `@apidevtools/json-schema-ref-parser`, which needs the 5.x API and gets the patched `^5.4.2` |
 
 The repository has no automated dependency update configuration. [CI/CD and releases](../operations/CI_CD_AND_RELEASES.md) describes the pipelines.
 
