@@ -67,7 +67,7 @@ const BUS_MOTION_COLORS: Record<string, string> = {
   uncertain: "#8c5a0b",
 };
 /** AU Red line on a white casing; passed stretches in AU Grey (brand guidelines, Part 6). */
-const ROUTE_PALETTE: RoutePalette = { casing: "#ffffff", casingOpacity: 0.95, line: "#b04233", active: "#801214", passed: "#939598" };
+const ROUTE_PALETTE: RoutePalette = { casing: "#ffffff", casingOpacity: 0.95, line: "#801214", active: "#801214", passed: "#939598" };
 const LOCATION_NOTICE_KEY = "eki:location-notice";
 type LocationChoice = "unknown" | "ask" | "allowed" | "declined";
 
@@ -248,6 +248,8 @@ function PassengerMapInner({
   const [liveReadFailed, setLiveReadFailed] = useState(false);
   const [isCentered, setIsCentered] = useState(true);
   const [focusBus, setFocusBus] = useState(!preview);
+  // Route overview also centres the camera, but on the route, not the bus.
+  const followingBus = isCentered && focusBus;
   const [inspectedStopId, setInspectedStopId] = useState<string | null>(null);
   const arrivalTimestampsRef = useRef<Record<string, number>>({});
   const routeStops = useMemo(() => {
@@ -753,11 +755,11 @@ function PassengerMapInner({
           onClick={() => { setFocusBus(true); setIsCentered(true); }}
           type="button"
           className="pp-map-button"
-          data-active={isCentered}
+          data-active={followingBus}
           aria-label="Center on bus"
-          aria-pressed={isCentered}
+          aria-pressed={followingBus}
         >
-          <Navigation className="w-5 h-5" aria-hidden="true" fill={isCentered ? "currentColor" : "none"} />
+          <Navigation className="w-5 h-5" aria-hidden="true" fill={followingBus ? "currentColor" : "none"} />
         </button>
         <button type="button" aria-label="Show route overview" onClick={() => {setFocusBus(false);setIsCentered(true);}}
           className="pp-map-button">

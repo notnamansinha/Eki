@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { ArrowRight, Check } from 'lucide-react';
 import { RouteData } from '@/hooks/useRoutes';
 import {
@@ -17,6 +17,7 @@ interface RouteCarouselProps {
 }
 
 export default function RouteCarousel({ routes, selectedRouteId, onClick, getActiveBusesCount, getAvailableBusesCount, getDirectionState }: RouteCarouselProps) {
+  const idBase = useId();
   const liveRoutes = routes.filter((route) =>
     getActiveBusesCount(route.id) > 0 || getAvailableBusesCount(route.id) > 0
   );
@@ -54,6 +55,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
             className="w-full min-w-0 flex items-stretch text-left disabled:cursor-default"
             onClick={() => onClick(route.id)}
             aria-label={`Track ${route.name}`}
+            aria-describedby={selected ? `${idBase}-selected` : undefined}
           >
             <div
               className="passenger-live-route-card relative w-full min-w-0 overflow-hidden flex flex-col min-h-[140px] p-4 text-left"
@@ -73,7 +75,7 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
                     </p>
                   )}
                   {selected && (
-                    <span className="pp-selected-chip">
+                    <span id={`${idBase}-selected`} className="pp-selected-chip">
                       <Check size={12} strokeWidth={3} aria-hidden="true" />
                       Selected
                     </span>

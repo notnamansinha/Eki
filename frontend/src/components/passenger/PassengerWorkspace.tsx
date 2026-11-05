@@ -544,7 +544,7 @@ export default function PassengerWorkspace() {
   const announcement = settings.announcementActive && settings.announcementText ? (
     <div className="pp-announcement" role="note">
       <Megaphone className="size-5" aria-hidden="true" />
-      <p className="line-clamp-4 min-w-0">{settings.announcementText}</p>
+      <p className="min-w-0">{settings.announcementText}</p>
     </div>
   ) : null;
   // Only ride-recovery messages are written for riders; the others name internals.

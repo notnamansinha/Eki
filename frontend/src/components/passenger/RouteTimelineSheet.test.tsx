@@ -19,6 +19,9 @@ it("uses the published next stop even when its ETA is unavailable", async () => 
   await userEvent.setup().click(screen.getByRole("button", { name: "Route timeline" }));
   expect(screen.getByText("Next stop").parentElement!.textContent).toContain("Beta");
   expect(screen.getByText("Alpha").parentElement!.parentElement!.getAttribute("data-passed")).toBe("true");
+  // data-current drives the current-stop highlight in theme.css.
+  expect(screen.getByText("Beta").parentElement!.parentElement!.getAttribute("data-current")).toBe("true");
+  expect(screen.getByText("Alpha").parentElement!.parentElement!.getAttribute("data-current")).toBe("false");
 });
 
 it("does not show live progress in a preview", async () => {

@@ -386,9 +386,12 @@ describe("passenger map device and ride contexts", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Center on bus" }));
     expect(state.panTo).toHaveBeenLastCalledWith({ lat: 23.12, lng: 72.1 });
     expect(state.setZoom).toHaveBeenLastCalledWith(16);
+    expect(screen.getByRole("button", { name: "Center on bus" }).getAttribute("aria-pressed")).toBe("true");
     const beforeOverview = state.fitBounds.mock.calls.length;
     await userEvent.setup().click(screen.getByRole("button", {name:"Show route overview"}));
     expect(state.fitBounds.mock.calls.length).toBeGreaterThan(beforeOverview);
+    // The overview centres the route, not the bus, so Center on bus is not pressed.
+    expect(screen.getByRole("button", { name: "Center on bus" }).getAttribute("aria-pressed")).toBe("false");
     expect(state.fitBounds).toHaveBeenLastCalledWith({north:23.12,south:23,east:72.1,west:72},expect.any(Object));
   });
   it("includes the first off-route fix without losing configured route bounds", async () => {
