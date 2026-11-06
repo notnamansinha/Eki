@@ -182,11 +182,11 @@ function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () =
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-          <button onClick={onEdit} aria-label={`Edit route ${route.name}`} className="w-11 h-11 rounded-lg text-ui-quiet hover:text-brand-accent hover:bg-brand-accent/10 transition-all" title="Edit route">
-            <Pencil className="w-3.5 h-3.5" />
+          <button type="button" onClick={onEdit} aria-label={`Edit route ${route.name}`} className="flex size-11 items-center justify-center rounded-lg text-ui-quiet hover:text-brand-accent hover:bg-brand-accent/10 transition-all" title="Edit route">
+            <Pencil className="size-4" aria-hidden="true" />
           </button>
-          <button onClick={() => onDelete(route.id)} aria-label={`Delete route ${route.name}`} className="w-11 h-11 rounded-lg text-ui-quiet hover:text-ui-danger hover:bg-ui-danger/10 transition-all" title="Delete route">
-            <Trash2 className="w-3.5 h-3.5" />
+          <button type="button" onClick={() => onDelete(route.id)} aria-label={`Delete route ${route.name}`} className="flex size-11 items-center justify-center rounded-lg text-ui-quiet hover:text-ui-danger hover:bg-ui-danger/10 transition-all" title="Delete route">
+            <Trash2 className="size-4" aria-hidden="true" />
           </button>
         </div>
       </div>
