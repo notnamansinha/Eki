@@ -52,3 +52,24 @@ test("touch screens rest Live routes on the tab bar under the artwork and raise 
   expect(await card.evaluate(element => element.closest("[inert]") !== null)).toBe(true);
   expect(await artworkShift()).toBe(0);
 });
+
+test("the sheet works from the keyboard and pointer devices never get a toggle", async ({ page }) => {
+  await page.goto("/?scenario=many-routes");
+  const panel = homePanel(page);
+  await expect(panel).toBeVisible();
+  if (await page.evaluate(() => matchMedia("(any-pointer: fine)").matches)) {
+    await expect(panel.getByRole("button", { name: /live routes$/ })).toHaveCount(0);
+    return;
+  }
+  const show = panel.getByRole("button", { name: "Show live routes", exact: true });
+  // The lowered list is inert, so the peek is the only stop before the tab bar.
+  await show.focus();
+  await page.keyboard.press("Enter");
+  const hide = panel.getByRole("button", { name: "Hide live routes", exact: true });
+  await expect(hide).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Track QA route", exact: true })).toBeFocused();
+  await hide.focus();
+  await page.keyboard.press("Space");
+  await expect(show).toHaveAttribute("aria-expanded", "false");
+});

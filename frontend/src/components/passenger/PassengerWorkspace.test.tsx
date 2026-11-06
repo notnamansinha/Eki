@@ -365,14 +365,48 @@ describe("passenger tab switching and footer", () => {
   });
 });
 describe("phone Live routes sheet", () => {
-  // jsdom has no matchMedia; a stub decides whether this is a touch screen.
-  const useTouchScreen = (touch: boolean) => vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: touch && query === "not all and (any-pointer: fine)",
-    media: query,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-  afterEach(() => vi.unstubAllGlobals());
+  // jsdom has no matchMedia; the stub decides whether this is a touch screen
+  // and can switch it live, as rotating or docking a device would.
+  const TOUCH_QUERY = "not all and (any-pointer: fine)";
+  let touch = false;
+  const mediaListeners = new Set<() => void>();
+  const useTouchScreen = (value: boolean) => {
+    touch = value;
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      get matches() { return touch && query === TOUCH_QUERY; },
+      media: query,
+      addEventListener: (_type: string, listener: () => void) => mediaListeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => mediaListeners.delete(listener),
+    }));
+  };
+  const switchTouchScreen = (value: boolean) => act(() => { touch = value; mediaListeners.forEach(listener => listener()); });
+
+  // jsdom does no layout, so give the panel and its heading the sizes a phone
+  // would: the peek is the heading's bottom edge inside the panel.
+  const geometry = { panel: 600, peek: 120 };
+  const originalOffsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight")!;
+  const originalOffsetTop = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetTop")!;
+  beforeEach(() => {
+    geometry.panel = 600; geometry.peek = 120;
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get(this: HTMLElement) {
+      return this.classList.contains("passenger-home-panel") ? geometry.panel : this.classList.contains("passenger-home-heading") ? geometry.peek : 0;
+    } });
+    Object.defineProperty(HTMLElement.prototype, "offsetTop", { configurable: true, get: () => 0 });
+  });
+  afterEach(async () => {
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", originalOffsetHeight);
+    Object.defineProperty(HTMLElement.prototype, "offsetTop", originalOffsetTop);
+    mediaListeners.clear();
+    vi.unstubAllGlobals();
+    await saveSettings({ announcementActive: false, announcementText: "" });
+  });
+  async function saveSettings(partial: { announcementActive?: boolean; announcementText?: string }) {
+    let save: ((value: typeof partial) => Promise<void>) | undefined;
+    function Probe() { save = fixtures.useSettings().saveSettings; return null; }
+    const probe = render(<Probe />);
+    await act(() => save!(partial));
+    probe.unmount();
+  }
 
   it("rests low on touch screens, keeping the hidden list out of reach until the peek is tapped", async () => {
     useTouchScreen(true);
@@ -394,21 +428,78 @@ describe("phone Live routes sheet", () => {
     expect(card.closest("[inert]")).not.toBeNull();
   });
 
-  it("returns from tracking to the raised list with the chosen route", async () => {
+  it("returns from tracking to the raised list even when the route was chosen from the lowered sheet", async () => {
     useTouchScreen(true);
     render(<PassengerWorkspace />); const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Show live routes" }));
-    await user.click(await screen.findByRole("button", { name: "Track QA route" }));
+    expect(await screen.findByRole("button", { name: "Show live routes" })).toBeTruthy();
+    // jsdom ignores inert, which lets this reach the choose-a-route path directly.
+    await user.click(screen.getByRole("button", { name: "Track QA route" }));
     await user.click(await screen.findByRole("button", { name: "Back to home" }));
     const card = await screen.findByRole("button", { name: "Track QA route" });
     expect(card.closest("[inert]")).toBeNull();
     expect(screen.getByRole("button", { name: "Hide live routes" }).getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("never hides the list on pointer devices", async () => {
+  it("ignores a route tap while the sheet is still rising", async () => {
+    useTouchScreen(true);
+    render(<PassengerWorkspace />); const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Show live routes" }));
+    await user.click(screen.getByRole("button", { name: "Track QA route" }));
+    expect(screen.queryByRole("button", { name: "Back to home" })).toBeNull();
+    await act(() => new Promise(resolve => setTimeout(resolve, 500)));
+    await user.click(screen.getByRole("button", { name: "Track QA route" }));
+    expect(await screen.findByRole("button", { name: "Back to home" })).toBeTruthy();
+  });
+
+  it("opens by itself to show an announcement, and the passenger's own choice wins", async () => {
+    useTouchScreen(true);
+    await saveSettings({ announcementActive: true, announcementText: "Route 2 is diverted today" });
+    render(<PassengerWorkspace />); const user = userEvent.setup();
+    const note = await screen.findByText("Route 2 is diverted today");
+    const toggle = screen.getByRole("button", { name: "Hide live routes" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(note.closest("[inert]")).toBeNull();
+    await user.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(note.closest("[inert]")).not.toBeNull();
+  });
+
+  it("opens by itself when no route can be chosen, so the reason shows", async () => {
+    useTouchScreen(true);
+    setScenario("offline");
+    render(<PassengerWorkspace />);
+    const reason = await screen.findByText("No buses running");
+    expect(reason.closest("[inert]")).toBeNull();
+    expect(screen.getByRole("button", { name: "Hide live routes" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("drops the sheet when the heading leaves too little to hide, as with very large text", async () => {
+    useTouchScreen(true);
+    geometry.peek = 560;
+    render(<PassengerWorkspace />);
+    const card = await screen.findByRole("button", { name: "Track QA route" });
+    expect(screen.queryByRole("button", { name: /live routes$/ })).toBeNull();
+    expect(card.closest("[inert]")).toBeNull();
+  });
+
+  it("follows a live switch between touch and pointer input", async () => {
+    useTouchScreen(false);
+    render(<PassengerWorkspace />);
+    const card = await screen.findByRole("button", { name: "Track QA route" });
+    expect(screen.queryByRole("button", { name: "Show live routes" })).toBeNull();
+    await switchTouchScreen(true);
+    expect(screen.getByRole("button", { name: "Show live routes" })).toBeTruthy();
+    expect(card.closest("[inert]")).not.toBeNull();
+    await switchTouchScreen(false);
+    expect(screen.queryByRole("button", { name: "Show live routes" })).toBeNull();
+    expect(card.closest("[inert]")).toBeNull();
+  });
+
+  it("never hides the list or shows a toggle on pointer devices", async () => {
     useTouchScreen(false);
     render(<PassengerWorkspace />);
     const card = await screen.findByRole("button", { name: "Track QA route" });
     expect(card.closest("[inert]")).toBeNull();
+    expect(screen.queryByRole("button", { name: /live routes$/ })).toBeNull();
   });
 });

@@ -280,6 +280,8 @@ const shortScreens = [
 ];
 
 test("edge: landscape phone and tiny heights keep the panel above a painted footer", async ({ browser, baseURL }) => {
+  // Four fresh browser contexts, each raising the phone sheet and opening a route.
+  test.slow();
   for (const { hasTouch, ...size } of shortScreens) {
     const label = `${size.width}x${size.height}${hasTouch ? " touch" : " mouse"}`;
     const context = await browser.newContext({ baseURL, viewport: size, hasTouch });

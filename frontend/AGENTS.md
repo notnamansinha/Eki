@@ -93,6 +93,12 @@ On touch screens the Live routes panel rests as a peek above the tab bar
 (date, title, route count and hint) so the passenger artwork shows in full.
 The whole peek is one button ("Show live routes" / "Hide live routes") that
 raises the list; while lowered the list is inert. Choosing a route leaves the
-sheet raised for Back. In portrait the artwork slides up 30% while the sheet
+sheet raised for Back. Until the passenger toggles it, the sheet opens by
+itself when it has something to say: an admin announcement, or loaded data
+with no route to choose. It is a sheet only while the heading leaves at least
+56px of panel below it; with very large text it stays open with no toggle.
+The peek is measured before first paint and transitions start only after
+that (`data-peek-ready`); the loading shell rests at the same peek. Route taps
+are ignored for the 450ms the sheet takes to rise. In portrait the artwork slides up 30% while the sheet
 is raised, so the band above it frames the passengers and trees rather than
 the ceiling straps. Pointer devices keep the centred panel with no toggle.

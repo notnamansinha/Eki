@@ -439,22 +439,33 @@
 .pp-home-sheet-toggle { display: none; }
 
 @media not all and (any-pointer: fine) {
+  /* The fallback matches the measured peek at default text size, so the
+     loading screen and the first frame rest where the workspace settles. */
   .passenger-layout .passenger-home-panel {
+    --home-peek-fallback: 7.375rem;
     clip-path: inset(-40px 0 0);
+  }
+
+  /* Animate only once the first measurement has painted (data-peek-ready). */
+  .passenger-layout .passenger-home-panel[data-peek-ready] {
     transition: transform 0.45s cubic-bezier(0.32, 0.72, 0, 1), clip-path 0.45s cubic-bezier(0.32, 0.72, 0, 1);
   }
 
+  /* Never lower past the raised position, even if the peek outgrows the panel. */
   .passenger-layout .passenger-home-panel[data-sheet="closed"] {
-    clip-path: inset(-40px 0 calc(100% - var(--home-peek, 9rem)));
-    transform: translateY(calc(100% - var(--home-peek, 9rem)));
+    clip-path: inset(-40px 0 max(0px, calc(100% - var(--home-peek, var(--home-peek-fallback)))));
+    transform: translateY(max(0px, calc(100% - var(--home-peek, var(--home-peek-fallback)))));
   }
+
+  /* Keep the route count and date clear of the chevron. */
+  .passenger-layout .passenger-home-panel:has(> .pp-home-sheet-toggle) .pp-home-heading { padding-right: 1.75rem; }
 
   .pp-home-sheet-toggle {
     position: absolute;
     inset: 0 0 auto;
     z-index: 2;
     display: block;
-    height: var(--home-peek, 9rem);
+    height: min(100%, var(--home-peek, var(--home-peek-fallback)));
     border-radius: var(--pp-panel-radius) var(--pp-panel-radius) 0 0;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
@@ -490,7 +501,7 @@
    band above the sheet shows the passengers and the trees outside, not just
    the ceiling straps. The sheet is opaque, so the vacated bottom never shows. */
 @media (not (any-pointer: fine)) and (orientation: portrait) {
-  .passenger-layout .transit-artwork img { transition: transform 0.45s cubic-bezier(0.32, 0.72, 0, 1); }
+  .passenger-layout:has(.passenger-home-panel[data-peek-ready]) .transit-artwork img { transition: transform 0.45s cubic-bezier(0.32, 0.72, 0, 1); }
   .passenger-layout:has(.passenger-home[data-home-sheet="open"][aria-hidden="false"]) .transit-artwork img { transform: translateY(-30%); }
 }
 
@@ -630,6 +641,13 @@
 .passenger-layout .schedule-detail-header .schedule-back { color: #ffffff; }
 .passenger-layout .schedule-detail-header .schedule-line-badge { background: #ffffff; color: var(--accent); }
 .passenger-layout .passenger-schedules :is(.schedule-list-header, .schedule-detail-header) button:focus-visible { outline-color: #ffffff; }
+/* Headings take focus when a list or timetable opens; keep that ring visible on the band. */
+.passenger-layout .passenger-schedules :is(.schedule-list-header, .schedule-detail-header) :is(h1, h2):focus-visible { outline: 2px solid #ffffff; outline-offset: 2px; }
+
+/* High-contrast mode drops the band colour, so restore the sticky headers' edge. */
+@media (forced-colors: active) {
+  .passenger-layout :is(.schedule-list-header, .schedule-detail-header) { border-bottom: 1px solid CanvasText; }
+}
 
 /* ═══ Profile: Settings-style grouped rows with tinted glyph tiles ═══ */
 .pp-page {
@@ -764,6 +782,11 @@
 .pp-profile-card .pp-profile-email { color: rgb(255 255 255 / 0.86); }
 .pp-profile-card .pp-avatar { background: rgb(255 255 255 / 0.16); color: #ffffff; box-shadow: 0 0 0 2px rgb(255 255 255 / 0.75); }
 .pp-profile-card .pp-role-chip { background: #ffffff; color: var(--accent); }
+/* At large text or page zoom the details wrap below the photo instead of
+   spilling white type past the card onto the light page. */
+.pp-profile-card { flex-wrap: wrap; }
+.pp-profile-card > div:last-child { flex: 1 1 8rem; grid-template-columns: minmax(0, 1fr); }
+.pp-role-chip { max-width: 100%; overflow-wrap: anywhere; }
 .pp-list-icon:not([data-tone]) { background: var(--accent); }
 
 /* Apple's continuous corners: iOS grouped sections round at 10pt and Settings
@@ -1151,7 +1174,7 @@
   .pp-star:hover,
   .pp-list-row:hover .pp-list-chevron { transform: none; }
 
-  .passenger-layout .passenger-home-panel,
-  .passenger-layout .transit-artwork img,
+  .passenger-layout .passenger-home-panel[data-peek-ready],
+  .passenger-layout:has(.passenger-home-panel[data-peek-ready]) .transit-artwork img,
   .pp-home-sheet-chevron { transition: none; }
 }
