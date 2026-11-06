@@ -45,7 +45,7 @@
     "@firebase/rules-unit-testing": "^6.0.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",
-    "@types/node": "26.6.5",
+    "@types/node": "26.6.6",
     "ajv": "^8.20.0",
     "eslint": "^10.13.0",
     "tsx": "^4.23.15",
