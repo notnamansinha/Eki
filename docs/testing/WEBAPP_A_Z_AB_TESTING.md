@@ -443,7 +443,7 @@ expand these rows rather than being silently omitted.
 | OPS08 | Expand each live ride/map marker/Open live details with same names | PARTIAL — Actual fleet expansion and real GNSS details modal opened; duplicate-name/context boundaries pending. |
 | OPS09 | Delay−2/−1/+1/+2 at0/1/1439/1440 and rapid alternating updates | PARTIAL — Actual +1-minute delay acknowledged; full min/max/rapid-update matrix pending. |
 | OPS10 | Delay unknown ack/conflict/session changes during request | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
-| OPS11 | Request boarding code / missing code ack / invalid code length | PARTIAL — Actual active QA boarding-code endpoint returned a code; missing/malformed/expiry boundaries pending. |
+| OPS11 | Request boarding code / missing code ack / invalid code length | PARTIAL — Actual active QA boarding-code endpoint returned a code; missing/malformed/expiry boundaries pending. Retired 2026-11-06: Live Ops no longer requests or shows boarding codes (passengers stopped entering them on 2026-10-25), so these boundaries will not be run. |
 | OPS12 | Open chat then switch session; clear messages at zero/nonzero | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | OPS13 | Clear ack missing/negative/nonfinite or proxy HTML | NOT_RUN — execute the complete current-source oracle and boundary matrix. |
 | OPS14 | End ride early confirm/cancel/Escape and concurrent replacement session | PARTIAL — Actual End early confirmation Cancel and Confirm worked; interrupted session persisted in History. Concurrent replacement and Escape pending. |

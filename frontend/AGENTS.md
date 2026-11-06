@@ -80,3 +80,24 @@ cards, adding the line code and gold rule only when the window is at least
 rail and AU Red terminals. Keep text at 12px or more, touch targets at 44px,
 and pair every colour signal with text or an icon. Show location use in a
 notice before the browser prompt; tracking must work without location.
+
+## Admin Live Ops dark (2026-11-06)
+
+Senior faculty found a light Live Ops panel beside the light Google Map hard to
+read, so the Live Ops panel (`.admin-live-ops`), its tab panel and the admin tab
+bar while Live Ops is active (`data-tone="dark"`) use the original Eki warm
+blacks: `#09090b` panel, `#0f0f12` tab bar, `#16161a` cards and `#ececef`
+text. AU Red stays the button fill (lifted to `#b3262a` on black); use the
+`--accent-text` tint `#f3a4a5` for accent text, rules and focus indicators on
+black, never AU Red itself. The Google Map and its own controls stay light, and
+every other admin tab keeps the AU palette. The overrides are scoped token changes in `src/app/admin/theme.css`;
+keep new Live Ops colours on the shared tokens so they follow the scope.
+
+## Admin continuous corners (2026-11-06)
+
+The admin panel uses Apple's continuous corner curve: inside
+`@supports (corner-shape: superellipse(1.7))`, `src/app/admin/theme.css` scales the
+radius tokens by 1.528665 and applies `corner-shape: superellipse(1.7)` to every
+`rounded-*` element except `rounded-full`. Keep circles and pills on
+`rounded-full`, and use the radius tokens (not arbitrary `rounded-[…]` values) so
+new admin corners pick up the curve.
