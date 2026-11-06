@@ -259,7 +259,7 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, draf
           {/* Comment */}
           <div className="flex flex-col gap-2">
             <label htmlFor={commentId} className="pp-field-label">
-              {busId ? "Comments (optional)" : "What's on your mind?"}
+              {busId ? "Comments (optional)" : "Comments and suggestions"}
             </label>
             <textarea
               id={commentId}
@@ -282,10 +282,9 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, draf
             />
 
             <div className="pp-field-meta">
+              {/* Speaks only for errors and the cooldown; empty otherwise. */}
               <span id={feedbackStatusId} role="status" aria-live="polite" data-tone={error ? "danger" : undefined}>
-                {error || (cooldownRemaining > 0
-                  ? `Wait ${formatCooldown(cooldownRemaining)}`
-                  : "Ready")}
+                {error || (cooldownRemaining > 0 ? `Wait ${formatCooldown(cooldownRemaining)}` : "")}
               </span>
               <span data-tone={wordCount >= FEEDBACK_WORD_LIMIT ? "warning" : undefined}>
                 {wordCount} / {FEEDBACK_WORD_LIMIT} words
