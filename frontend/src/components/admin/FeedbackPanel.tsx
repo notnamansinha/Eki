@@ -17,7 +17,10 @@ import {
   AlertCircle,
   CheckCircle,
   Inbox,
-  Filter,
+  Search,
+  Loader2,
+  Eye,
+  Bus as BusIcon,
 } from "lucide-react";
 import CustomSelect from "@/components/ui/CustomSelect";
 
@@ -57,26 +60,29 @@ function StarDisplay({ rating }: { rating: number | null }) {
       {[1, 2, 3, 4, 5].map((s) => (
         <Star
           key={s}
-          className={`w-4 h-4 ${
+          aria-hidden="true"
+          className={`size-3.5 ${
             s <= rating
-              ? "fill-yellow-400 text-yellow-400"
+              ? "fill-ui-warning text-ui-warning"
               : "fill-transparent text-ui-quiet"
           }`}
         />
       ))}
-      <span className="text-xs font-bold text-yellow-400 ml-1">{rating}/5</span>
+      <span className="text-xs font-bold text-ui-warning ml-1 tabular-nums">{rating}/5</span>
     </div>
   );
 }
 
+/* Same tinted pills and soft leading tiles as the Fleet, History and Live Ops rows. */
+const STATUS_STYLE: Record<FeedbackEntry["status"], { pill: string; tile: string; icon: string }> = {
+  new: { pill: "bg-brand-accent/10 text-brand-accent", tile: "bg-brand-accent/10", icon: "text-brand-accent" },
+  reviewed: { pill: "bg-ui-warning/15 text-ui-warning", tile: "bg-ui-warning/15", icon: "text-ui-warning" },
+  resolved: { pill: "bg-ui-success/15 text-ui-success", tile: "bg-ui-success/15", icon: "text-ui-success" },
+};
+
 function StatusBadge({ status }: { status: FeedbackEntry["status"] }) {
-  const cfg = {
-    new: "bg-brand-accent/20 text-brand-accent border-brand-accent/30",
-    reviewed: "bg-ui-warning/20 text-ui-warning border-ui-warning/30",
-    resolved: "bg-ui-success/20 text-ui-success border-ui-success/30",
-  }[status];
   return (
-    <span className={`px-2 py-0.5 rounded-full border text-xs font-bold uppercase tracking-widest ${cfg}`}>
+    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold uppercase tracking-wider ${STATUS_STYLE[status].pill}`}>
       {status}
     </span>
   );
@@ -94,8 +100,9 @@ function FeedbackCard({
   updating: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const formattedTime = entry.timestamp
-    ? new Date(entry.timestamp.seconds * 1000).toLocaleString("en-IN", {
+  const submittedAt = entry.timestamp ? new Date(entry.timestamp.seconds * 1000) : null;
+  const formattedTime = submittedAt
+    ? submittedAt.toLocaleString("en-IN", {
         day: "2-digit",
         month: "short",
         year: "numeric",
@@ -104,63 +111,62 @@ function FeedbackCard({
         hour12: true,
       })
     : "—";
+  const style = STATUS_STYLE[entry.status];
+  const TypeIcon = entry.type === "ride" ? BusIcon : MessageSquare;
 
   return (
-    <div
-      className={`border-b border-ui-line ${
-        entry.status === "new"
-          ? "bg-brand-accent/[0.04]"
-          : entry.status === "resolved"
-          ? "bg-transparent"
-          : "bg-ui-warning/[0.03]"
+    <article
+      data-status={entry.status}
+      className={`overflow-hidden rounded-2xl border bg-ui-paper ${
+        entry.status === "new" ? "border-brand-accent/40" : "border-ui-line"
       }`}
     >
-      {/* Card Header */}
+      {/* Card header: the whole row toggles, as in History and Fleet. */}
       <button
         type="button"
         aria-expanded={expanded}
         aria-controls={`feedback-details-${entry.id}`}
-        className="flex min-h-20 w-full cursor-pointer select-none items-start gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent"
+        className="flex w-full cursor-pointer select-none items-start gap-3 p-4 text-left transition-colors hover:bg-ui-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent"
         onClick={() => setExpanded((o) => !o)}
       >
-        {/* Main info */}
+        <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${style.tile}`} aria-hidden="true">
+          <TypeIcon className={`size-4 ${style.icon}`} />
+        </span>
+
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <span className="font-semibold text-ui-ink text-sm truncate">{identity.passengerName}</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate text-sm font-semibold text-ui-ink">{identity.passengerName}</span>
             <StatusBadge status={entry.status} />
           </div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ui-quiet">
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ui-muted">
             <StarDisplay rating={entry.rating} />
             <span>{entry.type === "ride" ? "Ride feedback" : "General feedback"}</span>
-            <span>{formattedTime}</span>
+            <time dateTime={submittedAt?.toISOString()} className="tabular-nums">{formattedTime}</time>
             {entry.type === "ride" && (
               <span>{identity.busName || "Vehicle unavailable"}{identity.driverName ? ` · ${identity.driverName}` : ""}</span>
             )}
           </div>
-          {entry.comment && <p className="mt-2 truncate text-xs text-ui-muted">{entry.comment}</p>}
+          {entry.comment && <p className="mt-2 line-clamp-2 text-sm text-ui-ink">{entry.comment}</p>}
         </div>
 
-        {/* Expand chevron */}
-        <div className="mt-1 shrink-0 text-ui-muted">
-          {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-        </div>
+        <span className="mt-1 shrink-0 text-ui-quiet" aria-hidden="true">
+          {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </span>
       </button>
 
-      {/* Expanded body */}
+      {/* Expanded body: tinted like History, details in Live Ops-style tiles. */}
       {expanded && (
-        <div id={`feedback-details-${entry.id}`} className="px-4 pb-4 border-t border-ui-line pt-4 flex flex-col gap-4 animate-slide-up">
-          {/* Comment */}
+        <div id={`feedback-details-${entry.id}`} className="flex flex-col gap-4 border-t border-ui-line bg-ui-soft p-4 animate-slide-up">
           {entry.comment ? (
             <div>
-              <p className="mb-2 text-xs font-semibold text-ui-quiet">Comment</p>
+              <p className="mb-1.5 text-xs font-bold uppercase tracking-widest text-ui-quiet">Comment</p>
               <p className="text-sm text-ui-ink leading-relaxed">{entry.comment}</p>
             </div>
           ) : (
             <p className="text-xs text-ui-quiet italic">No comment provided.</p>
           )}
 
-          {/* Full details grid */}
-          <dl className="grid grid-cols-1 gap-x-5 gap-y-3 border-y border-ui-line py-3 sm:grid-cols-2 lg:grid-cols-4">
+          <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {(() => {
               const bus = linkedDetail(entry.busId, "Bus", identity.busName, entry.type);
               const driver = linkedDetail(entry.driverId, "Driver", identity.driverName, entry.type);
@@ -183,42 +189,49 @@ function FeedbackCard({
             })().map(({ label, value, reference }) => (
               <div
                 key={label}
-                className="min-w-0"
+                className="min-w-0 rounded-xl border border-ui-line bg-ui-paper p-3"
               >
-                <dt className="text-xs font-medium text-ui-quiet">{label}</dt>
-                <dd className="mt-1 truncate text-xs font-semibold text-ui-ink" title={value}>
+                <dt className="text-xs font-bold uppercase tracking-widest text-ui-quiet">{label}</dt>
+                <dd className="mt-1 truncate text-sm font-semibold text-ui-ink" title={value}>
                   {value}
                 </dd>
-                <p className="mt-1 text-xs font-medium text-ui-quiet truncate" title={reference}>
+                <p className="mt-0.5 text-xs text-ui-quiet truncate" title={reference}>
                   {reference}
                 </p>
               </div>
             ))}
           </dl>
 
-          {/* Status action buttons */}
-          <div className="flex items-center gap-2 pt-1">
+          {/* Status actions: secondary and primary admin buttons. */}
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-ui-quiet font-bold uppercase tracking-widest mr-1">
-              Mark as:
+              Mark as
             </span>
-            {(["reviewed", "resolved"] as FeedbackEntry["status"][]).map((s) => (
-              <button
-                key={s}
-                onClick={() => void onStatusChange(entry.id, s)}
-                disabled={entry.status === s || updating}
-                className={`min-h-11 px-3 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                  s === "resolved"
-                    ? "bg-ui-success/20 text-ui-success border-ui-success/30 hover:bg-ui-success/30"
-                    : "bg-ui-warning/20 text-ui-warning border-ui-warning/30 hover:bg-ui-warning/30"
-                }`}
-              >
-                {s}
-              </button>
-            ))}
+            {(["reviewed", "resolved"] as FeedbackEntry["status"][]).map((s) => {
+              const ActionIcon = s === "resolved" ? CheckCircle : Eye;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  // The name stays the lowercase status whatever the visual casing.
+                  aria-label={s}
+                  onClick={() => void onStatusChange(entry.id, s)}
+                  disabled={entry.status === s || updating}
+                  className={`flex min-h-11 items-center gap-2 rounded-xl px-4 text-xs font-bold uppercase tracking-widest transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                    s === "resolved"
+                      ? "bg-brand-accent text-ui-on-accent hover:enabled:bg-ui-accent-hover"
+                      : "border border-ui-line bg-ui-paper text-ui-muted hover:enabled:bg-ui-hover"
+                  }`}
+                >
+                  <ActionIcon className="size-4" aria-hidden="true" />
+                  {s}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -355,8 +368,11 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
         ).toFixed(1)
       : "—";
 
+  const Root = embedded ? "div" : "main";
+
   return (
-    <main className={embedded ? "w-full bg-brand-dark text-ui-ink flex flex-col font-sans" : "min-h-screen bg-brand-dark text-ui-ink flex flex-col font-sans"}>
+    // Embedded in the admin page, which already owns the <main> landmark.
+    <Root className={embedded ? "w-full text-ui-ink flex flex-col font-sans" : "min-h-screen bg-brand-dark text-ui-ink flex flex-col font-sans"}>
       {/* Header */}
       {!embedded && <header className="sticky top-0 z-[100] w-full border-b border-ui-line bg-brand-dark/80 backdrop-blur-md">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-3">
@@ -383,23 +399,30 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
         </div>
       </header>}
 
-      <div className={embedded ? "w-full px-4 sm:px-6 py-6 flex flex-col gap-6" : "max-w-5xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col gap-6"}>
+      <div className={embedded ? "w-full max-w-4xl mx-auto p-4 md:p-6 flex flex-col gap-4 animate-slide-up" : "max-w-5xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col gap-4"}>
+        {embedded && (
+          <div>
+            <h2 className="font-bold text-xl text-ui-ink">Feedback</h2>
+            <p className="text-xs text-ui-quiet mt-0.5">Passenger ratings and comments</p>
+          </div>
+        )}
         {statusError && (
-          <div role="alert" className="rounded-xl border border-ui-danger/30 bg-ui-danger/10 px-4 py-3 text-sm text-ui-danger">
-            {statusError}
+          <div role="alert" className="flex items-start gap-2 rounded-xl border border-ui-danger/30 bg-ui-danger/10 px-3 py-2 text-xs font-semibold text-ui-danger">
+            <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>{statusError}</span>
           </div>
         )}
         {loadError ? (
-          <div className="flex flex-col items-center justify-center py-20 text-ui-danger text-center" role="alert">
-            <AlertCircle className="w-10 h-10 mb-4 opacity-60" />
-            <p className="text-sm font-semibold uppercase tracking-widest">
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-ui-danger/20 bg-ui-danger/5 px-4 py-16 text-center text-ui-danger" role="alert">
+            <AlertCircle className="size-8 mb-3" aria-hidden="true" />
+            <p className="text-sm font-semibold">
               Couldn&apos;t load feedback
             </p>
-            <p className="text-xs mt-1 opacity-70">{loadError}</p>
+            <p className="text-xs mt-1">{loadError}</p>
             <button
               type="button"
               onClick={retryFeedback}
-              className="mt-4 rounded-lg bg-ui-hover px-4 py-2 text-xs font-semibold text-ui-ink"
+              className="mt-4 min-h-11 rounded-lg bg-ui-hover px-4 py-2 text-xs font-semibold text-ui-ink"
             >
               Retry
             </button>
@@ -420,7 +443,7 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
               label: "Avg Rating",
               value: avgRating,
               icon: Star,
-              color: "text-yellow-400",
+              color: "text-ui-warning",
             },
           ].map(({ label, value, icon: Icon, color }) => (
             <div
@@ -433,7 +456,7 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
                   {label}
                 </span>
               </div>
-              <span className={`text-2xl font-bold tracking-tight ${color}`}>
+              <span className={`text-2xl font-bold tracking-tight tabular-nums ${color}`}>
                 {value}
               </span>
             </div>
@@ -443,14 +466,14 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ui-quiet pointer-events-none" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ui-quiet pointer-events-none" aria-hidden="true" />
             <input
               type="text"
               aria-label="Search feedback"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by user, bus, driver, or route…"
-              className="w-full h-11 bg-ui-soft border border-ui-line rounded-xl pl-9 pr-4 text-sm text-ui-ink focus:outline-none focus:border-ui-control transition-colors placeholder:text-ui-quiet font-semibold"
+              className="w-full h-11 bg-ui-paper border border-ui-line rounded-xl pl-10 pr-4 text-sm text-ui-ink transition-colors placeholder:text-ui-quiet font-medium"
             />
           </div>
           <div className="grid grid-cols-2 gap-2 sm:w-[300px]">
@@ -486,34 +509,36 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
                 setFilterType("all");
                 setFilterStatus("all");
               }}
-              className="h-11 rounded-xl border border-ui-line bg-ui-soft px-4 text-xs font-semibold text-ui-muted"
+              className="h-11 rounded-xl border border-ui-line bg-ui-soft px-4 text-xs font-bold uppercase tracking-widest text-ui-muted transition-colors hover:bg-ui-hover"
             >
               Reset
             </button>
           )}
         </div>
 
-        {/* Results count */}
-        <div className="flex items-center gap-2 text-xs text-ui-quiet font-bold uppercase tracking-widest -mb-2">
-          <CheckCircle className="w-3.5 h-3.5" />
-          {loading ? "Loading…" : loadError ? "Couldn't load" : `${filtered.length} of ${total} entries`}
+        {/* Results count: label and count pill, as in Fleet. */}
+        <div className="flex items-center gap-2 text-xs text-ui-quiet font-bold uppercase tracking-widest">
+          <span>Entries</span>
+          <span className="rounded-full bg-ui-hover px-2 py-0.5 text-ui-muted tabular-nums">
+            {loading ? "…" : `${filtered.length} of ${total}`}
+          </span>
         </div>
 
         {/* Feedback list */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 text-ui-quiet">
-            <div className="w-8 h-8 border-2 border-ui-control border-t-ui-control rounded-full animate-spin mb-4" />
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-ui-quiet">
+            <Loader2 className="size-6 animate-spin text-brand-accent" aria-hidden="true" />
             <span className="text-xs font-semibold uppercase tracking-widest">
               Loading feedback…
             </span>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-ui-quiet text-center">
-            <Inbox className="w-10 h-10 mb-4 opacity-30" />
-            <p className="text-sm font-semibold uppercase tracking-widest">
+          <div className="flex flex-col items-center justify-center gap-1 py-16 text-ui-quiet text-center">
+            <Inbox className="size-8 mb-2" aria-hidden="true" />
+            <p className="text-sm font-semibold">
               No feedback found
             </p>
-            <p className="text-xs mt-1 opacity-60">
+            <p className="text-xs">
               Try adjusting your filters
             </p>
           </div>
@@ -537,6 +562,6 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
           </>
         )}
       </div>
-    </main>
+    </Root>
   );
 }
