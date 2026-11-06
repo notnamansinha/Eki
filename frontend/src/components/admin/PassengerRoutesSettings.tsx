@@ -6,13 +6,12 @@ import AlertModal from "@/components/ui/AlertModal";
 import { useRoutes, type RouteData } from "@/hooks/useRoutes";
 import { usePassengerRouteConfig } from "@/hooks/usePassengerRouteConfig";
 import {
-  findPassengerStopTimeProblems,
   passengerStopTimeKey,
   type PassengerStopTimeProblem,
   validatePassengerRouteSchedule,
 } from "@/lib/adminValidation";
 import { errorMessage } from "@/lib/errors";
-import type { PassengerRouteApproval, PassengerRouteConfig } from "@/lib/passengerRouteSchedule";
+import { isValidStopTime, type PassengerRouteApproval, type PassengerRouteConfig } from "@/lib/passengerRouteSchedule";
 import { useUnsavedChanges } from "@/lib/unsavedChanges";
 import { SectionHeader } from "./SettingsSection";
 
@@ -29,6 +28,43 @@ function routeColor(route: RouteData): string {
 
 function stopLabel(stop: { id: string; name?: string; shortName?: string }): string {
   return stop.name || stop.shortName || stop.id;
+}
+
+/** Hours with optional minutes, as typed: "8", "830", "0830", "8:30" or "8.30". */
+const TYPED_STOP_TIME = /^(\d{1,2})(?:[:.]?(\d{2}))?$/;
+
+/**
+ * Tidy a typed stop time into the stored 24-hour "HH:mm": "830", "0830", "8:30"
+ * and "8.30" become "08:30", and "8" becomes "08:00". Text that isn't a time of
+ * day ("25:00", "ab") comes back trimmed but otherwise as typed, so it is flagged
+ * rather than guessed at.
+ */
+function normaliseStopTime(typed: string): string {
+  const text = typed.trim();
+  const match = TYPED_STOP_TIME.exec(text);
+  if (!match) return text;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2] ?? "0");
+  if (hours > 23 || minutes > 59) return text;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function normaliseApprovals(approvals: readonly PassengerRouteApproval[]): PassengerRouteApproval[] {
+  return approvals.map(({ routeId, stopTimes }) => ({
+    routeId,
+    stopTimes: Object.fromEntries(Object.entries(stopTimes).map(([stopId, time]) => [stopId, normaliseStopTime(time)])),
+  }));
+}
+
+/** `passengerStopTimeKey` → the entered text, for every time that isn't "HH:mm". */
+function invalidStopTimes(approvals: readonly PassengerRouteApproval[]): Map<string, string> {
+  const invalid = new Map<string, string>();
+  for (const { routeId, stopTimes } of approvals) {
+    for (const [stopId, time] of Object.entries(stopTimes)) {
+      if (time !== "" && !isValidStopTime(time)) invalid.set(passengerStopTimeKey(routeId, stopId), time);
+    }
+  }
+  return invalid;
 }
 
 /** Keep only approvals for routes that still exist, and times for their current stops. */
@@ -50,11 +86,15 @@ function sanitizeApprovals(
   return result;
 }
 
-/** Order-sensitive for routes, order-insensitive for stop times; blank times count as unset. */
+/**
+ * Order-sensitive for routes, order-insensitive for stop times; times compare as
+ * they will be saved ("0830" matches "08:30") and blank times count as unset.
+ */
 function scheduleKey(approvals: readonly PassengerRouteApproval[]): string {
   return JSON.stringify(approvals.map(approval => [
     approval.routeId,
     Object.entries(approval.stopTimes)
+      .map(([stopId, time]) => [stopId, normaliseStopTime(time)])
       .filter(([, time]) => time !== "")
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
   ]));
@@ -90,8 +130,11 @@ export default function PassengerRoutesSettings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
+  // Text that isn't a time, flagged when the admin leaves the field and shown until they change it.
+  const [flaggedTimes, setFlaggedTimes] = useState<ReadonlyMap<string, string>>(() => new Map());
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectOnMouseUpRef = useRef(false);
   const baseId = useId();
 
   const routesById = useMemo(() => new Map(routes.map(route => [route.id, route])), [routes]);
@@ -116,10 +159,6 @@ export default function PassengerRoutesSettings() {
     };
   }, []);
 
-  const problems: ReadonlyMap<string, PassengerStopTimeProblem> = showErrors
-    ? findPassengerStopTimeProblems({ routes: current }, routes)
-    : new Map();
-
   const edit = (next: PassengerRouteApproval[]) => {
     setSaved(false);
     setDraft(next);
@@ -143,14 +182,33 @@ export default function PassengerRoutesSettings() {
       : approval));
   };
 
+  /** Leaving a time field tidies what was typed into "HH:mm" and flags text that still isn't a time. */
+  const commitStopTime = (routeId: string, stopId: string, typed: string) => {
+    const time = normaliseStopTime(typed);
+    if (time !== typed) setStopTime(routeId, stopId, time);
+    const key = passengerStopTimeKey(routeId, stopId);
+    const invalid = time !== "" && !isValidStopTime(time);
+    setFlaggedTimes(previous => {
+      if (invalid ? previous.get(key) === time : !previous.has(key)) return previous;
+      const next = new Map(previous);
+      if (invalid) next.set(key, time);
+      else next.delete(key);
+      return next;
+    });
+  };
+
   const handleSave = async () => {
-    const validationError = validatePassengerRouteSchedule({ routes: current }, routes);
+    // Tidy a field that is still being typed in, exactly as leaving it would.
+    const schedule = normaliseApprovals(current);
+    if (draft) edit(schedule);
+    const validationError = validatePassengerRouteSchedule({ routes: schedule }, routes);
     if (validationError) {
+      setFlaggedTimes(invalidStopTimes(schedule));
       setShowErrors(true);
       setAlertMessage(validationError);
       return;
     }
-    const payload = buildPayload(current, routesById);
+    const payload = buildPayload(schedule, routesById);
     const configAtSave = config;
     setSaving(true);
     try {
@@ -277,7 +335,11 @@ export default function PassengerRoutesSettings() {
                     const name = stopLabel(stop);
                     const inputId = `${baseId}-time-${idPart(route.id)}-${idPart(stop.id)}`;
                     const errorId = `${inputId}-error`;
-                    const problem = problems.get(passengerStopTimeKey(route.id, stop.id));
+                    const time = approval.stopTimes[stop.id] ?? "";
+                    // Blank times are flagged after a save attempt; other text once it is flagged, until it changes.
+                    const problem: PassengerStopTimeProblem | undefined = time === ""
+                      ? (showErrors ? "missing" : undefined)
+                      : flaggedTimes.get(passengerStopTimeKey(route.id, stop.id)) === time ? "invalid" : undefined;
                     return (
                       <li
                         key={stop.id}
@@ -296,14 +358,28 @@ export default function PassengerRoutesSettings() {
                         <div className="flex flex-col gap-1 pl-9 sm:pl-0 sm:w-40 sm:shrink-0">
                           <input
                             id={inputId}
-                            type="time"
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            placeholder="HH:MM"
+                            maxLength={5}
                             disabled={saving}
-                            value={approval.stopTimes[stop.id] ?? ""}
+                            value={time}
                             onChange={event => setStopTime(route.id, stop.id, event.target.value)}
+                            onBlur={event => commitStopTime(route.id, stop.id, event.currentTarget.value)}
+                            // Clicking in selects the whole time so typing replaces it; WebKit
+                            // would otherwise drop the selection on that click's mouseup.
+                            onMouseDown={event => { selectOnMouseUpRef.current = document.activeElement !== event.currentTarget; }}
+                            onFocus={event => event.currentTarget.select()}
+                            onMouseUp={event => {
+                              if (!selectOnMouseUpRef.current) return;
+                              selectOnMouseUpRef.current = false;
+                              event.preventDefault();
+                            }}
                             aria-label={`Time for ${name} on ${routeName}`}
                             aria-invalid={problem ? true : undefined}
                             aria-describedby={problem ? errorId : undefined}
-                            className="input-rc h-11 [color-scheme:dark]"
+                            className="input-rc h-11"
                             style={problem ? { borderColor: INVALID_BORDER } : undefined}
                           />
                           {problem && (
