@@ -1,0 +1,992 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PASSENGER PANEL — Ahmedabad University brand
+   Tokens follow AU_RULES_AND_BRAND_GUIDELINES.md, Part 6: AU Red for actions,
+   Dark Grey for text, Off-white pages and Gold for decoration only, with
+   4.5:1 text contrast, 3:1 control edges, 12px minimum text and 44px touch
+   targets. Scoped with :has() so the admin console and landing page keep
+   their own theme, while portalled dialogs (feedback, confirm) still inherit
+   these values from the root.
+
+   Phones use iOS-style grouped lists, sheets and a translucent tab bar;
+   pointer devices keep the approved centred Live Routes panel with paper
+   cards; the Routes tab reads like a metro line diagram on every device.
+   Unlayered rules here outrank Tailwind utilities on the same element.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root:has(.passenger-layout) {
+  color-scheme: light;
+
+  /* Surfaces */
+  --surface-0: #f2efec;
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --surface-3: #f8f6f3;
+  --surface-4: #ece8e3;
+
+  /* Brand */
+  --accent: #801214;
+  --accent-hover: #6a0f11;
+  --accent-subtle: #f7e9e9;
+  --accent-glow: rgba(128, 18, 20, 0.18);
+  --accent-contrast: #ffffff;
+  --decor-gold: #ae9562;
+  --announcement-bg: #f4eee2;
+
+  /* Text — no lighter text colour exists */
+  --text-primary: #434747;
+  --text-secondary: #5c6060;
+  --text-tertiary: #626666;
+  --text-ghost: #626666;
+
+  /* Borders */
+  --border-subtle: #e2ddd6;
+  --border-default: #858789;
+  --border-hover: #5c6060;
+  --hairline: rgb(67 71 71 / 0.18);
+
+  /* Status: outside the brand palette, pending Communications sign-off */
+  --status-live: #256b42;
+  --status-live-bg: #e6f2ea;
+  --status-warning: #8c5a0b;
+  --status-warning-bg: #fbf0df;
+  --status-danger: #b42318;
+  --status-danger-bg: #fbe9e7;
+
+  /* Map */
+  --route-color: #801214;
+  --route-passed: #939598;
+
+  --font-ui: var(--font-roboto, "Roboto"), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-heading: var(--font-playfair, "Playfair Display"), Georgia, "Times New Roman", serif;
+
+  /* Surface hooks */
+  --pp-page: #f2efec;
+  --pp-art-scrim: linear-gradient(180deg, rgb(0 0 0 / 0) 45%, rgb(0 0 0 / 0.18) 100%);
+  --pp-panel-bg: #f2efec;
+  --pp-panel-border: 0;
+  --pp-panel-radius: 22px;
+  --pp-panel-shadow: 0 -1px 0 rgb(255 255 255 / 0.6), 0 -16px 40px -20px rgb(0 0 0 / 0.45);
+  --pp-heading-align: left;
+  --pp-title-size: 2.125rem;
+  --pp-card-bg: #ffffff;
+  --pp-card-border: 0;
+  --pp-card-radius: 12px;
+  --pp-card-shadow: none;
+  --pp-card-shadow-hover: none;
+  --pp-group-radius: 12px;
+  --pp-route-font: var(--font-ui);
+  --pp-route-weight: 500;
+  --pp-route-size: 1.0625rem;
+  --pp-nav-bg: rgb(249 248 246 / 0.94);
+  --pp-nav-border: 0.5px solid rgb(67 71 71 / 0.3);
+  --pp-nav-shadow: none;
+  --pp-nav-filter: blur(20px) saturate(180%);
+  --pp-nav-fg: #5c6060;
+  --pp-nav-active-fg: #801214;
+  --pp-float-bg: rgb(255 255 255 / 0.92);
+  --pp-float-border: 0.5px solid rgb(67 71 71 / 0.18);
+  --pp-float-shadow: 0 8px 24px -12px rgb(0 0 0 / 0.3);
+  --pp-float-radius: 14px;
+  --pp-float-filter: blur(20px) saturate(180%);
+  --pp-tracking-scrim: linear-gradient(180deg, rgb(242 239 236 / 0.9), rgb(242 239 236 / 0));
+  --pp-sheet-bg: rgb(249 248 246 / 0.96);
+  --pp-sheet-filter: blur(20px) saturate(180%);
+  --pp-sheet-radius: 14px;
+  --pp-dialog-bg: #f2efec;
+  --pp-dialog-radius: 14px;
+  --pp-dialog-shadow: 0 -10px 40px -10px rgb(0 0 0 / 0.35);
+  --pp-scrim: rgb(0 0 0 / 0.32);
+  --pp-input-bg: #ffffff;
+  --pp-button-radius: 12px;
+}
+
+/* Pointer devices: the approved centred panel with paper route cards. */
+@media (any-pointer: fine) {
+  :root:has(.passenger-layout) {
+    --pp-panel-bg: #ffffff;
+    --pp-panel-border: 1px solid #e2ddd6;
+    --pp-panel-radius: 24px;
+    --pp-panel-shadow: 0 1px 2px rgb(67 71 71 / 0.06), 0 32px 64px -32px rgb(67 71 71 / 0.5);
+    --pp-title-size: 2rem;
+    --pp-card-border: 1px solid #e2ddd6;
+    --pp-card-radius: 14px;
+    --pp-card-shadow: 0 1px 0 rgb(67 71 71 / 0.04);
+    --pp-card-shadow-hover: 0 14px 28px -18px rgb(67 71 71 / 0.45);
+    --pp-route-font: var(--font-heading);
+    --pp-route-weight: 600;
+    --pp-route-size: 1.375rem;
+    --pp-dialog-bg: #ffffff;
+    --pp-dialog-radius: 20px;
+    --pp-dialog-shadow: 0 40px 80px -32px rgb(67 71 71 / 0.6);
+    --pp-scrim: rgb(67 71 71 / 0.4);
+  }
+}
+
+:root:has(.passenger-layout) body {
+  background: var(--pp-page);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  letter-spacing: normal;
+}
+
+.passenger-layout {
+  background: var(--pp-page);
+}
+
+.pp-workspace {
+  color: var(--text-primary);
+}
+
+.passenger-layout .transit-artwork {
+  background: var(--pp-page);
+}
+
+.passenger-layout .transit-artwork-shade {
+  background: var(--pp-art-scrim);
+}
+
+/* ═══ Status banners above the workspace ═══ */
+.pp-alerts {
+  background: var(--pp-page);
+}
+
+.pp-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.pp-banner > svg { margin-top: 0.125rem; flex: none; }
+.pp-banner[data-tone="warning"] { background: var(--status-warning-bg); border-color: color-mix(in oklab, var(--status-warning) 30%, transparent); }
+.pp-banner[data-tone="warning"] > svg { color: var(--status-warning); }
+.pp-banner[data-tone="danger"] { background: var(--status-danger-bg); border-color: color-mix(in oklab, var(--status-danger) 30%, transparent); }
+.pp-banner[data-tone="danger"] > svg { color: var(--status-danger); }
+.pp-banner-title { font-weight: 500; }
+.pp-banner-detail { margin-top: 0.125rem; color: var(--text-secondary); }
+
+/* ═══ Buttons ═══ */
+.pp-btn-primary,
+.pp-btn-secondary {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding-inline: 1.125rem;
+  border-radius: var(--pp-button-radius);
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.2;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.pp-btn-primary { background: var(--accent); color: var(--accent-contrast); }
+.pp-btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.pp-btn-secondary { border: 1px solid var(--text-primary); background: var(--surface-1); color: var(--text-primary); }
+.pp-btn-secondary:hover:not(:disabled) { background: var(--surface-3); }
+:is(.pp-btn-primary, .pp-btn-secondary):active:not(:disabled) { transform: scale(0.98); }
+:is(.pp-btn-primary, .pp-btn-secondary):disabled { border-color: transparent; background: var(--surface-4); color: var(--text-tertiary); cursor: not-allowed; }
+
+/* RoleGuard's shared screens inside the passenger layout. */
+.passenger-layout .btn-primary { border-color: var(--accent); background: var(--accent); color: var(--accent-contrast); }
+.passenger-layout .btn-primary:hover { background: var(--accent-hover); box-shadow: none; }
+
+/* ═══ Home: Live Routes panel ═══ */
+.passenger-layout .passenger-home-panel {
+  border: var(--pp-panel-border);
+  border-radius: var(--pp-panel-radius);
+  background: var(--pp-panel-bg);
+  box-shadow: var(--pp-panel-shadow);
+}
+
+.pp-home-heading { text-align: var(--pp-heading-align); }
+
+.pp-kicker {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.pp-title {
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  font-size: var(--pp-title-size);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+}
+
+.pp-subtitle {
+  margin-top: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+/* Gold is decorative only; shown where the desktop panel has room for it. */
+.pp-rule {
+  display: none;
+  width: 2.5rem;
+  height: 2px;
+  margin: 0.875rem 0 0;
+  border: 0;
+  background: var(--decor-gold);
+}
+
+.pp-announcement {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin: 0 0.25rem 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--pp-card-radius);
+  background: var(--pp-card-bg);
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.pp-announcement > svg {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.pp-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  margin-inline: 0.25rem;
+  padding: 1.75rem 1.25rem;
+  border-radius: var(--pp-card-radius);
+  background: var(--pp-card-bg);
+  text-align: center;
+}
+
+.pp-empty .pp-announcement { width: 100%; margin: 0 0 0.75rem; padding: 0; text-align: left; }
+.pp-empty-title { color: var(--text-primary); font-size: 1rem; font-weight: 500; }
+.pp-empty-detail { color: var(--text-secondary); font-size: 0.875rem; }
+
+/* ═══ Live route cards ═══ */
+.passenger-layout [data-passenger-route] { border-radius: var(--pp-card-radius); }
+
+.passenger-layout .passenger-live-route-card {
+  border: var(--pp-card-border);
+  border-radius: var(--pp-card-radius);
+  background: var(--pp-card-bg);
+  box-shadow: var(--pp-card-shadow);
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.passenger-layout [data-passenger-route]:hover .passenger-live-route-card { box-shadow: var(--pp-card-shadow-hover); }
+
+/* The line code shows on roomy desktop cards only. */
+.pp-route-code {
+  display: none;
+  align-self: flex-start;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+.pp-route-name {
+  color: var(--text-primary);
+  font-family: var(--pp-route-font);
+  font-size: var(--pp-route-size);
+  font-weight: var(--pp-route-weight);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.pp-route-endpoints {
+  margin-top: 0.25rem;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.pp-route-endpoints .pp-arrow { margin-inline: 0.25rem; color: var(--accent); }
+
+.pp-route-meta-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.375rem;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.pp-route-meta-text > span { white-space: nowrap; }
+
+.pp-route-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--accent);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.pp-cta-icon { display: grid; place-items: center; transition: background-color 0.2s ease, color 0.2s ease; }
+
+.pp-selected-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  padding: 0.125rem 0.5rem 0.125rem 0.375rem;
+  border-radius: 999px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* Phones: Live Routes is a sheet resting on the tab bar, and the routes form
+   one inset grouped list with hairline separators. */
+@media not all and (any-pointer: fine) {
+  .passenger-layout .passenger-home {
+    --passenger-home-panel-bottom: calc(var(--passenger-nav-height) + var(--safe-area-bottom));
+  }
+
+  .passenger-layout .passenger-home-panel {
+    margin-inline: 0;
+    padding-top: 1.25rem;
+    border-radius: var(--pp-panel-radius) var(--pp-panel-radius) 0 0;
+  }
+
+  .passenger-layout .passenger-home-panel::before {
+    position: absolute;
+    top: 0.5rem;
+    left: 50%;
+    width: 2.25rem;
+    height: 5px;
+    border-radius: 3px;
+    background: #c9c3bb;
+    content: "";
+    transform: translateX(-50%);
+  }
+
+  .passenger-layout .pp-home-heading { margin-inline: 1.25rem; padding-bottom: 0.75rem; }
+
+  .passenger-layout .passenger-live-route-list {
+    gap: 0;
+    overflow: hidden;
+    border-radius: var(--pp-group-radius);
+    background: var(--pp-card-bg);
+  }
+
+  .passenger-layout [data-passenger-route] { position: relative; border-radius: 0; }
+
+  .passenger-layout [data-passenger-route] + [data-passenger-route]::before {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 1rem;
+    z-index: 1;
+    height: 1px;
+    background: var(--hairline);
+    content: "";
+    transform: scaleY(0.5);
+    transform-origin: top;
+  }
+
+  .passenger-layout .passenger-live-route-card { min-height: 0; padding: 0.75rem 1rem; border-radius: 0; background: transparent; }
+  .passenger-layout [data-passenger-route]:hover .passenger-live-route-card { background: var(--surface-3); }
+  .passenger-layout [data-passenger-route]:active .passenger-live-route-card { background: var(--surface-4); }
+  .passenger-layout .passenger-live-route-card-content { padding-left: 0; }
+  .passenger-layout .passenger-live-route-details { margin-top: 0.5rem; }
+}
+
+/* Short landscape phones keep main's compact heading. */
+@media (max-height: 480px) and (not (any-pointer: fine)) {
+  .passenger-layout .passenger-home-panel { padding-top: 1rem; }
+  .passenger-layout .pp-home-heading { padding-bottom: 0.5rem; }
+}
+
+/* Pointer devices: paper cards with the line code and a circled arrow. */
+@media (any-pointer: fine) {
+  .passenger-layout [data-passenger-route]:active .passenger-live-route-card { transform: scale(0.985); }
+  .passenger-layout .passenger-live-route-card[data-selected="true"] { box-shadow: inset 3px 0 0 var(--accent), var(--pp-card-shadow); }
+
+  .pp-cta-icon {
+    width: 24px;
+    height: 24px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+  }
+
+  .pp-cta-icon svg { width: 14px; height: 14px; }
+  .passenger-layout [data-passenger-route]:hover .pp-cta-icon { border-color: var(--accent); background: var(--accent); color: var(--accent-contrast); }
+  .pp-announcement { border: 1px solid var(--border-subtle); }
+  .pp-empty { border: 1px dashed var(--border-subtle); }
+}
+
+/* Tall enough windows add the line code and the gold rule; a 1280x585 window
+   still shows four routes. */
+@media (any-pointer: fine) and (min-height: 44rem) {
+  .pp-route-code { display: inline-flex; }
+  .pp-rule { display: block; }
+}
+
+@media (any-pointer: fine) and (max-height: 40rem) {
+  .pp-kicker { display: none; }
+}
+
+/* ═══ Bottom navigation: one translucent tab bar, AU Red as the tint ═══
+   :root:has() outranks the Routes-tab rules in globals.css whatever the load order. */
+:root:has(.passenger-layout) .passenger-nav-frame {
+  border-top: var(--pp-nav-border);
+  background: var(--pp-nav-bg);
+  box-shadow: var(--pp-nav-shadow);
+  -webkit-backdrop-filter: var(--pp-nav-filter);
+  backdrop-filter: var(--pp-nav-filter);
+}
+
+:root:has(.passenger-layout) .passenger-section-button {
+  border-radius: 16px;
+  color: var(--pp-nav-fg);
+  font-family: var(--font-ui);
+  font-weight: 500;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+:root:has(.passenger-layout) .passenger-section-button:hover,
+:root:has(.passenger-layout) .passenger-section-button[aria-current="page"] { color: var(--pp-nav-active-fg); }
+:root:has(.passenger-layout) .passenger-section-button[aria-current="page"] { font-weight: 700; }
+:root:has(.passenger-layout) .passenger-section-button[aria-current="page"]::after { display: none; }
+:root:has(.passenger-layout) .passenger-section-button:focus-visible,
+.passenger-layout .passenger-schedules :is(button, input, section):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* The floating desktop dock keeps its approved geometry with a full hairline edge. */
+@media (any-pointer: fine) {
+  :root:has(.passenger-layout) .passenger-nav-frame {
+    border: var(--pp-nav-border);
+    box-shadow: 0 12px 32px -16px rgb(0 0 0 / 0.35);
+  }
+
+  /* The Routes tab docks the bar to the bottom edge, or the top from 64rem. */
+  :root:has(.passenger-layout) [data-passenger-section="routes"] .passenger-nav-frame { border-width: 0.5px 0 0; box-shadow: none; }
+}
+
+@media (min-width: 64rem) and (any-pointer: fine) {
+  :root:has(.passenger-layout) [data-passenger-section="routes"] .passenger-nav-frame {
+    border-width: 0 0 0.5px;
+    background: var(--surface-1);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ═══ Routes tab: published schedules as a line diagram ═══ */
+.passenger-layout {
+  --schedule-canvas: var(--pp-page);
+  --schedule-page: var(--pp-page);
+  --schedule-surface: var(--surface-1);
+  --schedule-raised: var(--surface-3);
+  --schedule-border: #434747;
+  --schedule-badge-border: var(--accent);
+  --schedule-control-border: var(--border-default);
+  --schedule-muted: var(--text-secondary);
+}
+
+.passenger-layout .passenger-schedules {
+  --transit-paper: var(--text-primary);
+  font-family: var(--font-ui);
+}
+
+.passenger-layout .schedule-list-header h1,
+.passenger-layout .schedule-detail-header h2 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.passenger-layout .schedule-list-header h1 { font-size: 1.875rem; }
+.passenger-layout .schedule-list-header { border-bottom-width: 2px; }
+.passenger-layout .schedule-search { border-radius: 10px; background: var(--pp-input-bg); transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+/* One focus ring on the search box instead of a second one on the input inside it. */
+.passenger-layout .schedule-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.passenger-layout .passenger-schedules .schedule-search input:focus-visible { outline: none; }
+.passenger-layout .schedule-route-row:hover { background: var(--surface-3); }
+.passenger-layout .schedule-route-row svg:last-child { color: var(--text-tertiary); }
+.passenger-layout .schedule-line-badge { border: 0; border-radius: 4px; background: var(--accent); color: var(--accent-contrast); font-size: 0.75rem; }
+.passenger-layout .schedule-back { color: var(--accent); }
+.passenger-layout .schedule-summary,
+.passenger-layout .schedule-stop-copy { border-color: var(--border-subtle); }
+.passenger-layout .schedule-stop-rail::before { left: 10px; width: 4px; background: #434747; }
+.passenger-layout .schedule-stop-rail::after { border: 3px solid #434747; background: #ffffff; }
+.passenger-layout .schedule-stop:is(:first-child, :last-child) .schedule-stop-rail::after { border-color: var(--accent); background: var(--accent); }
+
+@media (min-width: 64rem) and (any-pointer: fine) {
+  .passenger-layout .schedule-route-row[data-selected="true"] { box-shadow: inset 3px 0 var(--accent); }
+  .passenger-layout .schedule-list { border-right-width: 1px; }
+}
+
+/* ═══ Profile: Settings-style grouped rows with tinted glyph tiles ═══ */
+.pp-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--safe-area-top) 1.25rem 0;
+  background: var(--pp-page);
+}
+
+.pp-page-inner {
+  display: flex;
+  width: 100%;
+  max-width: 32rem;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-inline: auto;
+  padding-top: 2rem;
+  padding-bottom: calc(var(--passenger-nav-height, 81px) + 3rem + var(--safe-area-bottom));
+}
+
+.pp-page-title { text-align: left; }
+
+.pp-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: var(--pp-group-radius);
+  background: #ffffff;
+}
+
+.pp-profile-card > div:last-child { display: grid; min-width: 0; justify-items: start; gap: 0.25rem; }
+
+.pp-avatar {
+  display: grid;
+  width: 3.75rem;
+  height: 3.75rem;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--surface-4);
+  color: var(--text-tertiary);
+}
+
+.pp-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.pp-profile-name { color: var(--text-primary); font-size: 1.25rem; font-weight: 500; line-height: 1.25; overflow-wrap: anywhere; }
+.pp-profile-email { color: var(--text-secondary); font-size: 0.875rem; overflow-wrap: anywhere; }
+
+.pp-role-chip {
+  padding: 0.125rem 0.625rem;
+  border-radius: 999px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.pp-list {
+  overflow: hidden;
+  border-radius: var(--pp-group-radius);
+  background: #ffffff;
+}
+
+.pp-list-row {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 3.25rem;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.5rem 1rem;
+  color: var(--text-primary);
+  font-size: 1rem;
+  text-align: left;
+  transition: background-color 0.15s ease;
+}
+
+.pp-list > * + *::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 3.75rem;
+  height: 1px;
+  background: var(--hairline);
+  content: "";
+  transform: scaleY(0.5);
+  transform-origin: top;
+}
+
+.pp-list-row:hover { background: var(--surface-3); }
+.pp-list-row:focus-visible { outline-offset: -3px; }
+.pp-list-row:disabled { cursor: not-allowed; opacity: 0.7; }
+
+.pp-list-icon {
+  display: grid;
+  width: 1.875rem;
+  height: 1.875rem;
+  flex: none;
+  place-items: center;
+  border-radius: 8px;
+  background: #5c6060;
+  color: #ffffff;
+}
+
+.pp-list-icon[data-tone="accent"] { background: var(--accent); }
+.pp-list-icon[data-tone="danger"] { background: var(--status-danger); }
+.pp-list-label { flex: 1; min-width: 0; }
+.pp-list-row[data-tone="danger"] .pp-list-label { color: var(--status-danger); }
+.pp-list-row[data-tone="accent"] .pp-list-label { color: var(--accent); }
+.pp-list-chevron { flex: none; color: var(--text-tertiary); transition: transform 0.15s ease; }
+.pp-list-row:hover .pp-list-chevron { transform: translateX(2px); }
+
+.pp-footnote { color: var(--text-secondary); font-size: 0.75rem; text-align: center; }
+.pp-footnote-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25rem 1rem; }
+.pp-footnote-links a { display: inline-flex; min-height: 44px; align-items: center; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ═══ Tracking overlay ═══ */
+.pp-tracking-scrim { background: var(--pp-tracking-scrim); }
+
+.pp-icon-button,
+.pp-map-button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  border: var(--pp-float-border);
+  background: var(--pp-float-bg);
+  box-shadow: var(--pp-float-shadow);
+  color: var(--text-primary);
+  -webkit-backdrop-filter: var(--pp-float-filter);
+  backdrop-filter: var(--pp-float-filter);
+  transition: background-color 0.15s ease, transform 0.1s ease, color 0.15s ease;
+}
+
+.pp-icon-button { position: relative; width: 44px; height: 44px; border-radius: 50%; }
+.pp-map-button { width: 48px; height: 48px; border-radius: 14px; }
+:is(.pp-icon-button, .pp-map-button):hover:not(:disabled) { background: var(--surface-3); }
+:is(.pp-icon-button, .pp-map-button):active:not(:disabled) { transform: scale(0.94); }
+.pp-map-button[data-active="true"] { border-color: color-mix(in oklab, var(--accent) 40%, transparent); background: var(--accent-subtle); color: var(--accent); }
+.pp-map-button:disabled { color: var(--text-tertiary); cursor: not-allowed; opacity: 0.6; }
+
+.pp-unread {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  padding-inline: 0.25rem;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface-1);
+  color: var(--accent-contrast);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.pp-float-card {
+  border: var(--pp-float-border);
+  border-radius: var(--pp-float-radius);
+  background: var(--pp-float-bg);
+  box-shadow: var(--pp-float-shadow);
+  -webkit-backdrop-filter: var(--pp-float-filter);
+  backdrop-filter: var(--pp-float-filter);
+}
+
+.pp-status-title { color: var(--accent); font-size: 0.8125rem; font-weight: 500; }
+.pp-status-title[data-tone="warning"] { color: var(--status-warning); }
+.pp-status-title[data-tone="danger"] { color: var(--status-danger); }
+.pp-status-title[data-tone="live"] { color: var(--status-live); }
+.pp-status-detail { margin-top: 0.25rem; color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.45; }
+.pp-status-detail[data-tone="danger"] { color: var(--status-danger); }
+.pp-tracking-route { color: var(--text-primary); font-family: var(--font-heading); font-size: 1.125rem; font-weight: 600; line-height: 1.25; }
+
+.pp-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.625rem 0.875rem;
+  border: var(--pp-float-border);
+  border-radius: var(--pp-float-radius);
+  background: var(--pp-float-bg);
+  box-shadow: var(--pp-float-shadow);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  -webkit-backdrop-filter: var(--pp-float-filter);
+  backdrop-filter: var(--pp-float-filter);
+}
+
+.pp-notice > svg { flex: none; margin-top: 0.125rem; color: var(--text-secondary); }
+.pp-notice[data-tone="warning"] { border-color: color-mix(in oklab, var(--status-warning) 35%, transparent); }
+.pp-notice[data-tone="warning"] > svg,
+.pp-notice[data-tone="warning"] .pp-notice-title { color: var(--status-warning); }
+.pp-notice[data-tone="danger"] { border-color: color-mix(in oklab, var(--status-danger) 35%, transparent); }
+.pp-notice[data-tone="danger"] > svg,
+.pp-notice[data-tone="danger"] .pp-notice-title { color: var(--status-danger); }
+.pp-notice-title { display: block; font-weight: 500; }
+.pp-notice-detail { display: block; color: var(--text-secondary); }
+.pp-notice-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.625rem; pointer-events: auto; }
+.pp-notice-actions :is(.pp-btn-primary, .pp-btn-secondary) { padding-inline: 0.875rem; font-size: 0.875rem; }
+
+/* Map stop markers: upcoming in AU Red, the stop the bus is at in live green, passed in grey. */
+.pp-stop-dot { position: relative; border-color: #fff; background: var(--accent); color: var(--accent-contrast); }
+.pp-stop-dot[data-state="here"] { background: var(--status-live); }
+.pp-stop-dot[data-state="passed"] { background: var(--text-tertiary); }
+/* A tick, so passed stops are not marked by grey alone; the button's name says "passed". */
+.pp-stop-dot[data-state="passed"]::after {
+  content: "\2713";
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--text-tertiary);
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.pp-stop-label {
+  position: absolute;
+  top: 2.5rem;
+  max-width: 10rem;
+  overflow: hidden;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 6px 16px -8px rgb(67 71 71 / 0.5);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ═══ Route ended overlay ═══ */
+.pp-ended { background: color-mix(in oklab, var(--pp-page) 94%, transparent); }
+.pp-ended-icon { display: grid; width: 4rem; height: 4rem; place-items: center; margin-bottom: 1.25rem; border-radius: 18px; background: var(--accent-subtle); color: var(--accent); }
+.pp-ended-title { color: var(--text-primary); font-family: var(--font-heading); font-size: 1.75rem; font-weight: 700; line-height: 1.15; }
+
+.pp-ended-wait {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 12px;
+  background: var(--status-live-bg);
+  color: var(--status-live);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* ═══ Route timeline sheet ═══ */
+.pp-sheet-backdrop { background: var(--pp-scrim); }
+
+.pp-sheet {
+  border-top: var(--pp-float-border);
+  border-radius: var(--pp-sheet-radius) var(--pp-sheet-radius) 0 0;
+  background: var(--pp-sheet-bg);
+  box-shadow: 0 -16px 40px -20px rgb(67 71 71 / 0.45);
+  -webkit-backdrop-filter: var(--pp-sheet-filter);
+  backdrop-filter: var(--pp-sheet-filter);
+}
+
+.pp-grabber { background: #c9c3bb; }
+.pp-sheet-title { color: var(--text-primary); font-size: 0.875rem; font-weight: 500; }
+.pp-sheet-footer { border-top: 1px solid var(--border-subtle); background: var(--surface-3); }
+
+.pp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 6px;
+  background: var(--surface-4);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.pp-chip[data-tone="accent"] { background: var(--accent-subtle); color: var(--accent); }
+.pp-chip[data-tone="live"] { background: var(--status-live-bg); color: var(--status-live); }
+
+.pp-stop-row[data-current="true"] {
+  margin-left: -10px;
+  padding-left: 8px;
+  border-left: 2px solid var(--status-live);
+  border-radius: 8px;
+  background: var(--status-live-bg);
+}
+
+.pp-stop-kicker { display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.25rem; font-size: 0.75rem; font-weight: 500; }
+.pp-stop-kicker[data-tone="live"] { color: var(--status-live); }
+.pp-stop-kicker[data-tone="muted"] { color: var(--text-tertiary); }
+.pp-eta { color: var(--text-primary); font-size: 1.125rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pp-eta[data-soon="true"] { color: var(--status-live); }
+.pp-eta-unit { color: var(--text-secondary); font-size: 0.75rem; font-weight: 500; }
+
+/* ═══ Feedback dialog: a bottom sheet with a grabber on phones ═══ */
+.pp-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: var(--pp-scrim);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.pp-dialog {
+  position: relative;
+  display: flex;
+  width: 100%;
+  max-height: 100%;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--pp-dialog-radius) var(--pp-dialog-radius) 0 0;
+  background: var(--pp-dialog-bg);
+  box-shadow: var(--pp-dialog-shadow);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+}
+
+.pp-dialog::before {
+  position: absolute;
+  top: 0.4375rem;
+  left: 50%;
+  width: 2.25rem;
+  height: 5px;
+  border-radius: 3px;
+  background: #c9c3bb;
+  content: "";
+  transform: translateX(-50%);
+}
+
+@media (min-width: 40rem) {
+  .pp-dialog-backdrop { align-items: center; padding: 1rem; }
+  .pp-dialog { max-width: 28rem; border-radius: var(--pp-dialog-radius); }
+  .pp-dialog::before { display: none; }
+}
+
+.pp-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.5rem 1.25rem 0.75rem 1.5rem; }
+.pp-dialog-icon { display: grid; width: 2.5rem; height: 2.5rem; flex: none; place-items: center; border-radius: 10px; background: var(--accent); color: var(--accent-contrast); }
+.pp-dialog-title { font-size: 1.0625rem; font-weight: 500; line-height: 1.25; }
+.pp-dialog-subtitle { margin-top: 0.125rem; color: var(--text-secondary); font-size: 0.875rem; }
+
+.pp-close {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--text-secondary);
+}
+
+.pp-close svg { width: 30px; height: 30px; padding: 7px; border-radius: 50%; background: #e3dfda; color: #5c6060; transition: background-color 0.15s ease; }
+.pp-close:hover:not(:disabled) svg { background: #d6d1ca; color: var(--text-primary); }
+.pp-dialog-body { display: flex; flex-direction: column; gap: 1.25rem; padding: 0.75rem 1.5rem calc(1.5rem + var(--safe-area-bottom)); }
+@media (min-width: 40rem) { .pp-dialog-body { padding-bottom: 1.5rem; } }
+.pp-field-label { color: var(--text-primary); font-size: 0.9375rem; font-weight: 500; }
+
+.pp-textarea {
+  width: 100%;
+  min-height: 8rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--pp-input-bg);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 1rem;
+  line-height: 1.5;
+  resize: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pp-textarea::placeholder { color: var(--text-tertiary); }
+.pp-textarea:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-glow); }
+.pp-textarea[aria-invalid="true"] { border-color: var(--status-danger); }
+.pp-field-meta { display: flex; justify-content: space-between; gap: 0.75rem; color: var(--text-secondary); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.pp-field-meta [data-tone="danger"] { color: var(--status-danger); }
+.pp-field-meta [data-tone="warning"] { color: var(--status-warning); }
+.pp-dialog-body .pp-btn-primary { min-height: 50px; font-size: 1.0625rem; }
+
+.pp-stars { display: flex; justify-content: center; gap: 0.25rem; }
+.pp-star { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 12px; transition: transform 0.15s ease; }
+.pp-star:hover { transform: scale(1.06); }
+.pp-star svg { width: 2rem; height: 2rem; color: var(--border-default); fill: transparent; transition: color 0.15s ease, fill 0.15s ease; }
+.pp-star[data-on="true"] svg { color: var(--accent); fill: var(--accent); }
+.pp-rating-label { color: var(--text-secondary); font-size: 0.875rem; text-align: center; }
+
+.pp-success { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; padding: 2.25rem 1.75rem calc(2.25rem + var(--safe-area-bottom)); text-align: center; }
+.pp-success-icon { display: grid; width: 4rem; height: 4rem; place-items: center; border-radius: 50%; background: var(--surface-4); color: var(--text-primary); }
+.pp-success .pp-dialog-title { font-family: var(--font-heading); font-size: 1.5rem; font-weight: 600; }
+
+/* ═══ Shared confirm dialog: Tailwind keeps the admin look; these rules win here ═══ */
+:root:has(.passenger-layout) .eki-confirm-backdrop { background: var(--pp-scrim); }
+:root:has(.passenger-layout) .eki-confirm {
+  border: 0;
+  border-radius: var(--pp-dialog-radius);
+  background: var(--pp-dialog-bg);
+  box-shadow: var(--pp-dialog-shadow);
+}
+:root:has(.passenger-layout) .eki-confirm-title { color: var(--text-primary); font-family: var(--font-heading); font-size: 1.25rem; font-weight: 600; }
+:root:has(.passenger-layout) .eki-confirm-text { color: var(--text-secondary); font-size: 0.875rem; }
+:root:has(.passenger-layout) .eki-confirm-icon { border-color: transparent; background: var(--accent); color: var(--accent-contrast); }
+:root:has(.passenger-layout) .eki-confirm-icon[data-variant="danger"] { background: var(--status-danger); }
+:root:has(.passenger-layout) .eki-confirm-icon svg { color: inherit; }
+:root:has(.passenger-layout) .eki-confirm-actions { border-color: var(--border-subtle); }
+:root:has(.passenger-layout) :is(.eki-confirm-cancel, .eki-confirm-ok) { min-height: 44px; padding-inline: 1.125rem; border-radius: var(--pp-button-radius); font-size: 0.9375rem; font-weight: 500; box-shadow: none; }
+:root:has(.passenger-layout) .eki-confirm-cancel { border: 1px solid var(--text-primary); background: var(--surface-1); color: var(--text-primary); }
+:root:has(.passenger-layout) .eki-confirm-cancel:hover:not(:disabled) { background: var(--surface-3); }
+:root:has(.passenger-layout) .eki-confirm-ok { background: var(--accent); color: var(--accent-contrast); }
+:root:has(.passenger-layout) .eki-confirm-ok:hover:not(:disabled) { background: var(--accent-hover); }
+:root:has(.passenger-layout) .eki-confirm-ok[data-variant="danger"] { background: var(--status-danger); }
+
+/* ═══ Motion preferences ═══ */
+@media (prefers-reduced-motion: reduce) {
+  .passenger-layout [data-passenger-route]:active .passenger-live-route-card,
+  :is(.pp-btn-primary, .pp-btn-secondary, .pp-icon-button, .pp-map-button):active,
+  .pp-star:hover,
+  .pp-list-row:hover .pp-list-chevron { transform: none; }
+}

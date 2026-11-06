@@ -17,7 +17,7 @@ export default function BusPositionGlyph({ label, heading, color, uncertain }: {
         </div>
       )}
       <div aria-hidden="true" className="relative flex size-8 items-center justify-center rounded-lg border border-zinc-300 bg-white shadow-md"
-        style={{ borderBottomColor: uncertain ? "#71717a" : color, borderBottomWidth: 3 }}>
+        style={{ borderBottomColor: uncertain ? "#626666" : color, borderBottomWidth: 3 }}>
         <BusFront className="size-5 text-zinc-900" strokeWidth={2} />
       </div>
     </div>

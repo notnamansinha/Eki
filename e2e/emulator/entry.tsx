@@ -13,6 +13,8 @@ import DashboardPanel from '@/components/admin/DashboardPanel';
 import AdminPage from '@/app/admin/page';
 import RoleGuard from '@/components/shared/RoleGuard';
 import '../../frontend/src/app/globals.css';
+// passenger/layout.tsx loads the passenger theme; it applies inside .passenger-layout.
+import '../../frontend/src/app/passenger/theme.css';
 
 function Fixture() {
   const { user, loading, roleError } = useAuth();
@@ -29,7 +31,11 @@ function Fixture() {
     <div style={{ height: '100dvh', paddingTop: 45, boxSizing: 'border-box' }}>
       {panel ? <RoleGuard allowedRoles={['admin']}>
         {panel === 'admin' ? <AdminPage /> : panel === 'settings' ? <SettingsPanel /> : panel === 'fleet' ? <FleetManagementPanel /> : panel === 'history' ? <RideHistoryPanel /> : panel === 'routes' ? <RouteManagementPanel /> : panel === 'ops' ? <DashboardPanel /> : <FeedbackPanel />}
-      </RoleGuard> : <PassengerWorkspace />}
+      </RoleGuard> : <div className="passenger-layout relative h-full overflow-hidden">
+        {/* The fixture controls take the top 45px; fit the 100dvh workspace to the rest. */}
+        <style>{'[data-passenger-workspace] { height: 100% !important; }'}</style>
+        <PassengerWorkspace />
+      </div>}
     </div>
   </>;
 }

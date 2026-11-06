@@ -13,10 +13,10 @@ afterEach(cleanup);
 
 describe("scoped route-card direction acceptance", () => {
   it.each([
-    ["unknown", "Open for live status", "VIEW STATUS"],
-    ["pending", "Direction pending", "VIEW STATUS"],
-    ["forward", "Alpha → Beta", "TRACK ROUTE"],
-    ["reverse", "Beta → Alpha", "TRACK ROUTE"],
+    ["unknown", "Open for live status", "View status"],
+    ["pending", "Direction pending", "View status"],
+    ["forward", "Alpha → Beta", "Track route"],
+    ["reverse", "Beta → Alpha", "Track route"],
   ] as const)("labels %s direction accurately and opens the selected route", async (direction, label, action) => {
     const select = vi.fn();
     render(<RouteCarousel routes={[route]} selectedRouteId="" onClick={select} getActiveBusesCount={() => 1} getAvailableBusesCount={() => 0} getDirectionState={() => direction} />);
@@ -33,10 +33,14 @@ describe("scoped route-card direction acceptance", () => {
     const props = { routes: [route], selectedRouteId: "", onClick: select, getActiveBusesCount: () => 1, getAvailableBusesCount: () => 0 };
     const view = render(<RouteCarousel {...props} getDirectionState={() => "unknown"} />);
     expect(screen.getByText("Open for live status")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Track B route" }).hasAttribute("aria-describedby")).toBe(false);
     await userEvent.setup().click(screen.getByRole("button", { name: "Track B route" }));
     expect(select).toHaveBeenCalledExactlyOnceWith("B");
     view.rerender(<RouteCarousel {...props} selectedRouteId="B" getDirectionState={() => "reverse"} />);
     expect(screen.getByRole("button", { name: "Track B route" }).textContent?.replace(/\s+/g, " ")).toContain("Beta → Alpha");
+    // The aria-label replaces the card text, so the Selected chip is the description.
+    const describedBy = screen.getByRole("button", { name: "Track B route" }).getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe("Selected");
     expect(screen.queryByText("Open for live status")).toBeNull();
     expect(screen.queryByText("Direction pending")).toBeNull();
   });

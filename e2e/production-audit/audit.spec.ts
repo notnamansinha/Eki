@@ -52,10 +52,10 @@ test("passenger read denial is distinct from telemetry delay and recovers on a n
   await page.getByText("QA controls", { exact: true }).click();
   await page.getByLabel("QA scenario").selectOption("detail-denied");
   await page.getByText("QA controls", { exact: true }).click();
-  await expect(page.getByText("Live bus data unavailable.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Live bus data is unavailable.", { exact: true })).toBeVisible();
   await expect(page.getByText(/Live tracking lost|Updates delayed/)).toHaveCount(0);
   await publishAge(page, 0);
-  await expect(page.getByText("Live bus data unavailable.", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Live bus data is unavailable.", { exact: true })).toHaveCount(0);
 });
 test("long route and endpoint labels remain fully rendered and selectable", async ({ page }, info) => {
   const title = page.getByRole("heading", { name: routeName });

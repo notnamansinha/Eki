@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
-import { MapPinned, UserRound, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle } from "lucide-react";
+import { MapPinned, UserRound, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle, Info, Megaphone } from "lucide-react";
 import { subscribeLiveBusChangesByRoute } from "@/lib/liveBusStore";
 import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
 import { getJoinedRideStatus } from "@/lib/joinedRideStatus";
@@ -46,6 +46,7 @@ import {
   routeInRideDirection,
 } from "@/lib/rideDirection";
 import InAppSelect from "@/components/ui/InAppSelect";
+import PassengerDate from "@/components/passenger/ui/PassengerDate";
 import { isLiveChatDeviceOnline } from "@/lib/activeBusEntries";
 import { stopEstimateContext, stopEstimateLabel, type PassengerStopEstimates } from "@/lib/passengerStopEstimates";
 import {
@@ -102,6 +103,14 @@ export default function PassengerWorkspace() {
     if (section === "routes") setRoutesMounted(true);
     if (section === "profile") setProfileMounted(true);
     setCurrentView(section);
+  }, []);
+
+  useEffect(() => {
+    // Download the tracking map's code while the passenger picks a route, without
+    // mounting it: Google Maps loads only when its APIProvider mounts. A lost
+    // connection at the moment of Track then cannot fail the import and unmount
+    // the workspace. A failed download here is retried by Track itself.
+    void import("@/components/maps/PassengerTrackingMap").catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -417,7 +426,7 @@ export default function PassengerWorkspace() {
   const endedMessage = completedRide !== null;
 
   const visibleView: ViewState = currentView;
-  const keyboardRouteButton = useRef<HTMLButtonElement | null>(null);
+  const keyboardRouteId = useRef<string | null>(null);
   const trackingBackButton = useRef<HTMLButtonElement>(null);
   const liveRoutesHeading = useRef<HTMLHeadingElement>(null);
   const liveRouteScroller = useRef<HTMLDivElement>(null);
@@ -442,15 +451,19 @@ export default function PassengerWorkspace() {
   }, []);
 
   useEffect(() => {
-    const routeButton = keyboardRouteButton.current;
-    if (!routeButton) return;
+    const routeId = keyboardRouteId.current;
+    if (!routeId) return;
     if (visibleView === "tracking") {
       trackingBackButton.current?.focus({ preventScroll: true });
     } else {
       // Only Back from tracking returns focus to the route; leaving for another
       // section forgets it, so a later tap on the first tab keeps focus there.
-      keyboardRouteButton.current = null;
-      if (visibleView === "home") (routeButton.isConnected ? routeButton : liveRoutesHeading.current)?.focus();
+      keyboardRouteId.current = null;
+      if (visibleView !== "home") return;
+      // Find the card again: a live-data gap during tracking remounts it.
+      const routeButton = Array.from(liveRouteContent.current?.querySelectorAll<HTMLButtonElement>("button[data-passenger-route]") ?? [])
+        .find(button => button.dataset.passengerRoute === routeId);
+      (routeButton ?? liveRoutesHeading.current)?.focus();
     }
   }, [visibleView]);
 
@@ -528,9 +541,9 @@ export default function PassengerWorkspace() {
 
   const handleRouteSelect = (routeId: string) => {
     const focused = document.activeElement;
-    keyboardRouteButton.current =
+    keyboardRouteId.current =
       focused instanceof HTMLButtonElement && focused.dataset.passengerRoute === routeId && focused.matches(":focus-visible")
-        ? focused : null;
+        ? routeId : null;
     setSelectedRouteId(routeId);
     setSelectedDestinationStopId("");
     setSelectedLiveBusKey("");
@@ -540,41 +553,50 @@ export default function PassengerWorkspace() {
     setCurrentView("tracking");
   };
 
+  const announcement = settings.announcementActive && settings.announcementText ? (
+    <div className="pp-announcement" role="note">
+      <Megaphone className="size-5" aria-hidden="true" />
+      <p className="min-w-0">{settings.announcementText}</p>
+    </div>
+  ) : null;
+  // Only ride-recovery messages are written for riders; the others name internals.
+  const plainDataError = !routesError && !catalogError && !detailDataError && rideRecoveryError
+    ? rideRecoveryError
+    : "Check your connection, then try again.";
+
   return (
-    <div data-passenger-workspace data-passenger-section={visibleView} className="relative flex flex-col overflow-hidden text-white" style={{ height: "100dvh" }}>
-      {(!isConnected || rideRecoveryNotice || routesError || liveDataError) && <div className="relative z-50 shrink-0 space-y-2 bg-zinc-950 px-4 pb-2 pt-safe">
+    <div data-passenger-workspace data-passenger-section={visibleView} className="pp-workspace relative flex flex-col overflow-hidden" style={{ height: "100dvh" }}>
+      {(!isConnected || rideRecoveryNotice || routesError || liveDataError) && <div className="pp-alerts relative z-50 shrink-0 space-y-2 px-4 pb-2 pt-safe">
       {!isConnected && (
-        <div
-          className="flex items-center gap-2 rounded-xl border border-amber-400/20 bg-zinc-950 px-4 py-3 text-sm font-semibold text-amber-300 shadow-lg"
-          role="status"
-          aria-live="polite"
-        >
-          <WifiOff className="size-4 shrink-0" aria-hidden="true" />
-          <span className="text-pretty">{connectionGeneration === 0 ? "Connecting to live bus data..." : "Reconnecting to live bus data..."}</span>
+        <div className="pp-banner" data-tone="warning" role="status" aria-live="polite">
+          <WifiOff className="size-4" aria-hidden="true" />
+          <span className="text-pretty">{connectionGeneration === 0 ? "Connecting to live bus data…" : "Reconnecting to live bus data…"}</span>
         </div>
       )}
-      {rideRecoveryNotice && <div className="rounded-xl bg-zinc-950 px-4 py-3 text-sm text-amber-300" role="status">{rideRecoveryNotice}</div>}
+      {rideRecoveryNotice && (
+        <div className="pp-banner" data-tone="warning" role="status">
+          <Info className="size-4" aria-hidden="true" />
+          <span>{rideRecoveryNotice}</span>
+        </div>
+      )}
       {(routesError || liveDataError) && (
-        <div
-          className="flex items-start gap-3 rounded-xl border border-red-400/20 bg-zinc-950 px-4 py-3 text-sm text-red-300 shadow-lg"
-          role="alert"
-        >
-          <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        <div className="pp-banner" data-tone="danger" role="alert">
+          <AlertCircle className="size-4" aria-hidden="true" />
           <div className="flex-1">
-            <p className="font-semibold">{routesError ? "Routes could not be loaded." : "Live bus data unavailable."}</p>
-            <p className="mt-0.5 text-xs text-red-300/70">{routesError || liveDataError}</p>
+            <p className="pp-banner-title">{routesError ? "Routes could not be loaded." : "Live bus data is unavailable."}</p>
+            <p className="pp-banner-detail">{plainDataError}</p>
           </div>
           <button
             type="button"
             onClick={() => { if (routesError) retryRoutes(); if (catalogError || detailDataError) { retryCatalog(); import("@/lib/liveBusStore").then(module => module.invalidateLiveBusCache()); } if (rideRecoveryError) setRideStatusRetry(value => value + 1); }}
-            className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
+            className="pp-btn-secondary shrink-0"
           >
             Retry
           </button>
         </div>
       )}
       </div>}
-      <div className="relative min-h-0 flex-1 overflow-clip">
+      <main className="relative min-h-0 flex-1 overflow-clip">
 
         {/* ── HOME VIEW ── */}
         <div inert={visibleView !== "home"} aria-hidden={visibleView !== "home"} className={`passenger-home absolute inset-0 z-20 flex flex-col pt-safe transition-[opacity,transform] duration-200 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"}`}>
@@ -587,18 +609,20 @@ export default function PassengerWorkspace() {
             style={passengerPanelStyle}
           >
             {/* Heading Section - Fixed */}
-            <div className="passenger-home-heading text-center pb-6 mb-4 mx-6 shrink-0">
+            <div className="passenger-home-heading pp-home-heading pb-5 mb-3 mx-6 shrink-0">
+              <PassengerDate />
               <div className="passenger-home-title">
-                <h1 ref={liveRoutesHeading} tabIndex={-1} className="text-[32px] font-black tracking-tight mb-2 leading-none" style={{ color: "var(--text-primary)" }}>
-                  Live Routes
+                <h1 ref={liveRoutesHeading} tabIndex={-1} className="pp-title">
+                  Live routes
                 </h1>
                 <span className="passenger-home-count">
                   {displayRoutes.length} {displayRoutes.length === 1 ? "route" : "routes"}
                 </span>
               </div>
-              <p className="text-[15px] font-medium mt-2" style={{ color: "var(--text-secondary)" }}>
+              <p className="pp-subtitle">
                 Select a route to view the live bus location.
               </p>
+              <hr className="pp-rule" aria-hidden="true" />
             </div>
 
             {/* Status / Routes Section - Scrollable */}
@@ -609,19 +633,10 @@ export default function PassengerWorkspace() {
               <div ref={liveRouteContent}>
                 {displayRoutes.length > 0 ? (
                   <>
-                    {settings.announcementActive && settings.announcementText && (
-                      <div
-                        className="rounded-2xl p-4 mb-3 mx-1 flex items-center justify-center border text-center"
-                        style={{ background: "#4c0519", borderColor: "#881337" }}
-                      >
-                        <p className="line-clamp-3 break-words min-w-0 text-[13px] font-black tracking-wider uppercase leading-tight text-[#fecdd3]">
-                          {settings.announcementText}
-                        </p>
-                      </div>
-                    )}
+                    {announcement}
                     <RouteCarousel
                       routes={displayRoutes}
-                      selectedRouteId={effectiveRouteId}
+                      selectedRouteId={selectedRouteId}
                        onClick={handleRouteSelect}
                        getActiveBusesCount={(routeId) => routeCatalog[routeId]?.active ?? 0}
                        getAvailableBusesCount={(routeId) => routeCatalog[routeId]?.available ?? 0}
@@ -633,20 +648,12 @@ export default function PassengerWorkspace() {
                      />
                   </>
                 ) : (
-                  <div className="rounded-xl p-8 text-center mx-1 flex flex-col items-center justify-center gap-2"
-                    style={{ background: "var(--surface-2)", border: "1px dashed var(--border-default)" }}>
-                    {settings.announcementActive && settings.announcementText && (
-                      <div className="inline-flex items-center px-4 py-1.5 rounded-full border mb-1"
-                        style={{ background: "#4c0519", borderColor: "#881337" }}>
-                        <span className="line-clamp-3 break-words min-w-0 text-[12px] font-black tracking-wider uppercase text-[#fecdd3]">
-                          {settings.announcementText}
-                        </span>
-                      </div>
-                    )}
-                    <p className="text-[13px] font-medium" style={{ color: "var(--text-tertiary)" }}>
+                  <div className="pp-empty">
+                    {announcement}
+                    <p className="pp-empty-title">
                       {settings.noBusesMessage || "No buses running"}
                     </p>
-                    <p className="text-[12px]" style={{ color: "var(--text-ghost)" }}>
+                    <p className="pp-empty-detail">
                       {!isConnected
                         ? "Unable to reach live data. Check your connection."
                         : isResuming || liveDataError
@@ -666,12 +673,12 @@ export default function PassengerWorkspace() {
         </div>
 
         {/* ── TRACKING VIEW ── */}
-        <div data-passenger-tracking inert={visibleView !== "tracking"} aria-hidden={visibleView !== "tracking"} className={`absolute inset-0 z-20 flex flex-col pointer-events-none transition-opacity duration-200 ${visibleView === "tracking" ? "opacity-100 bg-zinc-950" : "opacity-0"}`}>
+        <div data-passenger-tracking inert={visibleView !== "tracking"} aria-hidden={visibleView !== "tracking"} className={`absolute inset-0 z-20 flex flex-col pointer-events-none transition-opacity duration-200 ${visibleView === "tracking" ? "opacity-100 bg-[var(--pp-page)]" : "opacity-0"}`}>
           {!endedMessage && mapRoute && targetStop ? (
             <>
               {/* Top bar: back + route info */}
-              <div data-tracking-controls className="absolute inset-x-0 top-0 w-full z-40 pt-safe px-4 pb-4 pointer-events-none"
-                style={{ background: "linear-gradient(to bottom, rgba(9,9,11,0.92) 0%, transparent 100%)" }}>
+              <div data-tracking-controls className="pp-tracking-scrim absolute inset-x-0 top-0 w-full z-40 pt-safe px-4 pb-4 pointer-events-none">
+                <h1 className="sr-only">{mapRoute.name}</h1>
                 <div className="flex items-center gap-4 max-w-lg mx-auto pt-4 pointer-events-auto">
                   <button
                     ref={trackingBackButton}
@@ -684,18 +691,13 @@ export default function PassengerWorkspace() {
                       setIsMessagingOpen(false);
                       setCurrentView("home");
                     }}
-                    className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 hover:opacity-90 shadow-sm cursor-pointer pointer-events-auto"
-                    style={{ backgroundColor: "var(--surface-3)", border: "1px solid var(--border-subtle)" }}
+                    className="pp-icon-button cursor-pointer pointer-events-auto"
                     aria-label={chatShown(visibleView) ? "Close live chat" : "Back to home"}
-                    onPointerDown={(e) => (e.currentTarget.style.backgroundColor = "var(--surface-4)")}
-                    onPointerUp={(e) => (e.currentTarget.style.backgroundColor = "var(--surface-3)")}
-                    onPointerLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--surface-3)")}
                   >
-                    <ArrowLeft className="w-5 h-5" style={{ color: "var(--text-secondary)" }} />
+                    <ArrowLeft className="w-5 h-5" aria-hidden="true" />
                   </button>
                   {activeBusOnRoute ? (
-                    <div className="relative z-10 flex-1 min-w-0 flex flex-col gap-2 rounded-2xl p-3 shadow-lg pointer-events-auto"
-                      style={{ background: "var(--surface-1)", border: "1px solid var(--border-default)" }}>
+                    <div className="pp-float-card relative z-10 flex-1 min-w-0 flex flex-col gap-2 p-3 pointer-events-auto">
                       {(selectableBusesOnRoute.length > 1 || (!busSelectable && selectableBusesOnRoute.length > 0)) &&
                         !busesOnRoute.some(
                           (bus) => bus.sessionId === trackedSessionId,
@@ -708,11 +710,6 @@ export default function PassengerWorkspace() {
                             setSelectedBusId(busesOnRoute.find(bus => passengerLiveBusSelectionKey(bus) === value)?.busId ?? "");
                             setIsMessagingOpen(false);
                           }}
-                          style={{
-                            background: "var(--surface-2)",
-                            border: "1px solid var(--border-subtle)",
-                            color: "var(--text-primary)",
-                          }}
                           ariaLabel="Live bus"
                           placeholder="Choose a live bus…"
                           options={selectableBusesOnRoute.map(bus => ({
@@ -723,8 +720,8 @@ export default function PassengerWorkspace() {
                       )}
                       {!busSelectable && (
                         <div role="status" aria-live="polite">
-                          <p className={`text-xs font-semibold ${"tone" in pausedNotice && pausedNotice.tone === "danger" ? "text-red-300" : "text-amber-300"}`}>{pausedNotice.title}</p>
-                          <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+                          <p className="pp-status-title" data-tone={"tone" in pausedNotice && pausedNotice.tone === "danger" ? "danger" : "warning"}>{pausedNotice.title}</p>
+                          <p className="pp-status-detail">
                             {pausedNotice.detail}
                           </p>
                         </div>
@@ -761,15 +758,17 @@ export default function PassengerWorkspace() {
                           }}
                         />
                       ) : busSelectable ? (
-                        <div>
-                          <p className="text-xs font-semibold" style={{ color: "var(--accent)" }}>
+                        <div className="flex flex-col gap-2">
+                          <div>
+                          <p className="pp-status-title">
                             {hasSessionId(activeBusOnRoute) ? "Direction pending" : "Bus online · service not started"}
                           </p>
-                          <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+                          <p className="pp-status-detail">
                             {hasSessionId(activeBusOnRoute)
                               ? "Live location and configured route shown. Travel order and ETAs appear once direction is resolved."
                               : "Live location and configured route shown. Boarding and ETAs appear when service starts."}
                           </p>
+                          </div>
                         <InAppSelect
                           name="destination-station"
                           ariaLabel="Destination station"
@@ -784,20 +783,16 @@ export default function PassengerWorkspace() {
                               detail: stopEstimateLabel(stopEstimates ?? { context: "", minutes: {}, unavailable: hasSessionId(activeBusOnRoute) ? "Direction pending" : "Service not started" }, stop.id, index),
                             })),
                           ]}
-                          style={{
-                            background: "var(--surface-2)",
-                            border: "1px solid var(--border-subtle)",
-                          }}
                         />
                         </div>
                       ) : null}
                     </div>
                   ) : (
-                    <div className="min-w-0 flex-1 flex flex-col justify-center gap-0.5 rounded-2xl bg-[var(--surface-1)] p-3 shadow-lg pointer-events-auto">
-                      <p className="text-[11px] font-semibold uppercase tracking-widest leading-none" style={{ color: "var(--accent)" }}>
+                    <div className="pp-float-card min-w-0 flex-1 flex flex-col justify-center gap-1 p-3 pointer-events-auto">
+                      <p className="pp-status-title">
                         Waiting for live bus data…
                       </p>
-                      <p className="break-words text-pretty text-[17px] font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>
+                      <p className="pp-tracking-route break-words text-pretty">
                         {mapRoute.name}
                       </p>
                     </div>
@@ -808,19 +803,13 @@ export default function PassengerWorkspace() {
                   <div className="mt-2 flex justify-end max-w-lg mx-auto animate-scale-in pointer-events-none">
                     <button
                       onClick={handleOpenMessaging}
-                      className="w-12 h-12 rounded-xl flex items-center justify-center transition-all active:scale-95 relative pointer-events-auto"
-                      style={{
-                        background: "var(--surface-2)",
-                        border: "1px solid var(--border-default)",
-                        boxShadow: "0 4px 16px rgba(0,0,0,0.3)"
-                      }}
+                      className="pp-map-button relative pointer-events-auto"
                       aria-label={activeSessionId ? "Open live chat" : "Open live chat status"}
                       title={activeSessionId ? "Open live chat" : "Device online; chat will unlock when the ride is armed"}
                     >
-                      <MessageCircle className="w-5 h-5" style={{ color: "var(--status-live)" }} />
+                      <MessageCircle className="w-5 h-5" aria-hidden="true" style={{ color: "var(--accent)" }} />
                       {unreadCount > 0 && (
-                        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-semibold text-white px-1"
-                          style={{ background: "var(--status-danger)", boxShadow: "0 0 0 2px var(--surface-0)" }}>
+                        <span className="pp-unread">
                           {unreadCount > 9 ? "9+" : unreadCount}
                         </span>
                       )}
@@ -862,33 +851,28 @@ export default function PassengerWorkspace() {
               )}
             </>
           ) : endedMessage ? (
-            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center px-10 text-center animate-fade-in pointer-events-auto"
-              style={{ background: "rgba(9, 9, 11, 0.9)" }}>
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
-                style={{ background: "var(--status-danger-bg)", border: "1px solid rgba(248, 113, 113, 0.15)" }}>
-                <Flag className="w-8 h-8" style={{ color: "var(--status-danger)" }} />
+            <div className="pp-ended absolute inset-0 z-30 flex flex-col items-center justify-center px-10 text-center animate-fade-in pointer-events-auto">
+              <div className="pp-ended-icon">
+                <Flag className="w-8 h-8" aria-hidden="true" />
               </div>
-              <p className="text-xl font-extrabold tracking-tight mb-2" style={{ color: "var(--text-primary)" }}>
+              <h1 className="pp-ended-title">
                 Route ended
-              </p>
-              <p className="text-[13px] mb-6 max-w-xs" style={{ color: "var(--text-tertiary)" }}>
+              </h1>
+              <p className="pp-subtitle max-w-xs">
                 The bus has reached the terminus.
               </p>
-              <div className="flex items-center gap-2 px-5 py-2.5 rounded-xl"
-                style={{ background: "var(--status-live-bg)" }}>
-                <Loader2 className="w-4 h-4 animate-spin" style={{ color: "var(--status-live)" }} />
-                <p className="text-[11px] font-semibold" style={{ color: "var(--status-live)" }}>
-                  Waiting for next bus
-                </p>
-              </div>
+              <p className="pp-ended-wait" role="status">
+                <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                Waiting for the next bus
+              </p>
               <button
+                type="button"
                 onClick={() => {
                   setCurrentView("home");
                 }}
-                className="mt-6 px-6 py-2.5 rounded-xl text-[13px] font-semibold transition-all active:scale-95"
-                style={{ background: "rgba(255,255,255,0.1)", color: "white", border: "1px solid rgba(255,255,255,0.05)" }}
+                className="pp-btn-secondary mt-6"
               >
-                Return to Live Routes
+                Return to live routes
               </button>
             </div>
           ) : null}
@@ -903,7 +887,7 @@ export default function PassengerWorkspace() {
         <div inert={visibleView !== "profile"} aria-hidden={visibleView !== "profile"} className={`absolute inset-0 z-30 flex flex-col transition-[opacity,transform] duration-200 ${visibleView === "profile" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"}`}>
           {profileMounted && <AccountTab />}
         </div>
-      </div>
+      </main>
 
       {showFeedbackModal && (
         <FeedbackModal

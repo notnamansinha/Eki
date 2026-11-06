@@ -73,7 +73,7 @@ test('complete repository census reports declarations without granting acceptanc
   const catalog = await buildCatalog();
   assert.equal(catalog.cases.length, 399);
   assert.equal(catalog.documents['docs/testing/WEBAPP_A_Z_AB_TESTING_PLAN.md'].bytes, Buffer.byteLength(plan));
-  assert.deepEqual(catalog.inventory.pages.map(item => item.route).sort(), ['/', '/admin', '/feedback', '/passenger']);
+  assert.deepEqual(catalog.inventory.pages.map(item => item.route).sort(), ['/', '/admin', '/feedback', '/install', '/passenger']);
   assert.ok(catalog.inventory.operations.length >= 71);
   assert.ok(catalog.inventory.controls.length > 100);
   assert.ok(catalog.inventory.firmwareModes.includes('esp32dev-secure'));

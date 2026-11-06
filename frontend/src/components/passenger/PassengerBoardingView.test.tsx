@@ -104,21 +104,21 @@ describe("passenger boarding workflow", () => {
   });
   it("colours the ride status by live health, never green while tracking is degraded", () => {
     const props = { sessionId: "qa-session", route };
-    const colour = () => (screen.getByRole("status").firstElementChild as HTMLElement).style.color;
+    const colour = () => (screen.getByRole("status").firstElementChild as HTMLElement).getAttribute("data-tone");
     const view = render(<PassengerBoardingView {...props} tripState="in_service" liveHealth={{ state: "live", ageMs: 1_000 }} />);
-    expect(colour()).toBe("var(--status-live)");
+    expect(colour()).toBe("live");
     for (const [state, expected] of [["delayed", "warning"], ["gnss_lost", "warning"], ["lost", "danger"], ["offline", "danger"]] as const) {
       view.rerender(<PassengerBoardingView {...props} tripState="in_service" liveHealth={{ state, ageMs: 40_000 }} />);
-      expect([state, colour()]).toEqual([state, `var(--status-${expected})`]);
+      expect([state, colour()]).toEqual([state, expected]);
     }
     view.rerender(<PassengerBoardingView {...props} tripState="pre_departure" liveHealth={{ state: "live", ageMs: 1_000 }} />);
-    expect(colour()).toBe("var(--status-warning)");
+    expect(colour()).toBe("warning");
     view.rerender(<PassengerBoardingView {...props} tripState="pre_departure" liveHealth={{ state: "lost", ageMs: 40_000 }} />);
-    expect(colour()).toBe("var(--status-danger)");
+    expect(colour()).toBe("danger");
     // Without a health reading it neither claims Live nor shows green.
     view.rerender(<PassengerBoardingView {...props} tripState="in_service" />);
     expect(screen.getByRole("status").firstElementChild!.textContent).toBe("Ride in service");
-    expect(colour()).toBe("var(--status-warning)");
+    expect(colour()).toBe("warning");
   });
   it("shows where the bus is without opening the timeline, including at the origin", () => {
     const props = { sessionId: "qa-session", route, tripState: "in_service" as const };

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import PassengerLoadingShell from "@/components/passenger/PassengerLoadingShell";
 import RoleGuard from "@/components/shared/RoleGuard";
 import WorkspacePrefetch from "@/components/shared/WorkspacePrefetch";
+import "./theme.css";
 
 export const metadata: Metadata = {
   title: "Passenger live map",

@@ -832,70 +832,6 @@ body {
   display: none;
 }
 
-@keyframes profile-coin-flip {
-  from { transform: rotateY(0); }
-  to { transform: rotateY(180deg); }
-}
-
-.profile-coin {
-  position: absolute;
-  inset: 1px;
-  border-radius: 50%;
-  transform-style: preserve-3d;
-  animation: profile-coin-flip 1.1s cubic-bezier(0.2, 0.75, 0.25, 1) both;
-}
-
-.profile-coin-face {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 3px solid #e9bc55;
-  background:
-    radial-gradient(ellipse at 28% 18%, #fff9d0 0%, #ffe58b 16%, transparent 48%),
-    repeating-conic-gradient(from 10deg, #ffffff0a 0deg 3deg, #8050100a 3deg 6deg),
-    radial-gradient(circle at 50% 45%, #fbd66d 0%, #e8ac37 65%, #9a5d13 100%);
-  box-shadow:
-    inset 0 0 0 2px #fff0ad,
-    inset 0 0 0 5px #b47a20,
-    inset 0 3px 7px #fff5b080,
-    inset 0 -5px 8px #713d14a6,
-    0 2px 0 #8d5518,
-    0 5px 10px #0009;
-  color: #795015;
-  backface-visibility: hidden;
-}
-
-.profile-coin-face::before {
-  content: "";
-  position: absolute;
-  inset: 7px;
-  border: 1px solid #fff0a8cc;
-  border-radius: 50%;
-  box-shadow: 0 1px 1px #80501a, inset 0 1px 2px #8a581c;
-}
-
-.profile-coin-front::after {
-  content: "";
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 2px solid #e9b950;
-  box-shadow: inset 0 2px 4px #9d671c, 0 1px 1px #fff2ad;
-}
-
-.profile-coin-back {
-  transform: rotateY(180deg);
-  font-size: 3rem;
-  font-weight: 900;
-  line-height: 1;
-  letter-spacing: -0.08em;
-  text-align: center;
-  text-shadow: 0 1px 1px #fff2aa, 0 -1px 1px #8d581b;
-}
-
 /* ── Scrollbar ── */
 ::-webkit-scrollbar {
   width: 4px;
@@ -1365,6 +1301,12 @@ body {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* The collapsed map sheet clips to its 56px header, which would cut the
+   ring's sides and bottom, so the sheet toggle draws its ring inside. */
+[data-map-sheet-toggle]:focus-visible {
+  outline-offset: -2px;
 }
 
 /* Safe area utilities. Layout math reads the same variables, so clearance

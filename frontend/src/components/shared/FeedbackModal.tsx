@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Star, HeartHandshake, X, Send, Check } from "lucide-react";
+import { Star, BusFront, ClipboardPenLine, X, Send, Check } from "lucide-react";
 import { auth } from "@/lib/firebaseAuth";
 import { FEEDBACK_WORD_LIMIT } from "@/config/passenger";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
@@ -183,71 +183,60 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, draf
   // passenger Profile view) can leave its navigation above this backdrop.
   if (submitted) {
     return createPortal(
-      <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 animate-fade-in"
-        style={{ background: "rgba(0, 0, 0, 0.7)", backdropFilter: "blur(4px)" }}>
-        <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} className="rounded-3xl p-8 max-w-sm w-full flex flex-col items-center text-center animate-scale-up relative overflow-hidden"
-          style={{ background: "var(--surface-2)", border: "1px solid rgba(255,255,255,0.05)", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)" }}>
-          <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/10 to-transparent pointer-events-none" />
-          <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5 bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/30 relative z-10">
-            <Check className="text-white" strokeWidth={3} size={32} />
+      <div className="pp-dialog-backdrop fixed inset-0 animate-fade-in">
+        <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} className="pp-dialog animate-scale-up">
+          <div className="pp-success">
+            <div className="pp-success-icon">
+              <Check strokeWidth={2.5} size={30} aria-hidden="true" />
+            </div>
+            <h2 id={titleId} className="pp-dialog-title">
+              Thank you!
+            </h2>
+            <p id={descriptionId} className="pp-subtitle">
+              Your feedback helps us improve the experience for everyone.
+            </p>
           </div>
-          <h2 id={titleId} className="text-xl font-extrabold mb-2 relative z-10" style={{ color: "var(--text-primary)" }}>
-            Thank you!
-          </h2>
-          <p id={descriptionId} className="text-[14px] relative z-10" style={{ color: "var(--text-tertiary)" }}>
-            Your feedback helps us improve the experience for everyone.
-          </p>
         </div>
       </div>,
       document.body,
     );
   }
 
+  const blocked = submitting || cooldownRemaining > 0 || (!busId && !comment.trim());
+  const shownRating = hoverRating || rating;
   return createPortal(
-    <div className="fixed inset-0 z-[999] flex items-end sm:items-center justify-center sm:p-4 animate-fade-in"
-      style={{ background: "rgba(0, 0, 0, 0.7)", backdropFilter: "blur(4px)" }}>
-      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-h-full sm:max-w-md rounded-t-3xl sm:rounded-3xl flex flex-col animate-slide-up relative overflow-y-auto overscroll-contain shadow-2xl"
-        style={{ background: "var(--surface-1)", border: "1px solid rgba(255,255,255,0.08)" }}>
-        
-        {/* Subtle top gradient glow */}
-        <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-indigo-500/5 to-transparent pointer-events-none" />
-
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 relative z-10" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-          <div className="flex items-center gap-4">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg ${
-              busId 
-                ? 'bg-gradient-to-br from-blue-500 to-cyan-500 shadow-blue-500/20' 
-                : 'bg-gradient-to-br from-indigo-500 to-pink-500 shadow-indigo-500/20'
-            }`}>
-              <HeartHandshake className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h2 id={titleId} className="text-[16px] font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>
+    <div className="pp-dialog-backdrop fixed inset-0 animate-fade-in">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="pp-dialog animate-slide-up">
+        <div className="pp-dialog-header">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <span className="pp-dialog-icon">
+              {busId ? <BusFront className="w-5 h-5" aria-hidden="true" /> : <ClipboardPenLine className="w-5 h-5" aria-hidden="true" />}
+            </span>
+            <div className="min-w-0">
+              <h2 id={titleId} className="pp-dialog-title">
                 {busId ? "Rate your ride" : "Send feedback"}
               </h2>
               {busId && (
-                <p className="text-[11px] font-semibold mt-0.5" style={{ color: "var(--text-ghost)" }}>
+                <p className="pp-dialog-subtitle">
                   Bus {busId}
                 </p>
               )}
             </div>
           </div>
-          <button type="button" onClick={onClose} disabled={submitting} className="min-w-11 min-h-11 p-2 rounded-full transition-all hover:bg-white/10 active:scale-95 disabled:opacity-50"
-            style={{ color: "var(--text-ghost)" }}
+          <button type="button" onClick={onClose} disabled={submitting} className="pp-close disabled:opacity-50"
             aria-label="Close feedback">
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 pb-[calc(1.25rem_+_var(--safe-area-bottom))] sm:pb-5 flex flex-col gap-5">
+        <form onSubmit={handleSubmit} className="pp-dialog-body">
           {/* Star Rating */}
           {busId && (
-            <div className="flex flex-col items-center gap-2.5">
-              <span className="text-[11px] font-semibold" style={{ color: "var(--text-ghost)" }}>
+            <div className="flex flex-col gap-2">
+              <p className="pp-rating-label">
                 How was your experience?
-              </span>
-              <div className="flex items-center gap-1">
+              </p>
+              <div className="pp-stars">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
                     key={star}
@@ -255,20 +244,12 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, draf
                     onClick={() => setRating(star)}
                     onMouseEnter={() => setHoverRating(star)}
                     onMouseLeave={() => setHoverRating(0)}
-                    className="p-0.5 focus:outline-none transition-transform hover:scale-110"
-                    aria-label={`Rate ${star} stars`}
+                    className="pp-star"
+                    data-on={star <= shownRating}
+                    aria-label={`Rate ${star} ${star === 1 ? "star" : "stars"}`}
                     aria-pressed={rating === star}
                   >
-                    <Star 
-                      className={`w-11 h-11 transition-all ${
-                        star <= (hoverRating || rating) 
-                          ? 'fill-amber-400 text-amber-400' 
-                          : ''
-                      }`}
-                      style={{
-                        color: star <= (hoverRating || rating) ? "#FBBF24" : "var(--surface-4)",
-                      }}
-                    />
+                    <Star aria-hidden="true" />
                   </button>
                 ))}
               </div>
@@ -277,71 +258,44 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, draf
 
           {/* Comment */}
           <div className="flex flex-col gap-2">
-            <label htmlFor={commentId} className="text-[12px] font-semibold tracking-wide uppercase" style={{ color: "var(--text-ghost)" }}>
+            <label htmlFor={commentId} className="pp-field-label">
               {busId ? "Comments (optional)" : "What's on your mind?"}
             </label>
-            <div className="relative group">
-              <textarea
-                id={commentId}
-                aria-describedby={feedbackStatusId}
-                aria-invalid={Boolean(error)}
-                value={comment}
-                onChange={(e) => {
-                  const nextComment = e.target.value;
-                  if (countWords(nextComment) > FEEDBACK_WORD_LIMIT) {
-                    setComment(trimToWordLimit(nextComment));
-                    setError(`Limited to ${FEEDBACK_WORD_LIMIT} words.`);
-                  } else {
-                    setComment(nextComment);
-                    setError("");
-                  }
-                }}
-                maxLength={2000}
-                placeholder={busId ? "Temperature, driving, cleanliness…" : "Suggestions, ideas, bugs…"}
-                className="w-full rounded-2xl p-4 text-[14px] focus:outline-none resize-none h-32 transition-all placeholder:text-white/20"
-                style={{
-                  background: "var(--surface-2)",
-                  border: "1px solid rgba(255,255,255,0.05)",
-                  color: "var(--text-primary)",
-                  boxShadow: "inset 0 2px 4px rgba(0,0,0,0.2)"
-                }}
-              />
-              <div className="absolute inset-0 rounded-2xl pointer-events-none transition-opacity opacity-0 group-focus-within:opacity-100" 
-                style={{ border: "1px solid rgba(99, 102, 241, 0.3)", boxShadow: "0 0 0 4px rgba(99, 102, 241, 0.1)" }} />
-            </div>
-            
-            <div className="flex items-center justify-between gap-3 text-[11px] font-semibold px-1 mt-1">
-              <span id={feedbackStatusId} role="status" aria-live="polite" style={{ color: error ? "#F87171" : "var(--text-ghost)" }} className="transition-colors">
+            <textarea
+              id={commentId}
+              aria-describedby={feedbackStatusId}
+              aria-invalid={Boolean(error)}
+              value={comment}
+              onChange={(e) => {
+                const nextComment = e.target.value;
+                if (countWords(nextComment) > FEEDBACK_WORD_LIMIT) {
+                  setComment(trimToWordLimit(nextComment));
+                  setError(`Limited to ${FEEDBACK_WORD_LIMIT} words.`);
+                } else {
+                  setComment(nextComment);
+                  setError("");
+                }
+              }}
+              maxLength={2000}
+              placeholder={busId ? "Temperature, driving, cleanliness…" : "Suggestions, ideas, bugs…"}
+              className="pp-textarea"
+            />
+
+            <div className="pp-field-meta">
+              <span id={feedbackStatusId} role="status" aria-live="polite" data-tone={error ? "danger" : undefined}>
                 {error || (cooldownRemaining > 0
                   ? `Wait ${formatCooldown(cooldownRemaining)}`
                   : "Ready")}
               </span>
-              <span style={{ color: wordCount >= FEEDBACK_WORD_LIMIT ? "var(--status-warning)" : "var(--text-ghost)" }} className="transition-[color]">
+              <span data-tone={wordCount >= FEEDBACK_WORD_LIMIT ? "warning" : undefined}>
                 {wordCount} / {FEEDBACK_WORD_LIMIT} words
               </span>
             </div>
           </div>
 
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={submitting || cooldownRemaining > 0 || (!busId && !comment.trim())}
-            className="w-full h-12 rounded-xl font-semibold text-[14px] flex items-center justify-center gap-2 transition-all relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ 
-              background: (submitting || cooldownRemaining > 0 || (!busId && !comment.trim()))
-                ? "var(--surface-3)" 
-                : "linear-gradient(135deg, #6366f1 0%, #ec4899 100%)",
-              color: "white",
-              boxShadow: (submitting || cooldownRemaining > 0 || (!busId && !comment.trim()))
-                ? "none"
-                : "0 10px 25px -5px rgba(99, 102, 241, 0.4)",
-            }}
-          >
-            <div className="absolute inset-0 bg-white/20 translate-y-[100%] group-hover:translate-y-0 transition-transform duration-300 pointer-events-none" />
-            <span className="relative z-10 flex items-center gap-2">
-              {submitting ? "Sending…" : cooldownRemaining > 0 ? `Wait ${formatCooldown(cooldownRemaining)}` : "Submit Feedback"}
-              {!submitting && <Send className="w-4 h-4" />}
-            </span>
+          <button type="submit" disabled={blocked} className="pp-btn-primary w-full">
+            {submitting ? "Sending…" : cooldownRemaining > 0 ? `Wait ${formatCooldown(cooldownRemaining)}` : "Submit feedback"}
+            {!submitting && <Send className="w-4 h-4" aria-hidden="true" />}
           </button>
         </form>
       </div>

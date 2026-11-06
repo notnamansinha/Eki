@@ -23,6 +23,9 @@ interface RouteTimelineSheetProps {
   geometryUnavailable?: boolean;
 }
 
+/** The passenger map draws every route in AU Red; the timeline follows it. */
+const ROUTE_COLOR = "#801214";
+
 export default function RouteTimelineSheet({
   route,
   targetStopId,
@@ -39,7 +42,6 @@ export default function RouteTimelineSheet({
   const [isOpen, setIsOpen] = useState(false);
   if (!route || !route.stops || route.stops.length === 0) return null;
 
-  const routeColor = route.color || "#3b82f6";
   const nextStopIndex = !preview && !aggregateArrivals
     ? publishedStopIndex(currentStopIndex, route.stops.length) : undefined;
   const progress = nextStopIndex === undefined ? undefined
@@ -50,20 +52,20 @@ export default function RouteTimelineSheet({
       isOpen={isOpen}
       onToggle={() => setIsOpen(!isOpen)}
       headerIcon={<RouteIcon className="w-4 h-4" />}
-      headerTitle={preview ? "Configured route" : "Route Timeline"}
+      headerTitle={preview ? "Configured route" : "Route timeline"}
       bottomControls={bottomControls}
     >
       {/* Route name */}
-      <div className="text-[11px] font-semibold mb-5 text-center" style={{ color: "var(--text-ghost)" }}>
+      <p className="mb-5 text-center text-[13px] font-medium text-[var(--text-secondary)]">
         {route.name}
-      </div>
+      </p>
       {!preview && !aggregateArrivals && nextStopIndex === undefined && (
-        <p role="status" className="text-xs mb-4" style={{ color: "var(--text-secondary)" }}>
+        <p role="status" className="mb-4 text-[13px] text-[var(--text-secondary)]">
           Stop progress unavailable.
         </p>
       )}
       {!preview && (aggregateArrivals || geometryUnavailable) && (
-        <p role="status" className="text-xs mb-4" style={{ color: "var(--text-secondary)" }}>
+        <p role="status" className="mb-4 text-[13px] text-[var(--text-secondary)]">
           {aggregateArrivals && "Earliest arrival across buses. Select a bus to see its stop progress. "}
           {geometryUnavailable && "Road geometry unavailable for some buses. Their arrival estimates are unavailable."}
         </p>
@@ -81,104 +83,85 @@ export default function RouteTimelineSheet({
           const visit = progress?.states[index];
           const isPast = isBehindBus(visit);
 
-          // Dim passed stops. Never dim future stops just because they're after the user's target.
-          const isDimmed = isPast;
-
           // The stop the bus is at now, or else the one it is heading towards.
           const isAtStop = visit === "at";
-          const isNextStop = isAtStop || visit === "next";
+          const isNextStop = !isPast && (isAtStop || visit === "next");
 
           return (
             <div
               key={stop.id}
-              className={`relative flex items-start gap-4 pb-7 ${isDimmed ? "opacity-25" : "opacity-100"}`}
-              style={isNextStop && !isDimmed ? {
-                background: "rgba(34, 197, 94, 0.06)",
-                borderLeft: "2px solid var(--status-live)",
-                paddingLeft: 8,
-                marginLeft: -10,
-                borderRadius: 8,
-              } : undefined}
+              data-passed={isPast}
+              data-current={isNextStop}
+              className="pp-stop-row relative flex items-start gap-4 pb-7"
             >
               {/* Timeline rail + dots */}
-              <div 
+              <div
                 className="absolute top-0 bottom-0 flex flex-col items-center"
-                style={{ left: isNextStop && !isDimmed ? -20 : -28 }}
+                style={{ left: isNextStop ? -20 : -28 }}
               >
                 <div
                   className="w-3 h-3 rounded-full z-10 border-2 shrink-0"
                   style={{
                     borderColor: "var(--surface-1)",
-                    background: isDimmed
-                      ? "var(--surface-4)"
+                    background: isPast
+                      ? "var(--route-passed)"
                       : isNextStop
                         ? "var(--status-live)"
-                        : isTarget
-                          ? "var(--accent)"
-                          : routeColor,
-                    boxShadow: isNextStop && !isDimmed
-                      ? "0 0 8px rgba(34, 197, 94, 0.7)"
-                      : isTarget && !isDimmed
-                        ? "0 0 8px var(--accent-glow)"
+                        : ROUTE_COLOR,
+                    boxShadow: isNextStop
+                      ? "0 0 0 3px color-mix(in oklab, var(--status-live) 25%, transparent)"
+                      : isTarget
+                        ? "0 0 0 3px var(--accent-subtle)"
                         : "none",
                   }}
                 />
                 {!isLast && (
                   <div
                     className="w-[2px] flex-1 mt-1 mb-1"
-                    style={{
-                      background: isDimmed
-                        ? "var(--surface-3)"
-                        : `${routeColor}40`,
-                    }}
+                    style={{ background: isPast ? "var(--route-passed)" : `${ROUTE_COLOR}40` }}
                   />
                 )}
               </div>
 
               {/* Stop info */}
               <div className="flex-1 -mt-1 min-w-0">
-                {isNextStop && !isDimmed && (
-                  <div className="text-[9px] font-bold uppercase tracking-widest mb-1 flex items-center gap-1" style={{ color: "var(--status-live)" }}>
-                    <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: "var(--status-live)", animation: "pulse-dot 1.5s infinite" }} />
-                    {isAtStop ? "Bus is here" : "Next Stop"}
+                {isNextStop && (
+                  <div className="pp-stop-kicker" data-tone="live">
+                    <span aria-hidden="true" style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "var(--status-live)", animation: "pulse-dot 1.5s infinite" }} />
+                    {isAtStop ? "Bus is here" : "Next stop"}
                   </div>
                 )}
-                {visit === "unobserved" && (
-                  <div className="text-[9px] font-semibold uppercase tracking-widest mb-1" style={{ color: "var(--text-tertiary)" }}>
+                {isPast && (
+                  <div className="pp-stop-kicker" data-tone="muted">
                     {stopVisitLabel(visit)}
                   </div>
                 )}
-                <p className={`${(isTarget || isNextStop) && !isDimmed ? "font-semibold text-[14px]" : "font-medium text-[13px]"}`}
-                  style={{ color: isDimmed ? "var(--text-ghost)" : (isTarget || isNextStop) ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                <p className={(isTarget || isNextStop) && !isPast ? "font-medium text-[15px]" : "text-[14px]"}
+                  style={{ color: isPast ? "var(--text-tertiary)" : (isTarget || isNextStop) ? "var(--text-primary)" : "var(--text-secondary)" }}>
                   {stop.name}
                 </p>
-                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
-                    style={{ background: "var(--surface-3)", color: "var(--text-ghost)" }}>
+                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                  <span className="pp-chip">
                     {stop.shortName}
                   </span>
                   {isTarget && (
-                    <span className="px-1.5 py-0.5 rounded text-[8px] font-semibold"
-                      style={{ background: "var(--accent-subtle)", color: "var(--accent)" }}>
-                      {preview ? "Selected stop" : isFirst ? "Boarding Stop" : isLast ? "Destination" : "Selected Stop"}
+                    <span className="pp-chip" data-tone="accent">
+                      {preview ? "Selected stop" : isFirst ? "Boarding stop" : isLast ? "Destination" : "Selected stop"}
                     </span>
                   )}
                   {isFirst && !isTarget && (
-                    <span className="px-1.5 py-0.5 rounded text-[8px] font-semibold"
-                      style={{ background: "var(--surface-3)", color: "var(--text-ghost)" }}>
+                    <span className="pp-chip">
                       {preview ? "Route endpoint" : "Start"}
                     </span>
                   )}
                   {isLast && !isTarget && (
-                    <span className="px-1.5 py-0.5 rounded text-[8px] font-semibold"
-                      style={{ background: "var(--surface-3)", color: "var(--text-ghost)" }}>
+                    <span className="pp-chip">
                       {preview ? "Route endpoint" : "Terminus"}
                     </span>
                   )}
                   {isTarget && typeof walkMinutesToTarget === "number" && (
-                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-semibold"
-                      style={{ background: "rgba(59, 130, 246, 0.10)", color: "#60A5FA" }}>
-                      <Footprints className="w-2.5 h-2.5" />
+                    <span className="pp-chip">
+                      <Footprints className="w-3 h-3" aria-hidden="true" />
                       {walkMinutesToTarget === 0 ? "At stop" : `${walkMinutesToTarget} min walk`}
                     </span>
                   )}
@@ -188,16 +171,12 @@ export default function RouteTimelineSheet({
               {/* ETA */}
               {typeof etaMinutes === "number" && !isPast && !isAtStop && (
                 <div className="ml-auto text-right flex flex-col justify-center pr-1 pt-0.5">
-                  <div className="flex items-baseline gap-0.5">
-                    <span className={`text-lg font-extrabold tracking-tight`}
-                      style={{ 
-                        color: etaMinutes <= 2 && etaMinutes > 0 ? "var(--status-live)" : "var(--text-primary)",
-                        fontVariantNumeric: "tabular-nums",
-                      }}>
+                  <div className="flex items-baseline gap-1">
+                    <span className="pp-eta" data-soon={etaMinutes <= 2 && etaMinutes > 0}>
                       {etaMinutes === 0 ? "Due" : etaMinutes}
                     </span>
                     {etaMinutes > 0 && (
-                      <span className="text-[9px] font-semibold" style={{ color: "var(--text-ghost)" }}>
+                      <span className="pp-eta-unit">
                         min
                       </span>
                     )}
