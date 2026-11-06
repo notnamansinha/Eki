@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import WorkspaceLink from "@/components/shared/WorkspaceLink";
-import { CircleUserRound, LogOut, ChevronRight, LogIn, ClipboardPenLine, Trash2, LayoutDashboard } from "lucide-react";
+import { CircleUserRound, LogOut, ChevronRight, LogIn, MessageSquareText, UserRoundX, ShieldUser } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import FeedbackModal from "@/components/shared/FeedbackModal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
@@ -102,7 +102,7 @@ export default function AccountTab() {
           {user?.role === "admin" && (
             <WorkspaceLink href="/admin" className="pp-list-row" data-tone="accent">
               <span className="pp-list-icon" data-tone="accent">
-                <LayoutDashboard className="w-[18px] h-[18px]" aria-hidden="true" />
+                <ShieldUser className="w-[18px] h-[18px]" aria-hidden="true" />
               </span>
               <span className="pp-list-label">Admin panel</span>
               <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
@@ -111,7 +111,7 @@ export default function AccountTab() {
           {user && (
             <button type="button" className="pp-list-row" onClick={() => setShowFeedback(true)}>
               <span className="pp-list-icon">
-                <ClipboardPenLine className="w-[18px] h-[18px]" aria-hidden="true" />
+                <MessageSquareText className="w-[18px] h-[18px]" aria-hidden="true" />
               </span>
               <span className="pp-list-label">Send feedback</span>
               <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
@@ -138,7 +138,7 @@ export default function AccountTab() {
                   }}
                 >
                   <span className="pp-list-icon" data-tone="danger">
-                    <Trash2 className="w-[18px] h-[18px]" aria-hidden="true" />
+                    <UserRoundX className="w-[18px] h-[18px]" aria-hidden="true" />
                   </span>
                   <span className="pp-list-label">Delete account</span>
                   <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
@@ -211,6 +211,7 @@ export default function AccountTab() {
         title="Sign out?"
         description="Are you sure you want to sign out of your account?"
         confirmText="Sign out"
+        icon={LogOut}
         onCancel={() => setShowLogoutConfirm(false)}
         onConfirm={() => {
           setShowLogoutConfirm(false);
@@ -225,6 +226,7 @@ export default function AccountTab() {
         confirmText="Delete account"
         cancelText="Cancel"
         variant="danger"
+        icon={UserRoundX}
         loading={isDeleting}
         onConfirm={confirmDeletion}
         onCancel={() => setShowDeleteConfirm(false)}

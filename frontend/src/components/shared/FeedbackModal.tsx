@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Star, BusFront, ClipboardPenLine, X, Send, Check } from "lucide-react";
+import { Star, BusFront, MessageSquareText, X, Send, Check } from "lucide-react";
 import { auth } from "@/lib/firebaseAuth";
 import { FEEDBACK_WORD_LIMIT } from "@/config/passenger";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
@@ -210,7 +210,7 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, draf
         <div className="pp-dialog-header">
           <div className="flex items-center gap-3.5 min-w-0">
             <span className="pp-dialog-icon">
-              {busId ? <BusFront className="w-5 h-5" aria-hidden="true" /> : <ClipboardPenLine className="w-5 h-5" aria-hidden="true" />}
+              {busId ? <BusFront className="w-5 h-5" aria-hidden="true" /> : <MessageSquareText className="w-5 h-5" aria-hidden="true" />}
             </span>
             <div className="min-w-0">
               <h2 id={titleId} className="pp-dialog-title">

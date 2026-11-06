@@ -781,6 +781,15 @@
   .pp-list-icon { border-radius: 35.8%; corner-shape: squircle; }
 }
 
+/* iOS weights. Roboto Regular renders far lighter than SF on most screens, so
+   rows use Medium; names, chips and buttons use Bold, the heaviest weight
+   loaded, where iOS uses Semibold. */
+.pp-list-label { font-weight: 500; }
+.pp-profile-name,
+.pp-role-chip,
+.pp-btn-primary,
+.pp-btn-secondary { font-weight: 700; }
+
 .pp-footnote { color: var(--text-secondary); font-size: 0.75rem; text-align: center; }
 .pp-footnote-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25rem 1rem; }
 .pp-footnote-links a { display: inline-flex; min-height: 44px; align-items: center; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
@@ -1104,18 +1113,28 @@
   background: var(--pp-dialog-bg);
   box-shadow: var(--pp-dialog-shadow);
 }
-:root:has(.passenger-layout) .eki-confirm-title { color: var(--text-primary); font-family: var(--font-heading); font-size: 1.25rem; font-weight: 600; }
+/* Like an iOS alert: the title in the UI face, bold, rather than the serif. */
+:root:has(.passenger-layout) .eki-confirm-title { color: var(--text-primary); font-family: var(--font-ui); font-size: 1.0625rem; font-weight: 700; letter-spacing: normal; }
 :root:has(.passenger-layout) .eki-confirm-text { color: var(--text-secondary); font-size: 0.875rem; }
 :root:has(.passenger-layout) .eki-confirm-icon { border-color: transparent; background: var(--accent); color: var(--accent-contrast); }
 :root:has(.passenger-layout) .eki-confirm-icon[data-variant="danger"] { background: var(--status-danger); }
 :root:has(.passenger-layout) .eki-confirm-icon svg { color: inherit; }
 :root:has(.passenger-layout) .eki-confirm-actions { border-color: var(--border-subtle); }
-:root:has(.passenger-layout) :is(.eki-confirm-cancel, .eki-confirm-ok) { min-height: 44px; padding-inline: 1.125rem; border-radius: var(--pp-button-radius); font-size: 0.9375rem; font-weight: 500; box-shadow: none; }
+:root:has(.passenger-layout) :is(.eki-confirm-cancel, .eki-confirm-ok) { min-height: 44px; padding-inline: 1.125rem; border-radius: var(--pp-button-radius); font-size: 0.9375rem; font-weight: 700; box-shadow: none; }
 :root:has(.passenger-layout) .eki-confirm-cancel { border: 1px solid var(--text-primary); background: var(--surface-1); color: var(--text-primary); }
 :root:has(.passenger-layout) .eki-confirm-cancel:hover:not(:disabled) { background: var(--surface-3); }
 :root:has(.passenger-layout) .eki-confirm-ok { background: var(--accent); color: var(--accent-contrast); }
 :root:has(.passenger-layout) .eki-confirm-ok:hover:not(:disabled) { background: var(--accent-hover); }
 :root:has(.passenger-layout) .eki-confirm-ok[data-variant="danger"] { background: var(--status-danger); }
+
+/* The same continuous corners as Profile and Send feedback. */
+:root:has(.passenger-layout) .eki-confirm-icon { border-radius: 22.37%; }
+
+@supports (corner-shape: squircle) {
+  :root:has(.passenger-layout) .eki-confirm { border-radius: calc(var(--pp-dialog-radius) * 1.6); corner-shape: squircle; }
+  :root:has(.passenger-layout) .eki-confirm-icon { border-radius: 35.8%; corner-shape: squircle; }
+  :root:has(.passenger-layout) :is(.eki-confirm-cancel, .eki-confirm-ok) { border-radius: calc(var(--pp-button-radius) * 1.6); corner-shape: squircle; }
+}
 
 /* ═══ Motion preferences ═══ */
 @media (prefers-reduced-motion: reduce) {

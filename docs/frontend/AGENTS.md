@@ -52,7 +52,10 @@ route card when returning from tracking.
 
 Passenger navigation labels are Live, Routes and Profile. Use Lucide
 MapPinned for Live, connected dots for Routes and Lucide UserRound for Profile.
-The Send Feedback action uses Lucide ClipboardPenLine.
+The Send Feedback action uses Lucide MessageSquareText (2026-11-06; was
+ClipboardPenLine). Profile uses ShieldUser for Admin panel, LogOut for Sign
+out and UserRoundX for Delete account, and the matching confirm dialogs pass
+LogOut and UserRoundX to ConfirmModal's `icon` prop.
 
 The Routes tab shows published schedules in compact rows with line badges.
 Use the front-facing bus glyph with mirrors and tires in both badge placements.
