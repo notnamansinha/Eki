@@ -387,6 +387,78 @@
   .passenger-layout .pp-home-heading { padding-bottom: 0.5rem; }
 }
 
+/* Phones: the Live routes sheet rests as a peek above the tab bar so the
+   painting shows, and the whole peek raises or lowers it. The clip keeps the
+   lowered list from showing through the translucent tab bar. */
+.pp-home-sheet-toggle { display: none; }
+
+@media not all and (any-pointer: fine) {
+  /* The fallback matches the measured peek at default text size, so the
+     loading screen and the first frame rest where the workspace settles. */
+  .passenger-layout .passenger-home-panel {
+    --home-peek-fallback: 7.375rem;
+    clip-path: inset(-40px 0 0);
+  }
+
+  /* Animate only once the first measurement has painted (data-peek-ready). */
+  .passenger-layout .passenger-home-panel[data-peek-ready] {
+    transition: transform 0.45s cubic-bezier(0.32, 0.72, 0, 1), clip-path 0.45s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  /* Never lower past the raised position, even if the peek outgrows the panel. */
+  .passenger-layout .passenger-home-panel[data-sheet="closed"] {
+    clip-path: inset(-40px 0 max(0px, calc(100% - var(--home-peek, var(--home-peek-fallback)))));
+    transform: translateY(max(0px, calc(100% - var(--home-peek, var(--home-peek-fallback)))));
+  }
+
+  /* Keep the route count and date clear of the chevron. */
+  .passenger-layout .passenger-home-panel:has(> .pp-home-sheet-toggle) .pp-home-heading { padding-right: 1.75rem; }
+
+  .pp-home-sheet-toggle {
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: 2;
+    display: block;
+    height: min(100%, var(--home-peek, var(--home-peek-fallback)));
+    border-radius: var(--pp-panel-radius) var(--pp-panel-radius) 0 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .pp-home-sheet-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+
+  .pp-home-sheet-chevron {
+    position: absolute;
+    top: 1.125rem;
+    right: 1.25rem;
+    width: 1.25rem;
+    height: 1.25rem;
+    color: var(--text-secondary);
+    transition: transform 0.3s ease;
+  }
+
+  .passenger-home-panel[data-sheet="open"] .pp-home-sheet-chevron { transform: rotate(180deg); }
+
+  /* The peek says how many routes are live before it is raised. */
+  .passenger-layout .passenger-home-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    column-gap: 0.75rem;
+  }
+
+  .passenger-layout .passenger-home-count { display: inline; color: var(--text-secondary); font-size: 0.875rem; }
+}
+
+/* While the sheet is raised in portrait, the painting slides up with it so the
+   band above the sheet shows the passengers and the trees outside, not just
+   the ceiling straps. The sheet is opaque, so the vacated bottom never shows. */
+@media (not (any-pointer: fine)) and (orientation: portrait) {
+  .passenger-layout:has(.passenger-home-panel[data-peek-ready]) .transit-artwork img { transition: transform 0.45s cubic-bezier(0.32, 0.72, 0, 1); }
+  .passenger-layout:has(.passenger-home[data-home-sheet="open"][aria-hidden="false"]) .transit-artwork img { transform: translateY(-30%); }
+}
+
 /* Pointer devices: paper cards with the line code and a circled arrow. */
 @media (any-pointer: fine) {
   .passenger-layout [data-passenger-route]:active .passenger-live-route-card { transform: scale(0.985); }
@@ -506,6 +578,31 @@
   .passenger-layout .schedule-list { border-right-width: 1px; }
 }
 
+/* As on ahduni.edu.in, AU Red carries white type: the list and timetable
+   headers are solid maroon bands, with a white search field and badge. */
+.passenger-layout .schedule-list-header,
+.passenger-layout .schedule-detail-header {
+  border-bottom: 0;
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.passenger-layout .schedule-list-header h1,
+.passenger-layout .schedule-detail-header h2 { color: #ffffff; }
+.passenger-layout .schedule-list-header p { color: rgb(255 255 255 / 0.86); }
+.passenger-layout .schedule-list-header .schedule-search { border-color: transparent; background: #ffffff; color: var(--text-secondary); }
+.passenger-layout .schedule-list-header .schedule-search:focus-within { border-color: #ffffff; box-shadow: 0 0 0 3px rgb(255 255 255 / 0.45); }
+.passenger-layout .schedule-detail-header .schedule-back { color: #ffffff; }
+.passenger-layout .schedule-detail-header .schedule-line-badge { background: #ffffff; color: var(--accent); }
+.passenger-layout .passenger-schedules :is(.schedule-list-header, .schedule-detail-header) button:focus-visible { outline-color: #ffffff; }
+/* Headings take focus when a list or timetable opens; keep that ring visible on the band. */
+.passenger-layout .passenger-schedules :is(.schedule-list-header, .schedule-detail-header) :is(h1, h2):focus-visible { outline: 2px solid #ffffff; outline-offset: 2px; }
+
+/* High-contrast mode drops the band colour, so restore the sticky headers' edge. */
+@media (forced-colors: active) {
+  .passenger-layout :is(.schedule-list-header, .schedule-detail-header) { border-bottom: 1px solid CanvasText; }
+}
+
 /* ═══ Profile: Settings-style grouped rows with tinted glyph tiles ═══ */
 .pp-page {
   display: flex;
@@ -620,6 +717,63 @@
 .pp-list-row[data-tone="accent"] .pp-list-label { color: var(--accent); }
 .pp-list-chevron { flex: none; color: var(--text-tertiary); transition: transform 0.15s ease; }
 .pp-list-row:hover .pp-list-chevron { transform: translateX(2px); }
+
+/* As on ahduni.edu.in: a maroon section title over a short maroon rule, the
+   account on a solid maroon card with white type, and maroon glyph tiles. */
+.pp-page-title { color: var(--accent); }
+
+.pp-page-title::after {
+  display: block;
+  width: 2.5rem;
+  height: 2px;
+  margin-top: 0.5rem;
+  background: var(--accent);
+  content: "";
+}
+
+.pp-profile-card { background: var(--accent); color: #ffffff; }
+.pp-profile-card .pp-profile-name { color: #ffffff; }
+.pp-profile-card .pp-profile-email { color: rgb(255 255 255 / 0.86); }
+.pp-profile-card .pp-avatar { background: rgb(255 255 255 / 0.16); color: #ffffff; box-shadow: 0 0 0 2px rgb(255 255 255 / 0.75); }
+.pp-profile-card .pp-role-chip { background: #ffffff; color: var(--accent); }
+/* At large text or page zoom the details wrap below the photo instead of
+   spilling white type past the card onto the light page. */
+.pp-profile-card { flex-wrap: wrap; }
+.pp-profile-card > div:last-child { flex: 1 1 8rem; grid-template-columns: minmax(0, 1fr); }
+.pp-role-chip { max-width: 100%; overflow-wrap: anywhere; }
+.pp-list-icon:not([data-tone]) { background: var(--accent); }
+
+/* Apple's continuous corners: iOS grouped sections round at 10pt and Settings
+   glyph tiles at 22.37% of their size, on a curve that eases into each edge
+   instead of a circular arc. With 60% smoothing that curve runs 1.6x the
+   nominal radius along each edge, so corner-shape: squircle uses 1.6x the
+   radius. Without corner-shape the nominal circular radius remains. */
+.pp-profile-card,
+.pp-list { border-radius: 10px; }
+.pp-list-icon { border-radius: 22.37%; }
+
+@supports (corner-shape: squircle) {
+  .pp-profile-card,
+  .pp-list { border-radius: 16px; corner-shape: squircle; }
+  .pp-list-icon { border-radius: 35.8%; corner-shape: squircle; }
+}
+
+/* A little more room, in iOS Settings proportions: 56px rows, 32px glyph
+   tiles, hairlines that start at the label, and 24px between blocks. */
+.pp-page-inner { gap: 1.5rem; }
+.pp-profile-card { gap: 1.125rem; padding: 1.25rem; }
+.pp-list-row { min-height: 3.5rem; gap: 1rem; padding-block: 0.75rem; }
+.pp-list-icon { width: 2rem; height: 2rem; }
+.pp-list > * + *::before { left: 4rem; }
+
+/* iOS weights. Roboto Regular renders far lighter than SF on most screens, so
+   rows use Medium; names, chips and buttons use Bold, the heaviest weight
+   loaded, where iOS uses Semibold. */
+.pp-list-label { font-weight: 500; }
+.pp-profile-name,
+.pp-role-chip,
+.pp-btn-primary,
+.pp-btn-secondary { font-weight: 700; }
 
 .pp-footnote { color: var(--text-secondary); font-size: 0.75rem; text-align: center; }
 .pp-footnote-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25rem 1rem; }
@@ -912,6 +1066,26 @@
 .pp-star[data-on="true"] svg { color: var(--accent); fill: var(--accent); }
 .pp-rating-label { color: var(--text-secondary); font-size: 0.875rem; text-align: center; }
 
+/* Apple's continuous corners, as on Profile: the glyph tile rounds at 22.37%
+   of its size and the text box at the 10pt of a grouped field. Where
+   corner-shape is supported, every corner here switches to the squircle curve
+   at 1.6x its nominal radius. The close button stays a circle and the
+   grabber a capsule. */
+.pp-dialog-icon { border-radius: 22.37%; }
+.pp-textarea { border-radius: 10px; }
+
+@supports (corner-shape: squircle) {
+  .pp-dialog { border-radius: calc(var(--pp-dialog-radius) * 1.6) calc(var(--pp-dialog-radius) * 1.6) 0 0; corner-shape: squircle; }
+  .pp-dialog-icon { border-radius: 35.8%; corner-shape: squircle; }
+  .pp-textarea { border-radius: 16px; corner-shape: squircle; }
+  .pp-dialog :is(.pp-btn-primary, .pp-btn-secondary) { border-radius: calc(var(--pp-button-radius) * 1.6); corner-shape: squircle; }
+  .pp-star { border-radius: 19.2px; corner-shape: squircle; }
+
+  @media (min-width: 40rem) {
+    .pp-dialog { border-radius: calc(var(--pp-dialog-radius) * 1.6); }
+  }
+}
+
 .pp-success { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; padding: 2.25rem 1.75rem calc(2.25rem + var(--safe-area-bottom)); text-align: center; }
 .pp-success-icon { display: grid; width: 4rem; height: 4rem; place-items: center; border-radius: 50%; background: var(--surface-4); color: var(--text-primary); }
 .pp-success .pp-dialog-title { font-family: var(--font-heading); font-size: 1.5rem; font-weight: 600; }
@@ -924,18 +1098,28 @@
   background: var(--pp-dialog-bg);
   box-shadow: var(--pp-dialog-shadow);
 }
-:root:has(.passenger-layout) .eki-confirm-title { color: var(--text-primary); font-family: var(--font-heading); font-size: 1.25rem; font-weight: 600; }
+/* Like an iOS alert: the title in the UI face, bold, rather than the serif. */
+:root:has(.passenger-layout) .eki-confirm-title { color: var(--text-primary); font-family: var(--font-ui); font-size: 1.0625rem; font-weight: 700; letter-spacing: normal; }
 :root:has(.passenger-layout) .eki-confirm-text { color: var(--text-secondary); font-size: 0.875rem; }
 :root:has(.passenger-layout) .eki-confirm-icon { border-color: transparent; background: var(--accent); color: var(--accent-contrast); }
 :root:has(.passenger-layout) .eki-confirm-icon[data-variant="danger"] { background: var(--status-danger); }
 :root:has(.passenger-layout) .eki-confirm-icon svg { color: inherit; }
 :root:has(.passenger-layout) .eki-confirm-actions { border-color: var(--border-subtle); }
-:root:has(.passenger-layout) :is(.eki-confirm-cancel, .eki-confirm-ok) { min-height: 44px; padding-inline: 1.125rem; border-radius: var(--pp-button-radius); font-size: 0.9375rem; font-weight: 500; box-shadow: none; }
+:root:has(.passenger-layout) :is(.eki-confirm-cancel, .eki-confirm-ok) { min-height: 44px; padding-inline: 1.125rem; border-radius: var(--pp-button-radius); font-size: 0.9375rem; font-weight: 700; box-shadow: none; }
 :root:has(.passenger-layout) .eki-confirm-cancel { border: 1px solid var(--text-primary); background: var(--surface-1); color: var(--text-primary); }
 :root:has(.passenger-layout) .eki-confirm-cancel:hover:not(:disabled) { background: var(--surface-3); }
 :root:has(.passenger-layout) .eki-confirm-ok { background: var(--accent); color: var(--accent-contrast); }
 :root:has(.passenger-layout) .eki-confirm-ok:hover:not(:disabled) { background: var(--accent-hover); }
 :root:has(.passenger-layout) .eki-confirm-ok[data-variant="danger"] { background: var(--status-danger); }
+
+/* The same continuous corners as Profile and Send feedback. */
+:root:has(.passenger-layout) .eki-confirm-icon { border-radius: 22.37%; }
+
+@supports (corner-shape: squircle) {
+  :root:has(.passenger-layout) .eki-confirm { border-radius: calc(var(--pp-dialog-radius) * 1.6); corner-shape: squircle; }
+  :root:has(.passenger-layout) .eki-confirm-icon { border-radius: 35.8%; corner-shape: squircle; }
+  :root:has(.passenger-layout) :is(.eki-confirm-cancel, .eki-confirm-ok) { border-radius: calc(var(--pp-button-radius) * 1.6); corner-shape: squircle; }
+}
 
 /* ═══ Motion preferences ═══ */
 @media (prefers-reduced-motion: reduce) {
@@ -943,4 +1127,8 @@
   :is(.pp-btn-primary, .pp-btn-secondary, .pp-icon-button, .pp-map-button):active,
   .pp-star:hover,
   .pp-list-row:hover .pp-list-chevron { transform: none; }
+
+  .passenger-layout .passenger-home-panel[data-peek-ready],
+  .passenger-layout:has(.passenger-home-panel[data-peek-ready]) .transit-artwork img,
+  .pp-home-sheet-chevron { transition: none; }
 }

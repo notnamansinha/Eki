@@ -23,9 +23,11 @@ export default function PassengerLoadingShell() {
           aria-hidden="true"
         />
 
+        {/* Rests lowered on touch screens, like the workspace's sheet, so launch does not jump. */}
         <div
           className={passengerPanelClassName}
           style={passengerPanelStyle}
+          data-sheet="closed"
         >
           <div className="passenger-home-heading pp-home-heading mx-6 mb-3 shrink-0 pb-5">
             <h1 className="pp-title">Live routes</h1>

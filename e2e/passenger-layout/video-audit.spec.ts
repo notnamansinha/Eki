@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { homePanel, raiseLiveRoutes, trackRoute } from "./liveRoutes";
 
 // Regressions for the 2026-10-28 passenger video review (PAX-01..04) and the
 // admin "Passenger Panel" placement. Phone insets are injected explicitly, the
@@ -9,7 +10,6 @@ async function injectInsets(page: Page, top = 47, bottom = 34) {
 }
 const nav = (page: Page) => page.locator("[data-passenger-workspace] nav");
 const navButton = (page: Page, name: "Live" | "Routes" | "Profile") => nav(page).getByRole("button", { name, exact: true });
-const homePanel = (page: Page) => page.locator("[data-passenger-workspace] .passenger-home-panel");
 
 async function paintedNavBottom(page: Page) {
   return nav(page).evaluate(element => {
@@ -30,6 +30,7 @@ for (const bottomInset of [0, 34]) {
     const viewport = page.viewportSize()!;
     const desktop = await page.evaluate(() => matchMedia("(any-pointer: fine)").matches);
     expect(await paintedNavBottom(page)).toBeCloseTo(viewport.height - (desktop ? 16 : 0), 0);
+    await raiseLiveRoutes(page);
     const panel = (await homePanel(page).boundingBox())!;
     const navBox = (await nav(page).boundingBox())!;
     // Phones rest the sheet on the tab bar; the desktop panel keeps a gap above the dock.
@@ -103,7 +104,10 @@ test("PAX-02 rapid switching ends on a coherent destination", async ({ page }) =
   const hit = await page.evaluate(() => {
     const heading = Array.from(document.querySelectorAll("[data-passenger-workspace] h1")).find(h => h.textContent === "Live routes")!;
     const box = heading.getBoundingClientRect();
-    return heading.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    // On touch screens the sheet's own toggle spans the heading; any other layer is a leak.
+    const toggle = heading.closest(".passenger-home-panel")?.querySelector(".pp-home-sheet-toggle");
+    return heading.contains(top) || Boolean(toggle?.contains(top));
   });
   expect(hit).toBe(true);
 });
@@ -276,6 +280,8 @@ const shortScreens = [
 ];
 
 test("edge: landscape phone and tiny heights keep the panel above a painted footer", async ({ browser, baseURL }) => {
+  // Four fresh browser contexts, each raising the phone sheet and opening a route.
+  test.slow();
   for (const { hasTouch, ...size } of shortScreens) {
     const label = `${size.width}x${size.height}${hasTouch ? " touch" : " mouse"}`;
     const context = await browser.newContext({ baseURL, viewport: size, hasTouch });
@@ -286,6 +292,7 @@ test("edge: landscape phone and tiny heights keep the panel above a painted foot
       await expect(nav(page)).toBeVisible();
       // Touch screens paint the bar to the edge; the desktop dock floats 16 px above it.
       expect(await paintedNavBottom(page), label).toBeCloseTo(size.height - (hasTouch ? 0 : 16), 0);
+      await raiseLiveRoutes(page);
       const panel = (await homePanel(page).boundingBox())!;
       const navBox = (await nav(page).boundingBox())!;
       expect(panel.y + panel.height, label).toBeLessThanOrEqual(navBox.y);
@@ -316,7 +323,7 @@ test("edge: landscape phone and tiny heights keep the panel above a painted foot
         await page.goto("/?scenario=forward");
         await injectInsets(page, 0, 21);
         await page.addStyleTag({ content: "aside[aria-label='QA fixture controls']{display:none}" });
-        await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+        await trackRoute(page);
         const chat = page.getByRole("button", { name: "Open live chat", exact: true });
         await expect(chat).toBeVisible();
         const chatBox = (await chat.boundingBox())!;
@@ -344,7 +351,7 @@ test("edge: landscape phone and tiny heights keep the panel above a painted foot
 test("edge: the collapsed route timeline paints and takes pointers only on its header", async ({ page }) => {
   await page.goto("/?scenario=forward");
   await injectInsets(page, 0, 21);
-  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  await trackRoute(page);
   const toggle = page.getByRole("button", { name: "Route timeline", exact: true });
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await page.locator("[data-map-sheet]").evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
@@ -370,7 +377,7 @@ test("edge: the collapsed route timeline paints and takes pointers only on its h
 test("edge: chat overlay ends at the navigation instead of under it", async ({ page }) => {
   await page.goto("/?scenario=forward");
   await injectInsets(page);
-  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  await trackRoute(page);
   const open = page.getByRole("button", { name: "Open live chat", exact: true });
   await expect(open).toBeVisible();
   await open.click();

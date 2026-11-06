@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Star, BusFront, ClipboardPenLine, X, Send, Check } from "lucide-react";
+import { Star, BusFront, MessageSquareText, X, Send, Check } from "lucide-react";
 import { auth } from "@/lib/firebaseAuth";
 import { FEEDBACK_WORD_LIMIT } from "@/config/passenger";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
@@ -210,7 +210,7 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, draf
         <div className="pp-dialog-header">
           <div className="flex items-center gap-3.5 min-w-0">
             <span className="pp-dialog-icon">
-              {busId ? <BusFront className="w-5 h-5" aria-hidden="true" /> : <ClipboardPenLine className="w-5 h-5" aria-hidden="true" />}
+              {busId ? <BusFront className="w-5 h-5" aria-hidden="true" /> : <MessageSquareText className="w-5 h-5" aria-hidden="true" />}
             </span>
             <div className="min-w-0">
               <h2 id={titleId} className="pp-dialog-title">
@@ -259,7 +259,7 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, draf
           {/* Comment */}
           <div className="flex flex-col gap-2">
             <label htmlFor={commentId} className="pp-field-label">
-              {busId ? "Comments (optional)" : "What's on your mind?"}
+              {busId ? "Comments (optional)" : "Comments and suggestions"}
             </label>
             <textarea
               id={commentId}
@@ -282,10 +282,9 @@ export default function FeedbackModal({ userId, busId, driverId, sessionId, draf
             />
 
             <div className="pp-field-meta">
+              {/* Speaks only for errors and the cooldown; empty otherwise. */}
               <span id={feedbackStatusId} role="status" aria-live="polite" data-tone={error ? "danger" : undefined}>
-                {error || (cooldownRemaining > 0
-                  ? `Wait ${formatCooldown(cooldownRemaining)}`
-                  : "Ready")}
+                {error || (cooldownRemaining > 0 ? `Wait ${formatCooldown(cooldownRemaining)}` : "")}
               </span>
               <span data-tone={wordCount >= FEEDBACK_WORD_LIMIT ? "warning" : undefined}>
                 {wordCount} / {FEEDBACK_WORD_LIMIT} words

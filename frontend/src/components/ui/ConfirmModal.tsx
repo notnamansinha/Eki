@@ -2,7 +2,7 @@
 
 import React, { useId, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, ShieldAlert, Info, Loader2 } from "lucide-react";
+import { AlertTriangle, ShieldAlert, Info, Loader2, type LucideIcon } from "lucide-react";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 interface ConfirmModalProps {
@@ -13,6 +13,8 @@ interface ConfirmModalProps {
   cancelText?: string;
   showCancel?: boolean;
   variant?: "danger" | "warning" | "info";
+  /** Names the action (e.g. LogOut for sign out); defaults to the variant's alert icon. */
+  icon?: LucideIcon;
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
   loading?: boolean;
@@ -27,6 +29,7 @@ export default function ConfirmModal({
   cancelText = "Cancel",
   showCancel = true,
   variant = "danger",
+  icon,
   onConfirm,
   onCancel,
   loading = false,
@@ -67,7 +70,8 @@ export default function ConfirmModal({
     }
   };
 
-  const { iconBg, iconColor, buttonBg, Icon } = getVariantStyles();
+  const { iconBg, iconColor, buttonBg, Icon: VariantIcon } = getVariantStyles();
+  const Icon = icon ?? VariantIcon;
 
   // Escape transformed and scrolling parents so the dialog covers the viewport.
   return createPortal(

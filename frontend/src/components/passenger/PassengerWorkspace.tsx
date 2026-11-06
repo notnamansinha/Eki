@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useId, useSyncExternalStore, type CSSProperties } from "react";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
-import { MapPinned, UserRound, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle, Info, Megaphone } from "lucide-react";
+import { MapPinned, UserRound, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle, Info, Megaphone, ChevronUp } from "lucide-react";
 import { subscribeLiveBusChangesByRoute } from "@/lib/liveBusStore";
 import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
 import { getJoinedRideStatus } from "@/lib/joinedRideStatus";
@@ -81,6 +81,21 @@ function hasSessionId(bus: VisibleBusData): bus is ActiveSessionBusData {
   return typeof bus.sessionId === "string" && bus.sessionId.length > 0;
 }
 
+// Touch screens show Live routes as a sheet that rests low; pointer devices
+// keep the centred panel. Matches the phone rules in app/passenger/theme.css.
+const TOUCH_LAYOUT_QUERY = "not all and (any-pointer: fine)";
+function subscribeTouchLayout(onChange: () => void) {
+  const query = window.matchMedia?.(TOUCH_LAYOUT_QUERY);
+  query?.addEventListener?.("change", onChange);
+  return () => query?.removeEventListener?.("change", onChange);
+}
+const readTouchLayout = () => window.matchMedia?.(TOUCH_LAYOUT_QUERY)?.matches ?? false;
+const readServerTouchLayout = () => false;
+/** The sheet's rise (theme.css: 0.45s); route taps wait it out. */
+const HOME_SHEET_RISE_MS = 450;
+/** Below this much hidden panel, lowering the sheet would hide nothing useful. */
+const HOME_SHEET_MIN_HIDDEN_PX = 56;
+
 export default function PassengerWorkspace() {
   const {
     isConnected,
@@ -98,6 +113,23 @@ export default function PassengerWorkspace() {
   // The route schedule follows the same mount-once rule as Profile.
   const [routesMounted, setRoutesMounted] = useState(false);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
+  // On phones the Live routes sheet rests as a peek so the painting shows, and
+  // rises when tapped. A passenger's own choice wins; until then it opens by
+  // itself whenever it has something to say (see homeSheetOpen below).
+  // Choosing a route leaves it raised for the way back.
+  const [homeSheetChoice, setHomeSheetChoice] = useState<boolean | null>(null);
+  const touchLayout = useSyncExternalStore(subscribeTouchLayout, readTouchLayout, readServerTouchLayout);
+  const homeHeading = useRef<HTMLDivElement>(null);
+  const homePanel = useRef<HTMLDivElement>(null);
+  // Peek = panel top to the end of the heading; panel = the raised height.
+  const [homeSheetGeometry, setHomeSheetGeometry] = useState({ peek: 0, panel: 0 });
+  // Transitions start only after the first measurement has painted, so a cold
+  // load lands at the peek instead of sliding from the CSS fallback.
+  const [homePeekReady, setHomePeekReady] = useState(false);
+  // A second tap on a rising sheet must not open the route sliding under it.
+  const homeSheetRising = useRef<number | null>(null);
+  useEffect(() => () => { if (homeSheetRising.current !== null) window.clearTimeout(homeSheetRising.current); }, []);
+  const homeRoutesId = useId();
   const showSection = useCallback((section: PassengerSection) => {
     setIsMessagingOpen(false);
     if (section === "routes") setRoutesMounted(true);
@@ -112,6 +144,31 @@ export default function PassengerWorkspace() {
     // the workspace. A failed download here is retried by Track itself.
     void import("@/components/maps/PassengerTrackingMap").catch(() => {});
   }, []);
+
+  useLayoutEffect(() => {
+    // Measured before the first paint, and again whenever text size or the
+    // window changes, so the peek always ends exactly below the heading.
+    const heading = homeHeading.current;
+    const panel = homePanel.current;
+    if (!heading || !panel) return;
+    const update = () => setHomeSheetGeometry(previous => {
+      const peek = heading.offsetTop + heading.offsetHeight;
+      const height = panel.offsetHeight;
+      return previous.peek === peek && previous.panel === height ? previous : { peek, panel: height };
+    });
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(heading);
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (homePeekReady || homeSheetGeometry.peek === 0) return;
+    const frame = window.requestAnimationFrame(() => setHomePeekReady(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [homePeekReady, homeSheetGeometry.peek]);
 
   useEffect(() => {
     const syncSection = () => {
@@ -540,11 +597,13 @@ export default function PassengerWorkspace() {
   };
 
   const handleRouteSelect = (routeId: string) => {
+    if (homeSheetRising.current !== null) return;
     const focused = document.activeElement;
     keyboardRouteId.current =
       focused instanceof HTMLButtonElement && focused.dataset.passengerRoute === routeId && focused.matches(":focus-visible")
         ? routeId : null;
     setSelectedRouteId(routeId);
+    setHomeSheetChoice(true);
     setSelectedDestinationStopId("");
     setSelectedLiveBusKey("");
     setSelectedBusId("");
@@ -559,6 +618,20 @@ export default function PassengerWorkspace() {
       <p className="min-w-0">{settings.announcementText}</p>
     </div>
   ) : null;
+  // Raised by default when the panel has something to say: an announcement, or
+  // loaded data with no route to choose (the reason for that is in the panel).
+  const homeSheetOpen = homeSheetChoice ?? Boolean(announcement || (projectionReady && catalogReady && displayRoutes.length === 0));
+  // A sheet only when the heading leaves room below it; with very large text on
+  // a small phone the panel simply stays open, with no toggle over the routes.
+  const homeSheetUsable = touchLayout && homeSheetGeometry.peek > 0 && homeSheetGeometry.peek <= homeSheetGeometry.panel - HOME_SHEET_MIN_HIDDEN_PX;
+  const homeSheetLowered = homeSheetUsable && !homeSheetOpen;
+  const toggleHomeSheet = () => {
+    if (!homeSheetOpen) {
+      if (homeSheetRising.current !== null) window.clearTimeout(homeSheetRising.current);
+      homeSheetRising.current = window.setTimeout(() => { homeSheetRising.current = null; }, HOME_SHEET_RISE_MS);
+    }
+    setHomeSheetChoice(!homeSheetOpen);
+  };
   // Only ride-recovery messages are written for riders; the others name internals.
   const plainDataError = !routesError && !catalogError && !detailDataError && rideRecoveryError
     ? rideRecoveryError
@@ -599,17 +672,32 @@ export default function PassengerWorkspace() {
       <main className="relative min-h-0 flex-1 overflow-clip">
 
         {/* ── HOME VIEW ── */}
-        <div inert={visibleView !== "home"} aria-hidden={visibleView !== "home"} className={`passenger-home absolute inset-0 z-20 flex flex-col pt-safe transition-[opacity,transform] duration-200 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"}`}>
+        <div inert={visibleView !== "home"} aria-hidden={visibleView !== "home"} data-home-sheet={homeSheetLowered ? "closed" : "open"} className={`passenger-home absolute inset-0 z-20 flex flex-col pt-safe transition-[opacity,transform] duration-200 ${visibleView === "home" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"}`}>
 
           {/* Top spacer to frame the bus illustration near the top of the screen */}
           <div className="shrink-0" style={passengerTopSpacerStyle} aria-hidden="true" />
 
           {/* Unified Transit Panel that fills the rest of the height, with a gap above bottom nav */}
-          <div className={`${passengerPanelClassName} flex-1`}
-            style={passengerPanelStyle}
+          <div ref={homePanel} className={`${passengerPanelClassName} flex-1`}
+            style={homeSheetGeometry.peek > 0 ? { ...passengerPanelStyle, "--home-peek": `${homeSheetGeometry.peek}px` } as CSSProperties : passengerPanelStyle}
+            data-sheet={homeSheetLowered ? "closed" : "open"}
+            data-peek-ready={homePeekReady || undefined}
           >
+            {/* Touch screens only: the whole peek raises or lowers the list. */}
+            {homeSheetUsable && (
+              <button
+                type="button"
+                className="pp-home-sheet-toggle"
+                aria-expanded={homeSheetOpen}
+                aria-controls={homeRoutesId}
+                aria-label={homeSheetOpen ? "Hide live routes" : "Show live routes"}
+                onClick={toggleHomeSheet}
+              >
+                <ChevronUp className="pp-home-sheet-chevron" aria-hidden="true" />
+              </button>
+            )}
             {/* Heading Section - Fixed */}
-            <div className="passenger-home-heading pp-home-heading pb-5 mb-3 mx-6 shrink-0">
+            <div ref={homeHeading} className="passenger-home-heading pp-home-heading pb-5 mb-3 mx-6 shrink-0">
               <PassengerDate />
               <div className="passenger-home-title">
                 <h1 ref={liveRoutesHeading} tabIndex={-1} className="pp-title">
@@ -628,6 +716,8 @@ export default function PassengerWorkspace() {
             {/* Status / Routes Section - Scrollable */}
             <div
               ref={liveRouteScroller}
+              id={homeRoutesId}
+              inert={homeSheetLowered}
               className="passenger-live-route-scroll flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-32"
             >
               <div ref={liveRouteContent}>

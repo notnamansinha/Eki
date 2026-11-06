@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { raiseLiveRoutes } from "./liveRoutes";
 
 test("Live Routes adapts the panel and dock to the input device", async ({ page }) => {
   await page.goto("/?scenario=many-routes");
@@ -6,6 +7,8 @@ test("Live Routes adapts the panel and dock to the input device", async ({ page 
   const list = page.locator(".passenger-live-route-scroll");
   const cards = list.getByRole("button", { name: /^Track QA route/ });
   await expect(cards).toHaveCount(8);
+  // Phones measure the raised sheet; it rests lower (home-sheet.spec.ts).
+  await raiseLiveRoutes(page);
 
   const panel = page.locator("[data-passenger-workspace] .passenger-home-panel");
   const nav = page.getByRole("navigation", { name: "Passenger sections" });

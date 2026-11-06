@@ -52,7 +52,10 @@ route card when returning from tracking.
 
 Passenger navigation labels are Live, Routes and Profile. Use Lucide
 MapPinned for Live, connected dots for Routes and Lucide UserRound for Profile.
-The Send Feedback action uses Lucide ClipboardPenLine.
+The Send Feedback action uses Lucide MessageSquareText (2026-11-06; was
+ClipboardPenLine). Profile uses ShieldUser for Admin panel, LogOut for Sign
+out and UserRoundX for Delete account, and the matching confirm dialogs pass
+LogOut and UserRoundX to ConfirmModal's `icon` prop.
 
 The Routes tab shows published schedules in compact rows with line badges.
 Use the front-facing bus glyph with mirrors and tires in both badge placements.
@@ -80,6 +83,27 @@ cards, adding the line code and gold rule only when the window is at least
 rail and AU Red terminals. Keep text at 12px or more, touch targets at 44px,
 and pair every colour signal with text or an icon. Show location use in a
 notice before the browser prompt; tracking must work without location.
+Routes and Profile follow ahduni.edu.in, where AU Red carries white type: the
+route list and timetable headers are solid AU Red bands (white search field,
+white line badge on the timetable), Profile has an AU Red title over a short AU
+Red rule and the account on a solid AU Red card. Keep focus rings white on
+those bands.
+
+## Phone Live routes sheet (2026-11-06)
+
+On touch screens the Live routes panel rests as a peek above the tab bar
+(date, title, route count and hint) so the passenger artwork shows in full.
+The whole peek is one button ("Show live routes" / "Hide live routes") that
+raises the list; while lowered the list is inert. Choosing a route leaves the
+sheet raised for Back. Until the passenger toggles it, the sheet opens by
+itself when it has something to say: an admin announcement, or loaded data
+with no route to choose. It is a sheet only while the heading leaves at least
+56px of panel below it; with very large text it stays open with no toggle.
+The peek is measured before first paint and transitions start only after
+that (`data-peek-ready`); the loading shell rests at the same peek. Route taps
+are ignored for the 450ms the sheet takes to rise. In portrait the artwork slides up 30% while the sheet
+is raised, so the band above it frames the passengers and trees rather than
+the ceiling straps. Pointer devices keep the centred panel with no toggle.
 
 ## Admin Live Ops dark (2026-11-06)
 
