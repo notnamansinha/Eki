@@ -766,6 +766,21 @@
 .pp-profile-card .pp-role-chip { background: #ffffff; color: var(--accent); }
 .pp-list-icon:not([data-tone]) { background: var(--accent); }
 
+/* Apple's continuous corners: iOS grouped sections round at 10pt and Settings
+   glyph tiles at 22.37% of their size, on a curve that eases into each edge
+   instead of a circular arc. With 60% smoothing that curve runs 1.6x the
+   nominal radius along each edge, so corner-shape: squircle uses 1.6x the
+   radius. Without corner-shape the nominal circular radius remains. */
+.pp-profile-card,
+.pp-list { border-radius: 10px; }
+.pp-list-icon { border-radius: 22.37%; }
+
+@supports (corner-shape: squircle) {
+  .pp-profile-card,
+  .pp-list { border-radius: 16px; corner-shape: squircle; }
+  .pp-list-icon { border-radius: 35.8%; corner-shape: squircle; }
+}
+
 .pp-footnote { color: var(--text-secondary); font-size: 0.75rem; text-align: center; }
 .pp-footnote-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25rem 1rem; }
 .pp-footnote-links a { display: inline-flex; min-height: 44px; align-items: center; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
