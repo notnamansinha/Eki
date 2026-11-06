@@ -7,6 +7,8 @@ import type { PassengerStopEstimates } from "@/lib/passengerStopEstimates";
 import { publish, publishArrival, publishArrivalAtNextStop, publishAtOrigin, publishDeparture, publishDetour, publishGnssLoss, publishUncertainFix, route } from "./state";
 import { STOP_ARRIVAL_GEOFENCE_M } from "../../backend/src/services/tripStateReducer";
 import "../../frontend/src/app/globals.css";
+// passenger/layout.tsx loads the passenger theme; it applies inside .passenger-layout.
+import "../../frontend/src/app/passenger/theme.css";
 
 function Fixture() {
   const [estimates, setEstimates] = useState<PassengerStopEstimates>();
@@ -27,11 +29,11 @@ function Fixture() {
       <button onClick={publishGnssLoss}>Publish GNSS loss</button>
       <button onClick={() => publish(2)}>Publish fresh fix</button>
     </div>
-    <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden", transform: "translateZ(0)" }}>
+    <div className="passenger-layout" style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden", transform: "translateZ(0)" }}>
       <PassengerWorkspace />
     </div>
   </div>;
-  return <main style={{ height: "100dvh", display: "flex", flexDirection: "column", background: "#09090b", color: "white" }}>
+  return <main className="passenger-layout" style={{ height: "100dvh", display: "flex", flexDirection: "column", background: "#09090b", color: "white" }}>
     <header style={{ padding: 16, position: "relative", zIndex: 50 }}>
       <p>Synthetic GPS regression · actual passenger components</p>
       <PassengerBoardingView sessionId="synthetic-session" route={route} tripState="in_service" stopEstimates={estimates} />
