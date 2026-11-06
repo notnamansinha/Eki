@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-006 | 2.1 | Current | 2026-11-02 |
+| EKI-GEN-006 | 2.2 | Current | 2026-11-06 |
 
 ## 1. Purpose
 
@@ -30,7 +30,7 @@ Terms are sorted alphabetically, ignoring case and backticks.
 | Automatic service | A ride session that the backend starts from a qualified tracker fix, with no action in the browser. It needs an enabled device, a bus assigned to the route, exactly one operator on that bus, a valid route, and a fresh fix with HDOP at most 4. |
 | Blaze plan | The Firebase pay-as-you-go billing plan. It includes the Spark no-cost allowances and bills usage above them; see the [cost model](cost/COST_MODEL.md). |
 | Boarding | A passenger joining a ride session through `POST /api/sessions/<sessionId>/join` with a boarding stop and an alighting stop. The backend requires a passenger profile, stops in travel order, a fresh bus fix and the browser's location within 150 m of the bus. |
-| Boarding code | An eight-character code that Live Ops can show for a session. Boarding does not require it. |
+| Boarding code | An eight-character code that the backend issues for a session to older clients through `POST /api/sessions/<sessionId>/boarding-code`. The web app neither shows nor asks for it, and boarding does not require it. |
 | Bus | A record in the Firestore `buses` collection with its assigned routes. The user interface calls it a vehicle. |
 | Carriageway | One side of a divided road. Traffic keeps left, so the backend does not credit a stop that lies more than 6 m to the right of a moving bus: that stop is on the opposite carriageway. |
 | Claims | Custom fields in a Firebase Auth ID token that only the backend sets: `role`, `admin`, `driverId`, `assignedBusId` and `authorizationVersion`. Security rules and backend middleware trust these, never the Firestore profile. |

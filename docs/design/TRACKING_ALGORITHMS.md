@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-004 | 1.2 | Current | 2026-11-03 |
+| EKI-ARC-004 | 1.3 | Current | 2026-11-06 |
 
 ## 1. Introduction
 
@@ -570,7 +570,7 @@ Boarding is also withheld while `automaticServicePaused` is `true` or the browse
 
 ### 9.4 What the administrator interface withholds
 
-The Live Ops dashboard uses the 30 s threshold only, re-evaluated every 15 s (`frontend/src/components/admin/DashboardPanel.tsx:655`). A ride whose node is `offline` or silent for more than 30 s shows **Service paused** instead of its trip state (`DashboardPanel.tsx:72-75,88-90`) and is left out of the in-service, awaiting-start and direction-pending counts (`DashboardPanel.tsx:660`). Its marker stays at the last known location, however old, in the offline colour, and the delay and boarding-code controls are disabled until the receiver reports again. **End ride early** stays available for such a ride.
+The Live Ops dashboard uses the 30 s threshold only, re-evaluated every 15 s (`frontend/src/components/admin/DashboardPanel.tsx:643`). A ride whose node is `offline` or silent for more than 30 s shows **Service paused** instead of its trip state (`DashboardPanel.tsx:72-75,88-90`) and is left out of the in-service, awaiting-start and direction-pending counts (`DashboardPanel.tsx:648`). Its marker stays at the last known location, however old, in the offline colour, and the delay buttons are disabled until the receiver reports again. **End ride early** stays available for such a ride.
 
 ### 9.5 Backend staleness
 

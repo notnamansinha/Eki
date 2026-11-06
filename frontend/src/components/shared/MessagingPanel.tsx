@@ -367,11 +367,11 @@ export default function MessagingPanel({
               >
                 <div className={`flex items-baseline gap-1.5 mb-1 px-1 ${isMe ? 'flex-row-reverse' : ''}`}>
                   <span className="text-[12px] font-semibold"
-                    style={{ color: isMe ? "var(--accent)" : "var(--text-ghost)" }}>
+                    style={{ color: isMe ? "var(--accent-text, var(--accent))" : "var(--text-ghost)" }}>
                     {isMe ? 'You' : msg.senderName}
                   </span>
                   {msg.from === "admin" && (
-                    <span className="text-[12px] font-semibold" style={{ color: "var(--accent)" }}>Administrator</span>
+                    <span className="text-[12px] font-semibold" style={{ color: "var(--accent-text, var(--accent))" }}>Administrator</span>
                   )}
                   {msg.from === "driver" && (
                     <span className="text-[12px] font-semibold" style={{ color: "var(--text-ghost)" }}>Operator</span>

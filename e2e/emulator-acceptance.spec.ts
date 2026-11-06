@@ -659,6 +659,8 @@ test('admin live service controls admit a qualified receiver without a manual st
 });
 
 test('admin live service controls persist bounded delay and interrupt safely before a distinct restart', async ({ page, request }) => {
+  const boardingCodeRequests: string[] = [];
+  page.on('request', req => { if (req.url().includes('/boarding-code')) boardingCodeRequests.push(req.url()); });
   await page.goto('/?panel=ops'); await login(page, 'qa_admin');
   await page.getByRole('button', { expanded: false }).filter({ hasText: 'Synthetic bus' }).click();
   const saveDelay = async (buttonName: string, delayMinutes: number) => {
@@ -679,8 +681,9 @@ test('admin live service controls persist bounded delay and interrupt safely bef
   await saveDelay('Decrease delay by 1 minutes for qa_bus', 0);
   await saveDelay('Increase delay by 1 minutes for qa_bus', 1);
   await saveDelay('Decrease delay by 1 minutes for qa_bus', 0);
-  await page.getByRole('button', { name: 'Boarding code', exact: true }).click();
-  await expect(page.getByRole('button', { name: /^[A-Z0-9]{4}-[A-Z0-9]{4}$/ })).toBeVisible();
+  // Passengers board without a code since 2026-10-25, so the live card no
+  // longer offers one. The endpoint stays only for older clients.
+  await expect(page.getByRole('button', { name: 'Boarding code', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'End ride early', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Keep running', exact: true }).click();
   expect((await evidence(request)).sessions.find((ride: { id: string }) => ride.id === 'qa_session').status).toBe('active');
@@ -732,4 +735,5 @@ test('admin live service controls persist bounded delay and interrupt safely bef
   expect(restarted.sessions).toHaveLength(2); expect(restarted.lock.sessionId).toBe(fresh.id);
   expect(restarted.live.automaticServicePaused).toBe(false);
   expect(restarted.completions).toEqual([]);
+  expect(boardingCodeRequests).toEqual([]);
 });

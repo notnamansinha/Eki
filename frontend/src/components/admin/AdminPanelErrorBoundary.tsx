@@ -12,16 +12,16 @@ import { AlertCircle } from "lucide-react";
 function AdminPanelErrorFallback(_props: object, { reset }: ErrorInfo) {
   return (
     <div className="flex h-full items-center justify-center px-6 text-center">
-      <div role="alert" className="space-y-2 text-sm text-red-400/80">
+      <div role="alert" className="space-y-2 text-sm text-ui-danger">
         <AlertCircle className="mx-auto size-8 opacity-70" aria-hidden="true" />
         <p>This section could not be displayed.</p>
-        <p className="text-xs text-white/40">
+        <p className="text-xs text-ui-quiet">
           A stored record may be malformed. Other sections are still available.
         </p>
         <button
           type="button"
           onClick={() => reset()}
-          className="rounded-lg bg-white/10 px-4 py-2 text-xs font-semibold text-white"
+          className="rounded-lg bg-ui-hover px-4 py-2 text-xs font-semibold text-ui-ink"
         >
           Try again
         </button>

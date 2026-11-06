@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-002 | 2.0 | Current | 2026-10-30 |
+| EKI-PKG-002 | 2.1 | Current | 2026-11-06 |
 
 ## 1. Purpose
 
@@ -137,7 +137,7 @@ The browser writes to Firestore only for feedback (`lib/feedbackStore.ts`): a tr
 | Account deletion | `POST /api/v2/privacy-deletion-requests` |
 | Route editor | `PUT /api/routes/<id>`, save-operation polling, `DELETE /api/routes/<id>`, `/api/places/search` |
 | Fleet | `PUT` and `DELETE /api/fleet/buses/<id>` and `/api/fleet/drivers/<id>` |
-| Live Ops | `POST /api/shifts/stop`, `PATCH /api/shifts/delay`, `DELETE /api/shifts/<id>/messages`, `POST /api/v2/ride-sessions`, `POST /api/sessions/<id>/boarding-code` |
+| Live Ops | `POST /api/shifts/stop`, `PATCH /api/shifts/delay`, `DELETE /api/shifts/<id>/messages`, `POST /api/v2/ride-sessions` |
 | History and settings | `DELETE /api/shifts/<id>/history`, `PATCH /api/v2/settings/global`, `PUT /api/v2/settings/passenger-routes` |
 
 The [HTTP contract](../docs/api/HTTP_CONTRACT.md) and the [API reference](../backend/API.md) define each endpoint.

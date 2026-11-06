@@ -67,10 +67,12 @@ The passenger panel follows the Ahmedabad University brand rules
 (`AU_RULES_AND_BRAND_GUIDELINES.md`): AU Red `#801214` for actions, links and the
 route line, Dark Grey `#434747` text, Off-white `#F2EFEC` pages and Gold
 `#AE9562` for decoration only. Playfair Display (headings) and Roboto (UI) are
-self-hosted through `next/font` in `src/app/layout.tsx`. All passenger surfaces
-come from `src/app/passenger/theme.css`, scoped with
-`:root:has(.passenger-layout)` so the admin console and landing page keep their
-own theme; components carry semantic `pp-*` classes rather than colours.
+self-hosted through `next/font` in `src/app/layout.tsx`. Passenger and Admin share
+palette, font and gradient tokens in `src/app/brand-theme.css`, scoped with
+`:root:has(.passenger-layout, .admin-layout)` so portalled dialogs inherit them
+and the landing page keeps its theme. Surface rules live in each panel's
+`theme.css`; Passenger uses semantic `pp-*` classes and Admin uses `ui-*` colour
+utilities. Keep actions AU Red and reserve status colours for status indicators.
 Phones use iOS-style grouped lists, sheets with grabbers and one translucent tab
 bar tinted AU Red. Pointer devices keep the centred Live Routes panel with paper
 cards, adding the line code and gold rule only when the window is at least
@@ -78,3 +80,24 @@ cards, adding the line code and gold rule only when the window is at least
 rail and AU Red terminals. Keep text at 12px or more, touch targets at 44px,
 and pair every colour signal with text or an icon. Show location use in a
 notice before the browser prompt; tracking must work without location.
+
+## Admin Live Ops dark (2026-11-06)
+
+Senior faculty found a light Live Ops panel beside the light Google Map hard to
+read, so the Live Ops panel (`.admin-live-ops`), its tab panel and the admin tab
+bar while Live Ops is active (`data-tone="dark"`) use the original Eki warm
+blacks: `#09090b` panel, `#0f0f12` tab bar, `#16161a` cards and `#ececef`
+text. AU Red stays the button fill (lifted to `#b3262a` on black); use the
+`--accent-text` tint `#f3a4a5` for accent text, rules and focus indicators on
+black, never AU Red itself. The Google Map and its own controls stay light, and
+every other admin tab keeps the AU palette. The overrides are scoped token changes in `src/app/admin/theme.css`;
+keep new Live Ops colours on the shared tokens so they follow the scope.
+
+## Admin continuous corners (2026-11-06)
+
+The admin panel uses Apple's continuous corner curve: inside
+`@supports (corner-shape: superellipse(1.7))`, `src/app/admin/theme.css` scales the
+radius tokens by 1.528665 and applies `corner-shape: superellipse(1.7)` to every
+`rounded-*` element except `rounded-full`. Keep circles and pills on
+`rounded-full`, and use the radius tokens (not arbitrary `rounded-[…]` values) so
+new admin corners pick up the curve.

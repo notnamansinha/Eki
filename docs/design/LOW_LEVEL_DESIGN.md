@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-003 | 3.0 | Current | 2026-10-30 |
+| EKI-ARC-003 | 3.1 | Current | 2026-11-06 |
 
 ## 1. Introduction
 
@@ -282,7 +282,7 @@ The frontend is a Next.js App Router project built as a static export.
 | Group | Modules | Responsibility |
 |---|---|---|
 | Root | `Providers.tsx`, `MapProviders.tsx`, `ServiceWorkerRegistrar.tsx`, `TelemetryTraceControls.tsx` | Auth provider; Maps API provider for the admin layout and the passenger tracking view, whose SDK script loads once per page; service worker update and one-time reload; opt-in telemetry trace controls |
-| `admin/` | `DashboardPanel.tsx`, `FleetManagementPanel.tsx`, `RouteManagementPanel.tsx`, `RideHistoryPanel.tsx`, `SettingsPanel.tsx`, `PassengerRoutesSettings.tsx`, `SettingsSection.tsx`, `FeedbackPanel.tsx`, `AdminPanelErrorBoundary.tsx` | Live Ops map and ride cards (delay, boarding code, chat, End ride in the card and the live-details drawer); bus and driver administration; route editor; ride history with stop evidence; settings; passenger route schedules with their own save button and unsaved-change guard; shared settings field and section header; feedback review; per-panel error isolation |
+| `admin/` | `DashboardPanel.tsx`, `FleetManagementPanel.tsx`, `RouteManagementPanel.tsx`, `RideHistoryPanel.tsx`, `SettingsPanel.tsx`, `PassengerRoutesSettings.tsx`, `SettingsSection.tsx`, `FeedbackPanel.tsx`, `AdminPanelErrorBoundary.tsx` | Live Ops map and ride cards (delay, chat, End ride in the card and the live-details drawer); bus and driver administration; route editor; ride history with stop evidence; settings; passenger route schedules with their own save button and unsaved-change guard; shared settings field and section header; feedback review; per-panel error isolation |
 | `maps/` | `PassengerMap.tsx`, `PassengerTrackingMap.tsx`, `DirectionsRoute.tsx`, `BusPositionGlyph.tsx`, `TrafficLayer.tsx` | Passenger map with live health, arrival estimates and stop progress; route drawing from stored or reroute geometry; bus glyph; traffic layer. Every `<GoogleMap>` (passenger, Live Ops, route editor) sets `reuseMaps` with the shared map ID and `MAP_OPTIONS`, so a remount reattaches one cached `google.maps.Map`: one map construction per page load, not per tracking open, route, direction, bus, tab or editor change ([EKI-ADR-004](GOOGLE_MAP_REUSE_DECISION.md)) |
 | `passenger/` | `PassengerWorkspace.tsx`, `PassengerBoardingView.tsx`, `RouteTimelineSheet.tsx`, `RoutesTab.tsx`, `AccountTab.tsx`, `PassengerLoadingShell.tsx`, `passengerFrame.ts` | Route selection, boarding, ride card and header, stop timeline, published route schedules (the **Routes** tab), account and deletion request, loading shell, layout frame. The bottom navigation has **Live**, **Routes** and **Profile**; Routes and Profile mount on first visit and stay mounted |
 | `passenger/ui/` | `BottomSheet.tsx`, `RouteCarousel.tsx` | Draggable sheet and route carousel |

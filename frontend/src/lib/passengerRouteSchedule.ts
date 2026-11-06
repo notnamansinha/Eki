@@ -8,7 +8,7 @@
  */
 import type { RouteData } from "@/hooks/useRoutes";
 
-/** 24-hour "HH:mm", the value an `<input type="time">` produces. */
+/** 24-hour "HH:mm", the format the admin stop-time text fields normalise to. */
 export const STOP_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const MAX_PASSENGER_ROUTES = 50;
 

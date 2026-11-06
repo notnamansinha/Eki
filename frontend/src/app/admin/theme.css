@@ -1,0 +1,190 @@
+/* Admin uses the Passenger palette from ../brand-theme.css. */
+:root:has(.admin-layout) {
+  --alert-surface: var(--surface-1);
+}
+
+:root:has(.admin-layout) body,
+.admin-layout,
+.admin-layout .font-sans {
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  letter-spacing: normal;
+}
+
+.admin-layout { background: var(--surface-0); }
+.admin-layout :is(h1, h2, h3),
+:root:has(.admin-layout) .eki-confirm-title {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  letter-spacing: normal;
+}
+
+/* globals.css sets `* { border-color }` outside any layer, which beats the
+   border-brand-accent/40 utility, so mark new feedback here. */
+.admin-layout article[data-status="new"] { border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+
+.admin-navigation {
+  background: var(--brand-surface-gradient), rgb(249 248 246 / 0.94);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* Live Ops only: the original Eki warm blacks (globals.css :root) for the panel,
+   its tab-panel frame (loading and error states) and the tab bar above it, so
+   they separate clearly from the light Google Map. Re-tokens the shared palette;
+   utilities read these through @theme inline. Text and borders sit brighter than
+   the original for readability. AU Red stays the fill colour (white text 6.5:1);
+   --accent-text is the AU Red tint for text, rules and focus on black (8:1+). */
+.admin-layout :is(.admin-live-ops, [data-tone="dark"]) {
+  color-scheme: dark;
+  --accent-text: #f3a4a5;
+
+  --surface-0: #09090b;
+  --surface-1: #16161a;
+  --surface-2: #16161a;
+  --surface-3: #1c1c21;
+  --surface-4: #26262c;
+
+  --accent: #b3262a;
+  --accent-hover: #9a1f23;
+  --accent-subtle: rgb(243 164 165 / 0.12);
+  --accent-glow: rgb(243 164 165 / 0.3);
+  --accent-contrast: #ffffff;
+
+  --text-primary: #ececef;
+  --text-secondary: #c9c9cf;
+  --text-tertiary: #b1b1b9;
+  --text-ghost: #b1b1b9;
+
+  --border-subtle: rgb(255 255 255 / 0.12);
+  --border-default: rgb(255 255 255 / 0.24);
+  --border-hover: rgb(255 255 255 / 0.36);
+  --hairline: rgb(255 255 255 / 0.12);
+
+  --status-live: #34d399;
+  --status-live-bg: rgb(52 211 153 / 0.12);
+  --status-warning: #fbbf24;
+  --status-warning-bg: rgb(251 191 36 / 0.12);
+  --status-danger: #f87171;
+  --status-danger-bg: rgb(248 113 113 / 0.12);
+
+  color: var(--text-primary);
+}
+.admin-layout :is(.admin-live-ops, [role="tabpanel"][data-tone="dark"]) { background: var(--surface-0); }
+.admin-layout .admin-navigation[data-tone="dark"] {
+  background: #0f0f12;
+  backdrop-filter: none;
+}
+/* Google's own map UI keeps its light scheme; bus markers read the dark tokens on purpose. */
+.admin-layout .admin-live-ops .gm-style { color-scheme: light; }
+/* AU Red is too dark to read as text, a thin rule or a focus indicator on black. */
+.admin-layout :is(.admin-live-ops, [data-tone="dark"]) :is(.text-brand-accent, .hover\:text-brand-accent:hover) { color: var(--accent-text); }
+.admin-layout .admin-navigation[data-tone="dark"] [role="tab"] > .bg-brand-accent { background: var(--accent-text); }
+.admin-layout .admin-live-ops [data-fleet-card].border-brand-accent\/40 { border-color: var(--accent-text); }
+.admin-layout :is(.admin-live-ops, [data-tone="dark"]) .focus-visible\:ring-brand-accent\/50:focus-visible { --tw-ring-color: var(--accent-text); }
+.admin-layout :is(.admin-live-ops, [data-tone="dark"]) .focus-visible\:outline-brand-accent:focus-visible { outline-color: var(--accent-text); }
+/* The global :focus-visible outline is AU Red (2.8:1 on black); use the tint here. */
+.admin-layout :is(.admin-live-ops, [data-tone="dark"]) :focus-visible { outline-color: var(--accent-text); }
+.admin-layout :is(.admin-live-ops, [data-tone="dark"]) :is(input, select, textarea):focus {
+  border-color: var(--accent-text);
+  outline-color: var(--accent-text);
+}
+
+.admin-layout :is(.panel-rc, .eki-panel, .glass-panel) {
+  background: var(--surface-1);
+  border-color: var(--border-subtle);
+  box-shadow: 0 1px 2px rgb(67 71 71 / 0.06), 0 14px 28px -18px rgb(67 71 71 / 0.25);
+}
+
+.admin-layout :is(.input-rc, input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea) {
+  min-height: 44px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+}
+.admin-layout :is(input, textarea)::placeholder { color: var(--text-tertiary); }
+.admin-layout :is(input, select, textarea):focus {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  --tw-ring-color: var(--accent-glow);
+}
+/* CustomSelect's decorative chevron inherits the light UI's muted ink. */
+.admin-layout select + svg { color: var(--text-secondary); }
+
+.admin-layout :is(.btn-primary, .btn-rc-primary) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: none;
+  font-weight: 500;
+}
+.admin-layout :is(.btn-primary, .btn-rc-primary):hover:not(:disabled) { background: var(--accent-hover); }
+.admin-layout .shadow-lg,
+.admin-layout .shadow-xl { box-shadow: 0 8px 24px -12px rgb(67 71 71 / 0.25); }
+
+/* Shared confirmation dialogs are portalled outside the admin layout. */
+:root:has(.admin-layout) :is(.eki-confirm-backdrop, .eki-alert-backdrop) { background: rgb(67 71 71 / 0.4); }
+:root:has(.admin-layout) :is(.eki-confirm, .eki-alert) {
+  background: var(--surface-1);
+  border-color: var(--border-subtle);
+  border-radius: 20px;
+  box-shadow: 0 40px 80px -32px rgb(67 71 71 / 0.6);
+  font-family: var(--font-ui);
+}
+:root:has(.admin-layout) :is(.eki-confirm-title, .eki-alert h3) {
+  color: var(--text-primary);
+  font-size: 1.25rem;
+}
+:root:has(.admin-layout) :is(.eki-confirm-text, .eki-alert p) { color: var(--text-secondary); font-size: 0.875rem; }
+:root:has(.admin-layout) .eki-confirm-icon { border-color: transparent; background: var(--accent); color: var(--accent-contrast); }
+:root:has(.admin-layout) .eki-confirm-icon[data-variant="danger"] { background: var(--status-danger); }
+:root:has(.admin-layout) .eki-confirm-icon svg { color: inherit; }
+:root:has(.admin-layout) :is(.eki-confirm-actions, .eki-alert .border-t) { border-color: var(--border-subtle); }
+:root:has(.admin-layout) :is(.eki-confirm-cancel, .eki-confirm-ok, .eki-alert button) {
+  min-height: 44px;
+  padding-inline: 1.125rem;
+  border-radius: 12px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  box-shadow: none;
+}
+:root:has(.admin-layout) .eki-confirm-cancel { border: 1px solid var(--text-primary); background: var(--surface-1); color: var(--text-primary); }
+:root:has(.admin-layout) .eki-confirm-cancel:hover:not(:disabled) { background: var(--surface-3); }
+:root:has(.admin-layout) :is(.eki-confirm-ok, .eki-alert button) { background: var(--accent); color: var(--accent-contrast); }
+:root:has(.admin-layout) :is(.eki-confirm-ok, .eki-alert button):hover:not(:disabled) { background: var(--accent-hover); }
+:root:has(.admin-layout) .eki-confirm-ok[data-variant="danger"] { background: var(--status-danger); }
+.admin-layout .eki-alert .text-red-400 { color: var(--status-danger); }
+.admin-layout .eki-alert .text-amber-400 { color: var(--status-warning); }
+.admin-layout .eki-alert .text-blue-400 { color: var(--accent); }
+
+/* Apple continuous corners (CALayer `.continuous`, SwiftUI's default) across the
+   admin. The curve leaves each edge 1.528665x the nominal radius from the corner
+   and eases from zero curvature; `superellipse(1.7)` at that scaled radius tracks
+   Apple's path to within about 0.013r and keeps the same visual corner size.
+   Guarded so browsers without `corner-shape` keep their round corners at the
+   original radius. Circles, dots, switches and pills stay round: Apple draws
+   capsule ends as circular arcs. */
+@supports (corner-shape: superellipse(1.7)) {
+  :root:has(.admin-layout) {
+    --apple-corner: 1.528665;
+    --radius-sm: calc(8px * var(--apple-corner));
+    --radius-md: calc(12px * var(--apple-corner));
+    --radius-lg: calc(16px * var(--apple-corner));
+    --radius-xl: calc(20px * var(--apple-corner));
+    --radius-2xl: calc(24px * var(--apple-corner));
+    --radius-3xl: calc(24px * var(--apple-corner));
+  }
+  /* `rounded` is a fixed 0.25rem, not a token; scale it so the curve keeps its size. */
+  .admin-layout .rounded { border-radius: calc(0.25rem * var(--apple-corner)); }
+  .admin-layout .panel-rc { border-radius: calc(1.5rem * var(--apple-corner)); }
+  :root:has(.admin-layout) :is(.eki-confirm, .eki-alert) { border-radius: calc(20px * var(--apple-corner)); }
+  :root:has(.admin-layout) :is(.eki-confirm-cancel, .eki-confirm-ok, .eki-alert button) { border-radius: calc(12px * var(--apple-corner)); }
+
+  .admin-layout :is([class*="rounded"], .input-rc, .btn-rc-primary, .panel-rc):not(.rounded-full),
+  :root:has(.admin-layout) :is(.eki-confirm, .eki-alert, .eki-confirm-cancel, .eki-confirm-ok, .eki-alert button),
+  :root:has(.admin-layout) :is(.eki-confirm, .eki-alert) [class*="rounded"]:not(.rounded-full) {
+    corner-shape: superellipse(1.7);
+  }
+}

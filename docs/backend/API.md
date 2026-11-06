@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-001 | 3.1 | Current | 2026-11-01 |
+| EKI-API-001 | 3.2 | Current | 2026-11-06 |
 
 ## 1. Introduction
 
@@ -400,7 +400,7 @@ A ride session is a `ride_sessions/{sessionId}` document with status `pending`, 
 `POST /api/sessions/:sessionId/boarding-code` and `POST /api/v2/ride-sessions/:sessionId/boarding-code`
 
 - Caller: an administrator, or the operator whose `driverId` and `assignedBusId` claims match the session.
-- Success: 200 `{"sessionId","boardingCode"}`, with an 8-character code created on the first call and stored on the session. Boarding (Section 3.6.1) does not use the code; the operation remains for older clients and Live Ops.
+- Success: 200 `{"sessionId","boardingCode"}`, with an 8-character code created on the first call and stored on the session. Boarding (Section 3.6.1) does not use the code, and the web app, including Live Ops, no longer calls this operation; it remains for older clients.
 - Errors: 400 invalid ID; 403 not allowed, or session not `armed` or `active`; 404 unknown session; 500.
 
 #### 3.6.3 Send a chat message

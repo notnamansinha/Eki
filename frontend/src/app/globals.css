@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./brand-theme.css";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    EKI TRANSIT — Design System
@@ -56,6 +57,21 @@
 }
 
 @theme inline {
+  --color-ui-ink: var(--text-primary);
+  --color-ui-muted: var(--text-secondary);
+  --color-ui-quiet: var(--text-tertiary);
+  --color-ui-paper: var(--surface-1);
+  --color-ui-soft: var(--surface-3);
+  --color-ui-hover: var(--surface-4);
+  --color-ui-line: var(--border-subtle);
+  --color-ui-control: var(--border-default);
+  --color-ui-accent-soft: var(--accent-subtle);
+  --color-ui-accent-hover: var(--accent-hover, var(--accent));
+  --color-ui-on-accent: var(--accent-contrast, #fff);
+  --color-ui-success: var(--status-live);
+  --color-ui-warning: var(--status-warning);
+  --color-ui-danger: var(--status-danger);
+
   --color-brand-primary: var(--text-primary);
   --color-brand-accent: var(--accent);
   --color-brand-dark: var(--surface-0);

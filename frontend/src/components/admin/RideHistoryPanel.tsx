@@ -73,12 +73,12 @@ const STATUS_CONFIG: Record<
   RideSession["status"],
   { label: string; className: string }
 > = {
-  pending: { label: "Not started", className: "bg-white/10 text-white/60" },
+  pending: { label: "Not started", className: "bg-ui-hover text-ui-muted" },
   armed: { label: "Ready", className: "bg-sky-500/20 text-sky-300" },
   active: { label: "In progress", className: "bg-green-500/20 text-green-400" },
-  completed: { label: "Completed", className: "bg-white/10 text-white/60" },
-  failed: { label: "Failed", className: "bg-red-500/20 text-red-300" },
-  interrupted: { label: "Ended early", className: "bg-amber-500/15 text-amber-300" },
+  completed: { label: "Completed", className: "bg-ui-hover text-ui-muted" },
+  failed: { label: "Failed", className: "bg-ui-danger/20 text-ui-danger" },
+  interrupted: { label: "Ended early", className: "bg-ui-warning/15 text-ui-warning" },
 };
 
 function interruptionMessage(reason: RideSession["interruptionReason"]): string {
@@ -179,12 +179,12 @@ function RideHistoryMessages({ sessionId }: { sessionId: string }) {
     .sort((a, b) => (timestampDate(a.timestamp)?.getTime() ?? 0) - (timestampDate(b.timestamp)?.getTime() ?? 0));
   const loading = live.loading || archive.loading, error = live.error ?? archive.error;
   const retry = () => { live.retry(); archive.retry(); };
-  return <section className="mt-4 border-t border-white/10 pt-4" aria-label="Ride chat history">
-    <h4 className="mb-3 text-xs font-semibold uppercase text-white/50">Chat history</h4>
+  return <section className="mt-4 border-t border-ui-line pt-4" aria-label="Ride chat history">
+    <h4 className="mb-3 text-xs font-semibold uppercase text-ui-muted">Chat history</h4>
     {loading ? <p role="status">Loading messages…</p> : error ? <div role="alert">Messages unavailable. <button type="button" onClick={retry}>Retry messages</button></div> : <>
-      {!data.length && <p className="text-xs text-white/50">No messages recorded.</p>}
-      <ol className="space-y-2">{data.map(message => <li key={message.id} className="rounded border border-white/10 p-3 text-sm text-white/80">
-        <p className="text-xs text-white/50">{message.senderName || message.from || "Unknown sender"} · {formatServiceTime(message.timestamp)}</p>
+      {!data.length && <p className="text-xs text-ui-muted">No messages recorded.</p>}
+      <ol className="space-y-2">{data.map(message => <li key={message.id} className="rounded border border-ui-line p-3 text-sm text-ui-ink">
+        <p className="text-xs text-ui-muted">{message.senderName || message.from || "Unknown sender"} · {formatServiceTime(message.timestamp)}</p>
         <p className="whitespace-pre-wrap break-words">{message.text}</p>
       </li>)}</ol>
       {(live.data.length === messageLimit || archive.data.length === messageLimit) && <button type="button" className="mt-3 min-h-10 text-sm text-sky-300" onClick={() => setMessageLimit(limit => limit + 100)}>Load older messages</button>}
@@ -326,10 +326,10 @@ export default function RideHistoryPanel() {
   if (sessionsError || busesError || routesError || driversError) {
     return (
       <div className="flex h-full items-center justify-center px-6 text-center">
-        <div className="space-y-2 text-sm text-red-400/80">
+        <div className="space-y-2 text-sm text-ui-danger">
           <AlertCircle className="mx-auto size-8 opacity-70" />
           <p>{sessionsError ?? busesError ?? routesError ?? driversError ?? "Could not load ride history."}</p>
-          <p className="text-xs text-white/40">Ride history could not be loaded.</p>
+          <p className="text-xs text-ui-quiet">Ride history could not be loaded.</p>
           <button
             type="button"
             onClick={() => {
@@ -338,7 +338,7 @@ export default function RideHistoryPanel() {
               if (routesError) retryRoutes();
             if (driversError) retryDrivers();
             }}
-            className="rounded-lg bg-white/10 px-4 py-2 text-xs font-semibold text-white"
+            className="rounded-lg bg-ui-hover px-4 py-2 text-xs font-semibold text-ui-ink"
           >
             Retry
           </button>
@@ -349,10 +349,10 @@ export default function RideHistoryPanel() {
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-4 p-4 animate-slide-up sm:p-6">
-      <h2 ref={historyHeadingRef} tabIndex={-1} className="mb-4 text-balance text-xl font-bold text-white">Ride History</h2>
-      {deleteNotice && <p role="status" className="text-sm text-emerald-300">{deleteNotice}</p>}
+      <h2 ref={historyHeadingRef} tabIndex={-1} className="mb-4 text-balance text-xl font-bold text-ui-ink">Ride History</h2>
+      {deleteNotice && <p role="status" className="text-sm text-ui-success">{deleteNotice}</p>}
       {shownSessions.length === 0 ? (
-        <div className="py-10 text-center text-sm text-white/50">
+        <div className="py-10 text-center text-sm text-ui-muted">
           No rides recorded yet.
         </div>
       ) : (
@@ -366,36 +366,36 @@ export default function RideHistoryPanel() {
           return (
             <div
               key={session.id}
-              className="overflow-hidden rounded-xl border border-white/10 bg-brand-surface transition-all"
+              className="overflow-hidden rounded-xl border border-ui-line bg-brand-surface transition-all"
             >
               <button
                 type="button"
-                className="flex w-full cursor-pointer flex-col justify-between gap-4 p-4 text-left hover:bg-white/5 sm:flex-row sm:items-center"
+                className="flex w-full cursor-pointer flex-col justify-between gap-4 p-4 text-left hover:bg-ui-soft sm:flex-row sm:items-center"
                 onClick={() => setExpandedId(expandedId === session.id ? null : session.id)}
                 aria-expanded={expandedId === session.id}
                 aria-controls={`ride-history-details-${session.id}`}
               >
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${status.className}`}>
+                    <span className={`rounded px-2 py-0.5 text-xs font-bold uppercase ${status.className}`}>
                       {status.label}
                     </span>
-                    <span className="text-sm font-semibold text-white/80 tabular-nums">
+                    <span className="text-sm font-semibold text-ui-ink tabular-nums">
                       {formatServiceDate(startValue)}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/60 tabular-nums">
-                    <span><span className="text-white/40">Started</span> {formatServiceTime(startValue)}</span>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ui-muted tabular-nums">
+                    <span><span className="text-ui-quiet">Started</span> {formatServiceTime(startValue)}</span>
                     {session.status !== "active" && session.status !== "armed" && session.status !== "pending" && (
                       <span>
-                        <span className="text-white/40">
+                        <span className="text-ui-quiet">
                           {session.status === "interrupted" ? "Last recorded" : "Ended"}
                         </span>{" "}
                         {formatServiceTime(session.endTime)}
                       </span>
                     )}
                   </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/60">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ui-muted">
                     <span className="flex items-center gap-1">
                       <MapPin className="size-3" />
                       Route: {routeNames.get(session.routeId) || "Unavailable route"}
@@ -419,7 +419,7 @@ export default function RideHistoryPanel() {
                     </span>
                   </div>
                   {session.status === "interrupted" && (
-                    <div className="space-y-1 text-pretty text-xs text-amber-200/70">
+                    <div className="space-y-1 text-pretty text-xs text-ui-warning">
                       <p>The ride ended before the final stop was recorded.</p>
                       <p>{interruptionMessage(session.interruptionReason)}</p>
                     </div>
@@ -427,16 +427,16 @@ export default function RideHistoryPanel() {
                 </div>
 
                 <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-1.5 rounded-lg border border-white/5 bg-brand-dark/50 px-3 py-1.5">
+                  <div className="flex items-center gap-1.5 rounded-lg border border-ui-line bg-brand-dark/50 px-3 py-1.5">
                     <Users className="size-4 text-brand-accent" />
-                    <span className="text-sm font-bold text-white tabular-nums">{passengers.length}</span>
+                    <span className="text-sm font-bold text-ui-ink tabular-nums">{passengers.length}</span>
                   </div>
                 </div>
               </button>
 
               {expandedId === session.id && (
-                <div id={`ride-history-details-${session.id}`} className="border-t border-white/10 bg-black/20 px-4 pt-4 pb-4">
-                  <div className="mb-4 space-y-1 text-xs text-white/60">
+                <div id={`ride-history-details-${session.id}`} className="border-t border-ui-line bg-ui-soft px-4 pt-4 pb-4">
+                  <div className="mb-4 space-y-1 text-xs text-ui-muted">
                     <p>Service armed: {formatServiceTime(session.armedAt)}</p>
                     <p>Journey started: {formatServiceTime(session.startTime)}</p>
                     {isRecordObject<{ sampledAt?: TimestampValue }>(session.firstKnownLocation) && <p>First received GNSS: {formatCoordinates(session.firstKnownLocation)} · {formatServiceTime(session.firstKnownLocation.sampledAt)}</p>}
@@ -447,11 +447,11 @@ export default function RideHistoryPanel() {
                       Signal lost: {formatServiceTime(event.observedAt)}{event.location ? ` · ${formatCoordinates(event.location)}` : ""}
                     </p>)}
                   </div>
-                  <h4 className="mb-3 text-xs font-semibold uppercase text-white/50">
+                  <h4 className="mb-3 text-xs font-semibold uppercase text-ui-muted">
                     Passenger Manifest
                   </h4>
                   {passengers.length === 0 ? (
-                    <p className="text-pretty text-xs italic text-white/30">No passengers boarded.</p>
+                    <p className="text-pretty text-xs italic text-ui-quiet">No passengers boarded.</p>
                   ) : (
                     <div className="space-y-2">
                       {passengers.map((passenger, index) => {
@@ -473,30 +473,30 @@ export default function RideHistoryPanel() {
                         return (
                           <div
                             key={`${passenger.userId}-${index}`}
-                            className="flex flex-col gap-2 rounded border border-white/5 bg-white/5 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
+                            className="flex flex-col gap-2 rounded border border-ui-line bg-ui-soft px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
                           >
-                            <span className="truncate font-medium text-white/90">
+                            <span className="truncate font-medium text-ui-ink">
                               {displayText(passenger.userName, "Unknown passenger")}
                             </span>
-                            <div className="flex flex-col text-xs text-white/60 tabular-nums sm:items-end">
+                            <div className="flex flex-col text-xs text-ui-muted tabular-nums sm:items-end">
                               <span>
-                                <span className="text-white/40">Boarding stop:</span>{" "}
+                                <span className="text-ui-quiet">Boarding stop:</span>{" "}
                                 {boardingStopName === ARRIVAL_STOP_UNAVAILABLE ? "Unavailable" : boardingStopName}
                               </span>
                               {arrivalStopName === ARRIVAL_STOP_UNAVAILABLE ? (
                                 <span>{ARRIVAL_STOP_UNAVAILABLE}</span>
                               ) : (
                                 <span>
-                                  <span className="text-white/40">Arrival stop:</span>{" "}
+                                  <span className="text-ui-quiet">Arrival stop:</span>{" "}
                                   {arrivalStopName}
                                 </span>
                               )}
-                              <span><span className="text-white/40">Recorded</span> {formatServiceTime(passenger.joinedAt)}</span>
+                              <span><span className="text-ui-quiet">Recorded</span> {formatServiceTime(passenger.joinedAt)}</span>
                               {reachedAt === null ? (
                                 <span>Destination time not recorded</span>
                               ) : (
                                 <span>
-                                  <span className="text-white/40">Destination reached</span>{" "}
+                                  <span className="text-ui-quiet">Destination reached</span>{" "}
                                   {formatServiceTime(reachedAt)}
                                 </span>
                               )}
@@ -508,30 +508,30 @@ export default function RideHistoryPanel() {
                   )}
 
                   {stopsReached.length > 0 && (
-                    <div className="mt-4 border-t border-white/10 pt-4">
-                      <h4 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase text-white/50">
+                    <div className="mt-4 border-t border-ui-line pt-4">
+                      <h4 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase text-ui-muted">
                         <MapPin className="size-3" />
                         Route Log
                       </h4>
-                      <div className="relative space-y-3 before:absolute before:inset-0 before:ml-[39px] before:h-full before:w-0.5 before:-translate-x-px before:bg-white/10 md:before:mx-auto md:before:translate-x-0">
+                      <div className="relative space-y-3 before:absolute before:inset-0 before:ml-[39px] before:h-full before:w-0.5 before:-translate-x-px before:bg-ui-hover md:before:mx-auto md:before:translate-x-0">
                         {stopsReached.map((stop) => (
                           <div
                             key={`${stop.stopIndex}-${stop.stopId}`}
                             className="group relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse"
                           >
-                            <div className="z-10 ml-7 flex size-6 shrink-0 items-center justify-center rounded-full border border-white/20 bg-brand-dark text-brand-accent shadow md:order-1 md:ml-0 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2">
-                              <div className={`size-2 rounded-full ${isObservedArrival(stop) ? "bg-brand-accent" : "bg-white/30"}`} />
+                            <div className="z-10 ml-7 flex size-6 shrink-0 items-center justify-center rounded-full border border-ui-control bg-brand-dark text-brand-accent shadow md:order-1 md:ml-0 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2">
+                              <div className={`size-2 rounded-full ${isObservedArrival(stop) ? "bg-brand-accent" : "bg-ui-hover"}`} />
                             </div>
-                            <div className="w-[calc(100%-4rem)] rounded border border-white/10 bg-white/5 p-3 md:w-[calc(50%-2.5rem)]">
+                            <div className="w-[calc(100%-4rem)] rounded border border-ui-line bg-ui-soft p-3 md:w-[calc(50%-2.5rem)]">
                               <div className="mb-1 flex items-center justify-between gap-2">
-                                <span className="truncate text-sm font-bold text-white">
+                                <span className="truncate text-sm font-bold text-ui-ink">
                                   {displayText(stop.stopName, "Unnamed stop")}
                                 </span>
-                                <span className={`shrink-0 text-xs tabular-nums ${isObservedArrival(stop) ? "text-brand-accent" : "text-white/50"}`}>
+                                <span className={`shrink-0 text-xs tabular-nums ${isObservedArrival(stop) ? "text-brand-accent" : "text-ui-muted"}`}>
                                   {stopLogTime(stop)}
                                 </span>
                               </div>
-                              <p className="text-xs text-white/50 tabular-nums">Stop {stop.stopIndex + 1}</p>
+                              <p className="text-xs text-ui-muted tabular-nums">Stop {stop.stopIndex + 1}</p>
                             </div>
                           </div>
                         ))}
@@ -540,12 +540,12 @@ export default function RideHistoryPanel() {
                   )}
                   <RideHistoryMessages key={session.id} sessionId={session.id} />
                   {canDeleteRideHistory(session.status) && (
-                    <div className="mt-4 border-t border-red-500/20 pt-4">
+                    <div className="mt-4 border-t border-ui-danger/20 pt-4">
                         <button
                           type="button"
                           disabled={deleteState !== "idle"}
                           onClick={() => openDeleteConfirmation(session.id)}
-                          className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-500/20"
+                          className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-ui-danger/30 bg-ui-danger/10 px-3 py-2 text-xs font-semibold text-ui-danger hover:bg-ui-danger/20"
                         >
                           <Trash2 className="size-4" aria-hidden="true" />
                           Delete ride history
@@ -571,7 +571,7 @@ export default function RideHistoryPanel() {
           );
         })
       )}
-      {loadingOlderRides ? <p role="status" className="min-h-10 text-sm text-white/50">Loading older rides…</p>
+      {loadingOlderRides ? <p role="status" className="min-h-10 text-sm text-ui-muted">Loading older rides…</p>
         : (armedSessions.length === historyLimit || startedSessions.length === historyLimit) && <button
         type="button" className="min-h-10 text-sm text-sky-300" onClick={() => {
           setRidesBeforeOlderPage(sessions);
