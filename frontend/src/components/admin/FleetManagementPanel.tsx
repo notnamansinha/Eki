@@ -620,7 +620,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
           </div>
 
           {/* Saved drivers */}
-          <div className="bg-brand-surface/40 border border-ui-line rounded-[1.5rem] overflow-hidden">
+          <div className="bg-brand-surface/40 border border-ui-line rounded-2xl overflow-hidden">
             <button
               onClick={() => setDriverListOpen((o) => !o)}
               aria-label={driverListOpen ? "Collapse saved operators" : "Expand saved operators"}

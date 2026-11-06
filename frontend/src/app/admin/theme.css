@@ -152,3 +152,31 @@
 .admin-layout .eki-alert .text-red-400 { color: var(--status-danger); }
 .admin-layout .eki-alert .text-amber-400 { color: var(--status-warning); }
 .admin-layout .eki-alert .text-blue-400 { color: var(--accent); }
+
+/* Apple continuous corners (CALayer `.continuous`, SwiftUI's default) across the
+   admin. The curve leaves each edge 1.528665x the nominal radius from the corner
+   and eases from zero curvature; `superellipse(1.7)` at that scaled radius tracks
+   Apple's path to within about 0.013r and keeps the same visual corner size.
+   Guarded so browsers without `corner-shape` keep their round corners at the
+   original radius. Circles, dots, switches and pills stay round: Apple draws
+   capsule ends as circular arcs. */
+@supports (corner-shape: superellipse(1.7)) {
+  :root:has(.admin-layout) {
+    --apple-corner: 1.528665;
+    --radius-sm: calc(8px * var(--apple-corner));
+    --radius-md: calc(12px * var(--apple-corner));
+    --radius-lg: calc(16px * var(--apple-corner));
+    --radius-xl: calc(20px * var(--apple-corner));
+    --radius-2xl: calc(24px * var(--apple-corner));
+    --radius-3xl: calc(24px * var(--apple-corner));
+  }
+  .admin-layout .panel-rc { border-radius: calc(1.5rem * var(--apple-corner)); }
+  :root:has(.admin-layout) :is(.eki-confirm, .eki-alert) { border-radius: calc(20px * var(--apple-corner)); }
+  :root:has(.admin-layout) :is(.eki-confirm-cancel, .eki-confirm-ok, .eki-alert button) { border-radius: calc(12px * var(--apple-corner)); }
+
+  .admin-layout :is([class*="rounded"], .input-rc, .btn-rc-primary, .panel-rc):not(.rounded-full),
+  :root:has(.admin-layout) :is(.eki-confirm, .eki-alert, .eki-confirm-cancel, .eki-confirm-ok, .eki-alert button),
+  :root:has(.admin-layout) :is(.eki-confirm, .eki-alert) [class*="rounded"]:not(.rounded-full) {
+    corner-shape: superellipse(1.7);
+  }
+}
