@@ -1072,6 +1072,26 @@
 .pp-star[data-on="true"] svg { color: var(--accent); fill: var(--accent); }
 .pp-rating-label { color: var(--text-secondary); font-size: 0.875rem; text-align: center; }
 
+/* Apple's continuous corners, as on Profile: the glyph tile rounds at 22.37%
+   of its size and the text box at the 10pt of a grouped field. Where
+   corner-shape is supported, every corner here switches to the squircle curve
+   at 1.6x its nominal radius. The close button stays a circle and the
+   grabber a capsule. */
+.pp-dialog-icon { border-radius: 22.37%; }
+.pp-textarea { border-radius: 10px; }
+
+@supports (corner-shape: squircle) {
+  .pp-dialog { border-radius: calc(var(--pp-dialog-radius) * 1.6) calc(var(--pp-dialog-radius) * 1.6) 0 0; corner-shape: squircle; }
+  .pp-dialog-icon { border-radius: 35.8%; corner-shape: squircle; }
+  .pp-textarea { border-radius: 16px; corner-shape: squircle; }
+  .pp-dialog :is(.pp-btn-primary, .pp-btn-secondary) { border-radius: calc(var(--pp-button-radius) * 1.6); corner-shape: squircle; }
+  .pp-star { border-radius: 19.2px; corner-shape: squircle; }
+
+  @media (min-width: 40rem) {
+    .pp-dialog { border-radius: calc(var(--pp-dialog-radius) * 1.6); }
+  }
+}
+
 .pp-success { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; padding: 2.25rem 1.75rem calc(2.25rem + var(--safe-area-bottom)); text-align: center; }
 .pp-success-icon { display: grid; width: 4rem; height: 4rem; place-items: center; border-radius: 50%; background: var(--surface-4); color: var(--text-primary); }
 .pp-success .pp-dialog-title { font-family: var(--font-heading); font-size: 1.5rem; font-weight: 600; }
