@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { trackRoute } from "./liveRoutes";
 
 async function scenario(page: import("@playwright/test").Page, value: string) {
   await page.getByText("QA controls (synthetic)", { exact: true }).click();
@@ -14,7 +15,7 @@ async function fullMap(page: import("@playwright/test").Page) {
 }
 test("reconnecting retains a full map and paused tracking without new ride controls", async ({ page }, info) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  await trackRoute(page);
   await scenario(page, "reconnecting");
   await expect(page.getByText("Reconnecting to live bus data…",{exact:true})).toBeVisible();
   await expect(page.getByText("Live tracking paused", { exact: true })).toBeVisible();
@@ -27,7 +28,7 @@ test("reconnecting retains a full map and paused tracking without new ride contr
 
 test("destination dropdown stays above notices in the map pane", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  await trackRoute(page);
   await fullMap(page);
   await page.getByRole("combobox", { name: "Destination station" }).click();
   for (const name of ["Alpha", "Beta"]) {
@@ -47,7 +48,7 @@ test("location delay stays below variable ride controls and clears on recovery",
   await page.getByText("QA controls (synthetic)", { exact: true }).click();
   await page.getByLabel("QA scenario").selectOption("multiple");
   await page.getByText("QA controls (synthetic)", { exact: true }).click();
-  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  await trackRoute(page);
   const warning = page.locator("[data-map-notices]").getByText("Live tracking lost", { exact: true });
   await expect(page.getByLabel("Synthetic map", { exact: true })).toBeVisible();
   await expect(warning).toHaveCount(0);
@@ -83,7 +84,7 @@ test("location delay stays below variable ride controls and clears on recovery",
 
 test("an offline ride disappears like an offline device and returns on fresh telemetry", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  await trackRoute(page);
   await scenario(page, "offline");
   // Once its receiver is offline the ride is not shown at all, even to a viewer already tracking it.
   await expect(page.getByText("Waiting for live bus data…", { exact: true })).toBeVisible();
@@ -92,14 +93,14 @@ test("an offline ride disappears like an offline device and returns on fresh tel
   await page.getByRole("button", { name: "Back to home", exact: true }).click();
   await expect(page.getByRole("button", { name: "Track QA route", exact: true })).toHaveCount(0);
   await scenario(page, "pending");
-  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  await trackRoute(page);
   await expect(page.getByRole("combobox", { name: "Destination station" })).toBeVisible();
   await fullMap(page);
 });
 
 test("one stale bus neither hides another fresh bus nor becomes a picker option", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  await trackRoute(page);
   await scenario(page, "multiple-stale");
   await expect(page.getByText("Live tracking lost", { exact: true }).first()).toBeVisible();
   await page.getByRole("combobox", { name: "Live bus", exact: true }).click();
@@ -113,7 +114,7 @@ test("one stale bus neither hides another fresh bus nor becomes a picker option"
 test("navigation cannot scroll the tracking frame under the viewport", async ({ page }) => {
   await page.goto("/");
   for (let visit = 0; visit < 3; visit++) {
-    await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+    await trackRoute(page);
     await page.getByLabel("Synthetic map", { exact: true }).waitFor();
     await fullMap(page);
     await page.getByRole("button", { name: "Back to home", exact: true }).click();
@@ -125,7 +126,7 @@ test("navigation cannot scroll the tracking frame under the viewport", async ({ 
 test("a GNSS-loss packet is announced at once in the header and map without overlap, and clears on a fresh fix", async ({ page }, info) => {
   await page.goto("/");
   await scenario(page, "forward");
-  await page.getByRole("button", { name: "Track QA route", exact: true }).click();
+  await trackRoute(page);
   // The boarding card is stubbed here; live chat shows the bus is selectable.
   await expect(page.getByRole("button", { name: "Open live chat", exact: true })).toBeVisible();
   await scenario(page, "gnss-lost");

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
+import { raiseLiveRoutes } from "./liveRoutes";
 
-const nav = (page: Page) => page.getByRole("navigation", { name: "Passenger sections" });
+const nav =(page: Page) => page.getByRole("navigation", { name: "Passenger sections" });
 const navButton = (page: Page, name: "Live" | "Routes" | "Profile") => nav(page).getByRole("button", { name, exact: true });
 
 async function openSchedules(page: Page) {
@@ -102,6 +103,7 @@ test("Live returns to the route list and the hidden schedule cannot intercept ta
   const track = page.getByRole("button", { name: "Track QA route", exact: true });
   await expect(track).toBeVisible();
   await expect(page.getByRole("heading", { name: "Routes", exact: true })).toBeHidden();
+  await raiseLiveRoutes(page);
   await track.click();
   await expect(page.locator("[data-passenger-tracking]")).not.toHaveAttribute("aria-hidden", "true");
 });
