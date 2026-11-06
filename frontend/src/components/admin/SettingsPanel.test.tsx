@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import SettingsPanel from "./SettingsPanel";
 import { hasUnsavedChanges } from "@/lib/unsavedChanges";
+import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 const mocks = vi.hoisted(() => ({ save: vi.fn(), savePassengerRoutes: vi.fn(), passengerConfig: { routes: [] }, passengerRoutes: [{ id: "r1", name: "1A", color: "#2563eb", stops: [{ id: "s1", name: "Main Gate", shortName: "MG" }] }], error: null as string | null, settings: {
   serviceStartTime: "8:00 am", noBusesMessage: "No buses running", noBusesSubMessage: "Service starts at {time}", announcementText: "", announcementActive: false,
 } }));
@@ -94,6 +95,24 @@ describe("admin settings editing", () => {
     await user.type(field, "{Backspace}");
     expect(hasUnsavedChanges()).toBe(false);
   });
+  it("edits the start time, headline and subtext in one card with a live passenger preview", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPanel />);
+    const card = screen.getByRole("heading", { name: "Service Hours & No-Bus Message" }).closest("div.rounded-2xl") as HTMLElement;
+    expect(screen.queryByRole("heading", { name: "Passenger App Copy" })).toBeNull();
+    for (const label of ["Service Start Time", "No Buses — Headline", "No Buses — Subtext"]) {
+      expect(within(card).getByLabelText(label)).toBeTruthy();
+    }
+    const preview = within(card).getByRole("group", { name: "Passenger preview" });
+    expect(within(preview).getByText("No buses running")).toBeTruthy();
+    expect(within(preview).getByText("Service starts at 8:00 am")).toBeTruthy();
+    await user.clear(within(card).getByLabelText("Service Start Time"));
+    await user.type(within(card).getByLabelText("Service Start Time"), "6:45 am");
+    expect(within(preview).getByText("Service starts at 6:45 am")).toBeTruthy();
+    // An emptied field previews the passenger app's fallback, not a broken sentence.
+    await user.clear(within(card).getByLabelText("Service Start Time"));
+    expect(within(preview).getByText(`Service starts at ${PASSENGER_BUS_START_TIME}`)).toBeTruthy();
+  });
   it.each([
     ["6:30 am ($$ fare)", "Service starts at 6:30 am ($$ fare)"],
     ["$& sharp", "Service starts at $& sharp"],
@@ -103,7 +122,7 @@ describe("admin settings editing", () => {
     mocks.settings.serviceStartTime = time;
     try {
       render(<SettingsPanel />);
-      expect(screen.getByText(/^Preview:/).querySelector("strong")?.textContent).toBe(expected);
+      expect(within(screen.getByRole("group", { name: "Passenger preview" })).getByText(expected)).toBeTruthy();
     } finally {
       mocks.settings.serviceStartTime = original;
     }

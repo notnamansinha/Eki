@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSettings, GlobalSettings } from "@/hooks/useSettings";
-import { Save, Loader2, Eye, EyeOff, Megaphone, Clock, MessageSquare, Info } from "lucide-react";
+import { Save, Loader2, Eye, EyeOff, Megaphone, Clock, Info } from "lucide-react";
 import AlertModal from "@/components/ui/AlertModal";
 import { errorMessage } from "@/lib/errors";
 import { validateSettingsInput } from "@/lib/adminValidation";
 import { useUnsavedChanges } from "@/lib/unsavedChanges";
 import { formatNoBusesSubMessage } from "@/lib/serviceMessages";
+import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
 import { Field, SectionHeader } from "./SettingsSection";
 import PassengerRoutesSettings from "./PassengerRoutesSettings";
 
@@ -98,42 +99,39 @@ export default function SettingsPanel() {
         {saving ? "Saving settings" : saved ? "Settings saved" : isDirty ? "Unsaved settings changes" : "Settings unchanged"}
       </p>
 
-      {/* â”€â”€ Service Hours â”€â”€ */}
+      {/* Service hours and the no-buses copy are one message, edited together. */}
       <div className="bg-ui-paper border border-ui-line rounded-2xl p-5 flex flex-col gap-5">
-        <SectionHeader icon={Clock} title="Service Hours" subtitle="Controls the 'service starts at' message shown when no buses are active" />
+        <SectionHeader icon={Clock} title="Service Hours & No-Bus Message" subtitle="What passengers see when no buses are running" />
 
-        <Field controlId="setting-service-start-time" label="Service Start Time" hint='Shown to passengers in the "no buses" empty state. e.g. "6:30 am"'>
-          <input
-            id="setting-service-start-time"
-            disabled={saving}
-            type="text"
-            value={draft.serviceStartTime}
-            onChange={e => set("serviceStartTime", e.target.value)}
-            placeholder="e.g. 6:30 am"
-            className="input-rc h-11"
-          />
-        </Field>
-      </div>
+        <div className="grid gap-5 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)]">
+          <Field controlId="setting-service-start-time" label="Service Start Time" hint='e.g. "6:30 am"'>
+            <input
+              id="setting-service-start-time"
+              disabled={saving}
+              type="text"
+              value={draft.serviceStartTime}
+              onChange={e => set("serviceStartTime", e.target.value)}
+              placeholder="e.g. 6:30 am"
+              className="input-rc h-11"
+            />
+          </Field>
 
-      {/* â”€â”€ Passenger-facing copy â”€â”€ */}
-      <div className="bg-ui-paper border border-ui-line rounded-2xl p-5 flex flex-col gap-5">
-        <SectionHeader icon={MessageSquare} title="Passenger App Copy" subtitle="Text shown in the passenger app when no buses are running" />
-
-        <Field controlId="setting-no-buses-headline" label="No Buses — Headline" hint='The bold text shown in the empty state. e.g. "No buses running"'>
-          <input
-            id="setting-no-buses-headline"
-            disabled={saving}
-            value={draft.noBusesMessage}
-            onChange={e => set("noBusesMessage", e.target.value)}
-            placeholder="No buses running"
-            className="input-rc h-11"
-          />
-        </Field>
+          <Field controlId="setting-no-buses-headline" label="No Buses — Headline" hint='The bold line. e.g. "No buses running"'>
+            <input
+              id="setting-no-buses-headline"
+              disabled={saving}
+              value={draft.noBusesMessage}
+              onChange={e => set("noBusesMessage", e.target.value)}
+              placeholder="No buses running"
+              className="input-rc h-11"
+            />
+          </Field>
+        </div>
 
         <Field
           controlId="setting-no-buses-subtext"
           label="No Buses — Subtext"
-          hint='Use {time} to insert the service start time automatically. e.g. "Service starts at {time}"'
+          hint='{time} is replaced with the service start time above. e.g. "Service starts at {time}"'
         >
           <input
             id="setting-no-buses-subtext"
@@ -143,16 +141,21 @@ export default function SettingsPanel() {
             placeholder="Service starts at {time}"
             className="input-rc h-11"
           />
-          <div className="flex items-center gap-1.5 bg-brand-accent/10 border border-brand-accent/20 rounded-lg px-3 py-2 text-xs text-brand-accent">
-            <Info className="w-3.5 h-3.5 shrink-0" />
-            <span>
-              Preview:{" "}
-              <strong>
-                {formatNoBusesSubMessage(draft.noBusesSubMessage, draft.serviceStartTime)}
-              </strong>
-            </span>
-          </div>
         </Field>
+
+        <div
+          role="group"
+          aria-label="Passenger preview"
+          className="flex items-start gap-2 bg-brand-accent/10 border border-brand-accent/20 rounded-xl px-4 py-3"
+        >
+          <Info className="w-4 h-4 shrink-0 mt-0.5 text-brand-accent" aria-hidden="true" />
+          <div className="min-w-0 text-sm">
+            <p className="text-xs font-semibold text-brand-accent">Passengers see</p>
+            <p className="mt-1 font-semibold text-ui-ink">{draft.noBusesMessage || "No buses running"}</p>
+            {/* Same fallbacks as the passenger empty state in PassengerWorkspace. */}
+            <p className="text-ui-muted">{formatNoBusesSubMessage(draft.noBusesSubMessage || "Service starts at {time}", draft.serviceStartTime || PASSENGER_BUS_START_TIME)}</p>
+          </div>
+        </div>
       </div>
 
       {/* â”€â”€ Live Announcement Banner â”€â”€ */}
