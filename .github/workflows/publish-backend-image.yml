@@ -72,6 +72,8 @@ jobs:
       - name: Build backend image
         if: steps.creds.outputs.enabled == 'true'
         run: docker build -f backend/Dockerfile -t "eki-backend:${SOURCE_SHA}" .
+      # Same policy as the backend-image scan in ci.yml, so an image that CI
+      # accepted is not refused here.
       - name: Scan image for high-severity vulnerabilities
         if: steps.creds.outputs.enabled == 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -80,21 +82,31 @@ jobs:
           format: table
           exit-code: "1"
           severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          vuln-type: os,library
       - name: Push to Docker Hub
         if: steps.creds.outputs.enabled == 'true'
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           image="${DOCKERHUB_USERNAME}/eki-backend"
           docker tag "eki-backend:${SOURCE_SHA}" "${image}:${SOURCE_SHA}"
-          docker tag "eki-backend:${SOURCE_SHA}" "${image}:latest"
           printf '%s' "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
           trap 'docker logout' EXIT
           docker push "${image}:${SOURCE_SHA}"
-          docker push "${image}:latest"
           {
             echo "### Published backend image"
             echo "- \`${image}:${SOURCE_SHA}\`"
-            echo "- \`${image}:latest\`"
           } >> "$GITHUB_STEP_SUMMARY"
+          # Verification runs can finish out of order. Move latest only while this
+          # commit is still the head of main, so an older commit cannot replace it.
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          if [ "$main_sha" = "$SOURCE_SHA" ]; then
+            docker tag "eki-backend:${SOURCE_SHA}" "${image}:latest"
+            docker push "${image}:latest"
+            echo "- \`${image}:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::notice::main is now ${main_sha}; leaving latest unchanged."
+          fi

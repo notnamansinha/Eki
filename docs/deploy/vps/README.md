@@ -15,7 +15,9 @@ if it must move. Only the backend runs here; the frontend stays on Firebase Host
 
 Until the secrets exist, the "Publish backend image" workflow skips itself. After
 that, every green push to `main` publishes `<user>/eki-backend:<commit-sha>` and
-`:latest`. Run the workflow manually from `main` to publish on demand. It never
+moves `:latest` to it while that commit is still the head of `main`, so a run that
+finishes late never moves `:latest` back. The scan uses the same Trivy policy as
+CI. Run the workflow manually from `main` to publish on demand. It never
 publishes a pull request, a fork or a commit that `main` does not contain, and
 only the login and push steps can read the Docker Hub secrets.
 

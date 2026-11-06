@@ -26,6 +26,19 @@ describe("backend image publishing to Docker Hub", () => {
     assert.match(step("Refuse a commit that main does not contain").run, /compare\/\$\{SOURCE_SHA\}\.\.\.heads\/main"/);
   });
 
+  it("scans with the CI policy and moves latest only while the commit heads main", () => {
+    const ciScan = yaml.load(readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8"))
+      .jobs["backend-image"].steps.find((s) => s.uses?.startsWith("aquasecurity/trivy-action@"));
+    const scan = job.steps.find((s) => s.uses?.startsWith("aquasecurity/trivy-action@"));
+    assert.equal(scan.uses, ciScan.uses);
+    for (const key of ["exit-code", "severity", "ignore-unfixed", "vuln-type"]) {
+      assert.equal(scan.with[key], ciScan.with[key], key);
+    }
+    const push = step("Push to Docker Hub").run;
+    assert.match(push, /git\/ref\/heads\/main/);
+    assert.match(push, /if \[ "\$main_sha" = "\$SOURCE_SHA" \]; then\s+docker tag [^\n]+:latest"\s+docker push "\$\{image\}:latest"/);
+  });
+
   it("gives the Docker Hub secrets only to the credential check and the push", () => {
     assert.ok(!JSON.stringify(job.env ?? {}).includes("secrets."), "job-level env must not carry secrets");
     const withSecrets = job.steps.filter((s) => JSON.stringify(s).includes("secrets.")).map((s) => s.name);
