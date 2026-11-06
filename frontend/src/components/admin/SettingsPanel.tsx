@@ -131,7 +131,7 @@ export default function SettingsPanel() {
         <Field
           controlId="setting-no-buses-subtext"
           label="No Buses — Subtext"
-          hint='{time} is replaced with the service start time above. e.g. "Service starts at {time}"'
+          hint='The first {time} is replaced with the service start time above. e.g. "Service starts at {time}"'
         >
           <input
             id="setting-no-buses-subtext"
@@ -151,9 +151,9 @@ export default function SettingsPanel() {
           <Info className="w-4 h-4 shrink-0 mt-0.5 text-brand-accent" aria-hidden="true" />
           <div className="min-w-0 text-sm">
             <p className="text-xs font-semibold text-brand-accent">Passengers see</p>
-            <p className="mt-1 font-semibold text-ui-ink">{draft.noBusesMessage || "No buses running"}</p>
+            <p className="mt-1 font-semibold text-ui-ink [overflow-wrap:anywhere]">{draft.noBusesMessage || "No buses running"}</p>
             {/* Same fallbacks as the passenger empty state in PassengerWorkspace. */}
-            <p className="text-ui-muted">{formatNoBusesSubMessage(draft.noBusesSubMessage || "Service starts at {time}", draft.serviceStartTime || PASSENGER_BUS_START_TIME)}</p>
+            <p className="text-ui-muted [overflow-wrap:anywhere]">{formatNoBusesSubMessage(draft.noBusesSubMessage || "Service starts at {time}", draft.serviceStartTime || PASSENGER_BUS_START_TIME)}</p>
           </div>
         </div>
       </div>

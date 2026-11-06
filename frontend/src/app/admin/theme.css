@@ -78,6 +78,8 @@
 .admin-layout .admin-live-ops [data-fleet-card].border-brand-accent\/40 { border-color: var(--accent-text); }
 .admin-layout :is(.admin-live-ops, [data-tone="dark"]) .focus-visible\:ring-brand-accent\/50:focus-visible { --tw-ring-color: var(--accent-text); }
 .admin-layout :is(.admin-live-ops, [data-tone="dark"]) .focus-visible\:outline-brand-accent:focus-visible { outline-color: var(--accent-text); }
+/* The global :focus-visible outline is AU Red (2.8:1 on black); use the tint here. */
+.admin-layout :is(.admin-live-ops, [data-tone="dark"]) :focus-visible { outline-color: var(--accent-text); }
 .admin-layout :is(.admin-live-ops, [data-tone="dark"]) :is(input, select, textarea):focus {
   border-color: var(--accent-text);
   outline-color: var(--accent-text);
@@ -170,6 +172,8 @@
     --radius-2xl: calc(24px * var(--apple-corner));
     --radius-3xl: calc(24px * var(--apple-corner));
   }
+  /* `rounded` is a fixed 0.25rem, not a token; scale it so the curve keeps its size. */
+  .admin-layout .rounded { border-radius: calc(0.25rem * var(--apple-corner)); }
   .admin-layout .panel-rc { border-radius: calc(1.5rem * var(--apple-corner)); }
   :root:has(.admin-layout) :is(.eki-confirm, .eki-alert) { border-radius: calc(20px * var(--apple-corner)); }
   :root:has(.admin-layout) :is(.eki-confirm-cancel, .eki-confirm-ok, .eki-alert button) { border-radius: calc(12px * var(--apple-corner)); }

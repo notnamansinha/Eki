@@ -30,22 +30,37 @@ function stopLabel(stop: { id: string; name?: string; shortName?: string }): str
   return stop.name || stop.shortName || stop.id;
 }
 
-/** Hours with optional minutes, as typed: "8", "830", "0830", "8:30" or "8.30". */
-const TYPED_STOP_TIME = /^(\d{1,2})(?:[:.]?(\d{2}))?$/;
+/**
+ * Hours with optional minutes, as typed or pasted: "8", "830", "0830", "8:30" or
+ * "8.30", then optional ":ss" seconds ("09:45:00"), then an optional 12-hour
+ * suffix in any case, with or without a space: "am", "pm", "a.m.", "p.m.", "a" or "p".
+ */
+const TYPED_STOP_TIME = /^(\d{1,2})(?:[:.]?(\d{2})(?::(\d{2}))?)?(?:\s*([ap])\.?(?:m\.?)?)?$/i;
 
 /**
  * Tidy a typed stop time into the stored 24-hour "HH:mm": "830", "0830", "8:30"
- * and "8.30" become "08:30", and "8" becomes "08:00". Text that isn't a time of
- * day ("25:00", "ab") comes back trimmed but otherwise as typed, so it is flagged
- * rather than guessed at.
+ * and "8.30" become "08:30", "8" becomes "08:00", and a pasted "09:45:00" drops its
+ * zero seconds. A 12-hour suffix keeps the time of day, so a pasted "9:45 pm"
+ * becomes "21:45", "12:30 am" becomes "00:30" and "12 pm" becomes "12:00"; with a
+ * suffix the hour must be 1-12. Text that isn't a whole minute of the day
+ * ("25:00", "13:00 pm", "0:30 am", "09:45:30", "ab") comes back trimmed but
+ * otherwise as typed, so it is flagged rather than guessed at.
  */
 function normaliseStopTime(typed: string): string {
   const text = typed.trim();
   const match = TYPED_STOP_TIME.exec(text);
   if (!match) return text;
-  const hours = Number(match[1]);
+  let hours = Number(match[1]);
   const minutes = Number(match[2] ?? "0");
-  if (hours > 23 || minutes > 59) return text;
+  const seconds = Number(match[3] ?? "0");
+  const meridiem = match[4]?.toLowerCase();
+  if (minutes > 59 || seconds !== 0) return text;
+  if (meridiem) {
+    if (hours < 1 || hours > 12) return text;
+    hours = (hours % 12) + (meridiem === "p" ? 12 : 0);
+  } else if (hours > 23) {
+    return text;
+  }
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
@@ -216,6 +231,7 @@ export default function PassengerRoutesSettings() {
       setAwaitingEcho({ payload, configAtSave });
       setDraft(null);
       setShowErrors(false);
+      setFlaggedTimes(new Map());
       setSaved(true);
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
       savedTimerRef.current = setTimeout(() => setSaved(false), 3000);
@@ -362,7 +378,6 @@ export default function PassengerRoutesSettings() {
                             inputMode="numeric"
                             autoComplete="off"
                             placeholder="HH:MM"
-                            maxLength={5}
                             disabled={saving}
                             value={time}
                             onChange={event => setStopTime(route.id, stop.id, event.target.value)}

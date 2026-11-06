@@ -146,7 +146,7 @@ function FeedbackCard({
               <span>{identity.busName || "Vehicle unavailable"}{identity.driverName ? ` · ${identity.driverName}` : ""}</span>
             )}
           </div>
-          {entry.comment && <p className="mt-2 line-clamp-2 text-sm text-ui-ink">{entry.comment}</p>}
+          {entry.comment && <p className="mt-2 line-clamp-2 text-sm text-ui-ink [overflow-wrap:anywhere]">{entry.comment}</p>}
         </div>
 
         <span className="mt-1 shrink-0 text-ui-quiet" aria-hidden="true">
@@ -160,7 +160,7 @@ function FeedbackCard({
           {entry.comment ? (
             <div>
               <p className="mb-1.5 text-xs font-bold uppercase tracking-widest text-ui-quiet">Comment</p>
-              <p className="text-sm text-ui-ink leading-relaxed">{entry.comment}</p>
+              <p className="text-sm text-ui-ink leading-relaxed [overflow-wrap:anywhere]">{entry.comment}</p>
             </div>
           ) : (
             <p className="text-xs text-ui-quiet italic">No comment provided.</p>

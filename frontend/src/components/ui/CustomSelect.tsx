@@ -32,7 +32,7 @@ export default function CustomSelect({
   style,
 }: CustomSelectProps) {
   return (
-    // `style` colours the select itself; on the wrapper it drew a square box around the rounded control.
+    // `style` goes on the select itself; on the wrapper it drew a square box around the rounded control.
     <div className={`relative w-full ${className}`}>
       <select
         name={name}
@@ -44,6 +44,7 @@ export default function CustomSelect({
           disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:border-white/30"
         } focus-visible:ring-2 focus-visible:ring-blue-500/40 focus-visible:border-blue-500/60`}
         style={{
+          ...style,
           background: style?.background ?? "var(--surface-1, #09090b)",
           color: value ? "var(--text-primary, #ffffff)" : "var(--text-ghost, rgba(255, 255, 255, 0.4))",
           border: style?.border ?? "1px solid var(--border-default, rgba(255, 255, 255, 0.1))",
