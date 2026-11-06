@@ -78,6 +78,11 @@ cards, adding the line code and gold rule only when the window is at least
 rail and AU Red terminals. Keep text at 12px or more, touch targets at 44px,
 and pair every colour signal with text or an icon. Show location use in a
 notice before the browser prompt; tracking must work without location.
+Routes and Profile follow ahduni.edu.in, where AU Red carries white type: the
+route list and timetable headers are solid AU Red bands (white search field,
+white line badge on the timetable), Profile has an AU Red title over a short AU
+Red rule and the account on a solid AU Red card. Keep focus rings white on
+those bands.
 
 ## Phone Live routes sheet (2026-11-06)
 

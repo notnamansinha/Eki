@@ -613,6 +613,24 @@
   .passenger-layout .schedule-list { border-right-width: 1px; }
 }
 
+/* As on ahduni.edu.in, AU Red carries white type: the list and timetable
+   headers are solid maroon bands, with a white search field and badge. */
+.passenger-layout .schedule-list-header,
+.passenger-layout .schedule-detail-header {
+  border-bottom: 0;
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.passenger-layout .schedule-list-header h1,
+.passenger-layout .schedule-detail-header h2 { color: #ffffff; }
+.passenger-layout .schedule-list-header p { color: rgb(255 255 255 / 0.86); }
+.passenger-layout .schedule-list-header .schedule-search { border-color: transparent; background: #ffffff; color: var(--text-secondary); }
+.passenger-layout .schedule-list-header .schedule-search:focus-within { border-color: #ffffff; box-shadow: 0 0 0 3px rgb(255 255 255 / 0.45); }
+.passenger-layout .schedule-detail-header .schedule-back { color: #ffffff; }
+.passenger-layout .schedule-detail-header .schedule-line-badge { background: #ffffff; color: var(--accent); }
+.passenger-layout .passenger-schedules :is(.schedule-list-header, .schedule-detail-header) button:focus-visible { outline-color: #ffffff; }
+
 /* ═══ Profile: Settings-style grouped rows with tinted glyph tiles ═══ */
 .pp-page {
   display: flex;
@@ -727,6 +745,26 @@
 .pp-list-row[data-tone="accent"] .pp-list-label { color: var(--accent); }
 .pp-list-chevron { flex: none; color: var(--text-tertiary); transition: transform 0.15s ease; }
 .pp-list-row:hover .pp-list-chevron { transform: translateX(2px); }
+
+/* As on ahduni.edu.in: a maroon section title over a short maroon rule, the
+   account on a solid maroon card with white type, and maroon glyph tiles. */
+.pp-page-title { color: var(--accent); }
+
+.pp-page-title::after {
+  display: block;
+  width: 2.5rem;
+  height: 2px;
+  margin-top: 0.5rem;
+  background: var(--accent);
+  content: "";
+}
+
+.pp-profile-card { background: var(--accent); color: #ffffff; }
+.pp-profile-card .pp-profile-name { color: #ffffff; }
+.pp-profile-card .pp-profile-email { color: rgb(255 255 255 / 0.86); }
+.pp-profile-card .pp-avatar { background: rgb(255 255 255 / 0.16); color: #ffffff; box-shadow: 0 0 0 2px rgb(255 255 255 / 0.75); }
+.pp-profile-card .pp-role-chip { background: #ffffff; color: var(--accent); }
+.pp-list-icon:not([data-tone]) { background: var(--accent); }
 
 .pp-footnote { color: var(--text-secondary); font-size: 0.75rem; text-align: center; }
 .pp-footnote-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25rem 1rem; }
